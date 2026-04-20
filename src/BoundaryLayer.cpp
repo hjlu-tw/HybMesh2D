@@ -84,11 +84,18 @@ void BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
         }
 
         int n = static_cast<int>(currentFront.size());
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < currentFront.size(); ++i) {
             int i_next = (i + 1) % n;
             m_mesh.addElement({currentFront[i], currentFront[i_next], nextFront[i_next], nextFront[i]});
         }
         currentFront = nextFront;
         currentH *= m_config.blGrowthRate;
-    }
-}
+        }
+
+        // 將最外層波前 (Outer Front) 加入 edges 供遠場三角化使用
+        int nFinal = static_cast<int>(currentFront.size());
+        for (int i = 0; i < nFinal; ++i) {
+        m_mesh.addEdge(currentFront[i], currentFront[(i + 1) % nFinal]);
+        }
+        }
+

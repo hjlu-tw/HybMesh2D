@@ -52,6 +52,18 @@ int main(int argc, char* argv[]) {
     if (config.geomFile == "NONE") {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
+        // 加入計算域邊界 (Domain Box) 到 edges
+        std::vector<int> domainNodeIds;
+        mesh.addNode({config.xMin, config.yMin}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+        mesh.addNode({config.xMax, config.yMin}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+        mesh.addNode({config.xMax, config.yMax}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+        mesh.addNode({config.xMin, config.yMax}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+        
+        for (int i = 0; i < 4; ++i) {
+            mesh.addEdge(domainNodeIds[i], domainNodeIds[(i + 1) % 4]);
+            mesh.addElement({domainNodeIds[i], domainNodeIds[(i + 1) % 4]}); // 視覺化用
+        }
+
         std::vector<Point2D> geomPoints = loadGeometry(config.geomFile);
         if (geomPoints.empty()) {
             std::cerr << "Error: Failed to load geometry from " << config.geomFile << std::endl;
@@ -72,6 +84,9 @@ int main(int argc, char* argv[]) {
 
         BoundaryLayerGenerator blGen(mesh, config);
         blGen.generate(boundaryIds);
+
+        // Phase 4: 遠場三角化
+        mesh.generateFarFieldGmsh(config);
     }
 
     mesh.exportVTK("output.vtk");
