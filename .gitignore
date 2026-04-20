@@ -1,0 +1,8 @@
+build/
+bin/
+*.vtk
+HybMesh2D
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
