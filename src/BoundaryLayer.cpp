@@ -88,7 +88,10 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
         int n = static_cast<int>(currentFront.size());
         for (int i = 0; i < currentFront.size(); ++i) {
             int i_next = (i + 1) % n;
-            m_mesh.addElement({currentFront[i], currentFront[i_next], nextFront[i_next], nextFront[i]});
+            // 變更對角線方向：改用 (currentFront[i_next] 到 nextFront[i]) 的對角線
+            // 這能確保與 Gmsh 過渡層的切割方向一致
+            m_mesh.addElement({currentFront[i], currentFront[i_next], nextFront[i]});
+            m_mesh.addElement({currentFront[i_next], nextFront[i_next], nextFront[i]});
         }
         currentFront = nextFront;
         currentH *= m_config.blGrowthRate;

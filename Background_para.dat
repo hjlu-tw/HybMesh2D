@@ -22,11 +22,13 @@ BL_INITIAL_THICKNESS 0.001
 # 邊界層增長率
 BL_GROWTH_RATE 1.1
 # 邊界層四邊形層數
-BL_LAYERS 10
+BL_LAYERS 1
 
 # --- 過渡層設定 (Transition Layer - Phase 4) ---
 # 扁平三角形過渡層層數
-BL_TRANSITION_LAYERS 20
+BL_TRANSITION_LAYERS 1
+# 扁平三角形過渡層增長率
+BL_TRANSITION_GROWTH_RATE 1.5
 
 # --- Gmsh 底層演算法設定 (Gmsh Advanced Settings) ---
 # 網格生成演算法 (6: Frontal-Delaunay, 1: Delaunay, 5: Frontal-Delaunay for Quads)

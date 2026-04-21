@@ -92,6 +92,7 @@ void Mesh::exportVTK(const std::string& filename) const {
 
 void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     gmsh::initialize();
+    gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端大量輸出
     gmsh::model::add("FarField");
 
     // 1. 建立點與線
@@ -179,18 +180,30 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         int fBL = gmsh::model::mesh::field::add("BoundaryLayer");
         gmsh::model::mesh::field::setNumbers(fBL, "CurvesList", frontLineTags);
         gmsh::model::mesh::field::setNumber(fBL, "Size", hFirst);
-        gmsh::model::mesh::field::setNumber(fBL, "Ratio", config.blGrowthRate);
+        gmsh::model::mesh::field::setNumber(fBL, "Ratio", config.blTransitionGrowthRate);
         gmsh::model::mesh::field::setNumber(fBL, "Quads", 0);
         
-        double r = config.blGrowthRate;
+        double rTrans = config.blTransitionGrowthRate;
         int numTransitionLayers = config.blTransitionLayers; // 從設定檔讀取過渡層數
-        double totalTransThickness = hFirst * (std::pow(r, numTransitionLayers) - 1.0) / (r - 1.0);
+        double totalTransThickness = hFirst * (std::pow(rTrans, numTransitionLayers) - 1.0) / (rTrans - 1.0);
         gmsh::model::mesh::field::setNumber(fBL, "Thickness", totalTransThickness);
         gmsh::model::mesh::field::setAsBoundaryLayer(fBL);
 
         // 3.2 遠場平滑銜接優化 (Smooth Transition Optimization)
-        // 計算過渡層結束時的網格尺寸
-        double hEnd = hFirst * std::pow(r, numTransitionLayers);
+        double hEnd = hFirst * std::pow(rTrans, numTransitionLayers);
+
+        // --- 顯示尺寸銜接分析 ---
+        std::cout << "----- Mesh Size Transition Analysis -----\n";
+        std::cout << "Last BL Layer Thickness (Phase 3): " << finalBLThickness << "\n";
+        std::cout << "First Transition Tri Height:      " << hFirst << "\n";
+        std::cout << "Last Transition Tri Height (hEnd): " << hEnd << "\n";
+        std::cout << "Far-field Target Size:             " << config.farFieldSize << "\n";
+        if (hEnd > config.farFieldSize) {
+            std::cout << "Warning: Transition ended with size larger than far-field target!\n";
+        } else {
+            std::cout << "Transition Smoothness Ratio (hEnd/Target): " << (hEnd / config.farFieldSize * 100.0) << "%\n";
+        }
+        std::cout << "------------------------------------------\n";
         
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);

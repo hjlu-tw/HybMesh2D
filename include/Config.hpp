@@ -14,7 +14,10 @@ struct Config {
     double surfaceSize = 0.1, farFieldSize = 1.0;
     double blInitialThickness = 0.01, blGrowthRate = 1.2;
     int blLayers = 5;
+    
+    // 過渡層設定 (Phase 4)
     int blTransitionLayers = 3;
+    double blTransitionGrowthRate = 1.2;
     
     // 進階遠場過渡控制
     double farFieldGrowthRate = 0.1;
@@ -50,6 +53,7 @@ struct Config {
             else if (key == "BL_TRANSITION_LAYERS") {
                 double val; ss >> val; blTransitionLayers = static_cast<int>(val);
             }
+            else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> blTransitionGrowthRate;
             else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
             else if (key == "GMSH_ALGORITHM") {
                 double val; ss >> val; gmshAlgorithm = static_cast<int>(val);
@@ -67,7 +71,8 @@ struct Config {
         std::cout << "Domain: [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n";
         std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
         std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
-        std::cout << "Transition: " << blTransitionLayers << " layers, Farfield Growth: " << farFieldGrowthRate << "\n";
+        std::cout << "Transition: " << blTransitionLayers << " layers, rate " << blTransitionGrowthRate << "\n";
+        std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
         std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
         std::cout << "-------------------------\n";
     }
