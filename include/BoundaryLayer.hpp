@@ -9,8 +9,8 @@ class BoundaryLayerGenerator {
 public:
     BoundaryLayerGenerator(Mesh& mesh, const Config& config);
 
-    // 從一組初始邊界節點 ID 生成邊界層
-    void generate(const std::vector<int>& boundaryNodeIds);
+    // 從一組初始邊界節點 ID 生成邊界層，並回傳最後一層的厚度
+    double generate(const std::vector<int>& boundaryNodeIds);
 
 private:
     Mesh& m_mesh;

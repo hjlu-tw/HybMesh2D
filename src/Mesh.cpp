@@ -90,7 +90,7 @@ void Mesh::exportVTK(const std::string& filename) const {
     std::cout << "Mesh exported to " << filename << std::endl;
 }
 
-void Mesh::generateFarFieldGmsh(const Config& config) {
+void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     gmsh::initialize();
     gmsh::model::add("FarField");
 
@@ -99,43 +99,36 @@ void Mesh::generateFarFieldGmsh(const Config& config) {
     for (const auto& edge : edges) {
         for (int vid : {edge.v1, edge.v2}) {
             if (nodeMap.find(vid) == nodeMap.end()) {
-                // 根據節點類型設定網格大小
-                double lsize = (nodes[vid].type == NodeType::BoundaryLayer) ? config.surfaceSize : config.farFieldSize;
-                int tag = gmsh::model::geo::addPoint(nodes[vid].pos.x, nodes[vid].pos.y, 0.0, lsize);
+                int tag = gmsh::model::geo::addPoint(nodes[vid].pos.x, nodes[vid].pos.y, 0.0);
                 nodeMap[vid] = tag;
             }
         }
     }
 
     std::vector<int> allLines;
-    std::map<int, std::vector<int>> adj; // 節點 -> 相連的 Line Tags
-    for (const auto& edge : edges) {
-        int tag = gmsh::model::geo::addLine(nodeMap[edge.v1], nodeMap[edge.v2]);
+    std::vector<double> frontLineTags; // 用於尺寸場的邊界來源
+    for (size_t i = 0; i < edges.size(); ++i) {
+        int tag = gmsh::model::geo::addLine(nodeMap[edges[i].v1], nodeMap[edges[i].v2]);
         allLines.push_back(tag);
+        
+        // 識別 Outer Front
+        if (nodes[edges[i].v1].type == NodeType::BoundaryLayer && 
+            nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
+            frontLineTags.push_back(static_cast<double>(tag));
+        }
     }
 
-    // 2. 拓撲分析：將 Line 組織成多個閉合的 Curve Loop
-    // 為了簡化，我們假設 edges 是分段連續的（例如前 4 個是 Domain，後續是 Front）
-    // 這裡我們使用 gmsh::model::geo::addCurveLoop 的自動搜尋功能，
-    // 但我們需要分開傳遞，否則它會建立 subloops
-
-    // 改進方案：搜尋連通分量
+    // 2. 拓撲分析 (迴圈追蹤保持不變)
     std::vector<int> loops;
     std::vector<bool> used(allLines.size(), false);
-
     for (size_t i = 0; i < allLines.size(); ++i) {
         if (used[i]) continue;
-
         std::vector<int> currentLoopLines;
         int firstLine = allLines[i];
         currentLoopLines.push_back(firstLine);
         used[i] = true;
-
-        // 取得這條線的起終點 (我們的 ID)
         int startNode = edges[i].v1;
         int currNode = edges[i].v2;
-
-        // 尋找接續的線
         while (currNode != startNode) {
             bool found = false;
             for (size_t k = 0; k < allLines.size(); ++k) {
@@ -146,7 +139,7 @@ void Mesh::generateFarFieldGmsh(const Config& config) {
                         used[k] = true;
                         found = true;
                         break;
-                    } else if (edges[k].v2 == currNode) { // 方向相反
+                    } else if (edges[k].v2 == currNode) {
                         currentLoopLines.push_back(-allLines[k]);
                         currNode = edges[k].v1;
                         used[k] = true;
@@ -155,9 +148,8 @@ void Mesh::generateFarFieldGmsh(const Config& config) {
                     }
                 }
             }
-            if (!found) break; // 鏈條中斷 (非閉合)
+            if (!found) break;
         }
-
         if (currentLoopLines.size() >= 3) {
             int loopTag = gmsh::model::geo::addCurveLoop(currentLoopLines);
             loops.push_back(loopTag);
@@ -170,33 +162,91 @@ void Mesh::generateFarFieldGmsh(const Config& config) {
 
     gmsh::model::geo::synchronize();
 
-    // 設定全域網格控制參數
-    gmsh::option::setNumber("Mesh.Algorithm", 6); // Frontal-Delaunay
-    gmsh::option::setNumber("Mesh.CharacteristicLengthExtendFromBoundary", 1);
+    // 2.1 局部強制邊界層外緣 1-對-1 對接
+    // 只針對邊界層外緣 (Outer Front) 的線段強制節點數量為 2
+    // 其他邊界 (如計算域外框) 則允許 Gmsh 依據尺寸場自動分割，以獲得平均分佈
+    for (size_t i = 0; i < edges.size(); ++i) {
+        if (nodes[edges[i].v1].type == NodeType::BoundaryLayer && 
+            nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
+            gmsh::model::mesh::setTransfiniteCurve(allLines[i], 2);
+        }
+    }
 
+    // --- 3. 建立尺寸過渡場 ---
+    if (!frontLineTags.empty()) {
+        // 3.1 扁平三角形過渡層 (BoundaryLayer Field)
+        double hFirst = finalBLThickness * config.blGrowthRate;
+        int fBL = gmsh::model::mesh::field::add("BoundaryLayer");
+        gmsh::model::mesh::field::setNumbers(fBL, "CurvesList", frontLineTags);
+        gmsh::model::mesh::field::setNumber(fBL, "Size", hFirst);
+        gmsh::model::mesh::field::setNumber(fBL, "Ratio", config.blGrowthRate);
+        gmsh::model::mesh::field::setNumber(fBL, "Quads", 0);
+        
+        double r = config.blGrowthRate;
+        int numTransitionLayers = config.blTransitionLayers; // 從設定檔讀取過渡層數
+        double totalTransThickness = hFirst * (std::pow(r, numTransitionLayers) - 1.0) / (r - 1.0);
+        gmsh::model::mesh::field::setNumber(fBL, "Thickness", totalTransThickness);
+        gmsh::model::mesh::field::setAsBoundaryLayer(fBL);
+
+        // 3.2 遠場平滑銜接優化 (Smooth Transition Optimization)
+        // 計算過渡層結束時的網格尺寸
+        double hEnd = hFirst * std::pow(r, numTransitionLayers);
+        
+        int fDist = gmsh::model::mesh::field::add("Distance");
+        gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);
+
+        // 使用 MathEval 讓網格從 hEnd 平滑過渡到 farFieldSize
+        // 增長梯度從設定檔讀取 FARFIELD_GROWTH_RATE
+        std::string expr = "Min(" + std::to_string(config.farFieldSize) + ", " + 
+                           std::to_string(hEnd) + " + " + std::to_string(config.farFieldGrowthRate) + " * F" + std::to_string(fDist) + ")";
+        
+        int fFinal = gmsh::model::mesh::field::add("MathEval");
+        gmsh::model::mesh::field::setString(fFinal, "F", expr);
+        gmsh::model::mesh::field::setAsBackgroundMesh(fFinal);
+
+        // 設定全域尺寸範圍，確保尺寸場有權限控制網格
+        gmsh::option::setNumber("Mesh.MeshSizeMin", hFirst);
+        gmsh::option::setNumber("Mesh.MeshSizeMax", config.farFieldSize);
+    } else {
+        gmsh::option::setNumber("Mesh.MeshSizeMin", config.farFieldSize);
+        gmsh::option::setNumber("Mesh.MeshSizeMax", config.farFieldSize);
+    }
+
+    gmsh::option::setNumber("Mesh.MeshSizeExtendFromBoundary", 0);
+    gmsh::option::setNumber("Mesh.MeshSizeFromPoints", 0);
+    gmsh::option::setNumber("Mesh.Algorithm", config.gmshAlgorithm); 
+    
+    if (config.gmshOptimize) {
+        gmsh::option::setNumber("Mesh.Optimize", 1);
+        gmsh::option::setNumber("Mesh.OptimizeNetgen", 1);
+    }
+    
     gmsh::model::mesh::generate(2);
-
 
     std::vector<double> coord, dummy;
     std::vector<std::size_t> nodeTags;
     gmsh::model::mesh::getNodes(nodeTags, coord, dummy);
     
+    // 優化：建立座標查找表
+    std::map<std::pair<long long, long long>, int> coordMap;
+    auto getCoordKey = [](double x, double y) {
+        return std::make_pair((long long)(x * 1e7), (long long)(y * 1e7));
+    };
+    for(auto const& nm : nodeMap) {
+        coordMap[getCoordKey(nodes[nm.first].pos.x, nodes[nm.first].pos.y)] = nm.first;
+    }
+
     std::map<std::size_t, int> gmshToOurNode;
     for (size_t i = 0; i < nodeTags.size(); ++i) {
-        Point2D p = {coord[3*i], coord[3*i+1]};
-        bool exists = false;
-        int existingId = -1;
-        for(const auto& nm : nodeMap) {
-            if((nodes[nm.first].pos - p).length() < 1e-6) {
-                exists = true; existingId = nm.first; break;
-            }
-        }
-        
-        if (!exists) {
-            addNode(p, NodeType::Interior);
-            gmshToOurNode[nodeTags[i]] = nodes.back().id;
+        double x = coord[3*i], y = coord[3*i+1];
+        auto key = getCoordKey(x, y);
+        if (coordMap.count(key)) {
+            gmshToOurNode[nodeTags[i]] = coordMap[key];
         } else {
-            gmshToOurNode[nodeTags[i]] = existingId;
+            addNode({x, y}, NodeType::Interior);
+            int newId = nodes.back().id;
+            gmshToOurNode[nodeTags[i]] = newId;
+            coordMap[key] = newId;
         }
     }
 

@@ -8,22 +8,31 @@
 #include <iostream>
 
 struct Config {
+    // 預設參數值 (若檔案中未指定則使用)
     std::string geomFile = "NONE";
-    double xMin, xMax, yMin, yMax;
-    double surfaceSize, farFieldSize;
-    double blInitialThickness, blGrowthRate;
-    int blLayers;
+    double xMin = -10.0, xMax = 10.0, yMin = -10.0, yMax = 10.0;
+    double surfaceSize = 0.1, farFieldSize = 1.0;
+    double blInitialThickness = 0.01, blGrowthRate = 1.2;
+    int blLayers = 5;
+    int blTransitionLayers = 3;
+    
+    // 進階遠場過渡控制
+    double farFieldGrowthRate = 0.1;
+    int gmshAlgorithm = 6; // 6: Frontal-Delaunay
+    int gmshOptimize = 1;  // 1: Enable mesh optimization
 
     bool loadFromFile(const std::string& filename) {
         std::ifstream ifs(filename);
         if (!ifs) {
-            std::cerr << "Error: Could not open config file " << filename << std::endl;
-            return false;
+            std::cerr << "Warning: Could not open config file " << filename << ". Using defaults.\n";
+            return true;
         }
 
         std::string line, key;
         while (std::getline(ifs, line)) {
-            if (line.empty() || line[0] == '#') continue;
+            // 跳過註解與空行
+            if (line.empty() || line[0] == '#' || line[0] == '/') continue;
+            
             std::stringstream ss(line);
             ss >> key;
             if (key == "GEOM_FILE") ss >> geomFile;
@@ -36,9 +45,17 @@ struct Config {
             else if (key == "BL_INITIAL_THICKNESS") ss >> blInitialThickness;
             else if (key == "BL_GROWTH_RATE") ss >> blGrowthRate;
             else if (key == "BL_LAYERS") {
-                double val;
-                ss >> val;
-                blLayers = static_cast<int>(val);
+                double val; ss >> val; blLayers = static_cast<int>(val);
+            }
+            else if (key == "BL_TRANSITION_LAYERS") {
+                double val; ss >> val; blTransitionLayers = static_cast<int>(val);
+            }
+            else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
+            else if (key == "GMSH_ALGORITHM") {
+                double val; ss >> val; gmshAlgorithm = static_cast<int>(val);
+            }
+            else if (key == "GMSH_OPTIMIZE") {
+                double val; ss >> val; gmshOptimize = static_cast<int>(val);
             }
         }
         return true;
@@ -50,6 +67,8 @@ struct Config {
         std::cout << "Domain: [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n";
         std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
         std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
+        std::cout << "Transition: " << blTransitionLayers << " layers, Farfield Growth: " << farFieldGrowthRate << "\n";
+        std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
         std::cout << "-------------------------\n";
     }
 };

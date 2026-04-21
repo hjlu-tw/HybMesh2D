@@ -83,10 +83,10 @@ int main(int argc, char* argv[]) {
         }
 
         BoundaryLayerGenerator blGen(mesh, config);
-        blGen.generate(boundaryIds);
+        double lastH = blGen.generate(boundaryIds);
 
-        // Phase 4: 遠場三角化
-        mesh.generateFarFieldGmsh(config);
+        // Phase 4: 遠場三角化 (傳入最後一層厚度以控制長寬比過渡)
+        mesh.generateFarFieldGmsh(config, lastH);
     }
 
     mesh.exportVTK("output.vtk");

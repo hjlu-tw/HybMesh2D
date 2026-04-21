@@ -36,11 +36,12 @@ public:
     void addNode(Point2D p, NodeType type = NodeType::Interior);
     void addEdge(int v1, int v2);
     void addElement(const std::vector<int>& ids);
-    
-    void generateFarFieldGmsh(const Config& config);
+
+    // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制
+    void generateFarFieldGmsh(const Config& config, double finalBLThickness);
 
     void generateCartesianMesh(double xMin, double xMax, double yMin, double yMax, double ds);
-    
+
     void exportVTK(const std::string& filename) const;
 };
 

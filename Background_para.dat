@@ -1,17 +1,35 @@
-# 幾何檔案 (若無則填 NONE)
-GEOM_FILE Circle_D3.dat
+# --- 幾何設定 (Geometry Settings) ---
+# 幾何檔案名稱 (若無則填 NONE)
+GEOM_FILE circle_D3.dat
 
-# 幾何邊界尺寸 (Domain Size)
+# --- 計算域邊界 (Domain Boundaries) ---
 DOMAIN_X_MIN -5.0
 DOMAIN_X_MAX 5.0
 DOMAIN_Y_MIN -5.0
 DOMAIN_Y_MAX 5.0
 
-# 網格大小資訊 (Mesh Size Info)
+# --- 網格尺寸設定 (Mesh Size Settings) ---
+# 幾何表面網格大小
 SURFACE_MESH_SIZE 0.1
+# 遠場均勻網格大小
 FARFIELD_MESH_SIZE 0.5
+# 遠場網格增長斜率 (每單位距離增加的尺寸)
+FARFIELD_GROWTH_RATE 0.1
 
-# 邊界層參數 (Boundary Layer)
+# --- 邊界層設定 (Boundary Layer - Phase 3) ---
+# 邊界層第一層厚度
 BL_INITIAL_THICKNESS 0.001
+# 邊界層增長率
 BL_GROWTH_RATE 1.1
+# 邊界層四邊形層數
 BL_LAYERS 10
+
+# --- 過渡層設定 (Transition Layer - Phase 4) ---
+# 扁平三角形過渡層層數
+BL_TRANSITION_LAYERS 20
+
+# --- Gmsh 底層演算法設定 (Gmsh Advanced Settings) ---
+# 網格生成演算法 (6: Frontal-Delaunay, 1: Delaunay, 5: Frontal-Delaunay for Quads)
+GMSH_ALGORITHM 6
+# 網格優化 (1: 開啟, 0: 關閉)
+GMSH_OPTIMIZE 1

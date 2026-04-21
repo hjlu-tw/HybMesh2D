@@ -65,13 +65,15 @@ std::vector<Vector2D> BoundaryLayerGenerator::computeNormals(const std::vector<i
     return normals;
 }
 
-void BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
+double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
     detectGrowthDirection(boundaryNodeIds);
     
     std::vector<int> currentFront = boundaryNodeIds;
     double currentH = m_config.blInitialThickness;
+    double lastH = currentH;
 
     for (int layer = 0; layer < m_config.blLayers; ++layer) {
+        lastH = currentH;
         std::vector<Vector2D> normals = computeNormals(currentFront);
         std::vector<int> nextFront;
 
@@ -90,12 +92,14 @@ void BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
         }
         currentFront = nextFront;
         currentH *= m_config.blGrowthRate;
-        }
+    }
 
-        // 將最外層波前 (Outer Front) 加入 edges 供遠場三角化使用
-        int nFinal = static_cast<int>(currentFront.size());
-        for (int i = 0; i < nFinal; ++i) {
+    // 將最外層波前 (Outer Front) 加入 edges 供遠場三角化使用
+    int nFinal = static_cast<int>(currentFront.size());
+    for (int i = 0; i < nFinal; ++i) {
         m_mesh.addEdge(currentFront[i], currentFront[(i + 1) % nFinal]);
-        }
-        }
+    }
+
+    return lastH;
+}
 
