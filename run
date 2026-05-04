@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# 設定 Gmsh 函式庫路徑
+export DYLD_LIBRARY_PATH=/Users/hjlu_nchc/Library/Python/3.9/lib:$DYLD_LIBRARY_PATH
+
+# 確保結果輸出目錄存在
+mkdir -p results
+
+# 檢查執行檔是否存在
+if [ ! -f "./build/HybMesh2D" ]; then
+    echo "執行檔 ./build/HybMesh2D 不存在，正在嘗試自動編譯..."
+    g++ -std=c++17 -Iinclude -I/Users/hjlu_nchc/Library/Python/3.9/include \
+        src/main.cpp src/Mesh.cpp src/BoundaryLayer.cpp \
+        /Users/hjlu_nchc/Library/Python/3.9/lib/libgmsh.4.15.dylib \
+        -o build/HybMesh2D
+    if [ $? -ne 0 ]; then
+        echo "編譯失敗，請檢查原始碼或依賴項。"
+        exit 1
+    fi
+fi
+
+# 執行程式並傳遞所有參數
+./build/HybMesh2D "$@"

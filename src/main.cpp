@@ -38,8 +38,16 @@ bool checkDomainIntersection(const std::vector<Point2D>& geom, const Config& con
 }
 
 int main(int argc, char* argv[]) {
+    std::string configFile = "config/Background_para.dat";
+    
+    // 預解析參數以尋找自定義設定檔
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-conf" && i + 1 < argc) configFile = argv[++i];
+    }
+
     Config config;
-    if (!config.loadFromFile("Background_para.dat")) return 1;
+    if (!config.loadFromFile(configFile)) return 1;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -89,6 +97,6 @@ int main(int argc, char* argv[]) {
         mesh.generateFarFieldGmsh(config, lastH);
     }
 
-    mesh.exportVTK("output.vtk");
+    mesh.exportVTK("results/output.vtk");
     return 0;
 }
