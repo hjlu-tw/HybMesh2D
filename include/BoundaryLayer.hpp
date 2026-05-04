@@ -19,9 +19,6 @@ private:
 
     // 自動偵測生長方向
     void detectGrowthDirection(const std::vector<int>& nodeIds);
-
-    // 計算封閉曲線各點的平滑法向量
-    std::vector<Vector2D> computeNormals(const std::vector<int>& nodeIds);
 };
 
 #endif

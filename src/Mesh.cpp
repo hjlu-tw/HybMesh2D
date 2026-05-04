@@ -108,6 +108,8 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
 
     std::vector<int> allLines;
     std::vector<double> frontLineTags; // 用於尺寸場的邊界來源
+    double totalFrontLength = 0.0;
+    int numFrontEdges = 0;
     for (size_t i = 0; i < edges.size(); ++i) {
         int tag = gmsh::model::geo::addLine(nodeMap[edges[i].v1], nodeMap[edges[i].v2]);
         allLines.push_back(tag);
@@ -116,8 +118,13 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         if (nodes[edges[i].v1].type == NodeType::BoundaryLayer && 
             nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
             frontLineTags.push_back(static_cast<double>(tag));
+            Point2D p1 = nodes[edges[i].v1].pos;
+            Point2D p2 = nodes[edges[i].v2].pos;
+            totalFrontLength += std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+            numFrontEdges++;
         }
     }
+    double avgFrontEdgeLength = (numFrontEdges > 0) ? (totalFrontLength / numFrontEdges) : 1.0;
 
     // 2. 拓撲分析 (迴圈追蹤保持不變)
     std::vector<int> loops;
@@ -128,32 +135,19 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         int firstLine = allLines[i];
         currentLoopLines.push_back(firstLine);
         used[i] = true;
-        int startNode = edges[i].v1;
-        int currNode = edges[i].v2;
+        int startNode = edges[i].v1, currNode = edges[i].v2;
         while (currNode != startNode) {
             bool found = false;
             for (size_t k = 0; k < allLines.size(); ++k) {
                 if (!used[k]) {
-                    if (edges[k].v1 == currNode) {
-                        currentLoopLines.push_back(allLines[k]);
-                        currNode = edges[k].v2;
-                        used[k] = true;
-                        found = true;
-                        break;
-                    } else if (edges[k].v2 == currNode) {
-                        currentLoopLines.push_back(-allLines[k]);
-                        currNode = edges[k].v1;
-                        used[k] = true;
-                        found = true;
-                        break;
-                    }
+                    if (edges[k].v1 == currNode) { currentLoopLines.push_back(allLines[k]); currNode = edges[k].v2; used[k] = true; found = true; break; }
+                    else if (edges[k].v2 == currNode) { currentLoopLines.push_back(-allLines[k]); currNode = edges[k].v1; used[k] = true; found = true; break; }
                 }
             }
             if (!found) break;
         }
-        if (currentLoopLines.size() >= 3) {
-            int loopTag = gmsh::model::geo::addCurveLoop(currentLoopLines);
-            loops.push_back(loopTag);
+        if (currentLoopLines.size() >= 3 && currNode == startNode) {
+            loops.push_back(gmsh::model::geo::addCurveLoop(currentLoopLines));
         }
     }
 
@@ -163,7 +157,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
 
     gmsh::model::geo::synchronize();
 
-    // 2.1 局部強制邊界層外緣 1-對-1 對接
+    // 2.2 局部強制邊界層外緣 1-對-1 對接
     // 只針對邊界層外緣 (Outer Front) 的線段強制節點數量為 2
     // 其他邊界 (如計算域外框) 則允許 Gmsh 依據尺寸場自動分割，以獲得平均分佈
     for (size_t i = 0; i < edges.size(); ++i) {
@@ -184,24 +178,34 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         gmsh::model::mesh::field::setNumber(fBL, "Quads", 0);
         
         double rTrans = config.blTransitionGrowthRate;
-        int numTransitionLayers = config.blTransitionLayers; // 從設定檔讀取過渡層數
+        int numTransitionLayers = config.blTransitionLayers; // 預設值
+        
+        // 3.2 計算最佳過渡層數以達到 Aspect Ratio = 1.0
+        int bestLayers = static_cast<int>(std::round(std::log(avgFrontEdgeLength / hFirst) / std::log(rTrans)));
+        bestLayers = std::max(0, bestLayers);
+
+        if (config.blAutoTransitionLayers) {
+            numTransitionLayers = bestLayers;
+            std::cout << "Auto-Transition: Setting BL_TRANSITION_LAYERS to " << numTransitionLayers << " (Target AR=1.0)\n";
+        }
+
         double totalTransThickness = hFirst * (std::pow(rTrans, numTransitionLayers) - 1.0) / (rTrans - 1.0);
         gmsh::model::mesh::field::setNumber(fBL, "Thickness", totalTransThickness);
         gmsh::model::mesh::field::setAsBoundaryLayer(fBL);
 
-        // 3.2 遠場平滑銜接優化 (Smooth Transition Optimization)
+        // 3.3 遠場平滑銜接優化 (Smooth Transition Optimization)
         double hEnd = hFirst * std::pow(rTrans, numTransitionLayers);
+        double aspectRatio = hEnd / avgFrontEdgeLength;
 
         // --- 顯示尺寸銜接分析 ---
         std::cout << "----- Mesh Size Transition Analysis -----\n";
         std::cout << "Last BL Layer Thickness (Phase 3): " << finalBLThickness << "\n";
+        std::cout << "Average Outer Front Edge Length:  " << avgFrontEdgeLength << "\n";
         std::cout << "First Transition Tri Height:      " << hFirst << "\n";
         std::cout << "Last Transition Tri Height (hEnd): " << hEnd << "\n";
-        std::cout << "Far-field Target Size:             " << config.farFieldSize << "\n";
-        if (hEnd > config.farFieldSize) {
-            std::cout << "Warning: Transition ended with size larger than far-field target!\n";
-        } else {
-            std::cout << "Transition Smoothness Ratio (hEnd/Target): " << (hEnd / config.farFieldSize * 100.0) << "%\n";
+        std::cout << "Outermost Transition Aspect Ratio (hEnd/AvgEdge): " << aspectRatio << "\n";
+        if (!config.blAutoTransitionLayers) {
+            std::cout << "=> Optimal BL_TRANSITION_LAYERS for AR=1.0 is ~ " << bestLayers << "\n";
         }
         std::cout << "------------------------------------------\n";
         

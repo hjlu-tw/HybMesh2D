@@ -11,6 +11,15 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
     if (!ifs) return points;
     double x, y;
     while (ifs >> x >> y) points.push_back({x, y});
+
+    // 如果起點與終點重合，移除最後一個點以避免產生重疊的邊界節點，這會導致法向量計算錯誤
+    if (points.size() > 1) {
+        double dx = points.front().x - points.back().x;
+        double dy = points.front().y - points.back().y;
+        if (dx * dx + dy * dy < 1e-12) {
+            points.pop_back();
+        }
+    }
     return points;
 }
 

@@ -14,9 +14,14 @@ struct Config {
     double surfaceSize = 0.1, farFieldSize = 1.0;
     double blInitialThickness = 0.01, blGrowthRate = 1.2;
     int blLayers = 5;
+
+    // 邊界層扇形網格控制 (Fan Elements)
+    int blFanNodes = 5;
+    double blFanAngleThreshold = 60.0; // 度數
     
     // 過渡層設定 (Phase 4)
     int blTransitionLayers = 3;
+    bool blAutoTransitionLayers = false;
     double blTransitionGrowthRate = 1.2;
     
     // 進階遠場過渡控制
@@ -50,8 +55,15 @@ struct Config {
             else if (key == "BL_LAYERS") {
                 double val; ss >> val; blLayers = static_cast<int>(val);
             }
+            else if (key == "BL_FAN_NODES") {
+                double val; ss >> val; blFanNodes = static_cast<int>(val);
+            }
+            else if (key == "BL_FAN_ANGLE_THRESHOLD") ss >> blFanAngleThreshold;
             else if (key == "BL_TRANSITION_LAYERS") {
                 double val; ss >> val; blTransitionLayers = static_cast<int>(val);
+            }
+            else if (key == "BL_AUTO_TRANSITION_LAYERS") {
+                int val; ss >> val; blAutoTransitionLayers = (val != 0);
             }
             else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> blTransitionGrowthRate;
             else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
@@ -71,7 +83,8 @@ struct Config {
         std::cout << "Domain: [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n";
         std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
         std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
-        std::cout << "Transition: " << blTransitionLayers << " layers, rate " << blTransitionGrowthRate << "\n";
+        std::cout << "BL Fan Elements: " << blFanNodes << " nodes, trigger angle > " << blFanAngleThreshold << " deg\n";
+        std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " << (blAutoTransitionLayers ? "ON" : "OFF") << "), rate " << blTransitionGrowthRate << "\n";
         std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
         std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
         std::cout << "-------------------------\n";
