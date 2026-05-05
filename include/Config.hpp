@@ -17,6 +17,7 @@ struct Config {
 
     // 邊界層扇形網格控制 (Fan Elements)
     int blFanNodes = 5;
+    bool blAutoFanNodes = false;
     double blFanAngleThreshold = 60.0; // 度數
     
     // 凹角處理 (Concave Handling)
@@ -64,6 +65,9 @@ struct Config {
             else if (key == "BL_FAN_NODES") {
                 double val; ss >> val; blFanNodes = static_cast<int>(val);
             }
+            else if (key == "BL_AUTO_FAN_NODES") {
+                int val; ss >> val; blAutoFanNodes = (val != 0);
+            }
             else if (key == "BL_FAN_ANGLE_THRESHOLD") ss >> blFanAngleThreshold;
             else if (key == "BL_SMOOTHING_ITERS") {
                 double val; ss >> val; blSmoothingIters = static_cast<int>(val);
@@ -97,7 +101,7 @@ struct Config {
         std::cout << "Domain: [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n";
         std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
         std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
-        std::cout << "BL Fan Elements: " << blFanNodes << " nodes, trigger angle > " << blFanAngleThreshold << " deg\n";
+        std::cout << "BL Fan Elements: " << blFanNodes << " nodes (Auto: " << (blAutoFanNodes ? "ON" : "OFF") << "), trigger angle > " << blFanAngleThreshold << " deg\n";
         std::cout << "BL Corner Thresholds: Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
         std::cout << "BL Concave Handling: Smoothing " << blSmoothingIters << " iters, Merge " << (blMergeConcave ? "ON" : "OFF") << "\n";
         std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " << (blAutoTransitionLayers ? "ON" : "OFF") << "), rate " << blTransitionGrowthRate << "\n";

@@ -24,7 +24,10 @@ BL_GROWTH_RATE 1.1
 # 邊界層四邊形層數
 BL_LAYERS 10
 # 邊界層銳角扇形節點數
-BL_FAN_NODES 21
+BL_FAN_NODES 7
+
+BL_AUTO_FAN_NODES 1
+
 # 邊界層銳角觸發角度 (度)
 BL_FAN_ANGLE_THRESHOLD 60.0
 # 邊界層波前平滑迭代次數 (Laplacian Smoothing)

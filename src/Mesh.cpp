@@ -209,6 +209,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         }
         std::cout << "------------------------------------------\n";
         
+        std::cout << "Step: Setting up Gmsh fields...\n";
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);
 
@@ -238,7 +239,9 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         gmsh::option::setNumber("Mesh.OptimizeNetgen", 1);
     }
     
+    std::cout << "Step: Generating far-field triangle mesh (Gmsh)..." << std::endl;
     gmsh::model::mesh::generate(2);
+    std::cout << "Step: Gmsh generation finished. Syncing nodes..." << std::endl;
 
     std::vector<double> coord, dummy;
     std::vector<std::size_t> nodeTags;
@@ -267,6 +270,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         }
     }
 
+    std::cout << "Step: Syncing elements..." << std::endl;
     std::vector<int> elementTypes;
     std::vector<std::vector<std::size_t>> elementTags, nodeTagsByElement;
     gmsh::model::mesh::getElements(elementTypes, elementTags, nodeTagsByElement, 2);
@@ -282,5 +286,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         }
     }
 
+    std::cout << "Step: Finalizing Gmsh..." << std::endl;
     gmsh::finalize();
+    std::cout << "Mesh generation completed successfully!" << std::endl;
 }

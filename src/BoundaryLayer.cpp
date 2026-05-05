@@ -5,6 +5,10 @@
 #include <algorithm>
 #include <vector>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 BoundaryLayerGenerator::BoundaryLayerGenerator(Mesh& mesh, const Config& config)
     : m_mesh(mesh), m_config(config) {}
 
@@ -45,6 +49,66 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
     double currentH = m_config.blInitialThickness;
     double lastH = currentH;
     std::map<int, Vector2D> nodeDirections;
+// 自動偵測扇形節點數量 (Auto-detect Fan Node Counts)
+std::vector<int> fanNodeCounts(boundaryNodeIds.size(), m_config.blFanNodes);
+if (m_config.blAutoFanNodes) {
+    std::cout << "----- Fan Node Auto-Detection -----\n";
+    int n = static_cast<int>(boundaryNodeIds.size());
+    // ... (中間計算邏輯保持不變)
+
+        std::vector<Vector2D> n1_init(n), n2_init(n);
+        std::vector<bool> isConvexInit(n, false);
+        std::vector<Point2D> pos_init(n);
+        for (int i = 0; i < n; ++i) {
+            pos_init[i] = m_mesh.nodes[boundaryNodeIds[i]].pos;
+            Point2D p_prev = m_mesh.nodes[boundaryNodeIds[(i - 1 + n) % n]].pos;
+            Point2D p_next = m_mesh.nodes[boundaryNodeIds[(i + 1) % n]].pos;
+            Vector2D v1 = (pos_init[i] - p_prev).normalized();
+            Vector2D v2 = (p_next - pos_init[i]).normalized();
+            n1_init[i] = (m_growthSign > 0 ? v1.leftNormal() : v1.rightNormal());
+            n2_init[i] = (m_growthSign > 0 ? v2.leftNormal() : v2.rightNormal());
+            double angle1 = std::atan2(v1.y, v1.x), angle2 = std::atan2(v2.y, v2.x);
+            double diff = angle2 - angle1;
+            while (diff > M_PI) diff -= 2*M_PI;
+            while (diff < -M_PI) diff += 2*M_PI;
+            double exteriorAngle = 180.0 - (m_growthSign * diff * 180.0 / M_PI);
+            if (exteriorAngle > m_config.blConvexAngleThreshold) isConvexInit[i] = true;
+        }
+
+        double R_BL = 0.0, h_tmp = m_config.blInitialThickness;
+        for (int l = 0; l < m_config.blLayers; ++l) { R_BL += h_tmp; h_tmp *= m_config.blGrowthRate; }
+        double hFirst = h_tmp, rTrans = m_config.blTransitionGrowthRate;
+        int nTrans = m_config.blTransitionLayers;
+        if (m_config.blAutoTransitionLayers) {
+            double totalLen = 0;
+            for(int i=0; i<n; ++i) totalLen += (pos_init[(i+1)%n] - pos_init[i]).length();
+            nTrans = std::max(0, (int)std::round(std::log((totalLen/n) / hFirst) / std::log(rTrans)));
+        }
+        double R_trans = (nTrans > 0) ? hFirst * (std::pow(rTrans, nTrans) - 1.0) / (rTrans - 1.0) : 0.0;
+        double D_total = R_BL + R_trans;
+
+        double totalNonFanWidth = 0.0;
+        for (int i = 0; i < n; ++i) {
+            int i_next = (i + 1) % n;
+            Vector2D ray_i = isConvexInit[i] ? n2_init[i] : (n1_init[i] + n2_init[i]).normalized();
+            Vector2D ray_next = isConvexInit[i_next] ? n1_init[i_next] : (n1_init[i_next] + n2_init[i_next]).normalized();
+            totalNonFanWidth += (pos_init[i] + ray_i * D_total - (pos_init[i_next] + ray_next * D_total)).length();
+        }
+        double baselineWidth = totalNonFanWidth / (double)n;
+
+        for (int i = 0; i < n; ++i) {
+            if (isConvexInit[i]) {
+                double a1 = std::atan2(n1_init[i].y, n1_init[i].x), a2 = std::atan2(n2_init[i].y, n2_init[i].x);
+                if (m_growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
+                double arcLength = D_total * std::abs(a2 - a1);
+                fanNodeCounts[i] = std::max(2, (int)std::round(arcLength / baselineWidth) + 1);
+                std::cout << "  - Convex Node " << boundaryNodeIds[i] << ": Angle=" << std::abs(a2-a1)*180.0/M_PI 
+                          << " deg, ArcLength=" << arcLength << " -> FanNodes=" << fanNodeCounts[i] << "\n";
+            }
+        }
+        std::cout << "Baseline Width: " << baselineWidth << ", Total Depth (D_total): " << D_total << "\n";
+        std::cout << "-----------------------------------\n";
+    }
 
     for (int layer = 0; layer < m_config.blLayers; ++layer) {
         lastH = currentH;
@@ -129,7 +193,7 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
                 clusterToNewNodes[cid] = p2c[i]; nodeDirections[newId] = avgDir.normalized();
             } else {
                 if (layer == 0 && isConvexList[i]) {
-                    int numFanNodes = std::max(2, m_config.blFanNodes);
+                    int numFanNodes = std::max(2, fanNodeCounts[i]);
                     double a1 = std::atan2(n1_list[i].y, n1_list[i].x), a2 = std::atan2(n2_list[i].y, n2_list[i].x);
                     if (m_growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
                     for (int k = 0; k < numFanNodes; ++k) {
