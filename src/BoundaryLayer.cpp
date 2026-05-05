@@ -36,6 +36,7 @@ void BoundaryLayerGenerator::detectGrowthDirection(const std::vector<int>& nodeI
     } else {
         m_growthSign = ((p0 + leftN * 0.1 - centroid).lengthSq() < (p0 + rightN * 0.1 - centroid).lengthSq()) ? 1.0 : -1.0;
     }
+    std::cout << "Detected Growth Sign: " << m_growthSign << " (1: Left Normal, -1: Right Normal)\n";
 }
 
 double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
@@ -94,7 +95,9 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
                 Vector2D dir_next = nodeDirections.count(activeFront[i_next]) ? nodeDirections[activeFront[i_next]] : (n1_list[i_next] + n2_list[i_next]).normalized();
                 Point2D target_i = currentPos[i] + dir_i * currentH;
                 Point2D target_next = currentPos[i_next] + dir_next * currentH;
-                if (isConcaveList[i] || (target_i - target_next).lengthSq() < (currentH * 0.3) * (currentH * 0.3) || willIntersect(target_i, target_next, currentPos, i)) {
+                double currentDistSq = (currentPos[i] - currentPos[i_next]).lengthSq();
+                double targetDistSq = (target_i - target_next).lengthSq();
+                if (isConcaveList[i] || (targetDistSq < (currentH * 0.3) * (currentH * 0.3) && targetDistSq < currentDistSq) || willIntersect(target_i, target_next, currentPos, i)) {
                     int id1 = clusterId[i], id2 = clusterId[i_next];
                     int newId = std::min(id1, id2);
                     for (int j = 0; j < n; ++j) if (clusterId[j] == id1 || clusterId[j] == id2) clusterId[j] = newId;
