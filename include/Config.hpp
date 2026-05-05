@@ -19,6 +19,12 @@ struct Config {
     int blFanNodes = 5;
     double blFanAngleThreshold = 60.0; // 度數
     
+    // 凹角處理 (Concave Handling)
+    int blSmoothingIters = 0;
+    bool blMergeConcave = false;
+    double blConvexAngleThreshold = 260.0;
+    double blConcaveAngleThreshold = 100.0;
+    
     // 過渡層設定 (Phase 4)
     int blTransitionLayers = 3;
     bool blAutoTransitionLayers = false;
@@ -59,6 +65,14 @@ struct Config {
                 double val; ss >> val; blFanNodes = static_cast<int>(val);
             }
             else if (key == "BL_FAN_ANGLE_THRESHOLD") ss >> blFanAngleThreshold;
+            else if (key == "BL_SMOOTHING_ITERS") {
+                double val; ss >> val; blSmoothingIters = static_cast<int>(val);
+            }
+            else if (key == "BL_MERGE_CONCAVE") {
+                int val; ss >> val; blMergeConcave = (val != 0);
+            }
+            else if (key == "BL_CONVEX_ANGLE_THRESHOLD") ss >> blConvexAngleThreshold;
+            else if (key == "BL_CONCAVE_ANGLE_THRESHOLD") ss >> blConcaveAngleThreshold;
             else if (key == "BL_TRANSITION_LAYERS") {
                 double val; ss >> val; blTransitionLayers = static_cast<int>(val);
             }
@@ -84,6 +98,8 @@ struct Config {
         std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
         std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
         std::cout << "BL Fan Elements: " << blFanNodes << " nodes, trigger angle > " << blFanAngleThreshold << " deg\n";
+        std::cout << "BL Corner Thresholds: Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
+        std::cout << "BL Concave Handling: Smoothing " << blSmoothingIters << " iters, Merge " << (blMergeConcave ? "ON" : "OFF") << "\n";
         std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " << (blAutoTransitionLayers ? "ON" : "OFF") << "), rate " << blTransitionGrowthRate << "\n";
         std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
         std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";

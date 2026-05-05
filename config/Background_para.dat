@@ -24,9 +24,17 @@ BL_GROWTH_RATE 1.1
 # 邊界層四邊形層數
 BL_LAYERS 10
 # 邊界層銳角扇形節點數
-BL_FAN_NODES 20
+BL_FAN_NODES 7
 # 邊界層銳角觸發角度 (度)
 BL_FAN_ANGLE_THRESHOLD 60.0
+# 邊界層波前平滑迭代次數 (Laplacian Smoothing)
+BL_SMOOTHING_ITERS 0
+# 是否開啟凹角自動合併防碰撞 (1: 開啟, 0: 關閉)
+BL_MERGE_CONCAVE 1
+# 凸角觸發閾值 (外側角度大於此值則套用扇形)
+BL_CONVEX_ANGLE_THRESHOLD 260.0
+# 凹角觸發閾值 (外側角度小於此值則套用合併)
+BL_CONCAVE_ANGLE_THRESHOLD 100.0
 
 # --- 過渡層設定 (Transition Layer - Phase 4) ---
 # 扁平三角形過渡層層數

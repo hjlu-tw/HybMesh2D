@@ -1,154 +1,163 @@
 #include "BoundaryLayer.hpp"
 #include <iostream>
+#include <map>
+#include <cmath>
+#include <algorithm>
+#include <vector>
 
 BoundaryLayerGenerator::BoundaryLayerGenerator(Mesh& mesh, const Config& config)
     : m_mesh(mesh), m_config(config) {}
 
+bool willIntersect(const Point2D& p1, const Point2D& p2, const std::vector<Point2D>& front, int excludeIdx) {
+    int nf = (int)front.size();
+    for (int i = 0; i < nf; ++i) {
+        if (i == excludeIdx || i == (excludeIdx - 1 + nf) % nf || i == (excludeIdx + 1) % nf) continue;
+        if (segmentsIntersect(p1, p2, front[i], front[(i + 1) % nf])) return true;
+    }
+    return false;
+}
+
 void BoundaryLayerGenerator::detectGrowthDirection(const std::vector<int>& nodeIds) {
     int n = static_cast<int>(nodeIds.size());
     if (n < 3) return;
-
-    // 1. 計算幾何體中心 (Centroid)
     Point2D centroid = {0, 0};
     for (int id : nodeIds) centroid = centroid + m_mesh.nodes[id].pos;
-    centroid = centroid / n;
-
+    centroid = centroid / (double)n;
     const Point2D& p0 = m_mesh.nodes[nodeIds[0]].pos;
     const Point2D& p1 = m_mesh.nodes[nodeIds[1]].pos;
     Vector2D edge = (p1 - p0).normalized();
     Vector2D leftN = edge.leftNormal();
     Vector2D rightN = edge.rightNormal();
-
-    // 2. 判斷第一個點是否在計算域內部
     auto isInside = [&](const Point2D& p) {
-        return (p.x > m_config.xMin && p.x < m_config.xMax &&
-                p.y > m_config.yMin && p.y < m_config.yMax);
+        return (p.x > m_config.xMin && p.x < m_config.xMax && p.y > m_config.yMin && p.y < m_config.yMax);
     };
-
-    bool p0Inside = isInside(p0);
-    
-    Point2D testLeft = p0 + leftN * 0.1;
-    Point2D testRight = p0 + rightN * 0.1;
-    double dL = (testLeft - centroid).lengthSq();
-    double dR = (testRight - centroid).lengthSq();
-
-    if (p0Inside) {
-        // 如果幾何體在計算域內部 (外流場)，則選擇「遠離幾何中心」的方向
-        m_growthSign = (dL > dR) ? 1.0 : -1.0;
-        std::cout << "External flow detected: Growing AWAY from geometry centroid.\n";
+    if (isInside(p0)) {
+        m_growthSign = ((p0 + leftN * 0.1 - centroid).lengthSq() > (p0 + rightN * 0.1 - centroid).lengthSq()) ? 1.0 : -1.0;
     } else {
-        // 如果幾何體在計算域外部 (內流場)，則選擇「朝向幾何中心」的方向
-        m_growthSign = (dL < dR) ? 1.0 : -1.0;
-        std::cout << "Internal flow detected: Growing TOWARDS geometry centroid.\n";
+        m_growthSign = ((p0 + leftN * 0.1 - centroid).lengthSq() < (p0 + rightN * 0.1 - centroid).lengthSq()) ? 1.0 : -1.0;
     }
-    
-    std::cout << "Direction chosen: " << (m_growthSign > 0 ? "Left" : "Right") << "\n";
 }
 
 double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
     detectGrowthDirection(boundaryNodeIds);
-    
-    std::vector<int> currentFront = boundaryNodeIds;
+    std::vector<int> activeFront = boundaryNodeIds;
     double currentH = m_config.blInitialThickness;
     double lastH = currentH;
-
-    // 用於追蹤強制沿對稱線生長的節點，防止扇形網格歪斜
-    std::map<int, Vector2D> forcedNormals;
+    std::map<int, Vector2D> nodeDirections;
 
     for (int layer = 0; layer < m_config.blLayers; ++layer) {
         lastH = currentH;
-        int n = static_cast<int>(currentFront.size());
-        std::vector<std::vector<int>> layerNodes(n);
-        
+        int n = static_cast<int>(activeFront.size());
+        if (n < 3) break;
+
+        std::vector<Vector2D> n1_list(n), n2_list(n);
+        std::vector<bool> isConvexList(n, false);
+        std::vector<bool> isConcaveList(n, false);
+        std::vector<Point2D> currentPos(n);
+
         for (int i = 0; i < n; ++i) {
-            const Point2D& p_prev = m_mesh.nodes[currentFront[(i - 1 + n) % n]].pos;
-            const Point2D& p_curr = m_mesh.nodes[currentFront[i]].pos;
-            const Point2D& p_next = m_mesh.nodes[currentFront[(i + 1) % n]].pos;
+            currentPos[i] = m_mesh.nodes[activeFront[i]].pos;
+            Point2D p_prev = m_mesh.nodes[activeFront[(i - 1 + n) % n]].pos;
+            Point2D p_next = m_mesh.nodes[activeFront[(i + 1) % n]].pos;
+            Vector2D v1 = (currentPos[i] - p_prev).normalized();
+            Vector2D v2 = (p_next - currentPos[i]).normalized();
+            
+            n1_list[i] = (m_growthSign > 0 ? v1.leftNormal() : v1.rightNormal());
+            n2_list[i] = (m_growthSign > 0 ? v2.leftNormal() : v2.rightNormal());
 
-            Vector2D v1 = (p_curr - p_prev).normalized();
-            Vector2D v2 = (p_next - p_curr).normalized();
+            // 計算轉角 (Turn Angle): 凸角為負, 凹角為正 (若生長方向為左)
+            double angle1 = std::atan2(v1.y, v1.x);
+            double angle2 = std::atan2(v2.y, v2.x);
+            double diff = angle2 - angle1;
+            while (diff > M_PI) diff -= 2*M_PI;
+            while (diff < -M_PI) diff += 2*M_PI;
 
-            Vector2D n1 = (m_growthSign > 0) ? v1.leftNormal() : v1.rightNormal();
-            Vector2D n2 = (m_growthSign > 0) ? v2.leftNormal() : v2.rightNormal();
+            // 計算外部夾角 (Exterior Angle)
+            // 對於外生長來說：180 - diff(弧度轉角度)
+            double turnDeg = diff * 180.0 / M_PI;
+            double exteriorAngle = 180.0 - (m_growthSign * turnDeg);
 
-            // 銳角偵測與 Fan 處理
-            double cross = v1.x * v2.y - v1.y * v2.x;
-            bool isConvex = (m_growthSign > 0) ? (cross < 0) : (cross > 0);
-            double dot = v1.dot(v2);
+            if (exteriorAngle > m_config.blConvexAngleThreshold) {
+                isConvexList[i] = true;
+            } else if (exteriorAngle < m_config.blConcaveAngleThreshold) {
+                isConcaveList[i] = true;
+            }
+        }
 
-            // 使用設定檔中的閾值 (角度轉餘弦)
-            double cosThreshold = std::cos(m_config.blFanAngleThreshold * M_PI / 180.0);
+        std::vector<int> clusterId(n);
+        for (int i = 0; i < n; ++i) clusterId[i] = i;
 
-            if (isConvex && dot < cosThreshold) { // 轉角大於閾值且為凸角
-                int numFanNodes = m_config.blFanNodes;
-                double angle1 = std::atan2(n1.y, n1.x);
-                double angle2 = std::atan2(n2.y, n2.x);
-
-                if (m_growthSign > 0) { // 向左長，順時針旋轉
-                    while (angle2 > angle1) angle2 -= 2 * M_PI;
-                } else { // 向右長，逆時針旋轉
-                    while (angle2 < angle1) angle2 += 2 * M_PI;
-                }
-
-                for (int k = 0; k < numFanNodes; ++k) {
-                    double t = static_cast<double>(k) / (numFanNodes - 1);
-                    double angle = angle1 * (1.0 - t) + angle2 * t;
-                    Vector2D nk = {std::cos(angle), std::sin(angle)};
-                    m_mesh.addNode(p_curr + nk * currentH, NodeType::BoundaryLayer);
-                    int newNodeId = m_mesh.nodes.back().id;
-                    layerNodes[i].push_back(newNodeId);
-
-                    // 強制扇形最中間的節點沿著平分線生長，確保對稱性
-                    if (numFanNodes % 2 != 0 && k == numFanNodes / 2) {
-                        forcedNormals[newNodeId] = nk;
-                    }
-                }
-
-                // 加入 Fan 內部的三角形 (反向以符合主網格 orientation)
-                for (int k = 0; k < numFanNodes - 1; ++k) {
-                    m_mesh.addElement({currentFront[i], layerNodes[i][k+1], layerNodes[i][k]});
-                }
-            } else {
-                Vector2D n_avg;
-                if (forcedNormals.count(currentFront[i])) {
-                    n_avg = forcedNormals[currentFront[i]];
-                } else {
-                    n_avg = (n1 + n2).normalized();
-                }
-
-                m_mesh.addNode(p_curr + n_avg * currentH, NodeType::BoundaryLayer);
-                int newNodeId = m_mesh.nodes.back().id;
-                layerNodes[i].push_back(newNodeId);
-
-                // 將強制的方向傳遞給下一層節點
-                if (forcedNormals.count(currentFront[i])) {
-                    forcedNormals[newNodeId] = forcedNormals[currentFront[i]];
-                    forcedNormals.erase(currentFront[i]);
+        if (m_config.blMergeConcave) {
+            for (int i = 0; i < n; ++i) {
+                int i_next = (i + 1) % n;
+                Vector2D dir_i = nodeDirections.count(activeFront[i]) ? nodeDirections[activeFront[i]] : (n1_list[i] + n2_list[i]).normalized();
+                Vector2D dir_next = nodeDirections.count(activeFront[i_next]) ? nodeDirections[activeFront[i_next]] : (n1_list[i_next] + n2_list[i_next]).normalized();
+                Point2D target_i = currentPos[i] + dir_i * currentH;
+                Point2D target_next = currentPos[i_next] + dir_next * currentH;
+                if (isConcaveList[i] || (target_i - target_next).lengthSq() < (currentH * 0.3) * (currentH * 0.3) || willIntersect(target_i, target_next, currentPos, i)) {
+                    int id1 = clusterId[i], id2 = clusterId[i_next];
+                    int newId = std::min(id1, id2);
+                    for (int j = 0; j < n; ++j) if (clusterId[j] == id1 || clusterId[j] == id2) clusterId[j] = newId;
                 }
             }
         }
 
         std::vector<int> nextFront;
+        std::vector<std::vector<int>> p2c(n);
+        std::map<int, std::vector<int>> clusterToNewNodes;
+
+        for (int i = 0; i < n; ++i) {
+            int cid = clusterId[i];
+            if (clusterToNewNodes.count(cid)) { p2c[i] = clusterToNewNodes[cid]; continue; }
+            int clusterSize = 0;
+            for (int j = 0; j < n; ++j) if (clusterId[j] == cid) clusterSize++;
+
+            if (clusterSize > 1) {
+                Point2D avgPos = {0, 0}; Vector2D avgDir = {0, 0};
+                for (int j = 0; j < n; ++j) {
+                    if (clusterId[j] == cid) {
+                        Vector2D dir = nodeDirections.count(activeFront[j]) ? nodeDirections[activeFront[j]] : (n1_list[j] + n2_list[j]).normalized();
+                        avgPos = avgPos + currentPos[j] + dir * currentH; avgDir = avgDir + dir;
+                    }
+                }
+                m_mesh.addNode(avgPos / (double)clusterSize, NodeType::BoundaryLayer);
+                int newId = m_mesh.nodes.back().id;
+                nextFront.push_back(newId); p2c[i].push_back(newId);
+                clusterToNewNodes[cid] = p2c[i]; nodeDirections[newId] = avgDir.normalized();
+            } else {
+                if (layer == 0 && isConvexList[i]) {
+                    int numFanNodes = std::max(2, m_config.blFanNodes);
+                    double a1 = std::atan2(n1_list[i].y, n1_list[i].x), a2 = std::atan2(n2_list[i].y, n2_list[i].x);
+                    if (m_growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
+                    for (int k = 0; k < numFanNodes; ++k) {
+                        double t = (double)k / (double)(numFanNodes - 1);
+                        double angle = a1 * (1.0 - t) + a2 * t;
+                        Vector2D nk = {std::cos(angle), std::sin(angle)};
+                        m_mesh.addNode(currentPos[i] + nk * currentH, NodeType::BoundaryLayer);
+                        int newId = m_mesh.nodes.back().id;
+                        nextFront.push_back(newId); p2c[i].push_back(newId);
+                        nodeDirections[newId] = nk;
+                    }
+                    for (int k = 0; k < (int)p2c[i].size() - 1; ++k) m_mesh.addElement({activeFront[i], p2c[i][k+1], p2c[i][k]});
+                } else {
+                    Vector2D dir = nodeDirections.count(activeFront[i]) ? nodeDirections[activeFront[i]] : (n1_list[i] + n2_list[i]).normalized();
+                    m_mesh.addNode(currentPos[i] + dir * currentH, NodeType::BoundaryLayer);
+                    int newId = m_mesh.nodes.back().id;
+                    nextFront.push_back(newId); p2c[i].push_back(newId);
+                    nodeDirections[newId] = dir;
+                }
+                clusterToNewNodes[cid] = p2c[i];
+            }
+        }
         for (int i = 0; i < n; ++i) {
             int i_next = (i + 1) % n;
-            int n_last = layerNodes[i].back();
-            int n_next_first = layerNodes[i_next].front();
-
-            m_mesh.addElement({currentFront[i], currentFront[i_next], n_last});
-            m_mesh.addElement({currentFront[i_next], n_next_first, n_last});
-
-            for (int id : layerNodes[i]) nextFront.push_back(id);
+            int n_curr_last = p2c[i].back(); int n_next_first = p2c[i_next].front();
+            if (n_curr_last == n_next_first) m_mesh.addElement({activeFront[i], activeFront[i_next], n_curr_last});
+            else { m_mesh.addElement({activeFront[i], activeFront[i_next], n_next_first}); m_mesh.addElement({activeFront[i], n_next_first, n_curr_last}); }
         }
-
-        currentFront = nextFront;
-        currentH *= m_config.blGrowthRate;
+        activeFront = nextFront; currentH *= m_config.blGrowthRate;
     }
-
-    int nFinal = static_cast<int>(currentFront.size());
-    for (int i = 0; i < nFinal; ++i) {
-        m_mesh.addEdge(currentFront[i], currentFront[(i + 1) % nFinal]);
-    }
-
+    int nFinal = (int)activeFront.size();
+    for (int i = 0; i < nFinal; ++i) m_mesh.addEdge(activeFront[i], activeFront[(i + 1) % nFinal]);
     return lastH;
 }
-
