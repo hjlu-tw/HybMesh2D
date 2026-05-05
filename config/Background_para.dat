@@ -1,6 +1,6 @@
 # --- 幾何設定 (Geometry Settings) ---
 # 幾何檔案名稱 (若無則填 NONE)
-GEOM_FILE geometries/naca0012.dat
+GEOM_FILE geometries/L-shape_dense.dat
 
 # --- 計算域邊界 (Domain Boundaries) ---
 DOMAIN_X_MIN -5.0
