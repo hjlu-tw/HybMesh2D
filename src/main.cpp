@@ -4,6 +4,9 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 std::vector<Point2D> loadGeometry(const std::string& filename) {
     std::vector<Point2D> points;
@@ -66,6 +69,12 @@ int main(int argc, char* argv[]) {
     config.print();
     Mesh mesh;
 
+    std::string outputFilename = "results/mesh_cartesian.vtk";
+    if (config.geomFile != "NONE") {
+        fs::path geomPath(config.geomFile);
+        outputFilename = "results/mesh_" + geomPath.stem().string() + ".vtk";
+    }
+
     if (config.geomFile == "NONE") {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
@@ -106,6 +115,7 @@ int main(int argc, char* argv[]) {
         mesh.generateFarFieldGmsh(config, lastH);
     }
 
-    mesh.exportVTK("results/output.vtk");
+    mesh.exportVTK(outputFilename);
+    std::cout << "Mesh saved to: " << outputFilename << std::endl;
     return 0;
 }
