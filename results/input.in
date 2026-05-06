@@ -1,0 +1,42 @@
+
+
+   DomainType      	e2d
+   solve_gcl       	false 
+
+   restart           	false
+   zdump_fn_restart    	"binDumpZ.dat.C0d6e200t1d5_gcl_50k"
+   convg_fn_restart    	"unicones.enorm.C0d6e200t1d5_gcl_50k"
+
+   grid_fname "./mesh_multiple.grid"
+   bc_fname "./mesh_multiple.bc"
+
+   grid_type          	unstructured
+   grid_data_format    	c_binary
+   bc_file_use_table   	true
+ 
+   Transp_prop_option   CONST_PRANDTL
+   fs_Mach            	0.2
+   fs_Tinf            	273.
+   fs_UnitRe            25
+   Linf        		1.0
+   Prandtl         	0.72
+
+   alpha           	1.0
+   beta            	-200
+   dissip_ctrl          -1.5
+   epsilon         	200
+
+   cfl             	0.4
+   constant_cfl      	false
+   unsteady_lstep 	false //true
+   use_incenter    	true
+   dissip_per_cfl     	false //true
+
+   apply_pthread      	false //true
+   max_nthread          32
+   num_zones_per_block  28
+
+   num_half_iter   		10
+   print_convg_per_niter  	100
+   print_sol_per_niter   	100
+  

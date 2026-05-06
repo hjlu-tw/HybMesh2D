@@ -43,6 +43,7 @@ public:
     void generateCartesianMesh(double xMin, double xMax, double yMin, double yMax, double ds);
 
     void exportVTK(const std::string& filename) const;
+    void exportStarCD(const std::string& baseFilename, const Config& config) const;
 };
 
 #endif

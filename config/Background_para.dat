@@ -1,5 +1,5 @@
 # --- 幾何設定 (Geometry Settings) ---
-GEOM_FILE geometries/L-shape_dense.dat
+GEOM_FILE geometries/UNICONES_dense.dat
 
 # --- 計算域邊界 (Domain Boundaries) ---
 DOMAIN_X_MIN -4.0
@@ -37,3 +37,14 @@ BL_TRANSITION_GROWTH_RATE 1.15
 GMSH_ALGORITHM 6
 GMSH_OPTIMIZE 1
 FARFIELD_GROWTH_RATE 0.1
+
+# --- 輸出設定 (Export Settings) ---
+EXPORT_VTK 1
+EXPORT_STARCD 1
+
+# --- StarCD 邊界字串設定 (StarCD BC Strings) ---
+BC_XMIN inlet
+BC_XMAX outlet
+BC_YMIN wall
+BC_YMAX wall
+BC_GEOM wall

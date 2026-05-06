@@ -39,6 +39,13 @@ struct Config {
     int gmshAlgorithm = 6; // 6: Frontal-Delaunay
     int gmshOptimize = 1;  // 1: Enable mesh optimization
 
+    // StarCD 邊界字串
+    std::string bcXMin = "wall", bcXMax = "wall", bcYMin = "wall", bcYMax = "wall", bcGeom = "wall";
+
+    // 輸出開關
+    bool exportVTK = true;
+    bool exportStarCD = false;
+
     bool loadFromFile(const std::string& filename) {
         std::ifstream ifs(filename);
         if (!ifs) {
@@ -101,6 +108,17 @@ struct Config {
             else if (key == "GMSH_OPTIMIZE") {
                 double val; ss >> val; gmshOptimize = static_cast<int>(val);
             }
+            else if (key == "BC_XMIN") ss >> bcXMin;
+            else if (key == "BC_XMAX") ss >> bcXMax;
+            else if (key == "BC_YMIN") ss >> bcYMin;
+            else if (key == "BC_YMAX") ss >> bcYMax;
+            else if (key == "BC_GEOM") ss >> bcGeom;
+            else if (key == "EXPORT_VTK") {
+                int val; ss >> val; exportVTK = (val != 0);
+            }
+            else if (key == "EXPORT_STARCD") {
+                int val; ss >> val; exportStarCD = (val != 0);
+            }
         }
         return true;
     }
@@ -123,6 +141,8 @@ struct Config {
         std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " << (blAutoTransitionLayers ? "ON" : "OFF") << "), rate " << blTransitionGrowthRate << "\n";
         std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
         std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
+        std::cout << "StarCD BCs: XMin=" << bcXMin << ", XMax=" << bcXMax << ", YMin=" << bcYMin << ", YMax=" << bcYMax << ", Geom=" << bcGeom << "\n";
+        std::cout << "Exports: VTK=" << (exportVTK ? "ON" : "OFF") << ", StarCD=" << (exportStarCD ? "ON" : "OFF") << "\n";
         std::cout << "-------------------------\n";
     }
 };

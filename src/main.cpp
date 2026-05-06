@@ -101,19 +101,33 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
 
 int main(int argc, char* argv[]) {
     std::string configFile = "config/Background_para.dat";
+    Config config;
     
-    // 預解析參數以尋找自定義設定檔
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-conf" && i + 1 < argc) configFile = argv[++i];
+        else if (arg == "-bc_xmin" && i + 1 < argc) config.bcXMin = argv[++i];
+        else if (arg == "-bc_xmax" && i + 1 < argc) config.bcXMax = argv[++i];
+        else if (arg == "-bc_ymin" && i + 1 < argc) config.bcYMin = argv[++i];
+        else if (arg == "-bc_ymax" && i + 1 < argc) config.bcYMax = argv[++i];
+        else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
+        else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
     }
 
-    Config config;
     if (!config.loadFromFile(configFile)) return 1;
 
+    // 命令列參數應優先於設定檔，所以需要再解析一次或重新賦值
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-geom") {
+        if (arg == "-bc_xmin" && i + 1 < argc) config.bcXMin = argv[++i];
+        else if (arg == "-bc_xmax" && i + 1 < argc) config.bcXMax = argv[++i];
+        else if (arg == "-bc_ymin" && i + 1 < argc) config.bcYMin = argv[++i];
+        else if (arg == "-bc_ymax" && i + 1 < argc) config.bcYMax = argv[++i];
+        else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
+        else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-geom") {
             config.geomFiles.clear();
             while (i + 1 < argc && argv[i+1][0] != '-') {
                 config.geomFiles.push_back(argv[++i]);
@@ -204,7 +218,19 @@ int main(int argc, char* argv[]) {
         mesh.generateFarFieldGmsh(config, lastH);
     }
 
-    mesh.exportVTK(outputFilename);
-    std::cout << "Mesh saved to: " << outputFilename << std::endl;
+    if (config.exportVTK) {
+        mesh.exportVTK(outputFilename);
+        std::cout << "Mesh saved to: " << outputFilename << std::endl;
+    }
+    
+    if (config.exportStarCD) {
+        std::string starCDPrefix = outputFilename;
+        if (starCDPrefix.length() > 4 && starCDPrefix.substr(starCDPrefix.length() - 4) == ".vtk") {
+            starCDPrefix = starCDPrefix.substr(0, starCDPrefix.length() - 4);
+        }
+        mesh.exportStarCD(starCDPrefix, config);
+        std::cout << "StarCD mesh saved to: " << starCDPrefix << ".*" << std::endl;
+    }
+
     return 0;
 }

@@ -3,6 +3,8 @@
 #include <iostream>
 #include <gmsh.h>
 #include <map>
+#include <iomanip>
+#include <algorithm>
 
 void Mesh::addNode(Point2D p, NodeType type) {
     int id = static_cast<int>(nodes.size());
@@ -88,6 +90,107 @@ void Mesh::exportVTK(const std::string& filename) const {
 
     ofs.close();
     std::cout << "Mesh exported to " << filename << std::endl;
+}
+
+void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) const {
+    // 1. Export .vrt (Vertices)
+    std::string vrtFile = baseFilename + ".vrt";
+    std::ofstream vofs(vrtFile);
+    if (!vofs) {
+        std::cerr << "Error: Could not open " << vrtFile << " for writing.\n";
+        return;
+    }
+    vofs << std::fixed << std::setprecision(8);
+    double xMin = 1e9, xMax = -1e9, yMin = 1e9, yMax = -1e9;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        // 依據需求：總共 3 欄浮點數 (x, y, z)
+        vofs << nodes[i].pos.x << " " << nodes[i].pos.y << " 0.0\n";
+        
+        if (nodes[i].pos.x < xMin) xMin = nodes[i].pos.x;
+        if (nodes[i].pos.x > xMax) xMax = nodes[i].pos.x;
+        if (nodes[i].pos.y < yMin) yMin = nodes[i].pos.y;
+        if (nodes[i].pos.y > yMax) yMax = nodes[i].pos.y;
+    }
+    vofs.close();
+
+    // 2. Export .cel (Cells)
+    std::string celFile = baseFilename + ".cel";
+    std::ofstream cofs(celFile);
+    if (!cofs) {
+        std::cerr << "Error: Could not open " << celFile << " for writing.\n";
+        return;
+    }
+    int cellCount = 1;
+    for (size_t i = 0; i < elements.size(); ++i) {
+        const auto& el = elements[i];
+        if (el.nodeIds.size() < 3) continue; // 略過線段元素
+        
+        cofs << cellCount++ << " ";
+        if (el.nodeIds.size() == 3) {
+            // 三角形：ID, v1, v2, v3, v3, 1, 1 (共 7 欄)
+            cofs << (el.nodeIds[0] + 1) << " " << (el.nodeIds[1] + 1) << " " 
+                 << (el.nodeIds[2] + 1) << " " << (el.nodeIds[2] + 1) << " 1 1\n";
+        } else if (el.nodeIds.size() == 4) {
+            // 四角形：ID, v1, v2, v3, v4, 1, 1 (共 7 欄)
+            cofs << (el.nodeIds[0] + 1) << " " << (el.nodeIds[1] + 1) << " " 
+                 << (el.nodeIds[2] + 1) << " " << (el.nodeIds[3] + 1) << " 1 1\n";
+        }
+    }
+    cofs.close();
+
+    // 3. Export .bnd (Boundaries)
+    std::string bndFile = baseFilename + ".bnd";
+    std::ofstream bofs(bndFile);
+    if (!bofs) {
+        std::cerr << "Error: Could not open " << bndFile << " for writing.\n";
+        return;
+    }
+
+    // 統計每條邊被 Element 使用的次數，只被使用一次的即為邊界
+    std::map<std::pair<int, int>, int> edgeCellCount;
+    std::map<std::pair<int, int>, std::pair<int, int>> edgeNodes;
+    for (size_t i = 0; i < elements.size(); ++i) {
+        const auto& el = elements[i];
+        if (el.nodeIds.size() < 3) continue;
+        int numNodes = static_cast<int>(el.nodeIds.size());
+        for (int j = 0; j < numNodes; ++j) {
+            int n1 = el.nodeIds[j];
+            int n2 = el.nodeIds[(j + 1) % numNodes];
+            int vMin = std::min(n1, n2);
+            int vMax = std::max(n1, n2);
+            edgeCellCount[{vMin, vMax}]++;
+            edgeNodes[{vMin, vMax}] = {n1, n2};
+        }
+    }
+
+    int bndCount = 1;
+    double eps = 1e-5;
+    for (const auto& kv : edgeCellCount) {
+        if (kv.second == 1) { // 邊界邊
+            int v1 = edgeNodes[kv.first].first;
+            int v2 = edgeNodes[kv.first].second;
+            
+            // 判斷邊界類別
+            bool isXMin = (std::abs(nodes[v1].pos.x - xMin) < eps && std::abs(nodes[v2].pos.x - xMin) < eps);
+            bool isXMax = (std::abs(nodes[v1].pos.x - xMax) < eps && std::abs(nodes[v2].pos.x - xMax) < eps);
+            bool isYMin = (std::abs(nodes[v1].pos.y - yMin) < eps && std::abs(nodes[v2].pos.y - yMin) < eps);
+            bool isYMax = (std::abs(nodes[v1].pos.y - yMax) < eps && std::abs(nodes[v2].pos.y - yMax) < eps);
+            
+            int groupId = 5; // geometries surface grid
+            std::string bcName = config.bcGeom;
+
+            if (isXMin) { groupId = 1; bcName = config.bcXMin; }
+            else if (isXMax) { groupId = 2; bcName = config.bcXMax; }
+            else if (isYMin) { groupId = 3; bcName = config.bcYMin; }
+            else if (isYMax) { groupId = 4; bcName = config.bcYMax; }
+            
+            // 格式：bnd編號, v1, v2, 0, 0, groupId, 0, bcName (共 8 欄)
+            bofs << bndCount++ << " " << (v1 + 1) << " " << (v2 + 1) << " 0 0 " << groupId << " 0 " << bcName << "\n";
+        }
+    }
+    bofs.close();
+
+    std::cout << "StarCD mesh exported to " << baseFilename << " (.vrt, .cel, .bnd)" << std::endl;
 }
 
 void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
