@@ -49,6 +49,7 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
     double currentH = m_config.blInitialThickness;
     double lastH = currentH;
     std::map<int, Vector2D> nodeDirections;
+    std::map<int, double> nodeStepMultipliers;
 
     int n_init = static_cast<int>(boundaryNodeIds.size());
     std::vector<int> fanNodeCounts(n_init, m_config.blFanNodes);
@@ -129,29 +130,45 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
             double D_inf = m_config.blConcaveInfluenceMultiplier * D_total;
             std::cout << "Influence Distance (D_inf): " << D_inf << "\n";
             for (int i = 0; i < n_init; ++i) {
+                Vector2D N_i = (n1_init[i] + n2_init[i]).normalized();
+                Point2D P_base_i = pos_init[i] + N_i * D_total;
+
                 double weight_sum = 0.0;
-                Vector2D bisector_sum = {0, 0};
+                Vector2D shift_sum = {0, 0};
                 for (int k_idx : concaveIndices) {
                     double d = std::abs(S[i] - S[k_idx]);
                     double shortest_d = std::min(d, L_total - d);
                     if (shortest_d < D_inf) {
                         double w = (D_inf - shortest_d) / D_inf;
                         weight_sum += w;
+                        
                         Vector2D B_k = (n1_init[k_idx] + n2_init[k_idx]).normalized();
-                        bisector_sum = bisector_sum + B_k * w;
+                        double len = (n1_init[k_idx] + n2_init[k_idx]).length();
+                        double M_k = (len > 1e-6) ? (2.0 / len) : 1.0;
+                        M_k = std::min(M_k, 10.0);
+                        
+                        Point2D C_k = pos_init[k_idx] + B_k * (D_total * M_k);
+                        Vector2D S_ki = C_k - (pos_init[k_idx] + N_i * D_total);
+                        shift_sum = shift_sum + S_ki * w;
                     }
                 }
+                
                 if (weight_sum > 0) {
-                    double W = std::min(1.0, weight_sum);
-                    Vector2D NaturalNormal = (n1_init[i] + n2_init[i]).normalized();
-                    Vector2D B_blend = (bisector_sum / weight_sum).normalized();
-                    Vector2D Dir_i = (NaturalNormal * (1.0 - W) + B_blend * W).normalized();
-                    nodeDirections[boundaryNodeIds[i]] = Dir_i;
+                    double W_ratio = std::min(1.0, weight_sum) / weight_sum;
+                    Point2D P_final_i = P_base_i + shift_sum * W_ratio;
+                    
+                    Vector2D ray = P_final_i - pos_init[i];
+                    nodeDirections[boundaryNodeIds[i]] = ray.normalized();
+                    nodeStepMultipliers[boundaryNodeIds[i]] = ray.length() / D_total;
+                } else {
+                    nodeDirections[boundaryNodeIds[i]] = N_i;
+                    nodeStepMultipliers[boundaryNodeIds[i]] = 1.0;
                 }
             }
         }
         std::cout << "------------------------------------------------------\n";
     }
+
 
     int totalLayers = m_config.blLayers + nTrans;
     for (int layer = 0; layer < totalLayers; ++layer) {
@@ -224,17 +241,22 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
             for (int j = 0; j < n; ++j) if (clusterId[j] == cid) clusterSize++;
 
             if (clusterSize > 1) {
-                Point2D avgPos = {0, 0}; Vector2D avgDir = {0, 0};
+                Point2D avgPos = {0, 0}; Vector2D avgDir = {0, 0}; double avgMultiplier = 0.0;
                 for (int j = 0; j < n; ++j) {
                     if (clusterId[j] == cid) {
                         Vector2D dir = nodeDirections.count(activeFront[j]) ? nodeDirections[activeFront[j]] : (n1_list[j] + n2_list[j]).normalized();
-                        avgPos = avgPos + currentPos[j] + dir * currentH; avgDir = avgDir + dir;
+                        double multiplier = nodeStepMultipliers.count(activeFront[j]) ? nodeStepMultipliers[activeFront[j]] : 1.0;
+                        avgPos = avgPos + currentPos[j] + dir * (currentH * multiplier); 
+                        avgDir = avgDir + dir;
+                        avgMultiplier += multiplier;
                     }
                 }
                 m_mesh.addNode(avgPos / (double)clusterSize, NodeType::BoundaryLayer);
                 int newId = m_mesh.nodes.back().id;
                 nextFront.push_back(newId); p2c[i].push_back(newId);
-                clusterToNewNodes[cid] = p2c[i]; nodeDirections[newId] = avgDir.normalized();
+                clusterToNewNodes[cid] = p2c[i]; 
+                nodeDirections[newId] = avgDir.normalized();
+                nodeStepMultipliers[newId] = avgMultiplier / (double)clusterSize;
             } else {
                 if (layer == 0 && isConvexList[i]) {
                     int numFanNodes = std::max(2, fanNodeCounts[i]);
@@ -248,14 +270,17 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
                         int newId = m_mesh.nodes.back().id;
                         nextFront.push_back(newId); p2c[i].push_back(newId);
                         nodeDirections[newId] = nk;
+                        nodeStepMultipliers[newId] = 1.0;
                     }
                     for (int k = 0; k < (int)p2c[i].size() - 1; ++k) m_mesh.addElement({activeFront[i], p2c[i][k+1], p2c[i][k]});
                 } else {
                     Vector2D dir = nodeDirections.count(activeFront[i]) ? nodeDirections[activeFront[i]] : (n1_list[i] + n2_list[i]).normalized();
-                    m_mesh.addNode(currentPos[i] + dir * currentH, NodeType::BoundaryLayer);
+                    double multiplier = nodeStepMultipliers.count(activeFront[i]) ? nodeStepMultipliers[activeFront[i]] : 1.0;
+                    m_mesh.addNode(currentPos[i] + dir * (currentH * multiplier), NodeType::BoundaryLayer);
                     int newId = m_mesh.nodes.back().id;
                     nextFront.push_back(newId); p2c[i].push_back(newId);
                     nodeDirections[newId] = dir;
+                    nodeStepMultipliers[newId] = multiplier;
                 }
                 clusterToNewNodes[cid] = p2c[i];
             }
