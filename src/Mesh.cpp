@@ -169,47 +169,9 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
 
     // --- 3. 建立尺寸過渡場 ---
     if (!frontLineTags.empty()) {
-        // 3.1 扁平三角形過渡層 (BoundaryLayer Field)
-        double hFirst = finalBLThickness * config.blGrowthRate;
-        int fBL = gmsh::model::mesh::field::add("BoundaryLayer");
-        gmsh::model::mesh::field::setNumbers(fBL, "CurvesList", frontLineTags);
-        gmsh::model::mesh::field::setNumber(fBL, "Size", hFirst);
-        gmsh::model::mesh::field::setNumber(fBL, "Ratio", config.blTransitionGrowthRate);
-        gmsh::model::mesh::field::setNumber(fBL, "Quads", 1);
+        double hEnd = finalBLThickness;
+        std::cout << "Step: Setting up Gmsh fields (Final hEnd=" << hEnd << ")..." << std::endl;
         
-        double rTrans = config.blTransitionGrowthRate;
-        int numTransitionLayers = config.blTransitionLayers; // 預設值
-        
-        // 3.2 計算最佳過渡層數以達到 Aspect Ratio = 1.0
-        int bestLayers = static_cast<int>(std::round(std::log(avgFrontEdgeLength / hFirst) / std::log(rTrans)));
-        bestLayers = std::max(0, bestLayers);
-
-        if (config.blAutoTransitionLayers) {
-            numTransitionLayers = bestLayers;
-            std::cout << "Auto-Transition: Setting BL_TRANSITION_LAYERS to " << numTransitionLayers << " (Target AR=1.0)\n";
-        }
-
-        double totalTransThickness = hFirst * (std::pow(rTrans, numTransitionLayers) - 1.0) / (rTrans - 1.0);
-        gmsh::model::mesh::field::setNumber(fBL, "Thickness", totalTransThickness);
-        gmsh::model::mesh::field::setAsBoundaryLayer(fBL);
-
-        // 3.3 遠場平滑銜接優化 (Smooth Transition Optimization)
-        double hEnd = hFirst * std::pow(rTrans, numTransitionLayers);
-        double aspectRatio = hEnd / avgFrontEdgeLength;
-
-        // --- 顯示尺寸銜接分析 ---
-        std::cout << "----- Mesh Size Transition Analysis -----\n";
-        std::cout << "Last BL Layer Thickness (Phase 3): " << finalBLThickness << "\n";
-        std::cout << "Average Outer Front Edge Length:  " << avgFrontEdgeLength << "\n";
-        std::cout << "First Transition Tri Height:      " << hFirst << "\n";
-        std::cout << "Last Transition Tri Height (hEnd): " << hEnd << "\n";
-        std::cout << "Outermost Transition Aspect Ratio (hEnd/AvgEdge): " << aspectRatio << "\n";
-        if (!config.blAutoTransitionLayers) {
-            std::cout << "=> Optimal BL_TRANSITION_LAYERS for AR=1.0 is ~ " << bestLayers << "\n";
-        }
-        std::cout << "------------------------------------------\n";
-        
-        std::cout << "Step: Setting up Gmsh fields...\n";
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);
 
@@ -223,7 +185,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         gmsh::model::mesh::field::setAsBackgroundMesh(fFinal);
 
         // 設定全域尺寸範圍，確保尺寸場有權限控制網格
-        gmsh::option::setNumber("Mesh.MeshSizeMin", hFirst);
+        gmsh::option::setNumber("Mesh.MeshSizeMin", std::min(hEnd, config.farFieldSize));
         gmsh::option::setNumber("Mesh.MeshSizeMax", config.farFieldSize);
     } else {
         gmsh::option::setNumber("Mesh.MeshSizeMin", config.farFieldSize);
@@ -282,16 +244,6 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
                 int n2 = gmshToOurNode[nodeTagsByElement[i][j+1]];
                 int n3 = gmshToOurNode[nodeTagsByElement[i][j+2]];
                 addElement({n1, n2, n3});
-            }
-        } else if (elementTypes[i] == 3) { // 4-node quadrangles
-            for (size_t j = 0; j < nodeTagsByElement[i].size(); j += 4) {
-                int n1 = gmshToOurNode[nodeTagsByElement[i][j]];
-                int n2 = gmshToOurNode[nodeTagsByElement[i][j+1]];
-                int n3 = gmshToOurNode[nodeTagsByElement[i][j+2]];
-                int n4 = gmshToOurNode[nodeTagsByElement[i][j+3]];
-                // 統一切分方向為 (n1,n2,n3) 與 (n1,n3,n4)，對應對角線 n1-n3
-                addElement({n1, n2, n3});
-                addElement({n1, n3, n4});
             }
         }
     }

@@ -136,8 +136,6 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
                     double shortest_d = std::min(d, L_total - d);
                     if (shortest_d < D_inf) {
                         double w = (D_inf - shortest_d) / D_inf;
-                        // 使用 Smoothstep 函數使過度更平滑 (可選，這裡先用線性)
-                        // w = w * w * (3 - 2 * w); 
                         weight_sum += w;
                         Vector2D B_k = (n1_init[k_idx] + n2_init[k_idx]).normalized();
                         bisector_sum = bisector_sum + B_k * w;
@@ -155,7 +153,8 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
         std::cout << "------------------------------------------------------\n";
     }
 
-    for (int layer = 0; layer < m_config.blLayers; ++layer) {
+    int totalLayers = m_config.blLayers + nTrans;
+    for (int layer = 0; layer < totalLayers; ++layer) {
         lastH = currentH;
         int n = static_cast<int>(activeFront.size());
         if (n < 3) break;
@@ -267,7 +266,12 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
             if (n_curr_last == n_next_first) m_mesh.addElement({activeFront[i], activeFront[i_next], n_curr_last});
             else { m_mesh.addElement({activeFront[i], activeFront[i_next], n_next_first}); m_mesh.addElement({activeFront[i], n_next_first, n_curr_last}); }
         }
-        activeFront = nextFront; currentH *= m_config.blGrowthRate;
+        activeFront = nextFront; 
+        if (layer < m_config.blLayers - 1) {
+            currentH *= m_config.blGrowthRate;
+        } else {
+            currentH *= m_config.blTransitionGrowthRate;
+        }
     }
     int nFinal = (int)activeFront.size();
     for (int i = 0; i < nFinal; ++i) m_mesh.addEdge(activeFront[i], activeFront[(i + 1) % nFinal]);
