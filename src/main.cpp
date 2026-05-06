@@ -49,6 +49,56 @@ bool checkDomainIntersection(const std::vector<Point2D>& geom, const Config& con
     return false;
 }
 
+bool isPointInPolygon(Point2D p, const std::vector<Point2D>& poly) {
+    int n = static_cast<int>(poly.size());
+    bool inside = false;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        if (((poly[i].y > p.y) != (poly[j].y > p.y)) &&
+            (p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::vector<Point2D>& geom2) {
+    int n1 = static_cast<int>(geom1.size());
+    int n2 = static_cast<int>(geom2.size());
+    
+    // 1. 檢查線段是否交叉或重合
+    for (int i = 0; i < n1; ++i) {
+        Point2D g1_a = geom1[i];
+        Point2D g1_b = geom1[(i + 1) % n1];
+        for (int j = 0; j < n2; ++j) {
+            Point2D g2_a = geom2[j];
+            Point2D g2_b = geom2[(j + 1) % n2];
+            
+            // 正常的交叉檢查
+            if (segmentsIntersect(g1_a, g1_b, g2_a, g2_b)) return true;
+
+            // 檢查頂點是否落在另一條線段上 (處理重合或觸碰)
+            auto isPointOnSegment = [](Point2D p, Point2D s1, Point2D s2) {
+                double cross = (p.y - s1.y) * (s2.x - s1.x) - (p.x - s1.x) * (s2.y - s1.y);
+                if (std::abs(cross) > 1e-10) return false;
+                double dot = (p.x - s1.x) * (s2.x - s1.x) + (p.y - s1.y) * (s2.y - s1.y);
+                if (dot < 0) return false;
+                double squaredLength = (s2.x - s1.x) * (s2.x - s1.x) + (s2.y - s1.y) * (s2.y - s1.y);
+                if (dot > squaredLength) return false;
+                return true;
+            };
+
+            if (isPointOnSegment(g1_a, g2_a, g2_b)) return true;
+            if (isPointOnSegment(g2_a, g1_a, g1_b)) return true;
+        }
+    }
+
+    // 2. 檢查一個幾何是否完全在另一個內部
+    if (isPointInPolygon(geom1[0], geom2)) return true;
+    if (isPointInPolygon(geom2[0], geom1)) return true;
+
+    return false;
+}
+
 int main(int argc, char* argv[]) {
     std::string configFile = "config/Background_para.dat";
     
@@ -63,19 +113,28 @@ int main(int argc, char* argv[]) {
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-geom" && i + 1 < argc) config.geomFile = argv[++i];
+        if (arg == "-geom") {
+            config.geomFiles.clear();
+            while (i + 1 < argc && argv[i+1][0] != '-') {
+                config.geomFiles.push_back(argv[++i]);
+            }
+        }
     }
 
     config.print();
     Mesh mesh;
 
     std::string outputFilename = "results/mesh_cartesian.vtk";
-    if (config.geomFile != "NONE") {
-        fs::path geomPath(config.geomFile);
-        outputFilename = "results/mesh_" + geomPath.stem().string() + ".vtk";
+    if (!config.geomFiles.empty()) {
+        if (config.geomFiles.size() == 1) {
+            fs::path geomPath(config.geomFiles[0]);
+            outputFilename = "results/mesh_" + geomPath.stem().string() + ".vtk";
+        } else {
+            outputFilename = "results/mesh_multiple.vtk";
+        }
     }
 
-    if (config.geomFile == "NONE") {
+    if (config.geomFiles.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
         // 加入計算域邊界 (Domain Box) 到 edges
@@ -90,26 +149,56 @@ int main(int argc, char* argv[]) {
             mesh.addElement({domainNodeIds[i], domainNodeIds[(i + 1) % 4]}); // 視覺化用
         }
 
-        std::vector<Point2D> geomPoints = loadGeometry(config.geomFile);
-        if (geomPoints.empty()) {
-            std::cerr << "Error: Failed to load geometry from " << config.geomFile << std::endl;
-            return 1;
-        }
-
-        // 檢查是否與計算域相交
-        if (checkDomainIntersection(geomPoints, config)) {
-            std::cerr << "Error: Geometry intersects with domain boundary. Process stopped.\n";
-            return 1;
-        }
-        
-        std::vector<int> boundaryIds;
-        for (const auto& p : geomPoints) {
-            mesh.addNode(p, NodeType::Boundary);
-            boundaryIds.push_back(mesh.nodes.back().id);
-        }
-
         BoundaryLayerGenerator blGen(mesh, config);
-        double lastH = blGen.generate(boundaryIds);
+        double lastH = config.blInitialThickness;
+
+        struct GeomData {
+            std::string filename;
+            std::vector<Point2D> points;
+        };
+        std::vector<GeomData> allGeometries;
+
+        for (const auto& gFile : config.geomFiles) {
+            std::vector<Point2D> geomPoints = loadGeometry(gFile);
+            if (geomPoints.empty()) {
+                std::cerr << "Error: Failed to load geometry from " << gFile << std::endl;
+                continue;
+            }
+
+            // 檢查是否與計算域相交
+            if (checkDomainIntersection(geomPoints, config)) {
+                std::cerr << "Error: Geometry " << gFile << " intersects with domain boundary. Skipping.\n";
+                continue;
+            }
+            
+            allGeometries.push_back({gFile, geomPoints});
+        }
+
+        bool hasIntersection = false;
+        for (size_t i = 0; i < allGeometries.size(); ++i) {
+            for (size_t j = i + 1; j < allGeometries.size(); ++j) {
+                if (checkGeometriesIntersection(allGeometries[i].points, allGeometries[j].points)) {
+                    std::cerr << "Error: Geometry " << allGeometries[i].filename 
+                              << " and Geometry " << allGeometries[j].filename 
+                              << " intersect. Process stopped.\n";
+                    hasIntersection = true;
+                }
+            }
+        }
+
+        if (hasIntersection) {
+            return 1;
+        }
+
+        for (const auto& geomData : allGeometries) {
+            std::vector<int> boundaryIds;
+            for (const auto& p : geomData.points) {
+                mesh.addNode(p, NodeType::Boundary);
+                boundaryIds.push_back(mesh.nodes.back().id);
+            }
+
+            lastH = blGen.generate(boundaryIds);
+        }
 
         // Phase 4: 遠場三角化 (傳入最後一層厚度以控制長寬比過渡)
         mesh.generateFarFieldGmsh(config, lastH);

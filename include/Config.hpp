@@ -1,6 +1,7 @@
 #ifndef CONFIG_HPP
 #define CONFIG_HPP
 
+#include <vector>
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -9,7 +10,7 @@
 
 struct Config {
     // 預設參數值 (若檔案中未指定則使用)
-    std::string geomFile = "NONE";
+    std::vector<std::string> geomFiles;
     double xMin = -10.0, xMax = 10.0, yMin = -10.0, yMax = 10.0;
     double surfaceSize = 0.1, farFieldSize = 1.0;
     double blInitialThickness = 0.01, blGrowthRate = 1.2;
@@ -52,7 +53,10 @@ struct Config {
             
             std::stringstream ss(line);
             ss >> key;
-            if (key == "GEOM_FILE") ss >> geomFile;
+            if (key == "GEOM_FILE") {
+                std::string f;
+                if (ss >> f) geomFiles.push_back(f);
+            }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -103,7 +107,12 @@ struct Config {
 
     void print() const {
         std::cout << "----- Configuration -----\n";
-        std::cout << "Geom File: " << geomFile << "\n";
+        std::cout << "Geom Files: ";
+        if (geomFiles.empty()) std::cout << "NONE";
+        else {
+            for (const auto& f : geomFiles) std::cout << f << " ";
+        }
+        std::cout << "\n";
         std::cout << "Domain: [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n";
         std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
         std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
