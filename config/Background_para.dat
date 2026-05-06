@@ -1,5 +1,4 @@
 # --- 幾何設定 (Geometry Settings) ---
-# 幾何檔案名稱 (若無則填 NONE)
 GEOM_FILE geometries/L-shape_dense.dat
 
 # --- 計算域邊界 (Domain Boundaries) ---
@@ -9,46 +8,32 @@ DOMAIN_Y_MIN -5.0
 DOMAIN_Y_MAX 5.0
 
 # --- 網格尺寸設定 (Mesh Size Settings) ---
-# 幾何表面網格大小
-SURFACE_MESH_SIZE 0.1
-# 遠場均勻網格大小
-FARFIELD_MESH_SIZE 0.5
-# 遠場網格增長斜率 (每單位距離增加的尺寸)
-FARFIELD_GROWTH_RATE 0.1
+SURFACE_MESH_SIZE 0.2
+FARFIELD_MESH_SIZE 1.0
 
 # --- 邊界層設定 (Boundary Layer - Phase 3) ---
-# 邊界層第一層厚度
-BL_INITIAL_THICKNESS 0.001
-# 邊界層增長率
-BL_GROWTH_RATE 1.1
-# 邊界層四邊形層數
-BL_LAYERS 10
-# 邊界層銳角扇形節點數
-BL_FAN_NODES 7
-
+BL_INITIAL_THICKNESS 0.002
+BL_GROWTH_RATE 1.2
+BL_LAYERS 8
+BL_FAN_NODES 5
 BL_AUTO_FAN_NODES 1
-
-# 邊界層銳角觸發角度 (度)
 BL_FAN_ANGLE_THRESHOLD 60.0
-# 邊界層波前平滑迭代次數 (Laplacian Smoothing)
 BL_SMOOTHING_ITERS 0
-# 是否開啟凹角自動合併防碰撞 (1: 開啟, 0: 關閉)
-BL_MERGE_CONCAVE 1
-# 凸角觸發閾值 (外側角度大於此值則套用扇形)
+BL_MERGE_CONCAVE 0
+
+# --- Method 5 Settings ---
+BL_CONCAVE_METHOD 5
+BL_CONCAVE_INFLUENCE_MULTIPLIER 2.0
+
 BL_CONVEX_ANGLE_THRESHOLD 260.0
-# 凹角觸發閾值 (外側角度小於此值則套用合併)
 BL_CONCAVE_ANGLE_THRESHOLD 100.0
 
 # --- 過渡層設定 (Transition Layer - Phase 4) ---
-# 扁平三角形過渡層層數
 BL_TRANSITION_LAYERS 10
-# 是否自動優化過渡層數 (1: 開啟, 0: 關閉)
 BL_AUTO_TRANSITION_LAYERS 1
-# 扁平三角形過渡層增長率
-BL_TRANSITION_GROWTH_RATE 1.2
+BL_TRANSITION_GROWTH_RATE 1.15
 
 # --- Gmsh 底層演算法設定 (Gmsh Advanced Settings) ---
-# 網格生成演算法 (6: Frontal-Delaunay, 1: Delaunay, 5: Frontal-Delaunay for Quads)
 GMSH_ALGORITHM 6
-# 網格優化 (1: 開啟, 0: 關閉)
 GMSH_OPTIMIZE 1
+FARFIELD_GROWTH_RATE 0.1
