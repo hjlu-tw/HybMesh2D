@@ -93,28 +93,45 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
     double D_total = R_BL + R_trans;
 
     if (m_config.blAutoFanNodes) {
-        std::cout << "----- Fan Node Auto-Detection -----\n";
-        double totalNonFanWidth = 0.0;
+        std::cout << "----- Adaptive Fan Node Detection (Local 10-Neighbor Avg) -----\n";
+        
+        // 1. 預先計算所有線段在最外層 (D_total 深度) 的投影寬度
+        std::vector<double> projectedWidths(n_init);
         for (int i = 0; i < n_init; ++i) {
             int i_next = (i + 1) % n_init;
+            // 計算節點 i 和 i_next 在最外層的方向
             Vector2D ray_i = isConvexInit[i] ? n2_init[i] : (n1_init[i] + n2_init[i]).normalized();
             Vector2D ray_next = isConvexInit[i_next] ? n1_init[i_next] : (n1_init[i_next] + n2_init[i_next]).normalized();
-            totalNonFanWidth += (pos_init[i] + ray_i * D_total - (pos_init[i_next] + ray_next * D_total)).length();
+            
+            Point2D p_outer_i = pos_init[i] + ray_i * D_total;
+            Point2D p_outer_next = pos_init[i_next] + ray_next * D_total;
+            projectedWidths[i] = (p_outer_next - p_outer_i).length();
         }
-        double baselineWidth = totalNonFanWidth / (double)n_init;
 
+        // 2. 針對每個凸角，計算局部目標寬度並決定節點數
         for (int i = 0; i < n_init; ++i) {
             if (isConvexInit[i]) {
                 double a1 = std::atan2(n1_init[i].y, n1_init[i].x), a2 = std::atan2(n2_init[i].y, n2_init[i].x);
                 if (m_growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
                 double arcLength = D_total * std::abs(a2 - a1);
-                fanNodeCounts[i] = std::max(2, (int)std::round(arcLength / baselineWidth) + 1);
+
+                // 取左右各 5 個鄰居線段的寬度平均 (不含凸角本身的投影寬度)
+                double localWidthSum = 0.0;
+                int neighborCount = 0;
+                for (int j = 1; j <= 5; ++j) {
+                    localWidthSum += projectedWidths[(i - j + n_init) % n_init];
+                    localWidthSum += projectedWidths[(i + j - 1 + n_init) % n_init]; // i 線段是 i 到 i+1
+                    neighborCount += 2;
+                }
+                double localTargetWidth = localWidthSum / (double)neighborCount;
+
+                fanNodeCounts[i] = std::max(2, (int)std::round(arcLength / localTargetWidth) + 1);
                 std::cout << "  - Convex Node " << boundaryNodeIds[i] << ": Angle=" << std::abs(a2-a1)*180.0/M_PI 
-                          << " deg, ArcLength=" << arcLength << " -> FanNodes=" << fanNodeCounts[i] << "\n";
+                          << " deg, LocalWidth=" << localTargetWidth << " -> FanNodes=" << fanNodeCounts[i] << "\n";
             }
         }
-        std::cout << "Baseline Width: " << baselineWidth << ", Total Depth (D_total): " << D_total << "\n";
-        std::cout << "-----------------------------------\n";
+        std::cout << "Total Depth (D_total): " << D_total << "\n";
+        std::cout << "---------------------------------------------------------------\n";
     }
 
     if (m_config.blConcaveMethod == 5) {
