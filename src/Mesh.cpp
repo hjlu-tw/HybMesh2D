@@ -103,8 +103,8 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
     vofs << std::fixed << std::setprecision(8);
     double xMin = 1e9, xMax = -1e9, yMin = 1e9, yMax = -1e9;
     for (size_t i = 0; i < nodes.size(); ++i) {
-        // 依據需求：總共 3 欄浮點數 (x, y, z)
-        vofs << nodes[i].pos.x << " " << nodes[i].pos.y << " 0.0\n";
+        // 依據需求：總共 4 欄 (ID, x, y, z)
+        vofs << (i + 1) << " " << nodes[i].pos.x << " " << nodes[i].pos.y << " 0.0\n";
         
         if (nodes[i].pos.x < xMin) xMin = nodes[i].pos.x;
         if (nodes[i].pos.x > xMax) xMax = nodes[i].pos.x;
@@ -127,13 +127,21 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         
         cofs << cellCount++ << " ";
         if (el.nodeIds.size() == 3) {
+            int n0 = el.nodeIds[0], n1 = el.nodeIds[1], n2 = el.nodeIds[2];
+            double cross = (nodes[n1].pos.x - nodes[n0].pos.x) * (nodes[n2].pos.y - nodes[n0].pos.y) - 
+                           (nodes[n1].pos.y - nodes[n0].pos.y) * (nodes[n2].pos.x - nodes[n0].pos.x);
+            if (cross < 0) std::swap(n1, n2);
             // 三角形：ID, v1, v2, v3, v3, 1, 1 (共 7 欄)
-            cofs << (el.nodeIds[0] + 1) << " " << (el.nodeIds[1] + 1) << " " 
-                 << (el.nodeIds[2] + 1) << " " << (el.nodeIds[2] + 1) << " 1 1\n";
+            cofs << (n0 + 1) << " " << (n1 + 1) << " " 
+                 << (n2 + 1) << " " << (n2 + 1) << " 1 1\n";
         } else if (el.nodeIds.size() == 4) {
+            int n0 = el.nodeIds[0], n1 = el.nodeIds[1], n2 = el.nodeIds[2], n3 = el.nodeIds[3];
+            double cross = (nodes[n1].pos.x - nodes[n0].pos.x) * (nodes[n2].pos.y - nodes[n0].pos.y) - 
+                           (nodes[n1].pos.y - nodes[n0].pos.y) * (nodes[n2].pos.x - nodes[n0].pos.x);
+            if (cross < 0) std::swap(n1, n3);
             // 四角形：ID, v1, v2, v3, v4, 1, 1 (共 7 欄)
-            cofs << (el.nodeIds[0] + 1) << " " << (el.nodeIds[1] + 1) << " " 
-                 << (el.nodeIds[2] + 1) << " " << (el.nodeIds[3] + 1) << " 1 1\n";
+            cofs << (n0 + 1) << " " << (n1 + 1) << " " 
+                 << (n2 + 1) << " " << (n3 + 1) << " 1 1\n";
         }
     }
     cofs.close();
@@ -195,41 +203,53 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
 
 void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     gmsh::initialize();
-    gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端大量輸出
+    gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端輸出
     gmsh::model::add("FarField");
 
+    auto getCoordKey = [](double x, double y) {
+        return std::make_pair((long long)(std::round(x * 1e9)), (long long)(std::round(y * 1e9)));
+    };
+
     // 1. 建立點與線
-    std::map<int, int> nodeMap; 
+    std::map<int, int> nodeToGmshTag; 
+    std::map<std::pair<long long, long long>, int> coordToGmshTag;
+
     for (const auto& edge : edges) {
         for (int vid : {edge.v1, edge.v2}) {
-            if (nodeMap.find(vid) == nodeMap.end()) {
-                int tag = gmsh::model::geo::addPoint(nodes[vid].pos.x, nodes[vid].pos.y, 0.0);
-                nodeMap[vid] = tag;
+            if (nodeToGmshTag.find(vid) == nodeToGmshTag.end()) {
+                auto key = getCoordKey(nodes[vid].pos.x, nodes[vid].pos.y);
+                if (coordToGmshTag.count(key)) {
+                    nodeToGmshTag[vid] = coordToGmshTag[key];
+                } else {
+                    int tag = gmsh::model::geo::addPoint(nodes[vid].pos.x, nodes[vid].pos.y, 0.0);
+                    nodeToGmshTag[vid] = tag;
+                    coordToGmshTag[key] = tag;
+                }
             }
         }
     }
 
     std::vector<int> allLines;
+    std::vector<Edge> filteredEdges; // 用於後續拓撲分析
     std::vector<double> frontLineTags; // 用於尺寸場的邊界來源
-    double totalFrontLength = 0.0;
-    int numFrontEdges = 0;
+
     for (size_t i = 0; i < edges.size(); ++i) {
-        int tag = gmsh::model::geo::addLine(nodeMap[edges[i].v1], nodeMap[edges[i].v2]);
-        allLines.push_back(tag);
+        int t1 = nodeToGmshTag[edges[i].v1];
+        int t2 = nodeToGmshTag[edges[i].v2];
         
-        // 識別 Outer Front
+        if (t1 == t2) continue; // 跳過零長度邊 (座標重合)
+
+        int tag = gmsh::model::geo::addLine(t1, t2);
+        allLines.push_back(tag);
+        filteredEdges.push_back(edges[i]);
+        
         if (nodes[edges[i].v1].type == NodeType::BoundaryLayer && 
             nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
             frontLineTags.push_back(static_cast<double>(tag));
-            Point2D p1 = nodes[edges[i].v1].pos;
-            Point2D p2 = nodes[edges[i].v2].pos;
-            totalFrontLength += std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
-            numFrontEdges++;
         }
     }
-    double avgFrontEdgeLength = (numFrontEdges > 0) ? (totalFrontLength / numFrontEdges) : 1.0;
 
-    // 2. 拓撲分析 (迴圈追蹤保持不變)
+    // 2. 拓撲分析 (使用過濾後的邊)
     std::vector<int> loops;
     std::vector<bool> used(allLines.size(), false);
     for (size_t i = 0; i < allLines.size(); ++i) {
@@ -238,18 +258,36 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         int firstLine = allLines[i];
         currentLoopLines.push_back(firstLine);
         used[i] = true;
-        int startNode = edges[i].v1, currNode = edges[i].v2;
-        while (currNode != startNode) {
+        
+        int startGmshNode = nodeToGmshTag[filteredEdges[i].v1];
+        int currGmshNode = nodeToGmshTag[filteredEdges[i].v2];
+
+        while (currGmshNode != startGmshNode) {
             bool found = false;
             for (size_t k = 0; k < allLines.size(); ++k) {
                 if (!used[k]) {
-                    if (edges[k].v1 == currNode) { currentLoopLines.push_back(allLines[k]); currNode = edges[k].v2; used[k] = true; found = true; break; }
-                    else if (edges[k].v2 == currNode) { currentLoopLines.push_back(-allLines[k]); currNode = edges[k].v1; used[k] = true; found = true; break; }
+                    int v1_tag = nodeToGmshTag[filteredEdges[k].v1];
+                    int v2_tag = nodeToGmshTag[filteredEdges[k].v2];
+
+                    if (v1_tag == currGmshNode) { 
+                        currentLoopLines.push_back(allLines[k]); 
+                        currGmshNode = v2_tag; 
+                        used[k] = true; 
+                        found = true; 
+                        break; 
+                    }
+                    else if (v2_tag == currGmshNode) { 
+                        currentLoopLines.push_back(-allLines[k]); 
+                        currGmshNode = v1_tag; 
+                        used[k] = true; 
+                        found = true; 
+                        break; 
+                    }
                 }
             }
             if (!found) break;
         }
-        if (currentLoopLines.size() >= 3 && currNode == startNode) {
+        if (currentLoopLines.size() >= 3 && currGmshNode == startGmshNode) {
             loops.push_back(gmsh::model::geo::addCurveLoop(currentLoopLines));
         }
     }
@@ -261,11 +299,9 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     gmsh::model::geo::synchronize();
 
     // 2.2 局部強制邊界層外緣 1-對-1 對接
-    // 只針對邊界層外緣 (Outer Front) 的線段強制節點數量為 2
-    // 其他邊界 (如計算域外框) 則允許 Gmsh 依據尺寸場自動分割，以獲得平均分佈
-    for (size_t i = 0; i < edges.size(); ++i) {
-        if (nodes[edges[i].v1].type == NodeType::BoundaryLayer && 
-            nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
+    for (size_t i = 0; i < allLines.size(); ++i) {
+        if (nodes[filteredEdges[i].v1].type == NodeType::BoundaryLayer && 
+            nodes[filteredEdges[i].v2].type == NodeType::BoundaryLayer) {
             gmsh::model::mesh::setTransfiniteCurve(allLines[i], 2);
         }
     }
@@ -314,10 +350,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     
     // 優化：建立座標查找表
     std::map<std::pair<long long, long long>, int> coordMap;
-    auto getCoordKey = [](double x, double y) {
-        return std::make_pair((long long)(x * 1e7), (long long)(y * 1e7));
-    };
-    for(auto const& nm : nodeMap) {
+    for(auto const& nm : nodeToGmshTag) {
         coordMap[getCoordKey(nodes[nm.first].pos.x, nodes[nm.first].pos.y)] = nm.first;
     }
 
