@@ -24,23 +24,28 @@ bool willIntersect(const Point2D& p1, const Point2D& p2, const std::vector<Point
 void BoundaryLayerGenerator::detectGrowthDirection(const std::vector<int>& nodeIds) {
     int n = static_cast<int>(nodeIds.size());
     if (n < 3) return;
-    Point2D centroid = {0, 0};
-    for (int id : nodeIds) centroid = centroid + m_mesh.nodes[id].pos;
-    centroid = centroid / (double)n;
+
+    double area = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const Point2D& p1 = m_mesh.nodes[nodeIds[i]].pos;
+        const Point2D& p2 = m_mesh.nodes[nodeIds[(i + 1) % n]].pos;
+        area += (p1.x * p2.y - p2.x * p1.y);
+    }
+    bool isCCW = (area > 0);
+
     const Point2D& p0 = m_mesh.nodes[nodeIds[0]].pos;
-    const Point2D& p1 = m_mesh.nodes[nodeIds[1]].pos;
-    Vector2D edge = (p1 - p0).normalized();
-    Vector2D leftN = edge.leftNormal();
-    Vector2D rightN = edge.rightNormal();
     auto isInside = [&](const Point2D& p) {
         return (p.x > m_config.xMin && p.x < m_config.xMax && p.y > m_config.yMin && p.y < m_config.yMax);
     };
+
     if (isInside(p0)) {
-        m_growthSign = ((p0 + leftN * 0.1 - centroid).lengthSq() > (p0 + rightN * 0.1 - centroid).lengthSq()) ? 1.0 : -1.0;
+        // Internal object (e.g. airfoil): CCW -> inside is left, outward is right (-1.0)
+        m_growthSign = isCCW ? -1.0 : 1.0;
     } else {
-        m_growthSign = ((p0 + leftN * 0.1 - centroid).lengthSq() < (p0 + rightN * 0.1 - centroid).lengthSq()) ? 1.0 : -1.0;
+        // External boundary: CCW -> inside is left, inward is left (1.0)
+        m_growthSign = isCCW ? 1.0 : -1.0;
     }
-    std::cout << "Detected Growth Sign: " << m_growthSign << " (1: Left Normal, -1: Right Normal)\n";
+    std::cout << "Detected Growth Sign: " << m_growthSign << " (Orientation: " << (isCCW ? "CCW" : "CW") << ", Area: " << area << ")\n";
 }
 
 double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds) {
@@ -213,23 +218,6 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
         std::vector<int> clusterId(n);
         for (int i = 0; i < n; ++i) clusterId[i] = i;
 
-        if (m_config.blMergeConcave) {
-            for (int i = 0; i < n; ++i) {
-                int i_next = (i + 1) % n;
-                Vector2D dir_i = nodeDirections.count(activeFront[i]) ? nodeDirections[activeFront[i]] : (n1_list[i] + n2_list[i]).normalized();
-                Vector2D dir_next = nodeDirections.count(activeFront[i_next]) ? nodeDirections[activeFront[i_next]] : (n1_list[i_next] + n2_list[i_next]).normalized();
-                Point2D target_i = currentPos[i] + dir_i * currentH;
-                Point2D target_next = currentPos[i_next] + dir_next * currentH;
-                double currentDistSq = (currentPos[i] - currentPos[i_next]).lengthSq();
-                double targetDistSq = (target_i - target_next).lengthSq();
-                if (isConcaveList[i] || (targetDistSq < (currentH * 0.3) * (currentH * 0.3) && targetDistSq < currentDistSq) || willIntersect(target_i, target_next, currentPos, i)) {
-                    int id1 = clusterId[i], id2 = clusterId[i_next];
-                    int newId = std::min(id1, id2);
-                    for (int j = 0; j < n; ++j) if (clusterId[j] == id1 || clusterId[j] == id2) clusterId[j] = newId;
-                }
-            }
-        }
-
         std::vector<int> nextFront;
         std::vector<std::vector<int>> p2c(n);
         std::map<int, std::vector<int>> clusterToNewNodes;
@@ -260,17 +248,53 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
             } else {
                 if (layer == 0 && isConvexList[i]) {
                     int numFanNodes = std::max(2, fanNodeCounts[i]);
-                    double a1 = std::atan2(n1_list[i].y, n1_list[i].x), a2 = std::atan2(n2_list[i].y, n2_list[i].x);
+                    
+                    // 根據鄰居的「網格現況」重新規劃扇形邊界
+                    Vector2D d_prev = nodeDirections[activeFront[(i - 1 + n) % n]];
+                    Vector2D d_next = nodeDirections[activeFront[(i + 1) % n]];
+
+                    // 安全機制：如果鄰居也是凸角，則該側回歸幾何法向以維持邊界穩定
+                    if (isConvexList[(i - 1 + n) % n]) d_prev = n1_list[i];
+                    if (isConvexList[(i + 1) % n]) d_next = n2_list[i];
+
+                    double a1 = std::atan2(d_prev.y, d_prev.x);
+                    double a2 = std::atan2(d_next.y, d_next.x);
+
                     if (m_growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
+                    
+                    double fanAngleDeg = std::abs(a2 - a1) * 180.0 / M_PI;
+                    
+                    double center_multiplier = nodeStepMultipliers.count(activeFront[i]) ? nodeStepMultipliers[activeFront[i]] : 1.0;
+                    double m_prev = nodeStepMultipliers.count(activeFront[(i - 1 + n) % n]) ? nodeStepMultipliers[activeFront[(i - 1 + n) % n]] : center_multiplier;
+                    double m_next = nodeStepMultipliers.count(activeFront[(i + 1) % n]) ? nodeStepMultipliers[activeFront[(i + 1) % n]] : center_multiplier;
+                    
+                    // 如果鄰居本身是凸角，其高度可能與當前扇形起點不匹配，此時回歸中心值
+                    if (isConvexList[(i - 1 + n) % n]) m_prev = center_multiplier;
+                    if (isConvexList[(i + 1) % n]) m_next = center_multiplier;
+
+                    if (activeFront[i] == 246) {
+                        Vector2D bisector = (n1_list[i] + n2_list[i]).normalized();
+                        double a_bisect = std::atan2(bisector.y, bisector.x) * 180.0 / M_PI;
+                        double a1_deg = a1 * 180.0 / M_PI;
+                        double a2_deg = a2 * 180.0 / M_PI;
+                        std::cout << "  [DEBUG Node 246]:\n";
+                        std::cout << "    - Normal 1 (In): " << a1_deg << " deg, Multiplier: " << m_prev << "\n";
+                        std::cout << "    - Normal 2 (Out): " << a2_deg << " deg, Multiplier: " << m_next << "\n";
+                        std::cout << "    - Total Fan Sweep: " << fanAngleDeg << " deg\n";
+                    }
+                    std::cout << "  - Fan Angle Detail [Node " << activeFront[i] << "]: Total sweep = " << fanAngleDeg << " deg\n";
+
                     for (int k = 0; k < numFanNodes; ++k) {
                         double t = (double)k / (double)(numFanNodes - 1);
                         double angle = a1 * (1.0 - t) + a2 * t;
+                        double local_multiplier = m_prev * (1.0 - t) + m_next * t;
+                        
                         Vector2D nk = {std::cos(angle), std::sin(angle)};
-                        m_mesh.addNode(currentPos[i] + nk * currentH, NodeType::BoundaryLayer);
+                        m_mesh.addNode(currentPos[i] + nk * (currentH * local_multiplier), NodeType::BoundaryLayer);
                         int newId = m_mesh.nodes.back().id;
                         nextFront.push_back(newId); p2c[i].push_back(newId);
                         nodeDirections[newId] = nk;
-                        nodeStepMultipliers[newId] = 1.0;
+                        nodeStepMultipliers[newId] = local_multiplier;
                     }
                     for (int k = 0; k < (int)p2c[i].size() - 1; ++k) m_mesh.addElement({activeFront[i], p2c[i][k+1], p2c[i][k]});
                 } else {

@@ -1,0 +1,52 @@
+# --- 幾何設定 (Geometry Settings) ---
+GEOM_FILE geometries/UNICONES_dense.dat
+
+# --- 計算域邊界 (Domain Boundaries) ---
+DOMAIN_X_MIN -5.0
+DOMAIN_X_MAX  4.0
+DOMAIN_Y_MIN -5.0
+DOMAIN_Y_MAX 3.0
+
+# --- 網格尺寸設定 (Mesh Size Settings) ---
+SURFACE_MESH_SIZE 0.02
+FARFIELD_MESH_SIZE 1.0
+
+# --- 邊界層設定 (Boundary Layer - Phase 3) ---
+BL_INITIAL_THICKNESS 0.0002
+BL_GROWTH_RATE 1.1
+BL_LAYERS 5
+BL_FAN_NODES 2
+BL_AUTO_FAN_NODES 1
+BL_FAN_ANGLE_THRESHOLD 60.0
+BL_SMOOTHING_ITERS 5
+BL_MERGE_CONCAVE 0
+# BL_CONCAVE_METHOD 0
+
+# --- Method 5 Settings ---
+BL_CONCAVE_METHOD 5
+BL_CONCAVE_INFLUENCE_MULTIPLIER 5.0
+
+BL_CONVEX_ANGLE_THRESHOLD 220.0
+BL_CONCAVE_ANGLE_THRESHOLD 120.0
+
+# --- 過渡層設定 (Transition Layer - Phase 4) ---
+BL_TRANSITION_LAYERS 5
+BL_AUTO_TRANSITION_LAYERS 1
+BL_TRANSITION_GROWTH_RATE 1.15
+
+# --- Gmsh 底層演算法設定 (Gmsh Advanced Settings) ---
+GMSH_ALGORITHM 6
+GMSH_OPTIMIZE 1
+FARFIELD_GROWTH_RATE 0.1
+
+# --- 輸出設定 (Export Settings) ---
+EXPORT_VTK 1
+EXPORT_STARCD 0
+
+# --- StarCD 邊界字串設定 (StarCD BC Strings) ---
+BC_XMIN inlet
+BC_XMAX outlet
+BC_YMIN inlet
+BC_YMAX outlet
+BC_GEOM wall
+
