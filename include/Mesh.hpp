@@ -16,6 +16,7 @@ struct Node {
     Point2D pos;
     NodeType type;
     int id;
+    int geomId = -1; // -1 for domain/interior, >=0 for specific geometries
     bool isFrozen = false;
 };
 

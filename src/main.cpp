@@ -178,13 +178,10 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: Failed to load geometry from " << gFile << std::endl;
                 continue;
             }
-
-            // 檢查是否與計算域相交
             if (checkDomainIntersection(geomPoints, config)) {
                 std::cerr << "Error: Geometry " << gFile << " intersects with domain boundary. Skipping.\n";
                 continue;
             }
-            
             allGeometries.push_back({gFile, geomPoints});
         }
 
@@ -199,18 +196,12 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+        if (hasIntersection) return 1;
 
-        if (hasIntersection) {
-            return 1;
-        }
-
-        // 如果開啟模式 1 (GLOBAL)，計算所有幾何的平均段長
         if (config.blAutoTransitionLayers == 1) {
-            double totalLen = 0.0;
-            int totalSegments = 0;
+            double totalLen = 0.0; int totalSegments = 0;
             for (const auto& geomData : allGeometries) {
                 int np = (int)geomData.points.size();
-                if (np < 2) continue;
                 for (int i = 0; i < np; ++i) {
                     totalLen += (geomData.points[(i + 1) % np] - geomData.points[i]).length();
                     totalSegments++;
@@ -219,17 +210,26 @@ int main(int argc, char* argv[]) {
             if (totalSegments > 0) config.globalAvgSegmentLength = totalLen / (double)totalSegments;
         }
 
+        std::vector<std::vector<int>> allBoundaryIds;
+        int currentGeomId = 0;
         for (const auto& geomData : allGeometries) {
             std::vector<int> boundaryIds;
             for (const auto& p : geomData.points) {
                 mesh.addNode(p, NodeType::Boundary);
+                mesh.nodes.back().geomId = currentGeomId;
                 boundaryIds.push_back(mesh.nodes.back().id);
             }
-
-            lastH = blGen.generate(boundaryIds);
+            allBoundaryIds.push_back(boundaryIds);
+            currentGeomId++;
         }
 
-        // Phase 4: 遠場三角化 (傳入最後一層厚度以控制長寬比過渡)
+        try {
+            lastH = blGen.generate(allBoundaryIds);
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << std::endl;
+            return 1;
+        }
+
         mesh.generateFarFieldGmsh(config, lastH);
     }
 
