@@ -346,11 +346,21 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 int i_next = (i + 1) % n;
                 int n_curr_last = p2c[i].back();
                 int n_next_first = p2c[i_next].front();
+                
+                bool i_frozen = m_mesh.nodes[fs.activeFront[i]].isFrozen;
+                bool next_frozen = m_mesh.nodes[fs.activeFront[i_next]].isFrozen;
+
                 if (n_curr_last == n_next_first) {
-                    m_mesh.addElement({fs.activeFront[i], fs.activeFront[i_next], n_curr_last});
+                    if (!i_frozen || !next_frozen) {
+                        m_mesh.addElement({fs.activeFront[i], fs.activeFront[i_next], n_curr_last});
+                    }
                 } else {
-                    m_mesh.addElement({fs.activeFront[i], fs.activeFront[i_next], n_next_first});
-                    m_mesh.addElement({fs.activeFront[i], n_next_first, n_curr_last});
+                    if (!next_frozen) {
+                        m_mesh.addElement({fs.activeFront[i], fs.activeFront[i_next], n_next_first});
+                    }
+                    if (!i_frozen) {
+                        m_mesh.addElement({fs.activeFront[i], n_next_first, n_curr_last});
+                    }
                 }
             }
             fs.activeFront = nextFront;

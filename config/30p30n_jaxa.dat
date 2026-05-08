@@ -41,7 +41,7 @@ FARFIELD_GROWTH_RATE 0.1
 
 # --- 輸出設定 (Export Settings) ---
 EXPORT_VTK 1
-EXPORT_STARCD 0
+EXPORT_STARCD 1
 
 # --- StarCD 邊界字串設定 (StarCD BC Strings) ---
 BC_XMIN inlet

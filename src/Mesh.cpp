@@ -3,6 +3,7 @@
 #include <iostream>
 #include <gmsh.h>
 #include <map>
+#include <set>
 #include <iomanip>
 #include <algorithm>
 
@@ -121,10 +122,27 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         return;
     }
     int cellCount = 1;
+    std::set<std::vector<int>> seenElements;
     for (size_t i = 0; i < elements.size(); ++i) {
         const auto& el = elements[i];
         if (el.nodeIds.size() < 3) continue; // 略過線段元素
         
+        // 檢查退化單元 (節點重複)
+        std::vector<int> sortedIds = el.nodeIds;
+        std::sort(sortedIds.begin(), sortedIds.end());
+        bool degenerate = false;
+        for (size_t k = 0; k < sortedIds.size() - 1; ++k) {
+            if (sortedIds[k] == sortedIds[k+1]) {
+                degenerate = true;
+                break;
+            }
+        }
+        if (degenerate) continue;
+
+        // 檢查重複單元
+        if (seenElements.count(sortedIds)) continue;
+        seenElements.insert(sortedIds);
+
         cofs << cellCount++ << " ";
         if (el.nodeIds.size() == 3) {
             int n0 = el.nodeIds[0], n1 = el.nodeIds[1], n2 = el.nodeIds[2];
@@ -157,9 +175,27 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
     // 統計每條邊被 Element 使用的次數，只被使用一次的即為邊界
     std::map<std::pair<int, int>, int> edgeCellCount;
     std::map<std::pair<int, int>, std::pair<int, int>> edgeNodes;
+    std::set<std::vector<int>> seenElementsForBnd;
     for (size_t i = 0; i < elements.size(); ++i) {
         const auto& el = elements[i];
         if (el.nodeIds.size() < 3) continue;
+
+        // 檢查退化單元
+        std::vector<int> sortedIds = el.nodeIds;
+        std::sort(sortedIds.begin(), sortedIds.end());
+        bool degenerate = false;
+        for (size_t k = 0; k < sortedIds.size() - 1; ++k) {
+            if (sortedIds[k] == sortedIds[k+1]) {
+                degenerate = true;
+                break;
+            }
+        }
+        if (degenerate) continue;
+
+        // 檢查重複單元
+        if (seenElementsForBnd.count(sortedIds)) continue;
+        seenElementsForBnd.insert(sortedIds);
+
         int numNodes = static_cast<int>(el.nodeIds.size());
         for (int j = 0; j < numNodes; ++j) {
             int n1 = el.nodeIds[j];
