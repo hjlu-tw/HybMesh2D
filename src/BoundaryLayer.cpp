@@ -272,9 +272,23 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
                 if (layer == 0 && isConvexList[i]) {
                     int numFanNodes = std::max(2, fanNodeCounts[i]);
                     
+                    // 輔助邏輯：獲取節點方向，若找不到則回退到分角線
+                    auto getDir = [&](int idx) {
+                        int nodeId = activeFront[idx];
+                        if (nodeDirections.count(nodeId)) return nodeDirections[nodeId];
+                        return (n1_list[idx] + n2_list[idx]).normalized();
+                    };
+
+                    // 輔助邏輯：獲取高度倍率，若找不到則回退到 1.0
+                    auto getMult = [&](int idx) {
+                        int nodeId = activeFront[idx];
+                        if (nodeStepMultipliers.count(nodeId)) return nodeStepMultipliers[nodeId];
+                        return 1.0;
+                    };
+
                     // 根據鄰居的「網格現況」重新規劃扇形邊界
-                    Vector2D d_prev = nodeDirections[activeFront[(i - 1 + n) % n]];
-                    Vector2D d_next = nodeDirections[activeFront[(i + 1) % n]];
+                    Vector2D d_prev = getDir((i - 1 + n) % n);
+                    Vector2D d_next = getDir((i + 1) % n);
 
                     // 安全機制：如果鄰居也是凸角，則該側回歸幾何法向以維持邊界穩定
                     if (isConvexList[(i - 1 + n) % n]) d_prev = n1_list[i];
@@ -287,9 +301,9 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
                     
                     double fanAngleDeg = std::abs(a2 - a1) * 180.0 / M_PI;
                     
-                    double center_multiplier = nodeStepMultipliers.count(activeFront[i]) ? nodeStepMultipliers[activeFront[i]] : 1.0;
-                    double m_prev = nodeStepMultipliers.count(activeFront[(i - 1 + n) % n]) ? nodeStepMultipliers[activeFront[(i - 1 + n) % n]] : center_multiplier;
-                    double m_next = nodeStepMultipliers.count(activeFront[(i + 1) % n]) ? nodeStepMultipliers[activeFront[(i + 1) % n]] : center_multiplier;
+                    double center_multiplier = getMult(i);
+                    double m_prev = getMult((i - 1 + n) % n);
+                    double m_next = getMult((i + 1) % n);
                     
                     // 如果鄰居本身是凸角，其高度可能與當前扇形起點不匹配，此時回歸中心值
                     if (isConvexList[(i - 1 + n) % n]) m_prev = center_multiplier;
