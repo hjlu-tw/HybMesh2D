@@ -204,6 +204,21 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        // 如果開啟模式 1 (GLOBAL)，計算所有幾何的平均段長
+        if (config.blAutoTransitionLayers == 1) {
+            double totalLen = 0.0;
+            int totalSegments = 0;
+            for (const auto& geomData : allGeometries) {
+                int np = (int)geomData.points.size();
+                if (np < 2) continue;
+                for (int i = 0; i < np; ++i) {
+                    totalLen += (geomData.points[(i + 1) % np] - geomData.points[i]).length();
+                    totalSegments++;
+                }
+            }
+            if (totalSegments > 0) config.globalAvgSegmentLength = totalLen / (double)totalSegments;
+        }
+
         for (const auto& geomData : allGeometries) {
             std::vector<int> boundaryIds;
             for (const auto& p : geomData.points) {

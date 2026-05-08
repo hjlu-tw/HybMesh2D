@@ -31,8 +31,9 @@ struct Config {
     
     // 過渡層設定 (Phase 4)
     int blTransitionLayers = 3;
-    bool blAutoTransitionLayers = false;
+    int blAutoTransitionLayers = 0; // 0: OFF, 1: Global Avg, 2: Per-Geometry Avg
     double blTransitionGrowthRate = 1.2;
+    double globalAvgSegmentLength = -1.0; // 用於模式 1
     
     // 進階遠場過渡控制
     double farFieldGrowthRate = 0.1;
@@ -98,7 +99,7 @@ struct Config {
                 double val; ss >> val; blTransitionLayers = static_cast<int>(val);
             }
             else if (key == "BL_AUTO_TRANSITION_LAYERS") {
-                int val; ss >> val; blAutoTransitionLayers = (val != 0);
+                double val; ss >> val; blAutoTransitionLayers = static_cast<int>(val);
             }
             else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> blTransitionGrowthRate;
             else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
@@ -140,7 +141,9 @@ struct Config {
         std::cout << "BL Corner Thresholds: Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
         std::cout << "BL Concave Handling: Smoothing " << blSmoothingIters << " iters, Merge " << (blMergeConcave ? "ON" : "OFF") << ", Method " << blConcaveMethod << "\n";
         if (blConcaveMethod == 5) std::cout << "  - Thickness Blending Influence Multiplier: " << blConcaveInfluenceMultiplier << "\n";
-        std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " << (blAutoTransitionLayers ? "ON" : "OFF") << "), rate " << blTransitionGrowthRate << "\n";
+        std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " 
+                  << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL")) 
+                  << "), rate " << blTransitionGrowthRate << "\n";
         std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
         std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
         std::cout << "StarCD BCs: XMin=" << bcXMin << ", XMax=" << bcXMax << ", YMin=" << bcYMin << ", YMax=" << bcYMax << ", Geom=" << bcGeom << "\n";

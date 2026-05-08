@@ -84,11 +84,17 @@ double BoundaryLayerGenerator::generate(const std::vector<int>& boundaryNodeIds)
     for (int l = 0; l < m_config.blLayers; ++l) { R_BL += h_tmp; h_tmp *= m_config.blGrowthRate; }
     double hFirst = h_tmp, rTrans = m_config.blTransitionGrowthRate;
     int nTrans = m_config.blTransitionLayers;
-    if (m_config.blAutoTransitionLayers) {
+    
+    if (m_config.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
+        // Mode 1: Global Average
+        nTrans = std::max(0, (int)std::round(std::log(m_config.globalAvgSegmentLength / hFirst) / std::log(rTrans)));
+    } else if (m_config.blAutoTransitionLayers == 2) {
+        // Mode 2: Per-Geometry (Local) Average
         double totalLen = 0;
         for(int i=0; i<n_init; ++i) totalLen += (pos_init[(i+1)%n_init] - pos_init[i]).length();
         nTrans = std::max(0, (int)std::round(std::log((totalLen/n_init) / hFirst) / std::log(rTrans)));
     }
+
     double R_trans = (nTrans > 0) ? hFirst * (std::pow(rTrans, nTrans) - 1.0) / (rTrans - 1.0) : 0.0;
     double D_total = R_BL + R_trans;
 

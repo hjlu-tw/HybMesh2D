@@ -31,7 +31,7 @@ BL_CONCAVE_ANGLE_THRESHOLD 120.0
 
 # --- 過渡層設定 (Transition Layer - Phase 4) ---
 BL_TRANSITION_LAYERS 5
-BL_AUTO_TRANSITION_LAYERS 1
+BL_AUTO_TRANSITION_LAYERS 2
 BL_TRANSITION_GROWTH_RATE 1.15
 
 # --- Gmsh 底層演算法設定 (Gmsh Advanced Settings) ---
