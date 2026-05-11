@@ -344,6 +344,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
 
     // --- 3. 建立尺寸過渡場 ---
     if (!frontLineTags.empty()) {
+        std::cout << "Step: Setting up Gmsh fields..." << std::endl;
         double hEnd = config.surfaceSize;
         if (config.autoSurfaceSize) {
             double totalLen = 0.0;
@@ -357,13 +358,13 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
             }
             if (count > 0) {
                 hEnd = totalLen / (double)count;
-                std::cout << "Step: Auto-calculating Surface Mesh Size (Avg Front Width: " << hEnd << ")..." << std::endl;
+                std::cout << "  -> Final Surface Mesh Size (Auto): " << hEnd << std::endl;
             } else {
                 hEnd = finalBLThickness;
-                std::cout << "Step: Auto-calculating Surface Mesh Size (Fallback to last layer height: " << hEnd << ")..." << std::endl;
+                std::cout << "  -> Final Surface Mesh Size (Fallback to BL height): " << hEnd << std::endl;
             }
         } else {
-            std::cout << "Step: Setting up Gmsh fields (Manual hEnd=" << hEnd << ")..." << std::endl;
+            std::cout << "  -> Final Surface Mesh Size (Manual): " << hEnd << std::endl;
         }
         
         int fDist = gmsh::model::mesh::field::add("Distance");

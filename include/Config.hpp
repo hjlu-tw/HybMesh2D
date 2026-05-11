@@ -163,7 +163,8 @@ struct Config {
         std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
 
         std::cout << "[ Mesh Sizing ]\n";
-        std::cout << "  - Surface Mesh Size    : " << surfaceSize << " (Auto: " << (autoSurfaceSize ? "[ON]" : "[OFF]") << ")\n";
+        std::cout << "  - Auto Surface Sizing  : " << (autoSurfaceSize ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - Surface Mesh Size    : " << surfaceSize << (autoSurfaceSize ? " (Manual fallback)" : "") << "\n";
         std::cout << "  - Far-field Mesh Size  : " << farFieldSize << "\n\n";
 
         std::cout << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
