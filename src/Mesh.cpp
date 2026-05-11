@@ -421,10 +421,22 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     gmsh::model::geo::synchronize();
 
     // 2.2 局部強制邊界層外緣 1-對-1 對接
+    std::vector<double> collisionLineTags;
+    double collisionTotalLen = 0.0;
+    int collisionCount = 0;
+
     for (size_t i = 0; i < allLines.size(); ++i) {
         if (nodes[filteredEdges[i].v1].type == NodeType::BoundaryLayer && 
             nodes[filteredEdges[i].v2].type == NodeType::BoundaryLayer) {
+            
             gmsh::model::mesh::setTransfiniteCurve(allLines[i], 2);
+
+            // 偵測碰撞區域的邊 (包含至少一個 frozen 節點)
+            if (nodes[filteredEdges[i].v1].isFrozen || nodes[filteredEdges[i].v2].isFrozen) {
+                collisionLineTags.push_back(static_cast<double>(allLines[i]));
+                collisionTotalLen += (nodes[filteredEdges[i].v1].pos - nodes[filteredEdges[i].v2].pos).length();
+                collisionCount++;
+            }
         }
     }
 
@@ -432,6 +444,13 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     if (!frontLineTags.empty()) {
         std::cout << "Step: Setting up Gmsh fields..." << std::endl;
         double hEnd = config.surfaceSize;
+        double hGap = -1.0;
+
+        if (collisionCount > 0) {
+            hGap = collisionTotalLen / (double)collisionCount;
+            std::cout << "  -> Detected Collision Zone Mesh Size (hGap): " << hGap << std::endl;
+        }
+
         if (config.autoSurfaceSize) {
             double totalLen = 0.0;
             int count = 0;
@@ -444,7 +463,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
             }
             if (count > 0) {
                 hEnd = totalLen / (double)count;
-                std::cout << "  -> Final Surface Mesh Size (Auto): " << hEnd << std::endl;
+                std::cout << "  -> Final Surface Mesh Size (Auto Avg): " << hEnd << std::endl;
             } else {
                 hEnd = finalBLThickness;
                 std::cout << "  -> Final Surface Mesh Size (Fallback to BL height): " << hEnd << std::endl;
@@ -453,13 +472,23 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
             std::cout << "  -> Final Surface Mesh Size (Manual): " << hEnd << std::endl;
         }
         
+        // 如果偵測到碰撞區域，優先使用 hGap 作為局部基準
+        double hBase = (hGap > 0) ? hGap : hEnd;
+        if (hGap > 0) {
+            std::cout << "  -> Using hGap (" << hGap << ") as baseline for triangulation near collisions." << std::endl;
+        }
+
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);
 
-        // 使用 MathEval 讓網格從 hEnd 平滑過渡到 farFieldSize
-        // 增長梯度從設定檔讀取 FARFIELD_GROWTH_RATE
+        // 建立緩衝區：在 dBuffer 距離內維持 hBase 尺寸，避免 1 個大網格接多個小網格
+        // dBuffer 透過設定檔 BL_TRANSITION_BUFFER 控制
+        double dBuffer = hBase * config.blTransitionBuffer;
+        
+        // 使用 MathEval 實現：在 dBuffer 內維持 hBase，之後才開始增長
+        // 公式：Min(farFieldSize, hBase + Max(0, dist - dBuffer) * growthRate)
         std::string expr = "Min(" + std::to_string(config.farFieldSize) + ", " + 
-                           std::to_string(hEnd) + " + " + std::to_string(config.farFieldGrowthRate) + " * F" + std::to_string(fDist) + ")";
+                           std::to_string(hBase) + " + Max(0, F" + std::to_string(fDist) + " - " + std::to_string(dBuffer) + ") * " + std::to_string(config.farFieldGrowthRate) + ")";
         
         int fFinal = gmsh::model::mesh::field::add("MathEval");
         gmsh::model::mesh::field::setString(fFinal, "F", expr);

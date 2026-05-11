@@ -38,6 +38,7 @@ struct Config {
     int blTransitionLayers = 3;
     int blAutoTransitionLayers = 0; // 0: OFF, 1: Global Avg, 2: Per-Geometry Avg
     double blTransitionGrowthRate = 1.2;
+    double blTransitionBuffer = 2.0;
     double globalAvgSegmentLength = -1.0; // 用於模式 1
     
     // 進階遠場過渡控制
@@ -116,6 +117,7 @@ struct Config {
                 double val; ss >> val; blAutoTransitionLayers = static_cast<int>(val);
             }
             else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> blTransitionGrowthRate;
+            else if (key == "BL_TRANSITION_BUFFER") ss >> blTransitionBuffer;
             else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
             else if (key == "GMSH_ALGORITHM") {
                 double val; ss >> val; gmshAlgorithm = static_cast<int>(val);
@@ -171,7 +173,7 @@ struct Config {
         std::cout << "  - Base Layers          : " << blLayers << " (Initial: " << blInitialThickness << ", Growth Rate: " << blGrowthRate << ")\n";
         std::cout << "  - Transition Layers    : " << blTransitionLayers << " (Auto: " 
                   << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL")) 
-                  << ") | Growth Rate: " << blTransitionGrowthRate << "\n";
+                  << ") | Growth Rate: " << blTransitionGrowthRate << " | Buffer: " << blTransitionBuffer << "\n";
         std::cout << "  - Farfield Growth Rate : " << farFieldGrowthRate << "\n";
         std::cout << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n\n";
 
