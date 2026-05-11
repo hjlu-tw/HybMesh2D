@@ -461,11 +461,12 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
             fs.activeFront = nextFront;
         }
-        std::cout << "  - Layer " << layer + 1 << " complete." << std::endl;
+        std::cout << "\r  - Boundary Layer progress: " << layer + 1 << " / " << totalLayers << " complete." << std::flush;
 
         if (layer < m_config.blLayers - 1) currentH *= m_config.blGrowthRate;
         else currentH *= m_config.blTransitionGrowthRate;
     }
+    std::cout << std::endl;
 
     for (const auto& fs : fronts) {
         int nFinal = (int)fs.activeFront.size();

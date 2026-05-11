@@ -114,6 +114,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
+        else if (arg[0] != '-') configFile = arg; // 允許直接傳入設定檔路徑
     }
 
     if (!config.loadFromFile(configFile)) return 1;

@@ -141,31 +141,66 @@ struct Config {
     }
 
     void print() const {
-        std::cout << "----- Configuration -----\n";
-        std::cout << "Geom Files: ";
-        if (geomFiles.empty()) std::cout << "NONE";
-        else {
-            for (const auto& f : geomFiles) std::cout << f << " ";
+        std::cout << "==================================================\n";
+        std::cout << "              HybMesh2D Configuration             \n";
+        std::cout << "==================================================\n\n";
+
+        std::cout << "[ Input & Domain ]\n";
+        std::cout << "  - Geometry Files       : ";
+        if (geomFiles.empty()) {
+            std::cout << "NONE\n";
+        } else {
+            std::cout << "\n";
+            int count = 1;
+            for (const auto& f : geomFiles) {
+                std::cout << "          " << count++ << ". " << f << "\n";
+            }
+        }
+        std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
+
+        std::cout << "[ Mesh Sizing ]\n";
+        std::cout << "  - Surface Mesh Size    : " << surfaceSize << "\n";
+        std::cout << "  - Far-field Mesh Size  : " << farFieldSize << "\n\n";
+
+        std::cout << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
+        std::cout << "  - Base Layers          : " << blLayers << " (Initial: " << blInitialThickness << ", Growth Rate: " << blGrowthRate << ")\n";
+        std::cout << "  - Transition Layers    : " << blTransitionLayers << " (Auto: " 
+                  << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL")) 
+                  << ") | Growth Rate: " << blTransitionGrowthRate << "\n";
+        std::cout << "  - Farfield Growth Rate : " << farFieldGrowthRate << "\n";
+        std::cout << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n\n";
+
+        std::cout << "[ Corner Handling (Convex & Concave) ]\n";
+        std::cout << "  - Corner Thresholds    : Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
+        std::cout << "  - Convex Handling      : " << (blConvexMethod == 0 ? "Fan" : (blConvexMethod == 2 ? "Parallelogram" : "Unknown")) << "\n";
+        if (blConvexMethod == 0) {
+            std::cout << "      * Fan Elements         : " << blFanNodes << " nodes (Auto: " 
+                      << (blAutoFanNodes == 0 ? "OFF" : (blAutoFanNodes == 1 ? "GLOBAL" : "LOCAL")) 
+                      << ") | Trigger Angle > " << blFanAngleThreshold << " deg\n";
+        } else if (blConvexMethod == 2) {
+            std::cout << "      * Fallback Angle       : > " << blParaFallbackAngle << " deg\n";
+        }
+        std::cout << "  - Concave Handling     : " << (blConcaveMethod == 0 ? "Vector Merge" : (blConcaveMethod == 5 ? "Thickness Blending" : "Unknown")) 
+                  << " | Merge: " << (blMergeConcave ? "[ON]" : "[OFF]") 
+                  << " | Smoothing: " << blSmoothingIters << " iters\n";
+        if (blConcaveMethod == 5) {
+            std::cout << "      * Influence Multiplier : " << blConcaveInfluenceMultiplier << "\n";
         }
         std::cout << "\n";
-        std::cout << "Domain: [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n";
-        std::cout << "Surface Size: " << surfaceSize << ", Far-field Size: " << farFieldSize << "\n";
-        std::cout << "BL: " << blLayers << " layers, start " << blInitialThickness << ", rate " << blGrowthRate << "\n";
-        std::cout << "BL Fan Elements: " << blFanNodes << " nodes (Auto: " 
-                  << (blAutoFanNodes == 0 ? "OFF" : (blAutoFanNodes == 1 ? "GLOBAL" : "LOCAL")) 
-                  << "), trigger angle > " << blFanAngleThreshold << " deg\n";
-        std::cout << "BL Corner Thresholds: Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
-        std::cout << "BL Concave Handling: Smoothing " << blSmoothingIters << " iters, Merge " << (blMergeConcave ? "ON" : "OFF") << ", Method " << blConcaveMethod << "\n";
-        if (blConcaveMethod == 5) std::cout << "  - Thickness Blending Influence Multiplier: " << blConcaveInfluenceMultiplier << "\n";
-        std::cout << "Transition: " << blTransitionLayers << " layers (Auto: " 
-                  << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL")) 
-                  << "), rate " << blTransitionGrowthRate << "\n";
-        std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
-        std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
-        std::cout << "StarCD BCs: XMin=" << bcXMin << ", XMax=" << bcXMax << ", YMin=" << bcYMin << ", YMax=" << bcYMax << ", Geom=" << bcGeom << "\n";
-        std::cout << "Exports: VTK=" << (exportVTK ? "ON" : "OFF") << ", StarCD=" << (exportStarCD ? "ON" : "OFF") << ", CollisionDetection=" << (enableCollisionDetection ? "ON" : "OFF") << "\n";
-        if (!outputFilename.empty()) std::cout << "Output File: " << outputFilename << "\n";
-        std::cout << "-------------------------\n";
+
+        std::cout << "[ Boundary Conditions (StarCD) ]\n";
+        std::cout << "  - XMin                 : " << bcXMin << "\n";
+        std::cout << "  - XMax                 : " << bcXMax << "\n";
+        std::cout << "  - YMin                 : " << bcYMin << "\n";
+        std::cout << "  - YMax                 : " << bcYMax << "\n";
+        std::cout << "  - Geom                 : " << bcGeom << "\n\n";
+
+        std::cout << "[ Features & Export Options ]\n";
+        std::cout << "  - Collision Detection  : " << (enableCollisionDetection ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - VTK Export           : " << (exportVTK ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - StarCD Export        : " << (exportStarCD ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - Output Filename      : " << (outputFilename.empty() ? "(Auto-generated)" : outputFilename) << "\n";
+        std::cout << "==================================================\n";
     }
 };
 
