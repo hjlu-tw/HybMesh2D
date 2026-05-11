@@ -238,6 +238,10 @@ int main(int argc, char* argv[]) {
         }
 
         mesh.generateFarFieldGmsh(config, lastH);
+
+        if (config.blSmoothingIters > 0) {
+            mesh.smoothMesh(config.blSmoothingIters);
+        }
     }
 
     if (config.exportVTK) {

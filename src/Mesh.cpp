@@ -9,7 +9,93 @@
 
 void Mesh::addNode(Point2D p, NodeType type) {
     int id = static_cast<int>(nodes.size());
-    nodes.push_back({p, type, id, false});
+    Node n;
+    n.pos = p;
+    n.type = type;
+    n.id = id;
+    n.geomId = -1;
+    n.isFrozen = false;
+    nodes.push_back(n);
+}
+
+void Mesh::smoothMesh(int iters) {
+    if (iters <= 0 || nodes.empty()) return;
+
+    // 1. Build adjacency
+    std::vector<std::set<int>> adj(nodes.size());
+    for (const auto& el : elements) {
+        for (size_t i = 0; i < el.nodeIds.size(); ++i) {
+            int u = el.nodeIds[i];
+            int v = el.nodeIds[(i + 1) % el.nodeIds.size()];
+            adj[u].insert(v);
+            adj[v].insert(u);
+        }
+    }
+
+    // 2. Identify movable nodes (Collision-based Local Smoothing)
+    std::set<int> movable;
+    std::set<int> currentFront;
+    
+    for (const auto& node : nodes) {
+        if (node.isFrozen) {
+            currentFront.insert(node.id);
+        }
+    }
+
+    if (currentFront.empty()) {
+        std::cout << "Step: Local smoothing - No collision detected (no frozen nodes). Skipping." << std::endl;
+        return;
+    }
+
+    std::set<int> allAffected = currentFront;
+    // BFS to expand the affected region (e.g., 5 steps)
+    for (int step = 0; step < 5; ++step) {
+        std::set<int> nextFront;
+        for (int u : currentFront) {
+            for (int v : adj[u]) {
+                if (allAffected.find(v) == allAffected.end()) {
+                    allAffected.insert(v);
+                    nextFront.insert(v);
+                }
+            }
+        }
+        currentFront = nextFront;
+        if (currentFront.empty()) break;
+    }
+
+    for (int id : allAffected) {
+        // Only move BoundaryLayer or Interior nodes. Protect Boundary nodes.
+        if (nodes[id].type != NodeType::Boundary) {
+            movable.insert(id);
+        }
+    }
+
+    if (movable.empty()) return;
+
+    std::cout << "Step: Local smoothing - " << movable.size() << " nodes identified near collision zones. Iterations: " << iters << std::endl;
+
+    // 3. Laplacian Smoothing
+    for (int iter = 0; iter < iters; ++iter) {
+        std::vector<Point2D> nextPos(nodes.size());
+        for (int id : movable) {
+            Point2D sum = {0, 0};
+            int count = 0;
+            for (int neighbor : adj[id]) {
+                sum.x += nodes[neighbor].pos.x;
+                sum.y += nodes[neighbor].pos.y;
+                count++;
+            }
+            if (count > 0) {
+                nextPos[id] = {sum.x / count, sum.y / count};
+            } else {
+                nextPos[id] = nodes[id].pos;
+            }
+        }
+        // Update positions
+        for (int id : movable) {
+            nodes[id].pos = nextPos[id];
+        }
+    }
 }
 
 void Mesh::addEdge(int v1, int v2) {

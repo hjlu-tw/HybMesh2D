@@ -41,6 +41,9 @@ public:
     // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制
     void generateFarFieldGmsh(const Config& config, double finalBLThickness);
 
+    // Phase 5: 針對碰撞區域進行局部網格平滑化
+    void smoothMesh(int iters);
+
     void generateCartesianMesh(double xMin, double xMax, double yMin, double yMax, double ds);
 
     void exportVTK(const std::string& filename) const;
