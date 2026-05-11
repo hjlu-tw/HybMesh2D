@@ -1,5 +1,5 @@
 # --- 幾何設定 (Geometry Settings) ---
-GEOM_FILE geometries/UNICONES_dense.dat
+GEOM_FILE geometries/30p30n_jaxa_slat.dat
 
 # --- 計算域邊界 (Domain Boundaries) ---
 DOMAIN_X_MIN -5.0
@@ -26,6 +26,7 @@ BL_MERGE_CONCAVE 0
 BL_CONCAVE_METHOD 5
 BL_CONCAVE_INFLUENCE_MULTIPLIER 5.0
 
+BL_CONVEX_METHOD 2
 BL_CONVEX_ANGLE_THRESHOLD 220.0
 BL_CONCAVE_ANGLE_THRESHOLD 120.0
 

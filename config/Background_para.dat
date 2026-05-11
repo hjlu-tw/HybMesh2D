@@ -2,10 +2,10 @@
 GEOM_FILE geometries/UNICONES_dense.dat
 
 # --- 計算域邊界 (Domain Boundaries) ---
-DOMAIN_X_MIN -4.0
-DOMAIN_X_MAX 14.0
-DOMAIN_Y_MIN -3.0
-DOMAIN_Y_MAX 4.0
+DOMAIN_X_MIN -10.0
+DOMAIN_X_MAX 10.0
+DOMAIN_Y_MIN -10.0
+DOMAIN_Y_MAX 10.0
 
 # --- 網格尺寸設定 (Mesh Size Settings) ---
 SURFACE_MESH_SIZE 0.02

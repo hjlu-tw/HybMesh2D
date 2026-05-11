@@ -4,8 +4,8 @@
 #include "Mesh.hpp"
 #include "Config.hpp"
 #include <vector>
-
 #include <map>
+#include <set>
 
 struct FrontState {
     int geomId;
@@ -18,9 +18,8 @@ struct FrontState {
     std::vector<bool> isConvexInit, isConcaveInit;
     std::vector<Point2D> pos_init;
     std::vector<int> fanNodeCounts;
+    std::set<int> paraCenterNodes;
 };
-
-#include <set>
 
 class BoundaryLayerGenerator {
 public:

@@ -161,16 +161,34 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             for (int i = 0; i < n_init; ++i) if (fs.isConcaveInit[i]) concaveIndices.push_back(i);
             
             if (!concaveIndices.empty()) {
-                double D_inf = m_config.blConcaveInfluenceMultiplier * D_total;
+                double global_D_inf = m_config.blConcaveInfluenceMultiplier * D_total;
+                std::vector<double> concave_D_inf(concaveIndices.size(), global_D_inf);
+                for (size_t c = 0; c < concaveIndices.size(); ++c) {
+                    int k_idx = concaveIndices[c];
+                    double min_corner_dist = L_total;
+                    for (int j = 0; j < n_init; ++j) {
+                        if (j != k_idx && (fs.isConvexInit[j] || fs.isConcaveInit[j])) {
+                            double d = std::abs(S[k_idx] - S[j]);
+                            double shortest_d = std::min(d, L_total - d);
+                            min_corner_dist = std::min(min_corner_dist, shortest_d);
+                        }
+                    }
+                    if (min_corner_dist < L_total) {
+                        concave_D_inf[c] = std::min(global_D_inf, min_corner_dist * 0.9);
+                    }
+                }
+
                 for (int i = 0; i < n_init; ++i) {
                     Vector2D N_i = (fs.n1_init[i] + fs.n2_init[i]).normalized();
                     Point2D P_base_i = fs.pos_init[i] + N_i * D_total;
                     double weight_sum = 0.0; Vector2D shift_sum = {0, 0};
-                    for (int k_idx : concaveIndices) {
+                    for (size_t c = 0; c < concaveIndices.size(); ++c) {
+                        int k_idx = concaveIndices[c];
+                        double current_D_inf = concave_D_inf[c];
                         double d = std::abs(S[i] - S[k_idx]);
                         double shortest_d = std::min(d, L_total - d);
-                        if (shortest_d < D_inf) {
-                            double w = (D_inf - shortest_d) / D_inf;
+                        if (shortest_d < current_D_inf) {
+                            double w = (current_D_inf - shortest_d) / current_D_inf;
                             weight_sum += w;
                             Vector2D B_k = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).normalized();
                             double len = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).length();
@@ -209,6 +227,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             Point2D pos;
             Vector2D dir;
             double multiplier;
+            bool isParaCenter = false;
         };
         std::vector<std::vector<CandidateNode>> allCandidates(fronts.size());
 
@@ -241,31 +260,58 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 int nodeId = fs.activeFront[i];
                 if (m_mesh.nodes[nodeId].isFrozen) continue;
 
-                if (layer == 0 && isConvexList[i]) {
-                    int numFanNodes = std::max(2, fs.fanNodeCounts[i]);
-                    auto getDir = [&](int idx) {
-                        int nid = fs.activeFront[idx];
-                        return fs.nodeDirections.count(nid) ? fs.nodeDirections[nid] : (n1_list[idx] + n2_list[idx]).normalized();
-                    };
-                    auto getMult = [&](int idx) {
-                        int nid = fs.activeFront[idx];
-                        return fs.nodeStepMultipliers.count(nid) ? fs.nodeStepMultipliers[nid] : 1.0;
-                    };
-                    Vector2D d_p = getDir((i - 1 + n) % n), d_n = getDir((i + 1) % n);
-                    if (isConvexList[(i - 1 + n) % n]) d_p = n1_list[i];
-                    if (isConvexList[(i + 1) % n]) d_n = n2_list[i];
-                    double a1 = std::atan2(d_p.y, d_p.x), a2 = std::atan2(d_n.y, d_n.x);
-                    if (fs.growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
-                    double m_p = getMult((i - 1 + n) % n), m_n = getMult((i + 1) % n);
-                    if (isConvexList[(i - 1 + n) % n]) m_p = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
-                    if (isConvexList[(i + 1) % n]) m_n = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
+                double mult = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
+                bool shouldSplit = false;
+                if (m_config.blConvexMethod == 2) {
+                    if (layer == 0) shouldSplit = isConvexList[i];
+                    else shouldSplit = fs.paraCenterNodes.count(nodeId);
+                } else {
+                    shouldSplit = (layer == 0 && isConvexList[i]);
+                }
 
-                    for (int k = 0; k < numFanNodes; ++k) {
-                        double t = (double)k / (double)(numFanNodes - 1);
-                        double angle = a1 * (1.0 - t) + a2 * t;
-                        double local_m = m_p * (1.0 - t) + m_n * t;
-                        Vector2D nk = {std::cos(angle), std::sin(angle)};
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + nk * (currentH * local_m), nk, local_m});
+                if (shouldSplit) {
+                    if (m_config.blConvexMethod == 2) {
+                        // Parallelogram Strategy: Spawn 3 nodes (Left, Center, Right)
+                        Vector2D d_p = n1_list[i];
+                        Vector2D d_n = n2_list[i];
+                        Vector2D d_c = d_p + d_n;
+                        double diagLen = d_c.length();
+                        
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_c * currentH, d_c.normalized(), diagLen, true});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false});
+                    } else if (layer == 0) {
+                        // Fan Strategy (Only at layer 0)
+                        int numFanNodes = std::max(2, fs.fanNodeCounts[i]);
+                        auto getDir = [&](int idx) {
+                            int nid = fs.activeFront[idx];
+                            return fs.nodeDirections.count(nid) ? fs.nodeDirections[nid] : (n1_list[idx] + n2_list[idx]).normalized();
+                        };
+                        auto getMult = [&](int idx) {
+                            int nid = fs.activeFront[idx];
+                            return fs.nodeStepMultipliers.count(nid) ? fs.nodeStepMultipliers[nid] : 1.0;
+                        };
+                        Vector2D d_p = getDir((i - 1 + n) % n), d_n = getDir((i + 1) % n);
+                        if (isConvexList[(i - 1 + n) % n]) d_p = n1_list[i];
+                        if (isConvexList[(i + 1) % n]) d_n = n2_list[i];
+                        double a1 = std::atan2(d_p.y, d_p.x), a2 = std::atan2(d_n.y, d_n.x);
+                        if (fs.growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
+                        double m_p = getMult((i - 1 + n) % n), m_n = getMult((i + 1) % n);
+                        if (isConvexList[(i - 1 + n) % n]) m_p = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
+                        if (isConvexList[(i + 1) % n]) m_n = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
+
+                        for (int k = 0; k < numFanNodes; ++k) {
+                            double t = (double)k / (double)(numFanNodes - 1);
+                            double angle = a1 * (1.0 - t) + a2 * t;
+                            double local_m = m_p * (1.0 - t) + m_n * t;
+                            Vector2D nk = {std::cos(angle), std::sin(angle)};
+                            allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + nk * (currentH * local_m), nk, local_m});
+                        }
+                    } else {
+                        // Fallback for Fan at layer > 0 (should not happen with current logic but for safety)
+                        Vector2D dir = fs.nodeDirections.count(nodeId) ? fs.nodeDirections[nodeId] : (n1_list[i] + n2_list[i]).normalized();
+                        double mult = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + dir * (currentH * mult), dir, mult});
                     }
                 } else {
                     Vector2D dir = fs.nodeDirections.count(nodeId) ? fs.nodeDirections[nodeId] : (n1_list[i] + n2_list[i]).normalized();
@@ -332,6 +378,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         p2c[i].push_back(newId);
                         fs.nodeDirections[newId] = cand.dir;
                         fs.nodeStepMultipliers[newId] = cand.multiplier;
+                        if (cand.isParaCenter) fs.paraCenterNodes.insert(newId);
                     }
                 }
                 

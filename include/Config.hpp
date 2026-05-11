@@ -21,6 +21,9 @@ struct Config {
     int blAutoFanNodes = 0; // 0: OFF, 1: Global Avg, 2: Local Avg
     double blFanAngleThreshold = 60.0; // 度數
     
+    // 凸角處理 (Convex Handling)
+    int blConvexMethod = 0; // 0: Fan (Default), 2: Parallelogram
+    
     // 凹角處理 (Concave Handling)
     int blSmoothingIters = 0;
     bool blMergeConcave = false;
@@ -83,6 +86,9 @@ struct Config {
                 int val; ss >> val; blAutoFanNodes = (val != 0);
             }
             else if (key == "BL_FAN_ANGLE_THRESHOLD") ss >> blFanAngleThreshold;
+            else if (key == "BL_CONVEX_METHOD") {
+                double val; ss >> val; blConvexMethod = static_cast<int>(val);
+            }
             else if (key == "BL_SMOOTHING_ITERS") {
                 double val; ss >> val; blSmoothingIters = static_cast<int>(val);
             }
