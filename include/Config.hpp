@@ -23,6 +23,7 @@ struct Config {
     
     // 凸角處理 (Convex Handling)
     int blConvexMethod = 0; // 0: Fan (Default), 2: Parallelogram
+    double blParaFallbackAngle = 300.0; // 角度大於此值時，由單一平行四邊形改為雙平行四邊形策略
     
     // 凹角處理 (Concave Handling)
     int blSmoothingIters = 0;
@@ -89,6 +90,7 @@ struct Config {
             else if (key == "BL_CONVEX_METHOD") {
                 double val; ss >> val; blConvexMethod = static_cast<int>(val);
             }
+            else if (key == "BL_PARA_FALLBACK_ANGLE") ss >> blParaFallbackAngle;
             else if (key == "BL_SMOOTHING_ITERS") {
                 double val; ss >> val; blSmoothingIters = static_cast<int>(val);
             }

@@ -238,6 +238,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             int n = (int)fs.activeFront.size();
             std::vector<Vector2D> n1_list(n), n2_list(n);
             std::vector<bool> isConvexList(n, false);
+            std::vector<bool> useParaList(n, false);
+            std::vector<bool> useSplitParaList(n, false);
             std::vector<Point2D> currentPos(n);
 
             for (int i = 0; i < n; ++i) {
@@ -253,7 +255,16 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 while (diff > M_PI) diff -= 2*M_PI;
                 while (diff < -M_PI) diff += 2*M_PI;
                 double exteriorAngle = 180.0 - (fs.growthSign * diff * 180.0 / M_PI);
-                if (exteriorAngle > m_config.blConvexAngleThreshold) isConvexList[i] = true;
+                if (exteriorAngle > m_config.blConvexAngleThreshold) {
+                    isConvexList[i] = true;
+                    if (m_config.blConvexMethod == 2) {
+                        if (exteriorAngle <= m_config.blParaFallbackAngle) {
+                            useParaList[i] = true;
+                        } else {
+                            useSplitParaList[i] = true;
+                        }
+                    }
+                }
             }
 
             for (int i = 0; i < n; ++i) {
@@ -262,15 +273,25 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
                 double mult = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
                 bool shouldSplit = false;
+                bool localUsePara = false;
+                bool localUseSplitPara = false;
+                
                 if (m_config.blConvexMethod == 2) {
-                    if (layer == 0) shouldSplit = isConvexList[i];
-                    else shouldSplit = fs.paraCenterNodes.count(nodeId);
+                    if (layer == 0) {
+                        shouldSplit = isConvexList[i];
+                        localUsePara = useParaList[i];
+                        localUseSplitPara = useSplitParaList[i];
+                    } else {
+                        shouldSplit = fs.paraCenterNodes.count(nodeId);
+                        localUsePara = shouldSplit;
+                    }
                 } else {
                     shouldSplit = (layer == 0 && isConvexList[i]);
+                    localUsePara = false;
                 }
 
                 if (shouldSplit) {
-                    if (m_config.blConvexMethod == 2) {
+                    if (localUsePara) {
                         // Parallelogram Strategy: Spawn 3 nodes (Left, Center, Right)
                         Vector2D d_p = n1_list[i];
                         Vector2D d_n = n2_list[i];
@@ -281,6 +302,29 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         
                         allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false});
                         allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_c * currentH, d_c.normalized(), diagLen, true});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false});
+                    } else if (localUseSplitPara) {
+                        // Double (Split) Parallelogram Strategy (Only at layer 0)
+                        Vector2D d_p = n1_list[i];
+                        Vector2D d_n = n2_list[i];
+                        
+                        double a1 = std::atan2(d_p.y, d_p.x), a2 = std::atan2(d_n.y, d_n.x);
+                        if (fs.growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
+                        double angle = (a1 + a2) / 2.0;
+                        Vector2D d_b = {std::cos(angle), std::sin(angle)};
+                        
+                        double dot1 = std::max(-0.999, d_p.x * d_b.x + d_p.y * d_b.y);
+                        double m1 = 1.0 / (1.0 + dot1);
+                        Vector2D d_ML = (d_p + d_b) * m1;
+                        
+                        double dot2 = std::max(-0.999, d_b.x * d_n.x + d_b.y * d_n.y);
+                        double m2 = 1.0 / (1.0 + dot2);
+                        Vector2D d_MR = (d_b + d_n) * m2;
+                        
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_ML * currentH, d_ML.normalized(), d_ML.length(), true});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_b * currentH, d_b, 1.0, false});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_MR * currentH, d_MR.normalized(), d_MR.length(), true});
                         allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false});
                     } else if (layer == 0) {
                         // Fan Strategy (Only at layer 0)
