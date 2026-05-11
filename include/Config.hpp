@@ -50,6 +50,8 @@ struct Config {
     // 輸出開關
     bool exportVTK = true;
     bool exportStarCD = false;
+    bool enableCollisionDetection = true;
+    std::string outputFilename = "";
 
     bool loadFromFile(const std::string& filename) {
         std::ifstream ifs(filename);
@@ -128,6 +130,12 @@ struct Config {
             else if (key == "EXPORT_STARCD") {
                 int val; ss >> val; exportStarCD = (val != 0);
             }
+            else if (key == "ENABLE_COLLISION_DETECTION") {
+                int val; ss >> val; enableCollisionDetection = (val != 0);
+            }
+            else if (key == "OUTPUT_FILENAME") {
+                ss >> outputFilename;
+            }
         }
         return true;
     }
@@ -155,7 +163,8 @@ struct Config {
         std::cout << "Farfield Growth: " << farFieldGrowthRate << "\n";
         std::cout << "Gmsh: Algorithm " << gmshAlgorithm << ", Optimize " << (gmshOptimize ? "ON" : "OFF") << "\n";
         std::cout << "StarCD BCs: XMin=" << bcXMin << ", XMax=" << bcXMax << ", YMin=" << bcYMin << ", YMax=" << bcYMax << ", Geom=" << bcGeom << "\n";
-        std::cout << "Exports: VTK=" << (exportVTK ? "ON" : "OFF") << ", StarCD=" << (exportStarCD ? "ON" : "OFF") << "\n";
+        std::cout << "Exports: VTK=" << (exportVTK ? "ON" : "OFF") << ", StarCD=" << (exportStarCD ? "ON" : "OFF") << ", CollisionDetection=" << (enableCollisionDetection ? "ON" : "OFF") << "\n";
+        if (!outputFilename.empty()) std::cout << "Output File: " << outputFilename << "\n";
         std::cout << "-------------------------\n";
     }
 };

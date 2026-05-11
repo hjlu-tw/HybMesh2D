@@ -370,24 +370,26 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
         // --- 2. 碰撞偵測與退回判定 (Collision Phase) ---
         std::set<int> currentLayerNodesToFreeze;
-        double collisionThreshold = currentH;
+        if (m_config.enableCollisionDetection) {
+            double collisionThreshold = currentH;
 
-        std::set<int> currentAllFrontsSet;
-        for (const auto& fs : fronts) currentAllFrontsSet.insert(fs.activeFront.begin(), fs.activeFront.end());
+            std::set<int> currentAllFrontsSet;
+            for (const auto& fs : fronts) currentAllFrontsSet.insert(fs.activeFront.begin(), fs.activeFront.end());
 
-        for (int fIdx = 0; fIdx < (int)fronts.size(); ++fIdx) {
-            for (auto& cand : allCandidates[fIdx]) {
-                // A. 候選點 vs 已有節點
-                if (checkCollision(cand.pos, collisionThreshold, currentAllFrontsSet, fronts[fIdx].geomId)) {
-                    currentLayerNodesToFreeze.insert(cand.parentNodeId);
-                }
-                // B. 候選點 vs 其他幾何候選點
-                for (int fIdx2 = fIdx + 1; fIdx2 < (int)fronts.size(); ++fIdx2) {
-                    if (fronts[fIdx].geomId == fronts[fIdx2].geomId) continue;
-                    for (auto& cand2 : allCandidates[fIdx2]) {
-                        if ((cand.pos - cand2.pos).lengthSq() < collisionThreshold * collisionThreshold) {
-                            currentLayerNodesToFreeze.insert(cand.parentNodeId);
-                            currentLayerNodesToFreeze.insert(cand2.parentNodeId);
+            for (int fIdx = 0; fIdx < (int)fronts.size(); ++fIdx) {
+                for (auto& cand : allCandidates[fIdx]) {
+                    // A. 候選點 vs 已有節點
+                    if (checkCollision(cand.pos, collisionThreshold, currentAllFrontsSet, fronts[fIdx].geomId)) {
+                        currentLayerNodesToFreeze.insert(cand.parentNodeId);
+                    }
+                    // B. 候選點 vs 其他幾何候選點
+                    for (int fIdx2 = fIdx + 1; fIdx2 < (int)fronts.size(); ++fIdx2) {
+                        if (fronts[fIdx].geomId == fronts[fIdx2].geomId) continue;
+                        for (auto& cand2 : allCandidates[fIdx2]) {
+                            if ((cand.pos - cand2.pos).lengthSq() < collisionThreshold * collisionThreshold) {
+                                currentLayerNodesToFreeze.insert(cand.parentNodeId);
+                                currentLayerNodesToFreeze.insert(cand2.parentNodeId);
+                            }
                         }
                     }
                 }

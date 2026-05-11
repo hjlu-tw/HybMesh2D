@@ -117,3 +117,8 @@ BC_GEOM wall
 EXPORT_VTK 1
 # 是否輸出 STAR-CD 網格檔案 (.vrt, .cel, .bnd)。(1: 開啟, 0: 關閉)
 EXPORT_STARCD 0
+# 是否開啟多幾何體碰撞偵測 (1: 開啟, 0: 關閉)。若已知不碰撞，關閉此項可大幅加速。
+ENABLE_COLLISION_DETECTION 1
+
+# 指定輸出網格檔名 (選填)。若不指定，系統會根據幾何名稱自動命名。
+#OUTPUT_FILENAME results/my_mesh

@@ -113,6 +113,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
         else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
     }
 
     if (!config.loadFromFile(configFile)) return 1;
@@ -127,6 +128,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
         else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
         else if (arg == "-geom") {
             config.geomFiles.clear();
             while (i + 1 < argc && argv[i+1][0] != '-') {
@@ -139,7 +141,9 @@ int main(int argc, char* argv[]) {
     Mesh mesh;
 
     std::string outputFilename = "results/mesh_cartesian.vtk";
-    if (!config.geomFiles.empty()) {
+    if (!config.outputFilename.empty()) {
+        outputFilename = config.outputFilename;
+    } else if (!config.geomFiles.empty()) {
         if (config.geomFiles.size() == 1) {
             fs::path geomPath(config.geomFiles[0]);
             outputFilename = "results/mesh_" + geomPath.stem().string() + ".vtk";
@@ -186,13 +190,15 @@ int main(int argc, char* argv[]) {
         }
 
         bool hasIntersection = false;
-        for (size_t i = 0; i < allGeometries.size(); ++i) {
-            for (size_t j = i + 1; j < allGeometries.size(); ++j) {
-                if (checkGeometriesIntersection(allGeometries[i].points, allGeometries[j].points)) {
-                    std::cerr << "Error: Geometry " << allGeometries[i].filename 
-                              << " and Geometry " << allGeometries[j].filename 
-                              << " intersect. Process stopped.\n";
-                    hasIntersection = true;
+        if (config.enableCollisionDetection) {
+            for (size_t i = 0; i < allGeometries.size(); ++i) {
+                for (size_t j = i + 1; j < allGeometries.size(); ++j) {
+                    if (checkGeometriesIntersection(allGeometries[i].points, allGeometries[j].points)) {
+                        std::cerr << "Error: Geometry " << allGeometries[i].filename 
+                                  << " and Geometry " << allGeometries[j].filename 
+                                  << " intersect. Process stopped.\n";
+                        hasIntersection = true;
+                    }
                 }
             }
         }
@@ -234,8 +240,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (config.exportVTK) {
-        mesh.exportVTK(outputFilename);
-        std::cout << "Mesh saved to: " << outputFilename << std::endl;
+        std::string vtkFile = outputFilename;
+        if (vtkFile.find('.') == std::string::npos) vtkFile += ".vtk";
+        mesh.exportVTK(vtkFile);
+        std::cout << "Mesh saved to: " << vtkFile << std::endl;
     }
     
     if (config.exportStarCD) {

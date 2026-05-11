@@ -117,3 +117,8 @@ BC_GEOM wall
 EXPORT_VTK 1
 # Export STAR-CD mesh files (.vrt, .cel, .bnd). (1: ON, 0: OFF)
 EXPORT_STARCD 0
+# Enable collision detection for multi-geometry cases (1: ON, 0: OFF). Disabling it significantly speeds up the process.
+ENABLE_COLLISION_DETECTION 1
+
+# Explicitly specify the output mesh filename (Optional). If not set, system auto-generates it.
+#OUTPUT_FILENAME results/my_mesh
