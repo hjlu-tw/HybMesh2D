@@ -274,7 +274,9 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         // Parallelogram Strategy: Spawn 3 nodes (Left, Center, Right)
                         Vector2D d_p = n1_list[i];
                         Vector2D d_n = n2_list[i];
-                        Vector2D d_c = d_p + d_n;
+                        double dot_prod = std::max(-0.999, d_p.x * d_n.x + d_p.y * d_n.y);
+                        double m = 1.0 / (1.0 + dot_prod);
+                        Vector2D d_c = (d_p + d_n) * m;
                         double diagLen = d_c.length();
                         
                         allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false});
