@@ -217,6 +217,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     double currentH = m_config.blInitialThickness;
     double lastH = currentH;
     int totalLayers = m_config.blLayers + maxNTrans;
+    std::cout << "Step: Generating " << totalLayers << " boundary layers..." << std::endl;
     for (int layer = 0; layer < totalLayers; ++layer) {
         lastH = currentH;
         
@@ -458,6 +459,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
             fs.activeFront = nextFront;
         }
+        std::cout << "  - Layer " << layer + 1 << " complete." << std::endl;
 
         if (layer < m_config.blLayers - 1) currentH *= m_config.blGrowthRate;
         else currentH *= m_config.blTransitionGrowthRate;

@@ -1,0 +1,119 @@
+# ==============================================================================
+# HybMesh2D Configuration File (Background_para_EN.dat)
+# 
+# Lines starting with '#' are comments. Empty lines and comments are ignored.
+# ==============================================================================
+
+# ==============================================================================
+# 1. Geometry Settings
+# ==============================================================================
+# Path to the input geometry file. Use multiple GEOM_FILE entries for multiple shapes.
+GEOM_FILE geometries/UNICONES_dense.dat
+# GEOM_FILE geometries/circle.dat
+
+# ==============================================================================
+# 2. Domain Boundaries
+# ==============================================================================
+# Defines the bounding box of the Far-field computational domain.
+DOMAIN_X_MIN -10.0
+DOMAIN_X_MAX 10.0
+DOMAIN_Y_MIN -10.0
+DOMAIN_Y_MAX 10.0
+
+# ==============================================================================
+# 3. Base Mesh Size Settings
+# ==============================================================================
+# Target mesh size on geometry surfaces (used during Gmsh re-meshing).
+SURFACE_MESH_SIZE 0.02
+# Maximum mesh size at the outer domain boundaries.
+FARFIELD_MESH_SIZE 1.0
+
+# ==============================================================================
+# 4. Boundary Layer Basic Settings (Phase 3)
+# ==============================================================================
+# Height of the first boundary layer.
+BL_INITIAL_THICKNESS 0.0002
+# Thickness growth rate for consecutive layers.
+BL_GROWTH_RATE 1.1
+# Total number of structured boundary layers.
+BL_LAYERS 5
+
+# ==============================================================================
+# 5. Convex Corner Handling
+# ==============================================================================
+# Nodes with an exterior angle "greater than" this threshold are treated as convex.
+BL_CONVEX_ANGLE_THRESHOLD 220.0
+
+# Mesh generation strategy for convex corners (0: Fan, 2: Parallelogram).
+BL_CONVEX_METHOD 0
+
+# [Settings for BL_CONVEX_METHOD = 0 (Fan Strategy)]
+# Number of nodes to split in the fan region.
+BL_FAN_NODES 5
+# Auto-calculate fan nodes (0: OFF, 1: Global Avg spacing, 2: Local segment spacing).
+BL_AUTO_FAN_NODES 1
+# Minimum corner angle threshold to trigger fan splitting.
+BL_FAN_ANGLE_THRESHOLD 60.0
+
+# [Settings for BL_CONVEX_METHOD = 2 (Parallelogram Strategy)]
+# Angles sharper than this will switch from "Single Parallelogram" to "Double Parallelogram (Split)" strategy.
+BL_PARA_FALLBACK_ANGLE 300.0
+
+# ==============================================================================
+# 6. Concave Corner Handling
+# ==============================================================================
+# Nodes with an exterior angle "less than" this threshold are treated as concave.
+BL_CONCAVE_ANGLE_THRESHOLD 120.0
+
+# Algorithm for concave corner handling.
+# 0: Default (Normal merging).
+# 5: Thickness-based Blending (Recommended for smoothest transitions).
+BL_CONCAVE_METHOD 5
+
+# [Settings for BL_CONCAVE_METHOD = 5]
+# Multiplier for the influence radius. Radius = Multiplier * Expected BL thickness.
+# Smaller values localize the smoothing; larger values extend it further. (Range: 2.0 ~ 10.0)
+BL_CONCAVE_INFLUENCE_MULTIPLIER 5.0
+
+# (Legacy) Laplacian smoothing iterations after BL generation.
+BL_SMOOTHING_ITERS 0
+# (Legacy) Enable old concave merge logic (0/1).
+BL_MERGE_CONCAVE 0
+
+# ==============================================================================
+# 7. Transition Layer Settings (Phase 4)
+# ==============================================================================
+# Number of semi-structured layers transitioning from BL to far-field triangles.
+BL_TRANSITION_LAYERS 3
+# Auto-calculate layers for size matching (0: OFF, 1: Global avg, 2: Per-geometry avg).
+BL_AUTO_TRANSITION_LAYERS 0
+# Growth rate during the transition phase.
+BL_TRANSITION_GROWTH_RATE 1.15
+
+# ==============================================================================
+# 8. Far-field & Gmsh Control
+# ==============================================================================
+# Spatial growth rate of triangle sizes from the transition boundary to the far-field.
+FARFIELD_GROWTH_RATE 0.1
+# Gmsh 2D mesh generation algorithm (Default 6: Frontal-Delaunay).
+GMSH_ALGORITHM 6
+# Enable mesh optimization in Gmsh (1: ON, 0: OFF).
+GMSH_OPTIMIZE 1
+
+# ==============================================================================
+# 9. Boundary Condition Names (for STAR-CD Export)
+# ==============================================================================
+# BC names assigned to the domain and geometry boundaries in the .bnd file.
+BC_XMIN inlet
+BC_XMAX outlet
+BC_YMIN inlet
+BC_YMAX outlet
+BC_GEOM wall
+
+# ==============================================================================
+# 10. Export Options
+# ==============================================================================
+# Export VTK file (for ParaView). (1: ON, 0: OFF)
+EXPORT_VTK 1
+# Export STAR-CD mesh files (.vrt, .cel, .bnd). (1: ON, 0: OFF)
+EXPORT_STARCD 0
