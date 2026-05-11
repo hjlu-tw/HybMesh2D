@@ -344,8 +344,27 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
 
     // --- 3. 建立尺寸過渡場 ---
     if (!frontLineTags.empty()) {
-        double hEnd = finalBLThickness;
-        std::cout << "Step: Setting up Gmsh fields (Final hEnd=" << hEnd << ")..." << std::endl;
+        double hEnd = config.surfaceSize;
+        if (config.autoSurfaceSize) {
+            double totalLen = 0.0;
+            int count = 0;
+            for (const auto& edge : edges) {
+                if (nodes[edge.v1].type == NodeType::BoundaryLayer && 
+                    nodes[edge.v2].type == NodeType::BoundaryLayer) {
+                    totalLen += (nodes[edge.v1].pos - nodes[edge.v2].pos).length();
+                    count++;
+                }
+            }
+            if (count > 0) {
+                hEnd = totalLen / (double)count;
+                std::cout << "Step: Auto-calculating Surface Mesh Size (Avg Front Width: " << hEnd << ")..." << std::endl;
+            } else {
+                hEnd = finalBLThickness;
+                std::cout << "Step: Auto-calculating Surface Mesh Size (Fallback to last layer height: " << hEnd << ")..." << std::endl;
+            }
+        } else {
+            std::cout << "Step: Setting up Gmsh fields (Manual hEnd=" << hEnd << ")..." << std::endl;
+        }
         
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);

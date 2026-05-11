@@ -13,6 +13,7 @@ struct Config {
     std::vector<std::string> geomFiles;
     double xMin = -10.0, xMax = 10.0, yMin = -10.0, yMax = 10.0;
     double surfaceSize = 0.1, farFieldSize = 1.0;
+    bool autoSurfaceSize = true;
     double blInitialThickness = 0.01, blGrowthRate = 1.2;
     int blLayers = 5;
 
@@ -76,6 +77,9 @@ struct Config {
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
             else if (key == "DOMAIN_Y_MAX") ss >> yMax;
             else if (key == "SURFACE_MESH_SIZE") ss >> surfaceSize;
+            else if (key == "AUTO_SURFACE_SIZE") {
+                int val; ss >> val; autoSurfaceSize = (val != 0);
+            }
             else if (key == "FARFIELD_MESH_SIZE") ss >> farFieldSize;
             else if (key == "BL_INITIAL_THICKNESS") ss >> blInitialThickness;
             else if (key == "BL_GROWTH_RATE") ss >> blGrowthRate;
@@ -159,7 +163,7 @@ struct Config {
         std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
 
         std::cout << "[ Mesh Sizing ]\n";
-        std::cout << "  - Surface Mesh Size    : " << surfaceSize << "\n";
+        std::cout << "  - Surface Mesh Size    : " << surfaceSize << " (Auto: " << (autoSurfaceSize ? "[ON]" : "[OFF]") << ")\n";
         std::cout << "  - Far-field Mesh Size  : " << farFieldSize << "\n\n";
 
         std::cout << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
