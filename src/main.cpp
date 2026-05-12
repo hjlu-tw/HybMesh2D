@@ -153,6 +153,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    bool hasIntersection = false;
     if (config.geomFiles.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
@@ -190,7 +191,6 @@ int main(int argc, char* argv[]) {
             allGeometries.push_back({gFile, geomPoints});
         }
 
-        bool hasIntersection = false;
         if (config.enableCollisionDetection) {
             for (size_t i = 0; i < allGeometries.size(); ++i) {
                 for (size_t j = i + 1; j < allGeometries.size(); ++j) {
@@ -230,17 +230,23 @@ int main(int argc, char* argv[]) {
             currentGeomId++;
         }
 
+        bool blSuccess = true;
         try {
             lastH = blGen.generate(allBoundaryIds);
         } catch (const std::exception& e) {
             std::cerr << e.what() << std::endl;
-            return 1;
+            std::cerr << "Proceeding to export partial mesh for debugging..." << std::endl;
+            blSuccess = false;
         }
 
-        mesh.generateFarFieldGmsh(config, lastH);
+        if (blSuccess) {
+            mesh.generateFarFieldGmsh(config, lastH);
 
-        if (config.blSmoothingIters > 0) {
-            mesh.smoothMesh(config.blSmoothingIters);
+            if (config.blSmoothingIters > 0) {
+                mesh.smoothMesh(config.blSmoothingIters);
+            }
+        } else {
+            hasIntersection = true; // Use this to trigger return 1 later
         }
     }
 
@@ -260,5 +266,5 @@ int main(int argc, char* argv[]) {
         std::cout << "StarCD mesh saved to: " << starCDPrefix << ".*" << std::endl;
     }
 
-    return 0;
+    return hasIntersection ? 1 : 0;
 }

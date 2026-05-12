@@ -468,6 +468,52 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     }
     std::cout << std::endl;
 
+    // --- 4. Final Geometric Validation (Pre-Gmsh) ---
+    std::cout << "Step: Validating final boundary layer fronts before Gmsh..." << std::endl;
+    for (int i = 0; i < (int)fronts.size(); ++i) {
+        const auto& fs = fronts[i];
+        int nNodes = (int)fs.activeFront.size();
+        if (nNodes < 3) continue;
+
+        // A. Self-intersection check
+        for (int j = 0; j < nNodes; ++j) {
+            Point2D a = m_mesh.nodes[fs.activeFront[j]].pos;
+            Point2D b = m_mesh.nodes[fs.activeFront[(j + 1) % nNodes]].pos;
+
+            // Check against domain boundary
+            if (a.x < m_config.xMin || a.x > m_config.xMax || a.y < m_config.yMin || a.y > m_config.yMax) {
+                throw std::runtime_error("Error: Boundary layer at Geometry " + std::to_string(fs.geomId) + " exceeded domain boundaries.");
+            }
+
+            for (int k = j + 2; k < nNodes; ++k) {
+                if ((k + 1) % nNodes == j) continue; // Skip adjacent edges
+                Point2D c = m_mesh.nodes[fs.activeFront[k]].pos;
+                Point2D d = m_mesh.nodes[fs.activeFront[(k + 1) % nNodes]].pos;
+
+                if (segmentsIntersect(a, b, c, d)) {
+                    throw std::runtime_error("Error: Self-intersection detected in the final front of Geometry " + std::to_string(fs.geomId) + ".");
+                }
+            }
+        }
+
+        // B. Cross-geometry intersection check
+        for (int j = i + 1; j < (int)fronts.size(); ++j) {
+            const auto& fs2 = fronts[j];
+            int nNodes2 = (int)fs2.activeFront.size();
+            for (int k1 = 0; k1 < nNodes; ++k1) {
+                Point2D a = m_mesh.nodes[fs.activeFront[k1]].pos;
+                Point2D b = m_mesh.nodes[fs.activeFront[(k1 + 1) % nNodes]].pos;
+                for (int k2 = 0; k2 < nNodes2; ++k2) {
+                    Point2D c = m_mesh.nodes[fs2.activeFront[k2]].pos;
+                    Point2D d = m_mesh.nodes[fs2.activeFront[(k2 + 1) % nNodes2]].pos;
+                    if (segmentsIntersect(a, b, c, d)) {
+                        throw std::runtime_error("Error: Intersection detected between Geometry " + std::to_string(fs.geomId) + " and Geometry " + std::to_string(fs2.geomId) + " at the final front.");
+                    }
+                }
+            }
+        }
+    }
+
     for (const auto& fs : fronts) {
         int nFinal = (int)fs.activeFront.size();
         for (int i = 0; i < nFinal; ++i) {
