@@ -154,6 +154,7 @@ int main(int argc, char* argv[]) {
     }
 
     bool hasIntersection = false;
+    bool blSuccess = true;
     if (config.geomFiles.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
@@ -230,7 +231,6 @@ int main(int argc, char* argv[]) {
             currentGeomId++;
         }
 
-        bool blSuccess = true;
         try {
             lastH = blGen.generate(allBoundaryIds);
         } catch (const std::exception& e) {
@@ -252,7 +252,16 @@ int main(int argc, char* argv[]) {
 
     if (config.exportVTK) {
         std::string vtkFile = outputFilename;
-        if (vtkFile.find('.') == std::string::npos) vtkFile += ".vtk";
+        if (!blSuccess) {
+            size_t dotPos = vtkFile.find_last_of('.');
+            if (dotPos != std::string::npos) {
+                vtkFile.insert(dotPos, "_er");
+            } else {
+                vtkFile += "_er.vtk";
+            }
+        } else {
+            if (vtkFile.find('.') == std::string::npos) vtkFile += ".vtk";
+        }
         mesh.exportVTK(vtkFile);
         std::cout << "Mesh saved to: " << vtkFile << std::endl;
     }
