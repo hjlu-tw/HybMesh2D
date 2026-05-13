@@ -1,0 +1,120 @@
+# ==============================================================================
+# HybMesh2D Configuration File (Background_para.dat)
+# 
+# 井字號 (#) 開頭為註解。程式會自動忽略空行與註解。
+# ==============================================================================
+
+# ==============================================================================
+# 1. 輸入與計算域邊界 (Input & Domain)
+# ==============================================================================
+# 指定要處理的幾何外形檔案路徑。可重複使用此關鍵字來讀取多個不相交的幾何。
+GEOM_FILE geometries/U_coarse.dat
+GEOM_FILE geometries/N1_coarse.dat
+GEOM_FILE geometries/I_coarse.dat
+GEOM_FILE geometries/C_coarse.dat
+GEOM_FILE geometries/O_coarse.dat
+GEOM_FILE geometries/N2_coarse.dat
+GEOM_FILE geometries/E_coarse.dat
+GEOM_FILE geometries/S_coarse.dat
+
+# 定義遠場 (Far-field) 外部邊界框的範圍。
+DOMAIN_X_MIN -4.0
+DOMAIN_X_MAX 14.0
+DOMAIN_Y_MIN -3.0
+DOMAIN_Y_MAX 4.0
+
+# ==============================================================================
+# 2. 網格尺寸設定 (Mesh Sizing Settings)
+# ==============================================================================
+# 幾何表面網格重劃時的初始預期尺寸 (若 AUTO_SURFACE_SIZE 為 0 時以此值為準)。
+SURFACE_MESH_SIZE 0.02
+
+# 自動設定起始表面尺寸 (1: 開啟, 0: 關閉)。
+# 若開啟，則自動以過度層最外層的「平均寬度」作為遠場生成之起始尺寸 hEnd。
+AUTO_SURFACE_SIZE 1
+
+# 遠場最外圍 (Domain 邊界) 處的最大網格尺寸。
+FARFIELD_MESH_SIZE 2.0
+
+# ==============================================================================
+# 3. 網格生成主體 (Mesh Generation: BL, Transition, Far-field)
+# ==============================================================================
+# [ 邊界層基礎設定 (Phase 3) ]
+# 邊界層第一層的高度。
+BL_INITIAL_THICKNESS 0.005
+# 邊界層向外擴展的厚度增長率。
+BL_GROWTH_RATE 1.2
+# 結構化邊界層的總層數。
+BL_LAYERS 3
+
+# [ 過渡層與遠場控制 (Phase 4) ]
+# 從結構化邊界層過渡到遠場三角形網格時的「半結構化」過渡層數。
+BL_TRANSITION_LAYERS 3
+# 自動計算過渡層數以完美銜接遠場尺寸 (0: 關閉, 1: 全域計算, 2: 各幾何獨立計算)。
+BL_AUTO_TRANSITION_LAYERS 1
+# 過渡層期間的尺寸增長率。
+BL_TRANSITION_GROWTH_RATE 1.5
+BL_TRANSITION_BUFFER 2.0
+
+# 從過渡層邊界往遠場擴展時，三角形網格尺寸的空間增長率。
+FARFIELD_GROWTH_RATE 0.1
+
+# [ Gmsh 控制 ]
+# Gmsh 2D 網格生成演算法 (預設 6: Frontal-Delaunay)。
+GMSH_ALGORITHM 6
+# 是否開啟 Gmsh 網格優化功能 (1: 開啟, 0: 關閉)。
+GMSH_OPTIMIZE 1
+
+# ==============================================================================
+# 4. 轉角處理 (Corner Handling: Convex & Concave)
+# ==============================================================================
+# [ 閾值設定 ]
+# 當外角「大於」此閾值時視為凸角，當外角「小於」此閾值時視為凹角。
+BL_CONVEX_ANGLE_THRESHOLD 220.0
+BL_CONCAVE_ANGLE_THRESHOLD 150.0
+
+# [ 凸角處理 (Convex Handling) ]
+# 凸角的網格生成策略 (0: 扇形 Fan, 2: 平行四邊形 Parallelogram)。
+BL_CONVEX_METHOD 2
+
+# (當 BL_CONVEX_METHOD = 0 扇形時) 扇形分割節點數與觸發角度。
+BL_FAN_NODES 5
+BL_AUTO_FAN_NODES 1
+BL_FAN_ANGLE_THRESHOLD 60.0
+
+# (當 BL_CONVEX_METHOD = 2 平行四邊形時) 雙平行四邊形切換閾值。
+BL_PARA_FALLBACK_ANGLE 300.0
+
+# [ 凹角處理 (Concave Handling) ]
+# 凹角的處理演算法 (0: 法向量合併, 5: 厚度擴散混合 Thickness-based Blending)。
+BL_CONCAVE_METHOD 5
+# (當 Method = 5 時) 凹角平滑影響半徑倍率 (建議範圍: 2.0 ~ 10.0)。
+BL_CONCAVE_INFLUENCE_MULTIPLIER 5.0
+
+# (舊版相容性選項)
+BL_SMOOTHING_ITERS 0
+BL_MERGE_CONCAVE 0
+
+# ==============================================================================
+# 5. 邊界條件 (Boundary Conditions)
+# ==============================================================================
+# 設定輸出 STAR-CD 格式時，各個邊界所賦予的 BC 名稱。
+BC_XMIN inlet
+BC_XMAX outlet
+BC_YMIN outlet
+BC_YMAX outlet
+BC_GEOM wall
+
+# ==============================================================================
+# 6. 功能與輸出選項 (Features & Export Options)
+# ==============================================================================
+# 是否開啟多幾何體碰撞偵測 (1: 開啟, 0: 關閉)。若已知不碰撞，關閉此項可大幅加速。
+ENABLE_COLLISION_DETECTION 0
+
+# 是否輸出 VTK 檔案 (用於 ParaView 檢視)。(1: 開啟, 0: 關閉)
+EXPORT_VTK 1
+# 是否輸出 STAR-CD 網格檔案 (.vrt, .cel, .bnd)。(1: 開啟, 0: 關閉)
+EXPORT_STARCD 1
+
+# 指定輸出網格檔名 (選填)。若不指定，系統會根據幾何名稱自動命名。
+OUTPUT_FILENAME results/UNICONES_letters_coarse

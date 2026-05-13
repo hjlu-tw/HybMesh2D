@@ -250,6 +250,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::cout << "\n[ Mesh Statistics ]\n";
+    std::cout << "  - Vertices (VRT)       : " << mesh.nodes.size() << "\n";
+    std::cout << "  - Elements (CEL)       : " << mesh.elements.size() << "\n";
+    std::cout << "  - Boundary Edges (BND) : " << mesh.edges.size() << "\n\n";
+
     if (config.exportVTK) {
         std::string vtkFile = outputFilename;
         if (!blSuccess) {
