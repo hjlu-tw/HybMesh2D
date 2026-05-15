@@ -542,36 +542,31 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     }
 
     // --- 5. Global Transverse Balancing (Post-processing) ---
-    // Adjust node positions to ensure even segment widths across internal layers.
-    // A smooth transition is used so that the outermost vertices remain in their original positions.
+    // Adjust node positions to ensure even segment widths across ALL layers.
+    // The Left, Center, and Right anchor points of each group remain FIXED in every layer.
+    // Intermediate nodes are redistributed linearly between these anchors, offsetting ray angles.
     std::cout << "Step: Applying Global Transverse Balancing to Parallelogram regions..." << std::endl;
     for (auto& fs : fronts) {
         for (auto& group : fs.blParaGroups) {
-            int rootId = group.first;
             auto& layers = group.second;
-            size_t nLayers = layers.size();
 
-            for (size_t l = 0; l < nLayers; ++l) {
+            for (size_t l = 0; l < layers.size(); ++l) {
                 auto& nodeIds = layers[l];
-                if (nodeIds.size() < 3) continue;
+                int nNodes = (int)nodeIds.size();
+                if (nNodes < 3) continue;
 
-                // Identify the leftmost and rightmost nodes of this layer's split group
+                int midIdx = nNodes / 2;
                 Point2D pL = m_mesh.nodes[nodeIds.front()].pos;
+                Point2D pM = m_mesh.nodes[nodeIds[midIdx]].pos;
                 Point2D pR = m_mesh.nodes[nodeIds.back()].pos;
-                int nSegs = (int)nodeIds.size() - 1;
 
-                // Weight w = 1.0 at layer 0 (max balancing), transitioning to 0.0 at the final layer (no change)
-                double weight = (nLayers > 1) ? (1.0 - (double)l / (double)(nLayers - 1)) : 1.0;
-
-                for (int j = 1; j < (int)nodeIds.size() - 1; ++j) {
-                    int nid = nodeIds[j];
-                    // Ideal balanced position
-                    Point2D targetPos = pL + (pR - pL) * ((double)j / (double)nSegs);
-                    // Original position
-                    Point2D origPos = m_mesh.nodes[nid].pos;
-                    
-                    // Final position is a weighted average to satisfy the "outermost vertices cannot move" constraint
-                    m_mesh.nodes[nid].pos = targetPos * weight + origPos * (1.0 - weight);
+                // Balance left half
+                for (int j = 1; j < midIdx; ++j) {
+                    m_mesh.nodes[nodeIds[j]].pos = pL + (pM - pL) * ((double)j / (double)midIdx);
+                }
+                // Balance right half
+                for (int j = midIdx + 1; j < nNodes - 1; ++j) {
+                    m_mesh.nodes[nodeIds[j]].pos = pM + (pR - pM) * ((double)(j - midIdx) / (double)(nNodes - 1 - midIdx));
                 }
             }
         }
