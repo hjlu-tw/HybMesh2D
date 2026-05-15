@@ -543,7 +543,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
     // --- 5. Global Transverse Balancing (Post-processing) ---
     // Adjust node positions to ensure even segment widths across ALL layers.
-    // Fixed anchor points (3 for standard, 5 for split strategy) remain unchanged.
+    // Anchor points are identified by their RayRole to ensure correct handling of 3-point vs 5-point strategies.
     std::cout << "Step: Applying Global Transverse Balancing to Parallelogram regions..." << std::endl;
     for (auto& fs : fronts) {
         for (auto& group : fs.blParaGroups) {
@@ -551,43 +551,43 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
             for (size_t l = 0; l < layers.size(); ++l) {
                 auto& nodeIds = layers[l];
-                int nNodes = (int)nodeIds.size();
-                if (nNodes < 3) continue;
+                if (nodeIds.size() < 3) continue;
 
-                if (nNodes == 3 || (nNodes - 1) % 2 == 0 && (nNodes - 1) % 4 != 0) {
-                    // Standard 3-anchor case (L, Center, R)
-                    int midIdx = nNodes / 2;
-                    Point2D pL = m_mesh.nodes[nodeIds.front()].pos;
-                    Point2D pM = m_mesh.nodes[nodeIds[midIdx]].pos;
-                    Point2D pR = m_mesh.nodes[nodeIds.back()].pos;
+                // Identify anchors by role
+                int iL = 0, iR = (int)nodeIds.size() - 1;
+                int iC = -1, iML = -1, iB = -1, iMR = -1;
 
-                    for (int j = 1; j < midIdx; ++j) {
-                        m_mesh.nodes[nodeIds[j]].pos = pL + (pM - pL) * ((double)j / (double)midIdx);
+                for (int i = 0; i < (int)nodeIds.size(); ++i) {
+                    if (!fs.rayInfoMap.count(nodeIds[i])) continue;
+                    RayRole role = fs.rayInfoMap[nodeIds[i]].role;
+                    if (role == RayRole::Center) iC = i;
+                    else if (role == RayRole::ML) iML = i;
+                    else if (role == RayRole::Bisector) iB = i;
+                    else if (role == RayRole::MR) iMR = i;
+                }
+
+                auto balance = [&](int start, int end) {
+                    if (start < 0 || end < 0 || start >= end) return;
+                    Point2D sPos = m_mesh.nodes[nodeIds[start]].pos;
+                    Point2D ePos = m_mesh.nodes[nodeIds[end]].pos;
+                    for (int j = start + 1; j < end; ++j) {
+                        m_mesh.nodes[nodeIds[j]].pos = sPos + (ePos - sPos) * ((double)(j - start) / (double)(end - start));
                     }
-                    for (int j = midIdx + 1; j < nNodes - 1; ++j) {
-                        m_mesh.nodes[nodeIds[j]].pos = pM + (pR - pM) * ((double)(j - midIdx) / (double)(nNodes - 1 - midIdx));
-                    }
-                } else if (nNodes >= 5 && (nNodes - 1) % 4 == 0) {
-                    // Split 5-anchor case (L, ML, Bisector, MR, R)
-                    int q1 = nNodes / 4;
-                    int q2 = nNodes / 2;
-                    int q3 = 3 * nNodes / 4;
-                    
-                    Point2D pL = m_mesh.nodes[nodeIds[0]].pos;
-                    Point2D pML = m_mesh.nodes[nodeIds[q1]].pos;
-                    Point2D pB = m_mesh.nodes[nodeIds[q2]].pos;
-                    Point2D pMR = m_mesh.nodes[nodeIds[q3]].pos;
-                    Point2D pR = m_mesh.nodes[nodeIds.back()].pos;
+                };
 
-                    auto balance = [&](int start, int end, Point2D sPos, Point2D ePos) {
-                        for (int j = start + 1; j < end; ++j) {
-                            m_mesh.nodes[nodeIds[j]].pos = sPos + (ePos - sPos) * ((double)(j - start) / (double)(end - start));
-                        }
-                    };
-                    balance(0, q1, pL, pML);
-                    balance(q1, q2, pML, pB);
-                    balance(q2, q3, pB, pMR);
-                    balance(q3, nNodes - 1, pMR, pR);
+                if (iB >= 0 && iML >= 0 && iMR >= 0) {
+                    // Split 5-anchor case: Balance across 4 segments
+                    balance(iL, iML);
+                    balance(iML, iB);
+                    balance(iB, iMR);
+                    balance(iMR, iR);
+                } else if (iC >= 0) {
+                    // Standard 3-anchor case: Balance across 2 segments
+                    balance(iL, iC);
+                    balance(iC, iR);
+                } else {
+                    // Fallback: simple linear distribution across the whole layer
+                    balance(iL, iR);
                 }
             }
         }
