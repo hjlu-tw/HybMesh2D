@@ -229,6 +229,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             Vector2D dir;
             double multiplier;
             bool isParaCenter = false;
+            RayInfo rayInfo;
         };
         std::vector<std::vector<CandidateNode>> allCandidates(fronts.size());
 
@@ -276,6 +277,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 bool shouldSplit = false;
                 bool localUsePara = false;
                 bool localUseSplitPara = false;
+                RayInfo inheritedRay = fs.rayInfoMap.count(nodeId) ? fs.rayInfoMap[nodeId] : RayInfo();
                 
                 if (m_config.blConvexMethod == 2) {
                     if (layer == 0) {
@@ -283,6 +285,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         localUsePara = useParaList[i];
                         localUseSplitPara = useSplitParaList[i];
                     } else {
+                        // Restore recursive splitting: Center nodes split again
                         shouldSplit = fs.paraCenterNodes.count(nodeId);
                         localUsePara = shouldSplit;
                     }
@@ -292,6 +295,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 }
 
                 if (shouldSplit) {
+                    int rootId = (layer == 0) ? nodeId : inheritedRay.rootNodeId;
                     if (localUsePara) {
                         // Parallelogram Strategy: Spawn 3 nodes (Left, Center, Right)
                         Vector2D d_p = n1_list[i];
@@ -301,9 +305,13 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         Vector2D d_c = (d_p + d_n) * m;
                         double diagLen = d_c.length();
                         
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false});
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_c * currentH, d_c.normalized(), diagLen, true});
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false});
+                        RayInfo rL = {RayRole::Left, d_p, 1.0, rootId};
+                        RayInfo rC = {RayRole::Center, d_c.normalized(), diagLen, rootId};
+                        RayInfo rR = {RayRole::Right, d_n, 1.0, rootId};
+
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false, rL});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_c * currentH, d_c.normalized(), diagLen, true, rC});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false, rR});
                     } else if (localUseSplitPara) {
                         // Double (Split) Parallelogram Strategy (Only at layer 0)
                         Vector2D d_p = n1_list[i];
@@ -321,12 +329,18 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         double dot2 = std::max(-0.999, d_b.x * d_n.x + d_b.y * d_n.y);
                         double m2 = 1.0 / (1.0 + dot2);
                         Vector2D d_MR = (d_b + d_n) * m2;
+
+                        RayInfo rL = {RayRole::Left, d_p, 1.0, rootId};
+                        RayInfo rML = {RayRole::ML, d_ML.normalized(), d_ML.length(), rootId};
+                        RayInfo rB = {RayRole::Bisector, d_b, 1.0, rootId};
+                        RayInfo rMR = {RayRole::MR, d_MR.normalized(), d_MR.length(), rootId};
+                        RayInfo rR = {RayRole::Right, d_n, 1.0, rootId};
                         
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false});
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_ML * currentH, d_ML.normalized(), d_ML.length(), true});
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_b * currentH, d_b, 1.0, false});
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_MR * currentH, d_MR.normalized(), d_MR.length(), true});
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false, rL});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_ML * currentH, d_ML.normalized(), d_ML.length(), true, rML});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_b * currentH, d_b, 1.0, false, rB});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_MR * currentH, d_MR.normalized(), d_MR.length(), true, rMR});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_n * currentH, d_n, 1.0, false, rR});
                     } else if (layer == 0) {
                         // Fan Strategy (Only at layer 0)
                         int numFanNodes = std::max(2, fs.fanNodeCounts[i]);
@@ -352,23 +366,26 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                             double angle = a1 * (1.0 - t) + a2 * t;
                             double local_m = m_p * (1.0 - t) + m_n * t;
                             Vector2D nk = {std::cos(angle), std::sin(angle)};
-                            allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + nk * (currentH * local_m), nk, local_m});
+                            allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + nk * (currentH * local_m), nk, local_m, false, {RayRole::None, nk, local_m, rootId}});
                         }
                     } else {
-                        // Fallback for Fan at layer > 0 (should not happen with current logic but for safety)
+                        // Fallback for Fan at layer > 0
                         Vector2D dir = fs.nodeDirections.count(nodeId) ? fs.nodeDirections[nodeId] : (n1_list[i] + n2_list[i]).normalized();
                         double mult = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
-                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + dir * (currentH * mult), dir, mult});
+                        allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + dir * (currentH * mult), dir, mult, false, {RayRole::None, dir, mult, rootId}});
                     }
                 } else {
-                    Vector2D dir = fs.nodeDirections.count(nodeId) ? fs.nodeDirections[nodeId] : (n1_list[i] + n2_list[i]).normalized();
-                    double mult = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
-                    allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + dir * (currentH * mult), dir, mult});
+                    // Regular node growth or continued ray growth for split nodes
+                    Vector2D dir = inheritedRay.role != RayRole::None ? inheritedRay.direction : 
+                                   (fs.nodeDirections.count(nodeId) ? fs.nodeDirections[nodeId] : (n1_list[i] + n2_list[i]).normalized());
+                    int rootId = (inheritedRay.role != RayRole::None) ? inheritedRay.rootNodeId : -1;
+                    
+                    allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + dir * (currentH * mult), dir, mult, false, {inheritedRay.role, dir, mult, rootId}});
                 }
             }
         }
 
-        // --- 2. 碰撞偵測與退回判定 (Collision Phase) ---
+        // --- 2. Collision Detection & Retreat Phase ---
         std::set<int> currentLayerNodesToFreeze;
         if (m_config.enableCollisionDetection) {
             double collisionThreshold = currentH;
@@ -428,6 +445,16 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         fs.nodeDirections[newId] = cand.dir;
                         fs.nodeStepMultipliers[newId] = cand.multiplier;
                         if (cand.isParaCenter) fs.paraCenterNodes.insert(newId);
+                        
+                        // 儲存射線資訊與分組
+                        if (cand.rayInfo.role != RayRole::None) {
+                            fs.rayInfoMap[newId] = cand.rayInfo;
+                            int root = cand.rayInfo.rootNodeId;
+                            if (fs.blParaGroups[root].size() <= (size_t)layer) {
+                                fs.blParaGroups[root].resize(layer + 1);
+                            }
+                            fs.blParaGroups[root][layer].push_back(newId);
+                        }
                     }
                 }
                 
@@ -509,6 +536,42 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     if (segmentsIntersect(a, b, c, d)) {
                         throw std::runtime_error("Error: Intersection detected between Geometry " + std::to_string(fs.geomId) + " and Geometry " + std::to_string(fs2.geomId) + " at the final front.");
                     }
+                }
+            }
+        }
+    }
+
+    // --- 5. Global Transverse Balancing (Post-processing) ---
+    // Adjust node positions to ensure even segment widths across internal layers.
+    // A smooth transition is used so that the outermost vertices remain in their original positions.
+    std::cout << "Step: Applying Global Transverse Balancing to Parallelogram regions..." << std::endl;
+    for (auto& fs : fronts) {
+        for (auto& group : fs.blParaGroups) {
+            int rootId = group.first;
+            auto& layers = group.second;
+            size_t nLayers = layers.size();
+
+            for (size_t l = 0; l < nLayers; ++l) {
+                auto& nodeIds = layers[l];
+                if (nodeIds.size() < 3) continue;
+
+                // Identify the leftmost and rightmost nodes of this layer's split group
+                Point2D pL = m_mesh.nodes[nodeIds.front()].pos;
+                Point2D pR = m_mesh.nodes[nodeIds.back()].pos;
+                int nSegs = (int)nodeIds.size() - 1;
+
+                // Weight w = 1.0 at layer 0 (max balancing), transitioning to 0.0 at the final layer (no change)
+                double weight = (nLayers > 1) ? (1.0 - (double)l / (double)(nLayers - 1)) : 1.0;
+
+                for (int j = 1; j < (int)nodeIds.size() - 1; ++j) {
+                    int nid = nodeIds[j];
+                    // Ideal balanced position
+                    Point2D targetPos = pL + (pR - pL) * ((double)j / (double)nSegs);
+                    // Original position
+                    Point2D origPos = m_mesh.nodes[nid].pos;
+                    
+                    // Final position is a weighted average to satisfy the "outermost vertices cannot move" constraint
+                    m_mesh.nodes[nid].pos = targetPos * weight + origPos * (1.0 - weight);
                 }
             }
         }

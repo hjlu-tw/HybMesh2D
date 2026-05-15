@@ -7,6 +7,15 @@
 #include <map>
 #include <set>
 
+enum class RayRole { None, Left, Center, Right, ML, MR, Bisector };
+
+struct RayInfo {
+    RayRole role = RayRole::None;
+    Vector2D direction;
+    double multiplier = 1.0;
+    int rootNodeId = -1; // 幾何表面的原始節點 ID
+};
+
 struct FrontState {
     int geomId;
     std::vector<int> activeFront;
@@ -14,6 +23,8 @@ struct FrontState {
     int nTrans;
     std::map<int, Vector2D> nodeDirections;
     std::map<int, double> nodeStepMultipliers;
+    std::map<int, RayInfo> rayInfoMap; // 追蹤每個節點的射線屬性
+    std::map<int, std::vector<std::vector<int>>> blParaGroups; // rootNodeId -> vector of layers, each layer is vector of nodeIds
     std::vector<Vector2D> n1_init, n2_init;
     std::vector<bool> isConvexInit, isConcaveInit;
     std::vector<Point2D> pos_init;
