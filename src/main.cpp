@@ -100,26 +100,34 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
 }
 
 int main(int argc, char* argv[]) {
-    std::string configFile = "config/Background_para.dat";
     Config config;
+    std::string configFile = "config/Background_para.dat";
+    std::vector<std::string> cmdGeomFiles;
+    bool geomProvided = false;
     
+    // 第一階段：掃描以找出設定檔路徑與 -geom 參數
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-conf" && i + 1 < argc) configFile = argv[++i];
-        else if (arg == "-bc_xmin" && i + 1 < argc) config.bcXMin = argv[++i];
-        else if (arg == "-bc_xmax" && i + 1 < argc) config.bcXMax = argv[++i];
-        else if (arg == "-bc_ymin" && i + 1 < argc) config.bcYMin = argv[++i];
-        else if (arg == "-bc_ymax" && i + 1 < argc) config.bcYMax = argv[++i];
-        else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
-        else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
-        else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
-        else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
-        else if (arg[0] != '-') configFile = arg; // 允許直接傳入設定檔路徑
+        if (arg == "-conf" && i + 1 < argc) {
+            configFile = argv[++i];
+        } else if (arg == "-geom") {
+            geomProvided = true;
+            while (i + 1 < argc && argv[i+1][0] != '-') {
+                cmdGeomFiles.push_back(argv[++i]);
+            }
+        } else if (arg[0] != '-') {
+            configFile = arg;
+        }
     }
 
     if (!config.loadFromFile(configFile)) return 1;
 
-    // 命令列參數應優先於設定檔，所以需要再解析一次或重新賦值
+    // 如果命令列提供了 -geom，則覆蓋設定檔中的幾何物件
+    if (geomProvided) {
+        config.geomFiles = cmdGeomFiles;
+    }
+
+    // 第二階段：處理其他命令列參數，這些參數優先於設定檔
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-bc_xmin" && i + 1 < argc) config.bcXMin = argv[++i];
@@ -130,11 +138,12 @@ int main(int argc, char* argv[]) {
         else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
+        // -geom 與 -conf 已經處理過，但在這裡跳過它們的參數以避免干擾
         else if (arg == "-geom") {
-            config.geomFiles.clear();
-            while (i + 1 < argc && argv[i+1][0] != '-') {
-                config.geomFiles.push_back(argv[++i]);
-            }
+            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
+        }
+        else if (arg == "-conf") {
+            if (i + 1 < argc) ++i;
         }
     }
 
