@@ -56,45 +56,77 @@ The executable will be located at `build/HybMesh2D`.
 - `-geom <path1> [path2]...`: Specify one or more geometry data files.
 - `-out_vtk <0|1>`: Enable/Disable VTK output (1: ON, 0: OFF).
 - `-out_starcd <0|1>`: Enable/Disable STAR-CD output.
-- `-bc_xmin <name>`: Boundary name for STAR-CD X-min (e.g., inlet).
-- `-bc_xmax <name>`: Boundary name for STAR-CD X-max (e.g., outlet).
-- `-bc_geom <name>`: Boundary name for geometry surfaces (e.g., wall).
+
+### Execution Example (Using Example Files)
+
+```bash
+./HybMesh2D -conf examples/config/test_box.dat -geom examples/geometries/naca0012.dat
+```
 
 ## Configuration Parameters (`Background_para.dat`)
+
+### 1. Domain & Size Settings
 
 | Parameter | Description | Default |
 | :--- | :--- | :--- |
 | `DOMAIN_X_MIN` / `MAX` | X-axis range of the domain | -10.0 / 10.0 |
 | `DOMAIN_Y_MIN` / `MAX` | Y-axis range of the domain | -10.0 / 10.0 |
-| `BL_INITIAL_THICKNESS` | Height of the first boundary layer | 0.0002 |
-| `BL_GROWTH_RATE` | Growth rate of boundary layers | 1.1 |
-| `BL_LAYERS` | Total number of boundary layers | 5 |
-| `BL_FAN_NODES` | Number of segments in fan elements | 5 |
-| `BL_FAN_ANGLE_THRESHOLD`| Angle threshold to trigger fan elements (deg) | 60.0 |
-| `BL_CONVEX_METHOD` | Convex handling method (0: Fan, 2: Parallelogram) | 0 |
-| `BL_CONCAVE_METHOD` | Concave handling method (0: Merge, 5: Thickness-based Blending) | 5 |
+| `SURFACE_MESH_SIZE` | Initial mesh size on the geometry surface | 0.02 |
+| `AUTO_SURFACE_SIZE` | Auto-calculate starting surface size (0: OFF, 1: ON) | 1 |
 | `FARFIELD_MESH_SIZE` | Maximum mesh size in the far-field | 1.0 |
 | `FARFIELD_GROWTH_RATE` | Size growth rate from BL to far-field | 0.1 |
-| `ENABLE_COLLISION_DETECTION`| Enable multi-geometry collision detection (0/1) | 1 |
 
-### Advanced Parameters
+### 2. Boundary Layer (BL) Core Settings
 
 | Parameter | Description | Default |
 | :--- | :--- | :--- |
-| `SURFACE_MESH_SIZE` | Initial mesh size on the geometry surface | 0.02 |
-| `AUTO_SURFACE_SIZE` | Auto-calculate starting surface size | 1 |
+| `BL_INITIAL_THICKNESS` | Height of the first boundary layer | 0.0002 |
+| `BL_GROWTH_RATE` | Growth rate of boundary layers | 1.1 |
+| `BL_LAYERS` | Total number of boundary layers | 5 |
+
+### 3. Fan & Convex Corner Handling
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `BL_CONVEX_METHOD` | Convex handling method (0: Fan, 2: Parallelogram) | 0 |
+| `BL_FAN_NODES` | Number of segments in fan elements | 5 |
 | `BL_AUTO_FAN_NODES` | Auto-calculate fan nodes (0: OFF, 1: Global, 2: Local) | 1 |
+| `BL_FAN_ANGLE_THRESHOLD`| Angle threshold to trigger fan elements (deg) | 60.0 |
 | `BL_CONVEX_ANGLE_THRESHOLD`| External angle threshold for convex corners (deg) | 220.0 |
+| `BL_PARA_FALLBACK_ANGLE`| Threshold for dual-parallelogram strategy (deg) | 300.0 |
+
+### 4. Concave Corner Handling
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `BL_CONCAVE_METHOD` | Concave handling method (0: Merge, 5: Thickness-based Blending) | 5 |
 | `BL_CONCAVE_ANGLE_THRESHOLD`| External angle threshold for concave corners (deg) | 120.0 |
 | `BL_CONCAVE_INFLUENCE_MULTIPLIER`| Influence radius multiplier for concave smoothing (Method 5) | 5.0 |
+| `BL_MERGE_CONCAVE` | Force merge concave nodes (0: OFF, 1: ON) | 0 |
+| `BL_SMOOTHING_ITERS` | Number of Laplacian smoothing iterations | 0 |
+
+### 5. Transition to Farfield & Gmsh
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
 | `BL_TRANSITION_LAYERS` | Number of transition layers to far-field | 3 |
+| `BL_AUTO_TRANSITION_LAYERS`| Auto-calculate transition layers (0: OFF, 1: Global) | 0 |
 | `BL_TRANSITION_GROWTH_RATE`| Size growth rate during transition layers | 1.15 |
+| `BL_TRANSITION_BUFFER` | Buffer multiplier for the transition region | 2.0 |
 | `GMSH_ALGORITHM` | Gmsh triangulation algorithm (Default 6: Frontal-Delaunay) | 6 |
+| `GMSH_OPTIMIZE` | Enable mesh optimization in Gmsh | 1 |
+
+### 6. I/O & Advanced Features
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `EXPORT_VTK` | Default toggle for VTK export (0/1) | 1 |
+| `EXPORT_STARCD` | Default toggle for STAR-CD export (0/1) | 0 |
+| `ENABLE_COLLISION_DETECTION`| Enable multi-geometry collision detection (0/1) | 1 |
 | `BC_XMIN` / `XMAX` | STAR-CD boundary name strings | inlet / outlet |
 | `BC_YMIN` / `YMAX` | STAR-CD boundary name strings | inlet / outlet |
 | `BC_GEOM` | STAR-CD surface boundary name string | wall |
-| `EXPORT_VTK` | Default toggle for VTK export | 1 |
-| `EXPORT_STARCD` | Default toggle for STAR-CD export | 0 |
+| `OUTPUT_FILENAME` | Base name for output files | (empty) |
 
 ## Visualization & Output
 
@@ -106,4 +138,5 @@ The executable will be located at `build/HybMesh2D`.
 
 ## License
 
-[Insert your license information here]
+MIT License
+
