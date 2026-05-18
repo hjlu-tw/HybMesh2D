@@ -305,8 +305,9 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         Vector2D d_c = (d_p + d_n) * m;
                         double diagLen = d_c.length();
                         
+                        RayRole centerRole = (inheritedRay.role == RayRole::ML || inheritedRay.role == RayRole::MR) ? inheritedRay.role : RayRole::Center;
                         RayInfo rL = {RayRole::Left, d_p, 1.0, rootId};
-                        RayInfo rC = {RayRole::Center, d_c.normalized(), diagLen, rootId};
+                        RayInfo rC = {centerRole, d_c.normalized(), diagLen, rootId};
                         RayInfo rR = {RayRole::Right, d_n, 1.0, rootId};
 
                         allCandidates[fIdx].push_back({fIdx, nodeId, currentPos[i] + d_p * currentH, d_p, 1.0, false, rL});
