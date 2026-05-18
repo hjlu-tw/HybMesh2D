@@ -1,0 +1,25 @@
+{
+  "input_file": "examples/geometries/circle.dat",
+  "output_file": "Results/circle_seg_resampled.dat",
+  "is_closed": true,
+  "segments": [
+    {
+      "id": 1,
+      "start_index": 0,
+      "end_index": 10,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    },
+    {
+      "id": 2,
+      "start_index": 10,
+      "end_index": -1,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 40
+      }
+    }
+  ]
+}

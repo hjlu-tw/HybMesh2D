@@ -130,7 +130,7 @@ The executable will be located at `build/HybMesh2D`.
 
 ## Visualization & Output
 
-1. **VTK Format**: Generates `results/*.vtk`. View with [ParaView](https://www.paraview.org/).
+1. **VTK Format**: Generates `Results/*.vtk`. View with [ParaView](https://www.paraview.org/).
 2. **STAR-CD Format**: Generates a triad of files:
    - `.vrt`: Vertex coordinates.
    - `.cel`: Cell definitions (Triangles and Quads).

@@ -1,11 +1,46 @@
 cmake_minimum_required(VERSION 3.10)
-project(HybMesh2D)
+project(HybMesh VERSION 1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(GMSH_SDK "/Users/hjlu_nchc/Library/Python/3.9")
-include_directories(include ${GMSH_SDK}/include)
+# 1. 設置路徑 (根據原本 build.sh 的路徑)
+set(GMSH_INCLUDE_DIR "/Users/hjlu_nchc/Library/Python/3.9/include")
+set(GMSH_LIBRARY "/Users/hjlu_nchc/Library/Python/3.9/lib/libgmsh.4.15.dylib")
+set(GMSH_RPATH "/Users/hjlu_nchc/Library/Python/3.9/lib")
 
-add_executable(HybMesh2D src/main.cpp src/Mesh.cpp src/BoundaryLayer.cpp)
-target_link_libraries(HybMesh2D "${GMSH_SDK}/lib/libgmsh.4.15.dylib")
+# 2. 包含目錄
+include_directories(include ${GMSH_INCLUDE_DIR})
+
+# 3. 定義共用工具庫 (目前先包含基礎結構)
+# 未來可以把 IOUtils 等抽出來放在這裡
+add_library(HybMeshUtils INTERFACE)
+target_include_directories(HybMeshUtils INTERFACE include)
+
+# 4. 核心執行檔: HybMesh2D
+add_executable(HybMesh2D 
+    src/main.cpp 
+    src/Mesh.cpp 
+    src/BoundaryLayer.cpp
+)
+
+# 連結 Gmsh
+target_link_libraries(HybMesh2D ${GMSH_LIBRARY})
+
+# 設置 RPATH 以確保執行時能找到 dylib
+set_target_properties(HybMesh2D PROPERTIES
+    INSTALL_RPATH "${GMSH_RPATH}"
+    BUILD_WITH_INSTALL_RPATH TRUE
+)
+
+# 5. 前處理工具: surface_resampler
+add_executable(surface_resampler 
+    tools/PreProcessor/src/main.cpp
+)
+target_include_directories(surface_resampler PRIVATE tools/PreProcessor/include)
+target_link_libraries(surface_resampler HybMeshUtils)
+
+# 6. 輸出目錄設置
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+message(STATUS "HybMesh configuration complete.")

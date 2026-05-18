@@ -150,15 +150,15 @@ int main(int argc, char* argv[]) {
     config.print();
     Mesh mesh;
 
-    std::string outputFilename = "results/mesh_cartesian.vtk";
+    std::string outputFilename = "Results/mesh_cartesian.vtk";
     if (!config.outputFilename.empty()) {
         outputFilename = config.outputFilename;
     } else if (!config.geomFiles.empty()) {
         if (config.geomFiles.size() == 1) {
             fs::path geomPath(config.geomFiles[0]);
-            outputFilename = "results/mesh_" + geomPath.stem().string() + ".vtk";
+            outputFilename = "Results/mesh_" + geomPath.stem().string() + ".vtk";
         } else {
-            outputFilename = "results/mesh_multiple.vtk";
+            outputFilename = "Results/mesh_multiple.vtk";
         }
     }
 
