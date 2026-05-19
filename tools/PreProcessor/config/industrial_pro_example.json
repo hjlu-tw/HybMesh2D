@@ -1,0 +1,41 @@
+{
+  "elements": [
+    {
+      "name": "Industrial_Airfoil_Mockup",
+      "input_file": "examples/geometries/naca0012.dat",
+      "output_file": "Results/pro_airfoil.dat",
+      "is_closed": true,
+      "transform": { "scale": 2.0, "rotate": 10.0, "translate": [0, 0] },
+      "segments": [
+        {
+          "id": 1,
+          "comment": "前緣使用曲率加密",
+          "start_index": 0, "end_index": 50,
+          "strategy": "curvature",
+          "parameters": { "spacing": 0.005, "sensitivity": 2.0 }
+        },
+        {
+          "id": 2,
+          "comment": "後段使用幾何級數並匹配前段間距",
+          "start_index": 50, "end_index": -1,
+          "strategy": "geometric",
+          "parameters": { "spacing_start": 0.005, "spacing_end": 0.05, "n_points": 40 }
+        }
+      ]
+    },
+    {
+      "name": "Parametric_Control_Surface",
+      "output_file": "Results/pro_control.dat",
+      "is_closed": true,
+      "segments": [
+        {
+          "id": 1,
+          "type": "curve",
+          "x_formula": "0.5 * cos(t) + 3.0",
+          "y_formula": "0.2 * sin(t)",
+          "parameters": { "range": [0, 6.28318], "spacing": 0.02 }
+        }
+      ]
+    }
+  ]
+}

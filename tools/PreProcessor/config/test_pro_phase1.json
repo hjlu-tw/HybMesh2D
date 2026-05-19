@@ -1,0 +1,40 @@
+{
+  "elements": [
+    {
+      "name": "ShiftedLShape",
+      "input_file": "examples/geometries/L-shape.dat",
+      "output_file": "Results/shifted_lshape.dat",
+      "is_closed": true,
+      "transform": {
+        "scale": 0.5,
+        "rotate": 45.0,
+        "translate": [5.0, 5.0]
+      },
+      "segments": [
+        {
+          "id": 1,
+          "auto_split": true,
+          "parameters": { "n_points": 10 }
+        }
+      ]
+    },
+    {
+      "name": "ParametricEllipse",
+      "output_file": "Results/ellipse.dat",
+      "is_closed": true,
+      "segments": [
+        {
+          "id": 1,
+          "type": "curve",
+          "x_formula": "2.0 * cos(t)",
+          "y_formula": "1.0 * sin(t)",
+          "parameters": {
+            "range": [0, 6.28318530718],
+            "n_points": 60
+          },
+          "strategy": "uniform"
+        }
+      ]
+    }
+  ]
+}
