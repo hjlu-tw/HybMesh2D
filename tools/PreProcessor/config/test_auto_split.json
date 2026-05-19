@@ -1,0 +1,19 @@
+{
+  "elements": [
+    {
+      "name": "AutoLShape",
+      "input_file": "examples/geometries/L-shape.dat",
+      "output_file": "Results/auto_split_lshape.dat",
+      "is_closed": true,
+      "segments": [
+        {
+          "id": 1,
+          "auto_split": true,
+          "split_threshold": 30.0,
+          "strategy": "uniform",
+          "parameters": { "n_points": 15 }
+        }
+      ]
+    }
+  ]
+}

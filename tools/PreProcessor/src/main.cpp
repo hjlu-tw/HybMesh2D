@@ -4,6 +4,7 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
+#include <iomanip>
 #include "json.hpp"
 #include "GeomUtils.hpp"
 
@@ -231,6 +232,38 @@ std::vector<Point2D> generateCurvePoints(const std::string& formula, const json&
     return points;
 }
 
+// 偵測特徵點 (尖角)
+std::vector<int> detectFeaturePoints(const std::vector<Point2D>& points, double thresholdDegrees) {
+    std::vector<int> features = {0}; // 起點必為特徵點
+    if (points.size() < 3) {
+        features.push_back((int)points.size() - 1);
+        return features;
+    }
+
+    double thresholdRad = thresholdDegrees * M_PI / 180.0;
+
+    for (size_t i = 1; i < points.size() - 1; ++i) {
+        Vector2D v1 = (points[i] - points[i-1]).normalized();
+        Vector2D v2 = (points[i+1] - points[i]).normalized();
+        
+        // 如果其中一段長度極小，跳過
+        if ((points[i] - points[i-1]).length() < 1e-10 || (points[i+1] - points[i]).length() < 1e-10) continue;
+
+        double dot = std::clamp(v1.dot(v2), -1.0, 1.0);
+        double angle = std::acos(dot);
+
+        if (angle > thresholdRad) {
+            features.push_back((int)i);
+        }
+    }
+
+    features.push_back((int)points.size() - 1); // 終點必為特徵點
+    
+    // 移除重複
+    features.erase(std::unique(features.begin(), features.end()), features.end());
+    return features;
+}
+
 void processElement(const json& elementConfig) {
     std::string outputFile = elementConfig["output_file"];
     std::string globalInputFile = elementConfig.value("input_file", "");
@@ -243,7 +276,6 @@ void processElement(const json& elementConfig) {
     bool isClosed = elementConfig.value("is_closed", false);
     
     // 預處理閉合邏輯：如果是封閉迴圈且全局點集未閉合，先補上起點
-    // 這樣在計算弧長與重採樣時，閉合段才會被正確計入
     if (isClosed && !globalPoints.empty()) {
         double dx = globalPoints.front().x - globalPoints.back().x;
         double dy = globalPoints.front().y - globalPoints.back().y;
@@ -254,113 +286,135 @@ void processElement(const json& elementConfig) {
 
     std::vector<Point2D> resampledPoints;
 
-    for (size_t segIdx = 0; segIdx < elementConfig["segments"].size(); ++segIdx) {
-        auto& segJson = elementConfig["segments"][segIdx];
+    for (const auto& segJson : elementConfig["segments"]) {
         std::string type = segJson.value("type", "file");
-        std::vector<Point2D> segmentPoints;
+        bool autoSplit = segJson.value("auto_split", false);
+        double splitThreshold = segJson.value("split_threshold", 20.0); // 預設 20 度就切分
+
+        std::vector<std::pair<int, int>> subRanges;
 
         if (type == "curve") {
-            std::string formula = segJson.value("formula", "line");
-            segmentPoints = generateCurvePoints(formula, segJson["parameters"]);
+            subRanges.push_back({-1, -1}); 
         } else {
-            int startIdx = segJson["start_index"];
-            int endIdx = segJson["end_index"];
-            
-            if (globalPoints.empty()) {
-                std::cerr << "Error: Global input_file is required for 'file' type segments." << std::endl;
-                continue;
-            }
+            int startIdx = segJson.value("start_index", 0);
+            int endIdx = segJson.value("end_index", -1);
+            if (endIdx == -1 && !globalPoints.empty()) endIdx = (int)globalPoints.size() - 1;
 
-            if (endIdx == -1) endIdx = globalPoints.size() - 1;
-
-            for (int i = startIdx; i <= endIdx; ++i) {
-                segmentPoints.push_back(globalPoints[i]);
-            }
-        }
-
-        if (segmentPoints.size() < 2) continue;
-
-        std::vector<double> s = calculateArcLengths(segmentPoints);
-        double totalLength = s.back();
-        std::vector<Point2D> newSegmentPoints;
-
-        std::string strategy = segJson.value("strategy", "uniform");
-        int nTargetPoints = segJson["parameters"].value("n_points", (int)segmentPoints.size());
-        if (nTargetPoints < 2) nTargetPoints = 2;
-
-        std::vector<double> targetS;
-        if (strategy == "cosine") {
-            for (int i = 0; i < nTargetPoints; ++i) {
-                double xi = static_cast<double>(i) / (nTargetPoints - 1);
-                targetS.push_back(totalLength * (1.0 - std::cos(M_PI * xi)) * 0.5);
-            }
-        } else if (strategy == "geometric") {
-            double r = segJson["parameters"].value("ratio", 1.1);
-            if (std::abs(r - 1.0) < 1e-6) {
-                for (int i = 0; i < nTargetPoints; ++i) targetS.push_back(totalLength * i / (nTargetPoints - 1));
+            if (autoSplit && !globalPoints.empty()) {
+                std::vector<Point2D> subPoints;
+                for(int i = startIdx; i <= endIdx; ++i) subPoints.push_back(globalPoints[i]);
+                
+                std::vector<int> localFeatures = detectFeaturePoints(subPoints, splitThreshold);
+                for (size_t f = 0; f < localFeatures.size() - 1; ++f) {
+                    subRanges.push_back({startIdx + localFeatures[f], startIdx + localFeatures[f+1]});
+                }
             } else {
-                double d0 = totalLength * (1.0 - r) / (1.0 - std::pow(r, nTargetPoints - 1));
-                targetS.push_back(0.0);
-                double currentS = 0.0;
-                for (int i = 1; i < nTargetPoints; ++i) {
-                    currentS += d0 * std::pow(r, i - 1);
-                    targetS.push_back(currentS);
-                }
-            }
-        } else if (strategy == "tanh") {
-            double delta = segJson["parameters"].value("intensity", 2.0);
-            for (int i = 0; i < nTargetPoints; ++i) {
-                double xi = static_cast<double>(i) / (nTargetPoints - 1);
-                double val = 0.5 * (1.0 + std::tanh(delta * (2.0 * xi - 1.0)) / std::tanh(delta));
-                targetS.push_back(totalLength * val);
-            }
-        } else if (strategy == "curvature") {
-            double sensitivity = segJson["parameters"].value("sensitivity", 1.0);
-            std::vector<double> weights(segmentPoints.size(), 1.0);
-            for (size_t i = 1; i < segmentPoints.size() - 1; ++i) {
-                Vector2D v1 = (segmentPoints[i] - segmentPoints[i-1]).normalized();
-                Vector2D v2 = (segmentPoints[i+1] - segmentPoints[i]).normalized();
-                double dot = std::clamp(v1.dot(v2), -1.0, 1.0);
-                double angle = std::acos(dot);
-                weights[i] = 1.0 + sensitivity * angle;
-            }
-            std::vector<double> cSpace(segmentPoints.size(), 0.0);
-            for (size_t i = 1; i < segmentPoints.size(); ++i) {
-                double avgW = (weights[i-1] + weights[i]) * 0.5;
-                double ds = s[i] - s[i-1];
-                cSpace[i] = cSpace[i-1] + avgW * ds;
-            }
-            double totalC = cSpace.back();
-            for (int i = 0; i < nTargetPoints; ++i) {
-                double targetC = totalC * i / (nTargetPoints - 1);
-                auto it = std::lower_bound(cSpace.begin(), cSpace.end(), targetC);
-                int idx = std::distance(cSpace.begin(), it);
-                if (idx == 0) targetS.push_back(0.0);
-                else {
-                    double c0 = cSpace[idx-1], c1 = cSpace[idx];
-                    double s0 = s[idx-1], s1 = s[idx];
-                    double t = (targetC - c0) / (c1 - c0);
-                    targetS.push_back(s0 + t * (s1 - s0));
-                }
-            }
-        } else {
-            for (int i = 0; i < nTargetPoints; ++i) {
-                targetS.push_back((totalLength * i) / (nTargetPoints - 1));
+                subRanges.push_back({startIdx, endIdx});
             }
         }
 
-        for (double ts : targetS) {
-            newSegmentPoints.push_back(interpolate(segmentPoints, s, ts));
-        }
-
-        if (!resampledPoints.empty() && !newSegmentPoints.empty()) {
-            double dx = resampledPoints.back().x - newSegmentPoints.front().x;
-            double dy = resampledPoints.back().y - newSegmentPoints.front().y;
-            if (std::sqrt(dx*dx + dy*dy) < 1e-9) {
-                resampledPoints.pop_back(); 
+        for (auto& range : subRanges) {
+            std::vector<Point2D> segmentPoints;
+            if (type == "curve") {
+                std::string formula = segJson.value("formula", "line");
+                segmentPoints = generateCurvePoints(formula, segJson["parameters"]);
+            } else {
+                for (int i = range.first; i <= range.second; ++i) {
+                    segmentPoints.push_back(globalPoints[i]);
+                }
             }
+
+            if (segmentPoints.size() < 2) continue;
+std::vector<double> s = calculateArcLengths(segmentPoints);
+double totalLength = s.back();
+std::vector<Point2D> newSegmentPoints;
+
+std::string strategy = segJson.value("strategy", "uniform");
+
+// 點數計算邏輯：優先使用 spacing，若無則使用 n_points
+int nTargetPoints;
+if (segJson["parameters"].contains("spacing")) {
+    double ds = segJson["parameters"]["spacing"];
+    nTargetPoints = std::max(2, (int)std::round(totalLength / ds) + 1);
+} else {
+    nTargetPoints = segJson["parameters"].value("n_points", (int)segmentPoints.size());
+}
+if (nTargetPoints < 2) nTargetPoints = 2;
+
+            std::vector<double> targetS;
+            if (strategy == "cosine") {
+                for (int i = 0; i < nTargetPoints; ++i) {
+                    double xi = static_cast<double>(i) / (nTargetPoints - 1);
+                    targetS.push_back(totalLength * (1.0 - std::cos(M_PI * xi)) * 0.5);
+                }
+            } else if (strategy == "geometric") {
+                double r = segJson["parameters"].value("ratio", 1.1);
+                if (std::abs(r - 1.0) < 1e-6) {
+                    for (int i = 0; i < nTargetPoints; ++i) targetS.push_back(totalLength * i / (nTargetPoints - 1));
+                } else {
+                    double d0 = totalLength * (1.0 - r) / (1.0 - std::pow(r, nTargetPoints - 1));
+                    targetS.push_back(0.0);
+                    double currentS = 0.0;
+                    for (int i = 1; i < nTargetPoints; ++i) {
+                        currentS += d0 * std::pow(r, i - 1);
+                        targetS.push_back(currentS);
+                    }
+                }
+            } else if (strategy == "tanh") {
+                double delta = segJson["parameters"].value("intensity", 2.0);
+                for (int i = 0; i < nTargetPoints; ++i) {
+                    double xi = static_cast<double>(i) / (nTargetPoints - 1);
+                    double val = 0.5 * (1.0 + std::tanh(delta * (2.0 * xi - 1.0)) / std::tanh(delta));
+                    targetS.push_back(totalLength * val);
+                }
+            } else if (strategy == "curvature") {
+                double sensitivity = segJson["parameters"].value("sensitivity", 1.0);
+                std::vector<double> weights(segmentPoints.size(), 1.0);
+                for (size_t i = 1; i < segmentPoints.size() - 1; ++i) {
+                    Vector2D v1 = (segmentPoints[i] - segmentPoints[i-1]).normalized();
+                    Vector2D v2 = (segmentPoints[i+1] - segmentPoints[i]).normalized();
+                    double dot = std::clamp(v1.dot(v2), -1.0, 1.0);
+                    double angle = std::acos(dot);
+                    weights[i] = 1.0 + sensitivity * angle;
+                }
+                std::vector<double> cSpace(segmentPoints.size(), 0.0);
+                for (size_t i = 1; i < segmentPoints.size(); ++i) {
+                    double avgW = (weights[i-1] + weights[i]) * 0.5;
+                    double ds = s[i] - s[i-1];
+                    cSpace[i] = cSpace[i-1] + avgW * ds;
+                }
+                double totalC = cSpace.back();
+                for (int i = 0; i < nTargetPoints; ++i) {
+                    double targetC = totalC * i / (nTargetPoints - 1);
+                    auto it = std::lower_bound(cSpace.begin(), cSpace.end(), targetC);
+                    int idx = std::distance(cSpace.begin(), it);
+                    if (idx == 0) targetS.push_back(0.0);
+                    else {
+                        double c0 = cSpace[idx-1], c1 = cSpace[idx];
+                        double s0 = s[idx-1], s1 = s[idx];
+                        double t = (targetC - c0) / (c1 - c0);
+                        targetS.push_back(s0 + t * (s1 - s0));
+                    }
+                }
+            } else {
+                for (int i = 0; i < nTargetPoints; ++i) {
+                    targetS.push_back((totalLength * i) / (nTargetPoints - 1));
+                }
+            }
+
+            for (double ts : targetS) {
+                newSegmentPoints.push_back(interpolate(segmentPoints, s, ts));
+            }
+
+            if (!resampledPoints.empty() && !newSegmentPoints.empty()) {
+                double dx = resampledPoints.back().x - newSegmentPoints.front().x;
+                double dy = resampledPoints.back().y - newSegmentPoints.front().y;
+                if (std::sqrt(dx*dx + dy*dy) < 1e-9) {
+                    resampledPoints.pop_back(); 
+                }
+            }
+            resampledPoints.insert(resampledPoints.end(), newSegmentPoints.begin(), newSegmentPoints.end());
         }
-        resampledPoints.insert(resampledPoints.end(), newSegmentPoints.begin(), newSegmentPoints.end());
     }
 
     saveGeometry(outputFile, resampledPoints);
@@ -385,7 +439,6 @@ int main(int argc, char* argv[]) {
             processElement(element);
         }
     } else {
-        // Backward compatibility
         processElement(config);
     }
 

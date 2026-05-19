@@ -55,6 +55,31 @@ def get_seg_endpoints(seg, global_points):
         except:
             return None, None
 
+def detect_feature_points(points, threshold_degrees):
+    """與 C++ detectFeaturePoints 邏輯一致"""
+    if len(points) < 3:
+        return [0, len(points) - 1]
+    
+    features = [0]
+    threshold_rad = threshold_degrees * np.pi / 180.0
+    
+    for i in range(1, len(points) - 1):
+        v1 = points[i] - points[i-1]
+        v2 = points[i+1] - points[i]
+        
+        l1 = np.linalg.norm(v1)
+        l2 = np.linalg.norm(v2)
+        if l1 < 1e-10 or l2 < 1e-10: continue
+        
+        dot = np.dot(v1/l1, v2/l2)
+        angle = np.arccos(np.clip(dot, -1.0, 1.0))
+        
+        if angle > threshold_rad:
+            features.append(i)
+            
+    features.append(len(points) - 1)
+    return sorted(list(set(features)))
+
 def plot_element(plt, element_config, element_id, global_offset_idx):
     """繪製單個元素及其線段"""
     output_file = element_config.get("output_file")
@@ -67,58 +92,94 @@ def plot_element(plt, element_config, element_id, global_offset_idx):
     except:
         return 0
 
-    # 載入該元素的原始點供 file 類型參考
+    # 載入該元素的原始點
     global_points = None
     if "input_file" in element_config and os.path.exists(element_config["input_file"]):
         try:
             global_points = np.loadtxt(element_config["input_file"])
+            # 如果是閉合，預先補點 (與 C++ 同步)
+            if element_config.get("is_closed", False):
+                d = np.linalg.norm(global_points[0] - global_points[-1])
+                if d > 1e-9:
+                    global_points = np.vstack([global_points, global_points[0]])
         except: pass
 
     segments = element_config.get("segments", [])
     current_idx = 0
     
-    # 為每個 Element 使用不同的顏色循環
     for i, seg in enumerate(segments):
         seg_id = seg.get("id", "?")
+        seg_type = seg.get("type", "file")
+        auto_split = seg.get("auto_split", False)
+        split_threshold = seg.get("split_threshold", 20.0)
         
-        # 計算點數
-        n_points = seg.get("parameters", {}).get("n_points")
-        if n_points is None:
-            if seg.get("type") == "file":
-                start_idx = seg.get("start_index", 0)
-                end_idx = seg.get("end_index", 0)
-                if end_idx == -1 and global_points is not None: end_idx = len(global_points) - 1
-                n_points = end_idx - start_idx + 1
-            else:
-                n_points = 50
-        
-        start = current_idx
-        # 如果是最後一個線段，直接取到最後一個點，以包含自動產生的閉合點
-        if i == len(segments) - 1:
-            end = len(points)
+        # 決定子區段範圍
+        sub_ranges = []
+        if seg_type == "curve":
+            sub_ranges.append(None)
         else:
-            end = current_idx + n_points
+            start_idx = seg.get("start_index", 0)
+            end_idx = seg.get("end_index", -1)
+            if end_idx == -1 and global_points is not None: end_idx = len(global_points) - 1
             
-        if end > len(points): end = len(points)
-        if start >= len(points): break
-
-        seg_points = points[start:end]
-        label = f"E{element_id}-Seg{seg_id}"
-        plt.plot(seg_points[:, 0], seg_points[:, 1], '.-', markersize=4, linewidth=1.5, label=label)
-        
-        # 預測下一段
-        if i < len(segments) - 1:
-            p_curr_end = get_seg_endpoints(seg, global_points)[1]
-            p_next_start = get_seg_endpoints(segments[i+1], global_points)[0]
-            if p_curr_end is not None and p_next_start is not None:
-                if np.linalg.norm(p_curr_end - p_next_start) < 1e-9:
-                    current_idx = end - 1
-                else:
-                    current_idx = end
+            if auto_split and global_points is not None:
+                sub_pts = global_points[start_idx : end_idx + 1]
+                local_features = detect_feature_points(sub_pts, split_threshold)
+                for f in range(len(local_features) - 1):
+                    sub_ranges.append((start_idx + local_features[f], start_idx + local_features[f+1]))
             else:
-                current_idx = end
-        else:
-            current_idx = end
+                sub_ranges.append((start_idx, end_idx))
+
+        # 針對每個子區段繪圖
+        for sub_idx, sub_range in enumerate(sub_ranges):
+            # 準備點
+            if seg_type == "curve":
+                formula = seg.get("formula", "line")
+                p_start, p_end = get_seg_endpoints(seg, global_points)
+                # 對於 Curve，我們計算起點終點直線距離作為近似長度來估算點數
+                # 較精確做法應在 get_seg_endpoints 中回傳長度，此處先以點數判斷
+                segment_points_for_len = [] 
+            else:
+                segment_points_for_len = global_points[sub_range[0] : sub_range[1] + 1]
+
+            # 計算該段理論點數 (優先使用 spacing)
+            n_points = seg.get("parameters", {}).get("n_points")
+            if seg.get("parameters", {}).get("spacing") is not None:
+                ds = seg["parameters"]["spacing"]
+                if len(segment_points_for_len) >= 2:
+                    # 計算弧長
+                    diffs = np.diff(segment_points_for_len, axis=0)
+                    total_len = np.sum(np.sqrt(np.sum(diffs**2, axis=1)))
+                    n_points = int(round(total_len / ds)) + 1
+                else:
+                    # 如果是 Curve 類型且只有 spacing，Python 端目前暫採預設 50 或簡單估算
+                    n_points = 50 
+
+            if n_points is None:
+                if seg_type == "file":
+                    n_points = sub_range[1] - sub_range[0] + 1
+                else:
+                    n_points = 50
+            
+            if n_points < 2: n_points = 2
+            
+            start = current_idx
+            # 如果是該 Element 的最後一段的最後一個子段，取到最後一個點
+            if i == len(segments) - 1 and sub_idx == len(sub_ranges) - 1:
+                end = len(points)
+            else:
+                end = current_idx + n_points
+            
+            if end > len(points): end = len(points)
+            if start >= len(points): break
+
+            seg_points = points[start:end]
+            label = f"E{element_id}-S{seg_id}"
+            if len(sub_ranges) > 1:
+                label += f"-{sub_idx+1}"
+            
+            plt.plot(seg_points[:, 0], seg_points[:, 1], '.-', markersize=4, linewidth=1.5, label=label)
+            current_idx = end - 1
             
     return len(points)
 
@@ -142,7 +203,7 @@ def main():
             else:
                 total_points_loaded = plot_element(plt, config, 1, 0)
                 
-            plt.legend(loc='upper right', title="Element-Segment IDs", framealpha=0.8, fontsize='small', ncol=2)
+            plt.legend(loc='upper right', title="Element-Segment IDs", framealpha=0.8, fontsize='x-small', ncol=1)
         except Exception as e:
             print(f"Error processing config: {e}")
             import traceback

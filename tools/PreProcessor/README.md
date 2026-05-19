@@ -70,7 +70,8 @@ make
         - 支援函數：`sin`, `cos`, `tan`, `exp`, `log`, `sqrt`, `abs`。
     - **`parameters`**:
         - `range` (僅限 `curve`): `[x_start, x_end]` 定義公式的 X 軸範圍。
-        - `n_points`: 該線段重採樣後的目標點數。
+        - `n_points`: 該線段重採樣後的目標點數（固定數量模式）。
+        - `spacing`: 該線段重採樣後的目標格點間距（固定寬度模式）。**優先級高於 `n_points`**。
         - `sensitivity` (僅限 `curvature` 策略): 對曲率的敏感度（預設 1.0）。
         - `ratio` (僅限 `geometric` 策略): 相鄰間距的增長倍率（預設 1.1）。
         - `intensity` (僅限 `tanh` 策略): 雙端加密強度（預設 2.0）。
