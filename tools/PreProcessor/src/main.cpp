@@ -280,21 +280,85 @@ int main(int argc, char* argv[]) {
         }
 
         if (segmentPoints.size() < 2) continue;
+if (segmentPoints.size() < 2) continue;
 
-        std::string strategy = segJson.value("strategy", "uniform");
-        std::vector<double> s = calculateArcLengths(segmentPoints);
-        double totalLength = s.back();
-        std::vector<Point2D> newSegmentPoints;
+std::vector<double> s = calculateArcLengths(segmentPoints);
+double totalLength = s.back();
+std::vector<Point2D> newSegmentPoints;
 
-        if (strategy == "uniform") {
-            int nTargetPoints = segJson["parameters"].value("n_points", (int)segmentPoints.size());
-            for (int i = 0; i < nTargetPoints; ++i) {
-                double targetS = (totalLength * i) / (nTargetPoints - 1);
-                newSegmentPoints.push_back(interpolate(segmentPoints, s, targetS));
-            }
-        } else {
-            newSegmentPoints = segmentPoints;
+std::string strategy = segJson.value("strategy", "uniform");
+
+int nTargetPoints = segJson["parameters"].value("n_points", (int)segmentPoints.size());
+if (nTargetPoints < 2) nTargetPoints = 2;
+
+std::vector<double> targetS;
+if (strategy == "cosine") {
+    for (int i = 0; i < nTargetPoints; ++i) {
+        double xi = static_cast<double>(i) / (nTargetPoints - 1);
+        targetS.push_back(totalLength * (1.0 - std::cos(M_PI * xi)) * 0.5);
+    }
+} else if (strategy == "geometric") {
+    double r = segJson["parameters"].value("ratio", 1.1);
+    if (std::abs(r - 1.0) < 1e-6) {
+        for (int i = 0; i < nTargetPoints; ++i) targetS.push_back(totalLength * i / (nTargetPoints - 1));
+    } else {
+        double d0 = totalLength * (1.0 - r) / (1.0 - std::pow(r, nTargetPoints - 1));
+        targetS.push_back(0.0);
+        double currentS = 0.0;
+        for (int i = 1; i < nTargetPoints; ++i) {
+            currentS += d0 * std::pow(r, i - 1);
+            targetS.push_back(currentS);
         }
+    }
+} else if (strategy == "tanh") {
+    double delta = segJson["parameters"].value("intensity", 2.0);
+    for (int i = 0; i < nTargetPoints; ++i) {
+        double xi = static_cast<double>(i) / (nTargetPoints - 1);
+        double val = 0.5 * (1.0 + std::tanh(delta * (2.0 * xi - 1.0)) / std::tanh(delta));
+        targetS.push_back(totalLength * val);
+    }
+} else if (strategy == "curvature") {
+    double sensitivity = segJson["parameters"].value("sensitivity", 1.0);
+    // 1. 計算每個點的局部轉角
+    std::vector<double> weights(segmentPoints.size(), 1.0);
+    for (size_t i = 1; i < segmentPoints.size() - 1; ++i) {
+        Vector2D v1 = (segmentPoints[i] - segmentPoints[i-1]).normalized();
+        Vector2D v2 = (segmentPoints[i+1] - segmentPoints[i]).normalized();
+        double dot = std::clamp(v1.dot(v2), -1.0, 1.0);
+        double angle = std::acos(dot);
+        weights[i] = 1.0 + sensitivity * angle;
+    }
+    // 2. 建立累計權重空間 (C-space)
+    std::vector<double> cSpace(segmentPoints.size(), 0.0);
+    for (size_t i = 1; i < segmentPoints.size(); ++i) {
+        double avgW = (weights[i-1] + weights[i]) * 0.5;
+        double ds = s[i] - s[i-1];
+        cSpace[i] = cSpace[i-1] + avgW * ds;
+    }
+    double totalC = cSpace.back();
+    // 3. 在 C-space 均勻取樣並映射回弧長 s
+    for (int i = 0; i < nTargetPoints; ++i) {
+        double targetC = totalC * i / (nTargetPoints - 1);
+        auto it = std::lower_bound(cSpace.begin(), cSpace.end(), targetC);
+        int idx = std::distance(cSpace.begin(), it);
+        if (idx == 0) targetS.push_back(0.0);
+        else {
+            double c0 = cSpace[idx-1], c1 = cSpace[idx];
+            double s0 = s[idx-1], s1 = s[idx];
+            double t = (targetC - c0) / (c1 - c0);
+            targetS.push_back(s0 + t * (s1 - s0));
+        }
+    }
+} else { // uniform (fallback)
+    for (int i = 0; i < nTargetPoints; ++i) {
+        targetS.push_back((totalLength * i) / (nTargetPoints - 1));
+    }
+}
+
+for (double ts : targetS) {
+    newSegmentPoints.push_back(interpolate(segmentPoints, s, ts));
+}
+
 
         // 合併點，避免重疊的連接點
         if (!resampledPoints.empty() && !newSegmentPoints.empty()) {

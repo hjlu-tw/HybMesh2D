@@ -25,7 +25,7 @@
         "phase": 0.0,
         "offset_y": 0.5
       },
-      "strategy": "uniform"
+      "strategy": "cosine"
     },
     {
       "id": 3,
@@ -34,9 +34,10 @@
       "parameters": {
         "range": [-1.0, 1.0],
         "n_points": 25,
-        "coeffs": [1.0, 0.0, 1.0]
+        "coeffs": [1.0, 0.0, 1.0],
+        "ratio": 1.2
       },
-      "strategy": "uniform"
+      "strategy": "geometric"
     },
     {
       "id": 4,
@@ -45,9 +46,10 @@
       "parameters": {
         "x0": 1.0, "y0": 2.0,
         "x1": 2.0, "y1": 0.0,
-        "n_points": 15
+        "n_points": 15,
+        "intensity": 3.0
       },
-      "strategy": "uniform"
+      "strategy": "tanh"
     },
     {
       "id": 5,
@@ -55,9 +57,10 @@
       "formula": "x^3 - 2*x + sin(2*x)",
       "parameters": {
         "range": [-2.0, 2.0],
-        "n_points": 50
+        "n_points": 50,
+        "sensitivity": 2.0
       },
-      "strategy": "uniform"
+      "strategy": "curvature"
     }
   ]
 }
