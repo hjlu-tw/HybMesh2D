@@ -60,11 +60,19 @@ make
 - **`input_file`**: 原始幾何檔案路徑。
 - **`output_file`**: 重採樣後的幾何檔案輸出路徑。
 - **`segments`**: 一個陣列，定義幾何的不同區段。
-    - **`start_index` / `end_index`**: 該線段在原始點集中的起始與結束索引（`-1` 代表最後一個點）。
+    - **`type`**: 區段類型。
+        - `file` (預設): 從 `input_file` 中擷取點。需提供 `start_index` 與 `end_index`。
+        - `curve`: 根據數學公式產生點。
+    - **`formula`** (僅限 `type`: `curve`):
+        - 可使用預設關鍵字：`sin`, `polynomial`, `line`。
+        - **支援自定義公式字串**：例如 `"x^3 - 2*x"` 或 `"sin(x) + cos(2*x)"`。
+        - 支援運算子：`+`, `-`, `*`, `/`, `^` (次方), `()` (括號)。
+        - 支援函數：`sin`, `cos`, `tan`, `exp`, `log`, `sqrt`, `abs`。
+    - **`parameters`**:
+        - `range` (僅限 `curve`): `[x_start, x_end]` 定義公式的 X 軸範圍。
+        - `n_points`: 該線段產生的初始點數或重採樣後的目標點數。
     - **`strategy`**: 重採樣策略。目前支援：
         - `uniform`: 均勻分佈。
-    - **`parameters`**: 策略對應的參數。
-        - `n_points`: 該線段重採樣後的目標點數。
 
 ## 使用流程
 

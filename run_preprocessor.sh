@@ -1,20 +1,20 @@
 #!/bin/bash
 
 # Default configuration file
-CONFIG_FILE=${1:-"tools/PreProcessor/config/test_config.json"}
+CONFIG_FILE=${1:-"tools/PreProcessor/config/test_curve_config.json"}
 
 # 1. Run surface_resampler (if compiled)
 if [ -f "build/surface_resampler" ]; then
     echo "Running surface_resampler with config: $CONFIG_FILE"
     ./build/surface_resampler "$CONFIG_FILE"
     
-    # 2. Run visualization script
-    # Note: The result file name might vary based on config, 
-    # but we'll check for the common output location.
-    RESULT_FILE="Results/circle_resampled.dat"
+    # 2. Extract output file path from JSON to run visualization
+    # Using python to parse JSON correctly is more robust than grep/sed
+    RESULT_FILE=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['output_file'])")
+    
     if [ -f "$RESULT_FILE" ]; then
         echo "Launching visualization: $RESULT_FILE..."
-        python3 tools/scripts/visualize_dat.py "$RESULT_FILE"
+        python3 tools/scripts/visualize_dat.py "$RESULT_FILE" --config "$CONFIG_FILE"
     else
         echo "Warning: Output file $RESULT_FILE not found. Cannot visualize."
     fi

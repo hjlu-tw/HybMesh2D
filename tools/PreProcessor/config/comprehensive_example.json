@@ -1,0 +1,63 @@
+{
+  "input_file": "examples/geometries/box_outer.dat",
+  "output_file": "Results/comprehensive_test.dat",
+  "is_closed": false,
+  "segments": [
+    {
+      "id": 1,
+      "type": "file",
+      "start_index": 0,
+      "end_index": 1,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 20
+      }
+    },
+    {
+      "id": 2,
+      "type": "curve",
+      "formula": "sin",
+      "parameters": {
+        "range": [0.0, 3.14159],
+        "n_points": 30,
+        "amplitude": 1.0,
+        "frequency": 1.0,
+        "phase": 0.0,
+        "offset_y": 0.5
+      },
+      "strategy": "uniform"
+    },
+    {
+      "id": 3,
+      "type": "curve",
+      "formula": "polynomial",
+      "parameters": {
+        "range": [-1.0, 1.0],
+        "n_points": 25,
+        "coeffs": [1.0, 0.0, 1.0]
+      },
+      "strategy": "uniform"
+    },
+    {
+      "id": 4,
+      "type": "curve",
+      "formula": "line",
+      "parameters": {
+        "x0": 1.0, "y0": 2.0,
+        "x1": 2.0, "y1": 0.0,
+        "n_points": 15
+      },
+      "strategy": "uniform"
+    },
+    {
+      "id": 5,
+      "type": "curve",
+      "formula": "x^3 - 2*x + sin(2*x)",
+      "parameters": {
+        "range": [-2.0, 2.0],
+        "n_points": 50
+      },
+      "strategy": "uniform"
+    }
+  ]
+}
