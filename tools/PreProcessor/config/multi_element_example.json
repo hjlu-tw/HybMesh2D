@@ -1,0 +1,42 @@
+{
+  "elements": [
+    {
+      "name": "Circle",
+      "input_file": "examples/geometries/circle.dat",
+      "output_file": "Results/multi_circle.dat",
+      "is_closed": true,
+      "segments": [
+        {
+          "id": 1,
+          "start_index": 0,
+          "end_index": -1,
+          "strategy": "curvature",
+          "parameters": { "n_points": 60, "sensitivity": 2.0 }
+        }
+      ]
+    },
+    {
+      "name": "SquareCurve",
+      "output_file": "Results/multi_square.dat",
+      "is_closed": true,
+      "segments": [
+        {
+          "id": 1, "type": "curve", "formula": "line",
+          "parameters": { "x0": 2, "y0": 2, "x1": 4, "y1": 2, "n_points": 10 }
+        },
+        {
+          "id": 2, "type": "curve", "formula": "line",
+          "parameters": { "x0": 4, "y0": 2, "x1": 4, "y1": 4, "n_points": 10 }
+        },
+        {
+          "id": 3, "type": "curve", "formula": "line",
+          "parameters": { "x0": 4, "y0": 4, "x1": 2, "y1": 4, "n_points": 10 }
+        },
+        {
+          "id": 4, "type": "curve", "formula": "line",
+          "parameters": { "x0": 2, "y0": 4, "x1": 2, "y1": 2, "n_points": 10 }
+        }
+      ]
+    }
+  ]
+}
