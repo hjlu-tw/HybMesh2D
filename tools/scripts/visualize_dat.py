@@ -103,7 +103,8 @@ def plot_element(ax, element_config, element_id, quality_mode=False):
         # --- 一般模式：按線段著色 ---
         segments = element_config.get("segments", [])
         current_idx = 0
-        # 載入原始點供索引預測
+        
+        # 載入原始點
         global_points = None
         if "input_file" in element_config and os.path.exists(element_config["input_file"]):
             try:
@@ -114,25 +115,58 @@ def plot_element(ax, element_config, element_id, quality_mode=False):
             except: pass
 
         for i, seg in enumerate(segments):
-            n_points = seg.get("parameters", {}).get("n_points")
-            if seg.get("parameters", {}).get("spacing") is not None:
-                ds = seg["parameters"]["spacing"]
-                if seg.get("type") == "file" and global_points is not None:
-                    s, e = seg.get("start_index", 0), seg.get("end_index", -1)
-                    if e == -1: e = len(global_points) - 1
-                    sub = global_points[s:e+1]
-                    if len(sub) >= 2:
-                        total_l = np.sum(np.sqrt(np.sum(np.diff(sub, axis=0)**2, axis=1)))
+            seg_id = seg.get("id", "?")
+            seg_type = seg.get("type", "file")
+            auto_split = seg.get("auto_split", False)
+            split_threshold = seg.get("split_threshold", 20.0)
+
+            # 決定子區段範圍
+            sub_ranges = []
+            if seg_type == "curve":
+                sub_ranges.append(None)
+            else:
+                s_idx, e_idx = seg.get("start_index", 0), seg.get("end_index", -1)
+                if e_idx == -1 and global_points is not None: e_idx = len(global_points) - 1
+                
+                if auto_split and global_points is not None:
+                    sub_pts = global_points[s_idx : e_idx + 1]
+                    local_features = detect_feature_points(sub_pts, split_threshold)
+                    for f in range(len(local_features) - 1):
+                        sub_ranges.append((s_idx + local_features[f], s_idx + local_features[f+1]))
+                else:
+                    sub_ranges.append((s_idx, e_idx))
+
+            for sub_idx, r in enumerate(sub_ranges):
+                # 計算點數
+                n_points = seg.get("parameters", {}).get("n_points")
+                
+                # 取得該段原始點以計算長度或預設點數
+                if seg_type == "file" and global_points is not None:
+                    sp_raw = global_points[r[0] : r[1] + 1]
+                    if n_points is None: n_points = len(sp_raw)
+                    if seg.get("parameters", {}).get("spacing") is not None:
+                        ds = seg["parameters"]["spacing"]
+                        total_l = np.sum(np.sqrt(np.sum(np.diff(sp_raw, axis=0)**2, axis=1)))
                         n_points = int(round(total_l / ds)) + 1
-            if n_points is None: n_points = 50
-            
-            start = current_idx
-            end = len(points) if i == len(segments) - 1 else current_idx + n_points
-            if end > len(points): end = len(points)
-            
-            seg_pts = points[start:end]
-            ax.plot(seg_pts[:, 0], seg_pts[:, 1], '.-', markersize=4, label=f"E{element_id}-S{seg.get('id','?')}")
-            current_idx = end - 1
+                
+                if n_points is None: n_points = 50
+                if n_points < 2: n_points = 2
+
+                start = current_idx
+                # 如果是最後一個子段且是最後一個 Segment，取到最後
+                if i == len(segments)-1 and sub_idx == len(sub_ranges)-1:
+                    end = len(points)
+                else:
+                    end = current_idx + n_points
+                
+                if end > len(points): end = len(points)
+                if start >= len(points): break
+
+                seg_pts = points[start:end]
+                label = f"E{element_id}-S{seg_id}"
+                if len(sub_ranges) > 1: label += f"-{sub_idx+1}"
+                ax.plot(seg_pts[:, 0], seg_pts[:, 1], '.-', markersize=4, label=label)
+                current_idx = end - 1
     else:
         # --- 品質模式：熱向圖 ---
         diffs = np.diff(points, axis=0)

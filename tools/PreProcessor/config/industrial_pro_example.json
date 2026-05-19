@@ -1,7 +1,7 @@
 {
   "elements": [
     {
-      "name": "Industrial_Airfoil_Mockup",
+      "name": "High_Res_Airfoil",
       "input_file": "examples/geometries/naca0012.dat",
       "output_file": "Results/pro_airfoil.dat",
       "is_closed": true,
@@ -9,17 +9,24 @@
       "segments": [
         {
           "id": 1,
-          "comment": "前緣使用曲率加密",
-          "start_index": 0, "end_index": 50,
-          "strategy": "curvature",
-          "parameters": { "spacing": 0.005, "sensitivity": 2.0 }
+          "comment": "上翼面",
+          "start_index": 0, "end_index": 80,
+          "strategy": "uniform",
+          "parameters": { "spacing": 0.02 }
         },
         {
           "id": 2,
-          "comment": "後段使用幾何級數並匹配前段間距",
-          "start_index": 50, "end_index": -1,
-          "strategy": "geometric",
-          "parameters": { "spacing_start": 0.005, "spacing_end": 0.05, "n_points": 40 }
+          "comment": "前緣區域：使用 Cosine 雙端加密，確保最前端點極密",
+          "start_index": 80, "end_index": 120,
+          "strategy": "cosine",
+          "parameters": { "n_points": 60 }
+        },
+        {
+          "id": 3,
+          "comment": "下翼面",
+          "start_index": 120, "end_index": -1,
+          "strategy": "uniform",
+          "parameters": { "spacing": 0.02 }
         }
       ]
     },
