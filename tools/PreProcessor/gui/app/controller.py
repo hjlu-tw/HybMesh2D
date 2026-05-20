@@ -26,6 +26,8 @@ class AppController:
         # Connect input fields to model update
         sb = self.main_window.sidebar_view
         sb.uniform_n.valueChanged.connect(self.update_segment_params)
+        sb.uniform_spacing.valueChanged.connect(self.update_segment_params)
+        sb.uniform_type_combo.currentTextChanged.connect(self.update_segment_params)
         sb.tanh_n.valueChanged.connect(self.update_segment_params)
         sb.tanh_intensity.valueChanged.connect(self.update_segment_params)
         sb.cosine_n.valueChanged.connect(self.update_segment_params)
@@ -80,6 +82,30 @@ class AppController:
         
         self.main_window.sidebar_view.segment_props_group.setVisible(False)
         self.current_segment_idx = -1
+        self.main_window.canvas_view.update_active_segment(None, None)
+
+    def _apply_geometry_update(self):
+        if not hasattr(self, 'original_points') or self.original_points is None:
+            return
+            
+        points = self.original_points.copy()
+        
+        # If the user sets "is_closed" to True, logically connect the tail to the head
+        if self.project_model.is_closed and len(points) > 0:
+            if not np.allclose(points[0], points[-1]):
+                points = np.vstack((points, points[0]))
+        
+        self.main_window.canvas_view.load_data(points)
+        self.split_indices = self.auto_detect_features(points, angle_threshold_deg=30.0)
+        self.main_window.canvas_view.update_split_points(self.split_indices)
+        
+        self.selected_point_idx = None
+        self.main_window.canvas_view.update_selected_point(None)
+        self.main_window.sidebar_view.selected_info.setText("Selected Point: None")
+        self.main_window.sidebar_view.split_btn.setEnabled(False)
+        self.main_window.sidebar_view.remove_split_btn.setEnabled(False)
+        
+        self._sync_segments_to_view()
 
     def load_geometry(self):
         default_dir = "examples/geometries"
@@ -90,27 +116,25 @@ class AppController:
             "Data Files (*.dat)"
         )
         if file_path:
-            try:
-                self.project_model.input_file = file_path
-                self.project_model.output_file = file_path.replace(".dat", "_resampled.dat")
-                points = np.loadtxt(file_path)
-                self.main_window.canvas_view.load_data(points)
-                
-                self.split_indices = self.auto_detect_features(points, angle_threshold_deg=30.0)
-                self.main_window.canvas_view.update_split_points(self.split_indices)
-                
-                self.selected_point_idx = None
-                self.main_window.canvas_view.update_selected_point(None)
-                self.main_window.sidebar_view.selected_info.setText("Selected Point: None")
-                self.main_window.sidebar_view.split_btn.setEnabled(False)
-                self.main_window.sidebar_view.remove_split_btn.setEnabled(False)
-                
-                self._sync_segments_to_view()
-                
-                self.main_window.log_panel.log(f"Loaded {file_path} with {len(points)} points.")
-                self.main_window.log_panel.log(f"Auto-detected {len(self.split_indices)-1} segments based on sharp corners.")
-            except Exception as e:
-                self.main_window.log_panel.log(f"Error loading file: {str(e)}")
+            self.load_geometry_from_path(file_path)
+
+    def load_geometry_from_path(self, file_path):
+        try:
+            self.project_model.input_file = file_path
+            self.project_model.output_file = file_path.replace(".dat", "_resampled.dat")
+            self.original_points = np.loadtxt(file_path)
+            
+            # Update filename label
+            filename = os.path.basename(file_path)
+            self.main_window.sidebar_view.file_name_label.setText(f"File: {filename}")
+            self.main_window.sidebar_view.file_name_label.setStyleSheet("color: black; font-weight: bold; margin-bottom: 5px;")
+            
+            self._apply_geometry_update()
+            
+            self.main_window.log_panel.log(f"Loaded {file_path} with {len(self.original_points)} points.")
+            self.main_window.log_panel.log(f"Auto-detected {len(self.split_indices)-1} segments based on sharp corners.")
+        except Exception as e:
+            self.main_window.log_panel.log(f"Error loading file: {str(e)}")
 
     def handle_point_clicked(self, idx):
         self.selected_point_idx = idx
@@ -145,10 +169,16 @@ class AppController:
             self.handle_point_clicked(self.selected_point_idx)
 
     def handle_segment_selected(self, row):
-        if row < 0: return
+        if row < 0:
+            self.main_window.canvas_view.update_active_segment(None, None)
+            return
         self.current_segment_idx = row
         seg = self.project_model.get_segment(row)
-        if not seg: return
+        if not seg:
+            self.main_window.canvas_view.update_active_segment(None, None)
+            return
+        
+        self.main_window.canvas_view.update_active_segment(seg.start_index, seg.end_index)
         
         sb = self.main_window.sidebar_view
         sb.segment_props_group.setVisible(True)
@@ -177,9 +207,18 @@ class AppController:
                 widget.blockSignals(block)
         
         block_all(True)
+        sb.uniform_type_combo.blockSignals(True)
+        
         params = seg.parameters
         if seg.strategy == "uniform":
-            sb.uniform_n.setValue(params.get("n_points", 50))
+            if "spacing" in params:
+                sb.uniform_type_combo.setCurrentText("Specify Spacing")
+                sb.uniform_spacing.setValue(params["spacing"])
+                sb._toggle_uniform_mode(True)
+            else:
+                sb.uniform_type_combo.setCurrentText("Specify Num Points")
+                sb.uniform_n.setValue(params.get("n_points", 50))
+                sb._toggle_uniform_mode(False)
         elif seg.strategy == "tanh":
             sb.tanh_n.setValue(params.get("n_points", 50))
             sb.tanh_intensity.setValue(params.get("intensity", 2.0))
@@ -192,6 +231,7 @@ class AppController:
             sb.geo_n.setValue(params.get("n_points", 50))
             sb.geo_ratio.setValue(params.get("ratio", 1.2))
         block_all(False)
+        sb.uniform_type_combo.blockSignals(False)
 
     def update_segment_params(self):
         if self.current_segment_idx < 0: return
@@ -200,7 +240,11 @@ class AppController:
         
         sb = self.main_window.sidebar_view
         if seg.strategy == "uniform":
-            seg.parameters["n_points"] = sb.uniform_n.value()
+            seg.parameters.clear() # Clear to ensure we don't mix n_points and spacing
+            if sb.uniform_type_combo.currentText() == "Specify Spacing":
+                seg.parameters["spacing"] = sb.uniform_spacing.value()
+            else:
+                seg.parameters["n_points"] = sb.uniform_n.value()
         elif seg.strategy == "tanh":
             seg.parameters["n_points"] = sb.tanh_n.value()
             seg.parameters["intensity"] = sb.tanh_intensity.value()
@@ -215,6 +259,7 @@ class AppController:
 
     def handle_is_closed_changed(self, text):
         self.project_model.is_closed = (text == "True")
+        self._apply_geometry_update()
         
     def generate_json(self):
         if not self.project_model.input_file:

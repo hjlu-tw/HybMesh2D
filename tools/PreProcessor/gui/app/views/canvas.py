@@ -33,6 +33,9 @@ class CanvasView(QWidget):
         
         # Add a plot item for the resampled output (magenta dashed line with dots)
         self.resampled_curve = self.plot_widget.plot(pen=pg.mkPen('m', width=2, style=Qt.PenStyle.DashLine), symbolBrush='m', symbolSize=5)
+        
+        # Add a plot item to highlight the active segment (thick orange line)
+        self.active_segment_curve = self.plot_widget.plot(pen=pg.mkPen('#FF9800', width=4))
 
         self.points = None
         self.split_indices = []
@@ -53,6 +56,14 @@ class CanvasView(QWidget):
             self.resampled_curve.setData(points[:, 0], points[:, 1])
         else:
             self.resampled_curve.setData([], [])
+
+    def update_active_segment(self, start_idx, end_idx):
+        if self.points is not None and start_idx is not None and end_idx is not None:
+            if start_idx <= end_idx:
+                seg_pts = self.points[start_idx:end_idx+1]
+                self.active_segment_curve.setData(seg_pts[:, 0], seg_pts[:, 1])
+        else:
+            self.active_segment_curve.setData([], [])
 
     def update_split_points(self, indices):
         self.split_indices = indices

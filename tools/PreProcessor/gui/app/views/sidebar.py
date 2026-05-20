@@ -12,6 +12,10 @@ class SidebarView(QWidget):
         self.load_btn = QPushButton("Load Geometry (.dat)")
         self.layout.addWidget(self.load_btn)
         
+        self.file_name_label = QLabel("No file loaded")
+        self.file_name_label.setStyleSheet("color: gray; font-style: italic; margin-bottom: 5px;")
+        self.layout.addWidget(self.file_name_label)
+        
         global_form = QFormLayout()
         self.is_closed_combo = QComboBox()
         self.is_closed_combo.addItems(["True", "False"])
@@ -57,24 +61,49 @@ class SidebarView(QWidget):
         self.layout.addWidget(self.segment_props_group)
         self.segment_props_group.setVisible(False) # Hide until a segment is selected
         
-        # Generate JSON Button & Run Button
+        # Run Button & Generate JSON Button
         self.layout.addStretch()
-        self.generate_btn = QPushButton("Generate JSON Config")
-        self.generate_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 8px;")
-        self.layout.addWidget(self.generate_btn)
         
         self.run_btn = QPushButton("Run C++ Backend")
         self.run_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
         self.layout.addWidget(self.run_btn)
         
+        self.generate_btn = QPushButton("Generate JSON Config")
+        self.generate_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 8px;")
+        self.layout.addWidget(self.generate_btn)
+        
     def _setup_param_forms(self):
         # 1. Uniform
         uniform_widget = QWidget()
         uniform_layout = QFormLayout(uniform_widget)
+        
+        self.uniform_type_combo = QComboBox()
+        self.uniform_type_combo.addItems(["Specify Num Points", "Specify Spacing"])
+        uniform_layout.addRow("Mode:", self.uniform_type_combo)
+        
         self.uniform_n = QSpinBox()
-        self.uniform_n.setRange(2, 1000)
+        self.uniform_n.setRange(2, 100000)
         self.uniform_n.setValue(50)
         uniform_layout.addRow("Num Points:", self.uniform_n)
+        
+        self.uniform_spacing = QDoubleSpinBox()
+        self.uniform_spacing.setRange(0.00001, 10000.0)
+        self.uniform_spacing.setValue(0.1)
+        self.uniform_spacing.setDecimals(5)
+        self.uniform_spacing.setSingleStep(0.01)
+        
+        uniform_layout.addRow("Spacing (ds):", self.uniform_spacing)
+        
+        self.uniform_spacing.setVisible(False) # Hidden by default
+        self.uniform_spacing_label = uniform_layout.labelForField(self.uniform_spacing)
+        if self.uniform_spacing_label:
+            self.uniform_spacing_label.setVisible(False)
+        
+        # Connect mode toggle
+        self.uniform_type_combo.currentTextChanged.connect(
+            lambda text: self._toggle_uniform_mode(text == "Specify Spacing")
+        )
+        
         self.param_stack.addWidget(uniform_widget)
         
         # 2. Tanh
@@ -127,6 +156,14 @@ class SidebarView(QWidget):
         geo_layout.addRow("Num Points:", self.geo_n)
         geo_layout.addRow("Ratio:", self.geo_ratio)
         self.param_stack.addWidget(geo_widget)
+
+    def _toggle_uniform_mode(self, is_spacing):
+        self.uniform_n.setVisible(not is_spacing)
+        n_label = self.uniform_n.parentWidget().layout().labelForField(self.uniform_n)
+        if n_label: n_label.setVisible(not is_spacing)
+        
+        self.uniform_spacing.setVisible(is_spacing)
+        if self.uniform_spacing_label: self.uniform_spacing_label.setVisible(is_spacing)
 
     def switch_param_form(self, strategy_name):
         index_map = {"uniform": 0, "tanh": 1, "cosine": 2, "curvature": 3, "geometric": 4}

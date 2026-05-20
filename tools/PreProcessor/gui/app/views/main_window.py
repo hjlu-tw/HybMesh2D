@@ -8,18 +8,26 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HybMesh PreProcessor")
-        self.resize(1024, 768)
+        self.resize(1200, 800) # Slightly larger default window
 
         # Create main views
         self.canvas_view = CanvasView()
         self.sidebar_view = SidebarView()
+        
+        # Fix the sidebar width to prevent jumping when dynamic forms appear
+        self.sidebar_view.setFixedWidth(300)
+
         self.log_panel = LogPanel()
 
         # Center widget: Splitter containing sidebar and canvas
+        # Since sidebar has a fixed width, the splitter is less necessary for resizing it,
+        # but it still holds them together nicely.
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.sidebar_view)
         splitter.addWidget(self.canvas_view)
-        splitter.setSizes([250, 774]) # Initial sizes
+        
+        # Disable collapsing the sidebar completely to avoid weird UI states
+        splitter.setCollapsible(0, False)
 
         self.setCentralWidget(splitter)
 
