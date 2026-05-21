@@ -1,32 +1,101 @@
+from __future__ import annotations
+import copy
+
+
 class SegmentModel:
-    def __init__(self, segment_id, start_index, end_index):
+    """Represents one resampling segment (either from a .dat file or a math formula)."""
+
+    def __init__(self, segment_id: int, start_index: int, end_index: int):
         self.id = segment_id
-        self.type = "file"
+        self.type = "file"          # "file" | "curve"
         self.start_index = start_index
         self.end_index = end_index
+
+        # Resampling strategy (applies to both file and curve types)
         self.strategy = "uniform"
-        self.parameters = {"n_points": 50}
+        self.parameters: dict = {"n_points": 50}
 
-    def update_strategy(self, new_strategy):
+        # Curve-segment fields (only used when type == "curve")
+        self.curve_mode = "parametric"   # "parametric" | "explicit"
+        self.x_formula = "cos(t)"
+        self.y_formula = "sin(t)"
+        self.formula = "sin(x)"         # explicit y=f(x)
+        self.t_min = 0.0
+        self.t_max = 6.283185307        # 2π
+
+        # Advanced
+        self.match_previous: bool = False
+
+    # ── Strategy helpers ──────────────────────────────────────────────────
+
+    def update_strategy(self, new_strategy: str):
         self.strategy = new_strategy
-        # Assign default parameters based on strategy
-        if new_strategy == "uniform":
-            self.parameters = {"n_points": 50}
-        elif new_strategy == "tanh":
-            self.parameters = {"n_points": 50, "intensity": 2.0}
-        elif new_strategy == "cosine":
-            self.parameters = {"n_points": 50}
-        elif new_strategy == "curvature":
-            self.parameters = {"n_points": 50, "sensitivity": 1.5, "max_angle": 15.0}
-        elif new_strategy == "geometric":
-            self.parameters = {"n_points": 50, "ratio": 1.2}
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "type": self.type,
-            "start_index": int(self.start_index),
-            "end_index": int(self.end_index),
-            "strategy": self.strategy,
-            "parameters": self.parameters
+        defaults = {
+            "uniform":   {"n_points": 50},
+            "tanh":      {"n_points": 50, "intensity": 2.0},
+            "cosine":    {"n_points": 50},
+            "curvature": {"n_points": 50, "sensitivity": 1.5, "max_angle": 15.0},
+            "geometric": {"n_points": 50, "ratio": 1.2},
         }
+        self.parameters = defaults.get(new_strategy, {"n_points": 50})
+
+    # ── Serialisation ─────────────────────────────────────────────────────
+
+    @classmethod
+    def from_dict(cls, segment_id: int, d: dict) -> "SegmentModel":
+        seg_type = d.get("type", "file")
+        if seg_type == "curve":
+            seg = cls(segment_id, -1, -1)
+            seg.type = "curve"
+            seg.strategy = d.get("strategy", "uniform")
+            params = copy.deepcopy(d.get("parameters", {"n_points": 50}))
+            r = params.pop("range", [0.0, 1.0])
+            seg.parameters = params
+            seg.t_min = float(r[0])
+            seg.t_max = float(r[1])
+            seg.match_previous = d.get("match_previous", False)
+
+            if "x_formula" in d and "y_formula" in d:
+                seg.curve_mode = "parametric"
+                seg.x_formula = d["x_formula"]
+                seg.y_formula = d["y_formula"]
+            else:
+                seg.curve_mode = "explicit"
+                seg.formula = d.get("formula", "sin(x)")
+        else:
+            seg = cls(segment_id, d.get("start_index", 0), d.get("end_index", -1))
+            seg.type = d.get("type", "file")
+            seg.strategy = d.get("strategy", "uniform")
+            seg.parameters = copy.deepcopy(d.get("parameters", {"n_points": 50}))
+            seg.match_previous = d.get("match_previous", False)
+        return seg
+
+    def to_dict(self) -> dict:
+        if self.type == "curve":
+            params = copy.deepcopy(self.parameters)
+            params["range"] = [self.t_min, self.t_max]
+            d: dict = {
+                "id": self.id,
+                "type": "curve",
+                "strategy": self.strategy,
+                "parameters": params,
+            }
+            if self.curve_mode == "parametric":
+                d["x_formula"] = self.x_formula
+                d["y_formula"] = self.y_formula
+            else:
+                d["formula"] = self.formula
+            if self.match_previous:
+                d["match_previous"] = True
+        else:
+            d = {
+                "id": self.id,
+                "type": self.type,
+                "start_index": int(self.start_index),
+                "end_index": int(self.end_index),
+                "strategy": self.strategy,
+                "parameters": copy.deepcopy(self.parameters),
+            }
+            if self.match_previous:
+                d["match_previous"] = True
+        return d
