@@ -130,7 +130,7 @@ class SidebarView(QWidget):
         sec.add_layout(form)
 
     def _build_geometries_section(self):
-        sec = CollapsibleSection("Loaded Geometries", start_collapsed=True)
+        sec = CollapsibleSection("Loaded Geometries", start_collapsed=False)
         self.layout.addWidget(sec)
 
         self.geom_list = QListWidget()
@@ -154,11 +154,35 @@ class SidebarView(QWidget):
                 background: #20243c;
                 color: #dde6ff;
             }
+            QListWidget::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #4f5b8c;
+                border-radius: 3px;
+                background-color: #181b2a;
+            }
+            QListWidget::indicator:checked {
+                background-color: #5a9ad4;
+                border-color: #5a9ad4;
+                image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSIyMCA2IDkgMTcgNCAxMiI+PC9wb2x5bGluZT48L3N2Zz4=");
+            }
+            QListWidget::indicator:unchecked:hover {
+                border-color: #5a9ad4;
+            }
         """)
-        self.focus_geom_btn = self._btn("Focus View to Shape", '#102a45')
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(4)
+        self.toggle_visibility_btn = self._btn("Toggle Visible", '#1a2035')
+        self.toggle_visibility_btn.setToolTip(
+            "Toggle visibility of the selected geometry on the canvas")
+        self.focus_geom_btn = self._btn("Focus View", '#102a45')
+        self.focus_geom_btn.setToolTip("Fit canvas view to selected geometry")
+        btn_row.addWidget(self.toggle_visibility_btn)
+        btn_row.addWidget(self.focus_geom_btn)
 
         sec.add_widget(self.geom_list)
-        sec.add_widget(self.focus_geom_btn)
+        sec.add_layout(btn_row)
 
     def _build_split_section(self):
         sec = CollapsibleSection("Split Control", start_collapsed=True)
@@ -502,8 +526,13 @@ class SidebarView(QWidget):
         gl2.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.geo_n = mk_spin()
         self.geo_ratio = mk_dspin(1.0, 5.0, 1.2, 3, 0.05)
+        self.geo_ratio_end = mk_dspin(1.0, 5.0, 1.0, 3, 0.05)
         gl2.addRow("Num Points:", self.geo_n)
-        gl2.addRow("Ratio:", self.geo_ratio)
+        gl2.addRow("Ratio (start):", self.geo_ratio)
+        gl2.addRow("Ratio (end):", self.geo_ratio_end)
+        _hint = QLabel("Ratio = 1.0 means uniform end")
+        _hint.setStyleSheet("color:#556688; font-size:10px;")
+        gl2.addRow("", _hint)
         self.param_stack.addWidget(gw)
 
     # ═════════════════════════════════════════════════════════════════════

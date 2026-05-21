@@ -214,7 +214,21 @@ void processElement(const json& config) {
                 if (params.contains("spacing_start")) ratio = Spacing::solveGrowthRate(L, nT - 1, params["spacing_start"]);
                 else if (params.contains("spacing_end")) ratio = 1.0 / Spacing::solveGrowthRate(L, nT - 1, params["spacing_end"]);
                 else ratio = params.value("ratio", 1.1);
-                tS = Spacing::generateGeometric(L, nT, ratio);
+
+                double ratio_end = params.value("ratio_end", 1.0);
+                if (ratio_end != 1.0 && nT >= 4) {
+                    // Two-sided geometric: blend half from start, half from end
+                    int nHalf = nT / 2 + 1;
+                    auto tsA = Spacing::generateGeometric(L * 0.5, nHalf, ratio);
+                    auto tsB = Spacing::generateGeometric(L * 0.5, nHalf, ratio_end);
+                    tS.clear();
+                    for (int i = 0; i < nHalf; ++i) tS.push_back(tsA[i]);
+                    for (int i = (int)tsB.size() - 2; i >= 0; --i) tS.push_back(L - tsB[i]);
+                    // Rescale to ensure endpoints are exactly [0, L]
+                    if (!tS.empty()) { tS.front() = 0.0; tS.back() = L; }
+                } else {
+                    tS = Spacing::generateGeometric(L, nT, ratio);
+                }
             } else if (strat == "tanh") {
                 double dlt = params.value("intensity", 2.0);
                 if (params.contains("spacing_start") && params.contains("spacing_end")) {

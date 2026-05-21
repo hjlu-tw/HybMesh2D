@@ -78,7 +78,7 @@ class AppController:
         # Parameter-change signals (all route to update_segment_params)
         for widget in [sb.uniform_n, sb.tanh_n, sb.tanh_intensity,
                        sb.cosine_n, sb.curv_n, sb.curv_sens,
-                       sb.geo_n, sb.geo_ratio, sb.uniform_spacing]:
+                       sb.geo_n, sb.geo_ratio, sb.geo_ratio_end, sb.uniform_spacing]:
             widget.valueChanged.connect(self.update_segment_params)
         sb.uniform_type_combo.currentTextChanged.connect(
             self.update_segment_params)
@@ -96,6 +96,7 @@ class AppController:
         sb.geom_list.currentRowChanged.connect(self.handle_geom_list_row_changed)
         sb.geom_list.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
         sb.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
+        sb.toggle_visibility_btn.clicked.connect(self.toggle_selected_geometry_visibility)
 
         # ── Wire tab signals ────────────────────────────────────────────
         tw = self.main_window.tab_widget
@@ -170,6 +171,8 @@ class AppController:
         # Add geometry layer to the shared canvas
         self.main_window.canvas_view.add_geometry(
             session.session_id, None, session.color)
+        self.main_window.canvas_view.set_geometry_visible(
+            session.session_id, session.is_visible)
 
         # Explicitly set active index to the new tab
         new_idx = len(self.sessions) - 1
@@ -217,12 +220,13 @@ class AppController:
                 # Active segment
                 if session.current_segment_idx >= 0 and session.current_segment_idx < len(session.project_model.segments):
                     seg = session.project_model.segments[session.current_segment_idx]
-                    self.main_window.canvas_view.update_active_segment(seg.start_idx, seg.end_idx)
+                    self.main_window.canvas_view.update_active_segment(seg.start_index, seg.end_index)
                 
                 # Resampled preview
                 if session.resampled_points is not None:
                     self.main_window.canvas_view.load_resampled_data(session.resampled_points)
             
+            # Sync active overlays visibility with session visibility
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
 
     def close_tab(self, idx: int):
@@ -268,6 +272,7 @@ class AppController:
 
     def _sync_geometry_list(self):
         sb = self.main_window.sidebar_view
+        # Block both itemChanged AND currentRowChanged while rebuilding the list
         sb.geom_list.blockSignals(True)
         sb.geom_list.clear()
         from PyQt6.QtCore import Qt
@@ -279,14 +284,16 @@ class AppController:
             item.setCheckState(state)
             item.setData(Qt.ItemDataRole.UserRole, session.session_id)
             sb.geom_list.addItem(item)
-            
+
         if 0 <= self.active_idx < sb.geom_list.count():
             sb.geom_list.setCurrentRow(self.active_idx)
-            
+
         sb.geom_list.blockSignals(False)
 
     def handle_geom_visibility_changed(self, item: QListWidgetItem):
         session_id = item.data(Qt.ItemDataRole.UserRole)
+        if session_id is None:
+            return
         from PyQt6.QtCore import Qt
         is_checked = item.checkState() == Qt.CheckState.Checked
         for session in self.sessions:
@@ -300,12 +307,29 @@ class AppController:
     def handle_geom_list_row_changed(self, row: int):
         if row < 0 or row >= len(self.sessions):
             return
-        if row != self.active_idx:
-            self.main_window.tab_widget.setCurrentIndex(row)
+        # Guard: only switch if it's actually a different tab to avoid feedback loops
+        if row == self.active_idx:
+            return
+        self.main_window.tab_widget.setCurrentIndex(row)
 
     def handle_geom_list_double_clicked(self, item: QListWidgetItem):
         session_id = item.data(Qt.ItemDataRole.UserRole)
         self.main_window.canvas_view.fit_to_geometry(session_id)
+
+    def toggle_selected_geometry_visibility(self):
+        """Toggle the visibility of the currently selected geometry in the list."""
+        sb = self.main_window.sidebar_view
+        row = sb.geom_list.currentRow()
+        if row < 0 or row >= sb.geom_list.count():
+            return
+        item = sb.geom_list.item(row)
+        if item is None:
+            return
+        from PyQt6.QtCore import Qt
+        current = item.checkState() == Qt.CheckState.Checked
+        item.setCheckState(
+            Qt.CheckState.Unchecked if current else Qt.CheckState.Checked)
+        # itemChanged signal will call handle_geom_visibility_changed automatically
 
     def focus_to_selected_geometry(self):
         session = self.active_session()
@@ -465,6 +489,7 @@ class AppController:
 
         # Update geometry on the shared canvas
         self.main_window.canvas_view.update_geometry(session.session_id, points)
+        self.main_window.canvas_view.set_geometry_visible(session.session_id, session.is_visible)
 
         if re_detect:
             session.split_indices = self._auto_detect_features(points)
@@ -475,6 +500,7 @@ class AppController:
             self.main_window.canvas_view.update_split_points(session.split_indices)
             session.selected_point_idx = None
             self.main_window.canvas_view.update_selected_point(None)
+            self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
 
             # Reset sidebar point info
             sb = self.main_window.sidebar_view
@@ -494,7 +520,7 @@ class AppController:
             self._refresh_segment_list()
         self._update_tab_title()
 
-    def _refresh_segment_list(self):
+    def _refresh_segment_list(self, clear_resampled: bool = True):
         session = self.active_session()
         if not session:
             return
@@ -512,6 +538,11 @@ class AppController:
         sb.segment_list.blockSignals(False)
         session.current_segment_idx = -1
         self.main_window.canvas_view.update_active_segment(None, None)
+        # Only clear resampled preview when segments have actually changed
+        # (not on tab switch, so previews persist across session changes)
+        if clear_resampled:
+            session.resampled_points = None
+            self.main_window.canvas_view.clear_resampled()
 
     # ═════════════════════════════════════════════════════════════════════
     # Sidebar ↔ Session sync
@@ -553,7 +584,7 @@ class AppController:
         sb.split_btn.setEnabled(False)
         sb.remove_split_btn.setEnabled(False)
 
-        self._refresh_segment_list()
+        self._refresh_segment_list(clear_resampled=False)
         self._sync_geometry_list()
 
     def _clear_sidebar(self):
@@ -781,6 +812,7 @@ class AppController:
         elif seg.strategy == "geometric":
             sb.geo_n.setValue(p.get("n_points", 50))
             sb.geo_ratio.setValue(p.get("ratio", 1.2))
+            sb.geo_ratio_end.setValue(p.get("ratio_end", 1.0))
         block(False)
 
     def update_segment_params(self):
@@ -821,6 +853,11 @@ class AppController:
         elif seg.strategy == "geometric":
             seg.parameters["n_points"] = sb.geo_n.value()
             seg.parameters["ratio"] = sb.geo_ratio.value()
+            end_ratio = sb.geo_ratio_end.value()
+            if end_ratio != 1.0:
+                seg.parameters["ratio_end"] = end_ratio
+            else:
+                seg.parameters.pop("ratio_end", None)
 
     def update_match_previous(self, checked: bool):
         session = self.active_session()
