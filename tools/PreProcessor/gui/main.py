@@ -1,6 +1,11 @@
 import sys
 import os
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QSpinBox, QDoubleSpinBox
+
+# Disable scroll wheel value changes on numerical spin boxes
+QSpinBox.wheelEvent = lambda self, event: event.ignore()
+QDoubleSpinBox.wheelEvent = lambda self, event: event.ignore()
+
 from app.controller import AppController
 
 def main():

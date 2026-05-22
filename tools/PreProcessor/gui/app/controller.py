@@ -20,7 +20,10 @@ from app.models.segment import SegmentModel
 from app.workers.backend_run import BackendWorker
 from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd, AutoDetectSplitCmd
 from app.commands.vertex_cmds import InsertVertexCmd
-from app.commands.segment_cmds import UpdateStrategyCmd, UpdateParamsCmd, RemoveSegmentCmd
+from app.commands.segment_cmds import (
+    UpdateStrategyCmd, RemoveSegmentCmd,
+    AddCurveSegmentCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd
+)
 
 
 # ── Formula evaluator (Python-side, for canvas preview only) ─────────────────
@@ -126,6 +129,8 @@ class AppController:
 
         self._connecting_signals = False  # guard against re-entrant connects
         self._param_snapshot: dict = {}   # for UpdateParamsCmd debounce
+        self._is_populating = False       # guard against feedback loops during form population
+        self._segment_state_snapshot: dict = {}  # snapshot for segment state undo
 
         # Create a dedicated temp directory for the application lifecycle
         self.temp_dir = tempfile.mkdtemp(prefix="hybmesh_preprocessor_")
@@ -401,6 +406,24 @@ class AppController:
 
         sb.geom_list.blockSignals(False)
 
+    def _update_canvas_curve_segments(self):
+        session = self.active_session()
+        if not session:
+            self.main_window.canvas_view.update_curve_segments([])
+            return
+
+        segments_pts = []
+        for idx, seg in enumerate(session.project_model.segments):
+            if seg.type == "curve" and idx != session.current_segment_idx:
+                n = seg.parameters.get("n_points", 100)
+                try:
+                    xs, ys = self._compute_curve_preview_pts(seg, n)
+                    if xs is not None and ys is not None and len(xs) > 0:
+                        segments_pts.append(np.column_stack([xs, ys]))
+                except Exception:
+                    pass
+        self.main_window.canvas_view.update_curve_segments(segments_pts)
+
     def handle_geom_visibility_changed(self, item: QListWidgetItem):
         session_id = item.data(Qt.ItemDataRole.UserRole)
         if session_id is None:
@@ -668,6 +691,7 @@ class AppController:
         session.current_segment_idx = -1
         sb.remove_seg_btn.setEnabled(False)
         sb.show_segment_props(False)
+        self._update_canvas_curve_segments()
         self.main_window.canvas_view.update_active_segment(None, None)
         # Only clear resampled preview when segments have actually changed
         # (not on tab switch, so previews persist across session changes)
@@ -874,33 +898,40 @@ class AppController:
         sb.remove_seg_btn.setEnabled(seg.type == "curve")
 
         # Populate sidebar
-        sb.show_segment_props(True)
-        is_curve = (seg.type == "curve")
-        if is_curve:
-            sb.segment_type_label.setText("📐 Curve Segment")
-            sb.show_curve_segment(seg)
-            sb.strategy_combo.setVisible(False)
-            sb.param_stack.setVisible(False)
-        else:
-            sb.segment_type_label.setText("📁 File Segment")
-            sb.show_file_segment(seg.start_index, seg.end_index)
-            sb.strategy_combo.setVisible(True)
-            sb.param_stack.setVisible(True)
-            sb.strategy_combo.blockSignals(True)
-            sb.strategy_combo.setCurrentText(seg.strategy)
-            sb.strategy_combo.blockSignals(False)
-            sb.switch_param_form(seg.strategy)
-            self._populate_form_from_segment(seg)
+        self._is_populating = True
+        try:
+            sb.show_segment_props(True)
+            is_curve = (seg.type == "curve")
+            if is_curve:
+                sb.segment_type_label.setText("📐 Curve Segment")
+                sb.show_curve_segment(seg)
+                sb.strategy_combo.setVisible(False)
+                sb.param_stack.setVisible(False)
+            else:
+                sb.segment_type_label.setText("📁 File Segment")
+                sb.show_file_segment(seg.start_index, seg.end_index)
+                sb.strategy_combo.setVisible(True)
+                sb.param_stack.setVisible(True)
+                sb.strategy_combo.blockSignals(True)
+                sb.strategy_combo.setCurrentText(seg.strategy)
+                sb.strategy_combo.blockSignals(False)
+                sb.switch_param_form(seg.strategy)
+                self._populate_form_from_segment(seg)
 
-        # Show transform duplicate group only for curve segments
-        sb._transform_dup_group.setVisible(is_curve)
+            # Show transform duplicate group for all segments
+            sb._transform_dup_group.setVisible(True)
 
-        sb.match_previous_cb.blockSignals(True)
-        sb.match_previous_cb.setChecked(seg.match_previous)
-        sb.match_previous_cb.blockSignals(False)
+            sb.match_previous_cb.blockSignals(True)
+            sb.match_previous_cb.setChecked(seg.match_previous)
+            sb.match_previous_cb.blockSignals(False)
 
-        # Snapshot params for undo
-        self._param_snapshot = copy.deepcopy(seg.parameters)
+            # Snapshot params for undo
+            self._param_snapshot = copy.deepcopy(seg.parameters)
+            self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
+        finally:
+            self._is_populating = False
+
+        self._update_canvas_curve_segments()
 
     def handle_strategy_changed(self, strategy_name: str):
         session = self.active_session()
@@ -915,6 +946,7 @@ class AppController:
             repopulate_cb=self._repopulate_strategy)
         session.command_history.execute(cmd)
         self._param_snapshot = copy.deepcopy(seg.parameters)
+        self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
         self.main_window.log_panel.log(
             f"Segment {seg.id}: strategy → {strategy_name}")
 
@@ -966,20 +998,50 @@ class AppController:
         session = self.active_session()
         if not session or session.current_segment_idx < 0:
             return
+        if self._is_populating:
+            return
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg:
             return
-        old_params = copy.deepcopy(self._param_snapshot)
         self._read_params_into_segment(seg)
-        # Only push to history when value actually changes
-        new_params = copy.deepcopy(seg.parameters)
-        if new_params != old_params:
-            cmd = UpdateParamsCmd(
-                session, session.current_segment_idx, old_params, new_params)
-            # Push without re-executing (already applied by read)
+        self._record_segment_state_change()
+
+    def _record_segment_state_change(self):
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        if self._is_populating:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg:
+            return
+        
+        current_state = seg.to_dict()
+        old_state = self._segment_state_snapshot
+        
+        if current_state != old_state:
+            def refresh():
+                if session is self.active_session():
+                    if session.current_segment_idx >= 0:
+                        seg_to_refresh = session.project_model.get_segment(session.current_segment_idx)
+                        if seg_to_refresh:
+                            self._is_populating = True
+                            try:
+                                sb = self.main_window.sidebar_view
+                                if seg_to_refresh.type == "curve":
+                                    sb.show_curve_segment(seg_to_refresh)
+                                else:
+                                    sb.switch_param_form(seg_to_refresh.strategy)
+                                    self._populate_form_from_segment(seg_to_refresh)
+                            finally:
+                                self._is_populating = False
+                self._apply_geometry_update(session)
+            
+            cmd = UpdateSegmentStateCmd(session, session.current_segment_idx, old_state, current_state, refresh_cb=refresh)
             session.command_history._undo_stack.append(cmd)
             session.command_history._redo_stack.clear()
-            self._param_snapshot = new_params
+            self._segment_state_snapshot = current_state
+
 
     def _read_params_into_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view
@@ -1008,11 +1070,17 @@ class AppController:
 
     def update_match_previous(self, checked: bool):
         session = self.active_session()
-        if not session or session.current_segment_idx < 0:
-            return
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if seg:
-            seg.match_previous = checked
+        if session and session.current_segment_idx >= 0:
+            seg = session.project_model.get_segment(session.current_segment_idx)
+            if seg and seg.match_previous != checked:
+                def update_cb(val):
+                    sb = self.main_window.sidebar_view
+                    sb.match_previous_cb.blockSignals(True)
+                    sb.match_previous_cb.setChecked(val)
+                    sb.match_previous_cb.blockSignals(False)
+                    self._apply_geometry_update(session)
+                cmd = ToggleMatchPreviousCmd(session, session.current_segment_idx, checked, update_cb)
+                session.command_history.execute(cmd)
 
     # ═════════════════════════════════════════════════════════════════════
     # Global settings
@@ -1021,13 +1089,29 @@ class AppController:
     def handle_is_closed_changed(self, text: str):
         session = self.active_session()
         if session:
-            session.project_model.is_closed = (text == "True")
-            self._apply_geometry_update(session)
+            is_closed = (text == "True")
+            if session.project_model.is_closed != is_closed:
+                def refresh():
+                    sb = self.main_window.sidebar_view
+                    sb.is_closed_combo.blockSignals(True)
+                    sb.is_closed_combo.setCurrentText(str(session.project_model.is_closed))
+                    sb.is_closed_combo.blockSignals(False)
+                    self._apply_geometry_update(session)
+                cmd = ToggleIsClosedCmd(session, is_closed, refresh)
+                session.command_history.execute(cmd)
 
     def handle_global_spline_changed(self, checked: bool):
         session = self.active_session()
         if session:
-            session.project_model.global_spline = checked
+            if session.project_model.global_spline != checked:
+                def refresh():
+                    sb = self.main_window.sidebar_view
+                    sb.global_spline_cb.blockSignals(True)
+                    sb.global_spline_cb.setChecked(session.project_model.global_spline)
+                    sb.global_spline_cb.blockSignals(False)
+                    self._apply_geometry_update(session)
+                cmd = ToggleGlobalSplineCmd(session, checked, refresh)
+                session.command_history.execute(cmd)
 
     # ═════════════════════════════════════════════════════════════════════
     # Curve segment
@@ -1038,14 +1122,14 @@ class AppController:
         if not session:
             self.main_window.log_panel.log("No geometry session active.")
             return
-        seg = session.project_model.add_curve_segment()
-        self._refresh_segment_list()
-        # Select the new segment in the list
-        sb = self.main_window.sidebar_view
-        new_row = len(session.project_model.segments) - 1
-        sb.segment_list.setCurrentRow(new_row)
+        cmd = AddCurveSegmentCmd(
+            session,
+            refresh_cb=self._refresh_segment_list,
+            select_cb=lambda idx: self.main_window.sidebar_view.segment_list.setCurrentRow(idx)
+        )
+        session.command_history.execute(cmd)
         self.main_window.log_panel.log(
-            f"Added Curve Segment {seg.id}.")
+            f"Added Curve Segment {cmd.added_seg.id}.")
 
     def _sync_active_curve_segment_from_ui(self):
         session = self.active_session()
@@ -1148,6 +1232,8 @@ class AppController:
     def preview_curve_formula(self):
         session = self.active_session()
         if not session or session.current_segment_idx < 0:
+            return
+        if self._is_populating:
             return
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg or seg.type != "curve":
@@ -1275,6 +1361,8 @@ class AppController:
             self.main_window.canvas_view.update_curve_preview(pts)
             self.main_window.log_panel.log(
                 f"Curve preview updated ({len(pts)} points).")
+            self._update_canvas_curve_segments()
+            self._record_segment_state_change()
         except Exception as e:
             self.main_window.log_panel.log(f"Formula error: {e}")
             self.main_window.canvas_view.clear_curve_preview()
@@ -1289,6 +1377,10 @@ class AppController:
             if session.command_history.undo():
                 self.main_window.log_panel.log("Undo.")
                 self._sync_geometry_list()
+                if session.current_segment_idx >= 0:
+                    seg = session.project_model.get_segment(session.current_segment_idx)
+                    if seg:
+                        self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to undo.")
 
@@ -1298,6 +1390,10 @@ class AppController:
             if session.command_history.redo():
                 self.main_window.log_panel.log("Redo.")
                 self._sync_geometry_list()
+                if session.current_segment_idx >= 0:
+                    seg = session.project_model.get_segment(session.current_segment_idx)
+                    if seg:
+                        self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to redo.")
 
@@ -1335,28 +1431,36 @@ class AppController:
     # ═════════════════════════════════════════════════════════════════════
 
     def duplicate_with_transform(self):
-        """Generate preview points for the active curve segment, apply the
+        """Generate preview points for the active segment, apply the
         selected geometric transform, and add a new Polygon curve segment."""
         session = self.active_session()
         if not session or session.current_segment_idx < 0:
-            self.main_window.log_panel.log("No curve segment selected.")
+            self.main_window.log_panel.log("No segment selected.")
             return
         seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg or seg.type != "curve":
-            self.main_window.log_panel.log("Select a curve segment to duplicate.")
+        if not seg:
             return
 
-        # --- Get preview points (same logic as preview_curve_formula but returns arrays)
-        self._sync_active_curve_segment_from_ui()
-        n = seg.parameters.get("n_points", 100)
-        try:
-            xs, ys = self._compute_curve_preview_pts(seg, n)
-        except Exception as e:
-            self.main_window.log_panel.log(f"Cannot compute preview for transform: {e}")
-            return
+        # --- Get points to duplicate
+        if seg.type == "file":
+            if session.original_points is None or len(session.original_points) == 0:
+                self.main_window.log_panel.log("No file points loaded.")
+                return
+            pts = session.original_points[seg.start_index : seg.end_index + 1]
+            xs = pts[:, 0].copy()
+            ys = pts[:, 1].copy()
+            n = len(pts)
+        else:
+            self._sync_active_curve_segment_from_ui()
+            n = seg.parameters.get("n_points", 100)
+            try:
+                xs, ys = self._compute_curve_preview_pts(seg, n)
+            except Exception as e:
+                self.main_window.log_panel.log(f"Cannot compute preview for transform: {e}")
+                return
 
         if xs is None or len(xs) < 2:
-            self.main_window.log_panel.log("Preview has no valid points — cannot duplicate.")
+            self.main_window.log_panel.log("Segment has no valid points — cannot duplicate.")
             return
 
         xs = xs.copy()
@@ -1399,17 +1503,26 @@ class AppController:
 
         # --- Create new polygon curve segment from transformed points --------
         v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
-        new_seg = session.project_model.add_curve_segment()
+        new_seg = SegmentModel(session.project_model._next_curve_id, -1, -1)
+        new_seg.type = "curve"
         new_seg.curve_type = "polygon"
         new_seg.parameters["vertices_str"] = v_str
         new_seg.parameters["n_points"] = n
         new_seg.start_index = -1
         new_seg.end_index = -1
 
-        self._refresh_segment_list()
-        sb = self.main_window.sidebar_view
-        new_row = len(session.project_model.segments) - 1
-        sb.segment_list.setCurrentRow(new_row)
+        def select_cb(idx):
+            sidebar = self.main_window.sidebar_view
+            if 0 <= idx < sidebar.segment_list.count():
+                sidebar.segment_list.setCurrentRow(idx)
+
+        cmd = AddCurveSegmentCmd(
+            session,
+            refresh_cb=self._refresh_segment_list,
+            select_cb=select_cb,
+            preconfigured_seg=new_seg
+        )
+        session.command_history.execute(cmd)
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
         self.main_window.log_panel.log(
@@ -1448,9 +1561,6 @@ class AppController:
             xs = cx + r * np.cos(ts)
             ys = cy + r * np.sin(ts)
         elif seg.curve_type == "triangle":
-            verts = np.array([[seg.parameters.get(k, d) for k, d in
-                               [("x0",0.),("y0",0.)]], [("x1",1.),("y1",0.)],
-                              [("x2",0.5),("y2",1.)]])
             verts = np.array([
                 [seg.parameters.get("x0", 0.0), seg.parameters.get("y0", 0.0)],
                 [seg.parameters.get("x1", 1.0), seg.parameters.get("y1", 0.0)],

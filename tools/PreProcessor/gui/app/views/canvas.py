@@ -84,6 +84,9 @@ class CanvasView(QWidget):
         # ── Active-session points (for hit-testing) ───────────────────────
         self._active_points: np.ndarray | None = None
 
+        # ── Persistent background curve segments ──────────────────────────
+        self._curve_segment_items: list[pg.PlotDataItem] = []
+
         # ── Mouse events ──────────────────────────────────────────────────
         self.plot_widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
         self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
@@ -284,6 +287,24 @@ class CanvasView(QWidget):
         self.resampled_curve.setData([], [])
         self.curve_preview_item.setData([], [])
         self.quality_bad_scatter.clear()
+        self.update_curve_segments([])
+
+    def update_curve_segments(self, segments_pts: list[np.ndarray]):
+        """Clear and redraw all curve segments to keep them visible when deselected."""
+        # Remove existing items from the plot
+        for item in self._curve_segment_items:
+            self.plot_widget.removeItem(item)
+        self._curve_segment_items.clear()
+
+        # Add new items
+        for pts in segments_pts:
+            if pts is not None and len(pts) > 0:
+                # Plot with a slightly thin, neutral line
+                item = self.plot_widget.plot(
+                    pts[:, 0], pts[:, 1],
+                    pen=pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine)
+                )
+                self._curve_segment_items.append(item)
 
     # ═════════════════════════════════════════════════════════════════════
     # Mouse handlers
