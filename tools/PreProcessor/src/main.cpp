@@ -4,7 +4,9 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
+#include <numeric>
 #include <iomanip>
+#include <sstream>
 
 #include "json.hpp"
 #include "GeomUtils.hpp"
@@ -101,26 +103,216 @@ Point2D interpolateLinear(const std::vector<Point2D>& points, const std::vector<
     return points[idx - 1] * (1.0 - t) + points[idx] * t;
 }
 
-std::vector<Point2D> generateCurvePoints(const json& seg) {
+// Vertex-pinned polyline sampler: every vertex in `vertices` is guaranteed
+// to appear in the output.  Interior points are distributed proportionally
+// to each edge's length.  Total output count = n (includes repeated first
+// vertex at end for closed polygons).
+std::vector<Point2D> samplePolylinePinned(const std::vector<Point2D>& vertices, int n) {
+    int k = (int)vertices.size() - 1; // number of distinct vertices / edges
+    if (k < 1) return std::vector<Point2D>(n, vertices.empty() ? Point2D{0,0} : vertices[0]);
+
+    // Compute edge lengths
+    std::vector<double> edgeLen(k);
+    double Ltotal = 0.0;
+    for (int i = 0; i < k; ++i) {
+        edgeLen[i] = (vertices[i + 1] - vertices[i]).length();
+        Ltotal += edgeLen[i];
+    }
+    if (Ltotal < 1e-12) return std::vector<Point2D>(n, vertices[0]);
+
+    // Allocate interior (non-vertex) points per edge proportionally
+    int nPinned = k + 1; // k distinct vertices + repeated start vertex
+    int nInterior = std::max(0, n - nPinned);
+
+    std::vector<int> edgeInter(k, 0);
+    {
+        int allocated = 0;
+        for (int i = 0; i < k; ++i) {
+            edgeInter[i] = (int)std::floor(nInterior * edgeLen[i] / Ltotal);
+            allocated += edgeInter[i];
+        }
+        // Distribute remaining to longest edges first
+        int remaining = nInterior - allocated;
+        // Build sorted index by length descending
+        std::vector<int> order(k);
+        std::iota(order.begin(), order.end(), 0);
+        std::stable_sort(order.begin(), order.end(),
+            [&](int a, int b){ return edgeLen[a] > edgeLen[b]; });
+        for (int i = 0; i < remaining; ++i)
+            edgeInter[order[i % k]] += 1;
+    }
+
+    // Build output
+    std::vector<Point2D> result;
+    result.reserve(n);
+    for (int i = 0; i < k; ++i) {
+        result.push_back(vertices[i]);
+        int ni = edgeInter[i];
+        for (int j = 1; j <= ni; ++j) {
+            double t = (double)j / (ni + 1);
+            result.push_back(vertices[i] * (1.0 - t) + vertices[i + 1] * t);
+        }
+    }
+    result.push_back(vertices[k]); // repeated first vertex (closes polygon)
+    return result;
+}
+
+
+std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Point2D>& gp) {
     std::vector<Point2D> pts; 
     json p = seg.value("parameters", json::object());
     std::vector<double> r = p.value("range", std::vector<double>{0.0, 1.0});
     int n = p.value("n_points", 50); double t0 = r[0], t1 = r[1];
-    if (seg.contains("x_formula") && seg.contains("y_formula")) {
-        MathEvaluator ex(seg["x_formula"]), ey(seg["y_formula"]);
-        for (int i = 0; i < n; ++i) { double t = t0 + (t1 - t0) * i / (n - 1); pts.push_back({ex.eval(t, 't'), ey.eval(t, 't')}); }
+    
+    std::string curve_type = seg.value("curve_type", "custom");
+    
+    if (curve_type == "horizontal_line") {
+        double y = p.value("y", 0.0);
+        double x0 = p.value("x0", 0.0);
+        double x1 = p.value("x1", 1.0);
+        for (int i = 0; i < n; ++i) {
+            double t = (double)i / (n - 1);
+            pts.push_back({x0 + t * (x1 - x0), y});
+        }
+    } else if (curve_type == "vertical_line") {
+        double x = p.value("x", 0.0);
+        double y0 = p.value("y0", 0.0);
+        double y1 = p.value("y1", 1.0);
+        for (int i = 0; i < n; ++i) {
+            double t = (double)i / (n - 1);
+            pts.push_back({x, y0 + t * (y1 - y0)});
+        }
+    } else if (curve_type == "line") {
+        double x0 = p.value("x0", 0.0);
+        double y0 = p.value("y0", 0.0);
+        double x1 = p.value("x1", 1.0);
+        double y1 = p.value("y1", 1.0);
+        for (int i = 0; i < n; ++i) {
+            double t = (double)i / (n - 1);
+            pts.push_back({x0 + t * (x1 - x0), y0 + t * (y1 - y0)});
+        }
+    } else if (curve_type == "circle") {
+        double cx = p.value("cx", 0.0);
+        double cy = p.value("cy", 0.0);
+        double r_val = p.value("r", 1.0);
+        for (int i = 0; i < n; ++i) {
+            double t = 2.0 * M_PI * i / (n - 1);
+            pts.push_back({cx + r_val * std::cos(t), cy + r_val * std::sin(t)});
+        }
+    } else if (curve_type == "triangle" || curve_type == "quadrilateral" || curve_type == "polygon") {
+        std::vector<Point2D> vertices;
+        if (curve_type == "triangle") {
+            vertices = {
+                {p.value("x0", 0.0), p.value("y0", 0.0)},
+                {p.value("x1", 1.0), p.value("y1", 0.0)},
+                {p.value("x2", 0.5), p.value("y2", 1.0)}
+            };
+        } else if (curve_type == "quadrilateral") {
+            vertices = {
+                {p.value("x0", 0.0), p.value("y0", 0.0)},
+                {p.value("x1", 1.0), p.value("y1", 0.0)},
+                {p.value("x2", 1.0), p.value("y2", 1.0)},
+                {p.value("x3", 0.0), p.value("y3", 1.0)}
+            };
+        } else { // polygon
+            std::string v_str = p.value("vertices_str", "0,0; 1,0; 1,1; 0,1");
+            std::stringstream ss(v_str);
+            std::string pair;
+            while (std::getline(ss, pair, ';')) {
+                if (pair.empty() || pair.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+                size_t comma = pair.find(',');
+                if (comma != std::string::npos) {
+                    try {
+                        double vx = std::stod(pair.substr(0, comma));
+                        double vy = std::stod(pair.substr(comma + 1));
+                        vertices.push_back({vx, vy});
+                    } catch (...) {}
+                }
+            }
+            if (vertices.size() < 2) {
+                vertices = {{0.0, 0.0}, {1.0, 1.0}};
+            }
+        }
+        
+        // Ensure polygon/triangle/quadrilateral is closed
+        if (!vertices.empty()) {
+            double dx = vertices.front().x - vertices.back().x;
+            double dy = vertices.front().y - vertices.back().y;
+            if (std::sqrt(dx*dx + dy*dy) > 1e-9) {
+                vertices.push_back(vertices.front());
+            }
+        }
+        
+        pts = samplePolylinePinned(vertices, n);
     } else {
-        std::string f = seg.value("formula", "line");
-        if (f == "sin") {
-            double a = p.value("amplitude", 1.0), fr = p.value("frequency", 1.0), ph = p.value("phase", 0.0), oy = p.value("offset_y", 0.0);
-            for (int i = 0; i < n; ++i) { double x = t0 + (t1 - t0) * i / (n - 1); pts.push_back({x, a * std::sin(fr * x + ph) + oy}); }
-        } else if (f == "line") {
-            double x0 = p.value("x0", 0.0), y0 = p.value("y0", 0.0), x1 = p.value("x1", 1.0), y1 = p.value("y1", 1.0);
-            for (int i = 0; i < n; ++i) { double t = (double)i / (n - 1); pts.push_back({x0 + t * (x1 - x0), y0 + t * (y1 - y0)}); }
+        // Fallback to "custom" type
+        if (seg.contains("x_formula") && seg.contains("y_formula")) {
+            MathEvaluator ex(seg["x_formula"]), ey(seg["y_formula"]);
+            for (int i = 0; i < n; ++i) { double t = t0 + (t1 - t0) * i / (n - 1); pts.push_back({ex.eval(t, 't'), ey.eval(t, 't')}); }
         } else {
-            MathEvaluator ev(f); for (int i = 0; i < n; ++i) { double x = t0 + (t1 - t0) * i / (n - 1); pts.push_back({x, ev.eval(x, 'x')}); }
+            std::string f = seg.value("formula", "line");
+            if (f == "sin") {
+                double a = p.value("amplitude", 1.0), fr = p.value("frequency", 1.0), ph = p.value("phase", 0.0), oy = p.value("offset_y", 0.0);
+                for (int i = 0; i < n; ++i) { double x = t0 + (t1 - t0) * i / (n - 1); pts.push_back({x, a * std::sin(fr * x + ph) + oy}); }
+            } else if (f == "line") {
+                double x0 = p.value("x0", 0.0), y0 = p.value("y0", 0.0), x1 = p.value("x1", 1.0), y1 = p.value("y1", 1.0);
+                for (int i = 0; i < n; ++i) { double t = (double)i / (n - 1); pts.push_back({x0 + t * (x1 - x0), y0 + t * (y1 - y0)}); }
+            } else {
+                MathEvaluator ev(f); for (int i = 0; i < n; ++i) { double x = t0 + (t1 - t0) * i / (n - 1); pts.push_back({x, ev.eval(x, 'x')}); }
+            }
         }
     }
+
+    int start_idx = seg.value("start_index", -1);
+    int end_idx = seg.value("end_index", -1);
+
+    bool start_valid = (!gp.empty() && start_idx >= 0 && start_idx < (int)gp.size());
+    bool end_valid = (!gp.empty() && end_idx >= 0 && end_idx < (int)gp.size());
+
+    if (pts.size() >= 2 && (start_valid || end_valid)) {
+        Point2D P0 = pts.front();
+        Point2D P1 = pts.back();
+
+        if (start_valid && end_valid) {
+            Point2D Q0 = gp[start_idx];
+            Point2D Q1 = gp[end_idx];
+            double dx_P = P1.x - P0.x;
+            double dy_P = P1.y - P0.y;
+            double dx_Q = Q1.x - Q0.x;
+            double dy_Q = Q1.y - Q0.y;
+            double L_P2 = dx_P * dx_P + dy_P * dy_P;
+
+            if (L_P2 > 1e-12) {
+                double A = (dx_Q * dx_P + dy_Q * dy_P) / L_P2;
+                double B = (dy_Q * dx_P - dx_Q * dy_P) / L_P2;
+
+                for (auto& pt : pts) {
+                    double x_rel = pt.x - P0.x;
+                    double y_rel = pt.y - P0.y;
+                    pt.x = A * x_rel - B * y_rel + Q0.x;
+                    pt.y = B * x_rel + A * y_rel + Q0.y;
+                }
+            } else {
+                for (auto& pt : pts) {
+                    pt.x = pt.x - P0.x + Q0.x;
+                    pt.y = pt.y - P0.y + Q0.y;
+                }
+            }
+        } else if (start_valid) {
+            Point2D Q0 = gp[start_idx];
+            for (auto& pt : pts) {
+                pt.x = pt.x - P0.x + Q0.x;
+                pt.y = pt.y - P0.y + Q0.y;
+            }
+        } else if (end_valid) {
+            Point2D Q1 = gp[end_idx];
+            for (auto& pt : pts) {
+                pt.x = pt.x - P1.x + Q1.x;
+                pt.y = pt.y - P1.y + Q1.y;
+            }
+        }
+    }
+
     return pts;
 }
 
@@ -172,7 +364,7 @@ void processElement(const json& config) {
 
         for (auto& r : ranges) {
             std::vector<Point2D> sp; 
-            if (type == "curve") sp = generateCurvePoints(sj); 
+            if (type == "curve") sp = generateCurvePoints(sj, gp); 
             else for (int i = r.first; i <= r.second; ++i) sp.push_back(gp[i]);
             if (sp.size() < 2) continue;
 

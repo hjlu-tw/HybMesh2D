@@ -12,6 +12,7 @@ class ProjectModel:
         self.output_file: str = ""
         self.is_closed: bool = True
         self.segments: list[SegmentModel] = []
+        self._next_curve_id: int = 10001
 
         # Advanced backend settings
         self.global_spline: bool = False
@@ -40,11 +41,7 @@ class ProjectModel:
                 seg = SegmentModel(i + 1, start, end)
             new_file_segs.append(seg)
 
-        # Renumber curve segments
-        all_segs = new_file_segs + curve_segs
-        for i, seg in enumerate(all_segs):
-            seg.id = i + 1
-        self.segments = all_segs
+        self.segments = new_file_segs + curve_segs
 
     def get_segment(self, index: int) -> SegmentModel | None:
         if 0 <= index < len(self.segments):
@@ -52,9 +49,11 @@ class ProjectModel:
         return None
 
     def add_curve_segment(self) -> SegmentModel:
-        new_id = len(self.segments) + 1
+        new_id = self._next_curve_id
+        self._next_curve_id += 1
         seg = SegmentModel(new_id, -1, -1)
         seg.type = "curve"
+        seg.curve_type = "custom"
         seg.curve_mode = "parametric"
         self.segments.append(seg)
         return seg
@@ -62,8 +61,11 @@ class ProjectModel:
     def remove_segment(self, index: int):
         if 0 <= index < len(self.segments):
             self.segments.pop(index)
-            for i, s in enumerate(self.segments):
-                s.id = i + 1
+            file_idx = 1
+            for s in self.segments:
+                if s.type == "file":
+                    s.id = file_idx
+                    file_idx += 1
 
     def get_split_indices_from_file_segments(self) -> list[int]:
         """Reconstruct split_indices from file-type segments."""
@@ -87,6 +89,29 @@ class ProjectModel:
         for i, sj in enumerate(config.get("segments", [])):
             seg = SegmentModel.from_dict(i + 1, sj)
             self.segments.append(seg)
+
+        # Fix curve segment IDs if they are < 10000 (old format) to avoid conflicts
+        next_curve_id = 10001
+        used_curve_ids = set()
+        for seg in self.segments:
+            if seg.type == "curve":
+                if seg.id < 10000:
+                    seg.id = next_curve_id
+                    next_curve_id += 1
+                else:
+                    used_curve_ids.add(seg.id)
+
+        if used_curve_ids:
+            self._next_curve_id = max(used_curve_ids) + 1
+        else:
+            self._next_curve_id = next_curve_id
+
+        # Renumber only file segments to ensure they are 1..N contiguous
+        file_idx = 1
+        for seg in self.segments:
+            if seg.type == "file":
+                seg.id = file_idx
+                file_idx += 1
 
     def export_config(self, filepath: str):
         config: dict = {

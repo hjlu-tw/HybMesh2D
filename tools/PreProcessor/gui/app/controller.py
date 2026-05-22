@@ -20,7 +20,7 @@ from app.models.segment import SegmentModel
 from app.workers.backend_run import BackendWorker
 from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd, AutoDetectSplitCmd
 from app.commands.vertex_cmds import InsertVertexCmd
-from app.commands.segment_cmds import UpdateStrategyCmd, UpdateParamsCmd
+from app.commands.segment_cmds import UpdateStrategyCmd, UpdateParamsCmd, RemoveSegmentCmd
 
 
 # ── Formula evaluator (Python-side, for canvas preview only) ─────────────────
@@ -39,6 +39,80 @@ def _eval_formula(expr: str, var_name: str, val: float) -> float:
 def _eval_formula_array(expr: str, var_name: str,
                         vals: np.ndarray) -> np.ndarray:
     return np.array([_eval_formula(expr, var_name, v) for v in vals])
+
+
+def _parse_vertices_str(s: str) -> np.ndarray:
+    pairs = s.split(";")
+    pts = []
+    for p in pairs:
+        if not p.strip():
+            continue
+        parts = p.split(",")
+        if len(parts) == 2:
+            try:
+                pts.append([float(parts[0].strip()), float(parts[1].strip())])
+            except ValueError:
+                pass
+    if len(pts) < 2:
+        return np.array([[0.0, 0.0], [1.0, 1.0]])
+    return np.array(pts)
+
+
+def _sample_polyline_pinned(vertices: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
+    """Sample n points along a closed polyline, guaranteeing that every specified
+    vertex is included in the output. Interior points are distributed between
+    vertices proportionally to each edge's length.
+
+    Args:
+        vertices: shape (k+1, 2) where vertices[0] == vertices[-1] (closed polygon)
+        n: total output points, including all k distinct vertices plus the
+           repeated first vertex at the end.  n must be >= k+1.
+    Returns:
+        (xs, ys): 1-D arrays of length n
+    """
+    k = len(vertices) - 1          # number of distinct vertices / edges
+    if k < 1:
+        return np.full(n, vertices[0, 0]), np.full(n, vertices[0, 1])
+
+    diffs = np.diff(vertices, axis=0)
+    edge_lengths = np.sqrt(np.sum(diffs ** 2, axis=1))  # shape (k,)
+    L_total = float(np.sum(edge_lengths))
+
+    if L_total < 1e-12:
+        return np.full(n, vertices[0, 0]), np.full(n, vertices[0, 1])
+
+    # n_pinned = k distinct vertices + 1 repeated start vertex = k+1
+    n_pinned = k + 1
+    n_interior = max(0, n - n_pinned)   # interior (non-vertex) points to distribute
+
+    # Proportional allocation of interior points per edge
+    edge_interior = np.floor(n_interior * edge_lengths / L_total).astype(int)
+
+    # Distribute any remaining points to the longest edges first
+    remaining = n_interior - int(np.sum(edge_interior))
+    if remaining > 0:
+        order = np.argsort(-edge_lengths)
+        for i in range(remaining):
+            edge_interior[order[i % k]] += 1
+
+    # Build output: for each edge, emit vertex then interior points
+    xs: list[float] = []
+    ys: list[float] = []
+    for i in range(k):
+        v_s = vertices[i]
+        v_e = vertices[i + 1]
+        xs.append(float(v_s[0]))
+        ys.append(float(v_s[1]))
+        ni = int(edge_interior[i])
+        for j in range(1, ni + 1):
+            t = j / (ni + 1)
+            xs.append(float(v_s[0] + t * (v_e[0] - v_s[0])))
+            ys.append(float(v_s[1] + t * (v_e[1] - v_s[1])))
+    # Close: append repeated first vertex
+    xs.append(float(vertices[-1][0]))
+    ys.append(float(vertices[-1][1]))
+
+    return np.array(xs), np.array(ys)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -74,6 +148,30 @@ class AppController:
         sb.generate_btn.clicked.connect(self.generate_json)
         sb.add_curve_seg_btn.clicked.connect(self.add_curve_segment)
         sb.curve_preview_btn.clicked.connect(self.preview_curve_formula)
+        
+        # Wire live preview for curve editing
+        for w in [sb.curve_t_min, sb.curve_t_max, sb.curve_n,
+                  sb.curve_start_node, sb.curve_end_node,
+                  sb.h_line_y, sb.h_line_x_start, sb.h_line_x_end,
+                  sb.v_line_x, sb.v_line_y_start, sb.v_line_y_end,
+                  sb.line_x0, sb.line_y0, sb.line_x1, sb.line_y1,
+                  sb.circle_cx, sb.circle_cy, sb.circle_r,
+                  sb.tri_x0, sb.tri_y0, sb.tri_x1, sb.tri_y1, sb.tri_x2, sb.tri_y2,
+                  sb.quad_x0, sb.quad_y0, sb.quad_x1, sb.quad_y1,
+                  sb.quad_x2, sb.quad_y2, sb.quad_x3, sb.quad_y3]:
+            w.valueChanged.connect(self.preview_curve_formula)
+        for w in [sb.curve_x_formula, sb.curve_y_formula, sb.curve_formula]:
+            w.textChanged.connect(self.preview_curve_formula)
+        sb.poly_vertices.textChanged.connect(self.preview_curve_formula)
+        sb.curve_mode_param.toggled.connect(self.handle_curve_type_changed)
+        sb.curve_type_combo.currentIndexChanged.connect(self.handle_curve_type_changed)
+
+        # Undo / Redo / Remove / Quality Check
+        sb.undo_btn.clicked.connect(self.undo)
+        sb.redo_btn.clicked.connect(self.redo)
+        sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
+        sb.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
+        sb.dup_btn.clicked.connect(self.duplicate_with_transform)
 
         # Parameter-change signals (all route to update_segment_params)
         for widget in [sb.uniform_n, sb.tanh_n, sb.tanh_intensity,
@@ -221,10 +319,11 @@ class AppController:
                 if session.current_segment_idx >= 0 and session.current_segment_idx < len(session.project_model.segments):
                     seg = session.project_model.segments[session.current_segment_idx]
                     self.main_window.canvas_view.update_active_segment(seg.start_index, seg.end_index)
-                
-                # Resampled preview
-                if session.resampled_points is not None:
-                    self.main_window.canvas_view.load_resampled_data(session.resampled_points)
+            
+            # Resampled preview
+            if session.resampled_points is not None:
+                self.main_window.canvas_view.load_resampled_data(
+                    session.resampled_points, sb.quality_check_cb.isChecked())
             
             # Sync active overlays visibility with session visibility
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
@@ -245,8 +344,11 @@ class AppController:
         # Remove geometry from shared canvas
         self.main_window.canvas_view.remove_geometry(session.session_id)
 
+        # Block signals during tab removal and list popping to keep states synchronized
+        self.main_window.tab_widget.blockSignals(True)
         self.main_window.tab_widget.removeTab(idx)
         self.sessions.pop(idx)
+        self.main_window.tab_widget.blockSignals(False)
 
         # Adjust active index
         n = len(self.sessions)
@@ -255,11 +357,20 @@ class AppController:
             self._clear_sidebar()
             self.main_window.canvas_view.clear_active_overlays()
             self.main_window.canvas_view.set_active_points(None)
+            self._sync_geometry_list()
         else:
-            self.active_idx = min(idx, n - 1)
-            self.main_window.tab_widget.setCurrentIndex(self.active_idx)
+            # Shift active_idx appropriately
+            if idx == self.active_idx:
+                self.active_idx = min(idx, n - 1)
+            elif idx < self.active_idx:
+                self.active_idx -= 1
+            # If idx > active_idx, self.active_idx is unchanged
 
-        self._sync_geometry_list()
+            self.main_window.tab_widget.blockSignals(True)
+            self.main_window.tab_widget.setCurrentIndex(self.active_idx)
+            self.main_window.tab_widget.blockSignals(False)
+            self._sync_geometry_list()
+            self.switch_tab(self.active_idx)
 
     def _update_tab_title(self):
         session = self.active_session()
@@ -529,14 +640,34 @@ class AppController:
         sb.segment_list.clear()
         for seg in session.project_model.segments:
             if seg.type == "curve":
-                lbl = (f"Segment {seg.id}: Curve "
-                       f"({'Param' if seg.curve_mode == 'parametric' else 'Explicit'})")
+                c_type = getattr(seg, "curve_type", "custom")
+                if c_type == "custom":
+                    c_label = f"Curve ({'Param' if seg.curve_mode == 'parametric' else 'Explicit'})"
+                elif c_type == "horizontal_line":
+                    c_label = "H Line"
+                elif c_type == "vertical_line":
+                    c_label = "V Line"
+                elif c_type == "line":
+                    c_label = "Line"
+                elif c_type == "circle":
+                    c_label = "Circle"
+                elif c_type == "triangle":
+                    c_label = "Triangle"
+                elif c_type == "quadrilateral":
+                    c_label = "Quad"
+                elif c_type == "polygon":
+                    c_label = "Polygon"
+                else:
+                    c_label = c_type.capitalize()
+                lbl = f"Segment {seg.id}: {c_label}"
             else:
                 lbl = (f"Segment {seg.id}: "
                        f"Idx {seg.start_index} → {seg.end_index}")
             sb.segment_list.addItem(lbl)
         sb.segment_list.blockSignals(False)
         session.current_segment_idx = -1
+        sb.remove_seg_btn.setEnabled(False)
+        sb.show_segment_props(False)
         self.main_window.canvas_view.update_active_segment(None, None)
         # Only clear resampled preview when segments have actually changed
         # (not on tab switch, so previews persist across session changes)
@@ -594,6 +725,8 @@ class AppController:
         sb.selected_info.setText("Selected Point: None")
         sb.split_btn.setEnabled(False)
         sb.remove_split_btn.setEnabled(False)
+        sb.remove_seg_btn.setEnabled(False)
+        sb.show_segment_props(False)
         self._sync_geometry_list()
 
     # ═════════════════════════════════════════════════════════════════════
@@ -712,13 +845,19 @@ class AppController:
         sb = self.main_window.sidebar_view
         if row < 0:
             self.main_window.canvas_view.update_active_segment(None, None)
+            self.main_window.canvas_view.clear_curve_preview()
             session.current_segment_idx = -1
+            sb.remove_seg_btn.setEnabled(False)
+            sb.show_segment_props(False)
             return
 
         session.current_segment_idx = row
         seg = session.project_model.get_segment(row)
         if not seg:
             self.main_window.canvas_view.update_active_segment(None, None)
+            self.main_window.canvas_view.clear_curve_preview()
+            sb.remove_seg_btn.setEnabled(False)
+            sb.show_segment_props(False)
             return
 
         # Highlight on canvas
@@ -726,13 +865,18 @@ class AppController:
             self.main_window.canvas_view.update_active_segment(
                 seg.start_index, seg.end_index)
             self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, True)
+            self.main_window.canvas_view.clear_curve_preview()
         else:
             self.main_window.canvas_view.update_active_segment(None, None)
             self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, False)
 
+        # Enable/disable remove segment button based on type
+        sb.remove_seg_btn.setEnabled(seg.type == "curve")
+
         # Populate sidebar
         sb.show_segment_props(True)
-        if seg.type == "curve":
+        is_curve = (seg.type == "curve")
+        if is_curve:
             sb.segment_type_label.setText("📐 Curve Segment")
             sb.show_curve_segment(seg)
             sb.strategy_combo.setVisible(False)
@@ -747,6 +891,9 @@ class AppController:
             sb.strategy_combo.blockSignals(False)
             sb.switch_param_form(seg.strategy)
             self._populate_form_from_segment(seg)
+
+        # Show transform duplicate group only for curve segments
+        sb._transform_dup_group.setVisible(is_curve)
 
         sb.match_previous_cb.blockSignals(True)
         sb.match_previous_cb.setChecked(seg.match_previous)
@@ -900,6 +1047,104 @@ class AppController:
         self.main_window.log_panel.log(
             f"Added Curve Segment {seg.id}.")
 
+    def _sync_active_curve_segment_from_ui(self):
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg or seg.type != "curve":
+            return
+        
+        sb = self.main_window.sidebar_view
+        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
+        idx = sb.curve_type_combo.currentIndex()
+        if 0 <= idx < len(CURVE_TYPES):
+            seg.curve_type = CURVE_TYPES[idx]
+        else:
+            seg.curve_type = "custom"
+
+        seg.curve_mode = "parametric" if sb.curve_mode_param.isChecked() else "explicit"
+        seg.x_formula = sb.curve_x_formula.text()
+        seg.y_formula = sb.curve_y_formula.text()
+        seg.formula = sb.curve_formula.text()
+        seg.t_min = sb.curve_t_min.value()
+        seg.t_max = sb.curve_t_max.value()
+        seg.parameters["n_points"] = sb.curve_n.value()
+        seg.start_index = sb.curve_start_node.value()
+        seg.end_index = sb.curve_end_node.value()
+
+        # Sync parameters based on curve type
+        if seg.curve_type == "horizontal_line":
+            seg.parameters["y"] = sb.h_line_y.value()
+            seg.parameters["x0"] = sb.h_line_x_start.value()
+            seg.parameters["x1"] = sb.h_line_x_end.value()
+        elif seg.curve_type == "vertical_line":
+            seg.parameters["x"] = sb.v_line_x.value()
+            seg.parameters["y0"] = sb.v_line_y_start.value()
+            seg.parameters["y1"] = sb.v_line_y_end.value()
+        elif seg.curve_type == "line":
+            seg.parameters["x0"] = sb.line_x0.value()
+            seg.parameters["y0"] = sb.line_y0.value()
+            seg.parameters["x1"] = sb.line_x1.value()
+            seg.parameters["y1"] = sb.line_y1.value()
+        elif seg.curve_type == "circle":
+            seg.parameters["cx"] = sb.circle_cx.value()
+            seg.parameters["cy"] = sb.circle_cy.value()
+            seg.parameters["r"] = sb.circle_r.value()
+        elif seg.curve_type == "triangle":
+            seg.parameters["x0"] = sb.tri_x0.value()
+            seg.parameters["y0"] = sb.tri_y0.value()
+            seg.parameters["x1"] = sb.tri_x1.value()
+            seg.parameters["y1"] = sb.tri_y1.value()
+            seg.parameters["x2"] = sb.tri_x2.value()
+            seg.parameters["y2"] = sb.tri_y2.value()
+        elif seg.curve_type == "quadrilateral":
+            seg.parameters["x0"] = sb.quad_x0.value()
+            seg.parameters["y0"] = sb.quad_y0.value()
+            seg.parameters["x1"] = sb.quad_x1.value()
+            seg.parameters["y1"] = sb.quad_y1.value()
+            seg.parameters["x2"] = sb.quad_x2.value()
+            seg.parameters["y2"] = sb.quad_y2.value()
+            seg.parameters["x3"] = sb.quad_x3.value()
+            seg.parameters["y3"] = sb.quad_y3.value()
+        elif seg.curve_type == "polygon":
+            seg.parameters["vertices_str"] = sb.poly_vertices.text()
+
+    def handle_curve_type_changed(self):
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg or seg.type != "curve":
+            return
+        self._sync_active_curve_segment_from_ui()
+        # Update list item text
+        sb = self.main_window.sidebar_view
+        idx = session.current_segment_idx
+        if 0 <= idx < sb.segment_list.count():
+            item = sb.segment_list.item(idx)
+            c_type = seg.curve_type
+            if c_type == "custom":
+                c_label = f"Curve ({'Param' if seg.curve_mode == 'parametric' else 'Explicit'})"
+            elif c_type == "horizontal_line":
+                c_label = "H Line"
+            elif c_type == "vertical_line":
+                c_label = "V Line"
+            elif c_type == "line":
+                c_label = "Line"
+            elif c_type == "circle":
+                c_label = "Circle"
+            elif c_type == "triangle":
+                c_label = "Triangle"
+            elif c_type == "quadrilateral":
+                c_label = "Quad"
+            elif c_type == "polygon":
+                c_label = "Polygon"
+            else:
+                c_label = c_type.capitalize()
+            item.setText(f"Segment {seg.id}: {c_label}")
+        self.preview_curve_formula()
+
     def preview_curve_formula(self):
         session = self.active_session()
         if not session or session.current_segment_idx < 0:
@@ -908,36 +1153,125 @@ class AppController:
         if not seg or seg.type != "curve":
             return
 
-        # Read current form values into seg
-        sb = self.main_window.sidebar_view
-        n = sb.curve_n.value()
-        t_min = sb.curve_t_min.value()
-        t_max = sb.curve_t_max.value()
-        is_param = sb.curve_mode_param.isChecked()
+        self._sync_active_curve_segment_from_ui()
 
-        t_vals = np.linspace(t_min, t_max, n)
+        # Retrieve values from seg
+        n = seg.parameters.get("n_points", 100)
+        
         try:
-            if is_param:
-                x_expr = sb.curve_x_formula.text()
-                y_expr = sb.curve_y_formula.text()
-                xs = _eval_formula_array(x_expr, "t", t_vals)
-                ys = _eval_formula_array(y_expr, "t", t_vals)
-                seg.curve_mode = "parametric"
-                seg.x_formula = x_expr
-                seg.y_formula = y_expr
-            else:
-                expr = sb.curve_formula.text()
-                xs = t_vals
-                ys = _eval_formula_array(expr, "x", t_vals)
-                seg.curve_mode = "explicit"
-                seg.formula = expr
-
-            seg.t_min = t_min
-            seg.t_max = t_max
-            seg.parameters["n_points"] = n
+            if seg.curve_type == "horizontal_line":
+                y_val = seg.parameters.get("y", 0.0)
+                x0 = seg.parameters.get("x0", 0.0)
+                x1 = seg.parameters.get("x1", 1.0)
+                xs = np.linspace(x0, x1, n)
+                ys = np.full(n, y_val)
+            elif seg.curve_type == "vertical_line":
+                x_val = seg.parameters.get("x", 0.0)
+                y0 = seg.parameters.get("y0", 0.0)
+                y1 = seg.parameters.get("y1", 1.0)
+                xs = np.full(n, x_val)
+                ys = np.linspace(y0, y1, n)
+            elif seg.curve_type == "line":
+                x0 = seg.parameters.get("x0", 0.0)
+                y0 = seg.parameters.get("y0", 0.0)
+                x1 = seg.parameters.get("x1", 1.0)
+                y1 = seg.parameters.get("y1", 1.0)
+                xs = np.linspace(x0, x1, n)
+                ys = np.linspace(y0, y1, n)
+            elif seg.curve_type == "circle":
+                cx = seg.parameters.get("cx", 0.0)
+                cy = seg.parameters.get("cy", 0.0)
+                r = seg.parameters.get("r", 1.0)
+                ts = np.linspace(0.0, 2.0 * np.pi, n)
+                xs = cx + r * np.cos(ts)
+                ys = cy + r * np.sin(ts)
+            elif seg.curve_type == "triangle":
+                x0 = seg.parameters.get("x0", 0.0)
+                y0 = seg.parameters.get("y0", 0.0)
+                x1 = seg.parameters.get("x1", 1.0)
+                y1 = seg.parameters.get("y1", 0.0)
+                x2 = seg.parameters.get("x2", 0.5)
+                y2 = seg.parameters.get("y2", 1.0)
+                vertices = np.array([[x0, y0], [x1, y1], [x2, y2], [x0, y0]])
+                xs, ys = _sample_polyline_pinned(vertices, n)
+            elif seg.curve_type == "quadrilateral":
+                x0 = seg.parameters.get("x0", 0.0)
+                y0 = seg.parameters.get("y0", 0.0)
+                x1 = seg.parameters.get("x1", 1.0)
+                y1 = seg.parameters.get("y1", 0.0)
+                x2 = seg.parameters.get("x2", 1.0)
+                y2 = seg.parameters.get("y2", 1.0)
+                x3 = seg.parameters.get("x3", 0.0)
+                y3 = seg.parameters.get("y3", 1.0)
+                vertices = np.array([[x0, y0], [x1, y1], [x2, y2], [x3, y3], [x0, y0]])
+                xs, ys = _sample_polyline_pinned(vertices, n)
+            elif seg.curve_type == "polygon":
+                v_str = seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1")
+                vertices = _parse_vertices_str(v_str)
+                if len(vertices) > 0 and not np.allclose(vertices[0], vertices[-1]):
+                    vertices = np.vstack((vertices, vertices[0]))
+                xs, ys = _sample_polyline_pinned(vertices, n)
+            else: # custom
+                t_min = seg.t_min
+                t_max = seg.t_max
+                is_param = (seg.curve_mode == "parametric")
+                t_vals = np.linspace(t_min, t_max, n)
+                if is_param:
+                    xs = _eval_formula_array(seg.x_formula, "t", t_vals)
+                    ys = _eval_formula_array(seg.y_formula, "t", t_vals)
+                else:
+                    xs = t_vals
+                    ys = _eval_formula_array(seg.formula, "x", t_vals)
 
             valid = np.isfinite(xs) & np.isfinite(ys)
-            pts = np.column_stack([xs[valid], ys[valid]])
+            if not np.any(valid):
+                self.main_window.canvas_view.clear_curve_preview()
+                return
+
+            xs = xs[valid]
+            ys = ys[valid]
+
+            # Apply similarity transform if start_index and/or end_index are specified
+            gp = session.original_points
+            start_idx = seg.start_index
+            end_idx = seg.end_index
+            
+            start_valid = (gp is not None and start_idx >= 0 and start_idx < len(gp))
+            end_valid = (gp is not None and end_idx >= 0 and end_idx < len(gp))
+
+            if len(xs) >= 2:
+                P0 = np.array([xs[0], ys[0]])
+                P1 = np.array([xs[-1], ys[-1]])
+
+                if start_valid and end_valid:
+                    Q0 = gp[start_idx]
+                    Q1 = gp[end_idx]
+                    dx_P, dy_P = P1 - P0
+                    dx_Q, dy_Q = Q1 - Q0
+                    L_P2 = dx_P**2 + dy_P**2
+                    if L_P2 > 1e-12:
+                        A = (dx_Q * dx_P + dy_Q * dy_P) / L_P2
+                        B = (dy_Q * dx_P - dx_Q * dy_P) / L_P2
+                        
+                        x_rel = xs - P0[0]
+                        y_rel = ys - P0[1]
+                        xs_trans = A * x_rel - B * y_rel + Q0[0]
+                        ys_trans = B * x_rel + A * y_rel + Q0[1]
+                        xs, ys = xs_trans, ys_trans
+                    else:
+                        # Translate P0 to Q0
+                        xs = xs - P0[0] + Q0[0]
+                        ys = ys - P0[1] + Q0[1]
+                elif start_valid:
+                    Q0 = gp[start_idx]
+                    xs = xs - P0[0] + Q0[0]
+                    ys = ys - P0[1] + Q0[1]
+                elif end_valid:
+                    Q1 = gp[end_idx]
+                    xs = xs - P1[0] + Q1[0]
+                    ys = ys - P1[1] + Q1[1]
+
+            pts = np.column_stack([xs, ys])
             self.main_window.canvas_view.update_curve_preview(pts)
             self.main_window.log_panel.log(
                 f"Curve preview updated ({len(pts)} points).")
@@ -968,6 +1302,227 @@ class AppController:
                 self.main_window.log_panel.log("Nothing to redo.")
 
     # ═════════════════════════════════════════════════════════════════════
+    # Segment deletion & quality check toggles
+    # ═════════════════════════════════════════════════════════════════════
+
+    def remove_selected_segment(self):
+        session = self.active_session()
+        if not session:
+            return
+        idx = session.current_segment_idx
+        if idx < 0 or idx >= len(session.project_model.segments):
+            return
+        seg = session.project_model.segments[idx]
+        if seg.type != "curve":
+            self.main_window.log_panel.log("Only curve segments can be removed.")
+            return
+
+        cmd = RemoveSegmentCmd(session, idx, self._on_segment_removed)
+        session.command_history.execute(cmd)
+        self.main_window.log_panel.log(f"Removed Curve Segment {seg.id}.")
+
+    def _on_segment_removed(self):
+        session = self.active_session()
+        if not session:
+            return
+        self._refresh_segment_list()
+        self._sync_geometry_list()
+        session.is_geometry_modified = True
+        self.main_window.update_title(session.display_name, session.is_geometry_modified)
+
+    # ═════════════════════════════════════════════════════════════════════
+    # Duplicate with Transform
+    # ═════════════════════════════════════════════════════════════════════
+
+    def duplicate_with_transform(self):
+        """Generate preview points for the active curve segment, apply the
+        selected geometric transform, and add a new Polygon curve segment."""
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            self.main_window.log_panel.log("No curve segment selected.")
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg or seg.type != "curve":
+            self.main_window.log_panel.log("Select a curve segment to duplicate.")
+            return
+
+        # --- Get preview points (same logic as preview_curve_formula but returns arrays)
+        self._sync_active_curve_segment_from_ui()
+        n = seg.parameters.get("n_points", 100)
+        try:
+            xs, ys = self._compute_curve_preview_pts(seg, n)
+        except Exception as e:
+            self.main_window.log_panel.log(f"Cannot compute preview for transform: {e}")
+            return
+
+        if xs is None or len(xs) < 2:
+            self.main_window.log_panel.log("Preview has no valid points — cannot duplicate.")
+            return
+
+        xs = xs.copy()
+        ys = ys.copy()
+
+        # --- Apply transform ------------------------------------------------
+        sb = self.main_window.sidebar_view
+        t_idx = sb.dup_type_combo.currentIndex()
+
+        if t_idx == 0:   # Rotate
+            theta = math.radians(sb.dup_rot_angle.value())
+            px, py = sb.dup_rot_px.value(), sb.dup_rot_py.value()
+            xr = xs - px;  yr = ys - py
+            xs_new = px + xr * math.cos(theta) - yr * math.sin(theta)
+            ys_new = py + xr * math.sin(theta) + yr * math.cos(theta)
+            xs, ys = xs_new, ys_new
+        elif t_idx == 1: # Mirror Horizontal (flip y around axis_y)
+            axis_y = sb.dup_mh_py.value()
+            ys = 2.0 * axis_y - ys
+        elif t_idx == 2: # Mirror Vertical (flip x around axis_x)
+            axis_x = sb.dup_mv_px.value()
+            xs = 2.0 * axis_x - xs
+        elif t_idx == 3: # Mirror Axis (arbitrary)
+            px, py = sb.dup_ma_px.value(), sb.dup_ma_py.value()
+            dx, dy = sb.dup_ma_dx.value(), sb.dup_ma_dy.value()
+            d_len = math.hypot(dx, dy)
+            if d_len < 1e-12:
+                self.main_window.log_panel.log("Mirror axis direction is zero — cannot mirror.")
+                return
+            dx /= d_len;  dy /= d_len
+            # Reflect point (x,y) through line through (px,py) with direction (dx,dy)
+            xr = xs - px;  yr = ys - py
+            dot = xr * dx + yr * dy
+            xs = 2.0 * (px + dot * dx) - xs
+            ys = 2.0 * (py + dot * dy) - ys
+        elif t_idx == 4: # Point Symmetry
+            cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
+            xs = 2.0 * cx - xs
+            ys = 2.0 * cy - ys
+
+        # --- Create new polygon curve segment from transformed points --------
+        v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
+        new_seg = session.project_model.add_curve_segment()
+        new_seg.curve_type = "polygon"
+        new_seg.parameters["vertices_str"] = v_str
+        new_seg.parameters["n_points"] = n
+        new_seg.start_index = -1
+        new_seg.end_index = -1
+
+        self._refresh_segment_list()
+        sb = self.main_window.sidebar_view
+        new_row = len(session.project_model.segments) - 1
+        sb.segment_list.setCurrentRow(new_row)
+        session.is_geometry_modified = True
+        self.main_window.update_title(session.display_name, True)
+        self.main_window.log_panel.log(
+            f"Duplicated as Segment {new_seg.id} ({sb.dup_type_combo.currentText()}).")
+
+    def _compute_curve_preview_pts(
+            self, seg: SegmentModel, n: int
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Compute (xs, ys) for the given curve segment without updating the canvas."""
+        gp = None
+        session = self.active_session()
+        if session:
+            gp = session.original_points
+
+        if seg.curve_type == "horizontal_line":
+            y_val = seg.parameters.get("y", 0.0)
+            x0 = seg.parameters.get("x0", 0.0)
+            x1 = seg.parameters.get("x1", 1.0)
+            xs = np.linspace(x0, x1, n)
+            ys = np.full(n, y_val)
+        elif seg.curve_type == "vertical_line":
+            x_val = seg.parameters.get("x", 0.0)
+            y0 = seg.parameters.get("y0", 0.0)
+            y1 = seg.parameters.get("y1", 1.0)
+            xs = np.full(n, x_val)
+            ys = np.linspace(y0, y1, n)
+        elif seg.curve_type == "line":
+            x0 = seg.parameters.get("x0", 0.0);  y0 = seg.parameters.get("y0", 0.0)
+            x1 = seg.parameters.get("x1", 1.0);  y1 = seg.parameters.get("y1", 1.0)
+            xs = np.linspace(x0, x1, n)
+            ys = np.linspace(y0, y1, n)
+        elif seg.curve_type == "circle":
+            cx = seg.parameters.get("cx", 0.0);  cy = seg.parameters.get("cy", 0.0)
+            r  = seg.parameters.get("r",  1.0)
+            ts = np.linspace(0.0, 2.0 * math.pi, n)
+            xs = cx + r * np.cos(ts)
+            ys = cy + r * np.sin(ts)
+        elif seg.curve_type == "triangle":
+            verts = np.array([[seg.parameters.get(k, d) for k, d in
+                               [("x0",0.),("y0",0.)]], [("x1",1.),("y1",0.)],
+                              [("x2",0.5),("y2",1.)]])
+            verts = np.array([
+                [seg.parameters.get("x0", 0.0), seg.parameters.get("y0", 0.0)],
+                [seg.parameters.get("x1", 1.0), seg.parameters.get("y1", 0.0)],
+                [seg.parameters.get("x2", 0.5), seg.parameters.get("y2", 1.0)],
+                [seg.parameters.get("x0", 0.0), seg.parameters.get("y0", 0.0)],
+            ])
+            xs, ys = _sample_polyline_pinned(verts, n)
+        elif seg.curve_type == "quadrilateral":
+            verts = np.array([
+                [seg.parameters.get("x0", 0.0), seg.parameters.get("y0", 0.0)],
+                [seg.parameters.get("x1", 1.0), seg.parameters.get("y1", 0.0)],
+                [seg.parameters.get("x2", 1.0), seg.parameters.get("y2", 1.0)],
+                [seg.parameters.get("x3", 0.0), seg.parameters.get("y3", 1.0)],
+                [seg.parameters.get("x0", 0.0), seg.parameters.get("y0", 0.0)],
+            ])
+            xs, ys = _sample_polyline_pinned(verts, n)
+        elif seg.curve_type == "polygon":
+            v_str = seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1")
+            verts = _parse_vertices_str(v_str)
+            if len(verts) > 0 and not np.allclose(verts[0], verts[-1]):
+                verts = np.vstack((verts, verts[0]))
+            xs, ys = _sample_polyline_pinned(verts, n)
+        else:  # custom
+            t_vals = np.linspace(seg.t_min, seg.t_max, n)
+            if seg.curve_mode == "parametric":
+                xs = _eval_formula_array(seg.x_formula, "t", t_vals)
+                ys = _eval_formula_array(seg.y_formula, "t", t_vals)
+            else:
+                xs = t_vals
+                ys = _eval_formula_array(seg.formula, "x", t_vals)
+
+        valid = np.isfinite(xs) & np.isfinite(ys)
+        if not np.any(valid):
+            return None, None
+        xs, ys = xs[valid], ys[valid]
+
+        # Apply anchoring if start/end node are set
+        if gp is not None and len(xs) >= 2:
+            si, ei = seg.start_index, seg.end_index
+            sv = (si >= 0 and si < len(gp))
+            ev = (ei >= 0 and ei < len(gp))
+            P0 = np.array([xs[0], ys[0]])
+            P1 = np.array([xs[-1], ys[-1]])
+            if sv and ev:
+                Q0, Q1 = gp[si], gp[ei]
+                dx_P, dy_P = P1 - P0
+                L_P2 = dx_P**2 + dy_P**2
+                if L_P2 > 1e-12:
+                    dx_Q, dy_Q = Q1 - Q0
+                    A = (dx_Q * dx_P + dy_Q * dy_P) / L_P2
+                    B = (dy_Q * dx_P - dx_Q * dy_P) / L_P2
+                    xr = xs - P0[0];  yr = ys - P0[1]
+                    xs = A * xr - B * yr + Q0[0]
+                    ys = B * xr + A * yr + Q0[1]
+                else:
+                    xs = xs - P0[0] + Q0[0];  ys = ys - P0[1] + Q0[1]
+            elif sv:
+                Q0 = gp[si]
+                xs = xs - P0[0] + Q0[0];  ys = ys - P0[1] + Q0[1]
+            elif ev:
+                Q1 = gp[ei]
+                xs = xs - P1[0] + Q1[0];  ys = ys - P1[1] + Q1[1]
+
+        return xs, ys
+
+    def handle_quality_check_toggled(self, checked: bool):
+        session = self.active_session()
+        if session and session.resampled_points is not None:
+            self.main_window.canvas_view.load_resampled_data(
+                session.resampled_points, checked)
+
+    # ═════════════════════════════════════════════════════════════════════
     # Backend execution
     # ═════════════════════════════════════════════════════════════════════
 
@@ -984,6 +1539,7 @@ class AppController:
     def _write_temp_config(self, session: GeometrySession,
                            output_path: str) -> tuple[str, list[str]]:
         """Write config to a temp file and return its path and a list of extra temp files."""
+        self._sync_active_curve_segment_from_ui()
         pm = session.project_model
 
         orig_input = pm.input_file
@@ -1022,7 +1578,9 @@ class AppController:
     def preview_backend(self):
         """Run backend with a temp output path; display result on canvas."""
         session = self.active_session()
-        if not session or not session.project_model.input_file:
+        if not session:
+            return
+        if not session.project_model.input_file and not session.project_model.segments:
             self.main_window.log_panel.log("No geometry loaded.")
             return
         exe = self._find_executable()
@@ -1048,7 +1606,9 @@ class AppController:
     def save_output(self):
         """Ask user for output path, then run backend and save."""
         session = self.active_session()
-        if not session or not session.project_model.input_file:
+        if not session:
+            return
+        if not session.project_model.input_file and not session.project_model.segments:
             self.main_window.log_panel.log("No geometry loaded.")
             return
         exe = self._find_executable()
@@ -1082,7 +1642,10 @@ class AppController:
 
     def generate_json(self):
         session = self.active_session()
-        if not session or not session.project_model.input_file:
+        if not session:
+            return
+        self._sync_active_curve_segment_from_ui()
+        if not session.project_model.input_file and not session.project_model.segments:
             self.main_window.log_panel.log("No geometry loaded.")
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -1117,7 +1680,8 @@ class AppController:
                     pts = np.loadtxt(tmp_out)
                     session.resampled_points = pts
                     if session is self.active_session():
-                        self.main_window.canvas_view.load_resampled_data(pts)
+                        show_q = self.main_window.sidebar_view.quality_check_cb.isChecked()
+                        self.main_window.canvas_view.load_resampled_data(pts, show_q)
                     self.main_window.log_panel.log(
                         f"Preview done ({len(pts)} points).")
                 except Exception as e:
@@ -1145,7 +1709,8 @@ class AppController:
                         pts = np.loadtxt(out_path)
                         session.resampled_points = pts
                         if session is self.active_session():
-                            self.main_window.canvas_view.load_resampled_data(pts)
+                            show_q = self.main_window.sidebar_view.quality_check_cb.isChecked()
+                            self.main_window.canvas_view.load_resampled_data(pts, show_q)
                         self.main_window.log_panel.log(
                             f"Loaded result ({len(pts)} points).")
                     except Exception as e:

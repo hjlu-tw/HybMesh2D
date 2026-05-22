@@ -262,9 +262,16 @@ class SidebarView(QWidget):
         """)
 
         self.add_curve_seg_btn = self._btn("Add Curve Segment", '#3a180a')
+        self.remove_seg_btn = self._btn("Remove Segment", '#4a1212')
+        self.remove_seg_btn.setEnabled(False)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.addWidget(self.add_curve_seg_btn)
+        btn_layout.addWidget(self.remove_seg_btn)
 
         self._sec_segments.add_widget(self.segment_list)
-        self._sec_segments.add_widget(self.add_curve_seg_btn)
+        self._sec_segments.add_layout(btn_layout)
 
     def _build_seg_props_section(self):
         self._sec_seg_props = CollapsibleSection(
@@ -278,14 +285,39 @@ class SidebarView(QWidget):
         self.segment_type_label.setStyleSheet(
             "font-weight: bold; color: #64B5F6;")
 
-        # ── Curve formula group ───────────────────────────────────────────
-        self._curve_group = QGroupBox("Curve Formula")
+        # ── Curve / Shape Properties group ────────────────────────────────
+        self._curve_group = QGroupBox("Curve / Shape Properties")
         self._curve_group.setStyleSheet(
             "QGroupBox { color:#a0b0d0; border:1px solid #3a4060;"
             "  margin-top:6px; padding-top:6px; }"
             "QGroupBox::title { subcontrol-origin:margin; left:8px; }")
         cl = QVBoxLayout(self._curve_group)
         cl.setSpacing(4)
+
+        # Curve Type Selection
+        self.curve_type_combo = QComboBox()
+        self.curve_type_combo.addItems([
+            "Custom Formula",
+            "Horizontal Line",
+            "Vertical Line",
+            "Line (Diagonal)",
+            "Circle",
+            "Triangle",
+            "Quadrilateral",
+            "Polygon"
+        ])
+        self.curve_type_combo.setStyleSheet(_combo_style)
+        cl.addWidget(self.curve_type_combo)
+
+        # Stacked widget for switching parameters based on curve type
+        self.shape_stack = QStackedWidget()
+        cl.addWidget(self.shape_stack)
+
+        # ── Widget 0: Custom Formula ─────────────────────────────────────
+        widget_custom = QWidget()
+        layout_custom = QVBoxLayout(widget_custom)
+        layout_custom.setContentsMargins(0, 0, 0, 0)
+        layout_custom.setSpacing(4)
 
         mode_row = QHBoxLayout()
         self.curve_mode_param = QRadioButton("Parametric x(t),y(t)")
@@ -298,7 +330,7 @@ class SidebarView(QWidget):
         self._curve_mode_group.addButton(self.curve_mode_explicit, 1)
         mode_row.addWidget(self.curve_mode_param)
         mode_row.addWidget(self.curve_mode_explicit)
-        cl.addLayout(mode_row)
+        layout_custom.addLayout(mode_row)
 
         self._param_widget = QWidget()
         pf = QFormLayout(self._param_widget)
@@ -309,6 +341,7 @@ class SidebarView(QWidget):
         self.curve_y_formula.setStyleSheet(_spin_style)
         pf.addRow("x(t) =", self.curve_x_formula)
         pf.addRow("y(t) =", self.curve_y_formula)
+        layout_custom.addWidget(self._param_widget)
 
         self._explicit_widget = QWidget()
         ef = QFormLayout(self._explicit_widget)
@@ -317,8 +350,12 @@ class SidebarView(QWidget):
         self.curve_formula.setStyleSheet(_spin_style)
         ef.addRow("y(x) =", self.curve_formula)
         self._explicit_widget.setVisible(False)
+        layout_custom.addWidget(self._explicit_widget)
 
-        rf = QFormLayout()
+        # Form layout for t/x min/max limits
+        self.custom_limits_widget = QWidget()
+        layout_limits = QFormLayout(self.custom_limits_widget)
+        layout_limits.setContentsMargins(0, 0, 0, 0)
         self.curve_t_min = QDoubleSpinBox()
         self.curve_t_min.setRange(-1e6, 1e6)
         self.curve_t_min.setDecimals(6)
@@ -329,18 +366,173 @@ class SidebarView(QWidget):
         self.curve_t_max.setDecimals(6)
         self.curve_t_max.setValue(6.283185307)
         self.curve_t_max.setStyleSheet(_spin_style)
+        layout_limits.addRow("t / x  min:", self.curve_t_min)
+        layout_limits.addRow("t / x  max:", self.curve_t_max)
+        layout_custom.addWidget(self.custom_limits_widget)
+        
+        self.shape_stack.addWidget(widget_custom)
+
+        # ── Widget 1: Horizontal Line ───────────────────────────────────
+        widget_h_line = QWidget()
+        layout_h_line = QFormLayout(widget_h_line)
+        layout_h_line.setContentsMargins(0, 0, 0, 0)
+        self.h_line_y = QDoubleSpinBox()
+        self.h_line_y.setRange(-1e6, 1e6)
+        self.h_line_y.setDecimals(4)
+        self.h_line_y.setStyleSheet(_spin_style)
+        self.h_line_x_start = QDoubleSpinBox()
+        self.h_line_x_start.setRange(-1e6, 1e6)
+        self.h_line_x_start.setDecimals(4)
+        self.h_line_x_start.setStyleSheet(_spin_style)
+        self.h_line_x_end = QDoubleSpinBox()
+        self.h_line_x_end.setRange(-1e6, 1e6)
+        self.h_line_x_end.setDecimals(4)
+        self.h_line_x_end.setStyleSheet(_spin_style)
+        layout_h_line.addRow("Y:", self.h_line_y)
+        layout_h_line.addRow("X Start:", self.h_line_x_start)
+        layout_h_line.addRow("X End:", self.h_line_x_end)
+        self.shape_stack.addWidget(widget_h_line)
+
+        # ── Widget 2: Vertical Line ─────────────────────────────────────
+        widget_v_line = QWidget()
+        layout_v_line = QFormLayout(widget_v_line)
+        layout_v_line.setContentsMargins(0, 0, 0, 0)
+        self.v_line_x = QDoubleSpinBox()
+        self.v_line_x.setRange(-1e6, 1e6)
+        self.v_line_x.setDecimals(4)
+        self.v_line_x.setStyleSheet(_spin_style)
+        self.v_line_y_start = QDoubleSpinBox()
+        self.v_line_y_start.setRange(-1e6, 1e6)
+        self.v_line_y_start.setDecimals(4)
+        self.v_line_y_start.setStyleSheet(_spin_style)
+        self.v_line_y_end = QDoubleSpinBox()
+        self.v_line_y_end.setRange(-1e6, 1e6)
+        self.v_line_y_end.setDecimals(4)
+        self.v_line_y_end.setStyleSheet(_spin_style)
+        layout_v_line.addRow("X:", self.v_line_x)
+        layout_v_line.addRow("Y Start:", self.v_line_y_start)
+        layout_v_line.addRow("Y End:", self.v_line_y_end)
+        self.shape_stack.addWidget(widget_v_line)
+
+        # ── Widget 3: Line (Diagonal) ───────────────────────────────────
+        widget_line = QWidget()
+        layout_line = QFormLayout(widget_line)
+        layout_line.setContentsMargins(0, 0, 0, 0)
+        self.line_x0 = QDoubleSpinBox()
+        self.line_x0.setRange(-1e6, 1e6)
+        self.line_x0.setDecimals(4)
+        self.line_x0.setStyleSheet(_spin_style)
+        self.line_y0 = QDoubleSpinBox()
+        self.line_y0.setRange(-1e6, 1e6)
+        self.line_y0.setDecimals(4)
+        self.line_y0.setStyleSheet(_spin_style)
+        self.line_x1 = QDoubleSpinBox()
+        self.line_x1.setRange(-1e6, 1e6)
+        self.line_x1.setDecimals(4)
+        self.line_x1.setStyleSheet(_spin_style)
+        self.line_y1 = QDoubleSpinBox()
+        self.line_y1.setRange(-1e6, 1e6)
+        self.line_y1.setDecimals(4)
+        self.line_y1.setStyleSheet(_spin_style)
+        layout_line.addRow("X Start:", self.line_x0)
+        layout_line.addRow("Y Start:", self.line_y0)
+        layout_line.addRow("X End:", self.line_x1)
+        layout_line.addRow("Y End:", self.line_y1)
+        self.shape_stack.addWidget(widget_line)
+
+        # ── Widget 4: Circle ─────────────────────────────────────────────
+        widget_circle = QWidget()
+        layout_circle = QFormLayout(widget_circle)
+        layout_circle.setContentsMargins(0, 0, 0, 0)
+        self.circle_cx = QDoubleSpinBox()
+        self.circle_cx.setRange(-1e6, 1e6)
+        self.circle_cx.setDecimals(4)
+        self.circle_cx.setStyleSheet(_spin_style)
+        self.circle_cy = QDoubleSpinBox()
+        self.circle_cy.setRange(-1e6, 1e6)
+        self.circle_cy.setDecimals(4)
+        self.circle_cy.setStyleSheet(_spin_style)
+        self.circle_r = QDoubleSpinBox()
+        self.circle_r.setRange(1e-6, 1e6)
+        self.circle_r.setDecimals(4)
+        self.circle_r.setValue(1.0)
+        self.circle_r.setStyleSheet(_spin_style)
+        layout_circle.addRow("Center X:", self.circle_cx)
+        layout_circle.addRow("Center Y:", self.circle_cy)
+        layout_circle.addRow("Radius R:", self.circle_r)
+        self.shape_stack.addWidget(widget_circle)
+
+        # ── Widget 5: Triangle ───────────────────────────────────────────
+        widget_tri = QWidget()
+        layout_tri = QFormLayout(widget_tri)
+        layout_tri.setContentsMargins(0, 0, 0, 0)
+        self.tri_x0 = QDoubleSpinBox(); self.tri_x0.setRange(-1e6, 1e6); self.tri_x0.setDecimals(4); self.tri_x0.setStyleSheet(_spin_style)
+        self.tri_y0 = QDoubleSpinBox(); self.tri_y0.setRange(-1e6, 1e6); self.tri_y0.setDecimals(4); self.tri_y0.setStyleSheet(_spin_style)
+        self.tri_x1 = QDoubleSpinBox(); self.tri_x1.setRange(-1e6, 1e6); self.tri_x1.setDecimals(4); self.tri_x1.setStyleSheet(_spin_style)
+        self.tri_y1 = QDoubleSpinBox(); self.tri_y1.setRange(-1e6, 1e6); self.tri_y1.setDecimals(4); self.tri_y1.setStyleSheet(_spin_style)
+        self.tri_x2 = QDoubleSpinBox(); self.tri_x2.setRange(-1e6, 1e6); self.tri_x2.setDecimals(4); self.tri_x2.setStyleSheet(_spin_style)
+        self.tri_y2 = QDoubleSpinBox(); self.tri_y2.setRange(-1e6, 1e6); self.tri_y2.setDecimals(4); self.tri_y2.setStyleSheet(_spin_style)
+        layout_tri.addRow("P0 X:", self.tri_x0); layout_tri.addRow("P0 Y:", self.tri_y0)
+        layout_tri.addRow("P1 X:", self.tri_x1); layout_tri.addRow("P1 Y:", self.tri_y1)
+        layout_tri.addRow("P2 X:", self.tri_x2); layout_tri.addRow("P2 Y:", self.tri_y2)
+        self.shape_stack.addWidget(widget_tri)
+
+        # ── Widget 6: Quadrilateral ──────────────────────────────────────
+        widget_quad = QWidget()
+        layout_quad = QFormLayout(widget_quad)
+        layout_quad.setContentsMargins(0, 0, 0, 0)
+        self.quad_x0 = QDoubleSpinBox(); self.quad_x0.setRange(-1e6, 1e6); self.quad_x0.setDecimals(4); self.quad_x0.setStyleSheet(_spin_style)
+        self.quad_y0 = QDoubleSpinBox(); self.quad_y0.setRange(-1e6, 1e6); self.quad_y0.setDecimals(4); self.quad_y0.setStyleSheet(_spin_style)
+        self.quad_x1 = QDoubleSpinBox(); self.quad_x1.setRange(-1e6, 1e6); self.quad_x1.setDecimals(4); self.quad_x1.setStyleSheet(_spin_style)
+        self.quad_y1 = QDoubleSpinBox(); self.quad_y1.setRange(-1e6, 1e6); self.quad_y1.setDecimals(4); self.quad_y1.setStyleSheet(_spin_style)
+        self.quad_x2 = QDoubleSpinBox(); self.quad_x2.setRange(-1e6, 1e6); self.quad_x2.setDecimals(4); self.quad_x2.setStyleSheet(_spin_style)
+        self.quad_y2 = QDoubleSpinBox(); self.quad_y2.setRange(-1e6, 1e6); self.quad_y2.setDecimals(4); self.quad_y2.setStyleSheet(_spin_style)
+        self.quad_x3 = QDoubleSpinBox(); self.quad_x3.setRange(-1e6, 1e6); self.quad_x3.setDecimals(4); self.quad_x3.setStyleSheet(_spin_style)
+        self.quad_y3 = QDoubleSpinBox(); self.quad_y3.setRange(-1e6, 1e6); self.quad_y3.setDecimals(4); self.quad_y3.setStyleSheet(_spin_style)
+        layout_quad.addRow("P0 X:", self.quad_x0); layout_quad.addRow("P0 Y:", self.quad_y0)
+        layout_quad.addRow("P1 X:", self.quad_x1); layout_quad.addRow("P1 Y:", self.quad_y1)
+        layout_quad.addRow("P2 X:", self.quad_x2); layout_quad.addRow("P2 Y:", self.quad_y2)
+        layout_quad.addRow("P3 X:", self.quad_x3); layout_quad.addRow("P3 Y:", self.quad_y3)
+        self.shape_stack.addWidget(widget_quad)
+
+        # ── Widget 7: Polygon ────────────────────────────────────────────
+        widget_poly = QWidget()
+        layout_poly = QVBoxLayout(widget_poly)
+        layout_poly.setContentsMargins(0, 0, 0, 0)
+        layout_poly.setSpacing(2)
+        lbl_poly = QLabel("Vertices (x,y separated by semicolon):")
+        lbl_poly.setStyleSheet("color:#a0b0d0; font-size:10px;")
+        self.poly_vertices = QLineEdit("0,0; 1,0; 1,1; 0,1")
+        self.poly_vertices.setStyleSheet(_spin_style)
+        layout_poly.addWidget(lbl_poly)
+        layout_poly.addWidget(self.poly_vertices)
+        self.shape_stack.addWidget(widget_poly)
+
+        # Connect combobox switch
+        self.curve_type_combo.currentIndexChanged.connect(self.shape_stack.setCurrentIndex)
+
+        # General curve properties (applicable to all shapes)
+        rf = QFormLayout()
         self.curve_n = QSpinBox()
         self.curve_n.setRange(2, 100000)
         self.curve_n.setValue(100)
         self.curve_n.setStyleSheet(_spin_style)
-        rf.addRow("t / x  min:", self.curve_t_min)
-        rf.addRow("t / x  max:", self.curve_t_max)
+        self.curve_start_node = QSpinBox()
+        self.curve_start_node.setRange(-1, 1000000)
+        self.curve_start_node.setValue(-1)
+        self.curve_start_node.setSpecialValueText("None")
+        self.curve_start_node.setStyleSheet(_spin_style)
+        self.curve_end_node = QSpinBox()
+        self.curve_end_node.setRange(-1, 1000000)
+        self.curve_end_node.setValue(-1)
+        self.curve_end_node.setSpecialValueText("None")
+        self.curve_end_node.setStyleSheet(_spin_style)
         rf.addRow("Points:", self.curve_n)
+        rf.addRow("Start Node:", self.curve_start_node)
+        rf.addRow("End Node:", self.curve_end_node)
 
         self.curve_preview_btn = self._btn("Preview Formula", '#3a1f00')
 
-        cl.addWidget(self._param_widget)
-        cl.addWidget(self._explicit_widget)
         cl.addLayout(rf)
         cl.addWidget(self.curve_preview_btn)
 
@@ -374,7 +566,109 @@ class SidebarView(QWidget):
         self._sec_seg_props.add_widget(self.match_previous_cb)
         self._sec_seg_props.add_widget(self.param_stack)
 
+        # ── Duplicate with Transform (only for curve segments) ────────────
+        self._transform_dup_group = self._build_transform_group(_spin_style, _combo_style)
+        self._transform_dup_group.setVisible(False)
+        self._sec_seg_props.add_widget(self._transform_dup_group)
+
         self.curve_mode_param.toggled.connect(self._on_curve_mode_toggled)
+
+    def _build_transform_group(self, spin_style: str, combo_style: str) -> QGroupBox:
+        """Build the 'Duplicate with Transform' group box for curve segments."""
+        grp = QGroupBox("Duplicate with Transform")
+        grp.setStyleSheet(
+            "QGroupBox { color:#a0c0d0; border:1px solid #2a4060;"
+            "  margin-top:6px; padding-top:6px; }"
+            "QGroupBox::title { subcontrol-origin:margin; left:8px; }")
+        gl = QVBoxLayout(grp)
+        gl.setSpacing(4)
+
+        # Transform type combo
+        self.dup_type_combo = QComboBox()
+        self.dup_type_combo.addItems([
+            "Rotate",
+            "Mirror Horizontal (flip Y)",
+            "Mirror Vertical (flip X)",
+            "Mirror Axis (custom)",
+            "Point Symmetry",
+        ])
+        self.dup_type_combo.setStyleSheet(combo_style)
+        gl.addWidget(self.dup_type_combo)
+
+        # Stacked parameter areas per transform type
+        self._dup_stack = QStackedWidget()
+        gl.addWidget(self._dup_stack)
+
+        def _dspin(lo=-1e9, hi=1e9, val=0.0, dec=4):
+            s = QDoubleSpinBox()
+            s.setRange(lo, hi)
+            s.setValue(val)
+            s.setDecimals(dec)
+            s.setStyleSheet(spin_style)
+            return s
+
+        # ── 0: Rotate ────────────────────────────────────────────────────
+        w_rot = QWidget()
+        fl_rot = QFormLayout(w_rot)
+        fl_rot.setContentsMargins(0, 0, 0, 0)
+        self.dup_rot_angle = _dspin(-360, 360, 90.0, 3)
+        self.dup_rot_angle.setSuffix("  °")
+        self.dup_rot_px = _dspin()
+        self.dup_rot_py = _dspin()
+        fl_rot.addRow("Angle:", self.dup_rot_angle)
+        fl_rot.addRow("Pivot X:", self.dup_rot_px)
+        fl_rot.addRow("Pivot Y:", self.dup_rot_py)
+        self._dup_stack.addWidget(w_rot)
+
+        # ── 1: Mirror Horizontal (flip Y around pivot_y) ────────────────
+        w_mh = QWidget()
+        fl_mh = QFormLayout(w_mh)
+        fl_mh.setContentsMargins(0, 0, 0, 0)
+        self.dup_mh_py = _dspin()
+        fl_mh.addRow("Axis Y:", self.dup_mh_py)
+        self._dup_stack.addWidget(w_mh)
+
+        # ── 2: Mirror Vertical (flip X around pivot_x) ──────────────────
+        w_mv = QWidget()
+        fl_mv = QFormLayout(w_mv)
+        fl_mv.setContentsMargins(0, 0, 0, 0)
+        self.dup_mv_px = _dspin()
+        fl_mv.addRow("Axis X:", self.dup_mv_px)
+        self._dup_stack.addWidget(w_mv)
+
+        # ── 3: Mirror Axis (arbitrary direction through pivot) ───────────
+        w_ma = QWidget()
+        fl_ma = QFormLayout(w_ma)
+        fl_ma.setContentsMargins(0, 0, 0, 0)
+        self.dup_ma_px = _dspin()
+        self.dup_ma_py = _dspin()
+        self.dup_ma_dx = _dspin(val=1.0)
+        self.dup_ma_dy = _dspin(val=0.0)
+        fl_ma.addRow("Pivot X:", self.dup_ma_px)
+        fl_ma.addRow("Pivot Y:", self.dup_ma_py)
+        fl_ma.addRow("Dir X:", self.dup_ma_dx)
+        fl_ma.addRow("Dir Y:", self.dup_ma_dy)
+        self._dup_stack.addWidget(w_ma)
+
+        # ── 4: Point Symmetry ───────────────────────────────────────────
+        w_ps = QWidget()
+        fl_ps = QFormLayout(w_ps)
+        fl_ps.setContentsMargins(0, 0, 0, 0)
+        self.dup_ps_px = _dspin()
+        self.dup_ps_py = _dspin()
+        fl_ps.addRow("Centre X:", self.dup_ps_px)
+        fl_ps.addRow("Centre Y:", self.dup_ps_py)
+        self._dup_stack.addWidget(w_ps)
+
+        # Connect combo → stack
+        self.dup_type_combo.currentIndexChanged.connect(self._dup_stack.setCurrentIndex)
+
+        # Duplicate button
+        self.dup_btn = self._btn("Duplicate", '#1a3a2a')
+        gl.addWidget(self.dup_btn)
+
+        return grp
+
 
     def _build_advanced_section(self):
         sec = CollapsibleSection("Advanced Settings", start_collapsed=True)
@@ -389,6 +683,9 @@ class SidebarView(QWidget):
         hint = QLabel("Disable for geometries with true sharp corners.")
         hint.setStyleSheet("color:#556; font-size:10px;")
         hint.setWordWrap(True)
+
+        self.quality_check_cb = QCheckBox("Show Quality Heatmap")
+        self.quality_check_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
 
         tf_box = QGroupBox("Post-process Transform")
         tf_box.setStyleSheet(
@@ -433,6 +730,7 @@ class SidebarView(QWidget):
 
         sec.add_widget(self.global_spline_cb)
         sec.add_widget(hint)
+        sec.add_widget(self.quality_check_cb)
         sec.add_widget(self.apply_transform_cb)
         sec.add_widget(tf_box)
 
@@ -554,6 +852,59 @@ class SidebarView(QWidget):
     def show_curve_segment(self, seg):
         self._file_seg_label.setVisible(False)
         self._curve_group.setVisible(True)
+
+        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
+        curve_type = getattr(seg, "curve_type", "custom")
+        if curve_type in CURVE_TYPES:
+            idx = CURVE_TYPES.index(curve_type)
+            self.curve_type_combo.blockSignals(True)
+            self.curve_type_combo.setCurrentIndex(idx)
+            self.curve_type_combo.blockSignals(False)
+            self.shape_stack.setCurrentIndex(idx)
+        else:
+            self.curve_type_combo.blockSignals(True)
+            self.curve_type_combo.setCurrentIndex(0)
+            self.curve_type_combo.blockSignals(False)
+            self.shape_stack.setCurrentIndex(0)
+
+        # Populate shape specific inputs
+        params = seg.parameters
+        if curve_type == "horizontal_line":
+            self.h_line_y.setValue(params.get("y", 0.0))
+            self.h_line_x_start.setValue(params.get("x0", 0.0))
+            self.h_line_x_end.setValue(params.get("x1", 1.0))
+        elif curve_type == "vertical_line":
+            self.v_line_x.setValue(params.get("x", 0.0))
+            self.v_line_y_start.setValue(params.get("y0", 0.0))
+            self.v_line_y_end.setValue(params.get("y1", 1.0))
+        elif curve_type == "line":
+            self.line_x0.setValue(params.get("x0", 0.0))
+            self.line_y0.setValue(params.get("y0", 0.0))
+            self.line_x1.setValue(params.get("x1", 1.0))
+            self.line_y1.setValue(params.get("y1", 1.0))
+        elif curve_type == "circle":
+            self.circle_cx.setValue(params.get("cx", 0.0))
+            self.circle_cy.setValue(params.get("cy", 0.0))
+            self.circle_r.setValue(params.get("r", 1.0))
+        elif curve_type == "triangle":
+            self.tri_x0.setValue(params.get("x0", 0.0))
+            self.tri_y0.setValue(params.get("y0", 0.0))
+            self.tri_x1.setValue(params.get("x1", 1.0))
+            self.tri_y1.setValue(params.get("y1", 0.0))
+            self.tri_x2.setValue(params.get("x2", 0.5))
+            self.tri_y2.setValue(params.get("y2", 1.0))
+        elif curve_type == "quadrilateral":
+            self.quad_x0.setValue(params.get("x0", 0.0))
+            self.quad_y0.setValue(params.get("y0", 0.0))
+            self.quad_x1.setValue(params.get("x1", 1.0))
+            self.quad_y1.setValue(params.get("y1", 0.0))
+            self.quad_x2.setValue(params.get("x2", 1.0))
+            self.quad_y2.setValue(params.get("y2", 1.0))
+            self.quad_x3.setValue(params.get("x3", 0.0))
+            self.quad_y3.setValue(params.get("y3", 1.0))
+        elif curve_type == "polygon":
+            self.poly_vertices.setText(params.get("vertices_str", "0,0; 1,0; 1,1; 0,1"))
+
         is_p = (seg.curve_mode == "parametric")
         self.curve_mode_param.setChecked(is_p)
         self.curve_mode_explicit.setChecked(not is_p)
@@ -565,10 +916,14 @@ class SidebarView(QWidget):
         self.curve_t_min.setValue(seg.t_min)
         self.curve_t_max.setValue(seg.t_max)
         self.curve_n.setValue(seg.parameters.get("n_points", 100))
+        self.curve_start_node.setValue(seg.start_index)
+        self.curve_end_node.setValue(seg.end_index)
 
     def show_segment_props(self, visible: bool):
         if visible:
             self._sec_seg_props.expand()
+        else:
+            self._sec_seg_props.collapse()
 
     def _toggle_uniform_mode(self, is_spacing: bool):
         self.uniform_n.setVisible(not is_spacing)

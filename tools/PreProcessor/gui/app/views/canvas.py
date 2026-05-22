@@ -49,7 +49,7 @@ class CanvasView(QWidget):
         # Resampled output — magenta dashed
         self.resampled_curve = self.plot_widget.plot(
             pen=pg.mkPen(_COL_RESAMPLED, width=2, style=Qt.PenStyle.DashLine),
-            symbolBrush=_COL_RESAMPLED, symbolSize=5)
+            symbol='o', symbolBrush=_COL_RESAMPLED, symbolSize=5)
 
         # Active segment — thick orange
         self.active_segment_curve = self.plot_widget.plot(
@@ -58,7 +58,7 @@ class CanvasView(QWidget):
         # Curve-formula preview — orange dashed
         self.curve_preview_item = self.plot_widget.plot(
             pen=pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine),
-            symbolBrush=_COL_PREVIEW, symbolSize=4)
+            symbol='o', symbolBrush=_COL_PREVIEW, symbolSize=4)
 
         # Split points — red dots
         self.split_scatter = pg.ScatterPlotItem(
@@ -69,6 +69,11 @@ class CanvasView(QWidget):
         self.selected_scatter = pg.ScatterPlotItem(
             size=14, pen=pg.mkPen(_COL_SELECTED, width=2), brush=None)
         self.plot_widget.addItem(self.selected_scatter)
+
+        # Quality bad nodes — red 'x'
+        self.quality_bad_scatter = pg.ScatterPlotItem(
+            size=10, symbol='x', pen=pg.mkPen('#FF5252', width=2), brush=None)
+        self.plot_widget.addItem(self.quality_bad_scatter)
 
         # Mouse-coordinate label
         self.coord_label = pg.TextItem('', anchor=(-0.1, 1.1),
@@ -219,18 +224,52 @@ class CanvasView(QWidget):
         else:
             self.active_segment_curve.setData([], [])
 
-    def load_resampled_data(self, points: np.ndarray | None):
+    def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False):
         if points is not None and len(points) > 0:
-            self.resampled_curve.setData(points[:, 0], points[:, 1])
+            if show_quality and len(points) >= 2:
+                diffs = np.diff(points, axis=0)
+                ds = np.sqrt(np.sum(diffs**2, axis=1))
+                ds[ds < 1e-12] = 1e-12
+                ratios = np.ones(len(points))
+                if len(points) >= 3:
+                    ratios[1:-1] = ds[1:] / ds[:-1]
+                
+                brushes = []
+                bad_x = []
+                bad_y = []
+                for i, r in enumerate(ratios):
+                    if i == 0 or i == len(ratios) - 1:
+                        brushes.append(pg.mkBrush("#2ECC71"))
+                        continue
+                    val = max(r, 1.0 / r) if r > 0 else 1e12
+                    if val <= 1.05:
+                        brushes.append(pg.mkBrush("#2ECC71"))
+                    elif val <= 1.20:
+                        brushes.append(pg.mkBrush("#E67E22"))
+                    else:
+                        brushes.append(pg.mkBrush("#FF5252"))
+                        bad_x.append(points[i, 0])
+                        bad_y.append(points[i, 1])
+                
+                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol='o', symbolBrush=brushes)
+                if bad_x:
+                    self.quality_bad_scatter.setData(bad_x, bad_y)
+                else:
+                    self.quality_bad_scatter.clear()
+            else:
+                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol='o', symbolBrush=pg.mkBrush(_COL_RESAMPLED))
+                self.quality_bad_scatter.clear()
         else:
             self.resampled_curve.setData([], [])
+            self.quality_bad_scatter.clear()
 
     def clear_resampled(self):
         self.resampled_curve.setData([], [])
+        self.quality_bad_scatter.clear()
 
     def update_curve_preview(self, points: np.ndarray | None):
         if points is not None and len(points) > 0:
-            self.curve_preview_item.setData(points[:, 0], points[:, 1])
+            self.curve_preview_item.setData(points[:, 0], points[:, 1], symbol='o')
         else:
             self.curve_preview_item.setData([], [])
 
@@ -244,6 +283,7 @@ class CanvasView(QWidget):
         self.active_segment_curve.setData([], [])
         self.resampled_curve.setData([], [])
         self.curve_preview_item.setData([], [])
+        self.quality_bad_scatter.clear()
 
     # ═════════════════════════════════════════════════════════════════════
     # Mouse handlers

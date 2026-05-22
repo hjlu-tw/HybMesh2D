@@ -16,6 +16,7 @@ class SegmentModel:
         self.parameters: dict = {"n_points": 50}
 
         # Curve-segment fields (only used when type == "curve")
+        self.curve_type = "custom"      # "custom" | "horizontal_line" | "vertical_line" | "line" | "circle" | "triangle" | "quadrilateral" | "polygon"
         self.curve_mode = "parametric"   # "parametric" | "explicit"
         self.x_formula = "cos(t)"
         self.y_formula = "sin(t)"
@@ -43,13 +44,15 @@ class SegmentModel:
 
     @classmethod
     def from_dict(cls, segment_id: int, d: dict) -> "SegmentModel":
+        actual_id = d.get("id", segment_id)
         seg_type = d.get("type", "file")
         if seg_type == "curve":
-            seg = cls(segment_id, -1, -1)
+            seg = cls(actual_id, d.get("start_index", -1), d.get("end_index", -1))
             seg.type = "curve"
+            seg.curve_type = d.get("curve_type", "custom")
             seg.strategy = d.get("strategy", "uniform")
             params = copy.deepcopy(d.get("parameters", {"n_points": 50}))
-            r = params.pop("range", [0.0, 1.0])
+            r = params.pop("range", [0.0, 6.283185307])
             seg.parameters = params
             seg.t_min = float(r[0])
             seg.t_max = float(r[1])
@@ -59,11 +62,16 @@ class SegmentModel:
                 seg.curve_mode = "parametric"
                 seg.x_formula = d["x_formula"]
                 seg.y_formula = d["y_formula"]
-            else:
+            elif "formula" in d:
                 seg.curve_mode = "explicit"
                 seg.formula = d.get("formula", "sin(x)")
+            else:
+                seg.curve_mode = d.get("curve_mode", "parametric")
+                seg.x_formula = d.get("x_formula", "cos(t)")
+                seg.y_formula = d.get("y_formula", "sin(t)")
+                seg.formula = d.get("formula", "sin(x)")
         else:
-            seg = cls(segment_id, d.get("start_index", 0), d.get("end_index", -1))
+            seg = cls(actual_id, d.get("start_index", 0), d.get("end_index", -1))
             seg.type = d.get("type", "file")
             seg.strategy = d.get("strategy", "uniform")
             seg.parameters = copy.deepcopy(d.get("parameters", {"n_points": 50}))
@@ -77,14 +85,19 @@ class SegmentModel:
             d: dict = {
                 "id": self.id,
                 "type": "curve",
+                "curve_type": self.curve_type,
                 "strategy": self.strategy,
                 "parameters": params,
+                "start_index": int(self.start_index),
+                "end_index": int(self.end_index),
             }
-            if self.curve_mode == "parametric":
-                d["x_formula"] = self.x_formula
-                d["y_formula"] = self.y_formula
-            else:
-                d["formula"] = self.formula
+            if self.curve_type == "custom":
+                d["curve_mode"] = self.curve_mode
+                if self.curve_mode == "parametric":
+                    d["x_formula"] = self.x_formula
+                    d["y_formula"] = self.y_formula
+                else:
+                    d["formula"] = self.formula
             if self.match_previous:
                 d["match_previous"] = True
         else:
