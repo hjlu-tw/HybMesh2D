@@ -328,6 +328,112 @@ std::vector<int> detectFeaturePoints(const std::vector<Point2D>& points, double 
     return feat;
 }
 
+struct ResampleTask {
+    std::string type;
+    std::vector<Point2D> sp;
+    int start_gp_idx = -1;
+    int end_gp_idx = -1;
+    int n_points_alloc = -1;
+    json segment_json;
+};
+
+void alignEndpoints(std::vector<Point2D>& pts, int start_idx, int end_idx, const std::vector<Point2D>& gp) {
+    bool start_valid = (!gp.empty() && start_idx >= 0 && start_idx < (int)gp.size());
+    bool end_valid = (!gp.empty() && end_idx >= 0 && end_idx < (int)gp.size());
+    if (pts.size() >= 2 && (start_valid || end_valid)) {
+        Point2D P0 = pts.front();
+        Point2D P1 = pts.back();
+        if (start_valid && end_valid) {
+            Point2D Q0 = gp[start_idx];
+            Point2D Q1 = gp[end_idx];
+            double dx_P = P1.x - P0.x;
+            double dy_P = P1.y - P0.y;
+            double dx_Q = Q1.x - Q0.x;
+            double dy_Q = Q1.y - Q0.y;
+            double L_P2 = dx_P * dx_P + dy_P * dy_P;
+            if (L_P2 > 1e-12) {
+                double A = (dx_Q * dx_P + dy_Q * dy_P) / L_P2;
+                double B = (dy_Q * dx_P - dx_Q * dy_P) / L_P2;
+                for (auto& pt : pts) {
+                    double x_rel = pt.x - P0.x;
+                    double y_rel = pt.y - P0.y;
+                    pt.x = A * x_rel - B * y_rel + Q0.x;
+                    pt.y = B * x_rel + A * y_rel + Q0.y;
+                }
+            } else {
+                for (auto& pt : pts) {
+                    pt.x = pt.x - P0.x + Q0.x;
+                    pt.y = pt.y - P0.y + Q0.y;
+                }
+            }
+        } else if (start_valid) {
+            Point2D Q0 = gp[start_idx];
+            for (auto& pt : pts) {
+                pt.x = pt.x - P0.x + Q0.x;
+                pt.y = pt.y - P0.y + Q0.y;
+            }
+        } else if (end_valid) {
+            Point2D Q1 = gp[end_idx];
+            for (auto& pt : pts) {
+                pt.x = pt.x - P1.x + Q1.x;
+                pt.y = pt.y - P1.y + Q1.y;
+            }
+        }
+    }
+}
+
+std::vector<int> distributePointsProportionally(const std::vector<double>& lengths, int N) {
+    int M = (int)lengths.size();
+    if (M == 0) return {};
+    if (M == 1) return {N};
+    
+    double Ltotal = 0.0;
+    for (double l : lengths) Ltotal += l;
+    
+    std::vector<int> alloc(M, 2);
+    if (Ltotal < 1e-12) return alloc;
+    
+    int nInterior = N + M - 1 - 2 * M; // N - M - 1
+    if (nInterior <= 0) return alloc;
+    
+    int allocated = 0;
+    std::vector<double> remainders(M);
+    for (int i = 0; i < M; ++i) {
+        double exact = nInterior * lengths[i] / Ltotal;
+        int val = (int)std::floor(exact);
+        alloc[i] += val;
+        allocated += val;
+        remainders[i] = exact - val;
+    }
+    
+    int remaining = nInterior - allocated;
+    if (remaining > 0) {
+        std::vector<int> order(M);
+        std::iota(order.begin(), order.end(), 0);
+        std::stable_sort(order.begin(), order.end(),
+            [&](int a, int b) { return remainders[a] > remainders[b]; });
+        for (int i = 0; i < remaining; ++i) {
+            alloc[order[i % M]] += 1;
+        }
+    }
+    return alloc;
+}
+
+std::vector<std::vector<Point2D>> splitPolyline(const std::vector<Point2D>& pts, const std::vector<int>& indices) {
+    std::vector<std::vector<Point2D>> subs;
+    if (indices.size() < 2) return subs;
+    for (size_t i = 0; i < indices.size() - 1; ++i) {
+        int start = indices[i];
+        int end = indices[i + 1];
+        std::vector<Point2D> sub;
+        for (int j = start; j <= end; ++j) {
+            sub.push_back(pts[j]);
+        }
+        subs.push_back(sub);
+    }
+    return subs;
+}
+
 void processElement(const json& config) {
     std::vector<Point2D> gp = loadGeometry(config.value("input_file", ""));
     if (config.value("is_closed", false) && !gp.empty()) {
@@ -347,25 +453,202 @@ void processElement(const json& config) {
     double last_ds = -1.0; // Task 4: Spacing matching state
 
     for (const auto& sj : config["segments"]) {
-        std::string type = sj.value("type", "file"); 
+        std::string type = sj.value("type", "file");
         bool autoSplit = sj.value("auto_split", false);
-        std::vector<std::pair<int, int>> ranges;
+        double splitThreshold = sj.value("split_threshold", 20.0);
 
-        if (type == "curve") ranges.push_back({-1, -1});
-        else {
+        std::vector<ResampleTask> tasks;
+
+        if (type == "curve") {
+            std::string curve_type = sj.value("curve_type", "custom");
+            int n_points = sj.value("parameters", json::object()).value("n_points", 50);
+
+            if (curve_type == "triangle" || curve_type == "quadrilateral" || curve_type == "polygon") {
+                // Predefined shape: extract vertices
+                std::vector<Point2D> vertices;
+                json p = sj.value("parameters", json::object());
+                if (curve_type == "triangle") {
+                    vertices = {
+                        {p.value("x0", 0.0), p.value("y0", 0.0)},
+                        {p.value("x1", 1.0), p.value("y1", 0.0)},
+                        {p.value("x2", 0.5), p.value("y2", 1.0)}
+                    };
+                } else if (curve_type == "quadrilateral") {
+                    vertices = {
+                        {p.value("x0", 0.0), p.value("y0", 0.0)},
+                        {p.value("x1", 1.0), p.value("y1", 0.0)},
+                        {p.value("x2", 1.0), p.value("y2", 1.0)},
+                        {p.value("x3", 0.0), p.value("y3", 1.0)}
+                    };
+                } else { // polygon
+                    std::string v_str = p.value("vertices_str", "0,0; 1,0; 1,1; 0,1");
+                    std::stringstream ss(v_str);
+                    std::string pair;
+                    while (std::getline(ss, pair, ';')) {
+                        if (pair.empty() || pair.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+                        size_t comma = pair.find(',');
+                        if (comma != std::string::npos) {
+                            try {
+                                double vx = std::stod(pair.substr(0, comma));
+                                double vy = std::stod(pair.substr(comma + 1));
+                                vertices.push_back({vx, vy});
+                            } catch (...) {}
+                        }
+                    }
+                    if (vertices.size() < 2) {
+                        vertices = {{0.0, 0.0}, {1.0, 1.0}};
+                    }
+                }
+
+                if (!vertices.empty()) {
+                    double dx = vertices.front().x - vertices.back().x;
+                    double dy = vertices.front().y - vertices.back().y;
+                    if (std::sqrt(dx*dx + dy*dy) > 1e-9) {
+                        vertices.push_back(vertices.front());
+                    }
+                }
+
+                // Align vertices using start/end indices
+                int start_idx = sj.value("start_index", -1);
+                int end_idx = sj.value("end_index", -1);
+                alignEndpoints(vertices, start_idx, end_idx, gp);
+
+                int k = (int)vertices.size() - 1;
+                if (k >= 1) {
+                    std::vector<double> lengths(k);
+                    for (int i = 0; i < k; ++i) {
+                        lengths[i] = (vertices[i + 1] - vertices[i]).length();
+                    }
+                    
+                    std::vector<int> alloc_points;
+                    json params = sj.value("parameters", json::object());
+                    bool is_count_based = !params.contains("spacing") && 
+                                          !params.contains("spacing_start") && 
+                                          !params.contains("spacing_end");
+                    if (is_count_based) {
+                        alloc_points = distributePointsProportionally(lengths, n_points);
+                    }
+
+                    for (int i = 0; i < k; ++i) {
+                        ResampleTask task;
+                        task.type = "curve";
+                        task.sp = {vertices[i], vertices[i + 1]};
+                        task.n_points_alloc = is_count_based ? alloc_points[i] : -1;
+                        task.segment_json = sj;
+                        tasks.push_back(task);
+                    }
+                }
+            } else {
+                // Other curves
+                std::vector<Point2D> full_pts = generateCurvePoints(sj, gp);
+                if (autoSplit && full_pts.size() >= 3) {
+                    std::vector<int> f = detectFeaturePoints(full_pts, splitThreshold);
+                    if (f.size() > 2) {
+                        auto subs = splitPolyline(full_pts, f);
+                        int M = (int)subs.size();
+                        std::vector<double> lengths(M);
+                        for (int i = 0; i < M; ++i) {
+                            lengths[i] = calculateArcLengths(subs[i]).back();
+                        }
+
+                        json params = sj.value("parameters", json::object());
+                        bool is_count_based = !params.contains("spacing") && 
+                                              !params.contains("spacing_start") && 
+                                              !params.contains("spacing_end");
+                        std::vector<int> alloc_points;
+                        if (is_count_based) {
+                            alloc_points = distributePointsProportionally(lengths, n_points);
+                        }
+
+                        for (int i = 0; i < M; ++i) {
+                            ResampleTask task;
+                            task.type = "curve";
+                            task.sp = subs[i];
+                            task.n_points_alloc = is_count_based ? alloc_points[i] : -1;
+                            task.segment_json = sj;
+                            tasks.push_back(task);
+                        }
+                    } else {
+                        ResampleTask task;
+                        task.type = "curve";
+                        task.sp = full_pts;
+                        task.n_points_alloc = -1;
+                        task.segment_json = sj;
+                        tasks.push_back(task);
+                    }
+                } else {
+                    ResampleTask task;
+                    task.type = "curve";
+                    task.sp = full_pts;
+                    task.n_points_alloc = -1;
+                    task.segment_json = sj;
+                    tasks.push_back(task);
+                }
+            }
+        } else {
+            // File segment
             int s = sj.value("start_index", 0), e = sj.value("end_index", -1);
             if (e == -1 && !gp.empty()) e = (int)gp.size() - 1;
-            if (autoSplit && !gp.empty()) {
-                std::vector<Point2D> sub; for (int i = s; i <= e; ++i) sub.push_back(gp[i]);
-                std::vector<int> f = detectFeaturePoints(sub, sj.value("split_threshold", 20.0));
-                for (size_t i = 0; i < f.size() - 1; ++i) ranges.push_back({s + f[i], s + f[i + 1]});
-            } else ranges.push_back({s, e});
+
+            if (autoSplit && !gp.empty() && e > s) {
+                std::vector<Point2D> sub; 
+                for (int i = s; i <= e; ++i) sub.push_back(gp[i]);
+                std::vector<int> f = detectFeaturePoints(sub, splitThreshold);
+                if (f.size() > 2) {
+                    auto subs = splitPolyline(sub, f);
+                    int M = (int)subs.size();
+                    std::vector<double> lengths(M);
+                    for (int i = 0; i < M; ++i) {
+                        lengths[i] = calculateArcLengths(subs[i]).back();
+                    }
+
+                    int n_points = sj.value("parameters", json::object()).value("n_points", (int)sub.size());
+                    json params = sj.value("parameters", json::object());
+                    bool is_count_based = !params.contains("spacing") && 
+                                          !params.contains("spacing_start") && 
+                                          !params.contains("spacing_end");
+                    std::vector<int> alloc_points;
+                    if (is_count_based) {
+                        alloc_points = distributePointsProportionally(lengths, n_points);
+                    }
+
+                    for (int i = 0; i < M; ++i) {
+                        ResampleTask task;
+                        task.type = "file";
+                        task.sp = subs[i];
+                        task.start_gp_idx = s + f[i];
+                        task.end_gp_idx = s + f[i + 1];
+                        task.n_points_alloc = is_count_based ? alloc_points[i] : -1;
+                        task.segment_json = sj;
+                        tasks.push_back(task);
+                    }
+                } else {
+                    ResampleTask task;
+                    task.type = "file";
+                    task.sp = sub;
+                    task.start_gp_idx = s;
+                    task.end_gp_idx = e;
+                    task.n_points_alloc = -1;
+                    task.segment_json = sj;
+                    tasks.push_back(task);
+                }
+            } else {
+                std::vector<Point2D> sub;
+                for (int i = s; i <= e; ++i) sub.push_back(gp[i]);
+                ResampleTask task;
+                task.type = "file";
+                task.sp = sub;
+                task.start_gp_idx = s;
+                task.end_gp_idx = e;
+                task.n_points_alloc = -1;
+                task.segment_json = sj;
+                tasks.push_back(task);
+            }
         }
 
-        for (auto& r : ranges) {
-            std::vector<Point2D> sp; 
-            if (type == "curve") sp = generateCurvePoints(sj, gp); 
-            else for (int i = r.first; i <= r.second; ++i) sp.push_back(gp[i]);
+        // Now run the tasks for the segment
+        for (auto& task : tasks) {
+            std::vector<Point2D>& sp = task.sp;
             if (sp.size() < 2) continue;
 
             std::vector<double> s = calculateArcLengths(sp); 
@@ -373,14 +656,14 @@ void processElement(const json& config) {
             
             // Build segment-local spline if not using global
             Spline2D localSpline;
-            bool useLocalSpline = (type == "file" && sp.size() >= 3 && !useGlobalSpline);
+            bool useLocalSpline = (task.type == "file" && sp.size() >= 3 && !useGlobalSpline);
             if (useLocalSpline) localSpline.build(sp, s);
 
-            std::string strat = sj.value("strategy", "uniform");
-            json params = sj.value("parameters", json::object());
+            std::string strat = task.segment_json.value("strategy", "uniform");
+            json params = task.segment_json.value("parameters", json::object());
 
             // Task 4: Spacing matching
-            if (sj.value("match_previous", false) && last_ds > 0) {
+            if (task.segment_json.value("match_previous", false) && last_ds > 0) {
                 if (strat == "uniform") params["spacing"] = last_ds;
                 else params["spacing_start"] = last_ds;
             }
@@ -395,7 +678,13 @@ void processElement(const json& config) {
                 else ds_avg = params["spacing_end"];
                 nT = std::max(2, (int)std::round(L / ds_avg) + 1);
             }
-            else nT = params.value("n_points", (int)sp.size());
+            else {
+                if (task.n_points_alloc != -1) {
+                    nT = task.n_points_alloc;
+                } else {
+                    nT = params.value("n_points", (int)sp.size());
+                }
+            }
             if (nT < 2) nT = 2;
 
             std::vector<double> tS;
@@ -439,9 +728,9 @@ void processElement(const json& config) {
             std::vector<Point2D> segmentPts;
             for (double ts : tS) {
                 Point2D p;
-                if (useGlobalSpline) {
+                if (useGlobalSpline && task.type == "file" && task.start_gp_idx != -1) {
                     // Map local s to global s
-                    double start_s = globalS[r.first];
+                    double start_s = globalS[task.start_gp_idx];
                     p = globalSpline.eval(start_s + ts);
                 } else if (useLocalSpline) {
                     p = localSpline.eval(ts);

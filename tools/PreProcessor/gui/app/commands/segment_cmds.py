@@ -214,6 +214,8 @@ class UpdateSegmentStateCmd(BaseCommand):
         seg.strategy = state.get("strategy", "uniform")
         seg.parameters = copy.deepcopy(state.get("parameters", {}))
         seg.match_previous = state.get("match_previous", False)
+        seg.auto_split = state.get("auto_split", False)
+        seg.split_threshold = float(state.get("split_threshold", 20.0))
         
         # Curve specific
         seg.curve_type = state.get("curve_type", "custom")

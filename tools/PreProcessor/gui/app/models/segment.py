@@ -26,6 +26,8 @@ class SegmentModel:
 
         # Advanced
         self.match_previous: bool = False
+        self.auto_split: bool = False
+        self.split_threshold: float = 20.0
 
     # ── Strategy helpers ──────────────────────────────────────────────────
 
@@ -76,6 +78,9 @@ class SegmentModel:
             seg.strategy = d.get("strategy", "uniform")
             seg.parameters = copy.deepcopy(d.get("parameters", {"n_points": 50}))
             seg.match_previous = d.get("match_previous", False)
+        
+        seg.auto_split = d.get("auto_split", False)
+        seg.split_threshold = float(d.get("split_threshold", 20.0))
         return seg
 
     def to_dict(self) -> dict:
@@ -111,4 +116,8 @@ class SegmentModel:
             }
             if self.match_previous:
                 d["match_previous"] = True
+        
+        if self.auto_split:
+            d["auto_split"] = True
+            d["split_threshold"] = self.split_threshold
         return d

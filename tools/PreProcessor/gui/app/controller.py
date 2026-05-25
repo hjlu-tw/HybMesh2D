@@ -186,6 +186,8 @@ class AppController:
         sb.uniform_type_combo.currentTextChanged.connect(
             self.update_segment_params)
         sb.match_previous_cb.toggled.connect(self.update_match_previous)
+        sb.auto_split_cb.toggled.connect(self.handle_auto_split_toggled)
+        sb.split_threshold_sb.valueChanged.connect(self.handle_split_threshold_changed)
 
         # Advanced settings
         sb.global_spline_cb.toggled.connect(self.handle_global_spline_changed)
@@ -925,6 +927,8 @@ class AppController:
             sb.match_previous_cb.setChecked(seg.match_previous)
             sb.match_previous_cb.blockSignals(False)
 
+            self._update_auto_split_ui_from_segment(seg)
+
             # Snapshot params for undo
             self._param_snapshot = copy.deepcopy(seg.parameters)
             self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
@@ -1020,22 +1024,12 @@ class AppController:
         old_state = self._segment_state_snapshot
         
         if current_state != old_state:
+            seg_idx = session.current_segment_idx
             def refresh():
                 if session is self.active_session():
-                    if session.current_segment_idx >= 0:
-                        seg_to_refresh = session.project_model.get_segment(session.current_segment_idx)
-                        if seg_to_refresh:
-                            self._is_populating = True
-                            try:
-                                sb = self.main_window.sidebar_view
-                                if seg_to_refresh.type == "curve":
-                                    sb.show_curve_segment(seg_to_refresh)
-                                else:
-                                    sb.switch_param_form(seg_to_refresh.strategy)
-                                    self._populate_form_from_segment(seg_to_refresh)
-                            finally:
-                                self._is_populating = False
-                self._apply_geometry_update(session)
+                    self._apply_geometry_update(session)
+                    if 0 <= seg_idx < len(session.project_model.segments):
+                        self.main_window.sidebar_view.segment_list.setCurrentRow(seg_idx)
             
             cmd = UpdateSegmentStateCmd(session, session.current_segment_idx, old_state, current_state, refresh_cb=refresh)
             session.command_history._undo_stack.append(cmd)
@@ -1081,6 +1075,43 @@ class AppController:
                     self._apply_geometry_update(session)
                 cmd = ToggleMatchPreviousCmd(session, session.current_segment_idx, checked, update_cb)
                 session.command_history.execute(cmd)
+
+    def _update_auto_split_ui_from_segment(self, seg: SegmentModel):
+        sb = self.main_window.sidebar_view
+        sb.auto_split_cb.blockSignals(True)
+        sb.auto_split_cb.setChecked(seg.auto_split)
+        sb.auto_split_cb.blockSignals(False)
+
+        sb.split_threshold_sb.blockSignals(True)
+        sb.split_threshold_sb.setValue(seg.split_threshold)
+        sb.split_threshold_sb.blockSignals(False)
+
+        sb.auto_split_form.setVisible(seg.auto_split)
+
+    def handle_auto_split_toggled(self, checked: bool):
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        if self._is_populating:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg:
+            return
+        seg.auto_split = checked
+        self.main_window.sidebar_view.auto_split_form.setVisible(checked)
+        self._record_segment_state_change()
+
+    def handle_split_threshold_changed(self, val: float):
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        if self._is_populating:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg:
+            return
+        seg.split_threshold = val
+        self._record_segment_state_change()
 
     # ═════════════════════════════════════════════════════════════════════
     # Global settings
@@ -1193,6 +1224,9 @@ class AppController:
             seg.parameters["y3"] = sb.quad_y3.value()
         elif seg.curve_type == "polygon":
             seg.parameters["vertices_str"] = sb.poly_vertices.text()
+
+        seg.auto_split = sb.auto_split_cb.isChecked()
+        seg.split_threshold = sb.split_threshold_sb.value()
 
     def handle_curve_type_changed(self):
         session = self.active_session()

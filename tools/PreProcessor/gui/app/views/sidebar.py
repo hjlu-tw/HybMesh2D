@@ -556,6 +556,25 @@ class SidebarView(QWidget):
         self.match_previous_cb.setStyleSheet(
             "color:#a0b0d0; font-size:11px;")
 
+        self.auto_split_cb = QCheckBox("Auto Detect Segments")
+        self.auto_split_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
+
+        self.auto_split_form = QWidget()
+        as_form_layout = QFormLayout(self.auto_split_form)
+        as_form_layout.setContentsMargins(15, 0, 0, 0)
+        as_form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self.split_threshold_sb = QDoubleSpinBox()
+        self.split_threshold_sb.setRange(0.0, 180.0)
+        self.split_threshold_sb.setValue(20.0)
+        self.split_threshold_sb.setDecimals(1)
+        self.split_threshold_sb.setSuffix("  °")
+        self.split_threshold_sb.setStyleSheet(self._spin_style)
+        as_form_layout.addRow("Threshold:", self.split_threshold_sb)
+
+        self.auto_split_cb.toggled.connect(self.auto_split_form.setVisible)
+        self.auto_split_form.setVisible(False)
+
         self.param_stack = QStackedWidget()
         self._setup_param_forms()
 
@@ -564,6 +583,8 @@ class SidebarView(QWidget):
         self._sec_seg_props.add_widget(self._curve_group)
         self._sec_seg_props.add_layout(sf)
         self._sec_seg_props.add_widget(self.match_previous_cb)
+        self._sec_seg_props.add_widget(self.auto_split_cb)
+        self._sec_seg_props.add_widget(self.auto_split_form)
         self._sec_seg_props.add_widget(self.param_stack)
 
         # ── Duplicate with Transform (only for curve segments) ────────────
