@@ -14,6 +14,10 @@ class BaseCommand(ABC):
     def undo(self):
         ...
 
+    def description(self) -> str:
+        """Return a human-readable description of this command."""
+        return self.__class__.__name__
+
 
 class CommandHistory:
     """Manages undo/redo stacks for a single GeometrySession."""
@@ -30,21 +34,21 @@ class CommandHistory:
         self._undo_stack.append(cmd)
         self._redo_stack.clear()
 
-    def undo(self) -> bool:
+    def undo(self) -> BaseCommand | None:
         if not self._undo_stack:
-            return False
+            return None
         cmd = self._undo_stack.pop()
         cmd.undo()
         self._redo_stack.append(cmd)
-        return True
+        return cmd
 
-    def redo(self) -> bool:
+    def redo(self) -> BaseCommand | None:
         if not self._redo_stack:
-            return False
+            return None
         cmd = self._redo_stack.pop()
         cmd.execute()
         self._undo_stack.append(cmd)
-        return True
+        return cmd
 
     @property
     def can_undo(self) -> bool:
@@ -57,3 +61,4 @@ class CommandHistory:
     def clear(self):
         self._undo_stack.clear()
         self._redo_stack.clear()
+

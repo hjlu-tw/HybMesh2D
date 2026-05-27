@@ -17,6 +17,9 @@ class InsertVertexCmd(BaseCommand):
         self._base_pts = session.original_points.copy()
         self._old_modified = session.is_geometry_modified
 
+    def description(self) -> str:
+        return f"Insert Vertex at index {self.insert_idx}"
+
     def execute(self):
         # Apply insertion to the snapshot so redo is idempotent
         self.session.original_points = np.insert(

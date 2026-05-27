@@ -41,6 +41,7 @@ class GeometrySession:
         self.project_model: ProjectModel = ProjectModel()
         self.command_history: CommandHistory = CommandHistory()
         self.is_visible: bool = True
+        self.controller = None  # Set by controller when session is created
 
         # Colour assigned from palette (set by controller)
         self.color: str = SESSION_COLORS[

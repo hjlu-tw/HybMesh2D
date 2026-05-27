@@ -43,6 +43,8 @@ class CanvasView(QWidget):
         # ── Per-session geometry layers ───────────────────────────────────
         self._geometries: dict[int, pg.PlotDataItem] = {}   # sid → curve
         self._geo_colors: dict[int, str] = {}               # sid → color str
+        self._curve_preview_items: dict[int, pg.PlotDataItem] = {}         # sid → preview curve
+        self._curve_segment_items: dict[int, list[pg.PlotDataItem]] = {}   # sid → list of curves
 
         # ── Active-session overlays (single set, reused across sessions) ──
 
@@ -54,11 +56,6 @@ class CanvasView(QWidget):
         # Active segment — thick orange
         self.active_segment_curve = self.plot_widget.plot(
             pen=pg.mkPen(_COL_ACTIVE, width=4))
-
-        # Curve-formula preview — orange dashed
-        self.curve_preview_item = self.plot_widget.plot(
-            pen=pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine),
-            symbol='o', symbolBrush=_COL_PREVIEW, symbolSize=4)
 
         # Split points — red dots
         self.split_scatter = pg.ScatterPlotItem(
@@ -84,9 +81,6 @@ class CanvasView(QWidget):
         # ── Active-session points (for hit-testing) ───────────────────────
         self._active_points: np.ndarray | None = None
 
-        # ── Persistent background curve segments ──────────────────────────
-        self._curve_segment_items: list[pg.PlotDataItem] = []
-
         # ── Mouse events ──────────────────────────────────────────────────
         self.plot_widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
         self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
@@ -106,6 +100,13 @@ class CanvasView(QWidget):
         self._geometries[session_id] = curve
         self._geo_colors[session_id] = color
 
+        # Initialize per-session curve preview and segment dictionaries
+        preview_curve = self.plot_widget.plot(
+            pen=pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine),
+            symbol='o', symbolBrush=_COL_PREVIEW, symbolSize=4)
+        self._curve_preview_items[session_id] = preview_curve
+        self._curve_segment_items[session_id] = []
+
     def update_geometry(self, session_id: int, points: np.ndarray | None):
         """Update an existing geometry layer."""
         if session_id not in self._geometries:
@@ -121,12 +122,20 @@ class CanvasView(QWidget):
             self.plot_widget.removeItem(self._geometries.pop(session_id))
             self._geo_colors.pop(session_id, None)
 
+        if session_id in self._curve_preview_items:
+            self.plot_widget.removeItem(self._curve_preview_items.pop(session_id))
+
+        if session_id in self._curve_segment_items:
+            for item in self._curve_segment_items.pop(session_id):
+                self.plot_widget.removeItem(item)
+
     def highlight_geometry(self, active_session_id: int):
         """
         Bold the active session's curve; mute all others.
         Active: width=2.5, full colour, symbol size=4.
         Inactive: width=1, 60 alpha (approx 23% opacity), symbol size=1.5.
         """
+        self._active_session_id = active_session_id
         for sid, curve in self._geometries.items():
             color_str = self._geo_colors.get(sid, '#64B5F6')
             if sid == active_session_id:
@@ -141,6 +150,36 @@ class CanvasView(QWidget):
                 c2.setAlpha(40)
                 curve.setSymbolBrush(pg.mkBrush(c2))
                 curve.setSymbolSize(1.5)
+
+        # Highlight/dim curve previews of each session
+        for sid, preview_curve in self._curve_preview_items.items():
+            if sid == active_session_id:
+                # Active preview: full color, dash pen
+                preview_curve.setPen(pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine))
+                preview_curve.setSymbolBrush(pg.mkBrush(_COL_PREVIEW))
+                preview_curve.setSymbolSize(4)
+            else:
+                # Inactive preview: dim color
+                c = QColor(_COL_PREVIEW)
+                c.setAlpha(60)
+                preview_curve.setPen(pg.mkPen(c, width=1, style=Qt.PenStyle.DashLine))
+                preview_curve.setSymbolBrush(pg.mkBrush(c))
+                preview_curve.setSymbolSize(1.5)
+
+        # Highlight/dim deselected curve segments of each session
+        for sid, items in self._curve_segment_items.items():
+            if sid == active_session_id:
+                for item in items:
+                    item.setPen(pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine))
+                    item.setSymbolBrush(pg.mkBrush('#5c637a'))
+                    item.setSymbolSize(3)
+            else:
+                for item in items:
+                    c = QColor('#5c637a')
+                    c.setAlpha(60)
+                    item.setPen(pg.mkPen(c, width=1, style=Qt.PenStyle.SolidLine))
+                    item.setSymbolBrush(pg.mkBrush(c))
+                    item.setSymbolSize(1.5)
 
     def set_active_geometry_dimmed(self, active_session_id: int, dimmed: bool):
         """Dim the active geometry's base line so the selected segment stands out."""
@@ -162,34 +201,54 @@ class CanvasView(QWidget):
                 curve.setSymbolSize(4)
 
     def set_geometry_visible(self, session_id: int, visible: bool):
-        """Toggle the visibility of a specific geometry layer."""
+        """Toggle the visibility of a specific geometry layer and its curve elements."""
         if session_id in self._geometries:
             self._geometries[session_id].setVisible(visible)
+        if session_id in self._curve_preview_items:
+            self._curve_preview_items[session_id].setVisible(visible)
+        if session_id in self._curve_segment_items:
+            for item in self._curve_segment_items[session_id]:
+                item.setVisible(visible)
 
     def set_active_overlays_visible(self, visible: bool):
         """Toggle the visibility of the active session overlays."""
         self.resampled_curve.setVisible(visible)
         self.active_segment_curve.setVisible(visible)
-        self.curve_preview_item.setVisible(visible)
+        if hasattr(self, "_active_session_id") and self._active_session_id in self._curve_preview_items:
+            self._curve_preview_items[self._active_session_id].setVisible(visible)
         self.split_scatter.setVisible(visible)
         self.selected_scatter.setVisible(visible)
 
     def fit_to_geometry(self, session_id: int):
-        """Fit the view box to the points of a specific geometry layer."""
+        """Fit the view box to the points of a specific geometry layer or curve segments."""
+        pts = []
         if session_id in self._geometries:
             curve = self._geometries[session_id]
             x_data, y_data = curve.getData()
             if x_data is not None and len(x_data) > 0:
-                min_x, max_x = np.min(x_data), np.max(x_data)
-                min_y, max_y = np.min(y_data), np.max(y_data)
-                dx = max_x - min_x
-                dy = max_y - min_y
-                if dx == 0: dx = 1.0
-                if dy == 0: dy = 1.0
-                self.plot_widget.plotItem.vb.setRange(
-                    xRange=[min_x - 0.05 * dx, max_x + 0.05 * dx],
-                    yRange=[min_y - 0.05 * dy, max_y + 0.05 * dy]
-                )
+                pts.append(np.column_stack([x_data, y_data]))
+        if session_id in self._curve_preview_items:
+            x_data, y_data = self._curve_preview_items[session_id].getData()
+            if x_data is not None and len(x_data) > 0:
+                pts.append(np.column_stack([x_data, y_data]))
+        if session_id in self._curve_segment_items:
+            for item in self._curve_segment_items[session_id]:
+                x_data, y_data = item.getData()
+                if x_data is not None and len(x_data) > 0:
+                    pts.append(np.column_stack([x_data, y_data]))
+
+        if pts:
+            all_pts = np.vstack(pts)
+            min_x, max_x = np.min(all_pts[:, 0]), np.max(all_pts[:, 0])
+            min_y, max_y = np.min(all_pts[:, 1]), np.max(all_pts[:, 1])
+            dx = max_x - min_x
+            dy = max_y - min_y
+            if dx == 0: dx = 1.0
+            if dy == 0: dy = 1.0
+            self.plot_widget.plotItem.vb.setRange(
+                xRange=[min_x - 0.05 * dx, max_x + 0.05 * dx],
+                yRange=[min_y - 0.05 * dy, max_y + 0.05 * dy]
+            )
 
     def fit_all(self):
         """Auto-range to show all loaded geometries."""
@@ -270,14 +329,18 @@ class CanvasView(QWidget):
         self.resampled_curve.setData([], [])
         self.quality_bad_scatter.clear()
 
-    def update_curve_preview(self, points: np.ndarray | None):
+    def update_curve_preview(self, session_id: int, points: np.ndarray | None, show_symbols: bool = True):
+        if session_id not in self._curve_preview_items:
+            return
         if points is not None and len(points) > 0:
-            self.curve_preview_item.setData(points[:, 0], points[:, 1], symbol='o')
+            sym = 'o' if show_symbols else None
+            self._curve_preview_items[session_id].setData(points[:, 0], points[:, 1], symbol=sym)
         else:
-            self.curve_preview_item.setData([], [])
+            self._curve_preview_items[session_id].setData([], [])
 
-    def clear_curve_preview(self):
-        self.curve_preview_item.setData([], [])
+    def clear_curve_preview(self, session_id: int):
+        if session_id in self._curve_preview_items:
+            self._curve_preview_items[session_id].setData([], [])
 
     def clear_active_overlays(self):
         """Clear all markers that belong to the active session."""
@@ -285,26 +348,41 @@ class CanvasView(QWidget):
         self.selected_scatter.clear()
         self.active_segment_curve.setData([], [])
         self.resampled_curve.setData([], [])
-        self.curve_preview_item.setData([], [])
         self.quality_bad_scatter.clear()
-        self.update_curve_segments([])
 
-    def update_curve_segments(self, segments_pts: list[np.ndarray]):
+    def update_curve_segments(self, session_id: int, segments_pts: list[np.ndarray]):
         """Clear and redraw all curve segments to keep them visible when deselected."""
-        # Remove existing items from the plot
-        for item in self._curve_segment_items:
+        if session_id not in self._curve_segment_items:
+            self._curve_segment_items[session_id] = []
+
+        # Remove existing items for this session from the plot
+        for item in self._curve_segment_items[session_id]:
             self.plot_widget.removeItem(item)
-        self._curve_segment_items.clear()
+        self._curve_segment_items[session_id].clear()
+
+        # Determine styling depending on if this session is the active one
+        is_active = hasattr(self, "_active_session_id") and (session_id == self._active_session_id)
 
         # Add new items
         for pts in segments_pts:
             if pts is not None and len(pts) > 0:
-                # Plot with a slightly thin, neutral line
+                if is_active:
+                    pen = pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine)
+                    symbol_brush = pg.mkBrush('#5c637a')
+                    symbol_size = 3
+                else:
+                    c = QColor('#5c637a')
+                    c.setAlpha(60)
+                    pen = pg.mkPen(c, width=1, style=Qt.PenStyle.SolidLine)
+                    symbol_brush = pg.mkBrush(c)
+                    symbol_size = 1.5
+
                 item = self.plot_widget.plot(
                     pts[:, 0], pts[:, 1],
-                    pen=pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine)
+                    pen=pen,
+                    symbol='o', symbolBrush=symbol_brush, symbolSize=symbol_size
                 )
-                self._curve_segment_items.append(item)
+                self._curve_segment_items[session_id].append(item)
 
     # ═════════════════════════════════════════════════════════════════════
     # Mouse handlers

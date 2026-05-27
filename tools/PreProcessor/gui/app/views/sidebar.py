@@ -73,10 +73,19 @@ class SidebarView(QWidget):
 
         self._build_file_section()
         self._build_geometries_section()
+
+        # Vertex-related categories nested under a parent
+        self.sec_vertex_parent = CollapsibleSection("Vertex", start_collapsed=True)
+        self.layout.addWidget(self.sec_vertex_parent)
         self._build_split_section()
         self._build_insert_section()
+
+        # Edge-related categories nested under a parent
+        self.sec_edge_parent = CollapsibleSection("Edge", start_collapsed=True)
+        self.layout.addWidget(self.sec_edge_parent)
         self._build_segments_section()
         self._build_seg_props_section()
+
         self._build_advanced_section()
         self._build_actions_section()
 
@@ -104,14 +113,14 @@ class SidebarView(QWidget):
     # ═════════════════════════════════════════════════════════════════════
 
     def _build_file_section(self):
-        sec = CollapsibleSection("File & Output", start_collapsed=True)
+        sec = CollapsibleSection("Project", start_collapsed=True)
         self.layout.addWidget(sec)
 
-        self.load_btn = self._btn("Load Geometry (.dat)")
-        self.load_json_btn = self._btn("Load Config (.json)", '#301540')
-        self.new_tab_btn = self._btn("New Empty Tab", '#1a2525')
+        self.load_btn = self._btn("Import Geometry (.dat)")
+        self.load_json_btn = self._btn("Load Configuration (.json)", '#301540')
+        self.new_tab_btn = self._btn("New Session", '#1a2525')
 
-        self.file_name_label = QLabel("No file loaded")
+        self.file_name_label = QLabel("No geometry imported")
         self.file_name_label.setStyleSheet(
             "color: #6a7aaa; font-style: italic; margin-bottom: 4px;")
         self.file_name_label.setWordWrap(True)
@@ -121,7 +130,7 @@ class SidebarView(QWidget):
         self.is_closed_combo = QComboBox()
         self.is_closed_combo.addItems(["True", "False"])
         self.is_closed_combo.setStyleSheet(self._combo_style)
-        form.addRow("Is Closed:", self.is_closed_combo)
+        form.addRow("Closed Curve:", self.is_closed_combo)
 
         sec.add_widget(self.load_btn)
         sec.add_widget(self.load_json_btn)
@@ -130,7 +139,7 @@ class SidebarView(QWidget):
         sec.add_layout(form)
 
     def _build_geometries_section(self):
-        sec = CollapsibleSection("Loaded Geometries", start_collapsed=False)
+        sec = CollapsibleSection("Geometry Entities", start_collapsed=True)
         self.layout.addWidget(sec)
 
         self.geom_list = QListWidget()
@@ -173,10 +182,10 @@ class SidebarView(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
-        self.toggle_visibility_btn = self._btn("Toggle Visible", '#1a2035')
+        self.toggle_visibility_btn = self._btn("Toggle Visibility", '#1a2035')
         self.toggle_visibility_btn.setToolTip(
             "Toggle visibility of the selected geometry on the canvas")
-        self.focus_geom_btn = self._btn("Focus View", '#102a45')
+        self.focus_geom_btn = self._btn("Fit to View", '#102a45')
         self.focus_geom_btn.setToolTip("Fit canvas view to selected geometry")
         btn_row.addWidget(self.toggle_visibility_btn)
         btn_row.addWidget(self.focus_geom_btn)
@@ -185,20 +194,20 @@ class SidebarView(QWidget):
         sec.add_layout(btn_row)
 
     def _build_split_section(self):
-        sec = CollapsibleSection("Split Control", start_collapsed=True)
-        self.layout.addWidget(sec)
+        sec = CollapsibleSection("Vertex Selection", start_collapsed=True)
+        self.sec_vertex_parent.add_widget(sec)
 
-        self.selected_info = QLabel("Selected Point: None")
+        self.selected_info = QLabel("Selected Vertex: None")
         self.selected_info.setStyleSheet(
             "color: #00E5FF; font-weight: bold;")
 
-        self.split_btn = self._btn("Add Split Point", '#102438')
+        self.split_btn = self._btn("Add Breakpoint", '#102438')
         self.split_btn.setEnabled(False)
-        self.remove_split_btn = self._btn("Remove Split Point", '#251010')
+        self.remove_split_btn = self._btn("Remove Breakpoint", '#251010')
         self.remove_split_btn.setEnabled(False)
-        self.auto_detect_btn = self._btn("Auto Detect Segments", '#1b2a4a')
+        self.auto_detect_btn = self._btn("Auto Detect Breakpoints", '#1b2a4a')
 
-        self.keep_vertex_cb = QCheckBox("Keep vertex in geometry")
+        self.keep_vertex_cb = QCheckBox("Preserve vertex on removal")
         self.keep_vertex_cb.setStyleSheet(
             "color: #FF8A65; font-size: 11px;")
 
@@ -209,8 +218,8 @@ class SidebarView(QWidget):
         sec.add_widget(self.auto_detect_btn)
 
     def _build_insert_section(self):
-        sec = CollapsibleSection("Insert Exact Point", start_collapsed=True)
-        self.layout.addWidget(sec)
+        sec = CollapsibleSection("Insert Vertex", start_collapsed=True)
+        self.sec_vertex_parent.add_widget(sec)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -235,12 +244,10 @@ class SidebarView(QWidget):
         sec.add_widget(self.insert_btn)
 
     def _build_segments_section(self):
-        self._sec_segments = CollapsibleSection("Segments", start_collapsed=True)
-        self.layout.addWidget(self._sec_segments)
+        self._sec_segments = CollapsibleSection("Edge List", start_collapsed=True)
+        self.sec_edge_parent.add_widget(self._sec_segments)
 
-        self.segment_list = QListWidget()
-        self.segment_list.setMaximumHeight(160)
-        self.segment_list.setStyleSheet("""
+        list_style = """
             QListWidget {
                 background: #181b2a;
                 color: #8892b0;
@@ -259,10 +266,26 @@ class SidebarView(QWidget):
                 background: #20243c;
                 color: #dde6ff;
             }
-        """)
+        """
 
-        self.add_curve_seg_btn = self._btn("Add Curve Segment", '#3a180a')
-        self.remove_seg_btn = self._btn("Remove Segment", '#4a1212')
+        # Separator/label for geometry segments
+        lbl_file = QLabel("Discrete Edges:")
+        lbl_file.setStyleSheet("color: #a0c0d0; font-weight: bold; font-size: 11px; margin-top: 4px;")
+        
+        self.file_segment_list = QListWidget()
+        self.file_segment_list.setMaximumHeight(120)
+        self.file_segment_list.setStyleSheet(list_style)
+
+        # Separator/label for curve segments
+        lbl_curve = QLabel("Analytic Edges:")
+        lbl_curve.setStyleSheet("color: #a0c0d0; font-weight: bold; font-size: 11px; margin-top: 6px;")
+
+        self.curve_segment_list = QListWidget()
+        self.curve_segment_list.setMaximumHeight(120)
+        self.curve_segment_list.setStyleSheet(list_style)
+
+        self.add_curve_seg_btn = self._btn("Add Analytic Edge", '#3a180a')
+        self.remove_seg_btn = self._btn("Remove Edge", '#4a1212')
         self.remove_seg_btn.setEnabled(False)
 
         btn_layout = QHBoxLayout()
@@ -270,13 +293,16 @@ class SidebarView(QWidget):
         btn_layout.addWidget(self.add_curve_seg_btn)
         btn_layout.addWidget(self.remove_seg_btn)
 
-        self._sec_segments.add_widget(self.segment_list)
+        self._sec_segments.add_widget(lbl_file)
+        self._sec_segments.add_widget(self.file_segment_list)
+        self._sec_segments.add_widget(lbl_curve)
+        self._sec_segments.add_widget(self.curve_segment_list)
         self._sec_segments.add_layout(btn_layout)
 
     def _build_seg_props_section(self):
         self._sec_seg_props = CollapsibleSection(
-            "Segment Properties", start_collapsed=True)
-        self.layout.addWidget(self._sec_seg_props)
+            "Edge Properties", start_collapsed=True)
+        self.sec_edge_parent.add_widget(self._sec_seg_props)
 
         _combo_style = self._combo_style
         _spin_style = self._spin_style
@@ -286,7 +312,7 @@ class SidebarView(QWidget):
             "font-weight: bold; color: #64B5F6;")
 
         # ── Curve / Shape Properties group ────────────────────────────────
-        self._curve_group = QGroupBox("Curve / Shape Properties")
+        self._curve_group = QGroupBox("Edge Definition")
         self._curve_group.setStyleSheet(
             "QGroupBox { color:#a0b0d0; border:1px solid #3a4060;"
             "  margin-top:6px; padding-top:6px; }"
@@ -300,7 +326,7 @@ class SidebarView(QWidget):
             "Custom Formula",
             "Horizontal Line",
             "Vertical Line",
-            "Line (Diagonal)",
+            "Line",
             "Circle",
             "Triangle",
             "Quadrilateral",
@@ -527,14 +553,16 @@ class SidebarView(QWidget):
         self.curve_end_node.setValue(-1)
         self.curve_end_node.setSpecialValueText("None")
         self.curve_end_node.setStyleSheet(_spin_style)
-        rf.addRow("Points:", self.curve_n)
-        rf.addRow("Start Node:", self.curve_start_node)
-        rf.addRow("End Node:", self.curve_end_node)
+        rf.addRow("Node Count:", self.curve_n)
+        rf.addRow("Start Anchor:", self.curve_start_node)
+        rf.addRow("End Anchor:", self.curve_end_node)
 
-        self.curve_preview_btn = self._btn("Preview Formula", '#3a1f00')
+        self.curve_preview_btn = self._btn("Preview Edge", '#3a1f00')
+        self.curve_bake_btn = self._btn("Convert to Discrete", '#1b5e20')
 
         cl.addLayout(rf)
         cl.addWidget(self.curve_preview_btn)
+        cl.addWidget(self.curve_bake_btn)
 
         # ── File segment info ─────────────────────────────────────────────
         self._file_seg_label = QLabel("Start: —   End: —")
@@ -549,43 +577,44 @@ class SidebarView(QWidget):
         self.strategy_combo.addItems(
             ["uniform", "tanh", "cosine", "curvature", "geometric"])
         self.strategy_combo.setStyleSheet(_combo_style)
-        sf.addRow("Strategy:", self.strategy_combo)
+        sf.addRow("Distribution:", self.strategy_combo)
 
         self.match_previous_cb = QCheckBox(
-            "Match spacing with previous segment")
+            "Match spacing with previous edge")
         self.match_previous_cb.setStyleSheet(
             "color:#a0b0d0; font-size:11px;")
 
-        self.auto_split_cb = QCheckBox("Auto Detect Segments")
-        self.auto_split_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
+        self.auto_split_angle_sb = QDoubleSpinBox()
+        self.auto_split_angle_sb.setRange(0.0, 180.0)
+        self.auto_split_angle_sb.setValue(30.0)
+        self.auto_split_angle_sb.setDecimals(1)
+        self.auto_split_angle_sb.setSuffix("°")
+        self.auto_split_angle_sb.setStyleSheet(_spin_style)
 
-        self.auto_split_form = QWidget()
-        as_form_layout = QFormLayout(self.auto_split_form)
-        as_form_layout.setContentsMargins(15, 0, 0, 0)
-        as_form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self.auto_split_form = QFormLayout()
+        self.auto_split_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self.auto_split_form.addRow("Detection Angle:", self.auto_split_angle_sb)
 
-        self.split_threshold_sb = QDoubleSpinBox()
-        self.split_threshold_sb.setRange(0.0, 180.0)
-        self.split_threshold_sb.setValue(20.0)
-        self.split_threshold_sb.setDecimals(1)
-        self.split_threshold_sb.setSuffix("  °")
-        self.split_threshold_sb.setStyleSheet(self._spin_style)
-        as_form_layout.addRow("Threshold:", self.split_threshold_sb)
-
-        self.auto_split_cb.toggled.connect(self.auto_split_form.setVisible)
-        self.auto_split_form.setVisible(False)
+        self.auto_split_btn = self._btn("Auto Detect Sub-edges", '#1b2a4a')
+        self.auto_split_btn.setToolTip("Split selected edge at sharp corners based on threshold")
 
         self.param_stack = QStackedWidget()
         self._setup_param_forms()
+
+        self.file_preview_btn = self._btn("Apply & Preview", '#082544')
+        self.file_preview_btn.setVisible(False)
 
         self._sec_seg_props.add_widget(self.segment_type_label)
         self._sec_seg_props.add_widget(self._file_seg_label)
         self._sec_seg_props.add_widget(self._curve_group)
         self._sec_seg_props.add_layout(sf)
         self._sec_seg_props.add_widget(self.match_previous_cb)
-        self._sec_seg_props.add_widget(self.auto_split_cb)
-        self._sec_seg_props.add_widget(self.auto_split_form)
         self._sec_seg_props.add_widget(self.param_stack)
+        self._sec_seg_props.add_widget(self.file_preview_btn)
+
+        # Auto-detect sub-edges is placed below distribution parameters
+        self._sec_seg_props.add_layout(self.auto_split_form)
+        self._sec_seg_props.add_widget(self.auto_split_btn)
 
         # ── Duplicate with Transform (only for curve segments) ────────────
         self._transform_dup_group = self._build_transform_group(_spin_style, _combo_style)
@@ -596,7 +625,7 @@ class SidebarView(QWidget):
 
     def _build_transform_group(self, spin_style: str, combo_style: str) -> QGroupBox:
         """Build the 'Duplicate with Transform' group box for curve segments."""
-        grp = QGroupBox("Duplicate with Transform")
+        grp = QGroupBox("Duplicate \u0026 Transform")
         grp.setStyleSheet(
             "QGroupBox { color:#a0c0d0; border:1px solid #2a4060;"
             "  margin-top:6px; padding-top:6px; }"
@@ -685,21 +714,21 @@ class SidebarView(QWidget):
         self.dup_type_combo.currentIndexChanged.connect(self._dup_stack.setCurrentIndex)
 
         # Duplicate button
-        self.dup_btn = self._btn("Duplicate", '#1a3a2a')
+        self.dup_btn = self._btn("Duplicate Edge", '#1a3a2a')
         gl.addWidget(self.dup_btn)
 
         return grp
 
 
     def _build_advanced_section(self):
-        sec = CollapsibleSection("Advanced Settings", start_collapsed=True)
+        sec = CollapsibleSection("Global Settings", start_collapsed=True)
         self.layout.addWidget(sec)
 
         _spin_style = (
             "background:#181b2a; color:#a0a8c0; border:1px solid #333852;")
 
         self.global_spline_cb = QCheckBox(
-            "Global Spline  (G1 continuity at boundaries)")
+            "Global Spline Smoothing (G1 continuity)")
         self.global_spline_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
         hint = QLabel("Disable for geometries with true sharp corners.")
         hint.setStyleSheet("color:#556; font-size:10px;")
@@ -708,7 +737,7 @@ class SidebarView(QWidget):
         self.quality_check_cb = QCheckBox("Show Quality Heatmap")
         self.quality_check_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
 
-        tf_box = QGroupBox("Post-process Transform")
+        tf_box = QGroupBox("Output Transform")
         tf_box.setStyleSheet(
             "QGroupBox { color:#a0b0d0; border:1px solid #3a4060;"
             "  margin-top:6px; padding-top:6px; }"
@@ -743,7 +772,7 @@ class SidebarView(QWidget):
         tf_layout.addRow("Translate X:", self.transform_tx)
         tf_layout.addRow("Translate Y:", self.transform_ty)
 
-        self.apply_transform_cb = QCheckBox("Apply transform on output")
+        self.apply_transform_cb = QCheckBox("Enable output transform")
         self.apply_transform_cb.setStyleSheet("color:#a0b0d0;")
         tf_box.setEnabled(False)
         self.apply_transform_cb.toggled.connect(tf_box.setEnabled)
@@ -756,12 +785,12 @@ class SidebarView(QWidget):
         sec.add_widget(tf_box)
 
     def _build_actions_section(self):
-        sec = CollapsibleSection("Actions", start_collapsed=True)
+        sec = CollapsibleSection("Output", start_collapsed=True)
         self.layout.addWidget(sec)
 
-        self.preview_btn = self._btn("Preview on Canvas", '#082544')
-        self.save_btn = self._btn("Save Output (.dat)", '#062510')
-        self.generate_btn = self._btn("Export JSON Config", '#1b1f2a')
+        self.preview_btn = self._btn("Run & Preview", '#082544')
+        self.save_btn = self._btn("Export Mesh (.dat)", '#062510')
+        self.generate_btn = self._btn("Save Configuration (.json)", '#1b1f2a')
 
         sec.add_widget(self.preview_btn)
         sec.add_widget(self.save_btn)
@@ -796,19 +825,19 @@ class SidebarView(QWidget):
         ul.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.uniform_type_combo = QComboBox()
         self.uniform_type_combo.addItems(
-            ["Specify Num Points", "Specify Spacing"])
+            ["By Node Count", "By Spacing"])
         self.uniform_type_combo.setStyleSheet(combo_style)
         ul.addRow("Mode:", self.uniform_type_combo)
         self.uniform_n = mk_spin(2, 100000, 50)
-        ul.addRow("Num Points:", self.uniform_n)
+        ul.addRow("Node Count:", self.uniform_n)
         self.uniform_spacing = mk_dspin(1e-6, 1e4, 0.1, 5, 0.01)
         self.uniform_spacing.setVisible(False)
-        ul.addRow("Spacing (ds):", self.uniform_spacing)
+        ul.addRow("Spacing (\u0394s):", self.uniform_spacing)
         self._uniform_spacing_label = ul.labelForField(self.uniform_spacing)
         if self._uniform_spacing_label:
             self._uniform_spacing_label.setVisible(False)
         self.uniform_type_combo.currentTextChanged.connect(
-            lambda t: self._toggle_uniform_mode(t == "Specify Spacing"))
+            lambda t: self._toggle_uniform_mode(t == "By Spacing"))
         self.param_stack.addWidget(uw)
 
         # 1 — Tanh
@@ -817,7 +846,7 @@ class SidebarView(QWidget):
         tl.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.tanh_n = mk_spin()
         self.tanh_intensity = mk_dspin(0.1, 10.0, 2.0, 2, 0.1)
-        tl.addRow("Num Points:", self.tanh_n)
+        tl.addRow("Node Count:", self.tanh_n)
         tl.addRow("Intensity:", self.tanh_intensity)
         self.param_stack.addWidget(tw)
 
@@ -826,7 +855,7 @@ class SidebarView(QWidget):
         cfl = QFormLayout(cw)
         cfl.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.cosine_n = mk_spin()
-        cfl.addRow("Num Points:", self.cosine_n)
+        cfl.addRow("Node Count:", self.cosine_n)
         self.param_stack.addWidget(cw)
 
         # 3 — Curvature
@@ -835,7 +864,7 @@ class SidebarView(QWidget):
         kl.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.curv_n = mk_spin()
         self.curv_sens = mk_dspin(0.1, 10.0, 1.5, 2, 0.1)
-        kl.addRow("Num Points:", self.curv_n)
+        kl.addRow("Node Count:", self.curv_n)
         kl.addRow("Sensitivity:", self.curv_sens)
         self.param_stack.addWidget(kw)
 
@@ -846,10 +875,10 @@ class SidebarView(QWidget):
         self.geo_n = mk_spin()
         self.geo_ratio = mk_dspin(1.0, 5.0, 1.2, 3, 0.05)
         self.geo_ratio_end = mk_dspin(1.0, 5.0, 1.0, 3, 0.05)
-        gl2.addRow("Num Points:", self.geo_n)
-        gl2.addRow("Ratio (start):", self.geo_ratio)
-        gl2.addRow("Ratio (end):", self.geo_ratio_end)
-        _hint = QLabel("Ratio = 1.0 means uniform end")
+        gl2.addRow("Node Count:", self.geo_n)
+        gl2.addRow("Growth Ratio (start):", self.geo_ratio)
+        gl2.addRow("Growth Ratio (end):", self.geo_ratio_end)
+        _hint = QLabel("Growth ratio = 1.0 \u2192 uniform at end")
         _hint.setStyleSheet("color:#556688; font-size:10px;")
         gl2.addRow("", _hint)
         self.param_stack.addWidget(gw)
@@ -867,12 +896,14 @@ class SidebarView(QWidget):
     def show_file_segment(self, start: int, end: int):
         self._file_seg_label.setVisible(True)
         self._curve_group.setVisible(False)
+        self.file_preview_btn.setVisible(True)
         self._file_seg_label.setText(
-            f"Start index: {start}    End index: {end}")
+            f"Start Index: {start}    End Index: {end}")
 
     def show_curve_segment(self, seg):
         self._file_seg_label.setVisible(False)
         self._curve_group.setVisible(True)
+        self.file_preview_btn.setVisible(False)
 
         CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
         curve_type = getattr(seg, "curve_type", "custom")
@@ -942,6 +973,7 @@ class SidebarView(QWidget):
 
     def show_segment_props(self, visible: bool):
         if visible:
+            self.sec_edge_parent.expand()
             self._sec_seg_props.expand()
         else:
             self._sec_seg_props.collapse()
