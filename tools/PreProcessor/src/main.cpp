@@ -366,18 +366,22 @@ void alignEndpoints(std::vector<Point2D>& pts, int start_idx, int end_idx, const
                     pt.y = pt.y - P0.y + Q0.y;
                 }
             }
+            pts.front() = Q0;
+            pts.back() = Q1;
         } else if (start_valid) {
             Point2D Q0 = gp[start_idx];
             for (auto& pt : pts) {
                 pt.x = pt.x - P0.x + Q0.x;
                 pt.y = pt.y - P0.y + Q0.y;
             }
+            pts.front() = Q0;
         } else if (end_valid) {
             Point2D Q1 = gp[end_idx];
             for (auto& pt : pts) {
                 pt.x = pt.x - P1.x + Q1.x;
                 pt.y = pt.y - P1.y + Q1.y;
             }
+            pts.back() = Q1;
         }
     }
 }
@@ -726,16 +730,23 @@ void processElement(const json& config) {
             }
 
             std::vector<Point2D> segmentPts;
-            for (double ts : tS) {
+            for (size_t idx_ts = 0; idx_ts < tS.size(); ++idx_ts) {
+                double ts = tS[idx_ts];
                 Point2D p;
-                if (useGlobalSpline && task.type == "file" && task.start_gp_idx != -1) {
-                    // Map local s to global s
-                    double start_s = globalS[task.start_gp_idx];
-                    p = globalSpline.eval(start_s + ts);
-                } else if (useLocalSpline) {
-                    p = localSpline.eval(ts);
+                if (idx_ts == 0) {
+                    p = sp.front();
+                } else if (idx_ts == tS.size() - 1) {
+                    p = sp.back();
                 } else {
-                    p = interpolateLinear(sp, s, ts);
+                    if (useGlobalSpline && task.type == "file" && task.start_gp_idx != -1) {
+                        // Map local s to global s
+                        double start_s = globalS[task.start_gp_idx];
+                        p = globalSpline.eval(start_s + ts);
+                    } else if (useLocalSpline) {
+                        p = localSpline.eval(ts);
+                    } else {
+                        p = interpolateLinear(sp, s, ts);
+                    }
                 }
                 
                 // Avoid duplicate points at segment boundaries

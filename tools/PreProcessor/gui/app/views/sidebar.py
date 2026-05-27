@@ -40,7 +40,7 @@ class SidebarView(QWidget):
                 image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNhMGE4YzAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSI2IDkgMTIgMTUgMTggOSI+PC9wb2x5bGluZT48L3N2Zz4=");
             }
         """
-        self._spin_style = "background:#181b2a; color:#a0a8c0; border:1px solid #333852; padding: 2px;"
+        self._spin_style = "background:#181b2a; color:#a0a8c0; border:1px solid #333852; padding: 2px; max-width: 110px;"
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -50,26 +50,35 @@ class SidebarView(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet("background: #0c0d16;")
+        scroll.verticalScrollBar().setStyleSheet("""
+            QScrollBar:vertical {
+                border: none;
+                background: #0c0d16;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #2c2e43;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #3e415e;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
 
         content = QWidget()
         content.setStyleSheet("background: #121422; color: #a0a8c0;")
         self.layout = QVBoxLayout(content)
         self.layout.setContentsMargins(6, 6, 6, 6)
         self.layout.setSpacing(6)
-
-        # Undo / Redo buttons at the very top
-        self.undo_btn = self._btn("Undo", '#181b30')
-        self.redo_btn = self._btn("Redo", '#181b30')
-        self.undo_btn.setToolTip("Undo last action (Ctrl+Z)")
-        self.redo_btn.setToolTip("Redo last action (Ctrl+Y)")
-
-        hb = QHBoxLayout()
-        hb.setSpacing(6)
-        hb.addWidget(self.undo_btn)
-        hb.addWidget(self.redo_btn)
-        self.layout.addLayout(hb)
 
         self._build_file_section()
         self._build_geometries_section()
@@ -180,18 +189,12 @@ class SidebarView(QWidget):
             }
         """)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(4)
         self.toggle_visibility_btn = self._btn("Toggle Visibility", '#1a2035')
         self.toggle_visibility_btn.setToolTip(
             "Toggle visibility of the selected geometry on the canvas")
-        self.focus_geom_btn = self._btn("Fit to View", '#102a45')
-        self.focus_geom_btn.setToolTip("Fit canvas view to selected geometry")
-        btn_row.addWidget(self.toggle_visibility_btn)
-        btn_row.addWidget(self.focus_geom_btn)
 
         sec.add_widget(self.geom_list)
-        sec.add_layout(btn_row)
+        sec.add_widget(self.toggle_visibility_btn)
 
     def _build_split_section(self):
         sec = CollapsibleSection("Vertex Selection", start_collapsed=True)
@@ -287,6 +290,7 @@ class SidebarView(QWidget):
         self.add_curve_seg_btn = self._btn("Add Analytic Edge", '#3a180a')
         self.remove_seg_btn = self._btn("Remove Edge", '#4a1212')
         self.remove_seg_btn.setEnabled(False)
+        self.curve_bake_btn = self._btn("Convert to Discrete", '#1b5e20')
 
         btn_layout = QHBoxLayout()
         btn_layout.setContentsMargins(0, 0, 0, 0)
@@ -298,6 +302,7 @@ class SidebarView(QWidget):
         self._sec_segments.add_widget(lbl_curve)
         self._sec_segments.add_widget(self.curve_segment_list)
         self._sec_segments.add_layout(btn_layout)
+        self._sec_segments.add_widget(self.curve_bake_btn)
 
     def _build_seg_props_section(self):
         self._sec_seg_props = CollapsibleSection(
@@ -558,11 +563,9 @@ class SidebarView(QWidget):
         rf.addRow("End Anchor:", self.curve_end_node)
 
         self.curve_preview_btn = self._btn("Preview Edge", '#3a1f00')
-        self.curve_bake_btn = self._btn("Convert to Discrete", '#1b5e20')
 
         cl.addLayout(rf)
         cl.addWidget(self.curve_preview_btn)
-        cl.addWidget(self.curve_bake_btn)
 
         # ── File segment info ─────────────────────────────────────────────
         self._file_seg_label = QLabel("Start: —   End: —")
@@ -616,6 +619,12 @@ class SidebarView(QWidget):
         self._sec_seg_props.add_layout(self.auto_split_form)
         self._sec_seg_props.add_widget(self.auto_split_btn)
 
+        # Align form layouts in properties
+        for layout in [pf, ef, layout_limits, layout_h_line, layout_v_line,
+                       layout_line, layout_circle, layout_tri, layout_quad,
+                       rf, sf, self.auto_split_form]:
+            self._align_form_labels(layout)
+
         # ── Duplicate with Transform (only for curve segments) ────────────
         self._transform_dup_group = self._build_transform_group(_spin_style, _combo_style)
         self._transform_dup_group.setVisible(False)
@@ -641,9 +650,23 @@ class SidebarView(QWidget):
             "Mirror Vertical (flip X)",
             "Mirror Axis (custom)",
             "Point Symmetry",
+            "Translate",
+            "Scale",
         ])
         self.dup_type_combo.setStyleSheet(combo_style)
         gl.addWidget(self.dup_type_combo)
+
+        # Base point selection
+        self.dup_base_form = QFormLayout()
+        self.dup_base_mode_combo = QComboBox()
+        self.dup_base_mode_combo.addItems([
+            "Custom (Manual)",
+            "Start Point",
+            "End Point"
+        ])
+        self.dup_base_mode_combo.setStyleSheet(combo_style)
+        self.dup_base_form.addRow("Base Point:", self.dup_base_mode_combo)
+        gl.addLayout(self.dup_base_form)
 
         # Stacked parameter areas per transform type
         self._dup_stack = QStackedWidget()
@@ -710,12 +733,46 @@ class SidebarView(QWidget):
         fl_ps.addRow("Centre Y:", self.dup_ps_py)
         self._dup_stack.addWidget(w_ps)
 
+        # ── 5: Translate ─────────────────────────────────────────────────
+        w_trans = QWidget()
+        fl_trans = QFormLayout(w_trans)
+        fl_trans.setContentsMargins(0, 0, 0, 0)
+        self.dup_trans_dx = _dspin()
+        self.dup_trans_dy = _dspin()
+        fl_trans.addRow("Shift X:", self.dup_trans_dx)
+        fl_trans.addRow("Shift Y:", self.dup_trans_dy)
+        self._dup_stack.addWidget(w_trans)
+
+        # ── 6: Scale ─────────────────────────────────────────────────────
+        w_scale = QWidget()
+        fl_scale = QFormLayout(w_scale)
+        fl_scale.setContentsMargins(0, 0, 0, 0)
+        self.dup_scale_factor = _dspin(val=1.0)
+        self.dup_scale_px = _dspin()
+        self.dup_scale_py = _dspin()
+        fl_scale.addRow("Factor:", self.dup_scale_factor)
+        fl_scale.addRow("Pivot X:", self.dup_scale_px)
+        fl_scale.addRow("Pivot Y:", self.dup_scale_py)
+        self._dup_stack.addWidget(w_scale)
+
         # Connect combo → stack
         self.dup_type_combo.currentIndexChanged.connect(self._dup_stack.setCurrentIndex)
+
+        # Delete original checkbox
+        self.dup_delete_orig_cb = QCheckBox("Delete original")
+        self.dup_delete_orig_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
+        self.dup_delete_orig_cb.toggled.connect(
+            lambda checked: self.dup_btn.setText("Transform Edge" if checked else "Duplicate Edge")
+        )
+        gl.addWidget(self.dup_delete_orig_cb)
 
         # Duplicate button
         self.dup_btn = self._btn("Duplicate Edge", '#1a3a2a')
         gl.addWidget(self.dup_btn)
+
+        # Align form layouts in duplicate options
+        for layout in [self.dup_base_form, fl_rot, fl_mh, fl_mv, fl_ma, fl_ps, fl_trans, fl_scale]:
+            self._align_form_labels(layout)
 
         return grp
 
@@ -725,7 +782,7 @@ class SidebarView(QWidget):
         self.layout.addWidget(sec)
 
         _spin_style = (
-            "background:#181b2a; color:#a0a8c0; border:1px solid #333852;")
+            "background:#181b2a; color:#a0a8c0; border:1px solid #333852; max-width: 110px;")
 
         self.global_spline_cb = QCheckBox(
             "Global Spline Smoothing (G1 continuity)")
@@ -736,6 +793,10 @@ class SidebarView(QWidget):
 
         self.quality_check_cb = QCheckBox("Show Quality Heatmap")
         self.quality_check_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
+
+        self.show_vertices_cb = QCheckBox("Show Geometry Vertices")
+        self.show_vertices_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
+        self.show_vertices_cb.setChecked(True)
 
         tf_box = QGroupBox("Output Transform")
         tf_box.setStyleSheet(
@@ -780,7 +841,6 @@ class SidebarView(QWidget):
 
         sec.add_widget(self.global_spline_cb)
         sec.add_widget(hint)
-        sec.add_widget(self.quality_check_cb)
         sec.add_widget(self.apply_transform_cb)
         sec.add_widget(tf_box)
 
@@ -882,6 +942,10 @@ class SidebarView(QWidget):
         _hint.setStyleSheet("color:#556688; font-size:10px;")
         gl2.addRow("", _hint)
         self.param_stack.addWidget(gw)
+
+        # Align form layouts in distribution options
+        for layout in [ul, tl, cfl, kl, gl2]:
+            self._align_form_labels(layout)
 
     # ═════════════════════════════════════════════════════════════════════
     # Public helpers (called by controller)
@@ -1012,3 +1076,12 @@ class SidebarView(QWidget):
             self.transform_ty.setValue(tr[1])
         else:
             self.apply_transform_cb.setChecked(False)
+
+    def _align_form_labels(self, layout: QFormLayout, width: int = 120):
+        layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        for i in range(layout.rowCount()):
+            label_item = layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+            if label_item:
+                lbl = label_item.widget()
+                if lbl:
+                    lbl.setFixedWidth(width)

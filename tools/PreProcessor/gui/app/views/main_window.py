@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy
+    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
 
         # ── Sidebar ───────────────────────────────────────────────────────
         self.sidebar_view = SidebarView()
-        self.sidebar_view.setFixedWidth(330)
+        self.sidebar_view.setFixedWidth(350)
 
         # ── Right panel: tab-bar row + shared canvas ──────────────────────
         right_panel = QWidget()
@@ -89,10 +89,106 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         tab_hl.addWidget(self.tab_bar)
 
+        # ── Canvas Toolbar ────────────────────────────────────────────────
+        self.canvas_toolbar = QWidget()
+        self.canvas_toolbar.setFixedHeight(36)
+        self.canvas_toolbar.setStyleSheet("background: #06070d; border-bottom: 1px solid #1c1e36;")
+        tb_layout = QHBoxLayout(self.canvas_toolbar)
+        tb_layout.setContentsMargins(10, 0, 10, 0)
+        tb_layout.setSpacing(15)
+
+        # Helper to create buttons
+        def create_tb_btn(text: str, tooltip: str) -> QPushButton:
+            btn = QPushButton(text)
+            btn.setToolTip(tooltip)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #181b30;
+                    color: #dde2ff;
+                    border: 1px solid #2d3356;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-weight: bold;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #2c3258;
+                    border-color: #5a9ad4;
+                    color: #ffffff;
+                }
+                QPushButton:pressed {
+                    background-color: #1a1f3b;
+                }
+                QPushButton:disabled {
+                    background-color: #0b0c16;
+                    color: #4a4e69;
+                    border-color: #1b1d2e;
+                }
+            """)
+            return btn
+
+        self.undo_btn = create_tb_btn("↺ Undo", "Undo last action (Ctrl+Z)")
+        self.redo_btn = create_tb_btn("↻ Redo", "Redo last action (Ctrl+Shift+Z)")
+        self.focus_geom_btn = create_tb_btn("⛶ Fit to View", "Fit canvas view to selected geometry")
+
+        # Separators
+        def create_sep():
+            v = QWidget()
+            v.setFixedWidth(1)
+            v.setFixedHeight(16)
+            v.setStyleSheet("background-color: #1c1e36;")
+            return v
+
+        self.show_vertices_cb = QCheckBox("Show Geometry Vertices")
+        self.show_vertices_cb.setStyleSheet("""
+            QCheckBox {
+                color: #a0b0d0;
+                font-size: 11px;
+            }
+            QCheckBox:hover {
+                color: #ffffff;
+            }
+        """)
+        self.show_vertices_cb.setChecked(True)
+
+        self.show_nodes_cb = QCheckBox("Show Resampled Nodes")
+        self.show_nodes_cb.setStyleSheet("""
+            QCheckBox {
+                color: #a0b0d0;
+                font-size: 11px;
+            }
+            QCheckBox:hover {
+                color: #ffffff;
+            }
+        """)
+        self.show_nodes_cb.setChecked(True)
+
+        self.quality_check_cb = QCheckBox("Show Quality Heatmap")
+        self.quality_check_cb.setStyleSheet("""
+            QCheckBox {
+                color: #a0b0d0;
+                font-size: 11px;
+            }
+            QCheckBox:hover {
+                color: #ffffff;
+            }
+        """)
+
+        tb_layout.addWidget(self.undo_btn)
+        tb_layout.addWidget(self.redo_btn)
+        tb_layout.addWidget(create_sep())
+        tb_layout.addWidget(self.focus_geom_btn)
+        tb_layout.addWidget(create_sep())
+        tb_layout.addWidget(self.show_vertices_cb)
+        tb_layout.addWidget(self.show_nodes_cb)
+        tb_layout.addWidget(self.quality_check_cb)
+        tb_layout.addStretch(1)
+
         # Shared canvas
         self.canvas_view = CanvasView()
 
         right_layout.addWidget(tab_row)
+        right_layout.addWidget(self.canvas_toolbar)
         right_layout.addWidget(self.canvas_view, stretch=1)
 
         # ── Central layout: sidebar | right ───────────────────────────────

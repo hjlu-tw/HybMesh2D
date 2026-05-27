@@ -45,6 +45,8 @@ class CanvasView(QWidget):
         self._geo_colors: dict[int, str] = {}               # sid → color str
         self._curve_preview_items: dict[int, pg.PlotDataItem] = {}         # sid → preview curve
         self._curve_segment_items: dict[int, list[pg.PlotDataItem]] = {}   # sid → list of curves
+        self._show_symbols = True
+        self._show_nodes = True
 
         # ── Active-session overlays (single set, reused across sessions) ──
 
@@ -52,25 +54,37 @@ class CanvasView(QWidget):
         self.resampled_curve = self.plot_widget.plot(
             pen=pg.mkPen(_COL_RESAMPLED, width=2, style=Qt.PenStyle.DashLine),
             symbol='o', symbolBrush=_COL_RESAMPLED, symbolSize=5)
+        self.resampled_curve.setZValue(10)
 
-        # Active segment — thick orange
+        # Active segment — thick orange with symbols
         self.active_segment_curve = self.plot_widget.plot(
-            pen=pg.mkPen(_COL_ACTIVE, width=4))
+            pen=pg.mkPen(_COL_ACTIVE, width=4),
+            symbol='o', symbolBrush=_COL_ACTIVE, symbolSize=5)
+        self.active_segment_curve.setZValue(20)
 
         # Split points — red dots
         self.split_scatter = pg.ScatterPlotItem(
             size=10, pen=pg.mkPen(None), brush=pg.mkBrush(_COL_SPLIT))
+        self.split_scatter.setZValue(30)
         self.plot_widget.addItem(self.split_scatter)
 
         # Selected point — cyan hollow circle
         self.selected_scatter = pg.ScatterPlotItem(
             size=14, pen=pg.mkPen(_COL_SELECTED, width=2), brush=None)
+        self.selected_scatter.setZValue(40)
         self.plot_widget.addItem(self.selected_scatter)
 
         # Quality bad nodes — red 'x'
         self.quality_bad_scatter = pg.ScatterPlotItem(
             size=10, symbol='x', pen=pg.mkPen('#FF5252', width=2), brush=None)
+        self.quality_bad_scatter.setZValue(50)
         self.plot_widget.addItem(self.quality_bad_scatter)
+
+        # Duplicate preview segment — dashed cyan curve
+        self.duplicate_preview_curve = self.plot_widget.plot(
+            pen=pg.mkPen('#00E5FF', width=2, style=Qt.PenStyle.DashLine),
+            symbol='o' if self._show_symbols else None, symbolBrush='#00E5FF', symbolSize=4)
+        self.duplicate_preview_curve.setZValue(15)
 
         # Mouse-coordinate label
         self.coord_label = pg.TextItem('', anchor=(-0.1, 1.1),
@@ -94,6 +108,7 @@ class CanvasView(QWidget):
         """Add a new geometry layer for a session."""
         curve = self.plot_widget.plot(
             pen=pg.mkPen(color, width=2),
+            symbol='o' if self._show_symbols else None,
             symbolBrush=pg.mkBrush(color), symbolSize=3)
         if points is not None and len(points) > 0:
             curve.setData(points[:, 0], points[:, 1])
@@ -103,7 +118,8 @@ class CanvasView(QWidget):
         # Initialize per-session curve preview and segment dictionaries
         preview_curve = self.plot_widget.plot(
             pen=pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine),
-            symbol='o', symbolBrush=_COL_PREVIEW, symbolSize=4)
+            symbol='o' if self._show_symbols else None, symbolBrush=_COL_PREVIEW, symbolSize=4)
+        preview_curve.setZValue(5)
         self._curve_preview_items[session_id] = preview_curve
         self._curve_segment_items[session_id] = []
 
@@ -138,6 +154,7 @@ class CanvasView(QWidget):
         self._active_session_id = active_session_id
         for sid, curve in self._geometries.items():
             color_str = self._geo_colors.get(sid, '#64B5F6')
+            curve.setSymbol('o' if self._show_symbols else None)
             if sid == active_session_id:
                 curve.setPen(pg.mkPen(color_str, width=2.5))
                 curve.setSymbolBrush(pg.mkBrush(color_str))
@@ -152,8 +169,19 @@ class CanvasView(QWidget):
                 curve.setSymbolSize(1.5)
 
         # Highlight/dim curve previews of each session
+        has_resampled = False
+        x_data, y_data = self.resampled_curve.getData()
+        if x_data is not None and len(x_data) > 0:
+            has_resampled = True
+
         for sid, preview_curve in self._curve_preview_items.items():
-            if sid == active_session_id:
+            is_active = (sid == active_session_id)
+            if is_active and has_resampled:
+                preview_curve.setSymbol(None)
+            else:
+                preview_curve.setSymbol('o' if self._show_symbols else None)
+
+            if is_active:
                 # Active preview: full color, dash pen
                 preview_curve.setPen(pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine))
                 preview_curve.setSymbolBrush(pg.mkBrush(_COL_PREVIEW))
@@ -170,11 +198,13 @@ class CanvasView(QWidget):
         for sid, items in self._curve_segment_items.items():
             if sid == active_session_id:
                 for item in items:
+                    item.setSymbol('o' if self._show_symbols else None)
                     item.setPen(pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine))
                     item.setSymbolBrush(pg.mkBrush('#5c637a'))
                     item.setSymbolSize(3)
             else:
                 for item in items:
+                    item.setSymbol('o' if self._show_symbols else None)
                     c = QColor('#5c637a')
                     c.setAlpha(60)
                     item.setPen(pg.mkPen(c, width=1, style=Qt.PenStyle.SolidLine))
@@ -186,6 +216,7 @@ class CanvasView(QWidget):
         if active_session_id in self._geometries:
             curve = self._geometries[active_session_id]
             color_str = self._geo_colors.get(active_session_id, '#64B5F6')
+            curve.setSymbol('o' if self._show_symbols else None)
             if dimmed:
                 c = QColor(color_str)
                 c.setAlpha(70)
@@ -199,6 +230,36 @@ class CanvasView(QWidget):
                 curve.setPen(pg.mkPen(color_str, width=2.5))
                 curve.setSymbolBrush(pg.mkBrush(color_str))
                 curve.setSymbolSize(4)
+
+    def set_geometry_symbols_visible(self, visible: bool):
+        """Toggle the visibility of symbols on all geometries."""
+        self._show_symbols = visible
+        for sid, curve in self._geometries.items():
+            curve.setSymbol('o' if visible else None)
+        
+        self.active_segment_curve.setSymbol('o' if visible else None)
+        self.duplicate_preview_curve.setSymbol('o' if visible else None)
+
+        for sid, items in self._curve_segment_items.items():
+            for item in items:
+                item.setSymbol('o' if visible else None)
+
+        has_resampled = False
+        x_data, y_data = self.resampled_curve.getData()
+        if x_data is not None and len(x_data) > 0:
+            has_resampled = True
+
+        for sid, preview_curve in self._curve_preview_items.items():
+            is_active = (sid == getattr(self, "_active_session_id", None))
+            if is_active and has_resampled:
+                preview_curve.setSymbol(None)
+            else:
+                preview_curve.setSymbol('o' if visible else None)
+
+    def set_resampled_nodes_visible(self, visible: bool):
+        """Toggle the visibility of symbols representing resampled nodes."""
+        self._show_nodes = visible
+        self.resampled_curve.setSymbol('o' if visible else None)
 
     def set_geometry_visible(self, session_id: int, visible: bool):
         """Toggle the visibility of a specific geometry layer and its curve elements."""
@@ -313,13 +374,15 @@ class CanvasView(QWidget):
                         bad_x.append(points[i, 0])
                         bad_y.append(points[i, 1])
                 
-                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol='o', symbolBrush=brushes)
+                sym = 'o' if self._show_nodes else None
+                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol=sym, symbolBrush=brushes)
                 if bad_x:
                     self.quality_bad_scatter.setData(bad_x, bad_y)
                 else:
                     self.quality_bad_scatter.clear()
             else:
-                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol='o', symbolBrush=pg.mkBrush(_COL_RESAMPLED))
+                sym = 'o' if self._show_nodes else None
+                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol=sym, symbolBrush=pg.mkBrush(_COL_RESAMPLED))
                 self.quality_bad_scatter.clear()
         else:
             self.resampled_curve.setData([], [])
@@ -333,7 +396,7 @@ class CanvasView(QWidget):
         if session_id not in self._curve_preview_items:
             return
         if points is not None and len(points) > 0:
-            sym = 'o' if show_symbols else None
+            sym = 'o' if (show_symbols and self._show_symbols) else None
             self._curve_preview_items[session_id].setData(points[:, 0], points[:, 1], symbol=sym)
         else:
             self._curve_preview_items[session_id].setData([], [])
@@ -349,6 +412,19 @@ class CanvasView(QWidget):
         self.active_segment_curve.setData([], [])
         self.resampled_curve.setData([], [])
         self.quality_bad_scatter.clear()
+        self.duplicate_preview_curve.setData([], [])
+
+    def update_duplicate_preview(self, points: np.ndarray | None):
+        """Update the duplicate preview curve with transformed points."""
+        if points is not None and len(points) > 0:
+            sym = 'o' if self._show_symbols else None
+            self.duplicate_preview_curve.setData(points[:, 0], points[:, 1], symbol=sym)
+        else:
+            self.duplicate_preview_curve.setData([], [])
+
+    def clear_duplicate_preview(self):
+        """Clear the duplicate preview curve."""
+        self.duplicate_preview_curve.setData([], [])
 
     def update_curve_segments(self, session_id: int, segments_pts: list[np.ndarray]):
         """Clear and redraw all curve segments to keep them visible when deselected."""
@@ -380,8 +456,9 @@ class CanvasView(QWidget):
                 item = self.plot_widget.plot(
                     pts[:, 0], pts[:, 1],
                     pen=pen,
-                    symbol='o', symbolBrush=symbol_brush, symbolSize=symbol_size
+                    symbol='o' if self._show_symbols else None, symbolBrush=symbol_brush, symbolSize=symbol_size
                 )
+                item.setZValue(5)
                 self._curve_segment_items[session_id].append(item)
 
     # ═════════════════════════════════════════════════════════════════════

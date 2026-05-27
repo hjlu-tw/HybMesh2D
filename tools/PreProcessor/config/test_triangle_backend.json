@@ -1,0 +1,22 @@
+{
+  "input_file": "examples/geometries/circle.dat",
+  "output_file": "Results/test_triangle_backend.dat",
+  "is_closed": true,
+  "segments": [
+    {
+      "id": 10005,
+      "type": "curve",
+      "curve_type": "triangle",
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 4,
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 3.0,
+        "y1": 0.0,
+        "x2": 0.0,
+        "y2": 4.0
+      }
+    }
+  ]
+}

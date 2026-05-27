@@ -63,35 +63,85 @@ class UpdateParamsCmd(BaseCommand):
 
 
 class RemoveSegmentCmd(BaseCommand):
-    """Remove a curve segment from the project."""
+    """Remove a segment (file or curve) from the project, deleting points if discrete."""
 
     def __init__(self, session, seg_idx: int, refresh_cb):
         self.session = session
         self.seg_idx = seg_idx
-        self.refresh_cb = refresh_cb  # callback to refresh list and UI
+        self.refresh_cb = refresh_cb
 
         seg = session.project_model.get_segment(seg_idx)
         self.removed_seg = copy.deepcopy(seg) if seg else None
+
+        self.old_points = (self.session.original_points.copy()
+                           if self.session.original_points is not None else None)
+        self.old_split_indices = list(self.session.split_indices)
+        self.old_segments = copy.deepcopy(self.session.project_model.segments)
+        self.old_modified = self.session.is_geometry_modified
 
     def description(self) -> str:
         seg_id = self.removed_seg.id if self.removed_seg else "?"
         return f"Remove Edge {seg_id}"
 
     def execute(self):
-        if self.removed_seg:
-            self.session.project_model.remove_segment(self.seg_idx)
-            self.refresh_cb()
+        seg = self.session.project_model.get_segment(self.seg_idx)
+        if not seg:
+            return
+
+        if seg.type == "file" and self.session.original_points is not None:
+            # Determine shared boundaries
+            S = seg.start_index
+            E = seg.end_index
+
+            s_shared = False
+            e_shared = False
+            for other in self.session.project_model.segments:
+                if other is not seg and other.type == "file":
+                    if other.start_index == S or other.end_index == S:
+                        s_shared = True
+                    if other.start_index == E or other.end_index == E:
+                        e_shared = True
+
+            del_start = S + 1 if s_shared else S
+            del_end = E - 1 if e_shared else E
+
+            if del_start <= del_end:
+                num_deleted = del_end - del_start + 1
+
+                # Delete points from original_points
+                self.session.original_points = np.delete(
+                    self.session.original_points, slice(del_start, del_end + 1), axis=0)
+
+                # Adjust split indices
+                new_splits = []
+                for idx in self.session.split_indices:
+                    if idx < del_start:
+                        new_splits.append(idx)
+                    elif idx > del_end:
+                        new_splits.append(idx - num_deleted)
+                self.session.split_indices = sorted(list(set(new_splits)))
+
+                # Adjust start/end index of other file segments
+                for other in self.session.project_model.segments:
+                    if other is not seg and other.type == "file":
+                        if other.start_index >= del_start:
+                            other.start_index -= num_deleted
+                        if other.end_index >= del_start:
+                            other.end_index -= num_deleted
+
+        # Remove segment from project
+        self.session.project_model.remove_segment(self.seg_idx)
+        self.session.is_geometry_modified = True
+        self.refresh_cb()
 
     def undo(self):
-        if self.removed_seg:
-            self.session.project_model.segments.insert(self.seg_idx, copy.deepcopy(self.removed_seg))
-            # Renumber only file segments
-            file_idx = 1
-            for s in self.session.project_model.segments:
-                if s.type == "file":
-                    s.id = file_idx
-                    file_idx += 1
-            self.refresh_cb()
+        self.session.original_points = self.old_points
+        self.session.split_indices = self.old_split_indices
+        self.session.project_model.segments = self.old_segments
+        self.session.is_geometry_modified = self.old_modified
+        if hasattr(self.session, "controller") and self.session.controller:
+            self.session.controller._apply_geometry_update(self.session)
+        self.refresh_cb()
 
 
 class AddCurveSegmentCmd(BaseCommand):
@@ -491,6 +541,8 @@ class BakeCurveToGeometryCmd(BaseCommand):
 
         # Rebuild file segments
         self.session.project_model.update_file_segments_from_indices(self.session.split_indices)
+        if hasattr(self.session, "controller") and self.session.controller:
+            self.session.controller._apply_geometry_update(self.session)
         self.refresh_cb()
 
     def undo(self):
@@ -498,4 +550,94 @@ class BakeCurveToGeometryCmd(BaseCommand):
         self.session.split_indices = self.old_split_indices
         self.session.project_model.segments = self.old_segments
         self.session.is_geometry_modified = self.old_modified
+        if hasattr(self.session, "controller") and self.session.controller:
+            self.session.controller._apply_geometry_update(self.session)
         self.refresh_cb()
+
+
+class DuplicateTransformCmd(BaseCommand):
+    """Command to duplicate a segment with transform, optionally deleting the original segment."""
+    def __init__(self, session, seg_idx: int, new_seg, delete_original: bool, refresh_cb, select_cb):
+        self.session = session
+        self.seg_idx = seg_idx
+        self.new_seg = new_seg
+        self.delete_original = delete_original
+        self.refresh_cb = refresh_cb
+        self.select_cb = select_cb
+
+        # Snapshot state for undo
+        self.old_segments = copy.deepcopy(session.project_model.segments)
+        self.old_points = (self.session.original_points.copy()
+                           if self.session.original_points is not None else None)
+        self.old_split_indices = list(self.session.split_indices)
+        self.old_modified = self.session.is_geometry_modified
+
+    def description(self) -> str:
+        if self.delete_original:
+            return f"Transform Edge {self.old_segments[self.seg_idx].id}"
+        else:
+            return f"Duplicate Edge {self.old_segments[self.seg_idx].id}"
+
+    def execute(self):
+        if self.delete_original:
+            # 1. Remove original segment
+            seg = self.session.project_model.segments[self.seg_idx]
+            # If original segment is file/discrete, we must remove its unshared points from original_points
+            if seg.type == "file" and self.session.original_points is not None:
+                S = seg.start_index
+                E = seg.end_index
+                s_shared = False
+                e_shared = False
+                for other in self.session.project_model.segments:
+                    if other is not seg and other.type == "file":
+                        if other.start_index == S or other.end_index == S:
+                            s_shared = True
+                        if other.start_index == E or other.end_index == E:
+                            e_shared = True
+                del_start = S + 1 if s_shared else S
+                del_end = E - 1 if e_shared else E
+                if del_start <= del_end:
+                    num_deleted = del_end - del_start + 1
+                    self.session.original_points = np.delete(
+                        self.session.original_points, slice(del_start, del_end + 1), axis=0)
+                    # Adjust split indices
+                    new_splits = []
+                    for idx in self.session.split_indices:
+                        if idx < del_start:
+                            new_splits.append(idx)
+                        elif idx > del_end:
+                            new_splits.append(idx - num_deleted)
+                    self.session.split_indices = new_splits
+                    # Adjust remaining file segments
+                    for other in self.session.project_model.segments:
+                        if other is not seg and other.type == "file":
+                            if other.start_index > del_end:
+                                other.start_index -= num_deleted
+                            if other.end_index > del_end:
+                                other.end_index -= num_deleted
+            # Remove segment from list
+            self.session.project_model.segments.pop(self.seg_idx)
+
+        # 2. Append new segment
+        self.session.project_model.segments.append(self.new_seg)
+        pm = self.session.project_model
+        if self.new_seg.id >= pm._next_curve_id:
+            pm._next_curve_id = self.new_seg.id + 1
+
+        self.refresh_cb()
+        try:
+            idx = self.session.project_model.segments.index(self.new_seg)
+            self.select_cb(idx)
+        except ValueError:
+            pass
+        if hasattr(self.session, "controller") and self.session.controller:
+            self.session.controller._apply_geometry_update(self.session)
+
+    def undo(self):
+        self.session.original_points = self.old_points
+        self.session.split_indices = self.old_split_indices
+        self.session.project_model.segments = self.old_segments
+        self.session.is_geometry_modified = self.old_modified
+        self.refresh_cb()
+        if hasattr(self.session, "controller") and self.session.controller:
+            self.session.controller._apply_geometry_update(self.session)

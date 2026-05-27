@@ -23,7 +23,7 @@ from app.commands.vertex_cmds import InsertVertexCmd
 from app.commands.segment_cmds import (
     UpdateStrategyCmd, RemoveSegmentCmd,
     AddCurveSegmentCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd,
-    CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd
+    CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd, DuplicateTransformCmd
 )
 
 
@@ -156,6 +156,7 @@ class AppController:
         self._param_snapshot: dict = {}   # for UpdateParamsCmd debounce
         self._is_populating = False       # guard against feedback loops during form population
         self._segment_state_snapshot: dict = {}  # snapshot for segment state undo
+        self._show_duplicate_preview = False  # flag to show duplicate preview line
 
         # Create a dedicated temp directory for the application lifecycle
         self.temp_dir = tempfile.mkdtemp(prefix="hybmesh_preprocessor_")
@@ -199,11 +200,13 @@ class AppController:
         sb.curve_type_combo.currentIndexChanged.connect(self.handle_curve_type_changed)
 
         # Undo / Redo / Remove / Quality Check
-        sb.undo_btn.clicked.connect(self.undo)
-        sb.redo_btn.clicked.connect(self.redo)
+        self.main_window.undo_btn.clicked.connect(self.undo)
+        self.main_window.redo_btn.clicked.connect(self.redo)
         sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
         sb.curve_bake_btn.clicked.connect(self.bake_selected_curve)
-        sb.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
+        self.main_window.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
+        self.main_window.show_vertices_cb.toggled.connect(self.handle_show_vertices_toggled)
+        self.main_window.show_nodes_cb.toggled.connect(self.handle_show_nodes_toggled)
         sb.dup_btn.clicked.connect(self.duplicate_with_transform)
 
         # Parameter-change signals (all route to update_segment_params)
@@ -216,6 +219,18 @@ class AppController:
         sb.match_previous_cb.toggled.connect(self.update_match_previous)
         sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
 
+        # Wire duplicate live preview connections
+        sb.dup_type_combo.currentIndexChanged.connect(self.handle_dup_type_changed)
+        sb.dup_base_mode_combo.currentIndexChanged.connect(self.handle_dup_base_mode_changed)
+        sb.dup_delete_orig_cb.toggled.connect(self.on_duplicate_param_changed)
+        for w in [sb.dup_rot_angle, sb.dup_rot_px, sb.dup_rot_py,
+                  sb.dup_mh_py, sb.dup_mv_px,
+                  sb.dup_ma_px, sb.dup_ma_py, sb.dup_ma_dx, sb.dup_ma_dy,
+                  sb.dup_ps_px, sb.dup_ps_py,
+                  sb.dup_trans_dx, sb.dup_trans_dy,
+                  sb.dup_scale_factor, sb.dup_scale_px, sb.dup_scale_py]:
+            w.valueChanged.connect(self.on_duplicate_param_changed)
+
         # Advanced settings
         sb.global_spline_cb.toggled.connect(self.handle_global_spline_changed)
 
@@ -227,7 +242,7 @@ class AppController:
         sb.geom_list.itemChanged.connect(self.handle_geom_visibility_changed)
         sb.geom_list.currentRowChanged.connect(self.handle_geom_list_row_changed)
         sb.geom_list.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
-        sb.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
+        self.main_window.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
         sb.toggle_visibility_btn.clicked.connect(self.toggle_selected_geometry_visibility)
 
         # ── Wire tab signals ────────────────────────────────────────────
@@ -397,6 +412,8 @@ class AppController:
             
             # Clear overlays first, then rebuild active overlays
             self.main_window.canvas_view.clear_active_overlays()
+            self._show_duplicate_preview = False
+            self.main_window.canvas_view.clear_duplicate_preview()
             if session.original_points is not None:
                 self.main_window.canvas_view.update_split_points(session.split_indices)
                 self.main_window.canvas_view.update_selected_point(session.selected_point_idx)
@@ -409,7 +426,7 @@ class AppController:
             # Resampled preview
             if session.resampled_points is not None:
                 self.main_window.canvas_view.load_resampled_data(
-                    session.resampled_points, sb.quality_check_cb.isChecked())
+                    session.resampled_points, self.main_window.quality_check_cb.isChecked())
             
             # Sync active overlays visibility with session visibility
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
@@ -1086,6 +1103,8 @@ class AppController:
         if row < 0:
             self.main_window.canvas_view.update_active_segment(None, None)
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
+            self.main_window.canvas_view.clear_duplicate_preview()
+            self._show_duplicate_preview = False
             session.current_segment_idx = -1
             sb.remove_seg_btn.setEnabled(False)
             sb.show_segment_props(False)
@@ -1096,6 +1115,7 @@ class AppController:
         if not seg:
             self.main_window.canvas_view.update_active_segment(None, None)
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
+            self._show_duplicate_preview = False
             sb.remove_seg_btn.setEnabled(False)
             sb.show_segment_props(False)
             return
@@ -1141,11 +1161,16 @@ class AppController:
             sb.match_previous_cb.setChecked(seg.match_previous)
             sb.match_previous_cb.blockSignals(False)
 
+            # Update base point values
+            self.update_duplicate_base_point()
+            self._show_duplicate_preview = False
+
             # Snapshot params for undo
             self._param_snapshot = copy.deepcopy(seg.parameters)
             self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
         finally:
             self._is_populating = False
+            self.main_window.canvas_view.clear_duplicate_preview()
 
         self._update_canvas_curve_segments()
         if seg.type == "curve":
@@ -1357,6 +1382,7 @@ class AppController:
         session.command_history.execute(cmd)
         self.main_window.log_panel.log(f"Converted Edge {cmd.seg_id} to Discrete.")
         self.main_window.canvas_view.clear_curve_preview(session.session_id)
+        self._apply_geometry_update(session)
         self._update_canvas_curve_segments()
 
     def _sync_active_curve_segment_from_ui(self):
@@ -1483,6 +1509,8 @@ class AppController:
                 f"Curve preview updated ({len(pts)} points).")
             self._update_canvas_curve_segments()
             self._record_segment_state_change()
+            self.update_duplicate_base_point()
+            self.update_duplicate_preview()
         except Exception as e:
             self.main_window.log_panel.log(f"Formula error: {e}")
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
@@ -1542,6 +1570,7 @@ class AppController:
         session = self.active_session()
         if not session:
             return
+        self._apply_geometry_update(session)
         self._refresh_segment_list()
         self._sync_geometry_list()
         self.main_window.canvas_view.clear_curve_preview(session.session_id)
@@ -1623,6 +1652,17 @@ class AppController:
             cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
             xs = 2.0 * cx - xs
             ys = 2.0 * cy - ys
+        elif t_idx == 5: # Translate
+            dx = sb.dup_trans_dx.value()
+            dy = sb.dup_trans_dy.value()
+            xs = xs + dx
+            ys = ys + dy
+        elif t_idx == 6: # Scale
+            factor = sb.dup_scale_factor.value()
+            px = sb.dup_scale_px.value()
+            py = sb.dup_scale_py.value()
+            xs = px + (xs - px) * factor
+            ys = py + (ys - py) * factor
 
         # --- Create new polygon curve segment from transformed points --------
         v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
@@ -1637,17 +1677,236 @@ class AppController:
         def select_cb(idx):
             self._select_segment_by_index(idx)
 
-        cmd = AddCurveSegmentCmd(
-            session,
+        delete_original = sb.dup_delete_orig_cb.isChecked()
+
+        cmd = DuplicateTransformCmd(
+            session=session,
+            seg_idx=session.current_segment_idx,
+            new_seg=new_seg,
+            delete_original=delete_original,
             refresh_cb=self._refresh_segment_list,
-            select_cb=select_cb,
-            preconfigured_seg=new_seg
+            select_cb=select_cb
         )
         session.command_history.execute(cmd)
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
+        
+        action_name = "Moved/Transformed" if delete_original else "Duplicated"
         self.main_window.log_panel.log(
-            f"Duplicated as Edge {new_seg.id} ({sb.dup_type_combo.currentText()}).")
+            f"{action_name} Edge {seg.id} as Edge {new_seg.id} ({sb.dup_type_combo.currentText()}).")
+        self._show_duplicate_preview = False
+        self.main_window.canvas_view.clear_duplicate_preview()
+
+    def handle_dup_type_changed(self):
+        if self._is_populating:
+            return
+        self._show_duplicate_preview = True
+        self.update_duplicate_base_point()
+        self.update_duplicate_preview()
+
+    def handle_dup_base_mode_changed(self):
+        if self._is_populating:
+            return
+        self._show_duplicate_preview = True
+        self.update_duplicate_base_point()
+        self.update_duplicate_preview()
+
+    def on_duplicate_param_changed(self):
+        if self._is_populating:
+            return
+        self._show_duplicate_preview = True
+        self.update_duplicate_preview()
+
+    def update_duplicate_base_point(self):
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg:
+            return
+
+        sb = self.main_window.sidebar_view
+        t_idx = sb.dup_type_combo.currentIndex()
+        if t_idx == 5: # Translate
+            sb.dup_base_mode_combo.setEnabled(False)
+            sb.dup_trans_dx.setEnabled(True)
+            sb.dup_trans_dy.setEnabled(True)
+            return
+        else:
+            sb.dup_base_mode_combo.setEnabled(True)
+
+        mode = sb.dup_base_mode_combo.currentText()
+        if mode == "Custom (Manual)":
+            sb.dup_rot_px.setEnabled(True)
+            sb.dup_rot_py.setEnabled(True)
+            sb.dup_mh_py.setEnabled(True)
+            sb.dup_mv_px.setEnabled(True)
+            sb.dup_ma_px.setEnabled(True)
+            sb.dup_ma_py.setEnabled(True)
+            sb.dup_ps_px.setEnabled(True)
+            sb.dup_ps_py.setEnabled(True)
+            sb.dup_scale_px.setEnabled(True)
+            sb.dup_scale_py.setEnabled(True)
+            return
+
+        # Disable fields for Start / End Point mode
+        sb.dup_rot_px.setEnabled(False)
+        sb.dup_rot_py.setEnabled(False)
+        sb.dup_mh_py.setEnabled(False)
+        sb.dup_mv_px.setEnabled(False)
+        sb.dup_ma_px.setEnabled(False)
+        sb.dup_ma_py.setEnabled(False)
+        sb.dup_ps_px.setEnabled(False)
+        sb.dup_ps_py.setEnabled(False)
+        sb.dup_scale_px.setEnabled(False)
+        sb.dup_scale_py.setEnabled(False)
+
+        # Retrieve points of current segment
+        if seg.type == "file":
+            if session.original_points is None or len(session.original_points) == 0:
+                return
+            pts = session.original_points[seg.start_index : seg.end_index + 1]
+            if len(pts) == 0:
+                return
+            if mode == "Start Point":
+                px, py = pts[0][0], pts[0][1]
+            else:
+                px, py = pts[-1][0], pts[-1][1]
+        else:
+            n = seg.parameters.get("n_points", 100)
+            try:
+                xs, ys = self._compute_curve_preview_pts(seg, n)
+            except Exception:
+                return
+            if xs is None or len(xs) == 0:
+                return
+            if mode == "Start Point":
+                px, py = xs[0], ys[0]
+            else:
+                px, py = xs[-1], ys[-1]
+
+        # Populate coordinates
+        sb.dup_rot_px.blockSignals(True)
+        sb.dup_rot_py.blockSignals(True)
+        sb.dup_mh_py.blockSignals(True)
+        sb.dup_mv_px.blockSignals(True)
+        sb.dup_ma_px.blockSignals(True)
+        sb.dup_ma_py.blockSignals(True)
+        sb.dup_ps_px.blockSignals(True)
+        sb.dup_ps_py.blockSignals(True)
+        sb.dup_scale_px.blockSignals(True)
+        sb.dup_scale_py.blockSignals(True)
+
+        sb.dup_rot_px.setValue(px)
+        sb.dup_rot_py.setValue(py)
+        sb.dup_mh_py.setValue(py)
+        sb.dup_mv_px.setValue(px)
+        sb.dup_ma_px.setValue(px)
+        sb.dup_ma_py.setValue(py)
+        sb.dup_ps_px.setValue(px)
+        sb.dup_ps_py.setValue(py)
+        sb.dup_scale_px.setValue(px)
+        sb.dup_scale_py.setValue(py)
+
+        sb.dup_rot_px.blockSignals(False)
+        sb.dup_rot_py.blockSignals(False)
+        sb.dup_mh_py.blockSignals(False)
+        sb.dup_mv_px.blockSignals(False)
+        sb.dup_ma_px.blockSignals(False)
+        sb.dup_ma_py.blockSignals(False)
+        sb.dup_ps_px.blockSignals(False)
+        sb.dup_ps_py.blockSignals(False)
+        sb.dup_scale_px.blockSignals(False)
+        sb.dup_scale_py.blockSignals(False)
+
+    def update_duplicate_preview(self):
+        if not self._show_duplicate_preview:
+            self.main_window.canvas_view.clear_duplicate_preview()
+            return
+
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            self.main_window.canvas_view.clear_duplicate_preview()
+            return
+        
+        sb = self.main_window.sidebar_view
+        if not sb._transform_dup_group.isVisible():
+            self.main_window.canvas_view.clear_duplicate_preview()
+            return
+
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg:
+            self.main_window.canvas_view.clear_duplicate_preview()
+            return
+
+        # 1. Get original points
+        if seg.type == "file":
+            if session.original_points is None or len(session.original_points) == 0:
+                self.main_window.canvas_view.clear_duplicate_preview()
+                return
+            pts = session.original_points[seg.start_index : seg.end_index + 1]
+            xs = pts[:, 0].copy()
+            ys = pts[:, 1].copy()
+            n = len(pts)
+        else:
+            n = seg.parameters.get("n_points", 100)
+            try:
+                xs, ys = self._compute_curve_preview_pts(seg, n)
+            except Exception:
+                self.main_window.canvas_view.clear_duplicate_preview()
+                return
+
+        if xs is None or len(xs) < 2:
+            self.main_window.canvas_view.clear_duplicate_preview()
+            return
+
+        xs = xs.copy()
+        ys = ys.copy()
+
+        # 2. Apply transform
+        t_idx = sb.dup_type_combo.currentIndex()
+
+        if t_idx == 0:   # Rotate
+            theta = math.radians(sb.dup_rot_angle.value())
+            px, py = sb.dup_rot_px.value(), sb.dup_rot_py.value()
+            xr = xs - px;  yr = ys - py
+            xs_new = px + xr * math.cos(theta) - yr * math.sin(theta)
+            ys_new = py + xr * math.sin(theta) + yr * math.cos(theta)
+            xs, ys = xs_new, ys_new
+        elif t_idx == 1: # Mirror Horizontal (flip y around axis_y)
+            axis_y = sb.dup_mh_py.value()
+            ys = 2.0 * axis_y - ys
+        elif t_idx == 2: # Mirror Vertical (flip x around axis_x)
+            axis_x = sb.dup_mv_px.value()
+            xs = 2.0 * axis_x - xs
+        elif t_idx == 3: # Mirror Axis (arbitrary)
+            px, py = sb.dup_ma_px.value(), sb.dup_ma_py.value()
+            dx, dy = sb.dup_ma_dx.value(), sb.dup_ma_dy.value()
+            d_len = math.hypot(dx, dy)
+            if d_len >= 1e-12:
+                dx /= d_len;  dy /= d_len
+                xr = xs - px;  yr = ys - py
+                dot = xr * dx + yr * dy
+                xs = 2.0 * (px + dot * dx) - xs
+                ys = 2.0 * (py + dot * dy) - ys
+        elif t_idx == 4: # Point Symmetry
+            cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
+            xs = 2.0 * cx - xs
+            ys = 2.0 * cy - ys
+        elif t_idx == 5: # Translate
+            dx = sb.dup_trans_dx.value()
+            dy = sb.dup_trans_dy.value()
+            xs = xs + dx
+            ys = ys + dy
+        elif t_idx == 6: # Scale
+            factor = sb.dup_scale_factor.value()
+            px = sb.dup_scale_px.value()
+            py = sb.dup_scale_py.value()
+            xs = px + (xs - px) * factor
+            ys = py + (ys - py) * factor
+
+        pts_new = np.column_stack([xs, ys])
+        self.main_window.canvas_view.update_duplicate_preview(pts_new)
 
     def _compute_curve_preview_pts(
             self, seg: SegmentModel, n: int
@@ -1705,8 +1964,6 @@ class AppController:
         elif seg.curve_type == "polygon":
             v_str = seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1")
             verts = _parse_vertices_str(v_str)
-            if len(verts) > 0 and not np.allclose(verts[0], verts[-1]):
-                verts = np.vstack((verts, verts[0]))
             xs, ys = _sample_polyline_pinned(verts, n)
         else:  # custom
             t_vals = np.linspace(seg.t_min, seg.t_max, n)
@@ -1743,12 +2000,19 @@ class AppController:
                     ys = B * xr + A * yr + Q0[1]
                 else:
                     xs = xs - P0[0] + Q0[0];  ys = ys - P0[1] + Q0[1]
+                # Enforce exact endpoints
+                xs[0], ys[0] = Q0[0], Q0[1]
+                xs[-1], ys[-1] = Q1[0], Q1[1]
             elif sv:
                 Q0 = gp[si]
                 xs = xs - P0[0] + Q0[0];  ys = ys - P0[1] + Q0[1]
+                # Enforce exact start endpoint
+                xs[0], ys[0] = Q0[0], Q0[1]
             elif ev:
                 Q1 = gp[ei]
                 xs = xs - P1[0] + Q1[0];  ys = ys - P1[1] + Q1[1]
+                # Enforce exact end endpoint
+                xs[-1], ys[-1] = Q1[0], Q1[1]
 
         return xs, ys
 
@@ -1757,6 +2021,12 @@ class AppController:
         if session and session.resampled_points is not None:
             self.main_window.canvas_view.load_resampled_data(
                 session.resampled_points, checked)
+
+    def handle_show_vertices_toggled(self, checked: bool):
+        self.main_window.canvas_view.set_geometry_symbols_visible(checked)
+
+    def handle_show_nodes_toggled(self, checked: bool):
+        self.main_window.canvas_view.set_resampled_nodes_visible(checked)
 
     # ═════════════════════════════════════════════════════════════════════
     # Backend execution
@@ -1916,7 +2186,7 @@ class AppController:
                     pts = np.loadtxt(tmp_out)
                     session.resampled_points = pts
                     if session is self.active_session():
-                        show_q = self.main_window.sidebar_view.quality_check_cb.isChecked()
+                        show_q = self.main_window.quality_check_cb.isChecked()
                         self.main_window.canvas_view.load_resampled_data(pts, show_q)
                         self.preview_curve_formula()
                     self.main_window.log_panel.log(
@@ -1946,7 +2216,7 @@ class AppController:
                         pts = np.loadtxt(out_path)
                         session.resampled_points = pts
                         if session is self.active_session():
-                            show_q = self.main_window.sidebar_view.quality_check_cb.isChecked()
+                            show_q = self.main_window.quality_check_cb.isChecked()
                             self.main_window.canvas_view.load_resampled_data(pts, show_q)
                             self.preview_curve_formula()
                         self.main_window.log_panel.log(

@@ -53,7 +53,7 @@ class ProjectModel:
         self._next_curve_id += 1
         seg = SegmentModel(new_id, -1, -1)
         seg.type = "curve"
-        seg.curve_type = "custom"
+        seg.curve_type = "line"
         seg.curve_mode = "parametric"
         self.segments.append(seg)
         return seg

@@ -16,7 +16,7 @@ class SegmentModel:
         self.parameters: dict = {"n_points": 50}
 
         # Curve-segment fields (only used when type == "curve")
-        self.curve_type = "custom"      # "custom" | "horizontal_line" | "vertical_line" | "line" | "circle" | "triangle" | "quadrilateral" | "polygon"
+        self.curve_type = "line"      # "custom" | "horizontal_line" | "vertical_line" | "line" | "circle" | "triangle" | "quadrilateral" | "polygon"
         self.curve_mode = "parametric"   # "parametric" | "explicit"
         self.x_formula = "cos(t)"
         self.y_formula = "sin(t)"
