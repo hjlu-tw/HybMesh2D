@@ -18,6 +18,7 @@ class SessionControllerMixin:
         # Append BEFORE addTab so switch_tab (triggered by currentChanged)
         # can already find the session in self.sessions
         self.sessions.append(session)
+        self._refresh_session_colors()
 
         # Add tab (may trigger currentChanged → switch_tab)
         label = os.path.basename(file_path) if file_path else "Untitled"
@@ -107,6 +108,7 @@ class SessionControllerMixin:
         self.main_window.tab_widget.blockSignals(True)
         self.main_window.tab_widget.removeTab(idx)
         self.sessions.pop(idx)
+        self._refresh_session_colors()
         self.main_window.tab_widget.blockSignals(False)
 
         # Adjust active index
@@ -283,8 +285,7 @@ class SessionControllerMixin:
             label = os.path.basename(input_file) if input_file else "Untitled"
             self.main_window.tab_widget.setTabText(self.active_idx, label)
             session.file_path = input_file
-            session.color = session.SESSION_COLORS[
-                (session.session_id - 1) % len(session.SESSION_COLORS)]
+            self._refresh_session_colors()
         else:
             session = self._new_session(input_file)
 
@@ -310,3 +311,12 @@ class SessionControllerMixin:
         self.main_window.log_panel.log(
             f"Loaded config '{os.path.basename(config_path)}' — "
             f"{len(session.project_model.segments)} segments.")
+
+    def _refresh_session_colors(self):
+        """Re-assign palette colors to active sessions to keep coloring organized and synced."""
+        from app.models.session import SESSION_COLORS
+        for i, session in enumerate(self.sessions):
+            new_color = SESSION_COLORS[i % len(SESSION_COLORS)]
+            session.color = new_color
+            if hasattr(self.main_window, 'canvas_view'):
+                self.main_window.canvas_view.update_geometry_color(session.session_id, new_color)

@@ -309,3 +309,10 @@ class MainWindow(QMainWindow):
         self.quality_check_cb.setVisible(is_pre)
         self.focus_geom_btn.setVisible(is_pre)
         self.mode_changed.emit(idx)
+
+    def closeEvent(self, event):
+        if hasattr(self, "controller") and self.controller is not None:
+            if not self.controller.handle_close_event():
+                event.ignore()
+                return
+        event.accept()

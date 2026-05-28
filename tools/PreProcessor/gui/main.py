@@ -10,6 +10,11 @@ from app.controller import AppController
 
 def main():
     app = QApplication(sys.argv)
+    
+    import pyqtgraph as pg
+    pg.setConfigOption('background', '#0c0d16')
+    pg.setConfigOption('foreground', '#a0a8c0')
+    
     controller = AppController()
     
     # Check if a file path is provided as a command line argument

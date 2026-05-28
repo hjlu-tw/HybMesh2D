@@ -32,9 +32,6 @@ class CanvasView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        pg.setConfigOption('background', _CANVAS_BG)
-        pg.setConfigOption('foreground', _CANVAS_FG)
-
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setAspectLocked(True)
         self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
@@ -132,6 +129,15 @@ class CanvasView(QWidget):
             self._geometries[session_id].setData(points[:, 0], points[:, 1])
         else:
             self._geometries[session_id].setData([], [])
+
+    def update_geometry_color(self, session_id: int, color: str):
+        """Update the display color of an existing geometry layer."""
+        if session_id not in self._geometries:
+            return
+        self._geo_colors[session_id] = color
+        curve = self._geometries[session_id]
+        curve.setPen(pg.mkPen(color, width=2))
+        curve.setSymbolBrush(pg.mkBrush(color))
 
     def remove_geometry(self, session_id: int):
         """Remove a session's geometry layer."""

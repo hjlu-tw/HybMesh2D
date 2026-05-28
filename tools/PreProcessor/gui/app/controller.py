@@ -34,6 +34,7 @@ class AppController(
 
     def __init__(self):
         self.main_window = MainWindow()
+        self.main_window.controller = self
         self.sessions: list[GeometrySession] = []
         self.active_idx: int = -1
 
@@ -277,3 +278,26 @@ class AppController(
                         session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to redo.")
+
+    def handle_close_event(self) -> bool:
+        """Return True if the app can close, False to cancel closing."""
+        modified_sessions = [s for s in self.sessions if s.is_geometry_modified]
+        if modified_sessions:
+            names = ", ".join([s.display_name for s in modified_sessions])
+            from PyQt6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self.main_window,
+                "Unsaved Changes",
+                f"The following sessions have unsaved changes:\n{names}\n\nDo you want to discard them and exit?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return False
+        
+        try:
+            self.main_window.canvas_view.clear()
+            self.main_window.mesh_canvas_view.clear_mesh()
+        except Exception:
+            pass
+        return True

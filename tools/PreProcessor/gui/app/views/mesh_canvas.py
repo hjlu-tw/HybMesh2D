@@ -20,10 +20,6 @@ class MeshCanvasView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Configure pyqtgraph styling
-        pg.setConfigOption('background', _CANVAS_BG)
-        pg.setConfigOption('foreground', _CANVAS_FG)
-
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setAspectLocked(True)
         self.plot_widget.showGrid(x=True, y=True, alpha=0.15)

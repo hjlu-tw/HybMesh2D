@@ -8,6 +8,8 @@ from app.workers.backend_run import BackendWorker
 from app.views.output_dialog import OutputDialog
 from app.services.geometry_service import GeometryService
 
+from app.utils import find_binary_executable
+
 class BackendControllerMixin:
     """Mixin containing C++ backend execution, config generation, and file exporting logic."""
 
@@ -24,16 +26,7 @@ class BackendControllerMixin:
         self.main_window.canvas_view.set_resampled_nodes_visible(checked)
 
     def _find_executable(self) -> str | None:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        candidates = [
-            os.path.abspath(os.path.join(base_dir, "../../../../../build/surface_resampler")),
-            os.path.abspath("../../../build/surface_resampler"),
-            os.path.abspath("./build/surface_resampler"),
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                return c
-        return None
+        return find_binary_executable("surface_resampler")
 
 
 

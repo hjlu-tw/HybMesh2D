@@ -29,41 +29,11 @@ CURVE_TYPE_LABELS = {
     "polygon": "Polygon",
 }
 
-# Common styles
-COMBO_STYLE = """
-    QComboBox {
-        background: #181b2a;
-        color: #a0a8c0;
-        border: 1px solid #333852;
-        border-radius: 3px;
-        padding: 3px 20px 3px 6px;
-        min-width: 80px;
-    }
-    QComboBox::drop-down {
-        subcontrol-origin: padding;
-        subcontrol-position: top right;
-        width: 20px;
-        border-left-width: 1px;
-        border-left-color: #333852;
-        border-left-style: solid;
-    }
-    QComboBox::down-arrow {
-        image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNhMGE4YzAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSI2IDkgMTIgMTUgMTggOSI+PC9wb2x5bGluZT48L3N2Zz4=");
-    }
-"""
-
-SPIN_STYLE = "background:#181b2a; color:#a0a8c0; border:1px solid #333852; padding: 2px; max-width: 110px;"
+from app.styles import COMBO_STYLE, SPIN_STYLE, BUTTON_QSS_TEMPLATE
 
 def make_button(text: str, color: str = '#26293c') -> QPushButton:
     b = QPushButton(text)
-    b.setStyleSheet(
-        f"QPushButton {{"
-        f"  background-color: {color}; color: #dde6ff;"
-        f"  border: 1px solid #4a5070; border-radius: 4px;"
-        f"  padding: 6px 10px; font-weight: bold;"
-        f"}}"
-        f"QPushButton:hover {{ background-color: #32364e; }}"
-        f"QPushButton:disabled {{ background-color: #171926; color: #555; }}")
+    b.setStyleSheet(BUTTON_QSS_TEMPLATE.format(color=color))
     return b
 
 def align_form_labels(layout: QFormLayout, width: int = 120):
@@ -74,4 +44,26 @@ def align_form_labels(layout: QFormLayout, width: int = 120):
             lbl = label_item.widget()
             if lbl:
                 lbl.setFixedWidth(width)
+
+import os
+import shutil
+
+def find_binary_executable(bin_name: str) -> str | None:
+    """Locate binary executable in PATH environment or local build candidates."""
+    path_run = shutil.which(bin_name)
+    if path_run:
+        return path_run
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.abspath(os.path.join(base_dir, "../../../../../build")),
+        os.path.abspath("../../../build"),
+        os.path.abspath("./build"),
+        os.path.abspath("."),
+    ]
+    for folder in candidates:
+        full_path = os.path.join(folder, bin_name)
+        if os.path.exists(full_path) and os.access(full_path, os.X_OK) and not os.path.isdir(full_path):
+            return full_path
+    return None
 

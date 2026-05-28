@@ -20,7 +20,37 @@ def _eval_formula(expr: str, var_name: str, val: float) -> float:
 
 
 def _eval_formula_array(expr: str, var_name: str, vals: np.ndarray) -> np.ndarray:
-    return np.array([_eval_formula(expr, var_name, v) for v in vals])
+    """Evaluate a math expression over a numpy array in a vectorized manner."""
+    safe = {
+        "pi": np.pi,
+        "sin": np.sin,
+        "cos": np.cos,
+        "tan": np.tan,
+        "asin": np.arcsin,
+        "acos": np.arccos,
+        "atan": np.arctan,
+        "sinh": np.sinh,
+        "cosh": np.cosh,
+        "tanh": np.tanh,
+        "exp": np.exp,
+        "log": np.log,
+        "log10": np.log10,
+        "sqrt": np.sqrt,
+        "pow": np.power,
+        "abs": np.abs,
+    }
+    import math
+    safe["math"] = math
+    
+    parsed_expr = expr.replace("^", "**")
+    try:
+        safe[var_name] = vals
+        res = eval(parsed_expr, {"__builtins__": {}}, safe)
+        if isinstance(res, np.ndarray):
+            return res.astype(float)
+        return np.full_like(vals, float(res), dtype=float)
+    except Exception:
+        return np.array([_eval_formula(expr, var_name, v) for v in vals])
 
 
 def _parse_vertices_str(s: str) -> np.ndarray:

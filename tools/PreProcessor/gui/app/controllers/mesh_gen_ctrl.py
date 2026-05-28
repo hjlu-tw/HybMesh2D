@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QFileDialog
 from app.models.session import GeometrySession
 from app.models.vtk_mesh import VTKMesh
 from app.workers.mesh_gen_run import MeshGenWorker
+from app.utils import find_binary_executable
 
 class MeshGenControllerMixin:
     """Mixin containing HybMesh2D mesh generator execution, config editor mapping, and results visualization logic."""
@@ -132,18 +133,8 @@ class MeshGenControllerMixin:
             self._mesh_worker.cancel()
 
     def _find_mesh_gen_executable(self) -> str | None:
-        """Locate compiled HybMesh2D executable in build candidate paths."""
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        candidates = [
-            os.path.abspath(os.path.join(base_dir, "../../../../../build/HybMesh2D")),
-            os.path.abspath("../../../build/HybMesh2D"),
-            os.path.abspath("./build/HybMesh2D"),
-            os.path.abspath("./HybMesh2D")
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                return c
-        return None
+        """Locate compiled HybMesh2D executable in build candidate paths or PATH."""
+        return find_binary_executable("HybMesh2D")
 
 
 
