@@ -180,3 +180,55 @@ class VTKMesh:
             ratios.append(poly_aspect_ratio(poly))
 
         return np.array(ratios)
+
+    def get_element_skewness(self) -> np.ndarray:
+        """Calculate Equiangle Skewness of each cell element.
+        Skewness is defined as max((theta_max - theta_e)/(180 - theta_e), (theta_e - theta_min)/theta_e)
+        Where theta_e is the equiangle polygon angle (60 for triangles, 90 for quads).
+        Value ranges from 0 (perfect) to 1 (degenerate).
+        """
+        skewness_vals = []
+
+        def poly_skewness(nodes):
+            n = len(nodes)
+            p = self.points[nodes]
+            angles = []
+            for j in range(n):
+                pt = p[j]
+                pt_prev = p[(j - 1) % n]
+                pt_next = p[(j + 1) % n]
+                
+                v1 = pt_prev - pt
+                v2 = pt_next - pt
+                
+                l1 = np.linalg.norm(v1)
+                l2 = np.linalg.norm(v2)
+                
+                if l1 < 1e-12 or l2 < 1e-12:
+                    angles.append(0.0)
+                else:
+                    dot = np.dot(v1, v2)
+                    cos_theta = np.clip(dot / (l1 * l2), -1.0, 1.0)
+                    theta = np.arccos(cos_theta)
+                    angles.append(np.degrees(theta))
+            
+            if not angles:
+                return 0.0
+                
+            theta_max = np.max(angles)
+            theta_min = np.min(angles)
+            theta_e = (n - 2) * 180.0 / n
+            
+            skew_max = (theta_max - theta_e) / (180.0 - theta_e) if (180.0 - theta_e) > 1e-12 else 0.0
+            skew_min = (theta_e - theta_min) / theta_e if theta_e > 1e-12 else 0.0
+            return max(skew_max, skew_min)
+
+        for tri in self.triangles:
+            skewness_vals.append(poly_skewness(list(tri)))
+        for quad in self.quads:
+            skewness_vals.append(poly_skewness(list(quad)))
+        for poly in self.polygons:
+            skewness_vals.append(poly_skewness(poly))
+
+        return np.array(skewness_vals)
+

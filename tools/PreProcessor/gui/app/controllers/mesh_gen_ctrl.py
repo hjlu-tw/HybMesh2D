@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import tempfile
+import shutil
 from PyQt6.QtWidgets import QFileDialog
 from app.models.session import GeometrySession
 from app.models.vtk_mesh import VTKMesh
@@ -186,9 +187,10 @@ class MeshGenControllerMixin:
                 try:
                     mesh = VTKMesh.from_file(expected_vtk_path)
                     session.vtk_mesh = mesh
+                    session.vtk_path = expected_vtk_path
                     if session is self.active_session():
                         self.main_window.mesh_canvas_view.render_mesh(mesh)
-                        self.main_window.mesh_stats_panel.update_stats(mesh)
+                        self.main_window.mesh_stats_panel.update_stats(mesh, expected_vtk_path)
                     self.main_window.log_panel.log(f"Successfully loaded and rendered mesh from {expected_vtk_path}")
                 except Exception as e:
                     self.main_window.log_panel.log(f"Failed to load generated mesh VTK: {e}")
@@ -200,3 +202,86 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log("--- Mesh Generation Timed Out (10 min) ---")
         else:
             self.main_window.log_panel.log(f"--- Mesh Generation Failed (code {rc}) ---")
+
+    def export_generated_vtk(self):
+        """Export the generated VTK mesh file to a user-selected path."""
+        session = self.active_session()
+        if not session:
+            return
+
+        vtk_path = session.vtk_path
+        if not vtk_path or not os.path.exists(vtk_path):
+            vtk_path = self._get_expected_vtk_path(session.mesh_config) if session.mesh_config else ""
+
+        if not vtk_path or not os.path.exists(vtk_path):
+            self.main_window.log_panel.log("No generated VTK mesh available to export. Generate a mesh first.")
+            return
+
+        default_name = os.path.basename(vtk_path)
+        dest_path, _ = QFileDialog.getSaveFileName(
+            self.main_window,
+            "Export VTK Mesh",
+            default_name,
+            "VTK Files (*.vtk);;All Files (*)"
+        )
+        if not dest_path:
+            return
+
+        try:
+            shutil.copy2(vtk_path, dest_path)
+            self.main_window.log_panel.log(f"Successfully exported VTK mesh to {dest_path}")
+        except Exception as e:
+            self.main_window.log_panel.log(f"Failed to export VTK mesh: {e}")
+
+    def export_star_cd(self):
+        """Export the generated Star-CD mesh files (.vrt, .cel, .bnd) to a user-selected prefix."""
+        session = self.active_session()
+        if not session:
+            return
+
+        vtk_path = session.vtk_path
+        if not vtk_path or not os.path.exists(vtk_path):
+            vtk_path = self._get_expected_vtk_path(session.mesh_config) if session.mesh_config else ""
+
+        if not vtk_path or not os.path.exists(vtk_path):
+            self.main_window.log_panel.log("No generated mesh available. Export cannot proceed.")
+            return
+
+        base_name, _ = os.path.splitext(vtk_path)
+        vrt_path = base_name + ".vrt"
+        cel_path = base_name + ".cel"
+        bnd_path = base_name + ".bnd"
+
+        missing = []
+        if not os.path.exists(vrt_path): missing.append(".vrt")
+        if not os.path.exists(cel_path): missing.append(".cel")
+        if not os.path.exists(bnd_path): missing.append(".bnd")
+
+        if missing:
+            self.main_window.log_panel.log(
+                f"Missing Star-CD files: {', '.join(missing)}. "
+                "Ensure 'Export Star-CD' is enabled in the configuration panel, and regenerate the mesh."
+            )
+            return
+
+        default_name = os.path.basename(vrt_path)
+        dest_vrt, _ = QFileDialog.getSaveFileName(
+            self.main_window,
+            "Export Star-CD Files",
+            default_name,
+            "Star-CD VRT (*.vrt);;All Files (*)"
+        )
+        if not dest_vrt:
+            return
+
+        dest_base, _ = os.path.splitext(dest_vrt)
+        dest_cel = dest_base + ".cel"
+        dest_bnd = dest_base + ".bnd"
+
+        try:
+            shutil.copy2(vrt_path, dest_vrt)
+            shutil.copy2(cel_path, dest_cel)
+            shutil.copy2(bnd_path, dest_bnd)
+            self.main_window.log_panel.log(f"Successfully exported Star-CD files to {dest_base}.{{vrt,cel,bnd}}")
+        except Exception as e:
+            self.main_window.log_panel.log(f"Failed to export Star-CD files: {e}")

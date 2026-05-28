@@ -48,6 +48,7 @@ class GeometrySession:
         self.segment_state_snapshot: dict = {}
         self.mesh_config: MeshConfig = MeshConfig()
         self.vtk_mesh: VTKMesh | None = None
+        self.vtk_path: str = ""
 
         # Colour assigned from palette (set by controller)
         self.color: str = SESSION_COLORS[

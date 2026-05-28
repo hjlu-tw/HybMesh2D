@@ -144,6 +144,16 @@ class AppController(
         mw.mesh_config_panel.run_mesh_btn.clicked.connect(self.run_mesh_generator)
         mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
 
+        # Wire Mesh Statistics controls & export
+        mw.mesh_stats_panel.color_mode_changed.connect(mw.mesh_canvas_view.set_color_mode)
+        mw.mesh_stats_panel.fit_view_requested.connect(mw.mesh_canvas_view.auto_range)
+        mw.mesh_stats_panel.show_domain_box_toggled.connect(mw.mesh_canvas_view.set_domain_box_visible)
+        mw.mesh_stats_panel.show_bc_coloring_toggled.connect(mw.mesh_canvas_view.set_bc_coloring_visible)
+        mw.mesh_stats_panel.show_wireframe_toggled.connect(mw.mesh_canvas_view.set_wireframe_visible)
+        mw.mesh_stats_panel.export_vtk_requested.connect(self.export_generated_vtk)
+        mw.mesh_stats_panel.export_star_cd_requested.connect(self.export_star_cd)
+
+
         # ── Keyboard shortcuts ──────────────────────────────────────────
         self.main_window.setup_shortcuts(self)
 
@@ -161,11 +171,16 @@ class AppController(
             return
         if idx == 1:  # Mesh Generator Mode
             self.main_window.mesh_config_panel.set_config(session.mesh_config)
-            self.main_window.mesh_stats_panel.update_stats(session.vtk_mesh)
+            
+            vtk_path = session.vtk_path if session.vtk_path else (self._get_expected_vtk_path(session.mesh_config) if session.mesh_config else "")
+            self.main_window.mesh_stats_panel.update_stats(session.vtk_mesh, vtk_path)
+            
+            self.main_window.mesh_canvas_view.update_mesh_config(session.mesh_config)
             if session.vtk_mesh:
                 self.main_window.mesh_canvas_view.render_mesh(session.vtk_mesh)
             else:
                 self.main_window.mesh_canvas_view.clear_mesh()
+
 
     def active_session(self) -> GeometrySession | None:
         if 0 <= self.active_idx < len(self.sessions):
