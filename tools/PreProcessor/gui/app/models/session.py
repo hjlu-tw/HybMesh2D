@@ -3,6 +3,8 @@ import os
 import numpy as np
 from app.models.project import ProjectModel
 from app.commands.base import CommandHistory
+from app.models.mesh_config import MeshConfig
+from app.models.vtk_mesh import VTKMesh
 
 # Colour palette cycling per session (bright on dark canvas)
 SESSION_COLORS = [
@@ -44,6 +46,8 @@ class GeometrySession:
         self.controller = None  # Set by controller when session is created
         self.param_snapshot: dict = {}
         self.segment_state_snapshot: dict = {}
+        self.mesh_config: MeshConfig = MeshConfig()
+        self.vtk_mesh: VTKMesh | None = None
 
         # Colour assigned from palette (set by controller)
         self.color: str = SESSION_COLORS[

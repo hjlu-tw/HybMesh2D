@@ -24,14 +24,18 @@ class BackendControllerMixin:
         self.main_window.canvas_view.set_resampled_nodes_visible(checked)
 
     def _find_executable(self) -> str | None:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         candidates = [
-            "../../../build/surface_resampler",
-            "./build/surface_resampler",
+            os.path.abspath(os.path.join(base_dir, "../../../../../build/surface_resampler")),
+            os.path.abspath("../../../build/surface_resampler"),
+            os.path.abspath("./build/surface_resampler"),
         ]
         for c in candidates:
             if os.path.exists(c):
                 return c
         return None
+
+
 
     def _write_temp_config(self, session: GeometrySession,
                            output_path: str) -> tuple[str, list[str]]:

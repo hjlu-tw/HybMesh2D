@@ -18,7 +18,8 @@ from app.controllers import (
     SegmentControllerMixin,
     TransformControllerMixin,
     CurveControllerMixin,
-    BackendControllerMixin
+    BackendControllerMixin,
+    MeshGenControllerMixin
 )
 
 
@@ -27,7 +28,8 @@ class AppController(
     SegmentControllerMixin,
     TransformControllerMixin,
     CurveControllerMixin,
-    BackendControllerMixin
+    BackendControllerMixin,
+    MeshGenControllerMixin
 ):
 
     def __init__(self):
@@ -133,6 +135,15 @@ class AppController(
         # ── Wire shared canvas signals ──────────────────────────────────
         self.main_window.canvas_view.point_clicked.connect(self.handle_point_clicked)
 
+        # ── Wire Mesh Generation signals ───────────────────────────────
+        mw = self.main_window
+        mw.mode_changed.connect(self.handle_mode_changed)
+        mw.mesh_config_panel.load_config_btn.clicked.connect(self.load_mesh_config)
+        mw.mesh_config_panel.save_config_btn.clicked.connect(self.save_mesh_config)
+        mw.mesh_config_panel.add_active_geom_btn.clicked.connect(self.add_active_preprocessor_geometry)
+        mw.mesh_config_panel.run_mesh_btn.clicked.connect(self.run_mesh_generator)
+        mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
+
         # ── Keyboard shortcuts ──────────────────────────────────────────
         self.main_window.setup_shortcuts(self)
 
@@ -142,6 +153,19 @@ class AppController(
 
     def show_main_window(self):
         self.main_window.show()
+
+    def handle_mode_changed(self, idx: int):
+        """Update Mesh Config Panel and Mesh Canvas View when switching modes."""
+        session = self.active_session()
+        if not session:
+            return
+        if idx == 1:  # Mesh Generator Mode
+            self.main_window.mesh_config_panel.set_config(session.mesh_config)
+            self.main_window.mesh_stats_panel.update_stats(session.vtk_mesh)
+            if session.vtk_mesh:
+                self.main_window.mesh_canvas_view.render_mesh(session.vtk_mesh)
+            else:
+                self.main_window.mesh_canvas_view.clear_mesh()
 
     def active_session(self) -> GeometrySession | None:
         if 0 <= self.active_idx < len(self.sessions):

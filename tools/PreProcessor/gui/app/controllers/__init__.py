@@ -3,3 +3,4 @@ from app.controllers.segment_ctrl import SegmentControllerMixin
 from app.controllers.transform_ctrl import TransformControllerMixin
 from app.controllers.curve_ctrl import CurveControllerMixin
 from app.controllers.backend_ctrl import BackendControllerMixin
+from app.controllers.mesh_gen_ctrl import MeshGenControllerMixin

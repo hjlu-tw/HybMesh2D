@@ -98,6 +98,15 @@ class SegmentControllerMixin:
         self._refresh_segment_list(clear_resampled=False)
         self._sync_geometry_list()
 
+        # Sync Mesh Gen panels if present
+        if hasattr(self.main_window, "mesh_config_panel"):
+            self.main_window.mesh_config_panel.set_config(session.mesh_config)
+            self.main_window.mesh_stats_panel.update_stats(session.vtk_mesh)
+            if session.vtk_mesh:
+                self.main_window.mesh_canvas_view.render_mesh(session.vtk_mesh)
+            else:
+                self.main_window.mesh_canvas_view.clear_mesh()
+
     def _clear_sidebar(self):
         sb = self.main_window.sidebar_view
         sb.file_name_label.setText("No geometry imported")
@@ -109,6 +118,12 @@ class SegmentControllerMixin:
         sb.remove_seg_btn.setEnabled(False)
         sb.show_segment_props(False)
         self._sync_geometry_list()
+
+        # Clear mesh configuration and statistics if present
+        if hasattr(self.main_window, "mesh_config_panel"):
+            self.main_window.mesh_config_panel.geom_list_widget.clear()
+            self.main_window.mesh_stats_panel.update_stats(None)
+            self.main_window.mesh_canvas_view.clear_mesh()
 
     def handle_point_clicked(self, idx: int):
         session = self.active_session()

@@ -1,9 +1,9 @@
+from __future__ import annotations
 import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
-
-class BackendWorker(QThread):
-    """Runs the C++ surface_resampler binary in a background thread."""
+class MeshGenWorker(QThread):
+    """Runs the C++ HybMesh2D binary in a background thread."""
 
     log_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(int)
@@ -24,31 +24,33 @@ class BackendWorker(QThread):
         try:
             import os
             self.log_signal.emit(
-                f"Running: {self.executable_path} {self.config_path}")
+                f"Running: {self.executable_path} -conf {self.config_path}"
+            )
             self._cancelled = False
             cwd = os.path.dirname(os.path.dirname(os.path.abspath(self.executable_path)))
             self._process = subprocess.Popen(
-                [self.executable_path, self.config_path],
+                [self.executable_path, "-conf", self.config_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1,          # line-buffered
+                bufsize=1,  # line-buffered
                 cwd=cwd,
             )
 
+            
             for line in self._process.stdout:
                 if self._cancelled:
                     self._process.terminate()
-                    self.log_signal.emit("Backend cancelled by user.")
+                    self.log_signal.emit("Mesh generation cancelled by user.")
                     self.finished_signal.emit(-2)
                     return
                 stripped = line.rstrip()
                 if stripped:
                     self.log_signal.emit(stripped)
-            
+
             if self._cancelled:
                 self._process.terminate()
-                self.log_signal.emit("Backend cancelled by user.")
+                self.log_signal.emit("Mesh generation cancelled by user.")
                 self.finished_signal.emit(-2)
                 return
 
@@ -57,8 +59,8 @@ class BackendWorker(QThread):
         except subprocess.TimeoutExpired:
             if self._process:
                 self._process.kill()
-            self.log_signal.emit("Backend timed out (10 min).")
+            self.log_signal.emit("Mesh generation timed out (10 min).")
             self.finished_signal.emit(-3)
         except Exception as e:
-            self.log_signal.emit(f"Failed to start backend: {e}")
+            self.log_signal.emit(f"Failed to start mesh generator: {e}")
             self.finished_signal.emit(-1)

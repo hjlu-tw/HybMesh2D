@@ -569,3 +569,7 @@ class EdgePropsPanel(CollapsibleSection):
     def _on_curve_mode_toggled(self, is_parametric: bool):
         self._param_widget.setVisible(is_parametric)
         self._explicit_widget.setVisible(not is_parametric)
+
+    def show_segment_props(self, visible: bool):
+        self.setVisible(visible)
+

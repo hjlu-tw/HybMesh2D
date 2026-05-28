@@ -124,6 +124,49 @@ class SidebarView(QWidget):
         self.param_stack = self.edge_props_panel.param_stack
         self.file_preview_btn = self.edge_props_panel.file_preview_btn
 
+        # Strategy widgets
+        self.uniform_n = self.edge_props_panel.uniform_n
+        self.tanh_n = self.edge_props_panel.tanh_n
+        self.tanh_intensity = self.edge_props_panel.tanh_intensity
+        self.cosine_n = self.edge_props_panel.cosine_n
+        self.curv_n = self.edge_props_panel.curv_n
+        self.curv_sens = self.edge_props_panel.curv_sens
+        self.geo_n = self.edge_props_panel.geo_n
+        self.geo_ratio = self.edge_props_panel.geo_ratio
+        self.geo_ratio_end = self.edge_props_panel.geo_ratio_end
+        self.uniform_spacing = self.edge_props_panel.uniform_spacing
+        self.uniform_type_combo = self.edge_props_panel.uniform_type_combo
+
+        # Analytic shape parameters
+        self.h_line_y = self.edge_props_panel.h_line_y
+        self.h_line_x_start = self.edge_props_panel.h_line_x_start
+        self.h_line_x_end = self.edge_props_panel.h_line_x_end
+        self.v_line_x = self.edge_props_panel.v_line_x
+        self.v_line_y_start = self.edge_props_panel.v_line_y_start
+        self.v_line_y_end = self.edge_props_panel.v_line_y_end
+        self.line_x0 = self.edge_props_panel.line_x0
+        self.line_y0 = self.edge_props_panel.line_y0
+        self.line_x1 = self.edge_props_panel.line_x1
+        self.line_y1 = self.edge_props_panel.line_y1
+        self.circle_cx = self.edge_props_panel.circle_cx
+        self.circle_cy = self.edge_props_panel.circle_cy
+        self.circle_r = self.edge_props_panel.circle_r
+        self.tri_x0 = self.edge_props_panel.tri_x0
+        self.tri_y0 = self.edge_props_panel.tri_y0
+        self.tri_x1 = self.edge_props_panel.tri_x1
+        self.tri_y1 = self.edge_props_panel.tri_y1
+        self.tri_x2 = self.edge_props_panel.tri_x2
+        self.tri_y2 = self.edge_props_panel.tri_y2
+        self.quad_x0 = self.edge_props_panel.quad_x0
+        self.quad_y0 = self.edge_props_panel.quad_y0
+        self.quad_x1 = self.edge_props_panel.quad_x1
+        self.quad_y1 = self.edge_props_panel.quad_y1
+        self.quad_x2 = self.edge_props_panel.quad_x2
+        self.quad_y2 = self.edge_props_panel.quad_y2
+        self.quad_x3 = self.edge_props_panel.quad_x3
+        self.quad_y3 = self.edge_props_panel.quad_y3
+        self.poly_vertices = self.edge_props_panel.poly_vertices
+
         # Transform sub-widgets (from TransformPanel inside EdgePropsPanel)
         self._transform_dup_group = self.edge_props_panel._transform_dup_group
         self.dup_type_combo = self._transform_dup_group.dup_type_combo

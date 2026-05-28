@@ -1,5 +1,7 @@
 from __future__ import annotations
+import os
 from PyQt6.QtWidgets import (
+
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
     QFormLayout, QComboBox, QSpinBox, QDoubleSpinBox, QLabel,
     QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QFileDialog
@@ -60,6 +62,17 @@ class MeshConfigPanel(QScrollArea):
         btn_layout.addWidget(self.load_config_btn)
         btn_layout.addWidget(self.save_config_btn)
         self._layout.addLayout(btn_layout)
+
+        # Row 2: Run / Cancel
+        self.run_mesh_btn = make_button("Generate Mesh", "#1e4620")
+        self.cancel_mesh_btn = make_button("Cancel", "#4a1c1c")
+        self.cancel_mesh_btn.setEnabled(False)
+
+        btn_layout2 = QHBoxLayout()
+        btn_layout2.setSpacing(4)
+        btn_layout2.addWidget(self.run_mesh_btn)
+        btn_layout2.addWidget(self.cancel_mesh_btn)
+        self._layout.addLayout(btn_layout2)
 
         # ── 1. Domain & Geometry Files ────────────────────────────────────
         self.sec_domain = CollapsibleSection("1. Domain & Geometry", start_collapsed=False)
