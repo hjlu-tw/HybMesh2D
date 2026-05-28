@@ -1,8 +1,10 @@
 from __future__ import annotations
 import math
 import numpy as np
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.models.session import GeometrySession
 from app.models.segment import SegmentModel
-from app.models.session import GeometrySession
 
 # ── Helper functions for formula evaluation and sampling ────────────────────
 

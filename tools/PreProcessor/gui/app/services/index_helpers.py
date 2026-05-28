@@ -1,6 +1,8 @@
 from __future__ import annotations
 import numpy as np
-from app.models.session import GeometrySession
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.models.session import GeometrySession
 from app.models.segment import SegmentModel
 
 def remove_points_and_adjust_indices(session: GeometrySession, seg: SegmentModel):
