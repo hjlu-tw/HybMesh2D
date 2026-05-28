@@ -1,0 +1,241 @@
+from __future__ import annotations
+import os
+from dataclasses import dataclass, field
+
+@dataclass
+class MeshConfig:
+    # Section 1: Domain
+    domain_x_min: float = -10.0
+    domain_x_max: float = 10.0
+    domain_y_min: float = -10.0
+    domain_y_max: float = 10.0
+
+    # Section 2: Mesh Size
+    surface_mesh_size: float = 0.1
+    auto_surface_size: bool = True
+    farfield_mesh_size: float = 1.0
+    farfield_growth_rate: float = 0.1
+
+    # Section 3: Boundary Layer
+    bl_initial_thickness: float = 0.01
+    bl_growth_rate: float = 1.2
+    bl_layers: int = 5
+
+    # Section 4: Corner Handling (Convex & Fan)
+    bl_convex_method: int = 0  # 0: Fan, 2: Parallelogram
+    bl_fan_nodes: int = 5
+    bl_auto_fan_nodes: bool = False
+    bl_fan_angle_threshold: float = 60.0
+    bl_convex_angle_threshold: float = 260.0
+    bl_para_fallback_angle: float = 300.0
+
+    # Section 5: Concave Corner Handling
+    bl_concave_method: int = 0  # 0: Default (Merge), 5: Thickness-based Blending
+    bl_concave_angle_threshold: float = 100.0
+    bl_concave_influence_multiplier: float = 10.0
+    bl_merge_concave: bool = False
+    bl_smoothing_iters: int = 0
+
+    # Section 6: Transition & Meshing Algorithm
+    bl_transition_layers: int = 3
+    bl_auto_transition_layers: int = 0  # 0: OFF, 1: GLOBAL, 2: LOCAL
+    bl_transition_growth_rate: float = 1.2
+    bl_transition_buffer: float = 2.0
+    gmsh_algorithm: int = 6  # 6: Frontal-Delaunay
+    gmsh_optimize: int = 1   # 1: Enable, 0: Disable
+
+    # Section 7: Boundary Conditions & I/O
+    bc_xmin: str = "wall"
+    bc_xmax: str = "wall"
+    bc_ymin: str = "wall"
+    bc_ymax: str = "wall"
+    bc_geom: str = "wall"
+    export_vtk: bool = True
+    export_starcd: bool = False
+    enable_collision_detection: bool = True
+    output_filename: str = ""
+
+    # Geometry files list (corresponds to multiple GEOM_FILE parameters)
+    geom_files: list[str] = field(default_factory=list)
+
+    def load_from_file(self, path: str):
+        """Parse configuration parameters from a text file."""
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Config file not found: {path}")
+
+        # Clear existing geometry files list
+        self.geom_files = []
+
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or line.startswith("/"):
+                    continue
+
+                tokens = line.split()
+                if not tokens or len(tokens) < 2:
+                    continue
+
+                key = tokens[0].upper()
+                val_str = tokens[1]
+
+                # Map text file key to class attribute
+                if key == "GEOM_FILE":
+                    self.geom_files.append(val_str)
+                elif key == "DOMAIN_X_MIN":
+                    self.domain_x_min = float(val_str)
+                elif key == "DOMAIN_X_MAX":
+                    self.domain_x_max = float(val_str)
+                elif key == "DOMAIN_Y_MIN":
+                    self.domain_y_min = float(val_str)
+                elif key == "DOMAIN_Y_MAX":
+                    self.domain_y_max = float(val_str)
+                elif key == "SURFACE_MESH_SIZE":
+                    self.surface_mesh_size = float(val_str)
+                elif key == "AUTO_SURFACE_SIZE":
+                    self.auto_surface_size = (int(val_str) != 0)
+                elif key == "FARFIELD_MESH_SIZE":
+                    self.farfield_mesh_size = float(val_str)
+                elif key == "FARFIELD_GROWTH_RATE":
+                    self.farfield_growth_rate = float(val_str)
+                elif key == "BL_INITIAL_THICKNESS":
+                    self.bl_initial_thickness = float(val_str)
+                elif key == "BL_GROWTH_RATE":
+                    self.bl_growth_rate = float(val_str)
+                elif key == "BL_LAYERS":
+                    self.bl_layers = int(float(val_str))
+                elif key == "BL_CONVEX_METHOD":
+                    self.bl_convex_method = int(float(val_str))
+                elif key == "BL_FAN_NODES":
+                    self.bl_fan_nodes = int(float(val_str))
+                elif key == "BL_AUTO_FAN_NODES":
+                    self.bl_auto_fan_nodes = (int(val_str) != 0)
+                elif key == "BL_FAN_ANGLE_THRESHOLD":
+                    self.bl_fan_angle_threshold = float(val_str)
+                elif key == "BL_CONVEX_ANGLE_THRESHOLD":
+                    self.bl_convex_angle_threshold = float(val_str)
+                elif key == "BL_PARA_FALLBACK_ANGLE":
+                    self.bl_para_fallback_angle = float(val_str)
+                elif key == "BL_CONCAVE_METHOD":
+                    self.bl_concave_method = int(float(val_str))
+                elif key == "BL_CONCAVE_ANGLE_THRESHOLD":
+                    self.bl_concave_angle_threshold = float(val_str)
+                elif key == "BL_CONCAVE_INFLUENCE_MULTIPLIER":
+                    self.bl_concave_influence_multiplier = float(val_str)
+                elif key == "BL_MERGE_CONCAVE":
+                    self.bl_merge_concave = (int(val_str) != 0)
+                elif key == "BL_SMOOTHING_ITERS":
+                    self.bl_smoothing_iters = int(float(val_str))
+                elif key == "BL_TRANSITION_LAYERS":
+                    self.bl_transition_layers = int(float(val_str))
+                elif key == "BL_AUTO_TRANSITION_LAYERS":
+                    self.bl_auto_transition_layers = int(float(val_str))
+                elif key == "BL_TRANSITION_GROWTH_RATE":
+                    self.bl_transition_growth_rate = float(val_str)
+                elif key == "BL_TRANSITION_BUFFER":
+                    self.bl_transition_buffer = float(val_str)
+                elif key == "GMSH_ALGORITHM":
+                    self.gmsh_algorithm = int(float(val_str))
+                elif key == "GMSH_OPTIMIZE":
+                    self.gmsh_optimize = int(float(val_str))
+                elif key == "BC_XMIN":
+                    self.bc_xmin = val_str
+                elif key == "BC_XMAX":
+                    self.bc_xmax = val_str
+                elif key == "BC_YMIN":
+                    self.bc_ymin = val_str
+                elif key == "BC_YMAX":
+                    self.bc_ymax = val_str
+                elif key == "BC_GEOM":
+                    self.bc_geom = val_str
+                elif key == "EXPORT_VTK":
+                    self.export_vtk = (int(val_str) != 0)
+                elif key == "EXPORT_STARCD":
+                    self.export_starcd = (int(val_str) != 0)
+                elif key == "ENABLE_COLLISION_DETECTION":
+                    self.enable_collision_detection = (int(val_str) != 0)
+                elif key == "OUTPUT_FILENAME":
+                    self.output_filename = val_str
+
+    def save_to_file(self, path: str):
+        """Export parameters to a Background_para.dat format text file."""
+        lines = [
+            "# HybMesh2D Background Parameter File (Background_para.dat)",
+            "# Automatically generated by Mesh Config Editor",
+            "",
+            "# ==============================================================================",
+            "# 1. Domain Settings",
+            "# ==============================================================================",
+            f"DOMAIN_X_MIN {self.domain_x_min:.6g}",
+            f"DOMAIN_X_MAX {self.domain_x_max:.6g}",
+            f"DOMAIN_Y_MIN {self.domain_y_min:.6g}",
+            f"DOMAIN_Y_MAX {self.domain_y_max:.6g}",
+            "",
+            "# ==============================================================================",
+            "# 2. General Mesh Settings",
+            "# ==============================================================================",
+            f"SURFACE_MESH_SIZE {self.surface_mesh_size:.6g}",
+            f"AUTO_SURFACE_SIZE {1 if self.auto_surface_size else 0}",
+            f"FARFIELD_MESH_SIZE {self.farfield_mesh_size:.6g}",
+            f"FARFIELD_GROWTH_RATE {self.farfield_growth_rate:.6g}",
+            "",
+            "# ==============================================================================",
+            "# 3. Boundary Layer Core Settings",
+            "# ==============================================================================",
+            f"BL_INITIAL_THICKNESS {self.bl_initial_thickness:.6g}",
+            f"BL_GROWTH_RATE {self.bl_growth_rate:.6g}",
+            f"BL_LAYERS {self.bl_layers}",
+            "",
+            "# ==============================================================================",
+            "# 4. Fan & Convex Corner Handling",
+            "# ==============================================================================",
+            f"BL_CONVEX_METHOD {self.bl_convex_method}",
+            f"BL_FAN_NODES {self.bl_fan_nodes}",
+            f"BL_AUTO_FAN_NODES {1 if self.bl_auto_fan_nodes else 0}",
+            f"BL_FAN_ANGLE_THRESHOLD {self.bl_fan_angle_threshold:.6g}",
+            f"BL_CONVEX_ANGLE_THRESHOLD {self.bl_convex_angle_threshold:.6g}",
+            f"BL_PARA_FALLBACK_ANGLE {self.bl_para_fallback_angle:.6g}",
+            "",
+            "# ==============================================================================",
+            "# 5. Concave Corner Handling",
+            "# ==============================================================================",
+            f"BL_CONCAVE_METHOD {self.bl_concave_method}",
+            f"BL_CONCAVE_ANGLE_THRESHOLD {self.bl_concave_angle_threshold:.6g}",
+            f"BL_CONCAVE_INFLUENCE_MULTIPLIER {self.bl_concave_influence_multiplier:.6g}",
+            f"BL_MERGE_CONCAVE {1 if self.bl_merge_concave else 0}",
+            f"BL_SMOOTHING_ITERS {self.bl_smoothing_iters}",
+            "",
+            "# ==============================================================================",
+            "# 6. Transition to Farfield & Algorithm",
+            "# ==============================================================================",
+            f"BL_TRANSITION_LAYERS {self.bl_transition_layers}",
+            f"BL_AUTO_TRANSITION_LAYERS {self.bl_auto_transition_layers}",
+            f"BL_TRANSITION_GROWTH_RATE {self.bl_transition_growth_rate:.6g}",
+            f"BL_TRANSITION_BUFFER {self.bl_transition_buffer:.6g}",
+            f"GMSH_ALGORITHM {self.gmsh_algorithm}",
+            f"GMSH_OPTIMIZE {self.gmsh_optimize}",
+            "",
+            "# ==============================================================================",
+            "# 7. Boundary Conditions & I/O",
+            "# ==============================================================================",
+            f"EXPORT_VTK {1 if self.export_vtk else 0}",
+            f"EXPORT_STARCD {1 if self.export_starcd else 0}",
+            f"ENABLE_COLLISION_DETECTION {1 if self.enable_collision_detection else 0}",
+            f"BC_XMIN {self.bc_xmin}",
+            f"BC_XMAX {self.bc_xmax}",
+            f"BC_YMIN {self.bc_ymin}",
+            f"BC_YMAX {self.bc_ymax}",
+            f"BC_GEOM {self.bc_geom}",
+        ]
+
+        if self.output_filename:
+            lines.append(f"OUTPUT_FILENAME {self.output_filename}")
+
+        for gf in self.geom_files:
+            lines.append(f"GEOM_FILE {gf}")
+
+        # Ensure parent directories exist
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
