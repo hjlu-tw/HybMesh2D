@@ -124,9 +124,9 @@ class RemoveSegmentCmd(BaseCommand):
                 # Adjust start/end index of other file segments
                 for other in self.session.project_model.segments:
                     if other is not seg and other.type == "file":
-                        if other.start_index >= del_start:
+                        if other.start_index > del_end:
                             other.start_index -= num_deleted
-                        if other.end_index >= del_start:
+                        if other.end_index > del_end:
                             other.end_index -= num_deleted
 
         # Remove segment from project
@@ -396,8 +396,8 @@ class CreateSegmentsFromIndicesCmd(BaseCommand):
 
         # Map split indices to new point indices
         new_split_indices = [start_idx + i for i in self.split_indices]
-        self.session.split_indices = new_split_indices
-        self.session.split_indices.sort()
+        self.session.split_indices.extend(new_split_indices)
+        self.session.split_indices = sorted(list(set(self.session.split_indices)))
 
         # Remove the split curve segment from project segments
         if seg in self.session.project_model.segments:
@@ -488,14 +488,18 @@ class BakeCurveToGeometryCmd(BaseCommand):
                     # Adjust start_index
                     if other_seg.start_index > e:
                         other_seg.start_index += diff
-                    elif s <= other_seg.start_index <= e:
-                        other_seg.start_index = s if other_seg.start_index == s else (s + num_new_pts - 1)
+                    elif other_seg.start_index == s:
+                        pass
+                    elif s < other_seg.start_index <= e:
+                        other_seg.start_index = s + num_new_pts - 1
                     
                     # Adjust end_index
                     if other_seg.end_index > e:
                         other_seg.end_index += diff
-                    elif s <= other_seg.end_index <= e:
-                        other_seg.end_index = s if other_seg.end_index == s else (s + num_new_pts - 1)
+                    elif other_seg.end_index == s:
+                        pass
+                    elif s < other_seg.end_index <= e:
+                        other_seg.end_index = s + num_new_pts - 1
 
             # Adjust split indices
             new_splits = []

@@ -34,6 +34,11 @@ class CommandHistory:
         self._undo_stack.append(cmd)
         self._redo_stack.clear()
 
+    def record(self, cmd: BaseCommand):
+        """Record a command without executing it (already applied)."""
+        self._undo_stack.append(cmd)
+        self._redo_stack.clear()
+
     def undo(self) -> BaseCommand | None:
         if not self._undo_stack:
             return None

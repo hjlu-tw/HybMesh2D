@@ -47,6 +47,7 @@ class CanvasView(QWidget):
         self._curve_segment_items: dict[int, list[pg.PlotDataItem]] = {}   # sid → list of curves
         self._show_symbols = True
         self._show_nodes = True
+        self._active_session_id: int | None = None
 
         # ── Active-session overlays (single set, reused across sessions) ──
 
@@ -250,7 +251,7 @@ class CanvasView(QWidget):
             has_resampled = True
 
         for sid, preview_curve in self._curve_preview_items.items():
-            is_active = (sid == getattr(self, "_active_session_id", None))
+            is_active = (sid == self._active_session_id)
             if is_active and has_resampled:
                 preview_curve.setSymbol(None)
             else:
@@ -275,7 +276,7 @@ class CanvasView(QWidget):
         """Toggle the visibility of the active session overlays."""
         self.resampled_curve.setVisible(visible)
         self.active_segment_curve.setVisible(visible)
-        if hasattr(self, "_active_session_id") and self._active_session_id in self._curve_preview_items:
+        if self._active_session_id in self._curve_preview_items:
             self._curve_preview_items[self._active_session_id].setVisible(visible)
         self.split_scatter.setVisible(visible)
         self.selected_scatter.setVisible(visible)
@@ -437,7 +438,7 @@ class CanvasView(QWidget):
         self._curve_segment_items[session_id].clear()
 
         # Determine styling depending on if this session is the active one
-        is_active = hasattr(self, "_active_session_id") and (session_id == self._active_session_id)
+        is_active = (session_id == self._active_session_id)
 
         # Add new items
         for pts in segments_pts:

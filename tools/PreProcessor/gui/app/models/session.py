@@ -42,6 +42,8 @@ class GeometrySession:
         self.command_history: CommandHistory = CommandHistory()
         self.is_visible: bool = True
         self.controller = None  # Set by controller when session is created
+        self.param_snapshot: dict = {}
+        self.segment_state_snapshot: dict = {}
 
         # Colour assigned from palette (set by controller)
         self.color: str = SESSION_COLORS[

@@ -153,9 +153,7 @@ class AppController:
         self.active_idx: int = -1
 
         self._connecting_signals = False  # guard against re-entrant connects
-        self._param_snapshot: dict = {}   # for UpdateParamsCmd debounce
         self._is_populating = False       # guard against feedback loops during form population
-        self._segment_state_snapshot: dict = {}  # snapshot for segment state undo
         self._show_duplicate_preview = False  # flag to show duplicate preview line
 
         # Create a dedicated temp directory for the application lifecycle
@@ -926,7 +924,8 @@ class AppController:
 
         n_pts = (len(session.original_points)
                  if session.original_points is not None else 0)
-        is_endpoint = (idx == 0 or idx == n_pts - 1)
+        is_closed = session.project_model.is_closed
+        is_endpoint = (idx == 0 or idx == n_pts - 1) if not is_closed else False
         is_split = idx in session.split_indices
 
         sb.split_btn.setEnabled(not is_split)
@@ -1166,8 +1165,8 @@ class AppController:
             self._show_duplicate_preview = False
 
             # Snapshot params for undo
-            self._param_snapshot = copy.deepcopy(seg.parameters)
-            self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
+            session.param_snapshot = copy.deepcopy(seg.parameters)
+            session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
         finally:
             self._is_populating = False
             self.main_window.canvas_view.clear_duplicate_preview()
@@ -1183,13 +1182,12 @@ class AppController:
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg:
             return
-        old_params_snapshot = copy.deepcopy(self._param_snapshot)
         cmd = UpdateStrategyCmd(
             session, session.current_segment_idx, strategy_name,
             repopulate_cb=self._repopulate_strategy)
         session.command_history.execute(cmd)
-        self._param_snapshot = copy.deepcopy(seg.parameters)
-        self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
+        session.param_snapshot = copy.deepcopy(seg.parameters)
+        session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
         self.main_window.log_panel.log(
             f"Edge {seg.id}: distribution → {strategy_name}")
 
@@ -1260,7 +1258,7 @@ class AppController:
             return
         
         current_state = seg.to_dict()
-        old_state = self._segment_state_snapshot
+        old_state = session.segment_state_snapshot
         
         if current_state != old_state:
             seg_idx = session.current_segment_idx
@@ -1271,9 +1269,8 @@ class AppController:
                         self._select_segment_by_index(seg_idx)
             
             cmd = UpdateSegmentStateCmd(session, session.current_segment_idx, old_state, current_state, refresh_cb=refresh)
-            session.command_history._undo_stack.append(cmd)
-            session.command_history._redo_stack.clear()
-            self._segment_state_snapshot = current_state
+            session.command_history.record(cmd)
+            session.segment_state_snapshot = current_state
 
 
     def _read_params_into_segment(self, seg: SegmentModel):
@@ -1458,9 +1455,14 @@ class AppController:
         self._sync_active_curve_segment_from_ui()
         # Update list item text
         sb = self.main_window.sidebar_view
-        idx = session.current_segment_idx
-        if 0 <= idx < sb.curve_segment_list.count():
-            item = sb.curve_segment_list.item(idx)
+        seg_idx = session.current_segment_idx
+        item = None
+        for row in range(sb.curve_segment_list.count()):
+            curr_item = sb.curve_segment_list.item(row)
+            if curr_item.data(Qt.ItemDataRole.UserRole) == seg_idx:
+                item = curr_item
+                break
+        if item is not None:
             c_type = seg.curve_type
             if c_type == "custom":
                 c_label = f"Curve ({'Param' if seg.curve_mode == 'parametric' else 'Explicit'})"
@@ -1530,7 +1532,7 @@ class AppController:
                 if session.current_segment_idx >= 0:
                     seg = session.project_model.get_segment(session.current_segment_idx)
                     if seg:
-                        self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
+                        session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to undo.")
 
@@ -1545,7 +1547,7 @@ class AppController:
                 if session.current_segment_idx >= 0:
                     seg = session.project_model.get_segment(session.current_segment_idx)
                     if seg:
-                        self._segment_state_snapshot = copy.deepcopy(seg.to_dict())
+                        session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to redo.")
 
