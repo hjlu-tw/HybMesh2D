@@ -1,6 +1,8 @@
 import copy
 import numpy as np
 from app.commands.base import BaseCommand
+from app.services.index_helpers import remove_points_and_adjust_indices
+from app.services.geometry_service import GeometryService
 
 
 class UpdateStrategyCmd(BaseCommand):
@@ -94,46 +96,8 @@ class RemoveSegmentCmd(BaseCommand):
         if not seg:
             return
 
-        if seg.type == "file" and self.session.original_points is not None:
-            # Determine shared boundaries
-            S = seg.start_index
-            E = seg.end_index
-
-            s_shared = False
-            e_shared = False
-            for other in self.session.project_model.segments:
-                if other is not seg and other.type == "file":
-                    if other.start_index == S or other.end_index == S:
-                        s_shared = True
-                    if other.start_index == E or other.end_index == E:
-                        e_shared = True
-
-            del_start = S + 1 if s_shared else S
-            del_end = E - 1 if e_shared else E
-
-            if del_start <= del_end:
-                num_deleted = del_end - del_start + 1
-
-                # Delete points from original_points
-                self.session.original_points = np.delete(
-                    self.session.original_points, slice(del_start, del_end + 1), axis=0)
-
-                # Adjust split indices
-                new_splits = []
-                for idx in self.session.split_indices:
-                    if idx < del_start:
-                        new_splits.append(idx)
-                    elif idx > del_end:
-                        new_splits.append(idx - num_deleted)
-                self.session.split_indices = sorted(list(set(new_splits)))
-
-                # Adjust start/end index of other file segments
-                for other in self.session.project_model.segments:
-                    if other is not seg and other.type == "file":
-                        if other.start_index > del_end:
-                            other.start_index -= num_deleted
-                        if other.end_index > del_end:
-                            other.end_index -= num_deleted
+        if seg.type == "file":
+            remove_points_and_adjust_indices(self.session, seg)
 
         # Remove segment from project
         self.session.project_model.remove_segment(self.seg_idx)
@@ -145,8 +109,6 @@ class RemoveSegmentCmd(BaseCommand):
         self.session.split_indices = self.old_split_indices
         self.session.project_model.segments = self.old_segments
         self.session.is_geometry_modified = self.old_modified
-        if hasattr(self.session, "controller") and self.session.controller:
-            self.session.controller._apply_geometry_update(self.session)
         self.refresh_cb()
 
 
@@ -395,7 +357,7 @@ class CreateSegmentsFromIndicesCmd(BaseCommand):
         """Convert a curve segment to file segments via auto-detection."""
         n = seg.parameters.get("n_points", 100)
         try:
-            xs, ys = self.session.controller._compute_curve_preview_pts(seg, n)
+            xs, ys = GeometryService.compute_curve_preview_pts(seg, n, self.session.original_points)
         except Exception:
             return
 
@@ -466,7 +428,7 @@ class BakeCurveToGeometryCmd(BaseCommand):
 
         n = seg.parameters.get("n_points", 100)
         try:
-            xs, ys = self.session.controller._compute_curve_preview_pts(seg, n)
+            xs, ys = GeometryService.compute_curve_preview_pts(seg, n, self.session.original_points)
         except Exception:
             return
 
@@ -563,8 +525,6 @@ class BakeCurveToGeometryCmd(BaseCommand):
 
         # Rebuild file segments
         self.session.project_model.update_file_segments_from_indices(self.session.split_indices)
-        if hasattr(self.session, "controller") and self.session.controller:
-            self.session.controller._apply_geometry_update(self.session)
         self.refresh_cb()
 
     def undo(self):
@@ -572,8 +532,6 @@ class BakeCurveToGeometryCmd(BaseCommand):
         self.session.split_indices = self.old_split_indices
         self.session.project_model.segments = self.old_segments
         self.session.is_geometry_modified = self.old_modified
-        if hasattr(self.session, "controller") and self.session.controller:
-            self.session.controller._apply_geometry_update(self.session)
         self.refresh_cb()
 
 
@@ -605,38 +563,8 @@ class DuplicateTransformCmd(BaseCommand):
             # 1. Remove original segment
             seg = self.session.project_model.segments[self.seg_idx]
             # If original segment is file/discrete, we must remove its unshared points from original_points
-            if seg.type == "file" and self.session.original_points is not None:
-                S = seg.start_index
-                E = seg.end_index
-                s_shared = False
-                e_shared = False
-                for other in self.session.project_model.segments:
-                    if other is not seg and other.type == "file":
-                        if other.start_index == S or other.end_index == S:
-                            s_shared = True
-                        if other.start_index == E or other.end_index == E:
-                            e_shared = True
-                del_start = S + 1 if s_shared else S
-                del_end = E - 1 if e_shared else E
-                if del_start <= del_end:
-                    num_deleted = del_end - del_start + 1
-                    self.session.original_points = np.delete(
-                        self.session.original_points, slice(del_start, del_end + 1), axis=0)
-                    # Adjust split indices
-                    new_splits = []
-                    for idx in self.session.split_indices:
-                        if idx < del_start:
-                            new_splits.append(idx)
-                        elif idx > del_end:
-                            new_splits.append(idx - num_deleted)
-                    self.session.split_indices = new_splits
-                    # Adjust remaining file segments
-                    for other in self.session.project_model.segments:
-                        if other is not seg and other.type == "file":
-                            if other.start_index > del_end:
-                                other.start_index -= num_deleted
-                            if other.end_index > del_end:
-                                other.end_index -= num_deleted
+            if seg.type == "file":
+                remove_points_and_adjust_indices(self.session, seg)
             # Remove segment from list
             self.session.project_model.segments.pop(self.seg_idx)
 
@@ -652,8 +580,6 @@ class DuplicateTransformCmd(BaseCommand):
             self.select_cb(idx)
         except ValueError:
             pass
-        if hasattr(self.session, "controller") and self.session.controller:
-            self.session.controller._apply_geometry_update(self.session)
 
     def undo(self):
         self.session.original_points = self.old_points
@@ -661,5 +587,3 @@ class DuplicateTransformCmd(BaseCommand):
         self.session.project_model.segments = self.old_segments
         self.session.is_geometry_modified = self.old_modified
         self.refresh_cb()
-        if hasattr(self.session, "controller") and self.session.controller:
-            self.session.controller._apply_geometry_update(self.session)
