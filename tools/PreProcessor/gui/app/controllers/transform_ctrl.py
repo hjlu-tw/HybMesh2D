@@ -16,79 +16,27 @@ class TransformControllerMixin:
         if not session or session.current_segment_idx < 0:
             self.main_window.log_panel.log("No segment selected.")
             return
+        sb = self.main_window.sidebar_view
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg:
             return
 
         # Get points to duplicate
-        if seg.type == "file":
-            if session.original_points is None or len(session.original_points) == 0:
-                self.main_window.log_panel.log("No file points loaded.")
-                return
-            pts = session.original_points[seg.start_index : seg.end_index + 1]
-            xs = pts[:, 0].copy()
-            ys = pts[:, 1].copy()
-            n = len(pts)
-        else:
+        if seg.type == "curve":
             self._sync_active_curve_segment_from_ui()
-            n = seg.parameters.get("n_points", 100)
-            try:
-                xs, ys = GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
-            except Exception as e:
-                self.main_window.log_panel.log(f"Cannot compute preview for transform: {e}")
-                return
 
-        if xs is None or len(xs) < 2:
+        pts_tuple = GeometryService.get_segment_points(session, seg)
+        if pts_tuple is None:
             self.main_window.log_panel.log("Edge has no valid points — cannot duplicate.")
             return
+        xs, ys = pts_tuple
+        n = len(xs)
 
-        xs = xs.copy()
-        ys = ys.copy()
-
-        # Apply transform
-        sb = self.main_window.sidebar_view
-        t_idx = sb.dup_type_combo.currentIndex()
-
-        if t_idx == 0:   # Rotate
-            theta = math.radians(sb.dup_rot_angle.value())
-            px, py = sb.dup_rot_px.value(), sb.dup_rot_py.value()
-            xr = xs - px;  yr = ys - py
-            xs_new = px + xr * math.cos(theta) - yr * math.sin(theta)
-            ys_new = py + xr * math.sin(theta) + yr * math.cos(theta)
-            xs, ys = xs_new, ys_new
-        elif t_idx == 1: # Mirror Horizontal (flip y around axis_y)
-            axis_y = sb.dup_mh_py.value()
-            ys = 2.0 * axis_y - ys
-        elif t_idx == 2: # Mirror Vertical (flip x around axis_x)
-            axis_x = sb.dup_mv_px.value()
-            xs = 2.0 * axis_x - xs
-        elif t_idx == 3: # Mirror Axis (arbitrary)
-            px, py = sb.dup_ma_px.value(), sb.dup_ma_py.value()
-            dx, dy = sb.dup_ma_dx.value(), sb.dup_ma_dy.value()
-            d_len = math.hypot(dx, dy)
-            if d_len < 1e-12:
-                self.main_window.log_panel.log("Mirror axis direction is zero — cannot mirror.")
-                return
-            dx /= d_len;  dy /= d_len
-            xr = xs - px;  yr = ys - py
-            dot = xr * dx + yr * dy
-            xs = 2.0 * (px + dot * dx) - xs
-            ys = 2.0 * (py + dot * dy) - ys
-        elif t_idx == 4: # Point Symmetry
-            cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
-            xs = 2.0 * cx - xs
-            ys = 2.0 * cy - ys
-        elif t_idx == 5: # Translate
-            dx = sb.dup_trans_dx.value()
-            dy = sb.dup_trans_dy.value()
-            xs = xs + dx
-            ys = ys + dy
-        elif t_idx == 6: # Scale
-            factor = sb.dup_scale_factor.value()
-            px = sb.dup_scale_px.value()
-            py = sb.dup_scale_py.value()
-            xs = px + (xs - px) * factor
-            ys = py + (ys - py) * factor
+        transformed = self._apply_transform(xs, ys)
+        if transformed is None:
+            self.main_window.log_panel.log("Mirror axis direction is zero — cannot mirror.")
+            return
+        xs, ys = transformed
 
         # Create new polygon curve segment from transformed points
         v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
@@ -122,6 +70,56 @@ class TransformControllerMixin:
             f"{action_name} Edge {seg.id} as Edge {new_seg.id} ({sb.dup_type_combo.currentText()}).")
         self._show_duplicate_preview = False
         self.main_window.canvas_view.clear_duplicate_preview()
+
+    def _apply_transform(self, xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        """Apply the selected geometric transform to the points xs and ys."""
+        sb = self.main_window.sidebar_view
+        t_idx = sb.dup_type_combo.currentIndex()
+        xs = xs.copy()
+        ys = ys.copy()
+
+        if t_idx == 0:   # Rotate
+            theta = math.radians(sb.dup_rot_angle.value())
+            px, py = sb.dup_rot_px.value(), sb.dup_rot_py.value()
+            xr = xs - px;  yr = ys - py
+            xs_new = px + xr * math.cos(theta) - yr * math.sin(theta)
+            ys_new = py + xr * math.sin(theta) + yr * math.cos(theta)
+            xs, ys = xs_new, ys_new
+        elif t_idx == 1: # Mirror Horizontal (flip y around axis_y)
+            axis_y = sb.dup_mh_py.value()
+            ys = 2.0 * axis_y - ys
+        elif t_idx == 2: # Mirror Vertical (flip x around axis_x)
+            axis_x = sb.dup_mv_px.value()
+            xs = 2.0 * axis_x - xs
+        elif t_idx == 3: # Mirror Axis (arbitrary)
+            px, py = sb.dup_ma_px.value(), sb.dup_ma_py.value()
+            dx, dy = sb.dup_ma_dx.value(), sb.dup_ma_dy.value()
+            d_len = math.hypot(dx, dy)
+            if d_len < 1e-12:
+                return None
+            dx /= d_len;  dy /= d_len
+            xr = xs - px;  yr = ys - py
+            dot = xr * dx + yr * dy
+            xs = 2.0 * (px + dot * dx) - xs
+            ys = 2.0 * (py + dot * dy) - ys
+        elif t_idx == 4: # Point Symmetry
+            cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
+            xs = 2.0 * cx - xs
+            ys = 2.0 * cy - ys
+        elif t_idx == 5: # Translate
+            dx = sb.dup_trans_dx.value()
+            dy = sb.dup_trans_dy.value()
+            xs = xs + dx
+            ys = ys + dy
+        elif t_idx == 6: # Scale
+            factor = sb.dup_scale_factor.value()
+            px = sb.dup_scale_px.value()
+            py = sb.dup_scale_py.value()
+            xs = px + (xs - px) * factor
+            ys = py + (ys - py) * factor
+
+        return xs, ys
+
 
     def handle_dup_type_changed(self):
         if self._is_populating:
@@ -188,28 +186,16 @@ class TransformControllerMixin:
         sb.dup_scale_py.setEnabled(False)
 
         # Retrieve points of current segment
-        if seg.type == "file":
-            if session.original_points is None or len(session.original_points) == 0:
-                return
-            pts = session.original_points[seg.start_index : seg.end_index + 1]
-            if len(pts) == 0:
-                return
-            if mode == "Start Point":
-                px, py = pts[0][0], pts[0][1]
-            else:
-                px, py = pts[-1][0], pts[-1][1]
+        pts_tuple = GeometryService.get_segment_points(session, seg)
+        if pts_tuple is None:
+            return
+        xs, ys = pts_tuple
+        if len(xs) == 0:
+            return
+        if mode == "Start Point":
+            px, py = xs[0], ys[0]
         else:
-            n = seg.parameters.get("n_points", 100)
-            try:
-                xs, ys = GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
-            except Exception:
-                return
-            if xs is None or len(xs) == 0:
-                return
-            if mode == "Start Point":
-                px, py = xs[0], ys[0]
-            else:
-                px, py = xs[-1], ys[-1]
+            px, py = xs[-1], ys[-1]
 
         # Populate coordinates
         sb.dup_rot_px.blockSignals(True)
@@ -266,70 +252,18 @@ class TransformControllerMixin:
             return
 
         # 1. Get original points
-        if seg.type == "file":
-            if session.original_points is None or len(session.original_points) == 0:
-                self.main_window.canvas_view.clear_duplicate_preview()
-                return
-            pts = session.original_points[seg.start_index : seg.end_index + 1]
-            xs = pts[:, 0].copy()
-            ys = pts[:, 1].copy()
-            n = len(pts)
-        else:
-            n = seg.parameters.get("n_points", 100)
-            try:
-                xs, ys = GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
-            except Exception:
-                self.main_window.canvas_view.clear_duplicate_preview()
-                return
-
-        if xs is None or len(xs) < 2:
+        pts_tuple = GeometryService.get_segment_points(session, seg)
+        if pts_tuple is None or len(pts_tuple[0]) < 2:
             self.main_window.canvas_view.clear_duplicate_preview()
             return
-
-        xs = xs.copy()
-        ys = ys.copy()
+        xs, ys = pts_tuple
 
         # 2. Apply transform
-        t_idx = sb.dup_type_combo.currentIndex()
-
-        if t_idx == 0:   # Rotate
-            theta = math.radians(sb.dup_rot_angle.value())
-            px, py = sb.dup_rot_px.value(), sb.dup_rot_py.value()
-            xr = xs - px;  yr = ys - py
-            xs_new = px + xr * math.cos(theta) - yr * math.sin(theta)
-            ys_new = py + xr * math.sin(theta) + yr * math.cos(theta)
-            xs, ys = xs_new, ys_new
-        elif t_idx == 1: # Mirror Horizontal (flip y around axis_y)
-            axis_y = sb.dup_mh_py.value()
-            ys = 2.0 * axis_y - ys
-        elif t_idx == 2: # Mirror Vertical (flip x around axis_x)
-            axis_x = sb.dup_mv_px.value()
-            xs = 2.0 * axis_x - xs
-        elif t_idx == 3: # Mirror Axis (arbitrary)
-            px, py = sb.dup_ma_px.value(), sb.dup_ma_py.value()
-            dx, dy = sb.dup_ma_dx.value(), sb.dup_ma_dy.value()
-            d_len = math.hypot(dx, dy)
-            if d_len >= 1e-12:
-                dx /= d_len;  dy /= d_len
-                xr = xs - px;  yr = ys - py
-                dot = xr * dx + yr * dy
-                xs = 2.0 * (px + dot * dx) - xs
-                ys = 2.0 * (py + dot * dy) - ys
-        elif t_idx == 4: # Point Symmetry
-            cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
-            xs = 2.0 * cx - xs
-            ys = 2.0 * cy - ys
-        elif t_idx == 5: # Translate
-            dx = sb.dup_trans_dx.value()
-            dy = sb.dup_trans_dy.value()
-            xs = xs + dx
-            ys = ys + dy
-        elif t_idx == 6: # Scale
-            factor = sb.dup_scale_factor.value()
-            px = sb.dup_scale_px.value()
-            py = sb.dup_scale_py.value()
-            xs = px + (xs - px) * factor
-            ys = py + (ys - py) * factor
+        transformed = self._apply_transform(xs, ys)
+        if transformed is None:
+            self.main_window.canvas_view.clear_duplicate_preview()
+            return
+        xs, ys = transformed
 
         pts_new = np.column_stack([xs, ys])
         self.main_window.canvas_view.update_duplicate_preview(pts_new)

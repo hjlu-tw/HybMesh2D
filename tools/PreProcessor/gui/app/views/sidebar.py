@@ -154,8 +154,6 @@ class SidebarView(QWidget):
         self._layout.addWidget(self.advanced_panel)
         # Expose widgets
         self.global_spline_cb = self.advanced_panel.global_spline_cb
-        self.quality_check_cb = self.advanced_panel.quality_check_cb
-        self.show_vertices_cb = self.advanced_panel.show_vertices_cb
         self.transform_scale = self.advanced_panel.transform_scale
         self.transform_rotate = self.advanced_panel.transform_rotate
         self.transform_tx = self.advanced_panel.transform_tx

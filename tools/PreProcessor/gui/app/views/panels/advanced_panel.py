@@ -16,13 +16,6 @@ class AdvancedPanel(CollapsibleSection):
         hint.setStyleSheet("color:#556; font-size:10px;")
         hint.setWordWrap(True)
 
-        self.quality_check_cb = QCheckBox("Show Quality Heatmap")
-        self.quality_check_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
-
-        self.show_vertices_cb = QCheckBox("Show Geometry Vertices")
-        self.show_vertices_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
-        self.show_vertices_cb.setChecked(True)
-
         tf_box = QGroupBox("Output Transform")
         tf_box.setStyleSheet(
             "QGroupBox { color:#a0b0d0; border:1px solid #3a4060;"

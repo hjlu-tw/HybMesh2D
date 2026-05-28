@@ -7,23 +7,11 @@ import tempfile
 import copy
 import numpy as np
 
-from PyQt6.QtWidgets import QMessageBox, QListWidgetItem, QApplication
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
 
 from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
-from app.views.output_dialog import OutputDialog
 from app.models.session import GeometrySession
-from app.models.project import ProjectModel
-from app.models.segment import SegmentModel
-from app.workers.backend_run import BackendWorker
-from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd, AutoDetectSplitCmd
-from app.commands.vertex_cmds import InsertVertexCmd
-from app.commands.segment_cmds import (
-    UpdateStrategyCmd, RemoveSegmentCmd,
-    AddCurveSegmentCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd,
-    CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd, DuplicateTransformCmd
-)
 
 from app.controllers import (
     SessionControllerMixin,

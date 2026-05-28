@@ -127,24 +127,9 @@ class CurveControllerMixin:
                 break
         if item is not None:
             c_type = seg.curve_type
-            if c_type == "custom":
-                c_label = f"Curve ({'Param' if seg.curve_mode == 'parametric' else 'Explicit'})"
-            elif c_type == "horizontal_line":
-                c_label = "H Line"
-            elif c_type == "vertical_line":
-                c_label = "V Line"
-            elif c_type == "line":
-                c_label = "Line"
-            elif c_type == "circle":
-                c_label = "Circle"
-            elif c_type == "triangle":
-                c_label = "Triangle"
-            elif c_type == "quadrilateral":
-                c_label = "Quad"
-            elif c_type == "polygon":
-                c_label = "Polygon"
-            else:
-                c_label = c_type.capitalize()
+            from app.utils import CURVE_TYPE_LABELS
+            lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
+            c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
             item.setText(f"Edge {seg.id}: {c_label}")
         self.preview_curve_formula()
 

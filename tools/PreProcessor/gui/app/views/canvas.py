@@ -470,7 +470,7 @@ class CanvasView(QWidget):
         if self._active_points is None or not self.split_scatter.isVisible():
             return
         btn = event.button()
-        if btn != Qt.MouseButton.LeftButton and btn != 1:
+        if btn != Qt.MouseButton.LeftButton:
             return
         pos = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
         x, y = pos.x(), pos.y()

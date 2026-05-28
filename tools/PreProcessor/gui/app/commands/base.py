@@ -26,7 +26,7 @@ class CommandHistory:
 
     def __init__(self):
         self._undo_stack: deque[BaseCommand] = deque(maxlen=self.MAX_DEPTH)
-        self._redo_stack: deque[BaseCommand] = deque()
+        self._redo_stack: deque[BaseCommand] = deque(maxlen=self.MAX_DEPTH)
 
     def execute(self, cmd: BaseCommand):
         """Execute a command and push it onto the undo stack."""

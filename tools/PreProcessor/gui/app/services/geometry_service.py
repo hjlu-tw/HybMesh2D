@@ -228,3 +228,24 @@ class GeometryService:
         if (n - 1) not in indices:
             indices.append(n - 1)
         return indices
+
+    @staticmethod
+    def get_segment_points(session: GeometrySession, seg: SegmentModel) -> tuple[np.ndarray, np.ndarray] | None:
+        """Get points (xs, ys) for the given segment.
+        If seg.type is 'file', extracts it from session.original_points.
+        If seg.type is 'curve', computes them using compute_curve_preview_pts.
+        """
+        if seg.type == "file":
+            if session.original_points is None or len(session.original_points) == 0:
+                return None
+            pts = session.original_points[seg.start_index : seg.end_index + 1]
+            if len(pts) == 0:
+                return None
+            return pts[:, 0].copy(), pts[:, 1].copy()
+        else:
+            n = seg.parameters.get("n_points", 100)
+            try:
+                return GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
+            except Exception:
+                return None
+
