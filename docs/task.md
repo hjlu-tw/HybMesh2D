@@ -48,26 +48,26 @@
 
 > Starts after 1.1-1.8 are completed. 2.1-2.7 are independent.
 
-- [ ] **2.1** Add `is_geometry_modified` to missing commands
+- [x] **2.1** Add `is_geometry_modified` to missing commands
   - File: `gui/app/commands/split_cmds.py` - `AddSplitCmd`
   - File: `gui/app/commands/segment_cmds.py` - `UpdateStrategyCmd`, `UpdateParamsCmd`, `ToggleIsClosedCmd`, `ToggleGlobalSplineCmd`, `ToggleMatchPreviousCmd`, `UpdateSegmentStateCmd`
 
-- [ ] **2.2** Fix `RemoveSplitCmd.undo()` - Call `update_file_segments_from_indices()`
+- [x] **2.2** Fix `RemoveSplitCmd.undo()` - Call `update_file_segments_from_indices()`
   - File: `gui/app/commands/split_cmds.py` L66-71
 
-- [ ] **2.3** Add Backend Worker concurrency check
+- [x] **2.3** Add Backend Worker concurrency check
   - File: `gui/app/controller.py` `_run_backend` method - Add `if self._worker.isRunning(): return`
 
-- [ ] **2.4** Add cancel/timeout to BackendWorker
+- [x] **2.4** Add cancel/timeout to BackendWorker
   - File: `gui/app/workers/backend_run.py`
 
-- [ ] **2.5** Fix serialization: save formula for non-custom curves
+- [x] **2.5** Fix serialization: save formula for non-custom curves
   - File: `gui/app/models/segment.py` L94-100
 
-- [ ] **2.6** Improve `update_file_segments_from_indices` to inherit segment strategy and params
+- [x] **2.6** Improve `update_file_segments_from_indices` to inherit segment strategy and params
   - File: `gui/app/models/project.py` L23-44
 
-- [ ] **2.7** Add pixel distance threshold (30px) for Canvas click selection
+- [x] **2.7** Add pixel distance threshold (30px) for Canvas click selection
   - File: `gui/app/views/canvas.py` L468-478
 
 ---

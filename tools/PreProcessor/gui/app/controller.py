@@ -2174,6 +2174,9 @@ class AppController:
 
     def _run_backend(self, exe: str, cfg_path: str,
                      session: GeometrySession, on_finish):
+        if hasattr(self, "_worker") and self._worker is not None and self._worker.isRunning():
+            self.main_window.log_panel.log("Backend is already running. Please wait.")
+            return
         self._worker = BackendWorker(exe, cfg_path)
         self._worker.log_signal.connect(self.main_window.log_panel.log)
         self._worker.finished_signal.connect(on_finish)

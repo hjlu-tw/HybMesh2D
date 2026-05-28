@@ -39,6 +39,18 @@ class ProjectModel:
                 seg.id = i + 1
             else:
                 seg = SegmentModel(i + 1, start, end)
+                # Try to inherit settings from most-overlapping old segment
+                best_overlap = 0
+                best_seg = None
+                for (old_s, old_e), old_seg in existing_map.items():
+                    overlap = max(0, min(end, old_e) - max(start, old_s))
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_seg = old_seg
+                if best_seg:
+                    seg.strategy = best_seg.strategy
+                    seg.parameters = copy.deepcopy(best_seg.parameters)
+                    seg.match_previous = best_seg.match_previous
             new_file_segs.append(seg)
 
         self.segments = new_file_segs + curve_segs

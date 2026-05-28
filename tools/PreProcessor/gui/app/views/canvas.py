@@ -476,7 +476,16 @@ class CanvasView(QWidget):
         x, y = pos.x(), pos.y()
         dists = np.sqrt((self._active_points[:, 0] - x) ** 2
                         + (self._active_points[:, 1] - y) ** 2)
-        self.point_clicked.emit(int(np.argmin(dists)))
+        nearest_idx = int(np.argmin(dists))
+        
+        # Convert scene pos to pixel distance
+        vb = self.plot_widget.plotItem.vb
+        nearest_pt = self._active_points[nearest_idx]
+        p1 = event.scenePos()
+        p2 = vb.mapViewToScene(pg.Point(nearest_pt[0], nearest_pt[1]))
+        pixel_dist = ((p1.x() - p2.x())**2 + (p1.y() - p2.y())**2)**0.5
+        if pixel_dist < 30:  # 30 pixel threshold
+            self.point_clicked.emit(nearest_idx)
 
     def _on_mouse_moved(self, pos):
         if self.plot_widget.sceneBoundingRect().contains(pos):

@@ -91,13 +91,12 @@ class SegmentModel:
                 "start_index": int(self.start_index),
                 "end_index": int(self.end_index),
             }
-            if self.curve_type == "custom":
-                d["curve_mode"] = self.curve_mode
-                if self.curve_mode == "parametric":
-                    d["x_formula"] = self.x_formula
-                    d["y_formula"] = self.y_formula
-                else:
-                    d["formula"] = self.formula
+            d["curve_mode"] = self.curve_mode
+            if self.curve_mode == "parametric":
+                d["x_formula"] = self.x_formula
+                d["y_formula"] = self.y_formula
+            else:
+                d["formula"] = self.formula
             if self.match_previous:
                 d["match_previous"] = True
         else:

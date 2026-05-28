@@ -16,6 +16,7 @@ class UpdateStrategyCmd(BaseCommand):
         seg = session.project_model.get_segment(seg_idx)
         self.old_strategy = seg.strategy if seg else "uniform"
         self.old_params = copy.deepcopy(seg.parameters) if seg else {}
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         return f"Change Distribution to {self.new_strategy}"
@@ -24,6 +25,7 @@ class UpdateStrategyCmd(BaseCommand):
         seg = self.session.project_model.get_segment(self.seg_idx)
         if seg:
             seg.update_strategy(self.new_strategy)
+        self.session.is_geometry_modified = True
         self.repopulate_cb(self.new_strategy)
 
     def undo(self):
@@ -31,6 +33,7 @@ class UpdateStrategyCmd(BaseCommand):
         if seg:
             seg.strategy = self.old_strategy
             seg.parameters = copy.deepcopy(self.old_params)
+        self.session.is_geometry_modified = self._old_modified
         self.repopulate_cb(self.old_strategy)
 
 
@@ -43,6 +46,7 @@ class UpdateParamsCmd(BaseCommand):
         self.old_params = copy.deepcopy(old_params)
         self.new_params = copy.deepcopy(new_params)
         self.refresh_cb = refresh_cb
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         return "Update Edge Parameters"
@@ -51,6 +55,7 @@ class UpdateParamsCmd(BaseCommand):
         seg = self.session.project_model.get_segment(self.seg_idx)
         if seg:
             seg.parameters = copy.deepcopy(self.new_params)
+        self.session.is_geometry_modified = True
         if self.refresh_cb:
             self.refresh_cb()
 
@@ -58,6 +63,7 @@ class UpdateParamsCmd(BaseCommand):
         seg = self.session.project_model.get_segment(self.seg_idx)
         if seg:
             seg.parameters = copy.deepcopy(self.old_params)
+        self.session.is_geometry_modified = self._old_modified
         if self.refresh_cb:
             self.refresh_cb()
 
@@ -196,16 +202,19 @@ class ToggleIsClosedCmd(BaseCommand):
         self.new_val = is_closed
         self.old_val = session.project_model.is_closed
         self.refresh_cb = refresh_cb
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         return "Toggle Closed"
 
     def execute(self):
         self.session.project_model.is_closed = self.new_val
+        self.session.is_geometry_modified = True
         self.refresh_cb()
 
     def undo(self):
         self.session.project_model.is_closed = self.old_val
+        self.session.is_geometry_modified = self._old_modified
         self.refresh_cb()
 
 
@@ -217,16 +226,19 @@ class ToggleGlobalSplineCmd(BaseCommand):
         self.new_val = global_spline
         self.old_val = session.project_model.global_spline
         self.refresh_cb = refresh_cb
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         return "Toggle Global Spline"
 
     def execute(self):
         self.session.project_model.global_spline = self.new_val
+        self.session.is_geometry_modified = True
         self.refresh_cb()
 
     def undo(self):
         self.session.project_model.global_spline = self.old_val
+        self.session.is_geometry_modified = self._old_modified
         self.refresh_cb()
 
 
@@ -240,6 +252,7 @@ class ToggleMatchPreviousCmd(BaseCommand):
         seg = session.project_model.get_segment(seg_idx)
         self.old_val = seg.match_previous if seg else False
         self.update_ui_cb = update_ui_cb
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         return "Toggle Match Previous"
@@ -249,12 +262,14 @@ class ToggleMatchPreviousCmd(BaseCommand):
         if seg:
             seg.match_previous = self.new_val
             self.update_ui_cb(self.new_val)
+        self.session.is_geometry_modified = True
 
     def undo(self):
         seg = self.session.project_model.get_segment(self.seg_idx)
         if seg:
             seg.match_previous = self.old_val
             self.update_ui_cb(self.old_val)
+        self.session.is_geometry_modified = self._old_modified
 
 
 class UpdateSegmentStateCmd(BaseCommand):
@@ -266,6 +281,7 @@ class UpdateSegmentStateCmd(BaseCommand):
         self.old_state = copy.deepcopy(old_state)
         self.new_state = copy.deepcopy(new_state)
         self.refresh_cb = refresh_cb
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         seg = self.session.project_model.get_segment(self.seg_idx)
@@ -276,6 +292,7 @@ class UpdateSegmentStateCmd(BaseCommand):
         seg = self.session.project_model.get_segment(self.seg_idx)
         if seg:
             self._apply_state(seg, self.new_state)
+        self.session.is_geometry_modified = True
         if self.refresh_cb:
             self.refresh_cb()
 
@@ -283,6 +300,7 @@ class UpdateSegmentStateCmd(BaseCommand):
         seg = self.session.project_model.get_segment(self.seg_idx)
         if seg:
             self._apply_state(seg, self.old_state)
+        self.session.is_geometry_modified = self._old_modified
         if self.refresh_cb:
             self.refresh_cb()
 

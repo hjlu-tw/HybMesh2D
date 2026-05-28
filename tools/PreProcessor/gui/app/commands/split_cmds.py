@@ -10,6 +10,7 @@ class AddSplitCmd(BaseCommand):
         self.idx = idx
         self.sync_cb = sync_cb        # lightweight: update list + canvas markers
         self.refresh_cb = refresh_cb  # full: re-draw geometry
+        self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
         return f"Add Breakpoint at index {self.idx}"
@@ -18,11 +19,13 @@ class AddSplitCmd(BaseCommand):
         if self.idx not in self.session.split_indices:
             self.session.split_indices.append(self.idx)
             self.session.split_indices.sort()
+        self.session.is_geometry_modified = True
         self.sync_cb()
 
     def undo(self):
         if self.idx in self.session.split_indices:
             self.session.split_indices.remove(self.idx)
+        self.session.is_geometry_modified = self._old_modified
         self.sync_cb()
 
 
@@ -68,6 +71,8 @@ class RemoveSplitCmd(BaseCommand):
         if not self.keep_vertex and self._old_pts is not None:
             self.session.original_points = self._old_pts.copy()
         self.session.is_geometry_modified = self._old_modified
+        self.session.project_model.update_file_segments_from_indices(
+            self.session.split_indices)
         self.refresh_cb()
 
 
