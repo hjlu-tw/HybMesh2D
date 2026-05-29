@@ -117,7 +117,12 @@ class BackendControllerMixin:
             default_out = ""
 
         if not default_out:
-            default_out = session.default_output_path
+            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+            filename = "output_resampled.dat"
+            if session.file_path:
+                stem = os.path.splitext(os.path.basename(session.file_path))[0]
+                filename = f"{stem}_resampled.dat"
+            default_out = os.path.join(root_dir, "results", "resampled", filename)
 
         dlg = OutputDialog(default_out, self.main_window)
         if dlg.exec() != OutputDialog.DialogCode.Accepted:
@@ -141,9 +146,17 @@ class BackendControllerMixin:
         if not session.project_model.input_file and not session.project_model.segments:
             self.main_window.log_panel.log("No geometry loaded.")
             return
+
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        default_filename = "gui_config.json"
+        if session.file_path:
+            stem = os.path.splitext(os.path.basename(session.file_path))[0]
+            default_filename = f"{stem}_config.json"
+        default_path = os.path.join(root_dir, "config", "preprocessor", default_filename)
+
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Export JSON Config",
-            "gui_config.json", "JSON Files (*.json)")
+            default_path, "JSON Files (*.json)")
         if not path:
             return
 
@@ -162,6 +175,7 @@ class BackendControllerMixin:
         if hasattr(self, "_worker") and self._worker is not None and self._worker.isRunning():
             self.main_window.log_panel.log("Backend is already running. Please wait.")
             return
+        self.main_window.log_panel.clear_log()
         self._worker = BackendWorker(exe, cfg_path)
         self._worker.log_signal.connect(self.main_window.log_panel.log)
         self._worker.finished_signal.connect(on_finish)

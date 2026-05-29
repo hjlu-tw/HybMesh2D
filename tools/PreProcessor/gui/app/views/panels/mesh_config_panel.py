@@ -10,6 +10,8 @@ from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels
 from app.models.mesh_config import MeshConfig
+from app.views.bc_widget import BCWidget
+
 
 # Style for QLineEdit fields matching spinboxes
 LINEEDIT_STYLE = "background:#181b2a; color:#a0a8c0; border:1px solid #333852; padding:3px; border-radius:3px;"
@@ -63,19 +65,14 @@ class MeshConfigPanel(QScrollArea):
         btn_layout.addWidget(self.save_config_btn)
         self._layout.addLayout(btn_layout)
 
-        # Row 2: Run / Cancel
+        # Row 2: Preview / Run / Cancel (Redundant, not added to layout to keep sidebar clean since they are in the top toolbar)
+        self.preview_btn = make_button("Preview", "#1e2a38")
         self.run_mesh_btn = make_button("Generate Mesh", "#1e4620")
         self.cancel_mesh_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_mesh_btn.setEnabled(False)
 
-        btn_layout2 = QHBoxLayout()
-        btn_layout2.setSpacing(4)
-        btn_layout2.addWidget(self.run_mesh_btn)
-        btn_layout2.addWidget(self.cancel_mesh_btn)
-        self._layout.addLayout(btn_layout2)
-
         # ── 1. Domain & Geometry Files ────────────────────────────────────
-        self.sec_domain = CollapsibleSection("1. Domain & Geometry", start_collapsed=False)
+        self.sec_domain = CollapsibleSection("1. Domain & Geometry", start_collapsed=True)
         self._layout.addWidget(self.sec_domain)
 
         # Bounding box
@@ -313,16 +310,20 @@ class MeshConfigPanel(QScrollArea):
 
         io_form = QFormLayout()
         
-        self.bc_xmin = QLineEdit()
-        self.bc_xmin.setStyleSheet(LINEEDIT_STYLE)
-        self.bc_xmax = QLineEdit()
-        self.bc_xmax.setStyleSheet(LINEEDIT_STYLE)
-        self.bc_ymin = QLineEdit()
-        self.bc_ymin.setStyleSheet(LINEEDIT_STYLE)
-        self.bc_ymax = QLineEdit()
-        self.bc_ymax.setStyleSheet(LINEEDIT_STYLE)
-        self.bc_geom = QLineEdit()
-        self.bc_geom.setStyleSheet(LINEEDIT_STYLE)
+        self.bc_xmin = BCWidget()
+        self.bc_xmin_indicator = self.bc_xmin.indicator
+
+        self.bc_xmax = BCWidget()
+        self.bc_xmax_indicator = self.bc_xmax.indicator
+
+        self.bc_ymin = BCWidget()
+        self.bc_ymin_indicator = self.bc_ymin.indicator
+
+        self.bc_ymax = BCWidget()
+        self.bc_ymax_indicator = self.bc_ymax.indicator
+
+        self.bc_geom = BCWidget()
+        self.bc_geom_indicator = self.bc_geom.indicator
 
         self.output_filename = QLineEdit()
         self.output_filename.setStyleSheet(LINEEDIT_STYLE)
@@ -353,6 +354,37 @@ class MeshConfigPanel(QScrollArea):
         self.add_file_geom_btn.clicked.connect(self._on_browse_geom)
         self.remove_geom_btn.clicked.connect(self._on_remove_geom)
 
+        # Connect BC textChanged signals
+        self.bc_xmin.textChanged.connect(self._update_bc_indicators)
+        self.bc_xmax.textChanged.connect(self._update_bc_indicators)
+        self.bc_ymin.textChanged.connect(self._update_bc_indicators)
+        self.bc_ymax.textChanged.connect(self._update_bc_indicators)
+        self.bc_geom.textChanged.connect(self._update_bc_indicators)
+
+    def _update_bc_indicators(self):
+        """Parse boundary condition texts and update indicator backgrounds accordingly."""
+        bc_colors = {
+            "wall": '#ef4444',
+            "farfield": '#06b6d4',
+            "inlet": '#22c55e',
+            "outlet": '#3b82f6',
+            "symmetry": '#f97316',
+        }
+        default_bc_color = '#9ca3af'
+
+        for edit, indicator in [
+            (self.bc_xmin, self.bc_xmin_indicator),
+            (self.bc_xmax, self.bc_xmax_indicator),
+            (self.bc_ymin, self.bc_ymin_indicator),
+            (self.bc_ymax, self.bc_ymax_indicator),
+            (self.bc_geom, self.bc_geom_indicator),
+        ]:
+            val = edit.text().strip().lower()
+            color = bc_colors.get(val, default_bc_color)
+            indicator.setStyleSheet(
+                f"background-color: {color}; border-radius: 4px; border: 1px solid #333852;"
+            )
+
     def _on_browse_geom(self):
         """Prompt file dialog to select external geometry files."""
         files, _ = QFileDialog.getOpenFileNames(
@@ -364,11 +396,25 @@ class MeshConfigPanel(QScrollArea):
             item = QListWidgetItem(os.path.basename(f))
             item.setData(Qt.ItemDataRole.UserRole, f)
             self.geom_list_widget.addItem(item)
+            
+        geom_files = []
+        for row in range(self.geom_list_widget.count()):
+            geom_files.append(self.geom_list_widget.item(row).data(Qt.ItemDataRole.UserRole))
+        if hasattr(self.window(), 'mesh_canvas_view'):
+            self.window().mesh_canvas_view.update_geometry_previews(geom_files)
+            self.window().mesh_canvas_view.auto_range()
 
     def _on_remove_geom(self):
         """Remove selected geometry file from the list."""
         for item in self.geom_list_widget.selectedItems():
             self.geom_list_widget.takeItem(self.geom_list_widget.row(item))
+
+        geom_files = []
+        for row in range(self.geom_list_widget.count()):
+            geom_files.append(self.geom_list_widget.item(row).data(Qt.ItemDataRole.UserRole))
+        if hasattr(self.window(), 'mesh_canvas_view'):
+            self.window().mesh_canvas_view.update_geometry_previews(geom_files)
+            self.window().mesh_canvas_view.auto_range()
 
     def set_config(self, cfg: MeshConfig):
         """Populate widget values from a MeshConfig model instance."""
@@ -443,6 +489,11 @@ class MeshConfigPanel(QScrollArea):
         self.export_vtk.setChecked(cfg.export_vtk)
         self.export_starcd.setChecked(cfg.export_starcd)
         self.enable_collision_detection.setChecked(cfg.enable_collision_detection)
+
+        # Update canvas preview geometries and config
+        if hasattr(self.window(), 'mesh_canvas_view'):
+            self.window().mesh_canvas_view.update_mesh_config(cfg)
+            self.window().mesh_canvas_view.update_geometry_previews(cfg.geom_files)
 
     def get_config(self) -> MeshConfig:
         """Collect widget values and return a MeshConfig model instance."""

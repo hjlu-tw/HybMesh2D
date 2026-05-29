@@ -13,18 +13,21 @@ class MeshGenControllerMixin:
 
     def load_mesh_config(self):
         """Prompt file dialog to load a Background_para.dat configuration file."""
-        session = self.active_session()
-        if not session:
-            return
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        default_dir = os.path.join(root_dir, "config", "mesh")
         
         path, _ = QFileDialog.getOpenFileName(
             self.main_window, 
             "Load Mesh Configuration", 
-            "", 
+            default_dir, 
             "Config Files (Background_para.dat Background_para*.dat *.dat);;All Files (*)"
         )
         if not path:
             return
+
+        session = self.active_session()
+        if not session:
+            session = self._new_session("")
 
         try:
             session.mesh_config.load_from_file(path)
@@ -37,12 +40,21 @@ class MeshGenControllerMixin:
         """Extract config settings from UI panel and save them to a file."""
         session = self.active_session()
         if not session:
+            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
             return
         
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        
+        default_name = "Background_para.dat"
+        if session.file_path:
+            stem = os.path.splitext(os.path.basename(session.file_path))[0]
+            default_name = f"Background_para_{stem}.dat"
+        default_path = os.path.join(root_dir, "config", "mesh", default_name)
+
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, 
             "Save Mesh Configuration", 
-            "Background_para.dat", 
+            default_path, 
             "Config Files (*.dat);;All Files (*)"
         )
         if not path:
@@ -56,10 +68,25 @@ class MeshGenControllerMixin:
         except Exception as e:
             self.main_window.log_panel.log(f"Failed to save mesh config: {e}")
 
+    def preview_mesh_generator(self):
+        """Update and fit the canvas view to the current geometry input files and domain box coordinates."""
+        session = self.active_session()
+        if not session:
+            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
+            return
+
+        cfg = self.main_window.mesh_config_panel.get_config()
+        session.mesh_config = cfg
+
+        self.main_window.mesh_canvas_view.update_mesh_config(cfg)
+        self.main_window.mesh_canvas_view.auto_range()
+        self.main_window.log_panel.log("Mesh generator preview updated.")
+
     def add_active_preprocessor_geometry(self):
         """Auto-add the resampled output file of the active PreProcessor session into the mesh generator input list."""
         session = self.active_session()
         if not session:
+            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
             return
         
         if not session.project_model.output_file:
@@ -89,6 +116,7 @@ class MeshGenControllerMixin:
         """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background."""
         session = self.active_session()
         if not session:
+            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
             return
 
         if hasattr(self, '_mesh_worker') and self._mesh_worker is not None and self._mesh_worker.isRunning():
@@ -102,7 +130,18 @@ class MeshGenControllerMixin:
 
         # Extract current config values from UI
         cfg = self.main_window.mesh_config_panel.get_config()
+        
+        if not cfg.output_filename:
+            expected_vtk = self._get_expected_vtk_path(cfg)
+            cfg.output_filename = expected_vtk
+        else:
+            expected_vtk = cfg.output_filename
+            if not os.path.isabs(expected_vtk):
+                root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+                expected_vtk = os.path.abspath(os.path.join(root_dir, expected_vtk))
+
         session.mesh_config = cfg
+        self.main_window.mesh_canvas_view.update_mesh_config(cfg)
 
         # Save to temporary config file for generation
         tmp_cfg = tempfile.NamedTemporaryFile(
@@ -111,12 +150,13 @@ class MeshGenControllerMixin:
         cfg.save_to_file(tmp_cfg.name)
         tmp_cfg.close()
 
-        expected_vtk = self._get_expected_vtk_path(cfg)
-
-        # Disable/Enable panel trigger buttons
+        # Disable/Enable panel and toolbar trigger buttons
         self.main_window.mesh_config_panel.run_mesh_btn.setEnabled(False)
         self.main_window.mesh_config_panel.cancel_mesh_btn.setEnabled(True)
+        self.main_window.mesh_generate_btn.setEnabled(False)
+        self.main_window.mesh_cancel_btn.setEnabled(True)
 
+        self.main_window.log_panel.clear_log()
         self.main_window.log_panel.log("--- Starting HybMesh2D Mesh Generation ---")
         
         self._mesh_worker = MeshGenWorker(exe, tmp_cfg.name)
@@ -142,17 +182,16 @@ class MeshGenControllerMixin:
         """Calculate the expected output VTK filename matching main.cpp logic."""
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
 
-        
         path = ""
         if cfg.output_filename:
             path = cfg.output_filename
         elif not cfg.geom_files:
-            path = "Results/mesh_cartesian.vtk"
+            path = "results/meshes/mesh_cartesian.vtk"
         elif len(cfg.geom_files) == 1:
             stem = os.path.splitext(os.path.basename(cfg.geom_files[0]))[0]
-            path = f"Results/mesh_{stem}.vtk"
+            path = f"results/meshes/mesh_{stem}.vtk"
         else:
-            path = "Results/mesh_multiple.vtk"
+            path = "results/meshes/mesh_multiple.vtk"
 
         if os.path.isabs(path):
             return path
@@ -163,6 +202,8 @@ class MeshGenControllerMixin:
         """Handle execution thread termination, load VTK result, and refresh canvas."""
         self.main_window.mesh_config_panel.run_mesh_btn.setEnabled(True)
         self.main_window.mesh_config_panel.cancel_mesh_btn.setEnabled(False)
+        self.main_window.mesh_generate_btn.setEnabled(True)
+        self.main_window.mesh_cancel_btn.setEnabled(False)
 
         # Cleanup temporary config file
         try:
@@ -180,6 +221,7 @@ class MeshGenControllerMixin:
                     session.vtk_mesh = mesh
                     session.vtk_path = expected_vtk_path
                     if session is self.active_session():
+                        self.main_window.mesh_canvas_view.update_mesh_config(session.mesh_config)
                         self.main_window.mesh_canvas_view.render_mesh(mesh)
                         self.main_window.mesh_stats_panel.update_stats(mesh, expected_vtk_path)
                     self.main_window.log_panel.log(f"Successfully loaded and rendered mesh from {expected_vtk_path}")
@@ -198,6 +240,7 @@ class MeshGenControllerMixin:
         """Export the generated VTK mesh file to a user-selected path."""
         session = self.active_session()
         if not session:
+            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
             return
 
         vtk_path = session.vtk_path
@@ -208,11 +251,14 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log("No generated VTK mesh available to export. Generate a mesh first.")
             return
 
-        default_name = os.path.basename(vtk_path)
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        default_dir = os.path.join(root_dir, "results", "meshes")
+        default_path = os.path.join(default_dir, os.path.basename(vtk_path))
+
         dest_path, _ = QFileDialog.getSaveFileName(
             self.main_window,
             "Export VTK Mesh",
-            default_name,
+            default_path,
             "VTK Files (*.vtk);;All Files (*)"
         )
         if not dest_path:
@@ -228,6 +274,7 @@ class MeshGenControllerMixin:
         """Export the generated Star-CD mesh files (.vrt, .cel, .bnd) to a user-selected prefix."""
         session = self.active_session()
         if not session:
+            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
             return
 
         vtk_path = session.vtk_path
@@ -255,11 +302,14 @@ class MeshGenControllerMixin:
             )
             return
 
-        default_name = os.path.basename(vrt_path)
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        default_dir = os.path.join(root_dir, "results", "meshes")
+        default_path = os.path.join(default_dir, os.path.basename(vrt_path))
+
         dest_vrt, _ = QFileDialog.getSaveFileName(
             self.main_window,
             "Export Star-CD Files",
-            default_name,
+            default_path,
             "Star-CD VRT (*.vrt);;All Files (*)"
         )
         if not dest_vrt:

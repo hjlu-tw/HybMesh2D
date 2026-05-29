@@ -2,7 +2,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox
+    QStackedWidget, QComboBox, QFrame, QScrollArea
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
@@ -36,19 +36,37 @@ class MainWindow(QMainWindow):
         self.sidebar_view = SidebarView(self.sidebar_stack)
         self.sidebar_stack.addWidget(self.sidebar_view)
 
-        # Mesh Generation Sidebar Container
-        self.mesh_sidebar = QWidget(self.sidebar_stack)
-        self.mesh_sidebar.setStyleSheet("background: #121422;")
-        mesh_sb_layout = QVBoxLayout(self.mesh_sidebar)
-        mesh_sb_layout.setContentsMargins(0, 0, 0, 0)
-        mesh_sb_layout.setSpacing(6)
+        # Mesh Configuration Sidebar Page (directly in stack)
+        self.mesh_config_panel = MeshConfigPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.mesh_config_panel)
 
-        self.mesh_config_panel = MeshConfigPanel(self.mesh_sidebar)
-        self.mesh_stats_panel = MeshStatsPanel(self.mesh_sidebar)
-
-        mesh_sb_layout.addWidget(self.mesh_config_panel, stretch=7)
-        mesh_sb_layout.addWidget(self.mesh_stats_panel, stretch=3)
-        self.sidebar_stack.addWidget(self.mesh_sidebar)
+        # Mesh Statistics Sidebar Page (wrapped in scroll area)
+        self.stats_scroll = QScrollArea(self.sidebar_stack)
+        self.stats_scroll.setWidgetResizable(True)
+        self.stats_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.stats_scroll.setStyleSheet("background: #0c0d16;")
+        self.stats_scroll.verticalScrollBar().setStyleSheet("""
+            QScrollBar:vertical {
+                border: none;
+                background: #0c0d16;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #2c2e43;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #3e415e;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+        self.mesh_stats_panel = MeshStatsPanel(self.stats_scroll)
+        self.stats_scroll.setWidget(self.mesh_stats_panel)
+        self.sidebar_stack.addWidget(self.stats_scroll)
 
         # ── Right panel: tab-bar row + shared canvas ──────────────────────
         self.right_panel = QWidget(self)
@@ -113,7 +131,7 @@ class MainWindow(QMainWindow):
         tab_hl.addWidget(self.tab_bar)
 
         self.mode_combo = QComboBox(self.tab_row)
-        self.mode_combo.addItems(["PreProcessor (CAD)", "Mesh Generator"])
+        self.mode_combo.addItems(["PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics"])
         self.mode_combo.setStyleSheet("""
             QComboBox {
                 background: #181b30;
@@ -186,6 +204,9 @@ class MainWindow(QMainWindow):
             v.setStyleSheet("background-color: #1c1e36;")
             return v
 
+        self.cad_sep1 = create_sep()
+        self.cad_sep2 = create_sep()
+
         self.show_vertices_cb = QCheckBox("Show Geometry Vertices", self.canvas_toolbar)
         self.show_vertices_cb.setStyleSheet("""
             QCheckBox {
@@ -221,15 +242,195 @@ class MainWindow(QMainWindow):
             }
         """)
 
+        # Mesh Generation Toolbar controls
+        self.mesh_preview_btn = create_tb_btn("👁 Preview", "Preview calculation domain and boundary geometries")
+        self.mesh_generate_btn = create_tb_btn("⚙ Generate Mesh", "Run HybMesh2D to generate grid")
+        self.mesh_generate_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1e4620;
+                color: #dde2ff;
+                border: 1px solid #2d5630;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #2c5e2e;
+                border-color: #22c55e;
+                color: #ffffff;
+            }
+        """)
+        self.mesh_cancel_btn = create_tb_btn("⏹ Cancel", "Cancel background mesh generation")
+        self.mesh_cancel_btn.setEnabled(False)
+        self.mesh_cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a1c1c;
+                color: #dde2ff;
+                border: 1px solid #5d2d2d;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #6a2c2c;
+                border-color: #ef4444;
+                color: #ffffff;
+            }
+            QPushButton:disabled {
+                background-color: #1a1f3b;
+                color: #4a4e69;
+                border-color: #1c1e36;
+            }
+        """)
+        
+        self.mesh_export_vtk_btn = create_tb_btn("📤 Export VTK", "Export VTK mesh file")
+        self.mesh_export_vtk_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a3b5c;
+                color: #dde2ff;
+                border: 1px solid #3d527a;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #3b5280;
+                border-color: #3b82f6;
+                color: #ffffff;
+            }
+        """)
+        
+        self.mesh_export_star_cd_btn = create_tb_btn("📤 Export Star-CD", "Export Star-CD mesh files")
+        self.mesh_export_star_cd_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a2046;
+                color: #dde2ff;
+                border: 1px solid #522d63;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #522d63;
+                border-color: #a855f7;
+                color: #ffffff;
+            }
+        """)
+
+        self.mesh_focus_btn = create_tb_btn("⛶ Fit to View", "Fit canvas to mesh or preview boundaries")
+
+        self.mesh_show_wireframe_cb = QCheckBox("Show Mesh", self.canvas_toolbar)
+        self.mesh_show_wireframe_cb.setStyleSheet("""
+            QCheckBox {
+                color: #a0b0d0;
+                font-size: 11px;
+            }
+            QCheckBox:hover {
+                color: #ffffff;
+            }
+        """)
+        self.mesh_show_wireframe_cb.setChecked(True)
+
+        self.mesh_show_bc_cb = QCheckBox("Show BC", self.canvas_toolbar)
+        self.mesh_show_bc_cb.setStyleSheet("""
+            QCheckBox {
+                color: #a0b0d0;
+                font-size: 11px;
+            }
+            QCheckBox:hover {
+                color: #ffffff;
+            }
+        """)
+        self.mesh_show_bc_cb.setChecked(True)
+
+        self.mesh_show_domain_cb = QCheckBox("Show Domain", self.canvas_toolbar)
+        self.mesh_show_domain_cb.setStyleSheet("""
+            QCheckBox {
+                color: #a0b0d0;
+                font-size: 11px;
+            }
+            QCheckBox:hover {
+                color: #ffffff;
+            }
+        """)
+        self.mesh_show_domain_cb.setChecked(True)
+
+        self.mesh_color_label = QLabel("Color Mode:", self.canvas_toolbar)
+        self.mesh_color_label.setStyleSheet("color: #a0b0d0; font-size: 11px;")
+
+        self.mesh_color_mode_combo = QComboBox(self.canvas_toolbar)
+        self.mesh_color_mode_combo.addItems([
+            "Element Type", 
+            "Quality (Aspect Ratio)", 
+            "Quality (Skewness)",
+            "Uniform"
+        ])
+        self.mesh_color_mode_combo.setStyleSheet("""
+            QComboBox {
+                background: #181b30;
+                color: #dde2ff;
+                border: 1px solid #2d3356;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-weight: bold;
+                font-size: 10px;
+                min-width: 140px;
+            }
+        """)
+
+        self.mesh_sep1 = create_sep()
+        self.mesh_sep2 = create_sep()
+        self.mesh_sep3 = create_sep()
+        self.mesh_sep4 = create_sep()
+
         tb_layout.addWidget(self.undo_btn)
         tb_layout.addWidget(self.redo_btn)
-        tb_layout.addWidget(create_sep())
+        tb_layout.addWidget(self.cad_sep1)
         tb_layout.addWidget(self.focus_geom_btn)
-        tb_layout.addWidget(create_sep())
+        tb_layout.addWidget(self.cad_sep2)
         tb_layout.addWidget(self.show_vertices_cb)
         tb_layout.addWidget(self.show_nodes_cb)
         tb_layout.addWidget(self.quality_check_cb)
+
+        tb_layout.addWidget(self.mesh_preview_btn)
+        tb_layout.addWidget(self.mesh_generate_btn)
+        tb_layout.addWidget(self.mesh_cancel_btn)
+        tb_layout.addWidget(self.mesh_sep1)
+        tb_layout.addWidget(self.mesh_export_vtk_btn)
+        tb_layout.addWidget(self.mesh_export_star_cd_btn)
+        tb_layout.addWidget(self.mesh_sep2)
+        tb_layout.addWidget(self.mesh_focus_btn)
+        tb_layout.addWidget(self.mesh_sep3)
+        tb_layout.addWidget(self.mesh_show_wireframe_cb)
+        tb_layout.addWidget(self.mesh_show_bc_cb)
+        tb_layout.addWidget(self.mesh_show_domain_cb)
+        tb_layout.addWidget(self.mesh_sep4)
+        tb_layout.addWidget(self.mesh_color_label)
+        tb_layout.addWidget(self.mesh_color_mode_combo)
         tb_layout.addStretch(1)
+
+        # Track layouts for visibility toggling
+        self.cad_tb_widgets = [
+            self.undo_btn, self.redo_btn, self.focus_geom_btn,
+            self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
+            self.cad_sep1, self.cad_sep2
+        ]
+
+        self.mesh_tb_widgets = [
+            self.mesh_preview_btn, self.mesh_generate_btn, self.mesh_cancel_btn,
+            self.mesh_export_vtk_btn, self.mesh_export_star_cd_btn,
+            self.mesh_focus_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
+            self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,
+            self.mesh_sep1, self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
+        ]
+
+        # Hide mesh widgets on start
+        for w in self.mesh_tb_widgets:
+            w.setVisible(False)
 
         # Shared Canvas Stack
         self.canvas_stack = QStackedWidget(self.right_panel)
@@ -300,14 +501,17 @@ class MainWindow(QMainWindow):
 
     def _on_mode_changed(self, idx: int):
         self.sidebar_stack.setCurrentIndex(idx)
-        self.canvas_stack.setCurrentIndex(idx)
+        canvas_idx = 0 if idx == 0 else 1
+        self.canvas_stack.setCurrentIndex(canvas_idx)
+        
         is_pre = (idx == 0)
-        self.undo_btn.setVisible(is_pre)
-        self.redo_btn.setVisible(is_pre)
-        self.show_vertices_cb.setVisible(is_pre)
-        self.show_nodes_cb.setVisible(is_pre)
-        self.quality_check_cb.setVisible(is_pre)
-        self.focus_geom_btn.setVisible(is_pre)
+        for w in self.cad_tb_widgets:
+            w.setVisible(is_pre)
+            
+        is_mesh = (idx in [1, 2])
+        for w in self.mesh_tb_widgets:
+            w.setVisible(is_mesh)
+            
         self.mode_changed.emit(idx)
 
     def closeEvent(self, event):

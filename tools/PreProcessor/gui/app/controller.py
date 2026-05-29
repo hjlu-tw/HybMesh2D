@@ -139,18 +139,85 @@ class AppController(
         # ── Wire Mesh Generation signals ───────────────────────────────
         mw = self.main_window
         mw.mode_changed.connect(self.handle_mode_changed)
+        
+        # Sidebar Panel buttons
         mw.mesh_config_panel.load_config_btn.clicked.connect(self.load_mesh_config)
         mw.mesh_config_panel.save_config_btn.clicked.connect(self.save_mesh_config)
         mw.mesh_config_panel.add_active_geom_btn.clicked.connect(self.add_active_preprocessor_geometry)
+        mw.mesh_config_panel.preview_btn.clicked.connect(self.preview_mesh_generator)
         mw.mesh_config_panel.run_mesh_btn.clicked.connect(self.run_mesh_generator)
         mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
 
-        # Wire Mesh Statistics controls & export
-        mw.mesh_stats_panel.color_mode_changed.connect(mw.mesh_canvas_view.set_color_mode)
+        # Toolbar Mesh Buttons
+        mw.mesh_preview_btn.clicked.connect(self.preview_mesh_generator)
+        mw.mesh_generate_btn.clicked.connect(self.run_mesh_generator)
+        mw.mesh_cancel_btn.clicked.connect(self.cancel_mesh_generator)
+        mw.mesh_export_vtk_btn.clicked.connect(self.export_generated_vtk)
+        mw.mesh_export_star_cd_btn.clicked.connect(self.export_star_cd)
+        mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
+
+        # Wire Toolbar Toggles & Synchronization with Sidebar Panel
+        def sync_wireframe(checked):
+            mw.mesh_canvas_view.set_wireframe_visible(checked)
+            mw.mesh_stats_panel.show_wireframe_cb.blockSignals(True)
+            mw.mesh_stats_panel.show_wireframe_cb.setChecked(checked)
+            mw.mesh_stats_panel.show_wireframe_cb.blockSignals(False)
+            mw.mesh_show_wireframe_cb.blockSignals(True)
+            mw.mesh_show_wireframe_cb.setChecked(checked)
+            mw.mesh_show_wireframe_cb.blockSignals(False)
+
+        def sync_bc(checked):
+            mw.mesh_canvas_view.set_bc_coloring_visible(checked)
+            mw.mesh_stats_panel.show_bc_coloring_cb.blockSignals(True)
+            mw.mesh_stats_panel.show_bc_coloring_cb.setChecked(checked)
+            mw.mesh_stats_panel.show_bc_coloring_cb.blockSignals(False)
+            mw.mesh_show_bc_cb.blockSignals(True)
+            mw.mesh_show_bc_cb.setChecked(checked)
+            mw.mesh_show_bc_cb.blockSignals(False)
+
+        def sync_domain(checked):
+            mw.mesh_canvas_view.set_domain_box_visible(checked)
+            mw.mesh_stats_panel.show_domain_box_cb.blockSignals(True)
+            mw.mesh_stats_panel.show_domain_box_cb.setChecked(checked)
+            mw.mesh_stats_panel.show_domain_box_cb.blockSignals(False)
+            mw.mesh_show_domain_cb.blockSignals(True)
+            mw.mesh_show_domain_cb.setChecked(checked)
+            mw.mesh_show_domain_cb.blockSignals(False)
+
+        def sync_color_mode(text):
+            mode_map = {
+                "Element Type": "element_type",
+                "Quality (Aspect Ratio)": "quality_aspect",
+                "Quality (Skewness)": "quality_skewness",
+                "Uniform": "uniform"
+            }
+            mode_val = mode_map.get(text, "uniform")
+            mw.mesh_canvas_view.set_color_mode(mode_val)
+            
+            # Sync toolbar
+            mw.mesh_color_mode_combo.blockSignals(True)
+            mw.mesh_color_mode_combo.setCurrentText(text)
+            mw.mesh_color_mode_combo.blockSignals(False)
+            
+            # Sync sidebar panel
+            mw.mesh_stats_panel.color_mode_combo.blockSignals(True)
+            mw.mesh_stats_panel.color_mode_combo.setCurrentText(text)
+            mw.mesh_stats_panel.color_mode_combo.blockSignals(False)
+
+        mw.mesh_show_wireframe_cb.toggled.connect(sync_wireframe)
+        mw.mesh_stats_panel.show_wireframe_cb.toggled.connect(sync_wireframe)
+        
+        mw.mesh_show_bc_cb.toggled.connect(sync_bc)
+        mw.mesh_stats_panel.show_bc_coloring_cb.toggled.connect(sync_bc)
+        
+        mw.mesh_show_domain_cb.toggled.connect(sync_domain)
+        mw.mesh_stats_panel.show_domain_box_cb.toggled.connect(sync_domain)
+
+        mw.mesh_color_mode_combo.currentTextChanged.connect(sync_color_mode)
+        mw.mesh_stats_panel.color_mode_combo.currentTextChanged.connect(sync_color_mode)
+
+        # Wire stats panel buttons
         mw.mesh_stats_panel.fit_view_requested.connect(mw.mesh_canvas_view.auto_range)
-        mw.mesh_stats_panel.show_domain_box_toggled.connect(mw.mesh_canvas_view.set_domain_box_visible)
-        mw.mesh_stats_panel.show_bc_coloring_toggled.connect(mw.mesh_canvas_view.set_bc_coloring_visible)
-        mw.mesh_stats_panel.show_wireframe_toggled.connect(mw.mesh_canvas_view.set_wireframe_visible)
         mw.mesh_stats_panel.export_vtk_requested.connect(self.export_generated_vtk)
         mw.mesh_stats_panel.export_star_cd_requested.connect(self.export_star_cd)
 
@@ -170,7 +237,7 @@ class AppController(
         session = self.active_session()
         if not session:
             return
-        if idx == 1:  # Mesh Generator Mode
+        if idx in [1, 2]:  # Mesh Generator or Statistics Mode
             self.main_window.mesh_config_panel.set_config(session.mesh_config)
             
             vtk_path = session.vtk_path if session.vtk_path else (self._get_expected_vtk_path(session.mesh_config) if session.mesh_config else "")

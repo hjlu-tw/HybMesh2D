@@ -69,14 +69,24 @@ class LogPanel(QWidget):
             
         # Auto-detect level if not specified
         if level is None:
-            lower_msg = message.lower()
-            if "error" in lower_msg or "failed" in lower_msg:
+            if "\x1b[1;31m" in message or "\x1b[31m" in message:
                 level = "ERROR"
-            elif "warning" in lower_msg:
+            elif "\x1b[1;33m" in message or "\x1b[33m" in message:
                 level = "WARNING"
             else:
-                level = "INFO"
+                lower_msg = message.lower()
+                if "error" in lower_msg or "failed" in lower_msg:
+                    level = "ERROR"
+                elif "warning" in lower_msg or "warn" in lower_msg:
+                    level = "WARNING"
+                else:
+                    level = "INFO"
                 
+        # Strip ANSI escape codes to clean up garbled control characters
+        import re
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        clean_message = ansi_escape.sub('', message)
+
         timestamp = QTime.currentTime().toString("hh:mm:ss")
         
         # Choose text color based on level
@@ -91,7 +101,7 @@ class LogPanel(QWidget):
             lvl_lbl = "[INFO]"
             
         # Escape potential HTML characters in message to prevent formatting injection
-        safe_message = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        safe_message = clean_message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         
         html = (
             f'<span style="color:#6b738c;">[{timestamp}]</span> '

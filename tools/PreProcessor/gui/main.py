@@ -9,6 +9,16 @@ QDoubleSpinBox.wheelEvent = lambda self, event: event.ignore()
 from app.controller import AppController
 
 def main():
+    # Ensure default directories exist
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    for sub in [
+        "config/preprocessor",
+        "config/mesh",
+        "results/resampled",
+        "results/meshes"
+    ]:
+        os.makedirs(os.path.join(root_dir, sub), exist_ok=True)
+
     app = QApplication(sys.argv)
     
     import pyqtgraph as pg

@@ -53,6 +53,9 @@ class MeshCanvasView(QWidget):
         # Mouse events
         self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
+        # Geometry previews
+        self.geom_preview_items: list[pg.PlotDataItem] = []
+
     def render_mesh(self, vtk_mesh: VTKMesh):
         """Load and display the given VTK mesh."""
         self.mesh = vtk_mesh
@@ -78,6 +81,34 @@ class MeshCanvasView(QWidget):
             self.plot_widget.removeItem(item)
         self.filled_items.clear()
         self.coord_label.setText("")
+
+    def update_geometry_previews(self, geom_files: list[str]):
+        """Load and display the input boundary geometries as preview lines."""
+        import os
+        for item in self.geom_preview_items:
+            self.plot_widget.removeItem(item)
+        self.geom_preview_items.clear()
+
+        for f in geom_files:
+            if not f or not os.path.exists(f):
+                continue
+            try:
+                pts = np.loadtxt(f)
+                if len(pts) == 0:
+                    continue
+                # If the first and last points are not close, stack first point to close it visually
+                if not np.allclose(pts[0], pts[-1]):
+                    pts = np.vstack((pts, pts[0]))
+                
+                item = self.plot_widget.plot(
+                    pts[:, 0], pts[:, 1],
+                    pen=pg.mkPen('#4a5070', width=1.5, style=Qt.PenStyle.SolidLine),
+                    symbol='o', symbolBrush='#4a5070', symbolSize=3
+                )
+                item.setZValue(5)
+                self.geom_preview_items.append(item)
+            except Exception as e:
+                print(f"Error loading preview geometry {f}: {e}")
 
     def set_color_mode(self, mode: str):
         """Set the rendering color mode and refresh the display."""
@@ -109,14 +140,19 @@ class MeshCanvasView(QWidget):
     def update_mesh_config(self, cfg: MeshConfig | None):
         """Sync MeshConfig mapping for domain box and boundary conditions rendering."""
         self.mesh_config = cfg
-        if self.mesh_config and self.mesh:
+        if self.mesh_config:
             self.update_domain_box(
                 self.mesh_config.domain_x_min,
                 self.mesh_config.domain_x_max,
                 self.mesh_config.domain_y_min,
                 self.mesh_config.domain_y_max
             )
-            self._rebuild_mesh_items()
+            # Update geometry previews from config
+            self.update_geometry_previews(self.mesh_config.geom_files)
+            if self.mesh:
+                self._rebuild_mesh_items()
+            else:
+                self.auto_range()
 
     def update_domain_box(self, xmin: float, xmax: float, ymin: float, ymax: float):
         """Render calculations domain box coordinates as a dashed border."""
@@ -133,9 +169,23 @@ class MeshCanvasView(QWidget):
         self.domain_box_item.setVisible(self.show_domain_box)
 
     def auto_range(self):
-        """Automatically fit the view bounds to display the full mesh."""
+        """Automatically fit the view bounds to display the full mesh or geometry previews."""
+        xmin, xmax, ymin, ymax = None, None, None, None
+        
         if self.mesh and len(self.mesh.points) > 0:
             xmin, xmax, ymin, ymax = self.mesh.bounds
+        elif self.geom_preview_items:
+            xs, ys = [], []
+            for item in self.geom_preview_items:
+                data = item.getData()
+                if data and len(data[0]) > 0:
+                    xs.extend(data[0])
+                    ys.extend(data[1])
+            if xs and ys:
+                xmin, xmax = min(xs), max(xs)
+                ymin, ymax = min(ys), max(ys)
+
+        if xmin is not None:
             # If domain box is active and mesh config exists, stretch slightly to fit domain
             if self.show_domain_box and self.mesh_config:
                 xmin = min(xmin, self.mesh_config.domain_x_min)
@@ -195,7 +245,7 @@ class MeshCanvasView(QWidget):
 
         self.wireframe_item = self.plot_widget.plot(
             xs, ys,
-            pen=pg.mkPen('#2d3345', width=1),
+            pen=pg.mkPen('#6d7faf', width=1.2),
             connect='pairs'
         )
         self.wireframe_item.setZValue(10)

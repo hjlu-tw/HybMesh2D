@@ -12,7 +12,7 @@ class CollapsibleSection(QWidget):
         section.add_layout(some_layout)
     """
 
-    def __init__(self, title: str, parent=None, start_collapsed: bool = False):
+    def __init__(self, title: str, parent=None, start_collapsed: bool = True):
         super().__init__(parent)
 
         main_layout = QVBoxLayout(self)
