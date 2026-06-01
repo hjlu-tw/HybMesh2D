@@ -2,7 +2,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea
+    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
@@ -26,6 +26,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HybMesh PreProcessor")
+        self.setMinimumSize(1450, 900)
         self.resize(1450, 900)
         self.setStyleSheet("background: #0c0d16; color: #a0a8c0;")
 
@@ -160,7 +161,7 @@ class MainWindow(QMainWindow):
         self.canvas_toolbar.setStyleSheet("background: #06070d; border-bottom: 1px solid #1c1e36;")
         tb_layout = QHBoxLayout(self.canvas_toolbar)
         tb_layout.setContentsMargins(10, 0, 10, 0)
-        tb_layout.setSpacing(15)
+        tb_layout.setSpacing(8)
 
         # Helper to create buttons
         def create_tb_btn(text: str, tooltip: str) -> QPushButton:
@@ -192,9 +193,16 @@ class MainWindow(QMainWindow):
             """)
             return btn
 
-        self.undo_btn = create_tb_btn("↺ Undo", "Undo last action (Ctrl+Z)")
-        self.redo_btn = create_tb_btn("↻ Redo", "Redo last action (Ctrl+Shift+Z)")
-        self.focus_geom_btn = create_tb_btn("⛶ Fit to View", "Fit canvas view to selected geometry")
+        self.undo_btn = create_tb_btn("Undo", "Undo last action (Ctrl+Z)")
+        self.redo_btn = create_tb_btn("Redo", "Redo last action (Ctrl+Shift+Z)")
+        self.focus_geom_btn = create_tb_btn("Fit to View", "Fit canvas view to selected geometry")
+        
+        # New CAD Previews
+        self.cad_preview_btn = create_tb_btn("Preview Domain", "Run PreProcessor and preview geometry/boundary conditions")
+        self.cad_curve_preview_btn = create_tb_btn("Preview Edge", "Preview the selected curve equation")
+        self.cad_file_preview_btn = create_tb_btn("Apply & Preview", "Apply and preview the selected imported file segment")
+        self.cad_curve_preview_btn.setVisible(False)
+        self.cad_file_preview_btn.setVisible(False)
 
         # Separators
         def create_sep():
@@ -243,8 +251,8 @@ class MainWindow(QMainWindow):
         """)
 
         # Mesh Generation Toolbar controls
-        self.mesh_preview_btn = create_tb_btn("👁 Preview", "Preview calculation domain and boundary geometries")
-        self.mesh_generate_btn = create_tb_btn("⚙ Generate Mesh", "Run HybMesh2D to generate grid")
+        self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
+        self.mesh_generate_btn = create_tb_btn("Mesh Generate", "Run HybMesh2D to generate grid")
         self.mesh_generate_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1e4620;
@@ -261,7 +269,7 @@ class MainWindow(QMainWindow):
                 color: #ffffff;
             }
         """)
-        self.mesh_cancel_btn = create_tb_btn("⏹ Cancel", "Cancel background mesh generation")
+        self.mesh_cancel_btn = create_tb_btn("Cancel", "Cancel background mesh generation")
         self.mesh_cancel_btn.setEnabled(False)
         self.mesh_cancel_btn.setStyleSheet("""
             QPushButton {
@@ -284,46 +292,10 @@ class MainWindow(QMainWindow):
                 border-color: #1c1e36;
             }
         """)
-        
-        self.mesh_export_vtk_btn = create_tb_btn("📤 Export VTK", "Export VTK mesh file")
-        self.mesh_export_vtk_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2a3b5c;
-                color: #dde2ff;
-                border: 1px solid #3d527a;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #3b5280;
-                border-color: #3b82f6;
-                color: #ffffff;
-            }
-        """)
-        
-        self.mesh_export_star_cd_btn = create_tb_btn("📤 Export Star-CD", "Export Star-CD mesh files")
-        self.mesh_export_star_cd_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3a2046;
-                color: #dde2ff;
-                border: 1px solid #522d63;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #522d63;
-                border-color: #a855f7;
-                color: #ffffff;
-            }
-        """)
 
-        self.mesh_focus_btn = create_tb_btn("⛶ Fit to View", "Fit canvas to mesh or preview boundaries")
+        self.mesh_focus_btn = create_tb_btn("Fit to View", "Fit canvas to mesh or preview boundaries")
 
-        self.mesh_show_wireframe_cb = QCheckBox("Show Mesh", self.canvas_toolbar)
+        self.mesh_show_wireframe_cb = QCheckBox("Mesh", self.canvas_toolbar)
         self.mesh_show_wireframe_cb.setStyleSheet("""
             QCheckBox {
                 color: #a0b0d0;
@@ -335,7 +307,7 @@ class MainWindow(QMainWindow):
         """)
         self.mesh_show_wireframe_cb.setChecked(True)
 
-        self.mesh_show_bc_cb = QCheckBox("Show BC", self.canvas_toolbar)
+        self.mesh_show_bc_cb = QCheckBox("BCs", self.canvas_toolbar)
         self.mesh_show_bc_cb.setStyleSheet("""
             QCheckBox {
                 color: #a0b0d0;
@@ -347,7 +319,7 @@ class MainWindow(QMainWindow):
         """)
         self.mesh_show_bc_cb.setChecked(True)
 
-        self.mesh_show_domain_cb = QCheckBox("Show Domain", self.canvas_toolbar)
+        self.mesh_show_domain_cb = QCheckBox("Domain", self.canvas_toolbar)
         self.mesh_show_domain_cb.setStyleSheet("""
             QCheckBox {
                 color: #a0b0d0;
@@ -359,8 +331,8 @@ class MainWindow(QMainWindow):
         """)
         self.mesh_show_domain_cb.setChecked(True)
 
-        self.mesh_color_label = QLabel("Color Mode:", self.canvas_toolbar)
-        self.mesh_color_label.setStyleSheet("color: #a0b0d0; font-size: 11px;")
+        self.mesh_color_label = QLabel("", self.canvas_toolbar) # Hidden dummy
+        self.mesh_color_label.setVisible(False)
 
         self.mesh_color_mode_combo = QComboBox(self.canvas_toolbar)
         self.mesh_color_mode_combo.addItems([
@@ -382,7 +354,6 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        self.mesh_sep1 = create_sep()
         self.mesh_sep2 = create_sep()
         self.mesh_sep3 = create_sep()
         self.mesh_sep4 = create_sep()
@@ -391,6 +362,9 @@ class MainWindow(QMainWindow):
         tb_layout.addWidget(self.redo_btn)
         tb_layout.addWidget(self.cad_sep1)
         tb_layout.addWidget(self.focus_geom_btn)
+        tb_layout.addWidget(self.cad_preview_btn)
+        tb_layout.addWidget(self.cad_curve_preview_btn)
+        tb_layout.addWidget(self.cad_file_preview_btn)
         tb_layout.addWidget(self.cad_sep2)
         tb_layout.addWidget(self.show_vertices_cb)
         tb_layout.addWidget(self.show_nodes_cb)
@@ -399,9 +373,6 @@ class MainWindow(QMainWindow):
         tb_layout.addWidget(self.mesh_preview_btn)
         tb_layout.addWidget(self.mesh_generate_btn)
         tb_layout.addWidget(self.mesh_cancel_btn)
-        tb_layout.addWidget(self.mesh_sep1)
-        tb_layout.addWidget(self.mesh_export_vtk_btn)
-        tb_layout.addWidget(self.mesh_export_star_cd_btn)
         tb_layout.addWidget(self.mesh_sep2)
         tb_layout.addWidget(self.mesh_focus_btn)
         tb_layout.addWidget(self.mesh_sep3)
@@ -415,18 +386,24 @@ class MainWindow(QMainWindow):
 
         # Track layouts for visibility toggling
         self.cad_tb_widgets = [
-            self.undo_btn, self.redo_btn, self.focus_geom_btn,
+            self.focus_geom_btn,
+            self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
-            self.cad_sep1, self.cad_sep2
+            self.cad_sep2
         ]
 
         self.mesh_tb_widgets = [
             self.mesh_preview_btn, self.mesh_generate_btn, self.mesh_cancel_btn,
-            self.mesh_export_vtk_btn, self.mesh_export_star_cd_btn,
             self.mesh_focus_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
             self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,
-            self.mesh_sep1, self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
+            self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
         ]
+
+        # Dummy compatibility buttons
+        self.mesh_export_vtk_btn = QPushButton()
+        self.mesh_export_vtk_btn.setVisible(False)
+        self.mesh_export_star_cd_btn = QPushButton()
+        self.mesh_export_star_cd_btn.setVisible(False)
 
         # Hide mesh widgets on start
         for w in self.mesh_tb_widgets:
@@ -507,6 +484,13 @@ class MainWindow(QMainWindow):
         is_pre = (idx == 0)
         for w in self.cad_tb_widgets:
             w.setVisible(is_pre)
+            
+        if is_pre:
+            props = self.sidebar_view.edge_props_panel
+            is_curve_active = props.isVisible() and props._curve_group.isVisible()
+            is_file_active = props.isVisible() and props._file_seg_label.isVisible()
+            self.cad_curve_preview_btn.setVisible(is_curve_active)
+            self.cad_file_preview_btn.setVisible(is_file_active)
             
         is_mesh = (idx in [1, 2])
         for w in self.mesh_tb_widgets:

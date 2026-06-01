@@ -152,8 +152,8 @@ class AppController(
         mw.mesh_preview_btn.clicked.connect(self.preview_mesh_generator)
         mw.mesh_generate_btn.clicked.connect(self.run_mesh_generator)
         mw.mesh_cancel_btn.clicked.connect(self.cancel_mesh_generator)
-        mw.mesh_export_vtk_btn.clicked.connect(self.export_generated_vtk)
-        mw.mesh_export_star_cd_btn.clicked.connect(self.export_star_cd)
+        mw.mesh_config_panel.export_vtk_btn.clicked.connect(self.export_generated_vtk)
+        mw.mesh_config_panel.export_starcd_btn.clicked.connect(self.export_star_cd)
         mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
 
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel

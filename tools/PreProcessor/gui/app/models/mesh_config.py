@@ -22,7 +22,7 @@ class MeshConfig:
     bl_layers: int = 5
 
     # Section 4: Corner Handling (Convex & Fan)
-    bl_convex_method: int = 0  # 0: Fan, 2: Parallelogram
+    bl_convex_method: int = 2  # 0: Fan, 2: Parallelogram
     bl_fan_nodes: int = 5
     bl_auto_fan_nodes: bool = False
     bl_fan_angle_threshold: float = 60.0

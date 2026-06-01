@@ -1,13 +1,14 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QComboBox, QSpinBox, QDoubleSpinBox, QGroupBox,
+    QLabel, QComboBox, QSpinBox, QGroupBox,
     QCheckBox, QStackedWidget, QLineEdit, QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels
 from app.views.panels.transform_panel import TransformPanel
+from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 class EdgePropsPanel(CollapsibleSection):
     def __init__(self, parent=None):
@@ -92,12 +93,12 @@ class EdgePropsPanel(CollapsibleSection):
         self.custom_limits_widget = QWidget()
         layout_limits = QFormLayout(self.custom_limits_widget)
         layout_limits.setContentsMargins(0, 0, 0, 0)
-        self.curve_t_min = QDoubleSpinBox()
+        self.curve_t_min = CleanDoubleSpinBox()
         self.curve_t_min.setRange(-1e6, 1e6)
         self.curve_t_min.setDecimals(6)
         self.curve_t_min.setValue(0.0)
         self.curve_t_min.setStyleSheet(SPIN_STYLE)
-        self.curve_t_max = QDoubleSpinBox()
+        self.curve_t_max = CleanDoubleSpinBox()
         self.curve_t_max.setRange(-1e6, 1e6)
         self.curve_t_max.setDecimals(6)
         self.curve_t_max.setValue(6.283185307)
@@ -112,15 +113,15 @@ class EdgePropsPanel(CollapsibleSection):
         widget_h_line = QWidget()
         layout_h_line = QFormLayout(widget_h_line)
         layout_h_line.setContentsMargins(0, 0, 0, 0)
-        self.h_line_y = QDoubleSpinBox()
+        self.h_line_y = CleanDoubleSpinBox()
         self.h_line_y.setRange(-1e6, 1e6)
         self.h_line_y.setDecimals(4)
         self.h_line_y.setStyleSheet(SPIN_STYLE)
-        self.h_line_x_start = QDoubleSpinBox()
+        self.h_line_x_start = CleanDoubleSpinBox()
         self.h_line_x_start.setRange(-1e6, 1e6)
         self.h_line_x_start.setDecimals(4)
         self.h_line_x_start.setStyleSheet(SPIN_STYLE)
-        self.h_line_x_end = QDoubleSpinBox()
+        self.h_line_x_end = CleanDoubleSpinBox()
         self.h_line_x_end.setRange(-1e6, 1e6)
         self.h_line_x_end.setDecimals(4)
         self.h_line_x_end.setStyleSheet(SPIN_STYLE)
@@ -133,15 +134,15 @@ class EdgePropsPanel(CollapsibleSection):
         widget_v_line = QWidget()
         layout_v_line = QFormLayout(widget_v_line)
         layout_v_line.setContentsMargins(0, 0, 0, 0)
-        self.v_line_x = QDoubleSpinBox()
+        self.v_line_x = CleanDoubleSpinBox()
         self.v_line_x.setRange(-1e6, 1e6)
         self.v_line_x.setDecimals(4)
         self.v_line_x.setStyleSheet(SPIN_STYLE)
-        self.v_line_y_start = QDoubleSpinBox()
+        self.v_line_y_start = CleanDoubleSpinBox()
         self.v_line_y_start.setRange(-1e6, 1e6)
         self.v_line_y_start.setDecimals(4)
         self.v_line_y_start.setStyleSheet(SPIN_STYLE)
-        self.v_line_y_end = QDoubleSpinBox()
+        self.v_line_y_end = CleanDoubleSpinBox()
         self.v_line_y_end.setRange(-1e6, 1e6)
         self.v_line_y_end.setDecimals(4)
         self.v_line_y_end.setStyleSheet(SPIN_STYLE)
@@ -154,19 +155,19 @@ class EdgePropsPanel(CollapsibleSection):
         widget_line = QWidget()
         layout_line = QFormLayout(widget_line)
         layout_line.setContentsMargins(0, 0, 0, 0)
-        self.line_x0 = QDoubleSpinBox()
+        self.line_x0 = CleanDoubleSpinBox()
         self.line_x0.setRange(-1e6, 1e6)
         self.line_x0.setDecimals(4)
         self.line_x0.setStyleSheet(SPIN_STYLE)
-        self.line_y0 = QDoubleSpinBox()
+        self.line_y0 = CleanDoubleSpinBox()
         self.line_y0.setRange(-1e6, 1e6)
         self.line_y0.setDecimals(4)
         self.line_y0.setStyleSheet(SPIN_STYLE)
-        self.line_x1 = QDoubleSpinBox()
+        self.line_x1 = CleanDoubleSpinBox()
         self.line_x1.setRange(-1e6, 1e6)
         self.line_x1.setDecimals(4)
         self.line_x1.setStyleSheet(SPIN_STYLE)
-        self.line_y1 = QDoubleSpinBox()
+        self.line_y1 = CleanDoubleSpinBox()
         self.line_y1.setRange(-1e6, 1e6)
         self.line_y1.setDecimals(4)
         self.line_y1.setStyleSheet(SPIN_STYLE)
@@ -180,15 +181,15 @@ class EdgePropsPanel(CollapsibleSection):
         widget_circle = QWidget()
         layout_circle = QFormLayout(widget_circle)
         layout_circle.setContentsMargins(0, 0, 0, 0)
-        self.circle_cx = QDoubleSpinBox()
+        self.circle_cx = CleanDoubleSpinBox()
         self.circle_cx.setRange(-1e6, 1e6)
         self.circle_cx.setDecimals(4)
         self.circle_cx.setStyleSheet(SPIN_STYLE)
-        self.circle_cy = QDoubleSpinBox()
+        self.circle_cy = CleanDoubleSpinBox()
         self.circle_cy.setRange(-1e6, 1e6)
         self.circle_cy.setDecimals(4)
         self.circle_cy.setStyleSheet(SPIN_STYLE)
-        self.circle_r = QDoubleSpinBox()
+        self.circle_r = CleanDoubleSpinBox()
         self.circle_r.setRange(1e-6, 1e6)
         self.circle_r.setDecimals(4)
         self.circle_r.setValue(1.0)
@@ -203,32 +204,32 @@ class EdgePropsPanel(CollapsibleSection):
         layout_tri = QFormLayout(widget_tri)
         layout_tri.setContentsMargins(0, 0, 0, 0)
         
-        self.tri_x0 = QDoubleSpinBox()
+        self.tri_x0 = CleanDoubleSpinBox()
         self.tri_x0.setRange(-1e6, 1e6)
         self.tri_x0.setDecimals(4)
         self.tri_x0.setStyleSheet(SPIN_STYLE)
         
-        self.tri_y0 = QDoubleSpinBox()
+        self.tri_y0 = CleanDoubleSpinBox()
         self.tri_y0.setRange(-1e6, 1e6)
         self.tri_y0.setDecimals(4)
         self.tri_y0.setStyleSheet(SPIN_STYLE)
         
-        self.tri_x1 = QDoubleSpinBox()
+        self.tri_x1 = CleanDoubleSpinBox()
         self.tri_x1.setRange(-1e6, 1e6)
         self.tri_x1.setDecimals(4)
         self.tri_x1.setStyleSheet(SPIN_STYLE)
         
-        self.tri_y1 = QDoubleSpinBox()
+        self.tri_y1 = CleanDoubleSpinBox()
         self.tri_y1.setRange(-1e6, 1e6)
         self.tri_y1.setDecimals(4)
         self.tri_y1.setStyleSheet(SPIN_STYLE)
         
-        self.tri_x2 = QDoubleSpinBox()
+        self.tri_x2 = CleanDoubleSpinBox()
         self.tri_x2.setRange(-1e6, 1e6)
         self.tri_x2.setDecimals(4)
         self.tri_x2.setStyleSheet(SPIN_STYLE)
         
-        self.tri_y2 = QDoubleSpinBox()
+        self.tri_y2 = CleanDoubleSpinBox()
         self.tri_y2.setRange(-1e6, 1e6)
         self.tri_y2.setDecimals(4)
         self.tri_y2.setStyleSheet(SPIN_STYLE)
@@ -246,42 +247,42 @@ class EdgePropsPanel(CollapsibleSection):
         layout_quad = QFormLayout(widget_quad)
         layout_quad.setContentsMargins(0, 0, 0, 0)
         
-        self.quad_x0 = QDoubleSpinBox()
+        self.quad_x0 = CleanDoubleSpinBox()
         self.quad_x0.setRange(-1e6, 1e6)
         self.quad_x0.setDecimals(4)
         self.quad_x0.setStyleSheet(SPIN_STYLE)
         
-        self.quad_y0 = QDoubleSpinBox()
+        self.quad_y0 = CleanDoubleSpinBox()
         self.quad_y0.setRange(-1e6, 1e6)
         self.quad_y0.setDecimals(4)
         self.quad_y0.setStyleSheet(SPIN_STYLE)
         
-        self.quad_x1 = QDoubleSpinBox()
+        self.quad_x1 = CleanDoubleSpinBox()
         self.quad_x1.setRange(-1e6, 1e6)
         self.quad_x1.setDecimals(4)
         self.quad_x1.setStyleSheet(SPIN_STYLE)
         
-        self.quad_y1 = QDoubleSpinBox()
+        self.quad_y1 = CleanDoubleSpinBox()
         self.quad_y1.setRange(-1e6, 1e6)
         self.quad_y1.setDecimals(4)
         self.quad_y1.setStyleSheet(SPIN_STYLE)
         
-        self.quad_x2 = QDoubleSpinBox()
+        self.quad_x2 = CleanDoubleSpinBox()
         self.quad_x2.setRange(-1e6, 1e6)
         self.quad_x2.setDecimals(4)
         self.quad_x2.setStyleSheet(SPIN_STYLE)
         
-        self.quad_y2 = QDoubleSpinBox()
+        self.quad_y2 = CleanDoubleSpinBox()
         self.quad_y2.setRange(-1e6, 1e6)
         self.quad_y2.setDecimals(4)
         self.quad_y2.setStyleSheet(SPIN_STYLE)
         
-        self.quad_x3 = QDoubleSpinBox()
+        self.quad_x3 = CleanDoubleSpinBox()
         self.quad_x3.setRange(-1e6, 1e6)
         self.quad_x3.setDecimals(4)
         self.quad_x3.setStyleSheet(SPIN_STYLE)
         
-        self.quad_y3 = QDoubleSpinBox()
+        self.quad_y3 = CleanDoubleSpinBox()
         self.quad_y3.setRange(-1e6, 1e6)
         self.quad_y3.setDecimals(4)
         self.quad_y3.setStyleSheet(SPIN_STYLE)
@@ -332,10 +333,7 @@ class EdgePropsPanel(CollapsibleSection):
         rf.addRow("Start Anchor:", self.curve_start_node)
         rf.addRow("End Anchor:", self.curve_end_node)
 
-        self.curve_preview_btn = make_button("Preview Edge", '#3a1f00')
-
         cl.addLayout(rf)
-        cl.addWidget(self.curve_preview_btn)
 
         self._curve_group.setVisible(False)
 
@@ -349,7 +347,7 @@ class EdgePropsPanel(CollapsibleSection):
         self.match_previous_cb = QCheckBox("Match spacing with previous edge")
         self.match_previous_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
 
-        self.auto_split_angle_sb = QDoubleSpinBox()
+        self.auto_split_angle_sb = CleanDoubleSpinBox()
         self.auto_split_angle_sb.setRange(0.0, 180.0)
         self.auto_split_angle_sb.setValue(30.0)
         self.auto_split_angle_sb.setDecimals(1)
@@ -365,9 +363,6 @@ class EdgePropsPanel(CollapsibleSection):
         self.param_stack = QStackedWidget()
         self._setup_param_forms()
 
-        self.file_preview_btn = make_button("Apply & Preview", '#082544')
-        self.file_preview_btn.setVisible(False)
-
         # Adding widgets to self (which is CollapsibleSection)
         self.add_widget(self.segment_type_label)
         self.add_widget(self._file_seg_label)
@@ -375,7 +370,6 @@ class EdgePropsPanel(CollapsibleSection):
         self.add_layout(sf)
         self.add_widget(self.match_previous_cb)
         self.add_widget(self.param_stack)
-        self.add_widget(self.file_preview_btn)
 
         # Auto-detect sub-edges
         self.add_layout(self.auto_split_form)
@@ -405,7 +399,7 @@ class EdgePropsPanel(CollapsibleSection):
             return s
 
         def mk_dspin(lo=0.0, hi=1e4, val=1.0, dec=5, step=0.1):
-            s = QDoubleSpinBox()
+            s = CleanDoubleSpinBox()
             s.setRange(lo, hi)
             s.setValue(val)
             s.setDecimals(dec)
@@ -483,13 +477,19 @@ class EdgePropsPanel(CollapsibleSection):
     def show_file_segment(self, start: int, end: int):
         self._file_seg_label.setVisible(True)
         self._curve_group.setVisible(False)
-        self.file_preview_btn.setVisible(True)
+        if self.file_preview_btn:
+            self.file_preview_btn.setVisible(True)
+        if self.curve_preview_btn:
+            self.curve_preview_btn.setVisible(False)
         self._file_seg_label.setText(f"Start Index: {start}    End Index: {end}")
 
     def show_curve_segment(self, seg):
         self._file_seg_label.setVisible(False)
         self._curve_group.setVisible(True)
-        self.file_preview_btn.setVisible(False)
+        if self.file_preview_btn:
+            self.file_preview_btn.setVisible(False)
+        if self.curve_preview_btn:
+            self.curve_preview_btn.setVisible(True)
 
         CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
         curve_type = getattr(seg, "curve_type", "custom")
@@ -570,6 +570,21 @@ class EdgePropsPanel(CollapsibleSection):
         self._param_widget.setVisible(is_parametric)
         self._explicit_widget.setVisible(not is_parametric)
 
+    @property
+    def curve_preview_btn(self):
+        win = self.window()
+        return win.cad_curve_preview_btn if (win and hasattr(win, "cad_curve_preview_btn")) else None
+
+    @property
+    def file_preview_btn(self):
+        win = self.window()
+        return win.cad_file_preview_btn if (win and hasattr(win, "cad_file_preview_btn")) else None
+
     def show_segment_props(self, visible: bool):
         self.setVisible(visible)
+        if not visible:
+            if self.curve_preview_btn:
+                self.curve_preview_btn.setVisible(False)
+            if self.file_preview_btn:
+                self.file_preview_btn.setVisible(False)
 

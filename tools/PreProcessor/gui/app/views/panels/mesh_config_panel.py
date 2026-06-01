@@ -3,14 +3,16 @@ import os
 from PyQt6.QtWidgets import (
 
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QFormLayout, QComboBox, QSpinBox, QDoubleSpinBox, QLabel,
-    QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QFileDialog
+    QFormLayout, QComboBox, QSpinBox, QLabel,
+    QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QFileDialog,
+    QPushButton, QMenu
 )
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels
 from app.models.mesh_config import MeshConfig
 from app.views.bc_widget import BCWidget
+from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 
 # Style for QLineEdit fields matching spinboxes
@@ -66,8 +68,8 @@ class MeshConfigPanel(QScrollArea):
         self._layout.addLayout(btn_layout)
 
         # Row 2: Preview / Run / Cancel (Redundant, not added to layout to keep sidebar clean since they are in the top toolbar)
-        self.preview_btn = make_button("Preview", "#1e2a38")
-        self.run_mesh_btn = make_button("Generate Mesh", "#1e4620")
+        self.preview_btn = make_button("BC Preview", "#1e2a38")
+        self.run_mesh_btn = make_button("Mesh Generate", "#1e4620")
         self.cancel_mesh_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_mesh_btn.setEnabled(False)
 
@@ -77,22 +79,22 @@ class MeshConfigPanel(QScrollArea):
 
         # Bounding box
         dom_form = QFormLayout()
-        self.domain_x_min = QDoubleSpinBox()
+        self.domain_x_min = CleanDoubleSpinBox()
         self.domain_x_min.setRange(-1e6, 1e6)
         self.domain_x_min.setDecimals(4)
         self.domain_x_min.setStyleSheet(SPIN_STYLE)
 
-        self.domain_x_max = QDoubleSpinBox()
+        self.domain_x_max = CleanDoubleSpinBox()
         self.domain_x_max.setRange(-1e6, 1e6)
         self.domain_x_max.setDecimals(4)
         self.domain_x_max.setStyleSheet(SPIN_STYLE)
 
-        self.domain_y_min = QDoubleSpinBox()
+        self.domain_y_min = CleanDoubleSpinBox()
         self.domain_y_min.setRange(-1e6, 1e6)
         self.domain_y_min.setDecimals(4)
         self.domain_y_min.setStyleSheet(SPIN_STYLE)
 
-        self.domain_y_max = QDoubleSpinBox()
+        self.domain_y_max = CleanDoubleSpinBox()
         self.domain_y_max.setRange(-1e6, 1e6)
         self.domain_y_max.setDecimals(4)
         self.domain_y_max.setStyleSheet(SPIN_STYLE)
@@ -134,7 +136,7 @@ class MeshConfigPanel(QScrollArea):
         self._layout.addWidget(self.sec_sizing)
 
         sizing_form = QFormLayout()
-        self.surface_mesh_size = QDoubleSpinBox()
+        self.surface_mesh_size = CleanDoubleSpinBox()
         self.surface_mesh_size.setRange(1e-4, 1e4)
         self.surface_mesh_size.setDecimals(4)
         self.surface_mesh_size.setStyleSheet(SPIN_STYLE)
@@ -142,12 +144,12 @@ class MeshConfigPanel(QScrollArea):
         self.auto_surface_size = QCheckBox("Auto Surface Sizing")
         self.auto_surface_size.setStyleSheet("color:#a0a8c0;")
 
-        self.farfield_mesh_size = QDoubleSpinBox()
+        self.farfield_mesh_size = CleanDoubleSpinBox()
         self.farfield_mesh_size.setRange(1e-4, 1e4)
         self.farfield_mesh_size.setDecimals(4)
         self.farfield_mesh_size.setStyleSheet(SPIN_STYLE)
 
-        self.farfield_growth_rate = QDoubleSpinBox()
+        self.farfield_growth_rate = CleanDoubleSpinBox()
         self.farfield_growth_rate.setRange(0.01, 10.0)
         self.farfield_growth_rate.setDecimals(4)
         self.farfield_growth_rate.setStyleSheet(SPIN_STYLE)
@@ -164,12 +166,12 @@ class MeshConfigPanel(QScrollArea):
         self._layout.addWidget(self.sec_bl_core)
 
         bl_form = QFormLayout()
-        self.bl_initial_thickness = QDoubleSpinBox()
+        self.bl_initial_thickness = CleanDoubleSpinBox()
         self.bl_initial_thickness.setRange(1e-6, 1.0)
         self.bl_initial_thickness.setDecimals(6)
         self.bl_initial_thickness.setStyleSheet(SPIN_STYLE)
 
-        self.bl_growth_rate = QDoubleSpinBox()
+        self.bl_growth_rate = CleanDoubleSpinBox()
         self.bl_growth_rate.setRange(1.001, 5.0)
         self.bl_growth_rate.setDecimals(4)
         self.bl_growth_rate.setStyleSheet(SPIN_STYLE)
@@ -184,82 +186,8 @@ class MeshConfigPanel(QScrollArea):
         align_form_labels(bl_form, 130)
         self.sec_bl_core.add_layout(bl_form)
 
-        # ── 4. Fan & Convex Corner Handling ────────────────────────────────
-        self.sec_convex = CollapsibleSection("4. Convex Corner Handling", start_collapsed=True)
-        self._layout.addWidget(self.sec_convex)
-
-        convex_form = QFormLayout()
-        self.bl_convex_method = QComboBox()
-        self.bl_convex_method.addItems(["0: Fan", "2: Parallelogram"])
-        self.bl_convex_method.setStyleSheet(COMBO_STYLE)
-
-        self.bl_fan_nodes = QSpinBox()
-        self.bl_fan_nodes.setRange(1, 100)
-        self.bl_fan_nodes.setStyleSheet(SPIN_STYLE)
-
-        self.bl_auto_fan_nodes = QCheckBox("Auto Fan Nodes")
-        self.bl_auto_fan_nodes.setStyleSheet("color:#a0a8c0;")
-
-        self.bl_fan_angle_threshold = QDoubleSpinBox()
-        self.bl_fan_angle_threshold.setRange(0.0, 360.0)
-        self.bl_fan_angle_threshold.setDecimals(2)
-        self.bl_fan_angle_threshold.setStyleSheet(SPIN_STYLE)
-
-        self.bl_convex_angle_threshold = QDoubleSpinBox()
-        self.bl_convex_angle_threshold.setRange(0.0, 360.0)
-        self.bl_convex_angle_threshold.setDecimals(2)
-        self.bl_convex_angle_threshold.setStyleSheet(SPIN_STYLE)
-
-        self.bl_para_fallback_angle = QDoubleSpinBox()
-        self.bl_para_fallback_angle.setRange(0.0, 360.0)
-        self.bl_para_fallback_angle.setDecimals(2)
-        self.bl_para_fallback_angle.setStyleSheet(SPIN_STYLE)
-
-        convex_form.addRow("Convex Method:", self.bl_convex_method)
-        convex_form.addRow("Fan Nodes:", self.bl_fan_nodes)
-        convex_form.addRow("", self.bl_auto_fan_nodes)
-        convex_form.addRow("Fan Threshold (deg):", self.bl_fan_angle_threshold)
-        convex_form.addRow("Convex Threshold (deg):", self.bl_convex_angle_threshold)
-        convex_form.addRow("Fallback Angle (deg):", self.bl_para_fallback_angle)
-        align_form_labels(convex_form, 130)
-        self.sec_convex.add_layout(convex_form)
-
-        # ── 5. Concave Corner Handling ────────────────────────────────────
-        self.sec_concave = CollapsibleSection("5. Concave Corner Handling", start_collapsed=True)
-        self._layout.addWidget(self.sec_concave)
-
-        concave_form = QFormLayout()
-        self.bl_concave_method = QComboBox()
-        self.bl_concave_method.addItems(["0: Vector Merge", "5: Thickness Blending"])
-        self.bl_concave_method.setStyleSheet(COMBO_STYLE)
-
-        self.bl_concave_angle_threshold = QDoubleSpinBox()
-        self.bl_concave_angle_threshold.setRange(0.0, 360.0)
-        self.bl_concave_angle_threshold.setDecimals(2)
-        self.bl_concave_angle_threshold.setStyleSheet(SPIN_STYLE)
-
-        self.bl_concave_influence_multiplier = QDoubleSpinBox()
-        self.bl_concave_influence_multiplier.setRange(0.0, 100.0)
-        self.bl_concave_influence_multiplier.setDecimals(2)
-        self.bl_concave_influence_multiplier.setStyleSheet(SPIN_STYLE)
-
-        self.bl_merge_concave = QCheckBox("Merge Concave")
-        self.bl_merge_concave.setStyleSheet("color:#a0a8c0;")
-
-        self.bl_smoothing_iters = QSpinBox()
-        self.bl_smoothing_iters.setRange(0, 100)
-        self.bl_smoothing_iters.setStyleSheet(SPIN_STYLE)
-
-        concave_form.addRow("Concave Method:", self.bl_concave_method)
-        concave_form.addRow("Concave Threshold:", self.bl_concave_angle_threshold)
-        concave_form.addRow("Influence Mult:", self.bl_concave_influence_multiplier)
-        concave_form.addRow("", self.bl_merge_concave)
-        concave_form.addRow("Smoothing Iters:", self.bl_smoothing_iters)
-        align_form_labels(concave_form, 130)
-        self.sec_concave.add_layout(concave_form)
-
-        # ── 6. Transition & Meshing Algorithm ─────────────────────────────
-        self.sec_transition = CollapsibleSection("6. Transition & Algorithm", start_collapsed=True)
+        # ── 4. Transition & Meshing Algorithm ─────────────────────────────
+        self.sec_transition = CollapsibleSection("4. Transition & Algorithm", start_collapsed=True)
         self._layout.addWidget(self.sec_transition)
 
         trans_form = QFormLayout()
@@ -271,12 +199,12 @@ class MeshConfigPanel(QScrollArea):
         self.bl_auto_transition_layers.addItems(["0: OFF", "1: GLOBAL", "2: LOCAL"])
         self.bl_auto_transition_layers.setStyleSheet(COMBO_STYLE)
 
-        self.bl_transition_growth_rate = QDoubleSpinBox()
+        self.bl_transition_growth_rate = CleanDoubleSpinBox()
         self.bl_transition_growth_rate.setRange(1.001, 5.0)
         self.bl_transition_growth_rate.setDecimals(4)
         self.bl_transition_growth_rate.setStyleSheet(SPIN_STYLE)
 
-        self.bl_transition_buffer = QDoubleSpinBox()
+        self.bl_transition_buffer = CleanDoubleSpinBox()
         self.bl_transition_buffer.setRange(0.0, 100.0)
         self.bl_transition_buffer.setDecimals(4)
         self.bl_transition_buffer.setStyleSheet(SPIN_STYLE)
@@ -303,6 +231,87 @@ class MeshConfigPanel(QScrollArea):
         trans_form.addRow("", self.gmsh_optimize)
         align_form_labels(trans_form, 130)
         self.sec_transition.add_layout(trans_form)
+
+        # ── 5. Fan & Convex Corner Handling ────────────────────────────────
+        self.sec_convex = CollapsibleSection("5. Convex Corner Handling", start_collapsed=True)
+        self._layout.addWidget(self.sec_convex)
+
+        self.convex_form = QFormLayout()
+        self.bl_convex_method = QComboBox()
+        self.bl_convex_method.addItems(["0: Fan", "2: Parallelogram"])
+        self.bl_convex_method.setStyleSheet(COMBO_STYLE)
+        self.bl_convex_method.setCurrentIndex(1)  # Default: Parallelogram
+
+        self.bl_fan_nodes = QSpinBox()
+        self.bl_fan_nodes.setRange(1, 100)
+        self.bl_fan_nodes.setStyleSheet(SPIN_STYLE)
+
+        self.bl_auto_fan_nodes = QCheckBox("Auto Fan Nodes")
+        self.bl_auto_fan_nodes.setStyleSheet("color:#a0a8c0;")
+
+        self.bl_fan_angle_threshold = CleanDoubleSpinBox()
+        self.bl_fan_angle_threshold.setRange(0.0, 360.0)
+        self.bl_fan_angle_threshold.setDecimals(2)
+        self.bl_fan_angle_threshold.setStyleSheet(SPIN_STYLE)
+
+        self.bl_convex_angle_threshold = CleanDoubleSpinBox()
+        self.bl_convex_angle_threshold.setRange(0.0, 360.0)
+        self.bl_convex_angle_threshold.setDecimals(2)
+        self.bl_convex_angle_threshold.setStyleSheet(SPIN_STYLE)
+
+        self.bl_para_fallback_angle = CleanDoubleSpinBox()
+        self.bl_para_fallback_angle.setRange(0.0, 360.0)
+        self.bl_para_fallback_angle.setDecimals(2)
+        self.bl_para_fallback_angle.setStyleSheet(SPIN_STYLE)
+
+        self.convex_form.addRow("Convex Method:", self.bl_convex_method)
+        self.convex_form.addRow("Fan Nodes:", self.bl_fan_nodes)
+        self.convex_form.addRow("", self.bl_auto_fan_nodes)
+        self.convex_form.addRow("Fan Threshold (deg):", self.bl_fan_angle_threshold)
+        self.convex_form.addRow("Convex Threshold (deg):", self.bl_convex_angle_threshold)
+        self.convex_form.addRow("Fallback Angle (deg):", self.bl_para_fallback_angle)
+        align_form_labels(self.convex_form, 130)
+        self.sec_convex.add_layout(self.convex_form)
+
+        # Wire visibility updates for Fan parameters
+        self.bl_convex_method.currentIndexChanged.connect(self._update_convex_widgets_visibility)
+        self._update_convex_widgets_visibility()
+
+        # ── 6. Concave Corner Handling ────────────────────────────────────
+        self.sec_concave = CollapsibleSection("6. Concave Corner Handling", start_collapsed=True)
+        self._layout.addWidget(self.sec_concave)
+
+        concave_form = QFormLayout()
+        self.bl_concave_method = QComboBox()
+        self.bl_concave_method.addItems(["0: Vector Merge", "5: Thickness Blending"])
+        self.bl_concave_method.setStyleSheet(COMBO_STYLE)
+
+        self.bl_concave_angle_threshold = CleanDoubleSpinBox()
+        self.bl_concave_angle_threshold.setRange(0.0, 360.0)
+        self.bl_concave_angle_threshold.setDecimals(2)
+        self.bl_concave_angle_threshold.setStyleSheet(SPIN_STYLE)
+
+        self.bl_concave_influence_multiplier = CleanDoubleSpinBox()
+        self.bl_concave_influence_multiplier.setRange(0.0, 100.0)
+        self.bl_concave_influence_multiplier.setDecimals(2)
+        self.bl_concave_influence_multiplier.setStyleSheet(SPIN_STYLE)
+
+        self.bl_merge_concave = QCheckBox("Merge Concave")
+        self.bl_merge_concave.setStyleSheet("color:#a0a8c0;")
+
+        self.bl_smoothing_iters = QSpinBox()
+        self.bl_smoothing_iters.setRange(0, 100)
+        self.bl_smoothing_iters.setStyleSheet(SPIN_STYLE)
+
+        concave_form.addRow("Concave Method:", self.bl_concave_method)
+        concave_form.addRow("Concave Threshold:", self.bl_concave_angle_threshold)
+        concave_form.addRow("Influence Mult:", self.bl_concave_influence_multiplier)
+        concave_form.addRow("", self.bl_merge_concave)
+        concave_form.addRow("Smoothing Iters:", self.bl_smoothing_iters)
+        align_form_labels(concave_form, 130)
+        self.sec_concave.add_layout(concave_form)
+
+
 
         # ── 7. Boundary Conditions & I/O ──────────────────────────────────
         self.sec_io = CollapsibleSection("7. BCs & Output Options", start_collapsed=True)
@@ -335,15 +344,57 @@ class MeshConfigPanel(QScrollArea):
         self.enable_collision_detection = QCheckBox("Collision Detection")
         self.enable_collision_detection.setStyleSheet("color:#a0a8c0;")
 
+        self.export_vtk_btn = QPushButton("Export VTK")
+        self.export_vtk_btn.setToolTip("Export the generated mesh to a VTK file (.vtk)")
+        self.export_vtk_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a3b5c;
+                color: #dde2ff;
+                border: 1px solid #3d527a;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #3b5280;
+                border-color: #3b82f6;
+                color: #ffffff;
+            }
+        """)
+
+        self.export_starcd_btn = QPushButton("Export STAR-CD")
+        self.export_starcd_btn.setToolTip("Export the generated mesh to STAR-CD files (.vrt, .cel, .bnd)")
+        self.export_starcd_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #301540;
+                color: #f5d6ff;
+                border: 1px solid #5a2e7a;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #482060;
+                border-color: #a855f7;
+                color: #ffffff;
+            }
+        """)
+
+        export_layout = QHBoxLayout()
+        export_layout.setSpacing(6)
+        export_layout.addWidget(self.export_vtk_btn)
+        export_layout.addWidget(self.export_starcd_btn)
+
         io_form.addRow("BC XMin:", self.bc_xmin)
         io_form.addRow("BC XMax:", self.bc_xmax)
         io_form.addRow("BC YMin:", self.bc_ymin)
         io_form.addRow("BC YMax:", self.bc_ymax)
         io_form.addRow("BC Geom (Wall):", self.bc_geom)
         io_form.addRow("Output Filename:", self.output_filename)
-        io_form.addRow("", self.export_vtk)
-        io_form.addRow("", self.export_starcd)
         io_form.addRow("", self.enable_collision_detection)
+        io_form.addRow("Export:", export_layout)
         align_form_labels(io_form, 130)
         self.sec_io.add_layout(io_form)
 
@@ -447,7 +498,7 @@ class MeshConfigPanel(QScrollArea):
         if cfg.bl_convex_method in convex_methods:
             self.bl_convex_method.setCurrentIndex(convex_methods.index(cfg.bl_convex_method))
         else:
-            self.bl_convex_method.setCurrentIndex(0)
+            self.bl_convex_method.setCurrentIndex(1)
         self.bl_fan_nodes.setValue(cfg.bl_fan_nodes)
         self.bl_auto_fan_nodes.setChecked(cfg.bl_auto_fan_nodes)
         self.bl_fan_angle_threshold.setValue(cfg.bl_fan_angle_threshold)
@@ -484,7 +535,18 @@ class MeshConfigPanel(QScrollArea):
         self.bc_ymin.setText(cfg.bc_ymin)
         self.bc_ymax.setText(cfg.bc_ymax)
         self.bc_geom.setText(cfg.bc_geom)
-        self.output_filename.setText(cfg.output_filename)
+        
+        if not cfg.output_filename:
+            if not cfg.geom_files:
+                default_name = "results/meshes/mesh_cartesian.*"
+            elif len(cfg.geom_files) == 1:
+                stem = os.path.splitext(os.path.basename(cfg.geom_files[0]))[0]
+                default_name = f"results/meshes/mesh_{stem}.*"
+            else:
+                default_name = "results/meshes/mesh_multiple.*"
+            self.output_filename.setText(default_name)
+        else:
+            self.output_filename.setText(cfg.output_filename)
 
         self.export_vtk.setChecked(cfg.export_vtk)
         self.export_starcd.setChecked(cfg.export_starcd)
@@ -562,3 +624,19 @@ class MeshConfigPanel(QScrollArea):
         cfg.enable_collision_detection = self.enable_collision_detection.isChecked()
 
         return cfg
+
+    def _update_convex_widgets_visibility(self):
+        method_str = self.bl_convex_method.currentText()
+        is_fan = "0: Fan" in method_str
+
+        self.bl_fan_nodes.setVisible(is_fan)
+        self.bl_auto_fan_nodes.setVisible(is_fan)
+        self.bl_fan_angle_threshold.setVisible(is_fan)
+
+        label_nodes = self.convex_form.labelForField(self.bl_fan_nodes)
+        if label_nodes:
+            label_nodes.setVisible(is_fan)
+
+        label_threshold = self.convex_form.labelForField(self.bl_fan_angle_threshold)
+        if label_threshold:
+            label_threshold.setVisible(is_fan)

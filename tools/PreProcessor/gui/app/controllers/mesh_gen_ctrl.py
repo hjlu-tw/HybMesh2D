@@ -78,8 +78,9 @@ class MeshGenControllerMixin:
         cfg = self.main_window.mesh_config_panel.get_config()
         session.mesh_config = cfg
 
-        self.main_window.mesh_canvas_view.update_mesh_config(cfg)
-        self.main_window.mesh_canvas_view.auto_range()
+        self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
+        if session.vtk_mesh:
+            self.main_window.mesh_canvas_view.render_mesh(session.vtk_mesh, fit_view=False)
         self.main_window.log_panel.log("Mesh generator preview updated.")
 
     def add_active_preprocessor_geometry(self):
@@ -131,23 +132,24 @@ class MeshGenControllerMixin:
         # Extract current config values from UI
         cfg = self.main_window.mesh_config_panel.get_config()
         
-        if not cfg.output_filename:
-            expected_vtk = self._get_expected_vtk_path(cfg)
-            cfg.output_filename = expected_vtk
-        else:
-            expected_vtk = cfg.output_filename
-            if not os.path.isabs(expected_vtk):
-                root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
-                expected_vtk = os.path.abspath(os.path.join(root_dir, expected_vtk))
+        # Overrule solver output path to temporary folder to prevent generating permanent files on disk
+        temp_vtk_path = os.path.abspath(os.path.join(self.temp_dir, f"mesh_session_{session.session_id}.vtk"))
+        expected_vtk = temp_vtk_path
 
         session.mesh_config = cfg
         self.main_window.mesh_canvas_view.update_mesh_config(cfg)
+
+        import copy
+        tmp_cfg_data = copy.deepcopy(cfg)
+        tmp_cfg_data.output_filename = temp_vtk_path
+        tmp_cfg_data.export_vtk = True
+        tmp_cfg_data.export_starcd = True
 
         # Save to temporary config file for generation
         tmp_cfg = tempfile.NamedTemporaryFile(
             dir=self.temp_dir, suffix="_mesh_para.dat", delete=False, mode="w"
         )
-        cfg.save_to_file(tmp_cfg.name)
+        tmp_cfg_data.save_to_file(tmp_cfg.name)
         tmp_cfg.close()
 
         # Disable/Enable panel and toolbar trigger buttons
@@ -221,8 +223,8 @@ class MeshGenControllerMixin:
                     session.vtk_mesh = mesh
                     session.vtk_path = expected_vtk_path
                     if session is self.active_session():
-                        self.main_window.mesh_canvas_view.update_mesh_config(session.mesh_config)
-                        self.main_window.mesh_canvas_view.render_mesh(mesh)
+                        self.main_window.mesh_canvas_view.update_mesh_config(session.mesh_config, fit_view=False)
+                        self.main_window.mesh_canvas_view.render_mesh(mesh, fit_view=False)
                         self.main_window.mesh_stats_panel.update_stats(mesh, expected_vtk_path)
                     self.main_window.log_panel.log(f"Successfully loaded and rendered mesh from {expected_vtk_path}")
                 except Exception as e:
@@ -253,7 +255,19 @@ class MeshGenControllerMixin:
 
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
         default_dir = os.path.join(root_dir, "results", "meshes")
-        default_path = os.path.join(default_dir, os.path.basename(vtk_path))
+        
+        user_filename = session.mesh_config.output_filename if (session and session.mesh_config) else ""
+        if user_filename:
+            if user_filename.endswith(".*"):
+                user_filename = user_filename[:-2] + ".vtk"
+            else:
+                user_filename = os.path.splitext(user_filename)[0] + ".vtk"
+            if not os.path.isabs(user_filename):
+                default_path = os.path.abspath(os.path.join(root_dir, user_filename))
+            else:
+                default_path = user_filename
+        else:
+            default_path = os.path.join(default_dir, os.path.basename(vtk_path))
 
         dest_path, _ = QFileDialog.getSaveFileName(
             self.main_window,
@@ -297,14 +311,26 @@ class MeshGenControllerMixin:
 
         if missing:
             self.main_window.log_panel.log(
-                f"Missing Star-CD files: {', '.join(missing)}. "
+                f"[INFO] Missing Star-CD files: {', '.join(missing)}. "
                 "Ensure 'Export Star-CD' is enabled in the configuration panel, and regenerate the mesh."
             )
             return
 
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
         default_dir = os.path.join(root_dir, "results", "meshes")
-        default_path = os.path.join(default_dir, os.path.basename(vrt_path))
+        
+        user_filename = session.mesh_config.output_filename if (session and session.mesh_config) else ""
+        if user_filename:
+            if user_filename.endswith(".*"):
+                user_filename = user_filename[:-2] + ".vrt"
+            else:
+                user_filename = os.path.splitext(user_filename)[0] + ".vrt"
+            if not os.path.isabs(user_filename):
+                default_path = os.path.abspath(os.path.join(root_dir, user_filename))
+            else:
+                default_path = user_filename
+        else:
+            default_path = os.path.join(default_dir, os.path.basename(vrt_path))
 
         dest_vrt, _ = QFileDialog.getSaveFileName(
             self.main_window,

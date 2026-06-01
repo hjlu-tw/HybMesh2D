@@ -1,8 +1,9 @@
 from __future__ import annotations
-from PyQt6.QtWidgets import QFormLayout, QGroupBox, QDoubleSpinBox, QCheckBox, QLabel
+from PyQt6.QtWidgets import QFormLayout, QGroupBox, QCheckBox, QLabel
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import SPIN_STYLE, align_form_labels
+from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 class AdvancedPanel(CollapsibleSection):
     def __init__(self, parent=None):
@@ -23,24 +24,24 @@ class AdvancedPanel(CollapsibleSection):
             "QGroupBox::title { subcontrol-origin:margin; left:8px; }")
         tf_layout = QFormLayout(tf_box)
 
-        self.transform_scale = QDoubleSpinBox()
+        self.transform_scale = CleanDoubleSpinBox()
         self.transform_scale.setRange(1e-6, 1e6)
         self.transform_scale.setValue(1.0)
         self.transform_scale.setDecimals(6)
         self.transform_scale.setStyleSheet(_spin_style)
 
-        self.transform_rotate = QDoubleSpinBox()
+        self.transform_rotate = CleanDoubleSpinBox()
         self.transform_rotate.setRange(-360.0, 360.0)
         self.transform_rotate.setDecimals(3)
         self.transform_rotate.setSuffix("  °")
         self.transform_rotate.setStyleSheet(_spin_style)
 
-        self.transform_tx = QDoubleSpinBox()
+        self.transform_tx = CleanDoubleSpinBox()
         self.transform_tx.setRange(-1e9, 1e9)
         self.transform_tx.setDecimals(6)
         self.transform_tx.setStyleSheet(_spin_style)
 
-        self.transform_ty = QDoubleSpinBox()
+        self.transform_ty = CleanDoubleSpinBox()
         self.transform_ty.setRange(-1e9, 1e9)
         self.transform_ty.setDecimals(6)
         self.transform_ty.setStyleSheet(_spin_style)

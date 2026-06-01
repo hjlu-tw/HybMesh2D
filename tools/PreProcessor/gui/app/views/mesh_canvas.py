@@ -56,11 +56,12 @@ class MeshCanvasView(QWidget):
         # Geometry previews
         self.geom_preview_items: list[pg.PlotDataItem] = []
 
-    def render_mesh(self, vtk_mesh: VTKMesh):
+    def render_mesh(self, vtk_mesh: VTKMesh, fit_view: bool = False):
         """Load and display the given VTK mesh."""
         self.mesh = vtk_mesh
         self._rebuild_mesh_items()
-        self.auto_range()
+        if fit_view:
+            self.auto_range()
 
     def clear_mesh(self):
         """Clear all mesh items from the canvas."""
@@ -137,7 +138,7 @@ class MeshCanvasView(QWidget):
         for item in self.bc_items:
             item.setVisible(visible)
 
-    def update_mesh_config(self, cfg: MeshConfig | None):
+    def update_mesh_config(self, cfg: MeshConfig | None, fit_view: bool = False):
         """Sync MeshConfig mapping for domain box and boundary conditions rendering."""
         self.mesh_config = cfg
         if self.mesh_config:
@@ -151,7 +152,7 @@ class MeshCanvasView(QWidget):
             self.update_geometry_previews(self.mesh_config.geom_files)
             if self.mesh:
                 self._rebuild_mesh_items()
-            else:
+            elif fit_view:
                 self.auto_range()
 
     def update_domain_box(self, xmin: float, xmax: float, ymin: float, ymax: float):

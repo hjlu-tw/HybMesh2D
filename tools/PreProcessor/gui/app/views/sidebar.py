@@ -115,14 +115,12 @@ class SidebarView(QWidget):
         self.curve_n = self.edge_props_panel.curve_n
         self.curve_start_node = self.edge_props_panel.curve_start_node
         self.curve_end_node = self.edge_props_panel.curve_end_node
-        self.curve_preview_btn = self.edge_props_panel.curve_preview_btn
         self.strategy_combo = self.edge_props_panel.strategy_combo
         self.match_previous_cb = self.edge_props_panel.match_previous_cb
         self.auto_split_angle_sb = self.edge_props_panel.auto_split_angle_sb
         self.auto_split_form = self.edge_props_panel.auto_split_form
         self.auto_split_btn = self.edge_props_panel.auto_split_btn
         self.param_stack = self.edge_props_panel.param_stack
-        self.file_preview_btn = self.edge_props_panel.file_preview_btn
 
         # Strategy widgets
         self.uniform_n = self.edge_props_panel.uniform_n
@@ -208,13 +206,27 @@ class SidebarView(QWidget):
         self.actions_panel = ActionsPanel(self)
         self._layout.addWidget(self.actions_panel)
         # Expose widgets
-        self.preview_btn = self.actions_panel.preview_btn
         self.save_btn = self.actions_panel.save_btn
         self.generate_btn = self.actions_panel.generate_btn
 
         self._layout.addStretch()
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+    @property
+    def preview_btn(self):
+        win = self.window()
+        return win.cad_preview_btn if (win and hasattr(win, "cad_preview_btn")) else None
+
+    @property
+    def curve_preview_btn(self):
+        win = self.window()
+        return win.cad_curve_preview_btn if (win and hasattr(win, "cad_curve_preview_btn")) else None
+
+    @property
+    def file_preview_btn(self):
+        win = self.window()
+        return win.cad_file_preview_btn if (win and hasattr(win, "cad_file_preview_btn")) else None
 
     def switch_param_form(self, strategy_name: str):
         self.edge_props_panel.switch_param_form(strategy_name)

@@ -221,6 +221,9 @@ class SessionControllerMixin:
             self.main_window.log_panel.log(f"File not found: {file_path}")
 
     def _load_geometry_file(self, file_path: str):
+        if file_path.lower().endswith(".json"):
+            self._load_json_config_direct(file_path)
+            return
         try:
             # Check if active session is empty/untitled and has no loaded points
             active = self.active_session()
@@ -239,6 +242,10 @@ class SessionControllerMixin:
             session.project_model.output_file = session.default_output_path
             session.original_points = np.loadtxt(file_path)
 
+            abs_path = os.path.abspath(file_path)
+            if abs_path not in session.mesh_config.geom_files:
+                session.mesh_config.geom_files.append(abs_path)
+
             self._apply_geometry_update(session, re_detect=True)
             if session is self.active_session():
                 self._sync_sidebar_to_session()
@@ -249,6 +256,16 @@ class SessionControllerMixin:
                 f"{n_pts} points, {n_seg} auto-detected edges.")
         except Exception as e:
             self.main_window.log_panel.log(f"Error loading file: {e}")
+
+    def _load_json_config_direct(self, file_path: str):
+        try:
+            import json
+            with open(file_path) as f:
+                config = json.load(f)
+            self._apply_json_config(config, file_path)
+            self.main_window.log_panel.log(f"Loaded JSON configuration from '{os.path.basename(file_path)}'")
+        except Exception as e:
+            self.main_window.log_panel.log(f"Error loading JSON: {e}")
 
     def load_json_config(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -266,6 +283,20 @@ class SessionControllerMixin:
 
     def _apply_json_config(self, config: dict, config_path: str):
         input_file = config.get("input_file", "")
+
+        # Try to resolve relative path if not absolute
+        if input_file and not os.path.isabs(input_file):
+            candidate1 = os.path.abspath(os.path.join(os.path.dirname(config_path), input_file))
+            candidate2 = os.path.abspath(os.path.join(os.path.dirname(config_path), "..", "..", input_file))
+            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+            candidate3 = os.path.abspath(os.path.join(root_dir, input_file))
+            
+            if os.path.exists(candidate1):
+                input_file = candidate1
+            elif os.path.exists(candidate2):
+                input_file = candidate2
+            elif os.path.exists(candidate3):
+                input_file = candidate3
 
         # If input file doesn't exist, ask user
         if input_file and not os.path.exists(input_file):
@@ -294,6 +325,9 @@ class SessionControllerMixin:
         if input_file and os.path.exists(input_file):
             try:
                 session.original_points = np.loadtxt(input_file)
+                abs_path = os.path.abspath(input_file)
+                if abs_path not in session.mesh_config.geom_files:
+                    session.mesh_config.geom_files.append(abs_path)
             except Exception as e:
                 self.main_window.log_panel.log(f"Error reading geometry: {e}")
                 return
