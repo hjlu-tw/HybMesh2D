@@ -1,8 +1,8 @@
 from __future__ import annotations
 import os
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem, QMenu, QInputDialog
+from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
 from app.models.session import GeometrySession
 
@@ -249,6 +249,7 @@ class SessionControllerMixin:
             abs_path = os.path.abspath(file_path)
             if abs_path not in session.mesh_config.geom_files:
                 session.mesh_config.geom_files.append(abs_path)
+            self.update_recent_files(abs_path)
 
             self._apply_geometry_update(session, re_detect=True)
             if session is self.active_session():
@@ -349,6 +350,7 @@ class SessionControllerMixin:
         if session is self.active_session():
             self._sync_sidebar_to_session()
 
+        self.update_recent_files(config_path)
         self.main_window.log_panel.log(
             f"Loaded config '{os.path.basename(config_path)}' — "
             f"{len(session.project_model.segments)} segments.")
@@ -361,3 +363,279 @@ class SessionControllerMixin:
             session.color = new_color
             if hasattr(self.main_window, 'canvas_view'):
                 self.main_window.canvas_view.update_geometry_color(session.session_id, new_color)
+
+    def update_recent_files(self, file_path: str):
+        if not file_path:
+            return
+        abs_path = os.path.abspath(file_path)
+        settings = QSettings("HybMesh", "PreProcessor")
+        files = settings.value("recentFiles", [])
+        if not isinstance(files, list):
+            files = []
+        if abs_path in files:
+            files.remove(abs_path)
+        files.insert(0, abs_path)
+        files = files[:10]  # keep up to 10 files
+        settings.setValue("recentFiles", files)
+        self.main_window.refresh_recent_files_menu(files, self)
+
+    def init_recent_files(self):
+        settings = QSettings("HybMesh", "PreProcessor")
+        files = settings.value("recentFiles", [])
+        if not isinstance(files, list):
+            files = []
+        self.main_window.refresh_recent_files_menu(files, self)
+
+    def load_recent_file(self, file_path: str):
+        if not os.path.exists(file_path):
+            self.main_window.log_panel.log(f"Recent file not found: {file_path}")
+            # Remove from settings
+            settings = QSettings("HybMesh", "PreProcessor")
+            files = settings.value("recentFiles", [])
+            if isinstance(files, list) and file_path in files:
+                files.remove(file_path)
+                settings.setValue("recentFiles", files)
+                self.main_window.refresh_recent_files_menu(files, self)
+            return
+        
+        if file_path.lower().endswith(".json"):
+            try:
+                import json
+                with open(file_path) as f:
+                    config = json.load(f)
+                self._apply_json_config(config, file_path)
+            except Exception as e:
+                self.main_window.log_panel.log(f"Error loading JSON: {e}")
+        else:
+            self._load_geometry_file(file_path)
+
+    # ── Workspace Persistence & Layer Menu (E5 & E7) ─────────────────────────
+
+    def save_workspace(self):
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.main_window, "Save Workspace", "",
+            "HybMesh Workspace Files (*.hws);;All Files (*)")
+        if not file_path:
+            return
+        if not file_path.endswith(".hws"):
+            file_path += ".hws"
+        try:
+            self._write_workspace_file(file_path)
+            self.main_window.log_panel.log(f"Workspace manually saved to '{os.path.basename(file_path)}'")
+        except Exception as e:
+            self.main_window.log_panel.log(f"Failed to save workspace: {e}")
+
+    def load_workspace(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.main_window, "Load Workspace", "",
+            "HybMesh Workspace Files (*.hws);;All Files (*)")
+        if not file_path:
+            return
+        try:
+            self._read_workspace_file(file_path)
+        except Exception as e:
+            self.main_window.log_panel.log(f"Failed to load workspace: {e}")
+
+    def _write_workspace_file(self, file_path: str):
+        import json
+        import copy
+        
+        sessions_data = []
+        for session in self.sessions:
+            segments_data = [seg.to_dict() for seg in session.project_model.segments]
+            
+            project_config = {
+                "input_file": session.project_model.input_file,
+                "output_file": session.project_model.output_file,
+                "is_closed": session.project_model.is_closed,
+                "segments": segments_data,
+                "global_spline": session.project_model.global_spline,
+                "transform": copy.deepcopy(session.project_model.transform) if session.project_model.transform else None
+            }
+            
+            session_dict = {
+                "file_path": session.file_path,
+                "display_name": session.display_name.lstrip('*'),
+                "is_visible": session.is_visible,
+                "is_geometry_modified": session.is_geometry_modified,
+                "split_indices": session.split_indices,
+                "current_segment_idx": session.current_segment_idx,
+                "selected_point_idx": session.selected_point_idx,
+                "original_points": session.original_points.tolist() if session.original_points is not None else None,
+                "resampled_points": session.resampled_points.tolist() if session.resampled_points is not None else None,
+                "project_config": project_config,
+                "mesh_config": session.mesh_config.to_dict(),
+                "vtk_path": session.vtk_path
+            }
+            sessions_data.append(session_dict)
+            
+        workspace_data = {
+            "active_idx": self.active_idx,
+            "sessions": sessions_data
+        }
+        
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(workspace_data, f, indent=2)
+
+    def _read_workspace_file(self, file_path: str):
+        import json
+        import numpy as np
+        from app.models.session import GeometrySession
+        from app.models.segment import SegmentModel
+        from app.models.vtk_mesh import VTKMesh
+        
+        if not os.path.exists(file_path):
+            return
+            
+        with open(file_path, "r", encoding="utf-8") as f:
+            workspace_data = json.load(f)
+            
+        if self.sessions:
+            reply = QMessageBox.question(
+                self.main_window,
+                "Load Workspace",
+                "Loading a workspace will close all current tabs. Do you want to proceed?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
+
+        self.main_window.tab_widget.blockSignals(True)
+        while self.sessions:
+            session = self.sessions.pop(0)
+            self.main_window.canvas_view.remove_geometry(session.session_id)
+        while self.main_window.tab_widget.count() > 0:
+            self.main_window.tab_widget.removeTab(0)
+        self.active_idx = -1
+        self.main_window.canvas_view.clear_active_overlays()
+        self.main_window.canvas_view.set_active_points(None)
+        self.main_window.mesh_canvas_view.clear_mesh()
+        self.main_window.tab_widget.blockSignals(False)
+        
+        sessions_data = workspace_data.get("sessions", [])
+        for session_dict in sessions_data:
+            session = GeometrySession()
+            session.file_path = session_dict.get("file_path", "")
+            display_name = session_dict.get("display_name", "Untitled")
+            session.display_name = display_name
+            session.is_geometry_modified = session_dict.get("is_geometry_modified", False)
+            session.is_visible = session_dict.get("is_visible", True)
+            session.split_indices = session_dict.get("split_indices", [])
+            session.current_segment_idx = session_dict.get("current_segment_idx", -1)
+            session.selected_point_idx = session_dict.get("selected_point_idx", None)
+            session.vtk_path = session_dict.get("vtk_path", "")
+            
+            orig_pts = session_dict.get("original_points", None)
+            if orig_pts is not None:
+                session.original_points = np.array(orig_pts, dtype=np.float64)
+            res_pts = session_dict.get("resampled_points", None)
+            if res_pts is not None:
+                session.resampled_points = np.array(res_pts, dtype=np.float64)
+                
+            pconf = session_dict.get("project_config", {})
+            session.project_model.input_file = pconf.get("input_file", "")
+            session.project_model.output_file = pconf.get("output_file", "")
+            session.project_model.is_closed = pconf.get("is_closed", True)
+            session.project_model.global_spline = pconf.get("global_spline", False)
+            session.project_model.transform = pconf.get("transform", None)
+            
+            session.project_model.segments = []
+            for sj in pconf.get("segments", []):
+                seg = SegmentModel.from_dict(sj.get("id"), sj)
+                session.project_model.segments.append(seg)
+                
+            mconf = session_dict.get("mesh_config", {})
+            session.mesh_config.load_from_dict(mconf)
+            
+            if session.vtk_path and os.path.exists(session.vtk_path):
+                try:
+                    session.vtk_mesh = VTKMesh.from_file(session.vtk_path)
+                except Exception:
+                    session.vtk_mesh = None
+                    
+            self.sessions.append(session)
+            self.main_window.tab_widget.addTab(session.display_name)
+            
+            self.main_window.canvas_view.add_geometry(
+                session.session_id, None, session.color)
+            self.main_window.canvas_view.set_geometry_visible(
+                session.session_id, session.is_visible)
+            
+            if session.original_points is not None:
+                self._apply_geometry_update(session, re_detect=False)
+                
+        self._refresh_session_colors()
+        self._sync_geometry_list()
+        
+        target_idx = workspace_data.get("active_idx", -1)
+        if 0 <= target_idx < len(self.sessions):
+            self.active_idx = target_idx
+            self.main_window.tab_widget.setCurrentIndex(self.active_idx)
+            self.switch_tab(self.active_idx)
+            
+        self.main_window.log_panel.log(f"Workspace loaded from '{os.path.basename(file_path)}'")
+
+    def show_geometry_context_menu(self, global_pos, item):
+        session_id = item.data(Qt.ItemDataRole.UserRole)
+        session = None
+        session_idx = -1
+        for i, s in enumerate(self.sessions):
+            if s.session_id == session_id:
+                session = s
+                session_idx = i
+                break
+        if not session:
+            return
+            
+        menu = QMenu(self.main_window)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #121422;
+                color: #a0a8c0;
+                border: 1px solid #1c1e36;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+            }
+            QMenu::item:selected {
+                background-color: #3b82f6;
+                color: #ffffff;
+            }
+        """)
+        
+        focus_action = menu.addAction("Focus View")
+        
+        show_hide_label = "Hide Layer" if session.is_visible else "Show Layer"
+        show_hide_action = menu.addAction(show_hide_label)
+        
+        rename_action = menu.addAction("Rename...")
+        
+        menu.addSeparator()
+        close_action = menu.addAction("Close / Delete Tab")
+        
+        action = menu.exec(global_pos)
+        if action == focus_action:
+            self.main_window.canvas_view.fit_to_geometry(session_id)
+        elif action == show_hide_action:
+            new_visible = not session.is_visible
+            session.is_visible = new_visible
+            item.setCheckState(Qt.CheckState.Checked if new_visible else Qt.CheckState.Unchecked)
+            self.main_window.canvas_view.set_geometry_visible(session_id, new_visible)
+            if session is self.active_session():
+                self.main_window.canvas_view.set_active_overlays_visible(new_visible)
+        elif action == rename_action:
+            new_name, ok = QInputDialog.getText(
+                self.main_window, "Rename Geometry Layer",
+                "Enter new name for the geometry layer:",
+                text=session.display_name.lstrip('*')
+            )
+            if ok and new_name.strip():
+                session.display_name = new_name.strip()
+                item.setText(session.display_name)
+                self.main_window.tab_widget.setTabText(session_idx, session.display_name)
+                if session is self.active_session():
+                    self.main_window.update_title(session.display_name, session.is_geometry_modified)
+        elif action == close_action:
+            self.close_tab(session_idx)

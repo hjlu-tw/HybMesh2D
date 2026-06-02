@@ -33,6 +33,7 @@ class GeometrySession:
         self.session_id: int = GeometrySession._counter
 
         self.file_path: str = file_path
+        self._display_name: str = ""
         self.original_points: np.ndarray | None = None
         self.split_indices: list[int] = []
         self.selected_point_idx: int | None = None
@@ -58,10 +59,17 @@ class GeometrySession:
 
     @property
     def display_name(self) -> str:
-        if not self.file_path:
-            return "Untitled"
-        base = os.path.basename(self.file_path)
+        if self._display_name:
+            base = self._display_name
+        elif not self.file_path:
+            base = "Untitled"
+        else:
+            base = os.path.basename(self.file_path)
         return f"*{base}" if self.is_geometry_modified else base
+
+    @display_name.setter
+    def display_name(self, value: str):
+        self._display_name = value.lstrip('*')
 
     @property
     def default_output_path(self) -> str:

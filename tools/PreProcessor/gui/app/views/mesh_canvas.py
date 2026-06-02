@@ -187,7 +187,7 @@ class MeshCanvasView(QWidget):
             raise ValueError(f"Invalid color mode: {mode}")
         self.color_mode = mode
         if self.mesh:
-            self._rebuild_mesh_items()
+            self._rebuild_mesh_fills()
 
     def set_wireframe_visible(self, visible: bool):
         """Toggle display of the mesh wireframe edges."""
@@ -265,16 +265,11 @@ class MeshCanvasView(QWidget):
             self.plot_widget.setXRange(xmin, xmax, padding=0.06)
             self.plot_widget.setYRange(ymin, ymax, padding=0.06)
 
-    def _rebuild_mesh_items(self):
-        """Construct wireframe, quality path fills, and boundary condition lines."""
-        # 1. Clear existing items
+    def _rebuild_mesh_geometry(self):
+        """Construct only the wireframe, domain box, and boundary condition lines."""
         if self.wireframe_item is not None:
             self.plot_widget.removeItem(self.wireframe_item)
             self.wireframe_item = None
-
-        for item in self.filled_items:
-            self.plot_widget.removeItem(item)
-        self.filled_items.clear()
 
         for item in self.bc_items:
             self.plot_widget.removeItem(item)
@@ -283,7 +278,7 @@ class MeshCanvasView(QWidget):
         if not self.mesh or len(self.mesh.points) == 0:
             return
 
-        # 2. Rebuild wireframe (connect='pairs')
+        # Connect-pairs edge list construction
         edges = set()
         edge_cell_count = {}
 
@@ -321,7 +316,6 @@ class MeshCanvasView(QWidget):
         self.wireframe_item.setZValue(10)
         self.wireframe_item.setVisible(self.show_wireframe)
 
-        # 3. Create domain box if config exists
         if self.mesh_config:
             self.update_domain_box(
                 self.mesh_config.domain_x_min,
@@ -330,7 +324,19 @@ class MeshCanvasView(QWidget):
                 self.mesh_config.domain_y_max
             )
 
-        # 4. Paint fills based on color mode
+        boundary_edges = [edge for edge, count in edge_cell_count.items() if count == 1]
+        if boundary_edges:
+            self._rebuild_boundary_coloring(boundary_edges)
+
+    def _rebuild_mesh_fills(self):
+        """Construct only the quality/element colored path fills."""
+        for item in self.filled_items:
+            self.plot_widget.removeItem(item)
+        self.filled_items.clear()
+
+        if not self.mesh or len(self.mesh.points) == 0:
+            return
+
         if self.color_mode == "uniform":
             path = QPainterPath()
             for tri in self.mesh.triangles:
@@ -385,13 +391,13 @@ class MeshCanvasView(QWidget):
                     self._add_poly_to_path(path_bad, cell)
 
             if not path_good.isEmpty():
-                self._add_path_item(path_good, QBrush(QColor(16, 185, 129, 45)))  # Emerald
+                self._add_path_item(path_good, QBrush(QColor(16, 185, 129, 45)))
             if not path_fair.isEmpty():
-                self._add_path_item(path_fair, QBrush(QColor(163, 230, 53, 45)))  # Lime
+                self._add_path_item(path_fair, QBrush(QColor(163, 230, 53, 45)))
             if not path_poor.isEmpty():
-                self._add_path_item(path_poor, QBrush(QColor(245, 158, 11, 45)))  # Orange
+                self._add_path_item(path_poor, QBrush(QColor(245, 158, 11, 45)))
             if not path_bad.isEmpty():
-                self._add_path_item(path_bad, QBrush(QColor(239, 68, 68, 60)))   # Red
+                self._add_path_item(path_bad, QBrush(QColor(239, 68, 68, 60)))
 
         elif self.color_mode == "quality_skewness":
             path_good = QPainterPath()
@@ -418,18 +424,18 @@ class MeshCanvasView(QWidget):
                     self._add_poly_to_path(path_bad, cell)
 
             if not path_good.isEmpty():
-                self._add_path_item(path_good, QBrush(QColor(16, 185, 129, 45)))  # Emerald
+                self._add_path_item(path_good, QBrush(QColor(16, 185, 129, 45)))
             if not path_fair.isEmpty():
-                self._add_path_item(path_fair, QBrush(QColor(163, 230, 53, 45)))  # Lime
+                self._add_path_item(path_fair, QBrush(QColor(163, 230, 53, 45)))
             if not path_poor.isEmpty():
-                self._add_path_item(path_poor, QBrush(QColor(245, 158, 11, 45)))  # Orange
+                self._add_path_item(path_poor, QBrush(QColor(245, 158, 11, 45)))
             if not path_bad.isEmpty():
-                self._add_path_item(path_bad, QBrush(QColor(239, 68, 68, 60)))   # Red
+                self._add_path_item(path_bad, QBrush(QColor(239, 68, 68, 60)))
 
-        # 5. Paint boundary conditions with colors
-        boundary_edges = [edge for edge, count in edge_cell_count.items() if count == 1]
-        if boundary_edges:
-            self._rebuild_boundary_coloring(boundary_edges)
+    def _rebuild_mesh_items(self):
+        """Construct wireframe, quality path fills, and boundary condition lines."""
+        self._rebuild_mesh_geometry()
+        self._rebuild_mesh_fills()
 
     def _rebuild_boundary_coloring(self, boundary_edges: list[tuple[int, int]]):
         """Categorize boundary edges into domain limits XMin/XMax/YMin/YMax or Geom, and draw them colored."""

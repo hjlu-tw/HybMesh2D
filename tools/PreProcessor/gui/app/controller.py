@@ -127,6 +127,7 @@ class AppController(
         sb.geom_list.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
         self.main_window.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
         sb.toggle_visibility_btn.clicked.connect(self.toggle_selected_geometry_visibility)
+        sb.geometry_panel.context_menu_requested.connect(self.show_geometry_context_menu)
 
         # ── Wire tab signals ────────────────────────────────────────────
         tw = self.main_window.tab_widget
@@ -225,6 +226,20 @@ class AppController(
         self.main_window.setup_shortcuts(self)
 
         self._update_undo_redo_buttons()
+
+        # Auto-restore workspace
+        try:
+            workspace_path = os.path.expanduser("~/.hybmesh_workspace.json")
+            if os.path.exists(workspace_path):
+                self._read_workspace_file(workspace_path)
+            else:
+                self.new_blank_tab()
+        except Exception as e:
+            if hasattr(self, "main_window") and hasattr(self.main_window, "log_panel"):
+                self.main_window.log_panel.log(f"Failed to auto-restore workspace: {e}")
+            if not self.sessions:
+                self.new_blank_tab()
+
 
     # ═════════════════════════════════════════════════════════════════════
     # Coordination and Core Orchestration Methods
@@ -392,6 +407,13 @@ class AppController(
             if reply == QMessageBox.StandardButton.No:
                 return False
         
+        # Auto-save workspace on successful exit
+        try:
+            workspace_path = os.path.expanduser("~/.hybmesh_workspace.json")
+            self._write_workspace_file(workspace_path)
+        except Exception as e:
+            print(f"Failed to auto-save workspace: {e}")
+
         try:
             self.main_window.canvas_view.clear()
             self.main_window.mesh_canvas_view.clear_mesh()

@@ -98,6 +98,21 @@ class MeshConfig:
     # Geometry files list (corresponds to multiple GEOM_FILE parameters)
     geom_files: list[str] = field(default_factory=list)
 
+    def to_dict(self) -> dict:
+        """Serialize configuration parameters to a dictionary."""
+        d = {}
+        for attr, _ in _KEY_MAP.values():
+            d[attr] = getattr(self, attr)
+        d["geom_files"] = self.geom_files
+        return d
+
+    def load_from_dict(self, d: dict):
+        """Restore configuration parameters from a dictionary."""
+        for attr, _ in _KEY_MAP.values():
+            if attr in d:
+                setattr(self, attr, d[attr])
+        self.geom_files = d.get("geom_files", [])
+
     def load_from_file(self, path: str):
         """Parse configuration parameters from a text file."""
         if not os.path.exists(path):
