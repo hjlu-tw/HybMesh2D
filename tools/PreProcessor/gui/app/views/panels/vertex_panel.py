@@ -1,15 +1,15 @@
-from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QLabel, QCheckBox
+from PyQt6.QtWidgets import QWidget, QFormLayout, QLabel, QCheckBox
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, align_form_labels, help_label, help_widget
+from app.utils import make_button, align_form_labels, help_label, help_widget, SPIN_STYLE
+from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 class VertexPanel(CollapsibleSection):
     def __init__(self, parent=None):
         super().__init__("Vertex", start_collapsed=True, parent=parent)
 
         # 1. Selection Section
-        self.selection_sec = CollapsibleSection("Vertex Selection", start_collapsed=True)
+        self.selection_sec = CollapsibleSection("Vertex Selection", start_collapsed=False)
         self.add_widget(self.selection_sec)
 
         self.selected_info = QLabel("Selected Vertex: None")
@@ -35,20 +35,20 @@ class VertexPanel(CollapsibleSection):
         self.selection_sec.add_widget(help_widget(self.auto_detect_btn, "Automatically detect and split edges at all sharp corners"))
 
         # 2. Insert Section
-        self.insert_sec = CollapsibleSection("Insert Vertex", start_collapsed=True)
+        self.insert_sec = CollapsibleSection("Insert Vertex", start_collapsed=False)
         self.add_widget(self.insert_sec)
 
         form = QFormLayout()
-        self.insert_x = QDoubleSpinBox()
+        self.insert_x = CleanDoubleSpinBox()
         self.insert_x.setRange(-1e6, 1e6)
         self.insert_x.setDecimals(6)
-        self.insert_x.setStyleSheet("background:#181b2a; color:#a0a8c0; border:1px solid #333852;")
+        self.insert_x.setStyleSheet(SPIN_STYLE)
         self.insert_x.setToolTip("X-coordinate for a new vertex to insert into the geometry")
 
-        self.insert_y = QDoubleSpinBox()
+        self.insert_y = CleanDoubleSpinBox()
         self.insert_y.setRange(-1e6, 1e6)
         self.insert_y.setDecimals(6)
-        self.insert_y.setStyleSheet("background:#181b2a; color:#a0a8c0; border:1px solid #333852;")
+        self.insert_y.setStyleSheet(SPIN_STYLE)
         self.insert_y.setToolTip("Y-coordinate for a new vertex to insert into the geometry")
 
         form.addRow(help_label("X:", "X-coordinate for a new vertex to insert into the geometry"), self.insert_x)

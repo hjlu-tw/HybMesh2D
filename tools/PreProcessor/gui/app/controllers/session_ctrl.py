@@ -3,6 +3,7 @@ import os
 import numpy as np
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from app.models.session import GeometrySession
 
 class SessionControllerMixin:
@@ -87,6 +88,7 @@ class SessionControllerMixin:
             
             # Sync active overlays visibility with session visibility
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
+            self._update_undo_redo_buttons(session)
 
     def close_tab(self, idx: int):
         if idx < 0 or idx >= len(self.sessions):
@@ -154,6 +156,8 @@ class SessionControllerMixin:
             state = Qt.CheckState.Checked if session.is_visible else Qt.CheckState.Unchecked
             item.setCheckState(state)
             item.setData(Qt.ItemDataRole.UserRole, session.session_id)
+            if hasattr(session, "color") and session.color:
+                item.setForeground(QColor(session.color))
             sb.geom_list.addItem(item)
 
         if 0 <= self.active_idx < sb.geom_list.count():
@@ -250,7 +254,7 @@ class SessionControllerMixin:
             if session is self.active_session():
                 self._sync_sidebar_to_session()
             n_pts = len(session.original_points)
-            n_seg = len(session.split_indices) - 1
+            n_seg = max(0, len(session.split_indices) - 1)
             self.main_window.log_panel.log(
                 f"Loaded '{os.path.basename(file_path)}' — "
                 f"{n_pts} points, {n_seg} auto-detected edges.")
@@ -283,6 +287,9 @@ class SessionControllerMixin:
 
     def _apply_json_config(self, config: dict, config_path: str):
         input_file = config.get("input_file", "")
+        if not input_file:
+            self.main_window.log_panel.log("[WARNING] JSON config lacks 'input_file'. Configuration load aborted.")
+            return
 
         # Try to resolve relative path if not absolute
         if input_file and not os.path.isabs(input_file):

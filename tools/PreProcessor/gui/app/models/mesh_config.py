@@ -2,6 +2,46 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+_KEY_MAP = {
+    "DOMAIN_X_MIN": ("domain_x_min", float),
+    "DOMAIN_X_MAX": ("domain_x_max", float),
+    "DOMAIN_Y_MIN": ("domain_y_min", float),
+    "DOMAIN_Y_MAX": ("domain_y_max", float),
+    "SURFACE_MESH_SIZE": ("surface_mesh_size", float),
+    "AUTO_SURFACE_SIZE": ("auto_surface_size", lambda s: int(s) != 0),
+    "FARFIELD_MESH_SIZE": ("farfield_mesh_size", float),
+    "FARFIELD_GROWTH_RATE": ("farfield_growth_rate", float),
+    "BL_INITIAL_THICKNESS": ("bl_initial_thickness", float),
+    "BL_GROWTH_RATE": ("bl_growth_rate", float),
+    "BL_LAYERS": ("bl_layers", lambda s: int(float(s))),
+    "BL_CONVEX_METHOD": ("bl_convex_method", lambda s: int(float(s))),
+    "BL_FAN_NODES": ("bl_fan_nodes", lambda s: int(float(s))),
+    "BL_AUTO_FAN_NODES": ("bl_auto_fan_nodes", lambda s: int(s) != 0),
+    "BL_FAN_ANGLE_THRESHOLD": ("bl_fan_angle_threshold", float),
+    "BL_CONVEX_ANGLE_THRESHOLD": ("bl_convex_angle_threshold", float),
+    "BL_PARA_FALLBACK_ANGLE": ("bl_para_fallback_angle", float),
+    "BL_CONCAVE_METHOD": ("bl_concave_method", lambda s: int(float(s))),
+    "BL_CONCAVE_ANGLE_THRESHOLD": ("bl_concave_angle_threshold", float),
+    "BL_CONCAVE_INFLUENCE_MULTIPLIER": ("bl_concave_influence_multiplier", float),
+    "BL_MERGE_CONCAVE": ("bl_merge_concave", lambda s: int(s) != 0),
+    "BL_SMOOTHING_ITERS": ("bl_smoothing_iters", lambda s: int(float(s))),
+    "BL_TRANSITION_LAYERS": ("bl_transition_layers", lambda s: int(float(s))),
+    "BL_AUTO_TRANSITION_LAYERS": ("bl_auto_transition_layers", lambda s: int(float(s))),
+    "BL_TRANSITION_GROWTH_RATE": ("bl_transition_growth_rate", float),
+    "BL_TRANSITION_BUFFER": ("bl_transition_buffer", float),
+    "GMSH_ALGORITHM": ("gmsh_algorithm", lambda s: int(float(s))),
+    "GMSH_OPTIMIZE": ("gmsh_optimize", lambda s: int(float(s))),
+    "BC_XMIN": ("bc_xmin", str),
+    "BC_XMAX": ("bc_xmax", str),
+    "BC_YMIN": ("bc_ymin", str),
+    "BC_YMAX": ("bc_ymax", str),
+    "BC_GEOM": ("bc_geom", str),
+    "EXPORT_VTK": ("export_vtk", lambda s: int(s) != 0),
+    "EXPORT_STARCD": ("export_starcd", lambda s: int(s) != 0),
+    "ENABLE_COLLISION_DETECTION": ("enable_collision_detection", lambda s: int(s) != 0),
+    "OUTPUT_FILENAME": ("output_filename", str),
+}
+
 @dataclass
 class MeshConfig:
     # Section 1: Domain
@@ -82,80 +122,12 @@ class MeshConfig:
                 # Map text file key to class attribute
                 if key == "GEOM_FILE":
                     self.geom_files.append(val_str)
-                elif key == "DOMAIN_X_MIN":
-                    self.domain_x_min = float(val_str)
-                elif key == "DOMAIN_X_MAX":
-                    self.domain_x_max = float(val_str)
-                elif key == "DOMAIN_Y_MIN":
-                    self.domain_y_min = float(val_str)
-                elif key == "DOMAIN_Y_MAX":
-                    self.domain_y_max = float(val_str)
-                elif key == "SURFACE_MESH_SIZE":
-                    self.surface_mesh_size = float(val_str)
-                elif key == "AUTO_SURFACE_SIZE":
-                    self.auto_surface_size = (int(val_str) != 0)
-                elif key == "FARFIELD_MESH_SIZE":
-                    self.farfield_mesh_size = float(val_str)
-                elif key == "FARFIELD_GROWTH_RATE":
-                    self.farfield_growth_rate = float(val_str)
-                elif key == "BL_INITIAL_THICKNESS":
-                    self.bl_initial_thickness = float(val_str)
-                elif key == "BL_GROWTH_RATE":
-                    self.bl_growth_rate = float(val_str)
-                elif key == "BL_LAYERS":
-                    self.bl_layers = int(float(val_str))
-                elif key == "BL_CONVEX_METHOD":
-                    self.bl_convex_method = int(float(val_str))
-                elif key == "BL_FAN_NODES":
-                    self.bl_fan_nodes = int(float(val_str))
-                elif key == "BL_AUTO_FAN_NODES":
-                    self.bl_auto_fan_nodes = (int(val_str) != 0)
-                elif key == "BL_FAN_ANGLE_THRESHOLD":
-                    self.bl_fan_angle_threshold = float(val_str)
-                elif key == "BL_CONVEX_ANGLE_THRESHOLD":
-                    self.bl_convex_angle_threshold = float(val_str)
-                elif key == "BL_PARA_FALLBACK_ANGLE":
-                    self.bl_para_fallback_angle = float(val_str)
-                elif key == "BL_CONCAVE_METHOD":
-                    self.bl_concave_method = int(float(val_str))
-                elif key == "BL_CONCAVE_ANGLE_THRESHOLD":
-                    self.bl_concave_angle_threshold = float(val_str)
-                elif key == "BL_CONCAVE_INFLUENCE_MULTIPLIER":
-                    self.bl_concave_influence_multiplier = float(val_str)
-                elif key == "BL_MERGE_CONCAVE":
-                    self.bl_merge_concave = (int(val_str) != 0)
-                elif key == "BL_SMOOTHING_ITERS":
-                    self.bl_smoothing_iters = int(float(val_str))
-                elif key == "BL_TRANSITION_LAYERS":
-                    self.bl_transition_layers = int(float(val_str))
-                elif key == "BL_AUTO_TRANSITION_LAYERS":
-                    self.bl_auto_transition_layers = int(float(val_str))
-                elif key == "BL_TRANSITION_GROWTH_RATE":
-                    self.bl_transition_growth_rate = float(val_str)
-                elif key == "BL_TRANSITION_BUFFER":
-                    self.bl_transition_buffer = float(val_str)
-                elif key == "GMSH_ALGORITHM":
-                    self.gmsh_algorithm = int(float(val_str))
-                elif key == "GMSH_OPTIMIZE":
-                    self.gmsh_optimize = int(float(val_str))
-                elif key == "BC_XMIN":
-                    self.bc_xmin = val_str
-                elif key == "BC_XMAX":
-                    self.bc_xmax = val_str
-                elif key == "BC_YMIN":
-                    self.bc_ymin = val_str
-                elif key == "BC_YMAX":
-                    self.bc_ymax = val_str
-                elif key == "BC_GEOM":
-                    self.bc_geom = val_str
-                elif key == "EXPORT_VTK":
-                    self.export_vtk = (int(val_str) != 0)
-                elif key == "EXPORT_STARCD":
-                    self.export_starcd = (int(val_str) != 0)
-                elif key == "ENABLE_COLLISION_DETECTION":
-                    self.enable_collision_detection = (int(val_str) != 0)
-                elif key == "OUTPUT_FILENAME":
-                    self.output_filename = val_str
+                elif key in _KEY_MAP:
+                    attr, converter = _KEY_MAP[key]
+                    try:
+                        setattr(self, attr, converter(val_str))
+                    except ValueError:
+                        pass
 
     def save_to_file(self, path: str):
         """Export parameters to a Background_para.dat format text file."""

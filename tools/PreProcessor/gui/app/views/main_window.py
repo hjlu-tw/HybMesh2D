@@ -2,7 +2,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu
+    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu, QProgressBar
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
@@ -12,6 +12,7 @@ from app.views.log_panel import LogPanel
 from app.views.mesh_canvas import MeshCanvasView
 from app.views.panels.mesh_config_panel import MeshConfigPanel
 from app.views.panels.mesh_stats_panel import MeshStatsPanel
+from app.styles import TOOLBAR_CHECKBOX_STYLE
 
 
 class MainWindow(QMainWindow):
@@ -216,39 +217,15 @@ class MainWindow(QMainWindow):
         self.cad_sep2 = create_sep()
 
         self.show_vertices_cb = QCheckBox("Show Geometry Vertices", self.canvas_toolbar)
-        self.show_vertices_cb.setStyleSheet("""
-            QCheckBox {
-                color: #a0b0d0;
-                font-size: 11px;
-            }
-            QCheckBox:hover {
-                color: #ffffff;
-            }
-        """)
+        self.show_vertices_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.show_vertices_cb.setChecked(True)
 
         self.show_nodes_cb = QCheckBox("Show Resampled Nodes", self.canvas_toolbar)
-        self.show_nodes_cb.setStyleSheet("""
-            QCheckBox {
-                color: #a0b0d0;
-                font-size: 11px;
-            }
-            QCheckBox:hover {
-                color: #ffffff;
-            }
-        """)
+        self.show_nodes_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.show_nodes_cb.setChecked(True)
 
         self.quality_check_cb = QCheckBox("Show Quality Heatmap", self.canvas_toolbar)
-        self.quality_check_cb.setStyleSheet("""
-            QCheckBox {
-                color: #a0b0d0;
-                font-size: 11px;
-            }
-            QCheckBox:hover {
-                color: #ffffff;
-            }
-        """)
+        self.quality_check_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
 
         # Mesh Generation Toolbar controls
         self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
@@ -296,39 +273,15 @@ class MainWindow(QMainWindow):
         self.mesh_focus_btn = create_tb_btn("Fit to View", "Fit canvas to mesh or preview boundaries")
 
         self.mesh_show_wireframe_cb = QCheckBox("Mesh", self.canvas_toolbar)
-        self.mesh_show_wireframe_cb.setStyleSheet("""
-            QCheckBox {
-                color: #a0b0d0;
-                font-size: 11px;
-            }
-            QCheckBox:hover {
-                color: #ffffff;
-            }
-        """)
+        self.mesh_show_wireframe_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.mesh_show_wireframe_cb.setChecked(True)
 
         self.mesh_show_bc_cb = QCheckBox("BCs", self.canvas_toolbar)
-        self.mesh_show_bc_cb.setStyleSheet("""
-            QCheckBox {
-                color: #a0b0d0;
-                font-size: 11px;
-            }
-            QCheckBox:hover {
-                color: #ffffff;
-            }
-        """)
+        self.mesh_show_bc_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.mesh_show_bc_cb.setChecked(True)
 
         self.mesh_show_domain_cb = QCheckBox("Domain", self.canvas_toolbar)
-        self.mesh_show_domain_cb.setStyleSheet("""
-            QCheckBox {
-                color: #a0b0d0;
-                font-size: 11px;
-            }
-            QCheckBox:hover {
-                color: #ffffff;
-            }
-        """)
+        self.mesh_show_domain_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.mesh_show_domain_cb.setChecked(True)
 
         self.mesh_color_label = QLabel("", self.canvas_toolbar) # Hidden dummy
@@ -378,10 +331,29 @@ class MainWindow(QMainWindow):
         tb_layout.addWidget(self.mesh_sep3)
         tb_layout.addWidget(self.mesh_show_wireframe_cb)
         tb_layout.addWidget(self.mesh_show_bc_cb)
+        self.progress_bar = QProgressBar(self.canvas_toolbar)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setFixedHeight(12)
+        self.progress_bar.setFixedWidth(100)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #181b30;
+                border: 1px solid #2d3356;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background-color: #22c55e;
+                border-radius: 3px;
+            }
+        """)
+
         tb_layout.addWidget(self.mesh_show_domain_cb)
         tb_layout.addWidget(self.mesh_sep4)
         tb_layout.addWidget(self.mesh_color_label)
         tb_layout.addWidget(self.mesh_color_mode_combo)
+        tb_layout.addWidget(self.progress_bar)
         tb_layout.addStretch(1)
 
         # Track layouts for visibility toggling
@@ -398,12 +370,6 @@ class MainWindow(QMainWindow):
             self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,
             self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
         ]
-
-        # Dummy compatibility buttons
-        self.mesh_export_vtk_btn = QPushButton()
-        self.mesh_export_vtk_btn.setVisible(False)
-        self.mesh_export_star_cd_btn = QPushButton()
-        self.mesh_export_star_cd_btn.setVisible(False)
 
         # Hide mesh widgets on start
         for w in self.mesh_tb_widgets:
@@ -495,6 +461,7 @@ class MainWindow(QMainWindow):
         is_mesh = (idx in [1, 2])
         for w in self.mesh_tb_widgets:
             w.setVisible(is_mesh)
+        self.progress_bar.setVisible(False)
             
         self.mode_changed.emit(idx)
 

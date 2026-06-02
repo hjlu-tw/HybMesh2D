@@ -140,13 +140,14 @@ class AppController(
         mw = self.main_window
         mw.mode_changed.connect(self.handle_mode_changed)
         
-        # Sidebar Panel buttons
         mw.mesh_config_panel.load_config_btn.clicked.connect(self.load_mesh_config)
         mw.mesh_config_panel.save_config_btn.clicked.connect(self.save_mesh_config)
         mw.mesh_config_panel.add_active_geom_btn.clicked.connect(self.add_active_preprocessor_geometry)
         mw.mesh_config_panel.preview_btn.clicked.connect(self.preview_mesh_generator)
         mw.mesh_config_panel.run_mesh_btn.clicked.connect(self.run_mesh_generator)
         mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
+        mw.mesh_config_panel.geom_files_changed.connect(self.handle_mesh_geom_files_changed)
+        mw.mesh_config_panel.mesh_config_changed.connect(self.handle_mesh_config_changed)
 
         # Toolbar Mesh Buttons
         mw.mesh_preview_btn.clicked.connect(self.preview_mesh_generator)
@@ -157,32 +158,30 @@ class AppController(
         mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
 
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel
-        def sync_wireframe(checked):
-            mw.mesh_canvas_view.set_wireframe_visible(checked)
-            mw.mesh_stats_panel.show_wireframe_cb.blockSignals(True)
-            mw.mesh_stats_panel.show_wireframe_cb.setChecked(checked)
-            mw.mesh_stats_panel.show_wireframe_cb.blockSignals(False)
-            mw.mesh_show_wireframe_cb.blockSignals(True)
-            mw.mesh_show_wireframe_cb.setChecked(checked)
-            mw.mesh_show_wireframe_cb.blockSignals(False)
+        def _make_sync_checkbox_fn(canvas_method, cb_sidebar, cb_toolbar):
+            def sync_fn(checked):
+                canvas_method(checked)
+                for cb in (cb_sidebar, cb_toolbar):
+                    cb.blockSignals(True)
+                    cb.setChecked(checked)
+                    cb.blockSignals(False)
+            return sync_fn
 
-        def sync_bc(checked):
-            mw.mesh_canvas_view.set_bc_coloring_visible(checked)
-            mw.mesh_stats_panel.show_bc_coloring_cb.blockSignals(True)
-            mw.mesh_stats_panel.show_bc_coloring_cb.setChecked(checked)
-            mw.mesh_stats_panel.show_bc_coloring_cb.blockSignals(False)
-            mw.mesh_show_bc_cb.blockSignals(True)
-            mw.mesh_show_bc_cb.setChecked(checked)
-            mw.mesh_show_bc_cb.blockSignals(False)
-
-        def sync_domain(checked):
-            mw.mesh_canvas_view.set_domain_box_visible(checked)
-            mw.mesh_stats_panel.show_domain_box_cb.blockSignals(True)
-            mw.mesh_stats_panel.show_domain_box_cb.setChecked(checked)
-            mw.mesh_stats_panel.show_domain_box_cb.blockSignals(False)
-            mw.mesh_show_domain_cb.blockSignals(True)
-            mw.mesh_show_domain_cb.setChecked(checked)
-            mw.mesh_show_domain_cb.blockSignals(False)
+        sync_wireframe = _make_sync_checkbox_fn(
+            mw.mesh_canvas_view.set_wireframe_visible,
+            mw.mesh_stats_panel.show_wireframe_cb,
+            mw.mesh_show_wireframe_cb
+        )
+        sync_bc = _make_sync_checkbox_fn(
+            mw.mesh_canvas_view.set_bc_coloring_visible,
+            mw.mesh_stats_panel.show_bc_coloring_cb,
+            mw.mesh_show_bc_cb
+        )
+        sync_domain = _make_sync_checkbox_fn(
+            mw.mesh_canvas_view.set_domain_box_visible,
+            mw.mesh_stats_panel.show_domain_box_cb,
+            mw.mesh_show_domain_cb
+        )
 
         def sync_color_mode(text):
             mode_map = {
@@ -225,6 +224,8 @@ class AppController(
         # ── Keyboard shortcuts ──────────────────────────────────────────
         self.main_window.setup_shortcuts(self)
 
+        self._update_undo_redo_buttons()
+
     # ═════════════════════════════════════════════════════════════════════
     # Coordination and Core Orchestration Methods
     # ═════════════════════════════════════════════════════════════════════
@@ -249,6 +250,18 @@ class AppController(
             else:
                 self.main_window.mesh_canvas_view.clear_mesh()
 
+    def handle_mesh_geom_files_changed(self, geom_files: list[str]):
+        """Callback when geometry files in mesh config panel are modified."""
+        mw = self.main_window
+        mw.mesh_canvas_view.update_geometry_previews(geom_files)
+        mw.mesh_canvas_view.auto_range()
+
+    def handle_mesh_config_changed(self, cfg):
+        """Callback when mesh config is modified or set in the config panel."""
+        mw = self.main_window
+        mw.mesh_canvas_view.update_mesh_config(cfg)
+        mw.mesh_canvas_view.update_geometry_previews(cfg.geom_files)
+
 
     def active_session(self) -> GeometrySession | None:
         if 0 <= self.active_idx < len(self.sessions):
@@ -270,6 +283,7 @@ class AppController(
     def _apply_geometry_update(self, session: GeometrySession,
                                re_detect: bool = False):
         if session.original_points is None:
+            self._update_undo_redo_buttons(session)
             return
         points = session.original_points.copy()
 
@@ -303,6 +317,7 @@ class AppController(
             session.selected_point_idx = None
 
         self._sync_file_segments(session)
+        self._update_undo_redo_buttons(session)
 
     def _sync_file_segments(self, session: GeometrySession):
         """Rebuild file segments from split_indices then update the sidebar list."""
@@ -330,6 +345,7 @@ class AppController(
                         session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to undo.")
+            self._update_undo_redo_buttons(session)
 
     def redo(self):
         session = self.active_session()
@@ -345,6 +361,20 @@ class AppController(
                         session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
             else:
                 self.main_window.log_panel.log("Nothing to redo.")
+            self._update_undo_redo_buttons(session)
+
+    def _update_undo_redo_buttons(self, session: GeometrySession = None):
+        """Enable or disable undo/redo buttons in toolbar based on history stack status."""
+        if session is None:
+            session = self.active_session()
+        if session:
+            can_undo = session.command_history.can_undo
+            can_redo = session.command_history.can_redo
+            self.main_window.undo_btn.setEnabled(can_undo)
+            self.main_window.redo_btn.setEnabled(can_redo)
+        else:
+            self.main_window.undo_btn.setEnabled(False)
+            self.main_window.redo_btn.setEnabled(False)
 
     def handle_close_event(self) -> bool:
         """Return True if the app can close, False to cancel closing."""

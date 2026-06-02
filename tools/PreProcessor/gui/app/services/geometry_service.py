@@ -10,17 +10,21 @@ from app.models.segment import SegmentModel
 
 def _eval_formula(expr: str, var_name: str, val: float) -> float:
     """Safely evaluate a single math expression."""
+    if "__" in expr:
+        return float("nan")
     safe = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
     safe["pi"] = math.pi
     safe[var_name] = float(val)
     try:
-        return float(eval(expr.replace("^", "**"), {"__builtins__": {}}, safe))
+        return float(eval(expr.replace("^", "**"), {"__builtins__": None}, safe))
     except Exception:
         return float("nan")
 
 
 def _eval_formula_array(expr: str, var_name: str, vals: np.ndarray) -> np.ndarray:
     """Evaluate a math expression over a numpy array in a vectorized manner."""
+    if "__" in expr:
+        return np.full_like(vals, float("nan"), dtype=float)
     safe = {
         "pi": np.pi,
         "sin": np.sin,
@@ -45,7 +49,7 @@ def _eval_formula_array(expr: str, var_name: str, vals: np.ndarray) -> np.ndarra
     parsed_expr = expr.replace("^", "**")
     try:
         safe[var_name] = vals
-        res = eval(parsed_expr, {"__builtins__": {}}, safe)
+        res = eval(parsed_expr, {"__builtins__": None}, safe)
         if isinstance(res, np.ndarray):
             return res.astype(float)
         return np.full_like(vals, float(res), dtype=float)

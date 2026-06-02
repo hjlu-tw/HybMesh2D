@@ -42,16 +42,14 @@ class MeshGenWorker(QThread):
             
             for line in self._process.stdout:
                 if self._cancelled:
-                    self._process.terminate()
-                    self.log_signal.emit("Mesh generation cancelled by user.")
-                    self.finished_signal.emit(-2)
-                    return
+                    break
                 stripped = line.rstrip()
                 if stripped:
                     self.log_signal.emit(stripped)
 
             if self._cancelled:
-                self._process.terminate()
+                if self._process.poll() is None:
+                    self._process.terminate()
                 self.log_signal.emit("Mesh generation cancelled by user.")
                 self.finished_signal.emit(-2)
                 return

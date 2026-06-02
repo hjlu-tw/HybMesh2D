@@ -223,6 +223,7 @@ class SegmentControllerMixin:
         sb.curve_segment_list.blockSignals(True)
         sb.curve_segment_list.setCurrentRow(-1)
         sb.curve_segment_list.blockSignals(False)
+        sb.curve_bake_btn.setEnabled(False)
 
         item = sb.file_segment_list.item(row)
         if item:
@@ -236,6 +237,7 @@ class SegmentControllerMixin:
         sb.file_segment_list.blockSignals(True)
         sb.file_segment_list.setCurrentRow(-1)
         sb.file_segment_list.blockSignals(False)
+        sb.curve_bake_btn.setEnabled(True)
 
         item = sb.curve_segment_list.item(row)
         if item:
@@ -252,6 +254,7 @@ class SegmentControllerMixin:
             sb.curve_segment_list.blockSignals(True)
             sb.curve_segment_list.setCurrentRow(-1)
             sb.curve_segment_list.blockSignals(False)
+            sb.curve_bake_btn.setEnabled(False)
 
             self.handle_segment_selected(-1)
             return
@@ -275,6 +278,7 @@ class SegmentControllerMixin:
             sb.file_segment_list.blockSignals(True)
             sb.file_segment_list.setCurrentRow(row)
             sb.file_segment_list.blockSignals(False)
+            sb.curve_bake_btn.setEnabled(False)
         else:
             row = -1
             for r in range(sb.curve_segment_list.count()):
@@ -289,6 +293,7 @@ class SegmentControllerMixin:
             sb.curve_segment_list.blockSignals(True)
             sb.curve_segment_list.setCurrentRow(row)
             sb.curve_segment_list.blockSignals(False)
+            sb.curve_bake_btn.setEnabled(row >= 0)
 
         self.handle_segment_selected(index)
 

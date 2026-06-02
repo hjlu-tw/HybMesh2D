@@ -58,15 +58,24 @@ class SegmentModel:
             seg.t_max = float(r[1])
             seg.match_previous = d.get("match_previous", False)
 
-            if "x_formula" in d and "y_formula" in d:
+            curve_mode = d.get("curve_mode")
+            if curve_mode:
+                seg.curve_mode = curve_mode
+                seg.x_formula = d.get("x_formula", "cos(t)")
+                seg.y_formula = d.get("y_formula", "sin(t)")
+                seg.formula = d.get("formula", "sin(x)")
+            elif "x_formula" in d and "y_formula" in d:
                 seg.curve_mode = "parametric"
                 seg.x_formula = d["x_formula"]
                 seg.y_formula = d["y_formula"]
+                seg.formula = d.get("formula", "sin(x)")
             elif "formula" in d:
                 seg.curve_mode = "explicit"
-                seg.formula = d.get("formula", "sin(x)")
+                seg.formula = d["formula"]
+                seg.x_formula = d.get("x_formula", "cos(t)")
+                seg.y_formula = d.get("y_formula", "sin(t)")
             else:
-                seg.curve_mode = d.get("curve_mode", "parametric")
+                seg.curve_mode = "parametric"
                 seg.x_formula = d.get("x_formula", "cos(t)")
                 seg.y_formula = d.get("y_formula", "sin(t)")
                 seg.formula = d.get("formula", "sin(x)")

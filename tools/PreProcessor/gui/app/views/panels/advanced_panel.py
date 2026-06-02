@@ -15,7 +15,7 @@ class AdvancedPanel(CollapsibleSection):
         self.global_spline_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
         self.global_spline_cb.setToolTip("Apply cubic spline interpolation across all edges for G1 continuity. Disable for geometries with intentional sharp corners.")
         hint = QLabel("Disable for geometries with true sharp corners.")
-        hint.setStyleSheet("color:#556; font-size:10px;")
+        hint.setStyleSheet("color:#6a7aaa; font-size:10px;")
         hint.setWordWrap(True)
 
         tf_box = QGroupBox("Output Transform")

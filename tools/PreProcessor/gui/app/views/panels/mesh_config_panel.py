@@ -7,19 +7,21 @@ from PyQt6.QtWidgets import (
     QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QFileDialog,
     QPushButton, QMenu
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
+from app.utils import (
+    make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
+    help_label, help_widget, LINEEDIT_STYLE, BC_COLORS, DEFAULT_BC_COLOR
+)
 from app.models.mesh_config import MeshConfig
 from app.views.bc_widget import BCWidget
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 
-# Style for QLineEdit fields matching spinboxes
-LINEEDIT_STYLE = "background:#181b2a; color:#a0a8c0; border:1px solid #333852; padding:3px; border-radius:3px;"
-
 class MeshConfigPanel(QScrollArea):
     """Scrollable panel containing editor widgets for all Background_para.dat options."""
+    geom_files_changed = pyqtSignal(list)
+    mesh_config_changed = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -449,15 +451,6 @@ class MeshConfigPanel(QScrollArea):
 
     def _update_bc_indicators(self):
         """Parse boundary condition texts and update indicator backgrounds accordingly."""
-        bc_colors = {
-            "wall": '#ef4444',
-            "farfield": '#06b6d4',
-            "inlet": '#22c55e',
-            "outlet": '#3b82f6',
-            "symmetry": '#f97316',
-        }
-        default_bc_color = '#9ca3af'
-
         for edit, indicator in [
             (self.bc_xmin, self.bc_xmin_indicator),
             (self.bc_xmax, self.bc_xmax_indicator),
@@ -466,7 +459,7 @@ class MeshConfigPanel(QScrollArea):
             (self.bc_geom, self.bc_geom_indicator),
         ]:
             val = edit.text().strip().lower()
-            color = bc_colors.get(val, default_bc_color)
+            color = BC_COLORS.get(val, DEFAULT_BC_COLOR)
             indicator.setStyleSheet(
                 f"background-color: {color}; border-radius: 4px; border: 1px solid #333852;"
             )
@@ -486,9 +479,7 @@ class MeshConfigPanel(QScrollArea):
         geom_files = []
         for row in range(self.geom_list_widget.count()):
             geom_files.append(self.geom_list_widget.item(row).data(Qt.ItemDataRole.UserRole))
-        if hasattr(self.window(), 'mesh_canvas_view'):
-            self.window().mesh_canvas_view.update_geometry_previews(geom_files)
-            self.window().mesh_canvas_view.auto_range()
+        self.geom_files_changed.emit(geom_files)
 
     def _on_remove_geom(self):
         """Remove selected geometry file from the list."""
@@ -498,9 +489,7 @@ class MeshConfigPanel(QScrollArea):
         geom_files = []
         for row in range(self.geom_list_widget.count()):
             geom_files.append(self.geom_list_widget.item(row).data(Qt.ItemDataRole.UserRole))
-        if hasattr(self.window(), 'mesh_canvas_view'):
-            self.window().mesh_canvas_view.update_geometry_previews(geom_files)
-            self.window().mesh_canvas_view.auto_range()
+        self.geom_files_changed.emit(geom_files)
 
     def set_config(self, cfg: MeshConfig):
         """Populate widget values from a MeshConfig model instance."""
@@ -588,9 +577,7 @@ class MeshConfigPanel(QScrollArea):
         self.enable_collision_detection.setChecked(cfg.enable_collision_detection)
 
         # Update canvas preview geometries and config
-        if hasattr(self.window(), 'mesh_canvas_view'):
-            self.window().mesh_canvas_view.update_mesh_config(cfg)
-            self.window().mesh_canvas_view.update_geometry_previews(cfg.geom_files)
+        self.mesh_config_changed.emit(cfg)
 
     def get_config(self) -> MeshConfig:
         """Collect widget values and return a MeshConfig model instance."""

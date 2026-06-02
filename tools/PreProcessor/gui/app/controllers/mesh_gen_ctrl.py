@@ -76,6 +76,12 @@ class MeshGenControllerMixin:
             return
 
         cfg = self.main_window.mesh_config_panel.get_config()
+        if cfg.domain_x_min >= cfg.domain_x_max:
+            self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
+            return
+        if cfg.domain_y_min >= cfg.domain_y_max:
+            self.main_window.log_panel.log("[ERROR] Domain Y Min must be strictly less than Y Max.")
+            return
         session.mesh_config = cfg
 
         self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
@@ -131,6 +137,12 @@ class MeshGenControllerMixin:
 
         # Extract current config values from UI
         cfg = self.main_window.mesh_config_panel.get_config()
+        if cfg.domain_x_min >= cfg.domain_x_max:
+            self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
+            return
+        if cfg.domain_y_min >= cfg.domain_y_max:
+            self.main_window.log_panel.log("[ERROR] Domain Y Min must be strictly less than Y Max.")
+            return
         
         # Overrule solver output path to temporary folder to prevent generating permanent files on disk
         temp_vtk_path = os.path.abspath(os.path.join(self.temp_dir, f"mesh_session_{session.session_id}.vtk"))
@@ -166,6 +178,7 @@ class MeshGenControllerMixin:
         self._mesh_worker.finished_signal.connect(
             lambda rc: self._on_mesh_gen_finished(rc, tmp_cfg.name, expected_vtk, session)
         )
+        self.main_window.progress_bar.setVisible(True)
         self._mesh_worker.start()
 
     def cancel_mesh_generator(self):
@@ -199,9 +212,29 @@ class MeshGenControllerMixin:
             return path
         return os.path.abspath(os.path.join(root_dir, path))
 
+    def _resolve_export_path(self, session: GeometrySession, default_fallback_path: str, ext: str) -> str:
+        """Resolve the default export path based on session configuration settings."""
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        default_dir = os.path.join(root_dir, "results", "meshes")
+        
+        user_filename = session.mesh_config.output_filename if (session and session.mesh_config) else ""
+        if user_filename:
+            if user_filename.endswith(".*"):
+                user_filename = user_filename[:-2] + ext
+            else:
+                user_filename = os.path.splitext(user_filename)[0] + ext
+            if not os.path.isabs(user_filename):
+                default_path = os.path.abspath(os.path.join(root_dir, user_filename))
+            else:
+                default_path = user_filename
+        else:
+            default_path = os.path.join(default_dir, os.path.basename(default_fallback_path))
+        return default_path
+
 
     def _on_mesh_gen_finished(self, rc: int, tmp_cfg_name: str, expected_vtk_path: str, session: GeometrySession):
         """Handle execution thread termination, load VTK result, and refresh canvas."""
+        self.main_window.progress_bar.setVisible(False)
         self.main_window.mesh_config_panel.run_mesh_btn.setEnabled(True)
         self.main_window.mesh_config_panel.cancel_mesh_btn.setEnabled(False)
         self.main_window.mesh_generate_btn.setEnabled(True)
@@ -253,21 +286,7 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log("No generated VTK mesh available to export. Generate a mesh first.")
             return
 
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
-        default_dir = os.path.join(root_dir, "results", "meshes")
-        
-        user_filename = session.mesh_config.output_filename if (session and session.mesh_config) else ""
-        if user_filename:
-            if user_filename.endswith(".*"):
-                user_filename = user_filename[:-2] + ".vtk"
-            else:
-                user_filename = os.path.splitext(user_filename)[0] + ".vtk"
-            if not os.path.isabs(user_filename):
-                default_path = os.path.abspath(os.path.join(root_dir, user_filename))
-            else:
-                default_path = user_filename
-        else:
-            default_path = os.path.join(default_dir, os.path.basename(vtk_path))
+        default_path = self._resolve_export_path(session, vtk_path, ".vtk")
 
         dest_path, _ = QFileDialog.getSaveFileName(
             self.main_window,
@@ -316,21 +335,7 @@ class MeshGenControllerMixin:
             )
             return
 
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
-        default_dir = os.path.join(root_dir, "results", "meshes")
-        
-        user_filename = session.mesh_config.output_filename if (session and session.mesh_config) else ""
-        if user_filename:
-            if user_filename.endswith(".*"):
-                user_filename = user_filename[:-2] + ".vrt"
-            else:
-                user_filename = os.path.splitext(user_filename)[0] + ".vrt"
-            if not os.path.isabs(user_filename):
-                default_path = os.path.abspath(os.path.join(root_dir, user_filename))
-            else:
-                default_path = user_filename
-        else:
-            default_path = os.path.join(default_dir, os.path.basename(vrt_path))
+        default_path = self._resolve_export_path(session, vrt_path, ".vrt")
 
         dest_vrt, _ = QFileDialog.getSaveFileName(
             self.main_window,

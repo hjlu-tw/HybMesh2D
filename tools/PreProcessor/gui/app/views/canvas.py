@@ -2,7 +2,7 @@ from __future__ import annotations
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QColor
 
 
@@ -96,6 +96,12 @@ class CanvasView(QWidget):
         # ── Mouse events ──────────────────────────────────────────────────
         self.plot_widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
         self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
+
+        # Mouse-coordinate throttle timer
+        self._mouse_timer = QTimer(self)
+        self._mouse_timer.setSingleShot(True)
+        self._mouse_timer.timeout.connect(self._throttled_mouse_update)
+        self._last_mouse_pos = None
 
     # ═════════════════════════════════════════════════════════════════════
     # Multi-geometry management
@@ -473,7 +479,7 @@ class CanvasView(QWidget):
     # ═════════════════════════════════════════════════════════════════════
 
     def _on_mouse_clicked(self, event):
-        if self._active_points is None or not self.split_scatter.isVisible():
+        if self._active_session_id is None or self._active_points is None:
             return
         btn = event.button()
         if btn != Qt.MouseButton.LeftButton:
@@ -494,8 +500,13 @@ class CanvasView(QWidget):
             self.point_clicked.emit(nearest_idx)
 
     def _on_mouse_moved(self, pos):
-        if self.plot_widget.sceneBoundingRect().contains(pos):
+        self._last_mouse_pos = pos
+        if not self._mouse_timer.isActive():
+            self._mouse_timer.start(16)
+
+    def _throttled_mouse_update(self):
+        pos = self._last_mouse_pos
+        if pos is not None and self.plot_widget.sceneBoundingRect().contains(pos):
             mp = self.plot_widget.plotItem.vb.mapSceneToView(pos)
             self.coord_label.setPos(mp.x(), mp.y())
-            self.coord_label.setText(
-                f"X: {mp.x():.4f}\nY: {mp.y():.4f}")
+            self.coord_label.setText(f"X: {mp.x():.4f}\nY: {mp.y():.4f}")

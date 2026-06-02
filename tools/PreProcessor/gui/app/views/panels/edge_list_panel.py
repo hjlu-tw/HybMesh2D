@@ -1,32 +1,11 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QListWidget
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, help_widget
+from app.utils import make_button, help_widget, LIST_STYLE
 
 class EdgeListPanel(CollapsibleSection):
     def __init__(self, parent=None):
         super().__init__("Edge List", start_collapsed=True, parent=parent)
-
-        list_style = """
-            QListWidget {
-                background: #181b2a;
-                color: #8892b0;
-                border: 1px solid #333852;
-                border-radius: 4px;
-            }
-            QListWidget::item {
-                padding: 4px;
-            }
-            QListWidget::item:selected {
-                background: #2e3e70;
-                color: #ffffff;
-                font-weight: bold;
-            }
-            QListWidget::item:hover {
-                background: #20243c;
-                color: #dde6ff;
-            }
-        """
 
         # Discrete Edges
         lbl_file = QLabel("Discrete Edges:")
@@ -34,7 +13,7 @@ class EdgeListPanel(CollapsibleSection):
 
         self.file_segment_list = QListWidget()
         self.file_segment_list.setMaximumHeight(120)
-        self.file_segment_list.setStyleSheet(list_style)
+        self.file_segment_list.setStyleSheet(LIST_STYLE)
         self.file_segment_list.setToolTip("List of discrete edges loaded from geometry file data")
 
         # Analytic Edges
@@ -43,7 +22,7 @@ class EdgeListPanel(CollapsibleSection):
 
         self.curve_segment_list = QListWidget()
         self.curve_segment_list.setMaximumHeight(120)
-        self.curve_segment_list.setStyleSheet(list_style)
+        self.curve_segment_list.setStyleSheet(LIST_STYLE)
         self.curve_segment_list.setToolTip("List of analytically-defined curve edges")
 
         self.add_curve_seg_btn = make_button("Add Analytic Edge", '#3a180a')
@@ -52,6 +31,7 @@ class EdgeListPanel(CollapsibleSection):
         self.remove_seg_btn.setEnabled(False)
         self.remove_seg_btn.setToolTip("Remove the currently selected edge from the geometry")
         self.curve_bake_btn = make_button("Convert to Discrete", '#1b5e20')
+        self.curve_bake_btn.setEnabled(False)
         self.curve_bake_btn.setToolTip("Convert the selected analytic curve into a discrete edge")
 
         btn_layout = QHBoxLayout()

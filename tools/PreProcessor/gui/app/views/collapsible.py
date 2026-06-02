@@ -64,7 +64,7 @@ class CollapsibleSection(QWidget):
         main_layout.addWidget(self.toggle_btn)
         main_layout.addWidget(self.content_frame)
 
-        self.toggle_btn.clicked.connect(self._on_toggle)
+        self.toggle_btn.toggled.connect(self._on_toggle)
 
     # ── Public helpers ────────────────────────────────────────────────────
 

@@ -1,15 +1,38 @@
 from __future__ import annotations
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QGraphicsPathItem
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QGraphicsPathItem, QLabel
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainterPath, QPen, QBrush
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
+from app.utils import BC_COLORS, DEFAULT_BC_COLOR
 
 # Dark-theme palette matching CAD Canvas
 _CANVAS_BG = '#0c0d16'
 _CANVAS_FG = '#6b738c'
+
+class GeomLoaderThread(QThread):
+    """Loads multiple geometry files in a background thread to prevent UI freezing."""
+    loaded_signal = pyqtSignal(list)
+
+    def __init__(self, geom_files: list[str]):
+        super().__init__()
+        self.geom_files = geom_files
+
+    def run(self):
+        import os
+        results = []
+        for f in self.geom_files:
+            if not f or not os.path.exists(f):
+                continue
+            try:
+                pts = np.loadtxt(f)
+                if len(pts) > 0:
+                    results.append(pts)
+            except Exception as e:
+                print(f"Error loading preview geometry background {f}: {e}")
+        self.loaded_signal.emit(results)
 
 class MeshCanvasView(QWidget):
     """Canvas widget for visualizing 2D unstructured meshes with quality and BC filters."""
@@ -53,8 +76,28 @@ class MeshCanvasView(QWidget):
         # Mouse events
         self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
+        # Mouse-coordinate throttle timer
+        self._mouse_timer = QTimer(self)
+        self._mouse_timer.setSingleShot(True)
+        self._mouse_timer.timeout.connect(self._throttled_mouse_update)
+        self._last_mouse_pos = None
+
         # Geometry previews
         self.geom_preview_items: list[pg.PlotDataItem] = []
+
+        # Empty state guide label
+        self.empty_label = QLabel("Please load geometry data in the CAD tab first.\n請先在 CAD 分頁載入幾何資料。", self)
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setStyleSheet("""
+            color: #6a7aaa;
+            font-size: 13px;
+            font-weight: bold;
+            background: #0f111a;
+            border: 2px dashed #2d3356;
+            border-radius: 8px;
+            padding: 15px;
+        """)
+        self._update_empty_state()
 
     def render_mesh(self, vtk_mesh: VTKMesh, fit_view: bool = False):
         """Load and display the given VTK mesh."""
@@ -62,6 +105,7 @@ class MeshCanvasView(QWidget):
         self._rebuild_mesh_items()
         if fit_view:
             self.auto_range()
+        self._update_empty_state()
 
     def clear_mesh(self):
         """Clear all mesh items from the canvas."""
@@ -82,21 +126,31 @@ class MeshCanvasView(QWidget):
             self.plot_widget.removeItem(item)
         self.filled_items.clear()
         self.coord_label.setText("")
+        self._update_empty_state()
 
     def update_geometry_previews(self, geom_files: list[str]):
-        """Load and display the input boundary geometries as preview lines."""
-        import os
+        """Load and display the input boundary geometries as preview lines using a background thread."""
         for item in self.geom_preview_items:
             self.plot_widget.removeItem(item)
         self.geom_preview_items.clear()
 
-        for f in geom_files:
-            if not f or not os.path.exists(f):
-                continue
+        # Disconnect any previously active loader thread
+        if hasattr(self, "_geom_loader_thread") and self._geom_loader_thread is not None:
             try:
-                pts = np.loadtxt(f)
-                if len(pts) == 0:
-                    continue
+                self._geom_loader_thread.loaded_signal.disconnect()
+            except TypeError:
+                pass
+            if self._geom_loader_thread.isRunning():
+                self._geom_loader_thread.terminate()
+                self._geom_loader_thread.wait()
+
+        self._geom_loader_thread = GeomLoaderThread(geom_files)
+        self._geom_loader_thread.loaded_signal.connect(self._on_geometry_previews_loaded)
+        self._geom_loader_thread.start()
+
+    def _on_geometry_previews_loaded(self, results: list[np.ndarray]):
+        for pts in results:
+            try:
                 # If the first and last points are not close, stack first point to close it visually
                 if not np.allclose(pts[0], pts[-1]):
                     pts = np.vstack((pts, pts[0]))
@@ -109,7 +163,22 @@ class MeshCanvasView(QWidget):
                 item.setZValue(5)
                 self.geom_preview_items.append(item)
             except Exception as e:
-                print(f"Error loading preview geometry {f}: {e}")
+                print(f"Error rendering loaded preview geometry: {e}")
+        self._update_empty_state()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.empty_label.setGeometry(
+            (self.width() - 360) // 2,
+            (self.height() - 100) // 2,
+            360,
+            100
+        )
+
+    def _update_empty_state(self):
+        has_mesh = self.mesh is not None and len(self.mesh.points) > 0
+        has_previews = len(self.geom_preview_items) > 0
+        self.empty_label.setVisible(not (has_mesh or has_previews))
 
     def set_color_mode(self, mode: str):
         """Set the rendering color mode and refresh the display."""
@@ -198,9 +267,6 @@ class MeshCanvasView(QWidget):
 
     def _rebuild_mesh_items(self):
         """Construct wireframe, quality path fills, and boundary condition lines."""
-        if not self.mesh or len(self.mesh.points) == 0:
-            return
-
         # 1. Clear existing items
         if self.wireframe_item is not None:
             self.plot_widget.removeItem(self.wireframe_item)
@@ -213,6 +279,9 @@ class MeshCanvasView(QWidget):
         for item in self.bc_items:
             self.plot_widget.removeItem(item)
         self.bc_items.clear()
+
+        if not self.mesh or len(self.mesh.points) == 0:
+            return
 
         # 2. Rebuild wireframe (connect='pairs')
         edges = set()
@@ -369,15 +438,6 @@ class MeshCanvasView(QWidget):
         dy = g_ymax - g_ymin
         tol = 0.005 * max(dx, dy)
 
-        bc_colors = {
-            "wall": '#ef4444',       # Red
-            "farfield": '#06b6d4',   # Cyan
-            "inlet": '#22c55e',      # Green
-            "outlet": '#3b82f6',     # Blue
-            "symmetry": '#f97316',   # Orange
-        }
-        default_bc_color = '#9ca3af'  # Gray
-
         bc_names = {
             "xmin": "wall",
             "xmax": "wall",
@@ -422,7 +482,7 @@ class MeshCanvasView(QWidget):
                 ys_bc[2 * idx + 1] = self.mesh.points[v, 1]
 
             bc_type = bc_names[key]
-            color = bc_colors.get(bc_type, default_bc_color)
+            color = BC_COLORS.get(bc_type, DEFAULT_BC_COLOR)
 
             bc_item = self.plot_widget.plot(
                 xs_bc, ys_bc,
@@ -431,7 +491,6 @@ class MeshCanvasView(QWidget):
             )
             bc_item.setZValue(20)
             bc_item.setVisible(self.show_bc_coloring)
-            self.plot_widget.addItem(bc_item)
             self.bc_items.append(bc_item)
 
     def _add_poly_to_path(self, path: QPainterPath, nodes: tuple[int, ...] | list[int]):
@@ -452,8 +511,14 @@ class MeshCanvasView(QWidget):
         self.filled_items.append(item)
 
     def _on_mouse_moved(self, pos):
-        """Update coordinates label following the mouse cursor."""
-        if self.plot_widget.sceneBoundingRect().contains(pos):
+        """Update coordinates label following the mouse cursor with throttling."""
+        self._last_mouse_pos = pos
+        if not self._mouse_timer.isActive():
+            self._mouse_timer.start(16)
+
+    def _throttled_mouse_update(self):
+        pos = self._last_mouse_pos
+        if pos is not None and self.plot_widget.sceneBoundingRect().contains(pos):
             mp = self.plot_widget.plotItem.vb.mapSceneToView(pos)
             self.coord_label.setPos(mp.x(), mp.y())
             self.coord_label.setText(f"X: {mp.x():.4f}\nY: {mp.y():.4f}")

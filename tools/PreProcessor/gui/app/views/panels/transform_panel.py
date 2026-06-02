@@ -1,6 +1,6 @@
-from __future__ import annotations
-from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QStackedWidget, QDoubleSpinBox, QCheckBox, QWidget
+from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QStackedWidget, QCheckBox, QWidget
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
+from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 class TransformPanel(QGroupBox):
     def __init__(self, parent=None):
@@ -28,7 +28,9 @@ class TransformPanel(QGroupBox):
         gl.addWidget(help_widget(self.dup_type_combo, "Select the type of geometric transformation to apply"))
 
         # Base point selection
-        self.dup_base_form = QFormLayout()
+        self.dup_base_widget = QWidget()
+        self.dup_base_form = QFormLayout(self.dup_base_widget)
+        self.dup_base_form.setContentsMargins(0, 0, 0, 0)
         self.dup_base_mode_combo = QComboBox()
         self.dup_base_mode_combo.addItems([
             "Custom (Manual)",
@@ -38,14 +40,14 @@ class TransformPanel(QGroupBox):
         self.dup_base_mode_combo.setStyleSheet(COMBO_STYLE)
         self.dup_base_mode_combo.setToolTip("Choose the reference point for the transformation (start/end point or custom coordinates)")
         self.dup_base_form.addRow(help_label("Base Point:", "Choose the reference point for the transformation (start/end point or custom coordinates)"), self.dup_base_mode_combo)
-        gl.addLayout(self.dup_base_form)
+        gl.addWidget(self.dup_base_widget)
 
         # Stacked parameter areas per transform type
         self._dup_stack = QStackedWidget()
         gl.addWidget(self._dup_stack)
 
         def _dspin(lo=-1e9, hi=1e9, val=0.0, dec=4):
-            s = QDoubleSpinBox()
+            s = CleanDoubleSpinBox()
             s.setRange(lo, hi)
             s.setValue(val)
             s.setDecimals(dec)
@@ -144,7 +146,12 @@ class TransformPanel(QGroupBox):
         self._dup_stack.addWidget(w_scale)
 
         # Connect combo → stack
-        self.dup_type_combo.currentIndexChanged.connect(self._dup_stack.setCurrentIndex)
+        def _on_type_changed(index: int):
+            self._dup_stack.setCurrentIndex(index)
+            hide_base = (index in [1, 2, 5])
+            self.dup_base_widget.setVisible(not hide_base)
+        self.dup_type_combo.currentIndexChanged.connect(_on_type_changed)
+        _on_type_changed(self.dup_type_combo.currentIndex())
 
         # Delete original checkbox
         self.dup_delete_orig_cb = QCheckBox("Delete original")

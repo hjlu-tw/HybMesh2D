@@ -56,32 +56,14 @@ class SidebarView(QWidget):
         # 1. Project Panel (File)
         self.file_panel = FilePanel(self)
         self._layout.addWidget(self.file_panel)
-        # Expose widgets
-        self.load_btn = self.file_panel.load_btn
-        self.load_json_btn = self.file_panel.load_json_btn
-        self.new_tab_btn = self.file_panel.new_tab_btn
-        self.file_name_label = self.file_panel.file_name_label
-        self.is_closed_combo = self.file_panel.is_closed_combo
 
         # 2. Geometry Panel
         self.geometry_panel = GeometryPanel(self)
         self._layout.addWidget(self.geometry_panel)
-        # Expose widgets
-        self.geom_list = self.geometry_panel.geom_list
-        self.toggle_visibility_btn = self.geometry_panel.toggle_visibility_btn
 
         # 3. Vertex Panel
         self.vertex_panel = VertexPanel(self)
         self._layout.addWidget(self.vertex_panel)
-        # Expose widgets
-        self.selected_info = self.vertex_panel.selected_info
-        self.split_btn = self.vertex_panel.split_btn
-        self.remove_split_btn = self.vertex_panel.remove_split_btn
-        self.keep_vertex_cb = self.vertex_panel.keep_vertex_cb
-        self.auto_detect_btn = self.vertex_panel.auto_detect_btn
-        self.insert_x = self.vertex_panel.insert_x
-        self.insert_y = self.vertex_panel.insert_y
-        self.insert_btn = self.vertex_panel.insert_btn
 
         # 4. Edge Panel (List and Properties)
         self.sec_edge_parent = CollapsibleSection("Edge", start_collapsed=True)
@@ -89,125 +71,17 @@ class SidebarView(QWidget):
 
         self.edge_list_panel = EdgeListPanel(self)
         self.sec_edge_parent.add_widget(self.edge_list_panel)
-        # Expose widgets
-        self.file_segment_list = self.edge_list_panel.file_segment_list
-        self.curve_segment_list = self.edge_list_panel.curve_segment_list
-        self.add_curve_seg_btn = self.edge_list_panel.add_curve_seg_btn
-        self.remove_seg_btn = self.edge_list_panel.remove_seg_btn
-        self.curve_bake_btn = self.edge_list_panel.curve_bake_btn
 
         self.edge_props_panel = EdgePropsPanel(self)
         self.sec_edge_parent.add_widget(self.edge_props_panel)
-        # Expose widgets
-        self.segment_type_label = self.edge_props_panel.segment_type_label
-        self._file_seg_label = self.edge_props_panel._file_seg_label
-        self._curve_group = self.edge_props_panel._curve_group
-        self.curve_type_combo = self.edge_props_panel.curve_type_combo
-        self.shape_stack = self.edge_props_panel.shape_stack
-        self.curve_mode_param = self.edge_props_panel.curve_mode_param
-        self.curve_mode_explicit = self.edge_props_panel.curve_mode_explicit
-        self._curve_mode_group = self.edge_props_panel._curve_mode_group
-        self.curve_x_formula = self.edge_props_panel.curve_x_formula
-        self.curve_y_formula = self.edge_props_panel.curve_y_formula
-        self.curve_formula = self.edge_props_panel.curve_formula
-        self.curve_t_min = self.edge_props_panel.curve_t_min
-        self.curve_t_max = self.edge_props_panel.curve_t_max
-        self.curve_n = self.edge_props_panel.curve_n
-        self.curve_start_node = self.edge_props_panel.curve_start_node
-        self.curve_end_node = self.edge_props_panel.curve_end_node
-        self.strategy_combo = self.edge_props_panel.strategy_combo
-        self.match_previous_cb = self.edge_props_panel.match_previous_cb
-        self.auto_split_angle_sb = self.edge_props_panel.auto_split_angle_sb
-        self.auto_split_form = self.edge_props_panel.auto_split_form
-        self.auto_split_btn = self.edge_props_panel.auto_split_btn
-        self.param_stack = self.edge_props_panel.param_stack
-
-        # Strategy widgets
-        self.uniform_n = self.edge_props_panel.uniform_n
-        self.tanh_n = self.edge_props_panel.tanh_n
-        self.tanh_intensity = self.edge_props_panel.tanh_intensity
-        self.cosine_n = self.edge_props_panel.cosine_n
-        self.curv_n = self.edge_props_panel.curv_n
-        self.curv_sens = self.edge_props_panel.curv_sens
-        self.geo_n = self.edge_props_panel.geo_n
-        self.geo_ratio = self.edge_props_panel.geo_ratio
-        self.geo_ratio_end = self.edge_props_panel.geo_ratio_end
-        self.uniform_spacing = self.edge_props_panel.uniform_spacing
-        self.uniform_type_combo = self.edge_props_panel.uniform_type_combo
-
-        # Analytic shape parameters
-        self.h_line_y = self.edge_props_panel.h_line_y
-        self.h_line_x_start = self.edge_props_panel.h_line_x_start
-        self.h_line_x_end = self.edge_props_panel.h_line_x_end
-        self.v_line_x = self.edge_props_panel.v_line_x
-        self.v_line_y_start = self.edge_props_panel.v_line_y_start
-        self.v_line_y_end = self.edge_props_panel.v_line_y_end
-        self.line_x0 = self.edge_props_panel.line_x0
-        self.line_y0 = self.edge_props_panel.line_y0
-        self.line_x1 = self.edge_props_panel.line_x1
-        self.line_y1 = self.edge_props_panel.line_y1
-        self.circle_cx = self.edge_props_panel.circle_cx
-        self.circle_cy = self.edge_props_panel.circle_cy
-        self.circle_r = self.edge_props_panel.circle_r
-        self.tri_x0 = self.edge_props_panel.tri_x0
-        self.tri_y0 = self.edge_props_panel.tri_y0
-        self.tri_x1 = self.edge_props_panel.tri_x1
-        self.tri_y1 = self.edge_props_panel.tri_y1
-        self.tri_x2 = self.edge_props_panel.tri_x2
-        self.tri_y2 = self.edge_props_panel.tri_y2
-        self.quad_x0 = self.edge_props_panel.quad_x0
-        self.quad_y0 = self.edge_props_panel.quad_y0
-        self.quad_x1 = self.edge_props_panel.quad_x1
-        self.quad_y1 = self.edge_props_panel.quad_y1
-        self.quad_x2 = self.edge_props_panel.quad_x2
-        self.quad_y2 = self.edge_props_panel.quad_y2
-        self.quad_x3 = self.edge_props_panel.quad_x3
-        self.quad_y3 = self.edge_props_panel.quad_y3
-        self.poly_vertices = self.edge_props_panel.poly_vertices
-
-        # Transform sub-widgets (from TransformPanel inside EdgePropsPanel)
-        self._transform_dup_group = self.edge_props_panel._transform_dup_group
-        self.dup_type_combo = self._transform_dup_group.dup_type_combo
-        self.dup_base_form = self._transform_dup_group.dup_base_form
-        self.dup_base_mode_combo = self._transform_dup_group.dup_base_mode_combo
-        self._dup_stack = self._transform_dup_group._dup_stack
-        self.dup_rot_angle = self._transform_dup_group.dup_rot_angle
-        self.dup_rot_px = self._transform_dup_group.dup_rot_px
-        self.dup_rot_py = self._transform_dup_group.dup_rot_py
-        self.dup_mh_py = self._transform_dup_group.dup_mh_py
-        self.dup_mv_px = self._transform_dup_group.dup_mv_px
-        self.dup_ma_px = self._transform_dup_group.dup_ma_px
-        self.dup_ma_py = self._transform_dup_group.dup_ma_py
-        self.dup_ma_dx = self._transform_dup_group.dup_ma_dx
-        self.dup_ma_dy = self._transform_dup_group.dup_ma_dy
-        self.dup_ps_px = self._transform_dup_group.dup_ps_px
-        self.dup_ps_py = self._transform_dup_group.dup_ps_py
-        self.dup_trans_dx = self._transform_dup_group.dup_trans_dx
-        self.dup_trans_dy = self._transform_dup_group.dup_trans_dy
-        self.dup_scale_factor = self._transform_dup_group.dup_scale_factor
-        self.dup_scale_px = self._transform_dup_group.dup_scale_px
-        self.dup_scale_py = self._transform_dup_group.dup_scale_py
-        self.dup_delete_orig_cb = self._transform_dup_group.dup_delete_orig_cb
-        self.dup_btn = self._transform_dup_group.dup_btn
 
         # 5. Advanced Panel
         self.advanced_panel = AdvancedPanel(self)
         self._layout.addWidget(self.advanced_panel)
-        # Expose widgets
-        self.global_spline_cb = self.advanced_panel.global_spline_cb
-        self.transform_scale = self.advanced_panel.transform_scale
-        self.transform_rotate = self.advanced_panel.transform_rotate
-        self.transform_tx = self.advanced_panel.transform_tx
-        self.transform_ty = self.advanced_panel.transform_ty
-        self.apply_transform_cb = self.advanced_panel.apply_transform_cb
-        self._transform_box = self.advanced_panel._transform_box
 
         # 6. Actions Panel
         self.actions_panel = ActionsPanel(self)
         self._layout.addWidget(self.actions_panel)
-        # Expose widgets
-        self.save_btn = self.actions_panel.save_btn
-        self.generate_btn = self.actions_panel.generate_btn
 
         self._layout.addStretch()
         scroll.setWidget(content)
@@ -259,3 +133,23 @@ class SidebarView(QWidget):
             self.transform_ty.setValue(tr[1])
         else:
             self.apply_transform_cb.setChecked(False)
+
+    def __getattr__(self, name):
+        # Dynamically delegate property lookups to sub-panels
+        for panel in [
+            self.file_panel,
+            self.geometry_panel,
+            self.vertex_panel,
+            self.edge_list_panel,
+            self.edge_props_panel,
+            self.advanced_panel,
+            self.actions_panel,
+        ]:
+            if hasattr(panel, name):
+                return getattr(panel, name)
+            # Special check for transform sub-widgets within EdgePropsPanel
+            if panel is self.edge_props_panel and hasattr(panel, "_transform_dup_group"):
+                dup = panel._transform_dup_group
+                if hasattr(dup, name):
+                    return getattr(dup, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")

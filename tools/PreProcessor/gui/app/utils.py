@@ -1,7 +1,36 @@
 from __future__ import annotations
+import os
+import shutil
 from contextlib import contextmanager
+
 from PyQt6.QtCore import QObject, Qt, QPoint, QTimer
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import (
+    QApplication,
+    QPushButton,
+    QFormLayout,
+    QLabel,
+    QHBoxLayout,
+    QWidget
+)
+
+from app.styles import (
+    COMBO_STYLE,
+    SPIN_STYLE,
+    BUTTON_QSS_TEMPLATE,
+    LINEEDIT_STYLE,
+    LIST_STYLE,
+    LIST_INDICATOR_STYLE
+)
+
+# Boundary Condition Colors mapping
+BC_COLORS = {
+    "wall": '#ef4444',
+    "farfield": '#06b6d4',
+    "inlet": '#22c55e',
+    "outlet": '#3b82f6',
+    "symmetry": '#f97316',
+}
+DEFAULT_BC_COLOR = '#9ca3af'
 
 @contextmanager
 def block_signals(*widgets: QObject):
@@ -15,7 +44,6 @@ def block_signals(*widgets: QObject):
         for w in widgets:
             if w is not None:
                 w.blockSignals(False)
-from PyQt6.QtWidgets import QPushButton, QFormLayout, QLabel, QHBoxLayout, QWidget
 
 # Curve type labels mapping
 CURVE_TYPE_LABELS = {
@@ -29,7 +57,6 @@ CURVE_TYPE_LABELS = {
     "polygon": "Polygon",
 }
 
-from app.styles import COMBO_STYLE, SPIN_STYLE, BUTTON_QSS_TEMPLATE
 
 def make_button(text: str, color: str = '#26293c') -> QPushButton:
     b = QPushButton(text)
@@ -183,8 +210,6 @@ def help_row(label_text: str, widget, tooltip: str) -> QWidget:
     """Backward compatibility helper mapping to help_label."""
     return help_label(label_text, tooltip)
 
-import os
-import shutil
 
 def find_binary_executable(bin_name: str) -> str | None:
     """Locate binary executable in PATH environment or local build candidates."""

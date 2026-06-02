@@ -1,5 +1,7 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit, QPushButton, QLabel
+import re
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel
 from PyQt6.QtCore import QTime
+from PyQt6.QtGui import QTextCursor
 
 class LogPanel(QWidget):
     """An enhanced console panel for displaying logs, featuring color coding, timestamps, and log rotation."""
@@ -48,11 +50,11 @@ class LogPanel(QWidget):
         self._layout.addWidget(self.header)
         
         # ── Plain text log area ──────────────────────────────────────────
-        self.text_edit = QPlainTextEdit()
+        self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(True)
-        self.text_edit.setMaximumBlockCount(1000)
+        self.text_edit.document().setMaximumBlockCount(1000)
         self.text_edit.setStyleSheet("""
-            QPlainTextEdit {
+            QTextEdit {
                 background: #06070d;
                 color: #dde6ff;
                 font-family: 'Courier New', Courier, monospace;
@@ -83,7 +85,6 @@ class LogPanel(QWidget):
                     level = "INFO"
                 
         # Strip ANSI escape codes to clean up garbled control characters
-        import re
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         clean_message = ansi_escape.sub('', message)
 
@@ -108,7 +109,8 @@ class LogPanel(QWidget):
             f'<span style="color:{color}; font-weight:bold;">{lvl_lbl}</span> '
             f'<span style="color:#dde6ff;">{safe_message}</span>'
         )
-        self.text_edit.appendHtml(html)
+        self.text_edit.append(html)
+        self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
 
     def clear_log(self):
         """Clear all messages from the log."""
