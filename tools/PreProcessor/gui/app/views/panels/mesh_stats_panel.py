@@ -3,7 +3,7 @@ import os
 from PyQt6.QtWidgets import QWidget, QFormLayout, QComboBox, QLabel, QCheckBox, QPushButton, QHBoxLayout, QVBoxLayout
 from PyQt6.QtCore import pyqtSignal
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, COMBO_STYLE, align_form_labels
+from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, help_widget
 from app.models.vtk_mesh import VTKMesh
 
 class MeshStatsPanel(CollapsibleSection):
@@ -29,22 +29,26 @@ class MeshStatsPanel(CollapsibleSection):
             "Uniform"
         ])
         self.color_mode_combo.setStyleSheet(COMBO_STYLE)
+        self.color_mode_combo.setToolTip("Select the color visualization mode for mesh elements")
         self.color_mode_combo.currentTextChanged.connect(self._on_color_mode_changed)
 
         # Rendering options checkboxes
         self.show_domain_box_cb = QCheckBox("Show Domain Box")
         self.show_domain_box_cb.setStyleSheet("color: #a0b0d0; font-size: 11px;")
         self.show_domain_box_cb.setChecked(True)
+        self.show_domain_box_cb.setToolTip("Toggle visibility of the rectangular domain boundary")
         self.show_domain_box_cb.toggled.connect(self.show_domain_box_toggled.emit)
 
         self.show_bc_coloring_cb = QCheckBox("Show BC Coloring")
         self.show_bc_coloring_cb.setStyleSheet("color: #a0b0d0; font-size: 11px;")
         self.show_bc_coloring_cb.setChecked(True)
+        self.show_bc_coloring_cb.setToolTip("Toggle boundary condition color indicators on edges")
         self.show_bc_coloring_cb.toggled.connect(self.show_bc_coloring_toggled.emit)
 
         self.show_wireframe_cb = QCheckBox("Show Wireframe")
         self.show_wireframe_cb.setStyleSheet("color: #a0b0d0; font-size: 11px;")
         self.show_wireframe_cb.setChecked(True)
+        self.show_wireframe_cb.setToolTip("Toggle mesh wireframe overlay on the canvas")
         self.show_wireframe_cb.toggled.connect(self.show_wireframe_toggled.emit)
 
         self.fit_view_btn = make_button("Fit Mesh to Screen", "#1d2a3a")
@@ -53,66 +57,78 @@ class MeshStatsPanel(CollapsibleSection):
         # ── Statistics Display labels ─────────────────────────────────────
         self.vrt_label = QLabel("—")
         self.vrt_label.setStyleSheet("color: #dde6ff; font-weight: bold;")
+        self.vrt_label.setToolTip("Total number of mesh vertices (nodes)")
         self.cel_label = QLabel("—")
         self.cel_label.setStyleSheet("color: #dde6ff; font-weight: bold;")
+        self.cel_label.setToolTip("Total number of mesh elements (cells)")
         self.tri_label = QLabel("—")
         self.tri_label.setStyleSheet("color: #64b5f6;")
+        self.tri_label.setToolTip("Count of triangular elements in the mesh")
         self.quad_label = QLabel("—")
         self.quad_label.setStyleSheet("color: #b388ff;")
+        self.quad_label.setToolTip("Count of quadrilateral elements in the mesh")
         self.poly_label = QLabel("—")
         self.poly_label.setStyleSheet("color: #ffd54f;")
+        self.poly_label.setToolTip("Count of polygonal elements (5+ sides) in the mesh")
 
         self.bounds_label = QLabel("—")
         self.bounds_label.setStyleSheet("color: #dde6ff; font-size: 11px;")
         self.bounds_label.setWordWrap(True)
+        self.bounds_label.setToolTip("Bounding box coordinates of the mesh (Xmin, Xmax, Ymin, Ymax)")
 
         # Quality metrics (Aspect Ratio)
         self.ar_min_label = QLabel("—")
         self.ar_min_label.setStyleSheet("color: #81c784;")
+        self.ar_min_label.setToolTip("Minimum aspect ratio among all mesh elements (closer to 1.0 is better)")
         self.ar_max_label = QLabel("—")
         self.ar_max_label.setStyleSheet("color: #e57373;")
+        self.ar_max_label.setToolTip("Maximum aspect ratio among all mesh elements")
         self.ar_mean_label = QLabel("—")
         self.ar_mean_label.setStyleSheet("color: #ffb74d;")
+        self.ar_mean_label.setToolTip("Average aspect ratio across all mesh elements")
 
         # Quality metrics (Skewness)
         self.sk_min_label = QLabel("—")
         self.sk_min_label.setStyleSheet("color: #81c784;")
+        self.sk_min_label.setToolTip("Minimum skewness among all mesh elements (closer to 0.0 is better)")
         self.sk_max_label = QLabel("—")
         self.sk_max_label.setStyleSheet("color: #e57373;")
+        self.sk_max_label.setToolTip("Maximum skewness among all mesh elements")
         self.sk_mean_label = QLabel("—")
         self.sk_mean_label.setStyleSheet("color: #ffb74d;")
+        self.sk_mean_label.setToolTip("Average skewness across all mesh elements")
 
         # Layout setup
         ctrls_form = QFormLayout()
-        ctrls_form.addRow("Color Mode:", self.color_mode_combo)
+        ctrls_form.addRow(help_label("Color Mode:", "Select the color visualization mode for mesh elements"), self.color_mode_combo)
         align_form_labels(ctrls_form)
 
         # Checkboxes layout
         cbs_layout = QVBoxLayout()
         cbs_layout.setSpacing(4)
-        cbs_layout.addWidget(self.show_domain_box_cb)
-        cbs_layout.addWidget(self.show_bc_coloring_cb)
-        cbs_layout.addWidget(self.show_wireframe_cb)
+        cbs_layout.addWidget(help_widget(self.show_domain_box_cb, "Toggle visibility of the rectangular domain boundary"))
+        cbs_layout.addWidget(help_widget(self.show_bc_coloring_cb, "Toggle boundary condition color indicators on edges"))
+        cbs_layout.addWidget(help_widget(self.show_wireframe_cb, "Toggle mesh wireframe overlay on the canvas"))
 
         stats_form = QFormLayout()
-        stats_form.addRow("Vertices (VRT):", self.vrt_label)
-        stats_form.addRow("Elements (CEL):", self.cel_label)
-        stats_form.addRow("  - Triangles:", self.tri_label)
-        stats_form.addRow("  - Quadrilaterals:", self.quad_label)
-        stats_form.addRow("  - Polygons:", self.poly_label)
-        stats_form.addRow("Bounds (X, Y):", self.bounds_label)
-        stats_form.addRow("Min Aspect Ratio:", self.ar_min_label)
-        stats_form.addRow("Max Aspect Ratio:", self.ar_max_label)
-        stats_form.addRow("Mean Aspect Ratio:", self.ar_mean_label)
-        stats_form.addRow("Min Skewness:", self.sk_min_label)
-        stats_form.addRow("Max Skewness:", self.sk_max_label)
-        stats_form.addRow("Mean Skewness:", self.sk_mean_label)
+        stats_form.addRow(help_label("Vertices (VRT):", "Total number of mesh vertices (nodes)"), self.vrt_label)
+        stats_form.addRow(help_label("Elements (CEL):", "Total number of mesh elements (cells)"), self.cel_label)
+        stats_form.addRow(help_label("  - Triangles:", "Count of triangular elements in the mesh"), self.tri_label)
+        stats_form.addRow(help_label("  - Quadrilaterals:", "Count of quadrilateral elements in the mesh"), self.quad_label)
+        stats_form.addRow(help_label("  - Polygons:", "Count of polygonal elements (5+ sides) in the mesh"), self.poly_label)
+        stats_form.addRow(help_label("Bounds (X, Y):", "Bounding box coordinates of the mesh (Xmin, Xmax, Ymin, Ymax)"), self.bounds_label)
+        stats_form.addRow(help_label("Min Aspect Ratio:", "Minimum aspect ratio among all mesh elements (closer to 1.0 is better)"), self.ar_min_label)
+        stats_form.addRow(help_label("Max Aspect Ratio:", "Maximum aspect ratio among all mesh elements"), self.ar_max_label)
+        stats_form.addRow(help_label("Mean Aspect Ratio:", "Average aspect ratio across all mesh elements"), self.ar_mean_label)
+        stats_form.addRow(help_label("Min Skewness:", "Minimum skewness among all mesh elements (closer to 0.0 is better)"), self.sk_min_label)
+        stats_form.addRow(help_label("Max Skewness:", "Maximum skewness among all mesh elements"), self.sk_max_label)
+        stats_form.addRow(help_label("Mean Skewness:", "Average skewness across all mesh elements"), self.sk_mean_label)
         align_form_labels(stats_form)
 
         # Add widgets to collapsible container
         self.add_layout(ctrls_form)
         self.add_layout(cbs_layout)
-        self.add_widget(self.fit_view_btn)
+        self.add_widget(help_widget(self.fit_view_btn, "Fit the mesh view to the canvas boundaries"))
         
         # Spacer/separator
         sep = QLabel("")
@@ -144,8 +160,8 @@ class MeshStatsPanel(CollapsibleSection):
         self.export_star_btn.setToolTip("Export mesh to Star-CD (.vrt, .cel, .bnd) format")
         self.export_star_btn.clicked.connect(self.export_star_cd_requested.emit)
         
-        exp_layout.addWidget(self.export_vtk_btn)
-        exp_layout.addWidget(self.export_star_btn)
+        exp_layout.addWidget(help_widget(self.export_vtk_btn, "Export generated VTK mesh to a custom location"))
+        exp_layout.addWidget(help_widget(self.export_star_btn, "Export mesh to Star-CD (.vrt, .cel, .bnd) format"))
         self.add_layout(exp_layout)
 
     def update_stats(self, mesh: VTKMesh | None, file_path: str = ""):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QListWidget
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button
+from app.utils import make_button, help_widget
 
 class GeometryPanel(CollapsibleSection):
     def __init__(self, parent=None):
@@ -47,7 +47,7 @@ class GeometryPanel(CollapsibleSection):
 
         self.toggle_visibility_btn = make_button("Toggle Visibility", '#1a2035')
         self.toggle_visibility_btn.setToolTip(
-            "Toggle visibility of the selected geometry on the canvas")
+            "Show or hide the selected geometry layer on the canvas")
 
-        self.add_widget(self.geom_list)
-        self.add_widget(self.toggle_visibility_btn)
+        self.add_widget(help_widget(self.geom_list, "List of loaded geometry layers/entities"))
+        self.add_widget(help_widget(self.toggle_visibility_btn, "Show or hide the selected geometry layer on the canvas"))

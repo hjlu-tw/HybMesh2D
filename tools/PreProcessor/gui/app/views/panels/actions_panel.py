@@ -1,16 +1,18 @@
 from __future__ import annotations
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button
+from app.utils import make_button, help_widget
 
 class ActionsPanel(CollapsibleSection):
     def __init__(self, parent=None):
         super().__init__("Output", start_collapsed=True, parent=parent)
 
         self.save_btn = make_button("Export Mesh (.dat)", '#062510')
+        self.save_btn.setToolTip("Export the resampled geometry to a .dat mesh file")
         self.generate_btn = make_button("Save Configuration (.json)", '#1b1f2a')
+        self.generate_btn.setToolTip("Save the current configuration to a .json file for CLI processing")
 
-        self.add_widget(self.save_btn)
-        self.add_widget(self.generate_btn)
+        self.add_widget(help_widget(self.save_btn, "Export the resampled geometry to a .dat mesh file"))
+        self.add_widget(help_widget(self.generate_btn, "Save the current configuration to a .json file for CLI processing"))
 
     @property
     def preview_btn(self):

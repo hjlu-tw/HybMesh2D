@@ -20,6 +20,7 @@ def main():
         os.makedirs(os.path.join(root_dir, sub), exist_ok=True)
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     
     import pyqtgraph as pg
     pg.setConfigOption('background', '#0c0d16')

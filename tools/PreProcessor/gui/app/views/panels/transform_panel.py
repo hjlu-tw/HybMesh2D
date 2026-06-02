@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QStackedWidget, QDoubleSpinBox, QCheckBox, QWidget
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels
+from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
 
 class TransformPanel(QGroupBox):
     def __init__(self, parent=None):
@@ -24,7 +24,8 @@ class TransformPanel(QGroupBox):
             "Scale",
         ])
         self.dup_type_combo.setStyleSheet(COMBO_STYLE)
-        gl.addWidget(self.dup_type_combo)
+        self.dup_type_combo.setToolTip("Select the type of geometric transformation to apply")
+        gl.addWidget(help_widget(self.dup_type_combo, "Select the type of geometric transformation to apply"))
 
         # Base point selection
         self.dup_base_form = QFormLayout()
@@ -35,7 +36,8 @@ class TransformPanel(QGroupBox):
             "End Point"
         ])
         self.dup_base_mode_combo.setStyleSheet(COMBO_STYLE)
-        self.dup_base_form.addRow("Base Point:", self.dup_base_mode_combo)
+        self.dup_base_mode_combo.setToolTip("Choose the reference point for the transformation (start/end point or custom coordinates)")
+        self.dup_base_form.addRow(help_label("Base Point:", "Choose the reference point for the transformation (start/end point or custom coordinates)"), self.dup_base_mode_combo)
         gl.addLayout(self.dup_base_form)
 
         # Stacked parameter areas per transform type
@@ -56,11 +58,14 @@ class TransformPanel(QGroupBox):
         fl_rot.setContentsMargins(0, 0, 0, 0)
         self.dup_rot_angle = _dspin(-360, 360, 90.0, 3)
         self.dup_rot_angle.setSuffix("  °")
+        self.dup_rot_angle.setToolTip("Rotation angle in degrees (positive = counter-clockwise)")
         self.dup_rot_px = _dspin()
+        self.dup_rot_px.setToolTip("X-coordinate of the rotation pivot point")
         self.dup_rot_py = _dspin()
-        fl_rot.addRow("Angle:", self.dup_rot_angle)
-        fl_rot.addRow("Pivot X:", self.dup_rot_px)
-        fl_rot.addRow("Pivot Y:", self.dup_rot_py)
+        self.dup_rot_py.setToolTip("Y-coordinate of the rotation pivot point")
+        fl_rot.addRow(help_label("Angle:", "Rotation angle in degrees (positive = counter-clockwise)"), self.dup_rot_angle)
+        fl_rot.addRow(help_label("Pivot X:", "X-coordinate of the rotation pivot point"), self.dup_rot_px)
+        fl_rot.addRow(help_label("Pivot Y:", "Y-coordinate of the rotation pivot point"), self.dup_rot_py)
         self._dup_stack.addWidget(w_rot)
 
         # 1: Mirror Horizontal (flip Y around pivot_y)
@@ -68,7 +73,8 @@ class TransformPanel(QGroupBox):
         fl_mh = QFormLayout(w_mh)
         fl_mh.setContentsMargins(0, 0, 0, 0)
         self.dup_mh_py = _dspin()
-        fl_mh.addRow("Axis Y:", self.dup_mh_py)
+        self.dup_mh_py.setToolTip("Y-coordinate of the horizontal mirror axis")
+        fl_mh.addRow(help_label("Axis Y:", "Y-coordinate of the horizontal mirror axis"), self.dup_mh_py)
         self._dup_stack.addWidget(w_mh)
 
         # 2: Mirror Vertical (flip X around pivot_x)
@@ -76,7 +82,8 @@ class TransformPanel(QGroupBox):
         fl_mv = QFormLayout(w_mv)
         fl_mv.setContentsMargins(0, 0, 0, 0)
         self.dup_mv_px = _dspin()
-        fl_mv.addRow("Axis X:", self.dup_mv_px)
+        self.dup_mv_px.setToolTip("X-coordinate of the vertical mirror axis")
+        fl_mv.addRow(help_label("Axis X:", "X-coordinate of the vertical mirror axis"), self.dup_mv_px)
         self._dup_stack.addWidget(w_mv)
 
         # 3: Mirror Axis (arbitrary direction through pivot)
@@ -84,13 +91,17 @@ class TransformPanel(QGroupBox):
         fl_ma = QFormLayout(w_ma)
         fl_ma.setContentsMargins(0, 0, 0, 0)
         self.dup_ma_px = _dspin()
+        self.dup_ma_px.setToolTip("X-coordinate of the custom mirror axis origin")
         self.dup_ma_py = _dspin()
+        self.dup_ma_py.setToolTip("Y-coordinate of the custom mirror axis origin")
         self.dup_ma_dx = _dspin(val=1.0)
+        self.dup_ma_dx.setToolTip("X-component of the mirror axis direction vector")
         self.dup_ma_dy = _dspin(val=0.0)
-        fl_ma.addRow("Pivot X:", self.dup_ma_px)
-        fl_ma.addRow("Pivot Y:", self.dup_ma_py)
-        fl_ma.addRow("Dir X:", self.dup_ma_dx)
-        fl_ma.addRow("Dir Y:", self.dup_ma_dy)
+        self.dup_ma_dy.setToolTip("Y-component of the mirror axis direction vector")
+        fl_ma.addRow(help_label("Pivot X:", "X-coordinate of the custom mirror axis origin"), self.dup_ma_px)
+        fl_ma.addRow(help_label("Pivot Y:", "Y-coordinate of the custom mirror axis origin"), self.dup_ma_py)
+        fl_ma.addRow(help_label("Dir X:", "X-component of the mirror axis direction vector"), self.dup_ma_dx)
+        fl_ma.addRow(help_label("Dir Y:", "Y-component of the mirror axis direction vector"), self.dup_ma_dy)
         self._dup_stack.addWidget(w_ma)
 
         # 4: Point Symmetry
@@ -98,9 +109,11 @@ class TransformPanel(QGroupBox):
         fl_ps = QFormLayout(w_ps)
         fl_ps.setContentsMargins(0, 0, 0, 0)
         self.dup_ps_px = _dspin()
+        self.dup_ps_px.setToolTip("X-coordinate of the symmetry center point")
         self.dup_ps_py = _dspin()
-        fl_ps.addRow("Centre X:", self.dup_ps_px)
-        fl_ps.addRow("Centre Y:", self.dup_ps_py)
+        self.dup_ps_py.setToolTip("Y-coordinate of the symmetry center point")
+        fl_ps.addRow(help_label("Centre X:", "X-coordinate of the symmetry center point"), self.dup_ps_px)
+        fl_ps.addRow(help_label("Centre Y:", "Y-coordinate of the symmetry center point"), self.dup_ps_py)
         self._dup_stack.addWidget(w_ps)
 
         # 5: Translate
@@ -108,9 +121,11 @@ class TransformPanel(QGroupBox):
         fl_trans = QFormLayout(w_trans)
         fl_trans.setContentsMargins(0, 0, 0, 0)
         self.dup_trans_dx = _dspin()
+        self.dup_trans_dx.setToolTip("Horizontal shift distance")
         self.dup_trans_dy = _dspin()
-        fl_trans.addRow("Shift X:", self.dup_trans_dx)
-        fl_trans.addRow("Shift Y:", self.dup_trans_dy)
+        self.dup_trans_dy.setToolTip("Vertical shift distance")
+        fl_trans.addRow(help_label("Shift X:", "Horizontal shift distance"), self.dup_trans_dx)
+        fl_trans.addRow(help_label("Shift Y:", "Vertical shift distance"), self.dup_trans_dy)
         self._dup_stack.addWidget(w_trans)
 
         # 6: Scale
@@ -118,11 +133,14 @@ class TransformPanel(QGroupBox):
         fl_scale = QFormLayout(w_scale)
         fl_scale.setContentsMargins(0, 0, 0, 0)
         self.dup_scale_factor = _dspin(val=1.0)
+        self.dup_scale_factor.setToolTip("Scale factor (>1 enlarges, <1 shrinks)")
         self.dup_scale_px = _dspin()
+        self.dup_scale_px.setToolTip("X-coordinate of the scale pivot point")
         self.dup_scale_py = _dspin()
-        fl_scale.addRow("Factor:", self.dup_scale_factor)
-        fl_scale.addRow("Pivot X:", self.dup_scale_px)
-        fl_scale.addRow("Pivot Y:", self.dup_scale_py)
+        self.dup_scale_py.setToolTip("Y-coordinate of the scale pivot point")
+        fl_scale.addRow(help_label("Factor:", "Scale factor (>1 enlarges, <1 shrinks)"), self.dup_scale_factor)
+        fl_scale.addRow(help_label("Pivot X:", "X-coordinate of the scale pivot point"), self.dup_scale_px)
+        fl_scale.addRow(help_label("Pivot Y:", "Y-coordinate of the scale pivot point"), self.dup_scale_py)
         self._dup_stack.addWidget(w_scale)
 
         # Connect combo → stack
@@ -131,14 +149,16 @@ class TransformPanel(QGroupBox):
         # Delete original checkbox
         self.dup_delete_orig_cb = QCheckBox("Delete original")
         self.dup_delete_orig_cb.setStyleSheet("color:#a0b0d0; font-size:11px;")
+        self.dup_delete_orig_cb.setToolTip("Remove the original edge after transformation (transform instead of duplicate)")
         self.dup_delete_orig_cb.toggled.connect(
             lambda checked: self.dup_btn.setText("Transform Edge" if checked else "Duplicate Edge")
         )
-        gl.addWidget(self.dup_delete_orig_cb)
+        gl.addWidget(help_widget(self.dup_delete_orig_cb, "Remove the original edge after transformation (transform instead of duplicate)"))
 
         # Duplicate button
         self.dup_btn = make_button("Duplicate Edge", '#1a3a2a')
-        gl.addWidget(self.dup_btn)
+        self.dup_btn.setToolTip("Create a transformed copy of the selected edge")
+        gl.addWidget(help_widget(self.dup_btn, "Create a transformed copy of the selected edge"))
 
         # Align form layouts in duplicate options
         for layout in [self.dup_base_form, fl_rot, fl_mh, fl_mv, fl_ma, fl_ps, fl_trans, fl_scale]:

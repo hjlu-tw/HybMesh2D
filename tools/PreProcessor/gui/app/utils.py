@@ -1,6 +1,7 @@
 from __future__ import annotations
 from contextlib import contextmanager
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, Qt, QPoint, QTimer
+from PyQt6.QtWidgets import QApplication
 
 @contextmanager
 def block_signals(*widgets: QObject):
@@ -14,8 +15,7 @@ def block_signals(*widgets: QObject):
         for w in widgets:
             if w is not None:
                 w.blockSignals(False)
-from PyQt6.QtWidgets import QPushButton, QFormLayout
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QPushButton, QFormLayout, QLabel, QHBoxLayout, QWidget
 
 # Curve type labels mapping
 CURVE_TYPE_LABELS = {
@@ -44,6 +44,144 @@ def align_form_labels(layout: QFormLayout, width: int = 120):
             lbl = label_item.widget()
             if lbl:
                 lbl.setFixedWidth(width)
+
+
+# ---------------------------------------------------------------------------
+# Custom floating tooltip popup (bypasses macOS QToolTip rendering issues)
+# ---------------------------------------------------------------------------
+
+class _FloatingTooltip(QWidget):
+    """A frameless, always-on-top popup label used as a custom tooltip."""
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self._label = QLabel(self)
+        self._label.setWordWrap(True)
+        self._label.setMaximumWidth(260)
+        self._label.setStyleSheet(
+            "color: #e2e8f0;"
+            "background: transparent;"
+            "padding: 0px;"
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 5, 8, 5)
+        layout.addWidget(self._label)
+        self.setStyleSheet(
+            "background-color: #1e2235;"
+            "border: 1px solid #3b82f6;"
+            "border-radius: 5px;"
+        )
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
+
+    def show_near(self, global_pos: QPoint, text: str):
+        self._hide_timer.stop()
+        self._label.setText(text)
+        self._label.adjustSize()
+        self.adjustSize()
+        # Position slightly below-right of cursor
+        x = global_pos.x() + 14
+        y = global_pos.y() + 14
+        # Keep on screen
+        screen = QApplication.primaryScreen()
+        if screen:
+            geom = screen.availableGeometry()
+            if x + self.width() > geom.right():
+                x = global_pos.x() - self.width() - 4
+            if y + self.height() > geom.bottom():
+                y = global_pos.y() - self.height() - 4
+        self.move(x, y)
+        self.show()
+        self.raise_()
+
+    def schedule_hide(self, delay_ms: int = 200):
+        self._hide_timer.start(delay_ms)
+
+
+# Singleton tooltip popup (one per application)
+_tooltip_popup: _FloatingTooltip | None = None
+
+def _get_tooltip_popup() -> _FloatingTooltip:
+    global _tooltip_popup
+    if _tooltip_popup is None:
+        _tooltip_popup = _FloatingTooltip()
+    return _tooltip_popup
+
+
+class HelpButton(QPushButton):
+    """A small '?' button that shows a custom floating tooltip on hover."""
+
+    def __init__(self, tooltip_text: str):
+        super().__init__("?")
+        self._tooltip_text = tooltip_text
+        self.setFixedSize(16, 16)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setCursor(Qt.CursorShape.WhatsThisCursor)
+        self.setMouseTracking(True)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2d45;
+                color: #8892b0;
+                border: 1px solid #3a4060;
+                border-radius: 8px;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #3b82f6;
+                color: #ffffff;
+                border-color: #60a5fa;
+            }
+        """)
+
+    def enterEvent(self, event):
+        popup = _get_tooltip_popup()
+        cursor_pos = self.mapToGlobal(QPoint(self.width(), 0))
+        popup.show_near(cursor_pos, self._tooltip_text)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        _get_tooltip_popup().schedule_hide(150)
+        super().leaveEvent(event)
+
+
+def make_help_label(tooltip: str) -> HelpButton:
+    """Create a small '?' button with a custom floating tooltip."""
+    return HelpButton(tooltip)
+
+
+def help_label(label_text: str, tooltip: str) -> QWidget:
+    """Create a composite label widget with text + '?' help icon for use as a QFormLayout label."""
+    container = QWidget()
+    hl = QHBoxLayout(container)
+    hl.setContentsMargins(0, 0, 0, 0)
+    hl.setSpacing(3)
+    hl.addStretch()
+    text_lbl = QLabel(label_text)
+    text_lbl.setStyleSheet("color: #a0a8c0;")
+    hl.addWidget(text_lbl)
+    hl.addWidget(make_help_label(tooltip))
+    return container
+
+
+def help_widget(widget, tooltip: str) -> QWidget:
+    """Wrap any widget (like a button, checkbox, or list) with a '?' help icon to its right."""
+    container = QWidget()
+    hl = QHBoxLayout(container)
+    hl.setContentsMargins(0, 0, 0, 0)
+    hl.setSpacing(6)
+    hl.addWidget(widget)
+    hl.addWidget(make_help_label(tooltip))
+    return container
+
+
+def help_row(label_text: str, widget, tooltip: str) -> QWidget:
+    """Backward compatibility helper mapping to help_label."""
+    return help_label(label_text, tooltip)
 
 import os
 import shutil

@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels
+from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
 from app.models.mesh_config import MeshConfig
 from app.views.bc_widget import BCWidget
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
@@ -83,40 +83,44 @@ class MeshConfigPanel(QScrollArea):
         self.domain_x_min.setRange(-1e6, 1e6)
         self.domain_x_min.setDecimals(4)
         self.domain_x_min.setStyleSheet(SPIN_STYLE)
+        self.domain_x_min.setToolTip("Left boundary of the rectangular computational domain")
 
         self.domain_x_max = CleanDoubleSpinBox()
         self.domain_x_max.setRange(-1e6, 1e6)
         self.domain_x_max.setDecimals(4)
         self.domain_x_max.setStyleSheet(SPIN_STYLE)
+        self.domain_x_max.setToolTip("Right boundary of the rectangular computational domain")
 
         self.domain_y_min = CleanDoubleSpinBox()
         self.domain_y_min.setRange(-1e6, 1e6)
         self.domain_y_min.setDecimals(4)
         self.domain_y_min.setStyleSheet(SPIN_STYLE)
+        self.domain_y_min.setToolTip("Bottom boundary of the rectangular computational domain")
 
         self.domain_y_max = CleanDoubleSpinBox()
         self.domain_y_max.setRange(-1e6, 1e6)
         self.domain_y_max.setDecimals(4)
         self.domain_y_max.setStyleSheet(SPIN_STYLE)
+        self.domain_y_max.setToolTip("Top boundary of the rectangular computational domain")
 
-        dom_form.addRow("Domain X Min:", self.domain_x_min)
-        dom_form.addRow("Domain X Max:", self.domain_x_max)
-        dom_form.addRow("Domain Y Min:", self.domain_y_min)
-        dom_form.addRow("Domain Y Max:", self.domain_y_max)
+        dom_form.addRow(help_label("Domain X Min:", "Left boundary of the rectangular computational domain"), self.domain_x_min)
+        dom_form.addRow(help_label("Domain X Max:", "Right boundary of the rectangular computational domain"), self.domain_x_max)
+        dom_form.addRow(help_label("Domain Y Min:", "Bottom boundary of the rectangular computational domain"), self.domain_y_min)
+        dom_form.addRow(help_label("Domain Y Max:", "Top boundary of the rectangular computational domain"), self.domain_y_max)
         align_form_labels(dom_form, 130)
         self.sec_domain.add_layout(dom_form)
 
         # Geometry file list
         geom_label = QLabel("Geometry Input Files:")
         geom_label.setStyleSheet("color: #a0b0d0; margin-top: 6px; font-weight: bold;")
-        self.sec_domain.add_widget(geom_label)
+        self.sec_domain.add_widget(help_widget(geom_label, "Geometry files to load for meshing"))
 
         self.geom_list_widget = QListWidget()
         self.geom_list_widget.setFixedHeight(80)
         self.geom_list_widget.setStyleSheet(
             "background: #181b2a; color: #a0a8c0; border: 1px solid #333852; border-radius: 3px;"
         )
-        self.sec_domain.add_widget(self.geom_list_widget)
+        self.sec_domain.add_widget(help_widget(self.geom_list_widget, "List of geometry boundary files to include in the computational domain"))
 
         # Geometry list control buttons
         geom_btn_layout = QHBoxLayout()
@@ -126,9 +130,9 @@ class MeshConfigPanel(QScrollArea):
         self.add_file_geom_btn = make_button("Browse", "#1d2a3a")
         self.remove_geom_btn = make_button("Remove", "#301a1a")
 
-        geom_btn_layout.addWidget(self.add_active_geom_btn)
-        geom_btn_layout.addWidget(self.add_file_geom_btn)
-        geom_btn_layout.addWidget(self.remove_geom_btn)
+        geom_btn_layout.addWidget(help_widget(self.add_active_geom_btn, "Add the active PreProcessor resampled geometry"))
+        geom_btn_layout.addWidget(help_widget(self.add_file_geom_btn, "Browse for geometry files on disk"))
+        geom_btn_layout.addWidget(help_widget(self.remove_geom_btn, "Remove selected geometry file from list"))
         self.sec_domain.add_layout(geom_btn_layout)
 
         # ── 2. General Sizing ─────────────────────────────────────────────
@@ -140,24 +144,28 @@ class MeshConfigPanel(QScrollArea):
         self.surface_mesh_size.setRange(1e-4, 1e4)
         self.surface_mesh_size.setDecimals(4)
         self.surface_mesh_size.setStyleSheet(SPIN_STYLE)
+        self.surface_mesh_size.setToolTip("Target element size along the geometry boundary walls")
 
         self.auto_surface_size = QCheckBox("Auto Surface Sizing")
         self.auto_surface_size.setStyleSheet("color:#a0a8c0;")
+        self.auto_surface_size.setToolTip("Automatically determine surface mesh size from geometry spacing")
 
         self.farfield_mesh_size = CleanDoubleSpinBox()
         self.farfield_mesh_size.setRange(1e-4, 1e4)
         self.farfield_mesh_size.setDecimals(4)
         self.farfield_mesh_size.setStyleSheet(SPIN_STYLE)
+        self.farfield_mesh_size.setToolTip("Target element size in the far-field region away from geometry")
 
         self.farfield_growth_rate = CleanDoubleSpinBox()
         self.farfield_growth_rate.setRange(0.01, 10.0)
         self.farfield_growth_rate.setDecimals(4)
         self.farfield_growth_rate.setStyleSheet(SPIN_STYLE)
+        self.farfield_growth_rate.setToolTip("Rate of element size expansion from surface to far-field (0.0~1.0)")
 
-        sizing_form.addRow("Surface Size:", self.surface_mesh_size)
-        sizing_form.addRow("", self.auto_surface_size)
-        sizing_form.addRow("Far-field Size:", self.farfield_mesh_size)
-        sizing_form.addRow("Growth Rate:", self.farfield_growth_rate)
+        sizing_form.addRow(help_label("Surface Size:", "Target element size along the geometry boundary walls"), self.surface_mesh_size)
+        sizing_form.addRow("", help_widget(self.auto_surface_size, "Automatically determine surface mesh size from geometry spacing"))
+        sizing_form.addRow(help_label("Far-field Size:", "Target element size in the far-field region away from geometry"), self.farfield_mesh_size)
+        sizing_form.addRow(help_label("Growth Rate:", "Rate of element size expansion from surface to far-field (0.0~1.0)"), self.farfield_growth_rate)
         align_form_labels(sizing_form, 130)
         self.sec_sizing.add_layout(sizing_form)
 
@@ -170,19 +178,22 @@ class MeshConfigPanel(QScrollArea):
         self.bl_initial_thickness.setRange(1e-6, 1.0)
         self.bl_initial_thickness.setDecimals(6)
         self.bl_initial_thickness.setStyleSheet(SPIN_STYLE)
+        self.bl_initial_thickness.setToolTip("Height of the first boundary layer cell adjacent to the wall")
 
         self.bl_growth_rate = CleanDoubleSpinBox()
         self.bl_growth_rate.setRange(1.001, 5.0)
         self.bl_growth_rate.setDecimals(4)
         self.bl_growth_rate.setStyleSheet(SPIN_STYLE)
+        self.bl_growth_rate.setToolTip("Multiplicative growth factor between successive BL layers (e.g. 1.2 = 20% increase per layer)")
 
         self.bl_layers = QSpinBox()
         self.bl_layers.setRange(0, 100)
         self.bl_layers.setStyleSheet(SPIN_STYLE)
+        self.bl_layers.setToolTip("Total number of structured boundary layer rows to generate")
 
-        bl_form.addRow("Initial Thick:", self.bl_initial_thickness)
-        bl_form.addRow("Growth Rate:", self.bl_growth_rate)
-        bl_form.addRow("Layers:", self.bl_layers)
+        bl_form.addRow(help_label("Initial Thick:", "Height of the first boundary layer cell adjacent to the wall"), self.bl_initial_thickness)
+        bl_form.addRow(help_label("Growth Rate:", "Multiplicative growth factor between successive BL layers (e.g. 1.2 = 20% increase per layer)"), self.bl_growth_rate)
+        bl_form.addRow(help_label("Layers:", "Total number of structured boundary layer rows to generate"), self.bl_layers)
         align_form_labels(bl_form, 130)
         self.sec_bl_core.add_layout(bl_form)
 
@@ -194,20 +205,24 @@ class MeshConfigPanel(QScrollArea):
         self.bl_transition_layers = QSpinBox()
         self.bl_transition_layers.setRange(0, 100)
         self.bl_transition_layers.setStyleSheet(SPIN_STYLE)
+        self.bl_transition_layers.setToolTip("Number of transitional element rows blending BL quads into far-field triangles")
 
         self.bl_auto_transition_layers = QComboBox()
         self.bl_auto_transition_layers.addItems(["0: OFF", "1: GLOBAL", "2: LOCAL"])
         self.bl_auto_transition_layers.setStyleSheet(COMBO_STYLE)
+        self.bl_auto_transition_layers.setToolTip("Automatically compute transition layer count (OFF / GLOBAL / LOCAL)")
 
         self.bl_transition_growth_rate = CleanDoubleSpinBox()
         self.bl_transition_growth_rate.setRange(1.001, 5.0)
         self.bl_transition_growth_rate.setDecimals(4)
         self.bl_transition_growth_rate.setStyleSheet(SPIN_STYLE)
+        self.bl_transition_growth_rate.setToolTip("Growth rate applied within the transition zone between BL and far-field")
 
         self.bl_transition_buffer = CleanDoubleSpinBox()
         self.bl_transition_buffer.setRange(0.0, 100.0)
         self.bl_transition_buffer.setDecimals(4)
         self.bl_transition_buffer.setStyleSheet(SPIN_STYLE)
+        self.bl_transition_buffer.setToolTip("Buffer distance multiplier around geometry for transition smoothing")
 
         self.gmsh_algorithm = QComboBox()
         self.gmsh_algorithm.addItems([
@@ -219,16 +234,18 @@ class MeshConfigPanel(QScrollArea):
             "8: Frontal-Delaunay Quads"
         ])
         self.gmsh_algorithm.setStyleSheet(COMBO_STYLE)
+        self.gmsh_algorithm.setToolTip("Meshing algorithm used by Gmsh for far-field triangulation")
 
         self.gmsh_optimize = QCheckBox("Optimize Mesh Quality")
         self.gmsh_optimize.setStyleSheet("color:#a0a8c0;")
+        self.gmsh_optimize.setToolTip("Enable Gmsh mesh quality optimization pass after generation")
 
-        trans_form.addRow("Transition Layers:", self.bl_transition_layers)
-        trans_form.addRow("Auto Transition:", self.bl_auto_transition_layers)
-        trans_form.addRow("Trans Growth Rate:", self.bl_transition_growth_rate)
-        trans_form.addRow("Trans Buffer:", self.bl_transition_buffer)
-        trans_form.addRow("Gmsh Algorithm:", self.gmsh_algorithm)
-        trans_form.addRow("", self.gmsh_optimize)
+        trans_form.addRow(help_label("Transition Layers:", "Number of transitional element rows blending BL quads into far-field triangles"), self.bl_transition_layers)
+        trans_form.addRow(help_label("Auto Transition:", "Automatically compute transition layer count (OFF / GLOBAL / LOCAL)"), self.bl_auto_transition_layers)
+        trans_form.addRow(help_label("Trans Growth Rate:", "Growth rate applied within the transition zone between BL and far-field"), self.bl_transition_growth_rate)
+        trans_form.addRow(help_label("Trans Buffer:", "Buffer distance multiplier around geometry for transition smoothing"), self.bl_transition_buffer)
+        trans_form.addRow(help_label("Gmsh Algorithm:", "Meshing algorithm used by Gmsh for far-field triangulation"), self.gmsh_algorithm)
+        trans_form.addRow("", help_widget(self.gmsh_optimize, "Enable Gmsh mesh quality optimization pass after generation"))
         align_form_labels(trans_form, 130)
         self.sec_transition.add_layout(trans_form)
 
@@ -241,35 +258,41 @@ class MeshConfigPanel(QScrollArea):
         self.bl_convex_method.addItems(["0: Fan", "2: Parallelogram"])
         self.bl_convex_method.setStyleSheet(COMBO_STYLE)
         self.bl_convex_method.setCurrentIndex(1)  # Default: Parallelogram
+        self.bl_convex_method.setToolTip("Method for handling convex (outward-pointing) corners in the boundary layer")
 
         self.bl_fan_nodes = QSpinBox()
         self.bl_fan_nodes.setRange(1, 100)
         self.bl_fan_nodes.setStyleSheet(SPIN_STYLE)
+        self.bl_fan_nodes.setToolTip("Number of fan elements inserted at convex corners (Fan method only)")
 
         self.bl_auto_fan_nodes = QCheckBox("Auto Fan Nodes")
         self.bl_auto_fan_nodes.setStyleSheet("color:#a0a8c0;")
+        self.bl_auto_fan_nodes.setToolTip("Automatically determine fan node count based on corner angle")
 
         self.bl_fan_angle_threshold = CleanDoubleSpinBox()
         self.bl_fan_angle_threshold.setRange(0.0, 360.0)
         self.bl_fan_angle_threshold.setDecimals(2)
         self.bl_fan_angle_threshold.setStyleSheet(SPIN_STYLE)
+        self.bl_fan_angle_threshold.setToolTip("Minimum corner angle (degrees) to trigger fan insertion")
 
         self.bl_convex_angle_threshold = CleanDoubleSpinBox()
         self.bl_convex_angle_threshold.setRange(0.0, 360.0)
         self.bl_convex_angle_threshold.setDecimals(2)
         self.bl_convex_angle_threshold.setStyleSheet(SPIN_STYLE)
+        self.bl_convex_angle_threshold.setToolTip("Angle threshold to classify a corner as convex")
 
         self.bl_para_fallback_angle = CleanDoubleSpinBox()
         self.bl_para_fallback_angle.setRange(0.0, 360.0)
         self.bl_para_fallback_angle.setDecimals(2)
         self.bl_para_fallback_angle.setStyleSheet(SPIN_STYLE)
+        self.bl_para_fallback_angle.setToolTip("When corner angle exceeds this, fall back to parallelogram method")
 
-        self.convex_form.addRow("Convex Method:", self.bl_convex_method)
-        self.convex_form.addRow("Fan Nodes:", self.bl_fan_nodes)
-        self.convex_form.addRow("", self.bl_auto_fan_nodes)
-        self.convex_form.addRow("Fan Threshold (deg):", self.bl_fan_angle_threshold)
-        self.convex_form.addRow("Convex Threshold (deg):", self.bl_convex_angle_threshold)
-        self.convex_form.addRow("Fallback Angle (deg):", self.bl_para_fallback_angle)
+        self.convex_form.addRow(help_label("Convex Method:", "Method for handling convex (outward-pointing) corners in the boundary layer"), self.bl_convex_method)
+        self.convex_form.addRow(help_label("Fan Nodes:", "Number of fan elements inserted at convex corners (Fan method only)"), self.bl_fan_nodes)
+        self.convex_form.addRow("", help_widget(self.bl_auto_fan_nodes, "Automatically determine fan node count based on corner angle"))
+        self.convex_form.addRow(help_label("Fan Threshold (deg):", "Minimum corner angle (degrees) to trigger fan insertion"), self.bl_fan_angle_threshold)
+        self.convex_form.addRow(help_label("Convex Threshold (deg):", "Angle threshold to classify a corner as convex"), self.bl_convex_angle_threshold)
+        self.convex_form.addRow(help_label("Fallback Angle (deg):", "When corner angle exceeds this, fall back to parallelogram method"), self.bl_para_fallback_angle)
         align_form_labels(self.convex_form, 130)
         self.sec_convex.add_layout(self.convex_form)
 
@@ -285,29 +308,34 @@ class MeshConfigPanel(QScrollArea):
         self.bl_concave_method = QComboBox()
         self.bl_concave_method.addItems(["0: Vector Merge", "5: Thickness Blending"])
         self.bl_concave_method.setStyleSheet(COMBO_STYLE)
+        self.bl_concave_method.setToolTip("Method for handling concave (inward-pointing) corners in the boundary layer")
 
         self.bl_concave_angle_threshold = CleanDoubleSpinBox()
         self.bl_concave_angle_threshold.setRange(0.0, 360.0)
         self.bl_concave_angle_threshold.setDecimals(2)
         self.bl_concave_angle_threshold.setStyleSheet(SPIN_STYLE)
+        self.bl_concave_angle_threshold.setToolTip("Angle threshold to classify a corner as concave")
 
         self.bl_concave_influence_multiplier = CleanDoubleSpinBox()
         self.bl_concave_influence_multiplier.setRange(0.0, 100.0)
         self.bl_concave_influence_multiplier.setDecimals(2)
         self.bl_concave_influence_multiplier.setStyleSheet(SPIN_STYLE)
+        self.bl_concave_influence_multiplier.setToolTip("Controls how far the concave corner correction propagates along the wall")
 
         self.bl_merge_concave = QCheckBox("Merge Concave")
         self.bl_merge_concave.setStyleSheet("color:#a0a8c0;")
+        self.bl_merge_concave.setToolTip("Merge nearby concave corners into a single correction zone")
 
         self.bl_smoothing_iters = QSpinBox()
         self.bl_smoothing_iters.setRange(0, 100)
         self.bl_smoothing_iters.setStyleSheet(SPIN_STYLE)
+        self.bl_smoothing_iters.setToolTip("Number of Laplacian smoothing passes applied to BL cells near concave corners")
 
-        concave_form.addRow("Concave Method:", self.bl_concave_method)
-        concave_form.addRow("Concave Threshold:", self.bl_concave_angle_threshold)
-        concave_form.addRow("Influence Mult:", self.bl_concave_influence_multiplier)
-        concave_form.addRow("", self.bl_merge_concave)
-        concave_form.addRow("Smoothing Iters:", self.bl_smoothing_iters)
+        concave_form.addRow(help_label("Concave Method:", "Method for handling concave (inward-pointing) corners in the boundary layer"), self.bl_concave_method)
+        concave_form.addRow(help_label("Concave Threshold:", "Angle threshold to classify a corner as concave"), self.bl_concave_angle_threshold)
+        concave_form.addRow(help_label("Influence Mult:", "Controls how far the concave corner correction propagates along the wall"), self.bl_concave_influence_multiplier)
+        concave_form.addRow("", help_widget(self.bl_merge_concave, "Merge nearby concave corners into a single correction zone"))
+        concave_form.addRow(help_label("Smoothing Iters:", "Number of Laplacian smoothing passes applied to BL cells near concave corners"), self.bl_smoothing_iters)
         align_form_labels(concave_form, 130)
         self.sec_concave.add_layout(concave_form)
 
@@ -321,21 +349,27 @@ class MeshConfigPanel(QScrollArea):
         
         self.bc_xmin = BCWidget()
         self.bc_xmin_indicator = self.bc_xmin.indicator
+        self.bc_xmin.setToolTip("Boundary condition type for the left domain boundary")
 
         self.bc_xmax = BCWidget()
         self.bc_xmax_indicator = self.bc_xmax.indicator
+        self.bc_xmax.setToolTip("Boundary condition type for the right domain boundary")
 
         self.bc_ymin = BCWidget()
         self.bc_ymin_indicator = self.bc_ymin.indicator
+        self.bc_ymin.setToolTip("Boundary condition type for the bottom domain boundary")
 
         self.bc_ymax = BCWidget()
         self.bc_ymax_indicator = self.bc_ymax.indicator
+        self.bc_ymax.setToolTip("Boundary condition type for the top domain boundary")
 
         self.bc_geom = BCWidget()
         self.bc_geom_indicator = self.bc_geom.indicator
+        self.bc_geom.setToolTip("Boundary condition type assigned to the geometry wall surface")
 
         self.output_filename = QLineEdit()
         self.output_filename.setStyleSheet(LINEEDIT_STYLE)
+        self.output_filename.setToolTip("Base filename for mesh output files (extension .* means all formats)")
 
         self.export_vtk = QCheckBox("Export VTK File")
         self.export_vtk.setStyleSheet("color:#a0a8c0;")
@@ -343,6 +377,7 @@ class MeshConfigPanel(QScrollArea):
         self.export_starcd.setStyleSheet("color:#a0a8c0;")
         self.enable_collision_detection = QCheckBox("Collision Detection")
         self.enable_collision_detection.setStyleSheet("color:#a0a8c0;")
+        self.enable_collision_detection.setToolTip("Enable self-intersection detection during boundary layer generation")
 
         self.export_vtk_btn = QPushButton("Export VTK")
         self.export_vtk_btn.setToolTip("Export the generated mesh to a VTK file (.vtk)")
@@ -384,17 +419,17 @@ class MeshConfigPanel(QScrollArea):
 
         export_layout = QHBoxLayout()
         export_layout.setSpacing(6)
-        export_layout.addWidget(self.export_vtk_btn)
-        export_layout.addWidget(self.export_starcd_btn)
+        export_layout.addWidget(help_widget(self.export_vtk_btn, "Export the generated mesh to a VTK file (.vtk)"))
+        export_layout.addWidget(help_widget(self.export_starcd_btn, "Export the generated mesh to STAR-CD files (.vrt, .cel, .bnd)"))
 
-        io_form.addRow("BC XMin:", self.bc_xmin)
-        io_form.addRow("BC XMax:", self.bc_xmax)
-        io_form.addRow("BC YMin:", self.bc_ymin)
-        io_form.addRow("BC YMax:", self.bc_ymax)
-        io_form.addRow("BC Geom (Wall):", self.bc_geom)
-        io_form.addRow("Output Filename:", self.output_filename)
-        io_form.addRow("", self.enable_collision_detection)
-        io_form.addRow("Export:", export_layout)
+        io_form.addRow(help_label("BC XMin:", "Boundary condition type for the left domain boundary"), self.bc_xmin)
+        io_form.addRow(help_label("BC XMax:", "Boundary condition type for the right domain boundary"), self.bc_xmax)
+        io_form.addRow(help_label("BC YMin:", "Boundary condition type for the bottom domain boundary"), self.bc_ymin)
+        io_form.addRow(help_label("BC YMax:", "Boundary condition type for the top domain boundary"), self.bc_ymax)
+        io_form.addRow(help_label("BC Geom (Wall):", "Boundary condition type assigned to the geometry wall surface"), self.bc_geom)
+        io_form.addRow(help_label("Output Filename:", "Base filename for mesh output files (extension .* means all formats)"), self.output_filename)
+        io_form.addRow("", help_widget(self.enable_collision_detection, "Enable self-intersection detection during boundary layer generation"))
+        io_form.addRow(help_label("Export:", "Export options for outputting mesh files in various formats"), export_layout)
         align_form_labels(io_form, 130)
         self.sec_io.add_layout(io_form)
 
