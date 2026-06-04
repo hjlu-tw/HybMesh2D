@@ -14,6 +14,7 @@ class EdgeListPanel(CollapsibleSection):
         self.file_segment_list = QListWidget()
         self.file_segment_list.setMaximumHeight(120)
         self.file_segment_list.setStyleSheet(LIST_STYLE)
+        self.file_segment_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.file_segment_list.setToolTip("List of discrete edges loaded from geometry file data")
 
         # Analytic Edges
@@ -23,6 +24,7 @@ class EdgeListPanel(CollapsibleSection):
         self.curve_segment_list = QListWidget()
         self.curve_segment_list.setMaximumHeight(120)
         self.curve_segment_list.setStyleSheet(LIST_STYLE)
+        self.curve_segment_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.curve_segment_list.setToolTip("List of analytically-defined curve edges")
 
         self.add_curve_seg_btn = make_button("Add Analytic Edge", '#3a180a')

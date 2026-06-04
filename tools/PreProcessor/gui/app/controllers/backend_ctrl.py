@@ -74,7 +74,9 @@ class BackendControllerMixin:
         session = self.active_session()
         if not session:
             return
-        if not session.project_model.input_file and not session.project_model.segments:
+        if (not session.project_model.input_file
+                and not session.project_model.segments
+                and session.original_points is None):
             self.main_window.log_panel.log("No geometry loaded.")
             return
         exe = self._find_executable()
@@ -192,6 +194,9 @@ class BackendControllerMixin:
                     if session is self.active_session():
                         show_q = self.main_window.quality_check_cb.isChecked()
                         self.main_window.canvas_view.load_resampled_data(pts, show_q)
+                        # Clear orange segment overlay so the resampled result
+                        # is not obscured by the selection highlight
+                        self.main_window.canvas_view.clear_segment_highlight()
                         self.preview_curve_formula()
                     self.main_window.log_panel.log(
                         f"Preview done ({len(pts)} points).")
@@ -222,6 +227,7 @@ class BackendControllerMixin:
                         if session is self.active_session():
                             show_q = self.main_window.quality_check_cb.isChecked()
                             self.main_window.canvas_view.load_resampled_data(pts, show_q)
+                            self.main_window.canvas_view.clear_segment_highlight()
                             self.preview_curve_formula()
                         self.main_window.log_panel.log(
                             f"Loaded result ({len(pts)} points).")

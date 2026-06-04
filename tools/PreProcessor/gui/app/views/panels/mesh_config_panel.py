@@ -308,7 +308,7 @@ class MeshConfigPanel(QScrollArea):
 
         concave_form = QFormLayout()
         self.bl_concave_method = QComboBox()
-        self.bl_concave_method.addItems(["0: Vector Merge", "5: Thickness Blending"])
+        self.bl_concave_method.addItems(["5: Thickness Blending"])
         self.bl_concave_method.setStyleSheet(COMBO_STYLE)
         self.bl_concave_method.setToolTip("Method for handling concave (inward-pointing) corners in the boundary layer")
 
@@ -530,7 +530,7 @@ class MeshConfigPanel(QScrollArea):
         self.bl_para_fallback_angle.setValue(cfg.bl_para_fallback_angle)
 
         # 5. Concave
-        concave_methods = [0, 5]
+        concave_methods = [5]
         if cfg.bl_concave_method in concave_methods:
             self.bl_concave_method.setCurrentIndex(concave_methods.index(cfg.bl_concave_method))
         else:
@@ -616,7 +616,7 @@ class MeshConfigPanel(QScrollArea):
         cfg.bl_para_fallback_angle = self.bl_para_fallback_angle.value()
 
         # 5. Concave
-        concave_methods = [0, 5]
+        concave_methods = [5]
         cfg.bl_concave_method = concave_methods[self.bl_concave_method.currentIndex()]
         cfg.bl_concave_angle_threshold = self.bl_concave_angle_threshold.value()
         cfg.bl_concave_influence_multiplier = self.bl_concave_influence_multiplier.value()

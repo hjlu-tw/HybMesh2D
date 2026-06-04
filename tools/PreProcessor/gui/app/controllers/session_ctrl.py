@@ -4,7 +4,7 @@ import numpy as np
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem, QMenu, QInputDialog
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
-from app.models.session import GeometrySession
+from app.models.session import GeometrySession, SESSION_COLORS
 
 class SessionControllerMixin:
     """Mixin containing session management, tab switching, and file loading logic."""
@@ -148,17 +148,26 @@ class SessionControllerMixin:
         sb = self.main_window.sidebar_view
         # Block both itemChanged AND currentRowChanged while rebuilding the list
         sb.geom_list.blockSignals(True)
-        sb.geom_list.clear()
-        for session in self.sessions:
+        
+        num_sessions = len(self.sessions)
+        while sb.geom_list.count() > num_sessions:
+            sb.geom_list.takeItem(sb.geom_list.count() - 1)
+            
+        for i, session in enumerate(self.sessions):
             name = session.display_name
-            item = QListWidgetItem(name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            if i < sb.geom_list.count():
+                item = sb.geom_list.item(i)
+                item.setText(name)
+            else:
+                item = QListWidgetItem(name)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                sb.geom_list.addItem(item)
+                
             state = Qt.CheckState.Checked if session.is_visible else Qt.CheckState.Unchecked
             item.setCheckState(state)
             item.setData(Qt.ItemDataRole.UserRole, session.session_id)
             if hasattr(session, "color") and session.color:
                 item.setForeground(QColor(session.color))
-            sb.geom_list.addItem(item)
 
         if 0 <= self.active_idx < sb.geom_list.count():
             sb.geom_list.setCurrentRow(self.active_idx)
@@ -237,8 +246,8 @@ class SessionControllerMixin:
                 label = os.path.basename(file_path)
                 self.main_window.tab_widget.setTabText(self.active_idx, label)
                 session.file_path = file_path
-                session.color = session.SESSION_COLORS[
-                    (session.session_id - 1) % len(session.SESSION_COLORS)]
+                session.color = SESSION_COLORS[
+                    (session.session_id - 1) % len(SESSION_COLORS)]
             else:
                 session = self._new_session(file_path)
 

@@ -10,7 +10,7 @@ from app.models.session import GeometrySession
 from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd, AutoDetectSplitCmd
 from app.commands.vertex_cmds import InsertVertexCmd
 from app.commands.segment_cmds import (
-    UpdateStrategyCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd,
+    UpdateStrategyCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd, UpdateMultipleSegmentsStateCmd,
     CreateSegmentsFromIndicesCmd
 )
 from app.services.geometry_service import GeometryService
@@ -19,45 +19,106 @@ from app.utils import CURVE_TYPE_LABELS
 class SegmentControllerMixin:
     """Mixin containing edge segment, break point (split), and properties management logic."""
 
+    def get_selected_segment_indices(self) -> list[int]:
+        session = self.active_session()
+        if not session:
+            return []
+        sb = self.main_window.sidebar_view
+        indices = []
+        for item in sb.file_segment_list.selectedItems():
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is not None:
+                indices.append(idx)
+        for item in sb.curve_segment_list.selectedItems():
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is not None:
+                indices.append(idx)
+        if not indices and hasattr(session, 'current_segment_idx'):
+            if session.current_segment_idx >= 0:
+                indices.append(session.current_segment_idx)
+        return sorted(list(set(indices)))
+
     def _refresh_segment_list(self, clear_resampled: bool = True):
         session = self.active_session()
         if not session:
             return
         sb = self.main_window.sidebar_view
+
+        # Save currently selected segment indices
+        selected_indices = []
+        for item in sb.file_segment_list.selectedItems():
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is not None:
+                selected_indices.append(idx)
+        for item in sb.curve_segment_list.selectedItems():
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is not None:
+                selected_indices.append(idx)
+
+        # Fallback to session.current_segment_idx if list has no selection
+        if not selected_indices and getattr(session, 'current_segment_idx', -1) >= 0:
+            selected_indices = [session.current_segment_idx]
         
-        sb.file_segment_list.blockSignals(True)
-        sb.curve_segment_list.blockSignals(True)
-        sb.file_segment_list.clear()
-        sb.curve_segment_list.clear()
+        self._is_refreshing_list = True
+        try:
+            sb.file_segment_list.blockSignals(True)
+            sb.curve_segment_list.blockSignals(True)
+            sb.file_segment_list.clear()
+            sb.curve_segment_list.clear()
 
-        for idx, seg in enumerate(session.project_model.segments):
-            if seg.type == "curve":
-                c_type = getattr(seg, "curve_type", "custom")
-                lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
-                c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
-                lbl = f"Edge {seg.id}: {c_label}"
-                item = QListWidgetItem(lbl)
-                item.setData(Qt.ItemDataRole.UserRole, idx)
-                sb.curve_segment_list.addItem(item)
+            for idx, seg in enumerate(session.project_model.segments):
+                if seg.type == "curve":
+                    c_type = getattr(seg, "curve_type", "custom")
+                    lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
+                    c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
+                    lbl = f"Edge {seg.id}: {c_label}"
+                    item = QListWidgetItem(lbl)
+                    item.setData(Qt.ItemDataRole.UserRole, idx)
+                    sb.curve_segment_list.addItem(item)
+                    if idx in selected_indices:
+                        item.setSelected(True)
+                else:
+                    lbl = (f"Edge {seg.id}: "
+                           f"Idx {seg.start_index} → {seg.end_index}")
+                    item = QListWidgetItem(lbl)
+                    item.setData(Qt.ItemDataRole.UserRole, idx)
+                    sb.file_segment_list.addItem(item)
+                    if idx in selected_indices:
+                        item.setSelected(True)
+
+            sb.file_segment_list.blockSignals(False)
+            sb.curve_segment_list.blockSignals(False)
+
+            if selected_indices:
+                if session.current_segment_idx not in selected_indices:
+                    session.current_segment_idx = selected_indices[0]
+                sb.remove_seg_btn.setEnabled(True)
+                sb.show_segment_props(True)
+                active_seg = session.project_model.get_segment(session.current_segment_idx)
+                if active_seg:
+                    if active_seg.type == "file":
+                        self.main_window.canvas_view.update_active_segment(
+                            active_seg.start_index, active_seg.end_index)
+                        self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, True)
+                        self.main_window.canvas_view.clear_curve_preview(session.session_id)
+                    else:
+                        self.main_window.canvas_view.update_active_segment(None, None)
+                        self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, False)
+                        self.main_window.canvas_view.clear_curve_preview(session.session_id)
             else:
-                lbl = (f"Edge {seg.id}: "
-                       f"Idx {seg.start_index} → {seg.end_index}")
-                item = QListWidgetItem(lbl)
-                item.setData(Qt.ItemDataRole.UserRole, idx)
-                sb.file_segment_list.addItem(item)
+                session.current_segment_idx = -1
+                sb.remove_seg_btn.setEnabled(False)
+                sb.show_segment_props(False)
+                self.main_window.canvas_view.update_active_segment(None, None)
+                self.main_window.canvas_view.clear_curve_preview(session.session_id)
 
-        sb.file_segment_list.blockSignals(False)
-        sb.curve_segment_list.blockSignals(False)
+            self._update_canvas_curve_segments()
+            if clear_resampled:
+                session.resampled_points = None
+                self.main_window.canvas_view.clear_resampled()
+        finally:
+            self._is_refreshing_list = False
 
-        session.current_segment_idx = -1
-        sb.remove_seg_btn.setEnabled(False)
-        sb.show_segment_props(False)
-        self._update_canvas_curve_segments()
-        self.main_window.canvas_view.update_active_segment(None, None)
-        self.main_window.canvas_view.clear_curve_preview(session.session_id)
-        if clear_resampled:
-            session.resampled_points = None
-            self.main_window.canvas_view.clear_resampled()
 
     def _sync_sidebar_to_session(self):
         session = self.active_session()
@@ -216,33 +277,48 @@ class SegmentControllerMixin:
             f"Inserted ({x:.4f}, {y:.4f}) at index {insert_idx}.")
         self.handle_point_clicked(insert_idx)
 
-    def handle_file_segment_selected(self, row: int):
-        if row < 0:
+    def handle_file_segment_selected(self, row: int = -1):
+        if getattr(self, "_is_refreshing_list", False):
             return
         sb = self.main_window.sidebar_view
         sb.curve_segment_list.blockSignals(True)
+        sb.curve_segment_list.clearSelection()
         sb.curve_segment_list.setCurrentRow(-1)
         sb.curve_segment_list.blockSignals(False)
         sb.curve_bake_btn.setEnabled(False)
 
-        item = sb.file_segment_list.item(row)
-        if item:
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            self.handle_segment_selected(idx)
+        selected_items = sb.file_segment_list.selectedItems()
+        if not selected_items:
+            self.handle_segment_selected(-1)
+            # Clear all multi-segment highlights
+            self.main_window.canvas_view.update_active_segments([])
+            return
 
-    def handle_curve_segment_selected(self, row: int):
-        if row < 0:
+        first_item = selected_items[0]
+        idx = first_item.data(Qt.ItemDataRole.UserRole)
+        self.handle_segment_selected(idx)
+        self.highlight_selected_segments()
+
+    def handle_curve_segment_selected(self, row: int = -1):
+        if getattr(self, "_is_refreshing_list", False):
             return
         sb = self.main_window.sidebar_view
         sb.file_segment_list.blockSignals(True)
+        sb.file_segment_list.clearSelection()
         sb.file_segment_list.setCurrentRow(-1)
         sb.file_segment_list.blockSignals(False)
-        sb.curve_bake_btn.setEnabled(True)
 
-        item = sb.curve_segment_list.item(row)
-        if item:
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            self.handle_segment_selected(idx)
+        selected_items = sb.curve_segment_list.selectedItems()
+        if not selected_items:
+            sb.curve_bake_btn.setEnabled(False)
+            self.handle_segment_selected(-1)
+            self.main_window.canvas_view.update_active_segments([])
+            return
+
+        sb.curve_bake_btn.setEnabled(True)
+        first_item = selected_items[0]
+        idx = first_item.data(Qt.ItemDataRole.UserRole)
+        self.handle_segment_selected(idx)
 
     def _select_segment_by_index(self, index: int):
         sb = self.main_window.sidebar_view
@@ -380,19 +456,51 @@ class SegmentControllerMixin:
 
     def handle_strategy_changed(self, strategy_name: str):
         session = self.active_session()
-        if not session or session.current_segment_idx < 0:
+        if not session:
             return
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg:
+        if self._is_populating:
             return
-        cmd = UpdateStrategyCmd(
-            session, session.current_segment_idx, strategy_name,
-            repopulate_cb=self._repopulate_strategy)
-        session.command_history.execute(cmd)
-        session.param_snapshot = copy.deepcopy(seg.parameters)
-        session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
-        self.main_window.log_panel.log(
-            f"Edge {seg.id}: distribution → {strategy_name}")
+
+        sb = self.main_window.sidebar_view
+        sb.switch_param_form(strategy_name)
+
+        indices = self.get_selected_segment_indices()
+        if not indices:
+            return
+
+        old_states = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                old_states[idx] = seg.to_dict()
+
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                seg.strategy = strategy_name
+                self._read_params_into_segment(seg)
+
+        any_changed = False
+        states_dict = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                new_state = seg.to_dict()
+                states_dict[idx] = (old_states[idx], new_state)
+                if new_state != old_states[idx]:
+                    any_changed = True
+
+        if any_changed:
+            def refresh():
+                if session is self.active_session():
+                    self._apply_geometry_update(session)
+                    if session.current_segment_idx >= 0:
+                        self._repopulate_strategy(strategy_name)
+            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
+            session.command_history.execute(cmd)
+            self.main_window.log_panel.log(
+                f"Updated strategy to '{strategy_name}' for {len(indices)} selected edges."
+            )
 
     def _repopulate_strategy(self, strategy_name: str):
         session = self.active_session()
@@ -403,13 +511,129 @@ class SegmentControllerMixin:
             self._populate_form_from_segment(seg)
         self.main_window.sidebar_view.switch_param_form(strategy_name)
 
+    def highlight_selected_segments(self):
+        """Highlight all selected file segments on the canvas simultaneously."""
+        session = self.active_session()
+        if not session:
+            return
+        sb = self.main_window.sidebar_view
+
+        # Collect all selected file segment indices
+        selected_indices = []
+        for item in sb.file_segment_list.selectedItems():
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is not None:
+                selected_indices.append(idx)
+
+        if not selected_indices:
+            self.main_window.canvas_view.update_active_segments([])
+            return
+
+        # Build (start_index, end_index) ranges for each selected segment
+        segment_ranges = []
+        primary_pos = 0
+        current_idx = getattr(session, 'current_segment_idx', -1)
+        for list_pos, seg_idx in enumerate(selected_indices):
+            seg = session.project_model.get_segment(seg_idx)
+            if seg and seg.type == "file":
+                segment_ranges.append((seg.start_index, seg.end_index))
+                if seg_idx == current_idx:
+                    primary_pos = len(segment_ranges) - 1
+
+        self.main_window.canvas_view.update_active_segments(segment_ranges, primary_idx=primary_pos)
+        if segment_ranges:
+            self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, True)
+
+    def handle_canvas_segment_clicked(self, x: float, y: float):
+        """Handle a canvas click in edge selection mode: find and select the nearest segment."""
+        session = self.active_session()
+        if not session or session.original_points is None:
+            return
+
+        pts = session.original_points
+        segments = session.project_model.segments
+
+        best_seg_idx = -1
+        best_dist = float('inf')
+
+        for seg_idx, seg in enumerate(segments):
+            if seg.type != "file":
+                continue
+            start = seg.start_index
+            end = seg.end_index
+            if start >= end:
+                continue
+
+            # Compute minimum distance from click point to each sub-segment
+            seg_pts = pts[start:end + 1]
+            for i in range(len(seg_pts) - 1):
+                ax, ay = float(seg_pts[i][0]), float(seg_pts[i][1])
+                bx, by = float(seg_pts[i + 1][0]), float(seg_pts[i + 1][1])
+                dx, dy = bx - ax, by - ay
+                len_sq = dx * dx + dy * dy
+                if len_sq < 1e-20:
+                    d = ((x - ax) ** 2 + (y - ay) ** 2) ** 0.5
+                else:
+                    t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / len_sq))
+                    proj_x = ax + t * dx
+                    proj_y = ay + t * dy
+                    d = ((x - proj_x) ** 2 + (y - proj_y) ** 2) ** 0.5
+                if d < best_dist:
+                    best_dist = d
+                    best_seg_idx = seg_idx
+
+        if best_seg_idx < 0:
+            return
+
+        # Convert distance from data space to pixel space for threshold check
+        vb = self.main_window.canvas_view.plot_widget.plotItem.vb
+        import pyqtgraph as pg
+        p1_scene = vb.mapViewToScene(pg.Point(x, y))
+        seg = segments[best_seg_idx]
+        mid_idx = (seg.start_index + seg.end_index) // 2
+        mid_pt = pts[mid_idx]
+        p2_scene = vb.mapViewToScene(pg.Point(float(mid_pt[0]), float(mid_pt[1])))
+        # Use point-click pixel threshold scaled by segment proximity
+        # Compare in data space against a fraction of the view range
+        view_range = vb.viewRange()
+        x_range = abs(view_range[0][1] - view_range[0][0])
+        y_range = abs(view_range[1][1] - view_range[1][0])
+        data_threshold = max(x_range, y_range) * 0.03  # 3% of visible range
+        if best_dist > data_threshold:
+            return
+
+        # Select the segment in the list (programmatically)
+        sb = self.main_window.sidebar_view
+        # Clear curve list
+        sb.curve_segment_list.blockSignals(True)
+        sb.curve_segment_list.clearSelection()
+        sb.curve_segment_list.setCurrentRow(-1)
+        sb.curve_segment_list.blockSignals(False)
+        sb.curve_bake_btn.setEnabled(False)
+
+        # Find and select the item in file_segment_list
+        sb.file_segment_list.blockSignals(True)
+        for r in range(sb.file_segment_list.count()):
+            item = sb.file_segment_list.item(r)
+            if item.data(Qt.ItemDataRole.UserRole) == best_seg_idx:
+                sb.file_segment_list.clearSelection()
+                item.setSelected(True)
+                sb.file_segment_list.setCurrentItem(item)
+                break
+        sb.file_segment_list.blockSignals(False)
+
+        self.handle_segment_selected(best_seg_idx)
+        self.highlight_selected_segments()
+
+
+
     def _populate_form_from_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view
 
         def block(b):
             for w in [sb.uniform_n, sb.tanh_n, sb.tanh_intensity,
                       sb.cosine_n, sb.curv_n, sb.curv_sens,
-                      sb.geo_n, sb.geo_ratio, sb.uniform_spacing]:
+                      sb.geo_n, sb.geo_ratio, sb.geo_ratio_end, sb.uniform_spacing]:
                 w.blockSignals(b)
             sb.uniform_type_combo.blockSignals(b)
 
@@ -440,40 +664,43 @@ class SegmentControllerMixin:
 
     def update_segment_params(self):
         session = self.active_session()
-        if not session or session.current_segment_idx < 0:
+        if not session:
             return
         if self._is_populating:
             return
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg:
+        indices = self.get_selected_segment_indices()
+        if not indices:
             return
-        self._read_params_into_segment(seg)
-        self._record_segment_state_change()
 
-    def _record_segment_state_change(self):
-        session = self.active_session()
-        if not session or session.current_segment_idx < 0:
-            return
-        if self._is_populating:
-            return
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg:
-            return
-        
-        current_state = seg.to_dict()
-        old_state = session.segment_state_snapshot
-        
-        if current_state != old_state:
-            seg_idx = session.current_segment_idx
+        old_states = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                old_states[idx] = seg.to_dict()
+
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                self._read_params_into_segment(seg)
+
+        any_changed = False
+        states_dict = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                new_state = seg.to_dict()
+                states_dict[idx] = (old_states[idx], new_state)
+                if new_state != old_states[idx]:
+                    any_changed = True
+
+        if any_changed:
             def refresh():
                 if session is self.active_session():
                     self._apply_geometry_update(session)
-                    if 0 <= seg_idx < len(session.project_model.segments):
-                        self._select_segment_by_index(seg_idx)
-            
-            cmd = UpdateSegmentStateCmd(session, session.current_segment_idx, old_state, current_state, refresh_cb=refresh)
+            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
             session.command_history.record(cmd)
-            session.segment_state_snapshot = current_state
+            if session.current_segment_idx in old_states:
+                session.segment_state_snapshot = states_dict[session.current_segment_idx][1]
 
     def _read_params_into_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view
@@ -502,17 +729,43 @@ class SegmentControllerMixin:
 
     def update_match_previous(self, checked: bool):
         session = self.active_session()
-        if session and session.current_segment_idx >= 0:
-            seg = session.project_model.get_segment(session.current_segment_idx)
-            if seg and seg.match_previous != checked:
-                def update_cb(val):
+        if not session:
+            return
+        indices = self.get_selected_segment_indices()
+        if not indices:
+            return
+
+        old_states = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                old_states[idx] = seg.to_dict()
+
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                seg.match_previous = checked
+
+        any_changed = False
+        states_dict = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                new_state = seg.to_dict()
+                states_dict[idx] = (old_states[idx], new_state)
+                if new_state != old_states[idx]:
+                    any_changed = True
+
+        if any_changed:
+            def refresh():
+                if session is self.active_session():
                     sb = self.main_window.sidebar_view
                     sb.match_previous_cb.blockSignals(True)
-                    sb.match_previous_cb.setChecked(val)
+                    sb.match_previous_cb.setChecked(checked)
                     sb.match_previous_cb.blockSignals(False)
                     self._apply_geometry_update(session)
-                cmd = ToggleMatchPreviousCmd(session, session.current_segment_idx, checked, update_cb)
-                session.command_history.execute(cmd)
+            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
+            session.command_history.execute(cmd)
 
     def handle_is_closed_changed(self, text: str):
         session = self.active_session()
@@ -654,5 +907,5 @@ class SegmentControllerMixin:
         session.project_model.update_file_segments_from_indices(
             session.split_indices)
         if session is self.active_session():
-            self._refresh_segment_list()
+            self._refresh_segment_list(clear_resampled=False)
         self._update_tab_title()

@@ -52,8 +52,8 @@ class AppController(
         sb.split_btn.clicked.connect(self.add_split_point)
         sb.remove_split_btn.clicked.connect(self.remove_split_point)
         sb.insert_btn.clicked.connect(self.handle_insert_point)
-        sb.file_segment_list.currentRowChanged.connect(self.handle_file_segment_selected)
-        sb.curve_segment_list.currentRowChanged.connect(self.handle_curve_segment_selected)
+        sb.file_segment_list.itemSelectionChanged.connect(self.handle_file_segment_selected)
+        sb.curve_segment_list.itemSelectionChanged.connect(self.handle_curve_segment_selected)
         sb.strategy_combo.currentTextChanged.connect(
             self.handle_strategy_changed)
         sb.is_closed_combo.currentTextChanged.connect(
@@ -136,6 +136,22 @@ class AppController(
 
         # ── Wire shared canvas signals ──────────────────────────────────
         self.main_window.canvas_view.point_clicked.connect(self.handle_point_clicked)
+        self.main_window.canvas_view.segment_clicked.connect(self.handle_canvas_segment_clicked)
+
+        # Wire Vertex / Edge selection mode toggle buttons
+        mw = self.main_window
+        def _set_vertex_mode():
+            mw.select_vertex_btn.setChecked(True)
+            mw.select_edge_btn.setChecked(False)
+            self.main_window.canvas_view.set_selection_mode('vertex')
+
+        def _set_edge_mode():
+            mw.select_vertex_btn.setChecked(False)
+            mw.select_edge_btn.setChecked(True)
+            self.main_window.canvas_view.set_selection_mode('edge')
+
+        mw.select_vertex_btn.clicked.connect(_set_vertex_mode)
+        mw.select_edge_btn.clicked.connect(_set_edge_mode)
 
         # ── Wire Mesh Generation signals ───────────────────────────────
         mw = self.main_window
@@ -339,7 +355,7 @@ class AppController(
         session.project_model.update_file_segments_from_indices(
             session.split_indices)
         if session is self.active_session():
-            self._refresh_segment_list()
+            self._refresh_segment_list(clear_resampled=False)
         self._update_tab_title()
 
     # ═════════════════════════════════════════════════════════════════════
@@ -413,6 +429,26 @@ class AppController(
             self._write_workspace_file(workspace_path)
         except Exception as e:
             print(f"Failed to auto-save workspace: {e}")
+
+        # Cancel and wait for all running background workers/threads to avoid crash on exit
+        if hasattr(self, "_worker") and self._worker is not None:
+            if self._worker.isRunning():
+                self._worker.cancel()
+                self._worker.wait()
+                
+        if hasattr(self, "_mesh_worker") and self._mesh_worker is not None:
+            if self._mesh_worker.isRunning():
+                self._mesh_worker.cancel()
+                self._mesh_worker.wait()
+
+        mcv = self.main_window.mesh_canvas_view
+        if hasattr(mcv, "_geom_loader_thread") and mcv._geom_loader_thread is not None:
+            if mcv._geom_loader_thread.isRunning():
+                try:
+                    mcv._geom_loader_thread.loaded_signal.disconnect()
+                except TypeError:
+                    pass
+                mcv._geom_loader_thread.wait()
 
         try:
             self.main_window.canvas_view.clear()

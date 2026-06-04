@@ -4,7 +4,7 @@ from app.commands.vertex_cmds import InsertVertexCmd
 from app.commands.segment_cmds import (
     UpdateStrategyCmd, UpdateParamsCmd, RemoveSegmentCmd,
     AddCurveSegmentCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd,
-    ToggleMatchPreviousCmd, UpdateSegmentStateCmd,
+    ToggleMatchPreviousCmd, UpdateSegmentStateCmd, UpdateMultipleSegmentsStateCmd,
     CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd, DuplicateTransformCmd
 )
 
@@ -14,6 +14,6 @@ __all__ = [
     "InsertVertexCmd",
     "UpdateStrategyCmd", "UpdateParamsCmd", "RemoveSegmentCmd",
     "AddCurveSegmentCmd", "ToggleIsClosedCmd", "ToggleGlobalSplineCmd",
-    "ToggleMatchPreviousCmd", "UpdateSegmentStateCmd",
+    "ToggleMatchPreviousCmd", "UpdateSegmentStateCmd", "UpdateMultipleSegmentsStateCmd",
     "CreateSegmentsFromIndicesCmd", "BakeCurveToGeometryCmd", "DuplicateTransformCmd"
 ]

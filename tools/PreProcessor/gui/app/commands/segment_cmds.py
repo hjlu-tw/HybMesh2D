@@ -587,3 +587,59 @@ class DuplicateTransformCmd(BaseCommand):
         self.session.project_model.segments = self.old_segments
         self.session.is_geometry_modified = self.old_modified
         self.refresh_cb()
+
+
+class UpdateMultipleSegmentsStateCmd(BaseCommand):
+    """Record a complete state change on multiple segments simultaneously."""
+
+    def __init__(self, session, states_dict: dict[int, tuple[dict, dict]], refresh_cb=None):
+        """
+        states_dict: map of seg_idx -> (old_state, new_state)
+        """
+        self.session = session
+        self.states = copy.deepcopy(states_dict)
+        self.refresh_cb = refresh_cb
+        self._old_modified = session.is_geometry_modified
+
+    def description(self) -> str:
+        seg_ids = []
+        for idx in self.states.keys():
+            seg = self.session.project_model.get_segment(idx)
+            if seg:
+                seg_ids.append(str(seg.id))
+        return f"Update Edges: {', '.join(seg_ids)}"
+
+    def execute(self):
+        for seg_idx, (_, new_state) in self.states.items():
+            seg = self.session.project_model.get_segment(seg_idx)
+            if seg:
+                self._apply_state(seg, new_state)
+        self.session.is_geometry_modified = True
+        if self.refresh_cb:
+            self.refresh_cb()
+
+    def undo(self):
+        for seg_idx, (old_state, _) in self.states.items():
+            seg = self.session.project_model.get_segment(seg_idx)
+            if seg:
+                self._apply_state(seg, old_state)
+        self.session.is_geometry_modified = self._old_modified
+        if self.refresh_cb:
+            self.refresh_cb()
+
+    def _apply_state(self, seg, state):
+        seg.type = state.get("type", "file")
+        seg.start_index = state.get("start_index", -1)
+        seg.end_index = state.get("end_index", -1)
+        seg.strategy = state.get("strategy", "uniform")
+        seg.parameters = copy.deepcopy(state.get("parameters", {}))
+        seg.match_previous = state.get("match_previous", False)
+
+        # Curve specific
+        seg.curve_type = state.get("curve_type", "custom")
+        seg.curve_mode = state.get("curve_mode", "parametric")
+        seg.x_formula = state.get("x_formula", "cos(t)")
+        seg.y_formula = state.get("y_formula", "sin(t)")
+        seg.formula = state.get("formula", "0.0")
+        seg.t_min = state.get("t_min", 0.0)
+        seg.t_max = state.get("t_max", 1.0)

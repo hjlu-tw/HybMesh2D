@@ -701,17 +701,26 @@ void processElement(const json& config) {
                 else ratio = params.value("ratio", 1.1);
 
                 double ratio_end = params.value("ratio_end", 1.0);
-                if (ratio_end != 1.0 && nT >= 4) {
+                if (ratio != 1.0 && ratio_end != 1.0 && nT >= 4) {
                     // Two-sided geometric: blend half from start, half from end
-                    int nHalf = nT / 2 + 1;
-                    auto tsA = Spacing::generateGeometric(L * 0.5, nHalf, ratio);
-                    auto tsB = Spacing::generateGeometric(L * 0.5, nHalf, ratio_end);
+                    int n_left = (nT - 1) / 2;
+                    int n_right = (nT - 1) - n_left;
+                    double L_left = L * (double)n_left / (nT - 1);
+                    double L_right = L - L_left;
+
+                    auto tsA = Spacing::generateGeometric(L_left, n_left + 1, ratio);
+                    auto tsB = Spacing::generateGeometric(L_right, n_right + 1, ratio_end);
                     tS.clear();
-                    for (int i = 0; i < nHalf; ++i) tS.push_back(tsA[i]);
-                    for (int i = (int)tsB.size() - 2; i >= 0; --i) tS.push_back(L - tsB[i]);
-                    // Rescale to ensure endpoints are exactly [0, L]
+                    for (int i = 0; i <= n_left; ++i) tS.push_back(tsA[i]);
+                    for (int i = n_right - 1; i >= 0; --i) tS.push_back(L - tsB[i]);
                     if (!tS.empty()) { tS.front() = 0.0; tS.back() = L; }
+                } else if (ratio == 1.0 && ratio_end != 1.0) {
+                    // Single-sided from end: generate geometric from start and reverse
+                    auto ts = Spacing::generateGeometric(L, nT, ratio_end);
+                    tS.clear();
+                    for (int i = 0; i < nT; ++i) tS.push_back(L - ts[nT - 1 - i]);
                 } else {
+                    // Single-sided from start (or uniform if both are 1.0)
                     tS = Spacing::generateGeometric(L, nT, ratio);
                 }
             } else if (strat == "tanh") {

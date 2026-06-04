@@ -228,6 +228,45 @@ class MainWindow(QMainWindow):
         self.quality_check_cb = QCheckBox("Show Quality Heatmap", self.canvas_toolbar)
         self.quality_check_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
 
+        # Select Mode Toggle Buttons
+        toggle_btn_base = """
+            QPushButton {
+                background-color: #181b30;
+                color: #7a82a0;
+                border: 1px solid #2d3356;
+                padding: 3px 10px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:checked {
+                background-color: #2a4a7f;
+                color: #ffffff;
+                border: 1px solid #5a9ad4;
+            }
+            QPushButton:hover:!checked {
+                background-color: #232645;
+                color: #dde2ff;
+                border-color: #4a5280;
+            }
+        """
+        self.select_vertex_btn = QPushButton("📍 Vertex", self.canvas_toolbar)
+        self.select_vertex_btn.setToolTip("Vertex Mode: clicking on canvas selects vertices")
+        self.select_vertex_btn.setCheckable(True)
+        self.select_vertex_btn.setChecked(True)
+        self.select_vertex_btn.setStyleSheet(toggle_btn_base + """
+            QPushButton { border-radius: 4px 0px 0px 4px; border-right: none; }
+        """)
+
+        self.select_edge_btn = QPushButton("↔ Edge", self.canvas_toolbar)
+        self.select_edge_btn.setToolTip("Edge Mode: clicking on canvas selects edges")
+        self.select_edge_btn.setCheckable(True)
+        self.select_edge_btn.setChecked(False)
+        self.select_edge_btn.setStyleSheet(toggle_btn_base + """
+            QPushButton { border-radius: 0px 4px 4px 0px; }
+        """)
+
+        self.cad_sep3 = create_sep()
+
         # Mesh Generation Toolbar controls
         self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
         self.mesh_generate_btn = create_tb_btn("Mesh Generate", "Run HybMesh2D to generate grid")
@@ -323,6 +362,9 @@ class MainWindow(QMainWindow):
         tb_layout.addWidget(self.show_vertices_cb)
         tb_layout.addWidget(self.show_nodes_cb)
         tb_layout.addWidget(self.quality_check_cb)
+        tb_layout.addWidget(self.cad_sep3)
+        tb_layout.addWidget(self.select_vertex_btn)
+        tb_layout.addWidget(self.select_edge_btn)
 
         tb_layout.addWidget(self.mesh_preview_btn)
         tb_layout.addWidget(self.mesh_generate_btn)
@@ -362,7 +404,8 @@ class MainWindow(QMainWindow):
             self.focus_geom_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
-            self.cad_sep2
+            self.cad_sep2, self.cad_sep3,
+            self.select_vertex_btn, self.select_edge_btn,
         ]
 
         self.mesh_tb_widgets = [

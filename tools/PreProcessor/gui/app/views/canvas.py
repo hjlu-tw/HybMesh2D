@@ -1,9 +1,9 @@
 from __future__ import annotations
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QRectF, QPointF
+from PyQt6.QtGui import QColor, QPainter, QLinearGradient
 
 
 # ── Dark-theme palette ────────────────────────────────────────────────────────
@@ -17,6 +17,119 @@ _COL_RESAMPLED = '#FF79C6'  # magenta — resampled result
 _COL_PREVIEW  = '#FF8C42'   # orange — formula preview
 
 
+class ColorBarWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(70)
+        self.min_val = 0.0
+        self.max_val = 0.0
+        self.title_text = "Length"
+        self.setStyleSheet("background-color: #0c0d16; color: #a0a8c0;")
+
+    def set_range(self, min_val: float, max_val: float):
+        self.min_val = min_val
+        self.max_val = max_val
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        painter.fillRect(rect, QColor("#0c0d16"))
+        
+        margin_top = 30
+        margin_bottom = 20
+        bar_width = 12
+        bar_left = 10
+        bar_height = rect.height() - margin_top - margin_bottom
+        
+        if bar_height <= 0:
+            return
+            
+        gradient = QLinearGradient(QPointF(bar_left, rect.height() - margin_bottom),
+                                    QPointF(bar_left, margin_top))
+        gradient.setColorAt(0.0, QColor.fromHsvF(0.6666, 1.0, 1.0)) # blue
+        gradient.setColorAt(0.5, QColor.fromHsvF(0.3333, 1.0, 1.0)) # green/yellow
+        gradient.setColorAt(1.0, QColor.fromHsvF(0.0, 1.0, 1.0))    # red
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(gradient)
+        painter.drawRect(bar_left, margin_top, bar_width, bar_height)
+        
+        painter.setPen(QColor("#a0a8c0"))
+        font = painter.font()
+        font.setPointSize(9)
+        painter.setFont(font)
+        
+        min_str = f"{self.min_val:.4g}"
+        painter.drawText(bar_left + bar_width + 6, rect.height() - margin_bottom + 4, min_str)
+        
+        max_str = f"{self.max_val:.4g}"
+        painter.drawText(bar_left + bar_width + 6, margin_top + 4, max_str)
+        
+        mid_val = 0.5 * (self.min_val + self.max_val)
+        mid_str = f"{mid_val:.4g}"
+        painter.drawText(bar_left + bar_width + 6, margin_top + bar_height // 2 + 4, mid_str)
+        
+        painter.drawText(8, 18, self.title_text)
+
+
+class ColorCodedSegmentsItem(pg.GraphicsObject):
+    def __init__(self):
+        super().__init__()
+        self.points = None
+        self.pens = []
+        self.show_symbols = True
+        self.symbol_brushes = []
+        self._bounds = None
+
+    def setData(self, points, lengths, min_len, max_len, show_symbols, symbol_brushes):
+        self.points = points
+        self.show_symbols = show_symbols
+        self.symbol_brushes = symbol_brushes
+        
+        self.pens = []
+        if points is not None and len(points) >= 2:
+            span = max_len - min_len
+            for l in lengths:
+                t = (l - min_len) / span if span > 1e-12 else 0.0
+                t = max(0.0, min(1.0, t))
+                color = QColor.fromHsvF((1.0 - t) * 0.6666, 1.0, 1.0)
+                self.pens.append(pg.mkPen(color, width=2.5))
+            
+            x = points[:, 0]
+            y = points[:, 1]
+            self._bounds = QRectF(x.min(), y.min(), x.max() - x.min(), y.max() - y.min())
+        else:
+            self._bounds = None
+            
+        self.prepareGeometryChange()
+        self.update()
+
+    def boundingRect(self):
+        if self._bounds is None:
+            return QRectF()
+        return self._bounds
+
+    def paint(self, painter, option, widget):
+        if self.points is None or len(self.points) < 2:
+            return
+        
+        for i in range(len(self.points) - 1):
+            p0 = self.points[i]
+            p1 = self.points[i + 1]
+            painter.setPen(self.pens[i])
+            painter.drawLine(QPointF(p0[0], p0[1]), QPointF(p1[0], p1[1]))
+            
+        if self.show_symbols and self.symbol_brushes:
+            painter.setPen(pg.mkPen(None))
+            for i, p in enumerate(self.points):
+                if i < len(self.symbol_brushes):
+                    painter.setBrush(self.symbol_brushes[i])
+                    painter.drawEllipse(QPointF(p[0], p[1]), 3.0, 3.0)
+
+
 class CanvasView(QWidget):
     """
     Shared interactive canvas that can display multiple geometry sessions
@@ -24,18 +137,24 @@ class CanvasView(QWidget):
     (split points, selected point, active segment).
     """
 
-    point_clicked = pyqtSignal(int)  # nearest index in active session's points
+    point_clicked = pyqtSignal(int)       # nearest vertex index in active session's points
+    segment_clicked = pyqtSignal(float, float)  # canvas coords when in edge selection mode
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setAspectLocked(True)
         self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
         layout.addWidget(self.plot_widget)
+
+        self.colorbar_widget = ColorBarWidget(self)
+        self.colorbar_widget.setVisible(False)
+        layout.addWidget(self.colorbar_widget)
 
         # ── Per-session geometry layers ───────────────────────────────────
         self._geometries: dict[int, pg.PlotDataItem] = {}   # sid → curve
@@ -46,6 +165,12 @@ class CanvasView(QWidget):
         self._show_nodes = True
         self._active_session_id: int | None = None
 
+        # ── Selection mode ('vertex' or 'edge') ───────────────────────────
+        self._selection_mode: str = 'vertex'
+
+        # ── Multi-segment highlight overlays ──────────────────────────────
+        self._multi_segment_curves: list[pg.PlotDataItem] = []
+
         # ── Active-session overlays (single set, reused across sessions) ──
 
         # Resampled output — magenta dashed
@@ -53,6 +178,11 @@ class CanvasView(QWidget):
             pen=pg.mkPen(_COL_RESAMPLED, width=2, style=Qt.PenStyle.DashLine),
             symbol='o', symbolBrush=_COL_RESAMPLED, symbolSize=5)
         self.resampled_curve.setZValue(10)
+
+        # Custom color-coded segments item for quality heatmap
+        self.color_coded_segments = ColorCodedSegmentsItem()
+        self.color_coded_segments.setZValue(9)
+        self.plot_widget.addItem(self.color_coded_segments)
 
         # Active segment — thick orange with symbols
         self.active_segment_curve = self.plot_widget.plot(
@@ -350,6 +480,10 @@ class CanvasView(QWidget):
         else:
             self.selected_scatter.clear()
 
+    def set_selection_mode(self, mode: str):
+        """Set the canvas click selection mode: 'vertex' or 'edge'."""
+        self._selection_mode = mode
+
     def update_active_segment(self, start_idx: int | None,
                                end_idx: int | None):
         if (self._active_points is not None
@@ -360,48 +494,81 @@ class CanvasView(QWidget):
         else:
             self.active_segment_curve.setData([], [])
 
+    def update_active_segments(self, segment_ranges: list[tuple[int, int]],
+                                primary_idx: int = -1):
+        """Highlight multiple segments simultaneously.
+
+        segment_ranges: list of (start_index, end_index) for each selected segment.
+        primary_idx: The index (into segment_ranges list) of the primary segment
+                     that gets orange highlight; all others get a yellow highlight.
+        """
+        # Clear existing multi-segment overlays
+        for item in self._multi_segment_curves:
+            self.plot_widget.removeItem(item)
+        self._multi_segment_curves.clear()
+
+        if self._active_points is None or not segment_ranges:
+            self.active_segment_curve.setData([], [])
+            return
+
+        for i, (start, end) in enumerate(segment_ranges):
+            if start is None or end is None or start > end:
+                continue
+            if end >= len(self._active_points):
+                end = len(self._active_points) - 1
+            sp = self._active_points[start:end + 1]
+            if len(sp) < 2:
+                continue
+            is_primary = (i == primary_idx)
+            color = _COL_ACTIVE if is_primary else '#FFD700'  # orange or gold
+            width = 4 if is_primary else 2.5
+            zval = 20 if is_primary else 18
+            item = self.plot_widget.plot(
+                sp[:, 0], sp[:, 1],
+                pen=pg.mkPen(color, width=width),
+                symbol='o', symbolBrush=pg.mkBrush(color), symbolSize=5 if is_primary else 4
+            )
+            item.setZValue(zval)
+            self._multi_segment_curves.append(item)
+
+        # Clear the single active_segment_curve to avoid double drawing
+        self.active_segment_curve.setData([], [])
+
     def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False):
         if points is not None and len(points) > 0:
             if show_quality and len(points) >= 2:
                 diffs = np.diff(points, axis=0)
                 ds = np.sqrt(np.sum(diffs**2, axis=1))
                 ds[ds < 1e-12] = 1e-12
-                ratios = np.ones(len(points))
-                if len(points) >= 3:
-                    ratios[1:-1] = ds[1:] / ds[:-1]
                 
-                brushes = []
-                bad_x = []
-                bad_y = []
-                for i, r in enumerate(ratios):
-                    if i == 0 or i == len(ratios) - 1:
-                        brushes.append(pg.mkBrush("#2ECC71"))
-                        continue
-                    val = max(r, 1.0 / r) if r > 0 else 1e12
-                    if val <= 1.05:
-                        brushes.append(pg.mkBrush("#2ECC71"))
-                    elif val <= 1.20:
-                        brushes.append(pg.mkBrush("#E67E22"))
-                    else:
-                        brushes.append(pg.mkBrush("#FF5252"))
-                        bad_x.append(points[i, 0])
-                        bad_y.append(points[i, 1])
+                min_len = np.min(ds)
+                max_len = np.max(ds)
+                self.colorbar_widget.set_range(min_len, max_len)
+                self.colorbar_widget.setVisible(True)
                 
-                sym = 'o' if self._show_nodes else None
-                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol=sym, symbolBrush=brushes)
-                if bad_x:
-                    self.quality_bad_scatter.setData(bad_x, bad_y)
-                else:
-                    self.quality_bad_scatter.clear()
+                self.color_coded_segments.setData(points, ds, min_len, max_len, False, [])
+                self.resampled_curve.setData(points[:, 0], points[:, 1], pen=None, symbol=None)
+                self.quality_bad_scatter.clear()
             else:
+                self.colorbar_widget.setVisible(False)
+                self.color_coded_segments.setData(None, None, 0, 0, False, [])
+                
                 sym = 'o' if self._show_nodes else None
-                self.resampled_curve.setData(points[:, 0], points[:, 1], symbol=sym, symbolBrush=pg.mkBrush(_COL_RESAMPLED))
+                self.resampled_curve.setData(
+                    points[:, 0], points[:, 1],
+                    pen=pg.mkPen(_COL_RESAMPLED, width=2, style=Qt.PenStyle.DashLine),
+                    symbol=sym, symbolBrush=pg.mkBrush(_COL_RESAMPLED)
+                )
                 self.quality_bad_scatter.clear()
         else:
+            self.colorbar_widget.setVisible(False)
+            self.color_coded_segments.setData(None, None, 0, 0, False, [])
             self.resampled_curve.setData([], [])
             self.quality_bad_scatter.clear()
 
     def clear_resampled(self):
+        self.colorbar_widget.setVisible(False)
+        self.color_coded_segments.setData(None, None, 0, 0, False, [])
         self.resampled_curve.setData([], [])
         self.quality_bad_scatter.clear()
 
@@ -423,9 +590,27 @@ class CanvasView(QWidget):
         self.split_scatter.clear()
         self.selected_scatter.clear()
         self.active_segment_curve.setData([], [])
+        for item in self._multi_segment_curves:
+            self.plot_widget.removeItem(item)
+        self._multi_segment_curves.clear()
         self.resampled_curve.setData([], [])
+        self.colorbar_widget.setVisible(False)
+        self.color_coded_segments.setData(None, None, 0, 0, False, [])
         self.quality_bad_scatter.clear()
         self.duplicate_preview_curve.setData([], [])
+
+    def clear_segment_highlight(self):
+        """Clear only the active-segment / multi-segment highlight overlays.
+
+        Called after a successful Preview run so the resampled result is not
+        obscured by the orange selection overlay.  The edge-list selection is
+        preserved, so the user can immediately continue editing.
+        """
+        self.active_segment_curve.setData([], [])
+        for item in self._multi_segment_curves:
+            self.plot_widget.removeItem(item)
+        self._multi_segment_curves.clear()
+
 
     def update_duplicate_preview(self, points: np.ndarray | None):
         """Update the duplicate preview curve with transformed points."""
@@ -486,6 +671,14 @@ class CanvasView(QWidget):
             return
         pos = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
         x, y = pos.x(), pos.y()
+
+        if self._selection_mode == 'edge':
+            # In edge mode: emit segment_clicked with canvas coordinates
+            # (segment resolution is done in the controller via point proximity)
+            self.segment_clicked.emit(x, y)
+            return
+
+        # Vertex mode (default): find nearest point and emit point_clicked
         dists = np.sqrt((self._active_points[:, 0] - x) ** 2
                         + (self._active_points[:, 1] - y) ** 2)
         nearest_idx = int(np.argmin(dists))

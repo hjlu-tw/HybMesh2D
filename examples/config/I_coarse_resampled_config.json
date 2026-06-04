@@ -1,0 +1,47 @@
+{
+  "input_file": "examples/geometries/I_coarse_resampled.dat",
+  "output_file": "examples/geometries/I_coarse_resampled_resampled.dat",
+  "is_closed": true,
+  "segments": [
+    {
+      "id": 1,
+      "type": "file",
+      "start_index": 0,
+      "end_index": 29,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 50
+      }
+    },
+    {
+      "id": 2,
+      "type": "file",
+      "start_index": 29,
+      "end_index": 38,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 50
+      }
+    },
+    {
+      "id": 3,
+      "type": "file",
+      "start_index": 38,
+      "end_index": 67,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 50
+      }
+    },
+    {
+      "id": 4,
+      "type": "file",
+      "start_index": 67,
+      "end_index": 76,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 50
+      }
+    }
+  ]
+}

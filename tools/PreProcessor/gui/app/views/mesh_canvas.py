@@ -141,7 +141,6 @@ class MeshCanvasView(QWidget):
             except TypeError:
                 pass
             if self._geom_loader_thread.isRunning():
-                self._geom_loader_thread.terminate()
                 self._geom_loader_thread.wait()
 
         self._geom_loader_thread = GeomLoaderThread(geom_files)

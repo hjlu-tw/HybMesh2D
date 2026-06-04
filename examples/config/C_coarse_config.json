@@ -1,0 +1,130 @@
+{
+  "input_file": "/Users/hjlu_nchc/home/NCHC/CESE/HybMesh/examples/geometries/C_coarse.dat",
+  "output_file": "/Users/hjlu_nchc/home/NCHC/CESE/HybMesh/examples/geometries/C_coarse_resampled.dat",
+  "is_closed": true,
+  "segments": [
+    {
+      "id": 1,
+      "type": "file",
+      "start_index": 0,
+      "end_index": 20,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    },
+    {
+      "id": 2,
+      "type": "file",
+      "start_index": 20,
+      "end_index": 80,
+      "strategy": "geometric",
+      "parameters": {
+        "n_points": 25,
+        "ratio": 1.0
+      }
+    },
+    {
+      "id": 3,
+      "type": "file",
+      "start_index": 80,
+      "end_index": 140,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 20
+      }
+    },
+    {
+      "id": 4,
+      "type": "file",
+      "start_index": 140,
+      "end_index": 200,
+      "strategy": "geometric",
+      "parameters": {
+        "n_points": 25,
+        "ratio": 1.0,
+        "ratio_end": 1.05
+      }
+    },
+    {
+      "id": 5,
+      "type": "file",
+      "start_index": 200,
+      "end_index": 220,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    },
+    {
+      "id": 6,
+      "type": "file",
+      "start_index": 220,
+      "end_index": 240,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    },
+    {
+      "id": 7,
+      "type": "file",
+      "start_index": 240,
+      "end_index": 245,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 3
+      }
+    },
+    {
+      "id": 8,
+      "type": "file",
+      "start_index": 245,
+      "end_index": 265,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    },
+    {
+      "id": 9,
+      "type": "file",
+      "start_index": 265,
+      "end_index": 295,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 15
+      }
+    },
+    {
+      "id": 10,
+      "type": "file",
+      "start_index": 295,
+      "end_index": 315,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    },
+    {
+      "id": 11,
+      "type": "file",
+      "start_index": 315,
+      "end_index": 320,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 3
+      }
+    },
+    {
+      "id": 12,
+      "type": "file",
+      "start_index": 320,
+      "end_index": 340,
+      "strategy": "uniform",
+      "parameters": {
+        "n_points": 10
+      }
+    }
+  ]
+}
