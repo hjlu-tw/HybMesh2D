@@ -58,8 +58,10 @@ class AppController(
             self.handle_strategy_changed)
         sb.is_closed_combo.currentTextChanged.connect(
             self.handle_is_closed_changed)
-        sb.preview_btn.clicked.connect(self.preview_backend)
-        sb.file_preview_btn.clicked.connect(self.preview_backend)
+        if sb.preview_btn:
+            sb.preview_btn.clicked.connect(self.preview_backend)
+        if sb.file_preview_btn:
+            sb.file_preview_btn.clicked.connect(self.preview_backend)
         sb.save_btn.clicked.connect(self.save_output)
         sb.generate_btn.clicked.connect(self.generate_json)
         sb.add_curve_seg_btn.clicked.connect(self.add_curve_segment)
@@ -136,22 +138,16 @@ class AppController(
 
         # ── Wire shared canvas signals ──────────────────────────────────
         self.main_window.canvas_view.point_clicked.connect(self.handle_point_clicked)
+        self.main_window.canvas_view.point_deselected.connect(self.handle_point_deselected)
         self.main_window.canvas_view.segment_clicked.connect(self.handle_canvas_segment_clicked)
 
-        # Wire Vertex / Edge selection mode toggle buttons
+        # Wire Selection Mode dropdown
         mw = self.main_window
-        def _set_vertex_mode():
-            mw.select_vertex_btn.setChecked(True)
-            mw.select_edge_btn.setChecked(False)
-            self.main_window.canvas_view.set_selection_mode('vertex')
+        def _on_selection_mode_changed(index):
+            mode = 'vertex' if index == 0 else 'edge'
+            self.main_window.canvas_view.set_selection_mode(mode)
 
-        def _set_edge_mode():
-            mw.select_vertex_btn.setChecked(False)
-            mw.select_edge_btn.setChecked(True)
-            self.main_window.canvas_view.set_selection_mode('edge')
-
-        mw.select_vertex_btn.clicked.connect(_set_vertex_mode)
-        mw.select_edge_btn.clicked.connect(_set_edge_mode)
+        mw.select_mode_combo.currentIndexChanged.connect(_on_selection_mode_changed)
 
         # ── Wire Mesh Generation signals ───────────────────────────────
         mw = self.main_window
@@ -243,18 +239,8 @@ class AppController(
 
         self._update_undo_redo_buttons()
 
-        # Auto-restore workspace
-        try:
-            workspace_path = os.path.expanduser("~/.hybmesh_workspace.json")
-            if os.path.exists(workspace_path):
-                self._read_workspace_file(workspace_path)
-            else:
-                self.new_blank_tab()
-        except Exception as e:
-            if hasattr(self, "main_window") and hasattr(self.main_window, "log_panel"):
-                self.main_window.log_panel.log(f"Failed to auto-restore workspace: {e}")
-            if not self.sessions:
-                self.new_blank_tab()
+        # Open a new blank tab on startup (do not restore the previous session's files)
+        self.new_blank_tab()
 
 
     # ═════════════════════════════════════════════════════════════════════
@@ -423,12 +409,8 @@ class AppController(
             if reply == QMessageBox.StandardButton.No:
                 return False
         
-        # Auto-save workspace on successful exit
-        try:
-            workspace_path = os.path.expanduser("~/.hybmesh_workspace.json")
-            self._write_workspace_file(workspace_path)
-        except Exception as e:
-            print(f"Failed to auto-save workspace: {e}")
+        # Auto-save workspace on successful exit (disabled to start clean)
+        pass
 
         # Cancel and wait for all running background workers/threads to avoid crash on exit
         if hasattr(self, "_worker") and self._worker is not None:

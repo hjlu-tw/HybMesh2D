@@ -28,13 +28,15 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HybMesh PreProcessor")
-        self.setMinimumSize(1450, 900)
+        self.setMinimumSize(1200, 800)
         self.resize(1450, 900)
         self.setStyleSheet("background: #0c0d16; color: #a0a8c0;")
 
         # ── Sidebar Stack ─────────────────────────────────────────────────
         self.sidebar_stack = QStackedWidget(self)
-        self.sidebar_stack.setFixedWidth(350)
+        self.sidebar_stack.setMinimumWidth(300)
+        self.sidebar_stack.setMaximumWidth(430)
+        self.sidebar_stack.setFixedWidth(360)
 
         self.sidebar_view = SidebarView(self.sidebar_stack)
         self.sidebar_stack.addWidget(self.sidebar_view)
@@ -200,7 +202,7 @@ class MainWindow(QMainWindow):
         self.focus_geom_btn = create_tb_btn("Fit to View", "Fit canvas view to selected geometry")
         
         # New CAD Previews
-        self.cad_preview_btn = create_tb_btn("Preview Domain", "Run PreProcessor and preview geometry/boundary conditions")
+        self.cad_preview_btn = create_tb_btn("Preview", "Run PreProcessor and preview geometry/boundary conditions")
         self.cad_curve_preview_btn = create_tb_btn("Preview Edge", "Preview the selected curve equation")
         self.cad_file_preview_btn = create_tb_btn("Apply & Preview", "Apply and preview the selected imported file segment")
         self.cad_curve_preview_btn.setVisible(False)
@@ -249,20 +251,20 @@ class MainWindow(QMainWindow):
                 border-color: #4a5280;
             }
         """
-        self.select_vertex_btn = QPushButton("📍 Vertex", self.canvas_toolbar)
-        self.select_vertex_btn.setToolTip("Vertex Mode: clicking on canvas selects vertices")
-        self.select_vertex_btn.setCheckable(True)
-        self.select_vertex_btn.setChecked(True)
-        self.select_vertex_btn.setStyleSheet(toggle_btn_base + """
-            QPushButton { border-radius: 4px 0px 0px 4px; border-right: none; }
-        """)
-
-        self.select_edge_btn = QPushButton("↔ Edge", self.canvas_toolbar)
-        self.select_edge_btn.setToolTip("Edge Mode: clicking on canvas selects edges")
-        self.select_edge_btn.setCheckable(True)
-        self.select_edge_btn.setChecked(False)
-        self.select_edge_btn.setStyleSheet(toggle_btn_base + """
-            QPushButton { border-radius: 0px 4px 4px 0px; }
+        self.select_mode_combo = QComboBox(self.canvas_toolbar)
+        self.select_mode_combo.addItems(["Vertex", "Edge"])
+        self.select_mode_combo.setToolTip("Selection Mode: Choose whether clicking/selecting affects Vertices or Edges")
+        self.select_mode_combo.setStyleSheet("""
+            QComboBox {
+                background: #181b30;
+                color: #dde2ff;
+                border: 1px solid #2d3356;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-weight: bold;
+                font-size: 10px;
+                min-width: 80px;
+            }
         """)
 
         self.cad_sep3 = create_sep()
@@ -363,8 +365,7 @@ class MainWindow(QMainWindow):
         tb_layout.addWidget(self.show_nodes_cb)
         tb_layout.addWidget(self.quality_check_cb)
         tb_layout.addWidget(self.cad_sep3)
-        tb_layout.addWidget(self.select_vertex_btn)
-        tb_layout.addWidget(self.select_edge_btn)
+        tb_layout.addWidget(self.select_mode_combo)
 
         tb_layout.addWidget(self.mesh_preview_btn)
         tb_layout.addWidget(self.mesh_generate_btn)
@@ -405,7 +406,7 @@ class MainWindow(QMainWindow):
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2, self.cad_sep3,
-            self.select_vertex_btn, self.select_edge_btn,
+            self.select_mode_combo,
         ]
 
         self.mesh_tb_widgets = [

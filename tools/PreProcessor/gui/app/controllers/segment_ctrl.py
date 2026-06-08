@@ -11,7 +11,7 @@ from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd, AutoDetectSplit
 from app.commands.vertex_cmds import InsertVertexCmd
 from app.commands.segment_cmds import (
     UpdateStrategyCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd, UpdateMultipleSegmentsStateCmd,
-    CreateSegmentsFromIndicesCmd
+    CreateSegmentsFromIndicesCmd, RemoveSegmentCmd
 )
 from app.services.geometry_service import GeometryService
 from app.utils import CURVE_TYPE_LABELS
@@ -204,6 +204,19 @@ class SegmentControllerMixin:
 
         sb.split_btn.setEnabled(not is_split)
         sb.remove_split_btn.setEnabled(is_split and not is_endpoint)
+
+    def handle_point_deselected(self):
+        """Clear vertex selection when user clicks far from all vertices."""
+        session = self.active_session()
+        if not session:
+            return
+        session.selected_point_idx = None
+        self.main_window.canvas_view.update_selected_point(None)
+
+        sb = self.main_window.sidebar_view
+        sb.selected_info.setText("Selected Vertex: None")
+        sb.split_btn.setEnabled(False)
+        sb.remove_split_btn.setEnabled(False)
 
     def add_split_point(self):
         session = self.active_session()
@@ -544,8 +557,8 @@ class SegmentControllerMixin:
         if segment_ranges:
             self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, True)
 
-    def handle_canvas_segment_clicked(self, x: float, y: float):
-        """Handle a canvas click in edge selection mode: find and select the nearest segment."""
+    def handle_canvas_segment_clicked(self, x: float, y: float, extend_selection: bool = False):
+        """Handle a canvas click in edge selection mode: find and select/toggle the nearest segment."""
         session = self.active_session()
         if not session or session.original_points is None:
             return
@@ -611,18 +624,35 @@ class SegmentControllerMixin:
         sb.curve_segment_list.blockSignals(False)
         sb.curve_bake_btn.setEnabled(False)
 
-        # Find and select the item in file_segment_list
+        # Find and select/toggle the item in file_segment_list
         sb.file_segment_list.blockSignals(True)
+        found_item = None
         for r in range(sb.file_segment_list.count()):
             item = sb.file_segment_list.item(r)
             if item.data(Qt.ItemDataRole.UserRole) == best_seg_idx:
-                sb.file_segment_list.clearSelection()
-                item.setSelected(True)
-                sb.file_segment_list.setCurrentItem(item)
+                found_item = item
                 break
+
+        if found_item:
+            if extend_selection:
+                found_item.setSelected(not found_item.isSelected())
+                if found_item.isSelected():
+                    sb.file_segment_list.setCurrentItem(found_item)
+                    session.current_segment_idx = best_seg_idx
+                else:
+                    selected_items = sb.file_segment_list.selectedItems()
+                    if selected_items:
+                        session.current_segment_idx = selected_items[0].data(Qt.ItemDataRole.UserRole)
+                    else:
+                        session.current_segment_idx = -1
+            else:
+                sb.file_segment_list.clearSelection()
+                found_item.setSelected(True)
+                sb.file_segment_list.setCurrentItem(found_item)
+                session.current_segment_idx = best_seg_idx
         sb.file_segment_list.blockSignals(False)
 
-        self.handle_segment_selected(best_seg_idx)
+        self.handle_segment_selected(session.current_segment_idx)
         self.highlight_selected_segments()
 
 

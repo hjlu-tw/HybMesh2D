@@ -65,8 +65,11 @@ class MeshCanvasView(QWidget):
         # Filled graphics items list (Grouped paths for performance)
         self.filled_items: list[QGraphicsPathItem] = []
 
-        # Boundary condition colored items
+        # Boundary condition colored items (from actual mesh boundary edges)
         self.bc_items: list[pg.PlotDataItem] = []
+
+        # BC preview items drawn directly from domain box (no mesh needed)
+        self.bc_preview_items: list[pg.PlotDataItem] = []
 
         # Mouse coordinate tracking overlay
         self.coord_label = pg.TextItem('', anchor=(-0.1, 1.1), color=_CANVAS_FG)
@@ -86,8 +89,9 @@ class MeshCanvasView(QWidget):
         self.geom_preview_items: list[pg.PlotDataItem] = []
 
         # Empty state guide label
-        self.empty_label = QLabel("Please load geometry data in the CAD tab first.\n請先在 CAD 分頁載入幾何資料。", self)
+        self.empty_label = QLabel("Please load geometry data in the CAD tab first\nor load config file.", self)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setWordWrap(True)
         self.empty_label.setStyleSheet("""
             color: #6a7aaa;
             font-size: 13px;
@@ -122,6 +126,10 @@ class MeshCanvasView(QWidget):
             self.plot_widget.removeItem(item)
         self.bc_items.clear()
 
+        for item in self.bc_preview_items:
+            self.plot_widget.removeItem(item)
+        self.bc_preview_items.clear()
+
         for item in self.filled_items:
             self.plot_widget.removeItem(item)
         self.filled_items.clear()
@@ -148,6 +156,8 @@ class MeshCanvasView(QWidget):
         self._geom_loader_thread.start()
 
     def _on_geometry_previews_loaded(self, results: list[np.ndarray]):
+        # Store the loaded geometry data so we can re-highlight on failure
+        self._loaded_geom_data = results
         for pts in results:
             try:
                 # If the first and last points are not close, stack first point to close it visually
@@ -165,12 +175,60 @@ class MeshCanvasView(QWidget):
                 print(f"Error rendering loaded preview geometry: {e}")
         self._update_empty_state()
 
+    def highlight_error_geometry(self, geom_index: int):
+        """Highlight a specific geometry (0-based index) in red to indicate self-intersection failure.
+
+        Also re-renders all other geometries dimmed so the failed one stands out.
+        """
+        self.clear_error_highlights()
+        geom_data = getattr(self, '_loaded_geom_data', None)
+        if not geom_data:
+            return
+
+        for i, pts in enumerate(geom_data):
+            try:
+                display_pts = pts.copy()
+                if not np.allclose(display_pts[0], display_pts[-1]):
+                    display_pts = np.vstack((display_pts, display_pts[0]))
+                if i == geom_index:
+                    # Red, thick outline for the failed geometry
+                    item = self.plot_widget.plot(
+                        display_pts[:, 0], display_pts[:, 1],
+                        pen=pg.mkPen('#ff3333', width=4, style=Qt.PenStyle.SolidLine),
+                        symbol='o', symbolBrush='#ff5555', symbolSize=6
+                    )
+                    item.setZValue(25)
+                    self._error_highlight_items.append(item)
+                else:
+                    # Dim other geometries
+                    c = QColor('#4a5070')
+                    c.setAlpha(80)
+                    item = self.plot_widget.plot(
+                        display_pts[:, 0], display_pts[:, 1],
+                        pen=pg.mkPen(c, width=1, style=Qt.PenStyle.SolidLine),
+                    )
+                    item.setZValue(5)
+                    self._error_highlight_items.append(item)
+            except Exception as e:
+                print(f"Error highlighting error geometry {i}: {e}")
+
+    def clear_error_highlights(self):
+        """Remove any error-highlight geometry overlay items."""
+        for item in getattr(self, '_error_highlight_items', []):
+            try:
+                self.plot_widget.removeItem(item)
+            except Exception:
+                pass
+        self._error_highlight_items = []
+
+
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.empty_label.setGeometry(
-            (self.width() - 360) // 2,
+            (self.width() - 420) // 2,
             (self.height() - 100) // 2,
-            360,
+            420,
             100
         )
 
@@ -205,6 +263,8 @@ class MeshCanvasView(QWidget):
         self.show_bc_coloring = visible
         for item in self.bc_items:
             item.setVisible(visible)
+        for item in self.bc_preview_items:
+            item.setVisible(visible)
 
     def update_mesh_config(self, cfg: MeshConfig | None, fit_view: bool = False):
         """Sync MeshConfig mapping for domain box and boundary conditions rendering."""
@@ -216,6 +276,8 @@ class MeshCanvasView(QWidget):
                 self.mesh_config.domain_y_min,
                 self.mesh_config.domain_y_max
             )
+            # Always draw BC-colored segments on domain edges (preview, even without mesh)
+            self._rebuild_bc_preview_from_config()
             # Update geometry previews from config
             self.update_geometry_previews(self.mesh_config.geom_files)
             if self.mesh:
@@ -263,6 +325,41 @@ class MeshCanvasView(QWidget):
                 ymax = max(ymax, self.mesh_config.domain_y_max)
             self.plot_widget.setXRange(xmin, xmax, padding=0.06)
             self.plot_widget.setYRange(ymin, ymax, padding=0.06)
+
+    def _rebuild_bc_preview_from_config(self):
+        """Draw colored BC segments directly on the four domain boundary edges.
+
+        This works even before mesh generation, providing immediate visual feedback
+        for the configured boundary condition types.
+        """
+        for item in self.bc_preview_items:
+            self.plot_widget.removeItem(item)
+        self.bc_preview_items.clear()
+
+        if not self.mesh_config:
+            return
+
+        cfg = self.mesh_config
+        xmin, xmax = cfg.domain_x_min, cfg.domain_x_max
+        ymin, ymax = cfg.domain_y_min, cfg.domain_y_max
+
+        # Each side: (xs, ys, bc_config_value)
+        sides = [
+            ([xmin, xmin], [ymin, ymax], cfg.bc_xmin.lower()),  # left
+            ([xmax, xmax], [ymin, ymax], cfg.bc_xmax.lower()),  # right
+            ([xmin, xmax], [ymin, ymin], cfg.bc_ymin.lower()),  # bottom
+            ([xmin, xmax], [ymax, ymax], cfg.bc_ymax.lower()),  # top
+        ]
+
+        for xs, ys, bc_val in sides:
+            color_str = BC_COLORS.get(bc_val, DEFAULT_BC_COLOR)
+            item = self.plot_widget.plot(
+                xs, ys,
+                pen=pg.mkPen(color_str, width=4, style=Qt.PenStyle.SolidLine)
+            )
+            item.setZValue(18)
+            item.setVisible(self.show_bc_coloring)
+            self.bc_preview_items.append(item)
 
     def _rebuild_mesh_geometry(self):
         """Construct only the wireframe, domain box, and boundary condition lines."""

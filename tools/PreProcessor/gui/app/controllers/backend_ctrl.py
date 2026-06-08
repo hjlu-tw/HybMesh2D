@@ -93,7 +93,8 @@ class BackendControllerMixin:
         cfg_path, created_files = self._write_temp_config(session, tmp_out_name)
         to_cleanup = created_files + [tmp_out_name]
 
-        self.main_window.sidebar_view.preview_btn.setEnabled(False)
+        if self.main_window.sidebar_view.preview_btn:
+            self.main_window.sidebar_view.preview_btn.setEnabled(False)
         self.main_window.log_panel.log("--- Preview: Starting Backend ---")
         self._run_backend(exe, cfg_path, session,
                           on_finish=lambda rc: self._on_preview_finished(
@@ -185,7 +186,8 @@ class BackendControllerMixin:
 
     def _on_preview_finished(self, rc: int, tmp_out: str, to_cleanup: list[str],
                              session: GeometrySession):
-        self.main_window.sidebar_view.preview_btn.setEnabled(True)
+        if self.main_window.sidebar_view.preview_btn:
+            self.main_window.sidebar_view.preview_btn.setEnabled(True)
         try:
             if rc == 0 and os.path.exists(tmp_out):
                 try:

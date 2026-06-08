@@ -115,3 +115,7 @@ class LogPanel(QWidget):
     def clear_log(self):
         """Clear all messages from the log."""
         self.text_edit.clear()
+
+    def get_log_text(self) -> str:
+        """Return the plain text content of the log (strips HTML formatting)."""
+        return self.text_edit.toPlainText()

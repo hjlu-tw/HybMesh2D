@@ -1,12 +1,75 @@
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox, QLineEdit, QLabel
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QWidget, QHBoxLayout, QComboBox, QLineEdit, QLabel,
+    QStyledItemDelegate, QStyleOptionViewItem
+)
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PyQt6.QtGui import QColor, QFont
 from app.utils import COMBO_STYLE, LINEEDIT_STYLE, BC_COLORS, DEFAULT_BC_COLOR
+
+# BC type definitions: (display_name, technical_name, config_value)
+# config_value is what gets written to the config file / returned by text()
+BC_TYPE_DEFS = [
+    ("inlet",       "FIXED_BC",             "inlet"),
+    ("outlet",      "NON_REFLECT_BC",        "outlet"),
+    ("WALL",        "NO_SLIP_BC_ADIAW",      "wall"),
+    ("SYMP",        "REFLECT_BC",            "symmetry"),
+    ("isothermal",  "NO_SLIP_BC_ACONTW",     "isothermal"),
+    ("FREE",        "FIXED_BC",              "free"),
+    ("Custom",      "",                      "custom"),
+]
+
+
+class _BCTypeDelegate(QStyledItemDelegate):
+    """Custom delegate that renders BC items with a bold display name and
+    a smaller, muted technical name on the same line."""
+
+    def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
+        return QSize(0, 30)
+
+    def paint(self, painter, option, index):
+        from PyQt6.QtWidgets import QStyle, QApplication
+        # Draw the background (selection / hover)
+        style = QApplication.style()
+        style.drawPrimitive(QStyle.PrimitiveElement.PE_PanelItemViewItem, option, painter)
+
+        display_name = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        tech_name = index.data(Qt.ItemDataRole.UserRole) or ""
+
+        rect = option.rect
+        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        text_color = QColor("#ffffff") if is_selected else QColor("#c8d0e8")
+        tech_color = QColor("#cccccc") if is_selected else QColor("#606880")
+
+        x = rect.left() + 8
+        y_mid = rect.top() + rect.height() // 2 + 4  # +4 to vertically center text
+
+        # Display name (bold, normal size)
+        painter.save()
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(9)
+        painter.setFont(font)
+        painter.setPen(text_color)
+        painter.drawText(x, y_mid, display_name)
+
+        # Technical name (small, muted, after display name)
+        if tech_name:
+            fm = painter.fontMetrics()
+            name_w = fm.horizontalAdvance(display_name)
+            font2 = QFont(font)
+            font2.setBold(False)
+            font2.setPointSize(7)
+            painter.setFont(font2)
+            painter.setPen(tech_color)
+            painter.drawText(x + name_w + 6, y_mid, f"({tech_name})")
+        painter.restore()
+
 
 class BCWidget(QWidget):
     """
     A unified boundary condition selector widget.
-    Dropdown list for Wall, Inlet, Outlet, Farfield, Symmetry.
+    Dropdown list for supported BC types with technical names shown as smaller secondary text.
     Includes a 'Custom' option which reveals a text field to input custom BC names.
     Includes a colored indicator square corresponding to the selected boundary condition.
     """
@@ -19,8 +82,21 @@ class BCWidget(QWidget):
         self.layout.setSpacing(4)
 
         self.combo = QComboBox()
-        self.combo.addItems(["Wall", "Inlet", "Outlet", "Farfield", "Symmetry", "Custom"])
         self.combo.setStyleSheet(COMBO_STYLE)
+        self.combo.setItemDelegate(_BCTypeDelegate(self.combo))
+        self.combo.setMinimumWidth(90)
+        self.combo.setMaximumWidth(160)
+
+        for display_name, tech_name, _ in BC_TYPE_DEFS:
+            self.combo.addItem(display_name)
+            idx = self.combo.count() - 1
+            self.combo.setItemData(idx, tech_name, Qt.ItemDataRole.UserRole)
+            if tech_name:
+                self.combo.setItemData(
+                    idx,
+                    f"{display_name}  —  {tech_name}",
+                    Qt.ItemDataRole.ToolTipRole
+                )
 
         self.custom = QLineEdit()
         self.custom.setStyleSheet(LINEEDIT_STYLE)
@@ -53,25 +129,49 @@ class BCWidget(QWidget):
         self.textChanged.emit(self.text())
 
     def text(self) -> str:
-        t = self.combo.currentText()
-        if t == "Custom":
+        """Return the config-file value for the selected BC type."""
+        display = self.combo.currentText()
+        if display == "Custom":
             return self.custom.text().strip()
-        return t.lower()
+        # Look up config value from definitions
+        for disp, tech, config_val in BC_TYPE_DEFS:
+            if disp == display:
+                return config_val
+        return display.lower()
 
     def setText(self, val: str):
+        """Set the widget from a config-file value or display name."""
         val_clean = val.strip()
         val_lower = val_clean.lower()
-        standards = ["wall", "inlet", "outlet", "farfield", "symmetry"]
+
         self.combo.blockSignals(True)
         self.custom.blockSignals(True)
         try:
-            if val_lower in standards:
-                idx = standards.index(val_lower)
-                self.combo.setCurrentIndex(idx)
-                self.custom.setVisible(False)
-                self.custom.clear()
-            else:
-                self.combo.setCurrentText("Custom")
+            matched = False
+            # Try to match by config value
+            for i, (disp, tech, config_val) in enumerate(BC_TYPE_DEFS):
+                if val_lower == config_val and disp != "Custom":
+                    self.combo.setCurrentIndex(i)
+                    self.custom.setVisible(False)
+                    self.custom.clear()
+                    matched = True
+                    break
+            if not matched:
+                # Try to match by display name (case-insensitive)
+                for i, (disp, tech, config_val) in enumerate(BC_TYPE_DEFS):
+                    if val_lower == disp.lower() and disp != "Custom":
+                        self.combo.setCurrentIndex(i)
+                        self.custom.setVisible(False)
+                        self.custom.clear()
+                        matched = True
+                        break
+            if not matched:
+                # Fall back to custom
+                custom_idx = next(
+                    (i for i, (d, _, _) in enumerate(BC_TYPE_DEFS) if d == "Custom"), -1
+                )
+                if custom_idx >= 0:
+                    self.combo.setCurrentIndex(custom_idx)
                 self.custom.setText(val_clean)
                 self.custom.setVisible(True)
             self._update_indicator()

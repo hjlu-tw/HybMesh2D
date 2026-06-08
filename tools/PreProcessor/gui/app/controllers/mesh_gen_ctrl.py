@@ -250,6 +250,7 @@ class MeshGenControllerMixin:
         # Check return code
         if rc == 0:
             self.main_window.log_panel.log("--- Mesh Generation Success ---")
+            self.main_window.mesh_canvas_view.clear_error_highlights()
             if os.path.exists(expected_vtk_path):
                 try:
                     mesh = VTKMesh.from_file(expected_vtk_path)
@@ -270,6 +271,26 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log("--- Mesh Generation Timed Out (10 min) ---")
         else:
             self.main_window.log_panel.log(f"--- Mesh Generation Failed (code {rc}) ---")
+            # Try to detect self-intersection errors and highlight the failed geometry
+            self._try_highlight_self_intersection_error()
+
+    def _try_highlight_self_intersection_error(self):
+        """Parse log output for self-intersection error and highlight the offending geometry."""
+        import re
+        log_text = self.main_window.log_panel.get_log_text()
+        # C++ prints: "Error: Self-intersection detected in the final front of Geometry N."
+        match = re.search(
+            r"Self-intersection detected.*?Geometry\s+(\d+)",
+            log_text, re.IGNORECASE
+        )
+        if match:
+            geom_id = int(match.group(1))
+            self.main_window.log_panel.log(
+                f"[GUI] Self-intersection found in Geometry {geom_id} — highlighted on canvas."
+            )
+            self.main_window.mesh_canvas_view.highlight_error_geometry(geom_id)
+        else:
+            self.main_window.mesh_canvas_view.clear_error_highlights()
 
     def export_generated_vtk(self):
         """Export the generated VTK mesh file to a user-selected path."""

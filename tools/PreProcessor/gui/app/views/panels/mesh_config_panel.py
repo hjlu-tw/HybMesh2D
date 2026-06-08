@@ -432,7 +432,13 @@ class MeshConfigPanel(QScrollArea):
         io_form.addRow(help_label("Output Filename:", "Base filename for mesh output files (extension .* means all formats)"), self.output_filename)
         io_form.addRow("", help_widget(self.enable_collision_detection, "Enable self-intersection detection during boundary layer generation"))
         io_form.addRow(help_label("Export:", "Export options for outputting mesh files in various formats"), export_layout)
-        align_form_labels(io_form, 130)
+        # Use a fixed label width for the BC section to prevent column expansion
+        _bc_label_width = 105
+        io_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        for i in range(io_form.rowCount()):
+            lbl_item = io_form.itemAt(i, QFormLayout.ItemRole.LabelRole)
+            if lbl_item and lbl_item.widget():
+                lbl_item.widget().setFixedWidth(_bc_label_width)
         self.sec_io.add_layout(io_form)
 
         # Spacer at the end

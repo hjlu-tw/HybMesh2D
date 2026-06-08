@@ -29,6 +29,9 @@ BC_COLORS = {
     "inlet": '#22c55e',
     "outlet": '#3b82f6',
     "symmetry": '#f97316',
+    "symp": '#f97316',       # alias for symmetry
+    "isothermal": '#a855f7', # purple — isothermal wall
+    "free": '#eab308',       # yellow — free boundary
 }
 DEFAULT_BC_COLOR = '#9ca3af'
 
@@ -70,7 +73,9 @@ def align_form_labels(layout: QFormLayout, width: int = 120):
         if label_item:
             lbl = label_item.widget()
             if lbl:
-                lbl.setFixedWidth(width)
+                lbl.setMinimumWidth(width)
+                if isinstance(lbl, QLabel):
+                    lbl.setWordWrap(True)
 
 
 # ---------------------------------------------------------------------------

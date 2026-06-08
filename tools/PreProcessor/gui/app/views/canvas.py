@@ -138,7 +138,9 @@ class CanvasView(QWidget):
     """
 
     point_clicked = pyqtSignal(int)       # nearest vertex index in active session's points
-    segment_clicked = pyqtSignal(float, float)  # canvas coords when in edge selection mode
+    point_deselected = pyqtSignal()        # emitted when clicking far from all vertices (deselect)
+    segment_clicked = pyqtSignal(float, float, bool)  # (x, y, extend_selection)
+
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -184,10 +186,9 @@ class CanvasView(QWidget):
         self.color_coded_segments.setZValue(9)
         self.plot_widget.addItem(self.color_coded_segments)
 
-        # Active segment — thick orange with symbols
+        # Active segment — thick orange without symbols
         self.active_segment_curve = self.plot_widget.plot(
-            pen=pg.mkPen(_COL_ACTIVE, width=4),
-            symbol='o', symbolBrush=_COL_ACTIVE, symbolSize=5)
+            pen=pg.mkPen(_COL_ACTIVE, width=4))
         self.active_segment_curve.setZValue(20)
 
         # Split points — red dots
@@ -380,7 +381,6 @@ class CanvasView(QWidget):
         for sid, curve in self._geometries.items():
             curve.setSymbol('o' if visible else None)
         
-        self.active_segment_curve.setSymbol('o' if visible else None)
         self.duplicate_preview_curve.setSymbol('o' if visible else None)
 
         for sid, items in self._curve_segment_items.items():
@@ -472,6 +472,8 @@ class CanvasView(QWidget):
             self.split_scatter.setData(sp[:, 0], sp[:, 1])
         else:
             self.split_scatter.clear()
+        # Only show in vertex mode
+        self.split_scatter.setVisible(self._selection_mode == 'vertex')
 
     def update_selected_point(self, idx: int | None):
         if self._active_points is not None and idx is not None:
@@ -479,10 +481,30 @@ class CanvasView(QWidget):
             self.selected_scatter.setData([pt[0]], [pt[1]])
         else:
             self.selected_scatter.clear()
+        # Only show in vertex mode
+        self.selected_scatter.setVisible(self._selection_mode == 'vertex')
 
     def set_selection_mode(self, mode: str):
-        """Set the canvas click selection mode: 'vertex' or 'edge'."""
+        """Set the canvas click selection mode: 'vertex' or 'edge'.
+
+        Also updates overlay visibility so that:
+        - In 'vertex' mode: vertex selection markers (split points, selected point)
+          are visible; segment highlight overlays are hidden.
+        - In 'edge' mode: segment highlight overlays are visible; vertex markers
+          are hidden.
+        """
         self._selection_mode = mode
+        is_vertex = (mode == 'vertex')
+        is_edge = (mode == 'edge')
+
+        # Vertex-mode overlays
+        self.split_scatter.setVisible(is_vertex)
+        self.selected_scatter.setVisible(is_vertex)
+
+        # Edge-mode overlays: keep existing segment highlights visible only in edge mode
+        self.active_segment_curve.setVisible(is_edge)
+        for item in self._multi_segment_curves:
+            item.setVisible(is_edge)
 
     def update_active_segment(self, start_idx: int | None,
                                end_idx: int | None):
@@ -493,6 +515,8 @@ class CanvasView(QWidget):
             self.active_segment_curve.setData(sp[:, 0], sp[:, 1])
         else:
             self.active_segment_curve.setData([], [])
+        # Only show in edge mode
+        self.active_segment_curve.setVisible(self._selection_mode == 'edge')
 
     def update_active_segments(self, segment_ranges: list[tuple[int, int]],
                                 primary_idx: int = -1):
@@ -525,10 +549,10 @@ class CanvasView(QWidget):
             zval = 20 if is_primary else 18
             item = self.plot_widget.plot(
                 sp[:, 0], sp[:, 1],
-                pen=pg.mkPen(color, width=width),
-                symbol='o', symbolBrush=pg.mkBrush(color), symbolSize=5 if is_primary else 4
+                pen=pg.mkPen(color, width=width)
             )
             item.setZValue(zval)
+            item.setVisible(self._selection_mode == 'edge')
             self._multi_segment_curves.append(item)
 
         # Clear the single active_segment_curve to avoid double drawing
@@ -673,9 +697,15 @@ class CanvasView(QWidget):
         x, y = pos.x(), pos.y()
 
         if self._selection_mode == 'edge':
-            # In edge mode: emit segment_clicked with canvas coordinates
+            # In edge mode: emit segment_clicked with canvas coordinates and extend_selection flag
             # (segment resolution is done in the controller via point proximity)
-            self.segment_clicked.emit(x, y)
+            modifiers = event.modifiers()
+            extend_selection = bool(modifiers & (
+                Qt.KeyboardModifier.ControlModifier |
+                Qt.KeyboardModifier.ShiftModifier |
+                Qt.KeyboardModifier.MetaModifier
+            ))
+            self.segment_clicked.emit(x, y, extend_selection)
             return
 
         # Vertex mode (default): find nearest point and emit point_clicked
@@ -691,6 +721,9 @@ class CanvasView(QWidget):
         pixel_dist = ((p1.x() - p2.x())**2 + (p1.y() - p2.y())**2)**0.5
         if pixel_dist < 30:  # 30 pixel threshold
             self.point_clicked.emit(nearest_idx)
+        else:
+            # Click was far from all vertices — emit deselect
+            self.point_deselected.emit()
 
     def _on_mouse_moved(self, pos):
         self._last_mouse_pos = pos

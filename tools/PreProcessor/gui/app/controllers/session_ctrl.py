@@ -106,6 +106,10 @@ class SessionControllerMixin:
         # Remove geometry from shared canvas
         self.main_window.canvas_view.remove_geometry(session.session_id)
 
+        # If closing the currently active session, clear the mesh canvas previews
+        if idx == self.active_idx:
+            self.main_window.mesh_canvas_view.update_geometry_previews([])
+
         # Block signals during tab removal and list popping to keep states synchronized
         self.main_window.tab_widget.blockSignals(True)
         self.main_window.tab_widget.removeTab(idx)
