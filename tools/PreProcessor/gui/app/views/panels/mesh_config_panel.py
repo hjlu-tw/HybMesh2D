@@ -27,7 +27,7 @@ class MeshConfigPanel(QScrollArea):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("background: #0c0d16;")
 
@@ -54,6 +54,7 @@ class MeshConfigPanel(QScrollArea):
 
         content = QWidget()
         content.setStyleSheet("background: #121422; color: #a0a8c0;")
+        content.setMaximumWidth(430)  # Prevent content from expanding beyond sidebar
         self._layout = QVBoxLayout(content)
         self._layout.setContentsMargins(6, 6, 6, 6)
         self._layout.setSpacing(6)
@@ -419,8 +420,8 @@ class MeshConfigPanel(QScrollArea):
             }
         """)
 
-        export_layout = QHBoxLayout()
-        export_layout.setSpacing(6)
+        export_layout = QVBoxLayout()
+        export_layout.setSpacing(4)
         export_layout.addWidget(help_widget(self.export_vtk_btn, "Export the generated mesh to a VTK file (.vtk)"))
         export_layout.addWidget(help_widget(self.export_starcd_btn, "Export the generated mesh to STAR-CD files (.vrt, .cel, .bnd)"))
 
@@ -428,17 +429,13 @@ class MeshConfigPanel(QScrollArea):
         io_form.addRow(help_label("BC XMax:", "Boundary condition type for the right domain boundary"), self.bc_xmax)
         io_form.addRow(help_label("BC YMin:", "Boundary condition type for the bottom domain boundary"), self.bc_ymin)
         io_form.addRow(help_label("BC YMax:", "Boundary condition type for the top domain boundary"), self.bc_ymax)
-        io_form.addRow(help_label("BC Geom (Wall):", "Boundary condition type assigned to the geometry wall surface"), self.bc_geom)
-        io_form.addRow(help_label("Output Filename:", "Base filename for mesh output files (extension .* means all formats)"), self.output_filename)
+        io_form.addRow(help_label("BC Geom:", "Boundary condition type assigned to the geometry wall surface"), self.bc_geom)
+        io_form.addRow(help_label("Output File:", "Base filename for mesh output files (extension .* means all formats)"), self.output_filename)
         io_form.addRow("", help_widget(self.enable_collision_detection, "Enable self-intersection detection during boundary layer generation"))
         io_form.addRow(help_label("Export:", "Export options for outputting mesh files in various formats"), export_layout)
-        # Use a fixed label width for the BC section to prevent column expansion
-        _bc_label_width = 105
-        io_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        for i in range(io_form.rowCount()):
-            lbl_item = io_form.itemAt(i, QFormLayout.ItemRole.LabelRole)
-            if lbl_item and lbl_item.widget():
-                lbl_item.widget().setFixedWidth(_bc_label_width)
+        align_form_labels(io_form, 130)
+        # Override field growth policy to allow fields to shrink within sidebar
+        io_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.sec_io.add_layout(io_form)
 
         # Spacer at the end
