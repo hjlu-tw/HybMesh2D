@@ -44,4 +44,11 @@ inline bool segmentsIntersect(Point2D a, Point2D b, Point2D c, Point2D d) {
     return (ab_c * ab_d < 0 && cd_a * cd_b < 0);
 }
 
+inline Point2D getIntersectionPoint(Point2D a, Point2D b, Point2D c, Point2D d) {
+    double denom = (b - a).cross(d - c);
+    if (std::abs(denom) < 1e-12) return (a + b + c + d) * 0.25;
+    double t = (c - a).cross(d - c) / denom;
+    return a + (b - a) * t;
+}
+
 #endif

@@ -519,7 +519,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 Point2D d = m_mesh.nodes[fs.activeFront[(k + 1) % nNodes]].pos;
 
                 if (segmentsIntersect(a, b, c, d)) {
-                    throw std::runtime_error("Error: Self-intersection detected in the final front of Geometry " + std::to_string(fs.geomId) + ".");
+                    Point2D pt = getIntersectionPoint(a, b, c, d);
+                    throw std::runtime_error("Error: Self-intersection detected in the final front of Geometry " + std::to_string(fs.geomId) + " at point (" + std::to_string(pt.x) + ", " + std::to_string(pt.y) + ").");
                 }
             }
         }
@@ -535,7 +536,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     Point2D c = m_mesh.nodes[fs2.activeFront[k2]].pos;
                     Point2D d = m_mesh.nodes[fs2.activeFront[(k2 + 1) % nNodes2]].pos;
                     if (segmentsIntersect(a, b, c, d)) {
-                        throw std::runtime_error("Error: Intersection detected between Geometry " + std::to_string(fs.geomId) + " and Geometry " + std::to_string(fs2.geomId) + " at the final front.");
+                        Point2D pt = getIntersectionPoint(a, b, c, d);
+                        throw std::runtime_error("Error: Intersection detected between Geometry " + std::to_string(fs.geomId) + " and Geometry " + std::to_string(fs2.geomId) + " at the final front at point (" + std::to_string(pt.x) + ", " + std::to_string(pt.y) + ").");
                     }
                 }
             }
