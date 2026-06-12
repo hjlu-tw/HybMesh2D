@@ -136,6 +136,23 @@ class MeshCanvasView(QWidget):
         self.coord_label.setText("")
         self._update_empty_state()
 
+    def clear_mesh_results(self):
+        """Clear only the mesh-related output components, leaving inputs (geometry previews, domain box, BC previews) intact."""
+        self.mesh = None
+        if self.wireframe_item is not None:
+            self.plot_widget.removeItem(self.wireframe_item)
+            self.wireframe_item = None
+
+        for item in self.bc_items:
+            self.plot_widget.removeItem(item)
+        self.bc_items.clear()
+
+        for item in self.filled_items:
+            self.plot_widget.removeItem(item)
+        self.filled_items.clear()
+        self._update_empty_state()
+
+
     def update_geometry_previews(self, geom_files: list[str]):
         """Load and display the input boundary geometries as preview lines using a background thread."""
         for item in self.geom_preview_items:
@@ -175,27 +192,28 @@ class MeshCanvasView(QWidget):
                 print(f"Error rendering loaded preview geometry: {e}")
         self._update_empty_state()
 
-    def highlight_error_geometry(self, geom_index: int):
-        """Highlight a specific geometry (0-based index) in red to indicate self-intersection failure.
+    def highlight_error_geometry(self, geom_index: int | list[int]):
+        """Highlight a specific geometry or list of geometries (0-based index) in red to indicate self-intersection failure.
 
-        Also re-renders all other geometries dimmed so the failed one stands out.
+        Also re-renders all other geometries dimmed so the failed ones stand out.
         """
         self.clear_error_highlights()
         geom_data = getattr(self, '_loaded_geom_data', None)
         if not geom_data:
             return
 
+        target_indices = {geom_index} if isinstance(geom_index, int) else set(geom_index)
+
         for i, pts in enumerate(geom_data):
             try:
                 display_pts = pts.copy()
                 if not np.allclose(display_pts[0], display_pts[-1]):
                     display_pts = np.vstack((display_pts, display_pts[0]))
-                if i == geom_index:
+                if i in target_indices:
                     # Red, thick outline for the failed geometry
                     item = self.plot_widget.plot(
                         display_pts[:, 0], display_pts[:, 1],
-                        pen=pg.mkPen('#ff3333', width=4, style=Qt.PenStyle.SolidLine),
-                        symbol='o', symbolBrush='#ff5555', symbolSize=6
+                        pen=pg.mkPen('#ff3333', width=4, style=Qt.PenStyle.SolidLine)
                     )
                     item.setZValue(25)
                     self._error_highlight_items.append(item)
@@ -211,6 +229,19 @@ class MeshCanvasView(QWidget):
                     self._error_highlight_items.append(item)
             except Exception as e:
                 print(f"Error highlighting error geometry {i}: {e}")
+
+    def highlight_self_intersection_point(self, x: float, y: float):
+        """Draw a prominent marker at the self-intersection coordinate."""
+        item = self.plot_widget.plot(
+            [x], [y],
+            symbol='x',
+            symbolSize=14,
+            symbolPen=pg.mkPen('#ff3333', width=3)
+        )
+        item.setZValue(30)
+        if not hasattr(self, '_error_highlight_items'):
+            self._error_highlight_items = []
+        self._error_highlight_items.append(item)
 
     def clear_error_highlights(self):
         """Remove any error-highlight geometry overlay items."""

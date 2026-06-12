@@ -3,9 +3,9 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu, QProgressBar
+    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu, QProgressBar, QGridLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
 from app.views.sidebar import SidebarView
 from app.views.canvas import CanvasView
@@ -161,11 +161,11 @@ class MainWindow(QMainWindow):
 
         # ── Canvas Toolbar ────────────────────────────────────────────────
         self.canvas_toolbar = QWidget(self.right_panel)
-        self.canvas_toolbar.setFixedHeight(36)
         self.canvas_toolbar.setStyleSheet("background: #06070d; border-bottom: 1px solid #1c1e36;")
-        tb_layout = QHBoxLayout(self.canvas_toolbar)
-        tb_layout.setContentsMargins(10, 0, 10, 0)
-        tb_layout.setSpacing(8)
+        self.tb_layout = QGridLayout(self.canvas_toolbar)
+        self.tb_layout.setContentsMargins(10, 2, 10, 2)
+        self.tb_layout.setHorizontalSpacing(8)
+        self.tb_layout.setVerticalSpacing(4)
 
         # Helper to create buttons
         def create_tb_btn(text: str, tooltip: str) -> QPushButton:
@@ -199,12 +199,12 @@ class MainWindow(QMainWindow):
 
         self.undo_btn = create_tb_btn("Undo", "Undo last action (Ctrl+Z)")
         self.redo_btn = create_tb_btn("Redo", "Redo last action (Ctrl+Shift+Z)")
-        self.focus_geom_btn = create_tb_btn("Fit to View", "Fit canvas view to selected geometry")
+        self.focus_geom_btn = create_tb_btn("Fit View", "Fit canvas view to selected geometry")
         
         # New CAD Previews
         self.cad_preview_btn = create_tb_btn("Preview", "Run PreProcessor and preview geometry/boundary conditions")
         self.cad_curve_preview_btn = create_tb_btn("Preview Edge", "Preview the selected curve equation")
-        self.cad_file_preview_btn = create_tb_btn("Apply & Preview", "Apply and preview the selected imported file segment")
+        self.cad_file_preview_btn = create_tb_btn("Apply", "Apply and preview the selected imported file segment")
         self.cad_curve_preview_btn.setVisible(False)
         self.cad_file_preview_btn.setVisible(False)
 
@@ -219,16 +219,35 @@ class MainWindow(QMainWindow):
         self.cad_sep1 = create_sep()
         self.cad_sep2 = create_sep()
 
-        self.show_vertices_cb = QCheckBox("Show Geometry Vertices", self.canvas_toolbar)
+        self.show_vertices_cb = QCheckBox("Vertices", self.canvas_toolbar)
+        self.show_vertices_cb.setToolTip("Show/hide geometry vertices (points) on the canvas")
         self.show_vertices_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.show_vertices_cb.setChecked(True)
 
-        self.show_nodes_cb = QCheckBox("Show Resampled Nodes", self.canvas_toolbar)
+        self.show_nodes_cb = QCheckBox("Nodes", self.canvas_toolbar)
+        self.show_nodes_cb.setToolTip("Show/hide resampled nodes on the canvas")
         self.show_nodes_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.show_nodes_cb.setChecked(True)
 
-        self.quality_check_cb = QCheckBox("Show Quality Heatmap", self.canvas_toolbar)
+        self.quality_check_cb = QCheckBox("Heatmap", self.canvas_toolbar)
+        self.quality_check_cb.setToolTip("Show/hide geometry quality heatmap (Length / Ratio)")
         self.quality_check_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
+
+        self.quality_mode_combo = QComboBox(self.canvas_toolbar)
+        self.quality_mode_combo.addItems(["Length", "Ratio"])
+        self.quality_mode_combo.setStyleSheet("""
+            QComboBox {
+                background: #181b30;
+                color: #dde2ff;
+                border: 1px solid #2d3356;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-weight: bold;
+                font-size: 10px;
+                min-width: 80px;
+            }
+        """)
+        self.quality_mode_combo.setVisible(False)
 
         # Select Mode Toggle Buttons
         toggle_btn_base = """
@@ -251,8 +270,11 @@ class MainWindow(QMainWindow):
                 border-color: #4a5280;
             }
         """
+        self.select_mode_label = QLabel("Edit:", self.canvas_toolbar)
+        self.select_mode_label.setStyleSheet("color: #a0a8c0; font-size: 11px; font-weight: bold; margin-left: 4px;")
+
         self.select_mode_combo = QComboBox(self.canvas_toolbar)
-        self.select_mode_combo.addItems(["Vertex", "Edge"])
+        self.select_mode_combo.addItems(["Vertex (Point)", "Edge (Segment)"])
         self.select_mode_combo.setToolTip("Selection Mode: Choose whether clicking/selecting affects Vertices or Edges")
         self.select_mode_combo.setStyleSheet("""
             QComboBox {
@@ -263,7 +285,7 @@ class MainWindow(QMainWindow):
                 padding: 3px 8px;
                 font-weight: bold;
                 font-size: 10px;
-                min-width: 80px;
+                min-width: 120px;
             }
         """)
 
@@ -271,7 +293,7 @@ class MainWindow(QMainWindow):
 
         # Mesh Generation Toolbar controls
         self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
-        self.mesh_generate_btn = create_tb_btn("Mesh Generate", "Run HybMesh2D to generate grid")
+        self.mesh_generate_btn = create_tb_btn("Generate", "Run HybMesh2D to generate grid")
         self.mesh_generate_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1e4620;
@@ -312,17 +334,20 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        self.mesh_focus_btn = create_tb_btn("Fit to View", "Fit canvas to mesh or preview boundaries")
+        self.mesh_focus_btn = create_tb_btn("Fit View", "Fit canvas to mesh or preview boundaries")
 
         self.mesh_show_wireframe_cb = QCheckBox("Mesh", self.canvas_toolbar)
+        self.mesh_show_wireframe_cb.setToolTip("Show/hide mesh wireframe")
         self.mesh_show_wireframe_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.mesh_show_wireframe_cb.setChecked(True)
 
         self.mesh_show_bc_cb = QCheckBox("BCs", self.canvas_toolbar)
+        self.mesh_show_bc_cb.setToolTip("Show/hide boundary conditions")
         self.mesh_show_bc_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.mesh_show_bc_cb.setChecked(True)
 
         self.mesh_show_domain_cb = QCheckBox("Domain", self.canvas_toolbar)
+        self.mesh_show_domain_cb.setToolTip("Show/hide calculation domain boundary")
         self.mesh_show_domain_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.mesh_show_domain_cb.setChecked(True)
 
@@ -353,28 +378,6 @@ class MainWindow(QMainWindow):
         self.mesh_sep3 = create_sep()
         self.mesh_sep4 = create_sep()
 
-        tb_layout.addWidget(self.undo_btn)
-        tb_layout.addWidget(self.redo_btn)
-        tb_layout.addWidget(self.cad_sep1)
-        tb_layout.addWidget(self.focus_geom_btn)
-        tb_layout.addWidget(self.cad_preview_btn)
-        tb_layout.addWidget(self.cad_curve_preview_btn)
-        tb_layout.addWidget(self.cad_file_preview_btn)
-        tb_layout.addWidget(self.cad_sep2)
-        tb_layout.addWidget(self.show_vertices_cb)
-        tb_layout.addWidget(self.show_nodes_cb)
-        tb_layout.addWidget(self.quality_check_cb)
-        tb_layout.addWidget(self.cad_sep3)
-        tb_layout.addWidget(self.select_mode_combo)
-
-        tb_layout.addWidget(self.mesh_preview_btn)
-        tb_layout.addWidget(self.mesh_generate_btn)
-        tb_layout.addWidget(self.mesh_cancel_btn)
-        tb_layout.addWidget(self.mesh_sep2)
-        tb_layout.addWidget(self.mesh_focus_btn)
-        tb_layout.addWidget(self.mesh_sep3)
-        tb_layout.addWidget(self.mesh_show_wireframe_cb)
-        tb_layout.addWidget(self.mesh_show_bc_cb)
         self.progress_bar = QProgressBar(self.canvas_toolbar)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setFixedHeight(12)
@@ -393,19 +396,13 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        tb_layout.addWidget(self.mesh_show_domain_cb)
-        tb_layout.addWidget(self.mesh_sep4)
-        tb_layout.addWidget(self.mesh_color_label)
-        tb_layout.addWidget(self.mesh_color_mode_combo)
-        tb_layout.addWidget(self.progress_bar)
-        tb_layout.addStretch(1)
-
         # Track layouts for visibility toggling
         self.cad_tb_widgets = [
             self.focus_geom_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2, self.cad_sep3,
+            self.select_mode_label,
             self.select_mode_combo,
         ]
 
@@ -441,6 +438,15 @@ class MainWindow(QMainWindow):
         hl.addWidget(self.sidebar_stack)
         hl.addWidget(self.right_panel, stretch=1)
         self.setCentralWidget(self.central)
+
+        # Install event filter on all toolbar widgets to detect visibility changes dynamically
+        always_visible_tb_widgets = [self.undo_btn, self.redo_btn, self.cad_sep1]
+        all_toolbar_widgets = self.cad_tb_widgets + self.mesh_tb_widgets + always_visible_tb_widgets + [self.progress_bar, self.quality_mode_combo]
+        for w in all_toolbar_widgets:
+            w.installEventFilter(self)
+
+        self._layout_queued = False
+        self.adjust_toolbar_layout()
 
         # ── Log console (dock, bottom) ────────────────────────────────────
         self.log_panel = LogPanel(self)
@@ -581,7 +587,11 @@ class MainWindow(QMainWindow):
         is_pre = (idx == 0)
         for w in self.cad_tb_widgets:
             w.setVisible(is_pre)
-            
+
+        # The Length/Ratio selector belongs to CAD mode and only when the
+        # heatmap is on; kept out of cad_tb_widgets so it is not force-shown.
+        self.quality_mode_combo.setVisible(is_pre and self.quality_check_cb.isChecked())
+
         if is_pre:
             props = self.sidebar_view.edge_props_panel
             is_curve_active = props.isVisible() and props._curve_group.isVisible()
@@ -594,7 +604,189 @@ class MainWindow(QMainWindow):
             w.setVisible(is_mesh)
         self.progress_bar.setVisible(False)
             
+        self.adjust_toolbar_layout()
         self.mode_changed.emit(idx)
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() in (QEvent.Type.Show, QEvent.Type.Hide):
+            if not getattr(self, '_layout_queued', False):
+                self._layout_queued = True
+                QTimer.singleShot(0, self._run_queued_layout)
+        return super().eventFilter(watched, event)
+
+    def _run_queued_layout(self):
+        self._layout_queued = False
+        self.adjust_toolbar_layout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_toolbar_layout()
+
+    def adjust_toolbar_layout(self):
+        # Prevent recursion
+        if getattr(self, '_adjusting_layout', False):
+            return
+        self._adjusting_layout = True
+        
+        try:
+            # Clear layout first
+            while self.tb_layout.count() > 0:
+                self.tb_layout.takeAt(0)
+                
+            # Reset all column stretches
+            for col in range(30):
+                self.tb_layout.setColumnStretch(col, 0)
+                
+            idx = self.sidebar_stack.currentIndex()
+            width = self.width()
+            
+            # Determine threshold based on mode
+            if idx == 0:
+                threshold = 1200
+                is_narrow = (width < threshold)
+                
+                if is_narrow:
+                    self.canvas_toolbar.setFixedHeight(68)
+                    # cad_sep2 is redundant in two-row mode; hide so it is not
+                    # left visible-but-unpositioned after the grid is rebuilt.
+                    self.cad_sep2.setVisible(False)
+
+                    row0_widgets = [
+                        self.undo_btn,
+                        self.redo_btn,
+                        self.cad_sep1,
+                        self.focus_geom_btn,
+                        self.cad_preview_btn,
+                        self.cad_curve_preview_btn,
+                        self.cad_file_preview_btn,
+                    ]
+                    row1_widgets = [
+                        self.show_vertices_cb,
+                        self.show_nodes_cb,
+                        self.quality_check_cb,
+                        self.quality_mode_combo,
+                        self.cad_sep3,
+                        self.select_mode_label,
+                        self.select_mode_combo,
+                    ]
+                    
+                    # Add to row 0
+                    col_idx = 0
+                    for w in row0_widgets:
+                        if w.isVisible():
+                            self.tb_layout.addWidget(w, 0, col_idx)
+                            col_idx += 1
+                            
+                    # Add to row 1
+                    col_idx = 0
+                    for w in row1_widgets:
+                        if w.isVisible():
+                            self.tb_layout.addWidget(w, 1, col_idx)
+                            col_idx += 1
+                            
+                    max_col = max(self.tb_layout.columnCount() - 1, 0)
+                    self.tb_layout.setColumnStretch(max_col + 1, 1)
+                else:
+                    self.canvas_toolbar.setFixedHeight(36)
+                    self.cad_sep2.setVisible(True)
+                    all_widgets = [
+                        self.undo_btn,
+                        self.redo_btn,
+                        self.cad_sep1,
+                        self.focus_geom_btn,
+                        self.cad_preview_btn,
+                        self.cad_curve_preview_btn,
+                        self.cad_file_preview_btn,
+                        self.cad_sep2,
+                        self.show_vertices_cb,
+                        self.show_nodes_cb,
+                        self.quality_check_cb,
+                        self.quality_mode_combo,
+                        self.cad_sep3,
+                        self.select_mode_label,
+                        self.select_mode_combo,
+                    ]
+                    col_idx = 0
+                    for w in all_widgets:
+                        if w.isVisible():
+                            self.tb_layout.addWidget(w, 0, col_idx)
+                            col_idx += 1
+                    self.tb_layout.setColumnStretch(col_idx, 1)
+                    
+            else:  # Mesh modes (1 or 2)
+                threshold = 1100
+                is_narrow = (width < threshold)
+                
+                if is_narrow:
+                    self.canvas_toolbar.setFixedHeight(68)
+                    # mesh_sep3 is redundant in two-row mode; hide so it is not
+                    # left visible-but-unpositioned after the grid is rebuilt.
+                    self.mesh_sep3.setVisible(False)
+                    row0_widgets = [
+                        self.undo_btn,
+                        self.redo_btn,
+                        self.cad_sep1,
+                        self.mesh_preview_btn,
+                        self.mesh_generate_btn,
+                        self.mesh_cancel_btn,
+                        self.mesh_sep2,
+                        self.mesh_focus_btn,
+                    ]
+                    row1_widgets = [
+                        self.mesh_show_wireframe_cb,
+                        self.mesh_show_bc_cb,
+                        self.mesh_show_domain_cb,
+                        self.mesh_sep4,
+                        self.mesh_color_label,
+                        self.mesh_color_mode_combo,
+                        self.progress_bar,
+                    ]
+                    
+                    # Add to row 0
+                    col_idx = 0
+                    for w in row0_widgets:
+                        if w.isVisible():
+                            self.tb_layout.addWidget(w, 0, col_idx)
+                            col_idx += 1
+                            
+                    # Add to row 1
+                    col_idx = 0
+                    for w in row1_widgets:
+                        if w.isVisible():
+                            self.tb_layout.addWidget(w, 1, col_idx)
+                            col_idx += 1
+                            
+                    max_col = max(self.tb_layout.columnCount() - 1, 0)
+                    self.tb_layout.setColumnStretch(max_col + 1, 1)
+                else:
+                    self.canvas_toolbar.setFixedHeight(36)
+                    self.mesh_sep3.setVisible(True)
+                    all_widgets = [
+                        self.undo_btn,
+                        self.redo_btn,
+                        self.cad_sep1,
+                        self.mesh_preview_btn,
+                        self.mesh_generate_btn,
+                        self.mesh_cancel_btn,
+                        self.mesh_sep2,
+                        self.mesh_focus_btn,
+                        self.mesh_sep3,
+                        self.mesh_show_wireframe_cb,
+                        self.mesh_show_bc_cb,
+                        self.mesh_show_domain_cb,
+                        self.mesh_sep4,
+                        self.mesh_color_label,
+                        self.mesh_color_mode_combo,
+                        self.progress_bar,
+                    ]
+                    col_idx = 0
+                    for w in all_widgets:
+                        if w.isVisible():
+                            self.tb_layout.addWidget(w, 0, col_idx)
+                            col_idx += 1
+                    self.tb_layout.setColumnStretch(col_idx, 1)
+        finally:
+            self._adjusting_layout = False
 
     def closeEvent(self, event):
         if hasattr(self, "controller") and self.controller is not None:

@@ -14,10 +14,20 @@ class BackendControllerMixin:
     """Mixin containing C++ backend execution, config generation, and file exporting logic."""
 
     def handle_quality_check_toggled(self, checked: bool):
+        # Show the Length/Ratio selector only while the heatmap is enabled.
+        self.main_window.quality_mode_combo.setVisible(checked)
         session = self.active_session()
         if session and session.resampled_points is not None:
+            mode = self.main_window.quality_mode_combo.currentText().lower()
             self.main_window.canvas_view.load_resampled_data(
-                session.resampled_points, checked)
+                session.resampled_points, checked, mode)
+
+    def handle_quality_mode_changed(self, mode: str):
+        session = self.active_session()
+        if session and session.resampled_points is not None:
+            show_q = self.main_window.quality_check_cb.isChecked()
+            self.main_window.canvas_view.load_resampled_data(
+                session.resampled_points, show_q, mode.lower())
 
     def handle_show_vertices_toggled(self, checked: bool):
         self.main_window.canvas_view.set_geometry_symbols_visible(checked)
@@ -195,7 +205,8 @@ class BackendControllerMixin:
                     session.resampled_points = pts
                     if session is self.active_session():
                         show_q = self.main_window.quality_check_cb.isChecked()
-                        self.main_window.canvas_view.load_resampled_data(pts, show_q)
+                        mode = self.main_window.quality_mode_combo.currentText().lower()
+                        self.main_window.canvas_view.load_resampled_data(pts, show_q, mode)
                         # Clear orange segment overlay so the resampled result
                         # is not obscured by the selection highlight
                         self.main_window.canvas_view.clear_segment_highlight()
@@ -228,11 +239,19 @@ class BackendControllerMixin:
                         session.resampled_points = pts
                         if session is self.active_session():
                             show_q = self.main_window.quality_check_cb.isChecked()
-                            self.main_window.canvas_view.load_resampled_data(pts, show_q)
+                            mode = self.main_window.quality_mode_combo.currentText().lower()
+                            self.main_window.canvas_view.load_resampled_data(pts, show_q, mode)
                             self.main_window.canvas_view.clear_segment_highlight()
                             self.preview_curve_formula()
                         self.main_window.log_panel.log(
                             f"Loaded result ({len(pts)} points).")
+                        
+                        # Auto-sync output geometry path to global mesh config
+                        abs_out = os.path.abspath(out_path)
+                        if abs_out not in self.global_mesh_config.geom_files:
+                            self.global_mesh_config.geom_files.append(abs_out)
+                            self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+                        self.sync_mesh_layers_panel()
                     except Exception as e:
                         self.main_window.log_panel.log(f"Result load error: {e}")
             else:

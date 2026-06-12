@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import QApplication
 from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
 from app.models.session import GeometrySession
+from app.models.mesh_config import MeshConfig
 
 from app.controllers import (
     SessionControllerMixin,
@@ -37,6 +38,10 @@ class AppController(
         self.main_window.controller = self
         self.sessions: list[GeometrySession] = []
         self.active_idx: int = -1
+        
+        self.global_mesh_config = MeshConfig()
+        self.global_vtk_mesh = None
+        self.global_vtk_path = ""
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line
@@ -90,6 +95,7 @@ class AppController(
         sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
         sb.curve_bake_btn.clicked.connect(self.bake_selected_curve)
         self.main_window.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
+        self.main_window.quality_mode_combo.currentTextChanged.connect(self.handle_quality_mode_changed)
         self.main_window.show_vertices_cb.toggled.connect(self.handle_show_vertices_toggled)
         self.main_window.show_nodes_cb.toggled.connect(self.handle_show_nodes_toggled)
         sb.dup_btn.clicked.connect(self.duplicate_with_transform)
@@ -161,6 +167,8 @@ class AppController(
         mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
         mw.mesh_config_panel.geom_files_changed.connect(self.handle_mesh_geom_files_changed)
         mw.mesh_config_panel.mesh_config_changed.connect(self.handle_mesh_config_changed)
+        mw.mesh_config_panel.layers_list_widget.itemChanged.connect(self.handle_mesh_layer_toggled)
+        mw.mesh_config_panel.add_all_sessions_btn.clicked.connect(self.add_all_sessions_to_mesh)
 
         # Toolbar Mesh Buttons
         mw.mesh_preview_btn.clicked.connect(self.preview_mesh_generator)
@@ -252,20 +260,20 @@ class AppController(
 
     def handle_mode_changed(self, idx: int):
         """Update Mesh Config Panel and Mesh Canvas View when switching modes."""
-        session = self.active_session()
-        if not session:
-            return
         if idx in [1, 2]:  # Mesh Generator or Statistics Mode
-            self.main_window.mesh_config_panel.set_config(session.mesh_config)
+            self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
             
-            vtk_path = session.vtk_path if session.vtk_path else (self._get_expected_vtk_path(session.mesh_config) if session.mesh_config else "")
-            self.main_window.mesh_stats_panel.update_stats(session.vtk_mesh, vtk_path)
+            vtk_path = self.global_vtk_path if self.global_vtk_path else (self._get_expected_vtk_path(self.global_mesh_config) if self.global_mesh_config else "")
+            self.main_window.mesh_stats_panel.update_stats(self.global_vtk_mesh, vtk_path)
             
-            self.main_window.mesh_canvas_view.update_mesh_config(session.mesh_config)
-            if session.vtk_mesh:
-                self.main_window.mesh_canvas_view.render_mesh(session.vtk_mesh)
+            self.main_window.mesh_canvas_view.update_mesh_config(self.global_mesh_config)
+            if self.global_vtk_mesh:
+                self.main_window.mesh_canvas_view.render_mesh(self.global_vtk_mesh)
             else:
                 self.main_window.mesh_canvas_view.clear_mesh()
+            
+            # Update the Geometry Layers list panel in MeshConfigPanel
+            self.sync_mesh_layers_panel()
 
     def handle_mesh_geom_files_changed(self, geom_files: list[str]):
         """Callback when geometry files in mesh config panel are modified."""

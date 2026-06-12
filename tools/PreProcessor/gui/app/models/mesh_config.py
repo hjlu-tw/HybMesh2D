@@ -98,6 +98,10 @@ class MeshConfig:
     # Geometry files list (corresponds to multiple GEOM_FILE parameters)
     geom_files: list[str] = field(default_factory=list)
 
+    # GEOM_FILE tokens from the last load_from_file that could not be resolved
+    # to an existing file (not serialized; populated by load_from_file)
+    missing_geom_files: list[str] = field(default_factory=list)
+
     def to_dict(self) -> dict:
         """Serialize configuration parameters to a dictionary."""
         d = {}
@@ -118,8 +122,11 @@ class MeshConfig:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Config file not found: {path}")
 
+        path = os.path.abspath(path)
         # Clear existing geometry files list
         self.geom_files = []
+        # Track GEOM_FILE tokens that could not be resolved to an existing file
+        self.missing_geom_files = []
 
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
@@ -136,7 +143,37 @@ class MeshConfig:
 
                 # Map text file key to class attribute
                 if key == "GEOM_FILE":
-                    self.geom_files.append(val_str)
+                    geom_path = val_str
+                    if os.path.exists(geom_path):
+                        geom_path = os.path.abspath(geom_path)
+                    else:
+                        # Try relative to the config file's directory
+                        cfg_dir = os.path.dirname(path)
+                        p1 = os.path.abspath(os.path.join(cfg_dir, val_str))
+                        if os.path.exists(p1):
+                            geom_path = p1
+                        else:
+                            # Try relative to the parent of the config file's directory
+                            p2 = os.path.abspath(os.path.join(os.path.dirname(cfg_dir), val_str))
+                            if os.path.exists(p2):
+                                geom_path = p2
+                            else:
+                                # Try relative to the project root
+                                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+                                p3 = os.path.abspath(os.path.join(project_root, val_str))
+                                if os.path.exists(p3):
+                                    geom_path = p3
+                                else:
+                                    # Try relative to project_root/examples
+                                    p4 = os.path.abspath(os.path.join(project_root, "examples", val_str))
+                                    if os.path.exists(p4):
+                                        geom_path = p4
+                                    else:
+                                        # Fallback to absolute relative to config file's dir
+                                        # (file does not exist anywhere we looked)
+                                        geom_path = os.path.abspath(os.path.join(cfg_dir, val_str))
+                                        self.missing_geom_files.append(val_str)
+                    self.geom_files.append(geom_path)
                 elif key in _KEY_MAP:
                     attr, converter = _KEY_MAP[key]
                     try:
@@ -218,8 +255,21 @@ class MeshConfig:
         if self.output_filename:
             lines.append(f"OUTPUT_FILENAME {self.output_filename}")
 
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        cfg_dir = os.path.dirname(os.path.abspath(path))
         for gf in self.geom_files:
-            lines.append(f"GEOM_FILE {gf}")
+            abs_gf = os.path.abspath(gf)
+
+            # Real containment test (avoids matching siblings like HybMesh_old)
+            if abs_gf == project_root or abs_gf.startswith(project_root + os.sep):
+                rel_path = os.path.relpath(abs_gf, project_root)
+                lines.append(f"GEOM_FILE {rel_path}")
+            else:
+                try:
+                    rel_path = os.path.relpath(abs_gf, cfg_dir)
+                    lines.append(f"GEOM_FILE {rel_path}")
+                except ValueError:
+                    lines.append(f"GEOM_FILE {gf}")
 
         # Ensure parent directories exist
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

@@ -67,13 +67,15 @@ def make_button(text: str, color: str = '#26293c') -> QPushButton:
     return b
 
 def align_form_labels(layout: QFormLayout, width: int = 120):
-    layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+    layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+    layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     for i in range(layout.rowCount()):
         label_item = layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
         if label_item:
             lbl = label_item.widget()
             if lbl:
-                lbl.setMinimumWidth(width)
+                lbl.setFixedWidth(width)
                 if isinstance(lbl, QLabel):
                     lbl.setWordWrap(True)
 
@@ -192,10 +194,10 @@ def help_label(label_text: str, tooltip: str) -> QWidget:
     hl = QHBoxLayout(container)
     hl.setContentsMargins(0, 0, 0, 0)
     hl.setSpacing(3)
-    hl.addStretch()
     text_lbl = QLabel(label_text)
     text_lbl.setStyleSheet("color: #a0a8c0;")
-    hl.addWidget(text_lbl)
+    text_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    hl.addWidget(text_lbl, 1)
     hl.addWidget(make_help_label(tooltip))
     return container
 

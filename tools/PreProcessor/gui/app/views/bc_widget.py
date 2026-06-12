@@ -10,12 +10,12 @@ from app.utils import COMBO_STYLE, LINEEDIT_STYLE, BC_COLORS, DEFAULT_BC_COLOR
 # BC type definitions: (display_name, technical_name, config_value)
 # config_value is what gets written to the config file / returned by text()
 BC_TYPE_DEFS = [
-    ("inlet",       "FIXED_BC",             "inlet"),
-    ("outlet",      "NON_REFLECT_BC",        "outlet"),
-    ("WALL",        "NO_SLIP_BC_ADIAW",      "wall"),
-    ("SYMP",        "REFLECT_BC",            "symmetry"),
-    ("isothermal",  "NO_SLIP_BC_ACONTW",     "isothermal"),
-    ("FREE",        "FIXED_BC",              "free"),
+    ("Inlet",       "FIXED_BC",             "inlet"),
+    ("Outlet",      "NON_REFLECT_BC",        "outlet"),
+    ("Wall",        "NO_SLIP_BC_ADIAW",      "wall"),
+    ("Symmetry",    "REFLECT_BC",            "SYMP"),
+    ("Isothermal",  "NO_SLIP_BC_ACONTW",     "isothermal"),
+    ("Free",        "FIXED_BC",              "FREE"),
     ("Custom",      "",                      "custom"),
 ]
 
@@ -84,8 +84,7 @@ class BCWidget(QWidget):
         self.combo = QComboBox()
         self.combo.setStyleSheet(COMBO_STYLE)
         self.combo.setItemDelegate(_BCTypeDelegate(self.combo))
-        self.combo.setMinimumWidth(90)
-        self.combo.setMaximumWidth(160)
+        self.combo.setFixedWidth(110)
 
         for display_name, tech_name, _ in BC_TYPE_DEFS:
             self.combo.addItem(display_name)
@@ -100,8 +99,10 @@ class BCWidget(QWidget):
 
         self.custom = QLineEdit()
         self.custom.setStyleSheet(LINEEDIT_STYLE)
-        self.custom.setPlaceholderText("Enter custom BC...")
+        self.custom.setPlaceholderText("Enter...")
         self.custom.setVisible(False)
+        self.custom.setMinimumWidth(60)
+        self.custom.setMaximumWidth(90)
 
         self.indicator = QLabel()
         self.indicator.setFixedSize(16, 16)
@@ -114,12 +115,16 @@ class BCWidget(QWidget):
         self.combo.currentTextChanged.connect(self._on_combo_changed)
         self.custom.textChanged.connect(self._on_custom_changed)
 
+        self._update_custom_layout()
         self._update_indicator()
 
-    def _on_combo_changed(self, text: str):
-        is_custom = (text == "Custom")
+    def _update_custom_layout(self):
+        is_custom = (self.combo.currentText() == "Custom")
         self.custom.setVisible(is_custom)
-        if is_custom:
+
+    def _on_combo_changed(self, text: str):
+        self._update_custom_layout()
+        if self.combo.currentText() == "Custom":
             self.custom.setFocus()
         self._update_indicator()
         self.textChanged.emit(self.text())
@@ -150,7 +155,7 @@ class BCWidget(QWidget):
             matched = False
             # Try to match by config value
             for i, (disp, tech, config_val) in enumerate(BC_TYPE_DEFS):
-                if val_lower == config_val and disp != "Custom":
+                if val_lower == config_val.lower() and disp != "Custom":
                     self.combo.setCurrentIndex(i)
                     self.custom.setVisible(False)
                     self.custom.clear()
@@ -173,7 +178,7 @@ class BCWidget(QWidget):
                 if custom_idx >= 0:
                     self.combo.setCurrentIndex(custom_idx)
                 self.custom.setText(val_clean)
-                self.custom.setVisible(True)
+            self._update_custom_layout()
             self._update_indicator()
         finally:
             self.combo.blockSignals(False)

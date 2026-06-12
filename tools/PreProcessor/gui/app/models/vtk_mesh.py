@@ -100,13 +100,13 @@ class VTKMesh:
                         types_read += 1
                     i += 1
 
-                # Group temp_cells into triangles/quads/polygons based on type
+                # Group temp_cells into triangles/quads/polygons based on vertex count
                 for cell, c_type in zip(temp_cells, cell_types):
-                    if c_type == 5 and len(cell) == 3:  # Triangle
+                    if len(cell) == 3:  # Triangle
                         mesh.triangles.append(tuple(cell))
-                    elif c_type == 9 and len(cell) == 4:  # Quad
+                    elif len(cell) == 4:  # Quad
                         mesh.quads.append(tuple(cell))
-                    else:
+                    else:  # Polygon (5+ sides)
                         mesh.polygons.append(cell)
                 continue
 

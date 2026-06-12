@@ -24,6 +24,7 @@ class ColorBarWidget(QWidget):
         self.min_val = 0.0
         self.max_val = 0.0
         self.title_text = "Length"
+        self.quality_mode = "length"
         self.setStyleSheet("background-color: #0c0d16; color: #a0a8c0;")
 
     def set_range(self, min_val: float, max_val: float):
@@ -49,9 +50,14 @@ class ColorBarWidget(QWidget):
             
         gradient = QLinearGradient(QPointF(bar_left, rect.height() - margin_bottom),
                                     QPointF(bar_left, margin_top))
-        gradient.setColorAt(0.0, QColor.fromHsvF(0.6666, 1.0, 1.0)) # blue
-        gradient.setColorAt(0.5, QColor.fromHsvF(0.3333, 1.0, 1.0)) # green/yellow
-        gradient.setColorAt(1.0, QColor.fromHsvF(0.0, 1.0, 1.0))    # red
+        if self.quality_mode == "ratio":
+            gradient.setColorAt(0.0, QColor.fromHsvF(0.6666, 1.0, 1.0)) # blue (small ratio)
+            gradient.setColorAt(0.5, QColor.fromHsvF(0.3333, 1.0, 1.0)) # green/yellow
+            gradient.setColorAt(1.0, QColor.fromHsvF(0.0, 1.0, 1.0))    # red (large ratio)
+        else:
+            gradient.setColorAt(0.0, QColor.fromHsvF(0.0, 1.0, 1.0))    # red (small distance)
+            gradient.setColorAt(0.5, QColor.fromHsvF(0.3333, 1.0, 1.0)) # green/yellow
+            gradient.setColorAt(1.0, QColor.fromHsvF(0.6666, 1.0, 1.0)) # blue (large distance)
         
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(gradient)
@@ -83,11 +89,13 @@ class ColorCodedSegmentsItem(pg.GraphicsObject):
         self.show_symbols = True
         self.symbol_brushes = []
         self._bounds = None
+        self.gap_indices = set()
 
-    def setData(self, points, lengths, min_len, max_len, show_symbols, symbol_brushes):
+    def setData(self, points, lengths, min_len, max_len, show_symbols, symbol_brushes, quality_mode='length', gap_indices=None):
         self.points = points
         self.show_symbols = show_symbols
         self.symbol_brushes = symbol_brushes
+        self.gap_indices = gap_indices if gap_indices is not None else set()
         
         self.pens = []
         if points is not None and len(points) >= 2:
@@ -95,7 +103,10 @@ class ColorCodedSegmentsItem(pg.GraphicsObject):
             for l in lengths:
                 t = (l - min_len) / span if span > 1e-12 else 0.0
                 t = max(0.0, min(1.0, t))
-                color = QColor.fromHsvF((1.0 - t) * 0.6666, 1.0, 1.0)
+                if quality_mode == 'ratio':
+                    color = QColor.fromHsvF((1.0 - t) * 0.6666, 1.0, 1.0)
+                else:
+                    color = QColor.fromHsvF(t * 0.6666, 1.0, 1.0)
                 self.pens.append(pg.mkPen(color, width=2.5))
             
             x = points[:, 0]
@@ -116,11 +127,15 @@ class ColorCodedSegmentsItem(pg.GraphicsObject):
         if self.points is None or len(self.points) < 2:
             return
         
+        gap_indices = getattr(self, 'gap_indices', set())
         for i in range(len(self.points) - 1):
+            if i in gap_indices:
+                continue
             p0 = self.points[i]
             p1 = self.points[i + 1]
-            painter.setPen(self.pens[i])
-            painter.drawLine(QPointF(p0[0], p0[1]), QPointF(p1[0], p1[1]))
+            if i < len(self.pens):
+                painter.setPen(self.pens[i])
+                painter.drawLine(QPointF(p0[0], p0[1]), QPointF(p1[0], p1[1]))
             
         if self.show_symbols and self.symbol_brushes:
             painter.setPen(pg.mkPen(None))
@@ -558,19 +573,92 @@ class CanvasView(QWidget):
         # Clear the single active_segment_curve to avoid double drawing
         self.active_segment_curve.setData([], [])
 
-    def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False):
+    def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False, quality_mode: str = 'length'):
         if points is not None and len(points) > 0:
             if show_quality and len(points) >= 2:
                 diffs = np.diff(points, axis=0)
                 ds = np.sqrt(np.sum(diffs**2, axis=1))
                 ds[ds < 1e-12] = 1e-12
                 
-                min_len = np.min(ds)
-                max_len = np.max(ds)
-                self.colorbar_widget.set_range(min_len, max_len)
+                # Split points into separate curves if there are large gaps (disconnected boundaries)
+                median_d = np.median(ds)
+                gap_threshold = max(10.0 * median_d, 1e-3)
+                gap_indices = set(np.where(ds > gap_threshold)[0])
+                
+                def compute_sub_ratios(sub_ds, sub_pts):
+                    # A single-segment piece has no neighbour to compare against,
+                    # so its ratio stays 1.0 (handled by the np.ones_like default).
+                    sub_ratios = np.ones_like(sub_ds)
+                    if len(sub_ds) >= 2:
+                        # Only treat as a closed loop when the piece is large enough
+                        # to actually be one; otherwise an open arc whose endpoints
+                        # merely coincide would get the wrap-around ratio.
+                        is_closed = len(sub_pts) >= 4 and np.allclose(sub_pts[0], sub_pts[-1])
+                        if is_closed:
+                            interface_ratios = np.zeros(len(sub_ds))
+                            for j in range(len(sub_ds) - 1):
+                                r1 = sub_ds[j] / sub_ds[j+1]
+                                r2 = sub_ds[j+1] / sub_ds[j]
+                                interface_ratios[j+1] = max(r1, r2)
+                            r1 = sub_ds[-1] / sub_ds[0]
+                            r2 = sub_ds[0] / sub_ds[-1]
+                            interface_ratios[0] = max(r1, r2)
+                            for i in range(len(sub_ds)):
+                                next_idx = (i + 1) % len(sub_ds)
+                                sub_ratios[i] = max(interface_ratios[i], interface_ratios[next_idx])
+                        else:
+                            interface_ratios = np.zeros(len(sub_ds) - 1)
+                            for j in range(len(sub_ds) - 1):
+                                r1 = sub_ds[j] / sub_ds[j+1]
+                                r2 = sub_ds[j+1] / sub_ds[j]
+                                interface_ratios[j] = max(r1, r2)
+                            sub_ratios[0] = interface_ratios[0]
+                            sub_ratios[-1] = interface_ratios[-1]
+                            for i in range(1, len(sub_ds) - 1):
+                                sub_ratios[i] = max(interface_ratios[i-1], interface_ratios[i])
+                    return sub_ratios
+
+                if quality_mode == 'ratio':
+                    ratios = np.ones_like(ds)
+                    start = 0
+                    for gap_idx in sorted(gap_indices):
+                        if gap_idx > start:
+                            sub_ds = ds[start:gap_idx]
+                            sub_pts = points[start:gap_idx+1]
+                            ratios[start:gap_idx] = compute_sub_ratios(sub_ds, sub_pts)
+                        start = gap_idx + 1
+                    if start < len(ds):
+                        sub_ds = ds[start:]
+                        sub_pts = points[start:]
+                        ratios[start:] = compute_sub_ratios(sub_ds, sub_pts)
+                    vals = ratios
+                    self.colorbar_widget.title_text = "Ratio"
+                else:
+                    vals = ds
+                    self.colorbar_widget.title_text = "Length"
+                
+                # Determine color limits excluding gaps to avoid skews
+                valid_vals = [vals[i] for i in range(len(vals)) if i not in gap_indices]
+                if len(valid_vals) > 0:
+                    if quality_mode == 'ratio':
+                        min_val = 1.0
+                        max_val = max(1.3, np.max(valid_vals))
+                    else:
+                        min_val = np.min(valid_vals)
+                        max_val = np.max(valid_vals)
+                else:
+                    if quality_mode == 'ratio':
+                        min_val = 1.0
+                        max_val = 1.3
+                    else:
+                        min_val = np.min(vals)
+                        max_val = np.max(vals)
+
+                self.colorbar_widget.quality_mode = quality_mode
+                self.colorbar_widget.set_range(min_val, max_val)
                 self.colorbar_widget.setVisible(True)
                 
-                self.color_coded_segments.setData(points, ds, min_len, max_len, False, [])
+                self.color_coded_segments.setData(points, vals, min_val, max_val, False, [], quality_mode, gap_indices)
                 self.resampled_curve.setData(points[:, 0], points[:, 1], pen=None, symbol=None)
                 self.quality_bad_scatter.clear()
             else:

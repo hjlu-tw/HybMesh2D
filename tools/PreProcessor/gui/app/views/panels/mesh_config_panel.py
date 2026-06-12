@@ -76,6 +76,25 @@ class MeshConfigPanel(QScrollArea):
         self.cancel_mesh_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_mesh_btn.setEnabled(False)
 
+        # ── Geometry Layers (Sessions) ────────────────────────────────────
+        self.sec_layers = CollapsibleSection("Geometry Layers", start_collapsed=False)
+        self._layout.addWidget(self.sec_layers)
+
+        self.layers_list_widget = QListWidget()
+        self.layers_list_widget.setFixedHeight(110)
+        self.layers_list_widget.setStyleSheet(
+            "background: #181b2a; color: #a0a8c0; border: 1px solid #333852; border-radius: 3px;"
+        )
+        self.sec_layers.add_widget(help_widget(self.layers_list_widget, "Toggle which PreProcessor geometries are included in this mesh"))
+
+        # Layer control buttons
+        layer_btn_layout = QHBoxLayout()
+        layer_btn_layout.setSpacing(4)
+        self.add_all_sessions_btn = make_button("Add All Sessions", "#1a2a3a")
+        self.add_all_sessions_btn.setToolTip("Add all exported PreProcessor geometries to this mesh configuration")
+        layer_btn_layout.addWidget(help_widget(self.add_all_sessions_btn, "Include all currently exported geometry sessions"))
+        self.sec_layers.add_layout(layer_btn_layout)
+
         # ── 1. Domain & Geometry Files ────────────────────────────────────
         self.sec_domain = CollapsibleSection("1. Domain & Geometry", start_collapsed=True)
         self._layout.addWidget(self.sec_domain)

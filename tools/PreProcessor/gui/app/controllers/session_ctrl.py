@@ -83,8 +83,9 @@ class SessionControllerMixin:
             
             # Resampled preview
             if session.resampled_points is not None:
+                mode = self.main_window.quality_mode_combo.currentText().lower()
                 self.main_window.canvas_view.load_resampled_data(
-                    session.resampled_points, self.main_window.quality_check_cb.isChecked())
+                    session.resampled_points, self.main_window.quality_check_cb.isChecked(), mode)
             
             # Sync active overlays visibility with session visibility
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
