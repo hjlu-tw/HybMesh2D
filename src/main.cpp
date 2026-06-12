@@ -162,6 +162,18 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Ensure the output directory exists so VTK/STAR-CD exports do not silently
+    // vanish on a fresh clone or case-sensitive filesystem.
+    {
+        fs::path outParent = fs::path(outputFilename).parent_path();
+        if (!outParent.empty()) {
+            std::error_code ec;
+            fs::create_directories(outParent, ec);
+            if (ec) std::cerr << "Warning: cannot create output directory '"
+                              << outParent.string() << "': " << ec.message() << std::endl;
+        }
+    }
+
     bool hasIntersection = false;
     bool blSuccess = true;
     if (config.geomFiles.empty()) {

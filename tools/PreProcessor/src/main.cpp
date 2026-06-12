@@ -7,6 +7,8 @@
 #include <numeric>
 #include <iomanip>
 #include <sstream>
+#include <filesystem>
+#include <cctype>
 
 #include "json.hpp"
 #include "GeomUtils.hpp"
@@ -16,6 +18,7 @@
 
 using json = nlohmann::json;
 using namespace HybMesh;
+namespace fs = std::filesystem;
 
 // 數學表達式求值器 (保持在 main.cpp 以簡化)
 class MathEvaluator {
@@ -25,7 +28,13 @@ public:
     double eval(double x, double t) { xV = x; tV = t; pos = 0; return parseExpression(); }
 private:
     std::string expression; size_t pos; double xV = 0, tV = 0;
-    void skip() { while (pos < expression.length() && isspace(expression[pos])) pos++; }
+    // Treat chars as unsigned char before the ctype calls: passing a negative
+    // char (non-ASCII input) to isspace/isdigit/... is undefined behaviour.
+    static bool isSp(char c)  { return std::isspace(static_cast<unsigned char>(c)); }
+    static bool isDig(char c) { return std::isdigit(static_cast<unsigned char>(c)); }
+    static bool isAl(char c)  { return std::isalpha(static_cast<unsigned char>(c)); }
+    static bool isAlnum(char c){ return std::isalnum(static_cast<unsigned char>(c)); }
+    void skip() { while (pos < expression.length() && isSp(expression[pos])) pos++; }
     double parseExpression() {
         double res = parseTerm(); skip();
         while (pos < expression.length() && (expression[pos] == '+' || expression[pos] == '-')) {
@@ -35,28 +44,33 @@ private:
         return res;
     }
     double parseTerm() {
-        double res = parseFactor(); skip();
+        double res = parseUnary(); skip();
         while (pos < expression.length() && (expression[pos] == '*' || expression[pos] == '/')) {
-            char op = expression[pos++]; double next = parseFactor();
+            char op = expression[pos++]; double next = parseUnary();
             if (op == '*') res *= next; else res /= next; skip();
         }
         return res;
     }
+    // Unary minus binds looser than '^' so that -x^2 == -(x^2) and 2^-3 == 0.125.
+    double parseUnary() {
+        skip();
+        if (pos < expression.length() && expression[pos] == '-') { pos++; return -parseUnary(); }
+        return parseFactor();
+    }
     double parseFactor() {
         double res = parseBase(); skip();
-        if (pos < expression.length() && expression[pos] == '^') { pos++; res = std::pow(res, parseFactor()); }
+        if (pos < expression.length() && expression[pos] == '^') { pos++; res = std::pow(res, parseUnary()); }
         return res;
     }
     double parseBase() {
         skip(); if (pos >= expression.length()) return 0;
         if (expression[pos] == '(') { pos++; double res = parseExpression(); if (pos < expression.length() && expression[pos] == ')') pos++; return res; }
-        if (expression[pos] == '-') { pos++; return -parseBase(); }
-        if (isdigit(expression[pos]) || expression[pos] == '.') {
-            size_t s = pos; while (pos < expression.length() && (isdigit(expression[pos]) || expression[pos] == '.')) pos++;
-            return std::stod(expression.substr(s, pos - s));
+        if (isDig(expression[pos]) || expression[pos] == '.') {
+            size_t s = pos; while (pos < expression.length() && (isDig(expression[pos]) || expression[pos] == '.')) pos++;
+            try { return std::stod(expression.substr(s, pos - s)); } catch (...) { return 0; }
         }
-        if (isalpha(expression[pos])) {
-            size_t s = pos; while (pos < expression.length() && isalnum(expression[pos])) pos++;
+        if (isAl(expression[pos])) {
+            size_t s = pos; while (pos < expression.length() && isAlnum(expression[pos])) pos++;
             std::string n = expression.substr(s, pos - s);
             if (n == "x") return xV; if (n == "t") return tV; if (n == "pi") return M_PI;
             skip(); if (pos < expression.length() && expression[pos] == '(') {
@@ -79,11 +93,27 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
     return points;
 }
 
-void saveGeometry(const std::string& filename, const std::vector<Point2D>& points) {
+bool saveGeometry(const std::string& filename, const std::vector<Point2D>& points) {
+    // Ensure the output directory exists (e.g. Results/ on a fresh clone or
+    // case-sensitive FS) so the write does not silently vanish.
+    fs::path parent = fs::path(filename).parent_path();
+    if (!parent.empty()) {
+        std::error_code ec;
+        fs::create_directories(parent, ec);
+        if (ec) {
+            std::cerr << "Error: cannot create output directory '" << parent.string()
+                      << "': " << ec.message() << std::endl;
+            return false;
+        }
+    }
     std::ofstream ofs(filename);
-    if (!ofs) return;
+    if (!ofs) {
+        std::cerr << "Error: cannot open output file '" << filename << "' for writing." << std::endl;
+        return false;
+    }
     ofs << std::fixed << std::setprecision(10);
     for (const auto& p : points) ofs << p.x << " " << p.y << "\n";
+    return true;
 }
 
 std::vector<double> calculateArcLengths(const std::vector<Point2D>& points) {
@@ -99,6 +129,7 @@ Point2D interpolateLinear(const std::vector<Point2D>& points, const std::vector<
     auto it = std::lower_bound(s.begin(), s.end(), targetS);
     int idx = std::distance(s.begin(), it);
     if (idx == 0) return points.front();
+    if (s[idx] - s[idx - 1] < 1e-12) return points[idx - 1];
     double s0 = s[idx - 1], s1 = s[idx], t = (targetS - s0) / (s1 - s0);
     return points[idx - 1] * (1.0 - t) + points[idx] * t;
 }
@@ -162,7 +193,13 @@ std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Poin
     std::vector<Point2D> pts; 
     json p = seg.value("parameters", json::object());
     std::vector<double> r = p.value("range", std::vector<double>{0.0, 1.0});
-    int n = p.value("n_points", 50); double t0 = r[0], t1 = r[1];
+    if (r.size() < 2) r = {0.0, 1.0};
+    int n = p.value("n_points", 50);
+    if (n < 2) {
+        std::cerr << "Warning: n_points (" << n << ") must be >= 2; clamping to 2." << std::endl;
+        n = 2;
+    }
+    double t0 = r[0], t1 = r[1];
     
     std::string curve_type = seg.value("curve_type", "custom");
     
@@ -438,7 +475,24 @@ std::vector<std::vector<Point2D>> splitPolyline(const std::vector<Point2D>& pts,
     return subs;
 }
 
-void processElement(const json& config) {
+// Upper bound on resampled points per task; guards against tiny spacing values
+// requesting astronomically large allocations.
+static const int MAX_RESAMPLE_POINTS = 5000000;
+
+// Returns a positive, finite spacing value stored under `key`, or -1.0 if the
+// key is missing, not a number, or non-positive/non-finite (with a warning in
+// the latter case). Treat -1.0 as "unset".
+static double readPositiveSpacing(const json& p, const char* key) {
+    if (!p.contains(key)) return -1.0;
+    if (p[key].is_number()) {
+        double v = (double)p[key];
+        if (std::isfinite(v) && v > 0.0) return v;
+    }
+    std::cerr << "Warning: '" << key << "' must be a positive finite number; ignoring." << std::endl;
+    return -1.0;
+}
+
+bool processElement(const json& config) {
     std::vector<Point2D> gp = loadGeometry(config.value("input_file", ""));
     if (config.value("is_closed", false) && !gp.empty()) {
         if ((gp.front() - gp.back()).length() > 1e-9) gp.push_back(gp.front());
@@ -594,6 +648,15 @@ void processElement(const json& config) {
             int s = sj.value("start_index", 0), e = sj.value("end_index", -1);
             if (e == -1 && !gp.empty()) e = (int)gp.size() - 1;
 
+            // Clamp indices into gp's valid range; both branches below index gp[i].
+            if (gp.empty()) continue;
+            int s_orig = s, e_orig = e;
+            s = std::clamp(s, 0, (int)gp.size() - 1);
+            e = std::clamp(e, s, (int)gp.size() - 1);
+            if (s != s_orig || e != e_orig)
+                std::cerr << "Warning: start/end_index out of range [0," << gp.size() - 1
+                          << "]; clamped to [" << s << "," << e << "]." << std::endl;
+
             if (autoSplit && !gp.empty() && e > s) {
                 std::vector<Point2D> sub; 
                 for (int i = s; i <= e; ++i) sub.push_back(gp[i]);
@@ -672,15 +735,23 @@ void processElement(const json& config) {
                 else params["spacing_start"] = last_ds;
             }
 
-            int nT; 
-            if (params.contains("spacing")) nT = std::max(2, (int)std::round(L / (double)params["spacing"]) + 1);
-            else if (params.contains("spacing_start") || params.contains("spacing_end")) {
-                double ds_avg = L;
-                if (params.contains("spacing_start") && params.contains("spacing_end")) 
-                    ds_avg = 0.5 * ((double)params["spacing_start"] + (double)params["spacing_end"]);
-                else if (params.contains("spacing_start")) ds_avg = params["spacing_start"];
-                else ds_avg = params["spacing_end"];
-                nT = std::max(2, (int)std::round(L / ds_avg) + 1);
+            int nT;
+            double sp_val = readPositiveSpacing(params, "spacing");
+            double sp_start = readPositiveSpacing(params, "spacing_start");
+            double sp_end = readPositiveSpacing(params, "spacing_end");
+            if (sp_val > 0 || sp_start > 0 || sp_end > 0) {
+                double ds_avg;
+                if (sp_val > 0) ds_avg = sp_val;
+                else if (sp_start > 0 && sp_end > 0) ds_avg = 0.5 * (sp_start + sp_end);
+                else if (sp_start > 0) ds_avg = sp_start;
+                else ds_avg = sp_end;
+                // Clamp in double BEFORE casting: a tiny spacing makes L/ds_avg
+                // exceed INT_MAX, and casting that to int is undefined behaviour.
+                double cnt = std::round(L / ds_avg) + 1.0;
+                if (cnt > MAX_RESAMPLE_POINTS)
+                    std::cerr << "Warning: spacing too small for segment length; clamping to "
+                              << MAX_RESAMPLE_POINTS << " points." << std::endl;
+                nT = (int)std::clamp(cnt, 2.0, (double)MAX_RESAMPLE_POINTS);
             }
             else {
                 if (task.n_points_alloc != -1) {
@@ -688,16 +759,18 @@ void processElement(const json& config) {
                 } else {
                     nT = params.value("n_points", (int)sp.size());
                 }
+                nT = std::clamp(nT, 2, MAX_RESAMPLE_POINTS);
             }
-            if (nT < 2) nT = 2;
 
             std::vector<double> tS;
             if (strat == "cosine") {
                 for (int i = 0; i < nT; ++i) tS.push_back(L * (1.0 - std::cos(M_PI * i / (nT - 1))) * 0.5);
             } else if (strat == "geometric") {
                 double ratio = 1.1;
-                if (params.contains("spacing_start")) ratio = Spacing::solveGrowthRate(L, nT - 1, params["spacing_start"]);
-                else if (params.contains("spacing_end")) ratio = 1.0 / Spacing::solveGrowthRate(L, nT - 1, params["spacing_end"]);
+                double g_start = readPositiveSpacing(params, "spacing_start");
+                double g_end = readPositiveSpacing(params, "spacing_end");
+                if (g_start > 0) ratio = Spacing::solveGrowthRate(L, nT - 1, g_start);
+                else if (g_end > 0) ratio = 1.0 / Spacing::solveGrowthRate(L, nT - 1, g_end);
                 else ratio = params.value("ratio", 1.1);
 
                 double ratio_end = params.value("ratio_end", 1.0);
@@ -725,9 +798,12 @@ void processElement(const json& config) {
                 }
             } else if (strat == "tanh") {
                 double dlt = params.value("intensity", 2.0);
-                if (params.contains("spacing_start") && params.contains("spacing_end")) {
-                    double s0 = params["spacing_start"], s1 = params["spacing_end"];
-                    dlt = std::log(L / std::min(s0, s1)) * 0.5;
+                double s0 = readPositiveSpacing(params, "spacing_start");
+                double s1 = readPositiveSpacing(params, "spacing_end");
+                if (s0 > 0 && s1 > 0) {
+                    // When the requested spacing equals L, log(1)=0 -> dlt=0; keep a
+                    // small positive floor so generateTanh stays well-defined.
+                    dlt = std::max(1e-3, std::log(L / std::min(s0, s1)) * 0.5);
                 }
                 tS = Spacing::generateTanh(L, nT, dlt);
             } else if (strat == "curvature") {
@@ -747,11 +823,11 @@ void processElement(const json& config) {
                 } else if (idx_ts == tS.size() - 1) {
                     p = sp.back();
                 } else {
-                    if (useGlobalSpline && task.type == "file" && task.start_gp_idx != -1) {
+                    if (useGlobalSpline && globalSpline.valid() && task.type == "file" && task.start_gp_idx != -1) {
                         // Map local s to global s
                         double start_s = globalS[task.start_gp_idx];
                         p = globalSpline.eval(start_s + ts);
-                    } else if (useLocalSpline) {
+                    } else if (useLocalSpline && localSpline.valid()) {
                         p = localSpline.eval(ts);
                     } else {
                         p = interpolateLinear(sp, s, ts);
@@ -776,17 +852,23 @@ void processElement(const json& config) {
         const auto& t = config.at("transform"); 
         double sc = t.value("scale", 1.0), ang = t.value("rotate", 0.0) * M_PI / 180.0;
         std::vector<double> tr = t.value("translate", std::vector<double>{0.0, 0.0});
+        if (tr.size() < 2) tr = {0.0, 0.0};
         for (auto& p : resPts) {
             p.x *= sc; p.y *= sc; double xN = p.x * std::cos(ang) - p.y * std::sin(ang), yN = p.x * std::sin(ang) + p.y * std::cos(ang);
             p.x = xN + tr[0]; p.y = yN + tr[1];
         }
     }
 
-    saveGeometry(config.value("output_file", "Results/output.dat"), resPts);
-    std::cout << "Successfully processed element to " << config.value("output_file", "Results/output.dat") << " (" << resPts.size() << " points)" << std::endl;
+    std::string outPath = config.value("output_file", "Results/output.dat");
+    if (!saveGeometry(outPath, resPts)) {
+        std::cerr << "Failed to write element output to " << outPath << std::endl;
+        return false;
+    }
+    std::cout << "Successfully processed element to " << outPath << " (" << resPts.size() << " points)" << std::endl;
 
     // Task 5: Quality Report
     Quality::analyze(resPts).print();
+    return true;
 }
 
 int main(int argc, char* argv[]) {
@@ -803,7 +885,21 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    if (c.contains("elements") && c["elements"].is_array()) for (const auto& e : c["elements"]) processElement(e);
-    else processElement(c);
-    return 0;
+    // Backstop: a malformed value (e.g. non-numeric JSON where a number is
+    // expected) throws from deep inside processElement; catch so one bad
+    // element neither terminates the program nor falsely reports success.
+    auto runElement = [](const json& e) -> bool {
+        try {
+            return processElement(e);
+        } catch (const std::exception& ex) {
+            std::cerr << "Error processing element: " << ex.what() << std::endl;
+            return false;
+        }
+    };
+
+    bool allOk = true;
+    if (c.contains("elements") && c["elements"].is_array())
+        for (const auto& e : c["elements"]) { if (!runElement(e)) allOk = false; }
+    else allOk = runElement(c);
+    return allOk ? 0 : 1;
 }

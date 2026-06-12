@@ -21,7 +21,11 @@ public:
             r -= dr;
             if (std::abs(dr) < 1e-8) break;
         }
-        return std::max(0.1, std::min(r, 10.0));
+        double clamped = std::max(0.1, std::min(r, 10.0));
+        if (clamped != r)
+            std::cerr << "Warning: requested first-cell spacing unattainable; growth rate clamped to "
+                      << clamped << "." << std::endl;
+        return clamped;
     }
 
     static std::vector<double> generateGeometric(double L, int nT, double ratio) {
@@ -42,6 +46,12 @@ public:
 
     static std::vector<double> generateTanh(double L, int nT, double dlt) {
         std::vector<double> tS;
+        // dlt == 0 makes tanh(dlt) == 0 -> division by zero (NaN). Degenerate
+        // to a uniform distribution, matching generateGeometric at ratio ~= 1.
+        if (std::abs(dlt) < 1e-9) {
+            for (int i = 0; i < nT; ++i) tS.push_back(L * i / (nT - 1));
+            return tS;
+        }
         for (int i = 0; i < nT; ++i) {
             double xi = (double)i / (nT - 1);
             tS.push_back(L * 0.5 * (1.0 + std::tanh(dlt * (2.0 * xi - 1.0)) / std::tanh(dlt)));
@@ -76,12 +86,12 @@ public:
             double tC = cS.back() * i / (nT - 1);
             auto it = std::lower_bound(cS.begin(), cS.end(), tC);
             int idx = std::distance(cS.begin(), it);
-            if (idx == 0) tS.push_back(0.0);
-            else {
-                double t = (tC - cS[idx - 1]) / (cS[idx] - cS[idx - 1]);
-                double ts_val = s[idx - 1] + t * (s[idx] - s[idx - 1]);
-                tS.push_back(ts_val);
-            }
+            if (idx <= 0) { tS.push_back(0.0); continue; }
+            if (idx >= (int)cS.size()) idx = (int)cS.size() - 1; // clamp float overshoot past cS.back()
+            if (cS[idx] - cS[idx - 1] < 1e-12) { tS.push_back(s[idx - 1]); continue; } // coincident points
+            double t = (tC - cS[idx - 1]) / (cS[idx] - cS[idx - 1]);
+            double ts_val = s[idx - 1] + t * (s[idx] - s[idx - 1]);
+            tS.push_back(ts_val);
         }
         return tS;
     }

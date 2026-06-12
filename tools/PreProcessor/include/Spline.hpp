@@ -16,7 +16,12 @@ public:
         a = y;
         b.resize(n); d.resize(n); c.resize(n);
         std::vector<double> h(n - 1), alpha(n - 1);
-        for (int i = 0; i < n - 1; ++i) h[i] = x[i + 1] - x[i];
+        for (int i = 0; i < n - 1; ++i) {
+            h[i] = x[i + 1] - x[i];
+            // Coincident knots produce division-by-zero (NaN coefficients);
+            // mark invalid so callers fall back to linear interpolation.
+            if (h[i] <= 1e-12) { is_valid = false; return; }
+        }
         for (int i = 1; i < n - 1; ++i)
             alpha[i] = (3.0 / h[i]) * (a[i + 1] - a[i]) - (3.0 / h[i - 1]) * (a[i] - a[i - 1]);
 

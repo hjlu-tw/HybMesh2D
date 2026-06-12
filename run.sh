@@ -4,7 +4,7 @@
 export DYLD_LIBRARY_PATH=/Users/hjlu_nchc/Library/Python/3.9/lib:$DYLD_LIBRARY_PATH
 
 # 確保結果輸出目錄存在
-mkdir -p results
+mkdir -p Results
 
 # 檢查執行檔是否存在
 if [ ! -f "./build/HybMesh2D" ]; then
