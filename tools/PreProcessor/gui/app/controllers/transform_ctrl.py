@@ -3,71 +3,96 @@ import math
 import numpy as np
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
-from app.commands.segment_cmds import DuplicateTransformCmd
+from app.commands.segment_cmds import DuplicateMultipleTransformCmd
 from app.services.geometry_service import GeometryService
 
 class TransformControllerMixin:
     """Mixin containing geometric transform, duplication, and mirroring logic."""
 
     def duplicate_with_transform(self):
-        """Generate preview points for the active segment, apply the
-        selected geometric transform, and add a new Polygon curve segment."""
+        """Apply the selected geometric transform to every selected edge,
+        adding a transformed Polygon curve per edge (optionally deleting the
+        originals). Operates on all edges selected in the edge lists."""
         session = self.active_session()
-        if not session or session.current_segment_idx < 0:
+        if not session:
             self.main_window.log_panel.log("No segment selected.")
             return
         sb = self.main_window.sidebar_view
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg:
+
+        indices = self.get_selected_segment_indices()
+        if not indices:
+            self.main_window.log_panel.log("No segment selected.")
             return
 
-        # Get points to duplicate
-        if seg.type == "curve":
-            self._sync_active_curve_segment_from_ui()
+        delete_original = sb.dup_delete_orig_cb.isChecked()
 
-        pts_tuple = GeometryService.get_segment_points(session, seg)
-        if pts_tuple is None:
-            self.main_window.log_panel.log("Edge has no valid points — cannot duplicate.")
+        new_segs = []
+        seg_indices = []
+        new_ids = []
+        next_id = session.project_model._next_curve_id
+
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if not seg:
+                continue
+
+            # Only the active curve segment carries unsaved UI edits.
+            if seg.type == "curve" and idx == session.current_segment_idx:
+                self._sync_active_curve_segment_from_ui()
+
+            pts_tuple = GeometryService.get_segment_points(session, seg)
+            if pts_tuple is None:
+                self.main_window.log_panel.log(
+                    f"Edge {seg.id} has no valid points — skipped.")
+                continue
+            xs, ys = pts_tuple
+            n = len(xs)
+
+            transformed = self._apply_transform(xs, ys)
+            if transformed is None:
+                self.main_window.log_panel.log(
+                    "Mirror axis direction is zero — cannot mirror.")
+                return
+            xs, ys = transformed
+
+            v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
+            new_seg = SegmentModel(next_id, -1, -1)
+            new_seg.type = "curve"
+            new_seg.curve_type = "polygon"
+            new_seg.parameters["vertices_str"] = v_str
+            new_seg.parameters["n_points"] = n
+            new_seg.start_index = -1
+            new_seg.end_index = -1
+
+            new_segs.append(new_seg)
+            seg_indices.append(idx)
+            new_ids.append(new_seg.id)
+            next_id += 1
+
+        if not new_segs:
+            self.main_window.log_panel.log("No valid edges to transform.")
             return
-        xs, ys = pts_tuple
-        n = len(xs)
-
-        transformed = self._apply_transform(xs, ys)
-        if transformed is None:
-            self.main_window.log_panel.log("Mirror axis direction is zero — cannot mirror.")
-            return
-        xs, ys = transformed
-
-        # Create new polygon curve segment from transformed points
-        v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
-        new_seg = SegmentModel(session.project_model._next_curve_id, -1, -1)
-        new_seg.type = "curve"
-        new_seg.curve_type = "polygon"
-        new_seg.parameters["vertices_str"] = v_str
-        new_seg.parameters["n_points"] = n
-        new_seg.start_index = -1
-        new_seg.end_index = -1
 
         def select_cb(idx):
             self._select_segment_by_index(idx)
 
-        delete_original = sb.dup_delete_orig_cb.isChecked()
-
-        cmd = DuplicateTransformCmd(
+        cmd = DuplicateMultipleTransformCmd(
             session=session,
-            seg_idx=session.current_segment_idx,
-            new_seg=new_seg,
+            seg_indices=seg_indices,
+            new_segs=new_segs,
             delete_original=delete_original,
             refresh_cb=self._refresh_segment_list,
-            select_cb=select_cb
+            select_cb=select_cb,
         )
         session.command_history.execute(cmd)
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
-        
+
         action_name = "Moved/Transformed" if delete_original else "Duplicated"
+        ids_str = ", ".join(str(i) for i in new_ids)
         self.main_window.log_panel.log(
-            f"{action_name} Edge {seg.id} as Edge {new_seg.id} ({sb.dup_type_combo.currentText()}).")
+            f"{action_name} {len(new_segs)} edge(s) as Edge {ids_str} "
+            f"({sb.dup_type_combo.currentText()}).")
         self._show_duplicate_preview = False
         self.main_window.canvas_view.clear_duplicate_preview()
 
@@ -246,24 +271,42 @@ class TransformControllerMixin:
             self.main_window.canvas_view.clear_duplicate_preview()
             return
 
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg:
+        # Preview every selected edge so it matches the multi-edge apply.
+        indices = self.get_selected_segment_indices()
+        if not indices:
             self.main_window.canvas_view.clear_duplicate_preview()
             return
 
-        # 1. Get original points
-        pts_tuple = GeometryService.get_segment_points(session, seg)
-        if pts_tuple is None or len(pts_tuple[0]) < 2:
+        pieces = []
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if not seg:
+                continue
+            pts_tuple = GeometryService.get_segment_points(session, seg)
+            if pts_tuple is None or len(pts_tuple[0]) < 2:
+                continue
+            xs, ys = pts_tuple
+            transformed = self._apply_transform(xs, ys)
+            if transformed is None:
+                self.main_window.canvas_view.clear_duplicate_preview()
+                return
+            txs, tys = transformed
+            pieces.append(np.column_stack([txs, tys]))
+
+        if not pieces:
             self.main_window.canvas_view.clear_duplicate_preview()
             return
-        xs, ys = pts_tuple
 
-        # 2. Apply transform
-        transformed = self._apply_transform(xs, ys)
-        if transformed is None:
-            self.main_window.canvas_view.clear_duplicate_preview()
-            return
-        xs, ys = transformed
+        if len(pieces) == 1:
+            pts_new = pieces[0]
+        else:
+            # Separate disconnected pieces with a NaN gap (connect='finite').
+            sep = np.full((1, 2), np.nan)
+            parts = []
+            for k, p in enumerate(pieces):
+                if k > 0:
+                    parts.append(sep)
+                parts.append(p)
+            pts_new = np.vstack(parts)
 
-        pts_new = np.column_stack([xs, ys])
         self.main_window.canvas_view.update_duplicate_preview(pts_new)

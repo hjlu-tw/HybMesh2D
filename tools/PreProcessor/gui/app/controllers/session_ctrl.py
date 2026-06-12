@@ -107,9 +107,13 @@ class SessionControllerMixin:
         # Remove geometry from shared canvas
         self.main_window.canvas_view.remove_geometry(session.session_id)
 
-        # If closing the currently active session, clear the mesh canvas previews
+        # The mesh canvas previews reflect the (decoupled) global mesh config,
+        # not the active CAD tab. Refresh from global geom files rather than
+        # clearing, so closing a CAD tab does not wipe a multi-geometry mesh.
         if idx == self.active_idx:
-            self.main_window.mesh_canvas_view.update_geometry_previews([])
+            geom_files = (self.global_mesh_config.geom_files
+                          if self.global_mesh_config else [])
+            self.main_window.mesh_canvas_view.update_geometry_previews(geom_files)
 
         # Block signals during tab removal and list popping to keep states synchronized
         self.main_window.tab_widget.blockSignals(True)
@@ -238,9 +242,60 @@ class SessionControllerMixin:
         else:
             self.main_window.log_panel.log(f"File not found: {file_path}")
 
-    def _load_geometry_file(self, file_path: str):
+    def load_stl_geometry(self):
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self.main_window, "Import STL Surface(s) — z=0 only",
+            "examples/geometries", "STL Files (*.stl)")
+        for fp in file_paths:
+            if os.path.exists(fp):
+                self._load_stl_file(fp)
+            else:
+                self.main_window.log_panel.log(f"File not found: {fp}")
+
+    def _load_stl_file(self, file_path: str):
+        """Load a planar (z=0) STL, auto-detect its boundary outline as surface
+        points, and bring each detected loop in as a geometry session.
+
+        The boundary points are written to temporary ``.dat`` files so the rest
+        of the pipeline (resampler, mesh generator, export) is unchanged.
+        """
+        from app.services.stl_loader import load_planar_boundary_loops, STLPlanarError
+        try:
+            loops = load_planar_boundary_loops(file_path)
+        except STLPlanarError as e:
+            self.main_window.log_panel.log(f"[STL] {e}")
+            QMessageBox.warning(self.main_window, "STL Import Error", str(e))
+            return
+        except Exception as e:
+            self.main_window.log_panel.log(
+                f"[STL] Failed to read '{os.path.basename(file_path)}': {e}")
+            return
+
+        base = os.path.splitext(os.path.basename(file_path))[0]
+        multi = len(loops) > 1
+        for i, pts in enumerate(loops):
+            suffix = f"_loop{i + 1}" if multi else ""
+            dat_path = os.path.join(self.temp_dir, f"{base}{suffix}.dat")
+            try:
+                np.savetxt(dat_path, pts, fmt="%.10f")
+            except Exception as e:
+                self.main_window.log_panel.log(f"[STL] Could not stage loop {i + 1}: {e}")
+                continue
+            self._load_geometry_file(dat_path, record_recent=False)
+
+        # Record the original STL (not the temp .dat) in the recent-files list.
+        self.update_recent_files(os.path.abspath(file_path))
+        n_total = sum(len(p) for p in loops)
+        self.main_window.log_panel.log(
+            f"Imported STL '{os.path.basename(file_path)}' — detected "
+            f"{len(loops)} boundary loop(s), {n_total} surface points (z=0 plane).")
+
+    def _load_geometry_file(self, file_path: str, record_recent: bool = True):
         if file_path.lower().endswith(".json"):
             self._load_json_config_direct(file_path)
+            return
+        if file_path.lower().endswith(".stl"):
+            self._load_stl_file(file_path)
             return
         try:
             # Check if active session is empty/untitled and has no loaded points
@@ -263,7 +318,8 @@ class SessionControllerMixin:
             abs_path = os.path.abspath(file_path)
             if abs_path not in session.mesh_config.geom_files:
                 session.mesh_config.geom_files.append(abs_path)
-            self.update_recent_files(abs_path)
+            if record_recent:
+                self.update_recent_files(abs_path)
 
             self._apply_geometry_update(session, re_detect=True)
             if session is self.active_session():

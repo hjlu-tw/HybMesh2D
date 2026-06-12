@@ -53,6 +53,7 @@ class AppController(
         # ── Wire static signals (sidebar → controller) ──────────────────
         sb = self.main_window.sidebar_view
         sb.load_btn.clicked.connect(self.load_geometry)
+        sb.load_stl_btn.clicked.connect(self.load_stl_geometry)
         sb.load_json_btn.clicked.connect(self.load_json_config)
         sb.split_btn.clicked.connect(self.add_split_point)
         sb.remove_split_btn.clicked.connect(self.remove_split_point)
@@ -151,6 +152,10 @@ class AppController(
         mw = self.main_window
         def _on_selection_mode_changed(index):
             mode = 'vertex' if index == 0 else 'edge'
+            # Drop any edge/vertex selection carried over from the previous mode
+            # so switching modes always starts from a clean slate (important when
+            # several geometry layers are loaded).
+            self._clear_cad_selection()
             self.main_window.canvas_view.set_selection_mode(mode)
 
         mw.select_mode_combo.currentIndexChanged.connect(_on_selection_mode_changed)

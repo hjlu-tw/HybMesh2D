@@ -159,14 +159,15 @@ class SegmentControllerMixin:
         self._refresh_segment_list(clear_resampled=False)
         self._sync_geometry_list()
 
-        # Sync Mesh Gen panels if present
+        # NOTE: The Mesh Generator page is intentionally decoupled from the
+        # active CAD tab. It is driven solely by the shared `global_mesh_config`
+        # (populated via the Geometry Layers list), so that several CAD
+        # geometries can be combined into a single mesh. Switching CAD tabs must
+        # therefore NOT overwrite the mesh config / stats / canvas. We only keep
+        # the Geometry Layers list in sync so newly added or renamed sessions
+        # appear there.
         if hasattr(self.main_window, "mesh_config_panel"):
-            self.main_window.mesh_config_panel.set_config(session.mesh_config)
-            self.main_window.mesh_stats_panel.update_stats(session.vtk_mesh)
-            if session.vtk_mesh:
-                self.main_window.mesh_canvas_view.render_mesh(session.vtk_mesh)
-            else:
-                self.main_window.mesh_canvas_view.clear_mesh()
+            self.sync_mesh_layers_panel()
 
     def _clear_sidebar(self):
         sb = self.main_window.sidebar_view
@@ -180,11 +181,36 @@ class SegmentControllerMixin:
         sb.show_segment_props(False)
         self._sync_geometry_list()
 
-        # Clear mesh configuration and statistics if present
+        # The Mesh Generator page is driven by `global_mesh_config`, not by CAD
+        # tabs, so closing all CAD tabs must not wipe the mesh configuration or
+        # results. Only refresh the Geometry Layers list (now empty).
         if hasattr(self.main_window, "mesh_config_panel"):
-            self.main_window.mesh_config_panel.geom_list_widget.clear()
-            self.main_window.mesh_stats_panel.update_stats(None)
-            self.main_window.mesh_canvas_view.clear_mesh()
+            self.sync_mesh_layers_panel()
+
+    def _clear_cad_selection(self):
+        """Clear both edge and vertex selection (lists, session state, canvas
+        overlays). Used when switching the canvas edit mode so a stale highlight
+        from the previous mode is not left displayed."""
+        session = self.active_session()
+        if not session:
+            return
+        sb = self.main_window.sidebar_view
+
+        # Clear edge-list selection without re-triggering selection handlers
+        for lst in (sb.file_segment_list, sb.curve_segment_list):
+            lst.blockSignals(True)
+            lst.clearSelection()
+            lst.setCurrentRow(-1)
+            lst.blockSignals(False)
+        sb.curve_bake_btn.setEnabled(False)
+
+        # Clear edge highlight + active segment state
+        self.handle_segment_selected(-1)
+        self.main_window.canvas_view.update_active_segments([])
+        self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, False)
+
+        # Clear vertex selection
+        self.handle_point_deselected()
 
     def handle_point_clicked(self, idx: int):
         session = self.active_session()

@@ -5,7 +5,8 @@ from app.commands.segment_cmds import (
     UpdateStrategyCmd, UpdateParamsCmd, RemoveSegmentCmd,
     AddCurveSegmentCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd,
     ToggleMatchPreviousCmd, UpdateSegmentStateCmd, UpdateMultipleSegmentsStateCmd,
-    CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd, DuplicateTransformCmd
+    CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd, DuplicateTransformCmd,
+    DuplicateMultipleTransformCmd
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "UpdateStrategyCmd", "UpdateParamsCmd", "RemoveSegmentCmd",
     "AddCurveSegmentCmd", "ToggleIsClosedCmd", "ToggleGlobalSplineCmd",
     "ToggleMatchPreviousCmd", "UpdateSegmentStateCmd", "UpdateMultipleSegmentsStateCmd",
-    "CreateSegmentsFromIndicesCmd", "BakeCurveToGeometryCmd", "DuplicateTransformCmd"
+    "CreateSegmentsFromIndicesCmd", "BakeCurveToGeometryCmd", "DuplicateTransformCmd",
+    "DuplicateMultipleTransformCmd"
 ]

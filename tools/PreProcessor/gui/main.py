@@ -28,16 +28,23 @@ def main():
     
     controller = AppController()
     
-    # Check if a file path is provided as a command line argument
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
-        if os.path.exists(file_path):
-            # Load the file automatically after showing the window
-            # Use QTimer.singleShot to ensure the UI is fully rendered before loading
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(100, lambda: controller.load_geometry_from_path(file_path))
+    # Load any geometry files provided as command line arguments.
+    # Multiple files may be passed; each opens in its own geometry layer/tab.
+    file_paths = []
+    for arg in sys.argv[1:]:
+        if os.path.exists(arg):
+            file_paths.append(arg)
         else:
-            print(f"Warning: File not found: {file_path}")
+            print(f"Warning: File not found: {arg}")
+    if file_paths:
+        # Use QTimer.singleShot to ensure the UI is fully rendered before loading.
+        from PyQt6.QtCore import QTimer
+
+        def load_all():
+            for fp in file_paths:
+                controller.load_geometry_from_path(fp)
+
+        QTimer.singleShot(100, load_all)
 
     controller.show_main_window()
     sys.exit(app.exec())

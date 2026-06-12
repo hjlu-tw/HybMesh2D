@@ -589,6 +589,75 @@ class DuplicateTransformCmd(BaseCommand):
         self.refresh_cb()
 
 
+class DuplicateMultipleTransformCmd(BaseCommand):
+    """Duplicate/transform several segments at once, optionally deleting the
+    originals. Each entry in ``new_segs`` is the transformed polygon curve for
+    the corresponding index in ``seg_indices``."""
+
+    def __init__(self, session, seg_indices, new_segs, delete_original,
+                 refresh_cb, select_cb):
+        self.session = session
+        self.seg_indices = list(seg_indices)
+        self.new_segs = list(new_segs)
+        self.delete_original = delete_original
+        self.refresh_cb = refresh_cb
+        self.select_cb = select_cb
+
+        # Snapshot full state for undo
+        self.old_segments = copy.deepcopy(session.project_model.segments)
+        self.old_points = (session.original_points.copy()
+                           if session.original_points is not None else None)
+        self.old_split_indices = list(session.split_indices)
+        self.old_modified = session.is_geometry_modified
+
+        # Capture original ids up-front for a stable description
+        self._orig_ids = []
+        for idx in self.seg_indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                self._orig_ids.append(seg.id)
+
+    def description(self) -> str:
+        verb = "Transform" if self.delete_original else "Duplicate"
+        ids = ", ".join(str(i) for i in self._orig_ids)
+        return f"{verb} Edges {ids}"
+
+    def execute(self):
+        pm = self.session.project_model
+        if self.delete_original:
+            # Remove originals high-index-first so earlier indices stay valid.
+            for idx in sorted(self.seg_indices, reverse=True):
+                if idx < 0 or idx >= len(pm.segments):
+                    continue
+                seg = pm.segments[idx]
+                if seg.type == "file":
+                    remove_points_and_adjust_indices(self.session, seg)
+                pm.segments.pop(idx)
+
+        for new_seg in self.new_segs:
+            pm.segments.append(new_seg)
+            if new_seg.id >= pm._next_curve_id:
+                pm._next_curve_id = new_seg.id + 1
+
+        self.session.is_geometry_modified = True
+        self.refresh_cb()
+
+        # Select the last created segment so its properties are shown.
+        if self.new_segs:
+            try:
+                idx = pm.segments.index(self.new_segs[-1])
+                self.select_cb(idx)
+            except ValueError:
+                pass
+
+    def undo(self):
+        self.session.original_points = self.old_points
+        self.session.split_indices = self.old_split_indices
+        self.session.project_model.segments = self.old_segments
+        self.session.is_geometry_modified = self.old_modified
+        self.refresh_cb()
+
+
 class UpdateMultipleSegmentsStateCmd(BaseCommand):
     """Record a complete state change on multiple segments simultaneously."""
 

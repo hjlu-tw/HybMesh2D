@@ -10,6 +10,10 @@ class FilePanel(CollapsibleSection):
 
         self.load_btn = make_button("Import Geometry (.dat)")
         self.load_btn.setToolTip("Open a .dat geometry file from disk")
+        self.load_stl_btn = make_button("Import STL Surface (z=0)", '#15303a')
+        self.load_stl_btn.setToolTip(
+            "Load a planar (z=0) STL surface and auto-detect its boundary "
+            "outline as surface points. Non-planar STL files are rejected.")
         self.load_json_btn = make_button("Load Configuration (.json)", '#301540')
         self.load_json_btn.setToolTip("Open a .json configuration file with geometry and resampling settings")
         self.new_tab_btn = make_button("New Session", '#1a2525')
@@ -29,6 +33,7 @@ class FilePanel(CollapsibleSection):
         align_form_labels(form)
 
         self.add_widget(help_widget(self.load_btn, "Open a .dat geometry file from disk"))
+        self.add_widget(help_widget(self.load_stl_btn, "Load a planar (z=0) STL surface and auto-detect its boundary outline as surface points"))
         self.add_widget(help_widget(self.load_json_btn, "Open a .json configuration file with geometry and resampling settings"))
         self.add_widget(help_widget(self.new_tab_btn, "Create a new empty geometry workspace tab"))
         self.add_widget(self.file_name_label)

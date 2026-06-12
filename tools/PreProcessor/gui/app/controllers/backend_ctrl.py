@@ -245,12 +245,12 @@ class BackendControllerMixin:
                             self.preview_curve_formula()
                         self.main_window.log_panel.log(
                             f"Loaded result ({len(pts)} points).")
-                        
-                        # Auto-sync output geometry path to global mesh config
-                        abs_out = os.path.abspath(out_path)
-                        if abs_out not in self.global_mesh_config.geom_files:
-                            self.global_mesh_config.geom_files.append(abs_out)
-                            self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+
+                        # Do NOT auto-add the exported geometry to the mesh
+                        # config — the Mesh Generator page starts blank and the
+                        # user opts in per geometry via the Geometry Layers
+                        # checkboxes. Just refresh that list so the now-exported
+                        # session becomes available (unchecked) to import.
                         self.sync_mesh_layers_panel()
                     except Exception as e:
                         self.main_window.log_panel.log(f"Result load error: {e}")

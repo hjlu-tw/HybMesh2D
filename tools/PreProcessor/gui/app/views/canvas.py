@@ -725,10 +725,15 @@ class CanvasView(QWidget):
 
 
     def update_duplicate_preview(self, points: np.ndarray | None):
-        """Update the duplicate preview curve with transformed points."""
+        """Update the duplicate preview curve with transformed points.
+
+        Multiple selected edges may be passed as a single array separated by
+        rows of NaN; ``connect='finite'`` keeps those pieces visually distinct.
+        """
         if points is not None and len(points) > 0:
             sym = 'o' if self._show_symbols else None
-            self.duplicate_preview_curve.setData(points[:, 0], points[:, 1], symbol=sym)
+            self.duplicate_preview_curve.setData(
+                points[:, 0], points[:, 1], symbol=sym, connect='finite')
         else:
             self.duplicate_preview_curve.setData([], [])
 

@@ -585,6 +585,10 @@ class MainWindow(QMainWindow):
         self.canvas_stack.setCurrentIndex(canvas_idx)
         
         is_pre = (idx == 0)
+        # The CAD geometry tabs belong to the PreProcessor only; the Mesh
+        # Generator / Statistics pages are driven by the global mesh config,
+        # not by the active CAD tab, so hide the tab bar outside CAD mode.
+        self.tab_bar.setVisible(is_pre)
         for w in self.cad_tb_widgets:
             w.setVisible(is_pre)
 
