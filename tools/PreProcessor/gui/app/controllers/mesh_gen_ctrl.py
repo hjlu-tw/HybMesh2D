@@ -166,11 +166,19 @@ class MeshGenControllerMixin:
         
         self._mesh_worker = MeshGenWorker(exe, tmp_cfg.name)
         self._mesh_worker.log_signal.connect(self.main_window.log_panel.log)
+        self._mesh_worker.progress_signal.connect(self._on_mesh_gen_progress)
         self._mesh_worker.finished_signal.connect(
             lambda rc: self._on_mesh_gen_finished(rc, tmp_cfg.name, expected_vtk)
         )
-        self.main_window.progress_bar.setVisible(True)
+        # Determinate progress driven by parsed stdout markers (R5).
+        pb = self.main_window.progress_bar
+        pb.setRange(0, 100)
+        pb.setValue(0)
+        pb.setVisible(True)
         self._mesh_worker.start()
+
+    def _on_mesh_gen_progress(self, pct: int):
+        self.main_window.progress_bar.setValue(pct)
 
     def cancel_mesh_generator(self):
         """Cancel background mesh generation thread."""

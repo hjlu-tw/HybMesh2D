@@ -7,6 +7,7 @@ import tempfile
 import copy
 import numpy as np
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
 from app.views.main_window import MainWindow
@@ -252,8 +253,58 @@ class AppController(
 
         self._update_undo_redo_buttons()
 
-        # Open a new blank tab on startup (do not restore the previous session's files)
-        self.new_blank_tab()
+        # ── Auto-save / crash recovery (Phase 3) ────────────────────────────
+        # A stable path (NOT the per-run temp_dir, which is removed on exit) so
+        # an autosave survives a crash and can be offered for recovery next run.
+        self._autosave_path = os.path.join(
+            tempfile.gettempdir(), "hybmesh_preprocessor_autosave.hws")
+        recovered = self._maybe_recover_autosave()
+        if not recovered:
+            # Open a new blank tab on startup (do not restore previous files)
+            self.new_blank_tab()
+        self._autosave_timer = QTimer(self.main_window)
+        self._autosave_timer.timeout.connect(self._autosave)
+        self._autosave_timer.start(60000)  # every 60 s
+
+    def _maybe_recover_autosave(self) -> bool:
+        """Offer to restore an autosave left behind by an unclean shutdown."""
+        try:
+            if not os.path.exists(self._autosave_path):
+                return False
+            from PyQt6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self.main_window,
+                "Recover Unsaved Work",
+                "Unsaved work from a previous session was found — the application "
+                "may have closed unexpectedly.\n\nRecover it now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._read_workspace_file(self._autosave_path)
+                self.main_window.log_panel.log("Recovered autosaved workspace.")
+                return len(self.sessions) > 0
+            # User declined: drop the stale autosave so we don't ask again.
+            os.remove(self._autosave_path)
+        except Exception as e:
+            try:
+                self.main_window.log_panel.log(f"Autosave recovery failed: {e}")
+            except Exception:
+                pass
+        return False
+
+    def _autosave(self):
+        """Periodically checkpoint modified sessions to the stable autosave path."""
+        try:
+            if not self.sessions:
+                return
+            if not any(getattr(s, "is_geometry_modified", False) for s in self.sessions):
+                return
+            self._write_workspace_file(self._autosave_path)
+        except Exception:
+            # A background autosave must never interrupt the user (e.g. a
+            # transient NaN while editing a live curve); fail silently.
+            pass
 
 
     # ═════════════════════════════════════════════════════════════════════
@@ -437,13 +488,28 @@ class AppController(
                 self._mesh_worker.wait()
 
         mcv = self.main_window.mesh_canvas_view
-        if hasattr(mcv, "_geom_loader_thread") and mcv._geom_loader_thread is not None:
-            if mcv._geom_loader_thread.isRunning():
+        loader_threads = list(getattr(mcv, "_geom_loader_threads", []))
+        last = getattr(mcv, "_geom_loader_thread", None)
+        if last is not None and last not in loader_threads:
+            loader_threads.append(last)
+        for t in loader_threads:
+            if t is not None and t.isRunning():
                 try:
-                    mcv._geom_loader_thread.loaded_signal.disconnect()
+                    t.loaded_signal.disconnect()
                 except TypeError:
                     pass
-                mcv._geom_loader_thread.wait()
+                t.wait()
+
+        # Clean shutdown: stop autosave and remove its file so the next launch
+        # does not offer to "recover" an intentionally-closed session.
+        try:
+            if getattr(self, "_autosave_timer", None) is not None:
+                self._autosave_timer.stop()
+            ap = getattr(self, "_autosave_path", None)
+            if ap and os.path.exists(ap):
+                os.remove(ap)
+        except Exception:
+            pass
 
         try:
             self.main_window.canvas_view.clear()

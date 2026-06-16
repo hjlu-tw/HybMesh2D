@@ -190,6 +190,9 @@ class BackendControllerMixin:
             return
         self.main_window.log_panel.clear_log()
         self._worker = BackendWorker(exe, cfg_path)
+        # Remember which session this run belongs to so close_tab can cancel it
+        # and the finished-callback can tell whether the session still exists.
+        self._worker_session = session
         self._worker.log_signal.connect(self.main_window.log_panel.log)
         self._worker.finished_signal.connect(on_finish)
         self._worker.start()
@@ -202,6 +205,10 @@ class BackendControllerMixin:
             if rc == 0 and os.path.exists(tmp_out):
                 try:
                     pts = np.loadtxt(tmp_out)
+                    if session not in self.sessions:
+                        # Tab was closed while the backend ran; discard the
+                        # result (temp files are still cleaned in `finally`).
+                        return
                     session.resampled_points = pts
                     if session is self.active_session():
                         show_q = self.main_window.quality_check_cb.isChecked()
@@ -236,6 +243,10 @@ class BackendControllerMixin:
                 if os.path.exists(out_path):
                     try:
                         pts = np.loadtxt(out_path)
+                        # The file is already written to disk; only update the
+                        # in-memory session/UI if that session still exists.
+                        if session not in self.sessions:
+                            return
                         session.resampled_points = pts
                         if session is self.active_session():
                             show_q = self.main_window.quality_check_cb.isChecked()

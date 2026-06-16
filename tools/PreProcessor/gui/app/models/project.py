@@ -3,6 +3,11 @@ import json
 import copy
 from app.models.segment import SegmentModel
 
+# Bump when the exported JSON config schema changes in a backward-incompatible
+# way. Readers should tolerate a missing field (treated as version 0/legacy)
+# and warn — but not crash — when the file version is newer than they support.
+CONFIG_FORMAT_VERSION = 1
+
 
 class ProjectModel:
     """Holds all data for one geometry file's resampling project."""
@@ -127,6 +132,7 @@ class ProjectModel:
 
     def export_config(self, filepath: str):
         config: dict = {
+            "format_version": CONFIG_FORMAT_VERSION,
             "input_file": self.input_file,
             "output_file": self.output_file,
             "is_closed": self.is_closed,

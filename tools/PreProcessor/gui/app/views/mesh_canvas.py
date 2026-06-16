@@ -14,11 +14,12 @@ _CANVAS_FG = '#6b738c'
 
 class GeomLoaderThread(QThread):
     """Loads multiple geometry files in a background thread to prevent UI freezing."""
-    loaded_signal = pyqtSignal(list)
+    loaded_signal = pyqtSignal(int, list)  # (generation token, results)
 
-    def __init__(self, geom_files: list[str]):
+    def __init__(self, geom_files: list[str], token: int = 0):
         super().__init__()
         self.geom_files = geom_files
+        self.token = token
 
     def run(self):
         import os
@@ -32,7 +33,7 @@ class GeomLoaderThread(QThread):
                     results.append(pts)
             except Exception as e:
                 print(f"Error loading preview geometry background {f}: {e}")
-        self.loaded_signal.emit(results)
+        self.loaded_signal.emit(self.token, results)
 
 class MeshCanvasView(QWidget):
     """Canvas widget for visualizing 2D unstructured meshes with quality and BC filters."""
@@ -159,20 +160,32 @@ class MeshCanvasView(QWidget):
             self.plot_widget.removeItem(item)
         self.geom_preview_items.clear()
 
-        # Disconnect any previously active loader thread
-        if hasattr(self, "_geom_loader_thread") and self._geom_loader_thread is not None:
-            try:
-                self._geom_loader_thread.loaded_signal.disconnect()
-            except TypeError:
-                pass
-            if self._geom_loader_thread.isRunning():
-                self._geom_loader_thread.wait()
+        # Bump the generation token so any in-flight loader's result is ignored
+        # once superseded. We do NOT block (wait()) on the old thread here, so
+        # the UI never freezes while a previous load is still finishing.
+        self._geom_loader_gen = getattr(self, "_geom_loader_gen", 0) + 1
+        token = self._geom_loader_gen
+        # Keep references to running threads so they are not garbage-collected
+        # mid-run (which would crash with "QThread destroyed while running").
+        self._geom_loader_threads = [
+            t for t in getattr(self, "_geom_loader_threads", []) if t.isRunning()]
 
-        self._geom_loader_thread = GeomLoaderThread(geom_files)
-        self._geom_loader_thread.loaded_signal.connect(self._on_geometry_previews_loaded)
-        self._geom_loader_thread.start()
+        thread = GeomLoaderThread(geom_files, token)
+        thread.loaded_signal.connect(self._on_geometry_previews_loaded)
+        thread.finished.connect(lambda t=thread: self._drop_geom_loader_thread(t))
+        self._geom_loader_threads.append(thread)
+        self._geom_loader_thread = thread  # last thread (used by close handler)
+        thread.start()
 
-    def _on_geometry_previews_loaded(self, results: list[np.ndarray]):
+    def _drop_geom_loader_thread(self, thread):
+        threads = getattr(self, "_geom_loader_threads", [])
+        if thread in threads:
+            threads.remove(thread)
+
+    def _on_geometry_previews_loaded(self, token: int, results: list[np.ndarray]):
+        # Ignore results from a superseded request (a newer load has started).
+        if token != getattr(self, "_geom_loader_gen", 0):
+            return
         # Store the loaded geometry data so we can re-highlight on failure
         self._loaded_geom_data = results
         for pts in results:

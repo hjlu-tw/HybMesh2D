@@ -6,6 +6,11 @@ from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
 from app.models.session import GeometrySession, SESSION_COLORS
 
+# Bump when the .hws workspace schema changes in a backward-incompatible way.
+# A missing field on load is treated as version 0 (legacy); a file whose
+# version exceeds this is loaded best-effort with a warning rather than refused.
+WORKSPACE_FORMAT_VERSION = 1
+
 class SessionControllerMixin:
     """Mixin containing session management, tab switching, and file loading logic."""
 
@@ -103,6 +108,19 @@ class SessionControllerMixin:
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.No:
                 return
+
+        # If a resample backend is still running for THIS session, cancel and
+        # wait for it before tearing the session down, so its finished-callback
+        # cannot touch a half-removed session. The mesh generator worker is not
+        # tied to a CAD tab (it runs on the global mesh config), so it is left
+        # untouched here.
+        worker = getattr(self, "_worker", None)
+        if (worker is not None and worker.isRunning()
+                and getattr(self, "_worker_session", None) is session):
+            self.main_window.log_panel.log(
+                f"Cancelling backend for '{session.display_name}'...")
+            worker.cancel()
+            worker.wait()
 
         # Remove geometry from shared canvas
         self.main_window.canvas_view.remove_geometry(session.session_id)
@@ -357,6 +375,14 @@ class SessionControllerMixin:
             self.main_window.log_panel.log(f"Error loading JSON: {e}")
 
     def _apply_json_config(self, config: dict, config_path: str):
+        from app.models.project import CONFIG_FORMAT_VERSION
+        cfg_version = config.get("format_version", 0)
+        if cfg_version > CONFIG_FORMAT_VERSION:
+            self.main_window.log_panel.log(
+                f"[WARNING] Config format version {cfg_version} is newer than this "
+                f"build supports ({CONFIG_FORMAT_VERSION}). Loading best-effort."
+            )
+
         input_file = config.get("input_file", "")
         if not input_file:
             self.main_window.log_panel.log("[WARNING] JSON config lacks 'input_file'. Configuration load aborted.")
@@ -509,7 +535,23 @@ class SessionControllerMixin:
     def _write_workspace_file(self, file_path: str):
         import json
         import copy
-        
+
+        # Reject non-finite coordinates up front with a clear, named error.
+        # Standard JSON has no NaN/Infinity literal, so writing them produces a
+        # file that strict parsers (e.g. the C++ nlohmann reader) refuse to load.
+        bad_fields = []
+        for session in self.sessions:
+            for label, arr in (("original_points", session.original_points),
+                               ("resampled_points", session.resampled_points)):
+                if arr is not None and not np.all(np.isfinite(arr)):
+                    bad_fields.append(f"{session.display_name} ({label})")
+        if bad_fields:
+            raise ValueError(
+                "Cannot save workspace: non-finite (NaN/Inf) coordinates in "
+                + ", ".join(bad_fields)
+                + ". Check geometry data or curve formulas before saving."
+            )
+
         sessions_data = []
         for session in self.sessions:
             segments_data = [seg.to_dict() for seg in session.project_model.segments]
@@ -540,13 +582,17 @@ class SessionControllerMixin:
             sessions_data.append(session_dict)
             
         workspace_data = {
+            "format_version": WORKSPACE_FORMAT_VERSION,
             "active_idx": self.active_idx,
             "sessions": sessions_data
         }
-        
+
+        # Serialise fully (allow_nan=False) before opening the file so a failure
+        # leaves any previous workspace file intact rather than half-written.
+        text = json.dumps(workspace_data, indent=2, allow_nan=False)
         os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(workspace_data, f, indent=2)
+            f.write(text)
 
     def _read_workspace_file(self, file_path: str):
         import json
@@ -560,7 +606,15 @@ class SessionControllerMixin:
             
         with open(file_path, "r", encoding="utf-8") as f:
             workspace_data = json.load(f)
-            
+
+        file_version = workspace_data.get("format_version", 0)
+        if file_version > WORKSPACE_FORMAT_VERSION:
+            self.main_window.log_panel.log(
+                f"[WARNING] Workspace format version {file_version} is newer than "
+                f"this build supports ({WORKSPACE_FORMAT_VERSION}). Loading best-effort; "
+                "some data may be ignored."
+            )
+
         if self.sessions:
             reply = QMessageBox.question(
                 self.main_window,
@@ -603,6 +657,14 @@ class SessionControllerMixin:
             res_pts = session_dict.get("resampled_points", None)
             if res_pts is not None:
                 session.resampled_points = np.array(res_pts, dtype=np.float64)
+
+            for label, arr in (("original_points", session.original_points),
+                               ("resampled_points", session.resampled_points)):
+                if arr is not None and not np.all(np.isfinite(arr)):
+                    self.main_window.log_panel.log(
+                        f"[WARNING] '{display_name}' has non-finite (NaN/Inf) "
+                        f"values in {label}; geometry may render incorrectly."
+                    )
                 
             pconf = session_dict.get("project_config", {})
             session.project_model.input_file = pconf.get("input_file", "")

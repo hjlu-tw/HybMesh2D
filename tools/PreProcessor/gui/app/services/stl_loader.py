@@ -7,8 +7,21 @@ triangle.  ``extract_planar_boundary_loops`` walks those edges into ordered
 closed loops that can be used directly as geometry polylines.
 """
 from __future__ import annotations
+import os
 import struct
 import numpy as np
+
+# Reject pathologically large STL files up front rather than reading gigabytes
+# into memory and freezing/crashing the GUI.
+MAX_STL_BYTES = 256 * 1024 * 1024  # 256 MB
+
+# numpy view of one binary-STL triangle record: normal(3 f4) + 3 verts(3x3 f4)
+# + 2-byte attribute. Used to parse the whole buffer in one vectorised call.
+_BIN_TRI_DTYPE = np.dtype([
+    ("normal", "<f4", (3,)),
+    ("v", "<f4", (3, 3)),
+    ("attr", "<u2"),
+])
 
 
 class STLPlanarError(ValueError):
@@ -29,15 +42,11 @@ def _is_binary_stl(data: bytes) -> bool:
 
 def _parse_binary_stl(data: bytes) -> np.ndarray:
     n = struct.unpack("<I", data[80:84])[0]
-    tris = np.empty((n, 3, 3), dtype=np.float64)
-    off = 84
-    for i in range(n):
-        vals = struct.unpack("<12f", data[off:off + 48])
-        tris[i, 0] = vals[3:6]
-        tris[i, 1] = vals[6:9]
-        tris[i, 2] = vals[9:12]
-        off += 50
-    return tris
+    if len(data) < 84 + n * 50:
+        raise STLPlanarError("Binary STL is truncated or its triangle count is corrupt.")
+    # Vectorised parse: one frombuffer instead of a per-triangle Python loop.
+    recs = np.frombuffer(data, dtype=_BIN_TRI_DTYPE, count=n, offset=84)
+    return recs["v"].astype(np.float64)  # (n, 3, 3)
 
 
 def _parse_ascii_stl(text: str) -> np.ndarray:
@@ -57,12 +66,25 @@ def _parse_ascii_stl(text: str) -> np.ndarray:
 
 def load_stl_triangles(path: str) -> np.ndarray:
     """Return an (N, 3, 3) array of triangle vertex coordinates (x, y, z)."""
+    size = os.path.getsize(path)
+    if size > MAX_STL_BYTES:
+        raise STLPlanarError(
+            f"STL file is too large ({size / (1024 * 1024):.0f} MB > "
+            f"{MAX_STL_BYTES // (1024 * 1024)} MB limit)."
+        )
     with open(path, "rb") as f:
         data = f.read()
     if _is_binary_stl(data):
         tris = _parse_binary_stl(data)
     else:
-        tris = _parse_ascii_stl(data.decode("utf-8", errors="replace"))
+        # Strict decode: a binary blob misdetected as ASCII, or a genuinely
+        # corrupt text file, should fail loudly rather than silently mangle
+        # coordinates via error-replacement.
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise STLPlanarError(f"STL file is not valid UTF-8 text STL: {e}") from e
+        tris = _parse_ascii_stl(text)
     if tris.shape[0] == 0:
         raise STLPlanarError("STL file contains no triangles.")
     return tris

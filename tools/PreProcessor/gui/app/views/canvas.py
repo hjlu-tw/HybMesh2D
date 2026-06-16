@@ -3,7 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QRectF, QPointF
-from PyQt6.QtGui import QColor, QPainter, QLinearGradient
+from PyQt6.QtGui import QColor, QPainter, QLinearGradient, QPainterPath
 
 
 # ── Dark-theme palette ────────────────────────────────────────────────────────
@@ -126,23 +126,72 @@ class ColorCodedSegmentsItem(pg.GraphicsObject):
     def paint(self, painter, option, widget):
         if self.points is None or len(self.points) < 2:
             return
-        
+
+        pts = self.points
+        n = len(pts)
         gap_indices = getattr(self, 'gap_indices', set())
-        for i in range(len(self.points) - 1):
-            if i in gap_indices:
+
+        # Viewport culling: restrict drawing to the exposed rect (item coords)
+        # with a small margin, so pan/zoom stays fast on large datasets instead
+        # of redrawing every off-screen segment each frame.
+        clip = getattr(option, "exposedRect", None)
+        if clip is not None and clip.isValid() and clip.width() > 0:
+            m = max(clip.width(), clip.height()) * 0.05 + 1e-12
+            cx0, cy0 = clip.left() - m, clip.top() - m
+            cx1, cy1 = clip.right() + m, clip.bottom() + m
+        else:
+            cx0 = cy0 = -1e308
+            cx1 = cy1 = 1e308
+
+        # Batch consecutive segments sharing a colour into one QPainterPath so
+        # we issue far fewer setPen/draw calls than one drawLine per segment.
+        npens = len(self.pens)
+        path = None
+        cur_pen = None
+        cur_key = None
+
+        def flush():
+            nonlocal path, cur_pen, cur_key
+            if path is not None and cur_pen is not None:
+                painter.setPen(cur_pen)
+                painter.drawPath(path)
+            path = None
+            cur_pen = None
+            cur_key = None
+
+        for i in range(n - 1):
+            if i in gap_indices or i >= npens:
+                flush()
                 continue
-            p0 = self.points[i]
-            p1 = self.points[i + 1]
-            if i < len(self.pens):
-                painter.setPen(self.pens[i])
-                painter.drawLine(QPointF(p0[0], p0[1]), QPointF(p1[0], p1[1]))
-            
+            ax, ay = pts[i][0], pts[i][1]
+            bx, by = pts[i + 1][0], pts[i + 1][1]
+            if (max(ax, bx) < cx0 or min(ax, bx) > cx1
+                    or max(ay, by) < cy0 or min(ay, by) > cy1):
+                flush()
+                continue
+            pen = self.pens[i]
+            key = pen.color().rgba()
+            if key != cur_key:
+                flush()
+                cur_key = key
+                cur_pen = pen
+                path = QPainterPath()
+                path.moveTo(ax, ay)
+                path.lineTo(bx, by)
+            else:
+                # Segments are contiguous (share pts[i]); extend the polyline.
+                path.lineTo(bx, by)
+        flush()
+
         if self.show_symbols and self.symbol_brushes:
             painter.setPen(pg.mkPen(None))
-            for i, p in enumerate(self.points):
-                if i < len(self.symbol_brushes):
-                    painter.setBrush(self.symbol_brushes[i])
-                    painter.drawEllipse(QPointF(p[0], p[1]), 3.0, 3.0)
+            nb = len(self.symbol_brushes)
+            for i in range(min(n, nb)):
+                px, py = pts[i][0], pts[i][1]
+                if px < cx0 or px > cx1 or py < cy0 or py > cy1:
+                    continue
+                painter.setBrush(self.symbol_brushes[i])
+                painter.drawEllipse(QPointF(px, py), 3.0, 3.0)
 
 
 class CanvasView(QWidget):
@@ -781,7 +830,11 @@ class CanvasView(QWidget):
     # ═════════════════════════════════════════════════════════════════════
 
     def _on_mouse_clicked(self, event):
-        if self._active_session_id is None or self._active_points is None:
+        # Guard against empty point arrays too: np.argmin() on an empty array
+        # raises ValueError, which can happen when clicking right after a tab
+        # switch before the new session's points are loaded.
+        if (self._active_session_id is None or self._active_points is None
+                or len(self._active_points) == 0):
             return
         btn = event.button()
         if btn != Qt.MouseButton.LeftButton:
@@ -829,3 +882,7 @@ class CanvasView(QWidget):
             mp = self.plot_widget.plotItem.vb.mapSceneToView(pos)
             self.coord_label.setPos(mp.x(), mp.y())
             self.coord_label.setText(f"X: {mp.x():.4f}\nY: {mp.y():.4f}")
+        else:
+            # Mouse left the canvas area — clear the read-out so a stale
+            # coordinate does not linger over the scene.
+            self.coord_label.setText("")
