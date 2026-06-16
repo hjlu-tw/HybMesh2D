@@ -194,6 +194,49 @@ class ColorCodedSegmentsItem(pg.GraphicsObject):
                 painter.drawEllipse(QPointF(px, py), 3.0, 3.0)
 
 
+class SelectableViewBox(pg.ViewBox):
+    """ViewBox with rubber-band box ("圈選") selection.
+
+    A plain left-drag still pans (pyqtgraph default).  Holding a modifier
+    while left-dragging draws a selection rectangle; on release the
+    data-space rect is reported via ``box_select_cb``:
+      • Shift+drag      → replace the current selection with the box contents
+      • Ctrl/Cmd+drag   → add the box contents to the current selection
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.box_select_cb = None   # fn(x0, y0, x1, y1, extend: bool)
+        self.box_enabled = False    # only active in edge selection mode
+
+    def mouseDragEvent(self, ev, axis=None):
+        mods = ev.modifiers()
+        is_box = (
+            self.box_enabled
+            and ev.button() == Qt.MouseButton.LeftButton
+            and axis is None
+            and bool(mods & (Qt.KeyboardModifier.ShiftModifier
+                             | Qt.KeyboardModifier.ControlModifier
+                             | Qt.KeyboardModifier.MetaModifier))
+        )
+        if not is_box:
+            super().mouseDragEvent(ev, axis=axis)
+            return
+
+        ev.accept()
+        p1, p2 = ev.buttonDownPos(), ev.pos()
+        if ev.isFinish():
+            self.rbScaleBox.hide()
+            rect = self.childGroup.mapRectFromParent(QRectF(p1, p2))
+            extend = bool(mods & (Qt.KeyboardModifier.ControlModifier
+                                  | Qt.KeyboardModifier.MetaModifier))
+            if self.box_select_cb is not None:
+                self.box_select_cb(rect.left(), rect.top(),
+                                   rect.right(), rect.bottom(), extend)
+        else:
+            self.updateScaleBox(p1, p2)
+
+
 class CanvasView(QWidget):
     """
     Shared interactive canvas that can display multiple geometry sessions
@@ -204,6 +247,7 @@ class CanvasView(QWidget):
     point_clicked = pyqtSignal(int)       # nearest vertex index in active session's points
     point_deselected = pyqtSignal()        # emitted when clicking far from all vertices (deselect)
     segment_clicked = pyqtSignal(float, float, bool)  # (x, y, extend_selection)
+    box_selected = pyqtSignal(float, float, float, float, bool)  # (x0, y0, x1, y1, extend)
 
 
     def __init__(self, parent=None):
@@ -213,7 +257,9 @@ class CanvasView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.plot_widget = pg.PlotWidget()
+        self._select_vb = SelectableViewBox()
+        self._select_vb.box_select_cb = self._emit_box_selected
+        self.plot_widget = pg.PlotWidget(viewBox=self._select_vb)
         self.plot_widget.setAspectLocked(True)
         self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
         layout.addWidget(self.plot_widget)
@@ -232,7 +278,7 @@ class CanvasView(QWidget):
         self._active_session_id: int | None = None
 
         # ── Selection mode ('vertex' or 'edge') ───────────────────────────
-        self._selection_mode: str = 'vertex'
+        self._selection_mode: str = 'edge'
 
         # ── Multi-segment highlight overlays ──────────────────────────────
         self._multi_segment_curves: list[pg.PlotDataItem] = []
@@ -278,6 +324,19 @@ class CanvasView(QWidget):
             pen=pg.mkPen('#00E5FF', width=2, style=Qt.PenStyle.DashLine),
             symbol='o' if self._show_symbols else None, symbolBrush='#00E5FF', symbolSize=4)
         self.duplicate_preview_curve.setZValue(15)
+
+        # ── Draggable transform base-point / axis handles ─────────────────
+        # Populated on demand by show_transform_handles(); the controller sets
+        # transform_handle_cb to receive live drag updates.
+        self.transform_handle_cb = None      # fn(kind:str, x:float, y:float)
+        self._transform_items: list = []     # pg items currently shown
+        self._suppress_handle_cb = False     # guard programmatic setPos
+        self._axis_pivot_item = None
+        self._axis_dir_item = None
+        self._axis_line_item = None
+        self._axis_offset = (1.0, 0.0)       # dir-handle offset from pivot
+        self._translate_anchor = None        # source anchor for translate
+        self._translate_guide = None         # anchor → destination guide line
 
         # Mouse-coordinate label
         self.coord_label = pg.TextItem('', anchor=(-0.1, 1.1),
@@ -479,13 +538,19 @@ class CanvasView(QWidget):
                 item.setVisible(visible)
 
     def set_active_overlays_visible(self, visible: bool):
-        """Toggle the visibility of the active session overlays."""
+        """Toggle the visibility of the active session overlays.
+
+        Mode-specific overlays also respect the current selection mode, so
+        loading/refreshing in Edge mode does not resurrect the vertex markers
+        (and vice-versa)."""
+        is_vertex = (self._selection_mode == 'vertex')
+        is_edge = (self._selection_mode == 'edge')
         self.resampled_curve.setVisible(visible)
-        self.active_segment_curve.setVisible(visible)
         if self._active_session_id in self._curve_preview_items:
             self._curve_preview_items[self._active_session_id].setVisible(visible)
-        self.split_scatter.setVisible(visible)
-        self.selected_scatter.setVisible(visible)
+        self.active_segment_curve.setVisible(visible and is_edge)
+        self.split_scatter.setVisible(visible and is_vertex)
+        self.selected_scatter.setVisible(visible and is_vertex)
 
     def fit_to_geometry(self, session_id: int):
         """Fit the view box to the points of a specific geometry layer or curve segments."""
@@ -561,6 +626,9 @@ class CanvasView(QWidget):
         is_vertex = (mode == 'vertex')
         is_edge = (mode == 'edge')
 
+        # Rubber-band box selection is only meaningful for edges.
+        self._select_vb.box_enabled = is_edge
+
         # Vertex-mode overlays
         self.split_scatter.setVisible(is_vertex)
         self.selected_scatter.setVisible(is_vertex)
@@ -621,6 +689,32 @@ class CanvasView(QWidget):
 
         # Clear the single active_segment_curve to avoid double drawing
         self.active_segment_curve.setData([], [])
+
+    def update_active_segments_pts(self, pieces: list, primary_idx: int = -1):
+        """Highlight selected edges given their point arrays directly.
+
+        Unlike update_active_segments (which only handles discrete file ranges),
+        this accepts arbitrary (N, 2) point arrays so analytic/curve edges and
+        closed-loop closing edges are highlighted too."""
+        for item in self._multi_segment_curves:
+            self.plot_widget.removeItem(item)
+        self._multi_segment_curves.clear()
+        self.active_segment_curve.setData([], [])
+        if not pieces:
+            return
+        for i, sp in enumerate(pieces):
+            if sp is None or len(sp) < 2:
+                continue
+            is_primary = (i == primary_idx)
+            color = _COL_ACTIVE if is_primary else '#FFD700'  # orange / gold
+            width = 4 if is_primary else 2.5
+            zval = 20 if is_primary else 18
+            item = self.plot_widget.plot(
+                np.asarray(sp)[:, 0], np.asarray(sp)[:, 1],
+                pen=pg.mkPen(color, width=width))
+            item.setZValue(zval)
+            item.setVisible(self._selection_mode == 'edge')
+            self._multi_segment_curves.append(item)
 
     def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False, quality_mode: str = 'length'):
         if points is not None and len(points) > 0:
@@ -790,6 +884,204 @@ class CanvasView(QWidget):
         """Clear the duplicate preview curve."""
         self.duplicate_preview_curve.setData([], [])
 
+    # ── Transform base-point / axis handles ───────────────────────────────
+    _HANDLE_COL = '#FFD54A'   # amber
+
+    def _emit_handle(self, kind: str, x: float, y: float):
+        if self._suppress_handle_cb:
+            return
+        if self.transform_handle_cb is not None:
+            self.transform_handle_cb(kind, float(x), float(y))
+
+    def clear_transform_handles(self):
+        """Remove any draggable base-point / axis handles from the canvas."""
+        for it in self._transform_items:
+            self.plot_widget.removeItem(it)
+        self._transform_items = []
+        self._axis_pivot_item = None
+        self._axis_dir_item = None
+        self._axis_line_item = None
+        self._translate_anchor = None
+        self._translate_guide = None
+
+    def _view_handle_len(self) -> float:
+        """A reasonable on-screen length (data units) for the axis dir handle."""
+        try:
+            (x0, x1), (y0, y1) = self.plot_widget.getViewBox().viewRange()
+            return 0.15 * max(abs(x1 - x0), abs(y1 - y0), 1e-9)
+        except Exception:
+            return 1.0
+
+    def show_transform_handles(self, spec: dict):
+        """Show draggable base-point / line handle(s) for the active transform.
+
+        ``spec`` is one of:
+          {'point': (x, y)}                       — pivot / centre marker
+          {'hline': y}                            — horizontal mirror axis
+          {'vline': x}                            — vertical mirror axis
+          {'axis': {'pivot': (x, y), 'dir': (dx, dy)}} — arbitrary mirror axis
+          {'translate': {'anchor': (ax, ay), 'dest': (x, y)}} — move-to handle
+        Drags are reported through ``transform_handle_cb(kind, x, y)`` with
+        kind in {'point', 'hline', 'vline', 'axis_pivot', 'axis_dir',
+        'translate'}.
+        """
+        self.clear_transform_handles()
+        self._suppress_handle_cb = True
+        try:
+            col = self._HANDLE_COL
+            if 'point' in spec:
+                x, y = spec['point']
+                t = pg.TargetItem(
+                    pos=(x, y), size=16, movable=True,
+                    pen=pg.mkPen(col, width=2),
+                    brush=pg.mkBrush(0, 0, 0, 0),
+                    hoverBrush=pg.mkBrush(col))
+                t.setZValue(200)
+                t.sigPositionChanged.connect(
+                    lambda it: self._emit_handle('point', it.pos().x(), it.pos().y()))
+                self.plot_widget.addItem(t)
+                self._transform_items.append(t)
+            elif 'hline' in spec:
+                ln = pg.InfiniteLine(
+                    pos=spec['hline'], angle=0, movable=True,
+                    pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine),
+                    hoverPen=pg.mkPen(col, width=3))
+                ln.setZValue(200)
+                ln.sigPositionChanged.connect(
+                    lambda it: self._emit_handle('hline', 0.0, it.value()))
+                self.plot_widget.addItem(ln)
+                self._transform_items.append(ln)
+            elif 'vline' in spec:
+                ln = pg.InfiniteLine(
+                    pos=spec['vline'], angle=90, movable=True,
+                    pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine),
+                    hoverPen=pg.mkPen(col, width=3))
+                ln.setZValue(200)
+                ln.sigPositionChanged.connect(
+                    lambda it: self._emit_handle('vline', it.value(), 0.0))
+                self.plot_widget.addItem(ln)
+                self._transform_items.append(ln)
+            elif 'axis' in spec:
+                self._build_axis_handles(spec['axis'])
+            elif 'translate' in spec:
+                self._build_translate_handles(spec['translate'])
+        finally:
+            self._suppress_handle_cb = False
+
+    def _build_axis_handles(self, axis: dict):
+        import math
+        col = self._HANDLE_COL
+        px, py = axis.get('pivot', (0.0, 0.0))
+        dx, dy = axis.get('dir', (1.0, 0.0))
+        n = math.hypot(dx, dy)
+        if n < 1e-12:
+            dx, dy, n = 1.0, 0.0, 1.0
+        L = self._view_handle_len()
+        ox, oy = dx / n * L, dy / n * L
+        self._axis_offset = (ox, oy)
+
+        line = pg.InfiniteLine(
+            pos=(px, py), angle=math.degrees(math.atan2(dy, dx)), movable=False,
+            pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine))
+        line.setZValue(199)
+        pivot = pg.TargetItem(
+            pos=(px, py), size=16, movable=True,
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        pivot.setZValue(201)
+        dirh = pg.TargetItem(
+            pos=(px + ox, py + oy), size=12, movable=True, symbol='o',
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        dirh.setZValue(201)
+
+        pivot.sigPositionChanged.connect(self._on_axis_pivot_moved)
+        dirh.sigPositionChanged.connect(self._on_axis_dir_moved)
+
+        for it in (line, pivot, dirh):
+            self.plot_widget.addItem(it)
+            self._transform_items.append(it)
+        self._axis_line_item = line
+        self._axis_pivot_item = pivot
+        self._axis_dir_item = dirh
+
+    def _on_axis_pivot_moved(self, it):
+        if self._suppress_handle_cb or self._axis_pivot_item is None:
+            return
+        px, py = it.pos().x(), it.pos().y()
+        ox, oy = self._axis_offset
+        self._suppress_handle_cb = True
+        try:
+            if self._axis_dir_item is not None:
+                self._axis_dir_item.setPos((px + ox, py + oy))
+            if self._axis_line_item is not None:
+                self._axis_line_item.setPos((px, py))
+        finally:
+            self._suppress_handle_cb = False
+        self._emit_handle('axis_pivot', px, py)
+
+    def _on_axis_dir_moved(self, it):
+        import math
+        if self._suppress_handle_cb or self._axis_pivot_item is None:
+            return
+        px, py = self._axis_pivot_item.pos().x(), self._axis_pivot_item.pos().y()
+        hx, hy = it.pos().x(), it.pos().y()
+        ox, oy = hx - px, hy - py
+        if math.hypot(ox, oy) < 1e-12:
+            return
+        self._axis_offset = (ox, oy)
+        self._suppress_handle_cb = True
+        try:
+            if self._axis_line_item is not None:
+                self._axis_line_item.setAngle(math.degrees(math.atan2(oy, ox)))
+        finally:
+            self._suppress_handle_cb = False
+        # Report the direction vector (handle - pivot) directly.
+        self._emit_handle('axis_dir', ox, oy)
+
+    def _build_translate_handles(self, tr: dict):
+        col = self._HANDLE_COL
+        ax, ay = tr.get('anchor', (0.0, 0.0))
+        dx, dy = tr.get('dest', (ax, ay))
+
+        # Translation vector guide: source anchor → destination.
+        guide = self.plot_widget.plot(
+            [ax, dx], [ay, dy],
+            pen=pg.mkPen(col, width=1.5, style=Qt.PenStyle.DashLine))
+        guide.setZValue(199)
+        # Source anchor marker (fixed).
+        anchor = pg.ScatterPlotItem(
+            [ax], [ay], size=11, symbol='+',
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0))
+        anchor.setZValue(200)
+        # Destination handle (draggable) — drag to place the geometry centre.
+        dest = pg.TargetItem(
+            pos=(dx, dy), size=16, movable=True,
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        dest.setZValue(201)
+
+        self._translate_anchor = (ax, ay)
+        self._translate_guide = guide
+        dest.sigPositionChanged.connect(self._on_translate_dest_moved)
+
+        self.plot_widget.addItem(anchor)
+        self.plot_widget.addItem(dest)
+        self._transform_items += [guide, anchor, dest]
+
+    def _on_translate_dest_moved(self, it):
+        if self._suppress_handle_cb or self._translate_anchor is None:
+            return
+        hx, hy = it.pos().x(), it.pos().y()
+        ax, ay = self._translate_anchor
+        self._suppress_handle_cb = True
+        try:
+            if self._translate_guide is not None:
+                self._translate_guide.setData([ax, hx], [ay, hy])
+        finally:
+            self._suppress_handle_cb = False
+        self._emit_handle('translate', hx, hy)
+
     def update_curve_segments(self, session_id: int, segments_pts: list[np.ndarray]):
         """Clear and redraw all curve segments to keep them visible when deselected."""
         if session_id not in self._curve_segment_items:
@@ -829,12 +1121,15 @@ class CanvasView(QWidget):
     # Mouse handlers
     # ═════════════════════════════════════════════════════════════════════
 
+    def _emit_box_selected(self, x0, y0, x1, y1, extend):
+        """Forward a rubber-band selection rect from the view box. Only acts
+        when a session is loaded; the controller resolves what falls inside."""
+        if self._active_session_id is None:
+            return
+        self.box_selected.emit(x0, y0, x1, y1, extend)
+
     def _on_mouse_clicked(self, event):
-        # Guard against empty point arrays too: np.argmin() on an empty array
-        # raises ValueError, which can happen when clicking right after a tab
-        # switch before the new session's points are loaded.
-        if (self._active_session_id is None or self._active_points is None
-                or len(self._active_points) == 0):
+        if self._active_session_id is None:
             return
         btn = event.button()
         if btn != Qt.MouseButton.LeftButton:
@@ -844,7 +1139,9 @@ class CanvasView(QWidget):
 
         if self._selection_mode == 'edge':
             # In edge mode: emit segment_clicked with canvas coordinates and extend_selection flag
-            # (segment resolution is done in the controller via point proximity)
+            # (segment resolution is done in the controller, which handles both
+            # discrete and analytic/curve edges — so this works even when there
+            # are no discrete points, e.g. a geometry made only of curves).
             modifiers = event.modifiers()
             extend_selection = bool(modifiers & (
                 Qt.KeyboardModifier.ControlModifier |
@@ -854,7 +1151,12 @@ class CanvasView(QWidget):
             self.segment_clicked.emit(x, y, extend_selection)
             return
 
-        # Vertex mode (default): find nearest point and emit point_clicked
+        # Vertex mode (default): find nearest point and emit point_clicked.
+        # Guard against empty point arrays: np.argmin() on an empty array
+        # raises, e.g. when clicking right after a tab switch before the new
+        # session's points are loaded.
+        if self._active_points is None or len(self._active_points) == 0:
+            return
         dists = np.sqrt((self._active_points[:, 0] - x) ** 2
                         + (self._active_points[:, 1] - y) ** 2)
         nearest_idx = int(np.argmin(dists))

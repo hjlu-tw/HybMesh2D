@@ -60,6 +60,16 @@ class ProjectModel:
 
         self.segments = new_file_segs + curve_segs
 
+    def renumber_segments(self):
+        """Assign contiguous 1..N ids to every segment in list order.
+
+        Discrete (file) and analytic (curve) edges share one running sequence,
+        so the edge list / ids never gap or jump (e.g. to the old 10001 range)
+        after add / delete / transform."""
+        for i, seg in enumerate(self.segments):
+            seg.id = i + 1
+        self._next_curve_id = len(self.segments) + 1
+
     def get_segment(self, index: int) -> SegmentModel | None:
         if 0 <= index < len(self.segments):
             return self.segments[index]
@@ -107,30 +117,12 @@ class ProjectModel:
             seg = SegmentModel.from_dict(i + 1, sj)
             self.segments.append(seg)
 
-        # Fix curve segment IDs if they are < 10000 (old format) to avoid conflicts
-        next_curve_id = 10001
-        used_curve_ids = set()
-        for seg in self.segments:
-            if seg.type == "curve":
-                if seg.id < 10000:
-                    seg.id = next_curve_id
-                    next_curve_id += 1
-                else:
-                    used_curve_ids.add(seg.id)
-
-        if used_curve_ids:
-            self._next_curve_id = max(used_curve_ids) + 1
-        else:
-            self._next_curve_id = next_curve_id
-
-        # Renumber only file segments to ensure they are 1..N contiguous
-        file_idx = 1
-        for seg in self.segments:
-            if seg.type == "file":
-                seg.id = file_idx
-                file_idx += 1
+        # All edges share one contiguous 1..N numbering (in list order).
+        self.renumber_segments()
 
     def export_config(self, filepath: str):
+        # Keep exported ids consistent with the (contiguous) edge numbering.
+        self.renumber_segments()
         config: dict = {
             "format_version": CONFIG_FORMAT_VERSION,
             "input_file": self.input_file,

@@ -30,14 +30,14 @@ class AdvancedPanel(CollapsibleSection):
         self.transform_scale.setValue(1.0)
         self.transform_scale.setDecimals(6)
         self.transform_scale.setStyleSheet(_spin_style)
-        self.transform_scale.setToolTip("Uniform scale factor applied to the resampled geometry output")
+        self.transform_scale.setToolTip("Uniform scale factor about the geometry's bounding-box centre (scales in place)")
 
         self.transform_rotate = CleanDoubleSpinBox()
         self.transform_rotate.setRange(-360.0, 360.0)
         self.transform_rotate.setDecimals(3)
         self.transform_rotate.setSuffix("  °")
         self.transform_rotate.setStyleSheet(_spin_style)
-        self.transform_rotate.setToolTip("Rotation angle (degrees) applied to the resampled geometry output")
+        self.transform_rotate.setToolTip("Rotation angle (degrees) about the geometry's bounding-box centre (rotates in place)")
 
         self.transform_tx = CleanDoubleSpinBox()
         self.transform_tx.setRange(-1e9, 1e9)
@@ -51,8 +51,8 @@ class AdvancedPanel(CollapsibleSection):
         self.transform_ty.setStyleSheet(_spin_style)
         self.transform_ty.setToolTip("Vertical translation offset applied to the resampled geometry output")
 
-        tf_layout.addRow(help_label("Scale:", "Uniform scale factor applied to the resampled geometry output"), self.transform_scale)
-        tf_layout.addRow(help_label("Rotate:", "Rotation angle (degrees) applied to the resampled geometry output"), self.transform_rotate)
+        tf_layout.addRow(help_label("Scale:", "Uniform scale factor about the geometry's bounding-box centre (scales in place)"), self.transform_scale)
+        tf_layout.addRow(help_label("Rotate:", "Rotation angle (degrees) about the geometry's bounding-box centre (rotates in place)"), self.transform_rotate)
         tf_layout.addRow(help_label("Translate X:", "Horizontal translation offset applied to the resampled geometry output"), self.transform_tx)
         tf_layout.addRow(help_label("Translate Y:", "Vertical translation offset applied to the resampled geometry output"), self.transform_ty)
         align_form_labels(tf_layout)

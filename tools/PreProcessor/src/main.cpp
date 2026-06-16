@@ -848,14 +848,26 @@ bool processElement(const json& config) {
         }
     }
 
-    if (config.contains("transform")) {
-        const auto& t = config.at("transform"); 
+    if (config.contains("transform") && !resPts.empty()) {
+        const auto& t = config.at("transform");
         double sc = t.value("scale", 1.0), ang = t.value("rotate", 0.0) * M_PI / 180.0;
         std::vector<double> tr = t.value("translate", std::vector<double>{0.0, 0.0});
         if (tr.size() < 2) tr = {0.0, 0.0};
+        // Pivot scale + rotation about the geometry's bounding-box centre so the
+        // shape transforms in place (rather than swinging around the origin);
+        // the translate then offsets it from there.
+        double minX = resPts[0].x, maxX = resPts[0].x, minY = resPts[0].y, maxY = resPts[0].y;
+        for (const auto& p : resPts) {
+            minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+            minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
+        }
+        double cx = 0.5 * (minX + maxX), cy = 0.5 * (minY + maxY);
+        double ca = std::cos(ang), sa = std::sin(ang);
         for (auto& p : resPts) {
-            p.x *= sc; p.y *= sc; double xN = p.x * std::cos(ang) - p.y * std::sin(ang), yN = p.x * std::sin(ang) + p.y * std::cos(ang);
-            p.x = xN + tr[0]; p.y = yN + tr[1];
+            double rx = (p.x - cx) * sc, ry = (p.y - cy) * sc;
+            double xN = rx * ca - ry * sa, yN = rx * sa + ry * ca;
+            p.x = cx + xN + tr[0];
+            p.y = cy + yN + tr[1];
         }
     }
 

@@ -33,13 +33,17 @@ class TransformPanel(QGroupBox):
         self.dup_base_form.setContentsMargins(0, 0, 0, 0)
         self.dup_base_mode_combo = QComboBox()
         self.dup_base_mode_combo.addItems([
+            "Center (selection)",
             "Custom (Manual)",
             "Start Point",
             "End Point"
         ])
         self.dup_base_mode_combo.setStyleSheet(COMBO_STYLE)
-        self.dup_base_mode_combo.setToolTip("Choose the reference point for the transformation (start/end point or custom coordinates)")
-        self.dup_base_form.addRow(help_label("Base Point:", "Choose the reference point for the transformation (start/end point or custom coordinates)"), self.dup_base_mode_combo)
+        _base_tip = ("Reference point for the transform. 'Center (selection)' "
+                     "uses the bounding-box centre of all selected edges so "
+                     "Rotate/Scale happen in place.")
+        self.dup_base_mode_combo.setToolTip(_base_tip)
+        self.dup_base_form.addRow(help_label("Base Point:", _base_tip), self.dup_base_mode_combo)
         gl.addWidget(self.dup_base_widget)
 
         # Stacked parameter areas per transform type
@@ -148,10 +152,27 @@ class TransformPanel(QGroupBox):
         # Connect combo → stack
         def _on_type_changed(index: int):
             self._dup_stack.setCurrentIndex(index)
-            hide_base = (index in [1, 2, 5])
+            # Only Translate (5) has no reference point; every other transform
+            # (incl. Mirror H/V, whose axis position is a reference point) keeps
+            # the Base Point selector so it can snap to the selection centre.
+            hide_base = (index == 5)
             self.dup_base_widget.setVisible(not hide_base)
         self.dup_type_combo.currentIndexChanged.connect(_on_type_changed)
         _on_type_changed(self.dup_type_combo.currentIndex())
+
+        # Interactive canvas-editing toggle — the intuitive way to "start":
+        # shows the draggable base point / axis and a live result preview.
+        _interactive_tip = ("Show the draggable base point / mirror axis and a "
+                            "live preview of the result on the canvas. Drag to "
+                            "position, then Duplicate / Transform to apply.")
+        self.dup_interactive_btn = make_button("✎  Edit on Canvas", '#243a52')
+        self.dup_interactive_btn.setCheckable(True)
+        self.dup_interactive_btn.setStyleSheet(
+            self.dup_interactive_btn.styleSheet()
+            + "QPushButton:checked { background-color:#1f6feb;"
+              " border-color:#5b9bff; }")
+        self.dup_interactive_btn.setToolTip(_interactive_tip)
+        gl.addWidget(help_widget(self.dup_interactive_btn, _interactive_tip))
 
         # Delete original checkbox
         self.dup_delete_orig_cb = QCheckBox("Delete original")

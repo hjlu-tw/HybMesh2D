@@ -15,6 +15,12 @@ class SessionControllerMixin:
     """Mixin containing session management, tab switching, and file loading logic."""
 
     def new_blank_tab(self):
+        # In Mesh Generator / Statistics modes the separate mesh tab strip is
+        # active, so "New Tab" there adds a mesh workspace tab rather than a new
+        # CAD geometry session.
+        if self.main_window.mode_combo.currentIndex() in (1, 2):
+            self.add_mesh_tab()
+            return
         self._new_session("")
 
     def _new_session(self, file_path: str = "") -> GeometrySession:
@@ -77,6 +83,9 @@ class SessionControllerMixin:
             self.main_window.canvas_view.clear_active_overlays()
             self._show_duplicate_preview = False
             self.main_window.canvas_view.clear_duplicate_preview()
+            # Drop the transform base-point/axis handle from the previous
+            # geometry so it does not linger / show a stale pivot.
+            self.main_window.canvas_view.clear_transform_handles()
             if session.original_points is not None:
                 self.main_window.canvas_view.update_split_points(session.split_indices)
                 self.main_window.canvas_view.update_selected_point(session.selected_point_idx)

@@ -42,6 +42,9 @@ class SegmentControllerMixin:
         session = self.active_session()
         if not session:
             return
+        # Keep edge ids contiguous 1..N (no gaps / no 10001 jump) after any
+        # structural change. This is the single rebuild chokepoint.
+        session.project_model.renumber_segments()
         sb = self.main_window.sidebar_view
 
         # Save currently selected segment indices
@@ -316,6 +319,30 @@ class SegmentControllerMixin:
             f"Inserted ({x:.4f}, {y:.4f}) at index {insert_idx}.")
         self.handle_point_clicked(insert_idx)
 
+    def handle_segment_list_selected(self, row: int = -1):
+        """Selection handler for the unified Edge list (discrete + analytic).
+
+        Determines the active edge from the current item, enables the
+        Convert-to-Discrete button only for analytic edges, and refreshes the
+        canvas highlight (file segments only)."""
+        if getattr(self, "_is_refreshing_list", False):
+            return
+        sb = self.main_window.sidebar_view
+        selected_items = sb.segment_list.selectedItems()
+        if not selected_items:
+            sb.curve_bake_btn.setEnabled(False)
+            self.handle_segment_selected(-1)
+            self.main_window.canvas_view.update_active_segments([])
+            return
+
+        cur = sb.segment_list.currentItem() or selected_items[0]
+        idx = cur.data(Qt.ItemDataRole.UserRole)
+        session = self.active_session()
+        seg = session.project_model.get_segment(idx) if session else None
+        sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
+        self.handle_segment_selected(idx)
+        self.highlight_selected_segments()
+
     def handle_file_segment_selected(self, row: int = -1):
         if getattr(self, "_is_refreshing_list", False):
             return
@@ -379,6 +406,11 @@ class SegmentControllerMixin:
             return
 
         seg = session.project_model.segments[index]
+        # Single-select: drop any prior (e.g. box) selection so only `index`
+        # remains highlighted (the unified list shares one widget).
+        sb.segment_list.blockSignals(True)
+        sb.segment_list.clearSelection()
+        sb.segment_list.blockSignals(False)
         if seg.type == "file":
             row = -1
             for r in range(sb.file_segment_list.count()):
@@ -411,6 +443,8 @@ class SegmentControllerMixin:
             sb.curve_bake_btn.setEnabled(row >= 0)
 
         self.handle_segment_selected(index)
+        # Highlight the selected edge (file or curve) and dim the rest.
+        self.highlight_selected_segments()
 
     def handle_segment_selected(self, row: int):
         session = self.active_session()
@@ -419,8 +453,11 @@ class SegmentControllerMixin:
         sb = self.main_window.sidebar_view
         if row < 0:
             self.main_window.canvas_view.update_active_segment(None, None)
+            self.main_window.canvas_view.update_active_segments_pts([])
+            self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, False)
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
             self.main_window.canvas_view.clear_duplicate_preview()
+            self.main_window.canvas_view.clear_transform_handles()
             self._show_duplicate_preview = False
             session.current_segment_idx = -1
             sb.remove_seg_btn.setEnabled(False)
@@ -432,6 +469,7 @@ class SegmentControllerMixin:
         if not seg:
             self.main_window.canvas_view.update_active_segment(None, None)
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
+            self.main_window.canvas_view.clear_transform_handles()
             self._show_duplicate_preview = False
             sb.remove_seg_btn.setEnabled(False)
             sb.show_segment_props(False)
@@ -488,6 +526,9 @@ class SegmentControllerMixin:
         finally:
             self._is_populating = False
             self.main_window.canvas_view.clear_duplicate_preview()
+
+        # Show the draggable base-point / axis handle for the selected edge.
+        self._refresh_transform_handles()
 
         self._update_canvas_curve_segments()
         if seg.type == "curve":
@@ -551,137 +592,193 @@ class SegmentControllerMixin:
         self.main_window.sidebar_view.switch_param_form(strategy_name)
 
     def highlight_selected_segments(self):
-        """Highlight all selected file segments on the canvas simultaneously."""
+        """Highlight every selected edge on the canvas — discrete (file) AND
+        analytic (curve) — and dim the base geometry while a selection exists."""
         session = self.active_session()
         if not session:
             return
         sb = self.main_window.sidebar_view
 
-        # Collect all selected file segment indices
         selected_indices = []
-        for item in sb.file_segment_list.selectedItems():
+        for item in sb.segment_list.selectedItems():
             idx = item.data(Qt.ItemDataRole.UserRole)
             if idx is not None:
                 selected_indices.append(idx)
 
         if not selected_indices:
-            self.main_window.canvas_view.update_active_segments([])
+            self.main_window.canvas_view.update_active_segments_pts([])
+            self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, False)
             return
 
-        # Build (start_index, end_index) ranges for each selected segment
-        segment_ranges = []
+        # Build a highlight polyline for each selected edge (any type).
+        pieces = []
         primary_pos = 0
         current_idx = getattr(session, 'current_segment_idx', -1)
-        for list_pos, seg_idx in enumerate(selected_indices):
+        for seg_idx in selected_indices:
             seg = session.project_model.get_segment(seg_idx)
-            if seg and seg.type == "file":
-                segment_ranges.append((seg.start_index, seg.end_index))
-                if seg_idx == current_idx:
-                    primary_pos = len(segment_ranges) - 1
+            if not seg:
+                continue
+            poly = self._segment_polyline(session, seg)
+            if poly is None:
+                continue
+            pieces.append(poly)
+            if seg_idx == current_idx:
+                primary_pos = len(pieces) - 1
 
-        self.main_window.canvas_view.update_active_segments(segment_ranges, primary_idx=primary_pos)
-        if segment_ranges:
-            self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, True)
+        self.main_window.canvas_view.update_active_segments_pts(pieces, primary_idx=primary_pos)
+        self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, bool(pieces))
+
+    def _segment_polyline(self, session, seg) -> np.ndarray | None:
+        """Return a segment's display points as an (N, 2) array, or None.
+
+        Delegates to GeometryService.get_segment_points so discrete (file),
+        analytic (curve) and closed-loop closing edges are all hit-tested with
+        exactly the points used for transform / preview."""
+        res = GeometryService.get_segment_points(session, seg)
+        if res is None or len(res[0]) < 2:
+            return None
+        return np.column_stack([res[0], res[1]])
+
+    @staticmethod
+    def _point_to_polyline_dist(x: float, y: float, sp: np.ndarray) -> float:
+        """Minimum distance from (x, y) to the polyline through points ``sp``."""
+        best = float('inf')
+        for i in range(len(sp) - 1):
+            ax, ay = float(sp[i][0]), float(sp[i][1])
+            bx, by = float(sp[i + 1][0]), float(sp[i + 1][1])
+            dx, dy = bx - ax, by - ay
+            len_sq = dx * dx + dy * dy
+            if len_sq < 1e-20:
+                d = ((x - ax) ** 2 + (y - ay) ** 2) ** 0.5
+            else:
+                t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / len_sq))
+                d = ((x - (ax + t * dx)) ** 2 + (y - (ay + t * dy)) ** 2) ** 0.5
+            if d < best:
+                best = d
+        return best
 
     def handle_canvas_segment_clicked(self, x: float, y: float, extend_selection: bool = False):
-        """Handle a canvas click in edge selection mode: find and select/toggle the nearest segment."""
+        """Handle a canvas click in edge selection mode: select/toggle the
+        nearest segment. Both discrete (file) and analytic (curve/polygon)
+        segments are considered, so a transformed/duplicated result can be
+        clicked directly on the canvas instead of only via the edge list."""
         session = self.active_session()
-        if not session or session.original_points is None:
+        if not session:
             return
 
-        pts = session.original_points
         segments = session.project_model.segments
-
         best_seg_idx = -1
         best_dist = float('inf')
-
         for seg_idx, seg in enumerate(segments):
-            if seg.type != "file":
+            sp = self._segment_polyline(session, seg)
+            if sp is None or len(sp) < 2:
                 continue
-            start = seg.start_index
-            end = seg.end_index
-            if start >= end:
-                continue
-
-            # Compute minimum distance from click point to each sub-segment
-            seg_pts = pts[start:end + 1]
-            for i in range(len(seg_pts) - 1):
-                ax, ay = float(seg_pts[i][0]), float(seg_pts[i][1])
-                bx, by = float(seg_pts[i + 1][0]), float(seg_pts[i + 1][1])
-                dx, dy = bx - ax, by - ay
-                len_sq = dx * dx + dy * dy
-                if len_sq < 1e-20:
-                    d = ((x - ax) ** 2 + (y - ay) ** 2) ** 0.5
-                else:
-                    t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / len_sq))
-                    proj_x = ax + t * dx
-                    proj_y = ay + t * dy
-                    d = ((x - proj_x) ** 2 + (y - proj_y) ** 2) ** 0.5
-                if d < best_dist:
-                    best_dist = d
-                    best_seg_idx = seg_idx
+            d = self._point_to_polyline_dist(x, y, sp)
+            if d < best_dist:
+                best_dist = d
+                best_seg_idx = seg_idx
 
         if best_seg_idx < 0:
             return
 
-        # Convert distance from data space to pixel space for threshold check
+        # Reject clicks too far from any segment (3% of the visible range).
         vb = self.main_window.canvas_view.plot_widget.plotItem.vb
-        import pyqtgraph as pg
-        p1_scene = vb.mapViewToScene(pg.Point(x, y))
-        seg = segments[best_seg_idx]
-        mid_idx = (seg.start_index + seg.end_index) // 2
-        mid_pt = pts[mid_idx]
-        p2_scene = vb.mapViewToScene(pg.Point(float(mid_pt[0]), float(mid_pt[1])))
-        # Use point-click pixel threshold scaled by segment proximity
-        # Compare in data space against a fraction of the view range
         view_range = vb.viewRange()
         x_range = abs(view_range[0][1] - view_range[0][0])
         y_range = abs(view_range[1][1] - view_range[1][0])
-        data_threshold = max(x_range, y_range) * 0.03  # 3% of visible range
+        data_threshold = max(x_range, y_range) * 0.03
         if best_dist > data_threshold:
             return
 
-        # Select the segment in the list (programmatically)
         sb = self.main_window.sidebar_view
-        # Clear curve list
-        sb.curve_segment_list.blockSignals(True)
-        sb.curve_segment_list.clearSelection()
-        sb.curve_segment_list.setCurrentRow(-1)
-        sb.curve_segment_list.blockSignals(False)
-        sb.curve_bake_btn.setEnabled(False)
+        lst = sb.segment_list
 
-        # Find and select/toggle the item in file_segment_list
-        sb.file_segment_list.blockSignals(True)
+        # Find and select/toggle the item in the unified edge list.
         found_item = None
-        for r in range(sb.file_segment_list.count()):
-            item = sb.file_segment_list.item(r)
+        for r in range(lst.count()):
+            item = lst.item(r)
             if item.data(Qt.ItemDataRole.UserRole) == best_seg_idx:
                 found_item = item
                 break
 
+        lst.blockSignals(True)
         if found_item:
             if extend_selection:
                 found_item.setSelected(not found_item.isSelected())
                 if found_item.isSelected():
-                    sb.file_segment_list.setCurrentItem(found_item)
+                    lst.setCurrentItem(found_item)
                     session.current_segment_idx = best_seg_idx
                 else:
-                    selected_items = sb.file_segment_list.selectedItems()
-                    if selected_items:
-                        session.current_segment_idx = selected_items[0].data(Qt.ItemDataRole.UserRole)
-                    else:
-                        session.current_segment_idx = -1
+                    sel = lst.selectedItems()
+                    session.current_segment_idx = (
+                        sel[0].data(Qt.ItemDataRole.UserRole) if sel else -1)
             else:
-                sb.file_segment_list.clearSelection()
+                lst.clearSelection()
                 found_item.setSelected(True)
-                sb.file_segment_list.setCurrentItem(found_item)
+                lst.setCurrentItem(found_item)
                 session.current_segment_idx = best_seg_idx
-        sb.file_segment_list.blockSignals(False)
+        lst.blockSignals(False)
 
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
         self.handle_segment_selected(session.current_segment_idx)
         self.highlight_selected_segments()
 
+    def handle_canvas_box_selected(self, x0: float, y0: float,
+                                   x1: float, y1: float, extend: bool = False):
+        """Handle a rubber-band box selection from the canvas (edge mode).
 
+        Selects every edge segment (discrete or analytic) with at least one
+        point inside the box. Shift+drag replaces the current selection;
+        Ctrl/Cmd+drag adds to it. No-op in vertex mode."""
+        canvas = self.main_window.canvas_view
+        if getattr(canvas, '_selection_mode', 'vertex') != 'edge':
+            return
+        session = self.active_session()
+        if not session:
+            return
+
+        xmin, xmax = (x0, x1) if x0 <= x1 else (x1, x0)
+        ymin, ymax = (y0, y1) if y0 <= y1 else (y1, y0)
+
+        segments = session.project_model.segments
+        hit_set = set()
+        for seg_idx, seg in enumerate(segments):
+            sp = self._segment_polyline(session, seg)
+            if sp is None or len(sp) < 2:
+                continue
+            inside = ((sp[:, 0] >= xmin) & (sp[:, 0] <= xmax) &
+                      (sp[:, 1] >= ymin) & (sp[:, 1] <= ymax))
+            if np.any(inside):
+                hit_set.add(seg_idx)
+
+        sb = self.main_window.sidebar_view
+        lst = sb.segment_list
+        last_idx = -1
+        lst.blockSignals(True)
+        if not extend:
+            lst.clearSelection()
+            lst.setCurrentRow(-1)
+        for r in range(lst.count()):
+            item = lst.item(r)
+            if item.data(Qt.ItemDataRole.UserRole) in hit_set:
+                item.setSelected(True)
+                lst.setCurrentItem(item)
+                last_idx = item.data(Qt.ItemDataRole.UserRole)
+        lst.blockSignals(False)
+
+        if last_idx >= 0:
+            session.current_segment_idx = last_idx
+            seg = session.project_model.get_segment(last_idx)
+            sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
+            self.handle_segment_selected(last_idx)
+        elif not extend:
+            sb.curve_bake_btn.setEnabled(False)
+            self.handle_segment_selected(-1)
+        self.highlight_selected_segments()
+
+        if hit_set:
+            self.main_window.log_panel.log(f"Box-selected {len(hit_set)} edge(s).")
 
     def _populate_form_from_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view

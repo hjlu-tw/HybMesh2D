@@ -59,8 +59,8 @@ class AppController(
         sb.split_btn.clicked.connect(self.add_split_point)
         sb.remove_split_btn.clicked.connect(self.remove_split_point)
         sb.insert_btn.clicked.connect(self.handle_insert_point)
-        sb.file_segment_list.itemSelectionChanged.connect(self.handle_file_segment_selected)
-        sb.curve_segment_list.itemSelectionChanged.connect(self.handle_curve_segment_selected)
+        # Discrete and analytic edges share one unified list now.
+        sb.segment_list.itemSelectionChanged.connect(self.handle_segment_list_selected)
         sb.strategy_combo.currentTextChanged.connect(
             self.handle_strategy_changed)
         sb.is_closed_combo.currentTextChanged.connect(
@@ -113,6 +113,7 @@ class AppController(
         sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
 
         # Wire duplicate live preview connections
+        sb.dup_interactive_btn.toggled.connect(self.handle_dup_interactive_toggled)
         sb.dup_type_combo.currentIndexChanged.connect(self.handle_dup_type_changed)
         sb.dup_base_mode_combo.currentIndexChanged.connect(self.handle_dup_base_mode_changed)
         sb.dup_delete_orig_cb.toggled.connect(self.on_duplicate_param_changed)
@@ -144,10 +145,16 @@ class AppController(
         tw.tabCloseRequested.connect(self.close_tab)
         tw.currentChanged.connect(self.switch_tab)
 
+        # Mesh Generator / Statistics have their own (shared-state) tab strip.
+        self.main_window.mesh_tab_bar.tabCloseRequested.connect(self.close_mesh_tab)
+
         # ── Wire shared canvas signals ──────────────────────────────────
         self.main_window.canvas_view.point_clicked.connect(self.handle_point_clicked)
         self.main_window.canvas_view.point_deselected.connect(self.handle_point_deselected)
         self.main_window.canvas_view.segment_clicked.connect(self.handle_canvas_segment_clicked)
+        self.main_window.canvas_view.box_selected.connect(self.handle_canvas_box_selected)
+        # Live drag of the transform base point / mirror axis on the canvas.
+        self.main_window.canvas_view.transform_handle_cb = self._on_transform_handle_dragged
 
         # Wire Selection Mode dropdown
         mw = self.main_window
@@ -160,6 +167,11 @@ class AppController(
             self.main_window.canvas_view.set_selection_mode(mode)
 
         mw.select_mode_combo.currentIndexChanged.connect(_on_selection_mode_changed)
+        # Default the CAD canvas to Edge mode. The combo is preset to "Edge"
+        # before this signal was wired, so push the mode into the canvas once
+        # to apply its overlay / box-select side effects.
+        self.main_window.canvas_view.set_selection_mode(
+            'vertex' if mw.select_mode_combo.currentIndex() == 0 else 'edge')
 
         # ── Wire Mesh Generation signals ───────────────────────────────
         mw = self.main_window

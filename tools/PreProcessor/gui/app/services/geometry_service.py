@@ -272,9 +272,22 @@ class GeometryService:
         If seg.type is 'curve', computes them using compute_curve_preview_pts.
         """
         if seg.type == "file":
-            if session.original_points is None or len(session.original_points) == 0:
+            gp = session.original_points
+            if gp is None or len(gp) == 0:
                 return None
-            pts = session.original_points[seg.start_index : seg.end_index + 1]
+            s, e = seg.start_index, seg.end_index
+            if s < 0 or s >= len(gp) or e <= s:
+                return None
+            if e < len(gp):
+                pts = gp[s:e + 1]
+            elif session.project_model.is_closed:
+                # Closing edge of a closed loop: end index is one past the last
+                # point, so it wraps from `start` back to the first point. Keep
+                # that wrap so the edge's point count / geometry is complete
+                # everywhere (transform, preview, selection).
+                pts = np.vstack([gp[s:], gp[:1]])
+            else:
+                pts = gp[s:]
             if len(pts) == 0:
                 return None
             return pts[:, 0].copy(), pts[:, 1].copy()

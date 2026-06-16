@@ -93,14 +93,14 @@ class MainWindow(QMainWindow):
         self.tab_bar.setTabsClosable(True)
         self.tab_bar.setMovable(True)
         self.tab_bar.setExpanding(False)
-        self.tab_bar.setStyleSheet("""
+        tab_bar_style = """
             QTabBar {
                 background: transparent;
             }
             QTabBar::tab {
-                background: #252844;
+                background: transparent;
                 color: #a5b0cf;
-                border: 1px solid #363a60;
+                border: 1px solid transparent;
                 border-bottom: none;
                 padding: 5px 24px 5px 12px;
                 margin-right: 2px;
@@ -109,12 +109,13 @@ class MainWindow(QMainWindow):
                 font-size: 12px;
             }
             QTabBar::tab:selected {
-                background: #0c0d16;
+                background: #2a4a7f;
                 color: #ffffff;
-                border-bottom: 2px solid #5a9ad4;
+                border: 1px solid #5a9ad4;
+                border-bottom: 3px solid #7cb8f0;
                 font-weight: bold;
             }
-            QTabBar::tab:hover {
+            QTabBar::tab:hover:!selected {
                 background: #2e3155;
                 color: #d1d8f0;
             }
@@ -130,10 +131,25 @@ class MainWindow(QMainWindow):
                 background-color: #b71c1c;
                 border-radius: 2px;
             }
-        """)
+        """
+        self.tab_bar.setStyleSheet(tab_bar_style)
         self.tab_bar.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         tab_hl.addWidget(self.tab_bar)
+
+        # Mesh Generator / Statistics share their own tab strip, kept separate
+        # from the CAD geometry tabs. Mesh state is global/shared, so these
+        # tabs are visual workspaces — only one is shown depending on mode.
+        self.mesh_tab_bar = QTabBar(self.tab_row)
+        self.mesh_tab_bar.setTabsClosable(True)
+        self.mesh_tab_bar.setMovable(True)
+        self.mesh_tab_bar.setExpanding(False)
+        self.mesh_tab_bar.setStyleSheet(tab_bar_style)
+        self.mesh_tab_bar.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.mesh_tab_bar.addTab("Mesh 1")
+        self.mesh_tab_bar.setVisible(False)
+        tab_hl.addWidget(self.mesh_tab_bar)
 
         self.mode_combo = QComboBox(self.tab_row)
         self.mode_combo.addItems(["PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics"])
@@ -275,7 +291,11 @@ class MainWindow(QMainWindow):
 
         self.select_mode_combo = QComboBox(self.canvas_toolbar)
         self.select_mode_combo.addItems(["Vertex (Point)", "Edge (Segment)"])
-        self.select_mode_combo.setToolTip("Selection Mode: Choose whether clicking/selecting affects Vertices or Edges")
+        self.select_mode_combo.setCurrentIndex(1)   # default to Edge mode
+        self.select_mode_combo.setToolTip(
+            "Selection Mode: Choose whether clicking/selecting affects Vertices or Edges.\n"
+            "In Edge mode, Shift+drag box-selects edges (Ctrl/Cmd+drag adds to the selection); "
+            "plain drag still pans.")
         self.select_mode_combo.setStyleSheet("""
             QComboBox {
                 background: #181b30;
@@ -585,10 +605,11 @@ class MainWindow(QMainWindow):
         self.canvas_stack.setCurrentIndex(canvas_idx)
         
         is_pre = (idx == 0)
-        # The CAD geometry tabs belong to the PreProcessor only; the Mesh
-        # Generator / Statistics pages are driven by the global mesh config,
-        # not by the active CAD tab, so hide the tab bar outside CAD mode.
+        # CAD shows its per-file geometry tabs; the Mesh Generator / Statistics
+        # pages show their own separate tab strip. They never share tabs, but
+        # both keep their open tabs alive when the other mode is showing.
         self.tab_bar.setVisible(is_pre)
+        self.mesh_tab_bar.setVisible(not is_pre)
         for w in self.cad_tb_widgets:
             w.setVisible(is_pre)
 
