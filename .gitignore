@@ -7,3 +7,9 @@ CMakeCache.txt
 cmake_install.cmake
 Makefile
 .DS_Store
+
+# Output / result directories
+Results/
+
+# Editor / tooling artifacts
+.antigravitycli/
