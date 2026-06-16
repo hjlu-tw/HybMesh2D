@@ -6,6 +6,7 @@
 #include <set>
 #include <iomanip>
 #include <algorithm>
+#include <thread>
 
 void Mesh::addNode(Point2D p, NodeType type) {
     int id = static_cast<int>(nodes.size());
@@ -326,6 +327,14 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
 void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     gmsh::initialize();
     gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端輸出
+
+    // Let Gmsh use all available cores for the far-field meshing stage.
+    // Mesh.MaxNumThreads* default to 0 (= follow General.NumThreads).
+    unsigned int nthreads = std::thread::hardware_concurrency();
+    if (nthreads == 0) nthreads = 1;
+    gmsh::option::setNumber("General.NumThreads", static_cast<double>(nthreads));
+    std::cout << "Step: Gmsh configured to use " << nthreads << " thread(s)." << std::endl;
+
     gmsh::model::add("FarField");
 
     auto getCoordKey = [](double x, double y) {

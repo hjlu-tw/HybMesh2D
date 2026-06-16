@@ -4,6 +4,19 @@ project(HybMesh VERSION 1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Default to an optimized build. Without a build type, `cmake ..` produces an
+# unoptimized (-O0) binary; Release gives -O3 -DNDEBUG (often 2-10x faster).
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# Add -march=native when the compiler accepts it (portable guard).
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-march=native" HAS_MARCH_NATIVE)
+if(HAS_MARCH_NATIVE)
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
+endif()
+
 # 1. 設置路徑 (根據原本 build.sh 的路徑)
 set(GMSH_INCLUDE_DIR "/Users/hjlu_nchc/Library/Python/3.9/include")
 set(GMSH_LIBRARY "/Users/hjlu_nchc/Library/Python/3.9/lib/libgmsh.4.15.dylib")
