@@ -3,7 +3,7 @@ import os
 import math
 import copy
 import numpy as np
-from PyQt6.QtWidgets import QListWidgetItem
+from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtCore import Qt
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
@@ -24,19 +24,10 @@ class SegmentControllerMixin:
         if not session:
             return []
         sb = self.main_window.sidebar_view
-        indices = []
-        for item in sb.file_segment_list.selectedItems():
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            if idx is not None:
-                indices.append(idx)
-        for item in sb.curve_segment_list.selectedItems():
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            if idx is not None:
-                indices.append(idx)
-        if not indices and hasattr(session, 'current_segment_idx'):
-            if session.current_segment_idx >= 0:
-                indices.append(session.current_segment_idx)
-        return sorted(list(set(indices)))
+        indices = list(sb.geometry_tree.selected_edge_indices())
+        if not indices and getattr(session, 'current_segment_idx', -1) >= 0:
+            indices.append(session.current_segment_idx)
+        return sorted(set(indices))
 
     def _refresh_segment_list(self, clear_resampled: bool = True):
         session = self.active_session()
@@ -46,51 +37,47 @@ class SegmentControllerMixin:
         # structural change. This is the single rebuild chokepoint.
         session.project_model.renumber_segments()
         sb = self.main_window.sidebar_view
+        tree = sb.geometry_tree
 
         # Save currently selected segment indices
-        selected_indices = []
-        for item in sb.file_segment_list.selectedItems():
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            if idx is not None:
-                selected_indices.append(idx)
-        for item in sb.curve_segment_list.selectedItems():
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            if idx is not None:
-                selected_indices.append(idx)
+        selected_indices = list(tree.selected_edge_indices())
 
         # Fallback to session.current_segment_idx if list has no selection
         if not selected_indices and getattr(session, 'current_segment_idx', -1) >= 0:
             selected_indices = [session.current_segment_idx]
-        
+
         self._is_refreshing_list = True
         try:
-            sb.file_segment_list.blockSignals(True)
-            sb.curve_segment_list.blockSignals(True)
-            sb.file_segment_list.clear()
-            sb.curve_segment_list.clear()
-
-            for idx, seg in enumerate(session.project_model.segments):
-                if seg.type == "curve":
-                    c_type = getattr(seg, "curve_type", "custom")
-                    lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
-                    c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
-                    lbl = f"Edge {seg.id}: {c_label}"
-                    item = QListWidgetItem(lbl)
-                    item.setData(Qt.ItemDataRole.UserRole, idx)
-                    sb.curve_segment_list.addItem(item)
+            tree.blockSignals(True)
+            # Edges only ever live under the active session node; clearing every
+            # node first guarantees no stale children survive a tab switch.
+            tree.clear_all_edges()
+            node = tree.session_item(session.session_id)
+            primary_child = None
+            if node is not None:
+                for idx, seg in enumerate(session.project_model.segments):
+                    if seg.type == "curve":
+                        c_type = getattr(seg, "curve_type", "custom")
+                        lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
+                        c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
+                        lbl = f"Edge {seg.id}: {c_label}"
+                    else:
+                        lbl = (f"Edge {seg.id}: "
+                               f"Idx {seg.start_index} → {seg.end_index}")
+                    child = QTreeWidgetItem([lbl])
+                    child.setData(0, Qt.ItemDataRole.UserRole,
+                                  ("edge", session.session_id, idx))
+                    node.addChild(child)
                     if idx in selected_indices:
-                        item.setSelected(True)
-                else:
-                    lbl = (f"Edge {seg.id}: "
-                           f"Idx {seg.start_index} → {seg.end_index}")
-                    item = QListWidgetItem(lbl)
-                    item.setData(Qt.ItemDataRole.UserRole, idx)
-                    sb.file_segment_list.addItem(item)
-                    if idx in selected_indices:
-                        item.setSelected(True)
-
-            sb.file_segment_list.blockSignals(False)
-            sb.curve_segment_list.blockSignals(False)
+                        child.setSelected(True)
+                        if idx == session.current_segment_idx:
+                            primary_child = child
+                node.setExpanded(True)
+            # Make the primary edge the current item so a later layer-row resync
+            # (_sync_geometry_list) sees an edge is selected and leaves it alone.
+            if primary_child is not None:
+                tree.setCurrentItem(primary_child)
+            tree.blockSignals(False)
 
             if selected_indices:
                 if session.current_segment_idx not in selected_indices:
@@ -175,8 +162,7 @@ class SegmentControllerMixin:
     def _clear_sidebar(self):
         sb = self.main_window.sidebar_view
         sb.file_name_label.setText("No geometry imported")
-        sb.file_segment_list.clear()
-        sb.curve_segment_list.clear()
+        sb.geometry_tree.clear_all_edges()
         sb.selected_info.setText("Selected Vertex: None")
         sb.split_btn.setEnabled(False)
         sb.remove_split_btn.setEnabled(False)
@@ -199,12 +185,11 @@ class SegmentControllerMixin:
             return
         sb = self.main_window.sidebar_view
 
-        # Clear edge-list selection without re-triggering selection handlers
-        for lst in (sb.file_segment_list, sb.curve_segment_list):
-            lst.blockSignals(True)
-            lst.clearSelection()
-            lst.setCurrentRow(-1)
-            lst.blockSignals(False)
+        # Clear edge selection without re-triggering selection handlers
+        tree = sb.geometry_tree
+        tree.blockSignals(True)
+        tree.clear_edge_selection()
+        tree.blockSignals(False)
         sb.curve_bake_btn.setEnabled(False)
 
         # Clear edge highlight + active segment state
@@ -319,85 +304,41 @@ class SegmentControllerMixin:
             f"Inserted ({x:.4f}, {y:.4f}) at index {insert_idx}.")
         self.handle_point_clicked(insert_idx)
 
-    def handle_segment_list_selected(self, row: int = -1):
-        """Selection handler for the unified Edge list (discrete + analytic).
+    def handle_segment_list_selected(self, *args):
+        """Selection handler for the model tree (wired to itemSelectionChanged).
 
-        Determines the active edge from the current item, enables the
-        Convert-to-Discrete button only for analytic edges, and refreshes the
-        canvas highlight (file segments only)."""
+        Acts only on selected edge rows: determines the active edge, enables the
+        Convert-to-Discrete button for analytic edges, and refreshes highlights.
+        Selecting a layer row (no edges) clears the edge selection/properties."""
         if getattr(self, "_is_refreshing_list", False):
             return
         sb = self.main_window.sidebar_view
-        selected_items = sb.segment_list.selectedItems()
-        if not selected_items:
+        tree = sb.geometry_tree
+        sel_edges = tree.selected_edge_items()
+        if not sel_edges:
             sb.curve_bake_btn.setEnabled(False)
             self.handle_segment_selected(-1)
             self.main_window.canvas_view.update_active_segments([])
             return
 
-        cur = sb.segment_list.currentItem() or selected_items[0]
-        idx = cur.data(Qt.ItemDataRole.UserRole)
+        cur = tree.currentItem()
+        if tree.kind(cur) != "edge":
+            cur = sel_edges[0]
+        idx = tree.edge_index(cur)
         session = self.active_session()
         seg = session.project_model.get_segment(idx) if session else None
         sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
         self.handle_segment_selected(idx)
         self.highlight_selected_segments()
 
-    def handle_file_segment_selected(self, row: int = -1):
-        if getattr(self, "_is_refreshing_list", False):
-            return
-        sb = self.main_window.sidebar_view
-        sb.curve_segment_list.blockSignals(True)
-        sb.curve_segment_list.clearSelection()
-        sb.curve_segment_list.setCurrentRow(-1)
-        sb.curve_segment_list.blockSignals(False)
-        sb.curve_bake_btn.setEnabled(False)
-
-        selected_items = sb.file_segment_list.selectedItems()
-        if not selected_items:
-            self.handle_segment_selected(-1)
-            # Clear all multi-segment highlights
-            self.main_window.canvas_view.update_active_segments([])
-            return
-
-        first_item = selected_items[0]
-        idx = first_item.data(Qt.ItemDataRole.UserRole)
-        self.handle_segment_selected(idx)
-        self.highlight_selected_segments()
-
-    def handle_curve_segment_selected(self, row: int = -1):
-        if getattr(self, "_is_refreshing_list", False):
-            return
-        sb = self.main_window.sidebar_view
-        sb.file_segment_list.blockSignals(True)
-        sb.file_segment_list.clearSelection()
-        sb.file_segment_list.setCurrentRow(-1)
-        sb.file_segment_list.blockSignals(False)
-
-        selected_items = sb.curve_segment_list.selectedItems()
-        if not selected_items:
-            sb.curve_bake_btn.setEnabled(False)
-            self.handle_segment_selected(-1)
-            self.main_window.canvas_view.update_active_segments([])
-            return
-
-        sb.curve_bake_btn.setEnabled(True)
-        first_item = selected_items[0]
-        idx = first_item.data(Qt.ItemDataRole.UserRole)
-        self.handle_segment_selected(idx)
-
     def _select_segment_by_index(self, index: int):
         sb = self.main_window.sidebar_view
+        tree = sb.geometry_tree
         if index < 0:
-            sb.file_segment_list.blockSignals(True)
-            sb.file_segment_list.setCurrentRow(-1)
-            sb.file_segment_list.blockSignals(False)
-
-            sb.curve_segment_list.blockSignals(True)
-            sb.curve_segment_list.setCurrentRow(-1)
-            sb.curve_segment_list.blockSignals(False)
+            tree.blockSignals(True)
+            tree.clear_edge_selection()
+            tree.blockSignals(False)
             sb.curve_bake_btn.setEnabled(False)
-
             self.handle_segment_selected(-1)
             return
 
@@ -406,41 +347,16 @@ class SegmentControllerMixin:
             return
 
         seg = session.project_model.segments[index]
+        item = tree.edge_item_by_index(session.session_id, index)
         # Single-select: drop any prior (e.g. box) selection so only `index`
-        # remains highlighted (the unified list shares one widget).
-        sb.segment_list.blockSignals(True)
-        sb.segment_list.clearSelection()
-        sb.segment_list.blockSignals(False)
-        if seg.type == "file":
-            row = -1
-            for r in range(sb.file_segment_list.count()):
-                item = sb.file_segment_list.item(r)
-                if item.data(Qt.ItemDataRole.UserRole) == index:
-                    row = r
-                    break
-            sb.curve_segment_list.blockSignals(True)
-            sb.curve_segment_list.setCurrentRow(-1)
-            sb.curve_segment_list.blockSignals(False)
-
-            sb.file_segment_list.blockSignals(True)
-            sb.file_segment_list.setCurrentRow(row)
-            sb.file_segment_list.blockSignals(False)
-            sb.curve_bake_btn.setEnabled(False)
-        else:
-            row = -1
-            for r in range(sb.curve_segment_list.count()):
-                item = sb.curve_segment_list.item(r)
-                if item.data(Qt.ItemDataRole.UserRole) == index:
-                    row = r
-                    break
-            sb.file_segment_list.blockSignals(True)
-            sb.file_segment_list.setCurrentRow(-1)
-            sb.file_segment_list.blockSignals(False)
-
-            sb.curve_segment_list.blockSignals(True)
-            sb.curve_segment_list.setCurrentRow(row)
-            sb.curve_segment_list.blockSignals(False)
-            sb.curve_bake_btn.setEnabled(row >= 0)
+        # remains highlighted.
+        tree.blockSignals(True)
+        tree.clear_edge_selection()
+        if item is not None:
+            item.setSelected(True)
+            tree.setCurrentItem(item)
+        tree.blockSignals(False)
+        sb.curve_bake_btn.setEnabled(seg.type == "curve")
 
         self.handle_segment_selected(index)
         # Highlight the selected edge (file or curve) and dim the rest.
@@ -458,6 +374,7 @@ class SegmentControllerMixin:
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
             self.main_window.canvas_view.clear_duplicate_preview()
             self.main_window.canvas_view.clear_transform_handles()
+            self.main_window.canvas_view.clear_edge_handles()
             self._show_duplicate_preview = False
             session.current_segment_idx = -1
             sb.remove_seg_btn.setEnabled(False)
@@ -494,12 +411,14 @@ class SegmentControllerMixin:
             sb.show_segment_props(True)
             is_curve = (seg.type == "curve")
             if is_curve:
-                sb.segment_type_label.setText("Analytic Edge")
+                lbl_val = CURVE_TYPE_LABELS.get(seg.curve_type, seg.curve_type.capitalize())
+                shape = lbl_val(seg) if callable(lbl_val) else lbl_val
+                sb.segment_type_label.setText(f"Edge {seg.id}  ·  Analytic ({shape})")
                 sb.show_curve_segment(seg)
                 sb.strategy_combo.setVisible(False)
                 sb.param_stack.setVisible(False)
             else:
-                sb.segment_type_label.setText("Discrete Edge")
+                sb.segment_type_label.setText(f"Edge {seg.id}  ·  Discrete")
                 sb.show_file_segment(seg.start_index, seg.end_index)
                 sb.strategy_combo.setVisible(True)
                 sb.param_stack.setVisible(True)
@@ -533,6 +452,10 @@ class SegmentControllerMixin:
         self._update_canvas_curve_segments()
         if seg.type == "curve":
             self.preview_curve_formula()
+        # Show draggable control-point handles for an analytic shape edge.
+        self._refresh_edge_handles()
+        # Keep the distribution preview in sync if its window is open.
+        self._preview_distribution()
 
     def handle_strategy_changed(self, strategy_name: str):
         session = self.active_session()
@@ -544,7 +467,7 @@ class SegmentControllerMixin:
         sb = self.main_window.sidebar_view
         sb.switch_param_form(strategy_name)
 
-        indices = self.get_selected_segment_indices()
+        indices = self._distribution_indices_or_selection()
         if not indices:
             return
 
@@ -581,6 +504,8 @@ class SegmentControllerMixin:
             self.main_window.log_panel.log(
                 f"Updated strategy to '{strategy_name}' for {len(indices)} selected edges."
             )
+        # Refresh the live distribution preview (if its window is open).
+        self._preview_distribution()
 
     def _repopulate_strategy(self, strategy_name: str):
         session = self.active_session()
@@ -599,11 +524,7 @@ class SegmentControllerMixin:
             return
         sb = self.main_window.sidebar_view
 
-        selected_indices = []
-        for item in sb.segment_list.selectedItems():
-            idx = item.data(Qt.ItemDataRole.UserRole)
-            if idx is not None:
-                selected_indices.append(idx)
+        selected_indices = sb.geometry_tree.selected_edge_indices()
 
         if not selected_indices:
             self.main_window.canvas_view.update_active_segments_pts([])
@@ -662,6 +583,10 @@ class SegmentControllerMixin:
         nearest segment. Both discrete (file) and analytic (curve/polygon)
         segments are considered, so a transformed/duplicated result can be
         clicked directly on the canvas instead of only via the edge list."""
+        # Ignore selection clicks while creating/editing an edge (modeless dialog
+        # open), so the in-progress control points are not cleared by a stray click.
+        if self._edit_in_progress():
+            return
         session = self.active_session()
         if not session:
             return
@@ -691,33 +616,27 @@ class SegmentControllerMixin:
             return
 
         sb = self.main_window.sidebar_view
-        lst = sb.segment_list
+        tree = sb.geometry_tree
 
-        # Find and select/toggle the item in the unified edge list.
-        found_item = None
-        for r in range(lst.count()):
-            item = lst.item(r)
-            if item.data(Qt.ItemDataRole.UserRole) == best_seg_idx:
-                found_item = item
-                break
+        # Find and select/toggle the matching edge row in the model tree.
+        found_item = tree.edge_item_by_index(session.session_id, best_seg_idx)
 
-        lst.blockSignals(True)
+        tree.blockSignals(True)
         if found_item:
             if extend_selection:
                 found_item.setSelected(not found_item.isSelected())
                 if found_item.isSelected():
-                    lst.setCurrentItem(found_item)
+                    tree.setCurrentItem(found_item)
                     session.current_segment_idx = best_seg_idx
                 else:
-                    sel = lst.selectedItems()
-                    session.current_segment_idx = (
-                        sel[0].data(Qt.ItemDataRole.UserRole) if sel else -1)
+                    sel = tree.selected_edge_indices()
+                    session.current_segment_idx = sel[0] if sel else -1
             else:
-                lst.clearSelection()
+                tree.clear_edge_selection()
                 found_item.setSelected(True)
-                lst.setCurrentItem(found_item)
+                tree.setCurrentItem(found_item)
                 session.current_segment_idx = best_seg_idx
-        lst.blockSignals(False)
+        tree.blockSignals(False)
 
         seg = session.project_model.get_segment(session.current_segment_idx)
         sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
@@ -731,6 +650,8 @@ class SegmentControllerMixin:
         Selects every edge segment (discrete or analytic) with at least one
         point inside the box. Shift+drag replaces the current selection;
         Ctrl/Cmd+drag adds to it. No-op in vertex mode."""
+        if self._edit_in_progress():
+            return
         canvas = self.main_window.canvas_view
         if getattr(canvas, '_selection_mode', 'vertex') != 'edge':
             return
@@ -753,19 +674,18 @@ class SegmentControllerMixin:
                 hit_set.add(seg_idx)
 
         sb = self.main_window.sidebar_view
-        lst = sb.segment_list
+        tree = sb.geometry_tree
         last_idx = -1
-        lst.blockSignals(True)
+        tree.blockSignals(True)
         if not extend:
-            lst.clearSelection()
-            lst.setCurrentRow(-1)
-        for r in range(lst.count()):
-            item = lst.item(r)
-            if item.data(Qt.ItemDataRole.UserRole) in hit_set:
+            tree.clear_edge_selection()
+        for item in tree.edge_items(session.session_id):
+            idx = tree.edge_index(item)
+            if idx in hit_set:
                 item.setSelected(True)
-                lst.setCurrentItem(item)
-                last_idx = item.data(Qt.ItemDataRole.UserRole)
-        lst.blockSignals(False)
+                tree.setCurrentItem(item)
+                last_idx = idx
+        tree.blockSignals(False)
 
         if last_idx >= 0:
             session.current_segment_idx = last_idx
@@ -779,6 +699,71 @@ class SegmentControllerMixin:
 
         if hit_set:
             self.main_window.log_panel.log(f"Box-selected {len(hit_set)} edge(s).")
+
+    # ── Distribution tool window + live canvas preview ──────────────────────
+
+    def _distribution_indices_or_selection(self):
+        """While the Distribution window is open, distribution edits act on the
+        CURRENT edge only (per-edge), not the whole selection."""
+        session = self.active_session()
+        sb = self.main_window.sidebar_view
+        if (session and sb._distribution_dialog.isVisible()
+                and session.current_segment_idx >= 0):
+            return [session.current_segment_idx]
+        return self.get_selected_segment_indices()
+
+    def _open_distribution(self):
+        self.main_window.sidebar_view.open_distribution_dialog()
+        self._preview_distribution()
+
+    def _apply_distribution(self):
+        """Apply button: commit the distribution settings of the CURRENT edge
+        only (not every selected edge) and show its resampled preview."""
+        session = self.active_session()
+        if not session:
+            return
+        idx = session.current_segment_idx
+        seg = session.project_model.get_segment(idx)
+        if not seg or seg.type != "file":
+            self.main_window.log_panel.log("Select a discrete edge to apply its distribution.")
+            return
+        old_state = seg.to_dict()
+        self._read_params_into_segment(seg)
+        new_state = seg.to_dict()
+        if new_state != old_state:
+            def refresh():
+                if session is self.active_session():
+                    self._apply_geometry_update(session)
+            cmd = UpdateSegmentStateCmd(session, idx, old_state, new_state, refresh_cb=refresh)
+            session.command_history.execute(cmd)
+            session.is_geometry_modified = True
+            self.main_window.update_title(session.display_name, True)
+        self._preview_distribution()
+        self.main_window.log_panel.log(f"Applied distribution to Edge {seg.id}.")
+
+    def _preview_distribution(self):
+        """Live-render the chosen point distribution of the CURRENT discrete edge
+        onto the canvas while the Distribution window is open."""
+        session = self.active_session()
+        if not session:
+            return
+        sb = self.main_window.sidebar_view
+        if not sb._distribution_dialog.isVisible():
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg or seg.type != "file":
+            self.main_window.canvas_view.clear_resampled()
+            return
+        pts = GeometryService.get_segment_points(session, seg)
+        if pts is None or len(pts[0]) < 2:
+            self.main_window.canvas_view.clear_resampled()
+            return
+        rx, ry = GeometryService.resample_preview(
+            pts[0], pts[1], seg.strategy, seg.parameters)
+        if rx is None or len(rx) == 0:
+            self.main_window.canvas_view.clear_resampled()
+            return
+        self.main_window.canvas_view.load_resampled_data(np.column_stack([rx, ry]))
 
     def _populate_form_from_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view
@@ -821,7 +806,7 @@ class SegmentControllerMixin:
             return
         if self._is_populating:
             return
-        indices = self.get_selected_segment_indices()
+        indices = self._distribution_indices_or_selection()
         if not indices:
             return
 
@@ -854,6 +839,8 @@ class SegmentControllerMixin:
             session.command_history.record(cmd)
             if session.current_segment_idx in old_states:
                 session.segment_state_snapshot = states_dict[session.current_segment_idx][1]
+        # Live distribution preview (no-op unless the Distribution window is open).
+        self._preview_distribution()
 
     def _read_params_into_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view

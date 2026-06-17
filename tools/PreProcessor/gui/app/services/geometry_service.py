@@ -248,6 +248,52 @@ class GeometryService:
         return xs, ys
 
     @staticmethod
+    def resample_preview(xs, ys, strategy: str, params: dict):
+        """Lightweight Python preview of a point distribution along a polyline.
+
+        Re-parametrises by normalised arc length per the chosen strategy so the
+        canvas can show the node layout live while the Distribution dialog is
+        open.  This is a visual preview — the exact node positions are still
+        produced by the C++ resampler on Preview/Export."""
+        xs = np.asarray(xs, dtype=float)
+        ys = np.asarray(ys, dtype=float)
+        if len(xs) < 2:
+            return xs, ys
+        d = np.sqrt(np.diff(xs) ** 2 + np.diff(ys) ** 2)
+        s = np.concatenate([[0.0], np.cumsum(d)])
+        L = float(s[-1])
+        if L < 1e-12:
+            return xs, ys
+        t_in = s / L
+
+        if strategy == "uniform" and "spacing" in params:
+            sp = max(float(params.get("spacing", 0.1)), 1e-9)
+            n = max(2, int(round(L / sp)) + 1)
+        else:
+            n = max(2, int(params.get("n_points", 50)))
+        lin = np.linspace(0.0, 1.0, n)
+
+        if strategy == "cosine":
+            u = (1.0 - np.cos(np.pi * lin)) / 2.0
+        elif strategy == "tanh":
+            it = float(params.get("intensity", 2.0))
+            u = lin if it < 1e-6 else 0.5 * (1.0 + np.tanh(it * (lin - 0.5)) / np.tanh(it * 0.5))
+        elif strategy == "geometric":
+            r = float(params.get("ratio", 1.2))
+            if abs(r - 1.0) < 1e-9:
+                u = lin
+            else:
+                w = r ** np.arange(n - 1)
+                cs = np.concatenate([[0.0], np.cumsum(w)])
+                u = cs / cs[-1]
+        else:  # uniform / curvature (curvature shown as uniform in preview)
+            u = lin
+
+        rx = np.interp(u, t_in, xs)
+        ry = np.interp(u, t_in, ys)
+        return rx, ry
+
+    @staticmethod
     def auto_detect_features(points: np.ndarray, angle_threshold_deg: float = 30.0) -> list[int]:
         indices = [0]
         n = len(points)

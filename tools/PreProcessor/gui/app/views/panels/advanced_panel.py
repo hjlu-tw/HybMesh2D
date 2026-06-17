@@ -7,7 +7,7 @@ from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 class AdvancedPanel(CollapsibleSection):
     def __init__(self, parent=None):
-        super().__init__("Global Settings", start_collapsed=True, parent=parent)
+        super().__init__("Geometry Settings", start_collapsed=True, parent=parent)
 
         _spin_style = SPIN_STYLE
 

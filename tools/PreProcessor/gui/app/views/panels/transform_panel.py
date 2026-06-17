@@ -1,6 +1,7 @@
-from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QStackedWidget, QCheckBox, QWidget
+from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QWidget
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.adjusting_stacked_widget import AdjustingStackedWidget
 
 class TransformPanel(QGroupBox):
     def __init__(self, parent=None):
@@ -46,8 +47,9 @@ class TransformPanel(QGroupBox):
         self.dup_base_form.addRow(help_label("Base Point:", _base_tip), self.dup_base_mode_combo)
         gl.addWidget(self.dup_base_widget)
 
-        # Stacked parameter areas per transform type
-        self._dup_stack = QStackedWidget()
+        # Stacked parameter areas per transform type (sizes to the current page
+        # so a 1-field transform like Mirror Horizontal leaves no dead space).
+        self._dup_stack = AdjustingStackedWidget()
         gl.addWidget(self._dup_stack)
 
         def _dspin(lo=-1e9, hi=1e9, val=0.0, dec=4):
@@ -160,19 +162,9 @@ class TransformPanel(QGroupBox):
         self.dup_type_combo.currentIndexChanged.connect(_on_type_changed)
         _on_type_changed(self.dup_type_combo.currentIndex())
 
-        # Interactive canvas-editing toggle — the intuitive way to "start":
-        # shows the draggable base point / axis and a live result preview.
-        _interactive_tip = ("Show the draggable base point / mirror axis and a "
-                            "live preview of the result on the canvas. Drag to "
-                            "position, then Duplicate / Transform to apply.")
-        self.dup_interactive_btn = make_button("✎  Edit on Canvas", '#243a52')
-        self.dup_interactive_btn.setCheckable(True)
-        self.dup_interactive_btn.setStyleSheet(
-            self.dup_interactive_btn.styleSheet()
-            + "QPushButton:checked { background-color:#1f6feb;"
-              " border-color:#5b9bff; }")
-        self.dup_interactive_btn.setToolTip(_interactive_tip)
-        gl.addWidget(help_widget(self.dup_interactive_btn, _interactive_tip))
+        # (The base point / mirror axis gizmo and live preview now appear
+        # automatically whenever this Duplicate & Transform window is open —
+        # no explicit "Edit on Canvas" toggle is needed.)
 
         # Delete original checkbox
         self.dup_delete_orig_cb = QCheckBox("Delete original")

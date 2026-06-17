@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem, QMenu, QInputDialog
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QTreeWidgetItem, QMenu, QInputDialog
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
 from app.models.session import GeometrySession, SESSION_COLORS
@@ -60,12 +60,14 @@ class SessionControllerMixin:
             self.main_window.update_title(
                 session.display_name, session.is_geometry_modified)
             
-            # Select corresponding row in sidebar geometries list
+            # Select corresponding session row in the model tree
             sb = self.main_window.sidebar_view
-            sb.geom_list.blockSignals(True)
-            if 0 <= idx < sb.geom_list.count():
-                sb.geom_list.setCurrentRow(idx)
-            sb.geom_list.blockSignals(False)
+            tree = sb.geometry_tree
+            tree.blockSignals(True)
+            node = tree.session_item(session.session_id)
+            if node is not None:
+                tree.setCurrentItem(node)
+            tree.blockSignals(False)
 
             # Switch active geometries on the shared canvas
             self.main_window.canvas_view.highlight_geometry(session.session_id)
@@ -181,40 +183,58 @@ class SessionControllerMixin:
             self._sync_geometry_list()
 
     def _sync_geometry_list(self):
+        """Rebuild the model tree's top-level session rows (layers).
+
+        Edge children are owned by `_refresh_segment_list`; this method must not
+        disturb them, nor steal selection away from a currently-selected edge."""
         sb = self.main_window.sidebar_view
-        # Block both itemChanged AND currentRowChanged while rebuilding the list
-        sb.geom_list.blockSignals(True)
-        
-        num_sessions = len(self.sessions)
-        while sb.geom_list.count() > num_sessions:
-            sb.geom_list.takeItem(sb.geom_list.count() - 1)
-            
+        tree = sb.geometry_tree
+        tree.blockSignals(True)
+
+        live_ids = {s.session_id for s in self.sessions}
+        # Drop rows whose session was closed.
+        for i in reversed(range(tree.topLevelItemCount())):
+            if tree.session_id_of(tree.topLevelItem(i)) not in live_ids:
+                tree.takeTopLevelItem(i)
+
+        # One row per session, in session order. Reuse the existing row for a
+        # session_id (take/insert preserves its edge children) so a resync does
+        # not wipe the active layer's edges.
         for i, session in enumerate(self.sessions):
-            name = session.display_name
-            if i < sb.geom_list.count():
-                item = sb.geom_list.item(i)
-                item.setText(name)
-            else:
-                item = QListWidgetItem(name)
+            item = tree.session_item(session.session_id)
+            if item is None:
+                item = QTreeWidgetItem()
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                sb.geom_list.addItem(item)
-                
-            state = Qt.CheckState.Checked if session.is_visible else Qt.CheckState.Unchecked
-            item.setCheckState(state)
-            item.setData(Qt.ItemDataRole.UserRole, session.session_id)
+                item.setData(0, Qt.ItemDataRole.UserRole, ("session", session.session_id))
+                tree.insertTopLevelItem(i, item)
+            else:
+                cur = tree.indexOfTopLevelItem(item)
+                if cur != i:
+                    tree.takeTopLevelItem(cur)
+                    tree.insertTopLevelItem(i, item)
+            item.setText(0, session.display_name)
+            item.setCheckState(
+                0, Qt.CheckState.Checked if session.is_visible else Qt.CheckState.Unchecked)
             if hasattr(session, "color") and session.color:
-                item.setForeground(QColor(session.color))
+                item.setForeground(0, QColor(session.color))
 
-        if 0 <= self.active_idx < sb.geom_list.count():
-            sb.geom_list.setCurrentRow(self.active_idx)
+        # Highlight the active layer row — but only when no edge is selected, so
+        # we never clobber an active edge selection (edges share this widget).
+        if not tree.selected_edge_indices() and 0 <= self.active_idx < len(self.sessions):
+            node = tree.session_item(self.sessions[self.active_idx].session_id)
+            if node is not None:
+                tree.setCurrentItem(node)
 
-        sb.geom_list.blockSignals(False)
+        tree.blockSignals(False)
 
-    def handle_geom_visibility_changed(self, item: QListWidgetItem):
-        session_id = item.data(Qt.ItemDataRole.UserRole)
+    def handle_geom_visibility_changed(self, item, column: int = 0):
+        sb = self.main_window.sidebar_view
+        if sb.geometry_tree.kind(item) != "session":
+            return
+        session_id = sb.geometry_tree.session_id_of(item)
         if session_id is None:
             return
-        is_checked = item.checkState() == Qt.CheckState.Checked
+        is_checked = item.checkState(0) == Qt.CheckState.Checked
         for session in self.sessions:
             if session.session_id == session_id:
                 session.is_visible = is_checked
@@ -223,30 +243,23 @@ class SessionControllerMixin:
                     self.main_window.canvas_view.set_active_overlays_visible(is_checked)
                 break
 
-    def handle_geom_list_row_changed(self, row: int):
-        if row < 0 or row >= len(self.sessions):
-            return
-        # Guard: only switch if it's actually a different tab to avoid feedback loops
-        if row == self.active_idx:
-            return
-        self.main_window.tab_widget.setCurrentIndex(row)
-
-    def handle_geom_list_double_clicked(self, item: QListWidgetItem):
-        session_id = item.data(Qt.ItemDataRole.UserRole)
-        self.main_window.canvas_view.fit_to_geometry(session_id)
-
-    def toggle_selected_geometry_visibility(self):
-        """Toggle the visibility of the currently selected geometry in the list."""
+    def handle_tree_current_changed(self, current, previous=None):
+        """A session row becoming current navigates to that layer's tab. Edge
+        rows do not navigate (their selection is handled separately)."""
         sb = self.main_window.sidebar_view
-        row = sb.geom_list.currentRow()
-        if row < 0 or row >= sb.geom_list.count():
+        if sb.geometry_tree.kind(current) != "session":
             return
-        item = sb.geom_list.item(row)
-        if item is None:
-            return
-        current = item.checkState() == Qt.CheckState.Checked
-        item.setCheckState(
-            Qt.CheckState.Unchecked if current else Qt.CheckState.Checked)
+        session_id = sb.geometry_tree.session_id_of(current)
+        for i, s in enumerate(self.sessions):
+            if s.session_id == session_id:
+                if i != self.active_idx:
+                    self.main_window.tab_widget.setCurrentIndex(i)
+                break
+
+    def handle_geom_list_double_clicked(self, item, column: int = 0):
+        session_id = self.main_window.sidebar_view.geometry_tree.session_id_of(item)
+        if session_id is not None:
+            self.main_window.canvas_view.fit_to_geometry(session_id)
 
     def focus_to_selected_geometry(self):
         session = self.active_session()
@@ -718,8 +731,41 @@ class SessionControllerMixin:
             
         self.main_window.log_panel.log(f"Workspace loaded from '{os.path.basename(file_path)}'")
 
+    _CONTEXT_MENU_QSS = """
+        QMenu {
+            background-color: #121422;
+            color: #a0a8c0;
+            border: 1px solid #1c1e36;
+        }
+        QMenu::item {
+            padding: 6px 20px;
+        }
+        QMenu::item:selected {
+            background-color: #3b82f6;
+            color: #ffffff;
+        }
+    """
+
     def show_geometry_context_menu(self, global_pos, item):
-        session_id = item.data(Qt.ItemDataRole.UserRole)
+        """Right-click menu on the model tree. The actions offered depend on the
+        clicked row: a geometry layer (session), an edge, or empty space."""
+        tree = self.main_window.sidebar_view.geometry_tree
+        kind = tree.kind(item)
+
+        if kind == "edge":
+            self._show_edge_context_menu(global_pos, tree.edge_index(item))
+            return
+        if kind != "session":
+            # Empty space: offer to add a new analytic edge to the active layer.
+            if self.active_session() is not None:
+                menu = QMenu(self.main_window)
+                menu.setStyleSheet(self._CONTEXT_MENU_QSS)
+                add_action = menu.addAction("Add Analytic Edge")
+                if menu.exec(global_pos) == add_action:
+                    self.add_curve_segment()
+            return
+
+        session_id = tree.session_id_of(item)
         session = None
         session_idx = -1
         for i, s in enumerate(self.sessions):
@@ -729,40 +775,34 @@ class SessionControllerMixin:
                 break
         if not session:
             return
-            
+
         menu = QMenu(self.main_window)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #121422;
-                color: #a0a8c0;
-                border: 1px solid #1c1e36;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-            }
-            QMenu::item:selected {
-                background-color: #3b82f6;
-                color: #ffffff;
-            }
-        """)
-        
+        menu.setStyleSheet(self._CONTEXT_MENU_QSS)
+
         focus_action = menu.addAction("Focus View")
-        
+
         show_hide_label = "Hide Layer" if session.is_visible else "Show Layer"
         show_hide_action = menu.addAction(show_hide_label)
-        
+
         rename_action = menu.addAction("Rename...")
-        
+
+        menu.addSeparator()
+        add_edge_action = menu.addAction("Add Analytic Edge")
+
         menu.addSeparator()
         close_action = menu.addAction("Close / Delete Tab")
-        
+
         action = menu.exec(global_pos)
         if action == focus_action:
             self.main_window.canvas_view.fit_to_geometry(session_id)
+        elif action == add_edge_action:
+            if session_idx != self.active_idx:
+                self.main_window.tab_widget.setCurrentIndex(session_idx)
+            self.add_curve_segment()
         elif action == show_hide_action:
             new_visible = not session.is_visible
             session.is_visible = new_visible
-            item.setCheckState(Qt.CheckState.Checked if new_visible else Qt.CheckState.Unchecked)
+            item.setCheckState(0, Qt.CheckState.Checked if new_visible else Qt.CheckState.Unchecked)
             self.main_window.canvas_view.set_geometry_visible(session_id, new_visible)
             if session is self.active_session():
                 self.main_window.canvas_view.set_active_overlays_visible(new_visible)
@@ -774,9 +814,37 @@ class SessionControllerMixin:
             )
             if ok and new_name.strip():
                 session.display_name = new_name.strip()
-                item.setText(session.display_name)
+                item.setText(0, session.display_name)
                 self.main_window.tab_widget.setTabText(session_idx, session.display_name)
                 if session is self.active_session():
                     self.main_window.update_title(session.display_name, session.is_geometry_modified)
         elif action == close_action:
             self.close_tab(session_idx)
+
+    def _show_edge_context_menu(self, global_pos, seg_idx: int):
+        """Right-click menu on an edge row. Selects the edge first so the
+        existing edge commands (which act on current_segment_idx) apply."""
+        session = self.active_session()
+        if session is None or seg_idx is None:
+            return
+        if not (0 <= seg_idx < len(session.project_model.segments)):
+            return
+        self._select_segment_by_index(seg_idx)
+        seg = session.project_model.get_segment(seg_idx)
+
+        menu = QMenu(self.main_window)
+        menu.setStyleSheet(self._CONTEXT_MENU_QSS)
+        autodetect_action = menu.addAction("Auto Detect Sub-edges")
+        bake_action = menu.addAction("Convert to Discrete") if (seg and seg.type == "curve") else None
+        menu.addSeparator()
+        remove_action = menu.addAction("Remove Edge")
+
+        action = menu.exec(global_pos)
+        if action is None:
+            return
+        if action == remove_action:
+            self.remove_selected_segment()
+        elif bake_action is not None and action == bake_action:
+            self.bake_selected_curve()
+        elif action == autodetect_action:
+            self.auto_detect_segments_from_button()

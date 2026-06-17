@@ -265,51 +265,9 @@ class MainWindow(QMainWindow):
         """)
         self.quality_mode_combo.setVisible(False)
 
-        # Select Mode Toggle Buttons
-        toggle_btn_base = """
-            QPushButton {
-                background-color: #181b30;
-                color: #7a82a0;
-                border: 1px solid #2d3356;
-                padding: 3px 10px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:checked {
-                background-color: #2a4a7f;
-                color: #ffffff;
-                border: 1px solid #5a9ad4;
-            }
-            QPushButton:hover:!checked {
-                background-color: #232645;
-                color: #dde2ff;
-                border-color: #4a5280;
-            }
-        """
-        self.select_mode_label = QLabel("Edit:", self.canvas_toolbar)
-        self.select_mode_label.setStyleSheet("color: #a0a8c0; font-size: 11px; font-weight: bold; margin-left: 4px;")
-
-        self.select_mode_combo = QComboBox(self.canvas_toolbar)
-        self.select_mode_combo.addItems(["Vertex (Point)", "Edge (Segment)"])
-        self.select_mode_combo.setCurrentIndex(1)   # default to Edge mode
-        self.select_mode_combo.setToolTip(
-            "Selection Mode: Choose whether clicking/selecting affects Vertices or Edges.\n"
-            "In Edge mode, Shift+drag box-selects edges (Ctrl/Cmd+drag adds to the selection); "
-            "plain drag still pans.")
-        self.select_mode_combo.setStyleSheet("""
-            QComboBox {
-                background: #181b30;
-                color: #dde2ff;
-                border: 1px solid #2d3356;
-                border-radius: 4px;
-                padding: 3px 8px;
-                font-weight: bold;
-                font-size: 10px;
-                min-width: 120px;
-            }
-        """)
-
-        self.cad_sep3 = create_sep()
+        # NOTE: the Vertex/Edge selection-mode selector now lives in the sidebar,
+        # next to the model tree (see SidebarView.select_mode_combo), so it sits
+        # with the selection it filters rather than in the canvas toolbar.
 
         # Mesh Generation Toolbar controls
         self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
@@ -421,9 +379,7 @@ class MainWindow(QMainWindow):
             self.focus_geom_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
-            self.cad_sep2, self.cad_sep3,
-            self.select_mode_label,
-            self.select_mode_combo,
+            self.cad_sep2,
         ]
 
         self.mesh_tb_widgets = [
@@ -475,11 +431,13 @@ class MainWindow(QMainWindow):
         log_dock = QDockWidget("Log Console", self)
         log_dock.setWidget(self.log_panel)
         log_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
-        log_dock.setMinimumHeight(90)
+        log_dock.setMinimumHeight(48)
         log_dock.setStyleSheet(
             "QDockWidget { background: #06070d; color: #8892b0; }"
-            "QDockWidget::title { background: #121422; padding: 4px; }")
+            "QDockWidget::title { background: #121422; padding: 3px; }")
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
+        # Default to a small log console height.
+        self.resizeDocks([log_dock], [80], Qt.Orientation.Vertical)
 
     # ── Shortcuts ─────────────────────────────────────────────────────────
 
@@ -620,9 +578,9 @@ class MainWindow(QMainWindow):
         if is_pre:
             props = self.sidebar_view.edge_props_panel
             is_curve_active = props.isVisible() and props._curve_group.isVisible()
-            is_file_active = props.isVisible() and props._file_seg_label.isVisible()
             self.cad_curve_preview_btn.setVisible(is_curve_active)
-            self.cad_file_preview_btn.setVisible(is_file_active)
+            # The toolbar "Apply" (file preview) duplicated "Preview"; keep hidden.
+            self.cad_file_preview_btn.setVisible(False)
             
         is_mesh = (idx in [1, 2])
         for w in self.mesh_tb_widgets:
@@ -690,9 +648,6 @@ class MainWindow(QMainWindow):
                         self.show_nodes_cb,
                         self.quality_check_cb,
                         self.quality_mode_combo,
-                        self.cad_sep3,
-                        self.select_mode_label,
-                        self.select_mode_combo,
                     ]
                     
                     # Add to row 0
@@ -727,9 +682,6 @@ class MainWindow(QMainWindow):
                         self.show_nodes_cb,
                         self.quality_check_cb,
                         self.quality_mode_combo,
-                        self.cad_sep3,
-                        self.select_mode_label,
-                        self.select_mode_combo,
                     ]
                     col_idx = 0
                     for w in all_widgets:
@@ -737,7 +689,7 @@ class MainWindow(QMainWindow):
                             self.tb_layout.addWidget(w, 0, col_idx)
                             col_idx += 1
                     self.tb_layout.setColumnStretch(col_idx, 1)
-                    
+
             else:  # Mesh modes (1 or 2)
                 threshold = 1100
                 is_narrow = (width < threshold)

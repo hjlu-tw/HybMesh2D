@@ -13,6 +13,27 @@ from app.utils import find_binary_executable
 class MeshGenControllerMixin:
     """Mixin containing HybMesh2D mesh generator execution, config editor mapping, and results visualization logic."""
 
+    def add_mesh_tab(self):
+        """Add a new tab to the Mesh Generator / Statistics tab strip.
+
+        Mesh state is global/shared, so these tabs are visual workspaces; a new
+        tab does not fork the config or results — it is a separate label the
+        user can keep alongside others while working in mesh modes.
+        """
+        bar = self.main_window.mesh_tab_bar
+        seq = getattr(self, "_mesh_tab_seq", bar.count()) + 1
+        self._mesh_tab_seq = seq
+        idx = bar.addTab(f"Mesh {seq}")
+        bar.setCurrentIndex(idx)
+        return idx
+
+    def close_mesh_tab(self, idx: int):
+        """Close a mesh-mode tab, always keeping at least one open."""
+        bar = self.main_window.mesh_tab_bar
+        if bar.count() <= 1:
+            return
+        bar.removeTab(idx)
+
     def load_mesh_config(self):
         """Prompt file dialog to load a Background_para.dat configuration file."""
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))

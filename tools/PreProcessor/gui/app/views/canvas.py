@@ -247,7 +247,9 @@ class CanvasView(QWidget):
     point_clicked = pyqtSignal(int)       # nearest vertex index in active session's points
     point_deselected = pyqtSignal()        # emitted when clicking far from all vertices (deselect)
     segment_clicked = pyqtSignal(float, float, bool)  # (x, y, extend_selection)
+    segment_double_clicked = pyqtSignal(float, float)  # (x, y) — open numeric editor
     box_selected = pyqtSignal(float, float, float, float, bool)  # (x0, y0, x1, y1, extend)
+    shape_drawn = pyqtSignal(str, object)  # (tool, [(x, y), ...]) — interactive draw finished
 
 
     def __init__(self, parent=None):
@@ -337,6 +339,44 @@ class CanvasView(QWidget):
         self._axis_offset = (1.0, 0.0)       # dir-handle offset from pivot
         self._translate_anchor = None        # source anchor for translate
         self._translate_guide = None         # anchor → destination guide line
+        self._rot_pivot_item = None          # rotate gizmo: pivot handle
+        self._rot_angle_item = None          # rotate gizmo: angle handle
+        self._rot_line_item = None           # rotate gizmo: pivot → angle line
+        self._rot_radius = 1.0               # rotate gizmo: angle-handle radius
+
+        # ── Editable control-point handles for the selected analytic edge ──
+        # The controller sets edge_handle_cb to receive live drag updates and
+        # provides each handle's opaque id so it can map the drag back to the
+        # right spin box / vertex.
+        self.edge_handle_cb = None           # fn(handle_id:str, x:float, y:float, finished:bool)
+        self._edge_handle_items: list = []
+        self._suppress_edge_cb = False
+
+        # Endpoint markers — always-on highlight of every edge's endpoints so
+        # the user can clearly see where points are (and the snap targets).
+        # White rings, distinct from the cyan edit handles and amber transform
+        # pivot so they never read as one of those.
+        self._endpoint_markers = pg.ScatterPlotItem(
+            size=11, symbol='o', pen=pg.mkPen('#FFFFFF', width=1.6),
+            brush=pg.mkBrush(12, 13, 22, 200))
+        self._endpoint_markers.setZValue(35)
+        self.plot_widget.addItem(self._endpoint_markers)
+
+        # ── Interactive shape-drawing state ───────────────────────────────
+        self._draw_tool: str | None = None   # 'line'|'circle'|'rectangle'|'triangle'|'polygon'
+        self._draw_pts: list[tuple[float, float]] = []
+        self._draw_handle_items: list = []   # draggable control points while drawing
+        # Optional snap function (set by the controller): maps a clicked/cursor
+        # (x, y) to a nearby edge endpoint so placement clicks snap too.
+        self.snap_cb = None                  # fn(x, y) -> (x, y)
+        self._draw_preview = self.plot_widget.plot(
+            pen=pg.mkPen('#7CFC9A', width=2, style=Qt.PenStyle.DashLine),
+            symbol='o', symbolBrush='#7CFC9A', symbolSize=6)
+        self._draw_preview.setZValue(210)
+        self._draw_hint = pg.TextItem('', anchor=(0, 1), color='#7CFC9A')
+        self._draw_hint.setZValue(211)
+        self.plot_widget.addItem(self._draw_hint, ignoreBounds=True)
+        self._draw_hint.setVisible(False)
 
         # Mouse-coordinate label
         self.coord_label = pg.TextItem('', anchor=(-0.1, 1.1),
@@ -586,6 +626,19 @@ class CanvasView(QWidget):
     def fit_all(self):
         """Auto-range to show all loaded geometries."""
         self.plot_widget.autoRange()
+
+    def fit_to_points(self, pts: np.ndarray | None):
+        """Fit the view to an arbitrary (N, 2) point array (e.g. a live preview)."""
+        if pts is None or len(pts) == 0:
+            return
+        pts = np.asarray(pts, dtype=float)
+        minx, maxx = float(pts[:, 0].min()), float(pts[:, 0].max())
+        miny, maxy = float(pts[:, 1].min()), float(pts[:, 1].max())
+        dx = (maxx - minx) or 1.0
+        dy = (maxy - miny) or 1.0
+        self.plot_widget.plotItem.vb.setRange(
+            xRange=[minx - 0.1 * dx, maxx + 0.1 * dx],
+            yRange=[miny - 0.1 * dy, maxy + 0.1 * dy])
 
     # ═════════════════════════════════════════════════════════════════════
     # Active-session overlays
@@ -853,6 +906,7 @@ class CanvasView(QWidget):
         self.color_coded_segments.setData(None, None, 0, 0, False, [])
         self.quality_bad_scatter.clear()
         self.duplicate_preview_curve.setData([], [])
+        self._endpoint_markers.clear()
 
     def clear_segment_highlight(self):
         """Clear only the active-segment / multi-segment highlight overlays.
@@ -903,6 +957,9 @@ class CanvasView(QWidget):
         self._axis_line_item = None
         self._translate_anchor = None
         self._translate_guide = None
+        self._rot_pivot_item = None
+        self._rot_angle_item = None
+        self._rot_line_item = None
 
     def _view_handle_len(self) -> float:
         """A reasonable on-screen length (data units) for the axis dir handle."""
@@ -917,6 +974,7 @@ class CanvasView(QWidget):
 
         ``spec`` is one of:
           {'point': (x, y)}                       — pivot / centre marker
+          {'rotate': {'pivot': (x, y), 'angle': deg}} — rotate pivot + angle handle
           {'hline': y}                            — horizontal mirror axis
           {'vline': x}                            — vertical mirror axis
           {'axis': {'pivot': (x, y), 'dir': (dx, dy)}} — arbitrary mirror axis
@@ -961,12 +1019,91 @@ class CanvasView(QWidget):
                     lambda it: self._emit_handle('vline', it.value(), 0.0))
                 self.plot_widget.addItem(ln)
                 self._transform_items.append(ln)
+            elif 'rotate' in spec:
+                self._build_rotate_handles(spec['rotate'])
             elif 'axis' in spec:
                 self._build_axis_handles(spec['axis'])
             elif 'translate' in spec:
                 self._build_translate_handles(spec['translate'])
         finally:
             self._suppress_handle_cb = False
+
+    def _build_rotate_handles(self, rot: dict):
+        """Rotate gizmo: a pivot handle plus an angle handle on a ring around
+        the pivot.  Dragging the angle handle reports the absolute clock-hand
+        angle (degrees) via the 'rotate_angle' kind; dragging the pivot reports
+        'point' (so it shares the pivot-update path with the other transforms)."""
+        import math
+        col = self._HANDLE_COL
+        px, py = rot.get('pivot', (0.0, 0.0))
+        ang = math.radians(rot.get('angle', 0.0))
+        L = self._view_handle_len()
+        self._rot_radius = L
+        hx, hy = px + L * math.cos(ang), py + L * math.sin(ang)
+
+        line = self.plot_widget.plot(
+            [px, hx], [py, hy],
+            pen=pg.mkPen(col, width=1.5, style=Qt.PenStyle.DashLine))
+        line.setZValue(199)
+        pivot = pg.TargetItem(
+            pos=(px, py), size=16, movable=True,
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        pivot.setZValue(201)
+        angle = pg.TargetItem(
+            pos=(hx, hy), size=13, movable=True, symbol='o',
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        angle.setZValue(201)
+
+        pivot.sigPositionChanged.connect(self._on_rot_pivot_moved)
+        angle.sigPositionChanged.connect(self._on_rot_angle_moved)
+
+        # `line` was already added by plot_widget.plot(); only the handles need it.
+        self.plot_widget.addItem(pivot)
+        self.plot_widget.addItem(angle)
+        for it in (line, pivot, angle):
+            self._transform_items.append(it)
+        self._rot_line_item = line
+        self._rot_pivot_item = pivot
+        self._rot_angle_item = angle
+
+    def _on_rot_pivot_moved(self, it):
+        import math
+        if self._suppress_handle_cb or self._rot_pivot_item is None:
+            return
+        px, py = it.pos().x(), it.pos().y()
+        # Keep the angle handle on its ring relative to the new pivot.
+        self._suppress_handle_cb = True
+        try:
+            if self._rot_angle_item is not None:
+                hx, hy = self._rot_angle_item.pos().x(), self._rot_angle_item.pos().y()
+                ang = math.atan2(hy - py, hx - px)
+                ax, ay = px + self._rot_radius * math.cos(ang), py + self._rot_radius * math.sin(ang)
+                self._rot_angle_item.setPos((ax, ay))
+                if self._rot_line_item is not None:
+                    self._rot_line_item.setData([px, ax], [py, ay])
+        finally:
+            self._suppress_handle_cb = False
+        self._emit_handle('point', px, py)
+
+    def _on_rot_angle_moved(self, it):
+        import math
+        if self._suppress_handle_cb or self._rot_pivot_item is None:
+            return
+        px, py = self._rot_pivot_item.pos().x(), self._rot_pivot_item.pos().y()
+        hx, hy = it.pos().x(), it.pos().y()
+        ang = math.atan2(hy - py, hx - px)
+        # Snap the handle back onto the fixed ring so it reads purely as an angle.
+        ax, ay = px + self._rot_radius * math.cos(ang), py + self._rot_radius * math.sin(ang)
+        self._suppress_handle_cb = True
+        try:
+            it.setPos((ax, ay))
+            if self._rot_line_item is not None:
+                self._rot_line_item.setData([px, ax], [py, ay])
+        finally:
+            self._suppress_handle_cb = False
+        self._emit_handle('rotate_angle', math.degrees(ang), 0.0)
 
     def _build_axis_handles(self, axis: dict):
         import math
@@ -1082,6 +1219,244 @@ class CanvasView(QWidget):
             self._suppress_handle_cb = False
         self._emit_handle('translate', hx, hy)
 
+    # ── Editable control-point handles for the selected analytic edge ──────
+
+    def clear_edge_handles(self):
+        """Remove the draggable control-point handles of the selected edge."""
+        for it in self._edge_handle_items:
+            self.plot_widget.removeItem(it)
+        self._edge_handle_items = []
+
+    def show_endpoint_markers(self, points):
+        """Highlight a set of (x, y) endpoints (e.g. snap targets) clearly."""
+        if points:
+            pts = np.asarray(points, dtype=float)
+            self._endpoint_markers.setData(pts[:, 0], pts[:, 1])
+        else:
+            self._endpoint_markers.clear()
+
+    def clear_endpoint_markers(self):
+        self._endpoint_markers.clear()
+
+    def show_edge_handles(self, handles: list[dict]):
+        """Show draggable control points for the selected analytic edge.
+
+        ``handles`` is a list of ``{'id': str, 'pos': (x, y)}``.  Each drag is
+        reported through ``edge_handle_cb(handle_id, x, y, finished)`` so the
+        controller can push the new coordinate into the matching spin box /
+        polygon vertex.  Passing an empty list just clears the handles."""
+        self.clear_edge_handles()
+        if not handles:
+            return
+        col = '#00E5FF'
+        self._suppress_edge_cb = True
+        try:
+            for h in handles:
+                hid = h['id']
+                x, y = h['pos']
+                # Bigger, brighter handle with a solid centre dot so the
+                # endpoint is unmistakable on the canvas. ``symbol``/``size``
+                # let callers distinguish e.g. a move handle from endpoints.
+                kwargs = dict(
+                    pos=(x, y), size=h.get('size', 18), movable=True,
+                    pen=pg.mkPen(col, width=3),
+                    brush=pg.mkBrush(0, 229, 255, 90),
+                    hoverBrush=pg.mkBrush(col))
+                if 'symbol' in h:
+                    kwargs['symbol'] = h['symbol']
+                t = pg.TargetItem(**kwargs)
+                t.setZValue(206)
+                t.sigPositionChanged.connect(
+                    lambda it, _id=hid: self._emit_edge_handle(_id, it, False))
+                t.sigPositionChangeFinished.connect(
+                    lambda it, _id=hid: self._emit_edge_handle(_id, it, True))
+                self.plot_widget.addItem(t)
+                self._edge_handle_items.append(t)
+        finally:
+            self._suppress_edge_cb = False
+
+    def _emit_edge_handle(self, handle_id: str, it, finished: bool):
+        if self._suppress_edge_cb:
+            return
+        if self.edge_handle_cb is not None:
+            self.edge_handle_cb(handle_id, float(it.pos().x()),
+                                float(it.pos().y()), finished)
+
+    # ── Interactive shape drawing ──────────────────────────────────────────
+
+    # Number of points each tool collects (None = variable, finished by a
+    # double-click — used for the free polygon tool).
+    _DRAW_NPTS = {'line': 2, 'circle': 2, 'rectangle': 2, 'triangle': 3,
+                  'polygon': None}
+
+    def start_draw_mode(self, tool: str):
+        """Enter interactive shape-drawing mode for ``tool``.  Clicks place the
+        defining points (each becomes a draggable control point) with a live
+        rubber-band preview; once the shape is complete the canvas emits
+        ``shape_drawn`` (the controller then opens the numeric dialog).  The
+        initial prompt is centred in the current view so it is always visible."""
+        self.clear_draw_artifacts()
+        self._draw_tool = tool
+        self._draw_pts = []
+        self._draw_hint.setVisible(True)
+        # Centre the prompt in the current view so the user sees where to click.
+        try:
+            (x0, x1), (y0, y1) = self.plot_widget.getViewBox().viewRange()
+            self._draw_hint.setAnchor((0.5, 0.5))
+            self._draw_hint.setPos(0.5 * (x0 + x1), 0.5 * (y0 + y1))
+        except Exception:
+            pass
+        self._draw_hint.setText(self._draw_hint_text())
+        try:
+            self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+        except Exception:
+            pass
+
+    def cancel_draw_mode(self):
+        """Abort drawing entirely (e.g. right-click) and remove all artifacts."""
+        self.clear_draw_artifacts()
+
+    def clear_draw_artifacts(self):
+        """Remove the draw control points, rubber-band preview and prompt, and
+        leave draw mode.  Called by the controller once the add is committed or
+        cancelled so the control points only show *before* the edge completes."""
+        self._draw_tool = None
+        self._draw_pts = []
+        for it in self._draw_handle_items:
+            self.plot_widget.removeItem(it)
+        self._draw_handle_items = []
+        self._draw_preview.setData([], [])
+        self._draw_hint.setVisible(False)
+        try:
+            self.plot_widget.unsetCursor()
+        except Exception:
+            pass
+
+    def is_drawing(self) -> bool:
+        return self._draw_tool is not None
+
+    def _draw_hint_text(self) -> str:
+        tool = self._draw_tool
+        n = len(self._draw_pts)
+        if tool == 'line':
+            return "Click start point" if n == 0 else "Click end point"
+        if tool == 'circle':
+            return "Click centre" if n == 0 else "Click to set the radius"
+        if tool == 'rectangle':
+            return "Click a corner" if n == 0 else "Click the opposite corner"
+        if tool == 'triangle':
+            return f"Click point {n + 1} of 3"
+        if tool == 'polygon':
+            return ("Click to add vertices — double-click to finish"
+                    if n < 3 else
+                    f"{n} vertices — double-click to finish")
+        return "Click to place the start point"
+
+    def _add_draw_point(self, x: float, y: float):
+        """Append a placed point and give it a draggable control-point handle."""
+        i = len(self._draw_pts)
+        self._draw_pts.append((x, y))
+        col = '#7CFC9A'
+        t = pg.TargetItem(
+            pos=(x, y), size=12, movable=True,
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        t.setZValue(212)
+        t.sigPositionChanged.connect(
+            lambda it, _i=i: self._on_draw_handle_moved(_i, it))
+        self.plot_widget.addItem(t)
+        self._draw_handle_items.append(t)
+        self._refresh_draw_preview(None)
+        self._update_draw_hint((x, y))
+
+    def _on_draw_handle_moved(self, i: int, it):
+        """A placed control point was dragged before the edge was finished."""
+        if 0 <= i < len(self._draw_pts):
+            self._draw_pts[i] = (float(it.pos().x()), float(it.pos().y()))
+            self._refresh_draw_preview(None)
+
+    def _refresh_draw_preview(self, cursor_pt):
+        prev = self._draw_preview_points(cursor_pt)
+        if prev is not None and len(prev) > 0:
+            self._draw_preview.setData(prev[:, 0], prev[:, 1])
+        else:
+            self._draw_preview.setData([], [])
+
+    def _update_draw_hint(self, cursor_pt):
+        if self._draw_tool is None:
+            return
+        self._draw_hint.setText(self._draw_hint_text())
+        if cursor_pt is not None:
+            self._draw_hint.setPos(cursor_pt[0], cursor_pt[1])
+        elif self._draw_pts:
+            self._draw_hint.setPos(*self._draw_pts[-1])
+
+    def _draw_preview_points(self, cursor_pt):
+        """Build the rubber-band preview polyline for the in-progress shape."""
+        import math
+        tool = self._draw_tool
+        pts = list(self._draw_pts)
+        if cursor_pt is not None:
+            live = pts + [cursor_pt]
+        else:
+            live = pts
+        if not live:
+            return None
+        if tool == 'circle' and len(live) >= 2:
+            cx, cy = live[0]
+            r = math.hypot(live[1][0] - cx, live[1][1] - cy)
+            ts = np.linspace(0, 2 * math.pi, 64)
+            return np.column_stack([cx + r * np.cos(ts), cy + r * np.sin(ts)])
+        if tool == 'rectangle' and len(live) >= 2:
+            (x0, y0), (x1, y1) = live[0], live[1]
+            return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])
+        if tool in ('triangle', 'polygon') and len(live) >= 2:
+            arr = np.array(live, dtype=float)
+            # Close visually once enough vertices exist.
+            if (tool == 'triangle' and len(live) >= 3) or \
+               (tool == 'polygon' and len(self._draw_pts) >= 3 and cursor_pt is None):
+                arr = np.vstack([arr, arr[0]])
+            return arr
+        return np.array(live, dtype=float)
+
+    def _commit_draw(self):
+        """The shape is fully placed.  Stop collecting clicks but KEEP the
+        control points / preview on canvas (so they remain visible until the
+        edge is actually created) and emit the drawn points."""
+        tool = self._draw_tool
+        pts = list(self._draw_pts)
+        self._draw_tool = None           # stop collecting; artifacts stay visible
+        self._draw_hint.setVisible(False)
+        try:
+            self.plot_widget.unsetCursor()
+        except Exception:
+            pass
+        if tool and pts:
+            self.shape_drawn.emit(tool, pts)
+
+    def _handle_draw_click(self, x: float, y: float, is_double: bool):
+        tool = self._draw_tool
+        need = self._DRAW_NPTS.get(tool, 2)
+
+        # Snap the placed point to a nearby edge endpoint (incl. the first click).
+        if self.snap_cb is not None:
+            try:
+                x, y = self.snap_cb(x, y)
+            except Exception:
+                pass
+
+        if tool == 'polygon':
+            if is_double:                # finish the free polygon
+                if len(self._draw_pts) >= 3:
+                    self._commit_draw()
+                return
+            self._add_draw_point(x, y)
+            return
+
+        self._add_draw_point(x, y)
+        if need is not None and len(self._draw_pts) >= need:
+            self._commit_draw()
+
     def update_curve_segments(self, session_id: int, segments_pts: list[np.ndarray]):
         """Clear and redraw all curve segments to keep them visible when deselected."""
         if session_id not in self._curve_segment_items:
@@ -1129,6 +1504,23 @@ class CanvasView(QWidget):
         self.box_selected.emit(x0, y0, x1, y1, extend)
 
     def _on_mouse_clicked(self, event):
+        # ── Interactive shape drawing intercepts all clicks ───────────────
+        if self._draw_tool is not None:
+            btn = event.button()
+            pos = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
+            x, y = pos.x(), pos.y()
+            if btn == Qt.MouseButton.RightButton:
+                # Right-click cancels the in-progress shape.
+                event.accept()
+                self.cancel_draw_mode()
+                return
+            if btn != Qt.MouseButton.LeftButton:
+                return
+            event.accept()
+            is_double = bool(event.double()) if hasattr(event, 'double') else False
+            self._handle_draw_click(x, y, is_double)
+            return
+
         if self._active_session_id is None:
             return
         btn = event.button()
@@ -1136,6 +1528,13 @@ class CanvasView(QWidget):
             return
         pos = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
         x, y = pos.x(), pos.y()
+
+        # Double-click an edge → request its numeric editor (handled by the
+        # controller, which resolves which edge was hit).
+        if (self._selection_mode == 'edge' and hasattr(event, 'double')
+                and event.double()):
+            self.segment_double_clicked.emit(x, y)
+            return
 
         if self._selection_mode == 'edge':
             # In edge mode: emit segment_clicked with canvas coordinates and extend_selection flag
@@ -1184,6 +1583,18 @@ class CanvasView(QWidget):
             mp = self.plot_widget.plotItem.vb.mapSceneToView(pos)
             self.coord_label.setPos(mp.x(), mp.y())
             self.coord_label.setText(f"X: {mp.x():.4f}\nY: {mp.y():.4f}")
+            # Live rubber-band preview while drawing a shape.
+            if self._draw_tool is not None and self._draw_pts:
+                cursor = (mp.x(), mp.y())
+                if self.snap_cb is not None:
+                    try:
+                        cursor = self.snap_cb(*cursor)
+                    except Exception:
+                        pass
+                prev = self._draw_preview_points(cursor)
+                if prev is not None and len(prev) > 0:
+                    self._draw_preview.setData(prev[:, 0], prev[:, 1])
+                self._update_draw_hint(cursor)
         else:
             # Mouse left the canvas area — clear the read-out so a stale
             # coordinate does not linger over the scene.

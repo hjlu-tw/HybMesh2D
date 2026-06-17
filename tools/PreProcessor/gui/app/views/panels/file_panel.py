@@ -6,7 +6,7 @@ from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, h
 
 class FilePanel(CollapsibleSection):
     def __init__(self, parent=None):
-        super().__init__("Project", start_collapsed=True, parent=parent)
+        super().__init__("Import / File", start_collapsed=True, parent=parent)
 
         self.load_btn = make_button("Import Geometry (.dat)")
         self.load_btn.setToolTip("Open a .dat geometry file from disk")

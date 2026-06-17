@@ -35,12 +35,12 @@ COMBO_STYLE = """
 SPIN_STYLE = "background:#181b2a; color:#a0a8c0; border:1px solid #333852; padding: 2px; max-width: 110px;"
 
 
-CHECKBOX_STYLE = "color: #a0b0d0; font-size: 11px;"
+CHECKBOX_STYLE = "color: #a0b0d0; font-size: 10px;"
 
 TOOLBAR_CHECKBOX_STYLE = """
     QCheckBox {
         color: #a0b0d0;
-        font-size: 11px;
+        font-size: 10px;
     }
     QCheckBox:hover {
         color: #ffffff;
@@ -102,6 +102,47 @@ LIST_INDICATOR_STYLE = LIST_STYLE + """
         image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSIyMCA2IDkgMTcgNCAxMiI+PC9wb2x5bGluZT48L3N2Zz4=");
     }
     QListWidget::indicator:unchecked:hover {
+        border-color: #5a9ad4;
+    }
+"""
+
+# Model tree (geometry layers + their edges). Mirrors the list palette; the
+# checkbox on layer rows doubles as a visibility "eye". Branch arrows use the
+# same muted chevrons as the collapsible section headers.
+TREE_STYLE = """
+    QTreeWidget {
+        background: #181b2a;
+        color: #8892b0;
+        border: 1px solid #333852;
+        border-radius: 4px;
+        outline: 0;
+    }
+    QTreeWidget::item {
+        padding: 3px 2px;
+        border: none;
+    }
+    QTreeWidget::item:selected {
+        background: #2e3e70;
+        color: #ffffff;
+        font-weight: bold;
+    }
+    QTreeWidget::item:hover {
+        background: #20243c;
+        color: #dde6ff;
+    }
+    QTreeWidget::indicator {
+        width: 14px;
+        height: 14px;
+        border: 1px solid #4f5b8c;
+        border-radius: 3px;
+        background-color: #11131f;
+    }
+    QTreeWidget::indicator:checked {
+        background-color: #5a9ad4;
+        border-color: #5a9ad4;
+        image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSIyMCA2IDkgMTcgNCAxMiI+PC9wb2x5bGluZT48L3N2Zz4=");
+    }
+    QTreeWidget::indicator:unchecked:hover {
         border-color: #5a9ad4;
     }
 """

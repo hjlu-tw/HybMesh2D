@@ -8,7 +8,7 @@ import copy
 import numpy as np
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMenu
 
 from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
@@ -46,6 +46,21 @@ class AppController(
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line
+        self._pending_seg = None          # analytic edge being created/edited (modeless dialog open)
+        self._pending_dialog = None
+        self._pending_is_new = True       # True = creating, False = editing an existing edge
+        self._pending_orig = None         # original params snapshot (to restore on cancel of an edit)
+        self._custom_preview_fitted = False
+        # Discrete-geometry editing (imported file edges): the whole connected
+        # shape is edited together by its corner vertices; each edge re-fits
+        # between its corners as they move.
+        self._pending_file = None         # (i0, i1) corners of the double-clicked edge
+        self._pending_file_seg = None
+        self._pending_file_dialog = None
+        self._pending_geom_orig = None    # pristine original_points snapshot (revert)
+        self._pending_geom_specs = None   # [{i0, i1, interior:[idx,...]}] per edge
+        self._pending_geom_cur = None     # {corner_index: [x, y]} current corner positions
+        self._pending_geom_corners = None # sorted corner indices (handle order)
 
         # Create a dedicated temp directory for the application lifecycle
         self.temp_dir = tempfile.mkdtemp(prefix="hybmesh_preprocessor_")
@@ -59,8 +74,9 @@ class AppController(
         sb.split_btn.clicked.connect(self.add_split_point)
         sb.remove_split_btn.clicked.connect(self.remove_split_point)
         sb.insert_btn.clicked.connect(self.handle_insert_point)
-        # Discrete and analytic edges share one unified list now.
-        sb.segment_list.itemSelectionChanged.connect(self.handle_segment_list_selected)
+        # Geometry layers and their edges live in one model tree; an edge-row
+        # selection drives the edge properties.
+        sb.geometry_tree.itemSelectionChanged.connect(self.handle_segment_list_selected)
         sb.strategy_combo.currentTextChanged.connect(
             self.handle_strategy_changed)
         sb.is_closed_combo.currentTextChanged.connect(
@@ -71,7 +87,24 @@ class AppController(
             sb.file_preview_btn.clicked.connect(self.preview_backend)
         sb.save_btn.clicked.connect(self.save_output)
         sb.generate_btn.clicked.connect(self.generate_json)
-        sb.add_curve_seg_btn.clicked.connect(self.add_curve_segment)
+        # "Add Analytic Edge" is now a shape-tool menu: pick a shape, then draw
+        # it interactively on the canvas (Custom Formula adds a blank edge).
+        self._shape_tool_menu = QMenu(self.main_window)
+        for label, tool in [
+            ("Line", "line"),
+            ("Circle", "circle"),
+            ("Rectangle", "rectangle"),
+            ("Triangle", "triangle"),
+            ("Polygon", "polygon"),
+        ]:
+            act = self._shape_tool_menu.addAction(label)
+            act.triggered.connect(lambda _checked=False, t=tool: self.enter_shape_tool(t))
+        self._shape_tool_menu.addSeparator()
+        custom_act = self._shape_tool_menu.addAction("Custom Formula…")
+        custom_act.setToolTip("Define an edge by a math equation "
+                              "(parametric x(t),y(t) or explicit y=f(x))")
+        custom_act.triggered.connect(lambda _checked=False: self.enter_shape_tool("custom"))
+        sb.add_curve_seg_btn.setMenu(self._shape_tool_menu)
         sb.curve_preview_btn.clicked.connect(self.preview_curve_formula)
         
         # Wire live preview for curve editing
@@ -112,8 +145,18 @@ class AppController(
         sb.match_previous_cb.toggled.connect(self.update_match_previous)
         sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
 
+        # Distribution tool window: open it + drive a live resample preview.
+        sb.distribution_btn.clicked.connect(self._open_distribution)
+        sb.distribution_apply_btn.clicked.connect(self._apply_distribution)
+        sb._distribution_dialog.finished.connect(
+            lambda _r: self.main_window.canvas_view.clear_resampled())
+
+        # Duplicate & Transform tool window: opening it auto-shows the gizmo +
+        # live preview; closing it clears them.
+        sb.transform_btn.clicked.connect(self._open_transform)
+        sb._transform_dialog.finished.connect(lambda _r: self._close_transform())
+
         # Wire duplicate live preview connections
-        sb.dup_interactive_btn.toggled.connect(self.handle_dup_interactive_toggled)
         sb.dup_type_combo.currentIndexChanged.connect(self.handle_dup_type_changed)
         sb.dup_base_mode_combo.currentIndexChanged.connect(self.handle_dup_base_mode_changed)
         sb.dup_delete_orig_cb.toggled.connect(self.on_duplicate_param_changed)
@@ -132,13 +175,12 @@ class AppController(
         sb.new_tab_btn.clicked.connect(self.new_blank_tab)
         sb.auto_detect_btn.clicked.connect(self.auto_detect_segments)
 
-        # Geometries visibility / focus
-        sb.geom_list.itemChanged.connect(self.handle_geom_visibility_changed)
-        sb.geom_list.currentRowChanged.connect(self.handle_geom_list_row_changed)
-        sb.geom_list.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
+        # Model tree: visibility (per-row checkbox), navigation, focus, context menu
+        sb.geometry_tree.itemChanged.connect(self.handle_geom_visibility_changed)
+        sb.geometry_tree.currentItemChanged.connect(self.handle_tree_current_changed)
+        sb.geometry_tree.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
         self.main_window.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
-        sb.toggle_visibility_btn.clicked.connect(self.toggle_selected_geometry_visibility)
-        sb.geometry_panel.context_menu_requested.connect(self.show_geometry_context_menu)
+        sb.geometry_tree.context_menu_requested.connect(self.show_geometry_context_menu)
 
         # ── Wire tab signals ────────────────────────────────────────────
         tw = self.main_window.tab_widget
@@ -152,11 +194,18 @@ class AppController(
         self.main_window.canvas_view.point_clicked.connect(self.handle_point_clicked)
         self.main_window.canvas_view.point_deselected.connect(self.handle_point_deselected)
         self.main_window.canvas_view.segment_clicked.connect(self.handle_canvas_segment_clicked)
+        self.main_window.canvas_view.segment_double_clicked.connect(self.handle_canvas_segment_double_clicked)
         self.main_window.canvas_view.box_selected.connect(self.handle_canvas_box_selected)
+        # Interactive shape drawing finished → create the analytic edge.
+        self.main_window.canvas_view.shape_drawn.connect(self.on_shape_drawn)
         # Live drag of the transform base point / mirror axis on the canvas.
         self.main_window.canvas_view.transform_handle_cb = self._on_transform_handle_dragged
+        # Live drag of the selected analytic edge's control points.
+        self.main_window.canvas_view.edge_handle_cb = self._on_edge_handle_dragged
+        # Snap placement clicks (while drawing) to nearby edge endpoints.
+        self.main_window.canvas_view.snap_cb = self._snap_draw_xy
 
-        # Wire Selection Mode dropdown
+        # Wire Selection Mode dropdown (now in the sidebar, beside the tree)
         mw = self.main_window
         def _on_selection_mode_changed(index):
             mode = 'vertex' if index == 0 else 'edge'
@@ -165,13 +214,16 @@ class AppController(
             # several geometry layers are loaded).
             self._clear_cad_selection()
             self.main_window.canvas_view.set_selection_mode(mode)
+            # Swap the Details pane to match the active edit mode.
+            sb.show_details_for_mode(mode)
 
-        mw.select_mode_combo.currentIndexChanged.connect(_on_selection_mode_changed)
+        sb.select_mode_combo.currentIndexChanged.connect(_on_selection_mode_changed)
         # Default the CAD canvas to Edge mode. The combo is preset to "Edge"
         # before this signal was wired, so push the mode into the canvas once
         # to apply its overlay / box-select side effects.
-        self.main_window.canvas_view.set_selection_mode(
-            'vertex' if mw.select_mode_combo.currentIndex() == 0 else 'edge')
+        _initial_mode = 'vertex' if sb.select_mode_combo.currentIndex() == 0 else 'edge'
+        self.main_window.canvas_view.set_selection_mode(_initial_mode)
+        sb.show_details_for_mode(_initial_mode)
 
         # ── Wire Mesh Generation signals ───────────────────────────────
         mw = self.main_window

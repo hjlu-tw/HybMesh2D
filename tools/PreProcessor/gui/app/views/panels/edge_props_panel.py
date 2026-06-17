@@ -2,13 +2,14 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QComboBox, QSpinBox, QGroupBox,
-    QCheckBox, QStackedWidget, QLineEdit, QRadioButton, QButtonGroup
+    QCheckBox, QStackedWidget, QLineEdit, QRadioButton, QButtonGroup, QDialog
 )
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
 from app.views.panels.transform_panel import TransformPanel
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.adjusting_stacked_widget import AdjustingStackedWidget
 
 class EdgePropsPanel(CollapsibleSection):
     def __init__(self, parent=None):
@@ -23,7 +24,7 @@ class EdgePropsPanel(CollapsibleSection):
         self._file_seg_label.setVisible(False)
 
         # ── Curve / Shape Properties group ────────────────────────────────
-        self._curve_group = QGroupBox("Edge Definition")
+        self._curve_group = QGroupBox("Shape")
         self._curve_group.setStyleSheet(
             "QGroupBox { color:#a0b0d0; border:1px solid #3a4060;"
             "  margin-top:6px; padding-top:6px; }"
@@ -47,8 +48,10 @@ class EdgePropsPanel(CollapsibleSection):
         self.curve_type_combo.setToolTip("Select the geometric shape type for this curve edge")
         cl.addWidget(self.curve_type_combo)
 
-        # Stacked widget for switching parameters based on curve type
-        self.shape_stack = QStackedWidget()
+        # Stacked widget for switching parameters based on curve type.
+        # Sizes to the current page so a short shape (e.g. Circle) leaves no
+        # dead space below it.
+        self.shape_stack = AdjustingStackedWidget()
         cl.addWidget(self.shape_stack)
 
         # ── Widget 0: Custom Formula ─────────────────────────────────────
@@ -382,23 +385,66 @@ class EdgePropsPanel(CollapsibleSection):
         self.auto_split_form = QFormLayout()
         self.auto_split_form.addRow(help_label("Detection Angle:", "Angle threshold (degrees) for detecting sharp corners in auto-split"), self.auto_split_angle_sb)
 
-        self.auto_split_btn = make_button("Auto Detect Sub-edges", '#1b2a4a')
+        self.auto_split_btn = make_button("Split at Corners", '#1b2a4a')
         self.auto_split_btn.setToolTip("Split selected edge at sharp corners based on threshold")
 
-        self.param_stack = QStackedWidget()
+        self.param_stack = AdjustingStackedWidget()
         self._setup_param_forms()
 
-        # Adding widgets to self (which is CollapsibleSection)
+        # ── Slim inspector: definition inline, tools in standalone windows ──
+        # Header already names the edge & type, so the geometry definition is
+        # shown directly beneath it (no collapsible). Distribution / Split /
+        # Transform open as separate tool windows to keep the panel compact.
         self.add_widget(self.segment_type_label)
         self.add_widget(self._file_seg_label)
         self.add_widget(self._curve_group)
-        self.add_layout(sf)
-        self.add_widget(help_widget(self.match_previous_cb, "Match the end spacing of the previous edge for smooth transitions"))
-        self.add_widget(self.param_stack)
 
-        # Auto-detect sub-edges
-        self.add_layout(self.auto_split_form)
-        self.add_widget(help_widget(self.auto_split_btn, "Split selected edge at sharp corners based on threshold"))
+        # Tool buttons (open standalone windows).
+        self.distribution_btn = make_button("Distribution…", '#1b2a4a')
+        self.distribution_btn.setToolTip("Set the point distribution for this edge — live preview on the canvas")
+        self.split_corner_btn = make_button("Split at Corners…", '#1b2a4a')
+        self.split_corner_btn.setToolTip("Split this edge at sharp corners")
+        self.transform_btn = make_button("Duplicate & Transform…", '#243a52')
+        self.transform_btn.setToolTip("Open the duplicate / transform tools in a separate window")
+        self.add_widget(help_widget(self.distribution_btn, "Set the point distribution for this edge — live preview on the canvas"))
+        self.add_widget(help_widget(self.split_corner_btn, "Split this edge at sharp corners"))
+        self.add_widget(help_widget(self.transform_btn, "Open the duplicate / transform tools in a separate window"))
+
+        def _tool_dialog(title):
+            # Parented to this panel → the dialog floats above the MAIN window
+            # but not above other applications (no global stay-on-top), and
+            # follows the app when you switch away.
+            dlg = QDialog(self)
+            dlg.setWindowTitle(title)
+            dlg.setStyleSheet("background:#121422; color:#cdd6f4;")
+            lay = QVBoxLayout(dlg)
+            lay.setContentsMargins(8, 8, 8, 8)
+            lay.setSpacing(4)
+            dlg.hide()
+            return dlg, lay
+
+        # Distribution window — strategy + params + match-previous + Apply.
+        self._distribution_dialog, _qv = _tool_dialog("Edge Distribution")
+        _qv.addLayout(sf)
+        _qv.addWidget(help_widget(self.match_previous_cb, "Match the end spacing of the previous edge for smooth transitions"))
+        _qv.addWidget(self.param_stack)
+        self.distribution_apply_btn = make_button("Apply", '#1e4620')
+        self.distribution_apply_btn.setToolTip("Apply the distribution and show the resampled result on the canvas")
+        _qv.addWidget(help_widget(self.distribution_apply_btn, "Apply the distribution and show the resampled result on the canvas"))
+
+        # Split-at-corners window — detection angle + action.
+        self._split_dialog, _sv = _tool_dialog("Split at Corners")
+        _sv.addLayout(self.auto_split_form)
+        _sv.addWidget(help_widget(self.auto_split_btn, "Split selected edge at sharp corners based on threshold"))
+
+        # Duplicate & Transform window.
+        self._transform_dup_group = TransformPanel()
+        self._transform_dialog, _tl = _tool_dialog("Duplicate & Transform")
+        _tl.addWidget(self._transform_dup_group)
+
+        self.split_corner_btn.clicked.connect(self._open_split_dialog)
+        # distribution_btn and transform_btn are wired by the controller (they
+        # also start the live canvas preview / transform gizmo).
 
         # Align form layouts
         for layout in [pf, ef, layout_limits, layout_h_line, layout_v_line,
@@ -406,12 +452,36 @@ class EdgePropsPanel(CollapsibleSection):
                        rf, sf, self.auto_split_form]:
             align_form_labels(layout)
 
-        # ── Duplicate with Transform (only for curve segments) ────────────
-        self._transform_dup_group = TransformPanel()
-        self._transform_dup_group.setVisible(False)
-        self.add_widget(self._transform_dup_group)
+        # Slightly smaller fonts throughout the inspector for a denser, more
+        # industrial feel.
+        self.setStyleSheet(
+            "QLabel{font-size:11px;} QCheckBox{font-size:11px;}"
+            " QGroupBox{font-size:11px;} QGroupBox::title{font-size:11px;}"
+            " QSpinBox,QDoubleSpinBox,QLineEdit{font-size:11px;}")
 
         self.curve_mode_param.toggled.connect(self._on_curve_mode_toggled)
+
+    def _show_dialog(self, dlg):
+        # Re-parent to the MAIN WINDOW (not this panel, which gets hidden when
+        # the selection changes) and make it a Tool window: it then floats above
+        # the main window — even when the canvas / a gizmo handle is clicked —
+        # but recedes when you switch to another application.
+        mw = self.window()
+        if mw is not None and dlg.parent() is not mw:
+            dlg.setParent(mw, Qt.WindowType.Tool)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def open_distribution_dialog(self):
+        self._show_dialog(self._distribution_dialog)
+
+    def _open_split_dialog(self):
+        self._show_dialog(self._split_dialog)
+
+    def open_transform_dialog(self):
+        self._transform_dup_group.setVisible(True)
+        self._show_dialog(self._transform_dialog)
 
     def _setup_param_forms(self):
         spin_style = SPIN_STYLE
@@ -513,8 +583,13 @@ class EdgePropsPanel(CollapsibleSection):
     def show_file_segment(self, start: int, end: int):
         self._file_seg_label.setVisible(True)
         self._curve_group.setVisible(False)
+        # Discrete edges are resampled → offer the Distribution tool.
+        self.distribution_btn.setVisible(True)
+        # The toolbar "Apply" duplicated "Preview" (both run the full resampler),
+        # so it is no longer shown — use the toolbar "Preview" for a full preview
+        # and the Distribution window's Apply for a single edge.
         if self.file_preview_btn:
-            self.file_preview_btn.setVisible(True)
+            self.file_preview_btn.setVisible(False)
         if self.curve_preview_btn:
             self.curve_preview_btn.setVisible(False)
         self._file_seg_label.setText(f"Start Index: {start}    End Index: {end}")
@@ -522,6 +597,10 @@ class EdgePropsPanel(CollapsibleSection):
     def show_curve_segment(self, seg):
         self._file_seg_label.setVisible(False)
         self._curve_group.setVisible(True)
+        # Analytic edges set their point count in Definition (Node Count); the
+        # resampling-strategy Distribution does not apply to analytic edges.
+        self.distribution_btn.setVisible(False)
+        self._distribution_dialog.hide()
         if self.file_preview_btn:
             self.file_preview_btn.setVisible(False)
         if self.curve_preview_btn:
@@ -618,6 +697,10 @@ class EdgePropsPanel(CollapsibleSection):
 
     def show_segment_props(self, visible: bool):
         self.setVisible(visible)
+        if visible:
+            # Selecting an edge should surface its properties immediately rather
+            # than leaving them behind a collapsed header the user must hunt for.
+            self.expand()
         if not visible:
             if self.curve_preview_btn:
                 self.curve_preview_btn.setVisible(False)

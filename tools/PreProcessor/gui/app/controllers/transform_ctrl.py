@@ -4,15 +4,21 @@ import numpy as np
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
 from app.commands.segment_cmds import DuplicateMultipleTransformCmd
-from app.services.geometry_service import GeometryService
+from app.services.geometry_service import GeometryService, _parse_vertices_str
 
 class TransformControllerMixin:
     """Mixin containing geometric transform, duplication, and mirroring logic."""
 
     def duplicate_with_transform(self):
-        """Apply the selected geometric transform to every selected edge,
-        adding a transformed Polygon curve per edge (optionally deleting the
-        originals). Operates on all edges selected in the edge lists."""
+        """Apply the selected geometric transform to every selected edge.
+
+        The transform is type-preserving (like industrial CAD): a line stays a
+        line, a circle stays a circle, polygons/triangles/quads keep their type
+        — only their defining parameters are transformed. Discrete (file) edges
+        and custom-formula curves, which have no closed-form image under the
+        transform, fall back to a Polygon of the transformed sample points.
+        Operates on all edges selected in the model tree; originals are kept
+        unless 'Delete original' is set."""
         session = self.active_session()
         if not session:
             self.main_window.log_panel.log("No segment selected.")
@@ -23,6 +29,14 @@ class TransformControllerMixin:
         if not indices:
             self.main_window.log_panel.log("No segment selected.")
             return
+
+        # A zero-length custom mirror axis is the only fully-degenerate case;
+        # reject it once up front so a per-edge None can mean "no valid points".
+        if sb.dup_type_combo.currentIndex() == 3:
+            if math.hypot(sb.dup_ma_dx.value(), sb.dup_ma_dy.value()) < 1e-12:
+                self.main_window.log_panel.log(
+                    "Mirror axis direction is zero — cannot mirror.")
+                return
 
         delete_original = sb.dup_delete_orig_cb.isChecked()
 
@@ -40,35 +54,11 @@ class TransformControllerMixin:
             if seg.type == "curve" and idx == session.current_segment_idx:
                 self._sync_active_curve_segment_from_ui()
 
-            pts_tuple = GeometryService.get_segment_points(session, seg)
-            if pts_tuple is None:
+            new_seg = self._build_transformed_segment(session, seg, next_id)
+            if new_seg is None:
                 self.main_window.log_panel.log(
                     f"Edge {seg.id} has no valid points — skipped.")
                 continue
-            xs, ys = pts_tuple
-            n = len(xs)
-
-            transformed = self._apply_transform(xs, ys)
-            if transformed is None:
-                self.main_window.log_panel.log(
-                    "Mirror axis direction is zero — cannot mirror.")
-                return
-            xs, ys = transformed
-
-            v_str = ";".join(f"{x:.6g},{y:.6g}" for x, y in zip(xs, ys))
-            new_seg = SegmentModel(next_id, -1, -1)
-            new_seg.type = "curve"
-            new_seg.curve_type = "polygon"
-            # Carry the source edge's resampling strategy and spacing params so
-            # a moved/duplicated edge keeps its feel instead of silently
-            # resetting to uniform. (The backend honours `strategy` for polygon
-            # curve segments — see processElement in PreProcessor/src/main.cpp.)
-            new_seg.strategy = seg.strategy
-            new_seg.parameters = dict(seg.parameters)
-            new_seg.parameters["vertices_str"] = v_str
-            new_seg.parameters["n_points"] = n
-            new_seg.start_index = -1
-            new_seg.end_index = -1
 
             new_segs.append(new_seg)
             seg_indices.append(idx)
@@ -109,6 +99,119 @@ class TransformControllerMixin:
         self._show_duplicate_preview = False
         self.main_window.canvas_view.clear_duplicate_preview()
         self.main_window.canvas_view.clear_transform_handles()
+
+    def _build_transformed_segment(self, session, seg, new_id):
+        """Build a new curve segment that is `seg` after the active transform,
+        preserving the analytic type where the (similarity) transform allows it.
+
+        Returns None when the edge has no usable points. The mirror-axis
+        degenerate case is rejected by the caller before this is reached."""
+        def T(pts):
+            """Transform a short list of defining points; None if degenerate."""
+            xs = np.array([p[0] for p in pts], dtype=float)
+            ys = np.array([p[1] for p in pts], dtype=float)
+            res = self._apply_transform(xs, ys)
+            if res is None:
+                return None
+            txs, tys = res
+            return [(float(x), float(y)) for x, y in zip(txs, tys)]
+
+        new_seg = SegmentModel(new_id, -1, -1)
+        new_seg.type = "curve"
+        # Carry the source edge's resampling strategy and spacing params so a
+        # moved/duplicated edge keeps its feel instead of resetting to uniform.
+        new_seg.strategy = seg.strategy
+        new_seg.parameters = dict(seg.parameters)
+        new_seg.start_index = -1
+        new_seg.end_index = -1
+
+        ct = getattr(seg, "curve_type", "custom")
+        p = seg.parameters
+
+        # ── Lines (incl. axis-aligned, re-classified after the transform) ────
+        if seg.type == "curve" and ct in ("line", "horizontal_line", "vertical_line"):
+            if ct == "horizontal_line":
+                ends = [(p.get("x0", 0.0), p.get("y", 0.0)),
+                        (p.get("x1", 1.0), p.get("y", 0.0))]
+            elif ct == "vertical_line":
+                ends = [(p.get("x", 0.0), p.get("y0", 0.0)),
+                        (p.get("x", 0.0), p.get("y1", 1.0))]
+            else:
+                ends = [(p.get("x0", 0.0), p.get("y0", 0.0)),
+                        (p.get("x1", 1.0), p.get("y1", 1.0))]
+            t = T(ends)
+            if t is None:
+                return None
+            (ax, ay), (bx, by) = t
+            tol = 1e-9 * max(1.0, abs(ax) + abs(ay) + abs(bx) + abs(by))
+            for k in ("x", "y", "x0", "y0", "x1", "y1"):
+                new_seg.parameters.pop(k, None)
+            if abs(ay - by) <= tol:          # stayed horizontal
+                new_seg.curve_type = "horizontal_line"
+                new_seg.parameters.update({"y": ay, "x0": ax, "x1": bx})
+            elif abs(ax - bx) <= tol:        # became vertical
+                new_seg.curve_type = "vertical_line"
+                new_seg.parameters.update({"x": ax, "y0": ay, "y1": by})
+            else:                            # general line
+                new_seg.curve_type = "line"
+                new_seg.parameters.update({"x0": ax, "y0": ay, "x1": bx, "y1": by})
+            return new_seg
+
+        # ── Circle (similarity transforms keep it circular) ──────────────────
+        if seg.type == "curve" and ct == "circle":
+            cx, cy, r = p.get("cx", 0.0), p.get("cy", 0.0), p.get("r", 1.0)
+            # Transform the centre and a rim point; |Δ| recovers the new radius
+            # (handles rotation/mirror = unchanged, uniform scale = r·factor).
+            t = T([(cx, cy), (cx + r, cy)])
+            if t is None:
+                return None
+            (ncx, ncy), (ex, ey) = t
+            new_seg.curve_type = "circle"
+            new_seg.parameters.update(
+                {"cx": ncx, "cy": ncy, "r": math.hypot(ex - ncx, ey - ncy)})
+            return new_seg
+
+        # ── Triangle / Quadrilateral / Polygon (transform the vertices) ──────
+        if seg.type == "curve" and ct in ("triangle", "quadrilateral", "polygon"):
+            if ct == "triangle":
+                src = [(p.get("x0", 0.0), p.get("y0", 0.0)),
+                       (p.get("x1", 1.0), p.get("y1", 0.0)),
+                       (p.get("x2", 0.5), p.get("y2", 1.0))]
+            elif ct == "quadrilateral":
+                src = [(p.get(f"x{i}", 0.0), p.get(f"y{i}", 0.0)) for i in range(4)]
+            else:
+                src = [(float(x), float(y))
+                       for x, y in _parse_vertices_str(p.get("vertices_str", ""))]
+            t = T(src)
+            if t is None:
+                return None
+            new_seg.curve_type = ct
+            if ct in ("triangle", "quadrilateral"):
+                for i, (x, y) in enumerate(t):
+                    new_seg.parameters[f"x{i}"] = x
+                    new_seg.parameters[f"y{i}"] = y
+            else:
+                new_seg.parameters["vertices_str"] = ";".join(
+                    f"{x:.6g},{y:.6g}" for x, y in t)
+            return new_seg
+
+        # ── Fallback: discrete (file) edges and custom-formula curves ────────
+        # No closed-form image under the transform → bake the transformed sample
+        # points into a Polygon (the industrial 'explode' equivalent).
+        pts_tuple = GeometryService.get_segment_points(session, seg)
+        if pts_tuple is None:
+            return None
+        xs, ys = pts_tuple
+        res = self._apply_transform(np.asarray(xs, dtype=float),
+                                    np.asarray(ys, dtype=float))
+        if res is None:
+            return None
+        txs, tys = res
+        new_seg.curve_type = "polygon"
+        new_seg.parameters["vertices_str"] = ";".join(
+            f"{x:.6g},{y:.6g}" for x, y in zip(txs, tys))
+        new_seg.parameters["n_points"] = len(txs)
+        return new_seg
 
     def _apply_transform(self, xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         """Apply the selected geometric transform to the points xs and ys."""
@@ -159,6 +262,23 @@ class TransformControllerMixin:
 
         return xs, ys
 
+
+    def _open_transform(self):
+        """Open the Duplicate & Transform window and immediately show the base
+        point / mirror-axis gizmo and the live result preview on the canvas."""
+        self.main_window.sidebar_view.open_transform_dialog()
+        self._show_duplicate_preview = True
+        self.update_duplicate_base_point()
+        self.update_duplicate_preview()
+        self._refresh_transform_handles()
+
+    def _close_transform(self):
+        """The Duplicate & Transform window was closed → clear its gizmo/preview."""
+        self._show_duplicate_preview = False
+        self.main_window.canvas_view.clear_duplicate_preview()
+        self.main_window.canvas_view.clear_transform_handles()
+        # Restore the selected analytic edge's control handles, if any.
+        self._refresh_edge_handles()
 
     def handle_dup_interactive_toggled(self, checked: bool):
         """Explicit entry point for interactive placement: show (or hide) the
@@ -311,12 +431,18 @@ class TransformControllerMixin:
         # instead of being covered by a draggable marker / mirror axis line.
         if not on:
             canvas.clear_transform_handles()
+            # No transform preview → restore the selected edge's control points.
+            self._refresh_edge_handles()
             return
 
+        # Transform gizmo and edge control points must not overlap on canvas.
+        canvas.clear_edge_handles()
+
         t_idx = sb.dup_type_combo.currentIndex()
-        if t_idx == 0:    # Rotate — pivot point
-            canvas.show_transform_handles(
-                {'point': (sb.dup_rot_px.value(), sb.dup_rot_py.value())})
+        if t_idx == 0:    # Rotate — pivot + draggable angle handle
+            canvas.show_transform_handles({'rotate': {
+                'pivot': (sb.dup_rot_px.value(), sb.dup_rot_py.value()),
+                'angle': sb.dup_rot_angle.value()}})
         elif t_idx == 1:  # Mirror Horizontal — horizontal axis line
             canvas.show_transform_handles({'hline': sb.dup_mh_py.value()})
         elif t_idx == 2:  # Mirror Vertical — vertical axis line
@@ -378,6 +504,13 @@ class TransformControllerMixin:
             if anchor is not None:
                 self._spin_set_silent(sb.dup_trans_dx, x - anchor[0])
                 self._spin_set_silent(sb.dup_trans_dy, y - anchor[1])
+            self._show_duplicate_preview = True
+            self.update_duplicate_preview()
+            return
+
+        if kind == 'rotate_angle':
+            # The rotate gizmo reports the absolute clock-hand angle (deg) in x.
+            self._spin_set_silent(sb.dup_rot_angle, x)
             self._show_duplicate_preview = True
             self.update_duplicate_preview()
             return
