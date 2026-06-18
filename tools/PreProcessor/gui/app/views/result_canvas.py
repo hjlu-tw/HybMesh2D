@@ -1,5 +1,6 @@
 from __future__ import annotations
 import numpy as np
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox, QLabel,
     QPushButton, QFileDialog,
@@ -33,12 +34,18 @@ class ResultCanvasView(QWidget):
     grid, then matplotlib streamplot (R6).
     """
 
+    # Emitted after each render with the field's data range and applied clim,
+    # so a control panel can show stats / sync its color-scale inputs.
+    result_rendered = pyqtSignal(dict)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(f"background: {_BG};")
         self._result: TecplotResult | None = None
         self._triang: mtri.Triangulation | None = None
         self._building = False  # guard against re-entrant renders during setup
+        self._clim_auto = True
+        self._clim: tuple[float, float] | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -79,15 +86,22 @@ class ResultCanvasView(QWidget):
             hl.addWidget(cb)
 
         hl.addStretch()
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setStyleSheet(self.load_btn.styleSheet())
+        hl.addWidget(self.clear_btn)
         self.save_btn = QPushButton("Save PNG")
         self.save_btn.setStyleSheet(self.load_btn.styleSheet())
         hl.addWidget(self.save_btn)
         root.addWidget(bar)
 
         # ── Matplotlib figure ──────────────────────────────────────────────
-        self.figure = Figure(facecolor=_BG, tight_layout=True)
+        # Fixed axes rectangles (NOT tight_layout / colorbar(ax=...), which
+        # progressively shrink the main axes on every re-render).
+        self._AX_RECT = [0.08, 0.08, 0.80, 0.86]
+        self._CAX_RECT = [0.90, 0.08, 0.025, 0.86]
+        self.figure = Figure(facecolor=_BG)
         self.canvas = FigureCanvasQTAgg(self.figure)
-        self.ax = self.figure.add_subplot(111)
+        self.ax = self.figure.add_axes(self._AX_RECT)  # persistent, fixed position
         self._cbar = None
         self.nav = NavigationToolbar2QT(self.canvas, self)
         self.nav.setStyleSheet(f"background:{_BG};color:{_FG};")
@@ -106,6 +120,7 @@ class ResultCanvasView(QWidget):
         self.vector_cb.toggled.connect(self._on_control_changed)
         self.zone_combo.currentIndexChanged.connect(self._on_zone_changed)
         self.save_btn.clicked.connect(self._save_png)
+        self.clear_btn.clicked.connect(self.clear)
 
     # ------------------------------------------------------------------ #
     def _style_axes(self):
@@ -113,7 +128,10 @@ class ResultCanvasView(QWidget):
         for spine in self.ax.spines.values():
             spine.set_color("#2c2e43")
         self.ax.tick_params(colors=_FG, labelsize=8)
-        self.ax.set_aspect("equal", adjustable="box")
+        # 'datalim' keeps the axes box at its fixed rect (adjusting data limits
+        # to preserve aspect) so the plot area never shrinks between renders;
+        # 'box' would resize the box per render.
+        self.ax.set_aspect("equal", adjustable="datalim")
 
     def _empty_message(self, text: str):
         self.ax.clear()
@@ -160,6 +178,35 @@ class ResultCanvasView(QWidget):
             self._building = False
         self.render()
 
+    def clear(self):
+        """Clear the loaded result and reset to the empty placeholder."""
+        self._building = True
+        try:
+            self._result = None
+            self._triang = None
+            self.var_combo.clear()
+            self.zone_combo.clear()
+        finally:
+            self._building = False
+        if self._cbar is not None:
+            try:
+                self._cbar.remove()
+            except Exception:
+                pass
+            self._cbar = None
+        self._empty_message("No result loaded.")
+
+    def set_clim_auto(self, auto: bool):
+        """Auto color scale = use the field's data min/max each render."""
+        self._clim_auto = bool(auto)
+        self.render()
+
+    def set_clim(self, vmin: float, vmax: float):
+        """Set a manual color-scale range and switch off auto."""
+        self._clim_auto = False
+        self._clim = (float(vmin), float(vmax))
+        self.render()
+
     # ------------------------------------------------------------------ #
     def _node_field(self, var: str) -> np.ndarray:
         if var not in self._node_cache:
@@ -187,28 +234,54 @@ class ResultCanvasView(QWidget):
         cmap = self.cmap_combo.currentText()
         r = self._result
 
+        # Clear only the main axes contents; its position is fixed and it is
+        # never removed, so the plot area can't shrink between renders. The old
+        # colorbar (and its axes) is removed and a fresh colorbar axes is created
+        # at a fixed rect each render.
         self.ax.clear()
         if self._cbar is not None:
             try:
-                self._cbar.remove()
+                self._cbar.remove()  # also removes its colorbar axes
             except Exception:
                 pass
             self._cbar = None
         self._style_axes()
 
         try:
+            # Determine the field array and its true data range, then the color
+            # limits (auto = data range, else the user-set clim).
             if self.mode_combo.currentText().startswith("Filled"):
                 vals = r.get_cell_field(var)
-                mappable = self.ax.tripcolor(
-                    self._triang, facecolors=vals, cmap=cmap, shading="flat")
             else:
-                node_vals = self._node_field(var)
-                mappable = self.ax.tricontourf(
-                    self._triang, node_vals, levels=24, cmap=cmap)
+                vals = self._node_field(var)
+            import numpy as _np
+            finite = vals[_np.isfinite(vals)]
+            dmin = float(finite.min()) if finite.size else 0.0
+            dmax = float(finite.max()) if finite.size else 1.0
+            mean = float(finite.mean()) if finite.size else 0.0
+            if self._clim_auto or self._clim is None:
+                vmin, vmax = dmin, dmax
+            else:
+                vmin, vmax = self._clim
+            if vmin == vmax:  # flat field -> widen slightly so the colormap shows
+                vmin, vmax = vmin - 0.5, vmax + 0.5
 
-            self._cbar = self.figure.colorbar(mappable, ax=self.ax, fraction=0.046, pad=0.02)
+            if self.mode_combo.currentText().startswith("Filled"):
+                mappable = self.ax.tripcolor(
+                    self._triang, facecolors=vals, cmap=cmap, shading="flat",
+                    vmin=vmin, vmax=vmax)
+            else:
+                levels = _np.linspace(vmin, vmax, 24)
+                mappable = self.ax.tricontourf(
+                    self._triang, vals, levels=levels, cmap=cmap, extend="both")
+
+            cax = self.figure.add_axes(self._CAX_RECT)
+            self._cbar = self.figure.colorbar(mappable, cax=cax)
             self._cbar.ax.tick_params(colors=_FG, labelsize=8)
             self._cbar.set_label(var, color=_FG)
+            self.result_rendered.emit({
+                "var": var, "dmin": dmin, "dmax": dmax, "mean": mean,
+                "vmin": vmin, "vmax": vmax})
 
             if self.mesh_cb.isChecked():
                 self.ax.triplot(self._triang, color="#5a607a", lw=0.2, alpha=0.5)

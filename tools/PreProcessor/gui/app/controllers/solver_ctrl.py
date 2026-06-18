@@ -116,10 +116,11 @@ class SolverControllerMixin:
         self._solver_result_path = os.path.join(
             work_dir, f"xtecp_sol_allz.dat{self.SOLVER_TAG}")
 
-        # Show the live monitor (Results sidebar, idx 4) and reset it.
+        # Reset the live monitor and show the Solver mode (its canvas is the
+        # residual monitor, idx 3).
         monitor = self.main_window.solver_monitor_panel
         monitor.reset()
-        self.main_window.mode_combo.setCurrentIndex(4)
+        self.main_window.mode_combo.setCurrentIndex(3)
 
         log("--- Starting Solver Pipeline (getPGrid -> "
             + ("bDecompose -> " if cfg.enable_decompose else "")
@@ -175,9 +176,10 @@ class SolverControllerMixin:
         cfg.input_bnd_file = os.path.join(grid_dir, "input.bnd")
 
         # Solver boundary-condition table. The solver reads "<bc>.def" from its
-        # cwd; getPGrid generates this companion automatically, so we only write
-        # one here when the user supplied an explicit BC override (it then wins,
-        # because the worker won't overwrite an existing target).
+        # cwd; by default it uses getPGrid's own companion verbatim (the worker
+        # copies grid/<bc>.def -> work/<bc>.def). Only when the user explicitly
+        # fills the BC table do we write an override here (the worker then leaves
+        # it in place instead of copying getPGrid's).
         if cfg.bc_definitions:
             def_name = os.path.basename(cfg.output_bc_file) + ".def"
             cfg.generate_bc_def(os.path.join(work_dir, def_name))

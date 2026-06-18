@@ -77,9 +77,9 @@ class SolverConfig:
     # to stdout. The smoke test showed the stock value (100000) prints residuals
     # only every 100k iterations, leaving the live monitor blank. Default low so
     # the residual plot updates; users can raise it for long production runs.
-    num_half_iter: int = 50000
-    print_convg_per_niter: int = 100
-    print_sol_per_niter: int = 5000
+    num_half_iter: int = 1000
+    print_convg_per_niter: int = 10
+    print_sol_per_niter: int = 1000
 
     # Parallel (pthread; bDecompose/MPI is a separate optional path)
     apply_pthread: bool = True

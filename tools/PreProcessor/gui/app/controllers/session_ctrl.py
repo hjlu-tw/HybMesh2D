@@ -14,6 +14,18 @@ WORKSPACE_FORMAT_VERSION = 1
 class SessionControllerMixin:
     """Mixin containing session management, tab switching, and file loading logic."""
 
+    def clear_cad_canvas(self):
+        """Clear the transient resampled/preview overlay from the CAD canvas
+        without deleting the geometry or the model tree (non-destructive)."""
+        session = self.active_session()
+        if session is None:
+            return
+        session.resampled_points = None
+        cv = self.main_window.canvas_view
+        cv.clear_resampled()
+        cv.clear_duplicate_preview()
+        self.main_window.log_panel.log("Cleared CAD resampled/preview overlay.")
+
     def new_blank_tab(self):
         # In Mesh Generator / Statistics modes the separate mesh tab strip is
         # active, so "New Tab" there adds a mesh workspace tab rather than a new

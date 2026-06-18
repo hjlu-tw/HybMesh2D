@@ -103,15 +103,16 @@ class SolverPipelineWorker(QThread):
                 self.finished_signal.emit(rc if rc else -1)
             return False
 
-        # The solver reads its segment table "<bc>.def" (getPGrid's companion)
-        # from its own cwd. getPGrid writes it next to the grid; copy it into the
-        # solver work dir unless solver_ctrl already placed a user override there.
+        # The solver reads its segment table "<bc>.def" from its own cwd (work
+        # dir). Use getPGrid's companion verbatim: copy grid/<bc>.def -> work/.
+        # Skip only when the user supplied an explicit BC override (solver_ctrl
+        # already wrote it into the work dir).
         def_name = os.path.basename(self._config.output_bc_file) + ".def"
         companion = os.path.join(self._getpgrid_dir, def_name)
         target = os.path.join(self._solver_work_dir, def_name)
-        if (os.path.exists(companion)
-                and os.path.abspath(companion) != os.path.abspath(target)
-                and not os.path.exists(target)):
+        if (not self._config.bc_definitions
+                and os.path.exists(companion)
+                and os.path.abspath(companion) != os.path.abspath(target)):
             shutil.copy2(companion, target)
             self.log_signal.emit(f"[getPGrid] segment table -> {def_name}")
 

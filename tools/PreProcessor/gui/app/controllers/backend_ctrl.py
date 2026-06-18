@@ -270,7 +270,9 @@ class BackendControllerMixin:
         if hasattr(self, "_worker") and self._worker is not None and self._worker.isRunning():
             self.main_window.log_panel.log("Backend is already running. Please wait.")
             return
-        self.main_window.log_panel.clear_log()
+        # Keep the shared log across runs/pages (don't clear); just mark a new
+        # run. Users can clear manually via the log panel's Clear button.
+        self.main_window.log_panel.log("--- Running PreProcessor (resample) ---")
         self._worker = BackendWorker(exe, cfg_path)
         # Remember which session this run belongs to so close_tab can cancel it
         # and the finished-callback can tell whether the session still exists.

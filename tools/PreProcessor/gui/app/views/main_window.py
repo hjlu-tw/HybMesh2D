@@ -16,6 +16,7 @@ from app.views.panels.mesh_config_panel import MeshConfigPanel
 from app.views.panels.mesh_stats_panel import MeshStatsPanel
 from app.views.panels.solver_config_panel import SolverConfigPanel
 from app.views.panels.solver_monitor_panel import SolverMonitorPanel
+from app.views.panels.result_panel import ResultControlPanel
 from app.styles import TOOLBAR_CHECKBOX_STYLE
 
 
@@ -80,8 +81,10 @@ class MainWindow(QMainWindow):
         # placeholder until Phase 4.2.
         self.solver_config_panel = SolverConfigPanel(self.sidebar_stack)
         self.sidebar_stack.addWidget(self.solver_config_panel)      # idx 3
-        self.solver_monitor_panel = SolverMonitorPanel(self.sidebar_stack)
-        self.sidebar_stack.addWidget(self.solver_monitor_panel)     # idx 4
+        # Results sidebar: color-scale (clim) control + field statistics
+        # (complements the canvas toolbar's variable/colormap/overlay controls).
+        self.result_control_panel = ResultControlPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.result_control_panel)     # idx 4
 
         # ── Right panel: tab-bar row + shared canvas ──────────────────────
         self.right_panel = QWidget(self)
@@ -229,6 +232,7 @@ class MainWindow(QMainWindow):
         self.undo_btn = create_tb_btn("Undo", "Undo last action (Ctrl+Z)")
         self.redo_btn = create_tb_btn("Redo", "Redo last action (Ctrl+Shift+Z)")
         self.focus_geom_btn = create_tb_btn("Fit View", "Fit canvas view to selected geometry")
+        self.cad_clear_btn = create_tb_btn("Clear", "Clear the active geometry from the canvas")
         
         # New CAD Previews
         self.cad_preview_btn = create_tb_btn("Preview", "Run PreProcessor and preview geometry/boundary conditions")
@@ -326,6 +330,7 @@ class MainWindow(QMainWindow):
         """)
 
         self.mesh_focus_btn = create_tb_btn("Fit View", "Fit canvas to mesh or preview boundaries")
+        self.mesh_clear_btn = create_tb_btn("Clear", "Clear the displayed mesh from the canvas")
 
         self.mesh_show_wireframe_cb = QCheckBox("Mesh", self.canvas_toolbar)
         self.mesh_show_wireframe_cb.setToolTip("Show/hide mesh wireframe")
@@ -389,7 +394,7 @@ class MainWindow(QMainWindow):
 
         # Track layouts for visibility toggling
         self.cad_tb_widgets = [
-            self.focus_geom_btn,
+            self.focus_geom_btn, self.cad_clear_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2,
@@ -397,7 +402,7 @@ class MainWindow(QMainWindow):
 
         self.mesh_tb_widgets = [
             self.mesh_preview_btn, self.mesh_generate_btn, self.mesh_cancel_btn,
-            self.mesh_focus_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
+            self.mesh_focus_btn, self.mesh_clear_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
             self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,
             self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
         ]
@@ -417,6 +422,10 @@ class MainWindow(QMainWindow):
         # Results canvas (matplotlib, Phase 4.3)
         self.result_canvas_view = ResultCanvasView(self.canvas_stack)
         self.canvas_stack.addWidget(self.result_canvas_view)        # idx 2
+
+        # Solver monitor (live residual plot) is the Solver-mode canvas.
+        self.solver_monitor_panel = SolverMonitorPanel(self.canvas_stack)
+        self.canvas_stack.addWidget(self.solver_monitor_panel)      # idx 3
 
         right_layout.addWidget(self.tab_row)
         right_layout.addWidget(self.canvas_toolbar)
@@ -588,7 +597,8 @@ class MainWindow(QMainWindow):
     def _on_mode_changed(self, idx: int):
         self.sidebar_stack.setCurrentIndex(idx)
         # Canvas mapping: CAD->0, Mesh/Stats/Solver->1 (mesh canvas), Results->2.
-        canvas_map = {0: 0, 1: 1, 2: 1, 3: 1, 4: 2}
+        # CAD->geom, Mesh/Stats->mesh canvas, Solver->monitor, Results->result canvas
+        canvas_map = {0: 0, 1: 1, 2: 1, 3: 3, 4: 2}
         self.canvas_stack.setCurrentIndex(canvas_map.get(idx, 0))
 
         is_pre = (idx == 0)
@@ -668,6 +678,7 @@ class MainWindow(QMainWindow):
                         self.redo_btn,
                         self.cad_sep1,
                         self.focus_geom_btn,
+                        self.cad_clear_btn,
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
@@ -703,6 +714,7 @@ class MainWindow(QMainWindow):
                         self.redo_btn,
                         self.cad_sep1,
                         self.focus_geom_btn,
+                        self.cad_clear_btn,
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
@@ -737,6 +749,7 @@ class MainWindow(QMainWindow):
                         self.mesh_cancel_btn,
                         self.mesh_sep2,
                         self.mesh_focus_btn,
+                        self.mesh_clear_btn,
                     ]
                     row1_widgets = [
                         self.mesh_show_wireframe_cb,
@@ -776,6 +789,7 @@ class MainWindow(QMainWindow):
                         self.mesh_cancel_btn,
                         self.mesh_sep2,
                         self.mesh_focus_btn,
+                        self.mesh_clear_btn,
                         self.mesh_sep3,
                         self.mesh_show_wireframe_cb,
                         self.mesh_show_bc_cb,

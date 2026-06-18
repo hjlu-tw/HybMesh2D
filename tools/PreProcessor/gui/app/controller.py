@@ -194,6 +194,7 @@ class AppController(
         sb.geometry_tree.currentItemChanged.connect(self.handle_tree_current_changed)
         sb.geometry_tree.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
         self.main_window.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
+        self.main_window.cad_clear_btn.clicked.connect(self.clear_cad_canvas)
         sb.geometry_tree.context_menu_requested.connect(self.show_geometry_context_menu)
 
         # ── Wire tab signals ────────────────────────────────────────────
@@ -261,6 +262,7 @@ class AppController(
         mw.mesh_config_panel.export_vtk_btn.clicked.connect(self.export_generated_vtk)
         mw.mesh_config_panel.export_starcd_btn.clicked.connect(self.export_star_cd)
         mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
+        mw.mesh_clear_btn.clicked.connect(self.clear_mesh_canvas)
 
         # Solver panel (Phase 3)
         sp = mw.solver_config_panel
@@ -272,6 +274,7 @@ class AppController(
 
         # Results / post-processing
         mw.result_canvas_view.load_btn.clicked.connect(self.open_result_dialog)
+        mw.result_control_panel.bind(mw.result_canvas_view)
 
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel
         def _make_sync_checkbox_fn(canvas_method, cb_sidebar, cb_toolbar):

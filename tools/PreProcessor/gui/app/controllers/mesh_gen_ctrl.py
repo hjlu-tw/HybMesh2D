@@ -136,6 +136,25 @@ class MeshGenControllerMixin:
         else:
             self.main_window.log_panel.log("Geometry file is already in the list.")
 
+    def clear_mesh_canvas(self):
+        """Clear only the previously generated mesh, then re-show the current
+        (possibly edited) boundary preview. Keeps the geometry layers list and
+        all inputs — use this after editing CAD geometry to drop the stale mesh
+        and see the updated boundaries."""
+        self.global_vtk_mesh = None
+        self.global_vtk_path = ""
+        # clear_mesh_results removes only the mesh output, leaving geometry
+        # previews / domain box / BC previews intact.
+        self.main_window.mesh_canvas_view.clear_mesh_results()
+        self.main_window.mesh_stats_panel.update_stats(None)
+        # Refresh the boundary preview from the current config so CAD edits show.
+        cfg = self.main_window.mesh_config_panel.get_config()
+        self.global_mesh_config = cfg
+        self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
+        self.main_window.mesh_canvas_view.update_geometry_previews(cfg.geom_files)
+        self.main_window.log_panel.log(
+            "Cleared previous mesh; showing current boundaries.")
+
     def run_mesh_generator(self):
         """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background."""
         if hasattr(self, '_mesh_worker') and self._mesh_worker is not None and self._mesh_worker.isRunning():
@@ -206,7 +225,8 @@ class MeshGenControllerMixin:
         self.main_window.mesh_generate_btn.setEnabled(False)
         self.main_window.mesh_cancel_btn.setEnabled(True)
 
-        self.main_window.log_panel.clear_log()
+        # Keep the shared log across runs/pages (don't clear); the header below
+        # separates runs. Users can clear manually via the log panel.
         self.main_window.log_panel.log("--- Starting HybMesh2D Mesh Generation ---")
         
         self._mesh_worker = MeshGenWorker(exe, tmp_cfg.name)

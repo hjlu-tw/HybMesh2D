@@ -1,10 +1,13 @@
 import sys
 import os
-from PyQt6.QtWidgets import QApplication, QSpinBox, QDoubleSpinBox
+from PyQt6.QtWidgets import QApplication, QSpinBox, QDoubleSpinBox, QComboBox
 
-# Disable scroll wheel value changes on numerical spin boxes
+# Disable scroll-wheel value changes on spin boxes and combo boxes so a stray
+# scroll over the control can't silently change a value/selection (mis-touch).
+# (Only affects scrolling the closed widget; an open dropdown still scrolls.)
 QSpinBox.wheelEvent = lambda self, event: event.ignore()
 QDoubleSpinBox.wheelEvent = lambda self, event: event.ignore()
+QComboBox.wheelEvent = lambda self, event: event.ignore()
 
 from app.controller import AppController
 

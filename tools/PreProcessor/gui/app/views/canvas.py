@@ -1350,6 +1350,14 @@ class CanvasView(QWidget):
         self.clear_draw_artifacts()
         self._draw_tool = tool
         self._draw_pts = []
+        # Freeze the view while drawing: placing the first point (a single point)
+        # or updating the rubber-band preview must not trigger pyqtgraph
+        # auto-ranging to a tiny extent. The view stays put until the shape is
+        # complete; explicit fit_to_* calls still work afterwards.
+        try:
+            self.plot_widget.getViewBox().disableAutoRange()
+        except Exception:
+            pass
         self._draw_hint.setVisible(True)
         # Centre the prompt in the current view so the user sees where to click.
         try:

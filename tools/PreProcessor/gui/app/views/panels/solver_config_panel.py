@@ -336,7 +336,10 @@ class SolverConfigPanel(QScrollArea):
     def _build_bc_section(self):
         sec = CollapsibleSection("9. Boundary Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
-        hint = QLabel("Segment → BC type  (0: reflect, 1: non-reflect, 5: fixed)")
+        hint = QLabel(
+            "Segment → BC type  (0: reflect, 1: non-reflect, 5: fixed)\n"
+            "HybMesh2D groups: 1-4 = domain (XMin/XMax/YMin/YMax), 5 = geometry.\n"
+            "Leave empty to use getPGrid's own boundary flags; fill to override.")
         hint.setStyleSheet("color:#7a82a0; font-size: 10px;")
         hint.setWordWrap(True)
         sec.add_widget(hint)
@@ -356,11 +359,22 @@ class SolverConfigPanel(QScrollArea):
         bc_btns.setSpacing(4)
         self.bc_add_btn = make_button("Add Row", "#1a2a3a")
         self.bc_remove_btn = make_button("Remove Row", "#301a1a")
+        self.bc_default_btn = make_button("Fill Default", "#1a2a3a")
+        self.bc_default_btn.setToolTip(
+            "Fill segments 1-5 (domain 1-4 → non-reflect, geometry 5 → fixed)")
         bc_btns.addWidget(self.bc_add_btn)
         bc_btns.addWidget(self.bc_remove_btn)
+        bc_btns.addWidget(self.bc_default_btn)
         sec.add_layout(bc_btns)
         self.bc_add_btn.clicked.connect(lambda: self._add_bc_row(0, 0))
         self.bc_remove_btn.clicked.connect(self._remove_bc_row)
+        self.bc_default_btn.clicked.connect(self._fill_default_bc)
+
+    def _fill_default_bc(self):
+        """Populate the standard HybMesh2D group mapping (1-4 domain, 5 geometry)."""
+        self.bc_table.setRowCount(0)
+        for seg, bc in [(1, 1), (2, 1), (3, 1), (4, 1), (5, 5)]:
+            self._add_bc_row(seg, bc)
 
     # ------------------------------------------------------------------ #
     # BC table helpers

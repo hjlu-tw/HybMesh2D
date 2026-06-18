@@ -78,7 +78,7 @@ class MeshConfig:
 
     # Section 6: Transition & Meshing Algorithm
     bl_transition_layers: int = 3
-    bl_auto_transition_layers: int = 0  # 0: OFF, 1: GLOBAL, 2: LOCAL
+    bl_auto_transition_layers: int = 1  # 0: OFF, 1: GLOBAL, 2: LOCAL
     bl_transition_growth_rate: float = 1.2
     bl_transition_buffer: float = 2.0
     gmsh_algorithm: int = 6  # 6: Frontal-Delaunay
