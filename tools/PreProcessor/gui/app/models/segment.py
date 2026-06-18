@@ -27,6 +27,11 @@ class SegmentModel:
         # Advanced
         self.match_previous: bool = False
 
+        # Whether a polygon / polyline-style edge closes back to its first
+        # vertex. Inherently-closed shapes (triangle/quad/circle) ignore this;
+        # it matters for `polygon` (incl. file edges baked into a polygon).
+        self.closed: bool = True
+
     # ── Strategy helpers ──────────────────────────────────────────────────
 
     def update_strategy(self, new_strategy: str):
@@ -57,6 +62,7 @@ class SegmentModel:
             seg.t_min = float(r[0])
             seg.t_max = float(r[1])
             seg.match_previous = d.get("match_previous", False)
+            seg.closed = d.get("closed", True)
 
             curve_mode = d.get("curve_mode")
             if curve_mode:
@@ -85,6 +91,7 @@ class SegmentModel:
             seg.strategy = d.get("strategy", "uniform")
             seg.parameters = copy.deepcopy(d.get("parameters", {"n_points": 50}))
             seg.match_previous = d.get("match_previous", False)
+            seg.closed = d.get("closed", True)
         return seg
 
     def to_dict(self) -> dict:
@@ -108,6 +115,8 @@ class SegmentModel:
                 d["formula"] = self.formula
             if self.match_previous:
                 d["match_previous"] = True
+            if not self.closed:
+                d["closed"] = False
         else:
             d = {
                 "id": self.id,
@@ -119,4 +128,6 @@ class SegmentModel:
             }
             if self.match_previous:
                 d["match_previous"] = True
+            if not self.closed:
+                d["closed"] = False
         return d

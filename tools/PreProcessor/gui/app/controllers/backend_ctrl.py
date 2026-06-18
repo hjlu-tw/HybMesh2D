@@ -20,14 +20,16 @@ class BackendControllerMixin:
         if session and session.resampled_points is not None:
             mode = self.main_window.quality_mode_combo.currentText().lower()
             self.main_window.canvas_view.load_resampled_data(
-                session.resampled_points, checked, mode)
+                session.resampled_points, checked, mode,
+                gap_indices=getattr(session, "resampled_gaps", None))
 
     def handle_quality_mode_changed(self, mode: str):
         session = self.active_session()
         if session and session.resampled_points is not None:
             show_q = self.main_window.quality_check_cb.isChecked()
             self.main_window.canvas_view.load_resampled_data(
-                session.resampled_points, show_q, mode.lower())
+                session.resampled_points, show_q, mode.lower(),
+                gap_indices=getattr(session, "resampled_gaps", None))
 
     def handle_show_vertices_toggled(self, checked: bool):
         self.main_window.canvas_view.set_geometry_symbols_visible(checked)
@@ -38,11 +40,33 @@ class BackendControllerMixin:
     def _find_executable(self) -> str | None:
         return find_binary_executable("surface_resampler")
 
+    @staticmethod
+    def _split_preview_pieces(pts: np.ndarray) -> tuple[np.ndarray, set]:
+        """Strip 'nan' separator rows from a preview output array and return the
+        cleaned points plus the set of connect-break indices (each is the index,
+        in the cleaned array, of the last point before a separator)."""
+        pts = np.atleast_2d(np.asarray(pts, dtype=float))
+        if pts.size == 0:
+            return np.empty((0, 2)), set()
+        finite = np.isfinite(pts).all(axis=1)
+        clean = pts[finite]
+        if finite.all():
+            return clean, set()
+        real_cumsum = np.cumsum(finite)
+        sep_rows = np.where(~finite)[0]
+        gaps = {int(real_cumsum[r] - 1) for r in sep_rows if real_cumsum[r] >= 1}
+        return clean, gaps
+
 
 
     def _write_temp_config(self, session: GeometrySession,
-                           output_path: str) -> tuple[str, list[str]]:
-        """Write config to a temp file and return its path and a list of extra temp files."""
+                           output_path: str,
+                           preview_markers: bool = False) -> tuple[str, list[str]]:
+        """Write config to a temp file and return its path and a list of extra temp files.
+
+        When ``preview_markers`` is set, the backend emits 'nan nan' separator
+        rows between disconnected pieces so the canvas can break the preview
+        polyline exactly there (used for Preview, never for real saves)."""
         self._sync_active_curve_segment_from_ui()
         pm = session.project_model
 
@@ -69,7 +93,8 @@ class BackendControllerMixin:
 
         tmp_cfg = tempfile.NamedTemporaryFile(
             dir=self.temp_dir, suffix=".json", delete=False, mode="w")
-        pm.export_config(tmp_cfg.name)
+        pm.export_config(tmp_cfg.name,
+                         extra={"preview_markers": True} if preview_markers else None)
         created_files.append(tmp_cfg.name)
         tmp_cfg.close()
 
@@ -100,7 +125,8 @@ class BackendControllerMixin:
         tmp_out_name = tmp_out.name
         tmp_out.close()
 
-        cfg_path, created_files = self._write_temp_config(session, tmp_out_name)
+        cfg_path, created_files = self._write_temp_config(
+            session, tmp_out_name, preview_markers=True)
         to_cleanup = created_files + [tmp_out_name]
 
         if self.main_window.sidebar_view.preview_btn:
@@ -209,11 +235,16 @@ class BackendControllerMixin:
                         # Tab was closed while the backend ran; discard the
                         # result (temp files are still cleaned in `finally`).
                         return
+                    # 'nan nan' separator rows mark exact piece boundaries; strip
+                    # them and convert to connect-break indices for the canvas.
+                    pts, gaps = self._split_preview_pieces(pts)
                     session.resampled_points = pts
+                    session.resampled_gaps = gaps
                     if session is self.active_session():
                         show_q = self.main_window.quality_check_cb.isChecked()
                         mode = self.main_window.quality_mode_combo.currentText().lower()
-                        self.main_window.canvas_view.load_resampled_data(pts, show_q, mode)
+                        self.main_window.canvas_view.load_resampled_data(
+                            pts, show_q, mode, gap_indices=gaps)
                         # Clear orange segment overlay so the resampled result
                         # is not obscured by the selection highlight
                         self.main_window.canvas_view.clear_segment_highlight()

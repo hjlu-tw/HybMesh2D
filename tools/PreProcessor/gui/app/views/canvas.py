@@ -362,6 +362,14 @@ class CanvasView(QWidget):
         self._endpoint_markers.setZValue(35)
         self.plot_widget.addItem(self._endpoint_markers)
 
+        # Open / unstitched endpoints — red rings warning the boundary is not
+        # closed (or two pieces nearly meet). Drawn above the white markers.
+        self._open_endpoint_markers = pg.ScatterPlotItem(
+            size=15, symbol='o', pen=pg.mkPen('#FF5252', width=2.4),
+            brush=pg.mkBrush(255, 82, 82, 70))
+        self._open_endpoint_markers.setZValue(36)
+        self.plot_widget.addItem(self._open_endpoint_markers)
+
         # ── Interactive shape-drawing state ───────────────────────────────
         self._draw_tool: str | None = None   # 'line'|'circle'|'rectangle'|'triangle'|'polygon'
         self._draw_pts: list[tuple[float, float]] = []
@@ -769,18 +777,48 @@ class CanvasView(QWidget):
             item.setVisible(self._selection_mode == 'edge')
             self._multi_segment_curves.append(item)
 
-    def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False, quality_mode: str = 'length'):
+    @staticmethod
+    def _detect_gap_indices(points: np.ndarray) -> set:
+        """Heuristic split of a flat point list into disconnected pieces.
+
+        Returns the set of indices i where point i should NOT connect to i+1
+        (a gap), detected as inter-point distances far above the median. Used
+        as a fallback when the backend did not supply exact piece markers.
+        """
+        if points is None or len(points) < 2:
+            return set()
+        diffs = np.diff(points, axis=0)
+        ds = np.sqrt(np.sum(diffs**2, axis=1))
+        ds[ds < 1e-12] = 1e-12
+        median_d = np.median(ds)
+        gap_threshold = max(10.0 * median_d, 1e-3)
+        return set(np.where(ds > gap_threshold)[0])
+
+    @staticmethod
+    def _connect_array(n: int, gap_indices: set) -> np.ndarray:
+        """Build a pyqtgraph ``connect`` array of length n: 1 = connect point i
+        to i+1, 0 = break the polyline after point i (at every gap)."""
+        connect = np.ones(n, dtype=np.uint8)
+        for gi in gap_indices:
+            if 0 <= gi < n:
+                connect[gi] = 0
+        if n > 0:
+            connect[-1] = 0
+        return connect
+
+    def load_resampled_data(self, points: np.ndarray | None, show_quality: bool = False,
+                            quality_mode: str = 'length', gap_indices: set | None = None):
         if points is not None and len(points) > 0:
+            # Exact piece boundaries from the backend (preview markers) when
+            # provided; otherwise fall back to the distance heuristic.
+            gaps = gap_indices if gap_indices is not None else self._detect_gap_indices(points)
             if show_quality and len(points) >= 2:
                 diffs = np.diff(points, axis=0)
                 ds = np.sqrt(np.sum(diffs**2, axis=1))
                 ds[ds < 1e-12] = 1e-12
-                
-                # Split points into separate curves if there are large gaps (disconnected boundaries)
-                median_d = np.median(ds)
-                gap_threshold = max(10.0 * median_d, 1e-3)
-                gap_indices = set(np.where(ds > gap_threshold)[0])
-                
+
+                gap_indices = gaps
+
                 def compute_sub_ratios(sub_ds, sub_pts):
                     # A single-segment piece has no neighbour to compare against,
                     # so its ratio stays 1.0 (handled by the np.ones_like default).
@@ -865,7 +903,8 @@ class CanvasView(QWidget):
                 self.resampled_curve.setData(
                     points[:, 0], points[:, 1],
                     pen=pg.mkPen(_COL_RESAMPLED, width=2, style=Qt.PenStyle.DashLine),
-                    symbol=sym, symbolBrush=pg.mkBrush(_COL_RESAMPLED)
+                    symbol=sym, symbolBrush=pg.mkBrush(_COL_RESAMPLED),
+                    connect=self._connect_array(len(points), gaps)
                 )
                 self.quality_bad_scatter.clear()
         else:
@@ -907,6 +946,7 @@ class CanvasView(QWidget):
         self.quality_bad_scatter.clear()
         self.duplicate_preview_curve.setData([], [])
         self._endpoint_markers.clear()
+        self._open_endpoint_markers.clear()
 
     def clear_segment_highlight(self):
         """Clear only the active-segment / multi-segment highlight overlays.
@@ -1237,6 +1277,18 @@ class CanvasView(QWidget):
 
     def clear_endpoint_markers(self):
         self._endpoint_markers.clear()
+
+    def show_open_endpoint_markers(self, points):
+        """Highlight open / unstitched endpoints (red) so the user can see the
+        boundary is not closed. ``points`` is a list/array of (x, y)."""
+        if points is not None and len(points) > 0:
+            pts = np.asarray(points, dtype=float)
+            self._open_endpoint_markers.setData(pts[:, 0], pts[:, 1])
+        else:
+            self._open_endpoint_markers.clear()
+
+    def clear_open_endpoint_markers(self):
+        self._open_endpoint_markers.clear()
 
     def show_edge_handles(self, handles: list[dict]):
         """Show draggable control points for the selected analytic edge.

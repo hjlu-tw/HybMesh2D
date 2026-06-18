@@ -124,6 +124,15 @@ class TransformControllerMixin:
         new_seg.parameters = dict(seg.parameters)
         new_seg.start_index = -1
         new_seg.end_index = -1
+        # Inherit the source edge's closure so a moved/duplicated closed loop
+        # stays closed (and an open polyline stays open) after the transform.
+        # A discrete (file) edge's closure lives on the project; analytic edges
+        # carry their own `closed` flag. C++ re-adds the closing vertex only when
+        # this is True, so a closed loop keeps a clean single seam.
+        if seg.type == "file":
+            new_seg.closed = bool(session.project_model.is_closed)
+        else:
+            new_seg.closed = getattr(seg, "closed", True)
 
         ct = getattr(seg, "curve_type", "custom")
         p = seg.parameters

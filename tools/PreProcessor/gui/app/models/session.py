@@ -40,6 +40,9 @@ class GeometrySession:
         self.current_segment_idx: int = -1
         self.is_geometry_modified: bool = False
         self.resampled_points: np.ndarray | None = None
+        # Exact piece-break indices from the last preview (nan-separated output);
+        # used to break the resampled polyline at disconnected pieces.
+        self.resampled_gaps: set | None = None
 
         self.project_model: ProjectModel = ProjectModel()
         self.command_history: CommandHistory = CommandHistory()

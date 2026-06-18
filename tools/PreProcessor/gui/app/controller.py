@@ -21,7 +21,8 @@ from app.controllers import (
     TransformControllerMixin,
     CurveControllerMixin,
     BackendControllerMixin,
-    MeshGenControllerMixin
+    MeshGenControllerMixin,
+    StitchControllerMixin
 )
 
 
@@ -31,7 +32,8 @@ class AppController(
     TransformControllerMixin,
     CurveControllerMixin,
     BackendControllerMixin,
-    MeshGenControllerMixin
+    MeshGenControllerMixin,
+    StitchControllerMixin
 ):
 
     def __init__(self):
@@ -127,6 +129,7 @@ class AppController(
         # Undo / Redo / Remove / Quality Check
         self.main_window.undo_btn.clicked.connect(self.undo)
         self.main_window.redo_btn.clicked.connect(self.redo)
+        self.main_window.cad_stitch_btn.clicked.connect(self.stitch_open_endpoints)
         sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
         sb.curve_bake_btn.clicked.connect(self.bake_selected_curve)
         self.main_window.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
@@ -463,6 +466,10 @@ class AppController(
 
         self._sync_file_segments(session)
         self._update_undo_redo_buttons(session)
+
+        # Warn (red markers + log) about open / unstitched boundary endpoints.
+        if session is self.active_session():
+            self.detect_open_endpoints(session)
 
     def _sync_file_segments(self, session: GeometrySession):
         """Rebuild file segments from split_indices then update the sidebar list."""

@@ -93,7 +93,8 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
     return points;
 }
 
-bool saveGeometry(const std::string& filename, const std::vector<Point2D>& points) {
+bool saveGeometry(const std::string& filename, const std::vector<Point2D>& points,
+                  const std::vector<size_t>& pieceBreaks = {}) {
     // Ensure the output directory exists (e.g. Results/ on a fresh clone or
     // case-sensitive FS) so the write does not silently vanish.
     fs::path parent = fs::path(filename).parent_path();
@@ -112,7 +113,15 @@ bool saveGeometry(const std::string& filename, const std::vector<Point2D>& point
         return false;
     }
     ofs << std::fixed << std::setprecision(10);
-    for (const auto& p : points) ofs << p.x << " " << p.y << "\n";
+    // pieceBreaks holds (ascending) indices that start a new disconnected piece.
+    // When provided (preview only) we emit a 'nan nan' separator row before each
+    // such point so the GUI can break the polyline exactly there. pieceBreaks is
+    // empty for real exports, keeping the .dat clean for the downstream mesher.
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i != 0 && std::binary_search(pieceBreaks.begin(), pieceBreaks.end(), i))
+            ofs << "nan nan\n";
+        ofs << points[i].x << " " << points[i].y << "\n";
+    }
     return true;
 }
 
@@ -271,8 +280,9 @@ std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Poin
             }
         }
         
-        // Ensure polygon/triangle/quadrilateral is closed
-        if (!vertices.empty()) {
+        // Ensure polygon/triangle/quadrilateral is closed (unless the segment is
+        // explicitly marked open, in which case the endpoints stay distinct).
+        if (seg.value("closed", true) && !vertices.empty()) {
             double dx = vertices.front().x - vertices.back().x;
             double dy = vertices.front().y - vertices.back().y;
             if (std::sqrt(dx*dx + dy*dy) > 1e-9) {
@@ -508,9 +518,14 @@ bool processElement(const json& config) {
     }
 
     std::vector<Point2D> resPts;
+    std::vector<size_t> pieceBreaks; // indices in resPts that start a new piece
     double last_ds = -1.0; // Task 4: Spacing matching state
 
     for (const auto& sj : config["segments"]) {
+        // A segment whose first point does not coincide with the previous
+        // segment's last point starts a new disconnected piece (e.g. a moved /
+        // duplicated edge). Decided once, on the segment's first sample point.
+        bool segStarted = false;
         std::string type = sj.value("type", "file");
         bool autoSplit = sj.value("auto_split", false);
         double splitThreshold = sj.value("split_threshold", 20.0);
@@ -558,7 +573,9 @@ bool processElement(const json& config) {
                     }
                 }
 
-                if (!vertices.empty()) {
+                // Close the loop only when the segment is marked closed (default).
+                // An open polyline keeps its endpoints distinct.
+                if (sj.value("closed", true) && !vertices.empty()) {
                     double dx = vertices.front().x - vertices.back().x;
                     double dy = vertices.front().y - vertices.back().y;
                     if (std::sqrt(dx*dx + dy*dy) > 1e-9) {
@@ -834,6 +851,14 @@ bool processElement(const json& config) {
                     }
                 }
                 
+                // On the segment's first sample point, record a piece break if
+                // it is geometrically detached from the running output's tail.
+                if (!segStarted) {
+                    segStarted = true;
+                    if (!resPts.empty() && (p - resPts.back()).length() > 1e-7)
+                        pieceBreaks.push_back(resPts.size());
+                }
+
                 // Avoid duplicate points at segment boundaries
                 if (resPts.empty() || (p - resPts.back()).length() > 1e-10) {
                     resPts.push_back(p);
@@ -872,7 +897,11 @@ bool processElement(const json& config) {
     }
 
     std::string outPath = config.value("output_file", "Results/output.dat");
-    if (!saveGeometry(outPath, resPts)) {
+    // Piece separators are written only when the GUI requests a preview; real
+    // exports stay free of 'nan' rows for the downstream mesher / visualiser.
+    bool previewMarkers = config.value("preview_markers", false);
+    if (!saveGeometry(outPath, resPts,
+                      previewMarkers ? pieceBreaks : std::vector<size_t>{})) {
         std::cerr << "Failed to write element output to " << outPath << std::endl;
         return false;
     }

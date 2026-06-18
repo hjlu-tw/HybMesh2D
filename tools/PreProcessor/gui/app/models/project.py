@@ -120,7 +120,7 @@ class ProjectModel:
         # All edges share one contiguous 1..N numbering (in list order).
         self.renumber_segments()
 
-    def export_config(self, filepath: str):
+    def export_config(self, filepath: str, extra: dict | None = None):
         # Keep exported ids consistent with the (contiguous) edge numbering.
         self.renumber_segments()
         config: dict = {
@@ -134,6 +134,10 @@ class ProjectModel:
             config["global_spline"] = True
         if self.transform:
             config["transform"] = copy.deepcopy(self.transform)
+        # Transient, run-specific keys (e.g. preview_markers) that should not be
+        # persisted to user-saved configs.
+        if extra:
+            config.update(extra)
 
         with open(filepath, "w") as f:
             json.dump(config, f, indent=2)
