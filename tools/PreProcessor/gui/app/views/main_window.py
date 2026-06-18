@@ -223,8 +223,6 @@ class MainWindow(QMainWindow):
         self.cad_file_preview_btn = create_tb_btn("Apply", "Apply and preview the selected imported file segment")
         self.cad_curve_preview_btn.setVisible(False)
         self.cad_file_preview_btn.setVisible(False)
-        self.cad_stitch_btn = create_tb_btn(
-            "Stitch", "Merge open boundary endpoints that lie within tolerance (closes the loop)")
 
         # Separators
         def create_sep():
@@ -380,7 +378,6 @@ class MainWindow(QMainWindow):
         self.cad_tb_widgets = [
             self.focus_geom_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
-            self.cad_stitch_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2,
         ]
@@ -645,7 +642,6 @@ class MainWindow(QMainWindow):
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
-                        self.cad_stitch_btn,
                     ]
                     row1_widgets = [
                         self.show_vertices_cb,
@@ -681,7 +677,6 @@ class MainWindow(QMainWindow):
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
-                        self.cad_stitch_btn,
                         self.cad_sep2,
                         self.show_vertices_cb,
                         self.show_nodes_cb,

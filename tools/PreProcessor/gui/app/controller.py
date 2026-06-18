@@ -22,7 +22,7 @@ from app.controllers import (
     CurveControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
-    StitchControllerMixin
+    OpenEndpointControllerMixin
 )
 
 
@@ -33,7 +33,7 @@ class AppController(
     CurveControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
-    StitchControllerMixin
+    OpenEndpointControllerMixin
 ):
 
     def __init__(self):
@@ -129,7 +129,6 @@ class AppController(
         # Undo / Redo / Remove / Quality Check
         self.main_window.undo_btn.clicked.connect(self.undo)
         self.main_window.redo_btn.clicked.connect(self.redo)
-        self.main_window.cad_stitch_btn.clicked.connect(self.stitch_open_endpoints)
         sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
         sb.curve_bake_btn.clicked.connect(self.bake_selected_curve)
         self.main_window.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)

@@ -104,6 +104,57 @@ class BackendControllerMixin:
 
         return tmp_cfg.name, created_files
 
+    def _resolve_unclosed_before_preview(self, session) -> bool:
+        """Detect unclosed gaps and, if any, prompt the user. Returns True to
+        proceed with the preview, False to abort. Sets
+        ``session._preview_break_internal`` so the finished-callback knows whether
+        to break the polyline at internal gaps (Keep Open) or bridge them (Line).
+        """
+        gaps = self.find_geometry_gaps(session)
+        if not gaps:
+            session._preview_break_internal = False
+            session._gap_decision_sig = None
+            return True
+
+        sig = self.gaps_signature(gaps)
+        if (sig == getattr(session, "_gap_decision_sig", None)
+                and getattr(session, "_gap_decision", None) in ("keep_open", "line")):
+            session._preview_break_internal = (session._gap_decision == "keep_open")
+            return True
+
+        from app.views.unclosed_dialog import UnclosedPointsDialog
+        dlg = UnclosedPointsDialog(gaps, self.main_window)
+        dlg.exec()
+        choice = dlg.choice
+
+        if choice == "cancel":
+            return False
+        if choice == "keep_open":
+            session._gap_decision_sig = sig
+            session._gap_decision = "keep_open"
+            session._preview_break_internal = True
+            self.main_window.log_panel.log(
+                f"Preview: keeping {len(gaps)} gap(s) open (not bridged).")
+            return True
+
+        # choice == "stitch"
+        method = dlg.method
+        if method == "line":
+            session._gap_decision_sig = sig
+            session._gap_decision = "line"
+            session._preview_break_internal = False
+            self.main_window.log_panel.log(
+                f"Preview: closing {len(gaps)} gap(s) with a straight line.")
+            return True
+
+        # midpoint / snap mutate the points (undoable); the gaps then disappear
+        self.stitch_gaps(session, gaps, method)
+        session._gap_decision_sig = None
+        session._gap_decision = None
+        session._preview_break_internal = False
+        self.main_window.log_panel.log(f"Stitched {len(gaps)} gap(s) ({method}).")
+        return True
+
     def preview_backend(self):
         """Run backend with a temp output path; display result on canvas."""
         session = self.active_session()
@@ -118,6 +169,11 @@ class BackendControllerMixin:
         if not exe:
             self.main_window.log_panel.log(
                 "Executable not found. Please build the C++ project.")
+            return
+
+        # Unclosed-point check: a moved-away edge can leave a gap that preview
+        # would otherwise silently bridge. Prompt the user before running.
+        if not self._resolve_unclosed_before_preview(session):
             return
 
         tmp_out = tempfile.NamedTemporaryFile(
@@ -238,6 +294,12 @@ class BackendControllerMixin:
                     # 'nan nan' separator rows mark exact piece boundaries; strip
                     # them and convert to connect-break indices for the canvas.
                     pts, gaps = self._split_preview_pieces(pts)
+                    # Keep Open: also break the polyline at internal gaps (a
+                    # moved edge's jump lives inside one segment, so the backend
+                    # piece markers miss it — fall back to the distance heuristic).
+                    if getattr(session, "_preview_break_internal", False):
+                        extra = self.main_window.canvas_view._detect_gap_indices(pts)
+                        gaps = set(gaps) | set(extra)
                     session.resampled_points = pts
                     session.resampled_gaps = gaps
                     if session is self.active_session():

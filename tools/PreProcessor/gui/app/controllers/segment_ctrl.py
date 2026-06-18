@@ -516,6 +516,17 @@ class SegmentControllerMixin:
             self._populate_form_from_segment(seg)
         self.main_window.sidebar_view.switch_param_form(strategy_name)
 
+    def _deselect_all_edges(self, session):
+        """Clear the edge selection and its canvas highlight (empty-canvas click)."""
+        sb = self.main_window.sidebar_view
+        tree = sb.geometry_tree
+        tree.blockSignals(True)
+        tree.clear_edge_selection()
+        tree.blockSignals(False)
+        session.current_segment_idx = -1
+        self.handle_segment_selected(-1)
+        self.highlight_selected_segments()
+
     def highlight_selected_segments(self):
         """Highlight every selected edge on the canvas — discrete (file) AND
         analytic (curve) — and dim the base geometry while a selection exists."""
@@ -603,7 +614,14 @@ class SegmentControllerMixin:
                 best_dist = d
                 best_seg_idx = seg_idx
 
+        # Clicking empty canvas (no edge, or too far from any edge) clears the
+        # current highlight — unless the user is extending a selection.
+        def _missed():
+            if not extend_selection:
+                self._deselect_all_edges(session)
+
         if best_seg_idx < 0:
+            _missed()
             return
 
         # Reject clicks too far from any segment (3% of the visible range).
@@ -613,6 +631,7 @@ class SegmentControllerMixin:
         y_range = abs(view_range[1][1] - view_range[1][0])
         data_threshold = max(x_range, y_range) * 0.03
         if best_dist > data_threshold:
+            _missed()
             return
 
         sb = self.main_window.sidebar_view
