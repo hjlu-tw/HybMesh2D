@@ -22,8 +22,11 @@ from app.controllers import (
     CurveControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
-    OpenEndpointControllerMixin
+    OpenEndpointControllerMixin,
+    SolverControllerMixin,
+    PostprocessControllerMixin
 )
+from app.models.solver_config import SolverConfig
 
 
 class AppController(
@@ -33,7 +36,9 @@ class AppController(
     CurveControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
-    OpenEndpointControllerMixin
+    OpenEndpointControllerMixin,
+    SolverControllerMixin,
+    PostprocessControllerMixin
 ):
 
     def __init__(self):
@@ -45,6 +50,13 @@ class AppController(
         self.global_mesh_config = MeshConfig()
         self.global_vtk_mesh = None
         self.global_vtk_path = ""
+
+        # Solver pipeline state (Phase 3)
+        self.global_solver_config = SolverConfig()
+        self.global_solver_config.ensure_default_binaries()
+        self.global_result_path = ""
+        self.global_result_data = None
+        self._solver_worker = None
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line
@@ -249,6 +261,17 @@ class AppController(
         mw.mesh_config_panel.export_vtk_btn.clicked.connect(self.export_generated_vtk)
         mw.mesh_config_panel.export_starcd_btn.clicked.connect(self.export_star_cd)
         mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
+
+        # Solver panel (Phase 3)
+        sp = mw.solver_config_panel
+        sp.run_solver_btn.clicked.connect(self.run_solver_pipeline)
+        sp.cancel_solver_btn.clicked.connect(self.cancel_solver)
+        sp.load_cfg_btn.clicked.connect(self.load_solver_config)
+        sp.save_cfg_btn.clicked.connect(self.save_solver_config)
+        self.init_solver()
+
+        # Results / post-processing
+        mw.result_canvas_view.load_btn.clicked.connect(self.open_result_dialog)
 
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel
         def _make_sync_checkbox_fn(canvas_method, cb_sidebar, cb_toolbar):

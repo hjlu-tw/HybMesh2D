@@ -11,8 +11,11 @@ from app.views.sidebar import SidebarView
 from app.views.canvas import CanvasView
 from app.views.log_panel import LogPanel
 from app.views.mesh_canvas import MeshCanvasView
+from app.views.result_canvas import ResultCanvasView
 from app.views.panels.mesh_config_panel import MeshConfigPanel
 from app.views.panels.mesh_stats_panel import MeshStatsPanel
+from app.views.panels.solver_config_panel import SolverConfigPanel
+from app.views.panels.solver_monitor_panel import SolverMonitorPanel
 from app.styles import TOOLBAR_CHECKBOX_STYLE
 
 
@@ -72,6 +75,13 @@ class MainWindow(QMainWindow):
         self.mesh_stats_panel = MeshStatsPanel(self.stats_scroll)
         self.stats_scroll.setWidget(self.mesh_stats_panel)
         self.sidebar_stack.addWidget(self.stats_scroll)
+
+        # Solver config sidebar page (Phase 4.1). The monitor (idx 4) is still a
+        # placeholder until Phase 4.2.
+        self.solver_config_panel = SolverConfigPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.solver_config_panel)      # idx 3
+        self.solver_monitor_panel = SolverMonitorPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.solver_monitor_panel)     # idx 4
 
         # ── Right panel: tab-bar row + shared canvas ──────────────────────
         self.right_panel = QWidget(self)
@@ -152,7 +162,10 @@ class MainWindow(QMainWindow):
         tab_hl.addWidget(self.mesh_tab_bar)
 
         self.mode_combo = QComboBox(self.tab_row)
-        self.mode_combo.addItems(["PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics"])
+        self.mode_combo.addItems([
+            "PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics",
+            "Solver", "Results",
+        ])
         self.mode_combo.setStyleSheet("""
             QComboBox {
                 background: #181b30;
@@ -399,7 +412,11 @@ class MainWindow(QMainWindow):
         self.canvas_stack.addWidget(self.canvas_view)
         
         self.mesh_canvas_view = MeshCanvasView(self.canvas_stack)
-        self.canvas_stack.addWidget(self.mesh_canvas_view)
+        self.canvas_stack.addWidget(self.mesh_canvas_view)          # idx 1
+
+        # Results canvas (matplotlib, Phase 4.3)
+        self.result_canvas_view = ResultCanvasView(self.canvas_stack)
+        self.canvas_stack.addWidget(self.result_canvas_view)        # idx 2
 
         right_layout.addWidget(self.tab_row)
         right_layout.addWidget(self.canvas_toolbar)
@@ -557,17 +574,30 @@ class MainWindow(QMainWindow):
             if color:
                 self.tab_bar.setTabTextColor(idx, QColor(color))
 
+    def _make_placeholder(self, text: str) -> QWidget:
+        """A simple centred-label stub widget used for not-yet-built pages."""
+        w = QWidget()
+        w.setStyleSheet("background: #0c0d16;")
+        lay = QVBoxLayout(w)
+        lbl = QLabel(text, w)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet("color: #4a4e69; font-size: 13px;")
+        lay.addWidget(lbl)
+        return w
+
     def _on_mode_changed(self, idx: int):
         self.sidebar_stack.setCurrentIndex(idx)
-        canvas_idx = 0 if idx == 0 else 1
-        self.canvas_stack.setCurrentIndex(canvas_idx)
-        
+        # Canvas mapping: CAD->0, Mesh/Stats/Solver->1 (mesh canvas), Results->2.
+        canvas_map = {0: 0, 1: 1, 2: 1, 3: 1, 4: 2}
+        self.canvas_stack.setCurrentIndex(canvas_map.get(idx, 0))
+
         is_pre = (idx == 0)
+        is_mesh = (idx in (1, 2))
         # CAD shows its per-file geometry tabs; the Mesh Generator / Statistics
         # pages show their own separate tab strip. They never share tabs, but
         # both keep their open tabs alive when the other mode is showing.
         self.tab_bar.setVisible(is_pre)
-        self.mesh_tab_bar.setVisible(not is_pre)
+        self.mesh_tab_bar.setVisible(is_mesh)
         for w in self.cad_tb_widgets:
             w.setVisible(is_pre)
 
@@ -581,12 +611,11 @@ class MainWindow(QMainWindow):
             self.cad_curve_preview_btn.setVisible(is_curve_active)
             # The toolbar "Apply" (file preview) duplicated "Preview"; keep hidden.
             self.cad_file_preview_btn.setVisible(False)
-            
-        is_mesh = (idx in [1, 2])
+
         for w in self.mesh_tb_widgets:
             w.setVisible(is_mesh)
         self.progress_bar.setVisible(False)
-            
+
         self.adjust_toolbar_layout()
         self.mode_changed.emit(idx)
 
@@ -690,7 +719,7 @@ class MainWindow(QMainWindow):
                             col_idx += 1
                     self.tb_layout.setColumnStretch(col_idx, 1)
 
-            else:  # Mesh modes (1 or 2)
+            elif idx in (1, 2):  # Mesh modes
                 threshold = 1100
                 is_narrow = (width < threshold)
                 
@@ -762,6 +791,16 @@ class MainWindow(QMainWindow):
                             self.tb_layout.addWidget(w, 0, col_idx)
                             col_idx += 1
                     self.tb_layout.setColumnStretch(col_idx, 1)
+
+            else:  # Solver / Results modes — minimal toolbar; panels own their controls
+                self.canvas_toolbar.setFixedHeight(36)
+                self.mesh_sep3.setVisible(False)
+                col_idx = 0
+                for w in (self.undo_btn, self.redo_btn, self.cad_sep1):
+                    if w.isVisible():
+                        self.tb_layout.addWidget(w, 0, col_idx)
+                        col_idx += 1
+                self.tb_layout.setColumnStretch(col_idx, 1)
         finally:
             self._adjusting_layout = False
 

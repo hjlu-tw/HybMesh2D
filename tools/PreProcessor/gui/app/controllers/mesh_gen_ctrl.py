@@ -149,6 +149,30 @@ class MeshGenControllerMixin:
 
         # Extract current config values from UI
         cfg = self.main_window.mesh_config_panel.get_config()
+
+        # Diagnostic: report the geometry files actually handed to HybMesh2D.
+        # (A geometry that previews on the canvas but is missing/empty here is the
+        # usual cause of "mesh generates but shows no boundary/BL".)
+        if not cfg.geom_files:
+            self.main_window.log_panel.log(
+                "[WARNING] No geometry files in the mesh config — the mesh will "
+                "have no boundary/BL. If you drew with 'Add analytic edge', run "
+                "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
+                "Layers) so it is written to a .dat first.")
+        else:
+            for gf in cfg.geom_files:
+                if not os.path.exists(gf):
+                    self.main_window.log_panel.log(
+                        f"[WARNING] Geometry file missing: {gf}")
+                else:
+                    try:
+                        with open(gf) as _f:
+                            npts = sum(1 for ln in _f if ln.strip())
+                        self.main_window.log_panel.log(
+                            f"[geom] {os.path.basename(gf)} ({npts} points)")
+                    except OSError:
+                        pass
+
         if cfg.domain_x_min >= cfg.domain_x_max:
             self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
             return

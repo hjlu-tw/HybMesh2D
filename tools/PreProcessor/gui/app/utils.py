@@ -237,3 +237,28 @@ def find_binary_executable(bin_name: str) -> str | None:
             return full_path
     return None
 
+
+# Prebuilt solver-pipeline binaries shipped under solver/ (decision D5: use the
+# existing binaries, no compilation step). Paths are relative to the repo root.
+_SOLVER_BIN_REL = {
+    "getpgrid": "solver/preprocess/getPGrid/work/getPGrid",
+    "bdecompose": "solver/preprocess/bDecompose/work/bDecompose",
+    "solver": "solver/execute/unicones.eqn6.mac",
+}
+
+
+def find_solver_executables() -> dict:
+    """Locate the prebuilt getPGrid / bDecompose / unicones binaries.
+
+    Returns a dict {name: abs_path | None}. Existence (not executability) is
+    reported, since bDecompose ships without the +x bit and the solver worker
+    chmods it on demand when domain decomposition is enabled.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # .../gui/app
+    repo_root = os.path.abspath(os.path.join(base_dir, "../../../.."))
+    found: dict[str, str | None] = {}
+    for name, rel in _SOLVER_BIN_REL.items():
+        full = os.path.join(repo_root, rel)
+        found[name] = full if os.path.exists(full) else None
+    return found
+

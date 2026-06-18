@@ -5,3 +5,5 @@ from app.controllers.curve_ctrl import CurveControllerMixin
 from app.controllers.backend_ctrl import BackendControllerMixin
 from app.controllers.mesh_gen_ctrl import MeshGenControllerMixin
 from app.controllers.open_endpoint_ctrl import OpenEndpointControllerMixin
+from app.controllers.solver_ctrl import SolverControllerMixin
+from app.controllers.postprocess_ctrl import PostprocessControllerMixin

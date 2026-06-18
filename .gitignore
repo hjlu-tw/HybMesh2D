@@ -11,5 +11,8 @@ Makefile
 # Output / result directories
 Results/
 
+# Solver pipeline binaries + case data (large prebuilt binaries, kept out of VCS)
+solver/
+
 # Editor / tooling artifacts
 .antigravitycli/
