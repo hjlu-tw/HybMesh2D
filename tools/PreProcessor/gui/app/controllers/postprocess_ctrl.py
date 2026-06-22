@@ -79,7 +79,7 @@ class PostprocessControllerMixin:
         self.main_window.result_canvas_view.var_combo.setCurrentText(var_name)
 
     def update_colormap(self, cmap: str):
-        self.main_window.result_canvas_view.cmap_combo.setCurrentText(cmap)
+        self.main_window.result_canvas_view.set_cmap(cmap)
 
     def toggle_mesh_overlay(self, show: bool):
         self.main_window.result_canvas_view.mesh_cb.setChecked(show)

@@ -91,6 +91,7 @@ class WallQuantityDialog(QDialog):
         self.setStyleSheet(f"background:{_BG};color:{_FG};")
         self._labels: list[str] = []
         self._data = np.empty((0, 0))
+        self._line_sampler = None   # set in line-probe mode: var -> (s, vals)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -101,6 +102,13 @@ class WallQuantityDialog(QDialog):
         self.load_btn = QPushButton("Load .dat")
         self.load_btn.setStyleSheet(_BTN_QSS)
         bar.addWidget(self.load_btn)
+
+        # Variable selector (line-probe mode only): re-samples the segment.
+        self.var_label = QLabel("Var:")
+        self.var_label.setStyleSheet(f"color:{_FG};font-size:11px;")
+        self.line_var_combo = QComboBox(); self.line_var_combo.setStyleSheet(_COMBO_QSS)
+        self.var_label.setVisible(False); self.line_var_combo.setVisible(False)
+        bar.addWidget(self.var_label); bar.addWidget(self.line_var_combo)
 
         self.x_combo = QComboBox(); self.x_combo.setStyleSheet(_COMBO_QSS)
         self.y_combo = QComboBox(); self.y_combo.setStyleSheet(_COMBO_QSS)
@@ -128,6 +136,7 @@ class WallQuantityDialog(QDialog):
         self.save_btn.clicked.connect(self._save_png)
         self.x_combo.currentIndexChanged.connect(self._render)
         self.y_combo.currentIndexChanged.connect(self._render)
+        self.line_var_combo.currentTextChanged.connect(self._on_line_var_changed)
 
     # ------------------------------------------------------------------ #
     def _style_axes(self):
@@ -155,6 +164,10 @@ class WallQuantityDialog(QDialog):
             self._empty(f"No numeric columns found in {os.path.basename(path)}.")
             return
         self._labels, self._data = labels, data
+        # File mode: not a line probe -> hide the variable re-sampler.
+        self._line_sampler = None
+        self.var_label.setVisible(False)
+        self.line_var_combo.setVisible(False)
         self.setWindowTitle(f"Wall Quantities — {os.path.basename(path)}")
         self._building = True
         try:
@@ -164,6 +177,59 @@ class WallQuantityDialog(QDialog):
             # Sensible defaults: X = first column, Y = last column.
             self.x_combo.setCurrentIndex(0)
             self.y_combo.setCurrentIndex(len(labels) - 1)
+        finally:
+            self._building = False
+        self._render()
+
+    def plot_over_line(self, variables: list, sampler, var: str):
+        """Line-probe mode: show a variable selector that re-samples the segment.
+
+        variables: selectable scalar names; sampler(var) -> (s_array, vals_array).
+        """
+        self._line_sampler = sampler
+        self.setWindowTitle("Plot Over Line")
+        self._building = True
+        try:
+            self.line_var_combo.clear()
+            self.line_var_combo.addItems(list(variables))
+            if var in variables:
+                self.line_var_combo.setCurrentText(var)
+        finally:
+            self._building = False
+        self.var_label.setVisible(True)
+        self.line_var_combo.setVisible(True)
+        self._resample_line(self.line_var_combo.currentText())
+
+    def _on_line_var_changed(self, var: str):
+        if getattr(self, "_building", False) or self._line_sampler is None or not var:
+            return
+        self._resample_line(var)
+
+    def _resample_line(self, var: str):
+        if self._line_sampler is None or not var:
+            return
+        s, vals = self._line_sampler(var)
+        self.plot_series(np.asarray(s), {var: np.asarray(vals)},
+                         xlabel="distance along line")
+
+    def plot_series(self, x, ys: dict, xlabel: str = "x"):
+        """Plot already-sampled data directly (no file), reusing the column UI.
+
+        x: 1D array; ys: {label: 1D array}. Used by the canvas's line probe.
+        """
+        labels = [xlabel] + list(ys.keys())
+        cols = [np.asarray(x, dtype=float)]
+        cols += [np.asarray(v, dtype=float) for v in ys.values()]
+        width = min(c.shape[0] for c in cols)
+        self._labels = labels
+        self._data = np.column_stack([c[:width] for c in cols])
+        self._building = True
+        try:
+            for combo in (self.x_combo, self.y_combo):
+                combo.clear()
+                combo.addItems(labels)
+            self.x_combo.setCurrentIndex(0)
+            self.y_combo.setCurrentIndex(1 if len(labels) > 1 else 0)
         finally:
             self._building = False
         self._render()

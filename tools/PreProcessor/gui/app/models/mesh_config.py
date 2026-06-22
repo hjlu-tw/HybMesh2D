@@ -85,10 +85,12 @@ class MeshConfig:
     gmsh_optimize: int = 1   # 1: Enable, 0: Disable
 
     # Section 7: Boundary Conditions & I/O
-    bc_xmin: str = "wall"
-    bc_xmax: str = "wall"
-    bc_ymin: str = "wall"
-    bc_ymax: str = "wall"
+    # Default external-flow setup: inflow on the left, geometry is a wall, the
+    # remaining domain boundaries are outflow.
+    bc_xmin: str = "inlet"
+    bc_xmax: str = "outlet"
+    bc_ymin: str = "outlet"
+    bc_ymax: str = "outlet"
     bc_geom: str = "wall"
     export_vtk: bool = True
     export_starcd: bool = False

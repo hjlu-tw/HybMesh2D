@@ -349,6 +349,17 @@ class MeshGenControllerMixin:
             if rc not in (-2, -3):
                 self._try_highlight_self_intersection_error()
 
+        # Auto-export chain (Export-before-Generate foolproofing): run the pending
+        # export only if a mesh is now actually available; drop it otherwise.
+        pending = getattr(self, "_pending_after_mesh", None)
+        self._pending_after_mesh = None
+        if pending is not None:
+            if self.global_vtk_path and os.path.exists(self.global_vtk_path):
+                pending()
+            else:
+                self.main_window.log_panel.log(
+                    "[Export] Mesh generation did not produce a usable mesh; export skipped.")
+
     def _try_highlight_self_intersection_error(self):
         """Parse log output for self-intersection or cross-geometry intersection errors and highlight the offending geometry and coordinates."""
         import re
@@ -403,6 +414,32 @@ class MeshGenControllerMixin:
 
         self.main_window.mesh_canvas_view.clear_error_highlights()
 
+    def _offer_generate_then(self, retry_fn, what: str):
+        """Foolproof guard for Export-before-Generate: prompt the user and, if they
+        agree, run the mesh generator now and re-run `retry_fn` once it finishes."""
+        w = getattr(self, "_mesh_worker", None)
+        if w is not None and w.isRunning():
+            self.main_window.log_panel.log(
+                "Mesh generation is running; please wait for it to finish, then export.")
+            return
+        resp = QMessageBox.question(
+            self.main_window, "No Mesh Generated",
+            f"No mesh has been generated yet, so {what} cannot be exported.\n\n"
+            "Generate the mesh now and export automatically when it finishes?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if resp != QMessageBox.StandardButton.Yes:
+            return
+        self._pending_after_mesh = retry_fn
+        self.main_window.log_panel.log(
+            f"[Export] No mesh yet — generating first, then exporting {what}.")
+        self.run_mesh_generator()
+        # If generation did not actually start (e.g. binary missing, invalid
+        # domain), drop the pending action so it can't fire on a later run.
+        w = getattr(self, "_mesh_worker", None)
+        if w is None or not w.isRunning():
+            self._pending_after_mesh = None
+
     def export_generated_vtk(self):
         """Export the generated VTK mesh file to a user-selected path."""
         vtk_path = self.global_vtk_path
@@ -410,7 +447,7 @@ class MeshGenControllerMixin:
             vtk_path = self._get_expected_vtk_path(self.global_mesh_config) if self.global_mesh_config else ""
 
         if not vtk_path or not os.path.exists(vtk_path):
-            self.main_window.log_panel.log("No generated VTK mesh available to export. Generate a mesh first.")
+            self._offer_generate_then(self.export_generated_vtk, "the VTK mesh")
             return
 
         default_path = self._resolve_export_path(vtk_path, ".vtk")
@@ -437,7 +474,7 @@ class MeshGenControllerMixin:
             vtk_path = self._get_expected_vtk_path(self.global_mesh_config) if self.global_mesh_config else ""
 
         if not vtk_path or not os.path.exists(vtk_path):
-            self.main_window.log_panel.log("No generated mesh available. Export cannot proceed.")
+            self._offer_generate_then(self.export_star_cd, "the Star-CD files")
             return
 
         base_name, _ = os.path.splitext(vtk_path)
