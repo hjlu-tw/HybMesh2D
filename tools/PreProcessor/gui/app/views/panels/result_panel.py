@@ -122,14 +122,11 @@ class ResultControlPanel(QWidget):
         sec.add_layout(btns)
 
         # Exact-coordinate entry (alternative to clicking on the plot).
-        coord = QHBoxLayout(); coord.setSpacing(4)
         self.probe_x = self._coord_spin(); self.probe_y = self._coord_spin()
-        cx = QLabel("x:"); cy = QLabel("y:")
-        for w in (cx, cy):
-            w.setStyleSheet("color:#7a82a0;")
         self.probe_add_btn = make_button("Add", "#1e2a38")
-        coord.addWidget(cx); coord.addWidget(self.probe_x, 1)
-        coord.addWidget(cy); coord.addWidget(self.probe_y, 1)
+        self.probe_add_btn.setFixedWidth(54)
+        coord = QHBoxLayout(); coord.setSpacing(4)
+        coord.addWidget(self._xy_pair(self.probe_x, self.probe_y), 1)
         coord.addWidget(self.probe_add_btn)
         sec.add_layout(coord)
 
@@ -161,19 +158,10 @@ class ResultControlPanel(QWidget):
         hint.setWordWrap(True)
         sec.add_widget(hint)
 
-        form = QFormLayout()
         self.line_x0 = self._coord_spin(); self.line_y0 = self._coord_spin()
         self.line_x1 = self._coord_spin(); self.line_y1 = self._coord_spin()
-        r0 = QHBoxLayout(); r0.setSpacing(4)
-        r0.addWidget(self.line_x0); r0.addWidget(self.line_y0)
-        r1 = QHBoxLayout(); r1.setSpacing(4)
-        r1.addWidget(self.line_x1); r1.addWidget(self.line_y1)
-        w0 = QWidget(); w0.setLayout(r0); w1 = QWidget(); w1.setLayout(r1)
-        form.addRow("Start x,y:", w0)
-        form.addRow("End x,y:", w1)
-        align_form_labels(form, 70)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        sec.add_layout(form)
+        sec.add_widget(self._labeled("Start:", self._xy_pair(self.line_x0, self.line_y0)))
+        sec.add_widget(self._labeled("End:", self._xy_pair(self.line_x1, self.line_y1)))
 
         btns = QHBoxLayout(); btns.setSpacing(4)
         self.line_plot_btn = make_button("Plot Line", "#1e2a38")
@@ -239,14 +227,22 @@ class ResultControlPanel(QWidget):
     def _build_extrema(self, root):
         sec = CollapsibleSection("Min / Max", start_collapsed=True)
         root.addWidget(sec)
-        row = QHBoxLayout(); row.setSpacing(4)
+        hint = QLabel("Locate and mark the current field's extrema on the plot.")
+        hint.setStyleSheet("color:#7a82a0; font-size: 10px;"); hint.setWordWrap(True)
+        sec.add_widget(hint)
         self.min_btn = make_button("Mark Min", "#143044")
         self.max_btn = make_button("Mark Max", "#3a1414")
         self.both_btn = make_button("Both", "#1a2a3a")
         self.extrema_clear_btn = make_button("Clear", "#301a1a")
-        for b in (self.min_btn, self.max_btn, self.both_btn, self.extrema_clear_btn):
-            row.addWidget(b)
-        sec.add_layout(row)
+        r1 = QHBoxLayout(); r1.setSpacing(4)
+        r1.addWidget(self.min_btn); r1.addWidget(self.max_btn)
+        sec.add_layout(r1)
+        r2 = QHBoxLayout(); r2.setSpacing(4)
+        r2.addWidget(self.both_btn); r2.addWidget(self.extrema_clear_btn)
+        sec.add_layout(r2)
+        # Readouts of the located extrema.
+        self.lbl_minval = self._info_row(sec, "min:")
+        self.lbl_maxval = self._info_row(sec, "max:")
         self.min_btn.clicked.connect(lambda: self._mark("min"))
         self.max_btn.clicked.connect(lambda: self._mark("max"))
         self.both_btn.clicked.connect(lambda: self._mark("both"))
@@ -352,7 +348,12 @@ class ResultControlPanel(QWidget):
     def _build_vectors(self, root):
         sec = CollapsibleSection("Vectors / Streamlines", start_collapsed=True)
         root.addWidget(sec)
-        form = QFormLayout()
+        hint = QLabel("Turn each overlay on with its box in the top bar; tune it here, "
+                      "then Apply.")
+        hint.setStyleSheet("color:#7a82a0; font-size: 10px;"); hint.setWordWrap(True)
+        sec.add_widget(hint)
+
+        sec.add_widget(self._sub_label("VECTORS"))
         self.vec_density = QSpinBox()
         self.vec_density.setRange(8, 120); self.vec_density.setValue(40)
         self.vec_density.setStyleSheet(SPIN_STYLE)
@@ -363,19 +364,21 @@ class ResultControlPanel(QWidget):
         self.vec_scale.setToolTip(
             "Arrow length scale. Arrow length = velocity × this, in data units; "
             "increase if arrows look too short, decrease if they overlap.")
+        sec.add_widget(self._labeled("Density:", self.vec_density))
+        sec.add_widget(self._labeled("Scale:", self.vec_scale))
+
+        sec.add_widget(self._sub_label("STREAMLINES"))
         self.stream_density = CleanDoubleSpinBox()
         self.stream_density.setRange(0.2, 6.0); self.stream_density.setValue(1.2)
         self.stream_density.setDecimals(1); self.stream_density.setStyleSheet(SPIN_STYLE)
         self.stream_density.setToolTip("Streamline seeding density.")
-        form.addRow("Vec density:", self.vec_density)
-        form.addRow("Arrow scale:", self.vec_scale)
-        form.addRow("Stream dens:", self.stream_density)
-        align_form_labels(form, 90)
-        sec.add_layout(form)
-        self.stream_lw_cb = QCheckBox("Streamline width by speed")
+        sec.add_widget(self._labeled("Density:", self.stream_density))
+        self.stream_lw_cb = QCheckBox("Width by speed")
         self.stream_lw_cb.setChecked(True)
         self.stream_lw_cb.setStyleSheet("color:#a0a8c0;")
         sec.add_widget(self.stream_lw_cb)
+
+        sec.add_widget(self._hsep())
         self.vec_apply_btn = make_button("Apply", "#1e2a38")
         sec.add_widget(self.vec_apply_btn)
         self.vec_apply_btn.clicked.connect(self._apply_vec_stream)
@@ -393,9 +396,20 @@ class ResultControlPanel(QWidget):
     def _coord_spin(self) -> CleanDoubleSpinBox:
         s = CleanDoubleSpinBox()
         s.setRange(-1e9, 1e9)
-        s.setDecimals(6)
-        s.setStyleSheet(SPIN_STYLE)
+        s.setDecimals(4)
+        # Compact so an x/y pair fits the narrow sidebar (SPIN_STYLE caps at 110).
+        s.setStyleSheet(SPIN_STYLE.replace("max-width: 110px", "max-width: 66px"))
         return s
+
+    def _xy_pair(self, sx, sy) -> QWidget:
+        """[x: <spin>  y: <spin>] packed into one widget."""
+        box = QWidget(); h = QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(3)
+        for lab, w in [("x:", sx), ("y:", sy)]:
+            t = QLabel(lab); t.setStyleSheet("color:#7a82a0; font-size:10px;")
+            h.addWidget(t); h.addWidget(w)
+        h.addStretch()
+        return box
 
     def _info_row(self, sec, label: str) -> QLabel:
         row = QHBoxLayout(); row.setSpacing(6)
@@ -411,6 +425,7 @@ class ResultControlPanel(QWidget):
         self._canvas = canvas
         canvas.result_rendered.connect(self._on_rendered)
         canvas.probe_added.connect(self._on_probe_added)
+        canvas.extrema_found.connect(self._on_extrema_found)
         # Reflect the canvas's current colormap in the sidebar selector.
         self.cmap_combo.blockSignals(True)
         self.cmap_combo.setCurrentText(getattr(canvas, "_cmap", _COLORMAPS[0]))
@@ -534,10 +549,17 @@ class ResultControlPanel(QWidget):
 
     # ── Extrema ────────────────────────────────────────────────────────
     def _mark(self, which: str):
+        # Canvas replaces its marked set each call; reset both readouts first.
+        self.lbl_minval.setText("—"); self.lbl_maxval.setText("—")
         if self._canvas is not None:
             self._canvas.mark_extrema(which)
 
+    def _on_extrema_found(self, e: dict):
+        txt = f"{e['value']:.4g} @ ({e['x']:.3g}, {e['y']:.3g})"
+        (self.lbl_minval if e.get("which") == "min" else self.lbl_maxval).setText(txt)
+
     def _clear_extrema(self):
+        self.lbl_minval.setText("—"); self.lbl_maxval.setText("—")
         if self._canvas is not None:
             self._canvas.clear_extrema()
 

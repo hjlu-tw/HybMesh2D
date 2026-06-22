@@ -153,8 +153,8 @@ class SolverConfigPanel(QScrollArea):
         self._build_turbulence_section()
         self._build_numerics_section()
         self._build_iteration_section()
-        self._build_output_section()
         self._build_restart_section()
+        self._build_output_section()
         self._build_parallel_section()
         self._build_decompose_section()
         self._build_ibm_section()
@@ -206,7 +206,7 @@ class SolverConfigPanel(QScrollArea):
         return w
 
     def _build_pipeline_section(self):
-        sec = CollapsibleSection("1. Pipeline Binaries", start_collapsed=True)
+        sec = CollapsibleSection("Pipeline Binaries", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
         self.getpgrid_binary = _edit("Path to the getPGrid binary")
@@ -223,7 +223,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_grid_section(self):
-        sec = CollapsibleSection("2. Grid Conversion (getPGrid)", start_collapsed=True)
+        sec = CollapsibleSection("Grid Conversion (getPGrid)", start_collapsed=True)
         self._layout.addWidget(sec)
         self.auto_link_mesh = _check(
             "Auto-link from Mesh Generator output",
@@ -260,7 +260,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_flow_section(self):
-        sec = CollapsibleSection("3. Flow Conditions", start_collapsed=True)
+        sec = CollapsibleSection("Flow Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
         self.flow_solu_type = _combo(
@@ -297,7 +297,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_turbulence_section(self):
-        sec = CollapsibleSection("3b. Turbulence", start_collapsed=True)
+        sec = CollapsibleSection("Turbulence", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
         self.turb_model_option = _combo(
@@ -319,7 +319,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_numerics_section(self):
-        sec = CollapsibleSection("4. Numerics", start_collapsed=True)
+        sec = CollapsibleSection("Numerics", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
         self.cfl = _spin(4, 0.0, 1e4, "CFL number")
@@ -374,7 +374,7 @@ class SolverConfigPanel(QScrollArea):
         self._shock_form = shock_form
 
     def _build_iteration_section(self):
-        sec = CollapsibleSection("5. Iteration Control", start_collapsed=True)
+        sec = CollapsibleSection("Iteration Control", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
         self.num_half_iter = _ispin(1, 100_000_000, "Total number of half-iterations to run")
@@ -401,7 +401,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_output_section(self):
-        sec = CollapsibleSection("5c. Output & Probes", start_collapsed=True)
+        sec = CollapsibleSection("Output & Probes", start_collapsed=True)
         self._layout.addWidget(sec)
         self.tecplot_write_vtx_output = _check(
             "Write nodal Tecplot output",
@@ -426,7 +426,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_restart_section(self):
-        sec = CollapsibleSection("5b. Restart / Initial Condition", start_collapsed=True)
+        sec = CollapsibleSection("Restart / Initial Condition", start_collapsed=True)
         self._layout.addWidget(sec)
         self.restart = _check(
             "Restart from previous run",
@@ -455,7 +455,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(ic_form)
 
     def _build_parallel_section(self):
-        sec = CollapsibleSection("6. Parallel (pthread)", start_collapsed=True)
+        sec = CollapsibleSection("Parallel (pthread)", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
         self.apply_pthread = _check("Apply pthread", "Enable pthread parallelism")
@@ -468,7 +468,7 @@ class SolverConfigPanel(QScrollArea):
         sec.add_layout(form)
 
     def _build_decompose_section(self):
-        sec = CollapsibleSection("7. Domain Decomposition (bDecompose)", start_collapsed=True)
+        sec = CollapsibleSection("Domain Decomposition (bDecompose)", start_collapsed=True)
         self._layout.addWidget(sec)
         self.enable_decompose = _check(
             "Enable domain decomposition (MPI)",
@@ -499,7 +499,7 @@ class SolverConfigPanel(QScrollArea):
         self._decompose_form = form
 
     def _build_ibm_section(self):
-        sec = CollapsibleSection("8. Immersed Boundary (IBM)", start_collapsed=True)
+        sec = CollapsibleSection("Immersed Boundary (IBM)", start_collapsed=True)
         self._layout.addWidget(sec)
         self.immersed_solid = _check(
             "Immersed solid", "Enable the immersed-boundary solid phase (D7)")
@@ -527,7 +527,7 @@ class SolverConfigPanel(QScrollArea):
         self._ibm_form = form
 
     def _build_bc_section(self):
-        sec = CollapsibleSection("9. Boundary Conditions", start_collapsed=True)
+        sec = CollapsibleSection("Boundary Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
         hint = QLabel(
             "Segment → BC type. HybMesh2D groups: 1-4 = domain (XMin/XMax/YMin/YMax), "
@@ -628,24 +628,26 @@ class SolverConfigPanel(QScrollArea):
     # ------------------------------------------------------------------ #
     # Visibility toggles
     # ------------------------------------------------------------------ #
-    def _set_form_enabled(self, form: QFormLayout, enabled: bool):
+    def _set_form_visible(self, form: QFormLayout, visible: bool):
+        """Show/hide every row of a form (label + field) so the gated controls
+        appear only when their feature is enabled (collapsing the empty space)."""
         for i in range(form.rowCount()):
             for role in (QFormLayout.ItemRole.LabelRole, QFormLayout.ItemRole.FieldRole):
                 it = form.itemAt(i, role)
                 if it and it.widget():
-                    it.widget().setEnabled(enabled)
+                    it.widget().setVisible(visible)
 
     def _update_ibm_visibility(self):
-        self._set_form_enabled(self._ibm_form, self.immersed_solid.isChecked())
+        self._set_form_visible(self._ibm_form, self.immersed_solid.isChecked())
 
     def _update_decompose_visibility(self):
-        self._set_form_enabled(self._decompose_form, self.enable_decompose.isChecked())
+        self._set_form_visible(self._decompose_form, self.enable_decompose.isChecked())
 
     def _update_shock_visibility(self):
-        self._set_form_enabled(self._shock_form, self.enable_shock.isChecked())
+        self._set_form_visible(self._shock_form, self.enable_shock.isChecked())
 
     def _update_restart_visibility(self):
-        self._set_form_enabled(self._restart_form, self.restart.isChecked())
+        self._set_form_visible(self._restart_form, self.restart.isChecked())
 
     def _on_flow_solu_changed(self, _text: str):
         """When the solver type flips, refresh the geometry wall row (seg 5) if it

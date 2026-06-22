@@ -96,7 +96,7 @@ class MeshConfigPanel(QScrollArea):
         self.sec_layers.add_layout(layer_btn_layout)
 
         # ── 1. Domain & Geometry Files ────────────────────────────────────
-        self.sec_domain = CollapsibleSection("1. Domain & Geometry", start_collapsed=True)
+        self.sec_domain = CollapsibleSection("Domain & Geometry", start_collapsed=True)
         self._layout.addWidget(self.sec_domain)
 
         # Bounding box
@@ -158,7 +158,7 @@ class MeshConfigPanel(QScrollArea):
         self.sec_domain.add_layout(geom_btn_layout)
 
         # ── 2. General Sizing ─────────────────────────────────────────────
-        self.sec_sizing = CollapsibleSection("2. Mesh Sizing", start_collapsed=True)
+        self.sec_sizing = CollapsibleSection("Mesh Sizing", start_collapsed=True)
         self._layout.addWidget(self.sec_sizing)
 
         sizing_form = QFormLayout()
@@ -184,15 +184,19 @@ class MeshConfigPanel(QScrollArea):
         self.farfield_growth_rate.setStyleSheet(SPIN_STYLE)
         self.farfield_growth_rate.setToolTip("Rate of element size expansion from surface to far-field (0.0~1.0)")
 
-        sizing_form.addRow(help_label("Surface Size:", "Target element size along the geometry boundary walls"), self.surface_mesh_size)
+        # Auto sizing first: it controls whether the manual Surface Size applies.
         sizing_form.addRow("", help_widget(self.auto_surface_size, "Automatically determine surface mesh size from geometry spacing"))
+        sizing_form.addRow(help_label("Surface Size:", "Target element size along the geometry boundary walls"), self.surface_mesh_size)
         sizing_form.addRow(help_label("Far-field Size:", "Target element size in the far-field region away from geometry"), self.farfield_mesh_size)
         sizing_form.addRow(help_label("Growth Rate:", "Rate of element size expansion from surface to far-field (0.0~1.0)"), self.farfield_growth_rate)
         align_form_labels(sizing_form, 130)
         self.sec_sizing.add_layout(sizing_form)
+        self._sizing_form = sizing_form
+        self.auto_surface_size.toggled.connect(self._update_surface_size_visibility)
+        self._update_surface_size_visibility()
 
         # ── 3. Boundary Layer Core ────────────────────────────────────────
-        self.sec_bl_core = CollapsibleSection("3. Boundary Layer Core", start_collapsed=True)
+        self.sec_bl_core = CollapsibleSection("Boundary Layer Core", start_collapsed=True)
         self._layout.addWidget(self.sec_bl_core)
 
         bl_form = QFormLayout()
@@ -220,7 +224,7 @@ class MeshConfigPanel(QScrollArea):
         self.sec_bl_core.add_layout(bl_form)
 
         # ── 4. Transition & Meshing Algorithm ─────────────────────────────
-        self.sec_transition = CollapsibleSection("4. Transition & Algorithm", start_collapsed=True)
+        self.sec_transition = CollapsibleSection("Transition & Meshing Algorithm", start_collapsed=True)
         self._layout.addWidget(self.sec_transition)
 
         trans_form = QFormLayout()
@@ -262,17 +266,22 @@ class MeshConfigPanel(QScrollArea):
         self.gmsh_optimize.setStyleSheet("color:#a0a8c0;")
         self.gmsh_optimize.setToolTip("Enable Gmsh mesh quality optimization pass after generation")
 
-        trans_form.addRow(help_label("Transition Layers:", "Number of transitional element rows blending BL quads into far-field triangles"), self.bl_transition_layers)
+        trans_form.addRow(self._mesh_sublabel("BOUNDARY-LAYER TRANSITION"))
         trans_form.addRow(help_label("Auto Transition:", "Automatically compute transition layer count (OFF / GLOBAL / LOCAL)"), self.bl_auto_transition_layers)
+        trans_form.addRow(help_label("Transition Layers:", "Number of transitional element rows blending BL quads into far-field triangles"), self.bl_transition_layers)
         trans_form.addRow(help_label("Trans Growth Rate:", "Growth rate applied within the transition zone between BL and far-field"), self.bl_transition_growth_rate)
         trans_form.addRow(help_label("Trans Buffer:", "Buffer distance multiplier around geometry for transition smoothing"), self.bl_transition_buffer)
+        trans_form.addRow(self._mesh_sublabel("FAR-FIELD MESHING"))
         trans_form.addRow(help_label("Gmsh Algorithm:", "Meshing algorithm used by Gmsh for far-field triangulation"), self.gmsh_algorithm)
         trans_form.addRow("", help_widget(self.gmsh_optimize, "Enable Gmsh mesh quality optimization pass after generation"))
         align_form_labels(trans_form, 130)
         self.sec_transition.add_layout(trans_form)
+        self._trans_form = trans_form
+        self.bl_auto_transition_layers.currentIndexChanged.connect(self._update_transition_visibility)
+        self._update_transition_visibility()
 
         # ── 5. Fan & Convex Corner Handling ────────────────────────────────
-        self.sec_convex = CollapsibleSection("5. Convex Corner Handling", start_collapsed=True)
+        self.sec_convex = CollapsibleSection("Convex Corner Handling", start_collapsed=True)
         self._layout.addWidget(self.sec_convex)
 
         self.convex_form = QFormLayout()
@@ -323,7 +332,7 @@ class MeshConfigPanel(QScrollArea):
         self._update_convex_widgets_visibility()
 
         # ── 6. Concave Corner Handling ────────────────────────────────────
-        self.sec_concave = CollapsibleSection("6. Concave Corner Handling", start_collapsed=True)
+        self.sec_concave = CollapsibleSection("Concave Corner Handling", start_collapsed=True)
         self._layout.addWidget(self.sec_concave)
 
         concave_form = QFormLayout()
@@ -364,7 +373,7 @@ class MeshConfigPanel(QScrollArea):
 
 
         # ── 7. Boundary Conditions & I/O ──────────────────────────────────
-        self.sec_io = CollapsibleSection("7. BCs & Output Options", start_collapsed=True)
+        self.sec_io = CollapsibleSection("BCs & Output Options", start_collapsed=True)
         self._layout.addWidget(self.sec_io)
 
         io_form = QFormLayout()
@@ -393,10 +402,13 @@ class MeshConfigPanel(QScrollArea):
         self.output_filename.setStyleSheet(LINEEDIT_STYLE)
         self.output_filename.setToolTip("Base filename for mesh output files (extension .* means all formats)")
 
-        self.export_vtk = QCheckBox("Export VTK File")
+        self.export_vtk = QCheckBox("Write VTK (.vtk)")
         self.export_vtk.setStyleSheet("color:#a0a8c0;")
-        self.export_starcd = QCheckBox("Export STAR-CD Files")
+        self.export_vtk.setToolTip("Write a .vtk file when the mesh is generated/saved.")
+        self.export_starcd = QCheckBox("Write STAR-CD (.vrt/.cel/.bnd)")
         self.export_starcd.setStyleSheet("color:#a0a8c0;")
+        self.export_starcd.setToolTip(
+            "Write STAR-CD files when the mesh is generated/saved (required for the solver).")
         self.enable_collision_detection = QCheckBox("Collision Detection")
         self.enable_collision_detection.setStyleSheet("color:#a0a8c0;")
         self.enable_collision_detection.setToolTip("Enable self-intersection detection during boundary layer generation")
@@ -441,6 +453,9 @@ class MeshConfigPanel(QScrollArea):
 
         export_layout = QVBoxLayout()
         export_layout.setSpacing(4)
+        # Format toggles (which files to write) then the export-to-path buttons.
+        export_layout.addWidget(self.export_vtk)
+        export_layout.addWidget(self.export_starcd)
         export_layout.addWidget(help_widget(self.export_vtk_btn, "Export the generated mesh to a VTK file (.vtk)"))
         export_layout.addWidget(help_widget(self.export_starcd_btn, "Export the generated mesh to STAR-CD files (.vrt, .cel, .bnd)"))
 
@@ -668,6 +683,27 @@ class MeshConfigPanel(QScrollArea):
         cfg.enable_collision_detection = self.enable_collision_detection.isChecked()
 
         return cfg
+
+    def _mesh_sublabel(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet("color:#6b7390; font-size:10px; font-weight:bold;")
+        return lbl
+
+    def _update_surface_size_visibility(self):
+        """Hide the manual Surface Size when Auto Surface Sizing is on."""
+        show = not self.auto_surface_size.isChecked()
+        self.surface_mesh_size.setVisible(show)
+        lbl = self._sizing_form.labelForField(self.surface_mesh_size)
+        if lbl:
+            lbl.setVisible(show)
+
+    def _update_transition_visibility(self):
+        """Hide the manual Transition Layers count when Auto Transition computes it."""
+        manual = self.bl_auto_transition_layers.currentIndex() == 0  # 0: OFF
+        self.bl_transition_layers.setVisible(manual)
+        lbl = self._trans_form.labelForField(self.bl_transition_layers)
+        if lbl:
+            lbl.setVisible(manual)
 
     def _update_convex_widgets_visibility(self):
         method_str = self.bl_convex_method.currentText()

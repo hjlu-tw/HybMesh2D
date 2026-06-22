@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QFormLayout, QLabel, QCheckBox
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QFormLayout, QLabel, QCheckBox
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, align_form_labels, help_label, help_widget, SPIN_STYLE
@@ -13,7 +13,7 @@ class VertexPanel(CollapsibleSection):
         self.add_widget(self.selection_sec)
 
         self.selected_info = QLabel("Selected Vertex: None")
-        self.selected_info.setStyleSheet("color: #00E5FF; font-weight: bold;")
+        self.selected_info.setStyleSheet("color: #5a9ad4; font-weight: bold;")
 
         self.split_btn = make_button("Add Breakpoint", '#102438')
         self.split_btn.setEnabled(False)
@@ -25,7 +25,7 @@ class VertexPanel(CollapsibleSection):
         self.auto_detect_btn.setToolTip("Automatically detect and split edges at all sharp corners")
 
         self.keep_vertex_cb = QCheckBox("Preserve vertex on removal")
-        self.keep_vertex_cb.setStyleSheet("color: #FF8A65; font-size: 11px;")
+        self.keep_vertex_cb.setStyleSheet("color: #a0a8c0; font-size: 11px;")
         self.keep_vertex_cb.setToolTip("Preserve the original vertex position during resampling")
 
         self.selection_sec.add_widget(self.selected_info)
@@ -51,8 +51,13 @@ class VertexPanel(CollapsibleSection):
         self.insert_y.setStyleSheet(SPIN_STYLE)
         self.insert_y.setToolTip("Y-coordinate for a new vertex to insert into the geometry")
 
-        form.addRow(help_label("X:", "X-coordinate for a new vertex to insert into the geometry"), self.insert_x)
-        form.addRow(help_label("Y:", "Y-coordinate for a new vertex to insert into the geometry"), self.insert_y)
+        pos = QWidget(); ph = QHBoxLayout(pos)
+        ph.setContentsMargins(0, 0, 0, 0); ph.setSpacing(3)
+        for lab, s in (("x", self.insert_x), ("y", self.insert_y)):
+            t = QLabel(lab); t.setStyleSheet("color:#7a82a0; font-size:10px;")
+            ph.addWidget(t); ph.addWidget(s)
+        ph.addStretch()
+        form.addRow(help_label("Position:", "Coordinates (x, y) for a new vertex to insert"), pos)
         align_form_labels(form)
 
         self.insert_btn = make_button("Insert & Split")

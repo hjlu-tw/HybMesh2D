@@ -191,10 +191,10 @@ class EdgePropsPanel(CollapsibleSection):
         self.line_y1.setDecimals(4)
         self.line_y1.setStyleSheet(SPIN_STYLE)
         self.line_y1.setToolTip("Y-coordinate of the line end point")
-        layout_line.addRow(help_label("X Start:", "X-coordinate of the line start point"), self.line_x0)
-        layout_line.addRow(help_label("Y Start:", "Y-coordinate of the line start point"), self.line_y0)
-        layout_line.addRow(help_label("X End:", "X-coordinate of the line end point"), self.line_x1)
-        layout_line.addRow(help_label("Y End:", "Y-coordinate of the line end point"), self.line_y1)
+        layout_line.addRow(help_label("Start:", "Line start point (x, y)"),
+                           self._xy_row(self.line_x0, self.line_y0))
+        layout_line.addRow(help_label("End:", "Line end point (x, y)"),
+                           self._xy_row(self.line_x1, self.line_y1))
         self.shape_stack.addWidget(widget_line)
 
         # ── Widget 4: Circle ─────────────────────────────────────────────
@@ -217,8 +217,8 @@ class EdgePropsPanel(CollapsibleSection):
         self.circle_r.setValue(1.0)
         self.circle_r.setStyleSheet(SPIN_STYLE)
         self.circle_r.setToolTip("Radius of the circle")
-        layout_circle.addRow(help_label("Center X:", "X-coordinate of the circle center"), self.circle_cx)
-        layout_circle.addRow(help_label("Center Y:", "Y-coordinate of the circle center"), self.circle_cy)
+        layout_circle.addRow(help_label("Center:", "Circle center (x, y)"),
+                             self._xy_row(self.circle_cx, self.circle_cy))
         layout_circle.addRow(help_label("Radius R:", "Radius of the circle"), self.circle_r)
         self.shape_stack.addWidget(widget_circle)
 
@@ -257,12 +257,12 @@ class EdgePropsPanel(CollapsibleSection):
         self.tri_y2.setDecimals(4)
         self.tri_y2.setStyleSheet(SPIN_STYLE)
         
-        layout_tri.addRow(help_label("P0 X:", "X-coordinate of the first triangle point"), self.tri_x0)
-        layout_tri.addRow(help_label("P0 Y:", "Y-coordinate of the first triangle point"), self.tri_y0)
-        layout_tri.addRow(help_label("P1 X:", "X-coordinate of the second triangle point"), self.tri_x1)
-        layout_tri.addRow(help_label("P1 Y:", "Y-coordinate of the second triangle point"), self.tri_y1)
-        layout_tri.addRow(help_label("P2 X:", "X-coordinate of the third triangle point"), self.tri_x2)
-        layout_tri.addRow(help_label("P2 Y:", "Y-coordinate of the third triangle point"), self.tri_y2)
+        layout_tri.addRow(help_label("P0:", "First triangle point (x, y)"),
+                          self._xy_row(self.tri_x0, self.tri_y0))
+        layout_tri.addRow(help_label("P1:", "Second triangle point (x, y)"),
+                          self._xy_row(self.tri_x1, self.tri_y1))
+        layout_tri.addRow(help_label("P2:", "Third triangle point (x, y)"),
+                          self._xy_row(self.tri_x2, self.tri_y2))
         self.shape_stack.addWidget(widget_tri)
 
         # ── Widget 6: Quadrilateral ──────────────────────────────────────
@@ -310,14 +310,14 @@ class EdgePropsPanel(CollapsibleSection):
         self.quad_y3.setDecimals(4)
         self.quad_y3.setStyleSheet(SPIN_STYLE)
         
-        layout_quad.addRow(help_label("P0 X:", "X-coordinate of the first quad point"), self.quad_x0)
-        layout_quad.addRow(help_label("P0 Y:", "Y-coordinate of the first quad point"), self.quad_y0)
-        layout_quad.addRow(help_label("P1 X:", "X-coordinate of the second quad point"), self.quad_x1)
-        layout_quad.addRow(help_label("P1 Y:", "Y-coordinate of the second quad point"), self.quad_y1)
-        layout_quad.addRow(help_label("P2 X:", "X-coordinate of the third quad point"), self.quad_x2)
-        layout_quad.addRow(help_label("P2 Y:", "Y-coordinate of the third quad point"), self.quad_y2)
-        layout_quad.addRow(help_label("P3 X:", "X-coordinate of the fourth quad point"), self.quad_x3)
-        layout_quad.addRow(help_label("P3 Y:", "Y-coordinate of the fourth quad point"), self.quad_y3)
+        layout_quad.addRow(help_label("P0:", "First quad point (x, y)"),
+                           self._xy_row(self.quad_x0, self.quad_y0))
+        layout_quad.addRow(help_label("P1:", "Second quad point (x, y)"),
+                           self._xy_row(self.quad_x1, self.quad_y1))
+        layout_quad.addRow(help_label("P2:", "Third quad point (x, y)"),
+                           self._xy_row(self.quad_x2, self.quad_y2))
+        layout_quad.addRow(help_label("P3:", "Fourth quad point (x, y)"),
+                           self._xy_row(self.quad_x3, self.quad_y3))
         self.shape_stack.addWidget(widget_quad)
 
         # ── Widget 7: Polygon ────────────────────────────────────────────
@@ -461,6 +461,19 @@ class EdgePropsPanel(CollapsibleSection):
             " QSpinBox,QDoubleSpinBox,QLineEdit{font-size:11px;}")
 
         self.curve_mode_param.toggled.connect(self._on_curve_mode_toggled)
+
+    def _xy_row(self, sx, sy) -> QWidget:
+        """Pack two coordinate spinboxes into one [x: <sx>  y: <sy>] row so point
+        coordinates read as points instead of one field per line."""
+        compact = SPIN_STYLE.replace("max-width: 110px", "max-width: 72px")
+        box = QWidget(); h = QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(3)
+        for lab, s in (("x", sx), ("y", sy)):
+            s.setStyleSheet(compact)
+            t = QLabel(lab); t.setStyleSheet("color:#7a82a0; font-size:10px;")
+            h.addWidget(t); h.addWidget(s)
+        h.addStretch()
+        return box
 
     def _show_dialog(self, dlg):
         # Re-parent to the MAIN WINDOW (not this panel, which gets hidden when

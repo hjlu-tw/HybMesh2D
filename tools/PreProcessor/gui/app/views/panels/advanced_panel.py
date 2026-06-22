@@ -1,5 +1,5 @@
 from __future__ import annotations
-from PyQt6.QtWidgets import QFormLayout, QGroupBox, QCheckBox, QLabel
+from PyQt6.QtWidgets import QFormLayout, QGroupBox, QCheckBox, QLabel, QWidget, QHBoxLayout
 from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import SPIN_STYLE, align_form_labels, help_label, help_widget
@@ -53,8 +53,13 @@ class AdvancedPanel(CollapsibleSection):
 
         tf_layout.addRow(help_label("Scale:", "Uniform scale factor about the geometry's bounding-box centre (scales in place)"), self.transform_scale)
         tf_layout.addRow(help_label("Rotate:", "Rotation angle (degrees) about the geometry's bounding-box centre (rotates in place)"), self.transform_rotate)
-        tf_layout.addRow(help_label("Translate X:", "Horizontal translation offset applied to the resampled geometry output"), self.transform_tx)
-        tf_layout.addRow(help_label("Translate Y:", "Vertical translation offset applied to the resampled geometry output"), self.transform_ty)
+        translate = QWidget(); th = QHBoxLayout(translate)
+        th.setContentsMargins(0, 0, 0, 0); th.setSpacing(3)
+        for lab, s in (("x", self.transform_tx), ("y", self.transform_ty)):
+            t = QLabel(lab); t.setStyleSheet("color:#7a82a0; font-size:10px;")
+            th.addWidget(t); th.addWidget(s)
+        th.addStretch()
+        tf_layout.addRow(help_label("Translate:", "Translation offset (x, y) applied to the resampled geometry output"), translate)
         align_form_labels(tf_layout)
 
         self.apply_transform_cb = QCheckBox("Enable output transform")
