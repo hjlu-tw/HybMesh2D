@@ -122,8 +122,10 @@ class TecplotResult:
 
         header_idx = zone_starts[zone]
         header = lines[header_idx]
-        n_nodes = int(_N_RE.search(header).group(1))
-        n_elems = int(_E_RE.search(header).group(1))
+        n = _N_RE.search(header)
+        e = _E_RE.search(header)
+        n_nodes = int(n.group(1)) if n else 0
+        n_elems = int(e.group(1)) if e else 0
         zt = _ZONETYPE_RE.search(header)
         title = _TITLE_RE.search(header)
         zinfo = ZoneInfo(zone, title.group(1) if title else f"zone {zone}",
@@ -198,9 +200,11 @@ class TecplotResult:
         return list(self.variables)
 
     def scalar_variables(self) -> list[str]:
-        """Variable names that carry a field value (excludes coordinate-only x/y)."""
-        coords = set(self.variables[:2])
-        return [v for v in self.variables if v not in coords]
+        """Variable names that carry a field value. The first two variables are
+        the x/y coordinates (Tecplot convention), so exclude them by position —
+        excluding by name would also drop a distinct later field variable that
+        happens to share a coordinate's name."""
+        return list(self.variables[2:])
 
     def get_cell_field(self, var: str) -> np.ndarray:
         """Return the cell-centered values for a variable, deriving them from

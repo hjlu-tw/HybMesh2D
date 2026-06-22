@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QFileDialog, QListWidgetItem, QMessageBox
 from app.models.session import GeometrySession
 from app.models.vtk_mesh import VTKMesh
 from app.workers.mesh_gen_run import MeshGenWorker
-from app.utils import find_binary_executable
+from app.utils import find_binary_executable, repo_root
 
 class MeshGenControllerMixin:
     """Mixin containing HybMesh2D mesh generator execution, config editor mapping, and results visualization logic."""
@@ -36,7 +36,7 @@ class MeshGenControllerMixin:
 
     def load_mesh_config(self):
         """Prompt file dialog to load a Background_para.dat configuration file."""
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        root_dir = repo_root()
         default_dir = os.path.join(root_dir, "config", "mesh")
         
         path, _ = QFileDialog.getOpenFileName(
@@ -63,7 +63,7 @@ class MeshGenControllerMixin:
 
     def save_mesh_config(self):
         """Extract config settings from UI panel and save them to a file."""
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        root_dir = repo_root()
         
         default_name = "Background_para.dat"
         session = self.active_session()
@@ -137,23 +137,25 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log("Geometry file is already in the list.")
 
     def clear_mesh_canvas(self):
-        """Clear only the previously generated mesh, then re-show the current
-        (possibly edited) boundary preview. Keeps the geometry layers list and
-        all inputs — use this after editing CAD geometry to drop the stale mesh
-        and see the updated boundaries."""
+        """Clear the previously generated mesh AND the previous boundary/surface-
+        point previews, then re-show the current (possibly edited) boundaries.
+        Keeps the geometry layers list. Use this after editing CAD geometry to
+        drop the stale mesh + old surface points and see the updated boundaries."""
         self.global_vtk_mesh = None
         self.global_vtk_path = ""
-        # clear_mesh_results removes only the mesh output, leaving geometry
-        # previews / domain box / BC previews intact.
-        self.main_window.mesh_canvas_view.clear_mesh_results()
+        mc = self.main_window.mesh_canvas_view
+        # clear_mesh wipes the mesh, domain box, BC items AND the BC/surface
+        # previews; also drop the old geometry (surface-point) previews.
+        mc.clear_mesh()
+        mc.update_geometry_previews([])
         self.main_window.mesh_stats_panel.update_stats(None)
-        # Refresh the boundary preview from the current config so CAD edits show.
+        # Re-show the current boundaries from the current config (reflects edits).
         cfg = self.main_window.mesh_config_panel.get_config()
         self.global_mesh_config = cfg
-        self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
-        self.main_window.mesh_canvas_view.update_geometry_previews(cfg.geom_files)
+        mc.update_mesh_config(cfg, fit_view=False)
+        mc.update_geometry_previews(cfg.geom_files)
         self.main_window.log_panel.log(
-            "Cleared previous mesh; showing current boundaries.")
+            "Cleared previous mesh and surface points; showing current boundaries.")
 
     def run_mesh_generator(self):
         """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background."""
@@ -259,7 +261,7 @@ class MeshGenControllerMixin:
 
     def _get_expected_vtk_path(self, cfg: MeshConfig) -> str:
         """Calculate the expected output VTK filename matching main.cpp logic."""
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        root_dir = repo_root()
 
         path = ""
         if cfg.output_filename:
@@ -278,7 +280,7 @@ class MeshGenControllerMixin:
 
     def _resolve_export_path(self, default_fallback_path: str, ext: str) -> str:
         """Resolve the default export path based on global configuration settings."""
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        root_dir = repo_root()
         default_dir = os.path.join(root_dir, "results", "meshes")
         
         user_filename = self.global_mesh_config.output_filename if self.global_mesh_config else ""

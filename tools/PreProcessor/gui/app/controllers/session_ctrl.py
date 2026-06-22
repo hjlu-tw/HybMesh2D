@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QTreeWidgetItem, QMenu, QI
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
 from app.models.session import GeometrySession, SESSION_COLORS
+from app.utils import repo_root
 
 # Bump when the .hws workspace schema changes in a backward-incompatible way.
 # A missing field on load is treated as version 0 (legacy); a file whose
@@ -426,7 +427,7 @@ class SessionControllerMixin:
         if input_file and not os.path.isabs(input_file):
             candidate1 = os.path.abspath(os.path.join(os.path.dirname(config_path), input_file))
             candidate2 = os.path.abspath(os.path.join(os.path.dirname(config_path), "..", "..", input_file))
-            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+            root_dir = repo_root()
             candidate3 = os.path.abspath(os.path.join(root_dir, input_file))
             
             if os.path.exists(candidate1):

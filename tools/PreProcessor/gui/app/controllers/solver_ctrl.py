@@ -8,11 +8,7 @@ from PyQt6.QtWidgets import QFileDialog
 
 from app.models.solver_config import SolverConfig
 from app.workers.solver_run import SolverPipelineWorker
-from app.utils import find_solver_executables
-
-
-def _repo_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+from app.utils import find_solver_executables, repo_root
 
 
 def _sanitize(name: str) -> str:
@@ -39,7 +35,7 @@ class SolverControllerMixin:
     # Config save / load
     # ------------------------------------------------------------------ #
     def load_solver_config(self):
-        root = _repo_root()
+        root = repo_root()
         path, _ = QFileDialog.getOpenFileName(
             self.main_window, "Load Solver Config",
             os.path.join(root, "config"), "JSON (*.json);;All Files (*)")
@@ -53,7 +49,7 @@ class SolverControllerMixin:
             self.main_window.log_panel.log(f"Failed to load solver config: {e}")
 
     def save_solver_config(self):
-        root = _repo_root()
+        root = repo_root()
         cfg = self.main_window.solver_config_panel.get_config()
         default = os.path.join(root, "config", f"{_sanitize(cfg.case_name)}_solver.json")
         path, _ = QFileDialog.getSaveFileName(
@@ -149,7 +145,7 @@ class SolverControllerMixin:
         """Build case/<name>/{work,grid,dll}, stage inputs, rename outputs, write
         input.in / .def, and compile IBM DLLs. Returns (work_dir, grid_dir,
         input_in_path)."""
-        root = _repo_root()
+        root = repo_root()
         case = _sanitize(cfg.case_name)
         case_root = os.path.join(root, "results", "solver", case)
         work_dir = os.path.join(case_root, "work")

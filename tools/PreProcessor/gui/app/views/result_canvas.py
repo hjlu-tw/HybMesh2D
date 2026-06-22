@@ -301,12 +301,15 @@ class ResultCanvasView(QWidget):
     # ------------------------------------------------------------------ #
     def _velocity_nodes(self):
         """Return (u_node, v_node) or None if no velocity variables present."""
-        names = self._result.variables
-        u = "u" if "u" in names else None
-        v = "v" if "v" in names else None
-        if not (u and v):
-            return None
-        return self._node_field(u), self._node_field(v)
+        # Velocity components are named differently across solver outputs;
+        # match common pairs case-insensitively rather than only literal "u"/"v".
+        lower = {n.lower(): n for n in self._result.variables}
+        for ux, vy in (("u", "v"), ("vx", "vy"), ("u-velocity", "v-velocity"),
+                       ("x-velocity", "y-velocity"), ("velocity-x", "velocity-y"),
+                       ("velocityx", "velocityy")):
+            if ux in lower and vy in lower:
+                return self._node_field(lower[ux]), self._node_field(lower[vy])
+        return None
 
     def _stream_grid(self, n: int = 220):
         x, y = self._result.nodes[:, 0], self._result.nodes[:, 1]

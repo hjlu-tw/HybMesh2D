@@ -7,29 +7,9 @@ from PyQt6.QtWidgets import (
 from app.utils import COMBO_STYLE, SPIN_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
-# Numeric field layout per analytic shape type: list of (param_key, label).
-_FIELDS: dict[str, list[tuple[str, str]]] = {
-    "line": [("x0", "X Start"), ("y0", "Y Start"),
-             ("x1", "X End"), ("y1", "Y End")],
-    "horizontal_line": [("y", "Y"), ("x0", "X Start"), ("x1", "X End")],
-    "vertical_line": [("x", "X"), ("y0", "Y Start"), ("y1", "Y End")],
-    "circle": [("cx", "Centre X"), ("cy", "Centre Y"), ("r", "Radius")],
-    "triangle": [("x0", "P0 X"), ("y0", "P0 Y"), ("x1", "P1 X"),
-                 ("y1", "P1 Y"), ("x2", "P2 X"), ("y2", "P2 Y")],
-    "quadrilateral": [("x0", "P0 X"), ("y0", "P0 Y"), ("x1", "P1 X"),
-                      ("y1", "P1 Y"), ("x2", "P2 X"), ("y2", "P2 Y"),
-                      ("x3", "P3 X"), ("y3", "P3 Y")],
-}
-
-_DEFAULTS = {
-    "line": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
-    "horizontal_line": {"y": 0.0, "x0": 0.0, "x1": 1.0},
-    "vertical_line": {"x": 0.0, "y0": 0.0, "y1": 1.0},
-    "circle": {"cx": 0.0, "cy": 0.0, "r": 1.0},
-    "triangle": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0, "x2": 0.5, "y2": 1.0},
-    "quadrilateral": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0,
-                      "x2": 1.0, "y2": 1.0, "x3": 0.0, "y3": 1.0},
-}
+# Field layout and per-type defaults are owned by app.models.shape_spec so the
+# dialog, the sidebar editor, and the curve controller never drift apart.
+from app.models.shape_spec import DEFAULTS as _DEFAULTS, FIELDS as _FIELDS
 
 
 class ShapeParamDialog(QDialog):

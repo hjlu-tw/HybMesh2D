@@ -8,7 +8,7 @@ from app.workers.backend_run import BackendWorker
 from app.views.output_dialog import OutputDialog
 from app.services.geometry_service import GeometryService
 
-from app.utils import find_binary_executable
+from app.utils import find_binary_executable, repo_root
 
 class BackendControllerMixin:
     """Mixin containing C++ backend execution, config generation, and file exporting logic."""
@@ -104,6 +104,35 @@ class BackendControllerMixin:
 
         return tmp_cfg.name, created_files
 
+    def _confirm_open_endpoints_before_preview(self, session) -> bool:
+        """Warn (once per endpoint configuration) when analytic/open curve edges
+        leave genuinely-open endpoints with no internal polyline gap to flag
+        them. Returns True to proceed, False to abort."""
+        open_eps = self.open_endpoints_unclustered(session)
+        if not open_eps:
+            session._open_decision_sig = None
+            return True
+        sig = self.open_endpoints_signature(open_eps)
+        if sig == getattr(session, "_open_decision_sig", None):
+            return True  # this configuration was already acknowledged
+
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.warning(
+            self.main_window,
+            "Open boundary",
+            f"{len(open_eps)} open endpoint(s) detected — the boundary is not "
+            "closed. The mesher will bridge the gap with a straight line.\n\n"
+            "Preview anyway?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+        session._open_decision_sig = sig
+        self.main_window.log_panel.log(
+            f"Preview: proceeding with {len(open_eps)} open endpoint(s).")
+        return True
+
     def _resolve_unclosed_before_preview(self, session) -> bool:
         """Detect unclosed gaps and, if any, prompt the user. Returns True to
         proceed with the preview, False to abort. Sets
@@ -114,7 +143,10 @@ class BackendControllerMixin:
         if not gaps:
             session._preview_break_internal = False
             session._gap_decision_sig = None
-            return True
+            # No internal polyline gaps, but analytic / open-polygon curve edges
+            # may still leave dangling endpoints the mesher would silently bridge
+            # (find_geometry_gaps only inspects the file polyline).
+            return self._confirm_open_endpoints_before_preview(session)
 
         sig = self.gaps_signature(gaps)
         if (sig == getattr(session, "_gap_decision_sig", None)
@@ -212,7 +244,7 @@ class BackendControllerMixin:
             default_out = ""
 
         if not default_out:
-            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+            root_dir = repo_root()
             filename = "output_resampled.dat"
             if session.file_path:
                 stem = os.path.splitext(os.path.basename(session.file_path))[0]
@@ -242,7 +274,7 @@ class BackendControllerMixin:
             self.main_window.log_panel.log("No geometry loaded.")
             return
 
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+        root_dir = repo_root()
         default_filename = "gui_config.json"
         if session.file_path:
             stem = os.path.splitext(os.path.basename(session.file_path))[0]

@@ -159,7 +159,8 @@ class MeshConfig:
                                 geom_path = p2
                             else:
                                 # Try relative to the project root
-                                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+                                from app.utils import repo_root
+                                project_root = repo_root()
                                 p3 = os.path.abspath(os.path.join(project_root, val_str))
                                 if os.path.exists(p3):
                                     geom_path = p3
@@ -255,7 +256,8 @@ class MeshConfig:
         if self.output_filename:
             lines.append(f"OUTPUT_FILENAME {self.output_filename}")
 
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        from app.utils import repo_root
+        project_root = repo_root()
         cfg_dir = os.path.dirname(os.path.abspath(path))
         for gf in self.geom_files:
             abs_gf = os.path.abspath(gf)

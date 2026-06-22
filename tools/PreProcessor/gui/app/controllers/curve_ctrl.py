@@ -5,30 +5,12 @@ from PyQt6.QtCore import Qt
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
 from app.commands.segment_cmds import AddCurveSegmentCmd, BakeCurveToGeometryCmd
-from app.services.geometry_service import GeometryService, _parse_vertices_str
+from app.services.geometry_service import GeometryService
+from app.models import shape_spec
 
 # Curve-type list, indexed by the type combo's row order.
 CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line",
                "circle", "triangle", "quadrilateral", "polygon"]
-
-# Clean per-type defaults, applied when the user *switches* an edge's type so
-# the shared shape widgets never carry a stale value (e.g. a long vertices_str
-# left over from a previously-selected/transformed polygon).
-SHAPE_DEFAULTS = {
-    "horizontal_line": {"y": 0.0, "x0": 0.0, "x1": 1.0},
-    "vertical_line": {"x": 0.0, "y0": 0.0, "y1": 1.0},
-    "line": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
-    "circle": {"cx": 0.0, "cy": 0.0, "r": 1.0},
-    "triangle": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0, "x2": 0.5, "y2": 1.0},
-    "quadrilateral": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0,
-                      "x2": 1.0, "y2": 1.0, "x3": 0.0, "y3": 1.0},
-    "polygon": {"vertices_str": "0,0; 1,0; 1,1; 0,1"},
-}
-
-# Every shape-defining parameter key (cleared on a type switch before the new
-# type's defaults are applied). Excludes generic keys like n_points / spacing.
-_ALL_SHAPE_KEYS = {"x", "y", "x0", "y0", "x1", "y1", "x2", "y2", "x3", "y3",
-                   "cx", "cy", "r", "vertices_str"}
 
 
 class CurveControllerMixin:
@@ -78,7 +60,6 @@ class CurveControllerMixin:
             return
         
         sb = self.main_window.sidebar_view
-        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
         idx = sb.curve_type_combo.currentIndex()
         if 0 <= idx < len(CURVE_TYPES):
             seg.curve_type = CURVE_TYPES[idx]
@@ -95,42 +76,10 @@ class CurveControllerMixin:
         seg.start_index = sb.curve_start_node.value()
         seg.end_index = sb.curve_end_node.value()
 
-        # Sync parameters based on curve type
-        if seg.curve_type == "horizontal_line":
-            seg.parameters["y"] = sb.h_line_y.value()
-            seg.parameters["x0"] = sb.h_line_x_start.value()
-            seg.parameters["x1"] = sb.h_line_x_end.value()
-        elif seg.curve_type == "vertical_line":
-            seg.parameters["x"] = sb.v_line_x.value()
-            seg.parameters["y0"] = sb.v_line_y_start.value()
-            seg.parameters["y1"] = sb.v_line_y_end.value()
-        elif seg.curve_type == "line":
-            seg.parameters["x0"] = sb.line_x0.value()
-            seg.parameters["y0"] = sb.line_y0.value()
-            seg.parameters["x1"] = sb.line_x1.value()
-            seg.parameters["y1"] = sb.line_y1.value()
-        elif seg.curve_type == "circle":
-            seg.parameters["cx"] = sb.circle_cx.value()
-            seg.parameters["cy"] = sb.circle_cy.value()
-            seg.parameters["r"] = sb.circle_r.value()
-        elif seg.curve_type == "triangle":
-            seg.parameters["x0"] = sb.tri_x0.value()
-            seg.parameters["y0"] = sb.tri_y0.value()
-            seg.parameters["x1"] = sb.tri_x1.value()
-            seg.parameters["y1"] = sb.tri_y1.value()
-            seg.parameters["x2"] = sb.tri_x2.value()
-            seg.parameters["y2"] = sb.tri_y2.value()
-        elif seg.curve_type == "quadrilateral":
-            seg.parameters["x0"] = sb.quad_x0.value()
-            seg.parameters["y0"] = sb.quad_y0.value()
-            seg.parameters["x1"] = sb.quad_x1.value()
-            seg.parameters["y1"] = sb.quad_y1.value()
-            seg.parameters["x2"] = sb.quad_x2.value()
-            seg.parameters["y2"] = sb.quad_y2.value()
-            seg.parameters["x3"] = sb.quad_x3.value()
-            seg.parameters["y3"] = sb.quad_y3.value()
-        elif seg.curve_type == "polygon":
-            seg.parameters["vertices_str"] = sb.poly_vertices.text()
+        # Sync shape-defining parameters from the sidebar widgets (one source of
+        # the per-type widget↔param mapping lives in shape_spec).
+        if seg.curve_type in shape_spec.SIDEBAR_ATTRS or seg.curve_type == "polygon":
+            seg.parameters.update(shape_spec.read_widget_params(sb, seg.curve_type))
 
     def handle_curve_type_changed(self):
         session = self.active_session()
@@ -149,10 +98,10 @@ class CurveControllerMixin:
         new_type = CURVE_TYPES[idx] if 0 <= idx < len(CURVE_TYPES) else "custom"
         if new_type != seg.curve_type and not self._is_populating:
             seg.curve_type = new_type
-            if new_type in SHAPE_DEFAULTS:
-                for k in _ALL_SHAPE_KEYS:
+            if new_type in shape_spec.DEFAULTS:
+                for k in shape_spec.ALL_SHAPE_KEYS:
                     seg.parameters.pop(k, None)
-                seg.parameters.update(SHAPE_DEFAULTS[new_type])
+                seg.parameters.update(shape_spec.DEFAULTS[new_type])
             # Push the fresh defaults into the shape widgets before syncing back.
             self._is_populating = True
             try:
@@ -666,60 +615,12 @@ class CurveControllerMixin:
     @staticmethod
     def _apply_handle_drag_to_params(seg, handle_id, x, y):
         """Mutate a shape's defining parameters from a dragged control point."""
-        ct = seg.curve_type
-        p = seg.parameters
-        if ct == "line":
-            if handle_id == "p0":
-                p["x0"], p["y0"] = x, y
-            else:
-                p["x1"], p["y1"] = x, y
-        elif ct == "horizontal_line":
-            p["y"] = y
-            p["x0" if handle_id == "p0" else "x1"] = x
-        elif ct == "vertical_line":
-            p["x"] = x
-            p["y0" if handle_id == "p0" else "y1"] = y
-        elif ct == "circle":
-            if handle_id == "c":
-                p["cx"], p["cy"] = x, y
-            else:
-                p["r"] = max(1e-6, math.hypot(x - p.get("cx", 0.0),
-                                              y - p.get("cy", 0.0)))
-        elif ct in ("triangle", "quadrilateral"):
-            i = int(handle_id[1])
-            p[f"x{i}"], p[f"y{i}"] = x, y
-        elif ct == "polygon":
-            i = int(handle_id[1:])
-            verts = [list(v) for v in _parse_vertices_str(
-                p.get("vertices_str", "0,0; 1,0; 1,1; 0,1"))]
-            if 0 <= i < len(verts):
-                verts[i] = [x, y]
-                p["vertices_str"] = "; ".join(
-                    f"{a:.6g},{b:.6g}" for a, b in verts)
+        shape_spec.apply_drag(seg.curve_type, seg.parameters, handle_id, x, y)
 
     @staticmethod
     def _shape_params_from_points(tool: str, pts: list):
         """Map the drawn canvas points → (parameters, curve_type)."""
-        p = [(float(x), float(y)) for x, y in pts]
-        if tool == "line" and len(p) >= 2:
-            return ({"x0": p[0][0], "y0": p[0][1],
-                     "x1": p[1][0], "y1": p[1][1]}, "line")
-        if tool == "circle" and len(p) >= 2:
-            cx, cy = p[0]
-            r = math.hypot(p[1][0] - cx, p[1][1] - cy)
-            return ({"cx": cx, "cy": cy, "r": (r if r > 1e-9 else 1.0)}, "circle")
-        if tool == "rectangle" and len(p) >= 2:
-            (x0, y0), (x1, y1) = p[0], p[1]
-            return ({"x0": x0, "y0": y0, "x1": x1, "y1": y0,
-                     "x2": x1, "y2": y1, "x3": x0, "y3": y1}, "quadrilateral")
-        if tool == "triangle" and len(p) >= 3:
-            return ({"x0": p[0][0], "y0": p[0][1],
-                     "x1": p[1][0], "y1": p[1][1],
-                     "x2": p[2][0], "y2": p[2][1]}, "triangle")
-        if tool == "polygon" and len(p) >= 3:
-            v = "; ".join(f"{x:.6g},{y:.6g}" for x, y in p)
-            return ({"vertices_str": v}, "polygon")
-        return None, None
+        return shape_spec.params_from_points(tool, pts)
 
     def open_custom_formula_dialog(self):
         """Open the custom-formula dialog with a LIVE canvas preview (and fit the
@@ -797,33 +698,8 @@ class CurveControllerMixin:
     def _edge_control_points(self, seg):
         """Return [(handle_id, (x, y)), ...] control points for ``seg``'s shape,
         using its raw defining parameters (no anchoring/transform)."""
-        ct = getattr(seg, "curve_type", "custom")
-        p = seg.parameters
-        if ct == "line":
-            return [("p0", (p.get("x0", 0.0), p.get("y0", 0.0))),
-                    ("p1", (p.get("x1", 1.0), p.get("y1", 1.0)))]
-        if ct == "horizontal_line":
-            y = p.get("y", 0.0)
-            return [("p0", (p.get("x0", 0.0), y)),
-                    ("p1", (p.get("x1", 1.0), y))]
-        if ct == "vertical_line":
-            x = p.get("x", 0.0)
-            return [("p0", (x, p.get("y0", 0.0))),
-                    ("p1", (x, p.get("y1", 1.0)))]
-        if ct == "circle":
-            cx, cy, r = p.get("cx", 0.0), p.get("cy", 0.0), p.get("r", 1.0)
-            return [("c", (cx, cy)), ("rim", (cx + r, cy))]
-        if ct == "triangle":
-            return [(f"v{i}", (p.get(f"x{i}", 0.0), p.get(f"y{i}", 0.0)))
-                    for i in range(3)]
-        if ct == "quadrilateral":
-            return [(f"v{i}", (p.get(f"x{i}", 0.0), p.get(f"y{i}", 0.0)))
-                    for i in range(4)]
-        if ct == "polygon":
-            verts = _parse_vertices_str(p.get("vertices_str", "0,0; 1,0; 1,1; 0,1"))
-            return [(f"v{i}", (float(vx), float(vy)))
-                    for i, (vx, vy) in enumerate(verts)]
-        return []  # custom formula: no draggable control points
+        return shape_spec.control_points(
+            getattr(seg, "curve_type", "custom"), seg.parameters)
 
     def _refresh_edge_handles(self):
         """Selecting an edge shows only the (orange) highlight — no on-canvas
@@ -857,43 +733,13 @@ class CurveControllerMixin:
             return
         sb = self.main_window.sidebar_view
         ct = seg.curve_type
-        S = self._spin_set_silent
-
-        if ct == "line":
-            if handle_id == "p0":
-                S(sb.line_x0, x); S(sb.line_y0, y)
-            else:
-                S(sb.line_x1, x); S(sb.line_y1, y)
-        elif ct == "horizontal_line":
-            S(sb.h_line_y, y)
-            S(sb.h_line_x_start if handle_id == "p0" else sb.h_line_x_end, x)
-        elif ct == "vertical_line":
-            S(sb.v_line_x, x)
-            S(sb.v_line_y_start if handle_id == "p0" else sb.v_line_y_end, y)
-        elif ct == "circle":
-            if handle_id == "c":
-                S(sb.circle_cx, x); S(sb.circle_cy, y)
-            else:
-                r = math.hypot(x - sb.circle_cx.value(), y - sb.circle_cy.value())
-                S(sb.circle_r, max(r, 1e-6))
-        elif ct == "triangle":
-            i = int(handle_id[1])
-            S(getattr(sb, f"tri_x{i}"), x); S(getattr(sb, f"tri_y{i}"), y)
-        elif ct == "quadrilateral":
-            i = int(handle_id[1])
-            S(getattr(sb, f"quad_x{i}"), x); S(getattr(sb, f"quad_y{i}"), y)
-        elif ct == "polygon":
-            i = int(handle_id[1:])
-            verts = [list(v) for v in _parse_vertices_str(
-                sb.poly_vertices.text())]
-            if 0 <= i < len(verts):
-                verts[i] = [x, y]
-                txt = "; ".join(f"{vx:.6g},{vy:.6g}" for vx, vy in verts)
-                sb.poly_vertices.blockSignals(True)
-                sb.poly_vertices.setText(txt)
-                sb.poly_vertices.blockSignals(False)
-        else:
+        if ct not in shape_spec.SIDEBAR_ATTRS and ct != "polygon":
             return
+        # Apply the drag through the shared handle→param mapping, then push the
+        # result back into the (silently-updated) sidebar widgets.
+        params = shape_spec.read_widget_params(sb, ct)
+        shape_spec.apply_drag(ct, params, handle_id, x, y)
+        shape_spec.write_widget_params(sb, ct, params, silent=True)
 
         # Sync the (silently-updated) widgets into the segment and re-preview.
         self.preview_curve_formula()

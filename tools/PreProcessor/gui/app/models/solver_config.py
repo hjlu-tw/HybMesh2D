@@ -5,8 +5,10 @@ from dataclasses import dataclass, field, asdict
 
 
 def _repo_root() -> str:
-    """Absolute path to the repository root (5 levels up from this file)."""
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+    """Absolute path to the repository root. Delegates to the shared helper;
+    imported lazily so this model module stays free of GUI dependencies."""
+    from app.utils import repo_root
+    return repo_root()
 
 
 # Default locations of the prebuilt solver-pipeline binaries (decision D5:

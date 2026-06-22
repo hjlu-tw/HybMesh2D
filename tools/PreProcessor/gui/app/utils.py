@@ -218,6 +218,18 @@ def help_row(label_text: str, widget, tooltip: str) -> QWidget:
     return help_label(label_text, tooltip)
 
 
+def repo_root() -> str:
+    """Absolute path to the repository root (the HybMesh project directory).
+
+    Single source of truth for the project root. Callers in ``app/`` previously
+    derived it ad-hoc as ``os.path.join(dirname(__file__), "../...")`` with the
+    number of ``..`` segments depending on the file's depth — an easy off-by-one
+    to get wrong. ``utils.py`` lives at ``gui/app/utils.py``, four levels below
+    the repo root."""
+    return os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../.."))
+
+
 def find_binary_executable(bin_name: str) -> str | None:
     """Locate binary executable in PATH environment or local build candidates."""
     path_run = shutil.which(bin_name)
@@ -254,11 +266,10 @@ def find_solver_executables() -> dict:
     reported, since bDecompose ships without the +x bit and the solver worker
     chmods it on demand when domain decomposition is enabled.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))  # .../gui/app
-    repo_root = os.path.abspath(os.path.join(base_dir, "../../../.."))
+    repo = repo_root()
     found: dict[str, str | None] = {}
     for name, rel in _SOLVER_BIN_REL.items():
-        full = os.path.join(repo_root, rel)
+        full = os.path.join(repo, rel)
         found[name] = full if os.path.exists(full) else None
     return found
 

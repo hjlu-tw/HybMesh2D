@@ -123,6 +123,24 @@ class OpenEndpointControllerMixin:
     def gaps_signature(gaps: list[dict]):
         return tuple(sorted((g["idx"], g["j"]) for g in gaps))
 
+    def open_endpoints_unclustered(self, session) -> list[dict]:
+        """Open endpoints (from analytic/open curve edges or the file polyline)
+        that are not paired with another endpoint within tolerance — i.e.
+        genuinely dangling. Unlike :meth:`find_geometry_gaps`, this also covers
+        geometries with no file polyline (purely analytic edges), which
+        otherwise produce no gaps and would be previewed/bridged silently."""
+        eps = self._collect_open_endpoints(session)
+        if not eps:
+            return []
+        tol = self._endpoint_tolerance(session)
+        groups = self._cluster_endpoints(eps, tol)
+        return [eps[g[0]] for g in groups if len(g) == 1]
+
+    @staticmethod
+    def open_endpoints_signature(eps: list[dict]):
+        return tuple(sorted((round(float(e["pt"][0]), 6), round(float(e["pt"][1]), 6))
+                            for e in eps))
+
     # ── Detection / warning ───────────────────────────────────────────────
     def detect_open_endpoints(self, session=None):
         """Highlight open endpoints / internal gaps in red and report them in the

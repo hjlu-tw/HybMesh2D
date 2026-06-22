@@ -10,6 +10,7 @@ from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, h
 from app.views.panels.transform_panel import TransformPanel
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.adjusting_stacked_widget import AdjustingStackedWidget
+from app.models import shape_spec
 
 class EdgePropsPanel(CollapsibleSection):
     def __init__(self, parent=None):
@@ -620,43 +621,8 @@ class EdgePropsPanel(CollapsibleSection):
             self.curve_type_combo.blockSignals(False)
             self.shape_stack.setCurrentIndex(0)
 
-        # Populate shape specific inputs
-        params = seg.parameters
-        if curve_type == "horizontal_line":
-            self.h_line_y.setValue(params.get("y", 0.0))
-            self.h_line_x_start.setValue(params.get("x0", 0.0))
-            self.h_line_x_end.setValue(params.get("x1", 1.0))
-        elif curve_type == "vertical_line":
-            self.v_line_x.setValue(params.get("x", 0.0))
-            self.v_line_y_start.setValue(params.get("y0", 0.0))
-            self.v_line_y_end.setValue(params.get("y1", 1.0))
-        elif curve_type == "line":
-            self.line_x0.setValue(params.get("x0", 0.0))
-            self.line_y0.setValue(params.get("y0", 0.0))
-            self.line_x1.setValue(params.get("x1", 1.0))
-            self.line_y1.setValue(params.get("y1", 1.0))
-        elif curve_type == "circle":
-            self.circle_cx.setValue(params.get("cx", 0.0))
-            self.circle_cy.setValue(params.get("cy", 0.0))
-            self.circle_r.setValue(params.get("r", 1.0))
-        elif curve_type == "triangle":
-            self.tri_x0.setValue(params.get("x0", 0.0))
-            self.tri_y0.setValue(params.get("y0", 0.0))
-            self.tri_x1.setValue(params.get("x1", 1.0))
-            self.tri_y1.setValue(params.get("y1", 0.0))
-            self.tri_x2.setValue(params.get("x2", 0.5))
-            self.tri_y2.setValue(params.get("y2", 1.0))
-        elif curve_type == "quadrilateral":
-            self.quad_x0.setValue(params.get("x0", 0.0))
-            self.quad_y0.setValue(params.get("y0", 0.0))
-            self.quad_x1.setValue(params.get("x1", 1.0))
-            self.quad_y1.setValue(params.get("y1", 0.0))
-            self.quad_x2.setValue(params.get("x2", 1.0))
-            self.quad_y2.setValue(params.get("y2", 1.0))
-            self.quad_x3.setValue(params.get("x3", 0.0))
-            self.quad_y3.setValue(params.get("y3", 1.0))
-        elif curve_type == "polygon":
-            self.poly_vertices.setText(params.get("vertices_str", "0,0; 1,0; 1,1; 0,1"))
+        # Populate shape-specific inputs from the shared param↔widget mapping.
+        shape_spec.write_widget_params(self, curve_type, seg.parameters)
 
         is_p = (seg.curve_mode == "parametric")
         self.curve_mode_param.setChecked(is_p)

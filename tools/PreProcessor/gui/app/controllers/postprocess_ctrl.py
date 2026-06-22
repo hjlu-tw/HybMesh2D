@@ -3,6 +3,8 @@ import os
 
 from PyQt6.QtWidgets import QFileDialog
 
+from app.utils import repo_root
+
 
 class PostprocessControllerMixin:
     """Result loading / visualization control.
@@ -17,7 +19,7 @@ class PostprocessControllerMixin:
     # ------------------------------------------------------------------ #
     def open_result_dialog(self):
         """Prompt for a Tecplot solution file and load it into the Results view."""
-        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+        root = repo_root()
         start = os.path.join(root, "results", "solver")
         if not os.path.isdir(start):
             start = root
@@ -34,16 +36,33 @@ class PostprocessControllerMixin:
             return
         try:
             self.main_window.result_canvas_view.load_result_path(path)
-            self.global_result_data = self.main_window.result_canvas_view._result
-            self.global_result_path = path
-            self.main_window.mode_combo.setCurrentIndex(self.RESULTS_MODE_INDEX)
-            zones = (self.global_result_data.zones
-                     if self.global_result_data else [])
-            self.main_window.log_panel.log(
-                f"Loaded result {os.path.basename(path)} "
-                f"({len(zones)} zone(s)).")
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to load result: {e}")
+            return
+
+        # from_file() only raises when the data region is shorter than the
+        # NODAL count; a truncated/malformed file can still parse into a result
+        # with no nodes or no connectivity, which renders blank. Don't claim
+        # success or switch to the Results view in that case.
+        result = self.main_window.result_canvas_view._result
+        n_nodes = 0 if result is None else len(result.nodes)
+        n_elems = 0 if result is None else len(result.elements)
+        if n_nodes == 0 or n_elems == 0:
+            self.main_window.result_canvas_view.clear()
+            self.global_result_data = None
+            self.main_window.log_panel.log(
+                f"[ERROR] {os.path.basename(path)} has no usable mesh data "
+                f"({n_nodes} node(s), {n_elems} element(s)) — file may be "
+                "truncated or malformed.")
+            return
+
+        self.global_result_data = result
+        self.global_result_path = path
+        self.main_window.mode_combo.setCurrentIndex(self.RESULTS_MODE_INDEX)
+        zones = result.zones if result else []
+        self.main_window.log_panel.log(
+            f"Loaded result {os.path.basename(path)} "
+            f"({len(zones)} zone(s)).")
 
     def auto_load_solver_result(self):
         """Called after a successful solver run to surface the Tecplot output."""
