@@ -12,7 +12,9 @@ from app.utils import (
     make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
     help_label, help_widget, LINEEDIT_STYLE, find_solver_executables,
 )
-from app.models.solver_config import SolverConfig
+from app.models.solver_config import (
+    SolverConfig, BC_TYPES, PRESETS, BC_FLAGS_NEEDING_EXTRA,
+)
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 
@@ -51,6 +53,14 @@ def _edit(tip: str) -> QLineEdit:
 def _check(text: str, tip: str) -> QCheckBox:
     c = QCheckBox(text)
     c.setStyleSheet("color:#a0a8c0;")
+    c.setToolTip(tip)
+    return c
+
+
+def _combo(items: list[str], tip: str) -> QComboBox:
+    c = QComboBox()
+    c.addItems(items)
+    c.setStyleSheet(COMBO_STYLE)
     c.setToolTip(tip)
     return c
 
@@ -105,6 +115,26 @@ class SolverConfigPanel(QScrollArea):
         cfg_row.addWidget(self.save_cfg_btn)
         self._layout.addLayout(cfg_row)
 
+        # ── Workload preset ───────────────────────────────────────────────
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(4)
+        preset_lbl = QLabel("Preset:")
+        preset_lbl.setStyleSheet("color:#7a82a0;")
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItem("— choose a starting point —")
+        self.preset_combo.addItems(list(PRESETS.keys()))
+        self.preset_combo.setStyleSheet(COMBO_STYLE)
+        self.preset_combo.setToolTip(
+            "Apply a manual-grounded starting point (numerics + dissipation), "
+            "then fine-tune. Does not change geometry, BCs or iteration counts.")
+        self.apply_preset_btn = make_button("Apply", "#1d2a3a")
+        self.apply_preset_btn.setFixedWidth(70)
+        preset_row.addWidget(preset_lbl)
+        preset_row.addWidget(self.preset_combo, 1)
+        preset_row.addWidget(self.apply_preset_btn)
+        self._layout.addLayout(preset_row)
+        self.apply_preset_btn.clicked.connect(self._apply_preset)
+
         # Domain type selector (e2d / e3d) at top
         top_form = QFormLayout()
         self.domain_type = QComboBox()
@@ -120,8 +150,11 @@ class SolverConfigPanel(QScrollArea):
         self._build_pipeline_section()
         self._build_grid_section()
         self._build_flow_section()
+        self._build_turbulence_section()
         self._build_numerics_section()
         self._build_iteration_section()
+        self._build_output_section()
+        self._build_restart_section()
         self._build_parallel_section()
         self._build_decompose_section()
         self._build_ibm_section()
@@ -140,8 +173,13 @@ class SolverConfigPanel(QScrollArea):
 
         self.immersed_solid.toggled.connect(self._update_ibm_visibility)
         self.enable_decompose.toggled.connect(self._update_decompose_visibility)
+        self.enable_shock.toggled.connect(self._update_shock_visibility)
+        self.restart.toggled.connect(self._update_restart_visibility)
+        self.flow_solu_type.currentTextChanged.connect(self._on_flow_solu_changed)
         self._update_ibm_visibility()
         self._update_decompose_visibility()
+        self._update_shock_visibility()
+        self._update_restart_visibility()
 
     # ------------------------------------------------------------------ #
     # Section builders
@@ -198,6 +236,12 @@ class SolverConfigPanel(QScrollArea):
         self.input_cel_file = _edit("STAR-CD cell file (.cel)")
         self.input_bnd_file = _edit("STAR-CD boundary file (.bnd)")
         self.is_3d = _check("3D grid", "Treat the input as a 3D grid")
+        self.mixed_mesh = _check(
+            "Mixed mesh (keep quads+tris)",
+            "Preserve the hybrid quad+tri mesh instead of slicing to triangles. "
+            "Forces use_incenter off (undefined for quad cells).")
+        self.axisymmetric_2d = _check(
+            "Axisymmetric 2D", "Treat the 2D domain as axisymmetric (nozzles, cones)")
         self.output_grid_file = _edit("Output grid filename (.grid)")
         self.output_bc_file = _edit("Output bc filename (.bc)")
         form.addRow(help_label(".vrt:", "STAR-CD vertex file"),
@@ -207,6 +251,8 @@ class SolverConfigPanel(QScrollArea):
         form.addRow(help_label(".bnd:", "STAR-CD boundary file"),
                     self._browse_row(self.input_bnd_file, "Select .bnd", "Boundary (*.bnd);;All Files (*)"))
         form.addRow("", help_widget(self.is_3d, "Treat the input as a 3D grid"))
+        form.addRow("", help_widget(self.mixed_mesh, "Preserve hybrid quad+tri mesh"))
+        form.addRow("", help_widget(self.axisymmetric_2d, "Treat the 2D domain as axisymmetric"))
         form.addRow(help_label("Out grid:", "Output grid filename"), self.output_grid_file)
         form.addRow(help_label("Out bc:", "Output bc filename"), self.output_bc_file)
         align_form_labels(form, 100)
@@ -217,16 +263,58 @@ class SolverConfigPanel(QScrollArea):
         sec = CollapsibleSection("3. Flow Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
+        self.flow_solu_type = _combo(
+            ["ns_sol", "euler_sol"],
+            "Solution type: ns_sol = viscous Navier-Stokes, euler_sol = inviscid.\n"
+            "Also drives the default geometry wall BC (no-slip vs slip).")
+        self.transp_prop_option = _combo(
+            ["CONST_PRANDTL", "CONST_PROP", "VAR_PRANDTL"],
+            "Transport-property model under the perfect-gas assumption.")
         self.fs_mach = _spin(4, 0.0, 100.0, "Free-stream Mach number")
         self.fs_tinf = _spin(2, 0.0, 1e5, "Free-stream temperature (K)")
-        self.fs_unit_re = _spin(2, 0.0, 1e9, "Free-stream unit Reynolds number")
-        self.linf = _spin(4, 1e-6, 1e6, "Reference length scale")
+        self.fs_unit_re = _spin(2, 0.0, 1e9, "Free-stream unit Reynolds number per meter")
+        self.fs_flow_angle = _spin(3, -180.0, 180.0,
+                                   "Free-stream flow angle / angle of attack (degrees)")
+        self.linf = _spin(6, 1e-6, 1e6, "Reference length scale (m); 1 if mesh already in metres")
+        self.gamma = _spin(4, 1.0, 2.0, "Ratio of specific heats Cp/Cv (1.4 for air)")
+        self.rgas = _spin(3, 0.0, 1e4, "Perfect-gas constant R (≈287 for air, SI)")
+        self.stokes = _spin(4, -10.0, 10.0, "Stokes coefficient for the second viscosity")
         self.prandtl = _spin(4, 0.0, 10.0, "Prandtl number")
+        form.addRow(help_label("Solver type:", "ns_sol (viscous) / euler_sol (inviscid)"),
+                    self.flow_solu_type)
+        form.addRow(help_label("Transport:", "Transport-property model"), self.transp_prop_option)
         form.addRow(help_label("Mach:", "Free-stream Mach number"), self.fs_mach)
+        form.addRow(help_label("AoA (deg):", "Free-stream flow angle / angle of attack"),
+                    self.fs_flow_angle)
         form.addRow(help_label("T_inf (K):", "Free-stream temperature"), self.fs_tinf)
         form.addRow(help_label("Unit Re:", "Free-stream unit Reynolds number"), self.fs_unit_re)
-        form.addRow(help_label("L_inf:", "Reference length scale"), self.linf)
+        form.addRow(help_label("L_inf (m):", "Reference length scale"), self.linf)
+        form.addRow(help_label("gamma:", "Ratio of specific heats"), self.gamma)
+        form.addRow(help_label("Rgas:", "Perfect-gas constant"), self.rgas)
+        form.addRow(help_label("Stokes:", "Second-viscosity Stokes coefficient"), self.stokes)
         form.addRow(help_label("Prandtl:", "Prandtl number"), self.prandtl)
+        align_form_labels(form, 110)
+        sec.add_layout(form)
+
+    def _build_turbulence_section(self):
+        sec = CollapsibleSection("3b. Turbulence", start_collapsed=True)
+        self._layout.addWidget(sec)
+        form = QFormLayout()
+        self.turb_model_option = _combo(
+            ["laminar", "sa_model", "komega_wilcox", "komega_sst",
+             "k-epsilon", "smagorinsky", "dsm_model"],
+            "Turbulence model. laminar = none. RANS models need near-wall y+~1 mesh;\n"
+            "LES (smagorinsky/dsm) is only meaningful for time-accurate runs.")
+        self.construct_wall_dist_db = _check(
+            "Construct wall-distance DB",
+            "Generate Wall_dist_db.dat (RANS pre-processing step; run once with "
+            "num_half_iter = 0, then switch to 'Read in').")
+        self.read_in_wall_dist_db = _check(
+            "Read in wall-distance DB",
+            "Read the previously generated Wall_dist_db.dat instead of rebuilding it.")
+        form.addRow(help_label("Model:", "Turbulence model option"), self.turb_model_option)
+        form.addRow("", help_widget(self.construct_wall_dist_db, "Build wall-distance database"))
+        form.addRow("", help_widget(self.read_in_wall_dist_db, "Read wall-distance database"))
         align_form_labels(form, 110)
         sec.add_layout(form)
 
@@ -244,18 +332,46 @@ class SolverConfigPanel(QScrollArea):
         self.use_incenter = _check("Use incenter", "Use triangle incenter for reconstruction")
         self.dissip_per_cfl = _check("Dissipation per CFL", "Scale dissipation per CFL")
         self.unsteady_lstep = _check("Unsteady local stepping", "Enable unsteady local time stepping")
+        self.dt_const = _edit("Constant time step (used when 'Constant CFL' is off). Leave blank to use CFL.")
+        self.cfl_schedule_fn = _edit("Optional iteration→(cfl,dt,dissip) schedule table filename")
+        self.convg_norm_type = _combo(
+            ["L2NORM", "L1NORM"], "Error-norm type used for the convergence residual.")
         form.addRow(help_label("CFL:", "CFL number"), self.cfl)
-        form.addRow("", help_widget(self.constant_cfl, "Hold CFL constant"))
-        form.addRow(help_label("alpha:", "Numerical parameter alpha"), self.alpha)
+        form.addRow("", help_widget(self.constant_cfl, "Hold CFL constant (steady state)"))
+        form.addRow(help_label("dt_const:", "Constant time step (when Constant CFL is off)"), self.dt_const)
+        form.addRow(help_label("CFL schedule:", "Iteration-vs-parameter schedule file"), self.cfl_schedule_fn)
+        form.addRow(help_label("alpha:", "Numerical parameter alpha (larger = more dissipation)"), self.alpha)
         form.addRow(help_label("beta:", "Numerical parameter beta"), self.beta)
         form.addRow(help_label("dissip_ctrl:", "Dissipation control"), self.dissip_ctrl)
-        form.addRow(help_label("epsilon:", "Numerical parameter epsilon"), self.epsilon)
+        form.addRow(help_label("epsilon:", "Numerical parameter epsilon (sigma bound)"), self.epsilon)
+        form.addRow(help_label("Norm:", "Convergence error-norm type"), self.convg_norm_type)
         form.addRow("", help_widget(self.use_incenter, "Use triangle incenter"))
         form.addRow("", help_widget(self.dissip_per_cfl, "Scale dissipation per CFL"))
-        form.addRow("", help_widget(self.unsteady_lstep, "Unsteady local time stepping"))
+        form.addRow("", help_widget(self.unsteady_lstep, "Unsteady local time stepping (TALTS)"))
         align_form_labels(form, 110)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
+
+        # ── Shock capturing (collapsible toggle) ──
+        self.enable_shock = _check(
+            "Enable shock capturing",
+            "Pressure-gradient based shock capturing for supersonic flows.\n"
+            "Tip: run once and plot the 'vort' variable (2nd pressure derivative) "
+            "to pick shock_gradp_value.")
+        sec.add_widget(self.enable_shock)
+        shock_form = QFormLayout()
+        self.shock_gradp_value = _edit("Shock detection cut-off (e.g. -2000)")
+        self.shockf_gradp_beta = _edit("Shock beta (e.g. -2000)")
+        self.shockf_gradp_eps = _spin(4, -1e6, 1e6, "Shock epsilon (e.g. 3)")
+        self.shockf_gradp_dissip_ctrl = _edit("Shock dissipation control (e.g. 1.0e-14)")
+        shock_form.addRow(help_label("gradp value:", "Shock detection cut-off"), self.shock_gradp_value)
+        shock_form.addRow(help_label("gradp beta:", "Shock beta"), self.shockf_gradp_beta)
+        shock_form.addRow(help_label("gradp eps:", "Shock epsilon"), self.shockf_gradp_eps)
+        shock_form.addRow(help_label("gradp dissip:", "Shock dissipation control"), self.shockf_gradp_dissip_ctrl)
+        align_form_labels(shock_form, 110)
+        shock_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        sec.add_layout(shock_form)
+        self._shock_form = shock_form
 
     def _build_iteration_section(self):
         sec = CollapsibleSection("5. Iteration Control", start_collapsed=True)
@@ -271,11 +387,72 @@ class SolverConfigPanel(QScrollArea):
         self.print_sol_per_niter = _ispin(
             1, 100_000_000,
             "Iterations between Tecplot solution dumps. Controls when Results has a file.")
+        self.dump_zone_per_niter = _ispin(
+            1, 100_000_000,
+            "Iterations between zone-dump (restart) writes.")
+        self.write_wall_force = _check(
+            "Write wall force", "Compute viscous wall force and write WallForce.dat (lift/drag history).")
         form.addRow(help_label("Half iters:", "Total number of half-iterations"), self.num_half_iter)
         form.addRow(help_label("Print convg /n:", "Iterations between convergence prints (keep small for live monitor)"), self.print_convg_per_niter)
         form.addRow(help_label("Print sol /n:", "Iterations between Tecplot solution dumps"), self.print_sol_per_niter)
+        form.addRow(help_label("Dump zone /n:", "Iterations between restart zone dumps"), self.dump_zone_per_niter)
+        form.addRow("", help_widget(self.write_wall_force, "Write WallForce.dat"))
         align_form_labels(form, 110)
         sec.add_layout(form)
+
+    def _build_output_section(self):
+        sec = CollapsibleSection("5c. Output & Probes", start_collapsed=True)
+        self._layout.addWidget(sec)
+        self.tecplot_write_vtx_output = _check(
+            "Write nodal Tecplot output",
+            "Write solutions on cell vertices instead of cell centers. "
+            "Cell-centered is more reliable for the CESE scheme (esp. MPI).")
+        self.calc_time_mean_values = _check(
+            "Compute time-mean values",
+            "Accumulate and write time averages (MeanValue_tec.dat).")
+        sec.add_widget(self.tecplot_write_vtx_output)
+        sec.add_widget(self.calc_time_mean_values)
+        form = QFormLayout()
+        self.probe_points_def_fn = _edit(
+            "Probe-point coordinate file (one 'x y' per line for 2D); blank = no probes")
+        self.probe_output_skip_niter = _ispin(
+            1, 100_000_000, "Iterations between probe outputs")
+        form.addRow(help_label("Probe file:", "Probe-point coordinate definition file"),
+                    self._browse_row(self.probe_points_def_fn, "Select probe-point file"))
+        form.addRow(help_label("Probe /n:", "Iterations between probe outputs"),
+                    self.probe_output_skip_niter)
+        align_form_labels(form, 110)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        sec.add_layout(form)
+
+    def _build_restart_section(self):
+        sec = CollapsibleSection("5b. Restart / Initial Condition", start_collapsed=True)
+        self._layout.addWidget(sec)
+        self.restart = _check(
+            "Restart from previous run",
+            "Continue from a previous run's zone-dump and convergence files.")
+        sec.add_widget(self.restart)
+        form = QFormLayout()
+        self.convg_fn_restart = _edit("Previous-run convergence file (e.g. unicones.enorm.r1)")
+        self.zdump_fn_restart = _edit("Previous-run zone-dump file (e.g. binDumpZ.dat.r1)")
+        form.addRow(help_label("Convg file:", "Restart convergence file"),
+                    self._browse_row(self.convg_fn_restart, "Select convergence file"))
+        form.addRow(help_label("Zone dump:", "Restart zone-dump file"),
+                    self._browse_row(self.zdump_fn_restart, "Select zone-dump file"))
+        align_form_labels(form, 110)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        sec.add_layout(form)
+        self._restart_form = form
+
+        ic_form = QFormLayout()
+        self.init_cond_depQ = _edit(
+            "Explicit initial dep-var array, e.g. '1 1 0 0 0.524' (rho u v [w] et). "
+            "Leave blank for freestream init. Ignored on restart / IBM.")
+        ic_form.addRow(help_label("init Q:", "Explicit initial dependent-variable array"),
+                       self.init_cond_depQ)
+        align_form_labels(ic_form, 110)
+        ic_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        sec.add_layout(ic_form)
 
     def _build_parallel_section(self):
         sec = CollapsibleSection("6. Parallel (pthread)", start_collapsed=True)
@@ -295,13 +472,29 @@ class SolverConfigPanel(QScrollArea):
         self._layout.addWidget(sec)
         self.enable_decompose = _check(
             "Enable domain decomposition (MPI)",
-            "Run bDecompose to partition the grid for MPI. Off by default (D4): "
-            "the unicones reference path is pthread-parallel, not MPI.")
+            "Run bDecompose to partition the grid and launch the solver under "
+            "mpirun. Off by default (D4): the bundled unicones is a pthread build, "
+            "not MPI. Requires mpirun on PATH and an MPI-capable solver binary.")
         sec.add_widget(self.enable_decompose)
+        note = QLabel(
+            "Needs mpirun on PATH + an MPI build of unicones; otherwise the run is "
+            "refused before launch (the bundled binary is pthread-only).")
+        note.setStyleSheet("color:#7a82a0; font-size: 10px;")
+        note.setWordWrap(True)
+        sec.add_widget(note)
         form = QFormLayout()
-        self.num_partitions = _ispin(1, 4096, "Number of MPI partitions")
+        self.num_partitions = _ispin(1, 4096, "Number of MPI partitions (mpirun -np)")
+        self.readin_iface_info = _check(
+            "Read in interface info",
+            "Off for the first MPI run (the code generates interface info and writes "
+            "it to file); on for later runs reusing it.")
+        self.mpi_comm_map_fn = _edit("Communication-map file produced by bDecompose (optional)")
         form.addRow(help_label("Partitions:", "Number of MPI partitions"), self.num_partitions)
+        form.addRow("", help_widget(self.readin_iface_info, "Reuse generated interface info"))
+        form.addRow(help_label("Comm map:", "MPI communication-map file"),
+                    self._browse_row(self.mpi_comm_map_fn, "Select comm-map file"))
         align_form_labels(form, 110)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
         self._decompose_form = form
 
@@ -337,21 +530,25 @@ class SolverConfigPanel(QScrollArea):
         sec = CollapsibleSection("9. Boundary Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
         hint = QLabel(
-            "Segment → BC type  (0: reflect, 1: non-reflect, 5: fixed)\n"
-            "HybMesh2D groups: 1-4 = domain (XMin/XMax/YMin/YMax), 5 = geometry.\n"
-            "Leave empty to use getPGrid's own boundary flags; fill to override.")
+            "Segment → BC type. HybMesh2D groups: 1-4 = domain (XMin/XMax/YMin/YMax), "
+            "5 = geometry.\nLeave the table empty to keep getPGrid's own boundary flags; "
+            "add rows to override.\nTypes marked (+) take an extra value: isothermal wall "
+            "→ wall T; fixed dep-vars → 'rho u v et'; user DLL → './bc.so'.")
         hint.setStyleSheet("color:#7a82a0; font-size: 10px;")
         hint.setWordWrap(True)
         sec.add_widget(hint)
 
-        self.bc_table = QTableWidget(0, 2)
-        self.bc_table.setHorizontalHeaderLabels(["Segment No", "BC Type"])
-        self.bc_table.setFixedHeight(150)
+        self.bc_table = QTableWidget(0, 3)
+        self.bc_table.setHorizontalHeaderLabels(["Seg", "BC Type", "Extra values"])
+        self.bc_table.setFixedHeight(170)
         self.bc_table.setStyleSheet(
             "QTableWidget{background:#181b2a;color:#a0a8c0;border:1px solid #333852;"
             "gridline-color:#2c2e43;} QHeaderView::section{background:#1e2235;"
             "color:#a0a8c0;border:none;padding:3px;}")
-        self.bc_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        hdr = self.bc_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.bc_table.verticalHeader().setVisible(False)
         sec.add_widget(self.bc_table)
 
@@ -361,32 +558,70 @@ class SolverConfigPanel(QScrollArea):
         self.bc_remove_btn = make_button("Remove Row", "#301a1a")
         self.bc_default_btn = make_button("Fill Default", "#1a2a3a")
         self.bc_default_btn.setToolTip(
-            "Fill segments 1-5 (domain 1-4 → non-reflect, geometry 5 → fixed)")
+            "Fill segments 1-5: domain 1-4 → non-reflect, geometry 5 → wall "
+            "(no-slip for NS, reflect for Euler).")
         bc_btns.addWidget(self.bc_add_btn)
         bc_btns.addWidget(self.bc_remove_btn)
         bc_btns.addWidget(self.bc_default_btn)
         sec.add_layout(bc_btns)
-        self.bc_add_btn.clicked.connect(lambda: self._add_bc_row(0, 0))
+        self.bc_add_btn.clicked.connect(lambda: self._add_bc_row(0, 1, ""))
         self.bc_remove_btn.clicked.connect(self._remove_bc_row)
         self.bc_default_btn.clicked.connect(self._fill_default_bc)
 
     def _fill_default_bc(self):
-        """Populate the standard HybMesh2D group mapping (1-4 domain, 5 geometry)."""
+        """Populate the standard HybMesh2D group mapping (1-4 domain non-reflect,
+        5 geometry wall) using the wall flag appropriate for the solution type."""
+        wall = 0 if self.flow_solu_type.currentText() == "euler_sol" else 2
         self.bc_table.setRowCount(0)
-        for seg, bc in [(1, 1), (2, 1), (3, 1), (4, 1), (5, 5)]:
-            self._add_bc_row(seg, bc)
+        for seg, bc in [(1, 1), (2, 1), (3, 1), (4, 1), (5, wall)]:
+            self._add_bc_row(seg, bc, "")
 
     # ------------------------------------------------------------------ #
     # BC table helpers
     # ------------------------------------------------------------------ #
-    def _add_bc_row(self, seg: int, bc: int):
+    def _make_bc_type_combo(self, flag: int) -> QComboBox:
+        """A combo listing every BCType by name; itemData stores the integer flag.
+        Types that take an extra value are suffixed with '(+)'."""
+        combo = QComboBox()
+        combo.setStyleSheet(COMBO_STYLE)
+        sel = 0
+        for i, (f, label, extra) in enumerate(BC_TYPES):
+            combo.addItem(f"{f}: {label}{'  (+)' if extra else ''}", f)
+            if f == flag:
+                sel = i
+        combo.setCurrentIndex(sel)
+        combo.currentIndexChanged.connect(
+            lambda _=None, c=combo: self._sync_bc_extra_hint(c))
+        return combo
+
+    def _sync_bc_extra_hint(self, combo: QComboBox):
+        """Tooltip the row's extra cell according to the selected type."""
+        for r in range(self.bc_table.rowCount()):
+            if self.bc_table.cellWidget(r, 1) is combo:
+                flag = combo.currentData()
+                item = self.bc_table.item(r, 2)
+                if item is None:
+                    item = QTableWidgetItem("")
+                    self.bc_table.setItem(r, 2, item)
+                hints = {3: "non-dimensional wall temperature, e.g. 2.5",
+                         50: "rho u v et (2D) or rho u v w et (3D)",
+                         11: "./bc.so (path to the DLL)"}
+                item.setToolTip(hints.get(flag, "(no extra value needed)"))
+                break
+
+    def _add_bc_row(self, seg: int, bc: int, values: str = ""):
         r = self.bc_table.rowCount()
         self.bc_table.insertRow(r)
         self.bc_table.setItem(r, 0, QTableWidgetItem(str(seg)))
-        self.bc_table.setItem(r, 1, QTableWidgetItem(str(bc)))
+        self.bc_table.setCellWidget(r, 1, self._make_bc_type_combo(bc))
+        self.bc_table.setItem(r, 2, QTableWidgetItem(values))
+        self._sync_bc_extra_hint(self.bc_table.cellWidget(r, 1))
 
     def _remove_bc_row(self):
         rows = sorted({i.row() for i in self.bc_table.selectedItems()}, reverse=True)
+        # selectedItems() misses combo-only selections; fall back to current row.
+        if not rows and self.bc_table.currentRow() >= 0:
+            rows = [self.bc_table.currentRow()]
         for r in rows:
             self.bc_table.removeRow(r)
 
@@ -406,6 +641,36 @@ class SolverConfigPanel(QScrollArea):
     def _update_decompose_visibility(self):
         self._set_form_enabled(self._decompose_form, self.enable_decompose.isChecked())
 
+    def _update_shock_visibility(self):
+        self._set_form_enabled(self._shock_form, self.enable_shock.isChecked())
+
+    def _update_restart_visibility(self):
+        self._set_form_enabled(self._restart_form, self.restart.isChecked())
+
+    def _on_flow_solu_changed(self, _text: str):
+        """When the solver type flips, refresh the geometry wall row (seg 5) if it
+        still holds the other type's default wall flag, so the BC stays sensible."""
+        wall = 0 if self.flow_solu_type.currentText() == "euler_sol" else 2
+        other = 2 if wall == 0 else 0
+        for r in range(self.bc_table.rowCount()):
+            seg_item = self.bc_table.item(r, 0)
+            combo = self.bc_table.cellWidget(r, 1)
+            if not seg_item or combo is None:
+                continue
+            if seg_item.text().strip() == "5" and combo.currentData() == other:
+                idx = combo.findData(wall)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+
+    def _apply_preset(self):
+        """Apply the selected workload preset onto the current config + UI."""
+        name = self.preset_combo.currentText()
+        if name not in PRESETS:
+            return
+        cfg = self.get_config()
+        cfg.apply_preset(name)
+        self.set_config(cfg)
+
     # ------------------------------------------------------------------ #
     # Model sync
     # ------------------------------------------------------------------ #
@@ -420,28 +685,61 @@ class SolverConfigPanel(QScrollArea):
         self.input_cel_file.setText(cfg.input_cel_file)
         self.input_bnd_file.setText(cfg.input_bnd_file)
         self.is_3d.setChecked(cfg.is_3d)
+        self.mixed_mesh.setChecked(cfg.mixed_mesh)
+        self.axisymmetric_2d.setChecked(cfg.axisymmetric_2d)
         self.output_grid_file.setText(cfg.output_grid_file)
         self.output_bc_file.setText(cfg.output_bc_file)
 
+        self.flow_solu_type.setCurrentText(cfg.flow_solu_type)
+        self.transp_prop_option.setCurrentText(cfg.transp_prop_option)
         self.fs_mach.setValue(cfg.fs_mach)
         self.fs_tinf.setValue(cfg.fs_tinf)
         self.fs_unit_re.setValue(cfg.fs_unit_re)
+        self.fs_flow_angle.setValue(cfg.fs_flow_angle)
         self.linf.setValue(cfg.linf)
+        self.gamma.setValue(cfg.gamma)
+        self.rgas.setValue(cfg.rgas)
+        self.stokes.setValue(cfg.stokes)
         self.prandtl.setValue(cfg.prandtl)
+
+        self.turb_model_option.setCurrentText(cfg.turb_model_option)
+        self.construct_wall_dist_db.setChecked(cfg.construct_wall_dist_db)
+        self.read_in_wall_dist_db.setChecked(cfg.read_in_wall_dist_db)
 
         self.cfl.setValue(cfg.cfl)
         self.constant_cfl.setChecked(cfg.constant_cfl)
+        self.dt_const.setText(cfg.dt_const)
+        self.cfl_schedule_fn.setText(cfg.cfl_schedule_fn)
         self.alpha.setValue(cfg.alpha)
         self.beta.setText(f"{cfg.beta:g}")
         self.dissip_ctrl.setText(f"{cfg.dissip_ctrl:g}")
         self.epsilon.setValue(cfg.epsilon)
+        self.convg_norm_type.setCurrentText(cfg.convg_norm_type)
         self.use_incenter.setChecked(cfg.use_incenter)
         self.dissip_per_cfl.setChecked(cfg.dissip_per_cfl)
         self.unsteady_lstep.setChecked(cfg.unsteady_lstep)
 
+        self.enable_shock.setChecked(cfg.enable_shock_capturing)
+        self.shock_gradp_value.setText(f"{cfg.shock_gradp_value:g}")
+        self.shockf_gradp_beta.setText(f"{cfg.shockf_gradp_beta:g}")
+        self.shockf_gradp_eps.setValue(cfg.shockf_gradp_eps)
+        self.shockf_gradp_dissip_ctrl.setText(f"{cfg.shockf_gradp_dissip_ctrl:g}")
+
         self.num_half_iter.setValue(cfg.num_half_iter)
         self.print_convg_per_niter.setValue(cfg.print_convg_per_niter)
         self.print_sol_per_niter.setValue(cfg.print_sol_per_niter)
+        self.dump_zone_per_niter.setValue(cfg.dump_zone_per_niter)
+        self.write_wall_force.setChecked(cfg.write_wall_force)
+
+        self.tecplot_write_vtx_output.setChecked(cfg.tecplot_write_vtx_output)
+        self.calc_time_mean_values.setChecked(cfg.calc_time_mean_values)
+        self.probe_points_def_fn.setText(cfg.probe_points_def_fn)
+        self.probe_output_skip_niter.setValue(cfg.probe_output_skip_niter)
+
+        self.restart.setChecked(cfg.restart)
+        self.convg_fn_restart.setText(cfg.convg_fn_restart)
+        self.zdump_fn_restart.setText(cfg.zdump_fn_restart)
+        self.init_cond_depQ.setText(cfg.init_cond_depQ)
 
         self.apply_pthread.setChecked(cfg.apply_pthread)
         self.max_nthread.setValue(cfg.max_nthread)
@@ -449,6 +747,8 @@ class SolverConfigPanel(QScrollArea):
 
         self.enable_decompose.setChecked(cfg.enable_decompose)
         self.num_partitions.setValue(cfg.num_partitions)
+        self.readin_iface_info.setChecked(cfg.readin_iface_info)
+        self.mpi_comm_map_fn.setText(cfg.mpi_comm_map_fn)
 
         self.immersed_solid.setChecked(cfg.immersed_solid)
         self.solid_phase_phi_min.setValue(cfg.solid_phase_phi_min)
@@ -461,10 +761,13 @@ class SolverConfigPanel(QScrollArea):
 
         self.bc_table.setRowCount(0)
         for bc in cfg.bc_definitions:
-            self._add_bc_row(bc.get("segment_no", 0), bc.get("bc_type", 0))
+            self._add_bc_row(bc.get("segment_no", 0), bc.get("bc_type", 0),
+                             str(bc.get("values", "") or ""))
 
         self._update_ibm_visibility()
         self._update_decompose_visibility()
+        self._update_shock_visibility()
+        self._update_restart_visibility()
 
     def get_config(self, cfg: SolverConfig | None = None) -> SolverConfig:
         cfg = cfg or SolverConfig()
@@ -478,28 +781,62 @@ class SolverConfigPanel(QScrollArea):
         cfg.input_cel_file = self.input_cel_file.text().strip()
         cfg.input_bnd_file = self.input_bnd_file.text().strip()
         cfg.is_3d = self.is_3d.isChecked()
+        cfg.mixed_mesh = self.mixed_mesh.isChecked()
+        cfg.axisymmetric_2d = self.axisymmetric_2d.isChecked()
         cfg.output_grid_file = self.output_grid_file.text().strip() or "mesh.grid"
         cfg.output_bc_file = self.output_bc_file.text().strip() or "mesh.bc"
 
+        cfg.flow_solu_type = self.flow_solu_type.currentText()
+        cfg.transp_prop_option = self.transp_prop_option.currentText()
         cfg.fs_mach = self.fs_mach.value()
         cfg.fs_tinf = self.fs_tinf.value()
         cfg.fs_unit_re = self.fs_unit_re.value()
+        cfg.fs_flow_angle = self.fs_flow_angle.value()
         cfg.linf = self.linf.value()
+        cfg.gamma = self.gamma.value()
+        cfg.rgas = self.rgas.value()
+        cfg.stokes = self.stokes.value()
         cfg.prandtl = self.prandtl.value()
+
+        cfg.turb_model_option = self.turb_model_option.currentText()
+        cfg.construct_wall_dist_db = self.construct_wall_dist_db.isChecked()
+        cfg.read_in_wall_dist_db = self.read_in_wall_dist_db.isChecked()
 
         cfg.cfl = self.cfl.value()
         cfg.constant_cfl = self.constant_cfl.isChecked()
+        cfg.dt_const = self.dt_const.text().strip()
+        cfg.cfl_schedule_fn = self.cfl_schedule_fn.text().strip()
         cfg.alpha = self.alpha.value()
         cfg.beta = _parse_float(self.beta.text(), cfg.beta)
         cfg.dissip_ctrl = _parse_float(self.dissip_ctrl.text(), cfg.dissip_ctrl)
         cfg.epsilon = self.epsilon.value()
+        cfg.convg_norm_type = self.convg_norm_type.currentText()
         cfg.use_incenter = self.use_incenter.isChecked()
         cfg.dissip_per_cfl = self.dissip_per_cfl.isChecked()
         cfg.unsteady_lstep = self.unsteady_lstep.isChecked()
 
+        cfg.enable_shock_capturing = self.enable_shock.isChecked()
+        cfg.shock_gradp_value = _parse_float(self.shock_gradp_value.text(), cfg.shock_gradp_value)
+        cfg.shockf_gradp_beta = _parse_float(self.shockf_gradp_beta.text(), cfg.shockf_gradp_beta)
+        cfg.shockf_gradp_eps = self.shockf_gradp_eps.value()
+        cfg.shockf_gradp_dissip_ctrl = _parse_float(
+            self.shockf_gradp_dissip_ctrl.text(), cfg.shockf_gradp_dissip_ctrl)
+
         cfg.num_half_iter = self.num_half_iter.value()
         cfg.print_convg_per_niter = self.print_convg_per_niter.value()
         cfg.print_sol_per_niter = self.print_sol_per_niter.value()
+        cfg.dump_zone_per_niter = self.dump_zone_per_niter.value()
+        cfg.write_wall_force = self.write_wall_force.isChecked()
+
+        cfg.tecplot_write_vtx_output = self.tecplot_write_vtx_output.isChecked()
+        cfg.calc_time_mean_values = self.calc_time_mean_values.isChecked()
+        cfg.probe_points_def_fn = self.probe_points_def_fn.text().strip()
+        cfg.probe_output_skip_niter = self.probe_output_skip_niter.value()
+
+        cfg.restart = self.restart.isChecked()
+        cfg.convg_fn_restart = self.convg_fn_restart.text().strip()
+        cfg.zdump_fn_restart = self.zdump_fn_restart.text().strip()
+        cfg.init_cond_depQ = self.init_cond_depQ.text().strip()
 
         cfg.apply_pthread = self.apply_pthread.isChecked()
         cfg.max_nthread = self.max_nthread.value()
@@ -507,6 +844,8 @@ class SolverConfigPanel(QScrollArea):
 
         cfg.enable_decompose = self.enable_decompose.isChecked()
         cfg.num_partitions = self.num_partitions.value()
+        cfg.readin_iface_info = self.readin_iface_info.isChecked()
+        cfg.mpi_comm_map_fn = self.mpi_comm_map_fn.text().strip()
 
         cfg.immersed_solid = self.immersed_solid.isChecked()
         cfg.solid_phase_phi_min = self.solid_phase_phi_min.value()
@@ -520,12 +859,18 @@ class SolverConfigPanel(QScrollArea):
         cfg.bc_definitions = []
         for r in range(self.bc_table.rowCount()):
             seg_item = self.bc_table.item(r, 0)
-            bc_item = self.bc_table.item(r, 1)
+            combo = self.bc_table.cellWidget(r, 1)
+            val_item = self.bc_table.item(r, 2)
             try:
                 seg = int(seg_item.text()) if seg_item else 0
-                bc = int(bc_item.text()) if bc_item else 0
-            except ValueError:
+            except (ValueError, AttributeError):
                 continue
-            cfg.bc_definitions.append({"segment_no": seg, "bc_type": bc})
+            bc = int(combo.currentData()) if combo is not None else 0
+            values = val_item.text().strip() if val_item else ""
+            # Only keep the extra value for types that actually use one.
+            if bc not in BC_FLAGS_NEEDING_EXTRA:
+                values = ""
+            cfg.bc_definitions.append(
+                {"segment_no": seg, "bc_type": bc, "values": values})
 
         return cfg

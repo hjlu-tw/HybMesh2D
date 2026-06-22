@@ -273,3 +273,25 @@ def find_solver_executables() -> dict:
         found[name] = full if os.path.exists(full) else None
     return found
 
+
+def find_mpi_launcher() -> str | None:
+    """Return the path to mpirun/mpiexec on PATH, or None if neither is present."""
+    return shutil.which("mpirun") or shutil.which("mpiexec")
+
+
+def is_mpi_binary(path: str) -> bool:
+    """Heuristic: does this executable actually link MPI?
+
+    Scans the binary for the `MPI_Init` symbol name. A pthread/serial build (like
+    the bundled unicones) has no MPI symbols, so domain decomposition + mpirun
+    would be meaningless against it.
+    """
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        with open(path, "rb") as f:
+            blob = f.read()
+    except OSError:
+        return False
+    return b"MPI_Init" in blob
+

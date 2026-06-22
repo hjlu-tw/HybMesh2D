@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import numpy as np
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -86,6 +87,11 @@ class ResultCanvasView(QWidget):
             hl.addWidget(cb)
 
         hl.addStretch()
+        self.wallqty_btn = QPushButton("Wall Qty…")
+        self.wallqty_btn.setStyleSheet(self.load_btn.styleSheet())
+        self.wallqty_btn.setToolTip(
+            "Open the wall-quantity line plot (WallForce.dat, vsurface_qty.dat, …)")
+        hl.addWidget(self.wallqty_btn)
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setStyleSheet(self.load_btn.styleSheet())
         hl.addWidget(self.clear_btn)
@@ -121,6 +127,8 @@ class ResultCanvasView(QWidget):
         self.zone_combo.currentIndexChanged.connect(self._on_zone_changed)
         self.save_btn.clicked.connect(self._save_png)
         self.clear_btn.clicked.connect(self.clear)
+        self.wallqty_btn.clicked.connect(self._open_wall_qty)
+        self._wall_dialog = None
 
     # ------------------------------------------------------------------ #
     def _style_axes(self):
@@ -347,6 +355,25 @@ class ResultCanvasView(QWidget):
                        color="#dde2ff", scale_units="xy", angles="xy", width=0.0025)
 
     # ------------------------------------------------------------------ #
+    def _open_wall_qty(self):
+        """Open the wall-quantity line plot, pre-pointed at the current result's
+        directory and auto-loading a known wall file if one sits beside it."""
+        from app.views.wall_qty_view import WallQuantityDialog
+        if self._wall_dialog is None:
+            self._wall_dialog = WallQuantityDialog(self)
+        dlg = self._wall_dialog
+        result_dir = os.path.dirname(getattr(self, "_result_path", "") or "")
+        dlg._last_dir = result_dir
+        if result_dir:
+            for name in ("vsurface_qty.dat", "WallForce.dat", "tWall_values.dat"):
+                cand = os.path.join(result_dir, name)
+                if os.path.exists(cand):
+                    dlg.load_path(cand)
+                    break
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
     def _save_png(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Plot", "", "PNG (*.png);;PDF (*.pdf);;All Files (*)")

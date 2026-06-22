@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QFrame,
@@ -11,6 +12,12 @@ from PyQt6.QtCore import Qt, QTimer, QElapsedTimer
 _COMP_LABELS = ["continuity", "x-mom", "y-mom", "energy", "aux"]
 _COMP_COLORS = ["#22c55e", "#3b82f6", "#06b6d4", "#f59e0b", "#a855f7"]
 _RES_FLOOR = 1e-30  # clamp for log plotting (residuals can hit exactly 0)
+
+# Convergence-health thresholds (residuals are normalized eL2 norms).
+_CONVERGED_TOL = 1e-8     # max residual below this -> converged
+_DIVERGE_LIMIT = 1e2      # max residual above this (or non-finite) -> diverging
+_STALL_WINDOW = 6         # points inspected for a plateau
+_STALL_REL = 0.02         # relative spread within the window -> stalled
 
 
 class SolverMonitorPanel(QWidget):
@@ -48,6 +55,7 @@ class SolverMonitorPanel(QWidget):
         self.iter_value = _mk_value("—")
         self.cfl_value = _mk_value("—")
         self.elapsed_value = _mk_value("0.0 s")
+        self.health_value = _mk_value("—")
         grid.addWidget(_mk_key("Stage:"), 0, 0)
         grid.addWidget(self.stage_value, 0, 1)
         grid.addWidget(_mk_key("Iteration:"), 0, 2)
@@ -56,6 +64,8 @@ class SolverMonitorPanel(QWidget):
         grid.addWidget(self.cfl_value, 1, 1)
         grid.addWidget(_mk_key("Elapsed:"), 1, 2)
         grid.addWidget(self.elapsed_value, 1, 3)
+        grid.addWidget(_mk_key("Health:"), 2, 0)
+        grid.addWidget(self.health_value, 2, 1, 1, 3)
         root.addLayout(grid)
 
         sep = QFrame()
@@ -81,6 +91,7 @@ class SolverMonitorPanel(QWidget):
         self._curves: list = []
         self._iters: list[int] = []
         self._comps: list[list[float]] = []
+        self._maxhist: list[float] = []   # max residual per recorded iteration
 
         # Elapsed-time ticker
         self._elapsed = QElapsedTimer()
@@ -95,10 +106,12 @@ class SolverMonitorPanel(QWidget):
         self._curves = []
         self._iters = []
         self._comps = []
+        self._maxhist = []
         self.stage_value.setText("starting…")
         self.iter_value.setText("—")
         self.cfl_value.setText("—")
         self.elapsed_value.setText("0.0 s")
+        self._set_health("—", "#dde2ff")
         self._elapsed.restart()
         self._timer.start()
 
@@ -132,6 +145,39 @@ class SolverMonitorPanel(QWidget):
             self.iter_value.setText(str(data["iter"]))
         if data.get("cfl") is not None:
             self.cfl_value.setText(f"{data['cfl']:g}")
+
+        self._assess_health(l2)
+
+    # ------------------------------------------------------------------ #
+    def _set_health(self, text: str, color: str):
+        self.health_value.setText(text)
+        self.health_value.setStyleSheet(f"color: {color}; font-weight: bold;")
+
+    def _assess_health(self, l2: list):
+        """Classify convergence health from the latest residual vector and the
+        recent max-residual history: diverging / converged / stalled / converging."""
+        if not l2:
+            return
+        # Non-finite (NaN/Inf) or blow-up beyond the diverge limit.
+        if any(not math.isfinite(v) for v in l2):
+            self._set_health("⚠ diverging (non-finite residual)", "#ef4444")
+            return
+        cur_max = max(abs(v) for v in l2)
+        self._maxhist.append(cur_max)
+        if cur_max > _DIVERGE_LIMIT:
+            self._set_health(f"⚠ diverging (max {cur_max:.2e})", "#ef4444")
+            return
+        if cur_max < _CONVERGED_TOL:
+            self._set_health(f"✓ converged (max {cur_max:.2e})", "#22c55e")
+            return
+        # Plateau: recent window's relative spread is tiny (and not yet converged).
+        if len(self._maxhist) >= _STALL_WINDOW:
+            window = self._maxhist[-_STALL_WINDOW:]
+            hi, lo = max(window), min(window)
+            if hi > 0 and (hi - lo) / hi < _STALL_REL:
+                self._set_health(f"≈ stalled (max {cur_max:.2e})", "#f59e0b")
+                return
+        self._set_health(f"… converging (max {cur_max:.2e})", "#5a9ad4")
 
     def on_finished(self, rc: int):
         self._timer.stop()

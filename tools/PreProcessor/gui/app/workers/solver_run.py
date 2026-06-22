@@ -7,6 +7,7 @@ import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from app.models.solver_config import SolverConfig
+from app.utils import find_mpi_launcher
 
 # Convergence markers echoed by unicones on stdout (verified by smoke test, R1):
 #   Global Iteration count <N> :
@@ -148,12 +149,18 @@ class SolverPipelineWorker(QThread):
     # ------------------------------------------------------------------ #
     def _run_solver(self) -> bool:
         self.stage_signal.emit("Solver")
+        cmd = [self._config.solver_binary, "-t", self._tag, self._input_in_path]
+        # Domain decomposition => real MPI launch. The controller's pre-run guard
+        # has already verified mpirun + an MPI-capable binary; prepend the launcher.
+        if self._config.enable_decompose:
+            launcher = find_mpi_launcher()
+            if launcher:
+                cmd = [launcher, "-np", str(self._config.num_partitions)] + cmd
         self.log_signal.emit(
-            f"[Solver] {self._config.solver_binary} -t {self._tag} "
-            f"{self._input_in_path}  (cwd={self._solver_work_dir})")
+            f"[Solver] {' '.join(cmd)}  (cwd={self._solver_work_dir})")
         try:
             self._process = subprocess.Popen(
-                [self._config.solver_binary, "-t", self._tag, self._input_in_path],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

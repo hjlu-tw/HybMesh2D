@@ -6,9 +6,11 @@ import subprocess
 
 from PyQt6.QtWidgets import QFileDialog
 
-from app.models.solver_config import SolverConfig
+from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
-from app.utils import find_solver_executables, repo_root
+from app.utils import (
+    find_solver_executables, repo_root, find_mpi_launcher, is_mpi_binary,
+)
 
 
 def _sanitize(name: str) -> str:
@@ -93,6 +95,13 @@ class SolverControllerMixin:
             log("[ERROR] getPGrid binary not found. Check the Pipeline Binaries section.")
             return
 
+        problems = self._validate_solver_config(cfg)
+        if problems:
+            for p in problems:
+                log(f"[ERROR] {p}")
+            log("Fix the issues above and run again.")
+            return
+
         try:
             work_dir, grid_dir, input_in_path = self._prepare_case_dir(cfg)
         except Exception as e:
@@ -137,6 +146,67 @@ class SolverControllerMixin:
         if w is not None and w.isRunning():
             self.main_window.log_panel.log("Cancelling solver...")
             w.cancel()
+
+    # ------------------------------------------------------------------ #
+    # Pre-run validation (D): catch the manual's documented "blow up" setups
+    # before launching, instead of failing mid-run.
+    # ------------------------------------------------------------------ #
+    def _validate_solver_config(self, cfg: SolverConfig) -> list[str]:
+        errs: list[str] = []
+
+        # CFL / dt: with constant_cfl=false the solver needs cfl, or dt_const, or
+        # a cfl schedule — otherwise the manual says the code blows up.
+        has_cfl = cfg.cfl > 0.0
+        has_dt = bool(cfg.dt_const.strip())
+        has_sched = bool(cfg.cfl_schedule_fn.strip())
+        if not cfg.constant_cfl and not (has_cfl or has_dt or has_sched):
+            errs.append("Constant CFL is off but neither CFL (>0), dt_const, nor a "
+                        "CFL schedule is set — the solver would blow up. Set one.")
+        if cfg.unsteady_lstep and not has_cfl:
+            errs.append("Unsteady local time stepping (TALTS) needs a positive CFL.")
+
+        # Boundary conditions: segment numbers must be positive and unique.
+        segs = [bc.get("segment_no") for bc in cfg.bc_definitions]
+        if any((s is None or s <= 0) for s in segs):
+            errs.append("Boundary-condition table has a non-positive segment number.")
+        dupes = {s for s in segs if segs.count(s) > 1}
+        if dupes:
+            errs.append(f"Boundary-condition table has duplicate segment(s): "
+                        f"{sorted(dupes)}.")
+        # Types that carry an extra value must have one filled.
+        for bc in cfg.bc_definitions:
+            if bc.get("bc_type") in BC_FLAGS_NEEDING_EXTRA and not str(bc.get("values", "")).strip():
+                errs.append(f"Segment {bc.get('segment_no')} uses BC type "
+                            f"{bc.get('bc_type')} which requires an extra value "
+                            f"(wall T / dep-vars / DLL path).")
+
+        # IBM: a moving rigid body needs a motion DLL source.
+        if cfg.immersed_solid:
+            if cfg.rigid_moving_body and not cfg.motion_dll.strip():
+                errs.append("IBM rigid moving body is on but no motion DLL source is set.")
+            if not cfg.init_cond_dll.strip():
+                self.main_window.log_panel.log(
+                    "[WARNING] IBM is on without an init-condition DLL; the solid "
+                    "phase will start from freestream init.")
+
+        # Restart needs a zone dump to continue from.
+        if cfg.restart and not cfg.zdump_fn_restart.strip():
+            errs.append("Restart is on but no restart zone-dump file is set.")
+
+        # Domain decomposition implies a real MPI run. Refuse rather than silently
+        # partition the grid and then run a serial solver on the un-partitioned mesh.
+        if cfg.enable_decompose:
+            if find_mpi_launcher() is None:
+                errs.append("Domain decomposition (MPI) is enabled but no mpirun/"
+                            "mpiexec was found on PATH. Install an MPI runtime or "
+                            "turn off decomposition.")
+            if not is_mpi_binary(cfg.solver_binary):
+                errs.append("Domain decomposition (MPI) is enabled but the solver "
+                            "binary is not MPI-capable (no MPI symbols — likely the "
+                            "pthread build). Point to an MPI build of unicones or "
+                            "turn off decomposition.")
+
+        return errs
 
     # ------------------------------------------------------------------ #
     # Case directory orchestration (D6)
