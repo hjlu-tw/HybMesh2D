@@ -153,20 +153,28 @@ class SessionControllerMixin:
         # Remove geometry from shared canvas
         self.main_window.canvas_view.remove_geometry(session.session_id)
 
-        # The mesh canvas previews reflect the (decoupled) global mesh config,
-        # not the active CAD tab. Refresh from global geom files rather than
-        # clearing, so closing a CAD tab does not wipe a multi-geometry mesh.
-        if idx == self.active_idx:
-            geom_files = (self.global_mesh_config.geom_files
-                          if self.global_mesh_config else [])
-            self.main_window.mesh_canvas_view.update_geometry_previews(geom_files)
-
         # Block signals during tab removal and list popping to keep states synchronized
         self.main_window.tab_widget.blockSignals(True)
         self.main_window.tab_widget.removeTab(idx)
         self.sessions.pop(idx)
         self._refresh_session_colors()
         self.main_window.tab_widget.blockSignals(False)
+
+        # Deleting a geometry must also drop it from the mesh generator input
+        # list, so a removed geometry never silently reappears in the next
+        # generated mesh. Only this geometry's file is removed — any other
+        # geometries in a multi-geometry mesh are left untouched. Done after the
+        # session is popped so the Geometry Layers list resyncs to the real set.
+        self.remove_session_from_mesh_config(session)
+
+        # The mesh canvas previews reflect the (decoupled) global mesh config,
+        # not the active CAD tab. Refresh from global geom files rather than
+        # clearing, so closing a CAD tab does not wipe the *other* geometries
+        # of a multi-geometry mesh.
+        if idx == self.active_idx:
+            geom_files = (self.global_mesh_config.geom_files
+                          if self.global_mesh_config else [])
+            self.main_window.mesh_canvas_view.update_geometry_previews(geom_files)
 
         # Adjust active index
         n = len(self.sessions)

@@ -517,6 +517,35 @@ class MeshGenControllerMixin:
         except Exception as e:
             self.main_window.log_panel.log(f"Failed to export Star-CD files: {e}")
 
+    def remove_session_from_mesh_config(self, session) -> None:
+        """Drop a deleted CAD session's exported geometry from the mesh
+        generator input list.
+
+        CAD layers and the mesh geometry list are otherwise decoupled (closing
+        a tab keeps its geometry in the mesh), but an explicit *delete* should
+        also remove it from the mesh — and only that one file, so the remaining
+        geometries of a multi-geometry mesh are preserved. No-op when the
+        deleted geometry was never added to the mesh."""
+        pm = getattr(session, "project_model", None)
+        out_file = pm.output_file if pm else ""
+        cfg = self.global_mesh_config
+        if not cfg or not out_file:
+            return
+        abs_out = os.path.abspath(out_file)
+        before = len(cfg.geom_files)
+        cfg.geom_files = [p for p in cfg.geom_files if os.path.abspath(p) != abs_out]
+        if len(cfg.geom_files) == before:
+            return  # this geometry was not part of the mesh
+
+        # Keep the panel (the authority at generate time) and the canvas
+        # previews in sync with the pruned list.
+        self.main_window.mesh_config_panel.set_config(cfg)
+        self.sync_mesh_layers_panel()
+        self.main_window.log_panel.log(
+            f"Removed deleted geometry '{os.path.basename(abs_out)}' from the "
+            "mesh generator input list."
+        )
+
     def sync_mesh_layers_panel(self):
         """Update the Geometry Layers QListWidget in the MeshConfigPanel based on current sessions."""
         panel = self.main_window.mesh_config_panel
@@ -553,6 +582,34 @@ class MeshGenControllerMixin:
             
             panel.layers_list_widget.addItem(item)
 
+        # Surface any geometry files that WILL be meshed but are not backed by a
+        # live CAD layer (e.g. loaded from a saved mesh config, browsed in, or
+        # left over from a closed tab). They would otherwise be invisible here
+        # yet still meshed — so list them explicitly, checked, with uncheck =
+        # remove, giving one complete view of what the mesh will contain.
+        session_outs = set()
+        for session in self.sessions:
+            out_file = session.project_model.output_file
+            if out_file:
+                session_outs.add(os.path.abspath(out_file))
+
+        for gf in self.global_mesh_config.geom_files:
+            abs_gf = os.path.abspath(gf)
+            if abs_gf in session_outs:
+                continue
+            tag = "external file" if os.path.exists(abs_gf) else "missing file"
+            item = QListWidgetItem(f"{os.path.basename(abs_gf)}  ({tag})")
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            # session_id None marks an external/orphan entry: uncheck to remove.
+            item.setData(Qt.ItemDataRole.UserRole, (None, abs_gf))
+            item.setForeground(QColor("#8a93ad"))
+            item.setToolTip(
+                "Geometry file included in the mesh but not tied to a CAD "
+                "layer.\nUncheck to remove it from the mesh."
+            )
+            panel.layers_list_widget.addItem(item)
+
         panel.layers_list_widget.blockSignals(False)
 
     def handle_mesh_layer_toggled(self, item: QListWidgetItem):
@@ -561,7 +618,24 @@ class MeshGenControllerMixin:
         if not data:
             return
         session_id, abs_out_file = data
-        
+
+        # session_id None => an external/orphan geometry file (in the mesh but
+        # not tied to a live CAD layer). The only meaningful action is to drop
+        # it from the mesh; unchecking removes it from the geometry list.
+        if session_id is None:
+            if item.checkState() != Qt.CheckState.Checked and abs_out_file:
+                self.global_mesh_config.geom_files = [
+                    p for p in self.global_mesh_config.geom_files
+                    if os.path.abspath(p) != os.path.abspath(abs_out_file)
+                ]
+                self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+                self.sync_mesh_layers_panel()
+                self.main_window.log_panel.log(
+                    f"Removed external geometry '{os.path.basename(abs_out_file)}' "
+                    "from the mesh geometry list."
+                )
+            return
+
         session = None
         for s in self.sessions:
             if s.session_id == session_id:
