@@ -31,6 +31,7 @@ _KEY_MAP = {
     "BL_TRANSITION_BUFFER": ("bl_transition_buffer", float),
     "GMSH_ALGORITHM": ("gmsh_algorithm", lambda s: int(float(s))),
     "GMSH_OPTIMIZE": ("gmsh_optimize", lambda s: int(float(s))),
+    "BL_USE_ANALYTIC_GEOM": ("bl_use_analytic_geom", lambda s: int(s) != 0),
     "BC_XMIN": ("bc_xmin", str),
     "BC_XMAX": ("bc_xmax", str),
     "BC_YMIN": ("bc_ymin", str),
@@ -38,6 +39,7 @@ _KEY_MAP = {
     "BC_GEOM": ("bc_geom", str),
     "EXPORT_VTK": ("export_vtk", lambda s: int(s) != 0),
     "EXPORT_STARCD": ("export_starcd", lambda s: int(s) != 0),
+    "EXPORT_CGNS": ("export_cgns", lambda s: int(s) != 0),
     "ENABLE_COLLISION_DETECTION": ("enable_collision_detection", lambda s: int(s) != 0),
     "OUTPUT_FILENAME": ("output_filename", str),
 }
@@ -83,6 +85,7 @@ class MeshConfig:
     bl_transition_buffer: float = 2.0
     gmsh_algorithm: int = 6  # 6: Frontal-Delaunay
     gmsh_optimize: int = 1   # 1: Enable, 0: Disable
+    bl_use_analytic_geom: bool = False  # Phase 3: analytic normals on line/circle surfaces
 
     # Section 7: Boundary Conditions & I/O
     # Default external-flow setup: inflow on the left, geometry is a wall, the
@@ -94,6 +97,7 @@ class MeshConfig:
     bc_geom: str = "wall"
     export_vtk: bool = True
     export_starcd: bool = False
+    export_cgns: bool = False
     enable_collision_detection: bool = True
     output_filename: str = ""
 
@@ -241,12 +245,14 @@ class MeshConfig:
             f"BL_TRANSITION_BUFFER {self.bl_transition_buffer:.6g}",
             f"GMSH_ALGORITHM {self.gmsh_algorithm}",
             f"GMSH_OPTIMIZE {self.gmsh_optimize}",
+            f"BL_USE_ANALYTIC_GEOM {1 if self.bl_use_analytic_geom else 0}",
             "",
             "# ==============================================================================",
             "# 7. Boundary Conditions & I/O",
             "# ==============================================================================",
             f"EXPORT_VTK {1 if self.export_vtk else 0}",
             f"EXPORT_STARCD {1 if self.export_starcd else 0}",
+            f"EXPORT_CGNS {1 if self.export_cgns else 0}",
             f"ENABLE_COLLISION_DETECTION {1 if self.enable_collision_detection else 0}",
             f"BC_XMIN {self.bc_xmin}",
             f"BC_XMAX {self.bc_xmax}",

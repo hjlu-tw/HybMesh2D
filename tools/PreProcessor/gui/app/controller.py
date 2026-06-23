@@ -158,6 +158,7 @@ class AppController(
         sb.uniform_type_combo.currentTextChanged.connect(
             self.update_segment_params)
         sb.match_previous_cb.toggled.connect(self.update_match_previous)
+        sb.bc_combo.currentTextChanged.connect(self.update_segment_bc)
         sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
 
         # Distribution tool window: open it + drive a live resample preview.

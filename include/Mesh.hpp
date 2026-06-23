@@ -3,6 +3,7 @@
 
 #include "GeomUtils.hpp"
 #include "Config.hpp"
+#include "Curve.hpp"
 #include <vector>
 #include <string>
 
@@ -18,6 +19,16 @@ struct Node {
     int id;
     int geomId = -1; // -1 for domain/interior, >=0 for specific geometries
     bool isFrozen = false;
+
+    // Phase 1: provenance carried from the preprocessor's metadata sidecar.
+    // Defaults keep nodes without metadata (domain box, BL, interior) inert.
+    int segId = -1;        // source segment id, -1 if unknown
+    bool isCorner = false; // pinned structural vertex (sharp corner / shape vertex)
+    std::string bcTag;     // per-segment boundary condition, empty -> use config default
+
+    // Phase 2: local curve model of the source segment, so BL growth can query
+    // an analytic/spline tangent & curvature instead of a one-sided difference.
+    CurveKind curveKind = CurveKind::Polyline;
 };
 
 struct Edge {
@@ -48,6 +59,10 @@ public:
 
     void exportVTK(const std::string& filename) const;
     void exportStarCD(const std::string& baseFilename, const Config& config) const;
+
+    // Phase 4: CGNS unstructured export with per-BC patches. Compiled only when
+    // the CGNS library is found at configure time; otherwise a no-op stub warns.
+    void exportCGNS(const std::string& filename, const Config& config) const;
 };
 
 #endif

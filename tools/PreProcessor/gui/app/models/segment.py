@@ -27,6 +27,11 @@ class SegmentModel:
         # Advanced
         self.match_previous: bool = False
 
+        # Per-segment boundary condition tag. Empty -> inherits the mesh's
+        # global geometry BC (BC_GEOM). Carried to the mesher via the .meta
+        # sidecar (the C++ backend reads sj["bc"]).
+        self.bc: str = ""
+
         # Whether a polygon / polyline-style edge closes back to its first
         # vertex. Inherently-closed shapes (triangle/quad/circle) ignore this;
         # it matters for `polygon` (incl. file edges baked into a polygon).
@@ -92,6 +97,7 @@ class SegmentModel:
             seg.parameters = copy.deepcopy(d.get("parameters", {"n_points": 50}))
             seg.match_previous = d.get("match_previous", False)
             seg.closed = d.get("closed", True)
+        seg.bc = d.get("bc", "")
         return seg
 
     def to_dict(self) -> dict:
@@ -130,4 +136,6 @@ class SegmentModel:
                 d["match_previous"] = True
             if not self.closed:
                 d["closed"] = False
+        if self.bc:
+            d["bc"] = self.bc
         return d

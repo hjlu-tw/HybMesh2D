@@ -37,7 +37,29 @@ add_executable(HybMesh2D
     src/BoundaryLayer.cpp
 )
 
-# 連結 Gmsh
+# 4b. 選用的 CGNS 輸出 (Phase 4)
+# 找得到 CGNS 函式庫就編進 exportCGNS；找不到時 exportCGNS 退化為 runtime
+# stub，預設 build 不會因為缺少 CGNS 而失敗。CGNS 透過 install_name 內含
+# HDF5 的絕對路徑，因此這裡只需連結 libcgns。
+#
+# 重要：libcgns 必須排在 libgmsh 之前。libgmsh 內部靜態包了一份「32-bit
+# cgsize_t」的 CGNS 並匯出所有 cg_* 符號；在 macOS two-level namespace 下，
+# 連結順序在前者會綁定我們的 cg_* 呼叫。我們的 header 是 homebrew 的 64-bit
+# 版本，必須綁到 homebrew libcgns，否則 zone 維度會被當成 32-bit 而寫壞。
+find_path(CGNS_INCLUDE_DIR cgnslib.h
+    HINTS /opt/homebrew/opt/cgns/include /opt/homebrew/include /usr/local/include)
+find_library(CGNS_LIBRARY NAMES cgns
+    HINTS /opt/homebrew/opt/cgns/lib /opt/homebrew/lib /usr/local/lib)
+if(CGNS_INCLUDE_DIR AND CGNS_LIBRARY)
+    message(STATUS "CGNS export ENABLED: ${CGNS_LIBRARY}")
+    target_compile_definitions(HybMesh2D PRIVATE HAVE_CGNS)
+    target_include_directories(HybMesh2D PRIVATE ${CGNS_INCLUDE_DIR})
+    target_link_libraries(HybMesh2D ${CGNS_LIBRARY})  # 必須先於 Gmsh
+else()
+    message(STATUS "CGNS not found — exportCGNS compiled as a no-op stub.")
+endif()
+
+# 連結 Gmsh (排在 CGNS 之後，見上方說明)
 target_link_libraries(HybMesh2D ${GMSH_LIBRARY})
 
 # 設置 RPATH 以確保執行時能找到 dylib

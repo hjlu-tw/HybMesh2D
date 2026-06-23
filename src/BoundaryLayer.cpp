@@ -98,6 +98,49 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             else if (exteriorAngle < m_config.blConcaveAngleThreshold) fs.isConcaveInit[i] = true;
         }
 
+        // Phase 3: on line/circle surface runs, replace the finite-difference
+        // initial normals with exact analytic normals at smooth (non-corner)
+        // nodes. Smooth/polyline runs and corner/convex/concave nodes are left
+        // untouched, so with the flag off — or for any non-line/circle body —
+        // the result is bit-for-bit identical to before. The win is on curved
+        // surfaces (cylinders, leading edges) where the chord normal is only
+        // O(dtheta^2)-accurate but the radial normal is exact.
+        if (m_config.blUseAnalyticGeom) {
+            int nOverridden = 0;
+            double maxAngleDeg = 0.0;
+            int i = 0;
+            while (i < n_init) {
+                CurveKind kind = m_mesh.nodes[boundaryNodeIds[i]].curveKind;
+                int j = i;
+                while (j + 1 < n_init &&
+                       m_mesh.nodes[boundaryNodeIds[j + 1]].curveKind == kind) ++j;
+                if ((kind == CurveKind::Line || kind == CurveKind::Circle) && (j - i + 1) >= 2) {
+                    std::vector<Point2D> runPts(fs.pos_init.begin() + i, fs.pos_init.begin() + j + 1);
+                    auto curve = makeCurve(kind, runPts);
+                    for (int k = i; k <= j; ++k) {
+                        if (m_mesh.nodes[boundaryNodeIds[k]].isCorner ||
+                            fs.isConvexInit[k] || fs.isConcaveInit[k]) continue;
+                        // The growth direction for a smooth node is the bisector of
+                        // the two edge normals; measure how far the exact analytic
+                        // normal moves it (deterministic, unlike the gmsh far-field).
+                        Vector2D oldDir = (fs.n1_init[k] + fs.n2_init[k]).normalized();
+                        Vector2D t = curve->tangentAt(k - i);
+                        Vector2D nrm = (fs.growthSign > 0 ? t.leftNormal() : t.rightNormal()).normalized();
+                        double d = std::max(-1.0, std::min(1.0, oldDir.dot(nrm)));
+                        maxAngleDeg = std::max(maxAngleDeg, std::acos(d) * 180.0 / M_PI);
+                        fs.n1_init[k] = nrm;
+                        fs.n2_init[k] = nrm;
+                        ++nOverridden;
+                    }
+                }
+                i = j + 1;
+            }
+            if (nOverridden > 0)
+                std::cout << "  [Analytic BL] geom " << fs.geomId << ": " << nOverridden
+                          << " smooth node normal(s) set analytically (max shift "
+                          << maxAngleDeg << " deg vs finite-difference)\n";
+        }
+
         // 計算過渡層數
         double h_tmp = m_config.blInitialThickness;
         for (int l = 0; l < m_config.blLayers; ++l) h_tmp *= m_config.blGrowthRate;

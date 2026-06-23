@@ -9,6 +9,7 @@
 #include <sstream>
 #include <filesystem>
 #include <cctype>
+#include <map>
 
 #include "json.hpp"
 #include "GeomUtils.hpp"
@@ -122,6 +123,58 @@ bool saveGeometry(const std::string& filename, const std::vector<Point2D>& point
             ofs << "nan nan\n";
         ofs << points[i].x << " " << points[i].y << "\n";
     }
+    return true;
+}
+
+// Phase 1: lossless metadata sidecar for the downstream mesher.
+//
+// A flat "x y" .dat cannot say which segment a point came from, whether it is
+// a structural corner, or which boundary condition the segment carries. We
+// write that out-of-band as "<output>.meta" so the .dat itself stays
+// byte-identical (and any tool that ignores the sidecar keeps working).
+//
+// Format (token-stream, parseable with `ifstream >>`, no JSON dependency so
+// the mesher need not pull in json.hpp):
+//   HYBMESH_META 2
+//   COUNT <N>
+//   NPIECES <P> <break0> <break1> ...        # indices into the point list
+//   NSEGMENTS <S>
+//   <seg_id> <bc> <curve_kind>               # S lines; bc '-' = unset
+//   POINTS <N>
+//   <seg_id> <is_corner>                     # N lines, parallel to the .dat
+//
+// curve_kind (v2): line|circle|smooth|polyline — tells the mesher which local
+// model to rebuild from the surface points (Phase 2). v1 omitted this field.
+//
+// The per-point arrays are parallel to the points written by saveGeometry with
+// an EMPTY pieceBreaks (i.e. no 'nan' rows). We therefore only emit the sidecar
+// for real exports, never for the GUI's preview output.
+bool saveMetadata(const std::string& datPath,
+                  const std::vector<int>& segId,
+                  const std::vector<char>& isCorner,
+                  const std::vector<size_t>& pieceBreaks,
+                  const std::map<int, std::string>& segBc,
+                  const std::map<int, std::string>& segKind) {
+    const std::string metaPath = datPath + ".meta";
+    std::ofstream ofs(metaPath);
+    if (!ofs) {
+        std::cerr << "Warning: cannot write metadata sidecar '" << metaPath << "'." << std::endl;
+        return false;
+    }
+    ofs << "HYBMESH_META 2\n";
+    ofs << "COUNT " << segId.size() << "\n";
+    ofs << "NPIECES " << pieceBreaks.size();
+    for (size_t b : pieceBreaks) ofs << " " << b;
+    ofs << "\n";
+    ofs << "NSEGMENTS " << segBc.size() << "\n";
+    for (const auto& kv : segBc) {
+        auto kit = segKind.find(kv.first);
+        const std::string kind = (kit != segKind.end() && !kit->second.empty()) ? kit->second : "polyline";
+        ofs << kv.first << " " << (kv.second.empty() ? "-" : kv.second) << " " << kind << "\n";
+    }
+    ofs << "POINTS " << segId.size() << "\n";
+    for (size_t i = 0; i < segId.size(); ++i)
+        ofs << segId[i] << " " << (int)isCorner[i] << "\n";
     return true;
 }
 
@@ -521,7 +574,34 @@ bool processElement(const json& config) {
     std::vector<size_t> pieceBreaks; // indices in resPts that start a new piece
     double last_ds = -1.0; // Task 4: Spacing matching state
 
+    // Phase 1: per-point provenance, parallel to resPts, plus a seg_id -> BC map.
+    // Written out-of-band by saveMetadata so the .dat stays a plain coordinate list.
+    std::vector<int> resSegId;       // which segment each output point came from
+    std::vector<char> resCorner;     // 1 if the point is a pinned structural vertex
+    std::map<int, std::string> segBc; // per-segment boundary-condition tag
+    std::map<int, std::string> segKind; // per-segment curve kind (Phase 2)
+    int segIndex = -1;
+
+    // Phase 2: classify a segment's local smoothness model so the mesher can
+    // rebuild an analytic curve (line/circle) or a smooth spline from the
+    // surface points and query exact normals/curvature during BL growth.
+    auto deriveCurveKind = [](const json& sj) -> std::string {
+        if (sj.value("type", std::string("file")) == "curve") {
+            std::string ct = sj.value("curve_type", std::string("custom"));
+            if (ct == "line" || ct == "horizontal_line" || ct == "vertical_line") return "line";
+            if (ct == "circle") return "circle";
+            if (ct == "triangle" || ct == "quadrilateral" || ct == "polygon") return "polyline";
+            return "smooth"; // custom formula
+        }
+        return "smooth"; // file polyline: spline between flagged corners
+    };
+
     for (const auto& sj : config["segments"]) {
+        ++segIndex;
+        // A segment's id is its GUI-assigned id when present, else its position.
+        const int segId = sj.value("id", segIndex);
+        segBc[segId] = sj.value("bc", std::string());
+        segKind[segId] = deriveCurveKind(sj);
         // A segment whose first point does not coincide with the previous
         // segment's last point starts a new disconnected piece (e.g. a moved /
         // duplicated edge). Decided once, on the segment's first sample point.
@@ -834,6 +914,10 @@ bool processElement(const json& config) {
             std::vector<Point2D> segmentPts;
             for (size_t idx_ts = 0; idx_ts < tS.size(); ++idx_ts) {
                 double ts = tS[idx_ts];
+                // The first/last sample of every task is a pinned vertex: a shape
+                // vertex, a feature (auto-split) point, or a segment endpoint.
+                // These are the structural corners the resampler guarantees to keep.
+                const bool isBoundaryPt = (idx_ts == 0 || idx_ts == tS.size() - 1);
                 Point2D p;
                 if (idx_ts == 0) {
                     p = sp.front();
@@ -862,7 +946,12 @@ bool processElement(const json& config) {
                 // Avoid duplicate points at segment boundaries
                 if (resPts.empty() || (p - resPts.back()).length() > 1e-10) {
                     resPts.push_back(p);
+                    resSegId.push_back(segId);
+                    resCorner.push_back(isBoundaryPt ? 1 : 0);
                     segmentPts.push_back(p);
+                } else if (isBoundaryPt && !resCorner.empty()) {
+                    // Shared vertex between adjacent tasks: keep the corner flag.
+                    resCorner.back() = 1;
                 }
             }
             
@@ -906,6 +995,12 @@ bool processElement(const json& config) {
         return false;
     }
     std::cout << "Successfully processed element to " << outPath << " (" << resPts.size() << " points)" << std::endl;
+
+    // Phase 1: emit the metadata sidecar for real exports only. The preview
+    // path uses 'nan' separators and is consumed solely by the GUI, where the
+    // per-point arrays would no longer line up with the .dat rows.
+    if (!previewMarkers)
+        saveMetadata(outPath, resSegId, resCorner, pieceBreaks, segBc, segKind);
 
     // Task 5: Quality Report
     Quality::analyze(resPts).print();

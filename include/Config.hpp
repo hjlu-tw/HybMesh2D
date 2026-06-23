@@ -46,12 +46,17 @@ struct Config {
     int gmshAlgorithm = 6; // 6: Frontal-Delaunay
     int gmshOptimize = 1;  // 1: Enable mesh optimization
 
+    // Phase 3: 在平滑表面點以解析曲線(line/circle/spline)的法向取代有限差分。
+    // 預設關閉，行為與舊版逐位元相同；開啟後角點仍維持既有 fan/merge 處理。
+    bool blUseAnalyticGeom = false;
+
     // StarCD 邊界字串
     std::string bcXMin = "wall", bcXMax = "wall", bcYMin = "wall", bcYMax = "wall", bcGeom = "wall";
 
     // 輸出開關
     bool exportVTK = true;
     bool exportStarCD = false;
+    bool exportCGNS = false;
     bool enableCollisionDetection = true;
     std::string outputFilename = "";
 
@@ -125,6 +130,9 @@ struct Config {
             else if (key == "GMSH_OPTIMIZE") {
                 double val; ss >> val; gmshOptimize = static_cast<int>(val);
             }
+            else if (key == "BL_USE_ANALYTIC_GEOM") {
+                int val; ss >> val; blUseAnalyticGeom = (val != 0);
+            }
             else if (key == "BC_XMIN") ss >> bcXMin;
             else if (key == "BC_XMAX") ss >> bcXMax;
             else if (key == "BC_YMIN") ss >> bcYMin;
@@ -135,6 +143,9 @@ struct Config {
             }
             else if (key == "EXPORT_STARCD") {
                 int val; ss >> val; exportStarCD = (val != 0);
+            }
+            else if (key == "EXPORT_CGNS") {
+                int val; ss >> val; exportCGNS = (val != 0);
             }
             else if (key == "ENABLE_COLLISION_DETECTION") {
                 int val; ss >> val; enableCollisionDetection = (val != 0);
@@ -175,7 +186,8 @@ struct Config {
                   << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL")) 
                   << ") | Growth Rate: " << blTransitionGrowthRate << " | Buffer: " << blTransitionBuffer << "\n";
         std::cout << "  - Farfield Growth Rate : " << farFieldGrowthRate << "\n";
-        std::cout << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n\n";
+        std::cout << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - Analytic BL Normals  : " << (blUseAnalyticGeom ? "[ON]" : "[OFF]") << "\n\n";
 
         std::cout << "[ Corner Handling (Convex & Concave) ]\n";
         std::cout << "  - Corner Thresholds    : Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
@@ -206,6 +218,7 @@ struct Config {
         std::cout << "  - Collision Detection  : " << (enableCollisionDetection ? "[ON]" : "[OFF]") << "\n";
         std::cout << "  - VTK Export           : " << (exportVTK ? "[ON]" : "[OFF]") << "\n";
         std::cout << "  - StarCD Export        : " << (exportStarCD ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - CGNS Export          : " << (exportCGNS ? "[ON]" : "[OFF]") << "\n";
         std::cout << "  - Output Filename      : " << (outputFilename.empty() ? "(Auto-generated)" : outputFilename) << "\n";
         std::cout << "==================================================\n";
     }

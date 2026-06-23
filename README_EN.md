@@ -11,7 +11,10 @@ HybMesh2D is a C++ tool for generating 2D hybrid meshes. It generates high-quali
 - **Concave Handling & Smoothing**: Provides concave node merging and Laplacian smoothing to prevent mesh self-intersection in complex geometries.
 - **Safety Checks**: Automatically detects intersections between geometries and ensures they stay within the computational domain.
 - **Gmsh Integration**: Utilizes the Gmsh SDK for robust far-field triangulation.
-- **Multi-Format Export**: Supports exporting to `.vtk` (ParaView) and STAR-CD (`.vrt`, `.cel`, `.bnd`) formats.
+- **Multi-Format Export**: Supports exporting to `.vtk` (ParaView), STAR-CD (`.vrt`, `.cel`, `.bnd`), and **CGNS** (`.cgns`, unstructured zone + one BC patch per boundary) formats.
+- **Geometry Association**: The preprocessor writes a `.meta` sidecar next to each resampled `.dat`, losslessly carrying per-point source segment (`seg_id`), structural corner flags (`is_corner`), per-segment boundary condition (`bc`), and curve kind (`curve_kind`). See "Geometry Metadata Sidecar" below.
+- **Analytic BL Normals**: Grows the boundary layer along exact analytic normals on line/circle surfaces (instead of finite differences) for higher accuracy on curved bodies (cylinders, leading edges). Toggled by `BL_USE_ANALYTIC_GEOM` (off by default).
+- **Per-Segment Boundary Conditions**: Assign a BC per segment in the GUI CAD inspector; it travels to the mesher via the sidecar, replacing the position-based inference from the global `BC_GEOM`.
 
 ## Mesh Architecture & Transition
 
@@ -33,6 +36,9 @@ HybMesh2D divides the computational domain into three main regions with smooth s
 - **Compiler**: C++17 compatible compiler (e.g., GCC, Clang, MSVC).
 - **Build Tool**: CMake 3.10+.
 - **Dependencies**: [Gmsh SDK](https://gmsh.info/).
+- **Optional**: [CGNS](https://cgns.github.io/) (with HDF5). CMake auto-detects it; CGNS export is compiled in only when found, otherwise `exportCGNS` degrades to a no-op and the default build is unaffected. On macOS: `brew install cgns`.
+
+> ⚠️ **CGNS / Gmsh link order**: `libgmsh` statically bundles its own CGNS (built with 32-bit `cgsize_t`) and exports the `cg_*` symbols. CMakeLists links `libcgns` *before* `libgmsh` so our `cg_*` calls bind to the correct 64-bit homebrew libcgns — do not swap this order.
 
 ## Building the Project
 
@@ -56,6 +62,7 @@ The executable will be located at `build/HybMesh2D`.
 - `-geom <path1> [path2]...`: Specify one or more geometry data files.
 - `-out_vtk <0|1>`: Enable/Disable VTK output (1: ON, 0: OFF).
 - `-out_starcd <0|1>`: Enable/Disable STAR-CD output.
+- `-out_cgns <0|1>`: Enable/Disable CGNS output (requires the CGNS library detected at build time).
 
 ### Execution Example (Using Example Files)
 
@@ -115,6 +122,7 @@ The executable will be located at `build/HybMesh2D`.
 | `BL_TRANSITION_BUFFER` | Buffer multiplier for the transition region | 2.0 |
 | `GMSH_ALGORITHM` | Gmsh triangulation algorithm (Default 6: Frontal-Delaunay) | 6 |
 | `GMSH_OPTIMIZE` | Enable mesh optimization in Gmsh | 1 |
+| `BL_USE_ANALYTIC_GEOM` | Grow BL along analytic normals on line/circle surfaces (needs `.meta` sidecar; no effect on smooth/polyline) | 0 |
 
 ### 6. I/O & Advanced Features
 
@@ -122,6 +130,7 @@ The executable will be located at `build/HybMesh2D`.
 | :--- | :--- | :--- |
 | `EXPORT_VTK` | Default toggle for VTK export (0/1) | 1 |
 | `EXPORT_STARCD` | Default toggle for STAR-CD export (0/1) | 0 |
+| `EXPORT_CGNS` | Default toggle for CGNS export (0/1; requires the CGNS library at build time) | 0 |
 | `ENABLE_COLLISION_DETECTION`| Enable multi-geometry collision detection (0/1) | 1 |
 | `BC_XMIN` / `XMAX` | STAR-CD boundary name strings | inlet / outlet |
 | `BC_YMIN` / `YMAX` | STAR-CD boundary name strings | inlet / outlet |
@@ -134,7 +143,19 @@ The executable will be located at `build/HybMesh2D`.
 2. **STAR-CD Format**: Generates a triad of files:
    - `.vrt`: Vertex coordinates.
    - `.cel`: Cell definitions (Triangles and Quads).
-   - `.bnd`: Boundary condition definitions with assigned BC names.
+   - `.bnd`: Boundary condition definitions with assigned BC names (geometry edges prefer the per-segment `bc` from the sidecar, falling back to `BC_GEOM`).
+3. **CGNS Format** (optional): Generates `*.cgns` (single unstructured zone with triangle/quad element sections plus one BAR_2 edge section + `BC_t` patch per boundary; BCType mapped to wall/inlet/outlet, etc.). Suitable for lossless handoff to CGNS-aware solvers. Validate with `cgnscheck`.
+
+## Geometry Metadata Sidecar (Geometry Association)
+
+On a real export the preprocessor (`surface_resampler`) writes a `.meta` sidecar next to the resampled `.dat` (plain text, parseable with `ifstream` — the mesher needs no JSON dependency). It losslessly carries what a bare-coordinate `.dat` cannot:
+
+- `seg_id` (source segment per point), `is_corner` (structural corners the BL can trust), `piece_breaks` (disconnected pieces).
+- per-segment `bc` (boundary condition, assignable per segment in the GUI) and `curve_kind` (`line`/`circle`/`smooth`/`polyline`).
+
+The mesher then assigns geometry BCs from `bc` (instead of position inference), uses the corner flags for fan/merge decisions, and — when `BL_USE_ANALYTIC_GEOM` is on — rebuilds an analytic curve (`include/Curve.hpp`) from the actual surface points per `curve_kind` to query exact normals/curvature.
+
+Backward compatible: a missing sidecar, field, or older format falls back to the legacy behavior. Preview runs still use `nan` separator rows and write no sidecar.
 
 ## License
 

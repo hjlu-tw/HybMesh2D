@@ -266,6 +266,13 @@ class MeshConfigPanel(QScrollArea):
         self.gmsh_optimize.setStyleSheet("color:#a0a8c0;")
         self.gmsh_optimize.setToolTip("Enable Gmsh mesh quality optimization pass after generation")
 
+        self.bl_use_analytic_geom = QCheckBox("Analytic BL Normals (line/circle)")
+        self.bl_use_analytic_geom.setStyleSheet("color:#a0a8c0;")
+        self.bl_use_analytic_geom.setToolTip(
+            "Grow the boundary layer along exact analytic normals on line/circle surface "
+            "segments (instead of finite differences). No effect on smooth/polyline bodies. "
+            "Uses the curve kind carried in the geometry's .meta sidecar.")
+
         trans_form.addRow(self._mesh_sublabel("BOUNDARY-LAYER TRANSITION"))
         trans_form.addRow(help_label("Auto Transition:", "Automatically compute transition layer count (OFF / GLOBAL / LOCAL)"), self.bl_auto_transition_layers)
         trans_form.addRow(help_label("Transition Layers:", "Number of transitional element rows blending BL quads into far-field triangles"), self.bl_transition_layers)
@@ -274,6 +281,8 @@ class MeshConfigPanel(QScrollArea):
         trans_form.addRow(self._mesh_sublabel("FAR-FIELD MESHING"))
         trans_form.addRow(help_label("Gmsh Algorithm:", "Meshing algorithm used by Gmsh for far-field triangulation"), self.gmsh_algorithm)
         trans_form.addRow("", help_widget(self.gmsh_optimize, "Enable Gmsh mesh quality optimization pass after generation"))
+        trans_form.addRow("", help_widget(self.bl_use_analytic_geom,
+            "Grow the boundary layer along exact analytic normals on line/circle surfaces"))
         align_form_labels(trans_form, 130)
         self.sec_transition.add_layout(trans_form)
         self._trans_form = trans_form
@@ -409,6 +418,11 @@ class MeshConfigPanel(QScrollArea):
         self.export_starcd.setStyleSheet("color:#a0a8c0;")
         self.export_starcd.setToolTip(
             "Write STAR-CD files when the mesh is generated/saved (required for the solver).")
+        self.export_cgns = QCheckBox("Write CGNS (.cgns)")
+        self.export_cgns.setStyleSheet("color:#a0a8c0;")
+        self.export_cgns.setToolTip(
+            "Write a CGNS file (unstructured zone + per-BC patches) when the mesh is "
+            "generated. Ignored if HybMesh2D was built without the CGNS library.")
         self.enable_collision_detection = QCheckBox("Collision Detection")
         self.enable_collision_detection.setStyleSheet("color:#a0a8c0;")
         self.enable_collision_detection.setToolTip("Enable self-intersection detection during boundary layer generation")
@@ -456,6 +470,7 @@ class MeshConfigPanel(QScrollArea):
         # Format toggles (which files to write) then the export-to-path buttons.
         export_layout.addWidget(self.export_vtk)
         export_layout.addWidget(self.export_starcd)
+        export_layout.addWidget(self.export_cgns)
         export_layout.addWidget(help_widget(self.export_vtk_btn, "Export the generated mesh to a VTK file (.vtk)"))
         export_layout.addWidget(help_widget(self.export_starcd_btn, "Export the generated mesh to STAR-CD files (.vrt, .cel, .bnd)"))
 
@@ -589,6 +604,7 @@ class MeshConfigPanel(QScrollArea):
         else:
             self.gmsh_algorithm.setCurrentIndex(3)  # default: 6
         self.gmsh_optimize.setChecked(cfg.gmsh_optimize != 0)
+        self.bl_use_analytic_geom.setChecked(bool(cfg.bl_use_analytic_geom))
 
         # 7. BCs & IO
         self.bc_xmin.setText(cfg.bc_xmin)
@@ -611,6 +627,7 @@ class MeshConfigPanel(QScrollArea):
 
         self.export_vtk.setChecked(cfg.export_vtk)
         self.export_starcd.setChecked(cfg.export_starcd)
+        self.export_cgns.setChecked(cfg.export_cgns)
         self.enable_collision_detection.setChecked(cfg.enable_collision_detection)
 
         # Update canvas preview geometries and config
@@ -669,6 +686,7 @@ class MeshConfigPanel(QScrollArea):
         gmsh_algos = [1, 2, 5, 6, 7, 8]
         cfg.gmsh_algorithm = gmsh_algos[self.gmsh_algorithm.currentIndex()]
         cfg.gmsh_optimize = 1 if self.gmsh_optimize.isChecked() else 0
+        cfg.bl_use_analytic_geom = self.bl_use_analytic_geom.isChecked()
 
         # 7. BCs & IO
         cfg.bc_xmin = self.bc_xmin.text().strip()
@@ -680,6 +698,7 @@ class MeshConfigPanel(QScrollArea):
 
         cfg.export_vtk = self.export_vtk.isChecked()
         cfg.export_starcd = self.export_starcd.isChecked()
+        cfg.export_cgns = self.export_cgns.isChecked()
         cfg.enable_collision_detection = self.enable_collision_detection.isChecked()
 
         return cfg

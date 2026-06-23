@@ -400,6 +400,23 @@ class EdgePropsPanel(CollapsibleSection):
         self.add_widget(self._file_seg_label)
         self.add_widget(self._curve_group)
 
+        # ── Boundary condition (per-segment) ─────────────────────────────────
+        # Editable so users can type a custom tag; blank inherits the mesh's
+        # global geometry BC. Travels to the mesher via the .meta sidecar.
+        self.bc_combo = QComboBox()
+        self.bc_combo.setEditable(True)
+        self.bc_combo.addItems(["", "wall", "inlet", "outlet", "symmetry", "farfield", "movingwall"])
+        self.bc_combo.setStyleSheet(COMBO_STYLE)
+        self.bc_combo.setToolTip(
+            "Boundary condition tag for this edge. Blank = inherit the mesh's global "
+            "geometry BC. Carried to the mesher via the geometry .meta sidecar.")
+        _bc_w = QWidget()
+        _bc_form = QFormLayout(_bc_w)
+        _bc_form.setContentsMargins(0, 0, 0, 0)
+        _bc_form.addRow(help_label("Boundary:",
+            "Boundary condition tag for this edge (blank = global geometry BC)"), self.bc_combo)
+        self.add_widget(_bc_w)
+
         # Tool buttons (open standalone windows).
         self.distribution_btn = make_button("Distribution…", '#1b2a4a')
         self.distribution_btn.setToolTip("Set the point distribution for this edge — live preview on the canvas")

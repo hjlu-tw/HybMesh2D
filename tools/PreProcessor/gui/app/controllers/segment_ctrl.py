@@ -435,6 +435,10 @@ class SegmentControllerMixin:
             sb.match_previous_cb.setChecked(seg.match_previous)
             sb.match_previous_cb.blockSignals(False)
 
+            sb.bc_combo.blockSignals(True)
+            sb.bc_combo.setCurrentText(getattr(seg, "bc", "") or "")
+            sb.bc_combo.blockSignals(False)
+
             # Update base point values
             self.update_duplicate_base_point()
             self._show_duplicate_preview = False
@@ -923,6 +927,49 @@ class SegmentControllerMixin:
                     sb.match_previous_cb.setChecked(checked)
                     sb.match_previous_cb.blockSignals(False)
                     self._apply_geometry_update(session)
+            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
+            session.command_history.execute(cmd)
+
+    def update_segment_bc(self, text: str):
+        """Set the per-segment boundary condition on the selected edge(s). The
+        tag is metadata only (no geometry change) and flows to the mesher via
+        the .meta sidecar; blank inherits the global BC_GEOM."""
+        session = self.active_session()
+        if not session:
+            return
+        indices = self.get_selected_segment_indices()
+        if not indices:
+            return
+        bc = (text or "").strip()
+
+        old_states = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                old_states[idx] = seg.to_dict()
+
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                seg.bc = bc
+
+        any_changed = False
+        states_dict = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                new_state = seg.to_dict()
+                states_dict[idx] = (old_states[idx], new_state)
+                if new_state != old_states[idx]:
+                    any_changed = True
+
+        if any_changed:
+            def refresh():
+                if session is self.active_session():
+                    sb = self.main_window.sidebar_view
+                    sb.bc_combo.blockSignals(True)
+                    sb.bc_combo.setCurrentText(bc)
+                    sb.bc_combo.blockSignals(False)
             cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
             session.command_history.execute(cmd)
 

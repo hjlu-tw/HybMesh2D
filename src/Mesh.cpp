@@ -6,7 +6,25 @@
 #include <set>
 #include <iomanip>
 #include <algorithm>
+#include <array>
 #include <thread>
+
+#ifdef HAVE_CGNS
+#include <cgnslib.h>
+namespace {
+// Map a user BC string to the closest CGNS BCType_t. The user's original name
+// is always preserved as the BC node name; this only sets the typed enum so
+// CGNS-aware solvers can reason about it. Unknown names fall back to BCGeneral.
+CGNS_ENUMT(BCType_t) mapCgnsBcType(const std::string& n) {
+    if (n == "wall" || n == "movingwall") return CGNS_ENUMV(BCWall);
+    if (n == "inlet")    return CGNS_ENUMV(BCInflow);
+    if (n == "outlet")   return CGNS_ENUMV(BCOutflow);
+    if (n == "symmetry") return CGNS_ENUMV(BCSymmetryPlane);
+    if (n == "farfield") return CGNS_ENUMV(BCFarfield);
+    return CGNS_ENUMV(BCGeneral);
+}
+} // namespace
+#endif
 
 void Mesh::addNode(Point2D p, NodeType type) {
     int id = static_cast<int>(nodes.size());
@@ -314,6 +332,12 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
             else if (isXMax) { groupId = 2; bcName = config.bcXMax; }
             else if (isYMin) { groupId = 3; bcName = config.bcYMin; }
             else if (isYMax) { groupId = 4; bcName = config.bcYMax; }
+            // Phase 1: a geometry edge carrying an explicit per-segment BC tag
+            // (both endpoints agree) overrides the global BC_GEOM default. This
+            // replaces guessing the surface BC purely from domain proximity.
+            else if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag) {
+                bcName = nodes[v1].bcTag;
+            }
             
             // 格式：bnd編號, v1, v2, 0, 0, groupId, 0, bcName (共 8 欄)
             bofs << bndCount++ << " " << (v1 + 1) << " " << (v2 + 1) << " 0 0 " << groupId << " 0 " << bcName << "\n";
@@ -322,6 +346,152 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
     bofs.close();
 
     std::cout << "StarCD mesh exported to " << baseFilename << " (.vrt, .cel, .bnd)" << std::endl;
+}
+
+void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
+#ifndef HAVE_CGNS
+    (void)config;
+    std::cerr << "Warning: CGNS export requested but this build was configured "
+                 "without the CGNS library; skipping '" << filename << "'.\n"
+                 "         Reinstall CGNS and re-run cmake to enable it.\n";
+#else
+    // --- 1. Collect valid volume cells, mirroring exportStarCD's filtering
+    //        (skip line/degenerate/duplicate elements, enforce CCW winding). ---
+    std::vector<std::array<cgsize_t, 3>> tris;
+    std::vector<std::array<cgsize_t, 4>> quads;
+    std::set<std::vector<int>> seenCells;
+    auto degenerate = [](std::vector<int> ids) {
+        std::sort(ids.begin(), ids.end());
+        for (size_t k = 0; k + 1 < ids.size(); ++k) if (ids[k] == ids[k + 1]) return true;
+        return false;
+    };
+    for (const auto& el : elements) {
+        if (el.nodeIds.size() < 3) continue;
+        if (degenerate(el.nodeIds)) continue;
+        std::vector<int> key = el.nodeIds;
+        std::sort(key.begin(), key.end());
+        if (!seenCells.insert(key).second) continue;
+        if (el.nodeIds.size() == 3) {
+            int n0 = el.nodeIds[0], n1 = el.nodeIds[1], n2 = el.nodeIds[2];
+            double cr = (nodes[n1].pos.x - nodes[n0].pos.x) * (nodes[n2].pos.y - nodes[n0].pos.y)
+                      - (nodes[n1].pos.y - nodes[n0].pos.y) * (nodes[n2].pos.x - nodes[n0].pos.x);
+            if (cr < 0) std::swap(n1, n2);
+            tris.push_back({(cgsize_t)(n0 + 1), (cgsize_t)(n1 + 1), (cgsize_t)(n2 + 1)});
+        } else if (el.nodeIds.size() == 4) {
+            int n0 = el.nodeIds[0], n1 = el.nodeIds[1], n2 = el.nodeIds[2], n3 = el.nodeIds[3];
+            double cr = (nodes[n1].pos.x - nodes[n0].pos.x) * (nodes[n2].pos.y - nodes[n0].pos.y)
+                      - (nodes[n1].pos.y - nodes[n0].pos.y) * (nodes[n2].pos.x - nodes[n0].pos.x);
+            if (cr < 0) std::swap(n1, n3);
+            quads.push_back({(cgsize_t)(n0 + 1), (cgsize_t)(n1 + 1), (cgsize_t)(n2 + 1), (cgsize_t)(n3 + 1)});
+        }
+    }
+    const cgsize_t nCells = (cgsize_t)(tris.size() + quads.size());
+
+    // --- 2. Domain extents, then group boundary edges (used by exactly one
+    //        cell) by BC name — same classification as exportStarCD. ---
+    double xMin = 1e9, xMax = -1e9, yMin = 1e9, yMax = -1e9;
+    for (const auto& nd : nodes) {
+        xMin = std::min(xMin, nd.pos.x); xMax = std::max(xMax, nd.pos.x);
+        yMin = std::min(yMin, nd.pos.y); yMax = std::max(yMax, nd.pos.y);
+    }
+    std::map<std::pair<int, int>, int> edgeCount;
+    std::map<std::pair<int, int>, std::pair<int, int>> edgeNodes;
+    std::set<std::vector<int>> seenForBnd;
+    for (const auto& el : elements) {
+        if (el.nodeIds.size() < 3) continue;
+        if (degenerate(el.nodeIds)) continue;
+        std::vector<int> key = el.nodeIds;
+        std::sort(key.begin(), key.end());
+        if (!seenForBnd.insert(key).second) continue;
+        int m = (int)el.nodeIds.size();
+        for (int j = 0; j < m; ++j) {
+            int a = el.nodeIds[j], b = el.nodeIds[(j + 1) % m];
+            int lo = std::min(a, b), hi = std::max(a, b);
+            edgeCount[{lo, hi}]++;
+            edgeNodes[{lo, hi}] = {a, b};
+        }
+    }
+    std::map<std::string, std::vector<std::pair<int, int>>> bcGroups;
+    const double eps = 1e-5;
+    for (const auto& kv : edgeCount) {
+        if (kv.second != 1) continue;
+        int v1 = edgeNodes[kv.first].first, v2 = edgeNodes[kv.first].second;
+        bool isXMin = (std::abs(nodes[v1].pos.x - xMin) < eps && std::abs(nodes[v2].pos.x - xMin) < eps);
+        bool isXMax = (std::abs(nodes[v1].pos.x - xMax) < eps && std::abs(nodes[v2].pos.x - xMax) < eps);
+        bool isYMin = (std::abs(nodes[v1].pos.y - yMin) < eps && std::abs(nodes[v2].pos.y - yMin) < eps);
+        bool isYMax = (std::abs(nodes[v1].pos.y - yMax) < eps && std::abs(nodes[v2].pos.y - yMax) < eps);
+        std::string bc = config.bcGeom;
+        if (isXMin) bc = config.bcXMin;
+        else if (isXMax) bc = config.bcXMax;
+        else if (isYMin) bc = config.bcYMin;
+        else if (isYMax) bc = config.bcYMax;
+        else if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag) bc = nodes[v1].bcTag;
+        bcGroups[bc].push_back({v1, v2});
+    }
+
+    // --- 3. Write the CGNS/HDF5 file: base -> zone -> coords -> element
+    //        sections -> boundary edge sections + BC patches. ---
+    int fn = 0, B = 0, Z = 0;
+    if (cg_open(filename.c_str(), CG_MODE_WRITE, &fn)) {
+        std::cerr << "Error: cg_open failed for " << filename << ": " << cg_get_error() << "\n";
+        return;
+    }
+    auto cgChk = [](const char* what, int ier) {
+        if (ier) std::cerr << "CGNS warning: " << what << " -> " << cg_get_error() << "\n";
+    };
+    cgChk("cg_base_write", cg_base_write(fn, "Base", /*cell_dim=*/2, /*phys_dim=*/2, &B));
+    cgsize_t zoneSize[3] = {(cgsize_t)nodes.size(), nCells, 0};
+    cgChk("cg_zone_write", cg_zone_write(fn, B, "Zone1", zoneSize, CGNS_ENUMV(Unstructured), &Z));
+
+    std::vector<double> X(nodes.size()), Y(nodes.size());
+    for (size_t i = 0; i < nodes.size(); ++i) { X[i] = nodes[i].pos.x; Y[i] = nodes[i].pos.y; }
+    int ci = 0;
+    cgChk("cg_coord_write X", cg_coord_write(fn, B, Z, CGNS_ENUMV(RealDouble), "CoordinateX", X.data(), &ci));
+    cgChk("cg_coord_write Y", cg_coord_write(fn, B, Z, CGNS_ENUMV(RealDouble), "CoordinateY", Y.data(), &ci));
+
+    cgsize_t eStart = 1;
+    int S = 0;
+    if (!tris.empty()) {
+        std::vector<cgsize_t> conn;
+        conn.reserve(tris.size() * 3);
+        for (const auto& t : tris) { conn.push_back(t[0]); conn.push_back(t[1]); conn.push_back(t[2]); }
+        cgsize_t eEnd = eStart + (cgsize_t)tris.size() - 1;
+        cgChk("cg_section_write TRI_3", cg_section_write(fn, B, Z, "TriElements", CGNS_ENUMV(TRI_3), eStart, eEnd, 0, conn.data(), &S));
+        eStart = eEnd + 1;
+    }
+    if (!quads.empty()) {
+        std::vector<cgsize_t> conn;
+        conn.reserve(quads.size() * 4);
+        for (const auto& q : quads) { conn.push_back(q[0]); conn.push_back(q[1]); conn.push_back(q[2]); conn.push_back(q[3]); }
+        cgsize_t eEnd = eStart + (cgsize_t)quads.size() - 1;
+        cgChk("cg_section_write QUAD_4", cg_section_write(fn, B, Z, "QuadElements", CGNS_ENUMV(QUAD_4), eStart, eEnd, 0, conn.data(), &S));
+        eStart = eEnd + 1;
+    }
+
+    // Each BC group becomes a BAR_2 edge section plus a BC_t patch that
+    // references that section's element range (GridLocation = EdgeCenter).
+    for (const auto& kv : bcGroups) {
+        const std::string& bcName = kv.first;
+        const auto& edges = kv.second;
+        std::vector<cgsize_t> conn;
+        conn.reserve(edges.size() * 2);
+        for (const auto& e : edges) { conn.push_back((cgsize_t)(e.first + 1)); conn.push_back((cgsize_t)(e.second + 1)); }
+        cgsize_t eEnd = eStart + (cgsize_t)edges.size() - 1;
+        int sec = 0;
+        std::string secName = bcName + "_edges";
+        cgChk("cg_section_write BAR_2", cg_section_write(fn, B, Z, secName.c_str(), CGNS_ENUMV(BAR_2), eStart, eEnd, 0, conn.data(), &sec));
+        cgsize_t range[2] = {eStart, eEnd};
+        int bcIdx = 0;
+        cgChk("cg_boco_write", cg_boco_write(fn, B, Z, bcName.c_str(), mapCgnsBcType(bcName), CGNS_ENUMV(PointRange), 2, range, &bcIdx));
+        cgChk("cg_boco_gridlocation_write", cg_boco_gridlocation_write(fn, B, Z, bcIdx, CGNS_ENUMV(EdgeCenter)));
+        eStart = eEnd + 1;
+    }
+
+    cg_close(fn);
+    std::cout << "CGNS mesh exported to " << filename << " ("
+              << nodes.size() << " nodes, " << nCells << " cells, "
+              << bcGroups.size() << " BC patch(es))" << std::endl;
+#endif
 }
 
 void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {

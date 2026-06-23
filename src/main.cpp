@@ -2,8 +2,10 @@
 #include "Config.hpp"
 #include "BoundaryLayer.hpp"
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
+#include <map>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -24,6 +26,55 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
         }
     }
     return points;
+}
+
+// Phase 1: optional metadata sidecar produced by the preprocessor next to the
+// .dat (see saveMetadata in tools/PreProcessor/src/main.cpp). Parsed with the
+// stream extractor only — no JSON dependency. A missing or malformed sidecar
+// returns valid==false and the caller transparently falls back to the legacy
+// behaviour (BC from config, no corner info).
+struct SurfaceMeta {
+    bool valid = false;
+    std::vector<int> segId;             // parallel to the .dat points
+    std::vector<char> isCorner;         // parallel to the .dat points
+    std::map<int, std::string> segBc;   // seg_id -> boundary condition tag
+    std::map<int, std::string> segKind; // seg_id -> curve kind (v2+)
+    std::vector<size_t> pieceBreaks;
+};
+
+SurfaceMeta loadSurfaceMeta(const std::string& datFile) {
+    SurfaceMeta m;
+    std::ifstream ifs(datFile + ".meta");
+    if (!ifs) return m;
+    std::string tok;
+    int version = 0;
+    if (!(ifs >> tok >> version) || tok != "HYBMESH_META") return m;
+    size_t count = 0, nPieces = 0, nSeg = 0, nPts = 0;
+    if (!(ifs >> tok >> count) || tok != "COUNT") return m;
+    if (!(ifs >> tok >> nPieces) || tok != "NPIECES") return m;
+    for (size_t i = 0; i < nPieces; ++i) { size_t b; if (!(ifs >> b)) return m; m.pieceBreaks.push_back(b); }
+    if (!(ifs >> tok >> nSeg) || tok != "NSEGMENTS") return m;
+    for (size_t i = 0; i < nSeg; ++i) {
+        int sid; std::string bc;
+        if (!(ifs >> sid >> bc)) return m;
+        m.segBc[sid] = (bc == "-") ? std::string() : bc;
+        if (version >= 2) {              // v2 carries the curve kind per segment
+            std::string kind;
+            if (!(ifs >> kind)) return m;
+            m.segKind[sid] = kind;
+        }
+    }
+    if (!(ifs >> tok >> nPts) || tok != "POINTS") return m;
+    m.segId.reserve(nPts);
+    m.isCorner.reserve(nPts);
+    for (size_t i = 0; i < nPts; ++i) {
+        int sid = -1, corner = 0;
+        if (!(ifs >> sid >> corner)) return m;
+        m.segId.push_back(sid);
+        m.isCorner.push_back((char)(corner != 0));
+    }
+    m.valid = true;
+    return m;
 }
 
 bool checkDomainIntersection(const std::vector<Point2D>& geom, const Config& config) {
@@ -104,19 +155,25 @@ int main(int argc, char* argv[]) {
     std::string configFile = "config/Background_para.dat";
     std::vector<std::string> cmdGeomFiles;
     bool geomProvided = false;
+    bool confExplicit = false;
     
     // 第一階段：掃描以找出設定檔路徑與 -geom 參數
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-conf" && i + 1 < argc) {
             configFile = argv[++i];
+            confExplicit = true;
         } else if (arg == "-geom") {
             geomProvided = true;
             while (i + 1 < argc && argv[i+1][0] != '-') {
                 cmdGeomFiles.push_back(argv[++i]);
             }
-        } else if (arg[0] != '-') {
+        } else if (arg[0] != '-' && !confExplicit) {
+            // Bare positional config path. Guard with confExplicit so the VALUE
+            // of a later value-flag this loop doesn't recognise (e.g. the "1" in
+            // "-out_cgns 1") is not mistaken for the config filename.
             configFile = arg;
+            confExplicit = true;
         }
     }
 
@@ -137,6 +194,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
         else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-out_cgns" && i + 1 < argc) config.exportCGNS = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
         // -geom 與 -conf 已經處理過，但在這裡跳過它們的參數以避免干擾
         else if (arg == "-geom") {
@@ -197,6 +255,7 @@ int main(int argc, char* argv[]) {
         struct GeomData {
             std::string filename;
             std::vector<Point2D> points;
+            SurfaceMeta meta;
         };
         std::vector<GeomData> allGeometries;
 
@@ -210,7 +269,24 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: Geometry " << gFile << " intersects with domain boundary. Skipping.\n";
                 continue;
             }
-            allGeometries.push_back({gFile, geomPoints});
+
+            // Reconcile the sidecar with the points actually loaded. loadGeometry
+            // drops a trailing duplicate of the first point on closed loops, so
+            // the sidecar legitimately has exactly one extra entry; anything else
+            // is a stale/edited mismatch and we ignore the sidecar entirely.
+            SurfaceMeta meta = loadSurfaceMeta(gFile);
+            if (meta.valid) {
+                if (meta.segId.size() == geomPoints.size() + 1) {
+                    meta.segId.pop_back();
+                    meta.isCorner.pop_back();
+                } else if (meta.segId.size() != geomPoints.size()) {
+                    std::cerr << "Warning: metadata sidecar for " << gFile
+                              << " has " << meta.segId.size() << " points but geometry has "
+                              << geomPoints.size() << "; ignoring sidecar.\n";
+                    meta.valid = false;
+                }
+            }
+            allGeometries.push_back({gFile, geomPoints, meta});
         }
 
         if (config.enableCollisionDetection) {
@@ -241,15 +317,67 @@ int main(int argc, char* argv[]) {
 
         std::vector<std::vector<int>> allBoundaryIds;
         int currentGeomId = 0;
+        int taggedCorners = 0;
         for (const auto& geomData : allGeometries) {
             std::vector<int> boundaryIds;
-            for (const auto& p : geomData.points) {
-                mesh.addNode(p, NodeType::Boundary);
-                mesh.nodes.back().geomId = currentGeomId;
-                boundaryIds.push_back(mesh.nodes.back().id);
+            const SurfaceMeta& meta = geomData.meta;
+            for (size_t pi = 0; pi < geomData.points.size(); ++pi) {
+                mesh.addNode(geomData.points[pi], NodeType::Boundary);
+                Node& nd = mesh.nodes.back();
+                nd.geomId = currentGeomId;
+                if (meta.valid) {
+                    nd.segId = meta.segId[pi];
+                    nd.isCorner = meta.isCorner[pi] != 0;
+                    if (nd.isCorner) ++taggedCorners;
+                    auto it = meta.segBc.find(nd.segId);
+                    if (it != meta.segBc.end() && !it->second.empty()) nd.bcTag = it->second;
+                    auto kit = meta.segKind.find(nd.segId);
+                    if (kit != meta.segKind.end()) nd.curveKind = curveKindFromString(kit->second);
+                }
+                boundaryIds.push_back(nd.id);
             }
             allBoundaryIds.push_back(boundaryIds);
             currentGeomId++;
+        }
+        if (taggedCorners > 0)
+            std::cout << "  - Surface metadata     : " << taggedCorners << " corner node(s) tagged\n";
+
+        // Phase 2: report the analytic-curve coverage and sanity-check a fit.
+        // This is the bridge to Phase 3, where BL growth will query these curves
+        // for true tangents/curvature instead of one-sided finite differences.
+        {
+            int nLine = 0, nCircle = 0, nSmooth = 0, nPoly = 0;
+            for (const auto& nd : mesh.nodes) {
+                if (nd.type != NodeType::Boundary || nd.geomId < 0) continue;
+                switch (nd.curveKind) {
+                    case CurveKind::Line:   ++nLine; break;
+                    case CurveKind::Circle: ++nCircle; break;
+                    case CurveKind::Smooth: ++nSmooth; break;
+                    default:                ++nPoly; break;
+                }
+            }
+            if (nLine + nCircle + nSmooth > 0) {
+                std::cout << "  - Surface curve model  : line=" << nLine
+                          << " circle=" << nCircle << " smooth=" << nSmooth
+                          << " polyline=" << nPoly << "\n";
+                // If a circle segment exists, fit it and report the radius.
+                for (const auto& geomData : allGeometries) {
+                    if (!geomData.meta.valid) continue;
+                    std::vector<Point2D> circPts;
+                    for (size_t pi = 0; pi < geomData.points.size(); ++pi) {
+                        auto kit = geomData.meta.segKind.find(geomData.meta.segId[pi]);
+                        if (kit != geomData.meta.segKind.end() && kit->second == "circle")
+                            circPts.push_back(geomData.points[pi]);
+                    }
+                    if (circPts.size() >= 3) {
+                        CircleCurve cc(circPts);
+                        if (cc.valid())
+                            std::cout << "      * circle fit           : r=" << cc.radius()
+                                      << " center=(" << cc.center().x << ", " << cc.center().y << ")\n";
+                        break;
+                    }
+                }
+            }
         }
 
         try {
@@ -299,6 +427,14 @@ int main(int argc, char* argv[]) {
         }
         mesh.exportStarCD(starCDPrefix, config);
         std::cout << "StarCD mesh saved to: " << starCDPrefix << ".*" << std::endl;
+    }
+
+    if (config.exportCGNS) {
+        std::string cgnsFile = outputFilename;
+        if (cgnsFile.length() > 4 && cgnsFile.substr(cgnsFile.length() - 4) == ".vtk")
+            cgnsFile = cgnsFile.substr(0, cgnsFile.length() - 4);
+        cgnsFile += ".cgns";
+        mesh.exportCGNS(cgnsFile, config);
     }
 
     return hasIntersection ? 1 : 0;
