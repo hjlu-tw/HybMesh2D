@@ -10,6 +10,7 @@ from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, h
 from app.views.panels.transform_panel import TransformPanel
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.adjusting_stacked_widget import AdjustingStackedWidget
+from app.views.polygon_editor import PolygonEditor
 from app.models import shape_spec
 
 class EdgePropsPanel(CollapsibleSection):
@@ -325,12 +326,11 @@ class EdgePropsPanel(CollapsibleSection):
         layout_poly = QVBoxLayout(widget_poly)
         layout_poly.setContentsMargins(0, 0, 0, 0)
         layout_poly.setSpacing(2)
-        lbl_poly = QLabel("Vertices (x,y separated by semicolon):")
+        lbl_poly = QLabel("Vertices:")
         lbl_poly.setStyleSheet("color:#a0b0d0; font-size:10px;")
-        self.poly_vertices = QLineEdit("0,0; 1,0; 1,1; 0,1")
-        self.poly_vertices.setStyleSheet(SPIN_STYLE)
-        layout_poly.addWidget(help_widget(lbl_poly, "List of vertices for the polygon boundary (format: x1,y1; x2,y2; ...)"))
-        layout_poly.addWidget(help_widget(self.poly_vertices, "List of vertices for the polygon boundary (format: x1,y1; x2,y2; ...)"))
+        self.poly_vertices = PolygonEditor("0,0; 1,0; 1,1; 0,1")
+        layout_poly.addWidget(help_widget(lbl_poly, "Polygon boundary vertices. Edit in the table, load from a file, generate a regular polygon, or append points by absolute / relative (@dx,dy) / polar (@r<deg) coordinate."))
+        layout_poly.addWidget(self.poly_vertices)
         self.shape_stack.addWidget(widget_poly)
 
         # Connect combobox switch

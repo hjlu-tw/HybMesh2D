@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from app.utils import COMBO_STYLE, SPIN_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.polygon_editor import PolygonEditor
 
 # Field layout and per-type defaults are owned by app.models.shape_spec so the
 # dialog, the sidebar editor, and the curve controller never drift apart.
@@ -27,7 +28,7 @@ class ShapeParamDialog(QDialog):
         self.setStyleSheet("background:#121422; color:#cdd6f4;")
         self._curve_type = getattr(seg, "curve_type", "custom")
         self._spins: dict[str, CleanDoubleSpinBox] = {}
-        self._poly_edit: QLineEdit | None = None
+        self._poly_edit: PolygonEditor | None = None
         self._changed_cb = changed_cb
 
         lay = QVBoxLayout(self)
@@ -42,10 +43,9 @@ class ShapeParamDialog(QDialog):
         p.update({k: v for k, v in seg.parameters.items()})
 
         if self._curve_type == "polygon":
-            self._poly_edit = QLineEdit(
+            self._poly_edit = PolygonEditor(
                 seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1"))
-            self._poly_edit.setStyleSheet(SPIN_STYLE)
-            form.addRow(QLabel("Vertices (x,y; …):"), self._poly_edit)
+            form.addRow(QLabel("Vertices:"), self._poly_edit)
         else:
             for key, label in _FIELDS.get(self._curve_type, []):
                 spin = CleanDoubleSpinBox()
