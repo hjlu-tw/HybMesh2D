@@ -5,6 +5,34 @@ from app.services.index_helpers import remove_points_and_adjust_indices
 from app.services.geometry_service import GeometryService
 
 
+def _apply_segment_state(seg, state: dict):
+    """Restore a SegmentModel from a dict produced by ``SegmentModel.to_dict()``.
+
+    Shared by the single- and multi-segment state commands so undo/redo behaves
+    identically. Note the curve t-range lives inside ``parameters["range"]`` (not
+    as ``t_min``/``t_max`` keys), so it must be unpacked from there.
+    """
+    seg.type = state.get("type", "file")
+    seg.start_index = state.get("start_index", -1)
+    seg.end_index = state.get("end_index", -1)
+    seg.strategy = state.get("strategy", "uniform")
+    seg.parameters = copy.deepcopy(state.get("parameters", {}))
+    seg.match_previous = state.get("match_previous", False)
+    seg.closed = state.get("closed", True)
+
+    # Curve specific
+    seg.curve_type = state.get("curve_type", "custom")
+    seg.curve_mode = state.get("curve_mode", "parametric")
+    seg.x_formula = state.get("x_formula", "cos(t)")
+    seg.y_formula = state.get("y_formula", "sin(t)")
+    seg.formula = state.get("formula", "sin(x)")
+
+    # Unpack the t-range (stored inside parameters by to_dict).
+    r = seg.parameters.pop("range", [0.0, 6.283185307])
+    seg.t_min = float(r[0])
+    seg.t_max = float(r[1])
+
+
 class UpdateStrategyCmd(BaseCommand):
     """Change the resampling strategy of a segment."""
 
@@ -267,24 +295,7 @@ class UpdateSegmentStateCmd(BaseCommand):
             self.refresh_cb()
 
     def _apply_state(self, seg, state):
-        seg.type = state.get("type", "file")
-        seg.start_index = state.get("start_index", -1)
-        seg.end_index = state.get("end_index", -1)
-        seg.strategy = state.get("strategy", "uniform")
-        seg.parameters = copy.deepcopy(state.get("parameters", {}))
-        seg.match_previous = state.get("match_previous", False)
-
-        # Curve specific
-        seg.curve_type = state.get("curve_type", "custom")
-        seg.curve_mode = state.get("curve_mode", "parametric")
-        seg.x_formula = state.get("x_formula", "cos(t)")
-        seg.y_formula = state.get("y_formula", "sin(t)")
-        seg.formula = state.get("formula", "sin(x)")
-
-        # Unpack range
-        r = seg.parameters.pop("range", [0.0, 6.283185307])
-        seg.t_min = float(r[0])
-        seg.t_max = float(r[1])
+        _apply_segment_state(seg, state)
 
 
 class CreateSegmentsFromIndicesCmd(BaseCommand):
@@ -697,18 +708,4 @@ class UpdateMultipleSegmentsStateCmd(BaseCommand):
             self.refresh_cb()
 
     def _apply_state(self, seg, state):
-        seg.type = state.get("type", "file")
-        seg.start_index = state.get("start_index", -1)
-        seg.end_index = state.get("end_index", -1)
-        seg.strategy = state.get("strategy", "uniform")
-        seg.parameters = copy.deepcopy(state.get("parameters", {}))
-        seg.match_previous = state.get("match_previous", False)
-
-        # Curve specific
-        seg.curve_type = state.get("curve_type", "custom")
-        seg.curve_mode = state.get("curve_mode", "parametric")
-        seg.x_formula = state.get("x_formula", "cos(t)")
-        seg.y_formula = state.get("y_formula", "sin(t)")
-        seg.formula = state.get("formula", "0.0")
-        seg.t_min = state.get("t_min", 0.0)
-        seg.t_max = state.get("t_max", 1.0)
+        _apply_segment_state(seg, state)

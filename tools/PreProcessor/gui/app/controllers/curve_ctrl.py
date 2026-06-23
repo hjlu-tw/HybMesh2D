@@ -1,10 +1,13 @@
 from __future__ import annotations
+import copy
 import math
 import numpy as np
 from PyQt6.QtCore import Qt
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
-from app.commands.segment_cmds import AddCurveSegmentCmd, BakeCurveToGeometryCmd
+from app.commands.segment_cmds import (
+    AddCurveSegmentCmd, BakeCurveToGeometryCmd, UpdateSegmentStateCmd)
+from app.commands.vertex_cmds import ReplaceGeometryPointsCmd
 from app.services.geometry_service import GeometryService
 from app.models import shape_spec
 
@@ -239,7 +242,10 @@ class CurveControllerMixin:
         self._pending_seg = seg
         self._pending_is_new = is_new
         # Snapshot params so cancelling an *edit* restores the original shape.
-        self._pending_orig = None if is_new else dict(seg.parameters)
+        # Deep copy so nested params (e.g. polygon vertex lists) revert fully.
+        self._pending_orig = None if is_new else copy.deepcopy(seg.parameters)
+        # Full state snapshot so committing an *edit* is undoable.
+        self._pending_orig_state = None if is_new else seg.to_dict()
         # Clear the static selection highlight / transform gizmo so only the
         # live preview + control points are shown during the edit.
         canvas = self.main_window.canvas_view
@@ -517,10 +523,28 @@ class CurveControllerMixin:
 
     def _commit_file_edit(self):
         session = self.active_session()
+        orig = self._pending_geom_orig
         self._clear_file_edit_state()
         if session is None:
             return
-        self._apply_geometry_update(session)
+        new_points = session.original_points
+        changed = (orig is not None and new_points is not None
+                   and not np.array_equal(orig, new_points))
+        if changed:
+            # The new layout was applied in place during the drag; route it
+            # through the undo stack (restore old first so execute() applies it).
+            session.original_points = orig
+
+            def refresh(_s=session):
+                if _s is self.active_session():
+                    self._apply_geometry_update(_s)
+
+            cmd = ReplaceGeometryPointsCmd(session, orig, new_points,
+                                           refresh_cb=refresh,
+                                           label="Edit geometry shape")
+            session.command_history.execute(cmd)
+        else:
+            self._apply_geometry_update(session)
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
         self.main_window.log_panel.log("Updated geometry shape.")
@@ -557,9 +581,33 @@ class CurveControllerMixin:
         self._show_pending_handles()
         self._preview_pending()
 
+    def _record_segment_state_edit(self, session, seg, old_state, refresh_cb=None):
+        """Record an in-place edit of an existing segment so it is undoable.
+
+        ``old_state`` is ``seg.to_dict()`` captured BEFORE the edit; the edit has
+        already been applied in place, so the command is *recorded* (not executed)
+        — which also clears the redo stack. Returns True if a command was pushed.
+        """
+        if seg is None or session is None or old_state is None:
+            return False
+        try:
+            idx = session.project_model.segments.index(seg)
+        except ValueError:
+            return False
+        new_state = seg.to_dict()
+        if new_state == old_state:
+            return False
+        if refresh_cb is None:
+            refresh_cb = self._refresh_segment_list
+        cmd = UpdateSegmentStateCmd(session, idx, old_state, new_state,
+                                    refresh_cb=refresh_cb)
+        session.command_history.record(cmd)
+        return True
+
     def _commit_pending_edge(self):
         seg = self._pending_seg
         is_new = self._pending_is_new
+        orig_state = self._pending_orig_state
         session = self.active_session()
         self._clear_pending_state()
         if seg is None or not session:
@@ -574,8 +622,9 @@ class CurveControllerMixin:
             session.command_history.execute(cmd)
             self.main_window.log_panel.log(f"Added {seg.curve_type} Edge {seg.id}.")
         else:
-            # Editing an existing edge: params were mutated in place — just
-            # redraw and reselect it.
+            # Editing an existing edge: params were mutated in place — record the
+            # change (undoable) then redraw and reselect it.
+            self._record_segment_state_edit(session, seg, orig_state)
             self._refresh_segment_list()
             try:
                 self._select_segment_by_index(
@@ -606,6 +655,7 @@ class CurveControllerMixin:
         self._pending_dialog = None
         self._pending_is_new = True
         self._pending_orig = None
+        self._pending_orig_state = None
         canvas.clear_edge_handles()
         if session is not None:
             canvas.clear_curve_preview(session.session_id)
@@ -789,6 +839,7 @@ class CurveControllerMixin:
         if not dlg.exec():
             return
         cfg = dlg.result_config()
+        old_state = seg.to_dict()
         seg.curve_mode = cfg["mode"]
         seg.x_formula = cfg["x_formula"]
         seg.y_formula = cfg["y_formula"]
@@ -796,6 +847,7 @@ class CurveControllerMixin:
         seg.t_min = cfg["t_min"]
         seg.t_max = cfg["t_max"]
         seg.parameters["n_points"] = cfg["n_points"]
+        self._record_segment_state_edit(session, seg, old_state)
         self._is_populating = True
         try:
             self.main_window.sidebar_view.show_curve_segment(seg)
@@ -817,8 +869,10 @@ class CurveControllerMixin:
         dlg = ShapeParamDialog(seg, self.main_window)
         if dlg.exec():
             updates, n_points = dlg.result_params()
+            old_state = seg.to_dict()
             seg.parameters.update(updates)
             seg.parameters["n_points"] = n_points
+            self._record_segment_state_edit(session, seg, old_state)
             # Reflect the new values in the sidebar then re-preview.
             self._is_populating = True
             try:

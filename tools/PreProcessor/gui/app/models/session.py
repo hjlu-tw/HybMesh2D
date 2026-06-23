@@ -47,7 +47,6 @@ class GeometrySession:
         self.project_model: ProjectModel = ProjectModel()
         self.command_history: CommandHistory = CommandHistory()
         self.is_visible: bool = True
-        self.controller = None  # Set by controller when session is created
         self.param_snapshot: dict = {}
         self.segment_state_snapshot: dict = {}
         self.mesh_config: MeshConfig = MeshConfig()

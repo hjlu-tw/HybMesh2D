@@ -39,6 +39,10 @@ class SessionControllerMixin:
     def _new_session(self, file_path: str = "") -> GeometrySession:
         """Create a session and add a tab to the shared canvas."""
         session = GeometrySession(file_path)
+        # Keep the toolbar undo/redo buttons in sync on every stack change,
+        # regardless of which command dispatch path ran (the no-arg call always
+        # reflects whichever session is active at the time).
+        session.command_history.on_change = self._update_undo_redo_buttons
 
         # Append BEFORE addTab so switch_tab (triggered by currentChanged)
         # can already find the session in self.sessions
@@ -676,6 +680,7 @@ class SessionControllerMixin:
         sessions_data = workspace_data.get("sessions", [])
         for session_dict in sessions_data:
             session = GeometrySession()
+            session.command_history.on_change = self._update_undo_redo_buttons
             session.file_path = session_dict.get("file_path", "")
             display_name = session_dict.get("display_name", "Untitled")
             session.display_name = display_name

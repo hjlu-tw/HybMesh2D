@@ -27,17 +27,26 @@ class CommandHistory:
     def __init__(self):
         self._undo_stack: deque[BaseCommand] = deque(maxlen=self.MAX_DEPTH)
         self._redo_stack: deque[BaseCommand] = deque(maxlen=self.MAX_DEPTH)
+        # Optional callback fired whenever the stacks change, so the UI can keep
+        # the undo/redo buttons in sync no matter which dispatch path ran.
+        self.on_change = None
+
+    def _notify(self):
+        if self.on_change is not None:
+            self.on_change()
 
     def execute(self, cmd: BaseCommand):
         """Execute a command and push it onto the undo stack."""
         cmd.execute()
         self._undo_stack.append(cmd)
         self._redo_stack.clear()
+        self._notify()
 
     def record(self, cmd: BaseCommand):
         """Record a command without executing it (already applied)."""
         self._undo_stack.append(cmd)
         self._redo_stack.clear()
+        self._notify()
 
     def undo(self) -> BaseCommand | None:
         if not self._undo_stack:
@@ -45,6 +54,7 @@ class CommandHistory:
         cmd = self._undo_stack.pop()
         cmd.undo()
         self._redo_stack.append(cmd)
+        self._notify()
         return cmd
 
     def redo(self) -> BaseCommand | None:
@@ -53,6 +63,7 @@ class CommandHistory:
         cmd = self._redo_stack.pop()
         cmd.execute()
         self._undo_stack.append(cmd)
+        self._notify()
         return cmd
 
     @property
@@ -66,4 +77,5 @@ class CommandHistory:
     def clear(self):
         self._undo_stack.clear()
         self._redo_stack.clear()
+        self._notify()
 

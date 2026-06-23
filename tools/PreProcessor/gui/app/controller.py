@@ -64,6 +64,7 @@ class AppController(
         self._pending_dialog = None
         self._pending_is_new = True       # True = creating, False = editing an existing edge
         self._pending_orig = None         # original params snapshot (to restore on cancel of an edit)
+        self._pending_orig_state = None   # full state snapshot (to make committing an edit undoable)
         self._custom_preview_fitted = False
         # Discrete-geometry editing (imported file edges): the whole connected
         # shape is edited together by its corner vertices; each edge re-fits
