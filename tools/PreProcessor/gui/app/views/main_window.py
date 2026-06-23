@@ -16,6 +16,8 @@ from app.views.panels.mesh_config_panel import MeshConfigPanel
 from app.views.panels.mesh_stats_panel import MeshStatsPanel
 from app.views.panels.solver_config_panel import SolverConfigPanel
 from app.views.panels.solver_monitor_panel import SolverMonitorPanel
+from app.views.panels.stl3d_panel import Stl3dConfigPanel
+from app.views.stl3d_canvas import Stl3dCanvasView
 from app.views.panels.result_panel import ResultControlPanel
 from app.styles import TOOLBAR_CHECKBOX_STYLE
 
@@ -85,6 +87,9 @@ class MainWindow(QMainWindow):
         # (complements the canvas toolbar's variable/colormap/overlay controls).
         self.result_control_panel = ResultControlPanel(self.sidebar_stack)
         self.sidebar_stack.addWidget(self.result_control_panel)     # idx 4
+        # Immersed-solid (STL -> phi) preprocessor config sidebar page
+        self.stl3d_config_panel = Stl3dConfigPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.stl3d_config_panel)       # idx 5
 
         # ── Right panel: tab-bar row + shared canvas ──────────────────────
         self.right_panel = QWidget(self)
@@ -167,7 +172,7 @@ class MainWindow(QMainWindow):
         self.mode_combo = QComboBox(self.tab_row)
         self.mode_combo.addItems([
             "PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics",
-            "Solver", "Results",
+            "Solver", "Results", "Immersed Solid (STL→Phi)",
         ])
         self.mode_combo.setStyleSheet("""
             QComboBox {
@@ -427,6 +432,10 @@ class MainWindow(QMainWindow):
         self.solver_monitor_panel = SolverMonitorPanel(self.canvas_stack)
         self.canvas_stack.addWidget(self.solver_monitor_panel)      # idx 3
 
+        # Immersed-solid 3D viewport (STL + domain box/grid + phi cells).
+        self.stl3d_canvas = Stl3dCanvasView(self.canvas_stack)
+        self.canvas_stack.addWidget(self.stl3d_canvas)              # idx 4
+
         right_layout.addWidget(self.tab_row)
         right_layout.addWidget(self.canvas_toolbar)
         right_layout.addWidget(self.canvas_stack, stretch=1)
@@ -597,8 +606,9 @@ class MainWindow(QMainWindow):
     def _on_mode_changed(self, idx: int):
         self.sidebar_stack.setCurrentIndex(idx)
         # Canvas mapping: CAD->0, Mesh/Stats/Solver->1 (mesh canvas), Results->2.
-        # CAD->geom, Mesh/Stats->mesh canvas, Solver->monitor, Results->result canvas
-        canvas_map = {0: 0, 1: 1, 2: 1, 3: 3, 4: 2}
+        # CAD->geom, Mesh/Stats->mesh canvas, Solver->monitor, Results->result
+        # canvas, Immersed Solid (5)->stl3d 3D viewport (idx 4).
+        canvas_map = {0: 0, 1: 1, 2: 1, 3: 3, 4: 2, 5: 4}
         self.canvas_stack.setCurrentIndex(canvas_map.get(idx, 0))
 
         is_pre = (idx == 0)

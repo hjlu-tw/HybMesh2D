@@ -60,6 +60,47 @@
 - **橙色**：合格 ($1.05 \sim 1.2$)。
 - **紅色**：不合格 ($> 1.2$)，且會在幾何上標註紅色 `x`。
 
+## 沉浸固體前處理：STL → Phi（GUI「Immersed Solid」模式）
+
+UNICONES 求解器以沉浸邊界法 (IBM) 處理固體，需要一個 **phi 標記場**（0 = 流體、1 = 固體）。GUI 新增的 **Immersed Solid (STL→Phi)** 模式包裝了 `solver/preprocess/STL3d`，把「載入 STL → 設定卡氏網格 → 射線追蹤產生 phi → 驗證」整合進互動式 3D 介面（pyqtgraph OpenGL，需 `PyOpenGL`）。
+
+啟動後在右上模式選單切到 **Immersed Solid (STL→Phi)**：
+
+```bash
+python3 tools/PreProcessor/gui/main.py
+```
+
+操作流程：
+
+1. **STL Input** — 按 `…` 載入 STL。自動偵測 ASCII/binary、顯示三角面，並以邊界框 +10% 自動框出卡氏域。
+2. **Cartesian Domain** — 六個 min/max 欄位定義卡氏域；`Fit to STL` 一鍵套用邊界框（margin % 可調）。3D 視窗的 domain box 與格線會隨欄位**即時更新**。
+3. **Grid Resolution** — Nx/Ny/Nz；面板即時顯示 $dx, dy, dz$ 與總 cell 數（平面案例用 Nz=2、$dz=0$）。
+4. **Search Method** — 全元素（穩健、較慢）或近 x-range（較快，均勻面網格適用）。
+5. **Generate phi** — 背景執行 STL3d（進度條 + log）。完成後 3D 顯示固體 cell（紅），可勾選流體 cell、用 `k=` 隔離單一 z 層做驗證；log 會回報固體佔比，全為 0 時警告（通常是 domain 範圍或單位未包住 STL）。
+
+輸出：`results/stl3d/<case>/<case>_phi_tec.dat`（Tecplot POINT 格式，每行 `x y z phi`）。
+
+### 一鍵帶入求解器 (Send to Solver)
+
+phi 場是**透過初始條件 DLL** 餵進求解器的。成功產生 phi 後，**Send to Solver →** 按鈕啟用，按下會自動：
+
+1. 將 phi 去除 Tecplot 標頭，寫成 `<case>_phi.dat`（`x y z phi`）。
+2. 產生會讀取它的初始條件 DLL：STL3d 的卡氏網格規格直接烤入，對求解器網格點做 O(1) 最近格點索引（原始碼存於 `results/solver/dll_src/ibm_init_<case>.cc`）。
+3. 在 Solver 設定開啟 `immersed_solid`、接好 init DLL 與 phi 檔路徑，並切到 **Solver** 分頁。
+
+之後設定好網格（`.vrt/.cel/.bnd`）按 Run Solver 即可：跑求解時 phi 檔會自動 staging 成 work 目錄的 `phi.dat`，DLL 也會自動以求解器相同旗標編譯。
+
+## IBM DLL Builder（GUI 內產生 / 編譯 IBM DLL）
+
+求解器的兩種使用者 DLL —— 初始條件 `initQ_at_p()` 與固體運動 `get_6dof_vel()` —— 可直接在 GUI 內產生，無需手寫 C++。在 **Solver** 模式展開 **Immersed Boundary (IBM)** 區塊，於 `init DLL` / `motion DLL` 欄位按 **Build…** 開啟：
+
+- **Tier 1（參數模板）**：選模板（靜止 / 剛體旋轉 / 平移 / 旋轉圓盤 / 自由流 / 自訂），填參數，按 `Generate Code` 產生 C++。
+- **Tier 2（程式碼編輯器）**：產生的原始碼可自由編輯（含 C++ 語法高亮）。
+- **Compile**：以與求解器**完全相同的旗標**（`g++ -D_INCLUDE_TEMPLATE_IMPLEMENTATION -fPIC -shared -O3`）試編，行內顯示 `file:line:col` 診斷（雙擊跳到該行）。
+- **Save & Use**：存成 `.cc` 並自動填回欄位；求解 pipeline 執行時會把它編進該 case 的 `dll/`。
+
+> 注意：產生的 `extern "C"` 簽章是與求解器的契約，集中維護於 `app/services/dll_templates.py`（求解器若改簽章，只需改這一處）。需要編譯器（g++/clang++）在 PATH 上；找不到時 Compile 會停用，但求解器仍會在執行時自行編譯 `.cc`。
+
 ## 範例檔案
 - `config/comprehensive_example.json`: 基礎功能綜合展示。
 - `config/industrial_pro_example.json`: 專業翼型布點與品質監控展示。

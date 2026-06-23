@@ -274,6 +274,21 @@ def find_solver_executables() -> dict:
     return found
 
 
+def find_stl3d_binary() -> str | None:
+    """Locate the prebuilt STL3d immersed-solid preprocessor binary.
+
+    Mirrors find_solver_executables (decision D5: use the existing binaries). The
+    binary ships in both the work and src dirs; prefer the work-dir copy.
+    """
+    repo = repo_root()
+    for rel in ("solver/preprocess/STL3d/work/stl3d",
+                "solver/preprocess/STL3d/src/stl3d"):
+        full = os.path.join(repo, rel)
+        if os.path.exists(full):
+            return full
+    return None
+
+
 def find_mpi_launcher() -> str | None:
     """Return the path to mpirun/mpiexec on PATH, or None if neither is present."""
     return shutil.which("mpirun") or shutil.which("mpiexec")

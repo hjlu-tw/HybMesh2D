@@ -205,6 +205,29 @@ class SolverConfigPanel(QScrollArea):
         w.setLayout(row)
         return w
 
+    def _dll_row(self, edit: QLineEdit, caption: str, build_btn: QPushButton):
+        """A DLL path row: line edit + Browse + a 'Build…' button."""
+        browse = QPushButton("…")
+        browse.setFixedWidth(32)
+        browse.setStyleSheet(
+            "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
+            "border-radius:4px;padding:2px;} QPushButton:hover{border-color:#5a9ad4;}")
+
+        def _do():
+            f, _ = QFileDialog.getOpenFileName(
+                self, caption, "", "C++ (*.cc *.cpp *.so);;All Files (*)")
+            if f:
+                edit.setText(f)
+        browse.clicked.connect(_do)
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.addWidget(edit, 1)
+        row.addWidget(browse)
+        row.addWidget(build_btn)
+        w = QWidget()
+        w.setLayout(row)
+        return w
+
     def _build_pipeline_section(self):
         sec = CollapsibleSection("Pipeline Binaries", start_collapsed=True)
         self._layout.addWidget(sec)
@@ -512,15 +535,26 @@ class SolverConfigPanel(QScrollArea):
         self.rigid_moving_body = _check("Rigid moving body", "Solid is a rigid moving body")
         self.init_cond_dll = _edit("Path to init-condition DLL source (.cc; compiled per-case)")
         self.motion_dll = _edit("Path to motion DLL source (.cc; compiled per-case)")
+        # "Build…" opens the IBM DLL builder (templates + editor + g++); the
+        # controller wires these and writes the resulting .cc path back here.
+        self.build_init_cond_btn = make_button("Build…", "#1d2a3a")
+        self.build_motion_btn = make_button("Build…", "#1d2a3a")
+        for b in (self.build_init_cond_btn, self.build_motion_btn):
+            b.setFixedWidth(64)
+            b.setToolTip("Generate / edit / compile this DLL with the IBM DLL Builder")
         form.addRow(help_label("phi_min:", "Minimum solid-phase phi"), self.solid_phase_phi_min)
         form.addRow(help_label("solid alpha:", "Solid-phase alpha"), self.solid_phase_alpha)
         form.addRow(help_label("solid eps:", "Solid-phase epsilon"), self.solid_phase_epsilon)
         form.addRow("", help_widget(self.stationary_solid, "Solid does not move"))
         form.addRow("", help_widget(self.rigid_moving_body, "Solid is a rigid moving body"))
         form.addRow(help_label("init DLL:", "Init-condition DLL source (.cc)"),
-                    self._browse_row(self.init_cond_dll, "Select init DLL source", "C++ (*.cc *.cpp *.so);;All Files (*)"))
+                    self._dll_row(self.init_cond_dll, "Select init DLL source", self.build_init_cond_btn))
         form.addRow(help_label("motion DLL:", "Motion DLL source (.cc)"),
-                    self._browse_row(self.motion_dll, "Select motion DLL source", "C++ (*.cc *.cpp *.so);;All Files (*)"))
+                    self._dll_row(self.motion_dll, "Select motion DLL source", self.build_motion_btn))
+        self.ibm_phi_file = _edit("phi field data (STL3d output), staged into the work dir as phi.dat")
+        form.addRow(help_label("phi field:", "Solid phi field data from STL3d (staged as work/phi.dat)"),
+                    self._browse_row(self.ibm_phi_file, "Select phi field data",
+                                     "phi data (*.dat);;All Files (*)"))
         align_form_labels(form, 110)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
@@ -760,6 +794,7 @@ class SolverConfigPanel(QScrollArea):
         self.rigid_moving_body.setChecked(cfg.rigid_moving_body)
         self.init_cond_dll.setText(cfg.init_cond_dll)
         self.motion_dll.setText(cfg.motion_dll)
+        self.ibm_phi_file.setText(cfg.ibm_phi_file)
 
         self.bc_table.setRowCount(0)
         for bc in cfg.bc_definitions:
@@ -857,6 +892,7 @@ class SolverConfigPanel(QScrollArea):
         cfg.rigid_moving_body = self.rigid_moving_body.isChecked()
         cfg.init_cond_dll = self.init_cond_dll.text().strip()
         cfg.motion_dll = self.motion_dll.text().strip()
+        cfg.ibm_phi_file = self.ibm_phi_file.text().strip()
 
         cfg.bc_definitions = []
         for r in range(self.bc_table.rowCount()):

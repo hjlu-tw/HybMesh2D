@@ -216,6 +216,7 @@ class SolverConfig:
     rigid_moving_body: bool = False
     init_cond_dll: str = ""             # path to .cc source (compiled per-case)
     motion_dll: str = ""                # path to .cc source (compiled per-case)
+    ibm_phi_file: str = ""              # phi field data (STL3d) staged into work/phi.dat
 
     # Boundary-condition definitions for the solver .def table:
     # [{"segment_no": 33, "bc_type": 5, "values": ""}, ...]

@@ -254,6 +254,9 @@ class SolverControllerMixin:
         if cfg.immersed_solid:
             cfg.init_cond_dll = self._stage_dll(cfg.init_cond_dll, dll_dir)
             cfg.motion_dll = self._stage_dll(cfg.motion_dll, dll_dir)
+            # STL3d phi field: the init DLL reads "phi.dat" from its cwd (work dir).
+            if cfg.ibm_phi_file:
+                self._stage_phi_file(cfg.ibm_phi_file, work_dir)
 
         # input.in with paths relative to the work dir.
         input_in_path = os.path.join(work_dir, "input.in")
@@ -294,6 +297,18 @@ class SolverControllerMixin:
                 log(f"[WARNING] g++ unavailable, cannot compile DLL: {e}")
                 return ""
         return f"../dll/{base}.so"
+
+    def _stage_phi_file(self, src: str, work_dir: str) -> None:
+        """Copy the STL3d phi field into the work dir as phi.dat (the name the
+        generated init DLL reads)."""
+        log = self.main_window.log_panel.log
+        if not os.path.exists(src):
+            log(f"[IBM] phi field not found, skipping: {src}")
+            return
+        dst = os.path.join(work_dir, "phi.dat")
+        if os.path.abspath(src) != os.path.abspath(dst):
+            shutil.copy2(src, dst)
+        log(f"[IBM] phi field -> {os.path.basename(dst)}")
 
     def _auto_link_mesh_output(self, cfg: SolverConfig) -> bool:
         """Fill cfg's getPGrid inputs from the last mesh generation's STAR-CD output."""
@@ -360,3 +375,17 @@ class SolverControllerMixin:
 
     def _find_solver_executables(self) -> dict:
         return find_solver_executables()
+
+    # ------------------------------------------------------------------ #
+    # IBM DLL builder (D7): generate / edit / compile a .cc, then point the
+    # solver config's init / motion field at the saved source.
+    # ------------------------------------------------------------------ #
+    def open_dll_builder(self, dll_type: str):
+        from app.views.dll_builder_dialog import DllBuilderDialog
+        sp = self.main_window.solver_config_panel
+        target = sp.init_cond_dll if dll_type == "init_cond" else sp.motion_dll
+        dlg = DllBuilderDialog(self.main_window, dll_type, target.text().strip())
+        if dlg.exec() and dlg.result_path:
+            target.setText(dlg.result_path)
+            self.main_window.log_panel.log(
+                f"[IBM] {dll_type} DLL source set: {dlg.result_path}")

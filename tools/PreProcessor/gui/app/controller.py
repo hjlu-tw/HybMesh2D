@@ -24,9 +24,11 @@ from app.controllers import (
     MeshGenControllerMixin,
     OpenEndpointControllerMixin,
     SolverControllerMixin,
-    PostprocessControllerMixin
+    PostprocessControllerMixin,
+    Stl3dControllerMixin
 )
 from app.models.solver_config import SolverConfig
+from app.models.stl3d_config import Stl3dConfig
 
 
 class AppController(
@@ -38,7 +40,8 @@ class AppController(
     MeshGenControllerMixin,
     OpenEndpointControllerMixin,
     SolverControllerMixin,
-    PostprocessControllerMixin
+    PostprocessControllerMixin,
+    Stl3dControllerMixin
 ):
 
     def __init__(self):
@@ -57,6 +60,12 @@ class AppController(
         self.global_result_path = ""
         self.global_result_data = None
         self._solver_worker = None
+
+        # Immersed-solid (STL3d) preprocessor state
+        self.global_stl3d_config = Stl3dConfig()
+        self._stl3d_worker = None
+        self._stl3d_bbox = None
+        self._stl3d_phi_path = ""
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line
@@ -272,7 +281,21 @@ class AppController(
         sp.cancel_solver_btn.clicked.connect(self.cancel_solver)
         sp.load_cfg_btn.clicked.connect(self.load_solver_config)
         sp.save_cfg_btn.clicked.connect(self.save_solver_config)
+        sp.build_init_cond_btn.clicked.connect(lambda: self.open_dll_builder("init_cond"))
+        sp.build_motion_btn.clicked.connect(lambda: self.open_dll_builder("motion"))
         self.init_solver()
+
+        # Immersed-solid (STL3d) panel
+        s3 = mw.stl3d_config_panel
+        s3.browse_btn.clicked.connect(self.browse_stl3d)
+        s3.fit_domain_btn.clicked.connect(self.fit_stl3d_domain)
+        s3.fit_btn.clicked.connect(self.fit_stl3d_view)
+        s3.run_btn.clicked.connect(self.run_stl3d)
+        s3.cancel_btn.clicked.connect(self.cancel_stl3d)
+        s3.config_changed.connect(self.on_stl3d_config_changed)
+        s3.display_changed.connect(self.on_stl3d_display_changed)
+        s3.send_solver_btn.clicked.connect(self.send_stl3d_to_solver)
+        self.init_stl3d()
 
         # Results / post-processing
         mw.result_canvas_view.load_btn.clicked.connect(self.open_result_dialog)
@@ -424,6 +447,9 @@ class AppController(
             
             # Update the Geometry Layers list panel in MeshConfigPanel
             self.sync_mesh_layers_panel()
+        elif idx == 5:  # Immersed Solid (STL -> phi): refresh the 3D overlay
+            self.on_stl3d_config_changed()
+            self.on_stl3d_display_changed()
 
     def handle_mesh_geom_files_changed(self, geom_files: list[str]):
         """Callback when geometry files in mesh config panel are modified."""
