@@ -22,12 +22,14 @@ class Stl3dWorker(QThread):
     progress_signal = pyqtSignal(int)        # 0..100
     finished_signal = pyqtSignal(int)        # return code (0 ok; <0 cancelled/error)
 
-    def __init__(self, binary: str, work_dir: str, para_path: str, nx: int):
+    def __init__(self, binary: str, work_dir: str, para_path: str, nx: int,
+                 threads: int = 1):
         super().__init__()
         self._binary = binary
         self._work_dir = work_dir
         self._para_path = para_path
         self._nx = max(int(nx), 1)
+        self._threads = max(int(threads), 1)   # OMP_NUM_THREADS (1 = serial)
         self._process: subprocess.Popen | None = None
         self._cancelled = False
 
@@ -39,6 +41,10 @@ class Stl3dWorker(QThread):
     def run(self):
         self._cancelled = False
         self.progress_signal.emit(0)
+        # OpenMP thread count (the binary is OpenMP-enabled; OMP_NUM_THREADS=1
+        # makes it run single-threaded, which is the default).
+        env = os.environ.copy()
+        env["OMP_NUM_THREADS"] = str(self._threads)
         try:
             with open(self._para_path, "rb") as stdin_f:
                 self._process = subprocess.Popen(
@@ -51,6 +57,7 @@ class Stl3dWorker(QThread):
                     errors="replace",
                     bufsize=1,
                     cwd=self._work_dir,
+                    env=env,
                 )
         except OSError as e:
             self.log_signal.emit(f"[STL3d] failed to start: {e}")
@@ -58,6 +65,7 @@ class Stl3dWorker(QThread):
             return
 
         last_pct = 0
+        last_logged_pct = -1
         for line in self._process.stdout:
             if self._cancelled:
                 self._process.terminate()
@@ -67,14 +75,22 @@ class Stl3dWorker(QThread):
             stripped = line.rstrip()
             if not stripped:
                 continue
-            self.log_signal.emit(f"[STL3d] {stripped}")
             m = _TRACE_RE.match(stripped)
             if m:
+                # The per-slice "<n> tracing" lines drive the progress bar but are
+                # too noisy for the log. Don't echo them; instead log a throttled
+                # percentage every 10% so the user sees it is working, not stuck.
                 # +1 so the final slice reads as ~100%; ray tracing dominates runtime.
                 pct = min(99, int(100 * (int(m.group(1)) + 1) / self._nx))
                 if pct > last_pct:
                     last_pct = pct
                     self.progress_signal.emit(pct)
+                bucket = (pct // 10) * 10
+                if bucket > last_logged_pct:
+                    last_logged_pct = bucket
+                    self.log_signal.emit(f"[STL3d] ray tracing… {bucket}%")
+                continue
+            self.log_signal.emit(f"[STL3d] {stripped}")
 
         self._process.wait()
         rc = self._process.returncode

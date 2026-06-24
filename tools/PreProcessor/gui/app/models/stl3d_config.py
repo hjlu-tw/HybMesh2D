@@ -59,6 +59,7 @@ class Stl3dConfig:
     ny: int = 128
     nz: int = 2
     all_search: bool = True            # all-element (robust) vs close x-range (fast)
+    omp_threads: int = 1               # OMP_NUM_THREADS at run time; 1 = serial (runtime only, not in para.in)
 
     # ------------------------------------------------------------------ #
     @property

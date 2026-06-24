@@ -293,8 +293,9 @@ class AppController(
         s3.run_btn.clicked.connect(self.run_stl3d)
         s3.cancel_btn.clicked.connect(self.cancel_stl3d)
         s3.config_changed.connect(self.on_stl3d_config_changed)
-        s3.display_changed.connect(self.on_stl3d_display_changed)
         s3.send_solver_btn.clicked.connect(self.send_stl3d_to_solver)
+        mw.stl3d_canvas.clear_btn.clicked.connect(self.clear_stl3d)
+        mw.stl3d_canvas.clear_phi_btn.clicked.connect(self.clear_stl3d_phi)
         self.init_stl3d()
 
         # Results / post-processing

@@ -3,7 +3,7 @@ import os
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QFormLayout, QComboBox, QSpinBox, QLabel, QCheckBox, QLineEdit,
+    QFormLayout, QComboBox, QSpinBox, QLabel, QLineEdit, QCheckBox,
     QPushButton, QFileDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -25,28 +25,30 @@ _SCROLLBAR_QSS = """
 """
 
 
-def _dspin(lo: float, hi: float, decimals: int, tip: str) -> CleanDoubleSpinBox:
+def _spin_style(width: int | None) -> str:
+    """SPIN_STYLE, optionally re-capped to ``width`` px so several spins fit one
+    row inside the narrow sidebar (the default 110px cap overflows a 3-spin row)."""
+    if width is None:
+        return SPIN_STYLE
+    return SPIN_STYLE.replace("max-width: 110px", f"max-width: {width}px")
+
+
+def _dspin(lo: float, hi: float, decimals: int, tip: str,
+           width: int | None = None) -> CleanDoubleSpinBox:
     s = CleanDoubleSpinBox()
     s.setRange(lo, hi)
     s.setDecimals(decimals)
-    s.setStyleSheet(SPIN_STYLE)
+    s.setStyleSheet(_spin_style(width))
     s.setToolTip(tip)
     return s
 
 
-def _ispin(lo: int, hi: int, tip: str) -> QSpinBox:
+def _ispin(lo: int, hi: int, tip: str, width: int | None = None) -> QSpinBox:
     s = QSpinBox()
     s.setRange(lo, hi)
-    s.setStyleSheet(SPIN_STYLE)
+    s.setStyleSheet(_spin_style(width))
     s.setToolTip(tip)
     return s
-
-
-def _check(text: str, tip: str) -> QCheckBox:
-    c = QCheckBox(text)
-    c.setStyleSheet("color:#a0a8c0;")
-    c.setToolTip(tip)
-    return c
 
 
 class Stl3dConfigPanel(QScrollArea):
@@ -58,7 +60,6 @@ class Stl3dConfigPanel(QScrollArea):
     """
 
     config_changed = pyqtSignal()          # domain / resolution / STL edited
-    display_changed = pyqtSignal()         # a show-* checkbox or slice toggled
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -107,7 +108,7 @@ class Stl3dConfigPanel(QScrollArea):
         self._build_domain_section()
         self._build_resolution_section()
         self._build_search_section()
-        self._build_display_section()
+        self._build_parallel_section()
 
         self._layout.addStretch()
 
@@ -115,7 +116,7 @@ class Stl3dConfigPanel(QScrollArea):
 
     # ------------------------------------------------------------------ #
     def _build_input_section(self):
-        sec = CollapsibleSection("STL Input", start_collapsed=False)
+        sec = CollapsibleSection("STL Input", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
 
@@ -147,15 +148,17 @@ class Stl3dConfigPanel(QScrollArea):
         form.addRow(help_label("STL File:", "STL surface file"), path_w)
         form.addRow(help_label("Encoding:", "STL encoding (ASCII / binary)"), self.ascii_combo)
         form.addRow(help_label("Case Name:", "Output case name"), self.case_name)
-        align_form_labels(form, 90)
+        align_form_labels(form, 78)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
 
     def _build_domain_section(self):
-        sec = CollapsibleSection("Cartesian Domain", start_collapsed=False)
+        sec = CollapsibleSection("Cartesian Domain", start_collapsed=True)
         self._layout.addWidget(sec)
 
-        self.fit_domain_btn = make_button("Fit to STL", "#1d2a3a")
+        self.fit_domain_btn = make_button("Auto Domain", "#1d2a3a")
+        self.fit_domain_btn.setToolTip(
+            "Set the domain bounds to the STL bounding box, padded by margin %")
         margin_row = QHBoxLayout()
         margin_row.setSpacing(4)
         margin_row.addWidget(self.fit_domain_btn, 1)
@@ -169,12 +172,12 @@ class Stl3dConfigPanel(QScrollArea):
         sec.add_layout(margin_row)
 
         form = QFormLayout()
-        self.xmin = _dspin(-1e9, 1e9, 6, "Domain x min")
-        self.xmax = _dspin(-1e9, 1e9, 6, "Domain x max")
-        self.ymin = _dspin(-1e9, 1e9, 6, "Domain y min")
-        self.ymax = _dspin(-1e9, 1e9, 6, "Domain y max")
-        self.zmin = _dspin(-1e9, 1e9, 6, "Domain z min")
-        self.zmax = _dspin(-1e9, 1e9, 6, "Domain z max")
+        self.xmin = _dspin(-1e9, 1e9, 6, "Domain x min", width=90)
+        self.xmax = _dspin(-1e9, 1e9, 6, "Domain x max", width=90)
+        self.ymin = _dspin(-1e9, 1e9, 6, "Domain y min", width=90)
+        self.ymax = _dspin(-1e9, 1e9, 6, "Domain y max", width=90)
+        self.zmin = _dspin(-1e9, 1e9, 6, "Domain z min", width=90)
+        self.zmax = _dspin(-1e9, 1e9, 6, "Domain z max", width=90)
         for lo, hi, lbl in [(self.xmin, self.xmax, "X range:"),
                             (self.ymin, self.ymax, "Y range:"),
                             (self.zmin, self.zmax, "Z range:")]:
@@ -185,17 +188,17 @@ class Stl3dConfigPanel(QScrollArea):
             w = QWidget()
             w.setLayout(row)
             form.addRow(help_label(lbl, "Cartesian domain bounds (min, max)"), w)
-        align_form_labels(form, 90)
+        align_form_labels(form, 78)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
 
     def _build_resolution_section(self):
-        sec = CollapsibleSection("Grid Resolution", start_collapsed=False)
+        sec = CollapsibleSection("Grid Resolution", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
-        self.nx = _ispin(2, 4096, "Number of grid points in x")
-        self.ny = _ispin(2, 4096, "Number of grid points in y")
-        self.nz = _ispin(1, 4096, "Number of grid points in z (use 2 for a quasi-2D / planar case)")
+        self.nx = _ispin(2, 4096, "Number of grid points in x", width=66)
+        self.ny = _ispin(2, 4096, "Number of grid points in y", width=66)
+        self.nz = _ispin(1, 4096, "Number of grid points in z (use 2 for a quasi-2D / planar case)", width=66)
         self.nx.setValue(128); self.ny.setValue(128); self.nz.setValue(2)
         n_row = QHBoxLayout()
         n_row.setSpacing(4)
@@ -204,7 +207,7 @@ class Stl3dConfigPanel(QScrollArea):
         nw = QWidget()
         nw.setLayout(n_row)
         form.addRow(help_label("Nx, Ny, Nz:", "Grid points per axis"), nw)
-        align_form_labels(form, 90)
+        align_form_labels(form, 78)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
 
@@ -232,36 +235,45 @@ class Stl3dConfigPanel(QScrollArea):
             "Ray-tracing element search. All-elements never misses a triangle but "
             "scales with surface size; close x-range is faster on uniform meshes.")
         form.addRow(help_label("Method:", "Ray-tracing element search strategy"), self.search_combo)
-        align_form_labels(form, 90)
+        align_form_labels(form, 78)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
 
-    def _build_display_section(self):
-        sec = CollapsibleSection("Display", start_collapsed=False)
+    def _build_parallel_section(self):
+        sec = CollapsibleSection("Parallel (OpenMP)", start_collapsed=True)
         self._layout.addWidget(sec)
-        self.show_stl_cb = _check("STL surface", "Show the STL surface")
-        self.show_box_cb = _check("Domain box", "Show the Cartesian domain box")
-        self.show_grid_cb = _check("Grid lines", "Show the (decimated) grid lattice on the box faces")
-        self.show_solid_cb = _check("Solid cells (phi=1)", "Show marked solid cells from the last run")
-        self.show_fluid_cb = _check("Fluid cells (phi=0)", "Show fluid cells (faint) from the last run")
-        for cb, val in [(self.show_stl_cb, True), (self.show_box_cb, True),
-                        (self.show_grid_cb, True), (self.show_solid_cb, True),
-                        (self.show_fluid_cb, False)]:
-            cb.setChecked(val)
-            sec.add_widget(cb)
 
-        slice_row = QHBoxLayout()
-        slice_row.setSpacing(4)
-        self.slice_all_cb = _check("All z-layers", "Show every z-layer, or isolate one below")
-        self.slice_all_cb.setChecked(True)
-        slice_row.addWidget(self.slice_all_cb)
-        self.slice_spin = _ispin(0, 0, "z-layer index to isolate")
-        self.slice_spin.setEnabled(False)
-        slice_row.addWidget(QLabel("k="))
-        slice_row.addWidget(self.slice_spin)
-        sw = QWidget()
-        sw.setLayout(slice_row)
-        sec.add_widget(sw)
+        self.omp_cb = QCheckBox("Enable OpenMP")
+        self.omp_cb.setStyleSheet("color:#a0a8c0;")
+        self.omp_cb.setToolTip(
+            "Off = single-threaded (default). On = parallel ray tracing across the "
+            "chosen number of threads. Biggest gains on heavy STLs / all-element search.")
+        sec.add_widget(self.omp_cb)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        tlbl = QLabel("Threads:")
+        tlbl.setStyleSheet("color:#7a82a0;")
+        tlbl.setFixedWidth(78)
+        self.threads_spin = QSpinBox()
+        self.threads_spin.setRange(1, 256)
+        self.threads_spin.setValue(max(1, os.cpu_count() or 1))   # default = all cores
+        self.threads_spin.setStyleSheet(_spin_style(70))
+        self.threads_spin.setEnabled(False)
+        self.threads_spin.setToolTip("OMP_NUM_THREADS used when OpenMP is enabled")
+        row.addWidget(tlbl)
+        row.addWidget(self.threads_spin)
+        row.addStretch()
+        sec.add_layout(row)
+
+        hint = QLabel(f"Detected {os.cpu_count() or '?'} logical cores.")
+        hint.setStyleSheet("color:#6b7390; font-size:10px;")
+        sec.add_widget(hint)
+
+    # ------------------------------------------------------------------ #
+    def omp_threads(self) -> int:
+        """Effective OMP_NUM_THREADS: 1 (serial) unless OpenMP is enabled."""
+        return self.threads_spin.value() if self.omp_cb.isChecked() else 1
 
     # ------------------------------------------------------------------ #
     def _wire_live_signals(self):
@@ -269,19 +281,11 @@ class Stl3dConfigPanel(QScrollArea):
                   self.nx, self.ny, self.nz):
             w.valueChanged.connect(self._on_cfg_edited)
         self.case_name.textChanged.connect(lambda *_: self.config_changed.emit())
-
-        for cb in (self.show_stl_cb, self.show_box_cb, self.show_grid_cb,
-                   self.show_solid_cb, self.show_fluid_cb, self.slice_all_cb):
-            cb.toggled.connect(self._on_display_changed)
-        self.slice_spin.valueChanged.connect(lambda *_: self.display_changed.emit())
+        self.omp_cb.toggled.connect(self.threads_spin.setEnabled)
 
     def _on_cfg_edited(self, *_):
         self.refresh_derived()
         self.config_changed.emit()
-
-    def _on_display_changed(self, *_):
-        self.slice_spin.setEnabled(not self.slice_all_cb.isChecked())
-        self.display_changed.emit()
 
     def refresh_derived(self):
         """Recompute dx/dy/dz, cell count, and the over-resolution warning."""
@@ -311,6 +315,7 @@ class Stl3dConfigPanel(QScrollArea):
         cfg.zmin, cfg.zmax = self.zmin.value(), self.zmax.value()
         cfg.nx, cfg.ny, cfg.nz = self.nx.value(), self.ny.value(), self.nz.value()
         cfg.all_search = self.search_combo.currentIndex() == 0
+        cfg.omp_threads = self.omp_threads()   # 1 = serial (OpenMP off)
         return cfg
 
     def set_config(self, cfg: Stl3dConfig):
@@ -326,21 +331,11 @@ class Stl3dConfigPanel(QScrollArea):
             self.zmin.setValue(cfg.zmin); self.zmax.setValue(cfg.zmax)
             self.nx.setValue(cfg.nx); self.ny.setValue(cfg.ny); self.nz.setValue(cfg.nz)
             self.search_combo.setCurrentIndex(0 if cfg.all_search else 1)
+        # omp_threads > 1 means OpenMP was enabled with that thread count.
+        with block_signals(self.omp_cb, self.threads_spin):
+            enabled = int(getattr(cfg, "omp_threads", 1) or 1) > 1
+            self.omp_cb.setChecked(enabled)
+            self.threads_spin.setEnabled(enabled)
+            if enabled:
+                self.threads_spin.setValue(int(cfg.omp_threads))
         self.refresh_derived()
-
-    # display helpers ---------------------------------------------------- #
-    def visibility(self) -> dict:
-        return {"stl": self.show_stl_cb.isChecked(),
-                "box": self.show_box_cb.isChecked(),
-                "grid": self.show_grid_cb.isChecked(),
-                "solid": self.show_solid_cb.isChecked(),
-                "fluid": self.show_fluid_cb.isChecked()}
-
-    def slice_k(self) -> int | None:
-        return None if self.slice_all_cb.isChecked() else self.slice_spin.value()
-
-    def set_slice_max(self, n_levels: int):
-        """Configure the z-slice spin range after a run produced ``n_levels``."""
-        with block_signals(self.slice_spin):
-            self.slice_spin.setRange(0, max(0, n_levels - 1))
-            self.slice_spin.setValue(0)

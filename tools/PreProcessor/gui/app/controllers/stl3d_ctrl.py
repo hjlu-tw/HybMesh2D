@@ -48,6 +48,7 @@ class Stl3dControllerMixin:
         log = self.main_window.log_panel.log
         panel = self.main_window.stl3d_config_panel
         canvas = self.main_window.stl3d_canvas
+        log(f"Reading STL {os.path.basename(path)} … (parsing triangles)")
         try:
             tris = load_stl_triangles(path)
             bbox = stl_bounding_box(path)
@@ -84,10 +85,9 @@ class Stl3dControllerMixin:
         self.main_window.stl3d_canvas.set_domain(cfg.domain)
 
     def on_stl3d_display_changed(self):
-        panel = self.main_window.stl3d_config_panel
-        canvas = self.main_window.stl3d_canvas
-        canvas.set_visibility(**panel.visibility())
-        canvas.set_slice(panel.slice_k())
+        # The display toggles / z-slice now live on the 3D canvas's own top bar;
+        # just re-apply its current state to the scene.
+        self.main_window.stl3d_canvas.apply_display()
 
     def fit_stl3d_domain(self):
         if getattr(self, "_stl3d_bbox", None) is None:
@@ -98,10 +98,32 @@ class Stl3dControllerMixin:
         cfg.fit_to_bbox(self._stl3d_bbox, margin=panel.margin_spin.value() / 100.0)
         panel.set_config(cfg)
         self.on_stl3d_config_changed()
-        self.main_window.stl3d_canvas.fit_view()
 
     def fit_stl3d_view(self):
         self.main_window.stl3d_canvas.fit_view()
+
+    def clear_stl3d(self):
+        """Clear everything: the loaded STL surface and the phi result."""
+        canvas = self.main_window.stl3d_canvas
+        panel = self.main_window.stl3d_config_panel
+        canvas.set_stl(None)
+        canvas.clear_phi()
+        self._stl3d_bbox = None
+        self._stl3d_phi_path = ""
+        panel.stl_path.setText("")
+        self.global_stl3d_config.stl_path = ""
+        panel.send_solver_btn.setEnabled(False)
+        panel.status_lbl.setText("Load an STL surface to begin.")
+        self.main_window.log_panel.log("[STL3d] Cleared STL surface and phi result.")
+
+    def clear_stl3d_phi(self):
+        """Clear only the phi result (keep the STL surface and domain box)."""
+        canvas = self.main_window.stl3d_canvas
+        panel = self.main_window.stl3d_config_panel
+        canvas.clear_phi()
+        self._stl3d_phi_path = ""
+        panel.send_solver_btn.setEnabled(False)
+        self.main_window.log_panel.log("[STL3d] Cleared phi result (STL kept).")
 
     # ------------------------------------------------------------------ #
     # Run / cancel
@@ -152,10 +174,14 @@ class Stl3dControllerMixin:
         pb.setVisible(True)
         self.main_window.mode_combo.setCurrentIndex(5)
 
+        omp = max(int(getattr(cfg, "omp_threads", 1) or 1), 1)
         log(f"--- Starting STL3d ({cfg.nx}x{cfg.ny}x{cfg.nz} grid, "
-            f"{'all-element' if cfg.all_search else 'close x-range'} search) in {work_dir} ---")
+            f"{'all-element' if cfg.all_search else 'close x-range'} search, "
+            f"{'serial' if omp == 1 else f'OpenMP {omp} threads'}) in {work_dir} ---")
 
-        self._stl3d_worker = Stl3dWorker(binary, work_dir, para_path, cfg.nx)
+        log("[STL3d] Working… loading STL and building the search structure, then "
+            "ray tracing (a large STL / all-element search can take a while).")
+        self._stl3d_worker = Stl3dWorker(binary, work_dir, para_path, cfg.nx, threads=omp)
         self._stl3d_worker.log_signal.connect(log)
         self._stl3d_worker.progress_signal.connect(self._on_stl3d_progress)
         self._stl3d_worker.finished_signal.connect(self._on_stl3d_finished)
@@ -191,6 +217,7 @@ class Stl3dControllerMixin:
         if not path or not os.path.exists(path):
             log("[ERROR] STL3d finished but the phi output file was not found.")
             return
+        log("Parsing phi output … (reading the Tecplot field)")
         try:
             pts, phi = parse_phi_tecplot(path)
         except Exception as e:
@@ -202,8 +229,9 @@ class Stl3dControllerMixin:
         pct = (100.0 * n_solid / n) if n else 0.0
 
         canvas = self.main_window.stl3d_canvas
+        log(f"Rendering phi field … ({n:,} cells)")
         canvas.set_phi(pts, phi)
-        panel.set_slice_max(canvas.n_z_levels)
+        canvas.set_slice_max(canvas.n_z_levels)
         self.on_stl3d_display_changed()
         # A fresh phi result exists: enable the one-click hand-off.
         panel.send_solver_btn.setEnabled(n_solid > 0)

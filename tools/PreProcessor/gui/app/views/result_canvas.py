@@ -117,6 +117,10 @@ class ResultCanvasView(QWidget):
         self.wallqty_btn.setToolTip(
             "Open the wall-quantity line plot (WallForce.dat, vsurface_qty.dat, …)")
         hl.addWidget(self.wallqty_btn)
+        self.fit_btn = QPushButton("Fit View")
+        self.fit_btn.setStyleSheet(self.load_btn.styleSheet())
+        self.fit_btn.setToolTip("Fit the view to the full result extent")
+        hl.addWidget(self.fit_btn)
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setStyleSheet(self.load_btn.styleSheet())
         hl.addWidget(self.clear_btn)
@@ -151,6 +155,7 @@ class ResultCanvasView(QWidget):
         self.iso_cb.toggled.connect(self._on_iso_toggled)
         self.zone_combo.currentIndexChanged.connect(self._on_zone_changed)
         self.save_btn.clicked.connect(self._save_png)
+        self.fit_btn.clicked.connect(self.reset_view)
         self.clear_btn.clicked.connect(self.clear)
         self.wallqty_btn.clicked.connect(self._open_wall_qty)
         self._wall_dialog = None
