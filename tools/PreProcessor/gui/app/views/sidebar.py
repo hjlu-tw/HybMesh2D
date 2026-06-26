@@ -175,6 +175,7 @@ class SidebarView(QWidget):
         fl.setSpacing(6)
         fl.addWidget(self.save_btn, stretch=1)
         fl.addWidget(self.generate_btn, stretch=1)
+        fl.addWidget(self.extrude_stl_btn, stretch=1)
 
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setFixedWidth(34)

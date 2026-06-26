@@ -25,7 +25,8 @@ from app.controllers import (
     OpenEndpointControllerMixin,
     SolverControllerMixin,
     PostprocessControllerMixin,
-    Stl3dControllerMixin
+    Stl3dControllerMixin,
+    ExtrudeControllerMixin,
 )
 from app.models.solver_config import SolverConfig
 from app.models.stl3d_config import Stl3dConfig
@@ -41,7 +42,8 @@ class AppController(
     OpenEndpointControllerMixin,
     SolverControllerMixin,
     PostprocessControllerMixin,
-    Stl3dControllerMixin
+    Stl3dControllerMixin,
+    ExtrudeControllerMixin,
 ):
 
     def __init__(self):
@@ -64,8 +66,12 @@ class AppController(
         # Immersed-solid (STL3d) preprocessor state
         self.global_stl3d_config = Stl3dConfig()
         self._stl3d_worker = None
+        self._fit_worker = None            # background STL↔φ fit-check worker
         self._stl3d_bbox = None
+        self._stl3d_tris = None            # cached STL triangles for the fit check
         self._stl3d_phi_path = ""
+        self._stl3d_phi_pts = None         # cached parsed phi field (fit check)
+        self._stl3d_phi_val = None
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line
@@ -111,6 +117,7 @@ class AppController(
             sb.file_preview_btn.clicked.connect(self.preview_backend)
         sb.save_btn.clicked.connect(self.save_output)
         sb.generate_btn.clicked.connect(self.generate_json)
+        sb.extrude_stl_btn.clicked.connect(self.extrude_active_to_stl)
         # "Add Analytic Edge" is now a shape-tool menu: pick a shape, then draw
         # it interactively on the canvas (Custom Formula adds a blank edge).
         self._shape_tool_menu = QMenu(self.main_window)
@@ -293,6 +300,7 @@ class AppController(
         s3.run_btn.clicked.connect(self.run_stl3d)
         s3.cancel_btn.clicked.connect(self.cancel_stl3d)
         s3.config_changed.connect(self.on_stl3d_config_changed)
+        s3.check_fit_btn.clicked.connect(self.check_stl3d_fit)
         s3.send_solver_btn.clicked.connect(self.send_stl3d_to_solver)
         mw.stl3d_canvas.clear_btn.clicked.connect(self.clear_stl3d)
         mw.stl3d_canvas.clear_phi_btn.clicked.connect(self.clear_stl3d_phi)

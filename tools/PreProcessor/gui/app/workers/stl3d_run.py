@@ -94,8 +94,14 @@ class Stl3dWorker(QThread):
 
         self._process.wait()
         rc = self._process.returncode
+        if self._cancelled:
+            # cancel() terminate()s the process, which usually closes stdout via
+            # EOF before the in-loop cancel branch runs, so wait() returns the
+            # SIGTERM code. Report it as the cancel sentinel (-2), not a failure.
+            self.finished_signal.emit(-2)
+            return
         if rc == 0:
             self.progress_signal.emit(100)
-        elif not self._cancelled:
+        else:
             self.log_signal.emit(f"[STL3d] exited with code {rc}")
         self.finished_signal.emit(rc)

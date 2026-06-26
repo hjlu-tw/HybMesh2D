@@ -25,12 +25,12 @@ _SCROLLBAR_QSS = """
 """
 
 
-def _spin_style(width: int | None) -> str:
-    """SPIN_STYLE, optionally re-capped to ``width`` px so several spins fit one
-    row inside the narrow sidebar (the default 110px cap overflows a 3-spin row)."""
-    if width is None:
-        return SPIN_STYLE
-    return SPIN_STYLE.replace("max-width: 110px", f"max-width: {width}px")
+def _cap_width(spin, width: int | None) -> None:
+    """Re-cap a spin box's width via Qt rather than string-patching SPIN_STYLE,
+    so several spins fit one row in the narrow sidebar (the stylesheet's default
+    110px cap overflows a 3-spin row)."""
+    if width is not None:
+        spin.setMaximumWidth(width)
 
 
 def _dspin(lo: float, hi: float, decimals: int, tip: str,
@@ -38,7 +38,8 @@ def _dspin(lo: float, hi: float, decimals: int, tip: str,
     s = CleanDoubleSpinBox()
     s.setRange(lo, hi)
     s.setDecimals(decimals)
-    s.setStyleSheet(_spin_style(width))
+    s.setStyleSheet(SPIN_STYLE)
+    _cap_width(s, width)
     s.setToolTip(tip)
     return s
 
@@ -46,7 +47,8 @@ def _dspin(lo: float, hi: float, decimals: int, tip: str,
 def _ispin(lo: int, hi: int, tip: str, width: int | None = None) -> QSpinBox:
     s = QSpinBox()
     s.setRange(lo, hi)
-    s.setStyleSheet(_spin_style(width))
+    s.setStyleSheet(SPIN_STYLE)
+    _cap_width(s, width)
     s.setToolTip(tip)
     return s
 
@@ -89,6 +91,16 @@ class Stl3dConfigPanel(QScrollArea):
         run_row.addWidget(self.cancel_btn)
         run_row.addWidget(self.fit_btn)
         self._layout.addLayout(run_row)
+
+        # Compare the phi result against the original STL (volume/area + surface
+        # Hausdorff) and paint a deviation heatmap. Enabled after a run.
+        self.check_fit_btn = make_button("Check Fit (STL ↔ φ)", "#1d2a3a")
+        self.check_fit_btn.setEnabled(False)
+        self.check_fit_btn.setToolTip(
+            "Measure how well the phi field matches the original STL: volume/area "
+            "agreement and surface deviation (mean/RMS/max Hausdorff, in cells). "
+            "Paints a green→red deviation heatmap on the canvas (Fit Δ toggle).")
+        self._layout.addWidget(self.check_fit_btn)
 
         # One-click hand-off: stage phi + generate the reading DLL + enable IBM,
         # then jump to the Solver tab. Enabled only after a successful run.
@@ -258,7 +270,8 @@ class Stl3dConfigPanel(QScrollArea):
         self.threads_spin = QSpinBox()
         self.threads_spin.setRange(1, 256)
         self.threads_spin.setValue(max(1, os.cpu_count() or 1))   # default = all cores
-        self.threads_spin.setStyleSheet(_spin_style(70))
+        self.threads_spin.setStyleSheet(SPIN_STYLE)
+        self.threads_spin.setMaximumWidth(70)
         self.threads_spin.setEnabled(False)
         self.threads_spin.setToolTip("OMP_NUM_THREADS used when OpenMP is enabled")
         row.addWidget(tlbl)

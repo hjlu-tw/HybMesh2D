@@ -14,10 +14,44 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QPushButton, QSpinBox,
 )
 
+from app.services.phi_quality import FIT_OK_CELLS
+
 _C_STL = (0.62, 0.71, 0.92, 1.0)
 _C_BOX = (0.36, 0.78, 0.92, 1.0)     # bright cyan box edges
 _C_SOLID = (0.95, 0.30, 0.27, 1.0)   # phi = 1
 _C_FLUID = (0.45, 0.50, 0.66, 0.25)  # phi = 0 (faint)
+
+# Fit-deviation heatmap reference scale: deviation is shown in cell counts
+# (dev / h), green at 0 → red at this many cells. Shares the fit verdict's
+# "acceptable" threshold so the heatmap saturates exactly where the report says
+# the surface is under-resolved.
+_DEV_VMAX_CELLS = FIT_OK_CELLS
+
+# RdYlGn_r colormap, imported lazily and cached: matplotlib is heavy and is only
+# needed once the deviation heatmap is first drawn, never at GUI startup.
+_DEV_CMAP = None
+
+
+def _dev_cmap():
+    global _DEV_CMAP
+    if _DEV_CMAP is None:
+        from matplotlib import colormaps
+        _DEV_CMAP = colormaps["RdYlGn_r"]
+    return _DEV_CMAP
+
+
+def _bar_button(text: str, *, base: str, border: str, hover: str,
+                padding: str = "3px 10px", checked_bg: str | None = None) -> QPushButton:
+    """A compact display-bar push button. Centralises the toolbar QSS so the four
+    buttons (2D/3D, Fit View, Clear φ, Clear All) share one style definition."""
+    qss = (f"QPushButton{{background:{base};color:#dde2ff;border:1px solid {border};"
+           f"border-radius:4px;padding:{padding};font-weight:bold;font-size:11px;}}"
+           f"QPushButton:hover{{border-color:{hover};}}")
+    if checked_bg:
+        qss += f"QPushButton:checked{{background:{checked_bg};border-color:{hover};color:#fff;}}"
+    b = QPushButton(text)
+    b.setStyleSheet(qss)
+    return b
 
 
 def _box_edge_segments(b) -> np.ndarray:
@@ -124,6 +158,7 @@ class Stl3dCanvasView(QWidget):
         self._box_item: gl.GLLinePlotItem | None = None
         self._solid_item: gl.GLScatterPlotItem | None = None
         self._fluid_item: gl.GLScatterPlotItem | None = None
+        self._dev_item: gl.GLScatterPlotItem | None = None
 
         self._bbox = None              # last STL/domain bbox for camera fit
         self._phi_pts: np.ndarray | None = None
@@ -131,7 +166,12 @@ class Stl3dCanvasView(QWidget):
         self._z_levels: np.ndarray | None = None
         self._slice_k: int | None = None   # None => show all z-layers
 
-        self._show = {"stl": True, "box": True, "solid": True, "fluid": False}
+        self._dev_pts: np.ndarray | None = None   # fit-deviation heatmap
+        self._dev_val: np.ndarray | None = None
+        self._dev_h: float = 1.0
+
+        self._show = {"stl": True, "box": True, "solid": True,
+                      "fluid": False, "dev": False}
 
         # ── Top display bar (moved here from the sidebar) ──────────────────
         layout.addWidget(self._build_display_bar())
@@ -163,8 +203,11 @@ class Stl3dCanvasView(QWidget):
         self.show_box_cb = _check("Domain box", "Show the Cartesian domain box", True)
         self.show_solid_cb = _check("Solid (φ=1)", "Show marked solid cells from the last run", True)
         self.show_fluid_cb = _check("Fluid (φ=0)", "Show fluid cells (faint) from the last run", False)
+        self.show_dev_cb = _check(
+            "Fit Δ", "Show the STL↔φ surface-deviation heatmap from Check Fit "
+            f"(green = within a cell, red ≥ {FIT_OK_CELLS:g} cells off)", False)
         for cb in (self.show_stl_cb, self.show_box_cb,
-                   self.show_solid_cb, self.show_fluid_cb):
+                   self.show_solid_cb, self.show_fluid_cb, self.show_dev_cb):
             hl.addWidget(cb)
 
         sep = QWidget(); sep.setFixedWidth(1); sep.setFixedHeight(16)
@@ -190,38 +233,28 @@ class Stl3dCanvasView(QWidget):
         # 2D/3D view toggle. Default is 2D (top-down, pan/zoom only, like the CAD
         # and Result canvases); checking it switches to the 3D orbit view. The
         # label shows the current mode.
-        self.view2d_btn = QPushButton("2D")
+        self.view2d_btn = _bar_button(
+            "2D", base="#1d2a3a", border="#2d3356", hover="#5a9ad4",
+            padding="3px 12px", checked_bg="#27406a")
         self.view2d_btn.setCheckable(True)
         self.view2d_btn.setToolTip(
             "2D top-down view (pan & zoom only) ↔ 3D orbit view")
-        self.view2d_btn.setStyleSheet(
-            "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
-            "border-radius:4px;padding:3px 12px;font-weight:bold;font-size:11px;}"
-            "QPushButton:hover{border-color:#5a9ad4;}"
-            "QPushButton:checked{background:#27406a;border-color:#5a9ad4;color:#fff;}")
         self.view2d_btn.toggled.connect(self._on_view2d_toggled)
         hl.addWidget(self.view2d_btn)
 
-        self.fit_btn = QPushButton("Fit View")
+        self.fit_btn = _bar_button("Fit View", base="#1d2a3a", border="#2d3356",
+                                   hover="#5a9ad4")
         self.fit_btn.setToolTip("Frame the camera on the domain box")
-        self.fit_btn.setStyleSheet(
-            "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
-            "border-radius:4px;padding:3px 10px;font-weight:bold;font-size:11px;}"
-            "QPushButton:hover{border-color:#5a9ad4;}")
         self.fit_btn.clicked.connect(self.fit_view)
         hl.addWidget(self.fit_btn)
 
-        _clear_qss = (
-            "QPushButton{background:#301a1a;color:#dde2ff;border:1px solid #5d2d2d;"
-            "border-radius:4px;padding:3px 10px;font-weight:bold;font-size:11px;}"
-            "QPushButton:hover{border-color:#ef4444;}")
-        self.clear_phi_btn = QPushButton("Clear φ")
+        self.clear_phi_btn = _bar_button("Clear φ", base="#301a1a",
+                                         border="#5d2d2d", hover="#ef4444")
         self.clear_phi_btn.setToolTip("Clear only the phi result (keep the STL surface)")
-        self.clear_phi_btn.setStyleSheet(_clear_qss)
         hl.addWidget(self.clear_phi_btn)
-        self.clear_btn = QPushButton("Clear All")
+        self.clear_btn = _bar_button("Clear All", base="#301a1a",
+                                     border="#5d2d2d", hover="#ef4444")
         self.clear_btn.setToolTip("Clear the STL surface and the phi result")
-        self.clear_btn.setStyleSheet(_clear_qss)
         hl.addWidget(self.clear_btn)
         return bar
 
@@ -240,7 +273,8 @@ class Stl3dCanvasView(QWidget):
         return {"stl": self.show_stl_cb.isChecked(),
                 "box": self.show_box_cb.isChecked(),
                 "solid": self.show_solid_cb.isChecked(),
-                "fluid": self.show_fluid_cb.isChecked()}
+                "fluid": self.show_fluid_cb.isChecked(),
+                "dev": self.show_dev_cb.isChecked()}
 
     def slice_k(self) -> int | None:
         return None if self.slice_all_cb.isChecked() else self.slice_spin.value()
@@ -303,16 +337,64 @@ class Stl3dCanvasView(QWidget):
         self._z_levels = np.unique(np.round(self._phi_pts[:, 2], 9)) \
             if len(self._phi_pts) else np.array([])
         self._slice_k = None
+        self.clear_fit_deviation()        # any prior fit heatmap is now stale
         self._refresh_phi()
 
     def clear_phi(self):
         self._phi_pts = self._phi_val = None
         self._z_levels = None
+        self.clear_fit_deviation()
         for attr in ("_solid_item", "_fluid_item"):
             item = getattr(self, attr)
             if item is not None:
                 self.view.removeItem(item)
                 setattr(self, attr, None)
+
+    # ------------------------------------------------------------------ #
+    # Fit-deviation heatmap (STL ↔ phi surface agreement)
+    # ------------------------------------------------------------------ #
+    def set_fit_deviation(self, points: np.ndarray, dev: np.ndarray, h_cell: float):
+        """Render the reconstructed boundary coloured by deviation from the STL.
+
+        ``dev`` is the per-point distance to the STL surface (model units);
+        ``h_cell`` the in-plane cell size used to scale the colour ramp.
+        """
+        self._dev_pts = np.asarray(points, dtype=np.float64)
+        self._dev_val = np.asarray(dev, dtype=np.float64)
+        self._dev_h = float(h_cell) if h_cell and h_cell > 0 else 1.0
+        self._refresh_dev()
+
+    def clear_fit_deviation(self):
+        self._dev_pts = self._dev_val = None
+        if self._dev_item is not None:
+            self.view.removeItem(self._dev_item)
+            self._dev_item = None
+        # Keep the toggle honest: with no heatmap, the "Fit Δ" box must read off
+        # rather than show as enabled over an empty layer.
+        cb = getattr(self, "show_dev_cb", None)
+        if cb is not None and cb.isChecked():
+            cb.blockSignals(True)
+            cb.setChecked(False)
+            cb.blockSignals(False)
+            self._show["dev"] = False     # keep the visibility state in sync
+
+    def _refresh_dev(self):
+        if self._dev_item is not None:
+            self.view.removeItem(self._dev_item)
+            self._dev_item = None
+        if self._dev_pts is None or len(self._dev_pts) == 0:
+            return
+        # Map deviation (in cell counts) onto a green→red ramp via the cached
+        # colormap (Normalize inlined as a clipped 0..1 scale to avoid the extra
+        # matplotlib.colors import).
+        cells = self._dev_val / self._dev_h
+        t = np.clip(cells / _DEV_VMAX_CELLS, 0.0, 1.0)
+        rgba = _dev_cmap()(t)
+        self._dev_item = gl.GLScatterPlotItem(
+            pos=self._dev_pts.astype(np.float32),
+            color=rgba.astype(np.float32), size=7.0, pxMode=True)
+        self._dev_item.setVisible(self._show["dev"])
+        self.view.addItem(self._dev_item)
 
     @property
     def n_z_levels(self) -> int:
@@ -360,7 +442,8 @@ class Stl3dCanvasView(QWidget):
     def set_visibility(self, **kwargs):
         self._show.update({k: bool(v) for k, v in kwargs.items() if k in self._show})
         pairs = [("stl", self._stl_item), ("box", self._box_item),
-                 ("solid", self._solid_item), ("fluid", self._fluid_item)]
+                 ("solid", self._solid_item), ("fluid", self._fluid_item),
+                 ("dev", self._dev_item)]
         for key, item in pairs:
             if item is not None:
                 item.setVisible(self._show[key])

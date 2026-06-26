@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 
+import numpy as np
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from app.models.stl3d_config import (
@@ -10,7 +11,9 @@ from app.models.stl3d_config import (
 )
 from app.services.stl_loader import load_stl_triangles
 from app.services.dll_templates import render_phi_field_init
+from app.services.phi_quality import FIT_WELL_CELLS, FIT_OK_CELLS
 from app.workers.stl3d_run import Stl3dWorker
+from app.workers.fit_check_run import FitCheckWorker
 from app.utils import repo_root, find_stl3d_binary
 
 
@@ -58,9 +61,11 @@ class Stl3dControllerMixin:
             return
 
         self._stl3d_bbox = bbox
+        self._stl3d_tris = tris                   # cached for the fit check
         canvas.set_stl(tris)
         canvas.clear_phi()
         panel.send_solver_btn.setEnabled(False)   # result is now stale
+        panel.check_fit_btn.setEnabled(False)
 
         cfg = panel.get_config()
         cfg.stl_path = path
@@ -109,10 +114,13 @@ class Stl3dControllerMixin:
         canvas.set_stl(None)
         canvas.clear_phi()
         self._stl3d_bbox = None
+        self._stl3d_tris = None
         self._stl3d_phi_path = ""
+        self._stl3d_phi_pts = self._stl3d_phi_val = None
         panel.stl_path.setText("")
         self.global_stl3d_config.stl_path = ""
         panel.send_solver_btn.setEnabled(False)
+        panel.check_fit_btn.setEnabled(False)
         panel.status_lbl.setText("Load an STL surface to begin.")
         self.main_window.log_panel.log("[STL3d] Cleared STL surface and phi result.")
 
@@ -122,7 +130,9 @@ class Stl3dControllerMixin:
         panel = self.main_window.stl3d_config_panel
         canvas.clear_phi()
         self._stl3d_phi_path = ""
+        self._stl3d_phi_pts = self._stl3d_phi_val = None
         panel.send_solver_btn.setEnabled(False)
+        panel.check_fit_btn.setEnabled(False)
         self.main_window.log_panel.log("[STL3d] Cleared phi result (STL kept).")
 
     # ------------------------------------------------------------------ #
@@ -168,6 +178,11 @@ class Stl3dControllerMixin:
         panel.run_btn.setEnabled(False)
         panel.cancel_btn.setEnabled(True)
         panel.send_solver_btn.setEnabled(False)   # pending fresh result
+        # The previous phi result is now stale: disable the fit check and drop the
+        # cache so it cannot be measured against the new (already-applied) config.
+        panel.check_fit_btn.setEnabled(False)
+        self._stl3d_phi_pts = self._stl3d_phi_val = None
+        self.main_window.stl3d_canvas.clear_fit_deviation()
         pb = self.main_window.progress_bar
         pb.setRange(0, 100)
         pb.setValue(0)
@@ -228,13 +243,18 @@ class Stl3dControllerMixin:
         n_solid = int((phi > 0.5).sum())
         pct = (100.0 * n_solid / n) if n else 0.0
 
+        # Cache the parsed field so Check Fit doesn't re-read the file.
+        self._stl3d_phi_pts = pts
+        self._stl3d_phi_val = phi
+
         canvas = self.main_window.stl3d_canvas
         log(f"Rendering phi field … ({n:,} cells)")
         canvas.set_phi(pts, phi)
         canvas.set_slice_max(canvas.n_z_levels)
         self.on_stl3d_display_changed()
-        # A fresh phi result exists: enable the one-click hand-off.
+        # A fresh phi result exists: enable the one-click hand-off + fit check.
         panel.send_solver_btn.setEnabled(n_solid > 0)
+        panel.check_fit_btn.setEnabled(n_solid > 0)
 
         log(f"--- STL3d done: {n_solid:,} / {n:,} cells solid ({pct:.1f}%) ---")
         log(f"phi field written to {path}")
@@ -243,6 +263,77 @@ class Stl3dControllerMixin:
                 "(and units) enclose the STL, or switch to the all-elements search.")
         panel.status_lbl.setText(
             f"phi: {n_solid:,}/{n:,} solid ({pct:.1f}%)  →  {os.path.basename(path)}")
+
+    # ------------------------------------------------------------------ #
+    # Fit check: how well does phi reproduce the original STL?
+    # ------------------------------------------------------------------ #
+    def check_stl3d_fit(self):
+        """Measure volume/area + surface deviation between the STL and the phi
+        field in a background thread, then log a report and paint a deviation
+        heatmap (see ``_on_stl3d_fit_done``)."""
+        log = self.main_window.log_panel.log
+        if getattr(self, "_fit_worker", None) is not None and self._fit_worker.isRunning():
+            log("[STL3d] Fit check already running. Please wait.")
+            return
+        tris = getattr(self, "_stl3d_tris", None)
+        pts = getattr(self, "_stl3d_phi_pts", None)
+        phi = getattr(self, "_stl3d_phi_val", None)
+        if tris is None or pts is None or phi is None or len(phi) == 0:
+            log("[STL3d] Run STL3d successfully before checking the fit.")
+            return
+
+        cfg = self.global_stl3d_config
+        dx, dy, dz = cfg.spacings()
+        log("Computing STL ↔ φ fit (volume/area + surface deviation) … (background)")
+        # Heavy geometry: run off the GUI thread so the window stays responsive.
+        panel = self.main_window.stl3d_config_panel
+        panel.check_fit_btn.setEnabled(False)
+        self._fit_worker = FitCheckWorker(tris, pts, phi, cfg.nx, cfg.ny, cfg.nz, dx, dy, dz)
+        self._fit_worker.result_signal.connect(self._on_stl3d_fit_done)
+        self._fit_worker.start()
+
+    def _on_stl3d_fit_done(self, m: dict):
+        """Render the fit report + deviation heatmap from the worker result."""
+        log = self.main_window.log_panel.log
+        panel = self.main_window.stl3d_config_panel
+        # Re-enable only if a phi result is still present (a clear/run may have
+        # invalidated it while the worker was running).
+        panel.check_fit_btn.setEnabled(getattr(self, "_stl3d_phi_val", None) is not None)
+        if not m or m.get("error"):
+            log(f"[STL3d] Fit check: {(m or {}).get('error', 'no result')}.")
+            return
+
+        h, dx, dy, dz = m["h"], m["dx"], m["dy"], m["dz"]
+        kind = "quasi-2D (in-plane)" if m["quasi2d"] else "3D"
+        spc = f"dx={dx:.4g} dy={dy:.4g}" + ("" if m["quasi2d"] else f" dz={dz:.4g}")
+        rel = m["v_rel"]
+        rel_txt = f"{rel * 100:+.2f}%" if not np.isnan(rel) else "n/a"
+        what = "cross-section area" if m["mode"] == "area" else "volume"
+        hd_cells = m["hausdorff"] / h if h else 0.0
+
+        log(f"--- STL ↔ φ fit [{kind}] ---")
+        log(f"  cell size h = {h:.4g}  ({spc})")
+        log(f"  {what}:  φ {m['v_phi']:.6g}   STL {m['v_stl']:.6g}   (Δ {rel_txt})")
+        log(f"  surface deviation φ→STL:  mean {m['meanA']:.4g} ({m['meanA'] / h:.2f}h)"
+            f"   rms {m['rmsA']:.4g} ({m['rmsA'] / h:.2f}h)"
+            f"   max {m['maxA']:.4g} ({m['maxA'] / h:.2f}h)")
+        log(f"  symmetric Hausdorff:  {m['hausdorff']:.4g}  ({hd_cells:.2f}h)")
+        log(f"  interface cells: {m['n_interface']:,}")
+        if hd_cells <= FIT_WELL_CELLS:
+            verdict = f"well resolved (max deviation ≤ {FIT_WELL_CELLS:g} cell)."
+        elif hd_cells <= FIT_OK_CELLS:
+            verdict = "acceptable; raise Nx/Ny/Nz to sharpen the surface."
+        else:
+            verdict = (f"coarse — under-resolved by ~{hd_cells:.1f} cells; "
+                       "increase the grid resolution.")
+        log(f"  → {verdict}")
+
+        canvas = self.main_window.stl3d_canvas
+        canvas.set_fit_deviation(m["dev_points"], m["dev_values"], h)
+        canvas.show_dev_cb.setChecked(True)      # reveal the heatmap
+        panel.status_lbl.setText(
+            f"Fit: {what} Δ {rel_txt}, Hausdorff {hd_cells:.2f} cells. "
+            "Heatmap on (Fit Δ).")
 
     # ------------------------------------------------------------------ #
     # One-click hand-off to the Solver
