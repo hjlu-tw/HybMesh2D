@@ -62,10 +62,14 @@ class Stl3dControllerMixin:
 
         self._stl3d_bbox = bbox
         self._stl3d_tris = tris                   # cached for the fit check
+        # A new STL invalidates any prior run's phi result: drop the cache so the
+        # fit check can never pair the new triangles with a stale phi field.
+        self._stl3d_phi_path = ""
+        self._stl3d_phi_pts = self._stl3d_phi_val = None
         canvas.set_stl(tris)
         canvas.clear_phi()
         panel.send_solver_btn.setEnabled(False)   # result is now stale
-        panel.check_fit_btn.setEnabled(False)
+        self._update_fit_button()
 
         cfg = panel.get_config()
         cfg.stl_path = path
@@ -85,9 +89,16 @@ class Stl3dControllerMixin:
             f"{os.path.basename(path)} — {len(tris):,} triangles. Edit the domain, then Generate phi.")
 
     def on_stl3d_config_changed(self):
-        """Push the current domain to the 3D overlay (live box/grid update)."""
+        """Push the current domain to the 3D overlay (live box update).
+
+        A domain/resolution edit makes the panel diverge from the config the last
+        phi field was produced with, so mark the fit comparison stale until a
+        fresh run; ``_update_fit_button`` then keeps Check Fit disabled.
+        """
         cfg = self.main_window.stl3d_config_panel.get_config()
         self.main_window.stl3d_canvas.set_domain(cfg.domain)
+        self._fit_config_dirty = True
+        self._update_fit_button()
 
     def on_stl3d_display_changed(self):
         # The display toggles / z-slice now live on the 3D canvas's own top bar;
@@ -103,6 +114,7 @@ class Stl3dControllerMixin:
         cfg.fit_to_bbox(self._stl3d_bbox, margin=panel.margin_spin.value() / 100.0)
         panel.set_config(cfg)
         self.on_stl3d_config_changed()
+        self.main_window.stl3d_canvas.fit_view()   # re-frame on the resized box
 
     def fit_stl3d_view(self):
         self.main_window.stl3d_canvas.fit_view()
@@ -113,6 +125,7 @@ class Stl3dControllerMixin:
         panel = self.main_window.stl3d_config_panel
         canvas.set_stl(None)
         canvas.clear_phi()
+        canvas.clear_domain()                     # also drop the cyan domain box
         self._stl3d_bbox = None
         self._stl3d_tris = None
         self._stl3d_phi_path = ""
@@ -120,7 +133,7 @@ class Stl3dControllerMixin:
         panel.stl_path.setText("")
         self.global_stl3d_config.stl_path = ""
         panel.send_solver_btn.setEnabled(False)
-        panel.check_fit_btn.setEnabled(False)
+        self._update_fit_button()
         panel.status_lbl.setText("Load an STL surface to begin.")
         self.main_window.log_panel.log("[STL3d] Cleared STL surface and phi result.")
 
@@ -132,7 +145,7 @@ class Stl3dControllerMixin:
         self._stl3d_phi_path = ""
         self._stl3d_phi_pts = self._stl3d_phi_val = None
         panel.send_solver_btn.setEnabled(False)
-        panel.check_fit_btn.setEnabled(False)
+        self._update_fit_button()
         self.main_window.log_panel.log("[STL3d] Cleared phi result (STL kept).")
 
     # ------------------------------------------------------------------ #
@@ -178,10 +191,12 @@ class Stl3dControllerMixin:
         panel.run_btn.setEnabled(False)
         panel.cancel_btn.setEnabled(True)
         panel.send_solver_btn.setEnabled(False)   # pending fresh result
-        # The previous phi result is now stale: disable the fit check and drop the
-        # cache so it cannot be measured against the new (already-applied) config.
-        panel.check_fit_btn.setEnabled(False)
+        # The previous phi result is now stale: drop the cache (which disables the
+        # fit check) and clear the dirty flag — the run uses exactly this config,
+        # so the upcoming result will match the panel.
         self._stl3d_phi_pts = self._stl3d_phi_val = None
+        self._fit_config_dirty = False
+        self._update_fit_button()
         self.main_window.stl3d_canvas.clear_fit_deviation()
         pb = self.main_window.progress_bar
         pb.setRange(0, 100)
@@ -254,7 +269,7 @@ class Stl3dControllerMixin:
         self.on_stl3d_display_changed()
         # A fresh phi result exists: enable the one-click hand-off + fit check.
         panel.send_solver_btn.setEnabled(n_solid > 0)
-        panel.check_fit_btn.setEnabled(n_solid > 0)
+        self._update_fit_button()
 
         log(f"--- STL3d done: {n_solid:,} / {n:,} cells solid ({pct:.1f}%) ---")
         log(f"phi field written to {path}")
@@ -267,6 +282,19 @@ class Stl3dControllerMixin:
     # ------------------------------------------------------------------ #
     # Fit check: how well does phi reproduce the original STL?
     # ------------------------------------------------------------------ #
+    def _update_fit_button(self):
+        """Single source of truth for the Check Fit button: enabled iff a phi
+        result with solid cells exists, no fit check is mid-flight, and the panel
+        config has not diverged from the run since (``_fit_config_dirty``)."""
+        panel = self.main_window.stl3d_config_panel
+        phi = getattr(self, "_stl3d_phi_val", None)
+        running = (getattr(self, "_fit_worker", None) is not None
+                   and self._fit_worker.isRunning())
+        dirty = getattr(self, "_fit_config_dirty", False)
+        has_solid = (phi is not None and len(phi) > 0
+                     and bool((np.asarray(phi) > 0.5).any()))
+        panel.check_fit_btn.setEnabled(has_solid and not running and not dirty)
+
     def check_stl3d_fit(self):
         """Measure volume/area + surface deviation between the STL and the phi
         field in a background thread, then log a report and paint a deviation
@@ -296,9 +324,16 @@ class Stl3dControllerMixin:
         """Render the fit report + deviation heatmap from the worker result."""
         log = self.main_window.log_panel.log
         panel = self.main_window.stl3d_config_panel
-        # Re-enable only if a phi result is still present (a clear/run may have
-        # invalidated it while the worker was running).
-        panel.check_fit_btn.setEnabled(getattr(self, "_stl3d_phi_val", None) is not None)
+        # The worker has delivered its result; drop the reference so the button
+        # helper does not see it as still-running (isRunning() can lag the emit).
+        self._fit_worker = None
+        self._update_fit_button()
+        # If a clear/run invalidated the phi field while the worker was running,
+        # the result describes geometry that is no longer on the canvas — discard
+        # it rather than painting a stale heatmap over the cleared scene.
+        if getattr(self, "_stl3d_phi_val", None) is None:
+            log("[STL3d] Fit check result discarded (the phi result was cleared).")
+            return
         if not m or m.get("error"):
             log(f"[STL3d] Fit check: {(m or {}).get('error', 'no result')}.")
             return
@@ -313,7 +348,10 @@ class Stl3dControllerMixin:
 
         log(f"--- STL ↔ φ fit [{kind}] ---")
         log(f"  cell size h = {h:.4g}  ({spc})")
-        log(f"  {what}:  φ {m['v_phi']:.6g}   STL {m['v_stl']:.6g}   (Δ {rel_txt})")
+        if np.isnan(m.get("v_phi", float("nan"))):
+            log(f"  {what}:  n/a — {m.get('note', 'not comparable for this geometry')}")
+        else:
+            log(f"  {what}:  φ {m['v_phi']:.6g}   STL {m['v_stl']:.6g}   (Δ {rel_txt})")
         log(f"  surface deviation φ→STL:  mean {m['meanA']:.4g} ({m['meanA'] / h:.2f}h)"
             f"   rms {m['rmsA']:.4g} ({m['rmsA'] / h:.2f}h)"
             f"   max {m['maxA']:.4g} ({m['maxA'] / h:.2f}h)")

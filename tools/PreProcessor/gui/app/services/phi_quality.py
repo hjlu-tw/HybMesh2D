@@ -29,8 +29,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from app.services.stl_loader import triangle_normals
-
 # Candidate triangles examined per query point when the KD-tree accelerator is
 # available. Exact distance is computed against these nearest-centroid
 # candidates; 32 is robust for reasonably uniform tessellations.
@@ -157,17 +155,25 @@ def _dirA_distances(pts: np.ndarray, tris: np.ndarray, k: int = _K_CANDIDATES) -
 
     KDTree = _get_kdtree()
     if KDTree is not None and T > k:
+        # Index each triangle by its centroid AND its three vertices, all tagged
+        # with the triangle they belong to. A large triangle has a distant
+        # centroid, so a centroid-only tree can miss it for a query point near one
+        # of its corners/edges (and then report a too-large deviation); including
+        # the vertices makes the nearest-triangle search robust on non-uniform
+        # meshes (big side walls + small caps, exactly what the extruder emits).
         cent = (a_all + b_all + c_all) / 3.0
-        tree = KDTree(cent)
+        reps = np.vstack((cent, a_all, b_all, c_all))
+        tri_of = np.tile(np.arange(T), 4)
+        tree = KDTree(reps)
         out = np.empty(P)
         for s in range(0, P, 20000):        # chunk to bound the gather size
             pc = pts[s:s + 20000]
             _, idx = tree.query(pc, k=k)
             if idx.ndim == 1:
                 idx = idx[:, None]
-            flat = idx.ravel()
+            cand = tri_of[idx.ravel()]      # candidate triangle per (point, rep)
             p = np.repeat(pc, idx.shape[1], axis=0)
-            d = _pt_tri_dist(p, a_all[flat], b_all[flat], c_all[flat])
+            d = _pt_tri_dist(p, a_all[cand], b_all[cand], c_all[cand])
             out[s:s + len(pc)] = d.reshape(len(pc), idx.shape[1]).min(axis=1)
         return out
 
@@ -260,19 +266,45 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
         res["error"] = "the domain is entirely fluid or entirely solid (no interface)"
         return res
 
+    # Triangle geometry, computed once: the raw cross product gives both the area
+    # weighting and the |normal_z| used to tell caps (|nz|≈1) from walls (|nz|≈0).
+    raw = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+    twoA = np.linalg.norm(raw, axis=1)            # 2 × triangle area
+    total_area = float(twoA.sum())
+    nz_abs = np.abs(raw[:, 2]) / np.where(twoA < 1e-300, 1.0, twoA)
+
+    # A vertical extrusion has only horizontal caps and vertical walls; a sphere /
+    # tilted / curved STL has a large *area* of intermediate-tilt facets. The XY
+    # footprint identity (and the cap-dropping in the in-plane deviation below)
+    # only holds for a vertical extrusion, so detect it and, when violated, skip
+    # the area agreement rather than report a meaningless number.
+    tilted = (nz_abs > 0.1) & (nz_abs < 0.9)
+    tilted_frac = float(twoA[tilted].sum() / total_area) if total_area > 0 else 1.0
+    is_extruded = tilted_frac < 0.05
+    res["extruded"] = is_extruded
+
     # 1) Volume (3D) or footprint area (quasi-2D).
     if quasi2d:
-        # Cross-section area from the fullest z-layer rather than averaging the
-        # solid-point count over nz: averaging underestimates the footprint when
-        # the slab does not span every z-layer (padded z-range, caps between grid
-        # levels). xy_footprint_area assumes a vertical extrusion (horizontal end
-        # caps) — the documented immersed-solid input.
-        layer_cells = solid.reshape(nz, -1).sum(axis=1) if nz > 0 else np.array([n_solid])
-        a_phi = float(layer_cells.max()) * dx * dy
-        a_stl = xy_footprint_area(tris)
-        res.update(mode="area", v_phi=a_phi, v_stl=a_stl,
-                   v_rel=((a_phi - a_stl) / a_stl if a_stl > 0 else float("nan")))
+        if is_extruded:
+            # Cross-section area from the fullest z-layer rather than averaging the
+            # solid-point count over nz: averaging underestimates the footprint when
+            # the slab does not span every z-layer (padded z-range, caps between grid
+            # levels). xy_footprint_area assumes a vertical extrusion (horizontal
+            # end caps) — the documented immersed-solid input.
+            layer_cells = solid.reshape(nz, -1).sum(axis=1) if nz > 0 else np.array([n_solid])
+            a_phi = float(layer_cells.max()) * dx * dy
+            a_stl = xy_footprint_area(tris)
+            res.update(mode="area", v_phi=a_phi, v_stl=a_stl,
+                       v_rel=((a_phi - a_stl) / a_stl if a_stl > 0 else float("nan")))
+        else:
+            # Not a vertical extrusion: the XY footprint double-count identity does
+            # not hold, so the area Δ would be misleading. Report it as n/a.
+            res.update(mode="area", v_phi=float("nan"), v_stl=float("nan"),
+                       v_rel=float("nan"),
+                       note="area agreement skipped — STL is not a vertical extrusion")
     else:
+        # signed_volume is the divergence theorem: valid for any closed, well-wound
+        # surface (not only extrusions), so the 3D volume check stands as-is.
         v_phi = n_solid * dx * dy * dz
         v_stl = abs(signed_volume(tris))
         res.update(mode="volume", v_phi=v_phi, v_stl=v_stl,
@@ -285,16 +317,17 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
         res["error"] = "no interface cells were found"
         return res
 
-    if quasi2d and int((np.abs(triangle_normals(tris)[:, 2]) < 0.5).sum()) >= 1:
-        # Drop near-horizontal cap triangles and collapse to XY so the slab
-        # end-caps do not contribute; distances become in-plane deviations.
-        side = np.abs(triangle_normals(tris)[:, 2]) < 0.5
+    side = nz_abs < 0.5
+    if quasi2d and is_extruded and int(side.sum()) >= 1:
+        # Vertical extrusion in a quasi-2D grid: drop near-horizontal cap triangles
+        # and collapse to XY so the slab end-caps do not contribute; distances
+        # become in-plane deviations.
         wtris = tris[side].copy()
         wtris[:, :, 2] = 0.0
         wpts = ipts.copy()
         wpts[:, 2] = 0.0
     else:
-        # Full 3D (or a cap-only STL with no side walls): measure the true
+        # Full 3D (or a non-extruded / cap-only STL): measure the true
         # point-to-surface distance. Flattening a cap-only STL onto z=0 would put
         # every interface point inside a cap polygon and fake a ~0 deviation.
         wtris, wpts = tris, ipts
@@ -309,9 +342,10 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
         meanA=float(devA.mean()),
         rmsA=float(np.sqrt(np.mean(devA ** 2))),
         maxA=float(devA.max()),
-        maxB=float(devB.max()) if len(devB) else 0.0,
         dev_points=ipts,        # original 3D coords (for rendering)
         dev_values=devA,
     )
-    res["hausdorff"] = max(res["maxA"], res["maxB"])
+    # Symmetric Hausdorff = max over both directions (the reverse max has no other
+    # consumer, so it is folded in here rather than stored separately).
+    res["hausdorff"] = max(res["maxA"], float(devB.max()) if len(devB) else 0.0)
     return res

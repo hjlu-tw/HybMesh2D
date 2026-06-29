@@ -72,6 +72,9 @@ class AppController(
         self._stl3d_phi_path = ""
         self._stl3d_phi_pts = None         # cached parsed phi field (fit check)
         self._stl3d_phi_val = None
+        self._extrude_worker = None        # background 2D-profile → STL extruder
+        self._extrude_pending = None       # extrude params awaiting the worker result
+        self._fit_config_dirty = False     # panel config edited since the last run
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line

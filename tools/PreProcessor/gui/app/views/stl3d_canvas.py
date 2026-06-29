@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.services.phi_quality import FIT_OK_CELLS
+from app.utils import block_signals, make_button
 
 _C_STL = (0.62, 0.71, 0.92, 1.0)
 _C_BOX = (0.36, 0.78, 0.92, 1.0)     # bright cyan box edges
@@ -42,16 +43,13 @@ def _dev_cmap():
 
 def _bar_button(text: str, *, base: str, border: str, hover: str,
                 padding: str = "3px 10px", checked_bg: str | None = None) -> QPushButton:
-    """A compact display-bar push button. Centralises the toolbar QSS so the four
-    buttons (2D/3D, Fit View, Clear φ, Clear All) share one style definition."""
-    qss = (f"QPushButton{{background:{base};color:#dde2ff;border:1px solid {border};"
-           f"border-radius:4px;padding:{padding};font-weight:bold;font-size:11px;}}"
-           f"QPushButton:hover{{border-color:{hover};}}")
-    if checked_bg:
-        qss += f"QPushButton:checked{{background:{checked_bg};border-color:{hover};color:#fff;}}"
-    b = QPushButton(text)
-    b.setStyleSheet(qss)
-    return b
+    """A compact display-bar toolbar button (2D/3D, Fit View, Clear φ, Clear All).
+
+    Thin adapter over the shared ``make_button`` bar variant so the toolbar QSS is
+    defined in one place (utils) rather than a parallel factory here.
+    """
+    return make_button(text, base, border=border, hover_border=hover,
+                       padding=padding, checked_bg=checked_bg, font_size="11px")
 
 
 def _box_edge_segments(b) -> np.ndarray:
@@ -280,11 +278,22 @@ class Stl3dCanvasView(QWidget):
         return None if self.slice_all_cb.isChecked() else self.slice_spin.value()
 
     def set_slice_max(self, n_levels: int):
-        """Configure the z-slice spin range after a run produced ``n_levels``."""
-        self.slice_spin.blockSignals(True)
-        self.slice_spin.setRange(0, max(0, n_levels - 1))
-        self.slice_spin.setValue(0)
-        self.slice_spin.blockSignals(False)
+        """Reset the z-slice controls after a run produced ``n_levels`` layers.
+
+        Resets the 'All z-layers' toggle too (not just the spin value) so a stale
+        isolate-layer selection from a previous result never carries over and
+        renders only one layer of the fresh field.
+        """
+        self._reset_slice_controls(n_levels)
+
+    def _reset_slice_controls(self, n_levels: int = 0):
+        """Set the z-slice toggle back to 'all layers' and the spin to its range."""
+        with block_signals(self.slice_all_cb, self.slice_spin):
+            self.slice_all_cb.setChecked(True)
+            self.slice_spin.setRange(0, max(0, n_levels - 1))
+            self.slice_spin.setValue(0)
+            self.slice_spin.setEnabled(False)
+        self._slice_k = None
 
     def apply_display(self, *_):
         """Push the current toggle/slice state into the 3D scene."""
@@ -327,6 +336,13 @@ class Stl3dCanvasView(QWidget):
         else:
             self._box_item.setData(pos=box, color=_C_BOX, width=2.0, mode="lines")
 
+    def clear_domain(self):
+        """Remove the Cartesian domain box outline (used by Clear All)."""
+        if self._box_item is not None:
+            self.view.removeItem(self._box_item)
+            self._box_item = None
+        self._bbox = None
+
     # ------------------------------------------------------------------ #
     # phi result
     # ------------------------------------------------------------------ #
@@ -344,6 +360,7 @@ class Stl3dCanvasView(QWidget):
         self._phi_pts = self._phi_val = None
         self._z_levels = None
         self.clear_fit_deviation()
+        self._reset_slice_controls()      # drop any stale isolate-layer selection
         for attr in ("_solid_item", "_fluid_item"):
             item = getattr(self, attr)
             if item is not None:
@@ -373,9 +390,8 @@ class Stl3dCanvasView(QWidget):
         # rather than show as enabled over an empty layer.
         cb = getattr(self, "show_dev_cb", None)
         if cb is not None and cb.isChecked():
-            cb.blockSignals(True)
-            cb.setChecked(False)
-            cb.blockSignals(False)
+            with block_signals(cb):
+                cb.setChecked(False)
             self._show["dev"] = False     # keep the visibility state in sync
 
     def _refresh_dev(self):

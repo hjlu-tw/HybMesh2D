@@ -61,9 +61,36 @@ CURVE_TYPE_LABELS = {
 }
 
 
-def make_button(text: str, color: str = '#26293c') -> QPushButton:
+def make_button(text: str, color: str = '#26293c', *,
+                border: str | None = None, hover_border: str | None = None,
+                checked_bg: str | None = None, padding: str | None = None,
+                font_size: str | None = None) -> QPushButton:
+    """App push button.
+
+    Called as ``make_button(text, color)`` it yields the standard button (the
+    shared BUTTON_QSS_TEMPLATE — background-hover, disabled state). Passing any of
+    the keyword styling args switches to the compact "bar" variant used by the
+    STL3d canvas toolbar: a coloured border that brightens on hover (``border`` /
+    ``hover_border``), an optional checked highlight (``checked_bg``), and custom
+    ``padding`` / ``font_size`` — one factory instead of a parallel one.
+    """
     b = QPushButton(text)
-    b.setStyleSheet(BUTTON_QSS_TEMPLATE.format(color=color))
+    if (border is None and hover_border is None and checked_bg is None
+            and padding is None and font_size is None):
+        b.setStyleSheet(BUTTON_QSS_TEMPLATE.format(color=color))
+        return b
+    bdr = border or "#4a5070"
+    hov = hover_border or bdr
+    pad = padding or "6px 10px"
+    fs = f"font-size:{font_size};" if font_size else ""
+    qss = (f"QPushButton{{background:{color};color:#dde6ff;border:1px solid {bdr};"
+           f"border-radius:4px;padding:{pad};font-weight:bold;{fs}}}"
+           f"QPushButton:hover{{border-color:{hov};}}"
+           f"QPushButton:disabled{{background:#171926;color:#555;}}")
+    if checked_bg:
+        qss += (f"QPushButton:checked{{background:{checked_bg};"
+                f"border-color:{hov};color:#fff;}}")
+    b.setStyleSheet(qss)
     return b
 
 def align_form_labels(layout: QFormLayout, width: int = 120):

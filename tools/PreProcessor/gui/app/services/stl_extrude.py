@@ -92,7 +92,12 @@ def triangulate_polygon_2d(poly: np.ndarray) -> np.ndarray:
         nextv = np.roll(ring, -1, axis=0)
         cross = ((ring[:, 0] - prevv[:, 0]) * (nextv[:, 1] - prevv[:, 1])
                  - (ring[:, 1] - prevv[:, 1]) * (nextv[:, 0] - prevv[:, 0]))
-        reflex = [idx[t] for t in range(m) if cross[t] < -1e-14]
+        # Reflex indices + their coords, gathered once per pass: an ear can only be
+        # blocked by a reflex vertex, so each candidate is tested against this set
+        # (excluding the candidate's own 3 vertices) without rebuilding a list or
+        # re-indexing ``poly`` per candidate.
+        reflex_idx = np.array([idx[t] for t in range(m) if cross[t] < -1e-14], dtype=int)
+        reflex_pts = poly[reflex_idx] if len(reflex_idx) else None
 
         clipped = False
         for k in range(m):
@@ -105,9 +110,10 @@ def triangulate_polygon_2d(poly: np.ndarray) -> np.ndarray:
                 clipped = True
                 break
             a, b, c = poly[i0], poly[i1], poly[i2]
-            test = [j for j in reflex if j not in (i0, i1, i2)]
-            if test and _pts_in_tri(poly[test], a, b, c).any():
-                continue                     # a reflex vertex sits inside -> not an ear
+            if reflex_pts is not None:
+                keep = (reflex_idx != i0) & (reflex_idx != i1) & (reflex_idx != i2)
+                if keep.any() and _pts_in_tri(reflex_pts[keep], a, b, c).any():
+                    continue                 # a reflex vertex sits inside -> not an ear
             tris.append((i0, i1, i2))
             idx.pop(k)
             clipped = True
@@ -160,18 +166,6 @@ def extrude_loop(poly: np.ndarray, z0: float, z1: float) -> np.ndarray:
         tris.append([b0, c0, c1])
         tris.append([b0, c1, b1])
     return np.array(tris, dtype=np.float64)
-
-
-def loops_to_stl(loops: list[np.ndarray], z0: float, z1: float) -> np.ndarray:
-    """Extrude every loop and concatenate into one (M,3,3) triangle array."""
-    parts = []
-    for lp in loops:
-        t = extrude_loop(lp, z0, z1)
-        if len(t):
-            parts.append(t)
-    if not parts:
-        return np.empty((0, 3, 3), dtype=np.float64)
-    return np.vstack(parts)
 
 
 def write_binary_stl(path: str, tris: np.ndarray,

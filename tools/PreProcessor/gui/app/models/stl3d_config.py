@@ -117,7 +117,13 @@ class Stl3dConfig:
 
     # ------------------------------------------------------------------ #
     def to_dict(self) -> dict:
-        return asdict(self)
+        # omp_threads is a runtime-only, machine-specific concern (it never goes
+        # into para.in); drop it from the serialized form so a saved/exported
+        # config can't mislead a reader or CLI into treating a thread count as
+        # part of the immersed-solid definition. from_dict tolerates its absence.
+        d = asdict(self)
+        d.pop("omp_threads", None)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Stl3dConfig":
