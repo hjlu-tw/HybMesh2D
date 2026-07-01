@@ -65,7 +65,7 @@ class Stl3dWorker(QThread):
             return
 
         last_pct = 0
-        last_logged_pct = -1
+        traced = False
         for line in self._process.stdout:
             if self._cancelled:
                 self._process.terminate()
@@ -78,17 +78,17 @@ class Stl3dWorker(QThread):
             m = _TRACE_RE.match(stripped)
             if m:
                 # The per-slice "<n> tracing" lines drive the progress bar but are
-                # too noisy for the log. Don't echo them; instead log a throttled
-                # percentage every 10% so the user sees it is working, not stuck.
+                # too noisy for the log. Don't echo them; the progress bar already
+                # shows the live percentage. Log a single "ray tracing…" line the
+                # first time so the user knows the heavy phase has begun.
                 # +1 so the final slice reads as ~100%; ray tracing dominates runtime.
                 pct = min(99, int(100 * (int(m.group(1)) + 1) / self._nx))
                 if pct > last_pct:
                     last_pct = pct
                     self.progress_signal.emit(pct)
-                bucket = (pct // 10) * 10
-                if bucket > last_logged_pct:
-                    last_logged_pct = bucket
-                    self.log_signal.emit(f"[STL3d] ray tracing… {bucket}%")
+                if not traced:
+                    traced = True
+                    self.log_signal.emit("[STL3d] ray tracing…")
                 continue
             self.log_signal.emit(f"[STL3d] {stripped}")
 

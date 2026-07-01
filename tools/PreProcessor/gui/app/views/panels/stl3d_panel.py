@@ -9,10 +9,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from app.views.collapsible import CollapsibleSection
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.clean_double_spin_box import NarrowDoubleSpinBox
 from app.utils import (
     make_button, COMBO_STYLE, SPIN_STYLE, LINEEDIT_STYLE,
-    align_form_labels, help_label, block_signals,
+    align_form_labels, help_label, make_help_label, block_signals,
 )
 from app.models.stl3d_config import Stl3dConfig
 
@@ -34,12 +34,17 @@ def _cap_width(spin, width: int | None) -> None:
 
 
 def _dspin(lo: float, hi: float, decimals: int, tip: str,
-           width: int | None = None) -> CleanDoubleSpinBox:
-    s = CleanDoubleSpinBox()
+           width: int | None = None) -> NarrowDoubleSpinBox:
+    s = NarrowDoubleSpinBox()
     s.setRange(lo, hi)
     s.setDecimals(decimals)
     s.setStyleSheet(SPIN_STYLE)
     _cap_width(s, width)
+    if width is not None:
+        # A ±1e9 / 6-decimal box otherwise reports a ~140px minimumSizeHint that
+        # makes the two-per-row domain fields overflow the narrow sidebar; cap the
+        # hint so the requested width actually takes effect.
+        s.setWidthCap(width)
     s.setToolTip(tip)
     return s
 
@@ -92,15 +97,51 @@ class Stl3dConfigPanel(QScrollArea):
         run_row.addWidget(self.fit_btn)
         self._layout.addLayout(run_row)
 
-        # Compare the phi result against the original STL (volume/area + surface
-        # Hausdorff) and paint a deviation heatmap. Enabled after a run.
-        self.check_fit_btn = make_button("Check Fit (STL ↔ φ)", "#1d2a3a")
-        self.check_fit_btn.setEnabled(False)
-        self.check_fit_btn.setToolTip(
-            "Measure how well the phi field matches the original STL: volume/area "
-            "agreement and surface deviation (mean/RMS/max Hausdorff, in cells). "
-            "Paints a green→red deviation heatmap on the canvas (Fit Δ toggle).")
-        self._layout.addWidget(self.check_fit_btn)
+        # The STL↔φ fit is measured automatically after each successful run
+        # (controller._on_stl3d_finished → check_stl3d_fit); the result appears in
+        # the card below + as the canvas deviation heatmap. No manual button.
+
+        # Fit result card — a compact, color-coded summary of the last Check Fit so
+        # the verdict + key metrics are visible at a glance instead of being buried
+        # in the log. Hidden until a fit check completes (see set_fit_result()).
+        self.fit_result_card = QFrame()
+        self.fit_result_card.setObjectName("fitCard")
+        self.fit_result_card.setStyleSheet(
+            "#fitCard{background:#10131f;border:1px solid #2d3356;border-radius:6px;}")
+        fit_v = QVBoxLayout(self.fit_result_card)
+        fit_v.setContentsMargins(8, 6, 8, 8)
+        fit_v.setSpacing(3)
+        # Title row: "STL ↔ φ Fit" + a small "?" help icon carrying the full,
+        # plain-language explanation of the numbers (so the card itself stays terse).
+        title_row = QHBoxLayout()
+        title_row.setSpacing(4)
+        fit_title = QLabel("STL ↔ φ Fit")
+        fit_title.setStyleSheet("color:#dde2ff; font-weight:bold; font-size:11px;")
+        title_row.addWidget(fit_title)
+        title_row.addWidget(make_help_label(
+            "How well the voxel (φ) solid reproduces the STL surface.\n"
+            "• Surface within 1 cell — share of φ's surface within one cell of the "
+            "STL; this drives the verdict. Good needs ≥95% within 1 cell AND a "
+            "clean tail (≤1% more than 1.5 cells off), so 'mostly fine but a few "
+            "loose regions' reads amber, not green. A complex or steeply-angled "
+            "shape on a coarse grid strands more surface further out — raise "
+            "Nx/Ny to bring it back in.\n"
+            "• Average gap — mean distance between φ's surface and the STL (cells).\n"
+            "• Volume / Area match — size agreement (+ = φ slightly larger).\n"
+            "• Worst gap — the single largest distance, for reference. At a sharp "
+            "corner/edge (e.g. a trailing edge) it stays a few cells off at any "
+            "resolution, so it alone does not mean a coarse fit."))
+        title_row.addStretch()
+        self.fit_verdict_lbl = QLabel("")
+        self.fit_verdict_lbl.setWordWrap(True)
+        self.fit_metrics_lbl = QLabel("")
+        self.fit_metrics_lbl.setWordWrap(True)
+        self.fit_metrics_lbl.setStyleSheet("color:#a0a8c0; font-size:11px;")
+        fit_v.addLayout(title_row)
+        fit_v.addWidget(self.fit_verdict_lbl)
+        fit_v.addWidget(self.fit_metrics_lbl)
+        self.fit_result_card.setVisible(False)
+        self._layout.addWidget(self.fit_result_card)
 
         # One-click hand-off: stage phi + generate the reading DLL + enable IBM,
         # then jump to the Solver tab. Enabled only after a successful run.
@@ -207,21 +248,32 @@ class Stl3dConfigPanel(QScrollArea):
     def _build_resolution_section(self):
         sec = CollapsibleSection("Grid Resolution", start_collapsed=True)
         self._layout.addWidget(sec)
-        form = QFormLayout()
-        self.nx = _ispin(2, 4096, "Number of grid points in x", width=66)
-        self.ny = _ispin(2, 4096, "Number of grid points in y", width=66)
-        self.nz = _ispin(1, 4096, "Number of grid points in z (use 2 for a quasi-2D / planar case)", width=66)
+
+        # Label on its own line above the three spins. Side by side, the
+        # "Nx, Ny, Nz:" label + 3 spin boxes (each ~83px minimum — 4-digit value
+        # plus arrows — in the fixed 360px sidebar) overflow the panel and clip
+        # the right spin (and the no-horizontal-scroll viewport then hides it).
+        # Stacking lets the three spins use the full row width.
+        hdr = QHBoxLayout()
+        hdr.setContentsMargins(0, 0, 0, 0)
+        hdr.setSpacing(3)
+        lbl = QLabel("Nx, Ny, Nz:")
+        lbl.setStyleSheet("color:#a0a8c0;")
+        hdr.addWidget(lbl)
+        hdr.addWidget(make_help_label(
+            "Grid points per axis (use Nz=2 for a quasi-2D / planar case)"))
+        hdr.addStretch()
+        sec.add_layout(hdr)
+
+        self.nx = _ispin(2, 4096, "Number of grid points in x")
+        self.ny = _ispin(2, 4096, "Number of grid points in y")
+        self.nz = _ispin(1, 4096, "Number of grid points in z (use 2 for a quasi-2D / planar case)")
         self.nx.setValue(128); self.ny.setValue(128); self.nz.setValue(2)
         n_row = QHBoxLayout()
-        n_row.setSpacing(4)
+        n_row.setSpacing(6)
         for w in (self.nx, self.ny, self.nz):
-            n_row.addWidget(w)
-        nw = QWidget()
-        nw.setLayout(n_row)
-        form.addRow(help_label("Nx, Ny, Nz:", "Grid points per axis"), nw)
-        align_form_labels(form, 78)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        sec.add_layout(form)
+            n_row.addWidget(w, 1)          # share the full width equally
+        sec.add_layout(n_row)
 
         self.derived_lbl = QLabel("")
         self.derived_lbl.setWordWrap(True)
@@ -284,9 +336,20 @@ class Stl3dConfigPanel(QScrollArea):
         sec.add_widget(hint)
 
     # ------------------------------------------------------------------ #
-    def omp_threads(self) -> int:
-        """Effective OMP_NUM_THREADS: 1 (serial) unless OpenMP is enabled."""
-        return self.threads_spin.value() if self.omp_cb.isChecked() else 1
+    def set_fit_result(self, verdict: str, color: str, metrics: str):
+        """Populate the color-coded STL↔φ fit card (called after a Check Fit).
+
+        ``color`` tints the verdict line (green/amber/red); ``metrics`` is a
+        multi-line block of the key numbers shown beneath it."""
+        self.fit_verdict_lbl.setText(verdict)
+        self.fit_verdict_lbl.setStyleSheet(
+            f"color:{color}; font-size:12px; font-weight:bold;")
+        self.fit_metrics_lbl.setText(metrics)
+        self.fit_result_card.setVisible(True)
+
+    def clear_fit_result(self):
+        """Hide the fit card — a fresh run / cleared phi makes the last one stale."""
+        self.fit_result_card.setVisible(False)
 
     # ------------------------------------------------------------------ #
     def _wire_live_signals(self):
@@ -328,7 +391,8 @@ class Stl3dConfigPanel(QScrollArea):
         cfg.zmin, cfg.zmax = self.zmin.value(), self.zmax.value()
         cfg.nx, cfg.ny, cfg.nz = self.nx.value(), self.ny.value(), self.nz.value()
         cfg.all_search = self.search_combo.currentIndex() == 0
-        cfg.omp_threads = self.omp_threads()   # 1 = serial (OpenMP off)
+        cfg.omp_enabled = self.omp_cb.isChecked()
+        cfg.omp_threads = self.threads_spin.value()
         return cfg
 
     def set_config(self, cfg: Stl3dConfig):
@@ -344,11 +408,11 @@ class Stl3dConfigPanel(QScrollArea):
             self.zmin.setValue(cfg.zmin); self.zmax.setValue(cfg.zmax)
             self.nx.setValue(cfg.nx); self.ny.setValue(cfg.ny); self.nz.setValue(cfg.nz)
             self.search_combo.setCurrentIndex(0 if cfg.all_search else 1)
-        # omp_threads > 1 means OpenMP was enabled with that thread count.
+        # Enable flag and thread count are independent, so "enabled with 1 thread"
+        # round-trips as enabled rather than being read back as disabled.
         with block_signals(self.omp_cb, self.threads_spin):
-            enabled = int(getattr(cfg, "omp_threads", 1) or 1) > 1
+            enabled = bool(getattr(cfg, "omp_enabled", False))
             self.omp_cb.setChecked(enabled)
+            self.threads_spin.setValue(max(1, int(getattr(cfg, "omp_threads", 1) or 1)))
             self.threads_spin.setEnabled(enabled)
-            if enabled:
-                self.threads_spin.setValue(int(cfg.omp_threads))
         self.refresh_derived()

@@ -34,12 +34,29 @@ import numpy as np
 # candidates; 32 is robust for reasonably uniform tessellations.
 _K_CANDIDATES = 32
 
-# Surface-fit verdict thresholds, in cell counts (max deviation / cell size).
+# Surface-fit verdict thresholds, in cell counts (deviation / cell size).
 # Single source of truth shared by the fit report (stl3d_ctrl) and the canvas
 # deviation heatmap colour ramp (stl3d_canvas), so the verdict, the heatmap
 # saturation point, and the legend never drift apart.
-FIT_WELL_CELLS = 1.0    # max deviation <= 1 cell  -> well resolved
-FIT_OK_CELLS = 2.0      # <= 2 cells -> acceptable; also the heatmap red endpoint
+FIT_OK_CELLS = 2.0      # heatmap red endpoint; also the "localized sharp corner" flag
+
+# The verdict is driven by ``frac_over_1`` — the fraction of the reconstructed
+# surface that lands more than one cell from the STL. This folds in geometry
+# complexity AND slope (a wiggly/steep surface at a coarse grid strands a large
+# share of cells far from the STL; a gentle one strands few) and, unlike the
+# average gap (which is ~resolution-invariant), it shrinks as the grid is
+# refined. A handful of knife-edge/cusp cells can't move it, so the single worst
+# gap stays a "localized" reference only.
+FIT_FRAC_GREEN = 0.05   # <= 5% of the surface beyond 1 cell -> well resolved
+FIT_FRAC_AMBER = 0.20   # <= 20% -> acceptable; above -> coarse (raise Nx/Ny)
+
+# Tail gate: "<=5% beyond 1 cell" is, by definition, the same as "p95 <= 1 cell",
+# so it says nothing about HOW FAR that worst 5% is. The tail gate adds that — for
+# GREEN, at most FIT_TAIL_FRAC of the surface may be MORE than FIT_TAIL_CELLS away.
+# It catches "mostly within a cell, but a minority region is notably loose"; a few
+# isolated cusp cells stay a tiny fraction and don't trip it.
+FIT_TAIL_CELLS = 1.5    # "notably loose" cutoff (cells)
+FIT_TAIL_FRAC = 0.01    # GREEN allows <= 1% of the surface beyond FIT_TAIL_CELLS
 
 # scipy's cKDTree is an optional accelerator. Import it lazily (and cache the
 # result) so merely importing this module never pulls in scipy at GUI startup.
@@ -72,18 +89,47 @@ def signed_volume(tris: np.ndarray) -> float:
     return float(np.sum(np.einsum("ij,ij->i", v0, np.cross(v1, v2))) / 6.0)
 
 
-def xy_footprint_area(tris: np.ndarray) -> float:
-    """XY footprint (cross-section) area of a closed surface.
+def xy_footprint_area(tris: np.ndarray, single_layer: bool = False) -> float:
+    """XY footprint (cross-section) area of a triangulated surface.
 
     For a vertical extrusion the top and bottom caps each project to the full
     footprint while side walls project to zero-area lines, so summing the
     absolute projected triangle areas double-counts the footprint exactly:
     area = 0.25 * sum |cross of the XY-projected edges|.
+
+    ``single_layer=True`` is the flat-lamina case (a 2D profile triangulated as
+    one sheet, e.g. a planar z=const airfoil): there is only one layer of
+    triangles, not two caps, so the footprint is 0.5 * sum|cross|. Without this
+    the area reads exactly half and the φ/STL ratio a spurious ~+100%.
     """
     v0, v1, v2 = tris[:, 0, :2], tris[:, 1, :2], tris[:, 2, :2]
     cross = ((v1[:, 0] - v0[:, 0]) * (v2[:, 1] - v0[:, 1])
              - (v1[:, 1] - v0[:, 1]) * (v2[:, 0] - v0[:, 0]))
-    return 0.25 * float(np.sum(np.abs(cross)))
+    factor = 0.5 if single_layer else 0.25
+    return factor * float(np.sum(np.abs(cross)))
+
+
+def _boundary_outline(tris: np.ndarray, decimals: int = 7) -> np.ndarray:
+    """Free (boundary) edges of a triangulation, as (M, 2, 3) segments.
+
+    Vertices are quantised and de-duplicated to indices, then the edges used by
+    exactly one triangle are returned. For a filled flat lamina (a 2D profile
+    triangulated as a sheet) these free edges are its perimeter outline — the
+    real surface to compare a quasi-2D phi field against, as opposed to the
+    interior fill triangles.
+    """
+    if len(tris) == 0:
+        return np.empty((0, 2, 3))
+    V = tris.reshape(-1, 3)
+    uniq, inv = np.unique(np.round(V, decimals), axis=0, return_inverse=True)
+    idx = inv.reshape(-1, 3)
+    edges = np.concatenate([idx[:, [0, 1]], idx[:, [1, 2]], idx[:, [2, 0]]], axis=0)
+    edges = np.sort(edges, axis=1)
+    ue, cnt = np.unique(edges, axis=0, return_counts=True)
+    free = ue[cnt == 1]
+    if len(free) == 0:
+        return np.empty((0, 2, 3))
+    return uniq[free]        # (M, 2, 3) in the de-duplicated coordinates
 
 
 # --------------------------------------------------------------------------- #
@@ -177,13 +223,17 @@ def _dirA_distances(pts: np.ndarray, tris: np.ndarray, k: int = _K_CANDIDATES) -
             out[s:s + len(pc)] = d.reshape(len(pc), idx.shape[1]).min(axis=1)
         return out
 
-    # Exact brute force, double-chunked to keep memory bounded.
+    # Exact brute force, double-chunked to keep memory bounded. The block is
+    # capped at ~256*2048 rows because _pt_tri_dist allocates ~a dozen transient
+    # (block, 3) float64 arrays; a larger tile (e.g. 512*4096) peaks at several
+    # hundred MB and can OOM the GUI process on a dense STL when scipy is absent.
+    _PCHUNK, _TCHUNK = 256, 2048
     out = np.full(P, np.inf)
-    for ps in range(0, P, 512):
-        pc = pts[ps:ps + 512]
+    for ps in range(0, P, _PCHUNK):
+        pc = pts[ps:ps + _PCHUNK]
         best = np.full(len(pc), np.inf)
-        for ts in range(0, T, 4096):
-            av, bv, cv = a_all[ts:ts + 4096], b_all[ts:ts + 4096], c_all[ts:ts + 4096]
+        for ts in range(0, T, _TCHUNK):
+            av, bv, cv = a_all[ts:ts + _TCHUNK], b_all[ts:ts + _TCHUNK], c_all[ts:ts + _TCHUNK]
             t = len(av)
             p = np.repeat(pc, t, axis=0)
             d = _pt_tri_dist(p, np.tile(av, (len(pc), 1)),
@@ -201,11 +251,21 @@ def _nearest_point_dist(query: np.ndarray, ref: np.ndarray) -> np.ndarray:
     if KDTree is not None:
         d, _ = KDTree(ref).query(query, k=1)
         return d
+    # Double-chunk BOTH sides: chunking only the query still materialises a full
+    # (query_chunk, |ref|, 3) array, which is multi-GB for a fine STL / large
+    # interface set and can OOM the fit-check worker. Bounding |ref| per block
+    # keeps the transient at ~query_chunk*ref_chunk*3 floats (matching the memory
+    # discipline of _dirA_distances' brute-force branch above).
     out = np.empty(len(query))
-    for s in range(0, len(query), 1024):
-        q = query[s:s + 1024]
-        d = np.linalg.norm(q[:, None, :] - ref[None, :, :], axis=2)
-        out[s:s + len(q)] = d.min(axis=1)
+    _QCHUNK, _RCHUNK = 512, 4096
+    for s in range(0, len(query), _QCHUNK):
+        q = query[s:s + _QCHUNK]
+        best = np.full(len(q), np.inf)
+        for r in range(0, len(ref), _RCHUNK):
+            rc = ref[r:r + _RCHUNK]
+            d = np.linalg.norm(q[:, None, :] - rc[None, :, :], axis=2)
+            best = np.minimum(best, d.min(axis=1))
+        out[s:s + len(q)] = best
     return out
 
 
@@ -254,13 +314,27 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
     if nx * ny * nz != n:
         return {"error": f"grid {nx}×{ny}×{nz} ({nx * ny * nz} pts) does not match "
                          f"the phi field ({n} pts)"}
-    quasi2d = (nz <= 2) or (dz <= 0.0)
+    # A flat lamina (a 2D profile triangulated as a single sheet, e.g. a planar
+    # z=const airfoil) has ~zero z-extent and therefore ~zero signed volume. It is
+    # inherently an in-plane body even when the user gives it a non-degenerate Z
+    # range with Nz>2 — so classify it quasi-2D up front. Otherwise it falls into
+    # the 3D volume branch and the "Volume match" compares the real footprint area
+    # against a meaningless STL volume of ~0.
+    if len(tris):
+        z_span = float(tris[:, :, 2].max() - tris[:, :, 2].min())
+        xy_diag = float(np.hypot(np.ptp(tris[:, :, 0]), np.ptp(tris[:, :, 1])))
+        planar = z_span <= 1e-6 * max(xy_diag, 1e-300)
+    else:
+        planar = False
+
+    quasi2d = (nz <= 2) or (dz <= 0.0) or planar
     if quasi2d:
         h = float(np.sqrt(max(dx, 1e-300) * max(dy, 1e-300)))
     else:
         h = float((max(dx, 1e-300) * max(dy, 1e-300) * max(dz, 1e-300)) ** (1.0 / 3.0))
 
-    res: dict = {"quasi2d": quasi2d, "h": h, "n": n, "n_solid": n_solid,
+    res: dict = {"quasi2d": quasi2d, "planar": planar, "h": h, "n": n,
+                 "n_solid": n_solid, "nx": nx, "ny": ny, "nz": nz,
                  "dx": dx, "dy": dy, "dz": dz}
     if n_solid == 0 or n_solid == n:
         res["error"] = "the domain is entirely fluid or entirely solid (no interface)"
@@ -283,7 +357,11 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
     is_extruded = tilted_frac < 0.05
     res["extruded"] = is_extruded
 
-    # 1) Volume (3D) or footprint area (quasi-2D).
+    # 1) Volume (3D) or footprint area (quasi-2D). ``planar`` (a flat single-sheet
+    # lamina — an OPEN single layer, not a closed extrusion) was determined up
+    # front and folded into quasi2d; below it also switches the footprint
+    # double-count and the filled-interior surface comparison to a single-layer /
+    # perimeter-outline treatment.
     if quasi2d:
         if is_extruded:
             # Cross-section area from the fullest z-layer rather than averaging the
@@ -293,7 +371,7 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
             # end caps) — the documented immersed-solid input.
             layer_cells = solid.reshape(nz, -1).sum(axis=1) if nz > 0 else np.array([n_solid])
             a_phi = float(layer_cells.max()) * dx * dy
-            a_stl = xy_footprint_area(tris)
+            a_stl = xy_footprint_area(tris, single_layer=planar)
             res.update(mode="area", v_phi=a_phi, v_stl=a_stl,
                        v_rel=((a_phi - a_stl) / a_stl if a_stl > 0 else float("nan")))
         else:
@@ -318,7 +396,22 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
         return res
 
     side = nz_abs < 0.5
-    if quasi2d and is_extruded and int(side.sum()) >= 1:
+    if planar:
+        # Flat lamina: compare phi's reconstructed boundary against the profile's
+        # perimeter OUTLINE (the triangulation's free edges), not the filled
+        # interior. Against filled triangles every boundary cell reads ~0 gap while
+        # the reverse direction picks up deep-interior vertices — a bogus large
+        # Hausdorff. Collapse the outline edges to degenerate triangles (already at
+        # z=0), so distances are true in-plane gaps to the airfoil outline.
+        segs = _boundary_outline(tris)
+        if len(segs):
+            wtris = np.stack([segs[:, 0], segs[:, 1], segs[:, 1]], axis=1)
+            wtris[:, :, 2] = 0.0
+            wpts = ipts.copy()
+            wpts[:, 2] = 0.0
+        else:
+            wtris, wpts = tris, ipts        # no free edges (already a closed loop)
+    elif quasi2d and is_extruded and int(side.sum()) >= 1:
         # Vertical extrusion in a quasi-2D grid: drop near-horizontal cap triangles
         # and collapse to XY so the slab end-caps do not contribute; distances
         # become in-plane deviations.
@@ -342,6 +435,13 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
         meanA=float(devA.mean()),
         rmsA=float(np.sqrt(np.mean(devA ** 2))),
         maxA=float(devA.max()),
+        # Fraction of the reconstructed surface more than one cell from the STL —
+        # the verdict driver (complexity/slope-aware, resolution-sensitive, and
+        # robust to a few cusp cells). A boolean mean, so it is stable even when
+        # n_interface is only a few hundred. ``frac_over_tail`` is the loose-minority
+        # tail gate (share beyond FIT_TAIL_CELLS), used to qualify GREEN.
+        frac_over_1=float(np.mean(devA / h > 1.0)) if h > 0 else 0.0,
+        frac_over_tail=float(np.mean(devA / h > FIT_TAIL_CELLS)) if h > 0 else 0.0,
         dev_points=ipts,        # original 3D coords (for rendering)
         dev_values=devA,
     )

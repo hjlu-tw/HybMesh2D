@@ -74,7 +74,10 @@ class AppController(
         self._stl3d_phi_val = None
         self._extrude_worker = None        # background 2D-profile → STL extruder
         self._extrude_pending = None       # extrude params awaiting the worker result
-        self._fit_config_dirty = False     # panel config edited since the last run
+        # Workers between their result signal and their finished() signal are held
+        # here so we never drop the last Python reference to a QThread whose run()
+        # is still unwinding (that aborts with "QThread destroyed while running").
+        self._retiring_workers: set = set()
 
         self._is_populating = False       # guard against feedback loops during form population
         self._show_duplicate_preview = False  # flag to show duplicate preview line
@@ -303,7 +306,6 @@ class AppController(
         s3.run_btn.clicked.connect(self.run_stl3d)
         s3.cancel_btn.clicked.connect(self.cancel_stl3d)
         s3.config_changed.connect(self.on_stl3d_config_changed)
-        s3.check_fit_btn.clicked.connect(self.check_stl3d_fit)
         s3.send_solver_btn.clicked.connect(self.send_stl3d_to_solver)
         mw.stl3d_canvas.clear_btn.clicked.connect(self.clear_stl3d)
         mw.stl3d_canvas.clear_phi_btn.clicked.connect(self.clear_stl3d_phi)
@@ -622,6 +624,24 @@ class AppController(
             if self._mesh_worker.isRunning():
                 self._mesh_worker.cancel()
                 self._mesh_worker.wait()
+
+        # Immersed-solid (STL3d) workers. Stl3dWorker supports cancel(); the fit
+        # check and profile extruder have no cancel(), so wait() them out. All
+        # three are QThreads on this controller and would abort with "QThread
+        # destroyed while running" if the window closed mid-run without a join.
+        stl3d_worker = getattr(self, "_stl3d_worker", None)
+        if stl3d_worker is not None and stl3d_worker.isRunning():
+            stl3d_worker.cancel()
+            stl3d_worker.wait()
+        for attr in ("_fit_worker", "_extrude_worker"):
+            w = getattr(self, attr, None)
+            if w is not None and w.isRunning():
+                w.wait()
+        # Workers delivered but not yet finished() (see _retiring_workers): about
+        # to terminate, but join them so none is destroyed mid-run on exit.
+        for w in list(getattr(self, "_retiring_workers", ())):
+            if w is not None and w.isRunning():
+                w.wait()
 
         mcv = self.main_window.mesh_canvas_view
         loader_threads = list(getattr(mcv, "_geom_loader_threads", []))

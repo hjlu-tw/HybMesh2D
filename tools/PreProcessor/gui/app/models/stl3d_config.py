@@ -8,22 +8,49 @@ the exact ``para.in`` line order the binary expects, and provides STL helpers
 (bounding box, ASCII/binary detection) so the GUI can pre-fill the domain.
 """
 from __future__ import annotations
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 import os
+import re
+import struct
 
 import numpy as np
 
-from app.services.stl_loader import load_stl_triangles, _is_binary_stl
+from app.services.stl_loader import load_stl_triangles
+
+
+def _sanitize_token(s: str) -> str:
+    """A whitespace-free token safe to feed STL3d's para.in.
+
+    STL3d reads the STL filename and the case name with ``cin >> token``, which
+    splits on whitespace. A space anywhere in either name shifts every later
+    answer by one token: Nx/Ny/Nz then read garbage and the binary attempts a
+    huge/negative allocation that crashes or hangs. Collapsing unsafe runs to
+    '_' keeps each name a single token (dots/dashes are kept for ``*.stl``).
+    """
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", (s or "").strip())
+    return s or "x"
 
 
 def detect_stl_ascii(path: str) -> bool:
-    """Return True if the STL at ``path`` is ASCII (not binary)."""
+    """Return True if the STL at ``path`` is ASCII (not binary).
+
+    A binary STL is exactly ``84 + n*50`` bytes (n = triangle count at bytes
+    80:84), an identity ASCII files don't satisfy. The check needs the real FILE
+    SIZE — the previous version passed only the 84-byte header to the size test,
+    so the identity failed for every binary file and binaries were misreported as
+    ASCII. STL3d then read them with its ASCII parser, whose ``while(true)`` never
+    finds ``endsolid`` on binary bytes and hangs.
+    """
     try:
+        size = os.path.getsize(path)
         with open(path, "rb") as f:
             head = f.read(84)
     except OSError:
         return True
-    return not _is_binary_stl(head if len(head) >= 84 else head + b"\0" * 84)
+    if len(head) < 84:
+        return True               # too small to be a binary STL with triangles
+    n = struct.unpack("<I", head[80:84])[0]
+    return size != 84 + n * 50
 
 
 def stl_bounding_box(path: str) -> tuple[float, float, float, float, float, float]:
@@ -59,7 +86,12 @@ class Stl3dConfig:
     ny: int = 128
     nz: int = 2
     all_search: bool = True            # all-element (robust) vs close x-range (fast)
-    omp_threads: int = 1               # OMP_NUM_THREADS at run time; 1 = serial (runtime only, not in para.in)
+    # OpenMP is a runtime-only, machine-specific concern (neither field goes into
+    # para.in). The enable flag and the thread count are kept SEPARATE so that
+    # "enabled with 1 thread" stays distinguishable from "disabled" on a config
+    # round-trip (a single conflated int loses that distinction).
+    omp_enabled: bool = False          # run STL3d under OpenMP (else serial)
+    omp_threads: int = field(default_factory=lambda: max(1, os.cpu_count() or 1))
 
     # ------------------------------------------------------------------ #
     @property
@@ -97,13 +129,23 @@ class Stl3dConfig:
         self.zmin, self.zmax = expand(z0, z1)
 
     # ------------------------------------------------------------------ #
+    def stl_run_basename(self) -> str:
+        """Whitespace-safe basename for the STL staged into the run dir + para.in.
+
+        Must match the name written on para.in line 1 (see ``para_in_text``) so the
+        binary can open the file it is told to read."""
+        return _sanitize_token(os.path.basename(self.stl_path) or "input.stl")
+
     def para_in_text(self) -> str:
-        """Serialise to the exact 6-line stdin order STL3d's main() reads."""
-        stl_base = os.path.basename(self.stl_path) or "input.stl"
+        """Serialise to the exact 6-line stdin order STL3d's main() reads.
+
+        The STL filename and case name are sanitised to single tokens: STL3d
+        reads them with ``cin >>`` and a space would misalign every later answer.
+        """
         lines = [
-            stl_base,
+            self.stl_run_basename(),
             "y" if self.ascii else "n",
-            self.case_name or "phi",
+            _sanitize_token(self.case_name or "phi"),
             " ".join(_fmt(v) for v in self.domain),
             f"{int(self.nx)} {int(self.ny)} {int(self.nz)}",
             "y" if self.all_search else "n",
@@ -111,17 +153,21 @@ class Stl3dConfig:
         return "\n".join(lines) + "\n"
 
     def output_basenames(self) -> tuple[str, str]:
-        """(stl_tec, phi_tec) output filenames STL3d writes for this case."""
-        case = self.case_name or "phi"
+        """(stl_tec, phi_tec) output filenames STL3d writes for this case.
+
+        Uses the sanitised case name so it matches what the binary (reading the
+        case name via ``cin >>``) actually writes."""
+        case = _sanitize_token(self.case_name or "phi")
         return f"{case}_stl_tec.dat", f"{case}_phi_tec.dat"
 
     # ------------------------------------------------------------------ #
     def to_dict(self) -> dict:
-        # omp_threads is a runtime-only, machine-specific concern (it never goes
-        # into para.in); drop it from the serialized form so a saved/exported
-        # config can't mislead a reader or CLI into treating a thread count as
-        # part of the immersed-solid definition. from_dict tolerates its absence.
+        # The OpenMP fields are runtime-only, machine-specific concerns (they never
+        # go into para.in); drop them from the serialized form so a saved/exported
+        # config can't mislead a reader or CLI into treating a thread count as part
+        # of the immersed-solid definition. from_dict tolerates their absence.
         d = asdict(self)
+        d.pop("omp_enabled", None)
         d.pop("omp_threads", None)
         return d
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from app.utils import repo_root
 from app.services.stl_extrude import _signed_area
@@ -47,18 +47,32 @@ def _fraction_inside(inner: np.ndarray, outer: np.ndarray, samples: int = 16) ->
 
 
 class ExtrudeControllerMixin:
-    """Extrude the 2D CAD profile(s) into a watertight 3D STL (Q2 method A).
+    """Export the 2D CAD profile(s) as a flat-sheet STL for the immersed solid.
 
-    Each visible geometry layer's polyline becomes a prism (triangulated caps +
-    side walls); all are written to one binary STL that the Immersed Solid
-    (STL→φ) page can consume directly. Bridges the 2D editor to the STL3d
-    preprocessor without any external CAD tool.
+    The project is 2D, so each visible geometry layer's polyline is triangulated
+    into a planar z=0 sheet (filled cross-section, no z-extrusion); all are
+    written to one binary STL that the Immersed Solid (STL→φ) page can consume
+    directly. Bridges the 2D editor to the STL3d preprocessor without any
+    external CAD tool. (A true 3D prism is still available via
+    ``stl_extrude.extrude_loop`` should the solver gain 3D support.)
     """
 
     def _extrude_profile_stem(self) -> str:
-        s = self.active_session()
-        if s is not None and getattr(s, "file_path", ""):
-            return os.path.splitext(os.path.basename(s.file_path))[0]
+        """Filename stem for the exported STL. The export writes every VISIBLE
+        session (see ``_collect_extrude_loops``), so name it after the active layer
+        only when it is itself visible, else after the first visible layer with a
+        file — otherwise the suggested name could point at a hidden layer that is
+        not in the STL."""
+        active = self.active_session()
+        candidates = []
+        if active is not None and getattr(active, "is_visible", True):
+            candidates.append(active)
+        candidates.extend(s for s in self.sessions
+                          if s is not active and getattr(s, "is_visible", True))
+        for s in candidates:
+            fp = getattr(s, "file_path", "")
+            if fp:
+                return os.path.splitext(os.path.basename(fp))[0]
         return "profile"
 
     def _collect_extrude_loops(self):
@@ -67,9 +81,9 @@ class ExtrudeControllerMixin:
         Prefers each session's authored polyline (original_points); falls back to
         its last resampled output if the raw points are unavailable. ``open_names``
         lists the used layers whose per-profile ``closed`` flag is False (they are
-        sealed into a solid on extrude — surfaced as a warning, not guessed from
-        the points, which cannot tell an unrepeated-first-vertex closed loop from
-        an open one).
+        sealed into a closed loop on export — surfaced as a warning, not guessed
+        from the points, which cannot tell an unrepeated-first-vertex closed loop
+        from an open one).
         """
         loops: list[np.ndarray] = []
         used: list[str] = []
@@ -96,16 +110,16 @@ class ExtrudeControllerMixin:
 
     def _loop_issue_warnings(self, loops: list[np.ndarray], names: list[str],
                              open_names: list[str]) -> list[str]:
-        """Surface the prism extruder's key limitations (never silently): open
-        profiles are sealed into a solid, and nested loops are extruded as solid
-        (not subtracted as holes — STL3d marks them solid via z-ray parity)."""
+        """Surface the flat-sheet export's key limitations (never silently): open
+        profiles are sealed into a closed loop, and nested loops are filled as
+        solid (not cut as holes — STL3d marks them solid via z-ray parity)."""
         warnings: list[str] = []
         if open_names:
             warnings.append(
-                "Open profile(s) will be SEALED into a closed solid "
-                f"({', '.join(open_names)}); a side wall joins the last point back "
-                "to the first. Mark the profile closed (or close it) if that is not "
-                "what you want.")
+                "Open profile(s) will be SEALED into a closed loop "
+                f"({', '.join(open_names)}); a closing edge joins the last point "
+                "back to the first. Mark the profile closed (or close it) if that "
+                "is not what you want.")
         areas = [_poly_area(a) for a in loops]
         nested = []
         for i, (ai, ni) in enumerate(zip(loops, names)):
@@ -114,66 +128,58 @@ class ExtrudeControllerMixin:
                 nested.append(ni)
         if nested:
             warnings.append(
-                "Nested profile(s) are extruded as SOLID, not subtracted as holes "
+                "Nested profile(s) are FILLED as solid, not cut as holes "
                 f"({', '.join(nested)}); STL3d will mark these interiors solid. "
                 "Remove inner loops if you need voids.")
         return warnings
 
     def extrude_active_to_stl(self):
+        """Export the visible 2D profile(s) as a flat z=0 sheet STL (2D project).
+
+        Method name kept for the existing button/menu wiring; it no longer
+        extrudes in z — each profile is triangulated into a planar lamina.
+        """
         log = self.main_window.log_panel.log
         if getattr(self, "_extrude_worker", None) is not None and self._extrude_worker.isRunning():
-            log("[Extrude] An extrusion is already running. Please wait.")
+            log("[Export] An STL export is already running. Please wait.")
             return
         loops, used, skipped, open_names = self._collect_extrude_loops()
         if not loops:
-            log("[Extrude] No 2D geometry to extrude. Draw or import a closed "
+            log("[Export] No 2D geometry to export. Draw or import a closed "
                 "profile first (bake analytic curves so they have points).")
             QMessageBox.information(
-                self.main_window, "Extrude → STL",
+                self.main_window, "Export 2D STL",
                 "No 2D geometry found.\n\nDraw or import a closed profile first. "
-                "Analytic curves must be baked into points before extruding.")
+                "Analytic curves must be converted to discrete points first.")
             return
         if skipped:
-            log(f"[Extrude] Skipped layers without usable points: {', '.join(skipped)}")
+            log(f"[Export] Skipped layers without usable points: {', '.join(skipped)}")
 
-        # Surface the prism extruder's limitations loudly (open profiles are
-        # sealed; nested loops fill instead of becoming holes) and let the user
-        # abort rather than silently producing a wrong immersed solid.
+        # Surface the flat-sheet limitations loudly (open profiles are sealed;
+        # nested loops fill instead of becoming holes) and let the user abort
+        # rather than silently producing a wrong immersed solid.
         issues = self._loop_issue_warnings(loops, used, open_names)
         if issues:
             for w in issues:
-                log(f"[Extrude] ⚠ {w}")
+                log(f"[Export] ⚠ {w}")
             proceed = QMessageBox.warning(
-                self.main_window, "Extrude → STL",
-                "Heads up before extruding:\n\n• " + "\n\n• ".join(issues)
-                + "\n\nExtrude anyway?",
+                self.main_window, "Export 2D STL",
+                "Heads up before exporting:\n\n• " + "\n\n• ".join(issues)
+                + "\n\nExport anyway?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)
             if proceed != QMessageBox.StandardButton.Yes:
-                log("[Extrude] Cancelled (profile warnings).")
+                log("[Export] Cancelled (profile warnings).")
                 return
 
-        # Default thickness = 10% of the in-plane extent (sane for a thin slab).
-        allpts = np.vstack(loops)
-        ext = float(max(np.ptp(allpts[:, 0]), np.ptp(allpts[:, 1])))
-        default_t = ext * 0.1 if ext > 0 else 1.0
-        # Round for a clean default, but never below the dialog minimum: a tiny
-        # extent would otherwise round to 0.0 and silently clamp to 1e-9.
-        rounded = round(default_t, 6)
-        default_t = rounded if rounded >= 1e-6 else default_t
-        thickness, ok = QInputDialog.getDouble(
-            self.main_window, "Extrude → STL",
-            "Extrusion thickness in z (centered on z=0):",
-            default_t, 1e-9, 1e12, 6)
-        if not ok:
-            return
-        z0, z1 = -thickness / 2.0, thickness / 2.0
+        # 2D project: export a flat sheet at z=0 (no z-extrusion / thickness).
+        z0 = z1 = 0.0
 
         default_path = os.path.join(
             repo_root(), "examples", "geometries",
-            f"{self._extrude_profile_stem()}_extruded.stl")
+            f"{self._extrude_profile_stem()}_2d.stl")
         path, _ = QFileDialog.getSaveFileName(
-            self.main_window, "Save Extruded STL", default_path,
+            self.main_window, "Save 2D Profile STL", default_path,
             "STL Files (*.stl);;All Files (*)")
         if not path:
             return
@@ -184,43 +190,49 @@ class ExtrudeControllerMixin:
         # dense imported profile, so run it off the GUI thread; the hand-off to
         # the Immersed Solid page happens in _on_extrude_done.
         from app.workers.extrude_run import ExtrudeWorker
-        self._extrude_pending = {"thickness": thickness, "z0": z0, "z1": z1,
+        self._extrude_pending = {"z0": z0, "z1": z1,
                                  "n_loops": len(loops), "used": list(used)}
-        log(f"[Extrude] Triangulating {len(loops)} loop(s) and writing STL "
+        log(f"[Export] Triangulating {len(loops)} profile(s) into a flat 2D STL "
             "in the background…")
-        self._extrude_worker = ExtrudeWorker(loops, used, z0, z1, path)
+        self._extrude_worker = ExtrudeWorker(loops, used, z0, z1, path, flat=True)
         self._extrude_worker.result_signal.connect(self._on_extrude_done)
         self._extrude_worker.start()
 
     def _on_extrude_done(self, m: dict):
         """Report the extrusion result and offer the Immersed Solid hand-off."""
         log = self.main_window.log_panel.log
-        self._extrude_worker = None          # delivered; release the thread object
+        # Keep the finished worker alive until its finished() signal fires before
+        # releasing it — dropping the last reference to a QThread whose run() is
+        # still unwinding can abort with "QThread destroyed while running".
+        worker = self._extrude_worker
+        self._extrude_worker = None
+        if worker is not None:
+            self._retiring_workers.add(worker)
+            worker.finished.connect(lambda w=worker: self._retiring_workers.discard(w))
         info = getattr(self, "_extrude_pending", None) or {}
         if m.get("failed"):
-            log("[Extrude] Could not triangulate (degenerate / self-intersecting "
+            log("[Export] Could not triangulate (degenerate / self-intersecting "
                 f"loop, skipped): {', '.join(m['failed'])}")
         if m.get("error") == "no_facets":
-            log("[Extrude] Triangulation produced no facets — check that the "
+            log("[Export] Triangulation produced no facets — check that the "
                 "profile is a simple (non-self-intersecting) closed loop.")
-            QMessageBox.warning(self.main_window, "Extrude → STL",
+            QMessageBox.warning(self.main_window, "Export 2D STL",
                                 "Could not triangulate any profile (degenerate "
                                 "or self-intersecting loop).")
             return
         if m.get("error"):
-            log(f"[Extrude] Failed: {m['error']}")
-            QMessageBox.warning(self.main_window, "Extrude → STL", str(m["error"]))
+            log(f"[Export] Failed: {m['error']}")
+            QMessageBox.warning(self.main_window, "Export 2D STL", str(m["error"]))
             return
 
         path, n = m["path"], m["n_facets"]
-        thickness, z0, z1 = info.get("thickness", 0.0), info.get("z0", 0.0), info.get("z1", 0.0)
         used = info.get("used", [])
-        log(f"--- Extruded {info.get('n_loops', 0)} loop(s) [{', '.join(used)}] → "
-            f"{n:,} facets, thickness {thickness:g} (z {z0:g}..{z1:g}) ---")
+        log(f"--- Exported {info.get('n_loops', 0)} profile(s) [{', '.join(used)}] → "
+            f"flat 2D STL, {n:,} facets (z=0) ---")
         log(f"STL written to {path}")
 
         reply = QMessageBox.question(
-            self.main_window, "Extrude → STL",
+            self.main_window, "Export 2D STL",
             "STL saved.\n\nLoad it into the Immersed Solid (STL→φ) page now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes)

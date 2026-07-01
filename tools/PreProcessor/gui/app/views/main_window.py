@@ -816,11 +816,14 @@ class MainWindow(QMainWindow):
                             col_idx += 1
                     self.tb_layout.setColumnStretch(col_idx, 1)
 
-            else:  # Solver / Results modes — minimal toolbar; panels own their controls
+            else:  # Solver / Results / STL3d modes — minimal toolbar; panels own their controls
                 self.canvas_toolbar.setFixedHeight(36)
                 self.mesh_sep3.setVisible(False)
                 col_idx = 0
-                for w in (self.undo_btn, self.redo_btn, self.cad_sep1):
+                # Include the progress bar so the STL3d "Generate phi" run shows it
+                # placed in the grid (after undo/redo) instead of floating at the
+                # top-left corner over the undo/redo buttons.
+                for w in (self.undo_btn, self.redo_btn, self.cad_sep1, self.progress_bar):
                     if w.isVisible():
                         self.tb_layout.addWidget(w, 0, col_idx)
                         col_idx += 1

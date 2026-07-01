@@ -7,11 +7,14 @@ the domain/resolution. After a run it shows the phi field's solid cells
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pyqtgraph.opengl as gl
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QPushButton, QSpinBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QLabel,
+    QPushButton, QSpinBox,
 )
 
 from app.services.phi_quality import FIT_OK_CELLS
@@ -52,6 +55,26 @@ def _bar_button(text: str, *, base: str, border: str, hover: str,
                        padding=padding, checked_bg=checked_bg, font_size="11px")
 
 
+def _nice_step(extent: float, target: int = 10) -> float:
+    """A round grid spacing (1/2/5 × 10ⁿ) giving roughly ``target`` divisions."""
+    if extent <= 0:
+        return 1.0
+    raw = extent / max(target, 1)
+    mag = 10.0 ** math.floor(math.log10(raw))
+    for m in (1.0, 2.0, 5.0):
+        if raw <= m * mag:
+            return m * mag
+    return 10.0 * mag
+
+
+def _axis_ticks(lo: float, hi: float, step: float) -> list[float]:
+    """Tick coordinates at multiples of ``step`` within [lo, hi]."""
+    if step <= 0:
+        return []
+    n0, n1 = math.ceil(lo / step), math.floor(hi / step)
+    return [round(k * step, 10) for k in range(n0, n1 + 1)] if n1 >= n0 else []
+
+
 def _box_edge_segments(b) -> np.ndarray:
     """12 edges of the box (xmin,xmax,ymin,ymax,zmin,zmax) as line-pair verts."""
     x0, x1, y0, y1, z0, z1 = b
@@ -76,6 +99,19 @@ class _GLView(gl.GLViewWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._mode_2d = True
+        self._sync_widgets = []        # repainted whenever the camera changes
+
+    def add_sync(self, w):
+        """Register a widget (e.g. an axis ruler) to repaint on every GL frame."""
+        self._sync_widgets.append(w)
+
+    def paintGL(self, *args, **kwargs):
+        super().paintGL(*args, **kwargs)
+        # Keep the external rulers in lock-step with pan/zoom/orbit (setCameraPosition
+        # and our pan/wheel handlers all funnel through a GL repaint).
+        for w in self._sync_widgets:
+            if w.isVisible():
+                w.update()
 
     def set_2d(self, on: bool):
         self._mode_2d = bool(on)
@@ -143,6 +179,72 @@ class _GLView(gl.GLViewWidget):
         return (nx + (fx - nx) * t, ny + (fy - ny) * t)
 
 
+class _AxisStrip(QWidget):
+    """A screen-space numeric ruler along the GL view's left or bottom edge,
+    mirroring the CAD page's plot axes (the numbers sit *outside* the viewport,
+    fixed to the border, not floating in the 3D scene).
+
+    Exact in 2D top-down mode: with the camera looking straight down, every point
+    on the z=const plane is at the same depth, so the perspective projection is
+    uniform and world↔screen is linear. Blank in 3D orbit (no fixed axes there).
+    """
+
+    LEFT_W = 46
+    BOTTOM_H = 20
+
+    def __init__(self, glview: "_GLView", side: str, parent=None):
+        super().__init__(parent)
+        self._gl = glview
+        self._side = side                      # "left" or "bottom"
+        self.setStyleSheet("background:#06070d;")
+        if side == "left":
+            self.setFixedWidth(self.LEFT_W)
+        else:
+            self.setFixedHeight(self.BOTTOM_H)
+
+    def _edge_world(self, sx, sy):
+        return self._gl._world_on_z(sx, sy, self._gl.opts["center"].z())
+
+    def paintEvent(self, ev):
+        from PyQt6.QtGui import QPainter, QPen, QColor, QFont
+        p = QPainter(self)
+        if not getattr(self._gl, "_mode_2d", False):
+            return                             # 3D orbit: no fixed edge ruler
+        gW, gH = self._gl.width(), self._gl.height()
+        if gW <= 0 or gH <= 0:
+            return
+        p.setPen(QPen(QColor(120, 130, 160)))
+        f = QFont(); f.setPointSize(8); p.setFont(f)
+        W, H = self.width(), self.height()
+
+        if self._side == "bottom":
+            a, b = self._edge_world(0, gH), self._edge_world(gW, gH)
+            if not (a and b) or a[0] == b[0]:
+                return
+            x0v, x1v = a[0], b[0]
+            step = _nice_step(abs(x1v - x0v), target=8)
+            for xt in _axis_ticks(min(x0v, x1v), max(x0v, x1v), step):
+                sx = gW * (xt - x0v) / (x1v - x0v)
+                if 0 <= sx <= gW:
+                    p.drawLine(int(sx), 0, int(sx), 4)
+                    p.drawText(int(sx) - 24, 5, 48, H - 6,
+                               Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+                               f"{xt:g}")
+        else:                                  # left
+            bot, top = self._edge_world(0, gH), self._edge_world(0, 0)
+            if not (bot and top) or bot[1] == top[1]:
+                return
+            y0v, y1v = bot[1], top[1]
+            step = _nice_step(abs(y1v - y0v), target=8)
+            for yt in _axis_ticks(min(y0v, y1v), max(y0v, y1v), step):
+                sy = gH * (1.0 - (yt - y0v) / (y1v - y0v))
+                if 0 <= sy <= gH:
+                    p.drawLine(W - 4, int(sy), W, int(sy))
+                    p.drawText(2, int(sy) - 8, W - 8, 16,
+                               Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                               f"{yt:g}")
+
+
 class Stl3dCanvasView(QWidget):
     """OpenGL canvas: STL surface + live domain box/grid + phi solid points."""
 
@@ -158,7 +260,8 @@ class Stl3dCanvasView(QWidget):
         self._fluid_item: gl.GLScatterPlotItem | None = None
         self._dev_item: gl.GLScatterPlotItem | None = None
 
-        self._bbox = None              # last STL/domain bbox for camera fit
+        self._bbox = None              # last domain bbox (camera fallback)
+        self._stl_bbox = None          # STL surface bbox — preferred fit target
         self._phi_pts: np.ndarray | None = None
         self._phi_val: np.ndarray | None = None
         self._z_levels: np.ndarray | None = None
@@ -168,8 +271,10 @@ class Stl3dCanvasView(QWidget):
         self._dev_val: np.ndarray | None = None
         self._dev_h: float = 1.0
 
+        self._grid_items: list = []    # faint in-scene XY grid (graph paper)
+
         self._show = {"stl": True, "box": True, "solid": True,
-                      "fluid": False, "dev": False}
+                      "fluid": False, "dev": False, "grid": True}
 
         # ── Top display bar (moved here from the sidebar) ──────────────────
         layout.addWidget(self._build_display_bar())
@@ -177,7 +282,26 @@ class Stl3dCanvasView(QWidget):
         self.view = _GLView()
         self.view.setBackgroundColor(12, 13, 22)        # match app dark theme
         self.view.setCameraPosition(elevation=90, azimuth=-90)  # default 2D top-down
-        layout.addWidget(self.view, stretch=1)
+
+        # ── GL view framed by left + bottom numeric rulers (like the CAD page:
+        #    the scale numbers sit outside the viewport, fixed to the border). ──
+        self._left_axis = _AxisStrip(self.view, "left")
+        self._bottom_axis = _AxisStrip(self.view, "bottom")
+        self._axis_corner = QWidget()
+        self._axis_corner.setFixedSize(_AxisStrip.LEFT_W, _AxisStrip.BOTTOM_H)
+        self._axis_corner.setStyleSheet("background:#06070d;")
+        self.view.add_sync(self._left_axis)
+        self.view.add_sync(self._bottom_axis)
+
+        grid_w = QWidget()
+        g = QGridLayout(grid_w)
+        g.setContentsMargins(0, 0, 0, 0)
+        g.setSpacing(0)
+        g.addWidget(self._left_axis, 0, 0)
+        g.addWidget(self.view, 0, 1)
+        g.addWidget(self._axis_corner, 1, 0)
+        g.addWidget(self._bottom_axis, 1, 1)
+        layout.addWidget(grid_w, stretch=1)
 
     # ------------------------------------------------------------------ #
     def _build_display_bar(self) -> QWidget:
@@ -199,12 +323,15 @@ class Stl3dCanvasView(QWidget):
 
         self.show_stl_cb = _check("STL surface", "Show the STL surface", True)
         self.show_box_cb = _check("Domain box", "Show the Cartesian domain box", True)
+        self.show_grid_cb = _check(
+            "Ruler", "Show the edge axis rulers (x/y scale at the border) + the "
+            "faint in-scene grid", True)
         self.show_solid_cb = _check("Solid (φ=1)", "Show marked solid cells from the last run", True)
         self.show_fluid_cb = _check("Fluid (φ=0)", "Show fluid cells (faint) from the last run", False)
         self.show_dev_cb = _check(
             "Fit Δ", "Show the STL↔φ surface-deviation heatmap from Check Fit "
             f"(green = within a cell, red ≥ {FIT_OK_CELLS:g} cells off)", False)
-        for cb in (self.show_stl_cb, self.show_box_cb,
+        for cb in (self.show_stl_cb, self.show_box_cb, self.show_grid_cb,
                    self.show_solid_cb, self.show_fluid_cb, self.show_dev_cb):
             hl.addWidget(cb)
 
@@ -242,7 +369,7 @@ class Stl3dCanvasView(QWidget):
 
         self.fit_btn = _bar_button("Fit View", base="#1d2a3a", border="#2d3356",
                                    hover="#5a9ad4")
-        self.fit_btn.setToolTip("Frame the camera on the domain box")
+        self.fit_btn.setToolTip("Frame the camera on the geometry (STL surface)")
         self.fit_btn.clicked.connect(self.fit_view)
         hl.addWidget(self.fit_btn)
 
@@ -270,6 +397,7 @@ class Stl3dCanvasView(QWidget):
     def visibility(self) -> dict:
         return {"stl": self.show_stl_cb.isChecked(),
                 "box": self.show_box_cb.isChecked(),
+                "grid": self.show_grid_cb.isChecked(),
                 "solid": self.show_solid_cb.isChecked(),
                 "fluid": self.show_fluid_cb.isChecked(),
                 "dev": self.show_dev_cb.isChecked()}
@@ -310,7 +438,12 @@ class Stl3dCanvasView(QWidget):
             self.view.removeItem(self._stl_item)
             self._stl_item = None
         if tris is None or len(tris) == 0:
+            self._stl_bbox = None
             return
+        v = tris.reshape(-1, 3)
+        self._stl_bbox = (float(v[:, 0].min()), float(v[:, 0].max()),
+                          float(v[:, 1].min()), float(v[:, 1].max()),
+                          float(v[:, 2].min()), float(v[:, 2].max()))
         verts = tris.reshape(-1, 3).astype(np.float32)
         faces = np.arange(len(verts), dtype=np.uint32).reshape(-1, 3)
         md = gl.MeshData(vertexes=verts, faces=faces)
@@ -325,7 +458,7 @@ class Stl3dCanvasView(QWidget):
     # Domain box (live overlay)
     # ------------------------------------------------------------------ #
     def set_domain(self, bounds):
-        """Update the Cartesian domain box outline."""
+        """Update the Cartesian domain box outline and the XY scale ruler."""
         self._bbox = tuple(float(v) for v in bounds)
         box = _box_edge_segments(self._bbox)
         if self._box_item is None:
@@ -335,13 +468,50 @@ class Stl3dCanvasView(QWidget):
             self.view.addItem(self._box_item)
         else:
             self._box_item.setData(pos=box, color=_C_BOX, width=2.0, mode="lines")
+        self._rebuild_grid()
 
     def clear_domain(self):
-        """Remove the Cartesian domain box outline (used by Clear All)."""
+        """Remove the Cartesian domain box outline + ruler (used by Clear All)."""
         if self._box_item is not None:
             self.view.removeItem(self._box_item)
             self._box_item = None
+        for it in self._grid_items:
+            self.view.removeItem(it)
+        self._grid_items = []
         self._bbox = None
+
+    # ------------------------------------------------------------------ #
+    # XY scale ruler (graph-paper grid + numeric axis ticks)
+    # ------------------------------------------------------------------ #
+    def _rebuild_grid(self):
+        """(Re)draw a faint graph-paper grid under the geometry, aligned to round
+        world coordinates so its lines coincide with the external rulers' ticks.
+        The numeric scale itself lives on the left/bottom ruler strips."""
+        for it in self._grid_items:
+            self.view.removeItem(it)
+        self._grid_items = []
+        if self._bbox is None:
+            return
+        x0, x1, y0, y1, z0, z1 = self._bbox
+        sx, sy = x1 - x0, y1 - y0
+        if sx <= 0 or sy <= 0:
+            return
+        step = _nice_step(max(sx, sy))
+        grid = gl.GLGridItem()
+        # Pad by a step and centre on a multiple of step so grid lines fall on
+        # round coordinates (matching the ruler ticks) rather than the box centre.
+        grid.setSize(x=sx + 2 * step, y=sy + 2 * step)
+        grid.setSpacing(x=step, y=step)
+        ax = round((x0 + x1) / 2.0 / step) * step
+        ay = round((y0 + y1) / 2.0 / step) * step
+        grid.translate(ax, ay, z0)
+        try:
+            grid.setColor((70, 80, 115, 45))      # very faint, like the CAD grid
+        except Exception:
+            pass
+        self._grid_items.append(grid)
+        self.view.addItem(grid)
+        grid.setVisible(self._show.get("grid", True))
 
     # ------------------------------------------------------------------ #
     # phi result
@@ -400,14 +570,25 @@ class Stl3dCanvasView(QWidget):
             self._dev_item = None
         if self._dev_pts is None or len(self._dev_pts) == 0:
             return
+        # Honour the z-slice selection so isolating a layer hides deviation points
+        # from the other layers — otherwise the heatmap contradicts the solid/fluid
+        # view, which _refresh_phi already filters the same way.
+        mask = np.ones(len(self._dev_pts), dtype=bool)
+        if (self._slice_k is not None and self._z_levels is not None
+                and 0 <= self._slice_k < len(self._z_levels)):
+            zsel = self._z_levels[self._slice_k]
+            mask = np.isclose(np.round(self._dev_pts[:, 2], 9), zsel)
+        pts = self._dev_pts[mask]
+        if len(pts) == 0:
+            return
         # Map deviation (in cell counts) onto a green→red ramp via the cached
         # colormap (Normalize inlined as a clipped 0..1 scale to avoid the extra
         # matplotlib.colors import).
-        cells = self._dev_val / self._dev_h
+        cells = self._dev_val[mask] / self._dev_h
         t = np.clip(cells / _DEV_VMAX_CELLS, 0.0, 1.0)
         rgba = _dev_cmap()(t)
         self._dev_item = gl.GLScatterPlotItem(
-            pos=self._dev_pts.astype(np.float32),
+            pos=pts.astype(np.float32),
             color=rgba.astype(np.float32), size=7.0, pxMode=True)
         self._dev_item.setVisible(self._show["dev"])
         self.view.addItem(self._dev_item)
@@ -420,6 +601,7 @@ class Stl3dCanvasView(QWidget):
         """Show only z-layer ``k`` (0-based), or all layers when None."""
         self._slice_k = k
         self._refresh_phi()
+        self._refresh_dev()      # keep the deviation heatmap on the same layer
 
     def _refresh_phi(self):
         for attr in ("_solid_item", "_fluid_item"):
@@ -463,12 +645,23 @@ class Stl3dCanvasView(QWidget):
         for key, item in pairs:
             if item is not None:
                 item.setVisible(self._show[key])
+        # "Ruler" toggles the in-scene grid AND the external left/bottom rulers.
+        gvis = self._show.get("grid", True)
+        for it in self._grid_items:
+            it.setVisible(gvis)
+        for w in (getattr(self, "_left_axis", None), getattr(self, "_bottom_axis", None),
+                  getattr(self, "_axis_corner", None)):
+            if w is not None:
+                w.setVisible(gvis)
 
     def fit_view(self):
-        """Frame the camera on the current domain box (or STL bbox)."""
-        if self._bbox is None:
+        """Frame the camera on the geometry (STL surface), falling back to the
+        domain box only when no STL is loaded. Auto Domain therefore keeps the
+        view locked on the solid rather than zooming out to the padded box."""
+        b = self._stl_bbox or self._bbox
+        if b is None:
             return
-        x0, x1, y0, y1, z0, z1 = self._bbox
+        x0, x1, y0, y1, z0, z1 = b
         cx, cy, cz = (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2
         span = max(x1 - x0, y1 - y0, z1 - z0, 1e-6)
         try:

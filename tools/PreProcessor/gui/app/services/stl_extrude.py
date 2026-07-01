@@ -168,6 +168,32 @@ def extrude_loop(poly: np.ndarray, z0: float, z1: float) -> np.ndarray:
     return np.array(tris, dtype=np.float64)
 
 
+def flat_sheet_loop(poly: np.ndarray, z: float = 0.0) -> np.ndarray:
+    """Triangulate one closed 2D loop into a flat sheet at height ``z``.
+
+    Unlike :func:`extrude_loop` this emits ONE cap only — no second cap, no side
+    walls — i.e. the filled profile as a planar z=const lamina. That is the
+    quasi-2D immersed-solid input (cf. a 2D airfoil STL): STL3d ray-traces a flat
+    sheet the same way it does an extruded slab's cap, so the project's 2D solver
+    can mark phi without a (here unnecessary) z-extrusion. Returns (M,3,3)
+    triangle vertices; empty if the loop cannot be triangulated.
+    """
+    poly = _clean_loop(poly)
+    if len(poly) < 3:
+        return np.empty((0, 3, 3), dtype=np.float64)
+    if _signed_area(poly) < 0:               # canonical CCW
+        poly = poly[::-1]
+    cap = triangulate_polygon_2d(poly)       # CCW indices
+    if len(cap) == 0:
+        return np.empty((0, 3, 3), dtype=np.float64)
+    # Single cap with a -z normal (reversed CCW winding), matching the facet
+    # orientation of a 2D profile exported as a planar STL.
+    tris = [[[poly[i, 0], poly[i, 1], z],
+             [poly[k, 0], poly[k, 1], z],
+             [poly[j, 0], poly[j, 1], z]] for i, j, k in cap]
+    return np.array(tris, dtype=np.float64)
+
+
 def write_binary_stl(path: str, tris: np.ndarray,
                      header: bytes = b"HybMesh extruded profile") -> None:
     """Write an (M,3,3) triangle array as a binary STL with computed normals."""
@@ -181,3 +207,26 @@ def write_binary_stl(path: str, tris: np.ndarray,
         f.write(header[:80].ljust(80, b"\0"))
         f.write(struct.pack("<I", n))
         f.write(recs.tobytes())
+
+
+def write_ascii_stl(path: str, tris: np.ndarray, name: str = "hybmesh_profile") -> None:
+    """Write an (M,3,3) triangle array as an ASCII STL (same layout as the
+    reference ``naca0012.stl``: ``solid`` … ``facet normal`` / ``outer loop`` /
+    three ``vertex`` lines / ``endloop`` / ``endfacet`` … ``endsolid``).
+
+    ASCII is the format the STL3d preprocessor reads most robustly, and it is
+    human-readable for debugging. Normals are computed per facet.
+    """
+    tris = np.asarray(tris, dtype=np.float64)
+    normals = triangle_normals(tris)
+    out = [f"solid {name}"]
+    for tri, nrm in zip(tris, normals):
+        out.append(f"facet normal {nrm[0]:.6e} {nrm[1]:.6e} {nrm[2]:.6e}")
+        out.append("  outer loop")
+        for v in tri:
+            out.append(f"    vertex {v[0]:.6e} {v[1]:.6e} {v[2]:.6e}")
+        out.append("  endloop")
+        out.append("endfacet")
+    out.append(f"endsolid {name}")
+    with open(path, "w") as f:
+        f.write("\n".join(out) + "\n")
