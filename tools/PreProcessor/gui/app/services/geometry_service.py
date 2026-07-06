@@ -74,6 +74,31 @@ def _parse_vertices_str(s: str) -> np.ndarray:
     return np.array(pts)
 
 
+# Canonical polygon vertices_str serialisation, shared by every producer (canvas
+# drag, right-click insert/delete, transform bake, sidebar table) so the format
+# lives in ONE place next to its parser. %.10g (not %.6g) keeps ~10 significant
+# digits, so repeated drag/edit round-trips through the string don't accumulate
+# visible coordinate drift.
+def format_vertices_str(verts) -> str:
+    """Serialise an iterable of (x, y) to the canonical ``"x,y; x,y; …"`` form."""
+    return "; ".join(f"{float(x):.10g},{float(y):.10g}" for x, y in verts)
+
+
+def project_point_to_segment(p, a, b):
+    """Nearest point on segment a→b to point p, and the parameter t in [0, 1].
+
+    Returns ``(proj_xy: np.ndarray, t: float)``; t is clamped so the projection
+    stays on the segment (degenerate a==b → t=0, proj=a). Shared by the polygon
+    edge-insert hit-test and the discrete-geometry insert-point hit-test."""
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    p = np.asarray(p, dtype=float)
+    ab = b - a
+    l2 = float(ab @ ab)
+    t = float(np.clip((p - a) @ ab / l2, 0.0, 1.0)) if l2 > 0.0 else 0.0
+    return a + t * ab, t
+
+
 def _sample_polyline_pinned(vertices: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
     """Sample n points along a closed polyline, guaranteeing that every specified
     vertex is included in the output.

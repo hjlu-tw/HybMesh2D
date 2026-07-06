@@ -77,7 +77,15 @@ class LogPanel(QWidget):
                 level = "WARNING"
             else:
                 lower_msg = message.lower()
-                if "error" in lower_msg or "failed" in lower_msg:
+                # "eL2 error norm ..." is the solver's per-iteration residual
+                # metric echoed on stdout, not a failure — don't let the "error"
+                # substring in "error norm" mis-tag these convergence lines as
+                # ERROR. Match the solver's own "eL2 error norm" token (not a bare
+                # "error norm"), so a genuine error that happens to contain the
+                # words "error norm" is still surfaced as ERROR.
+                if "el2 error norm" in lower_msg:
+                    level = "INFO"
+                elif "error" in lower_msg or "failed" in lower_msg:
                     level = "ERROR"
                 elif "warning" in lower_msg or "warn" in lower_msg:
                     level = "WARNING"

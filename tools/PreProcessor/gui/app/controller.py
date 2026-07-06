@@ -86,6 +86,9 @@ class AppController(
         self._pending_is_new = True       # True = creating, False = editing an existing edge
         self._pending_orig = None         # original params snapshot (to restore on cancel of an edit)
         self._pending_orig_state = None   # full state snapshot (to make committing an edit undoable)
+        # Pre-drag state snapshot for on-canvas vertex dragging of an already-
+        # committed edge, so the whole drag collapses into one undo step.
+        self._drag_orig_state = None
         self._custom_preview_fitted = False
         # Discrete-geometry editing (imported file edges): the whole connected
         # shape is edited together by its corner vertices; each edge re-fits
@@ -203,7 +206,7 @@ class AppController(
                   sb.dup_ma_px, sb.dup_ma_py, sb.dup_ma_dx, sb.dup_ma_dy,
                   sb.dup_ps_px, sb.dup_ps_py,
                   sb.dup_trans_dx, sb.dup_trans_dy,
-                  sb.dup_scale_factor, sb.dup_scale_px, sb.dup_scale_py]:
+                  sb.dup_scale_sx, sb.dup_scale_sy, sb.dup_scale_px, sb.dup_scale_py]:
             w.valueChanged.connect(self.on_duplicate_param_changed)
 
         # Advanced settings
@@ -234,6 +237,7 @@ class AppController(
         self.main_window.canvas_view.point_deselected.connect(self.handle_point_deselected)
         self.main_window.canvas_view.segment_clicked.connect(self.handle_canvas_segment_clicked)
         self.main_window.canvas_view.segment_double_clicked.connect(self.handle_canvas_segment_double_clicked)
+        self.main_window.canvas_view.segment_context_requested.connect(self.handle_canvas_context_menu)
         self.main_window.canvas_view.box_selected.connect(self.handle_canvas_box_selected)
         # Interactive shape drawing finished → create the analytic edge.
         self.main_window.canvas_view.shape_drawn.connect(self.on_shape_drawn)

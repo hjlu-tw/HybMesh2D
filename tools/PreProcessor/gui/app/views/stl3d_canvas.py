@@ -11,6 +11,8 @@ import math
 
 import numpy as np
 import pyqtgraph.opengl as gl
+from OpenGL.GL import (GL_DEPTH_TEST, GL_BLEND, GL_ALPHA_TEST, GL_CULL_FACE,
+                       GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QLabel,
@@ -21,7 +23,20 @@ from app.services.phi_quality import FIT_OK_CELLS
 from app.utils import block_signals, make_button
 
 _C_STL = (0.62, 0.71, 0.92, 1.0)
+_C_STL_EDGE = (0.20, 0.30, 0.62, 1.0)  # STL triangle wireframe lines (reads on
+#                                        the pale fill AND the dark background)
 _C_BOX = (0.36, 0.78, 0.92, 1.0)     # bright cyan box edges
+
+# Wireframe overlay GL state: depth-test OFF so the triangle lines always draw
+# over the (coplanar) opaque faces instead of z-fighting and vanishing on a
+# flat, face-on sheet; alpha-blended otherwise like the 'translucent' preset.
+_EDGE_GLOPTS = {
+    GL_DEPTH_TEST: False,
+    GL_BLEND: True,
+    GL_ALPHA_TEST: False,
+    GL_CULL_FACE: False,
+    'glBlendFunc': (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA),
+}
 _C_SOLID = (0.95, 0.30, 0.27, 1.0)   # phi = 1
 _C_FLUID = (0.45, 0.50, 0.66, 0.25)  # phi = 0 (faint)
 
@@ -255,6 +270,7 @@ class Stl3dCanvasView(QWidget):
         layout.setSpacing(0)
 
         self._stl_item: gl.GLMeshItem | None = None
+        self._stl_edge_item: gl.GLLinePlotItem | None = None
         self._box_item: gl.GLLinePlotItem | None = None
         self._solid_item: gl.GLScatterPlotItem | None = None
         self._fluid_item: gl.GLScatterPlotItem | None = None
@@ -273,7 +289,7 @@ class Stl3dCanvasView(QWidget):
 
         self._grid_items: list = []    # faint in-scene XY grid (graph paper)
 
-        self._show = {"stl": True, "box": True, "solid": True,
+        self._show = {"stl": True, "stl_edges": True, "box": True, "solid": True,
                       "fluid": False, "dev": False, "grid": True}
 
         # ── Top display bar (moved here from the sidebar) ──────────────────
@@ -322,6 +338,8 @@ class Stl3dCanvasView(QWidget):
             return c
 
         self.show_stl_cb = _check("STL surface", "Show the STL surface", True)
+        self.show_stl_edges_cb = _check(
+            "STL edges", "Show the STL triangle edges (wireframe grid lines)", True)
         self.show_box_cb = _check("Domain box", "Show the Cartesian domain box", True)
         self.show_grid_cb = _check(
             "Ruler", "Show the edge axis rulers (x/y scale at the border) + the "
@@ -331,8 +349,9 @@ class Stl3dCanvasView(QWidget):
         self.show_dev_cb = _check(
             "Fit Δ", "Show the STL↔φ surface-deviation heatmap from Check Fit "
             f"(green = within a cell, red ≥ {FIT_OK_CELLS:g} cells off)", False)
-        for cb in (self.show_stl_cb, self.show_box_cb, self.show_grid_cb,
-                   self.show_solid_cb, self.show_fluid_cb, self.show_dev_cb):
+        for cb in (self.show_stl_cb, self.show_stl_edges_cb, self.show_box_cb,
+                   self.show_grid_cb, self.show_solid_cb, self.show_fluid_cb,
+                   self.show_dev_cb):
             hl.addWidget(cb)
 
         sep = QWidget(); sep.setFixedWidth(1); sep.setFixedHeight(16)
@@ -396,6 +415,7 @@ class Stl3dCanvasView(QWidget):
     # ------------------------------------------------------------------ #
     def visibility(self) -> dict:
         return {"stl": self.show_stl_cb.isChecked(),
+                "stl_edges": self.show_stl_edges_cb.isChecked(),
                 "box": self.show_box_cb.isChecked(),
                 "grid": self.show_grid_cb.isChecked(),
                 "solid": self.show_solid_cb.isChecked(),
@@ -434,9 +454,11 @@ class Stl3dCanvasView(QWidget):
     # ------------------------------------------------------------------ #
     def set_stl(self, tris: np.ndarray | None):
         """Set the STL surface from an (N, 3, 3) triangle-vertex array."""
-        if self._stl_item is not None:
-            self.view.removeItem(self._stl_item)
-            self._stl_item = None
+        for it in (self._stl_item, self._stl_edge_item):
+            if it is not None:
+                self.view.removeItem(it)
+        self._stl_item = None
+        self._stl_edge_item = None
         if tris is None or len(tris) == 0:
             self._stl_bbox = None
             return
@@ -447,12 +469,34 @@ class Stl3dCanvasView(QWidget):
         verts = tris.reshape(-1, 3).astype(np.float32)
         faces = np.arange(len(verts), dtype=np.uint32).reshape(-1, 3)
         md = gl.MeshData(vertexes=verts, faces=faces)
+        # Faces only. GLMeshItem's own drawEdges draws the wireframe at the SAME
+        # depth as the faces (no polygon offset), so on a flat sheet viewed
+        # face-on the opaque faces z-fight over the coplanar edges and they
+        # vanish — which is exactly the "can't see the edges" case. Draw the
+        # triangle grid as a separate line item with depth-testing OFF instead,
+        # so it always sits on top of the surface regardless of orientation.
         self._stl_item = gl.GLMeshItem(
-            meshdata=md, smooth=False, drawEdges=True,
-            edgeColor=(0.20, 0.24, 0.40, 1.0), color=_C_STL,
+            meshdata=md, smooth=False, drawEdges=False, color=_C_STL,
             shader="shaded", glOptions="opaque")
         self._stl_item.setVisible(self._show["stl"])
         self.view.addItem(self._stl_item)
+
+        # Triangle edges as a DEDUPED line set (mode="lines" pairs consecutive
+        # vertices). A shared edge is drawn once instead of once per adjacent
+        # triangle — ~halves the line vertices on a closed mesh. np.unique maps
+        # the per-face-duplicated vertices (``verts``) to canonical ids by exact
+        # coordinate; vertices that don't match bit-for-bit simply stay distinct,
+        # degrading gracefully to the naive per-triangle edge set.
+        uniq, inv = np.unique(verts, axis=0, return_inverse=True)
+        tri_ids = np.asarray(inv).reshape(-1, 3)
+        e = np.concatenate([tri_ids[:, [0, 1]], tri_ids[:, [1, 2]], tri_ids[:, [2, 0]]])
+        e = np.unique(np.sort(e, axis=1), axis=0)          # undirected, deduped
+        seg = uniq[e].reshape(-1, 3).astype(np.float32)
+        self._stl_edge_item = gl.GLLinePlotItem(
+            pos=seg, color=_C_STL_EDGE, width=1.0, mode="lines", antialias=True,
+            glOptions=_EDGE_GLOPTS)
+        self._stl_edge_item.setVisible(self._show["stl_edges"])
+        self.view.addItem(self._stl_edge_item)
 
     # ------------------------------------------------------------------ #
     # Domain box (live overlay)
@@ -639,9 +683,9 @@ class Stl3dCanvasView(QWidget):
     # ------------------------------------------------------------------ #
     def set_visibility(self, **kwargs):
         self._show.update({k: bool(v) for k, v in kwargs.items() if k in self._show})
-        pairs = [("stl", self._stl_item), ("box", self._box_item),
-                 ("solid", self._solid_item), ("fluid", self._fluid_item),
-                 ("dev", self._dev_item)]
+        pairs = [("stl", self._stl_item), ("stl_edges", self._stl_edge_item),
+                 ("box", self._box_item), ("solid", self._solid_item),
+                 ("fluid", self._fluid_item), ("dev", self._dev_item)]
         for key, item in pairs:
             if item is not None:
                 item.setVisible(self._show[key])

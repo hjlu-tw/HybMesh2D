@@ -13,7 +13,7 @@ from app.commands.segment_cmds import (
     UpdateStrategyCmd, ToggleIsClosedCmd, ToggleGlobalSplineCmd, ToggleMatchPreviousCmd, UpdateSegmentStateCmd, UpdateMultipleSegmentsStateCmd,
     CreateSegmentsFromIndicesCmd, RemoveSegmentCmd
 )
-from app.services.geometry_service import GeometryService
+from app.services.geometry_service import GeometryService, project_point_to_segment
 from app.utils import CURVE_TYPE_LABELS
 
 class SegmentControllerMixin:
@@ -286,11 +286,8 @@ class SegmentControllerMixin:
         n = len(pts)
         best_idx, min_dist = 0, float("inf")
         for i in range(n - 1):
-            v, w = pts[i], pts[i + 1]
-            l2 = np.sum((w - v) ** 2)
-            t = (np.dot(p - v, w - v) / l2) if l2 > 0 else 0
-            t = float(np.clip(t, 0, 1))
-            dist = np.linalg.norm(p - (v + t * (w - v)))
+            proj, _ = project_point_to_segment(p, pts[i], pts[i + 1])
+            dist = float(np.hypot(*(p - proj)))
             if dist < min_dist:
                 min_dist = dist
                 best_idx = i

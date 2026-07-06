@@ -248,6 +248,7 @@ class CanvasView(QWidget):
     point_deselected = pyqtSignal()        # emitted when clicking far from all vertices (deselect)
     segment_clicked = pyqtSignal(float, float, bool)  # (x, y, extend_selection)
     segment_double_clicked = pyqtSignal(float, float)  # (x, y) — open numeric editor
+    segment_context_requested = pyqtSignal(float, float)  # (x, y) — right-click menu (e.g. polygon vertex insert/delete)
     box_selected = pyqtSignal(float, float, float, float, bool)  # (x0, y0, x1, y1, extend)
     shape_drawn = pyqtSignal(str, object)  # (tool, [(x, y), ...]) — interactive draw finished
 
@@ -263,6 +264,10 @@ class CanvasView(QWidget):
         self._select_vb.box_select_cb = self._emit_box_selected
         self.plot_widget = pg.PlotWidget(viewBox=self._select_vb)
         self.plot_widget.setAspectLocked(True)
+        # Disable pyqtgraph's default right-click plot menu (export / axis range /
+        # etc.) — this is a CAD canvas, and right-click is repurposed for the
+        # polygon vertex insert/delete context menu (segment_context_requested).
+        self.plot_widget.setMenuEnabled(False)
         self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
         layout.addWidget(self.plot_widget)
 
@@ -1584,6 +1589,14 @@ class CanvasView(QWidget):
         if self._active_session_id is None:
             return
         btn = event.button()
+        # Right-click in edge mode → context-menu request (polygon vertex
+        # insert/delete). The controller resolves what's under the cursor and
+        # only acts when a polygon is selected; harmless otherwise.
+        if btn == Qt.MouseButton.RightButton and self._selection_mode == 'edge':
+            rpos = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
+            event.accept()
+            self.segment_context_requested.emit(rpos.x(), rpos.y())
+            return
         if btn != Qt.MouseButton.LeftButton:
             return
         pos = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())

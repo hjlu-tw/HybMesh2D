@@ -136,7 +136,8 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
         verts = [list(v) for v in _verts(p)]
         if 0 <= i < len(verts):
             verts[i] = [x, y]
-            p["vertices_str"] = "; ".join(f"{a:.6g},{b:.6g}" for a, b in verts)
+            from app.services.geometry_service import format_vertices_str
+            p["vertices_str"] = format_vertices_str(verts)
 
 
 def params_from_points(tool: str, pts: list):
@@ -160,8 +161,8 @@ def params_from_points(tool: str, pts: list):
                  "x1": p[1][0], "y1": p[1][1],
                  "x2": p[2][0], "y2": p[2][1]}, "triangle")
     if tool == "polygon" and len(p) >= 3:
-        v = "; ".join(f"{x:.6g},{y:.6g}" for x, y in p)
-        return ({"vertices_str": v}, "polygon")
+        from app.services.geometry_service import format_vertices_str
+        return ({"vertices_str": format_vertices_str(p)}, "polygon")
     return None, None
 
 

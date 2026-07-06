@@ -4,7 +4,8 @@ import numpy as np
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
 from app.commands.segment_cmds import DuplicateMultipleTransformCmd
-from app.services.geometry_service import GeometryService, _parse_vertices_str
+from app.services.geometry_service import (
+    GeometryService, _parse_vertices_str, format_vertices_str)
 
 class TransformControllerMixin:
     """Mixin containing geometric transform, duplication, and mirroring logic."""
@@ -167,7 +168,10 @@ class TransformControllerMixin:
             return new_seg
 
         # ── Circle (similarity transforms keep it circular) ──────────────────
-        if seg.type == "curve" and ct == "circle":
+        # A non-uniform scale turns a circle into an ellipse, which the circle
+        # model can't represent (one radius); skip the analytic path so it falls
+        # through to the polygon bake below (samples then transforms the rim).
+        if seg.type == "curve" and ct == "circle" and not self._nonuniform_scale_active():
             cx, cy, r = p.get("cx", 0.0), p.get("cy", 0.0), p.get("r", 1.0)
             # Transform the centre and a rim point; |Δ| recovers the new radius
             # (handles rotation/mirror = unchanged, uniform scale = r·factor).
@@ -200,8 +204,7 @@ class TransformControllerMixin:
                     new_seg.parameters[f"x{i}"] = x
                     new_seg.parameters[f"y{i}"] = y
             else:
-                new_seg.parameters["vertices_str"] = ";".join(
-                    f"{x:.6g},{y:.6g}" for x, y in t)
+                new_seg.parameters["vertices_str"] = format_vertices_str(t)
             return new_seg
 
         # ── Fallback: discrete (file) edges and custom-formula curves ────────
@@ -217,8 +220,7 @@ class TransformControllerMixin:
             return None
         txs, tys = res
         new_seg.curve_type = "polygon"
-        new_seg.parameters["vertices_str"] = ";".join(
-            f"{x:.6g},{y:.6g}" for x, y in zip(txs, tys))
+        new_seg.parameters["vertices_str"] = format_vertices_str(zip(txs, tys))
         new_seg.parameters["n_points"] = len(txs)
         return new_seg
 
@@ -262,14 +264,26 @@ class TransformControllerMixin:
             dy = sb.dup_trans_dy.value()
             xs = xs + dx
             ys = ys + dy
-        elif t_idx == 6: # Scale
-            factor = sb.dup_scale_factor.value()
+        elif t_idx == 6: # Scale (independent X / Y factors about the pivot)
+            sx = sb.dup_scale_sx.value()
+            sy = sb.dup_scale_sy.value()
             px = sb.dup_scale_px.value()
             py = sb.dup_scale_py.value()
-            xs = px + (xs - px) * factor
-            ys = py + (ys - py) * factor
+            xs = px + (xs - px) * sx
+            ys = py + (ys - py) * sy
 
         return xs, ys
+
+    def _nonuniform_scale_active(self) -> bool:
+        """True when the active transform is a Scale with different X and Y
+        factors. Such a scale is affine but not a similarity: lines and polygons
+        keep their type (vertices just move), but a circle becomes an ellipse the
+        circle model can't hold — so its builder bakes it into a polygon instead
+        of emitting a wrong-radius circle."""
+        sb = self.main_window.sidebar_view
+        if sb.dup_type_combo.currentIndex() != 6:
+            return False
+        return abs(sb.dup_scale_sx.value() - sb.dup_scale_sy.value()) > 1e-12
 
 
     def _open_transform(self):

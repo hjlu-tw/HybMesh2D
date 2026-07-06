@@ -3,12 +3,15 @@ import copy
 import math
 import numpy as np
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
+from PyQt6.QtWidgets import QMenu
 from app.models.segment import SegmentModel
 from app.models.session import GeometrySession
 from app.commands.segment_cmds import (
     AddCurveSegmentCmd, BakeCurveToGeometryCmd, UpdateSegmentStateCmd)
 from app.commands.vertex_cmds import ReplaceGeometryPointsCmd
-from app.services.geometry_service import GeometryService
+from app.services.geometry_service import (
+    GeometryService, format_vertices_str, project_point_to_segment)
 from app.models import shape_spec
 
 # Curve-type list, indexed by the type combo's row order.
@@ -752,16 +755,43 @@ class CurveControllerMixin:
             getattr(seg, "curve_type", "custom"), seg.parameters)
 
     def _refresh_edge_handles(self):
-        """Selecting an edge shows only the (orange) highlight — no on-canvas
-        control-point markers (they were perceived as stray base-point markers).
-        Numeric editing is done through the double-click dialog instead.  This
-        stays a single chokepoint so handles are always cleared on selection.
+        """Show draggable vertex handles for the selected vertex-defined edge
+        (polygon / triangle / quadrilateral) so it can be reshaped directly on
+        the canvas; a drag routes through ``_on_edge_handle_dragged`` and writes
+        the new coordinates back to the sidebar table (both stay in sync). Any
+        other selection — or ``custom`` — shows none. Square markers keep the
+        vertices visually distinct from the round transform pivot/base gizmo
+        (the ambiguity that had these hidden before).
 
         Exception: while a create-edit session is active, its control points
         must be left untouched."""
+        # This is the selection/refresh chokepoint, so it is also where a
+        # committed-edge drag's pre-drag snapshot is retired: clearing it here
+        # guarantees a stale snapshot from a drag that ended abnormally (its
+        # finished-event guard tripped, or selection changed mid-drag) can never
+        # leak into the NEXT drag and record an undo against the wrong segment.
+        self._drag_orig_state = None
         if self._edit_in_progress():
             return
-        self.main_window.canvas_view.clear_edge_handles()
+        canvas = self.main_window.canvas_view
+        session = self.active_session()
+        seg = (session.project_model.get_segment(session.current_segment_idx)
+               if session and session.current_segment_idx >= 0 else None)
+        editable = ("polygon", "triangle", "quadrilateral")
+        if (seg is None or seg.type != "curve"
+                or getattr(seg, "curve_type", "custom") not in editable):
+            canvas.clear_edge_handles()
+            return
+        cps = self._edge_control_points(seg)
+        # A hand-authored polygon has a handful of vertices; a baked/imported one
+        # can have hundreds — that many draggable markers is cluttered and slow,
+        # and such shapes are reshaped through the sidebar table instead.
+        if not cps or len(cps) > 60:
+            canvas.clear_edge_handles()
+            return
+        canvas.show_edge_handles(
+            [{"id": hid, "pos": pos, "symbol": "s", "size": 12}
+             for hid, pos in cps])
 
     def _on_edge_handle_dragged(self, handle_id: str, x: float, y: float,
                                 finished: bool):
@@ -785,6 +815,11 @@ class CurveControllerMixin:
         ct = seg.curve_type
         if ct not in shape_spec.SIDEBAR_ATTRS and ct != "polygon":
             return
+        # Snapshot the pre-drag state once so the whole drag (many move events)
+        # collapses into a single undo step; this branch fires only for an
+        # already-committed edge (a create-edit session is routed off above).
+        if self._drag_orig_state is None:
+            self._drag_orig_state = seg.to_dict()
         # Apply the drag through the shared handle→param mapping, then push the
         # result back into the (silently-updated) sidebar widgets.
         params = shape_spec.read_widget_params(sb, ct)
@@ -794,10 +829,11 @@ class CurveControllerMixin:
         # Sync the (silently-updated) widgets into the segment and re-preview.
         self.preview_curve_formula()
         if finished:
-            session.is_geometry_modified = True
-            self.main_window.update_title(session.display_name, True)
-            # Re-snap the handles (e.g. circle rim onto the new radius ring).
-            self._refresh_edge_handles()
+            old_state = self._drag_orig_state
+            self._drag_orig_state = None
+            # Record the completed move as one undoable edit + re-snap the handles
+            # (e.g. circle rim onto the new radius ring); no-op if unchanged.
+            self._finalize_edge_edit(session, seg, old_state)
 
     # ══════════════════════════════════════════════════════════════════════
     # Numeric (double-click) editor — the "Both" precise-entry path
@@ -823,10 +859,94 @@ class CurveControllerMixin:
             return
         if seg.curve_type == "custom":
             self._edit_custom_formula(seg)
+        elif seg.curve_type == "polygon":
+            # Polygon is edited inline — the sidebar vertex table (type / append /
+            # load-from-file) plus the on-canvas vertex handles shown on select —
+            # so a double-click just selects it; no separate editor dialog.
+            return
         else:
             # Re-open the same interactive edit session (control points +
             # modeless dialog + snapping) on the existing edge.
             self._begin_pending_edit(seg, is_new=False)
+
+    # ── Polygon on-canvas vertex insert / delete (right-click) ─────────────
+    def handle_canvas_context_menu(self, x: float, y: float):
+        """Right-click over the selected polygon → insert a vertex on the nearest
+        edge or delete the nearest vertex. Both are undoable and sync the sidebar
+        vertex table. No-op unless the selected edge is a polygon."""
+        if self._edit_in_progress():
+            return
+        session = self.active_session()
+        if not session or session.current_segment_idx < 0:
+            return
+        seg = session.project_model.get_segment(session.current_segment_idx)
+        if not seg or seg.type != "curve" or seg.curve_type != "polygon":
+            return
+        sb = self.main_window.sidebar_view
+        params = shape_spec.read_widget_params(sb, "polygon")
+        verts = [(float(vx), float(vy))
+                 for _, (vx, vy) in shape_spec.control_points("polygon", params)]
+        if len(verts) < 3:
+            return
+        closed = bool(getattr(seg, "closed", True))
+        click = np.array([x, y], dtype=float)
+        vi = min(range(len(verts)),
+                 key=lambda i: (verts[i][0] - x) ** 2 + (verts[i][1] - y) ** 2)
+        edge_i, proj = self._nearest_polygon_edge(verts, click, closed)
+
+        menu = QMenu(self.main_window)
+        act_ins = menu.addAction("Insert vertex here")
+        act_ins.setEnabled(edge_i is not None)
+        act_del = menu.addAction("Delete nearest vertex")
+        # A polygon needs at least 3 vertices.
+        act_del.setEnabled(len(verts) > 3)
+        chosen = menu.exec(QCursor.pos())
+        if chosen is None:
+            return
+        if chosen is act_ins and edge_i is not None:
+            new_verts = (verts[:edge_i + 1] + [(float(proj[0]), float(proj[1]))]
+                         + verts[edge_i + 1:])
+        elif chosen is act_del and len(verts) > 3:
+            new_verts = verts[:vi] + verts[vi + 1:]
+        else:
+            return
+        self._commit_polygon_vertices(session, seg, sb, new_verts)
+
+    def _nearest_polygon_edge(self, verts, click, closed):
+        """(edge_start_index, projected_point) for the polygon edge nearest to
+        ``click`` — projection clamped to the segment; the closing edge is
+        considered only when ``closed``. Returns (None, click) if no edge."""
+        n = len(verts)
+        edges = list(range(n - 1)) + ([n - 1] if closed and n >= 3 else [])
+        best_i, best_d, best_p = None, float("inf"), click
+        for i in edges:
+            proj, _ = project_point_to_segment(click, verts[i], verts[(i + 1) % n])
+            d = float(np.hypot(*(click - proj)))
+            if d < best_d:
+                best_i, best_d, best_p = i, d, proj
+        return best_i, best_p
+
+    def _commit_polygon_vertices(self, session, seg, sb, new_verts):
+        """Apply a new polygon vertex list: push it to the sidebar table, sync it
+        into the segment + re-preview, re-show the on-canvas handles, and record
+        the change as one undo step."""
+        old_state = seg.to_dict()
+        shape_spec.write_widget_params(
+            sb, "polygon", {"vertices_str": format_vertices_str(new_verts)},
+            silent=True)
+        # preview_curve_formula() reads the sidebar back into seg.parameters and
+        # redraws; recording afterwards captures the applied change as undoable.
+        self.preview_curve_formula()
+        self._finalize_edge_edit(session, seg, old_state)
+
+    def _finalize_edge_edit(self, session, seg, old_state):
+        """Record a completed in-place edge edit (drag / vertex insert-delete) as
+        one undo step, flag the session modified, and re-snap the canvas handles.
+        No-op recording if ``old_state`` is None or the shape is unchanged."""
+        self._record_segment_state_edit(session, seg, old_state)
+        session.is_geometry_modified = True
+        self.main_window.update_title(session.display_name, True)
+        self._refresh_edge_handles()
 
     def _edit_custom_formula(self, seg):
         """Reopen the custom-formula dialog (pre-filled) to edit an existing

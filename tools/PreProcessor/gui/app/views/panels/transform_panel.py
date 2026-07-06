@@ -136,17 +136,25 @@ class TransformPanel(QGroupBox):
         fl_trans.addRow(help_label("Shift Y:", "Vertical shift distance"), self.dup_trans_dy)
         self._dup_stack.addWidget(w_trans)
 
-        # 6: Scale
+        # 6: Scale (independent X / Y factors -> uniform when equal,
+        #    non-uniform / directional stretch when different)
         w_scale = QWidget()
         fl_scale = QFormLayout(w_scale)
         fl_scale.setContentsMargins(0, 0, 0, 0)
-        self.dup_scale_factor = _dspin(val=1.0)
-        self.dup_scale_factor.setToolTip("Scale factor (>1 enlarges, <1 shrinks)")
+        _sx_tip = ("X scale factor (>1 enlarges, <1 shrinks). Set Scale X ≠ "
+                   "Scale Y for a non-uniform / directional stretch.")
+        _sy_tip = ("Y scale factor (>1 enlarges, <1 shrinks). Set Scale X ≠ "
+                   "Scale Y for a non-uniform / directional stretch.")
+        self.dup_scale_sx = _dspin(val=1.0)
+        self.dup_scale_sx.setToolTip(_sx_tip)
+        self.dup_scale_sy = _dspin(val=1.0)
+        self.dup_scale_sy.setToolTip(_sy_tip)
         self.dup_scale_px = _dspin()
         self.dup_scale_px.setToolTip("X-coordinate of the scale pivot point")
         self.dup_scale_py = _dspin()
         self.dup_scale_py.setToolTip("Y-coordinate of the scale pivot point")
-        fl_scale.addRow(help_label("Factor:", "Scale factor (>1 enlarges, <1 shrinks)"), self.dup_scale_factor)
+        fl_scale.addRow(help_label("Scale X:", _sx_tip), self.dup_scale_sx)
+        fl_scale.addRow(help_label("Scale Y:", _sy_tip), self.dup_scale_sy)
         fl_scale.addRow(help_label("Pivot X:", "X-coordinate of the scale pivot point"), self.dup_scale_px)
         fl_scale.addRow(help_label("Pivot Y:", "Y-coordinate of the scale pivot point"), self.dup_scale_py)
         self._dup_stack.addWidget(w_scale)
