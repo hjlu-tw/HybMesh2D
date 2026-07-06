@@ -593,10 +593,19 @@ class CurveControllerMixin:
         """
         if seg is None or session is None or old_state is None:
             return False
+        segs = session.project_model.segments
         try:
-            idx = session.project_model.segments.index(seg)
+            idx = segs.index(seg)
         except ValueError:
-            return False
+            # The pending segment object was orphaned (e.g. an intervening
+            # undo deep-copied the list). Fall back to a stable id match so the
+            # edit is still recorded rather than silently dropped.
+            idx = next((i for i, s in enumerate(segs) if s.id == seg.id), -1)
+            if idx < 0:
+                self.main_window.log_panel.log(
+                    "Edit not recorded: the edge is no longer present.")
+                return False
+            seg = segs[idx]
         new_state = seg.to_dict()
         if new_state == old_state:
             return False

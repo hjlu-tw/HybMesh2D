@@ -5,6 +5,41 @@ from app.services.index_helpers import remove_points_and_adjust_indices
 from app.services.geometry_service import GeometryService
 
 
+def _snapshot_full_state(session) -> dict:
+    """Capture the full undoable geometry state of a session.
+
+    Paired with :func:`_restore_full_state`. Used by every command that mutates
+    the segment list / point array wholesale (add, remove, split, bake,
+    duplicate). Restoring deep-copies the captured segment list so that a later
+    *redo* which mutates ``project_model.segments`` in place can never corrupt
+    this snapshot — allowing repeated undo↔redo cycles to stay faithful.
+    """
+    pm = session.project_model
+    return {
+        "points": (session.original_points.copy()
+                   if session.original_points is not None else None),
+        "split_indices": list(session.split_indices),
+        "segments": copy.deepcopy(pm.segments),
+        "next_curve_id": pm._next_curve_id,
+        "modified": session.is_geometry_modified,
+    }
+
+
+def _restore_full_state(session, snap: dict):
+    """Restore a snapshot produced by :func:`_snapshot_full_state`.
+
+    The segment list is deep-copied on the way out so the snapshot itself is
+    never aliased by the live model (see the note in ``_snapshot_full_state``).
+    """
+    pm = session.project_model
+    session.original_points = (snap["points"].copy()
+                               if snap["points"] is not None else None)
+    session.split_indices = list(snap["split_indices"])
+    pm.segments = copy.deepcopy(snap["segments"])
+    pm._next_curve_id = snap["next_curve_id"]
+    session.is_geometry_modified = snap["modified"]
+
+
 def _apply_segment_state(seg, state: dict):
     """Restore a SegmentModel from a dict produced by ``SegmentModel.to_dict()``.
 
@@ -19,6 +54,9 @@ def _apply_segment_state(seg, state: dict):
     seg.parameters = copy.deepcopy(state.get("parameters", {}))
     seg.match_previous = state.get("match_previous", False)
     seg.closed = state.get("closed", True)
+    # Per-segment boundary condition. to_dict() only emits "bc" when non-empty,
+    # so the "" default correctly restores a segment back to inheriting BC_GEOM.
+    seg.bc = state.get("bc", "")
 
     # Curve specific
     seg.curve_type = state.get("curve_type", "custom")
@@ -108,12 +146,7 @@ class RemoveSegmentCmd(BaseCommand):
 
         seg = session.project_model.get_segment(seg_idx)
         self.removed_seg = copy.deepcopy(seg) if seg else None
-
-        self.old_points = (self.session.original_points.copy()
-                           if self.session.original_points is not None else None)
-        self.old_split_indices = list(self.session.split_indices)
-        self.old_segments = copy.deepcopy(self.session.project_model.segments)
-        self.old_modified = self.session.is_geometry_modified
+        self._snap = _snapshot_full_state(session)
 
     def description(self) -> str:
         seg_id = self.removed_seg.id if self.removed_seg else "?"
@@ -133,10 +166,7 @@ class RemoveSegmentCmd(BaseCommand):
         self.refresh_cb()
 
     def undo(self):
-        self.session.original_points = self.old_points
-        self.session.split_indices = self.old_split_indices
-        self.session.project_model.segments = self.old_segments
-        self.session.is_geometry_modified = self.old_modified
+        _restore_full_state(self.session, self._snap)
         self.refresh_cb()
 
 
@@ -148,40 +178,46 @@ class AddCurveSegmentCmd(BaseCommand):
         self.refresh_cb = refresh_cb
         self.select_cb = select_cb
         self.added_seg = preconfigured_seg
+        # Full pre-add snapshot so undo restores the whole state wholesale rather
+        # than removing the segment by object identity — the latter silently
+        # no-ops once any *other* command's undo has deep-copied the segment
+        # list (leaving an undeletable phantom edge behind).
+        self._snap = _snapshot_full_state(session)
+        self._added_idx = -1
 
     def description(self) -> str:
         seg_id = self.added_seg.id if self.added_seg else "?"
         return f"Add Analytic Edge {seg_id}"
 
     def execute(self):
+        pm = self.session.project_model
         if self.added_seg is None:
             # Create a new blank curve segment
-            self.added_seg = self.session.project_model.add_curve_segment()
+            self.added_seg = pm.add_curve_segment()
         else:
-            # Re-add the existing preconfigured/duplicated segment
-            self.session.project_model.segments.append(self.added_seg)
-            # Ensure the next curve ID is higher
-            pm = self.session.project_model
+            # Re-add the existing preconfigured/duplicated segment. Rebuild the
+            # list (rather than append in place) so a redo can never mutate the
+            # deep-copied snapshot a sibling command may be holding.
+            pm.segments = pm.segments + [self.added_seg]
             if self.added_seg.id >= pm._next_curve_id:
                 pm._next_curve_id = self.added_seg.id + 1
 
+        self.session.is_geometry_modified = True
         self.refresh_cb()
         try:
-            idx = self.session.project_model.segments.index(self.added_seg)
-            self.select_cb(idx)
+            self._added_idx = pm.segments.index(self.added_seg)
+            self.select_cb(self._added_idx)
         except ValueError:
-            pass
+            self._added_idx = -1
 
     def undo(self):
-        if self.added_seg in self.session.project_model.segments:
-            idx = self.session.project_model.segments.index(self.added_seg)
-            self.session.project_model.segments.pop(idx)
-            self.refresh_cb()
-            new_idx = max(0, idx - 1)
-            if self.session.project_model.segments:
-                self.select_cb(new_idx)
-            else:
-                self.select_cb(-1)
+        _restore_full_state(self.session, self._snap)
+        self.refresh_cb()
+        segs = self.session.project_model.segments
+        if segs:
+            self.select_cb(max(0, min(self._added_idx - 1, len(segs) - 1)))
+        else:
+            self.select_cb(-1)
 
 
 class ToggleIsClosedCmd(BaseCommand):
@@ -252,7 +288,7 @@ class ToggleMatchPreviousCmd(BaseCommand):
         if seg:
             seg.match_previous = self.new_val
             self.update_ui_cb(self.new_val)
-        self.session.is_geometry_modified = True
+            self.session.is_geometry_modified = True
 
     def undo(self):
         seg = self.session.project_model.get_segment(self.seg_idx)
@@ -313,11 +349,7 @@ class CreateSegmentsFromIndicesCmd(BaseCommand):
         self.refresh_cb = refresh_cb
 
         self.old_seg = session.project_model.get_segment(seg_idx)
-        self.old_split_indices = list(session.split_indices)
-        self.old_points = (session.original_points.copy()
-                           if session.original_points is not None else None)
-        self.old_segments = copy.deepcopy(session.project_model.segments)
-        self.old_modified = session.is_geometry_modified
+        self._snap = _snapshot_full_state(session)
 
         # Store old segment index range for file segments
         self._old_start = None
@@ -398,14 +430,7 @@ class CreateSegmentsFromIndicesCmd(BaseCommand):
         return f"Split Edge {self.old_seg.id if self.old_seg else '?'}"
 
     def undo(self):
-        # Restore original points and split indices
-        if self.old_points is not None:
-            self.session.original_points = self.old_points
-        else:
-            self.session.original_points = None
-        self.session.split_indices = self.old_split_indices
-        self.session.project_model.segments = self.old_segments
-        self.session.is_geometry_modified = self.old_modified
+        _restore_full_state(self.session, self._snap)
         self.refresh_cb()
 
 
@@ -420,11 +445,7 @@ class BakeCurveToGeometryCmd(BaseCommand):
         self.refresh_cb = refresh_cb
 
         # Save old state for undo
-        self.old_points = (self.session.original_points.copy()
-                           if self.session.original_points is not None else None)
-        self.old_split_indices = list(self.session.split_indices)
-        self.old_segments = copy.deepcopy(self.session.project_model.segments)
-        self.old_modified = self.session.is_geometry_modified
+        self._snap = _snapshot_full_state(session)
 
         seg = self.session.project_model.get_segment(self.seg_idx)
         self.seg_id = seg.id if seg else None
@@ -539,10 +560,7 @@ class BakeCurveToGeometryCmd(BaseCommand):
         self.refresh_cb()
 
     def undo(self):
-        self.session.original_points = self.old_points
-        self.session.split_indices = self.old_split_indices
-        self.session.project_model.segments = self.old_segments
-        self.session.is_geometry_modified = self.old_modified
+        _restore_full_state(self.session, self._snap)
         self.refresh_cb()
 
 
@@ -557,17 +575,14 @@ class DuplicateTransformCmd(BaseCommand):
         self.select_cb = select_cb
 
         # Snapshot state for undo
-        self.old_segments = copy.deepcopy(session.project_model.segments)
-        self.old_points = (self.session.original_points.copy()
-                           if self.session.original_points is not None else None)
-        self.old_split_indices = list(self.session.split_indices)
-        self.old_modified = self.session.is_geometry_modified
+        self._snap = _snapshot_full_state(session)
 
     def description(self) -> str:
-        if self.delete_original:
-            return f"Transform Edge {self.old_segments[self.seg_idx].id}"
-        else:
-            return f"Duplicate Edge {self.old_segments[self.seg_idx].id}"
+        snap_segs = self._snap["segments"]
+        seg_id = (snap_segs[self.seg_idx].id
+                  if 0 <= self.seg_idx < len(snap_segs) else "?")
+        verb = "Transform" if self.delete_original else "Duplicate"
+        return f"{verb} Edge {seg_id}"
 
     def execute(self):
         if self.delete_original:
@@ -593,10 +608,7 @@ class DuplicateTransformCmd(BaseCommand):
             pass
 
     def undo(self):
-        self.session.original_points = self.old_points
-        self.session.split_indices = self.old_split_indices
-        self.session.project_model.segments = self.old_segments
-        self.session.is_geometry_modified = self.old_modified
+        _restore_full_state(self.session, self._snap)
         self.refresh_cb()
 
 
@@ -615,11 +627,7 @@ class DuplicateMultipleTransformCmd(BaseCommand):
         self.select_cb = select_cb
 
         # Snapshot full state for undo
-        self.old_segments = copy.deepcopy(session.project_model.segments)
-        self.old_points = (session.original_points.copy()
-                           if session.original_points is not None else None)
-        self.old_split_indices = list(session.split_indices)
-        self.old_modified = session.is_geometry_modified
+        self._snap = _snapshot_full_state(session)
 
         # Capture original ids up-front for a stable description
         self._orig_ids = []
@@ -662,10 +670,7 @@ class DuplicateMultipleTransformCmd(BaseCommand):
                 pass
 
     def undo(self):
-        self.session.original_points = self.old_points
-        self.session.split_indices = self.old_split_indices
-        self.session.project_model.segments = self.old_segments
-        self.session.is_geometry_modified = self.old_modified
+        _restore_full_state(self.session, self._snap)
         self.refresh_cb()
 
 

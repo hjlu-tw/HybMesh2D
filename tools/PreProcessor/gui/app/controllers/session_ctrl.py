@@ -150,6 +150,10 @@ class SessionControllerMixin:
             worker.cancel()
             worker.wait()
 
+        # Detach the undo/redo button sync so a late callback on this closed
+        # session's history can never fire against the surviving active tab.
+        session.command_history.on_change = None
+
         # Remove geometry from shared canvas
         self.main_window.canvas_view.remove_geometry(session.session_id)
 

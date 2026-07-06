@@ -105,3 +105,15 @@ phi 場是**透過初始條件 DLL** 餵進求解器的。成功產生 phi 後�
 - `config/comprehensive_example.json`: 基礎功能綜合展示。
 - `config/industrial_pro_example.json`: 專業翼型布點與品質監控展示。
 - `config/multi_element_example.json`: 多物體並行處理展示。
+
+## 測試 (Tests)
+
+GUI 的 undo/redo 命令層有回歸測試，位於 `tools/PreProcessor/tests/`（皆為可直接執行的腳本，路徑以檔案自身位置解析，可從任何 cwd 執行）：
+
+- **`test_undo_redo.py`** — headless，不需 Qt / 顯示器（CI 安全）。以輕量 fake session 直接操作 command 與 model，涵蓋：以物件識別追蹤 segment 造成的「幽靈 edge」、`is_geometry_modified` 還原、每段邊界條件 (`bc`) 的 undo/redo、split 保留頂點時的 dirty 旗標、`ToggleMatchPrevious` 對不存在 segment 的行為、`ReplacePointsCmd` 共用基底、以及反覆 undo↔redo 循環的忠實度。
+- **`smoke_undo_redo.py`** — offscreen GUI 冒煙測試，需 `PyQt6` + `pyqtgraph`（不需顯示器；使用 `QT_QPA_PLATFORM=offscreen`）。啟動真實 `AppController` + `MainWindow`，載入 `examples/geometries/naca0012.dat`，透過實際 controller 方法驅動 undo/redo 並檢查工具列按鈕狀態。不進事件迴圈、不觸發 modal 對話框，因此不會卡住。
+
+```bash
+python3 tools/PreProcessor/tests/test_undo_redo.py     # 快速、無需顯示
+python3 tools/PreProcessor/tests/smoke_undo_redo.py    # offscreen GUI 端到端
+```

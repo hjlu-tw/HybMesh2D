@@ -4,7 +4,6 @@ AppController — multi-session, command-pattern, preview/save-separated control
 from __future__ import annotations
 import os
 import tempfile
-import copy
 import numpy as np
 
 from PyQt6.QtCore import QTimer
@@ -557,34 +556,31 @@ class AppController(
     def undo(self):
         session = self.active_session()
         if session:
-            cmd = session.command_history.undo()
-            if cmd:
-                desc = cmd.description()
-                self.main_window.log_panel.log(f"Undo ({desc})")
-                self._sync_geometry_list()
-                if session.current_segment_idx >= 0:
-                    seg = session.project_model.get_segment(session.current_segment_idx)
-                    if seg:
-                        session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
-            else:
-                self.main_window.log_panel.log("Nothing to undo.")
-            self._update_undo_redo_buttons(session)
+            self._after_history_change(session, session.command_history.undo(), "Undo")
 
     def redo(self):
         session = self.active_session()
         if session:
-            cmd = session.command_history.redo()
-            if cmd:
-                desc = cmd.description()
-                self.main_window.log_panel.log(f"Redo ({desc})")
-                self._sync_geometry_list()
-                if session.current_segment_idx >= 0:
-                    seg = session.project_model.get_segment(session.current_segment_idx)
-                    if seg:
-                        session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
-            else:
-                self.main_window.log_panel.log("Nothing to redo.")
-            self._update_undo_redo_buttons(session)
+            self._after_history_change(session, session.command_history.redo(), "Redo")
+
+    def _after_history_change(self, session, cmd, verb: str):
+        """Shared post-command bookkeeping for undo()/redo().
+
+        The toolbar buttons are refreshed by ``CommandHistory.on_change`` fired
+        from inside ``undo()``/``redo()``, so they are not re-toggled here.
+        """
+        if cmd is None:
+            self.main_window.log_panel.log(f"Nothing to {verb.lower()}.")
+            return
+        self.main_window.log_panel.log(f"{verb} ({cmd.description()})")
+        self._sync_geometry_list()
+        # Reseed the edit baseline so the next in-place form edit diffs against
+        # the restored state. to_dict() already returns a fresh dict, so the
+        # previous extra deepcopy was redundant.
+        if session.current_segment_idx >= 0:
+            seg = session.project_model.get_segment(session.current_segment_idx)
+            if seg:
+                session.segment_state_snapshot = seg.to_dict()
 
     def _update_undo_redo_buttons(self, session: GeometrySession = None):
         """Enable or disable undo/redo buttons in toolbar based on history stack status."""
