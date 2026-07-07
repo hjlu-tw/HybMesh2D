@@ -184,7 +184,9 @@ class MeshConfigPanel(QScrollArea):
         self.seed_size.setDecimals(5)
         self.seed_size.setSpecialValueText("auto")   # value 0 displays as "auto"
         self.seed_size.setStyleSheet(SPIN_STYLE)
-        self.seed_size.setToolTip("Target minimum element size at the seed (0 = auto).")
+        self.seed_size.setToolTip(
+            "Target minimum element size at the seed "
+            "(0 = auto: follows the seed's own resampled point spacing).")
 
         self.seed_radius = CleanDoubleSpinBox()
         self.seed_radius.setRange(0.0, 1e6)
@@ -192,8 +194,8 @@ class MeshConfigPanel(QScrollArea):
         self.seed_radius.setSpecialValueText("auto")
         self.seed_radius.setStyleSheet(SPIN_STYLE)
         self.seed_radius.setToolTip(
-            "Influence radius: beyond it the size returns to far-field (0 = auto). "
-            "Requires an explicit seed size.")
+            "Influence radius: beyond it the size returns to far-field "
+            "(0 = auto: 100x the seed size). Can be set independently of size.")
 
         self.seed_mode = QComboBox()
         self.seed_mode.addItems(["source (sizing only)", "embed (conform)"])
@@ -203,8 +205,8 @@ class MeshConfigPanel(QScrollArea):
             "embed: mesh nodes conform to the seed curve (still no boundary layer).")
 
         role_form.addRow(help_label("Role:", "Body-fitted boundary or refinement seed"), self.geom_role_combo)
-        role_form.addRow(help_label("Seed Size:", "Target min element size at the seed (0 = auto)"), self.seed_size)
-        role_form.addRow(help_label("Seed Radius:", "Influence radius (0 = auto); requires a seed size"), self.seed_radius)
+        role_form.addRow(help_label("Seed Size:", "Target min element size at the seed (0 = auto: follows the seed's own point spacing)"), self.seed_size)
+        role_form.addRow(help_label("Seed Radius:", "Influence radius (0 = auto ≈ 100x size); independent of seed size"), self.seed_radius)
         role_form.addRow(help_label("Seed Mode:", "source (sizing only) or embed (conform)"), self.seed_mode)
         align_form_labels(role_form, 130)
         self.sec_domain.add_layout(role_form)
@@ -645,8 +647,9 @@ class MeshConfigPanel(QScrollArea):
             rinfo = {
                 "role": "seed",
                 "size": size if size > 0 else None,
-                # radius is meaningless without an explicit size
-                "radius": radius if (radius > 0 and size > 0) else None,
+                # radius is independent of size (an explicit radius is kept even
+                # when the size is auto).
+                "radius": radius if radius > 0 else None,
                 "mode": "embed" if self.seed_mode.currentIndex() == 1 else "source",
             }
             item.setData(self._ROLE_DATA, rinfo)
@@ -656,14 +659,15 @@ class MeshConfigPanel(QScrollArea):
         self.mesh_config_changed.emit(self.get_config())
 
     def _update_role_visibility(self):
-        """Show seed params only for a selected seed geometry; radius needs a size."""
+        """Show seed params only for a selected seed geometry. Size and radius are
+        independent, so radius stays editable even when the size is auto."""
         is_seed = self.geom_role_combo.isEnabled() and self.geom_role_combo.currentIndex() == 1
         for w in (self.seed_size, self.seed_radius, self.seed_mode):
             w.setVisible(is_seed)
+            w.setEnabled(is_seed)
             lbl = self._role_form.labelForField(w)
             if lbl:
                 lbl.setVisible(is_seed)
-        self.seed_radius.setEnabled(is_seed and self.seed_size.value() > 0)
 
     def set_config(self, cfg: MeshConfig):
         """Populate widget values from a MeshConfig model instance."""
@@ -743,10 +747,13 @@ class MeshConfigPanel(QScrollArea):
         self.bc_geom.setText(cfg.bc_geom)
         
         if not cfg.output_filename:
-            if not cfg.geom_files:
+            # Suggested name from BOUNDARY geometries only (seeds share geom_files
+            # but shouldn't drive the name).
+            boundaries = cfg.boundary_files
+            if not cfg.geom_files or len(boundaries) == 0:
                 default_name = "results/meshes/mesh_cartesian.*"
-            elif len(cfg.geom_files) == 1:
-                stem = os.path.splitext(os.path.basename(cfg.geom_files[0]))[0]
+            elif len(boundaries) == 1:
+                stem = os.path.splitext(os.path.basename(boundaries[0]))[0]
                 default_name = f"results/meshes/mesh_{stem}.*"
             else:
                 default_name = "results/meshes/mesh_multiple.*"
@@ -836,6 +843,18 @@ class MeshConfigPanel(QScrollArea):
         cfg.enable_collision_detection = self.enable_collision_detection.isChecked()
 
         return cfg
+
+    def current_geom_roles(self) -> dict:
+        """Return {path: role_dict} for the seed geometries currently listed,
+        read straight from item data — no full MeshConfig rebuild. Used by the
+        live preview path so a geom-file change doesn't re-parse every widget."""
+        roles = {}
+        for row in range(self.geom_list_widget.count()):
+            item = self.geom_list_widget.item(row)
+            rinfo = item.data(self._ROLE_DATA)
+            if rinfo and rinfo.get("role") == "seed":
+                roles[item.data(Qt.ItemDataRole.UserRole)] = rinfo
+        return roles
 
     def _mesh_sublabel(self, text: str) -> QLabel:
         lbl = QLabel(text)

@@ -151,9 +151,9 @@ make
 
 | 參數名稱 | 說明 | 預設值 |
 | :--- | :--- | :--- |
-| `SEED_FILE <path> [size] [radius] [mode]` | 指定一個種子幾何檔。可選：`size` 種子處最小尺寸、`radius` 影響半徑、`mode`（`source`/`embed`）。省略則套用下方全域預設 | — |
-| `SEED_SIZE` | 全域種子最小尺寸預設（省略/<0：依表面尺寸自動推得） | auto |
-| `SEED_RADIUS` | 全域影響半徑預設（省略：約 25×size；半徑外平滑回到遠場尺寸） | auto |
+| `SEED_FILE <path> [size\|auto] [radius] [mode]` | 指定一個種子幾何檔。可選：`size` 種子處最小尺寸、`radius` 影響半徑、`mode`（`source`/`embed`）。`size` 與 `radius` 彼此獨立；若要「size 自動、radius 指定」，size 欄位填 `auto`（例：`SEED_FILE f auto 1.0 source`）。省略則套用下方全域預設 | — |
+| `SEED_SIZE` | 全域種子最小尺寸預設（省略/<0：**依該 seed 幾何自身重採樣後的平均點距**自動推得，貼合其 surface point 分布） | auto |
+| `SEED_RADIUS` | 全域影響半徑預設（省略：**約 100×size**；半徑外平滑回到遠場尺寸）。可獨立於 size 指定 | auto |
 | `SEED_MODE` | 全域模式預設。`source`：純尺寸來源、網格**不貼合**；`embed`：網格節點**貼合**種子曲線（仍不生長邊界層） | source |
 
 `SEED_FILE` 的數值/關鍵字順序可容忍（`source`/`embed` 可出現在任意位置）。範例：

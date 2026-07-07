@@ -99,13 +99,18 @@ struct Config {
                 // 順序容忍：mode 關鍵字 (source/embed) 可出現在任意位置，數值則
                 // 依序填入 size、radius。如此「SEED_FILE f embed」或
                 // 「SEED_FILE f 0.02 embed」皆可正確解析。
+                // 注意：GUI 端於 tools/PreProcessor/gui/app/models/mesh_config.py
+                //   的 load_from_file 有一份等價的 SEED_FILE 解析，二者需保持一致。
                 SeedSpec s;
                 if (ss >> s.file) {
                     std::string tok;
-                    int numIdx = 0;
+                    int numIdx = 0;   // 0=size slot, 1=radius slot
                     while (ss >> tok) {
                         if (tok == "embed") s.mode = 1;
                         else if (tok == "source") s.mode = 0;
+                        // "auto" 明確跳過目前數值槽 (維持該項為自動)，讓後面的數字
+                        // 落到下一槽，如此「SEED_FILE f auto 0.5」= size 自動、radius=0.5。
+                        else if (tok == "auto") ++numIdx;
                         else {
                             try {
                                 double v = std::stod(tok);

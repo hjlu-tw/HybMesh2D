@@ -609,6 +609,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         std::vector<int> lineTags;     // gmsh 線 tag (embed)
         double size;
         double radius;
+        double spacing;                // 種子自身的平均點距 (auto size 依此)
         bool embed;
     };
     std::vector<SeedFieldData> seedFieldData;
@@ -616,6 +617,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         if (seed.points.empty()) continue;
         SeedFieldData sd;
         sd.size = seed.size; sd.radius = seed.radius; sd.embed = seed.embed;
+        sd.spacing = 0.0;
         std::vector<int> gpts;
         gpts.reserve(seed.points.size());
         for (const auto& p : seed.points) {
@@ -623,6 +625,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         }
         int nseg = static_cast<int>(seed.points.size());
         int limit = seed.closed ? nseg : nseg - 1;
+        double spanLen = 0.0; int spanCnt = 0;
         for (int i = 0; i < limit; ++i) {
             int a = gpts[i];
             int b = gpts[(i + 1) % nseg];
@@ -630,7 +633,11 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
             int lt = gmsh::model::geo::addLine(a, b);
             sd.lineTags.push_back(lt);
             sd.curveTags.push_back(static_cast<double>(lt));
+            spanLen += (seed.points[(i + 1) % nseg] - seed.points[i]).length();
+            spanCnt++;
         }
+        // 種子自身重採樣後的平均點距，供 auto size 使用 (貼合 surface point 分布)。
+        if (spanCnt > 0) sd.spacing = spanLen / (double)spanCnt;
         // 單點種子 (無法連線) 時，改以點本身作為尺寸場來源。
         if (sd.lineTags.empty()) sd.pointTags = gpts;
         seedFieldData.push_back(sd);
@@ -738,11 +745,18 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     //     一併取 Min。effSize / effRadius 未指定時自動推得。
     double seedMinSize = config.farFieldSize;
     for (const auto& sd : seedFieldData) {
+        // main.cpp already folded the per-file value and the global default
+        // (config.seedSize/seedRadius) into sd.size/sd.radius; here we only do
+        // the remaining auto step, so the defaulting isn't split.
+        // Auto size follows the seed's own resampled point spacing (surface
+        // point distribution), falling back to the local base size only if the
+        // seed is a single point / degenerate.
         double effSize = (sd.size > 0) ? sd.size
-                        : (config.seedSize > 0 ? config.seedSize : hBase);
+                        : (sd.spacing > 0 ? sd.spacing : hBase);
         if (effSize <= 0) effSize = config.surfaceSize;
-        double effRadius = (sd.radius > 0) ? sd.radius
-                          : (config.seedRadius > 0 ? config.seedRadius : 25.0 * effSize);
+        // Radius is independent of size: an explicit radius is honoured even when
+        // the size is auto; only a fully-auto radius derives from the size.
+        double effRadius = (sd.radius > 0) ? sd.radius : 100.0 * effSize;
 
         int fSeedDist = gmsh::model::mesh::field::add("Distance");
         if (!sd.curveTags.empty()) {

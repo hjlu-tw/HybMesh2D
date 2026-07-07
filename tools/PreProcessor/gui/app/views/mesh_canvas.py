@@ -163,29 +163,41 @@ class MeshCanvasView(QWidget):
 
     def update_geometry_previews(self, geom_files: list[str]):
         """Load and display the input boundary geometries as preview lines using a background thread."""
-        for item in self.geom_preview_items:
+        self._render_previews(
+            geom_files, self.geom_preview_items,
+            "_geom_loader_gen", "_geom_loader_threads",
+            self._on_geometry_previews_loaded, last_attr="_geom_loader_thread")
+
+    def _render_previews(self, files, item_list, gen_attr, threads_attr,
+                         on_loaded, last_attr=None):
+        """Shared preview-load boilerplate for boundary and seed previews: clear
+        the current items, bump the generation token (so a superseded load's
+        result is ignored), prune finished threads, and spawn a fresh loader.
+        Only the target item list and the on_loaded render style differ."""
+        for item in item_list:
             self.plot_widget.removeItem(item)
-        self.geom_preview_items.clear()
+        item_list.clear()
 
         # Bump the generation token so any in-flight loader's result is ignored
         # once superseded. We do NOT block (wait()) on the old thread here, so
         # the UI never freezes while a previous load is still finishing.
-        self._geom_loader_gen = getattr(self, "_geom_loader_gen", 0) + 1
-        token = self._geom_loader_gen
+        gen = getattr(self, gen_attr, 0) + 1
+        setattr(self, gen_attr, gen)
         # Keep references to running threads so they are not garbage-collected
         # mid-run (which would crash with "QThread destroyed while running").
-        self._geom_loader_threads = [
-            t for t in getattr(self, "_geom_loader_threads", []) if t.isRunning()]
+        running = [t for t in getattr(self, threads_attr, []) if t.isRunning()]
+        setattr(self, threads_attr, running)
 
-        thread = GeomLoaderThread(geom_files, token)
-        thread.loaded_signal.connect(self._on_geometry_previews_loaded)
-        thread.finished.connect(lambda t=thread: self._drop_geom_loader_thread(t))
-        self._geom_loader_threads.append(thread)
-        self._geom_loader_thread = thread  # last thread (used by close handler)
+        thread = GeomLoaderThread(files, gen)
+        thread.loaded_signal.connect(on_loaded)
+        thread.finished.connect(lambda t=thread: self._drop_loader_thread(t, threads_attr))
+        running.append(thread)
+        if last_attr is not None:
+            setattr(self, last_attr, thread)  # last thread (used by close handler)
         thread.start()
 
-    def _drop_geom_loader_thread(self, thread):
-        threads = getattr(self, "_geom_loader_threads", [])
+    def _drop_loader_thread(self, thread, threads_attr):
+        threads = getattr(self, threads_attr, [])
         if thread in threads:
             threads.remove(thread)
 
@@ -216,29 +228,10 @@ class MeshCanvasView(QWidget):
         """Load and display refinement-seed geometries as dashed orange preview
         lines — a distinct style from body-fitted boundaries. Kept in a separate
         item list so boundary and seed previews refresh independently."""
-        for item in self.seed_preview_items:
-            self.plot_widget.removeItem(item)
-        self.seed_preview_items.clear()
-
-        self._seed_loader_gen = getattr(self, "_seed_loader_gen", 0) + 1
-        token = self._seed_loader_gen
-        self._seed_loader_threads = [
-            t for t in getattr(self, "_seed_loader_threads", []) if t.isRunning()]
-
-        if not seed_files:
-            self._update_empty_state()
-            return
-
-        thread = GeomLoaderThread(seed_files, token)
-        thread.loaded_signal.connect(self._on_seed_previews_loaded)
-        thread.finished.connect(lambda t=thread: self._drop_seed_loader_thread(t))
-        self._seed_loader_threads.append(thread)
-        thread.start()
-
-    def _drop_seed_loader_thread(self, thread):
-        threads = getattr(self, "_seed_loader_threads", [])
-        if thread in threads:
-            threads.remove(thread)
+        self._render_previews(
+            seed_files, self.seed_preview_items,
+            "_seed_loader_gen", "_seed_loader_threads",
+            self._on_seed_previews_loaded)
 
     def _on_seed_previews_loaded(self, token: int, results: list[np.ndarray]):
         # Ignore results from a superseded request.

@@ -134,6 +134,36 @@ class MeshConfig:
         self.geom_files = d.get("geom_files", [])
         self.geom_roles = d.get("geom_roles", {}) or {}
 
+    # ── Per-geometry role helpers ─────────────────────────────────────────
+    # Roles live in geom_roles (keyed by the path in geom_files). These helpers
+    # are the single place that queries a role, and they tolerate a relative vs
+    # absolute spelling mismatch so a seed role is not silently lost/misapplied.
+    def role_of(self, path: str) -> dict | None:
+        r = self.geom_roles.get(path)
+        if r is None:
+            r = self.geom_roles.get(os.path.abspath(path))
+        return r
+
+    def is_seed(self, path: str) -> bool:
+        r = self.role_of(path)
+        return bool(r and r.get("role") == "seed")
+
+    @property
+    def boundary_files(self) -> list:
+        """geom_files that are body-fitted boundaries (used for output naming)."""
+        return [g for g in self.geom_files if not self.is_seed(g)]
+
+    @property
+    def seed_files(self) -> list:
+        """geom_files that are refinement seeds."""
+        return [g for g in self.geom_files if self.is_seed(g)]
+
+    def prune_roles(self):
+        """Drop geom_roles entries whose path is no longer in geom_files, so a
+        stale seed role can't silently re-attach when a path is added again."""
+        present = set(self.geom_files) | {os.path.abspath(g) for g in self.geom_files}
+        self.geom_roles = {k: v for k, v in self.geom_roles.items() if k in present}
+
     def load_from_file(self, path: str):
         """Parse configuration parameters from a text file."""
         if not os.path.exists(path):
@@ -184,9 +214,10 @@ class MeshConfig:
                 if key == "GEOM_FILE":
                     self.geom_files.append(resolve(val_str))
                 elif key == "SEED_FILE":
-                    # SEED_FILE <path> [size] [radius] [mode]; order-tolerant like
-                    # the C++ parser: words source/embed = mode, numbers fill
-                    # size then radius.
+                    # SEED_FILE <path> [size] [radius] [mode]; order-tolerant:
+                    # words source/embed = mode, numbers fill size then radius.
+                    # Must stay equivalent to the C++ parser in include/Config.hpp
+                    # (loadFromFile, SEED_FILE branch).
                     seed_path = resolve(val_str)
                     size = radius = None
                     mode = "source"
@@ -194,6 +225,8 @@ class MeshConfig:
                     for tok in tokens[2:]:
                         if tok in ("source", "embed"):
                             mode = tok
+                        elif tok == "auto":
+                            numi += 1  # skip this numeric slot (stays auto)
                         else:
                             try:
                                 v = float(tok)
@@ -306,17 +339,24 @@ class MeshConfig:
                 except ValueError:
                     rel_path = gf
 
-            role = self.geom_roles.get(gf)
+            role = self.role_of(gf)
             if role and role.get("role") == "seed":
-                # SEED_FILE <path> [size] [radius] <mode>; mode always explicit so
-                # per-file source/embed round-trips. size/radius omitted => auto.
+                # SEED_FILE <path> [size|auto] [radius] <mode>; mode always
+                # explicit so source/embed round-trips. size/radius are
+                # independent: an explicit radius with an auto size uses the
+                # 'auto' size-slot placeholder so radius still lands correctly.
                 parts = [f"SEED_FILE {rel_path}"]
                 size = role.get("size")
                 radius = role.get("radius")
-                if size and size > 0:
+                has_size = bool(size and size > 0)
+                has_radius = bool(radius and radius > 0)
+                if has_size:
                     parts.append(f"{size:.6g}")
-                    if radius and radius > 0:
+                    if has_radius:
                         parts.append(f"{radius:.6g}")
+                elif has_radius:
+                    parts.append("auto")            # auto size, explicit radius
+                    parts.append(f"{radius:.6g}")
                 parts.append(role.get("mode") or "source")
                 lines.append(" ".join(parts))
             else:

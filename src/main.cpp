@@ -10,8 +10,12 @@
 
 namespace fs = std::filesystem;
 
-std::vector<Point2D> loadGeometry(const std::string& filename) {
+// Load a polyline. If `closed` is provided, report whether the first/last
+// points coincided (a closed loop) — refinement seeds use this to decide
+// whether to add the closing segment; boundary loads pass nullptr and ignore it.
+std::vector<Point2D> loadGeometry(const std::string& filename, bool* closed = nullptr) {
     std::vector<Point2D> points;
+    if (closed) *closed = false;
     std::ifstream ifs(filename);
     if (!ifs) return points;
     double x, y;
@@ -23,27 +27,24 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
         double dy = points.front().y - points.back().y;
         if (dx * dx + dy * dy < 1e-12) {
             points.pop_back();
+            if (closed) *closed = true;
         }
     }
     return points;
 }
 
-// Load a refinement seed polyline. Unlike loadGeometry (which always drops a
-// trailing duplicate), we report whether the seed is a closed loop so the
-// far-field Distance-field source adds the closing segment only when needed.
-std::vector<Point2D> loadSeedGeometry(const std::string& filename, bool& closed) {
-    std::vector<Point2D> points;
-    closed = false;
-    std::ifstream ifs(filename);
-    if (!ifs) return points;
-    double x, y;
-    while (ifs >> x >> y) points.push_back({x, y});
-    if (points.size() > 2) {
-        double dx = points.front().x - points.back().x;
-        double dy = points.front().y - points.back().y;
-        if (dx * dx + dy * dy < 1e-12) { points.pop_back(); closed = true; }
+// Parse a numeric command-line argument. On malformed input, warn and leave the
+// target unchanged (so it falls back to its config/auto default) rather than
+// letting std::stod throw and abort the program.
+static bool parseDoubleArg(const std::string& s, double& out) {
+    try {
+        out = std::stod(s);
+        return true;
+    } catch (const std::exception&) {
+        std::cerr << "Warning: invalid numeric value '" << s
+                  << "' for a command-line argument; ignoring.\n";
+        return false;
     }
-    return points;
 }
 
 // Phase 1: optional metadata sidecar produced by the preprocessor next to the
@@ -228,8 +229,8 @@ int main(int argc, char* argv[]) {
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_cgns" && i + 1 < argc) config.exportCGNS = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
-        else if (arg == "-seed_size" && i + 1 < argc) config.seedSize = std::stod(argv[++i]);
-        else if (arg == "-seed_radius" && i + 1 < argc) config.seedRadius = std::stod(argv[++i]);
+        else if (arg == "-seed_size" && i + 1 < argc) parseDoubleArg(argv[++i], config.seedSize);
+        else if (arg == "-seed_radius" && i + 1 < argc) parseDoubleArg(argv[++i], config.seedRadius);
         else if (arg == "-seed_mode" && i + 1 < argc) {
             std::string m = argv[++i]; config.seedMode = (m == "embed" || m == "1") ? 1 : 0;
         }
@@ -431,12 +432,15 @@ int main(int argc, char* argv[]) {
         // 載入加密種子 (seeds)：僅供遠場 Gmsh 使用，不進邊界層、也不當域邊界。
         // size/radius 若未指定 (含全域預設仍為負) 交由 Gmsh 端自動推得。
         std::vector<SeedGeom> seeds;
+        const int seedRequested = static_cast<int>(config.seedFiles.size());
         for (const auto& spec : config.seedFiles) {
             bool closed = false;
-            std::vector<Point2D> pts = loadSeedGeometry(spec.file, closed);
+            std::vector<Point2D> pts = loadGeometry(spec.file, &closed);
             if (pts.empty()) {
-                std::cerr << "Warning: seed geometry '" << spec.file
-                          << "' is empty or missing; skipping.\n";
+                // Loud (not silent): a specified seed that can't be loaded means
+                // the mesh is generated WITHOUT the intended refinement.
+                std::cerr << "Error: refinement seed '" << spec.file
+                          << "' could not be loaded (missing or empty); it will NOT refine the mesh.\n";
                 continue;
             }
             SeedGeom s;
@@ -448,8 +452,14 @@ int main(int argc, char* argv[]) {
             s.embed = (m == 1);
             seeds.push_back(s);
         }
-        if (!seeds.empty())
-            std::cout << "  - Refinement seeds     : " << seeds.size() << " loaded\n";
+        if (seedRequested > 0) {
+            std::cout << "  - Refinement seeds     : " << seeds.size()
+                      << " of " << seedRequested << " loaded\n";
+            if (static_cast<int>(seeds.size()) < seedRequested)
+                std::cerr << "Error: " << (seedRequested - static_cast<int>(seeds.size()))
+                          << " of " << seedRequested
+                          << " refinement seed(s) failed to load; mesh generated WITHOUT that refinement.\n";
+        }
 
         if (blSuccess) {
             mesh.generateFarFieldGmsh(config, lastH, seeds);

@@ -146,9 +146,9 @@ Tag a geometry as a *refinement seed* rather than a body-fitted boundary: a seed
 
 | Parameter | Description | Default |
 | :--- | :--- | :--- |
-| `SEED_FILE <path> [size] [radius] [mode]` | Add one seed geometry. Optional: `size` (min size at the seed), `radius` (influence radius), `mode` (`source`/`embed`). Omitted fields fall back to the globals below | — |
-| `SEED_SIZE` | Global default seed size (omitted/<0: auto from the surface size) | auto |
-| `SEED_RADIUS` | Global default influence radius (omitted: ~25×size; beyond it the size blends back to the far field) | auto |
+| `SEED_FILE <path> [size\|auto] [radius] [mode]` | Add one seed geometry. Optional: `size` (min size at the seed), `radius` (influence radius), `mode` (`source`/`embed`). `size` and `radius` are independent; for an auto size with an explicit radius, put `auto` in the size slot (e.g. `SEED_FILE f auto 1.0 source`). Omitted fields fall back to the globals below | — |
+| `SEED_SIZE` | Global default seed size (omitted/<0: auto — **follows the seed's own resampled point spacing**, matching its surface-point distribution) | auto |
+| `SEED_RADIUS` | Global default influence radius (omitted: **~100×size**; beyond it the size blends back to the far field). May be set independently of size | auto |
 | `SEED_MODE` | Global default mode. `source`: pure sizing source, mesh does **not** conform; `embed`: mesh nodes **conform** to the seed curve (still no boundary layer) | source |
 
 `SEED_FILE` tokens are order-tolerant (`source`/`embed` may appear anywhere). Example:

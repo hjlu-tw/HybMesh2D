@@ -264,13 +264,16 @@ class MeshGenControllerMixin:
         """Calculate the expected output VTK filename matching main.cpp logic."""
         root_dir = repo_root()
 
+        # Name from BOUNDARY geometries only — seeds share geom_files but must
+        # not count (matches HybMesh2D, which names from geomFiles alone).
+        boundaries = cfg.boundary_files
         path = ""
         if cfg.output_filename:
             path = cfg.output_filename
-        elif not cfg.geom_files:
+        elif not cfg.geom_files or len(boundaries) == 0:
             path = "results/meshes/mesh_cartesian.vtk"
-        elif len(cfg.geom_files) == 1:
-            stem = os.path.splitext(os.path.basename(cfg.geom_files[0]))[0]
+        elif len(boundaries) == 1:
+            stem = os.path.splitext(os.path.basename(boundaries[0]))[0]
             path = f"results/meshes/mesh_{stem}.vtk"
         else:
             path = "results/meshes/mesh_multiple.vtk"
@@ -537,6 +540,7 @@ class MeshGenControllerMixin:
         cfg.geom_files = [p for p in cfg.geom_files if os.path.abspath(p) != abs_out]
         if len(cfg.geom_files) == before:
             return  # this geometry was not part of the mesh
+        cfg.prune_roles()  # drop the removed geometry's seed role, if any
 
         # Keep the panel (the authority at generate time) and the canvas
         # previews in sync with the pruned list.
@@ -629,6 +633,7 @@ class MeshGenControllerMixin:
                     p for p in self.global_mesh_config.geom_files
                     if os.path.abspath(p) != os.path.abspath(abs_out_file)
                 ]
+                self.global_mesh_config.prune_roles()
                 self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
                 self.sync_mesh_layers_panel()
                 self.main_window.log_panel.log(
@@ -667,7 +672,8 @@ class MeshGenControllerMixin:
         else:
             if abs_out_file in self.global_mesh_config.geom_files:
                 self.global_mesh_config.geom_files.remove(abs_out_file)
-        
+                self.global_mesh_config.prune_roles()
+
         self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
 
     def add_all_sessions_to_mesh(self):

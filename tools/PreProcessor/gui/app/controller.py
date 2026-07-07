@@ -468,28 +468,21 @@ class AppController(
             self.on_stl3d_config_changed()
             self.on_stl3d_display_changed()
 
-    def _split_boundary_seed(self, cfg):
-        """Partition cfg.geom_files into (boundary_files, seed_files) using
-        cfg.geom_roles so previews can style each distinctly."""
-        roles = getattr(cfg, "geom_roles", {}) or {}
-        seeds, boundaries = [], []
-        for p in cfg.geom_files:
-            r = roles.get(p)
-            (seeds if (r and r.get("role") == "seed") else boundaries).append(p)
-        return boundaries, seeds
-
     def _refresh_mesh_previews(self, cfg):
         """Refresh boundary and seed geometry previews from a mesh config."""
         mw = self.main_window
-        boundaries, seeds = self._split_boundary_seed(cfg)
-        mw.mesh_canvas_view.update_geometry_previews(boundaries)
-        mw.mesh_canvas_view.update_seed_previews(seeds)
+        mw.mesh_canvas_view.update_geometry_previews(cfg.boundary_files)
+        mw.mesh_canvas_view.update_seed_previews(cfg.seed_files)
 
     def handle_mesh_geom_files_changed(self, geom_files: list[str]):
         """Callback when geometry files in mesh config panel are modified."""
         mw = self.main_window
-        # Pull the full config so seed roles are honoured in the preview.
-        self._refresh_mesh_previews(mw.mesh_config_panel.get_config())
+        # Cheap role lookup from item data (no full MeshConfig rebuild).
+        roles = mw.mesh_config_panel.current_geom_roles()
+        seeds = [p for p in geom_files if p in roles]
+        boundaries = [p for p in geom_files if p not in roles]
+        mw.mesh_canvas_view.update_geometry_previews(boundaries)
+        mw.mesh_canvas_view.update_seed_previews(seeds)
         mw.mesh_canvas_view.auto_range()
 
     def handle_mesh_config_changed(self, cfg):
@@ -670,6 +663,9 @@ class AppController(
 
         mcv = self.main_window.mesh_canvas_view
         loader_threads = list(getattr(mcv, "_geom_loader_threads", []))
+        # Seed previews use their own loader threads; join them too so none is
+        # destroyed mid-run on exit ("QThread destroyed while running").
+        loader_threads += list(getattr(mcv, "_seed_loader_threads", []))
         last = getattr(mcv, "_geom_loader_thread", None)
         if last is not None and last not in loader_threads:
             loader_threads.append(last)
