@@ -1,9 +1,27 @@
 from __future__ import annotations
 import os
 
+import numpy as np
 from PyQt6.QtWidgets import QFileDialog
 
 from app.utils import repo_root
+
+
+def _split_gap_pieces(pts: np.ndarray, gaps) -> list:
+    """Split a polyline at connect-break indices (each gap is the index of the
+    last point before a break, matching session.resampled_gaps)."""
+    if pts is None or len(pts) < 2:
+        return []
+    if not gaps:
+        return [pts]
+    pieces, start = [], 0
+    for b in sorted(int(g) for g in gaps):
+        if b + 1 > start:
+            pieces.append(pts[start:b + 1])
+        start = b + 1
+    if start < len(pts):
+        pieces.append(pts[start:])
+    return [p for p in pieces if len(p) >= 2]
 
 
 class PostprocessControllerMixin:
@@ -89,3 +107,42 @@ class PostprocessControllerMixin:
 
     def export_result_screenshot(self):
         self.main_window.result_canvas_view._save_png()
+
+    # ------------------------------------------------------------------ #
+    # Geometry overlay data provider (used by ResultControlPanel)
+    # ------------------------------------------------------------------ #
+    def cad_overlay_sessions(self) -> list:
+        """[(session_id, display_name, color, has_geom)] for the overlay picker —
+        one entry per open session, so the panel can tick individual geometries."""
+        out: list = []
+        for s in getattr(self, "sessions", []):
+            pts = s.resampled_points if s.resampled_points is not None else s.original_points
+            has_geom = pts is not None and len(pts) >= 2
+            out.append((s.session_id, s.display_name, getattr(s, "color", ""), has_geom))
+        return out
+
+    def cad_overlay_polylines(self, session_ids=None) -> list:
+        """CAD outline polylines (list of (N,2) arrays) from open sessions —
+        resampled points if present (what got meshed), else the raw loaded points,
+        split at piece breaks and closed per the project flag. With `session_ids`
+        (a set) only those sessions are included; otherwise all of them."""
+        polys: list = []
+        for s in getattr(self, "sessions", []):
+            if session_ids is not None and s.session_id not in session_ids:
+                continue
+            use_resampled = s.resampled_points is not None
+            pts = s.resampled_points if use_resampled else s.original_points
+            if pts is None or len(pts) < 2:
+                continue
+            pts = np.atleast_2d(np.asarray(pts, dtype=float))[:, :2]
+            gaps = s.resampled_gaps if use_resampled else None
+            closed = getattr(s.project_model, "is_closed", False)
+            for piece in _split_gap_pieces(pts, gaps):
+                if closed and not np.allclose(piece[0], piece[-1]):
+                    piece = np.vstack([piece, piece[0]])
+                polys.append(piece)
+        if not polys:
+            self.main_window.log_panel.log(
+                "[Results] CAD overlay: no geometry selected / found in the open "
+                "project(s).")
+        return polys

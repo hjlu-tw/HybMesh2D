@@ -316,7 +316,7 @@ class AppController(
 
         # Results / post-processing
         mw.result_canvas_view.load_btn.clicked.connect(self.open_result_dialog)
-        mw.result_control_panel.bind(mw.result_canvas_view)
+        mw.result_control_panel.bind(mw.result_canvas_view, self)
 
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel
         def _make_sync_checkbox_fn(canvas_method, cb_sidebar, cb_toolbar):

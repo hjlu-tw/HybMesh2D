@@ -151,8 +151,11 @@ class MainWindow(QMainWindow):
             }
         """
         self.tab_bar.setStyleSheet(tab_bar_style)
+        # Preferred (not Expanding) so the bar spans only its tabs; a trailing
+        # stretch (added before the mode selector) absorbs the free space, which
+        # keeps the mode selector pinned to the right in every mode.
         self.tab_bar.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         tab_hl.addWidget(self.tab_bar)
 
         # Mesh Generator / Statistics share their own tab strip, kept separate
@@ -164,7 +167,7 @@ class MainWindow(QMainWindow):
         self.mesh_tab_bar.setExpanding(False)
         self.mesh_tab_bar.setStyleSheet(tab_bar_style)
         self.mesh_tab_bar.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.mesh_tab_bar.addTab("Mesh 1")
         self.mesh_tab_bar.setVisible(False)
         tab_hl.addWidget(self.mesh_tab_bar)
@@ -172,7 +175,7 @@ class MainWindow(QMainWindow):
         self.mode_combo = QComboBox(self.tab_row)
         self.mode_combo.addItems([
             "PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics",
-            "Solver", "Results", "Immersed Solid (STL→Phi)",
+            "Solver", "Results", "Immersed Boundary (φ)",
         ])
         self.mode_combo.setStyleSheet("""
             QComboBox {
@@ -183,7 +186,6 @@ class MainWindow(QMainWindow):
                 padding: 4px 10px;
                 font-weight: bold;
                 font-size: 11px;
-                min-width: 150px;
                 margin-right: 6px;
             }
             QComboBox::drop-down {
@@ -193,6 +195,17 @@ class MainWindow(QMainWindow):
                 border-left: 1px solid #2d3356;
             }
         """)
+        # Pin the width to the widest tab name (measured in the bold QSS font) so
+        # the selector never resizes when a longer/shorter tab is selected.
+        from PyQt6.QtGui import QFont, QFontMetrics
+        _mc_font = QFont(self.mode_combo.font()); _mc_font.setBold(True)
+        _mc_fm = QFontMetrics(_mc_font)
+        _mc_w = max(_mc_fm.horizontalAdvance(self.mode_combo.itemText(i))
+                    for i in range(self.mode_combo.count()))
+        self.mode_combo.setFixedWidth(_mc_w + 46)   # + text padding, arrow, slack
+        # Stretch before the selector so it stays pinned to the right (fixed
+        # position) whether or not a tab strip is visible in the current mode.
+        tab_hl.addStretch(1)
         tab_hl.addWidget(self.mode_combo)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 

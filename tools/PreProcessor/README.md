@@ -60,11 +60,11 @@
 - **橙色**：合格 ($1.05 \sim 1.2$)。
 - **紅色**：不合格 ($> 1.2$)，且會在幾何上標註紅色 `x`。
 
-## 沉浸固體前處理：STL → Phi（GUI「Immersed Solid」模式）
+## 沉浸固體前處理：STL → φ（GUI「Immersed Boundary (φ)」模式）
 
-UNICONES 求解器以沉浸邊界法 (IBM) 處理固體，需要一個 **phi 標記場**（0 = 流體、1 = 固體）。GUI 新增的 **Immersed Solid (STL→Phi)** 模式包裝了 `solver/preprocess/STL3d`，把「載入 STL → 設定卡氏網格 → 射線追蹤產生 phi → 驗證」整合進互動式 3D 介面（pyqtgraph OpenGL，需 `PyOpenGL`）。
+UNICONES 求解器以沉浸邊界法 (IBM) 處理固體，需要一個 **phi 標記場**（0 = 流體、1 = 固體）。GUI 的 **Immersed Boundary (φ)** 模式（分頁選單，原名 Immersed Solid (STL→Phi)）包裝了 `solver/preprocess/STL3d`，把「載入 STL → 設定卡氏網格 → 射線追蹤產生 phi → 驗證」整合進互動式 3D 介面（pyqtgraph OpenGL，需 `PyOpenGL`）。
 
-啟動後在右上模式選單切到 **Immersed Solid (STL→Phi)**：
+啟動後在右上模式選單切到 **Immersed Boundary (φ)**：
 
 ```bash
 python3 tools/PreProcessor/gui/main.py
@@ -79,6 +79,10 @@ python3 tools/PreProcessor/gui/main.py
 5. **Generate phi** — 背景執行 STL3d（進度條 + log）。完成後 3D 顯示固體 cell（紅），可勾選流體 cell、用 `k=` 隔離單一 z 層做驗證；log 會回報固體佔比，全為 0 時警告（通常是 domain 範圍或單位未包住 STL）。
 
 輸出：`results/stl3d/<case>/<case>_phi_tec.dat`（Tecplot POINT 格式，每行 `x y z phi`）。
+
+### 從 2D CAD 匯出 STL（Export 2D STL）
+
+不必外部 CAD：在 PreProcessor 分頁畫好 2D 封閉輪廓後，側欄底部 **Export 2D STL** 會把輪廓三角化成平面 (z=0) STL 供本頁載入。當開啟中、含幾何的圖層有兩個以上時，會先跳出**來源選擇**對話框，讓你勾選哪些圖層納入這個沉浸固體 STL——避免把只想拿去產生網格的幾何一起掃入（可見圖層預設勾選，附 All / None）。
 
 ### 一鍵帶入求解器 (Send to Solver)
 
@@ -100,6 +104,20 @@ phi 場是**透過初始條件 DLL** 餵進求解器的。成功產生 phi 後�
 - **Save & Use**：存成 `.cc` 並自動填回欄位；求解 pipeline 執行時會把它編進該 case 的 `dll/`。
 
 > 注意：產生的 `extern "C"` 簽章是與求解器的契約，集中維護於 `app/services/dll_templates.py`（求解器若改簽章，只需改這一處）。需要編譯器（g++/clang++）在 PATH 上；找不到時 Compile 會停用，但求解器仍會在執行時自行編譯 `.cc`。
+
+## 結果後處理 (Results)
+
+載入求解器的 Tecplot 輸出（`xtecp_sol_allz.dat.*`）後，**Results** 分頁提供互動式場視覺化（FEQUADRILATERAL zone 會在載入時切成兩個三角形）：
+
+- **場繪製**：填色 (tripcolor) 或平滑等值填色 (tricontourf)；變數 / zone / 繪製模式選擇；色階（colormap、對數 / 對稱、連續或分段）。頂欄 **Contour** 可關閉場填色，只保留疊加層。
+- **疊加層**：網格線框、速度流線、向量箭頭、等值線 (iso)。
+- **CAD 幾何疊加**：把目前專案開啟的幾何輪廓疊到場上。可**逐一勾選**要顯示的幾何（單個或多個），並從一小組線色選擇（White / Gray / Black / Cyan / Amber / Green / Pink / Red）。
+- **探針工具**：點查詢 (probe，列出該點所有變數)、沿線取樣 (line probe，另開圖表)、標註場的最小 / 最大值、面積加權統計 (∫dA / 平均 / 標準差)。
+- **視圖**：滾輪縮放、右鍵 / 中鍵拖曳平移；重新載入結果或切換 zone **不會自動 fit**（保留目前縮放），需要時按 **Fit View**。
+- **Wall Qty…**：開啟壁面量沿線圖 (WallForce.dat / vsurface_qty.dat …)。
+- **Save PNG** 匯出目前畫面。
+
+> 大型網格效能：`Mesh Statistics` 的品質指標（aspect ratio / skewness）已向量化，且大網格會在背景執行緒計算（不阻塞 UI）；網格畫布的線框抽取亦向量化，元素填色超過門檻的極大網格會略過（保留線框）。
 
 ## 範例檔案
 - `config/comprehensive_example.json`: 基礎功能綜合展示。

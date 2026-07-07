@@ -1,10 +1,12 @@
 from __future__ import annotations
 import csv
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QLabel, QCheckBox,
     QPushButton, QButtonGroup, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QSpinBox, QFileDialog, QScrollArea, QFrame, QComboBox,
+    QListWidget, QListWidgetItem,
 )
 
 from app.views.collapsible import CollapsibleSection
@@ -40,6 +42,7 @@ class ResultControlPanel(QWidget):
         super().__init__(parent)
         self.setStyleSheet("background: #121422; color: #a0a8c0;")
         self._canvas = None
+        self._controller = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -60,6 +63,7 @@ class ResultControlPanel(QWidget):
         self._build_line(root)
         self._build_iso(root)
         self._build_extrema(root)
+        self._build_overlays(root)
         self._build_color(root)
         self._build_vectors(root)
         self._build_stats(root)
@@ -248,6 +252,109 @@ class ResultControlPanel(QWidget):
         self.both_btn.clicked.connect(lambda: self._mark("both"))
         self.extrema_clear_btn.clicked.connect(self._clear_extrema)
 
+    def _build_overlays(self, root):
+        sec = CollapsibleSection("Geometry Overlay", start_collapsed=True)
+        root.addWidget(sec)
+        hint = QLabel("Overlay CAD outline(s) from the open project on the field. "
+                      "Tick the geometries to show. Draws only while a result is "
+                      "loaded.")
+        hint.setStyleSheet("color:#7a82a0; font-size: 10px;"); hint.setWordWrap(True)
+        sec.add_widget(hint)
+
+        self.cad_cb = QCheckBox("Show CAD outline")
+        self.cad_cb.setStyleSheet("color:#a0a8c0;")
+        sec.add_widget(self.cad_cb)
+
+        # Outline colour — a short curated set of high-contrast choices.
+        self.cad_color = QComboBox()
+        self.cad_color.setStyleSheet(COMBO_STYLE)
+        self.cad_color.setToolTip("CAD outline colour")
+        for name, hexv in [("White", "#e5e7eb"), ("Gray", "#808080"),
+                           ("Black", "#000000"), ("Cyan", "#22d3ee"),
+                           ("Amber", "#fbbf24"), ("Green", "#4ade80"),
+                           ("Pink", "#f472b6"), ("Red", "#f87171")]:
+            self.cad_color.addItem(name, hexv)
+            self.cad_color.setItemData(self.cad_color.count() - 1,
+                                       QColor(hexv), Qt.ItemDataRole.ForegroundRole)
+        sec.add_widget(self._labeled("Color:", self.cad_color))
+
+        # Per-geometry picker: tick one or many open project geometries.
+        self.cad_list = QListWidget()
+        self.cad_list.setFixedHeight(110)
+        self.cad_list.setStyleSheet(
+            "background:#181b2a; color:#a0a8c0; border:1px solid #333852; "
+            "border-radius:3px;")
+        sec.add_widget(self.cad_list)
+        self.cad_reload_btn = make_button("Refresh list", "#1e2a38")
+        self.cad_reload_btn.setToolTip("Re-read the open project geometries.")
+        sec.add_widget(self.cad_reload_btn)
+
+        self.cad_cb.toggled.connect(self._on_cad_toggled)
+        self.cad_color.currentIndexChanged.connect(self._on_cad_color_changed)
+        self.cad_list.itemChanged.connect(self._on_cad_item_changed)
+        self.cad_reload_btn.clicked.connect(self._reload_cad)
+
+    # ── Overlay handlers ───────────────────────────────────────────────
+    def _cad_checked_ids(self) -> set:
+        ids = set()
+        for i in range(self.cad_list.count()):
+            it = self.cad_list.item(i)
+            if ((it.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+                    and it.checkState() == Qt.CheckState.Checked):
+                ids.add(it.data(Qt.ItemDataRole.UserRole))
+        return ids
+
+    def _populate_cad_list(self):
+        """(Re)build the geometry checklist from the controller, preserving the
+        prior tick state; a fresh list defaults every geometry to ticked."""
+        if self._controller is None:
+            return
+        prev = self._cad_checked_ids()
+        fresh = self.cad_list.count() == 0
+        self.cad_list.blockSignals(True)
+        self.cad_list.clear()
+        for sid, name, color, has_geom in self._controller.cad_overlay_sessions():
+            item = QListWidgetItem(name if has_geom else f"{name}  (no geometry)")
+            if has_geom:
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                checked = (sid in prev) if not fresh else True
+                item.setCheckState(Qt.CheckState.Checked if checked
+                                   else Qt.CheckState.Unchecked)
+                if color:
+                    item.setForeground(QColor(color))
+            else:
+                item.setFlags(Qt.ItemFlag.NoItemFlags)
+            item.setData(Qt.ItemDataRole.UserRole, sid)
+            self.cad_list.addItem(item)
+        self.cad_list.blockSignals(False)
+
+    def _apply_cad(self, *_):
+        if self._canvas is None:
+            return
+        if self.cad_cb.isChecked() and self._controller is not None:
+            polys = self._controller.cad_overlay_polylines(self._cad_checked_ids())
+            self._canvas.set_cad_geometry(polys, True)
+        else:
+            self._canvas.set_cad_geometry([], False)
+
+    def _on_cad_toggled(self, on: bool):
+        if on and self.cad_list.count() == 0:
+            self._populate_cad_list()
+        self._apply_cad()
+
+    def _on_cad_item_changed(self, *_):
+        if self.cad_cb.isChecked():
+            self._apply_cad()
+
+    def _on_cad_color_changed(self, *_):
+        if self._canvas is not None:
+            self._canvas.set_cad_color(self.cad_color.currentData())
+
+    def _reload_cad(self):
+        self._populate_cad_list()
+        self.cad_cb.setChecked(True)   # showing implies loading (may fire _apply_cad)
+        self._apply_cad()              # ensure a (re)apply even if already checked
+
     def _sub_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setStyleSheet("color:#6b7390; font-size:10px; font-weight:bold;")
@@ -420,9 +527,10 @@ class ResultControlPanel(QWidget):
         return v
 
     # ------------------------------------------------------------------ #
-    def bind(self, canvas):
+    def bind(self, canvas, controller=None):
         """Connect to the result canvas (called by the controller)."""
         self._canvas = canvas
+        self._controller = controller
         canvas.result_rendered.connect(self._on_rendered)
         canvas.probe_added.connect(self._on_probe_added)
         canvas.extrema_found.connect(self._on_extrema_found)

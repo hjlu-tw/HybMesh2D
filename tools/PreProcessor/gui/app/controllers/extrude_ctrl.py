@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
 from app.utils import repo_root
 from app.services.stl_extrude import _signed_area
@@ -57,40 +57,55 @@ class ExtrudeControllerMixin:
     ``stl_extrude.extrude_loop`` should the solver gain 3D support.)
     """
 
-    def _extrude_profile_stem(self) -> str:
-        """Filename stem for the exported STL. The export writes every VISIBLE
-        session (see ``_collect_extrude_loops``), so name it after the active layer
-        only when it is itself visible, else after the first visible layer with a
-        file — otherwise the suggested name could point at a hidden layer that is
-        not in the STL."""
-        active = self.active_session()
-        candidates = []
-        if active is not None and getattr(active, "is_visible", True):
-            candidates.append(active)
-        candidates.extend(s for s in self.sessions
-                          if s is not active and getattr(s, "is_visible", True))
+    def _extrude_profile_stem(self, session_ids=None) -> str:
+        """Filename stem for the exported STL, named after a layer that is
+        actually in the export: one of the selected `session_ids` if given, else
+        the active layer when visible, else the first visible layer with a file —
+        so the suggested name never points at a layer left out of the STL."""
+        if session_ids is not None:
+            candidates = [s for s in self.sessions if s.session_id in session_ids]
+        else:
+            active = self.active_session()
+            candidates = []
+            if active is not None and getattr(active, "is_visible", True):
+                candidates.append(active)
+            candidates.extend(s for s in self.sessions
+                              if s is not active and getattr(s, "is_visible", True))
         for s in candidates:
             fp = getattr(s, "file_path", "")
             if fp:
                 return os.path.splitext(os.path.basename(fp))[0]
         return "profile"
 
-    def _collect_extrude_loops(self):
-        """Return (loops, used_names, skipped_names, open_names) from visible sessions.
+    @staticmethod
+    def _session_has_geom(s) -> bool:
+        """True if a session carries a usable polyline (>= 3 points), from its
+        authored points or its last resampled output."""
+        pts = s.original_points
+        if pts is None or len(pts) < 3:
+            pts = getattr(s, "resampled_points", None)
+        return pts is not None and len(pts) >= 3
 
-        Prefers each session's authored polyline (original_points); falls back to
-        its last resampled output if the raw points are unavailable. ``open_names``
-        lists the used layers whose per-profile ``closed`` flag is False (they are
-        sealed into a closed loop on export — surfaced as a warning, not guessed
-        from the points, which cannot tell an unrepeated-first-vertex closed loop
-        from an open one).
+    def _collect_extrude_loops(self, session_ids=None):
+        """Return (loops, used_names, skipped_names, open_names).
+
+        With `session_ids` (a set), collect exactly those sessions; otherwise
+        collect every currently-visible session. Prefers each session's authored
+        polyline (original_points); falls back to its last resampled output if the
+        raw points are unavailable. ``open_names`` lists the used layers whose
+        per-profile ``closed`` flag is False (they are sealed into a closed loop on
+        export — surfaced as a warning, not guessed from the points, which cannot
+        tell an unrepeated-first-vertex closed loop from an open one).
         """
         loops: list[np.ndarray] = []
         used: list[str] = []
         skipped: list[str] = []
         open_names: list[str] = []
         for s in self.sessions:
-            if not getattr(s, "is_visible", True):
+            if session_ids is None:
+                if not getattr(s, "is_visible", True):
+                    continue
+            elif s.session_id not in session_ids:
                 continue
             pts = s.original_points
             if pts is None or len(pts) < 3:
@@ -143,7 +158,26 @@ class ExtrudeControllerMixin:
         if getattr(self, "_extrude_worker", None) is not None and self._extrude_worker.isRunning():
             log("[Export] An STL export is already running. Please wait.")
             return
-        loops, used, skipped, open_names = self._collect_extrude_loops()
+        # Source selection: with two or more CAD layers that have geometry, let
+        # the user pick which become the immersed-boundary STL (so a layer meant
+        # only for the mesh isn't swept in). Zero/one candidate -> no prompt.
+        candidates = [s for s in self.sessions if self._session_has_geom(s)]
+        session_ids = None
+        if len(candidates) >= 2:
+            from app.views.extrude_source_dialog import ExtrudeSourceDialog
+            dlg = ExtrudeSourceDialog(self.sessions, self._session_has_geom,
+                                      self.main_window)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                log("[Export] Cancelled (source selection).")
+                return
+            session_ids = dlg.selected_ids()
+            if not session_ids:
+                log("[Export] No source layer selected.")
+                QMessageBox.information(self.main_window, "Export 2D STL",
+                                        "No source layer selected.")
+                return
+
+        loops, used, skipped, open_names = self._collect_extrude_loops(session_ids)
         if not loops:
             log("[Export] No 2D geometry to export. Draw or import a closed "
                 "profile first (bake analytic curves so they have points).")
@@ -177,7 +211,7 @@ class ExtrudeControllerMixin:
 
         default_path = os.path.join(
             repo_root(), "examples", "geometries",
-            f"{self._extrude_profile_stem()}_2d.stl")
+            f"{self._extrude_profile_stem(session_ids)}_2d.stl")
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Save 2D Profile STL", default_path,
             "STL Files (*.stl);;All Files (*)")
@@ -233,7 +267,7 @@ class ExtrudeControllerMixin:
 
         reply = QMessageBox.question(
             self.main_window, "Export 2D STL",
-            "STL saved.\n\nLoad it into the Immersed Solid (STL→φ) page now?",
+            "STL saved.\n\nLoad it into the Immersed Boundary (φ) page now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes)
         if reply == QMessageBox.StandardButton.Yes:

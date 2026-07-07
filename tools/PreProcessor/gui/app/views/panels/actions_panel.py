@@ -15,8 +15,8 @@ class ActionsPanel(CollapsibleSection):
         # this collapsed section, for discoverability.
         self.extrude_stl_btn = make_button("Export 2D STL", '#15303a')
         self.extrude_stl_btn.setToolTip(
-            "Export the visible 2D profile(s) as a flat sheet STL (z=0) for the "
-            "Immersed Solid (STL→φ) page")
+            "Export the selected 2D profile(s) as a flat sheet STL (z=0) for the "
+            "Immersed Boundary (φ) page")
 
         self.add_widget(help_widget(self.save_btn, "Export the resampled geometry to a .dat mesh file"))
         self.add_widget(help_widget(self.generate_btn, "Save the current configuration to a .json file for CLI processing"))

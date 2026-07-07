@@ -71,17 +71,29 @@ class ResultCanvasView(QWidget):
         self._stream_lw_speed = True
         self._interp_cache: dict[str, mtri.LinearTriInterpolator] = {}
 
+        # CAD geometry overlay: raw polyline pieces (list of (N,2) arrays) from
+        # the open project segments, drawn over the field each render.
+        self._cad_polylines: list = []
+        self._cad_on = False
+        self._cad_color = "#e5e7eb"
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Control bar ────────────────────────────────────────────────────
+        # ── Control bar (two rows: data + file actions on top, display
+        #    toggles below, so nothing crowds) ───────────────────────────────
         bar = QWidget()
         bar.setStyleSheet("background: #06070d; border-bottom: 1px solid #1c1e36;")
-        hl = QHBoxLayout(bar)
-        hl.setContentsMargins(8, 4, 8, 4)
-        hl.setSpacing(6)
+        bar_v = QVBoxLayout(bar)
+        bar_v.setContentsMargins(8, 4, 8, 4)
+        bar_v.setSpacing(4)
+        hl = QHBoxLayout(); hl.setSpacing(6)      # row 1
+        hl2 = QHBoxLayout(); hl2.setSpacing(6)    # row 2
+        bar_v.addLayout(hl)
+        bar_v.addLayout(hl2)
 
+        # Row 1: load + variable / zone / mode selectors, then file/view actions.
         self.load_btn = QPushButton("Load Result")
         self.load_btn.setStyleSheet(
             "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
@@ -102,15 +114,6 @@ class ResultCanvasView(QWidget):
             t = QLabel(lbl); t.setStyleSheet(f"color:{_FG};font-size:11px;")
             hl.addWidget(t); hl.addWidget(w)
 
-        self.mesh_cb = QCheckBox("Mesh")
-        self.stream_cb = QCheckBox("Streamlines")
-        self.vector_cb = QCheckBox("Vectors")
-        self.iso_cb = QCheckBox("Iso")      # iso-line visibility (levels set in sidebar)
-        self.iso_cb.setToolTip("Show iso-contour lines (levels set in the left panel)")
-        for cb in (self.mesh_cb, self.stream_cb, self.vector_cb, self.iso_cb):
-            cb.setStyleSheet(f"color:{_FG};font-size:11px;")
-            hl.addWidget(cb)
-
         hl.addStretch()
         self.wallqty_btn = QPushButton("Wall Qty…")
         self.wallqty_btn.setStyleSheet(self.load_btn.styleSheet())
@@ -127,6 +130,22 @@ class ResultCanvasView(QWidget):
         self.save_btn = QPushButton("Save PNG")
         self.save_btn.setStyleSheet(self.load_btn.styleSheet())
         hl.addWidget(self.save_btn)
+
+        # Row 2: display toggles.
+        self.contour_cb = QCheckBox("Contour")
+        self.contour_cb.setChecked(True)
+        self.contour_cb.setToolTip(
+            "Show the filled/contoured scalar field. Turn off to view the "
+            "geometry overlay on its own.")
+        self.mesh_cb = QCheckBox("Mesh")
+        self.stream_cb = QCheckBox("Streamlines")
+        self.vector_cb = QCheckBox("Vectors")
+        self.iso_cb = QCheckBox("Iso")      # iso-line visibility (levels set in sidebar)
+        self.iso_cb.setToolTip("Show iso-contour lines (levels set in the left panel)")
+        for cb in (self.contour_cb, self.mesh_cb, self.stream_cb, self.vector_cb, self.iso_cb):
+            cb.setStyleSheet(f"color:{_FG};font-size:11px;")
+            hl2.addWidget(cb)
+        hl2.addStretch()
         root.addWidget(bar)
 
         # ── Matplotlib figure ──────────────────────────────────────────────
@@ -149,6 +168,7 @@ class ResultCanvasView(QWidget):
         # Signals
         self.var_combo.currentIndexChanged.connect(self._on_control_changed)
         self.mode_combo.currentIndexChanged.connect(self._on_control_changed)
+        self.contour_cb.toggled.connect(self._on_control_changed)
         self.mesh_cb.toggled.connect(self._on_control_changed)
         self.stream_cb.toggled.connect(self._on_control_changed)
         self.vector_cb.toggled.connect(self._on_control_changed)
@@ -220,7 +240,9 @@ class ResultCanvasView(QWidget):
         self._line_pts = []
         self._line_seg = None
         self._extrema = []
-        self._user_view = None   # new mesh -> auto-fit
+        # Preserve the current zoom/pan across reloads and zone switches (no
+        # auto-fit). The first-ever load has no saved view, so it still fits;
+        # 'Fit View' or Clear re-fits on demand.
 
         self._building = True
         try:
@@ -248,7 +270,9 @@ class ResultCanvasView(QWidget):
         self._line_pts = []
         self._line_seg = None
         self._extrema = []
-        self._user_view = None
+        self._cad_polylines = []
+        self._cad_on = False
+        self._user_view = None   # Clear re-fits the next load
         if self._cbar is not None:
             try:
                 self._cbar.remove()
@@ -362,27 +386,31 @@ class ResultCanvasView(QWidget):
             # log stay continuous).
             banded = (mode in ("count", "delta")) and not use_log
 
-            if self.mode_combo.currentText().startswith("Filled"):
-                if use_log:
-                    mappable = self.ax.tripcolor(
-                        self._triang, facecolors=vals, cmap=cmap, shading="flat", norm=norm)
-                elif banded:
-                    bnorm = mcolors.BoundaryNorm(levels, matplotlib.colormaps[cmap].N)
-                    mappable = self.ax.tripcolor(
-                        self._triang, facecolors=vals, cmap=cmap, shading="flat", norm=bnorm)
-                else:  # smooth, continuous flood (original default)
-                    mappable = self.ax.tripcolor(
-                        self._triang, facecolors=vals, cmap=cmap, shading="flat",
-                        vmin=vmin, vmax=vmax)
-            else:
-                mappable = self.ax.tricontourf(
-                    self._triang, vals, levels=levels, cmap=cmap,
-                    norm=norm, extend="both")
+            # The field flood + colorbar are optional (top-bar 'Contour'); when
+            # off, only the overlays (mesh, iso, CAD geometry) draw, but the
+            # field stats below are still computed and emitted.
+            if self.contour_cb.isChecked():
+                if self.mode_combo.currentText().startswith("Filled"):
+                    if use_log:
+                        mappable = self.ax.tripcolor(
+                            self._triang, facecolors=vals, cmap=cmap, shading="flat", norm=norm)
+                    elif banded:
+                        bnorm = mcolors.BoundaryNorm(levels, matplotlib.colormaps[cmap].N)
+                        mappable = self.ax.tripcolor(
+                            self._triang, facecolors=vals, cmap=cmap, shading="flat", norm=bnorm)
+                    else:  # smooth, continuous flood (original default)
+                        mappable = self.ax.tripcolor(
+                            self._triang, facecolors=vals, cmap=cmap, shading="flat",
+                            vmin=vmin, vmax=vmax)
+                else:
+                    mappable = self.ax.tricontourf(
+                        self._triang, vals, levels=levels, cmap=cmap,
+                        norm=norm, extend="both")
 
-            cax = self.figure.add_axes(self._CAX_RECT)
-            self._cbar = self.figure.colorbar(mappable, cax=cax)
-            self._cbar.ax.tick_params(colors=_FG, labelsize=8)
-            self._cbar.set_label(var, color=_FG)
+                cax = self.figure.add_axes(self._CAX_RECT)
+                self._cbar = self.figure.colorbar(mappable, cax=cax)
+                self._cbar.ax.tick_params(colors=_FG, labelsize=8)
+                self._cbar.set_label(var, color=_FG)
             self.result_rendered.emit({
                 "var": var, "dmin": dmin, "dmax": dmax, "mean": mean,
                 "vmin": vmin, "vmax": vmax})
@@ -404,6 +432,10 @@ class ResultCanvasView(QWidget):
                 self._draw_streamlines()
             if self.vector_cb.isChecked():
                 self._draw_vectors()
+
+            # CAD geometry overlay (independent of the displayed field).
+            if self._cad_on:
+                self._draw_cad_geometry()
 
             self._draw_probes()
             self._draw_line_overlay()
@@ -630,6 +662,29 @@ class ResultCanvasView(QWidget):
             self.ax.plot([x0, x1], [y0, y1], "o", ms=4, color="#fbbf24")
         for pt in self._line_pts:  # partial (first click)
             self.ax.plot(pt[0], pt[1], "o", ms=4, color="#fbbf24")
+
+    # ── CAD geometry overlay ────────────────────────────────────────────────
+    def set_cad_geometry(self, polylines, on: bool):
+        """Overlay raw CAD polyline pieces. `polylines` is a list of (N,2)
+        arrays; short/empty pieces are dropped."""
+        self._cad_polylines = [
+            np.asarray(p, dtype=float) for p in (polylines or [])
+            if p is not None and len(p) >= 2]
+        self._cad_on = bool(on)
+        self.render()
+
+    def set_cad_color(self, color: str):
+        """Set the CAD-overlay line colour (hex)."""
+        if color:
+            self._cad_color = color
+            if self._cad_on:
+                self.render()
+
+    def _draw_cad_geometry(self):
+        for p in self._cad_polylines:
+            if p.ndim == 2 and p.shape[1] >= 2:
+                self.ax.plot(p[:, 0], p[:, 1], color=self._cad_color, lw=1.3,
+                             alpha=0.9, zorder=5)
 
     def _draw_extrema(self):
         for e in self._extrema:

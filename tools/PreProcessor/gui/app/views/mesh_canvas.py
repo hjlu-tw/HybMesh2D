@@ -38,6 +38,10 @@ class GeomLoaderThread(QThread):
 class MeshCanvasView(QWidget):
     """Canvas widget for visualizing 2D unstructured meshes with quality and BC filters."""
 
+    # Above this cell count the per-element translucent fills (O(cells)
+    # QPainterPath work) are skipped — the wireframe alone stays responsive.
+    FILL_CELL_LIMIT = 200_000
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -418,43 +422,37 @@ class MeshCanvasView(QWidget):
         if not self.mesh or len(self.mesh.points) == 0:
             return
 
-        # Connect-pairs edge list construction
-        edges = set()
-        edge_cell_count = {}
-
-        def register_edges(nodes):
-            n = len(nodes)
-            for k in range(n):
-                edge = tuple(sorted((nodes[k], nodes[(k + 1) % n])))
-                edges.add(edge)
-                edge_cell_count[edge] = edge_cell_count.get(edge, 0) + 1
-
-        for tri in self.mesh.triangles:
-            register_edges(tri)
-        for quad in self.mesh.quads:
-            register_edges(quad)
+        # Undirected edge list, vectorised over the tri/quad bulk (the rare
+        # variable-length polygons loop). Each cell's edges are (v_k, v_{k+1});
+        # sorting each pair makes them undirected so shared edges dedupe. An
+        # edge used by one cell is a boundary edge, by two is interior.
+        edge_arrays = []
+        if self.mesh.triangles:
+            T = np.asarray(self.mesh.triangles, dtype=np.int64)
+            edge_arrays.append(np.stack([T, np.roll(T, -1, axis=1)], axis=2).reshape(-1, 2))
+        if self.mesh.quads:
+            Q = np.asarray(self.mesh.quads, dtype=np.int64)
+            edge_arrays.append(np.stack([Q, np.roll(Q, -1, axis=1)], axis=2).reshape(-1, 2))
         for poly in self.mesh.polygons:
-            register_edges(poly)
+            a = np.asarray(poly, dtype=np.int64)
+            edge_arrays.append(np.stack([a, np.roll(a, -1)], axis=1))
 
-        edge_list = list(edges)
-        n_edges = len(edge_list)
-
-        xs = np.empty(2 * n_edges, dtype=np.float64)
-        ys = np.empty(2 * n_edges, dtype=np.float64)
-
-        for idx, (u, v) in enumerate(edge_list):
-            xs[2 * idx] = self.mesh.points[u, 0]
-            xs[2 * idx + 1] = self.mesh.points[v, 0]
-            ys[2 * idx] = self.mesh.points[u, 1]
-            ys[2 * idx + 1] = self.mesh.points[v, 1]
-
-        self.wireframe_item = self.plot_widget.plot(
-            xs, ys,
-            pen=pg.mkPen('#6d7faf', width=1.2),
-            connect='pairs'
-        )
-        self.wireframe_item.setZValue(10)
-        self.wireframe_item.setVisible(self.show_wireframe)
+        if edge_arrays:
+            all_edges = np.concatenate(edge_arrays, axis=0)
+            all_edges.sort(axis=1)                                  # undirected
+            uniq, counts = np.unique(all_edges, axis=0, return_counts=True)
+            # Interleave endpoints -> [u0,v0,u1,v1,...] for connect='pairs'.
+            seg = self.mesh.points[uniq.reshape(-1)]
+            self.wireframe_item = self.plot_widget.plot(
+                seg[:, 0], seg[:, 1],
+                pen=pg.mkPen('#6d7faf', width=1.2),
+                connect='pairs'
+            )
+            self.wireframe_item.setZValue(10)
+            self.wireframe_item.setVisible(self.show_wireframe)
+        else:
+            uniq = np.empty((0, 2), dtype=np.int64)
+            counts = np.empty((0,), dtype=np.int64)
 
         if self.mesh_config:
             self.update_domain_box(
@@ -464,9 +462,10 @@ class MeshCanvasView(QWidget):
                 self.mesh_config.domain_y_max
             )
 
-        boundary_edges = [edge for edge, count in edge_cell_count.items() if count == 1]
-        if boundary_edges:
-            self._rebuild_boundary_coloring(boundary_edges)
+        boundary_edges = uniq[counts == 1]
+        if len(boundary_edges):
+            self._rebuild_boundary_coloring(
+                [(int(u), int(v)) for u, v in boundary_edges])
 
     def _rebuild_mesh_fills(self):
         """Construct only the quality/element colored path fills."""
@@ -475,6 +474,18 @@ class MeshCanvasView(QWidget):
         self.filled_items.clear()
 
         if not self.mesh or len(self.mesh.points) == 0:
+            return
+
+        total_cells = (len(self.mesh.triangles) + len(self.mesh.quads)
+                       + len(self.mesh.polygons))
+        if total_cells > self.FILL_CELL_LIMIT:
+            # Skip fills on very large meshes; the wireframe conveys the mesh and
+            # stays responsive. Log once per distinct mesh so it's not silent.
+            if getattr(self, "_fills_skipped_for", None) != id(self.mesh):
+                self._fills_skipped_for = id(self.mesh)
+                print(f"[mesh] {total_cells} cells > {self.FILL_CELL_LIMIT}: element "
+                      "fills / quality shading skipped for performance "
+                      "(wireframe shown).")
             return
 
         if self.color_mode == "uniform":

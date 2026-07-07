@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QComboBox, QSpinBox, QGroupBox,
+    QLabel, QComboBox, QSpinBox,
     QCheckBox, QStackedWidget, QLineEdit, QRadioButton, QButtonGroup, QDialog
 )
 from PyQt6.QtCore import Qt
@@ -25,14 +25,8 @@ class EdgePropsPanel(CollapsibleSection):
         self._file_seg_label.setStyleSheet("color:#6a7aaa; font-size:11px;")
         self._file_seg_label.setVisible(False)
 
-        # ── Curve / Shape Properties group ────────────────────────────────
-        self._curve_group = QGroupBox("Shape")
-        self._curve_group.setStyleSheet(
-            "QGroupBox { color:#a0b0d0; border:1px solid #3a4060;"
-            "  margin-top:6px; padding-top:6px; }"
-            "QGroupBox::title { subcontrol-origin:margin; left:8px; }")
-        cl = QVBoxLayout(self._curve_group)
-        cl.setSpacing(4)
+        # ── Curve / Shape Properties group (collapsible) ──────────────────
+        self._curve_group = CollapsibleSection("Shape", start_collapsed=False)
 
         # Curve Type Selection
         self.curve_type_combo = QComboBox()
@@ -48,13 +42,13 @@ class EdgePropsPanel(CollapsibleSection):
         ])
         self.curve_type_combo.setStyleSheet(COMBO_STYLE)
         self.curve_type_combo.setToolTip("Select the geometric shape type for this curve edge")
-        cl.addWidget(self.curve_type_combo)
+        self._curve_group.add_widget(self.curve_type_combo)
 
         # Stacked widget for switching parameters based on curve type.
         # Sizes to the current page so a short shape (e.g. Circle) leaves no
         # dead space below it.
         self.shape_stack = AdjustingStackedWidget()
-        cl.addWidget(self.shape_stack)
+        self._curve_group.add_widget(self.shape_stack)
 
         # ── Widget 0: Custom Formula ─────────────────────────────────────
         widget_custom = QWidget()
@@ -359,7 +353,7 @@ class EdgePropsPanel(CollapsibleSection):
         rf.addRow(help_label("Start Anchor:", "Index of the anchor node at the start (or None for auto)"), self.curve_start_node)
         rf.addRow(help_label("End Anchor:", "Index of the anchor node at the end (or None for auto)"), self.curve_end_node)
 
-        cl.addLayout(rf)
+        self._curve_group.add_layout(rf)
 
         self._curve_group.setVisible(False)
 

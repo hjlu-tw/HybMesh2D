@@ -14,7 +14,12 @@ import numpy as np
 #         DATAPACKING = BLOCK VARLOCATION = ( [1-2] = NODAL, [3-10] = CELLCENTERED )
 #   <block data: all values of var1, then var2, ...; NODAL vars have N values,
 #    CELLCENTERED vars have E values>
-#   <connectivity: E rows of 3 one-based node indices>
+#   <connectivity: E rows of node indices (3 for FETRIANGLE, 4 for
+#    FEQUADRILATERAL), one-based>
+#
+# FEQUADRILATERAL zones are split into two triangles per quad at load time (the
+# rest of the app — matplotlib Triangulation, tripcolor, tricontourf, integral
+# areas — is triangle-based), duplicating each cell value onto both triangles.
 #
 # Transient runs append multiple zones. Zones are parsed lazily: list_zones()
 # scans only the headers (R7); from_file() materialises one zone's arrays.
@@ -149,14 +154,25 @@ class TecplotResult:
         n_data = sum(counts)
 
         # Read the whole numeric region as floats (connectivity ints parse as
-        # floats fine), then slice: first n_data are field values, the next
-        # n_elems*3 are connectivity.
+        # floats fine), then slice: first n_data are field values, the rest are
+        # the connectivity (npe node indices per element).
         block = "".join(lines[data_start:data_end])
         tokens = np.fromstring(block, sep=" ")
-        expected = n_data + n_elems * 3
         if tokens.size < n_data:
             raise ValueError(
                 f"Zone {zone}: expected >= {n_data} data values, got {tokens.size}")
+
+        # Nodes-per-element from ZONETYPE (FETRIANGLE=3, FEQUADRILATERAL=4);
+        # fall back to inferring it from the trailing connectivity token count.
+        zt_name = zinfo.zonetype.upper()
+        if "QUAD" in zt_name:
+            npe = 4
+        elif "TRI" in zt_name:
+            npe = 3
+        else:
+            avail = tokens.size - n_data
+            npe = 4 if (n_elems > 0 and avail >= n_elems * 4) else 3
+        expected = n_data + n_elems * npe
 
         data_part = tokens[:n_data]
         node_data: dict = {}
@@ -173,9 +189,17 @@ class TecplotResult:
         # Connectivity (one-based -> zero-based). If absent (shared connectivity
         # in a transient run), leave empty; caller may reuse a prior zone's.
         if tokens.size >= expected:
-            conn = tokens[n_data:expected].astype(np.int64).reshape(n_elems, 3) - 1
+            conn = tokens[n_data:expected].astype(np.int64).reshape(n_elems, npe) - 1
         else:
-            conn = np.empty((0, 3), dtype=np.int64)
+            conn = np.empty((0, npe), dtype=np.int64)
+
+        # Split quads into two triangles [n0,n1,n2] + [n0,n2,n3] and duplicate
+        # each cell-centered value so it stays 1:1 with its triangle. The two
+        # triangles tile the quad, so area-weighted integrals are unchanged.
+        if npe == 4 and conn.size:
+            conn = np.vstack([conn[:, [0, 1, 2]], conn[:, [0, 2, 3]]])
+            for k in list(cell_data):
+                cell_data[k] = np.tile(cell_data[k], 2)
 
         # Nodes come from the first two NODAL variables (x, y).
         nodal_vars = [v for i, v in enumerate(variables) if loc[i] == "NODAL"]
