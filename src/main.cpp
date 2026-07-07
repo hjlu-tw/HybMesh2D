@@ -28,6 +28,24 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
     return points;
 }
 
+// Load a refinement seed polyline. Unlike loadGeometry (which always drops a
+// trailing duplicate), we report whether the seed is a closed loop so the
+// far-field Distance-field source adds the closing segment only when needed.
+std::vector<Point2D> loadSeedGeometry(const std::string& filename, bool& closed) {
+    std::vector<Point2D> points;
+    closed = false;
+    std::ifstream ifs(filename);
+    if (!ifs) return points;
+    double x, y;
+    while (ifs >> x >> y) points.push_back({x, y});
+    if (points.size() > 2) {
+        double dx = points.front().x - points.back().x;
+        double dy = points.front().y - points.back().y;
+        if (dx * dx + dy * dy < 1e-12) { points.pop_back(); closed = true; }
+    }
+    return points;
+}
+
 // Phase 1: optional metadata sidecar produced by the preprocessor next to the
 // .dat (see saveMetadata in tools/PreProcessor/src/main.cpp). Parsed with the
 // stream extractor only — no JSON dependency. A missing or malformed sidecar
@@ -154,10 +172,12 @@ int main(int argc, char* argv[]) {
     Config config;
     std::string configFile = "config/Background_para.dat";
     std::vector<std::string> cmdGeomFiles;
+    std::vector<std::string> cmdSeedFiles;
     bool geomProvided = false;
+    bool seedProvided = false;
     bool confExplicit = false;
-    
-    // 第一階段：掃描以找出設定檔路徑與 -geom 參數
+
+    // 第一階段：掃描以找出設定檔路徑與 -geom / -seed 參數
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-conf" && i + 1 < argc) {
@@ -167,6 +187,11 @@ int main(int argc, char* argv[]) {
             geomProvided = true;
             while (i + 1 < argc && argv[i+1][0] != '-') {
                 cmdGeomFiles.push_back(argv[++i]);
+            }
+        } else if (arg == "-seed") {
+            seedProvided = true;
+            while (i + 1 < argc && argv[i+1][0] != '-') {
+                cmdSeedFiles.push_back(argv[++i]);
             }
         } else if (arg[0] != '-' && !confExplicit) {
             // Bare positional config path. Guard with confExplicit so the VALUE
@@ -183,6 +208,13 @@ int main(int argc, char* argv[]) {
     if (geomProvided) {
         config.geomFiles = cmdGeomFiles;
     }
+    // 如果命令列提供了 -seed，則覆蓋設定檔中的加密種子 (套用全域 size/radius/mode)
+    if (seedProvided) {
+        config.seedFiles.clear();
+        for (const auto& f : cmdSeedFiles) {
+            Config::SeedSpec s; s.file = f; config.seedFiles.push_back(s);
+        }
+    }
 
     // 第二階段：處理其他命令列參數，這些參數優先於設定檔
     for (int i = 1; i < argc; ++i) {
@@ -196,8 +228,16 @@ int main(int argc, char* argv[]) {
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_cgns" && i + 1 < argc) config.exportCGNS = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
-        // -geom 與 -conf 已經處理過，但在這裡跳過它們的參數以避免干擾
+        else if (arg == "-seed_size" && i + 1 < argc) config.seedSize = std::stod(argv[++i]);
+        else if (arg == "-seed_radius" && i + 1 < argc) config.seedRadius = std::stod(argv[++i]);
+        else if (arg == "-seed_mode" && i + 1 < argc) {
+            std::string m = argv[++i]; config.seedMode = (m == "embed" || m == "1") ? 1 : 0;
+        }
+        // -geom / -seed / -conf 已經處理過，但在這裡跳過它們的參數以避免干擾
         else if (arg == "-geom") {
+            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
+        }
+        else if (arg == "-seed") {
             while (i + 1 < argc && argv[i+1][0] != '-') ++i;
         }
         else if (arg == "-conf") {
@@ -234,7 +274,7 @@ int main(int argc, char* argv[]) {
 
     bool hasIntersection = false;
     bool blSuccess = true;
-    if (config.geomFiles.empty()) {
+    if (config.geomFiles.empty() && config.seedFiles.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
         // 加入計算域邊界 (Domain Box) 到 edges
@@ -388,8 +428,31 @@ int main(int argc, char* argv[]) {
             blSuccess = false;
         }
 
+        // 載入加密種子 (seeds)：僅供遠場 Gmsh 使用，不進邊界層、也不當域邊界。
+        // size/radius 若未指定 (含全域預設仍為負) 交由 Gmsh 端自動推得。
+        std::vector<SeedGeom> seeds;
+        for (const auto& spec : config.seedFiles) {
+            bool closed = false;
+            std::vector<Point2D> pts = loadSeedGeometry(spec.file, closed);
+            if (pts.empty()) {
+                std::cerr << "Warning: seed geometry '" << spec.file
+                          << "' is empty or missing; skipping.\n";
+                continue;
+            }
+            SeedGeom s;
+            s.points = pts;
+            s.closed = closed;
+            s.size = (spec.size > 0) ? spec.size : config.seedSize;
+            s.radius = (spec.radius > 0) ? spec.radius : config.seedRadius;
+            int m = (spec.mode >= 0) ? spec.mode : config.seedMode;
+            s.embed = (m == 1);
+            seeds.push_back(s);
+        }
+        if (!seeds.empty())
+            std::cout << "  - Refinement seeds     : " << seeds.size() << " loaded\n";
+
         if (blSuccess) {
-            mesh.generateFarFieldGmsh(config, lastH);
+            mesh.generateFarFieldGmsh(config, lastH, seeds);
 
             if (config.blSmoothingIters > 0) {
                 mesh.smoothMesh(config.blSmoothingIters);

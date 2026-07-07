@@ -468,17 +468,42 @@ class AppController(
             self.on_stl3d_config_changed()
             self.on_stl3d_display_changed()
 
+    def _split_boundary_seed(self, cfg):
+        """Partition cfg.geom_files into (boundary_files, seed_files) using
+        cfg.geom_roles so previews can style each distinctly."""
+        roles = getattr(cfg, "geom_roles", {}) or {}
+        seeds, boundaries = [], []
+        for p in cfg.geom_files:
+            r = roles.get(p)
+            (seeds if (r and r.get("role") == "seed") else boundaries).append(p)
+        return boundaries, seeds
+
+    def _refresh_mesh_previews(self, cfg):
+        """Refresh boundary and seed geometry previews from a mesh config."""
+        mw = self.main_window
+        boundaries, seeds = self._split_boundary_seed(cfg)
+        mw.mesh_canvas_view.update_geometry_previews(boundaries)
+        mw.mesh_canvas_view.update_seed_previews(seeds)
+
     def handle_mesh_geom_files_changed(self, geom_files: list[str]):
         """Callback when geometry files in mesh config panel are modified."""
         mw = self.main_window
-        mw.mesh_canvas_view.update_geometry_previews(geom_files)
+        # Pull the full config so seed roles are honoured in the preview.
+        self._refresh_mesh_previews(mw.mesh_config_panel.get_config())
         mw.mesh_canvas_view.auto_range()
 
     def handle_mesh_config_changed(self, cfg):
         """Callback when mesh config is modified or set in the config panel."""
         mw = self.main_window
+        # Keep the shared config's per-file roles in step with panel edits, so
+        # later layer-list actions (which re-apply global_mesh_config via
+        # set_config) don't clobber a seed role the user just set. Only sync when
+        # a distinct cfg arrives (i.e. from a role edit), never on the self-apply.
+        gmc = getattr(self, "global_mesh_config", None)
+        if gmc is not None and cfg is not gmc:
+            gmc.geom_roles = dict(getattr(cfg, "geom_roles", {}) or {})
         mw.mesh_canvas_view.update_mesh_config(cfg)
-        mw.mesh_canvas_view.update_geometry_previews(cfg.geom_files)
+        self._refresh_mesh_previews(cfg)
 
 
     def active_session(self) -> GeometrySession | None:

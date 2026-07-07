@@ -23,6 +23,9 @@ class MeshConfigPanel(QScrollArea):
     geom_files_changed = pyqtSignal(list)
     mesh_config_changed = pyqtSignal(object)
 
+    # Per-item data role storing the geometry's mesh role (seed dict or None)
+    _ROLE_DATA = Qt.ItemDataRole.UserRole + 1
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -156,6 +159,64 @@ class MeshConfigPanel(QScrollArea):
         geom_btn_layout.addWidget(help_widget(self.add_file_geom_btn, "Browse for geometry files on disk"))
         geom_btn_layout.addWidget(help_widget(self.remove_geom_btn, "Remove selected geometry file from list"))
         self.sec_domain.add_layout(geom_btn_layout)
+
+        # ── Geometry Role (Boundary vs Refinement Seed) ───────────────────
+        # Set the role of the geometry SELECTED in the list above: a body-fitted
+        # boundary (grows boundary layers) or a refinement seed (Pointwise-like
+        # source that only drives a local minimum mesh size).
+        role_label = QLabel("Selected Geometry Role:")
+        role_label.setStyleSheet("color: #a0b0d0; margin-top: 6px; font-weight: bold;")
+        self.sec_domain.add_widget(help_widget(role_label,
+            "Set the role of the geometry selected in the list above."))
+
+        role_form = QFormLayout()
+        self.geom_role_combo = QComboBox()
+        self.geom_role_combo.addItems(["Boundary (body-fitted)", "Seed (refinement source)"])
+        self.geom_role_combo.setStyleSheet(COMBO_STYLE)
+        self.geom_role_combo.setEnabled(False)
+        self.geom_role_combo.setToolTip(
+            "Boundary: grows boundary layers and bounds the domain (default).\n"
+            "Seed: only drives a local minimum mesh size for unstructured refinement "
+            "(no boundary layer, not a domain boundary).")
+
+        self.seed_size = CleanDoubleSpinBox()
+        self.seed_size.setRange(0.0, 1e4)
+        self.seed_size.setDecimals(5)
+        self.seed_size.setSpecialValueText("auto")   # value 0 displays as "auto"
+        self.seed_size.setStyleSheet(SPIN_STYLE)
+        self.seed_size.setToolTip("Target minimum element size at the seed (0 = auto).")
+
+        self.seed_radius = CleanDoubleSpinBox()
+        self.seed_radius.setRange(0.0, 1e6)
+        self.seed_radius.setDecimals(5)
+        self.seed_radius.setSpecialValueText("auto")
+        self.seed_radius.setStyleSheet(SPIN_STYLE)
+        self.seed_radius.setToolTip(
+            "Influence radius: beyond it the size returns to far-field (0 = auto). "
+            "Requires an explicit seed size.")
+
+        self.seed_mode = QComboBox()
+        self.seed_mode.addItems(["source (sizing only)", "embed (conform)"])
+        self.seed_mode.setStyleSheet(COMBO_STYLE)
+        self.seed_mode.setToolTip(
+            "source: mesh does NOT conform to the seed (pure sizing source).\n"
+            "embed: mesh nodes conform to the seed curve (still no boundary layer).")
+
+        role_form.addRow(help_label("Role:", "Body-fitted boundary or refinement seed"), self.geom_role_combo)
+        role_form.addRow(help_label("Seed Size:", "Target min element size at the seed (0 = auto)"), self.seed_size)
+        role_form.addRow(help_label("Seed Radius:", "Influence radius (0 = auto); requires a seed size"), self.seed_radius)
+        role_form.addRow(help_label("Seed Mode:", "source (sizing only) or embed (conform)"), self.seed_mode)
+        align_form_labels(role_form, 130)
+        self.sec_domain.add_layout(role_form)
+        self._role_form = role_form
+        self._role_updating = False
+
+        self.geom_list_widget.currentItemChanged.connect(self._on_geom_selection_changed)
+        self.geom_role_combo.currentIndexChanged.connect(self._on_role_edited)
+        self.seed_size.valueChanged.connect(self._on_role_edited)
+        self.seed_radius.valueChanged.connect(self._on_role_edited)
+        self.seed_mode.currentIndexChanged.connect(self._on_role_edited)
+        self._update_role_visibility()
 
         # ── 2. General Sizing ─────────────────────────────────────────────
         self.sec_sizing = CollapsibleSection("Mesh Sizing", start_collapsed=True)
@@ -543,6 +604,67 @@ class MeshConfigPanel(QScrollArea):
             geom_files.append(self.geom_list_widget.item(row).data(Qt.ItemDataRole.UserRole))
         self.geom_files_changed.emit(geom_files)
 
+    def _on_geom_selection_changed(self, current, previous=None):
+        """Populate the role editor from the geometry selected in the list."""
+        self._role_updating = True
+        try:
+            if current is None:
+                self.geom_role_combo.setEnabled(False)
+                self.geom_role_combo.setCurrentIndex(0)
+                self.seed_size.setValue(0.0)
+                self.seed_radius.setValue(0.0)
+                self.seed_mode.setCurrentIndex(0)
+            else:
+                self.geom_role_combo.setEnabled(True)
+                rinfo = current.data(self._ROLE_DATA)
+                if rinfo and rinfo.get("role") == "seed":
+                    self.geom_role_combo.setCurrentIndex(1)
+                    self.seed_size.setValue(float(rinfo.get("size") or 0.0))
+                    self.seed_radius.setValue(float(rinfo.get("radius") or 0.0))
+                    self.seed_mode.setCurrentIndex(1 if rinfo.get("mode") == "embed" else 0)
+                else:
+                    self.geom_role_combo.setCurrentIndex(0)
+                    self.seed_size.setValue(0.0)
+                    self.seed_radius.setValue(0.0)
+                    self.seed_mode.setCurrentIndex(0)
+        finally:
+            self._role_updating = False
+        self._update_role_visibility()
+
+    def _on_role_edited(self, *args):
+        """Commit the role editor state onto the selected geometry item and
+        re-emit the config so previews re-style boundary vs seed."""
+        if self._role_updating:
+            return
+        item = self.geom_list_widget.currentItem()
+        if item is None:
+            return
+        if self.geom_role_combo.currentIndex() == 1:  # Seed
+            size = self.seed_size.value()
+            radius = self.seed_radius.value()
+            rinfo = {
+                "role": "seed",
+                "size": size if size > 0 else None,
+                # radius is meaningless without an explicit size
+                "radius": radius if (radius > 0 and size > 0) else None,
+                "mode": "embed" if self.seed_mode.currentIndex() == 1 else "source",
+            }
+            item.setData(self._ROLE_DATA, rinfo)
+        else:
+            item.setData(self._ROLE_DATA, None)
+        self._update_role_visibility()
+        self.mesh_config_changed.emit(self.get_config())
+
+    def _update_role_visibility(self):
+        """Show seed params only for a selected seed geometry; radius needs a size."""
+        is_seed = self.geom_role_combo.isEnabled() and self.geom_role_combo.currentIndex() == 1
+        for w in (self.seed_size, self.seed_radius, self.seed_mode):
+            w.setVisible(is_seed)
+            lbl = self._role_form.labelForField(w)
+            if lbl:
+                lbl.setVisible(is_seed)
+        self.seed_radius.setEnabled(is_seed and self.seed_size.value() > 0)
+
     def set_config(self, cfg: MeshConfig):
         """Populate widget values from a MeshConfig model instance."""
         # 1. Domain
@@ -551,12 +673,19 @@ class MeshConfigPanel(QScrollArea):
         self.domain_y_min.setValue(cfg.domain_y_min)
         self.domain_y_max.setValue(cfg.domain_y_max)
 
-        # Geometries
+        # Geometries (with per-file role carried as item data). Block selection
+        # signals during the rebuild, then resync the role editor once.
+        self.geom_list_widget.blockSignals(True)
         self.geom_list_widget.clear()
         for f in cfg.geom_files:
             item = QListWidgetItem(os.path.basename(f))
             item.setData(Qt.ItemDataRole.UserRole, f)
+            rinfo = cfg.geom_roles.get(f)
+            if rinfo:
+                item.setData(self._ROLE_DATA, dict(rinfo))
             self.geom_list_widget.addItem(item)
+        self.geom_list_widget.blockSignals(False)
+        self._on_geom_selection_changed(self.geom_list_widget.currentItem())
 
         # 2. Sizing
         self.surface_mesh_size.setValue(cfg.surface_mesh_size)
@@ -643,11 +772,16 @@ class MeshConfigPanel(QScrollArea):
         cfg.domain_y_min = self.domain_y_min.value()
         cfg.domain_y_max = self.domain_y_max.value()
 
-        # Geometries
+        # Geometries (+ per-file role read back from item data)
         cfg.geom_files = []
+        cfg.geom_roles = {}
         for row in range(self.geom_list_widget.count()):
             item = self.geom_list_widget.item(row)
-            cfg.geom_files.append(item.data(Qt.ItemDataRole.UserRole))
+            p = item.data(Qt.ItemDataRole.UserRole)
+            cfg.geom_files.append(p)
+            rinfo = item.data(self._ROLE_DATA)
+            if rinfo and rinfo.get("role") == "seed":
+                cfg.geom_roles[p] = dict(rinfo)
 
         # 2. Sizing
         cfg.surface_mesh_size = self.surface_mesh_size.value()

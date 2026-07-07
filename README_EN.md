@@ -6,6 +6,7 @@ HybMesh2D is a C++ tool for generating 2D hybrid meshes. It generates high-quali
 
 - **Boundary Layer Generation**: Grows quadrilateral boundary layers with specified layers and growth rates from geometric shapes (e.g., NACA0012 airfoil).
 - **Multi-Geometry Support**: Supports multiple non-intersecting geometries simultaneously, each with its own boundary layer.
+- **Refinement Seeds**: A geometry can be tagged as a *refinement seed* (Pointwise-like source) instead of a body-fitted boundary. A seed only drives a local minimum mesh size to refine the unstructured far-field around it — it **grows no boundary layer and is not a domain boundary**. Two modes are supported: `source` (pure sizing source, mesh does not conform) and `embed` (mesh nodes conform to the seed curve). You can freely designate which geometries are body-fitted boundaries and which are seeds. See "Refinement Seeds" below.
 - **Hybrid Mesh Architecture**: Combines structured near-field (boundary layers) with unstructured far-field flexibility (triangles).
 - **Fan Elements**: Automatically generates fan meshes at sharp convex corners to maintain mesh quality.
 - **Concave Handling & Smoothing**: Provides concave node merging and Laplacian smoothing to prevent mesh self-intersection in complex geometries.
@@ -59,7 +60,9 @@ The executable will be located at `build/HybMesh2D`.
 ### Common Command-Line Arguments
 
 - `-conf <path>`: Path to the background parameter config file (Default: `config/Background_para.dat`).
-- `-geom <path1> [path2]...`: Specify one or more geometry data files.
+- `-geom <path1> [path2]...`: Specify one or more geometry data files (body-fitted boundaries).
+- `-seed <path1> [path2]...`: Specify one or more *refinement seed* geometries (drive a local minimum size only; no boundary layer).
+- `-seed_size <v>` / `-seed_radius <v>` / `-seed_mode <source|embed>`: Global default seed size / influence radius / mode.
 - `-out_vtk <0|1>`: Enable/Disable VTK output (1: ON, 0: OFF).
 - `-out_starcd <0|1>`: Enable/Disable STAR-CD output.
 - `-out_cgns <0|1>`: Enable/Disable CGNS output (requires the CGNS library detected at build time).
@@ -136,6 +139,32 @@ The executable will be located at `build/HybMesh2D`.
 | `BC_YMIN` / `YMAX` | STAR-CD boundary name strings | inlet / outlet |
 | `BC_GEOM` | STAR-CD surface boundary name string | wall |
 | `OUTPUT_FILENAME` | Base name for output files | (empty) |
+
+### 7. Refinement Seeds
+
+Tag a geometry as a *refinement seed* rather than a body-fitted boundary: a seed only drives a local minimum mesh size around itself (a Gmsh Distance + Threshold size field). It **grows no boundary layer and is not a domain boundary** — ideal for locally refining wakes, shear layers, etc. (like a Pointwise source).
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `SEED_FILE <path> [size] [radius] [mode]` | Add one seed geometry. Optional: `size` (min size at the seed), `radius` (influence radius), `mode` (`source`/`embed`). Omitted fields fall back to the globals below | — |
+| `SEED_SIZE` | Global default seed size (omitted/<0: auto from the surface size) | auto |
+| `SEED_RADIUS` | Global default influence radius (omitted: ~25×size; beyond it the size blends back to the far field) | auto |
+| `SEED_MODE` | Global default mode. `source`: pure sizing source, mesh does **not** conform; `embed`: mesh nodes **conform** to the seed curve (still no boundary layer) | source |
+
+`SEED_FILE` tokens are order-tolerant (`source`/`embed` may appear anywhere). Example:
+
+```
+GEOM_FILE examples/geometries/naca0012.dat             # body-fitted boundary
+SEED_FILE examples/geometries/wake.dat 0.02 1.0 source  # wake refinement seed
+```
+
+Command line:
+
+```bash
+./HybMesh2D -geom naca0012.dat -seed wake.dat -seed_size 0.02 -seed_radius 1.0 -seed_mode source
+```
+
+In the PreProcessor GUI, use **Mesh Generator → Domain & Geometry**: select any geometry file, switch its role (Boundary / Seed) and set the seed size, influence radius, and mode. Seeds are drawn as dashed orange lines on the canvas.
 
 ## Visualization & Output
 

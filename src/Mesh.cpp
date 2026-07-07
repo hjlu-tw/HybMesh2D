@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <thread>
+#include <exception>
 
 #ifdef HAVE_CGNS
 #include <cgnslib.h>
@@ -494,7 +495,8 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
 #endif
 }
 
-void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
+void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
+                                const std::vector<SeedGeom>& seeds) {
     gmsh::initialize();
     gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端輸出
 
@@ -593,11 +595,66 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
         }
     }
 
+    int surfTag = -1;
     if (!loops.empty()) {
-        gmsh::model::geo::addPlaneSurface(loops);
+        surfTag = gmsh::model::geo::addPlaneSurface(loops);
+    }
+
+    // Seeds: 把種子的點/線加入 geo 模型，供後續 Distance 尺寸場參考。
+    // 它們不放進 `loops`，所以既非域邊界也不會被長成邊界層；source 模式為浮動
+    // 幾何 (只被尺寸場使用)，embed 模式則於 synchronize 後內嵌進遠場面。
+    struct SeedFieldData {
+        std::vector<double> curveTags; // gmsh 線 tag (Distance CurvesList)
+        std::vector<int> pointTags;    // gmsh 點 tag (單點種子 / embed)
+        std::vector<int> lineTags;     // gmsh 線 tag (embed)
+        double size;
+        double radius;
+        bool embed;
+    };
+    std::vector<SeedFieldData> seedFieldData;
+    for (const auto& seed : seeds) {
+        if (seed.points.empty()) continue;
+        SeedFieldData sd;
+        sd.size = seed.size; sd.radius = seed.radius; sd.embed = seed.embed;
+        std::vector<int> gpts;
+        gpts.reserve(seed.points.size());
+        for (const auto& p : seed.points) {
+            gpts.push_back(gmsh::model::geo::addPoint(p.x, p.y, 0.0));
+        }
+        int nseg = static_cast<int>(seed.points.size());
+        int limit = seed.closed ? nseg : nseg - 1;
+        for (int i = 0; i < limit; ++i) {
+            int a = gpts[i];
+            int b = gpts[(i + 1) % nseg];
+            if (a == b) continue;
+            int lt = gmsh::model::geo::addLine(a, b);
+            sd.lineTags.push_back(lt);
+            sd.curveTags.push_back(static_cast<double>(lt));
+        }
+        // 單點種子 (無法連線) 時，改以點本身作為尺寸場來源。
+        if (sd.lineTags.empty()) sd.pointTags = gpts;
+        seedFieldData.push_back(sd);
     }
 
     gmsh::model::geo::synchronize();
+
+    // embed 模式：把種子曲線內嵌進遠場面，強制網格節點貼合它 (仍不長邊界層)。
+    // 逐一 try/catch：種子若落在邊界層洞內/域外會使 embed 拋例外，此時退化為
+    // 純尺寸來源 (尺寸場仍會套用)。
+    if (surfTag > 0) {
+        for (const auto& sd : seedFieldData) {
+            if (!sd.embed) continue;
+            try {
+                if (!sd.lineTags.empty())
+                    gmsh::model::mesh::embed(1, sd.lineTags, 2, surfTag);
+                else if (!sd.pointTags.empty())
+                    gmsh::model::mesh::embed(0, sd.pointTags, 2, surfTag);
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: could not embed a refinement seed ("
+                          << e.what() << "); using it as a sizing source only." << std::endl;
+            }
+        }
+    }
 
     // 2.2 局部強制邊界層外緣 1-對-1 對接
     std::vector<double> collisionLineTags;
@@ -620,61 +677,104 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     }
 
     // --- 3. 建立尺寸過渡場 ---
+    std::cout << "Step: Setting up Gmsh fields..." << std::endl;
+
+    // 3.0 計算基準尺寸 hEnd / hBase。即使沒有邊界層 (frontLineTags 為空、
+    //     例如僅有加密種子) 也要先算好，供種子尺寸場的預設值使用。
+    double hEnd = config.surfaceSize;
+    double hGap = -1.0;
+    if (collisionCount > 0) {
+        hGap = collisionTotalLen / (double)collisionCount;
+        std::cout << "  -> Detected Collision Zone Mesh Size (hGap): " << hGap << std::endl;
+    }
+    if (config.autoSurfaceSize) {
+        double totalLen = 0.0;
+        int count = 0;
+        for (const auto& edge : edges) {
+            if (nodes[edge.v1].type == NodeType::BoundaryLayer &&
+                nodes[edge.v2].type == NodeType::BoundaryLayer) {
+                totalLen += (nodes[edge.v1].pos - nodes[edge.v2].pos).length();
+                count++;
+            }
+        }
+        if (count > 0) {
+            hEnd = totalLen / (double)count;
+            std::cout << "  -> Final Surface Mesh Size (Auto Avg): " << hEnd << std::endl;
+        } else if (finalBLThickness > 0) {
+            hEnd = finalBLThickness;
+            std::cout << "  -> Final Surface Mesh Size (Fallback to BL height): " << hEnd << std::endl;
+        }
+    } else {
+        std::cout << "  -> Final Surface Mesh Size (Manual): " << hEnd << std::endl;
+    }
+    // 如果偵測到碰撞區域，優先使用 hGap 作為局部基準
+    double hBase = (hGap > 0) ? hGap : hEnd;
+    if (hGap > 0) {
+        std::cout << "  -> Using hGap (" << hGap << ") as baseline for triangulation near collisions." << std::endl;
+    }
+
+    // 收集所有尺寸場，最後取 Min 作為背景尺寸場。
+    std::vector<double> sizeFields;
+
+    // 3.1 邊界層距離場 (僅在存在邊界層外緣時)：
+    //     Min(farFieldSize, hBase + Max(0, dist - dBuffer) * growthRate)
     if (!frontLineTags.empty()) {
-        std::cout << "Step: Setting up Gmsh fields..." << std::endl;
-        double hEnd = config.surfaceSize;
-        double hGap = -1.0;
-
-        if (collisionCount > 0) {
-            hGap = collisionTotalLen / (double)collisionCount;
-            std::cout << "  -> Detected Collision Zone Mesh Size (hGap): " << hGap << std::endl;
-        }
-
-        if (config.autoSurfaceSize) {
-            double totalLen = 0.0;
-            int count = 0;
-            for (const auto& edge : edges) {
-                if (nodes[edge.v1].type == NodeType::BoundaryLayer && 
-                    nodes[edge.v2].type == NodeType::BoundaryLayer) {
-                    totalLen += (nodes[edge.v1].pos - nodes[edge.v2].pos).length();
-                    count++;
-                }
-            }
-            if (count > 0) {
-                hEnd = totalLen / (double)count;
-                std::cout << "  -> Final Surface Mesh Size (Auto Avg): " << hEnd << std::endl;
-            } else {
-                hEnd = finalBLThickness;
-                std::cout << "  -> Final Surface Mesh Size (Fallback to BL height): " << hEnd << std::endl;
-            }
-        } else {
-            std::cout << "  -> Final Surface Mesh Size (Manual): " << hEnd << std::endl;
-        }
-        
-        // 如果偵測到碰撞區域，優先使用 hGap 作為局部基準
-        double hBase = (hGap > 0) ? hGap : hEnd;
-        if (hGap > 0) {
-            std::cout << "  -> Using hGap (" << hGap << ") as baseline for triangulation near collisions." << std::endl;
-        }
-
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);
 
         // 建立緩衝區：在 dBuffer 距離內維持 hBase 尺寸，避免 1 個大網格接多個小網格
-        // dBuffer 透過設定檔 BL_TRANSITION_BUFFER 控制
         double dBuffer = hBase * config.blTransitionBuffer;
-        
-        // 使用 MathEval 實現：在 dBuffer 內維持 hBase，之後才開始增長
-        // 公式：Min(farFieldSize, hBase + Max(0, dist - dBuffer) * growthRate)
-        std::string expr = "Min(" + std::to_string(config.farFieldSize) + ", " + 
-                           std::to_string(hBase) + " + Max(0, F" + std::to_string(fDist) + " - " + std::to_string(dBuffer) + ") * " + std::to_string(config.farFieldGrowthRate) + ")";
-        
+        std::string expr = "Min(" + std::to_string(config.farFieldSize) + ", " +
+                           std::to_string(hBase) + " + Max(0, F" + std::to_string(fDist) + " - " +
+                           std::to_string(dBuffer) + ") * " + std::to_string(config.farFieldGrowthRate) + ")";
+
         int fFinal = gmsh::model::mesh::field::add("MathEval");
         gmsh::model::mesh::field::setString(fFinal, "F", expr);
-        gmsh::model::mesh::field::setAsBackgroundMesh(fFinal);
+        sizeFields.push_back(static_cast<double>(fFinal));
+    }
 
-        // 設定全域尺寸範圍，確保尺寸場有權限控制網格
-        gmsh::option::setNumber("Mesh.MeshSizeMin", std::min(hEnd, config.farFieldSize));
+    // 3.2 加密種子尺寸場 (Distance + Threshold)：種子附近維持 effSize，於 effRadius
+    //     之外藉 StopAtDistMax 失效，交由邊界層/遠場尺寸接手；多個種子與邊界層場
+    //     一併取 Min。effSize / effRadius 未指定時自動推得。
+    double seedMinSize = config.farFieldSize;
+    for (const auto& sd : seedFieldData) {
+        double effSize = (sd.size > 0) ? sd.size
+                        : (config.seedSize > 0 ? config.seedSize : hBase);
+        if (effSize <= 0) effSize = config.surfaceSize;
+        double effRadius = (sd.radius > 0) ? sd.radius
+                          : (config.seedRadius > 0 ? config.seedRadius : 25.0 * effSize);
+
+        int fSeedDist = gmsh::model::mesh::field::add("Distance");
+        if (!sd.curveTags.empty()) {
+            gmsh::model::mesh::field::setNumbers(fSeedDist, "CurvesList", sd.curveTags);
+            gmsh::model::mesh::field::setNumber(fSeedDist, "Sampling", 100);
+        } else {
+            std::vector<double> pts(sd.pointTags.begin(), sd.pointTags.end());
+            gmsh::model::mesh::field::setNumbers(fSeedDist, "PointsList", pts);
+        }
+
+        int fSeedTh = gmsh::model::mesh::field::add("Threshold");
+        gmsh::model::mesh::field::setNumber(fSeedTh, "InField", fSeedDist);
+        gmsh::model::mesh::field::setNumber(fSeedTh, "SizeMin", effSize);
+        gmsh::model::mesh::field::setNumber(fSeedTh, "SizeMax", config.farFieldSize);
+        gmsh::model::mesh::field::setNumber(fSeedTh, "DistMin", 0.0);
+        gmsh::model::mesh::field::setNumber(fSeedTh, "DistMax", effRadius);
+        gmsh::model::mesh::field::setNumber(fSeedTh, "StopAtDistMax", 1);
+        sizeFields.push_back(static_cast<double>(fSeedTh));
+
+        if (effSize < seedMinSize) seedMinSize = effSize;
+        std::cout << "  -> Refinement seed: size=" << effSize << ", radius=" << effRadius
+                  << (sd.embed ? " (embed)" : " (source)") << std::endl;
+    }
+
+    // 3.3 合併所有尺寸場並設定全域尺寸範圍
+    if (!sizeFields.empty()) {
+        int fMin = gmsh::model::mesh::field::add("Min");
+        gmsh::model::mesh::field::setNumbers(fMin, "FieldsList", sizeFields);
+        gmsh::model::mesh::field::setAsBackgroundMesh(fMin);
+
+        double meshMin = std::min(std::min(hEnd, config.farFieldSize), seedMinSize);
+        gmsh::option::setNumber("Mesh.MeshSizeMin", meshMin);
         gmsh::option::setNumber("Mesh.MeshSizeMax", config.farFieldSize);
     } else {
         gmsh::option::setNumber("Mesh.MeshSizeMin", config.farFieldSize);
@@ -697,38 +797,53 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness) {
     std::vector<double> coord, dummy;
     std::vector<std::size_t> nodeTags;
     gmsh::model::mesh::getNodes(nodeTags, coord, dummy);
-    
-    // 優化：建立座標查找表
+
+    // gmsh 節點 tag -> 座標，供三角形連線時按需解析
+    std::map<std::size_t, std::pair<double, double>> gmshTagCoord;
+    for (size_t i = 0; i < nodeTags.size(); ++i) {
+        gmshTagCoord[nodeTags[i]] = {coord[3*i], coord[3*i+1]};
+    }
+
+    // 優化：建立座標查找表，把 gmsh 節點對應回既有的邊界/邊界層節點
     std::map<std::pair<long long, long long>, int> coordMap;
     for(auto const& nm : nodeToGmshTag) {
         coordMap[getCoordKey(nodes[nm.first].pos.x, nodes[nm.first].pos.y)] = nm.first;
     }
 
+    // 只建立實際被三角形引用的節點；如此 source 模式下浮動的種子線/點所產生的
+    // 1D 網格節點不會混入最終網格。
     std::map<std::size_t, int> gmshToOurNode;
-    for (size_t i = 0; i < nodeTags.size(); ++i) {
-        double x = coord[3*i], y = coord[3*i+1];
+    auto resolveGmshNode = [&](std::size_t gt) -> int {
+        auto cached = gmshToOurNode.find(gt);
+        if (cached != gmshToOurNode.end()) return cached->second;
+        double x = 0.0, y = 0.0;
+        auto cit = gmshTagCoord.find(gt);
+        if (cit != gmshTagCoord.end()) { x = cit->second.first; y = cit->second.second; }
         auto key = getCoordKey(x, y);
-        if (coordMap.count(key)) {
-            gmshToOurNode[nodeTags[i]] = coordMap[key];
+        int id;
+        auto it = coordMap.find(key);
+        if (it != coordMap.end()) {
+            id = it->second;
         } else {
             addNode({x, y}, NodeType::Interior);
-            int newId = nodes.back().id;
-            gmshToOurNode[nodeTags[i]] = newId;
-            coordMap[key] = newId;
+            id = nodes.back().id;
+            coordMap[key] = id;
         }
-    }
+        gmshToOurNode[gt] = id;
+        return id;
+    };
 
     std::cout << "Step: Syncing elements..." << std::endl;
     std::vector<int> elementTypes;
     std::vector<std::vector<std::size_t>> elementTags, nodeTagsByElement;
     gmsh::model::mesh::getElements(elementTypes, elementTags, nodeTagsByElement, 2);
-    
+
     for (size_t i = 0; i < elementTypes.size(); ++i) {
         if (elementTypes[i] == 2) { // Triangles
             for (size_t j = 0; j < nodeTagsByElement[i].size(); j += 3) {
-                int n1 = gmshToOurNode[nodeTagsByElement[i][j]];
-                int n2 = gmshToOurNode[nodeTagsByElement[i][j+1]];
-                int n3 = gmshToOurNode[nodeTagsByElement[i][j+2]];
+                int n1 = resolveGmshNode(nodeTagsByElement[i][j]);
+                int n2 = resolveGmshNode(nodeTagsByElement[i][j+1]);
+                int n3 = resolveGmshNode(nodeTagsByElement[i][j+2]);
                 addElement({n1, n2, n3});
             }
         }

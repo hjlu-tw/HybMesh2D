@@ -11,6 +11,22 @@
 struct Config {
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
+
+    // 加密種子 (Refinement seeds, 類似 Pointwise source)：僅用來驅動遠場三角
+    // 網格的「局部最小尺寸」，絕不長邊界層、也不當成計算域邊界。
+    //   mode = -1: 沿用全域 seedMode, 0: source (純尺寸來源), 1: embed (內嵌貼合)
+    //   size / radius < 0 時退回全域 seedSize / seedRadius，仍為負時於 Gmsh 端自動推得
+    struct SeedSpec {
+        std::string file;
+        double size = -1.0;
+        double radius = -1.0;
+        int mode = -1;
+    };
+    std::vector<SeedSpec> seedFiles;
+    double seedSize = -1.0;    // 全域預設種子尺寸 (<0 -> 依表面尺寸自動)
+    double seedRadius = -1.0;  // 全域預設影響半徑 (<0 -> 約 25×size)
+    int seedMode = 0;          // 0: source (僅尺寸), 1: embed (貼合、無邊界層)
+
     double xMin = -10.0, xMax = 10.0, yMin = -10.0, yMax = 10.0;
     double surfaceSize = 0.1, farFieldSize = 1.0;
     bool autoSurfaceSize = true;
@@ -77,6 +93,35 @@ struct Config {
             if (key == "GEOM_FILE") {
                 std::string f;
                 if (ss >> f) geomFiles.push_back(f);
+            }
+            else if (key == "SEED_FILE") {
+                // SEED_FILE <path> [size] [radius] [mode(source|embed)]
+                // 順序容忍：mode 關鍵字 (source/embed) 可出現在任意位置，數值則
+                // 依序填入 size、radius。如此「SEED_FILE f embed」或
+                // 「SEED_FILE f 0.02 embed」皆可正確解析。
+                SeedSpec s;
+                if (ss >> s.file) {
+                    std::string tok;
+                    int numIdx = 0;
+                    while (ss >> tok) {
+                        if (tok == "embed") s.mode = 1;
+                        else if (tok == "source") s.mode = 0;
+                        else {
+                            try {
+                                double v = std::stod(tok);
+                                if (numIdx == 0) s.size = v;
+                                else if (numIdx == 1) s.radius = v;
+                                ++numIdx;
+                            } catch (...) { /* 忽略無法辨識的 token */ }
+                        }
+                    }
+                    seedFiles.push_back(s);
+                }
+            }
+            else if (key == "SEED_SIZE") ss >> seedSize;
+            else if (key == "SEED_RADIUS") ss >> seedRadius;
+            else if (key == "SEED_MODE") {
+                std::string m; ss >> m; seedMode = (m == "embed" || m == "1") ? 1 : 0;
             }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
@@ -171,6 +216,17 @@ struct Config {
             int count = 1;
             for (const auto& f : geomFiles) {
                 std::cout << "          " << count++ << ". " << f << "\n";
+            }
+        }
+        if (!seedFiles.empty()) {
+            std::cout << "  - Refinement Seeds     : \n";
+            int sc = 1;
+            for (const auto& s : seedFiles) {
+                int m = (s.mode >= 0) ? s.mode : seedMode;
+                std::cout << "          " << sc++ << ". " << s.file
+                          << " (size=" << (s.size > 0 ? std::to_string(s.size) : "auto")
+                          << ", radius=" << (s.radius > 0 ? std::to_string(s.radius) : "auto")
+                          << ", mode=" << (m == 1 ? "embed" : "source") << ")\n";
             }
         }
         std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";

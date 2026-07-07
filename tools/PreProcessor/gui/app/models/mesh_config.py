@@ -101,8 +101,17 @@ class MeshConfig:
     enable_collision_detection: bool = True
     output_filename: str = ""
 
-    # Geometry files list (corresponds to multiple GEOM_FILE parameters)
+    # Geometry files list (corresponds to multiple GEOM_FILE parameters).
+    # A geometry file stays in this list whether it is a body-fitted boundary
+    # or a refinement seed; its role is recorded separately in geom_roles.
     geom_files: list[str] = field(default_factory=list)
+
+    # Per-geometry role, keyed by the exact path stored in geom_files. Absent =
+    # body-fitted boundary (default, written as GEOM_FILE). Present =>
+    # refinement seed (written as SEED_FILE), value is a dict:
+    #   {"role": "seed", "size": float|None, "radius": float|None, "mode": "source"|"embed"}
+    # size/radius None (or <=0) => let the backend auto-resolve.
+    geom_roles: dict = field(default_factory=dict)
 
     # GEOM_FILE tokens from the last load_from_file that could not be resolved
     # to an existing file (not serialized; populated by load_from_file)
@@ -114,6 +123,7 @@ class MeshConfig:
         for attr, _ in _KEY_MAP.values():
             d[attr] = getattr(self, attr)
         d["geom_files"] = self.geom_files
+        d["geom_roles"] = self.geom_roles
         return d
 
     def load_from_dict(self, d: dict):
@@ -122,6 +132,7 @@ class MeshConfig:
             if attr in d:
                 setattr(self, attr, d[attr])
         self.geom_files = d.get("geom_files", [])
+        self.geom_roles = d.get("geom_roles", {}) or {}
 
     def load_from_file(self, path: str):
         """Parse configuration parameters from a text file."""
@@ -131,8 +142,30 @@ class MeshConfig:
         path = os.path.abspath(path)
         # Clear existing geometry files list
         self.geom_files = []
-        # Track GEOM_FILE tokens that could not be resolved to an existing file
+        # Per-geometry roles (seed geometries), rebuilt from SEED_FILE lines
+        self.geom_roles = {}
+        # Track GEOM_FILE/SEED_FILE tokens that could not be resolved to a file
         self.missing_geom_files = []
+
+        cfg_dir = os.path.dirname(path)
+
+        def resolve(val_str: str) -> str:
+            """Resolve a geometry token to an absolute path, trying several roots.
+            Records unresolved tokens in missing_geom_files."""
+            if os.path.exists(val_str):
+                return os.path.abspath(val_str)
+            candidates = [os.path.abspath(os.path.join(cfg_dir, val_str)),
+                          os.path.abspath(os.path.join(os.path.dirname(cfg_dir), val_str))]
+            from app.utils import repo_root
+            project_root = repo_root()
+            candidates.append(os.path.abspath(os.path.join(project_root, val_str)))
+            candidates.append(os.path.abspath(os.path.join(project_root, "examples", val_str)))
+            for c in candidates:
+                if os.path.exists(c):
+                    return c
+            # Not found anywhere: keep a config-dir-relative absolute path.
+            self.missing_geom_files.append(val_str)
+            return os.path.abspath(os.path.join(cfg_dir, val_str))
 
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
@@ -149,38 +182,32 @@ class MeshConfig:
 
                 # Map text file key to class attribute
                 if key == "GEOM_FILE":
-                    geom_path = val_str
-                    if os.path.exists(geom_path):
-                        geom_path = os.path.abspath(geom_path)
-                    else:
-                        # Try relative to the config file's directory
-                        cfg_dir = os.path.dirname(path)
-                        p1 = os.path.abspath(os.path.join(cfg_dir, val_str))
-                        if os.path.exists(p1):
-                            geom_path = p1
+                    self.geom_files.append(resolve(val_str))
+                elif key == "SEED_FILE":
+                    # SEED_FILE <path> [size] [radius] [mode]; order-tolerant like
+                    # the C++ parser: words source/embed = mode, numbers fill
+                    # size then radius.
+                    seed_path = resolve(val_str)
+                    size = radius = None
+                    mode = "source"
+                    numi = 0
+                    for tok in tokens[2:]:
+                        if tok in ("source", "embed"):
+                            mode = tok
                         else:
-                            # Try relative to the parent of the config file's directory
-                            p2 = os.path.abspath(os.path.join(os.path.dirname(cfg_dir), val_str))
-                            if os.path.exists(p2):
-                                geom_path = p2
-                            else:
-                                # Try relative to the project root
-                                from app.utils import repo_root
-                                project_root = repo_root()
-                                p3 = os.path.abspath(os.path.join(project_root, val_str))
-                                if os.path.exists(p3):
-                                    geom_path = p3
-                                else:
-                                    # Try relative to project_root/examples
-                                    p4 = os.path.abspath(os.path.join(project_root, "examples", val_str))
-                                    if os.path.exists(p4):
-                                        geom_path = p4
-                                    else:
-                                        # Fallback to absolute relative to config file's dir
-                                        # (file does not exist anywhere we looked)
-                                        geom_path = os.path.abspath(os.path.join(cfg_dir, val_str))
-                                        self.missing_geom_files.append(val_str)
-                    self.geom_files.append(geom_path)
+                            try:
+                                v = float(tok)
+                                if numi == 0:
+                                    size = v
+                                elif numi == 1:
+                                    radius = v
+                                numi += 1
+                            except ValueError:
+                                pass
+                    self.geom_files.append(seed_path)
+                    self.geom_roles[seed_path] = {
+                        "role": "seed", "size": size, "radius": radius, "mode": mode,
+                    }
                 elif key in _KEY_MAP:
                     attr, converter = _KEY_MAP[key]
                     try:
@@ -273,13 +300,27 @@ class MeshConfig:
             # Real containment test (avoids matching siblings like HybMesh_old)
             if abs_gf == project_root or abs_gf.startswith(project_root + os.sep):
                 rel_path = os.path.relpath(abs_gf, project_root)
-                lines.append(f"GEOM_FILE {rel_path}")
             else:
                 try:
                     rel_path = os.path.relpath(abs_gf, cfg_dir)
-                    lines.append(f"GEOM_FILE {rel_path}")
                 except ValueError:
-                    lines.append(f"GEOM_FILE {gf}")
+                    rel_path = gf
+
+            role = self.geom_roles.get(gf)
+            if role and role.get("role") == "seed":
+                # SEED_FILE <path> [size] [radius] <mode>; mode always explicit so
+                # per-file source/embed round-trips. size/radius omitted => auto.
+                parts = [f"SEED_FILE {rel_path}"]
+                size = role.get("size")
+                radius = role.get("radius")
+                if size and size > 0:
+                    parts.append(f"{size:.6g}")
+                    if radius and radius > 0:
+                        parts.append(f"{radius:.6g}")
+                parts.append(role.get("mode") or "source")
+                lines.append(" ".join(parts))
+            else:
+                lines.append(f"GEOM_FILE {rel_path}")
 
         # Ensure parent directories exist
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

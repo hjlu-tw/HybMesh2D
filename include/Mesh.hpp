@@ -39,6 +39,18 @@ struct Element {
     std::vector<int> nodeIds;
 };
 
+// Refinement seed (Pointwise-like source): a geometry used only to drive a local
+// minimum mesh size in the far-field triangulation. Never grown into a boundary
+// layer nor treated as a domain boundary. In 'embed' mode the mesh is forced to
+// conform to the seed curve (gmsh embed); otherwise it is a pure sizing source.
+struct SeedGeom {
+    std::vector<Point2D> points;
+    bool closed = false;
+    double size = -1.0;    // target min size at the seed (<0 -> resolved from config)
+    double radius = -1.0;  // influence radius     (<0 -> resolved from config)
+    bool embed = false;    // true: conform (embed); false: sizing source only
+};
+
 class Mesh {
 public:
     std::vector<Node> nodes;
@@ -50,7 +62,9 @@ public:
     void addElement(const std::vector<int>& ids);
 
     // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制
-    void generateFarFieldGmsh(const Config& config, double finalBLThickness);
+    // seeds: 加密種子 (Pointwise-like sources)，只驅動局部最小尺寸/選擇性內嵌貼合
+    void generateFarFieldGmsh(const Config& config, double finalBLThickness,
+                              const std::vector<SeedGeom>& seeds = {});
 
     // Phase 5: 針對碰撞區域進行局部網格平滑化
     void smoothMesh(int iters);

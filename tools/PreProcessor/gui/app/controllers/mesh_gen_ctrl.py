@@ -148,12 +148,13 @@ class MeshGenControllerMixin:
         # previews; also drop the old geometry (surface-point) previews.
         mc.clear_mesh()
         mc.update_geometry_previews([])
+        mc.update_seed_previews([])
         self.main_window.mesh_stats_panel.update_stats(None)
-        # Re-show the current boundaries from the current config (reflects edits).
+        # Re-show the current boundaries + seeds from the current config (reflects edits).
         cfg = self.main_window.mesh_config_panel.get_config()
         self.global_mesh_config = cfg
         mc.update_mesh_config(cfg, fit_view=False)
-        mc.update_geometry_previews(cfg.geom_files)
+        self._refresh_mesh_previews(cfg)
         self.main_window.log_panel.log(
             "Cleared previous mesh and surface points; showing current boundaries.")
 

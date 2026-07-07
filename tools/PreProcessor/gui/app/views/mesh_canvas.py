@@ -92,6 +92,9 @@ class MeshCanvasView(QWidget):
 
         # Geometry previews
         self.geom_preview_items: list[pg.PlotDataItem] = []
+        # Refinement-seed previews (rendered dashed/orange, kept separate from
+        # the boundary geometry previews so each can be refreshed independently)
+        self.seed_preview_items: list[pg.PlotDataItem] = []
 
         # Empty state guide label
         self.empty_label = QLabel("Please load geometry data in the CAD tab first\nor load config file.", self)
@@ -209,6 +212,55 @@ class MeshCanvasView(QWidget):
                 print(f"Error rendering loaded preview geometry: {e}")
         self._update_empty_state()
 
+    def update_seed_previews(self, seed_files: list[str]):
+        """Load and display refinement-seed geometries as dashed orange preview
+        lines — a distinct style from body-fitted boundaries. Kept in a separate
+        item list so boundary and seed previews refresh independently."""
+        for item in self.seed_preview_items:
+            self.plot_widget.removeItem(item)
+        self.seed_preview_items.clear()
+
+        self._seed_loader_gen = getattr(self, "_seed_loader_gen", 0) + 1
+        token = self._seed_loader_gen
+        self._seed_loader_threads = [
+            t for t in getattr(self, "_seed_loader_threads", []) if t.isRunning()]
+
+        if not seed_files:
+            self._update_empty_state()
+            return
+
+        thread = GeomLoaderThread(seed_files, token)
+        thread.loaded_signal.connect(self._on_seed_previews_loaded)
+        thread.finished.connect(lambda t=thread: self._drop_seed_loader_thread(t))
+        self._seed_loader_threads.append(thread)
+        thread.start()
+
+    def _drop_seed_loader_thread(self, thread):
+        threads = getattr(self, "_seed_loader_threads", [])
+        if thread in threads:
+            threads.remove(thread)
+
+    def _on_seed_previews_loaded(self, token: int, results: list[np.ndarray]):
+        # Ignore results from a superseded request.
+        if token != getattr(self, "_seed_loader_gen", 0):
+            return
+        for pts in results:
+            try:
+                pts = np.atleast_2d(pts)
+                if pts.shape[1] < 2:
+                    continue
+                # Seeds are often open polylines/points — do NOT force-close them.
+                item = self.plot_widget.plot(
+                    pts[:, 0], pts[:, 1],
+                    pen=pg.mkPen('#e0872e', width=1.6, style=Qt.PenStyle.DashLine),
+                    symbol='x', symbolBrush='#e0872e', symbolPen='#e0872e', symbolSize=5
+                )
+                item.setZValue(6)
+                self.seed_preview_items.append(item)
+            except Exception as e:
+                print(f"Error rendering seed preview geometry: {e}")
+        self._update_empty_state()
+
     def highlight_error_geometry(self, geom_index: int | list[int]):
         """Highlight a specific geometry or list of geometries (0-based index) in red to indicate self-intersection failure.
 
@@ -282,7 +334,7 @@ class MeshCanvasView(QWidget):
 
     def _update_empty_state(self):
         has_mesh = self.mesh is not None and len(self.mesh.points) > 0
-        has_previews = len(self.geom_preview_items) > 0
+        has_previews = len(self.geom_preview_items) > 0 or len(self.seed_preview_items) > 0
         self.empty_label.setVisible(not (has_mesh or has_previews))
 
     def set_color_mode(self, mode: str):

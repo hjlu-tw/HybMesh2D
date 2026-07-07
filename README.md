@@ -6,6 +6,7 @@ HybMesh2D 是一個用於生成 2D 混合網格（Hybrid Mesh）的 C++ 工具�
 
 - **邊界層生成**：根據給定的幾何形狀（如 NACA0012 翼型），向外生長指定層數與增長率的四邊形邊界層網格。
 - **多幾何支援**：支援同時輸入多個不相交的幾何形狀，並分別生成邊界層。
+- **加密種子 (Refinement Seeds)**：可將指定幾何標記為「加密種子」（類似 Pointwise source），僅用來設定局部最小網格尺寸、向外加密遠場非結構三角網格，**不生長邊界層、也不作為計算域邊界**。支援 `source`（純尺寸來源，網格不貼合）與 `embed`（網格節點貼合種子曲線）兩種模式，可同時指定哪些幾何為 body-fitted 邊界、哪些為種子。詳見下方「加密種子」。
 - **混合網格架構**：結合近場的結構化特性（邊界層）與遠場的非結構化彈性（三角形）。
 - **扇形網格 (Fan Elements)**：在幾何尖角處自動生成扇形網格以維持網格品質。
 - **凹角處理與平滑**：提供凹角合併與拉普拉斯平滑技術，處理複雜幾何的網格交叉問題。
@@ -64,7 +65,9 @@ make
 ### 常用命令列參數
 
 - `-conf <path>`: 指定背景參數設定檔路徑（預設: `config/Background_para.dat`）。
-- `-geom <path1> [path2]...`: 指定一個或多個幾何資料檔。
+- `-geom <path1> [path2]...`: 指定一個或多個幾何資料檔（body-fitted 邊界）。
+- `-seed <path1> [path2]...`: 指定一個或多個「加密種子」幾何檔（僅驅動局部最小尺寸，不生長邊界層）。
+- `-seed_size <值>` / `-seed_radius <值>` / `-seed_mode <source|embed>`: 全域種子尺寸 / 影響半徑 / 模式預設值。
 - `-out_vtk <0|1>`: 是否輸出 VTK 檔案 (1: 開啟, 0: 關閉)。
 - `-out_starcd <0|1>`: 是否輸出 STAR-CD 檔案。
 - `-out_cgns <0|1>`: 是否輸出 CGNS 檔案 (需 build 時偵測到 CGNS 函式庫)。
@@ -141,6 +144,32 @@ make
 | `BC_YMIN` / `YMAX` | STAR-CD 邊界名稱設定 | inlet / outlet |
 | `BC_GEOM` | STAR-CD 幾何表面邊界名稱 | wall |
 | `OUTPUT_FILENAME` | 指定輸出的檔案基本名稱 | (空) |
+
+### 7. 加密種子 (Refinement Seeds)
+
+將幾何作為「加密種子」而非 body-fitted 邊界：種子僅在其周圍驅動局部最小網格尺寸（Gmsh Distance + Threshold 尺寸場），**不生長邊界層、也不作為計算域邊界**。適合在尾流、剪切層等區域做局部加密（類似 Pointwise 的 source）。
+
+| 參數名稱 | 說明 | 預設值 |
+| :--- | :--- | :--- |
+| `SEED_FILE <path> [size] [radius] [mode]` | 指定一個種子幾何檔。可選：`size` 種子處最小尺寸、`radius` 影響半徑、`mode`（`source`/`embed`）。省略則套用下方全域預設 | — |
+| `SEED_SIZE` | 全域種子最小尺寸預設（省略/<0：依表面尺寸自動推得） | auto |
+| `SEED_RADIUS` | 全域影響半徑預設（省略：約 25×size；半徑外平滑回到遠場尺寸） | auto |
+| `SEED_MODE` | 全域模式預設。`source`：純尺寸來源、網格**不貼合**；`embed`：網格節點**貼合**種子曲線（仍不生長邊界層） | source |
+
+`SEED_FILE` 的數值/關鍵字順序可容忍（`source`/`embed` 可出現在任意位置）。範例：
+
+```
+GEOM_FILE examples/geometries/naca0012.dat        # body-fitted 邊界
+SEED_FILE examples/geometries/wake.dat 0.02 1.0 source   # 尾流加密種子
+```
+
+命令列：
+
+```bash
+./HybMesh2D -geom naca0012.dat -seed wake.dat -seed_size 0.02 -seed_radius 1.0 -seed_mode source
+```
+
+也可在 GUI 前處理器的 **Mesh Generator → Domain & Geometry** 選取任一幾何檔，切換其角色（Boundary / Seed）並設定種子尺寸、影響半徑與模式；種子在畫布上以虛線橘色顯示。
 
 ## 視覺化與輸出
 
