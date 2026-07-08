@@ -194,6 +194,22 @@ The mesher then assigns geometry BCs from `bc` (instead of position inference), 
 
 Backward compatible: a missing sidecar, field, or older format falls back to the legacy behavior. Preview runs still use `nan` separator rows and write no sidecar.
 
+## Mesh Generator GUI Workflow
+
+The Mesh Generator tab manages inputs through a **single geometry list**: add with `Add All` (all exported PreProcessor sessions), `Add Active`, or `Browse`; drop with `Remove`. Select a geometry and set its **Role** (mirrors the CLI/config `bl|nobl` / `DOMAIN_FILE` tokens):
+
+| Role | Meaning |
+| :--- | :--- |
+| Boundary (grows BL) | A body/obstacle that grows a boundary layer (external obstacle, or internal-flow island) |
+| No-BL (far-field size) | A boundary with no BL, conforming at far-field size |
+| Seed (refinement source) | Refinement seed (drives local size only) |
+| Domain: far-field (no BL) | This closed geometry is the outer domain (external flow, no BL) |
+| Domain: wall (internal, BL in) | This closed geometry is the domain wall; the BL grows inward (internal flow) |
+
+The **Domain Source** selector chooses `Rectangle box` (shows the X/Y Min/Max box) or `Custom geometry` (hides the box; the domain then comes from whichever geometry has a Domain role).
+
+**Multiple bodies / annular domains:** draw each shape as its own PreProcessor session, Save & Export each, then in the Mesh Generator click `Add All` to include them all and assign a Role to each. An annular domain = the outer shape as `Domain: wall` + the inner island as `Boundary`.
+
 ## License
 
 MIT License

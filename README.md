@@ -222,6 +222,22 @@ PreProcessor GUI 另提供 UNICONES 求解器的沉浸邊界 (IBM) 前處理：
 
 完整操作流程見 [tools/PreProcessor/README.md](tools/PreProcessor/README.md)。
 
+### Mesh Generator GUI 工作流
+
+Mesh Generator 分頁以**單一幾何清單**管理輸入：用 `Add All`（加入所有已匯出的 PreProcessor session）、`Add Active`、`Browse` 加入，`Remove` 移除。清單中選取一個幾何後，以「**Role**」下拉指定角色（對應上方 CLI / 設定的 `bl|nobl`、`DOMAIN_FILE`）：
+
+| Role | 意義 |
+| :--- | :--- |
+| Boundary (grows BL) | 生長邊界層的物體 / 障礙物（外流障礙物或內流島嶼）|
+| No-BL (far-field size) | 不長 BL、以遠場尺寸貼合的邊界 |
+| Seed (refinement source) | 加密種子（只驅動局部尺寸）|
+| Domain: far-field (no BL) | 此封閉幾何為外圍計算域（外流，不長 BL）|
+| Domain: wall (internal, BL in) | 此封閉幾何為域壁面，BL 往內長（內流）|
+
+**Domain Source** 下拉可選 `Rectangle box`（顯示 X/Y Min/Max 矩形範圍）或 `Custom geometry`（隱藏矩形，改由清單中設為 Domain 角色的幾何當外框）。
+
+**多物體 / 環狀域**：把每個形狀畫成**獨立的 PreProcessor session**、各自 Save & Export，再於 Mesh Generator 按 `Add All` 一次全部加入，逐一指定 Role 後生成。環狀域 = 外壁設 `Domain: wall`、內島設 `Boundary`。
+
 ## 授權
 
 MIT License

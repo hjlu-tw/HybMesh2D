@@ -79,31 +79,40 @@ class MeshConfigPanel(QScrollArea):
         self.cancel_mesh_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_mesh_btn.setEnabled(False)
 
-        # ── Geometry Layers (Sessions) ────────────────────────────────────
-        self.sec_layers = CollapsibleSection("Geometry Layers", start_collapsed=False)
-        self._layout.addWidget(self.sec_layers)
-
-        self.layers_list_widget = QListWidget()
-        self.layers_list_widget.setFixedHeight(110)
-        self.layers_list_widget.setStyleSheet(
-            "background: #181b2a; color: #a0a8c0; border: 1px solid #333852; border-radius: 3px;"
-        )
-        self.sec_layers.add_widget(help_widget(self.layers_list_widget, "Toggle which PreProcessor geometries are included in this mesh"))
-
-        # Layer control buttons
-        layer_btn_layout = QHBoxLayout()
-        layer_btn_layout.setSpacing(4)
-        self.add_all_sessions_btn = make_button("Add All Sessions", "#1a2a3a")
-        self.add_all_sessions_btn.setToolTip("Add all exported PreProcessor geometries to this mesh configuration")
-        layer_btn_layout.addWidget(help_widget(self.add_all_sessions_btn, "Include all currently exported geometry sessions"))
-        self.sec_layers.add_layout(layer_btn_layout)
+        # The former separate "Geometry Layers" (session checklist) and
+        # "Geometry Input Files" (file list) overlapped, so they are merged into
+        # the single geometry list in the "Domain & Geometry" section below. The
+        # "Add All Sessions" button is created here and placed in that list's
+        # button row.
+        self.add_all_sessions_btn = make_button("Add All", "#1a2a3a")
+        self.add_all_sessions_btn.setToolTip("Add all exported PreProcessor sessions to this mesh configuration")
 
         # ── 1. Domain & Geometry Files ────────────────────────────────────
-        self.sec_domain = CollapsibleSection("Domain & Geometry", start_collapsed=True)
+        self.sec_domain = CollapsibleSection("Domain & Geometry", start_collapsed=False)
         self._layout.addWidget(self.sec_domain)
 
-        # Bounding box
-        dom_form = QFormLayout()
+        # Domain source: the rectangular box, or a geometry acting as the outer
+        # domain outline. When "Custom geometry" is chosen the box X/Y Min/Max are
+        # hidden (the domain comes from whichever geometry has a Domain role in the
+        # list below); "Rectangle box" shows them.
+        dsrc_form = QFormLayout()
+        self.domain_source_combo = QComboBox()
+        self.domain_source_combo.addItems(["Rectangle box", "Custom geometry"])
+        self.domain_source_combo.setStyleSheet(COMBO_STYLE)
+        self.domain_source_combo.setToolTip(
+            "Rectangle box: the domain is the X/Y Min/Max box below.\n"
+            "Custom geometry: a geometry in the list is the outer domain — set its "
+            "role to 'Domain: far-field' (external) or 'Domain: wall' (internal).")
+        dsrc_form.addRow(help_label("Domain Source:",
+            "Use the rectangular box, or a geometry as the outer domain outline"),
+            self.domain_source_combo)
+        align_form_labels(dsrc_form, 130)
+        self.sec_domain.add_layout(dsrc_form)
+
+        # Bounding box (shown only for the "Rectangle box" source)
+        self._domain_box_widget = QWidget()
+        dom_form = QFormLayout(self._domain_box_widget)
+        dom_form.setContentsMargins(0, 0, 0, 0)
         self.domain_x_min = CleanDoubleSpinBox()
         self.domain_x_min.setRange(-1e6, 1e6)
         self.domain_x_min.setDecimals(4)
@@ -133,10 +142,11 @@ class MeshConfigPanel(QScrollArea):
         dom_form.addRow(help_label("Domain Y Min:", "Bottom boundary of the rectangular computational domain"), self.domain_y_min)
         dom_form.addRow(help_label("Domain Y Max:", "Top boundary of the rectangular computational domain"), self.domain_y_max)
         align_form_labels(dom_form, 130)
-        self.sec_domain.add_layout(dom_form)
+        self.sec_domain.add_widget(self._domain_box_widget)
+        self.domain_source_combo.currentIndexChanged.connect(self._update_domain_source_visibility)
 
-        # Geometry file list
-        geom_label = QLabel("Geometry Input Files:")
+        # Geometry file list (the single merged geometry list)
+        geom_label = QLabel("Geometry files (add / assign role / remove):")
         geom_label.setStyleSheet("color: #a0b0d0; margin-top: 6px; font-weight: bold;")
         self.sec_domain.add_widget(help_widget(geom_label, "Geometry files to load for meshing"))
 
@@ -147,18 +157,21 @@ class MeshConfigPanel(QScrollArea):
         )
         self.sec_domain.add_widget(help_widget(self.geom_list_widget, "List of geometry boundary files to include in the computational domain"))
 
-        # Geometry list control buttons
-        geom_btn_layout = QHBoxLayout()
-        geom_btn_layout.setSpacing(4)
+        # Geometry list control buttons — two rows so four buttons don't force the
+        # sidebar wider than its fixed width.
         self.add_active_geom_btn = make_button("Add Active", "#1a2525")
         self.add_active_geom_btn.setToolTip("Add the active PreProcessor resampled file")
         self.add_file_geom_btn = make_button("Browse", "#1d2a3a")
         self.remove_geom_btn = make_button("Remove", "#301a1a")
 
-        geom_btn_layout.addWidget(help_widget(self.add_active_geom_btn, "Add the active PreProcessor resampled geometry"))
-        geom_btn_layout.addWidget(help_widget(self.add_file_geom_btn, "Browse for geometry files on disk"))
-        geom_btn_layout.addWidget(help_widget(self.remove_geom_btn, "Remove selected geometry file from list"))
-        self.sec_domain.add_layout(geom_btn_layout)
+        geom_btn_row1 = QHBoxLayout(); geom_btn_row1.setSpacing(4)
+        geom_btn_row1.addWidget(help_widget(self.add_all_sessions_btn, "Add all exported PreProcessor sessions"))
+        geom_btn_row1.addWidget(help_widget(self.add_active_geom_btn, "Add the active PreProcessor resampled geometry"))
+        geom_btn_row2 = QHBoxLayout(); geom_btn_row2.setSpacing(4)
+        geom_btn_row2.addWidget(help_widget(self.add_file_geom_btn, "Browse for geometry files on disk"))
+        geom_btn_row2.addWidget(help_widget(self.remove_geom_btn, "Remove selected geometry file from list"))
+        self.sec_domain.add_layout(geom_btn_row1)
+        self.sec_domain.add_layout(geom_btn_row2)
 
         # ── Geometry Role (Boundary vs Refinement Seed) ───────────────────
         # Set the role of the geometry SELECTED in the list above: a body-fitted
@@ -585,6 +598,14 @@ class MeshConfigPanel(QScrollArea):
         self.bc_ymax.textChanged.connect(self._update_bc_indicators)
         self.bc_geom.textChanged.connect(self._update_bc_indicators)
 
+        self._update_domain_source_visibility()
+
+    def _update_domain_source_visibility(self):
+        """Show the rectangular box X/Y Min/Max only when Domain Source is
+        'Rectangle box'; hide them for 'Custom geometry' (the domain then comes
+        from a geometry with a Domain role)."""
+        self._domain_box_widget.setVisible(self.domain_source_combo.currentIndex() == 0)
+
     def _update_bc_indicators(self):
         """Parse boundary condition texts and update indicator backgrounds accordingly."""
         for edit, indicator in [
@@ -705,6 +726,11 @@ class MeshConfigPanel(QScrollArea):
         self.domain_x_max.setValue(cfg.domain_x_max)
         self.domain_y_min.setValue(cfg.domain_y_min)
         self.domain_y_max.setValue(cfg.domain_y_max)
+        # Domain source follows whether a geometry acts as the outer domain.
+        self.domain_source_combo.blockSignals(True)
+        self.domain_source_combo.setCurrentIndex(1 if cfg.domain_file else 0)
+        self.domain_source_combo.blockSignals(False)
+        self._update_domain_source_visibility()
 
         # Geometries (with per-file role carried as item data). Block selection
         # signals during the rebuild, then resync the role editor once.
