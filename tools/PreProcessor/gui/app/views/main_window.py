@@ -206,6 +206,38 @@ class MainWindow(QMainWindow):
         # Stretch before the selector so it stays pinned to the right (fixed
         # position) whether or not a tab strip is visible in the current mode.
         tab_hl.addStretch(1)
+
+        # "Run All" — one click runs CAD resample -> mesh -> solver -> results.
+        # Lives in the persistent tab row (not the rebuilt canvas toolbar) so it
+        # is available in every mode.
+        self.run_all_btn = QPushButton("▶ Run All", self.tab_row)
+        self.run_all_btn.setToolTip(
+            "Run the full pipeline for the active geometry:\n"
+            "CAD resample → mesh generation → solver → results contour.")
+        self.run_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1e4620;
+                color: #eaf6ea;
+                border: 1px solid #2d5630;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                margin-right: 8px;
+            }
+            QPushButton:hover {
+                background-color: #2c5e2e;
+                border-color: #22c55e;
+                color: #ffffff;
+            }
+            QPushButton:disabled {
+                background-color: #1a1f3b;
+                color: #4a4e69;
+                border-color: #1c1e36;
+            }
+        """)
+        tab_hl.addWidget(self.run_all_btn)
+
         tab_hl.addWidget(self.mode_combo)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
@@ -576,6 +608,21 @@ class MainWindow(QMainWindow):
 
         exit_action = file_menu.addAction("Exit")
         exit_action.triggered.connect(self.close)
+
+        # ── Pipeline menu (full CAD -> mesh -> solver -> results) ──────────
+        pipeline_menu = menubar.addMenu("Pipeline")
+
+        run_all_action = pipeline_menu.addAction("Run Full Pipeline")
+        run_all_action.setShortcut("Ctrl+R")
+        run_all_action.triggered.connect(controller.run_full_pipeline)
+
+        pipeline_menu.addSeparator()
+
+        load_pipe_action = pipeline_menu.addAction("Load Pipeline Script...")
+        load_pipe_action.triggered.connect(controller.load_pipeline_file)
+
+        save_pipe_action = pipeline_menu.addAction("Save Pipeline Script...")
+        save_pipe_action.triggered.connect(controller.save_pipeline_file)
 
     def refresh_recent_files_menu(self, files: list[str], controller):
         self.recent_menu.clear()

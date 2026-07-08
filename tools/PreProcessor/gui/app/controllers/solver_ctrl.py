@@ -1,22 +1,15 @@
 from __future__ import annotations
 import os
-import re
-import shutil
-import subprocess
 
 from PyQt6.QtWidgets import QFileDialog
 
 from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
+from app.services import solver_case
+from app.services.solver_case import sanitize_case_name as _sanitize
 from app.utils import (
     find_solver_executables, repo_root, find_mpi_launcher, is_mpi_binary,
 )
-
-
-def _sanitize(name: str) -> str:
-    """Make a filesystem-safe case name."""
-    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
-    return s or "case"
 
 
 class SolverControllerMixin:
@@ -214,101 +207,9 @@ class SolverControllerMixin:
     def _prepare_case_dir(self, cfg: SolverConfig):
         """Build case/<name>/{work,grid,dll}, stage inputs, rename outputs, write
         input.in / .def, and compile IBM DLLs. Returns (work_dir, grid_dir,
-        input_in_path)."""
-        root = repo_root()
-        case = _sanitize(cfg.case_name)
-        case_root = os.path.join(root, "results", "solver", case)
-        work_dir = os.path.join(case_root, "work")
-        grid_dir = os.path.join(case_root, "grid")
-        dll_dir = os.path.join(case_root, "dll")
-        for d in (work_dir, grid_dir, dll_dir):
-            os.makedirs(d, exist_ok=True)
-        cfg.work_dir = work_dir
-
-        # getPGrid runs in grid_dir: stage the STAR-CD inputs there with the
-        # basenames para.in will reference, and have it write <case>.grid/.bc there.
-        stem = case
-        cfg.output_grid_file = f"{stem}.grid"
-        cfg.output_bc_file = f"{stem}.bc"
-        for src, base in [(cfg.input_vrt_file, "input.vrt"),
-                          (cfg.input_cel_file, "input.cel"),
-                          (cfg.input_bnd_file, "input.bnd")]:
-            dst = os.path.join(grid_dir, base)
-            if os.path.abspath(src) != os.path.abspath(dst):
-                shutil.copy2(src, dst)
-        # Point the config at the staged basenames (para.in uses basenames).
-        cfg.input_vrt_file = os.path.join(grid_dir, "input.vrt")
-        cfg.input_cel_file = os.path.join(grid_dir, "input.cel")
-        cfg.input_bnd_file = os.path.join(grid_dir, "input.bnd")
-
-        # Solver boundary-condition table. The solver reads "<bc>.def" from its
-        # cwd; by default it uses getPGrid's own companion verbatim (the worker
-        # copies grid/<bc>.def -> work/<bc>.def). Only when the user explicitly
-        # fills the BC table do we write an override here (the worker then leaves
-        # it in place instead of copying getPGrid's).
-        if cfg.bc_definitions:
-            def_name = os.path.basename(cfg.output_bc_file) + ".def"
-            cfg.generate_bc_def(os.path.join(work_dir, def_name))
-
-        # IBM DLLs (D7): compile .cc sources into dll/, reference as ../dll/*.so.
-        if cfg.immersed_solid:
-            cfg.init_cond_dll = self._stage_dll(cfg.init_cond_dll, dll_dir)
-            cfg.motion_dll = self._stage_dll(cfg.motion_dll, dll_dir)
-            # STL3d phi field: the init DLL reads "phi.dat" from its cwd (work dir).
-            if cfg.ibm_phi_file:
-                self._stage_phi_file(cfg.ibm_phi_file, work_dir)
-
-        # input.in with paths relative to the work dir.
-        input_in_path = os.path.join(work_dir, "input.in")
-        cfg.generate_input_in(
-            input_in_path,
-            grid_rel=f"../grid/{stem}.grid",
-            bc_rel=f"../grid/{stem}.bc")
-
-        return work_dir, grid_dir, input_in_path
-
-    def _stage_dll(self, src: str, dll_dir: str) -> str:
-        """Compile a .cc/.cpp DLL source into dll_dir (or copy a prebuilt .so).
-
-        Returns the path relative to the work dir ("../dll/<name>.so") or "" if
-        no source given.
-        """
-        if not src:
-            return ""
-        log = self.main_window.log_panel.log
-        base = os.path.splitext(os.path.basename(src))[0]
-        out_so = os.path.join(dll_dir, f"{base}.so")
-        if src.endswith(".so"):
-            if os.path.abspath(src) != os.path.abspath(out_so):
-                shutil.copy2(src, out_so)
-        else:
-            if not os.path.exists(src):
-                log(f"[WARNING] DLL source not found, skipping: {src}")
-                return ""
-            cmd = ["g++", "-D_INCLUDE_TEMPLATE_IMPLEMENTATION", "-fPIC",
-                   "-shared", "-O3", "-o", out_so, src]
-            log(f"[IBM] compiling {os.path.basename(src)} -> {base}.so")
-            try:
-                r = subprocess.run(cmd, capture_output=True, text=True)
-                if r.returncode != 0:
-                    log(f"[WARNING] DLL compile failed: {r.stderr.strip()}")
-                    return ""
-            except OSError as e:
-                log(f"[WARNING] g++ unavailable, cannot compile DLL: {e}")
-                return ""
-        return f"../dll/{base}.so"
-
-    def _stage_phi_file(self, src: str, work_dir: str) -> None:
-        """Copy the STL3d phi field into the work dir as phi.dat (the name the
-        generated init DLL reads)."""
-        log = self.main_window.log_panel.log
-        if not os.path.exists(src):
-            log(f"[IBM] phi field not found, skipping: {src}")
-            return
-        dst = os.path.join(work_dir, "phi.dat")
-        if os.path.abspath(src) != os.path.abspath(dst):
-            shutil.copy2(src, dst)
-        log(f"[IBM] phi field -> {os.path.basename(dst)}")
+        input_in_path). Delegates to the shared, Qt-free solver_case service so
+        the GUI and the headless pipeline runner lay out cases identically."""
+        return solver_case.prepare_case_dir(cfg, log=self.main_window.log_panel.log)
 
     def _auto_link_mesh_output(self, cfg: SolverConfig) -> bool:
         """Fill cfg's getPGrid inputs from the last mesh generation's STAR-CD output."""

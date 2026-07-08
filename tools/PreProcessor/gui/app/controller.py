@@ -26,6 +26,7 @@ from app.controllers import (
     PostprocessControllerMixin,
     Stl3dControllerMixin,
     ExtrudeControllerMixin,
+    PipelineControllerMixin,
 )
 from app.models.solver_config import SolverConfig
 from app.models.stl3d_config import Stl3dConfig
@@ -43,6 +44,7 @@ class AppController(
     PostprocessControllerMixin,
     Stl3dControllerMixin,
     ExtrudeControllerMixin,
+    PipelineControllerMixin,
 ):
 
     def __init__(self):
@@ -61,6 +63,10 @@ class AppController(
         self.global_result_path = ""
         self.global_result_data = None
         self._solver_worker = None
+
+        # Full-pipeline (Run All) state
+        self._pipeline_running = False
+        self._pipeline_result_var = ""
 
         # Immersed-solid (STL3d) preprocessor state
         self.global_stl3d_config = Stl3dConfig()
@@ -316,6 +322,10 @@ class AppController(
         # Results / post-processing
         mw.result_canvas_view.load_btn.clicked.connect(self.open_result_dialog)
         mw.result_control_panel.bind(mw.result_canvas_view, self)
+
+        # Full pipeline (Run All) — toolbar button + menu actions
+        if getattr(mw, "run_all_btn", None) is not None:
+            mw.run_all_btn.clicked.connect(self.run_full_pipeline)
 
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel
         def _make_sync_checkbox_fn(canvas_method, cb_sidebar, cb_toolbar):

@@ -36,6 +36,13 @@ python3 tools/PreProcessor/gui/main.py [optional_geometry_file]
 ./build/surface_resampler config/your_config.json
 ```
 
+**Run full pipeline (CAD → mesh → solver → contour) headless from one JSON script:**
+```bash
+./run_pipeline.sh config/pipeline/naca_demo.json           # -> results/pipeline/*.png
+./run_pipeline.sh config/pipeline/naca_demo.json --no-solver   # stop after meshing
+```
+`run_pipeline.sh` sets `DYLD_LIBRARY_PATH` (like `run.sh`) and calls `tools/PreProcessor/run_pipeline.py`. In the GUI, the same end-to-end run is the **Run All** button (top-right, all modes) / **Pipeline** menu (Run / Load / Save script). See the "Full Pipeline" section under Architecture.
+
 **Visualize .dat files:**
 ```bash
 python3 tools/scripts/visualize_dat.py <path_to_dat_file> [--config <json_config>] [--quality]
@@ -117,6 +124,15 @@ Scroll-wheel on QSpinBox/QDoubleSpinBox is intentionally disabled (overridden in
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`
 - Spacing strategies: `uniform`, `curvature`, `cosine` (double-end dense), `geometric` (exponential), `tanh`
 - Supporting headers in `tools/PreProcessor/include/`: `Spline.hpp` (cubic spline), `Spacing.hpp`, `Quality.hpp`
+
+### Full Pipeline (CAD → mesh → solver → results, one action)
+A single unified JSON script drives the whole chain; the GUI and the headless CLI share the same schema and stage logic.
+- **`models/pipeline_config.py`** (`PipelineConfig`, Qt-free): the unified schema (`cad`/`mesh`/`solver`/`results` sections, each mapping 1:1 onto `ProjectModel`/`MeshConfig`/`SolverConfig`) + converters. `PIPELINE_FORMAT_VERSION`. Example: `config/pipeline/naca_demo.json`.
+- **`services/pipeline_runner.py`** (Qt-free, blocking): runs the 3 CLI stages via subprocess (surface_resampler → HybMesh2D → getPGrid→unicones); `run_pipeline()` returns the produced artifact paths.
+- **`services/solver_case.py`** (Qt-free): case-dir orchestration (`results/solver/<name>/{work,grid,dll}`), extracted so `solver_ctrl._prepare_case_dir` and the headless runner share one source of truth.
+- **`services/contour_render.py`** (Qt-free): renders a Tecplot result to a contour PNG (matplotlib Agg) for headless runs.
+- **`controllers/pipeline_ctrl.py`** (`PipelineControllerMixin`): GUI **Run All** — chains the existing per-stage QThread workers on their `finished_signal` (batch mode: no per-stage dialogs), ending on the auto-loaded Results contour. Also Save/Load pipeline script.
+- **`tools/PreProcessor/run_pipeline.py`** + **`run_pipeline.sh`**: headless entry point (`--no-solver`, `--no-contour`, `--png`).
 
 ### Visualization (`tools/scripts/`)
 - **`visualize_dat.py`**: Matplotlib visualization for `.dat` files; `--quality` flag adds expansion-ratio heatmap

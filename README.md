@@ -19,6 +19,7 @@ HybMesh2D 是一個用於生成 2D 混合網格（Hybrid Mesh）的 C++ 工具�
 - **自訂計算域外形 (Custom Domain)**：計算域外框可用矩形 (`DOMAIN_X/Y_MIN/MAX`)，或指定一條封閉多邊線 (`DOMAIN_FILE`)。多邊形、圓、扇形皆以重採樣多邊線表示，直接走完整的邊界層/碰撞/匯出管線；外框每段可由 sidecar 帶各自的 BC。
 - **內部網格 / 內流 (Internal Flow)**：可對封閉 CAD 幾何生成「內部」網格 —— 邊界層往**內**生長、三角形填滿內部核心，且不建立獨立遠場外框 (`DOMAIN_FILE <path> bl`)。域內可再放障礙物島嶼形成環狀域。
 - **逐幾何角色 (Per-geometry Role)**：每個幾何可獨立選擇生長邊界層 (`bl`)，或不長邊界層、以遠場尺寸貼合 (`nobl`)。生長方向為確定性：計算域壁面往內、障礙物往外（不再用面積啟發式猜測）。
+- **完整流程管線 (Full Pipeline)**：以單一 JSON 腳本一鍵串起 CAD 重採樣 → 網格生成 → UNICONES 求解 → 結果 contour。GUI 提供 **▶ Run All** 按鈕，headless 提供 `run_pipeline.sh`（無視窗、直接輸出 contour PNG），兩者共用同一份腳本與階段邏輯。詳見下方「完整流程管線」。
 
 ## 網格架構與過渡機制
 
@@ -237,6 +238,39 @@ Mesh Generator 分頁以**單一幾何清單**管理輸入：用 `Add All`（加
 **Domain Source** 下拉可選 `Rectangle box`（顯示 X/Y Min/Max 矩形範圍）或 `Custom geometry`（隱藏矩形，改由清單中設為 Domain 角色的幾何當外框）。
 
 **多物體 / 環狀域**：把每個形狀畫成**獨立的 PreProcessor session**、各自 Save & Export，再於 Mesh Generator 按 `Add All` 一次全部加入，逐一指定 Role 後生成。環狀域 = 外壁設 `Domain: wall`、內島設 `Boundary`。
+
+## 完整流程管線 (Full Pipeline：CAD → 網格 → 求解 → 結果)
+
+可用**單一 JSON 腳本**把整條流程（CAD 重採樣 → 網格生成 → UNICONES 求解 → 結果 contour）串成一鍵工作流。GUI 與 headless CLI **共用同一份腳本與階段邏輯**，不會分岔。
+
+**GUI 一鍵：** PreProcessor GUI 右上角的 **▶ Run All** 按鈕（所有模式皆可見），對作用中的幾何依序跑完 CAD→網格→求解，並自動切到 Results 分頁顯示 contour。**Pipeline** 選單另提供 Run / Load / Save Pipeline Script。
+
+**Headless（無視窗、輸出 PNG）：**
+
+```bash
+./run_pipeline.sh config/pipeline/template.json            # → results/pipeline/<name>_M.png
+./run_pipeline.sh config/pipeline/template.json --no-solver    # 只跑到網格
+```
+
+也可讓 GUI 啟動時直接載入並自動執行某個腳本：
+
+```bash
+python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/my_case.json --run
+```
+
+**腳本格式**：一個 JSON，分成 `cad` / `mesh` / `solver` / `results` 四段，各段對應既有的設定模型（`ProjectModel` / `MeshConfig` / `SolverConfig`）。複製 `config/pipeline/template.json` 起手，改幾個數字（Mach、攻角、雷諾數、迭代次數、BC…）即可重跑。逐欄說明見 [config/pipeline/README.md](config/pipeline/README.md)。
+
+```json
+{
+  "cad":    { "input_file": "examples/geometries/naca0012.dat", "skip": true },
+  "mesh":   { "domain_x_min": -4, "domain_x_max": 8, "bl_layers": 15, "bc_geom": "wall" },
+  "solver": { "preset": "Laminar NS (subsonic, steady)", "fs_mach": 0.3,
+              "fs_flow_angle": 4.0, "fs_unit_re": 1000, "num_half_iter": 2000 },
+  "results":{ "variable": "M", "save_png": "results/pipeline/case_M.png" }
+}
+```
+
+> `run_pipeline.sh` 會先設定 Gmsh 的 `DYLD_LIBRARY_PATH`（同 `run.sh`）。求解器結果檔輸出到 `results/solver/<case_name>/work/`，contour PNG 到 `results/pipeline/`。注意 `print_sol_per_niter` 需 ≤ `num_half_iter`，否則求解器不會寫出結果檔。
 
 ## 授權
 

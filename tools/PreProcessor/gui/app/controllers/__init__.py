@@ -9,3 +9,4 @@ from app.controllers.solver_ctrl import SolverControllerMixin
 from app.controllers.postprocess_ctrl import PostprocessControllerMixin
 from app.controllers.stl3d_ctrl import Stl3dControllerMixin
 from app.controllers.extrude_ctrl import ExtrudeControllerMixin
+from app.controllers.pipeline_ctrl import PipelineControllerMixin

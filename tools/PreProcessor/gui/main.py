@@ -95,20 +95,55 @@ def main():
     pg.setConfigOption('foreground', '#a0a8c0')
     
     controller = AppController()
-    
+
+    # Split off pipeline flags: `--pipeline <file>` loads a unified pipeline
+    # script into the GUI on startup; `--run` then auto-clicks Run All so the
+    # whole CAD->mesh->solver->results chain executes and ends on the contour.
+    argv = sys.argv[1:]
+    pipeline_path = None
+    auto_run = False
+    rest_args = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--pipeline" and i + 1 < len(argv):
+            pipeline_path = argv[i + 1]
+            i += 2
+            continue
+        if a == "--run":
+            auto_run = True
+            i += 1
+            continue
+        rest_args.append(a)
+        i += 1
+
+    from PyQt6.QtCore import QTimer
+
     # Load any geometry files provided as command line arguments. Multiple
     # files may be passed directly, or via a list file (@list.txt / *.txt /
     # *.list) holding one path per line. Each file opens in its own tab.
-    file_paths = collect_geometry_files(sys.argv[1:])
+    file_paths = collect_geometry_files(rest_args)
     if file_paths:
         # Use QTimer.singleShot to ensure the UI is fully rendered before loading.
-        from PyQt6.QtCore import QTimer
-
         def load_all():
             for fp in file_paths:
                 controller.load_geometry_from_path(fp)
 
         QTimer.singleShot(100, load_all)
+
+    if pipeline_path:
+        from app.models.pipeline_config import PipelineConfig
+
+        def load_pipeline():
+            try:
+                pcfg = PipelineConfig.load_from_file(pipeline_path)
+                controller._apply_pipeline_config(pcfg, os.path.abspath(pipeline_path))
+                if auto_run:
+                    QTimer.singleShot(500, controller.run_full_pipeline)
+            except Exception as e:
+                print(f"Failed to load pipeline '{pipeline_path}': {e}")
+
+        QTimer.singleShot(200, load_pipeline)
 
     controller.show_main_window()
     sys.exit(app.exec())
