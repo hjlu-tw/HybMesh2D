@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <set>
 #include <iostream>
 
 struct Config {
@@ -28,6 +29,22 @@ struct Config {
     int seedMode = 0;          // 0: source (僅尺寸), 1: embed (貼合、無邊界層)
 
     double xMin = -10.0, xMax = 10.0, yMin = -10.0, yMax = 10.0;
+
+    // 自訂計算域外框 (Phase 2/5)：一條封閉多邊線 .dat，取代 xMin..yMax 的矩形外框。
+    // 空字串 -> 用矩形 (向後相容)。多邊形/圓/扇形皆以重取樣多邊線表示；每段可
+    // 由旁附 .meta 帶各自的 BC。載入後會以其 bounding box 覆寫 xMin..yMax。
+    std::string domainFile;
+
+    // Per-geometry role (Phase 5, 取代舊的全域 internalFlow + 最大面積啟發式)：
+    //   - domainGrowBL：domain 外框幾何是否生長邊界層。false=遠場外框(不長 BL、
+    //     外流)；true=域壁面(BL 往「內」長、無獨立外框 -> 內流)。方向由此確定，
+    //     不再用最大面積猜測。
+    //   - noBLGeoms：這些 GEOM_FILE 幾何不長 BL，而是以遠場尺寸貼合的邊界(洞)。
+    //     不在集合中的 GEOM_FILE 為長 BL 的障礙物(往外長)。
+    // Config 語法：DOMAIN_FILE <path> [bl|nobl]、GEOM_FILE <path> [bl|nobl]。
+    bool domainGrowBL = false;
+    std::set<std::string> noBLGeoms;
+
     double surfaceSize = 0.1, farFieldSize = 1.0;
     bool autoSurfaceSize = true;
     double blInitialThickness = 0.01, blGrowthRate = 1.2;
@@ -91,8 +108,15 @@ struct Config {
             std::stringstream ss(line);
             ss >> key;
             if (key == "GEOM_FILE") {
-                std::string f;
-                if (ss >> f) geomFiles.push_back(f);
+                // GEOM_FILE <path> [bl|nobl]  (bl = grow boundary layer, default;
+                // nobl = no BL, conform at far-field size). The GUI in
+                // tools/PreProcessor/gui/app/models/mesh_config.py must emit the
+                // same token; keep the two parsers in sync.
+                std::string f, role;
+                if (ss >> f) {
+                    geomFiles.push_back(f);
+                    if (ss >> role && role == "nobl") noBLGeoms.insert(f);
+                }
             }
             else if (key == "SEED_FILE") {
                 // SEED_FILE <path> [size] [radius] [mode(source|embed)]
@@ -127,6 +151,13 @@ struct Config {
             else if (key == "SEED_RADIUS") ss >> seedRadius;
             else if (key == "SEED_MODE") {
                 std::string m; ss >> m; seedMode = (m == "embed" || m == "1") ? 1 : 0;
+            }
+            else if (key == "DOMAIN_FILE") {
+                // DOMAIN_FILE <path> [bl|nobl]  (nobl = far-field outline, no BL,
+                // external flow, default; bl = domain wall, BL grows inward ->
+                // internal flow). Replaces the old global INTERNAL_FLOW flag.
+                std::string role;
+                if (ss >> domainFile) domainGrowBL = (ss >> role && role == "bl");
             }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
@@ -234,7 +265,16 @@ struct Config {
                           << ", mode=" << (m == 1 ? "embed" : "source") << ")\n";
             }
         }
-        std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
+        if (!noBLGeoms.empty())
+            std::cout << "  - No-BL geometries     : " << noBLGeoms.size() << " (conform at far-field size)\n";
+        if (!domainFile.empty()) {
+            std::cout << "  - Flow Type            : " << (domainGrowBL ? "INTERNAL (domain wall, BL grows inward)" : "EXTERNAL (custom far-field outline)") << "\n";
+            std::cout << "  - Domain Boundary      : " << domainFile << (domainGrowBL ? " (wall, BL)" : " (far-field, no BL)") << "\n";
+            std::cout << "  - Domain Box           : " << (domainGrowBL ? "(bounded by the domain wall)" : "(bounding box of the outline)") << "\n\n";
+        } else {
+            std::cout << "  - Flow Type            : EXTERNAL (rectangular box)\n";
+            std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
+        }
 
         std::cout << "[ Mesh Sizing ]\n";
         std::cout << "  - Auto Surface Sizing  : " << (autoSurfaceSize ? "[ON]" : "[OFF]") << "\n";

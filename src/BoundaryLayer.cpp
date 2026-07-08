@@ -23,7 +23,7 @@ bool willIntersect(const Point2D& p1, const Point2D& p2, const std::vector<Point
 
 #include <set>
 
-double BoundaryLayerGenerator::detectGrowthDirection(const std::vector<int>& nodeIds) {
+double BoundaryLayerGenerator::detectGrowthDirection(const std::vector<int>& nodeIds, int growMode) {
     int n = static_cast<int>(nodeIds.size());
     if (n < 3) return 1.0;
 
@@ -35,6 +35,14 @@ double BoundaryLayerGenerator::detectGrowthDirection(const std::vector<int>& nod
     }
     bool isCCW = (area > 0);
 
+    // Explicit role (Phase 3). For a CCW loop, leftNormal (sign>0) points to the
+    // interior and rightNormal (sign<0) to the exterior; a CW loop is the mirror,
+    // and the isCCW branch below encodes both windings.
+    if (growMode > 0) return isCCW ? 1.0 : -1.0;   // grow toward loop interior (internal wall)
+    if (growMode < 0) return isCCW ? -1.0 : 1.0;   // grow toward loop exterior (obstacle/island)
+
+    // Auto (legacy, external flow): decide from whether the loop sits inside the
+    // rectangular domain box. Unchanged for backward compatibility.
     const Point2D& p0 = m_mesh.nodes[nodeIds[0]].pos;
     auto isInside = [&](const Point2D& p) {
         return (p.x > m_config.xMin && p.x < m_config.xMax && p.y > m_config.yMin && p.y < m_config.yMax);
@@ -62,7 +70,8 @@ bool BoundaryLayerGenerator::checkCollision(Point2D p, double threshold, const s
     return false;
 }
 
-double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& allBoundaryNodeIds) {
+double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& allBoundaryNodeIds,
+                                        const std::vector<int>& growModes) {
     std::vector<FrontState> fronts;
     int maxNTrans = 0;
     std::set<int> allInitialBoundaryIds;
@@ -71,9 +80,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     for (const auto& boundaryNodeIds : allBoundaryNodeIds) {
         allInitialBoundaryIds.insert(boundaryNodeIds.begin(), boundaryNodeIds.end());
         FrontState fs;
+        int gm = (currentId < static_cast<int>(growModes.size())) ? growModes[currentId] : 0;
         fs.geomId = currentId++;
         fs.activeFront = boundaryNodeIds;
-        fs.growthSign = detectGrowthDirection(boundaryNodeIds);
+        fs.growthSign = detectGrowthDirection(boundaryNodeIds, gm);
         
         int n_init = static_cast<int>(boundaryNodeIds.size());
         fs.fanNodeCounts.assign(n_init, m_config.blFanNodes);

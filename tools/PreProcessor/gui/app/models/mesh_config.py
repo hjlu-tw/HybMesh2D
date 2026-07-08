@@ -41,6 +41,7 @@ _KEY_MAP = {
     "EXPORT_STARCD": ("export_starcd", lambda s: int(s) != 0),
     "EXPORT_CGNS": ("export_cgns", lambda s: int(s) != 0),
     "ENABLE_COLLISION_DETECTION": ("enable_collision_detection", lambda s: int(s) != 0),
+    "INTERNAL_FLOW": ("internal_flow", lambda s: int(s) != 0),
     "OUTPUT_FILENAME": ("output_filename", str),
 }
 
@@ -99,6 +100,10 @@ class MeshConfig:
     export_starcd: bool = False
     export_cgns: bool = False
     enable_collision_detection: bool = True
+    # Internal flow (Phase 3): geometries are the domain walls, the boundary layer
+    # grows inward and triangles fill the interior; no separate far-field box. The
+    # largest geometry loop is the outer wall, the rest are island obstacles.
+    internal_flow: bool = False
     output_filename: str = ""
 
     # Geometry files list (corresponds to multiple GEOM_FILE parameters).
@@ -107,9 +112,13 @@ class MeshConfig:
     geom_files: list[str] = field(default_factory=list)
 
     # Per-geometry role, keyed by the exact path stored in geom_files. Absent =
-    # body-fitted boundary (default, written as GEOM_FILE). Present =>
-    # refinement seed (written as SEED_FILE), value is a dict:
+    # body-fitted boundary (default, written as GEOM_FILE — an external-flow
+    # obstacle, or an internal-flow wall/island when internal_flow is set). Present
+    # role dicts:
     #   {"role": "seed", "size": float|None, "radius": float|None, "mode": "source"|"embed"}
+    #       -> refinement seed, written as SEED_FILE.
+    #   {"role": "farfield"}
+    #       -> custom outer domain outline, written as DOMAIN_FILE (external flow).
     # size/radius None (or <=0) => let the backend auto-resolve.
     geom_roles: dict = field(default_factory=dict)
 
@@ -148,10 +157,24 @@ class MeshConfig:
         r = self.role_of(path)
         return bool(r and r.get("role") == "seed")
 
+    def is_farfield(self, path: str) -> bool:
+        """True if this geometry is the custom outer domain outline (DOMAIN_FILE)."""
+        r = self.role_of(path)
+        return bool(r and r.get("role") == "farfield")
+
+    @property
+    def domain_file(self) -> str | None:
+        """The single custom outer-domain outline, if one is defined (external flow)."""
+        for g in self.geom_files:
+            if self.is_farfield(g):
+                return g
+        return None
+
     @property
     def boundary_files(self) -> list:
-        """geom_files that are body-fitted boundaries (used for output naming)."""
-        return [g for g in self.geom_files if not self.is_seed(g)]
+        """geom_files that are body-fitted boundaries (used for output naming):
+        neither refinement seeds nor the far-field outline."""
+        return [g for g in self.geom_files if not self.is_seed(g) and not self.is_farfield(g)]
 
     @property
     def seed_files(self) -> list:
@@ -213,6 +236,11 @@ class MeshConfig:
                 # Map text file key to class attribute
                 if key == "GEOM_FILE":
                     self.geom_files.append(resolve(val_str))
+                elif key == "DOMAIN_FILE":
+                    # Custom outer-domain outline -> a geom_file with role farfield.
+                    dom_path = resolve(val_str)
+                    self.geom_files.append(dom_path)
+                    self.geom_roles[dom_path] = {"role": "farfield"}
                 elif key == "SEED_FILE":
                     # SEED_FILE <path> [size] [radius] [mode]; order-tolerant:
                     # words source/embed = mode, numbers fill size then radius.
@@ -314,6 +342,7 @@ class MeshConfig:
             f"EXPORT_STARCD {1 if self.export_starcd else 0}",
             f"EXPORT_CGNS {1 if self.export_cgns else 0}",
             f"ENABLE_COLLISION_DETECTION {1 if self.enable_collision_detection else 0}",
+            f"INTERNAL_FLOW {1 if self.internal_flow else 0}",
             f"BC_XMIN {self.bc_xmin}",
             f"BC_XMAX {self.bc_xmax}",
             f"BC_YMIN {self.bc_ymin}",
@@ -340,7 +369,13 @@ class MeshConfig:
                     rel_path = gf
 
             role = self.role_of(gf)
-            if role and role.get("role") == "seed":
+            role_name = role.get("role") if role else None
+            # Custom outer-domain outline (external flow only) -> DOMAIN_FILE. In
+            # internal flow there is no far-field, so such a geom falls through to
+            # GEOM_FILE (treated as a wall/island by the backend).
+            if role_name == "farfield" and not self.internal_flow:
+                lines.append(f"DOMAIN_FILE {rel_path}")
+            elif role and role_name == "seed":
                 # SEED_FILE <path> [size|auto] [radius] <mode>; mode always
                 # explicit so source/embed round-trips. size/radius are
                 # independent: an explicit radius with an auto size uses the

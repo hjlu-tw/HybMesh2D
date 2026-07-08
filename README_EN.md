@@ -15,7 +15,10 @@ HybMesh2D is a C++ tool for generating 2D hybrid meshes. It generates high-quali
 - **Multi-Format Export**: Supports exporting to `.vtk` (ParaView), STAR-CD (`.vrt`, `.cel`, `.bnd`), and **CGNS** (`.cgns`, unstructured zone + one BC patch per boundary) formats.
 - **Geometry Association**: The preprocessor writes a `.meta` sidecar next to each resampled `.dat`, losslessly carrying per-point source segment (`seg_id`), structural corner flags (`is_corner`), per-segment boundary condition (`bc`), and curve kind (`curve_kind`). See "Geometry Metadata Sidecar" below.
 - **Analytic BL Normals**: Grows the boundary layer along exact analytic normals on line/circle surfaces (instead of finite differences) for higher accuracy on curved bodies (cylinders, leading edges). Toggled by `BL_USE_ANALYTIC_GEOM` (off by default).
-- **Per-Segment Boundary Conditions**: Assign a BC per segment in the GUI CAD inspector; it travels to the mesher via the sidecar, replacing the position-based inference from the global `BC_GEOM`.
+- **Per-Segment Boundary Conditions**: Assign a BC per segment in the GUI CAD inspector; it travels to the mesher via the sidecar. On export, each boundary edge's BC comes from a tag attached to the edge (rectangle side, custom-outline segment, or geometry segment) rather than from position-based inference; same-named boundaries merge into one group (like STAR-CCM+/Fluent named boundaries).
+- **Custom Domain Shape**: The outer domain can be the rectangular box (`DOMAIN_X/Y_MIN/MAX`) or a custom closed polyline (`DOMAIN_FILE`). Polygons, circles, and sectors are all represented as resampled polylines that flow through the full BL/collision/export pipeline; each outline segment can carry its own BC via the sidecar.
+- **Internal Flow (Interior Meshing)**: Mesh the *interior* of a closed CAD geometry — the boundary layer grows **inward**, triangles fill the core, and no separate far-field box is built (`DOMAIN_FILE <path> bl`). Islands can be placed inside to form an annular domain.
+- **Per-Geometry Role**: Each geometry independently either grows a boundary layer (`bl`) or grows none and conforms at far-field size (`nobl`). Growth direction is deterministic: the domain wall grows inward, obstacles grow outward (no area-based heuristic).
 
 ## Mesh Architecture & Transition
 
@@ -60,7 +63,10 @@ The executable will be located at `build/HybMesh2D`.
 ### Common Command-Line Arguments
 
 - `-conf <path>`: Path to the background parameter config file (Default: `config/Background_para.dat`).
-- `-geom <path1> [path2]...`: Specify one or more geometry data files (body-fitted boundaries).
+- `-geom <path1> [path2]...`: Specify one or more geometry data files (body-fitted boundaries / obstacles that grow a boundary layer).
+- `-geom_nobl <path1> [path2]...`: Specify geometries that grow no boundary layer (conform at far-field size, as holes).
+- `-domain <path>`: Use a custom domain-outline geometry (a closed polyline) instead of the rectangular box.
+- `-domain_bl`: Treat the `-domain` geometry as a domain wall with the boundary layer growing inward (= internal flow); omit for a far-field outline (external flow).
 - `-seed <path1> [path2]...`: Specify one or more *refinement seed* geometries (drive a local minimum size only; no boundary layer).
 - `-seed_size <v>` / `-seed_radius <v>` / `-seed_mode <source|embed>`: Global default seed size / influence radius / mode.
 - `-out_vtk <0|1>`: Enable/Disable VTK output (1: ON, 0: OFF).
@@ -79,8 +85,10 @@ The executable will be located at `build/HybMesh2D`.
 
 | Parameter | Description | Default |
 | :--- | :--- | :--- |
-| `DOMAIN_X_MIN` / `MAX` | X-axis range of the domain | -10.0 / 10.0 |
-| `DOMAIN_Y_MIN` / `MAX` | Y-axis range of the domain | -10.0 / 10.0 |
+| `DOMAIN_X_MIN` / `MAX` | X-axis range of the rectangular domain (used when `DOMAIN_FILE` is unset) | -10.0 / 10.0 |
+| `DOMAIN_Y_MIN` / `MAX` | Y-axis range of the rectangular domain | -10.0 / 10.0 |
+| `DOMAIN_FILE <path> [bl\|nobl]` | Custom domain outline (closed polyline). `nobl` (default) = far-field outline (no BL, external flow); `bl` = domain wall (BL grows inward, internal flow). | (none; uses box) |
+| `GEOM_FILE <path> [bl\|nobl]` | Geometry / obstacle. `bl` (default) = grows a boundary layer; `nobl` = no BL, conforms at far-field size. | — |
 | `SURFACE_MESH_SIZE` | Initial mesh size on the geometry surface | 0.02 |
 | `AUTO_SURFACE_SIZE` | Auto-calculate starting surface size (0: OFF, 1: ON) | 1 |
 | `FARFIELD_MESH_SIZE` | Maximum mesh size in the far-field | 1.0 |

@@ -33,6 +33,12 @@ struct Node {
 
 struct Edge {
     int v1, v2;
+    // Boundary condition tag for a domain / far-field boundary edge (a rectangle
+    // side or a custom polygon edge). Empty -> not a tagged domain edge; geometry
+    // surface edges instead carry their BC via Node::bcTag. The exporters classify
+    // boundary edges by this attached tag rather than by domain proximity, which is
+    // what lets arbitrary (non-rectangular) domains keep correct per-edge BCs.
+    std::string bcTag;
 };
 
 struct Element {
@@ -77,6 +83,21 @@ public:
     // Phase 4: CGNS unstructured export with per-BC patches. Compiled only when
     // the CGNS library is found at configure time; otherwise a no-op stub warns.
     void exportCGNS(const std::string& filename, const Config& config) const;
+
+private:
+    // A tagged domain / far-field boundary segment (rectangle side or custom
+    // polygon edge). Boundary cell-edges lying on it inherit its BC; this
+    // generalizes the legacy axis-aligned (x≈xMin …) classification to any shape.
+    struct BcRefSeg { Point2D a, b; std::string bc; };
+    // Gather the tagged domain-boundary segments from `edges` (non-empty bcTag).
+    std::vector<BcRefSeg> collectBcRefSegs() const;
+    // Classify one boundary edge (endpoints v1,v2) to a BC name. Priority:
+    //   1) a domain reference segment it lies on (rectangle side / polygon edge),
+    //   2) a geometry per-segment Node::bcTag shared by both endpoints,
+    //   3) config.bcGeom (also the internal-flow wall default).
+    std::string classifyBoundaryBc(int v1, int v2,
+                                   const std::vector<BcRefSeg>& refs,
+                                   const Config& config) const;
 };
 
 #endif

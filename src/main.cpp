@@ -96,20 +96,21 @@ SurfaceMeta loadSurfaceMeta(const std::string& datFile) {
     return m;
 }
 
-bool checkDomainIntersection(const std::vector<Point2D>& geom, const Config& config) {
-    std::vector<Point2D> domain = {
-        {config.xMin, config.yMin}, {config.xMax, config.yMin},
-        {config.xMax, config.yMax}, {config.xMin, config.yMax}
-    };
-    
+// True if a geometry loop crosses the domain outline. `domain` is the ordered,
+// closed domain polyline (a rectangle's 4 corners, or a custom outline) — testing
+// against the real outline (not just its bbox) keeps the check valid for arbitrary
+// domain shapes.
+bool checkDomainIntersection(const std::vector<Point2D>& geom, const std::vector<Point2D>& domain) {
     int nGeom = static_cast<int>(geom.size());
+    int nDom = static_cast<int>(domain.size());
+    if (nDom < 3) return false;
     for (int i = 0; i < nGeom; ++i) {
         Point2D g1 = geom[i];
         Point2D g2 = geom[(i + 1) % nGeom];
 
-        for (int j = 0; j < 4; ++j) {
+        for (int j = 0; j < nDom; ++j) {
             Point2D d1 = domain[j];
-            Point2D d2 = domain[(j + 1) % 4];
+            Point2D d2 = domain[(j + 1) % nDom];
 
             if (segmentsIntersect(g1, g2, d1, d2)) {
                 return true;
@@ -117,6 +118,113 @@ bool checkDomainIntersection(const std::vector<Point2D>& geom, const Config& con
         }
     }
     return false;
+}
+
+// Reconcile a metadata sidecar against the points actually loaded. loadGeometry
+// drops a trailing duplicate of the first point on closed loops, so a sidecar for
+// a closed shape legitimately has one extra entry; anything else is a stale/edited
+// mismatch and the sidecar is dropped. Shared by every geometry load (obstacles,
+// the domain outline, no-BL holes) so per-segment BCs survive loop closure.
+static void reconcileMeta(SurfaceMeta& meta, size_t nPts, const std::string& file) {
+    if (!meta.valid) return;
+    if (meta.segId.size() == nPts + 1) { meta.segId.pop_back(); meta.isCorner.pop_back(); }
+    else if (meta.segId.size() != nPts) {
+        std::cerr << "Warning: metadata sidecar for " << file << " has " << meta.segId.size()
+                  << " points but geometry has " << nPts << "; ignoring sidecar.\n";
+        meta.valid = false;
+    }
+}
+
+// Add a closed polyline as boundary nodes + edges, each edge tagged with its
+// per-segment BC (edge i -> point i's segment BC, else defaultBc); nodes carry the
+// per-point metadata. Used for boundaries that do NOT grow a boundary layer — the
+// far-field outline and no-BL obstacle holes — which conform to the mesh at
+// far-field size. Returns the node ids.
+static std::vector<int> addTaggedLoop(Mesh& mesh, const std::vector<Point2D>& pts,
+                                      const SurfaceMeta& meta, const std::string& defaultBc,
+                                      int geomId) {
+    bool useMeta = meta.valid && meta.segId.size() == pts.size();
+    std::vector<int> ids; ids.reserve(pts.size());
+    std::vector<std::string> edgeBc(pts.size(), defaultBc);
+    for (size_t i = 0; i < pts.size(); ++i) {
+        mesh.addNode(pts[i], NodeType::Boundary);
+        Node& nd = mesh.nodes.back();
+        nd.geomId = geomId;
+        if (useMeta) {
+            nd.segId = meta.segId[i];
+            nd.isCorner = meta.isCorner[i] != 0;
+            auto it = meta.segBc.find(nd.segId);
+            if (it != meta.segBc.end() && !it->second.empty()) { nd.bcTag = it->second; edgeBc[i] = it->second; }
+            auto kit = meta.segKind.find(nd.segId);
+            if (kit != meta.segKind.end()) nd.curveKind = curveKindFromString(kit->second);
+        }
+        ids.push_back(nd.id);
+    }
+    int n = static_cast<int>(ids.size());
+    for (int i = 0; i < n; ++i) {
+        mesh.addEdge(ids[i], ids[(i + 1) % n]);
+        mesh.edges.back().bcTag = edgeBc[i];
+        mesh.addElement({ids[i], ids[(i + 1) % n]}); // 視覺化用
+    }
+    return ids;
+}
+
+// Build the outer computational-domain boundary for the cases that do NOT grow a
+// boundary layer: the rectangular box (config.domainFile empty) or a custom
+// far-field outline (config.domainFile set, config.domainGrowBL false). The
+// internal-flow case (domainGrowBL true) is handled by the caller, which loads the
+// domain file as a BL wall so its inner front bounds the triangulated core. For a
+// custom outline the config box is overwritten with the outline's bounding box so
+// downstream logic that reads xMin..yMax (mesh sizing, front validation) stays
+// valid. Returns the ordered domain polyline for intersection tests.
+static std::vector<Point2D> buildDomainBoundary(Mesh& mesh, Config& config) {
+    std::vector<Point2D> outline;
+    if (!config.domainFile.empty()) {
+        outline = loadGeometry(config.domainFile);
+        if (outline.size() < 3) {
+            std::cerr << "Warning: domain file '" << config.domainFile
+                      << "' has fewer than 3 points; using the rectangular box instead.\n";
+            outline.clear();
+        }
+    }
+
+    if (!outline.empty()) {
+        SurfaceMeta meta = loadSurfaceMeta(config.domainFile);
+        reconcileMeta(meta, outline.size(), config.domainFile);
+        double bxMin = outline[0].x, bxMax = outline[0].x;
+        double byMin = outline[0].y, byMax = outline[0].y;
+        for (const auto& p : outline) {
+            if (p.x < bxMin) bxMin = p.x;
+            if (p.x > bxMax) bxMax = p.x;
+            if (p.y < byMin) byMin = p.y;
+            if (p.y > byMax) byMax = p.y;
+        }
+        config.xMin = bxMin; config.xMax = bxMax;
+        config.yMin = byMin; config.yMax = byMax;
+        addTaggedLoop(mesh, outline, meta, config.bcGeom, /*geomId*/ -1);
+        std::cout << "  - Domain Boundary      : custom far-field outline ("
+                  << outline.size() << " segment(s)) from " << config.domainFile << "\n";
+        return outline;
+    }
+
+    // Rectangular box. Sides tagged to match node order: bottom(YMin), right(XMax),
+    // top(YMax), left(XMin).
+    std::vector<int> domainNodeIds;
+    mesh.addNode({config.xMin, config.yMin}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+    mesh.addNode({config.xMax, config.yMin}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+    mesh.addNode({config.xMax, config.yMax}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+    mesh.addNode({config.xMin, config.yMax}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
+    const std::string domainBcTags[4] = {
+        config.bcYMin, config.bcXMax, config.bcYMax, config.bcXMin
+    };
+    std::vector<Point2D> rect;
+    for (int i = 0; i < 4; ++i) {
+        mesh.addEdge(domainNodeIds[i], domainNodeIds[(i + 1) % 4]);
+        mesh.edges.back().bcTag = domainBcTags[i];
+        mesh.addElement({domainNodeIds[i], domainNodeIds[(i + 1) % 4]}); // 視覺化用
+        rect.push_back(mesh.nodes[domainNodeIds[i]].pos);
+    }
+    return rect;
 }
 
 bool isPointInPolygon(Point2D p, const std::vector<Point2D>& poly) {
@@ -131,7 +239,8 @@ bool isPointInPolygon(Point2D p, const std::vector<Point2D>& poly) {
     return inside;
 }
 
-bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::vector<Point2D>& geom2) {
+bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::vector<Point2D>& geom2,
+                                 bool internalFlow = false) {
     int n1 = static_cast<int>(geom1.size());
     int n2 = static_cast<int>(geom2.size());
     
@@ -162,9 +271,12 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
         }
     }
 
-    // 2. 檢查一個幾何是否完全在另一個內部
-    if (isPointInPolygon(geom1[0], geom2)) return true;
-    if (isPointInPolygon(geom2[0], geom1)) return true;
+    // 2. 檢查一個幾何是否完全在另一個內部。內流時島嶼障礙物本就位於外壁之內，
+    //    此為合法的環狀域，故略過此包含檢查 (線段交叉檢查於上方仍生效)。
+    if (!internalFlow) {
+        if (isPointInPolygon(geom1[0], geom2)) return true;
+        if (isPointInPolygon(geom2[0], geom1)) return true;
+    }
 
     return false;
 }
@@ -173,10 +285,20 @@ int main(int argc, char* argv[]) {
     Config config;
     std::string configFile = "config/Background_para.dat";
     std::vector<std::string> cmdGeomFiles;
+    std::vector<std::string> cmdNoBLGeomFiles;   // -geom_nobl: obstacles that don't grow BL
     std::vector<std::string> cmdSeedFiles;
     bool geomProvided = false;
     bool seedProvided = false;
     bool confExplicit = false;
+
+    // Phase-2 flags that consume exactly one value. Phase 1 must skip their value
+    // so it is never mistaken for the bare positional config path (e.g. the "1" in
+    // "-out_starcd 1", or the filename in "-domain outline.dat").
+    static const std::set<std::string> kValueFlags = {
+        "-bc_xmin", "-bc_xmax", "-bc_ymin", "-bc_ymax", "-bc_geom",
+        "-out_vtk", "-out_starcd", "-out_cgns", "-out_name",
+        "-domain", "-seed_size", "-seed_radius", "-seed_mode"
+    };
 
     // 第一階段：掃描以找出設定檔路徑與 -geom / -seed 參數
     for (int i = 1; i < argc; ++i) {
@@ -194,10 +316,15 @@ int main(int argc, char* argv[]) {
             while (i + 1 < argc && argv[i+1][0] != '-') {
                 cmdSeedFiles.push_back(argv[++i]);
             }
+        } else if (arg == "-geom_nobl") {
+            while (i + 1 < argc && argv[i+1][0] != '-') {
+                cmdNoBLGeomFiles.push_back(argv[++i]);
+            }
+        } else if (kValueFlags.count(arg) && i + 1 < argc) {
+            ++i; // value belongs to a phase-2 flag, not the config path
         } else if (arg[0] != '-' && !confExplicit) {
-            // Bare positional config path. Guard with confExplicit so the VALUE
-            // of a later value-flag this loop doesn't recognise (e.g. the "1" in
-            // "-out_cgns 1") is not mistaken for the config filename.
+            // Bare positional config path (only the first one; guarded so a stray
+            // value can't override it).
             configFile = arg;
             confExplicit = true;
         }
@@ -208,6 +335,11 @@ int main(int argc, char* argv[]) {
     // 如果命令列提供了 -geom，則覆蓋設定檔中的幾何物件
     if (geomProvided) {
         config.geomFiles = cmdGeomFiles;
+    }
+    // -geom_nobl：附加不長 BL 的障礙物 (以遠場尺寸貼合)。
+    for (const auto& f : cmdNoBLGeomFiles) {
+        config.geomFiles.push_back(f);
+        config.noBLGeoms.insert(f);
     }
     // 如果命令列提供了 -seed，則覆蓋設定檔中的加密種子 (套用全域 size/radius/mode)
     if (seedProvided) {
@@ -229,6 +361,11 @@ int main(int argc, char* argv[]) {
         else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_cgns" && i + 1 < argc) config.exportCGNS = (std::stoi(argv[++i]) != 0);
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
+        else if (arg == "-domain" && i + 1 < argc) config.domainFile = argv[++i];
+        else if (arg == "-domain_bl") config.domainGrowBL = true; // domain wall grows BL inward (internal flow)
+        else if (arg == "-geom_nobl") { // already collected in phase 1; skip its values here
+            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
+        }
         else if (arg == "-seed_size" && i + 1 < argc) parseDoubleArg(argv[++i], config.seedSize);
         else if (arg == "-seed_radius" && i + 1 < argc) parseDoubleArg(argv[++i], config.seedRadius);
         else if (arg == "-seed_mode" && i + 1 < argc) {
@@ -275,117 +412,139 @@ int main(int argc, char* argv[]) {
 
     bool hasIntersection = false;
     bool blSuccess = true;
-    if (config.geomFiles.empty() && config.seedFiles.empty()) {
+    if (config.geomFiles.empty() && config.seedFiles.empty() && config.domainFile.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
-        // 加入計算域邊界 (Domain Box) 到 edges
-        std::vector<int> domainNodeIds;
-        mesh.addNode({config.xMin, config.yMin}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
-        mesh.addNode({config.xMax, config.yMin}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
-        mesh.addNode({config.xMax, config.yMax}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
-        mesh.addNode({config.xMin, config.yMax}, NodeType::Boundary); domainNodeIds.push_back(mesh.nodes.back().id);
-        
-        for (int i = 0; i < 4; ++i) {
-            mesh.addEdge(domainNodeIds[i], domainNodeIds[(i + 1) % 4]);
-            mesh.addElement({domainNodeIds[i], domainNodeIds[(i + 1) % 4]}); // 視覺化用
+        // ---- Domain boundary ----------------------------------------------
+        // Rectangle box, or a custom far-field outline (no BL). The internal-flow
+        // case (a domain wall that grows BL inward) is NOT built here — it is loaded
+        // below as a BL geometry so its inner front bounds the triangulated core.
+        std::vector<Point2D> domainOutline;
+        bool domainIsWall = (!config.domainFile.empty() && config.domainGrowBL);
+        if (!domainIsWall) {
+            domainOutline = buildDomainBoundary(mesh, config); // box or far-field outline
         }
 
         BoundaryLayerGenerator blGen(mesh, config);
         double lastH = config.blInitialThickness;
 
-        struct GeomData {
-            std::string filename;
+        // ---- Gather input geometries with their per-geometry role -----------
+        struct GeomInput {
+            std::string file;
             std::vector<Point2D> points;
             SurfaceMeta meta;
+            bool isDomainWall;   // domain outline that grows BL inward (internal flow)
+            bool growBL;         // grow a boundary layer (false = conform at far-field size)
         };
-        std::vector<GeomData> allGeometries;
+        std::vector<GeomInput> inputs;
 
+        // Domain wall first (internal flow): its bbox drives the config box so the
+        // BL front validation (xMin..yMax) stays valid for geometries beyond ±10.
+        if (domainIsWall) {
+            std::vector<Point2D> pts = loadGeometry(config.domainFile);
+            if (pts.size() < 3) {
+                std::cerr << "Error: internal-flow domain wall '" << config.domainFile
+                          << "' has fewer than 3 points.\n";
+                return 1;
+            }
+            SurfaceMeta meta = loadSurfaceMeta(config.domainFile);
+            reconcileMeta(meta, pts.size(), config.domainFile);
+            double bxMin = pts[0].x, bxMax = pts[0].x, byMin = pts[0].y, byMax = pts[0].y;
+            for (const auto& p : pts) {
+                if (p.x < bxMin) bxMin = p.x;
+                if (p.x > bxMax) bxMax = p.x;
+                if (p.y < byMin) byMin = p.y;
+                if (p.y > byMax) byMax = p.y;
+            }
+            config.xMin = bxMin; config.xMax = bxMax;
+            config.yMin = byMin; config.yMax = byMax;
+            inputs.push_back({config.domainFile, pts, meta, true, true});
+        }
+
+        // Obstacles / objects (GEOM_FILE). growBL unless listed in noBLGeoms.
         for (const auto& gFile : config.geomFiles) {
             std::vector<Point2D> geomPoints = loadGeometry(gFile);
             if (geomPoints.empty()) {
                 std::cerr << "Error: Failed to load geometry from " << gFile << std::endl;
                 continue;
             }
-            if (checkDomainIntersection(geomPoints, config)) {
+            if (checkDomainIntersection(geomPoints, domainOutline)) { // no-op when domainOutline empty
                 std::cerr << "Error: Geometry " << gFile << " intersects with domain boundary. Skipping.\n";
                 continue;
             }
-
-            // Reconcile the sidecar with the points actually loaded. loadGeometry
-            // drops a trailing duplicate of the first point on closed loops, so
-            // the sidecar legitimately has exactly one extra entry; anything else
-            // is a stale/edited mismatch and we ignore the sidecar entirely.
             SurfaceMeta meta = loadSurfaceMeta(gFile);
-            if (meta.valid) {
-                if (meta.segId.size() == geomPoints.size() + 1) {
-                    meta.segId.pop_back();
-                    meta.isCorner.pop_back();
-                } else if (meta.segId.size() != geomPoints.size()) {
-                    std::cerr << "Warning: metadata sidecar for " << gFile
-                              << " has " << meta.segId.size() << " points but geometry has "
-                              << geomPoints.size() << "; ignoring sidecar.\n";
-                    meta.valid = false;
-                }
-            }
-            allGeometries.push_back({gFile, geomPoints, meta});
+            reconcileMeta(meta, geomPoints.size(), gFile);
+            bool bl = config.noBLGeoms.find(gFile) == config.noBLGeoms.end();
+            inputs.push_back({gFile, geomPoints, meta, false, bl});
         }
 
+        // ---- Pairwise collision detection -----------------------------------
+        // A domain wall legitimately contains islands, so skip the containment check
+        // for internal flow; segment-crossing checks still apply.
         if (config.enableCollisionDetection) {
-            for (size_t i = 0; i < allGeometries.size(); ++i) {
-                for (size_t j = i + 1; j < allGeometries.size(); ++j) {
-                    if (checkGeometriesIntersection(allGeometries[i].points, allGeometries[j].points)) {
-                        std::cerr << "Error: Geometry " << allGeometries[i].filename 
-                                  << " and Geometry " << allGeometries[j].filename 
+            for (size_t i = 0; i < inputs.size(); ++i)
+                for (size_t j = i + 1; j < inputs.size(); ++j)
+                    if (checkGeometriesIntersection(inputs[i].points, inputs[j].points, domainIsWall)) {
+                        std::cerr << "Error: Geometry " << inputs[i].file
+                                  << " and Geometry " << inputs[j].file
                                   << " intersect. Process stopped.\n";
                         hasIntersection = true;
                     }
-                }
-            }
         }
         if (hasIntersection) return 1;
 
         if (config.blAutoTransitionLayers == 1) {
             double totalLen = 0.0; int totalSegments = 0;
-            for (const auto& geomData : allGeometries) {
-                int np = (int)geomData.points.size();
+            for (const auto& g : inputs) {
+                int np = (int)g.points.size();
                 for (int i = 0; i < np; ++i) {
-                    totalLen += (geomData.points[(i + 1) % np] - geomData.points[i]).length();
+                    totalLen += (g.points[(i + 1) % np] - g.points[i]).length();
                     totalSegments++;
                 }
             }
             if (totalSegments > 0) config.globalAvgSegmentLength = totalLen / (double)totalSegments;
         }
 
+        // ---- Build nodes/edges + per-loop growth direction ------------------
+        // BL geometries -> allBoundaryIds (growMode: domain wall +1 inward, obstacle
+        // -1 outward — deterministic, no area heuristic). No-BL geometries -> tagged
+        // edge loops (holes) meshed at far-field size, not grown.
         std::vector<std::vector<int>> allBoundaryIds;
-        int currentGeomId = 0;
+        std::vector<int> growModes;
         int taggedCorners = 0;
-        for (const auto& geomData : allGeometries) {
+        int noBLGeomId = 100000;   // distinct geomIds for no-BL loops (BL self-collision)
+        for (const auto& g : inputs) {
+            if (!g.growBL) {
+                addTaggedLoop(mesh, g.points, g.meta, config.bcGeom, noBLGeomId++);
+                continue;
+            }
+            int blIndex = static_cast<int>(allBoundaryIds.size()); // == FrontState.geomId
             std::vector<int> boundaryIds;
-            const SurfaceMeta& meta = geomData.meta;
-            for (size_t pi = 0; pi < geomData.points.size(); ++pi) {
-                mesh.addNode(geomData.points[pi], NodeType::Boundary);
+            boundaryIds.reserve(g.points.size());
+            for (size_t pi = 0; pi < g.points.size(); ++pi) {
+                mesh.addNode(g.points[pi], NodeType::Boundary);
                 Node& nd = mesh.nodes.back();
-                nd.geomId = currentGeomId;
-                if (meta.valid) {
-                    nd.segId = meta.segId[pi];
-                    nd.isCorner = meta.isCorner[pi] != 0;
+                nd.geomId = blIndex;
+                if (g.meta.valid) {
+                    nd.segId = g.meta.segId[pi];
+                    nd.isCorner = g.meta.isCorner[pi] != 0;
                     if (nd.isCorner) ++taggedCorners;
-                    auto it = meta.segBc.find(nd.segId);
-                    if (it != meta.segBc.end() && !it->second.empty()) nd.bcTag = it->second;
-                    auto kit = meta.segKind.find(nd.segId);
-                    if (kit != meta.segKind.end()) nd.curveKind = curveKindFromString(kit->second);
+                    auto it = g.meta.segBc.find(nd.segId);
+                    if (it != g.meta.segBc.end() && !it->second.empty()) nd.bcTag = it->second;
+                    auto kit = g.meta.segKind.find(nd.segId);
+                    if (kit != g.meta.segKind.end()) nd.curveKind = curveKindFromString(kit->second);
                 }
                 boundaryIds.push_back(nd.id);
             }
             allBoundaryIds.push_back(boundaryIds);
-            currentGeomId++;
+            growModes.push_back(g.isDomainWall ? 1 : -1);
         }
         if (taggedCorners > 0)
             std::cout << "  - Surface metadata     : " << taggedCorners << " corner node(s) tagged\n";
+        if (domainIsWall)
+            std::cout << "  - Internal flow        : domain wall grows BL inward\n";
 
-        // Phase 2: report the analytic-curve coverage and sanity-check a fit.
-        // This is the bridge to Phase 3, where BL growth will query these curves
-        // for true tangents/curvature instead of one-sided finite differences.
+        // Report the analytic-curve coverage and sanity-check a fit (diagnostic).
         {
             int nLine = 0, nCircle = 0, nSmooth = 0, nPoly = 0;
             for (const auto& nd : mesh.nodes) {
@@ -401,14 +560,13 @@ int main(int argc, char* argv[]) {
                 std::cout << "  - Surface curve model  : line=" << nLine
                           << " circle=" << nCircle << " smooth=" << nSmooth
                           << " polyline=" << nPoly << "\n";
-                // If a circle segment exists, fit it and report the radius.
-                for (const auto& geomData : allGeometries) {
-                    if (!geomData.meta.valid) continue;
+                for (const auto& g : inputs) {
+                    if (!g.meta.valid) continue;
                     std::vector<Point2D> circPts;
-                    for (size_t pi = 0; pi < geomData.points.size(); ++pi) {
-                        auto kit = geomData.meta.segKind.find(geomData.meta.segId[pi]);
-                        if (kit != geomData.meta.segKind.end() && kit->second == "circle")
-                            circPts.push_back(geomData.points[pi]);
+                    for (size_t pi = 0; pi < g.points.size(); ++pi) {
+                        auto kit = g.meta.segKind.find(g.meta.segId[pi]);
+                        if (kit != g.meta.segKind.end() && kit->second == "circle")
+                            circPts.push_back(g.points[pi]);
                     }
                     if (circPts.size() >= 3) {
                         CircleCurve cc(circPts);
@@ -422,7 +580,7 @@ int main(int argc, char* argv[]) {
         }
 
         try {
-            lastH = blGen.generate(allBoundaryIds);
+            lastH = blGen.generate(allBoundaryIds, growModes);
         } catch (const std::exception& e) {
             std::cerr << e.what() << std::endl;
             std::cerr << "Proceeding to export partial mesh for debugging..." << std::endl;

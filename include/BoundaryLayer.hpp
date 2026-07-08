@@ -36,15 +36,19 @@ class BoundaryLayerGenerator {
 public:
     BoundaryLayerGenerator(Mesh& mesh, const Config& config);
 
-    // 從多組初始邊界節點 ID 同步生成邊界層，並回傳最後一層的厚度
-    double generate(const std::vector<std::vector<int>>& allBoundaryNodeIds);
+    // 從多組初始邊界節點 ID 同步生成邊界層，並回傳最後一層的厚度。
+    // growModes (若提供) 與 allBoundaryNodeIds 平行，逐迴圈指定生長方向：
+    //   0 = auto (沿用矩形域框判定, 外流預設), +1 = 往迴圈內側 (內流壁面),
+    //  -1 = 往迴圈外側 (障礙物 / 島嶼)。空 vector -> 全部 auto。
+    double generate(const std::vector<std::vector<int>>& allBoundaryNodeIds,
+                    const std::vector<int>& growModes = {});
 
 private:
     Mesh& m_mesh;
     const Config& m_config;
 
-    // 自動偵測生長方向
-    double detectGrowthDirection(const std::vector<int>& nodeIds);
+    // 偵測生長方向。growMode: 0=auto(域框判定), +1=內側, -1=外側。
+    double detectGrowthDirection(const std::vector<int>& nodeIds, int growMode = 0);
     bool checkCollision(Point2D p, double threshold, const std::set<int>& ignoreIds, int currentGeomId);
 };
 

@@ -27,6 +27,57 @@ CGNS_ENUMT(BCType_t) mapCgnsBcType(const std::string& n) {
 } // namespace
 #endif
 
+namespace {
+// True if p lies on segment a-b (within eps of the line and inside its span).
+// Used to attach a domain-boundary edge's BC to the (possibly Gmsh-subdivided)
+// mesh edges that fall on it — a generalization of the axis-aligned x≈xMin test.
+bool pointOnSegment(const Point2D& p, const Point2D& a, const Point2D& b,
+                    double eps = 1e-5) {
+    double abx = b.x - a.x, aby = b.y - a.y;
+    double len2 = abx * abx + aby * aby;
+    if (len2 < 1e-18) {
+        double dx0 = p.x - a.x, dy0 = p.y - a.y;
+        return (dx0 * dx0 + dy0 * dy0) < eps * eps;
+    }
+    double t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+    if (t < -eps || t > 1.0 + eps) return false;
+    double dx = p.x - (a.x + t * abx), dy = p.y - (a.y + t * aby);
+    return (dx * dx + dy * dy) < eps * eps;
+}
+} // namespace
+
+std::vector<Mesh::BcRefSeg> Mesh::collectBcRefSegs() const {
+    std::vector<BcRefSeg> refs;
+    for (const auto& e : edges) {
+        if (e.bcTag.empty()) continue;
+        refs.push_back({nodes[e.v1].pos, nodes[e.v2].pos, e.bcTag});
+    }
+    return refs;
+}
+
+std::string Mesh::classifyBoundaryBc(int v1, int v2,
+                                     const std::vector<BcRefSeg>& refs,
+                                     const Config& config) const {
+    const Point2D& p1 = nodes[v1].pos;
+    const Point2D& p2 = nodes[v2].pos;
+
+    // 1. Domain / far-field reference segment (rectangle side or polygon edge):
+    //    generalizes the legacy axis (x≈xMin …) classification to any shape.
+    //    For external flow the box/outline is always tagged, so this catches every
+    //    far-field edge; for internal flow there are no such segments.
+    for (const auto& r : refs) {
+        if (pointOnSegment(p1, r.a, r.b) && pointOnSegment(p2, r.a, r.b))
+            return r.bc;
+    }
+
+    // 2. Geometry per-segment tag carried on the nodes (both endpoints agree).
+    if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag)
+        return nodes[v1].bcTag;
+
+    // 3. Default geometry / wall BC (untagged geometry surface, internal-flow wall).
+    return config.bcGeom;
+}
+
 void Mesh::addNode(Point2D p, NodeType type) {
     int id = static_cast<int>(nodes.size());
     Node n;
@@ -208,15 +259,9 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         return;
     }
     vofs << std::fixed << std::setprecision(8);
-    double xMin = 1e9, xMax = -1e9, yMin = 1e9, yMax = -1e9;
     for (size_t i = 0; i < nodes.size(); ++i) {
         // 依據需求：總共 4 欄 (ID, x, y, z)
         vofs << (i + 1) << " " << nodes[i].pos.x << " " << nodes[i].pos.y << " 0.0\n";
-        
-        if (nodes[i].pos.x < xMin) xMin = nodes[i].pos.x;
-        if (nodes[i].pos.x > xMax) xMax = nodes[i].pos.x;
-        if (nodes[i].pos.y < yMin) yMin = nodes[i].pos.y;
-        if (nodes[i].pos.y > yMax) yMax = nodes[i].pos.y;
     }
     vofs.close();
 
@@ -313,36 +358,27 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         }
     }
 
+    // Boundary edges (used by exactly one cell), classified by their attached BC
+    // tag: a domain reference segment wins, else a geometry per-segment Node::bcTag,
+    // else the axis/geom fallback. Group ids are assigned per unique BC name in
+    // first-appearance order (name-based grouping, like STAR-CCM+/Fluent).
+    const std::vector<BcRefSeg> bcRefs = collectBcRefSegs();
+    std::map<std::string, int> groupIds;
+    int nextGroup = 1;
     int bndCount = 1;
-    double eps = 1e-5;
     for (const auto& kv : edgeCellCount) {
-        if (kv.second == 1) { // 邊界邊
-            int v1 = edgeNodes[kv.first].first;
-            int v2 = edgeNodes[kv.first].second;
-            
-            // 判斷邊界類別
-            bool isXMin = (std::abs(nodes[v1].pos.x - xMin) < eps && std::abs(nodes[v2].pos.x - xMin) < eps);
-            bool isXMax = (std::abs(nodes[v1].pos.x - xMax) < eps && std::abs(nodes[v2].pos.x - xMax) < eps);
-            bool isYMin = (std::abs(nodes[v1].pos.y - yMin) < eps && std::abs(nodes[v2].pos.y - yMin) < eps);
-            bool isYMax = (std::abs(nodes[v1].pos.y - yMax) < eps && std::abs(nodes[v2].pos.y - yMax) < eps);
-            
-            int groupId = 5; // geometries surface grid
-            std::string bcName = config.bcGeom;
+        if (kv.second != 1) continue; // 只輸出邊界邊
+        int v1 = edgeNodes[kv.first].first;
+        int v2 = edgeNodes[kv.first].second;
 
-            if (isXMin) { groupId = 1; bcName = config.bcXMin; }
-            else if (isXMax) { groupId = 2; bcName = config.bcXMax; }
-            else if (isYMin) { groupId = 3; bcName = config.bcYMin; }
-            else if (isYMax) { groupId = 4; bcName = config.bcYMax; }
-            // Phase 1: a geometry edge carrying an explicit per-segment BC tag
-            // (both endpoints agree) overrides the global BC_GEOM default. This
-            // replaces guessing the surface BC purely from domain proximity.
-            else if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag) {
-                bcName = nodes[v1].bcTag;
-            }
-            
-            // 格式：bnd編號, v1, v2, 0, 0, groupId, 0, bcName (共 8 欄)
-            bofs << bndCount++ << " " << (v1 + 1) << " " << (v2 + 1) << " 0 0 " << groupId << " 0 " << bcName << "\n";
-        }
+        std::string bcName = classifyBoundaryBc(v1, v2, bcRefs, config);
+        int gid;
+        auto git = groupIds.find(bcName);
+        if (git == groupIds.end()) { gid = nextGroup++; groupIds[bcName] = gid; }
+        else gid = git->second;
+
+        // 格式：bnd編號, v1, v2, 0, 0, groupId, 0, bcName (共 8 欄)
+        bofs << bndCount++ << " " << (v1 + 1) << " " << (v2 + 1) << " 0 0 " << gid << " 0 " << bcName << "\n";
     }
     bofs.close();
 
@@ -388,13 +424,8 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
     }
     const cgsize_t nCells = (cgsize_t)(tris.size() + quads.size());
 
-    // --- 2. Domain extents, then group boundary edges (used by exactly one
-    //        cell) by BC name — same classification as exportStarCD. ---
-    double xMin = 1e9, xMax = -1e9, yMin = 1e9, yMax = -1e9;
-    for (const auto& nd : nodes) {
-        xMin = std::min(xMin, nd.pos.x); xMax = std::max(xMax, nd.pos.x);
-        yMin = std::min(yMin, nd.pos.y); yMax = std::max(yMax, nd.pos.y);
-    }
+    // --- 2. Group boundary edges (used by exactly one cell) by BC name —
+    //        same classification as exportStarCD. ---
     std::map<std::pair<int, int>, int> edgeCount;
     std::map<std::pair<int, int>, std::pair<int, int>> edgeNodes;
     std::set<std::vector<int>> seenForBnd;
@@ -413,20 +444,11 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
         }
     }
     std::map<std::string, std::vector<std::pair<int, int>>> bcGroups;
-    const double eps = 1e-5;
+    const std::vector<BcRefSeg> bcRefs = collectBcRefSegs();
     for (const auto& kv : edgeCount) {
         if (kv.second != 1) continue;
         int v1 = edgeNodes[kv.first].first, v2 = edgeNodes[kv.first].second;
-        bool isXMin = (std::abs(nodes[v1].pos.x - xMin) < eps && std::abs(nodes[v2].pos.x - xMin) < eps);
-        bool isXMax = (std::abs(nodes[v1].pos.x - xMax) < eps && std::abs(nodes[v2].pos.x - xMax) < eps);
-        bool isYMin = (std::abs(nodes[v1].pos.y - yMin) < eps && std::abs(nodes[v2].pos.y - yMin) < eps);
-        bool isYMax = (std::abs(nodes[v1].pos.y - yMax) < eps && std::abs(nodes[v2].pos.y - yMax) < eps);
-        std::string bc = config.bcGeom;
-        if (isXMin) bc = config.bcXMin;
-        else if (isXMax) bc = config.bcXMax;
-        else if (isYMin) bc = config.bcYMin;
-        else if (isYMax) bc = config.bcYMax;
-        else if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag) bc = nodes[v1].bcTag;
+        std::string bc = classifyBoundaryBc(v1, v2, bcRefs, config);
         bcGroups[bc].push_back({v1, v2});
     }
 
@@ -552,18 +574,21 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         }
     }
 
-    // 2. 拓撲分析 (使用過濾後的邊)
-    std::vector<int> loops;
+    // 2. 拓撲分析 (使用過濾後的邊)。同時記錄每個 loop 的節點序列以計算面積。
+    struct LoopInfo { int tag; double absArea; };
+    std::vector<LoopInfo> loopInfos;
     std::vector<bool> used(allLines.size(), false);
     for (size_t i = 0; i < allLines.size(); ++i) {
         if (used[i]) continue;
         std::vector<int> currentLoopLines;
-        int firstLine = allLines[i];
-        currentLoopLines.push_back(firstLine);
+        std::vector<int> loopNodeSeq;                 // 依序的「本地」節點 id
+        currentLoopLines.push_back(allLines[i]);
         used[i] = true;
-        
+
         int startGmshNode = nodeToGmshTag[filteredEdges[i].v1];
         int currGmshNode = nodeToGmshTag[filteredEdges[i].v2];
+        loopNodeSeq.push_back(filteredEdges[i].v1);
+        loopNodeSeq.push_back(filteredEdges[i].v2);
 
         while (currGmshNode != startGmshNode) {
             bool found = false;
@@ -572,28 +597,46 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
                     int v1_tag = nodeToGmshTag[filteredEdges[k].v1];
                     int v2_tag = nodeToGmshTag[filteredEdges[k].v2];
 
-                    if (v1_tag == currGmshNode) { 
-                        currentLoopLines.push_back(allLines[k]); 
-                        currGmshNode = v2_tag; 
-                        used[k] = true; 
-                        found = true; 
-                        break; 
+                    if (v1_tag == currGmshNode) {
+                        currentLoopLines.push_back(allLines[k]);
+                        currGmshNode = v2_tag;
+                        loopNodeSeq.push_back(filteredEdges[k].v2);
+                        used[k] = true;
+                        found = true;
+                        break;
                     }
-                    else if (v2_tag == currGmshNode) { 
-                        currentLoopLines.push_back(-allLines[k]); 
-                        currGmshNode = v1_tag; 
-                        used[k] = true; 
-                        found = true; 
-                        break; 
+                    else if (v2_tag == currGmshNode) {
+                        currentLoopLines.push_back(-allLines[k]);
+                        currGmshNode = v1_tag;
+                        loopNodeSeq.push_back(filteredEdges[k].v1);
+                        used[k] = true;
+                        found = true;
+                        break;
                     }
                 }
             }
             if (!found) break;
         }
         if (currentLoopLines.size() >= 3 && currGmshNode == startGmshNode) {
-            loops.push_back(gmsh::model::geo::addCurveLoop(currentLoopLines));
+            int loopTag = gmsh::model::geo::addCurveLoop(currentLoopLines);
+            double area2 = 0.0;                        // shoelace (帶符號 ×2)
+            int m = static_cast<int>(loopNodeSeq.size());
+            for (int a = 0; a < m; ++a) {
+                const Point2D& p1 = nodes[loopNodeSeq[a]].pos;
+                const Point2D& p2 = nodes[loopNodeSeq[(a + 1) % m]].pos;
+                area2 += (p1.x * p2.y - p2.x * p1.y);
+            }
+            loopInfos.push_back({loopTag, std::abs(area2) * 0.5});
         }
     }
+
+    // 依 |面積| 由大到小排序：最大 loop 為外邊界置於首位，其餘為洞。這讓任意外框
+    // 形狀 (多邊形/圓/扇形) 與內流 (BL 內緣 front 為外圈) 交給 Gmsh 時皆正確。
+    std::sort(loopInfos.begin(), loopInfos.end(),
+              [](const LoopInfo& a, const LoopInfo& b) { return a.absArea > b.absArea; });
+    std::vector<int> loops;
+    loops.reserve(loopInfos.size());
+    for (const auto& li : loopInfos) loops.push_back(li.tag);
 
     int surfTag = -1;
     if (!loops.empty()) {

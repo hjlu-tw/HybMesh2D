@@ -15,7 +15,10 @@ HybMesh2D 是一個用於生成 2D 混合網格（Hybrid Mesh）的 C++ 工具�
 - **多格式輸出**：支援匯出 `.vtk` (ParaView)、STAR-CD (`.vrt`, `.cel`, `.bnd`)，以及 **CGNS** (`.cgns`，非結構化區 + 每 BC patch) 格式。
 - **幾何關聯 (Geometry Association)**：前處理器在重採樣 `.dat` 旁產生 `.meta` sidecar，無損攜帶每點的來源段 (`seg_id`)、結構角點 (`is_corner`)、每段邊界條件 (`bc`) 與曲線型別 (`curve_kind`)。詳見下方「幾何 metadata sidecar」。
 - **解析邊界層法向**：在 line/circle 表面以精確解析法向生長邊界層 (取代有限差分)，對曲面 (圓柱、前緣) 更準確。可由 `BL_USE_ANALYTIC_GEOM` 開關，預設關閉。
-- **每段邊界條件**：可在 GUI CAD 檢視器逐段指定 BC，透過 sidecar 帶到 mesher，取代全域 `BC_GEOM` 的位置反推。
+- **每段邊界條件**：可在 GUI CAD 檢視器逐段指定 BC，透過 sidecar 帶到 mesher，取代全域 `BC_GEOM` 的位置反推。匯出時邊界條件由「邊自帶的標籤」決定（矩形邊、自訂外框每段、幾何每段），不再靠座標反推；同名邊界自動合併為同一 group（對齊 STAR-CCM+/Fluent 的具名邊界）。
+- **自訂計算域外形 (Custom Domain)**：計算域外框可用矩形 (`DOMAIN_X/Y_MIN/MAX`)，或指定一條封閉多邊線 (`DOMAIN_FILE`)。多邊形、圓、扇形皆以重採樣多邊線表示，直接走完整的邊界層/碰撞/匯出管線；外框每段可由 sidecar 帶各自的 BC。
+- **內部網格 / 內流 (Internal Flow)**：可對封閉 CAD 幾何生成「內部」網格 —— 邊界層往**內**生長、三角形填滿內部核心，且不建立獨立遠場外框 (`DOMAIN_FILE <path> bl`)。域內可再放障礙物島嶼形成環狀域。
+- **逐幾何角色 (Per-geometry Role)**：每個幾何可獨立選擇生長邊界層 (`bl`)，或不長邊界層、以遠場尺寸貼合 (`nobl`)。生長方向為確定性：計算域壁面往內、障礙物往外（不再用面積啟發式猜測）。
 
 ## 網格架構與過渡機制
 
@@ -65,7 +68,10 @@ make
 ### 常用命令列參數
 
 - `-conf <path>`: 指定背景參數設定檔路徑（預設: `config/Background_para.dat`）。
-- `-geom <path1> [path2]...`: 指定一個或多個幾何資料檔（body-fitted 邊界）。
+- `-geom <path1> [path2]...`: 指定一個或多個幾何資料檔（生長邊界層的 body-fitted 邊界 / 障礙物）。
+- `-geom_nobl <path1> [path2]...`: 指定不生長邊界層的幾何（以遠場尺寸貼合，作為洞）。
+- `-domain <path>`: 指定計算域外框幾何（一條封閉多邊線），取代矩形外框。
+- `-domain_bl`: 將 `-domain` 幾何視為計算域壁面、邊界層往內生長（= 內流）；省略時為遠場外框（外流）。
 - `-seed <path1> [path2]...`: 指定一個或多個「加密種子」幾何檔（僅驅動局部最小尺寸，不生長邊界層）。
 - `-seed_size <值>` / `-seed_radius <值>` / `-seed_mode <source|embed>`: 全域種子尺寸 / 影響半徑 / 模式預設值。
 - `-out_vtk <0|1>`: 是否輸出 VTK 檔案 (1: 開啟, 0: 關閉)。
@@ -84,8 +90,10 @@ make
 
 | 參數名稱 | 說明 | 預設值 |
 | :--- | :--- | :--- |
-| `DOMAIN_X_MIN` / `MAX` | 計算域 X 軸範圍 | -10.0 / 10.0 |
-| `DOMAIN_Y_MIN` / `MAX` | 計算域 Y 軸範圍 | -10.0 / 10.0 |
+| `DOMAIN_X_MIN` / `MAX` | 矩形計算域 X 軸範圍（`DOMAIN_FILE` 未指定時使用） | -10.0 / 10.0 |
+| `DOMAIN_Y_MIN` / `MAX` | 矩形計算域 Y 軸範圍 | -10.0 / 10.0 |
+| `DOMAIN_FILE <path> [bl\|nobl]` | 自訂計算域外框（封閉多邊線）。`nobl`(預設)=遠場外框(不長 BL, 外流)；`bl`=域壁面(BL 往內長, 內流)。 | (無, 用矩形) |
+| `GEOM_FILE <path> [bl\|nobl]` | 幾何/障礙物。`bl`(預設)=生長邊界層；`nobl`=不長 BL、以遠場尺寸貼合。 | — |
 | `SURFACE_MESH_SIZE` | 表面初始網格尺寸 | 0.02 |
 | `AUTO_SURFACE_SIZE` | 是否自動計算起始表面尺寸 (0: 關閉, 1: 開啟) | 1 |
 | `FARFIELD_MESH_SIZE` | 遠場最大網格尺寸 | 1.0 |
