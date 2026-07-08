@@ -171,19 +171,26 @@ class MeshConfigPanel(QScrollArea):
 
         role_form = QFormLayout()
         self.geom_role_combo = QComboBox()
+        # Index order is relied on by _on_geom_selection_changed / _on_role_edited /
+        # _update_role_visibility below — keep them in sync.
         self.geom_role_combo.addItems([
-            "Boundary (body-fitted)",
-            "Seed (refinement source)",
-            "Far-field (custom outline)",
+            "Boundary (grows BL)",              # 0 -> None (obstacle, BL outward)
+            "No-BL (far-field size)",           # 1 -> {"role":"nobl"}
+            "Seed (refinement source)",         # 2 -> {"role":"seed",...}
+            "Domain: far-field (no BL)",        # 3 -> {"role":"farfield"}  (external)
+            "Domain: wall (internal, BL in)",   # 4 -> {"role":"wall"}      (internal flow)
         ])
         self.geom_role_combo.setStyleSheet(COMBO_STYLE)
         self.geom_role_combo.setEnabled(False)
         self.geom_role_combo.setToolTip(
-            "Boundary: grows boundary layers; an external-flow obstacle, or an "
-            "internal-flow wall/island when Internal Flow is on (default).\n"
-            "Seed: only drives a local minimum mesh size (no boundary layer).\n"
-            "Far-field: this closed outline replaces the rectangular domain box "
-            "(external flow); each of its edges can carry its own BC.")
+            "Boundary: grows a boundary layer (external-flow obstacle / wall) — default.\n"
+            "No-BL: no boundary layer; the mesh conforms to it at far-field size.\n"
+            "Seed: only drives a local minimum mesh size (no BL, not a boundary).\n"
+            "Domain far-field: this closed outline is the outer domain (no BL, external flow).\n"
+            "Domain wall: this closed outline is the outer domain and grows its BL inward "
+            "(internal flow — mesh the interior).\n"
+            "The rectangular box (Domain X/Y Min/Max) is used unless one geometry has a "
+            "Domain role. At most one Domain geometry.")
 
         self.seed_size = CleanDoubleSpinBox()
         self.seed_size.setRange(0.0, 1e4)
@@ -496,13 +503,8 @@ class MeshConfigPanel(QScrollArea):
         self.enable_collision_detection.setStyleSheet("color:#a0a8c0;")
         self.enable_collision_detection.setToolTip("Enable self-intersection detection during boundary layer generation")
 
-        self.internal_flow = QCheckBox("Internal Flow (mesh inside geometry)")
-        self.internal_flow.setStyleSheet("color:#a0a8c0;")
-        self.internal_flow.setToolTip(
-            "Off (external flow): geometries are obstacles inside a far-field box.\n"
-            "On (internal flow): geometries ARE the domain walls — the boundary layer "
-            "grows inward and triangles fill the interior; no far-field box. With "
-            "several geometries, the largest is the outer wall and the rest are islands.")
+        # Internal flow is now expressed per-geometry (a geometry with the
+        # "Domain: wall" role grows its BL inward); there is no global toggle.
 
         self.export_vtk_btn = QPushButton("Export VTK")
         self.export_vtk_btn.setToolTip("Export the generated mesh to a VTK file (.vtk)")
@@ -557,8 +559,6 @@ class MeshConfigPanel(QScrollArea):
         io_form.addRow(help_label("BC YMax:", "Boundary condition type for the top domain boundary"), self.bc_ymax)
         io_form.addRow(help_label("BC Geom:", "Boundary condition type assigned to the geometry wall surface"), self.bc_geom)
         io_form.addRow(help_label("Output File:", "Base filename for mesh output files (extension .* means all formats)"), self.output_filename)
-        io_form.addRow("", help_widget(self.internal_flow,
-            "Mesh the interior of the geometry (internal flow) instead of the exterior (external flow)."))
         io_form.addRow("", help_widget(self.enable_collision_detection, "Enable self-intersection detection during boundary layer generation"))
         io_form.addRow(help_label("Export:", "Export options for outputting mesh files in various formats"), export_layout)
         # Narrower label column than the other sections: the BC labels are short
@@ -641,18 +641,13 @@ class MeshConfigPanel(QScrollArea):
                 self.geom_role_combo.setEnabled(True)
                 rinfo = current.data(self._ROLE_DATA)
                 role_name = rinfo.get("role") if rinfo else None
+                role_to_index = {None: 0, "nobl": 1, "seed": 2, "farfield": 3, "wall": 4}
+                self.geom_role_combo.setCurrentIndex(role_to_index.get(role_name, 0))
                 if role_name == "seed":
-                    self.geom_role_combo.setCurrentIndex(1)
                     self.seed_size.setValue(float(rinfo.get("size") or 0.0))
                     self.seed_radius.setValue(float(rinfo.get("radius") or 0.0))
                     self.seed_mode.setCurrentIndex(1 if rinfo.get("mode") == "embed" else 0)
-                elif role_name == "farfield":
-                    self.geom_role_combo.setCurrentIndex(2)
-                    self.seed_size.setValue(0.0)
-                    self.seed_radius.setValue(0.0)
-                    self.seed_mode.setCurrentIndex(0)
                 else:
-                    self.geom_role_combo.setCurrentIndex(0)
                     self.seed_size.setValue(0.0)
                     self.seed_radius.setValue(0.0)
                     self.seed_mode.setCurrentIndex(0)
@@ -669,7 +664,7 @@ class MeshConfigPanel(QScrollArea):
         if item is None:
             return
         idx = self.geom_role_combo.currentIndex()
-        if idx == 1:  # Seed
+        if idx == 2:  # Seed
             size = self.seed_size.value()
             radius = self.seed_radius.value()
             rinfo = {
@@ -681,9 +676,13 @@ class MeshConfigPanel(QScrollArea):
                 "mode": "embed" if self.seed_mode.currentIndex() == 1 else "source",
             }
             item.setData(self._ROLE_DATA, rinfo)
-        elif idx == 2:  # Far-field (custom outer-domain outline)
+        elif idx == 1:   # No-BL obstacle (conform at far-field size)
+            item.setData(self._ROLE_DATA, {"role": "nobl"})
+        elif idx == 3:   # Domain: far-field outline (external, no BL)
             item.setData(self._ROLE_DATA, {"role": "farfield"})
-        else:
+        elif idx == 4:   # Domain: wall (internal flow, BL grows inward)
+            item.setData(self._ROLE_DATA, {"role": "wall"})
+        else:            # Boundary obstacle (grows BL)
             item.setData(self._ROLE_DATA, None)
         self._update_role_visibility()
         self.mesh_config_changed.emit(self.get_config())
@@ -691,7 +690,7 @@ class MeshConfigPanel(QScrollArea):
     def _update_role_visibility(self):
         """Show seed params only for a selected seed geometry. Size and radius are
         independent, so radius stays editable even when the size is auto."""
-        is_seed = self.geom_role_combo.isEnabled() and self.geom_role_combo.currentIndex() == 1
+        is_seed = self.geom_role_combo.isEnabled() and self.geom_role_combo.currentIndex() == 2
         for w in (self.seed_size, self.seed_radius, self.seed_mode):
             w.setVisible(is_seed)
             w.setEnabled(is_seed)
@@ -795,7 +794,6 @@ class MeshConfigPanel(QScrollArea):
         self.export_starcd.setChecked(cfg.export_starcd)
         self.export_cgns.setChecked(cfg.export_cgns)
         self.enable_collision_detection.setChecked(cfg.enable_collision_detection)
-        self.internal_flow.setChecked(cfg.internal_flow)
 
         # Update canvas preview geometries and config
         self.mesh_config_changed.emit(cfg)
@@ -818,7 +816,7 @@ class MeshConfigPanel(QScrollArea):
             p = item.data(Qt.ItemDataRole.UserRole)
             cfg.geom_files.append(p)
             rinfo = item.data(self._ROLE_DATA)
-            if rinfo and rinfo.get("role") in ("seed", "farfield"):
+            if rinfo and rinfo.get("role") in ("seed", "nobl", "farfield", "wall"):
                 cfg.geom_roles[p] = dict(rinfo)
 
         # 2. Sizing
@@ -872,7 +870,6 @@ class MeshConfigPanel(QScrollArea):
         cfg.export_starcd = self.export_starcd.isChecked()
         cfg.export_cgns = self.export_cgns.isChecked()
         cfg.enable_collision_detection = self.enable_collision_detection.isChecked()
-        cfg.internal_flow = self.internal_flow.isChecked()
 
         return cfg
 

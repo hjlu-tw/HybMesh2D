@@ -602,10 +602,14 @@ bool processElement(const json& config) {
         const int segId = sj.value("id", segIndex);
         segBc[segId] = sj.value("bc", std::string());
         segKind[segId] = deriveCurveKind(sj);
-        // A segment whose first point does not coincide with the previous
-        // segment's last point starts a new disconnected piece (e.g. a moved /
-        // duplicated edge). Decided once, on the segment's first sample point.
+        // A segment starts a new disconnected piece if the GUI declares one
+        // ("new_piece"), OR its first point does not coincide with the previous
+        // segment's last point (a moved/duplicated edge, or a separately-drawn
+        // body). Decided once, on the segment's first sample point. The explicit
+        // flag makes multi-body / annular sessions robust even when two pieces
+        // happen to sit geometrically close.
         bool segStarted = false;
+        bool declaredNewPiece = sj.value("new_piece", false);
         std::string type = sj.value("type", "file");
         bool autoSplit = sj.value("auto_split", false);
         double splitThreshold = sj.value("split_threshold", 20.0);
@@ -935,11 +939,13 @@ bool processElement(const json& config) {
                     }
                 }
                 
-                // On the segment's first sample point, record a piece break if
-                // it is geometrically detached from the running output's tail.
+                // On the segment's first sample point, record a piece break if the
+                // GUI declared one, or it is geometrically detached from the running
+                // output's tail.
                 if (!segStarted) {
                     segStarted = true;
-                    if (!resPts.empty() && (p - resPts.back()).length() > 1e-7)
+                    if (!resPts.empty() &&
+                        (declaredNewPiece || (p - resPts.back()).length() > 1e-7))
                         pieceBreaks.push_back(resPts.size());
                 }
 
