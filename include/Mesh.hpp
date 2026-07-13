@@ -24,6 +24,7 @@ struct Node {
     // Defaults keep nodes without metadata (domain box, BL, interior) inert.
     int segId = -1;        // source segment id, -1 if unknown
     bool isCorner = false; // pinned structural vertex (sharp corner / shape vertex)
+    bool skipBL = false;   // per-segment BL disabled on this node -> grow no layer here
     std::string bcTag;     // per-segment boundary condition, empty -> use config default
 
     // Phase 2: local curve model of the source segment, so BL growth can query

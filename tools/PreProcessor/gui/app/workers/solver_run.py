@@ -1,12 +1,12 @@
 from __future__ import annotations
 import os
 import re
-import shutil
 import subprocess
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from app.models.solver_config import SolverConfig
+from app.services import solver_case
 from app.utils import find_mpi_launcher
 
 # Convergence markers echoed by unicones on stdout (verified by smoke test, R1):
@@ -105,17 +105,11 @@ class SolverPipelineWorker(QThread):
             return False
 
         # The solver reads its segment table "<bc>.def" from its own cwd (work
-        # dir). Use getPGrid's companion verbatim: copy grid/<bc>.def -> work/.
-        # Skip only when the user supplied an explicit BC override (solver_ctrl
-        # already wrote it into the work dir).
-        def_name = os.path.basename(self._config.output_bc_file) + ".def"
-        companion = os.path.join(self._getpgrid_dir, def_name)
-        target = os.path.join(self._solver_work_dir, def_name)
-        if (not self._config.bc_definitions
-                and os.path.exists(companion)
-                and os.path.abspath(companion) != os.path.abspath(target)):
-            shutil.copy2(companion, target)
-            self.log_signal.emit(f"[getPGrid] segment table -> {def_name}")
+        # dir). Use getPGrid's companion verbatim, unless the user supplied an
+        # explicit BC override (solver_ctrl already wrote it into the work dir).
+        solver_case.stage_bc_def_companion(
+            self._config, self._getpgrid_dir, self._solver_work_dir,
+            log=self.log_signal.emit)
 
         self.progress_signal.emit(15)
         return True

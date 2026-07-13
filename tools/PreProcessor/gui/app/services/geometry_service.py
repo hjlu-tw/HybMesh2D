@@ -223,6 +223,11 @@ class GeometryService:
         elif seg.curve_type == "polygon":
             v_str = seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1")
             verts = _parse_vertices_str(v_str)
+            # Force-close the polygon: the last point always connects back to the
+            # first (like triangle/quad), so a polygon is a closed loop rather
+            # than an open polyline missing its last edge.
+            if len(verts) >= 3 and not np.allclose(verts[0], verts[-1]):
+                verts = np.vstack([verts, verts[0]])
             xs, ys = _sample_polyline_pinned(verts, n)
         else:  # custom
             t_vals = np.linspace(seg.t_min, seg.t_max, n)
@@ -273,6 +278,45 @@ class GeometryService:
         return xs, ys
 
     @staticmethod
+    def _geo_cum(n: int, ratio: float) -> np.ndarray:
+        """Normalised cumulative node positions (0..1, length n) for a one-sided
+        geometric distribution, mirroring C++ Spacing::generateGeometric."""
+        if n < 2:
+            return np.zeros(1)
+        if abs(ratio - 1.0) < 1e-9:
+            return np.linspace(0.0, 1.0, n)
+        w = ratio ** np.arange(n - 1)                 # relative cell widths
+        cs = np.concatenate([[0.0], np.cumsum(w)])
+        return cs / cs[-1]
+
+    @staticmethod
+    def _geometric_u(n: int, r0: float, r1: float) -> np.ndarray:
+        """Normalised parameter (0..1, length n) for a geometric distribution
+        with start ratio r0 and end ratio r1. Mirrors the C++ resampler: both
+        ratios non-unit and n>=4 -> two-sided blend; start unit -> single from
+        the end; otherwise single from the start."""
+        r0 = max(float(r0), 1e-6)
+        r1 = max(float(r1), 1e-6)
+        s0 = abs(r0 - 1.0) > 1e-9
+        s1 = abs(r1 - 1.0) > 1e-9
+        if s0 and s1 and n >= 4:
+            n_left = (n - 1) // 2
+            n_right = (n - 1) - n_left
+            fL = n_left / (n - 1)
+            a = GeometryService._geo_cum(n_left + 1, r0) * fL          # 0..fL
+            b = GeometryService._geo_cum(n_right + 1, r1) * (1.0 - fL)  # 0..(1-fL)
+            u = np.concatenate([a, 1.0 - b[:n_right][::-1]])
+        elif not s0 and s1:
+            u = 1.0 - GeometryService._geo_cum(n, r1)[::-1]
+        else:
+            u = GeometryService._geo_cum(n, r0)
+        u = np.asarray(u, dtype=float)
+        if u.size:
+            u[0] = 0.0
+            u[-1] = 1.0
+        return u
+
+    @staticmethod
     def resample_preview(xs, ys, strategy: str, params: dict):
         """Lightweight Python preview of a point distribution along a polyline.
 
@@ -304,13 +348,13 @@ class GeometryService:
             it = float(params.get("intensity", 2.0))
             u = lin if it < 1e-6 else 0.5 * (1.0 + np.tanh(it * (lin - 0.5)) / np.tanh(it * 0.5))
         elif strategy == "geometric":
-            r = float(params.get("ratio", 1.2))
-            if abs(r - 1.0) < 1e-9:
-                u = lin
-            else:
-                w = r ** np.arange(n - 1)
-                cs = np.concatenate([[0.0], np.cumsum(w)])
-                u = cs / cs[-1]
+            # Honour BOTH the start and end growth ratios, mirroring the C++
+            # resampler (tools/PreProcessor/src/main.cpp, "geometric" branch) so
+            # the live preview matches the exported result. Previously only the
+            # start ratio was read, so changing the end ratio showed no change.
+            r0 = float(params.get("ratio", 1.2))
+            r1 = float(params.get("ratio_end", 1.0))
+            u = GeometryService._geometric_u(n, r0, r1)
         else:  # uniform / curvature (curvature shown as uniform in preview)
             u = lin
 

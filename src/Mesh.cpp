@@ -763,6 +763,19 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         std::cout << "  -> Using hGap (" << hGap << ") as baseline for triangulation near collisions." << std::endl;
     }
 
+    // 3.0b 遠場尺寸：AUTO_FARFIELD_SIZE 開啟時，由計算域範圍 (xMin..yMax，矩形域
+    //      或自訂外形皆已填好) 較長邊的 5% 推得 (約 20 格)，並確保不小於表面尺寸
+    //      hEnd；否則沿用手動 FARFIELD_MESH_SIZE。之後的尺寸場一律使用此值。
+    double farFieldSize = config.farFieldSize;
+    if (config.autoFarFieldSize) {
+        double domExtent = std::max(config.xMax - config.xMin, config.yMax - config.yMin);
+        if (domExtent > 0.0) {
+            farFieldSize = std::max(domExtent * 0.05, hEnd);
+            std::cout << "  -> Final Far-field Mesh Size (Auto from domain extent): "
+                      << farFieldSize << std::endl;
+        }
+    }
+
     // 收集所有尺寸場，最後取 Min 作為背景尺寸場。
     std::vector<double> sizeFields;
 
@@ -774,7 +787,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
 
         // 建立緩衝區：在 dBuffer 距離內維持 hBase 尺寸，避免 1 個大網格接多個小網格
         double dBuffer = hBase * config.blTransitionBuffer;
-        std::string expr = "Min(" + std::to_string(config.farFieldSize) + ", " +
+        std::string expr = "Min(" + std::to_string(farFieldSize) + ", " +
                            std::to_string(hBase) + " + Max(0, F" + std::to_string(fDist) + " - " +
                            std::to_string(dBuffer) + ") * " + std::to_string(config.farFieldGrowthRate) + ")";
 
@@ -783,10 +796,32 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         sizeFields.push_back(static_cast<double>(fFinal));
     }
 
+    // 3.1b 雙向分級：由計算域外邊界向內成長 (#7)。以計算域邊界框的內距
+    //      d = Min(x-xMin, xMax-x, y-yMin, yMax-y) 為距離，尺寸由外邊界的 hEnd
+    //      往內以 farFieldGrowthRateOuter 成長至 farFieldSize；與其餘尺寸場一併取
+    //      Min，因此靠近外邊界處也維持較細、中間最粗。矩形域為精確值，自訂外形以
+    //      邊界框近似 (xMin..yMax 兩者皆已填好)。
+    if (config.farFieldBidirectional) {
+        double dBufferOuter = hEnd * config.blTransitionBuffer;
+        std::string dOuter = "Min(Min(x-(" + std::to_string(config.xMin) + "),(" +
+                             std::to_string(config.xMax) + ")-x),Min(y-(" +
+                             std::to_string(config.yMin) + "),(" +
+                             std::to_string(config.yMax) + ")-y))";
+        std::string exprOuter = "Min(" + std::to_string(farFieldSize) + ", " +
+                                std::to_string(hEnd) + " + Max(0, (" + dOuter + ") - " +
+                                std::to_string(dBufferOuter) + ") * " +
+                                std::to_string(config.farFieldGrowthRateOuter) + ")";
+        int fOuter = gmsh::model::mesh::field::add("MathEval");
+        gmsh::model::mesh::field::setString(fOuter, "F", exprOuter);
+        sizeFields.push_back(static_cast<double>(fOuter));
+        std::cout << "  -> Far-field bidirectional grading enabled (outer growth rate "
+                  << config.farFieldGrowthRateOuter << ")." << std::endl;
+    }
+
     // 3.2 加密種子尺寸場 (Distance + Threshold)：種子附近維持 effSize，於 effRadius
     //     之外藉 StopAtDistMax 失效，交由邊界層/遠場尺寸接手；多個種子與邊界層場
     //     一併取 Min。effSize / effRadius 未指定時自動推得。
-    double seedMinSize = config.farFieldSize;
+    double seedMinSize = farFieldSize;
     for (const auto& sd : seedFieldData) {
         // main.cpp already folded the per-file value and the global default
         // (config.seedSize/seedRadius) into sd.size/sd.radius; here we only do
@@ -813,7 +848,7 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         int fSeedTh = gmsh::model::mesh::field::add("Threshold");
         gmsh::model::mesh::field::setNumber(fSeedTh, "InField", fSeedDist);
         gmsh::model::mesh::field::setNumber(fSeedTh, "SizeMin", effSize);
-        gmsh::model::mesh::field::setNumber(fSeedTh, "SizeMax", config.farFieldSize);
+        gmsh::model::mesh::field::setNumber(fSeedTh, "SizeMax", farFieldSize);
         gmsh::model::mesh::field::setNumber(fSeedTh, "DistMin", 0.0);
         gmsh::model::mesh::field::setNumber(fSeedTh, "DistMax", effRadius);
         gmsh::model::mesh::field::setNumber(fSeedTh, "StopAtDistMax", 1);
@@ -830,12 +865,12 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         gmsh::model::mesh::field::setNumbers(fMin, "FieldsList", sizeFields);
         gmsh::model::mesh::field::setAsBackgroundMesh(fMin);
 
-        double meshMin = std::min(std::min(hEnd, config.farFieldSize), seedMinSize);
+        double meshMin = std::min(std::min(hEnd, farFieldSize), seedMinSize);
         gmsh::option::setNumber("Mesh.MeshSizeMin", meshMin);
-        gmsh::option::setNumber("Mesh.MeshSizeMax", config.farFieldSize);
+        gmsh::option::setNumber("Mesh.MeshSizeMax", farFieldSize);
     } else {
-        gmsh::option::setNumber("Mesh.MeshSizeMin", config.farFieldSize);
-        gmsh::option::setNumber("Mesh.MeshSizeMax", config.farFieldSize);
+        gmsh::option::setNumber("Mesh.MeshSizeMin", farFieldSize);
+        gmsh::option::setNumber("Mesh.MeshSizeMax", farFieldSize);
     }
 
     gmsh::option::setNumber("Mesh.MeshSizeExtendFromBoundary", 0);

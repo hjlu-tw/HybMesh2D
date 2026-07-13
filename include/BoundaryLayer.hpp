@@ -21,6 +21,12 @@ struct FrontState {
     std::vector<int> activeFront;
     double growthSign;
     int nTrans;
+    // Per-geometry boundary-layer parameters (global defaults + this geometry's
+    // overrides) and the running layer thickness for this front. Each front
+    // advances its own thickness, so geometries may differ in initial
+    // thickness / growth rate / layer count.
+    BLParams bl;
+    double currentH = 0.0;
     std::map<int, Vector2D> nodeDirections;
     std::map<int, double> nodeStepMultipliers;
     std::map<int, RayInfo> rayInfoMap; // 追蹤每個節點的射線屬性
@@ -40,8 +46,11 @@ public:
     // growModes (若提供) 與 allBoundaryNodeIds 平行，逐迴圈指定生長方向：
     //   0 = auto (沿用矩形域框判定, 外流預設), +1 = 往迴圈內側 (內流壁面),
     //  -1 = 往迴圈外側 (障礙物 / 島嶼)。空 vector -> 全部 auto。
+    // blParamsPerLoop (若提供) 與 allBoundaryNodeIds 平行，逐迴圈指定該幾何的
+    // 邊界層參數；缺項或空 vector -> 使用全域 config 參數。
     double generate(const std::vector<std::vector<int>>& allBoundaryNodeIds,
-                    const std::vector<int>& growModes = {});
+                    const std::vector<int>& growModes = {},
+                    const std::vector<BLParams>& blParamsPerLoop = {});
 
 private:
     Mesh& m_mesh;

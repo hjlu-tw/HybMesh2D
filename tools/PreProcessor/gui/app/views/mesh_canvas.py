@@ -42,6 +42,13 @@ class MeshCanvasView(QWidget):
     # QPainterPath work) are skipped — the wireframe alone stays responsive.
     FILL_CELL_LIMIT = 200_000
 
+    # (#9) Distinct colours assigned to free-form patch/group labels (those not
+    # in the semantic BC_COLORS map), cycled in first-appearance order.
+    _BC_PALETTE = [
+        "#e63946", "#457b9d", "#2a9d8f", "#e9c46a", "#f4a261",
+        "#9b5de5", "#00bbf9", "#f15bb5", "#80ed99", "#ff8fab",
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -60,6 +67,16 @@ class MeshCanvasView(QWidget):
         self.show_wireframe = True
         self.show_domain_box = True
         self.show_bc_coloring = True
+        # When the domain comes from a custom geometry outline (not the X/Y box)
+        # the rectangular domain box and its per-edge BC colours are meaningless,
+        # so they are suppressed regardless of the show_* toggles.
+        self.domain_is_custom = False
+        # Overlay highlighting the geometry currently selected in the config list.
+        self._sel_highlight_item: pg.PlotDataItem | None = None
+        # The view is auto-fit once (initial content / explicit refit); after
+        # that, preview refreshes (e.g. a role change) must NOT move the view, so
+        # selecting a domain role doesn't yank the camera around.
+        self._did_initial_fit = False
 
         # Wireframe plot item
         self.wireframe_item: pg.PlotDataItem | None = None
@@ -75,6 +92,14 @@ class MeshCanvasView(QWidget):
 
         # BC preview items drawn directly from domain box (no mesh needed)
         self.bc_preview_items: list[pg.PlotDataItem] = []
+
+        # (#9) Per-segment BC/patch coloured overlays for the GEOMETRY outlines
+        # (read from each geometry's .meta), so BC Preview colours the actual
+        # edges by their patch/group — works for custom domains too, unlike the
+        # rectangle-box preview above. `_bc_label_colors` assigns a stable colour
+        # to each free-form label (known BC-type names use the shared BC_COLORS).
+        self.geom_bc_items: list[pg.PlotDataItem] = []
+        self._bc_label_colors: dict[str, str] = {}
 
         # Mouse coordinate tracking overlay
         self.coord_label = pg.TextItem('', anchor=(-0.1, 1.1), color=_CANVAS_FG)
@@ -138,6 +163,10 @@ class MeshCanvasView(QWidget):
             self.plot_widget.removeItem(item)
         self.bc_preview_items.clear()
 
+        for item in self.geom_bc_items:
+            self.plot_widget.removeItem(item)
+        self.geom_bc_items.clear()
+
         for item in self.filled_items:
             self.plot_widget.removeItem(item)
         self.filled_items.clear()
@@ -163,6 +192,9 @@ class MeshCanvasView(QWidget):
 
     def update_geometry_previews(self, geom_files: list[str]):
         """Load and display the input boundary geometries as preview lines using a background thread."""
+        # The geometry set is changing; drop any stale selection highlight so it
+        # can't linger over a file that is no longer listed.
+        self.highlight_geometry_file(None)
         self._render_previews(
             geom_files, self.geom_preview_items,
             "_geom_loader_gen", "_geom_loader_threads",
@@ -223,6 +255,15 @@ class MeshCanvasView(QWidget):
             except Exception as e:
                 print(f"Error rendering loaded preview geometry: {e}")
         self._update_empty_state()
+        # Fit once when the first content (or a requested refit) arrives; leave
+        # the view alone on later refreshes so a role change doesn't move it.
+        if self.geom_preview_items and not self._did_initial_fit:
+            self.auto_range()
+
+    def request_refit(self):
+        """Ask for a one-time refit on the next preview load (used when the
+        geometry SET changes, e.g. add/browse/remove)."""
+        self._did_initial_fit = False
 
     def update_seed_previews(self, seed_files: list[str]):
         """Load and display refinement-seed geometries as dashed orange preview
@@ -314,6 +355,59 @@ class MeshCanvasView(QWidget):
                 pass
         self._error_highlight_items = []
 
+    def highlight_segment(self, coords):
+        """Highlight one or more segments' points/edges (Nx2 array). Rows of NaN
+        break the polyline, so several disjoint segments can be highlighted at
+        once (multi-select in the per-segment BC dialog). Pass None/empty to
+        clear."""
+        item = getattr(self, "_seg_highlight_item", None)
+        if item is not None:
+            try:
+                self.plot_widget.removeItem(item)
+            except Exception:
+                pass
+            self._seg_highlight_item = None
+        if coords is None or len(coords) < 1:
+            return
+        c = np.atleast_2d(np.asarray(coords, dtype=float))
+        if c.shape[1] < 2:
+            return
+        # connect='finite' → NaN rows split the line into separate segments.
+        self._seg_highlight_item = self.plot_widget.plot(
+            c[:, 0], c[:, 1], connect='finite',
+            pen=pg.mkPen('#ff5bd0', width=4, style=Qt.PenStyle.SolidLine),
+            symbol='o', symbolSize=6, symbolBrush='#ff5bd0', symbolPen='#ff5bd0')
+        self._seg_highlight_item.setZValue(24)
+
+    def highlight_geometry_file(self, path: str | None):
+        """Draw a bright outline over the geometry stored at `path` so the file
+        selected in the config list stands out on the canvas. Passing a falsy
+        path (or a missing file) just clears the previous highlight."""
+        if self._sel_highlight_item is not None:
+            try:
+                self.plot_widget.removeItem(self._sel_highlight_item)
+            except Exception:
+                pass
+            self._sel_highlight_item = None
+
+        import os
+        if not path or not os.path.exists(path):
+            return
+        try:
+            pts = np.atleast_2d(np.loadtxt(path))
+        except Exception:
+            return
+        if pts.shape[0] < 2 or pts.shape[1] < 2:
+            return
+        # Close a boundary loop visually, but leave open polylines/seeds as-is.
+        if pts.shape[0] >= 3 and not np.allclose(pts[0], pts[-1]):
+            pts = np.vstack((pts, pts[0]))
+        item = self.plot_widget.plot(
+            pts[:, 0], pts[:, 1],
+            pen=pg.mkPen('#ffe066', width=3, style=Qt.PenStyle.SolidLine))
+        item.setZValue(22)
+        self._sel_highlight_item = item
+
 
 
     def resizeEvent(self, event):
@@ -349,7 +443,19 @@ class MeshCanvasView(QWidget):
         """Toggle display of the domain bounding box."""
         self.show_domain_box = visible
         if self.domain_box_item is not None:
-            self.domain_box_item.setVisible(visible)
+            self.domain_box_item.setVisible(visible and not self.domain_is_custom)
+
+    def set_domain_is_custom(self, is_custom: bool):
+        """Record that the domain comes from a custom geometry outline (Domain
+        Source = Custom geometry). Hides the rectangular box and its per-edge BC
+        colours, which only describe the rectangular domain."""
+        self.domain_is_custom = bool(is_custom)
+        if self.domain_box_item is not None:
+            self.domain_box_item.setVisible(self.show_domain_box and not self.domain_is_custom)
+        # The four rectangle-edge BC colours don't apply to a custom domain, but
+        # the geometry-outline patch colours (#9) do — refresh both.
+        self._rebuild_bc_preview_from_config()
+        self._rebuild_geom_bc_preview()
 
     def set_bc_coloring_visible(self, visible: bool):
         """Toggle display of colored boundary conditions."""
@@ -358,6 +464,9 @@ class MeshCanvasView(QWidget):
             item.setVisible(visible)
         for item in self.bc_preview_items:
             item.setVisible(visible)
+        # (#9) geometry-outline patch colours follow the same toggle; rebuild so
+        # newly-turned-on colouring picks up the current .meta labels.
+        self._rebuild_geom_bc_preview()
 
     def update_mesh_config(self, cfg: MeshConfig | None, fit_view: bool = False):
         """Sync MeshConfig mapping for domain box and boundary conditions rendering."""
@@ -373,6 +482,8 @@ class MeshCanvasView(QWidget):
             self._rebuild_bc_preview_from_config()
             # Update geometry previews from config
             self.update_geometry_previews(self.mesh_config.geom_files)
+            # (#9) Colour the geometry outlines by their per-segment patch/group.
+            self._rebuild_geom_bc_preview()
             if self.mesh:
                 self._rebuild_mesh_items()
             elif fit_view:
@@ -390,7 +501,7 @@ class MeshCanvasView(QWidget):
             self.domain_box_item.setZValue(15)
         else:
             self.domain_box_item.setData(xs, ys)
-        self.domain_box_item.setVisible(self.show_domain_box)
+        self.domain_box_item.setVisible(self.show_domain_box and not self.domain_is_custom)
 
     def auto_range(self):
         """Automatically fit the view bounds to display the full mesh or geometry previews."""
@@ -410,14 +521,19 @@ class MeshCanvasView(QWidget):
                 ymin, ymax = min(ys), max(ys)
 
         if xmin is not None:
-            # If domain box is active and mesh config exists, stretch slightly to fit domain
-            if self.show_domain_box and self.mesh_config:
+            # Stretch to the rectangular domain box only when it is actually the
+            # domain (not a custom-geometry domain, where the box is hidden and
+            # its stale -10..10 extent would wrongly zoom the view out).
+            if (self.show_domain_box and self.mesh_config
+                    and not self.domain_is_custom):
                 xmin = min(xmin, self.mesh_config.domain_x_min)
                 xmax = max(xmax, self.mesh_config.domain_x_max)
                 ymin = min(ymin, self.mesh_config.domain_y_min)
                 ymax = max(ymax, self.mesh_config.domain_y_max)
             self.plot_widget.setXRange(xmin, xmax, padding=0.06)
             self.plot_widget.setYRange(ymin, ymax, padding=0.06)
+            # Pin the view: later preview refreshes won't auto-move it.
+            self._did_initial_fit = True
 
     def _rebuild_bc_preview_from_config(self):
         """Draw colored BC segments directly on the four domain boundary edges.
@@ -430,6 +546,11 @@ class MeshCanvasView(QWidget):
         self.bc_preview_items.clear()
 
         if not self.mesh_config:
+            return
+        # A custom-geometry domain carries its boundary conditions on the outline
+        # edges (via the .meta sidecar), not on the four rectangle sides, so drawing
+        # rectangle-edge BC colours here would be misleading.
+        if self.domain_is_custom:
             return
 
         cfg = self.mesh_config
@@ -453,6 +574,68 @@ class MeshCanvasView(QWidget):
             item.setZValue(18)
             item.setVisible(self.show_bc_coloring)
             self.bc_preview_items.append(item)
+
+    def _bc_color_for_label(self, label: str) -> str:
+        """Colour for a patch/group label. Known BC-type names use the shared
+        semantic BC_COLORS; any other free-form label gets a stable palette
+        colour assigned in first-appearance order (#9)."""
+        key = (label or "").strip().lower()
+        if not key:
+            return DEFAULT_BC_COLOR
+        if key in BC_COLORS:
+            return BC_COLORS[key]
+        if key not in self._bc_label_colors:
+            idx = len(self._bc_label_colors) % len(self._BC_PALETTE)
+            self._bc_label_colors[key] = self._BC_PALETTE[idx]
+        return self._bc_label_colors[key]
+
+    def _rebuild_geom_bc_preview(self):
+        """(#9) Colour each geometry OUTLINE segment by its per-segment patch/
+        group label (read from the geometry's .meta sidecar). Runs synchronously
+        (the .dat/.meta files are small) so BC Preview immediately shows the
+        colours on the corresponding edges — including custom-geometry domains,
+        which the rectangle-box preview skips. Segments with no .meta info keep
+        the plain grey outline drawn by the async loader."""
+        for item in self.geom_bc_items:
+            self.plot_widget.removeItem(item)
+        self.geom_bc_items.clear()
+
+        if not self.mesh_config or not self.show_bc_coloring:
+            return
+
+        from app.services.meta_io import read_meta_segments, read_meta_point_segids
+        for gf in self.mesh_config.geom_files:
+            try:
+                pts = np.atleast_2d(np.loadtxt(gf))
+            except Exception:
+                continue
+            if pts.shape[0] < 2 or pts.shape[1] < 2:
+                continue
+            labels = {sid: bc for sid, bc, _k in read_meta_segments(gf)}
+            segids = read_meta_point_segids(gf)
+            if not segids or len(segids) != pts.shape[0]:
+                continue  # no per-segment info → leave the grey outline
+
+            # Draw each maximal run of consecutive points with the same segment
+            # id in that segment's label colour; extend one vertex into the next
+            # run so adjacent segments meet with no visible gap.
+            n = len(segids)
+            i = 0
+            while i < n:
+                sid = segids[i]
+                j = i
+                while j + 1 < n and segids[j + 1] == sid:
+                    j += 1
+                end = min(j + 1, n - 1)
+                if sid >= 0 and end > i:
+                    color = self._bc_color_for_label(labels.get(sid, ""))
+                    run = pts[i:end + 1, :2]
+                    item = self.plot_widget.plot(
+                        run[:, 0], run[:, 1],
+                        pen=pg.mkPen(color, width=3))
+                    item.setZValue(19)
+                    self.geom_bc_items.append(item)
+                i = j + 1
 
     def _rebuild_mesh_geometry(self):
         """Construct only the wireframe, domain box, and boundary condition lines."""
@@ -656,20 +839,28 @@ class MeshCanvasView(QWidget):
 
         bc_groups = {"xmin": [], "xmax": [], "ymin": [], "ymax": [], "geom": []}
 
-        for u, v in boundary_edges:
-            p1 = self.mesh.points[u]
-            p2 = self.mesh.points[v]
+        if self.domain_is_custom:
+            # Custom-geometry domain: the outer edges belong to the outline, NOT
+            # the rectangle sides. Classifying them by bbox proximity mislabels
+            # e.g. a circle's top/right arcs as YMax/XMax (=outlet). Group every
+            # boundary edge as "geom" so it's coloured uniformly by BC Geom
+            # instead of gaining spurious inlet/outlet colours.
+            bc_groups["geom"] = list(boundary_edges)
+        else:
+            for u, v in boundary_edges:
+                p1 = self.mesh.points[u]
+                p2 = self.mesh.points[v]
 
-            if abs(p1[0] - g_xmin) < tol and abs(p2[0] - g_xmin) < tol:
-                bc_groups["xmin"].append((u, v))
-            elif abs(p1[0] - g_xmax) < tol and abs(p2[0] - g_xmax) < tol:
-                bc_groups["xmax"].append((u, v))
-            elif abs(p1[1] - g_ymin) < tol and abs(p2[1] - g_ymin) < tol:
-                bc_groups["ymin"].append((u, v))
-            elif abs(p1[1] - g_ymax) < tol and abs(p2[1] - g_ymax) < tol:
-                bc_groups["ymax"].append((u, v))
-            else:
-                bc_groups["geom"].append((u, v))
+                if abs(p1[0] - g_xmin) < tol and abs(p2[0] - g_xmin) < tol:
+                    bc_groups["xmin"].append((u, v))
+                elif abs(p1[0] - g_xmax) < tol and abs(p2[0] - g_xmax) < tol:
+                    bc_groups["xmax"].append((u, v))
+                elif abs(p1[1] - g_ymin) < tol and abs(p2[1] - g_ymin) < tol:
+                    bc_groups["ymin"].append((u, v))
+                elif abs(p1[1] - g_ymax) < tol and abs(p2[1] - g_ymax) < tol:
+                    bc_groups["ymax"].append((u, v))
+                else:
+                    bc_groups["geom"].append((u, v))
 
         for key, edge_list in bc_groups.items():
             if not edge_list:

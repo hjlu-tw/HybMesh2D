@@ -37,7 +37,9 @@ class GeometryTreeView(QTreeWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_context_menu)
         self.setStyleSheet(TREE_STYLE)
-        self.setMinimumHeight(140)
+        # Keep a usable default height but let it shrink on short windows so the
+        # sidebar's top pane (and the footer below it) stay reachable.
+        self.setMinimumHeight(80)
 
     def _on_context_menu(self, pos):
         item = self.itemAt(pos)

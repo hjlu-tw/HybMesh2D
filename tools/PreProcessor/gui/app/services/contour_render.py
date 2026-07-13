@@ -56,38 +56,40 @@ def render_contour(result_path: str, out_png: str, *,
     tri = mtri.Triangulation(x, y, result.elements)
 
     fig, ax = plt.subplots(figsize=(9, 6))
-    fig.patch.set_facecolor("white")
+    try:
+        fig.patch.set_facecolor("white")
 
-    finite = np.isfinite(values)
-    if finite.any():
-        vmin, vmax = float(np.min(values[finite])), float(np.max(values[finite]))
-    else:
-        vmin, vmax = 0.0, 1.0
-    if vmin == vmax:
-        vmax = vmin + 1.0
+        finite = np.isfinite(values)
+        if finite.any():
+            vmin, vmax = float(np.min(values[finite])), float(np.max(values[finite]))
+        else:
+            vmin, vmax = 0.0, 1.0
+        if vmin == vmax:
+            vmax = vmin + 1.0
 
-    cf = ax.tricontourf(tri, values, levels=levels, cmap=cmap,
-                        vmin=vmin, vmax=vmax)
-    if mesh_overlay:
-        ax.triplot(tri, color="k", linewidth=0.15, alpha=0.4)
+        cf = ax.tricontourf(tri, values, levels=levels, cmap=cmap,
+                            vmin=vmin, vmax=vmax)
+        if mesh_overlay:
+            ax.triplot(tri, color="k", linewidth=0.15, alpha=0.4)
 
-    for poly in (overlays or []):
-        poly = np.asarray(poly, dtype=float)
-        if poly.ndim == 2 and len(poly) >= 2:
-            ax.plot(poly[:, 0], poly[:, 1], color="k", linewidth=1.0)
+        for poly in (overlays or []):
+            poly = np.asarray(poly, dtype=float)
+            if poly.ndim == 2 and len(poly) >= 2:
+                ax.plot(poly[:, 0], poly[:, 1], color="k", linewidth=1.0)
 
-    cbar = fig.colorbar(cf, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label(var)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    title = f"{var}"
-    if result.zone and result.zone.title:
-        title += f"   ({result.zone.title})"
-    ax.set_title(title)
-    fig.tight_layout()
+        cbar = fig.colorbar(cf, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label(var)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        title = f"{var}"
+        if result.zone and result.zone.title:
+            title += f"   ({result.zone.title})"
+        ax.set_title(title)
+        fig.tight_layout()
 
-    os.makedirs(os.path.dirname(os.path.abspath(out_png)), exist_ok=True)
-    fig.savefig(out_png, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
+        os.makedirs(os.path.dirname(os.path.abspath(out_png)), exist_ok=True)
+        fig.savefig(out_png, dpi=dpi, bbox_inches="tight")
+    finally:
+        plt.close(fig)
     return var

@@ -34,8 +34,20 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HybMesh PreProcessor")
-        self.setMinimumSize(1200, 800)
-        self.resize(1450, 900)
+        # A smaller minimum so the window fits (and can be shrunk on) laptop /
+        # scaled displays. The old 1200x800 floor forced the window larger than
+        # small screens, pushing the left sidebar's lower fields + footer buttons
+        # off the visible area. Every sidebar page is scrollable, so content
+        # stays reachable at this size.
+        self.setMinimumSize(900, 600)
+        # Open at a comfortable size but never larger than the available screen.
+        from PyQt6.QtWidgets import QApplication
+        scr = QApplication.primaryScreen()
+        if scr is not None:
+            avail = scr.availableGeometry()
+            self.resize(min(1450, avail.width()), min(900, avail.height()))
+        else:
+            self.resize(1450, 900)
         self.setStyleSheet("background: #0c0d16; color: #a0a8c0;")
 
         # ── Sidebar Stack ─────────────────────────────────────────────────

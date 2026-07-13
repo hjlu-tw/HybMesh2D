@@ -956,8 +956,13 @@ bool processElement(const json& config) {
                     resCorner.push_back(isBoundaryPt ? 1 : 0);
                     segmentPts.push_back(p);
                 } else if (isBoundaryPt && !resCorner.empty()) {
-                    // Shared vertex between adjacent tasks: keep the corner flag.
+                    // Shared vertex between adjacent tasks: keep the corner flag and
+                    // re-assign the point to the LATER segment (the one that starts
+                    // here). Without this the shared corner kept the previous
+                    // segment's id, so per-segment runs (BC preview / node segIds)
+                    // spilled one point past the corner ("overshoot by one").
                     resCorner.back() = 1;
+                    resSegId.back() = segId;
                 }
             }
             

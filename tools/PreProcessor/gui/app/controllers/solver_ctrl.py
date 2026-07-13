@@ -232,6 +232,51 @@ class SolverControllerMixin:
         return True
 
     # ------------------------------------------------------------------ #
+    # Bridge mesh boundary patches -> solver BC table (D)
+    # ------------------------------------------------------------------ #
+    def _locate_mesh_bnd(self) -> str:
+        """Find the STAR-CD .bnd of the mesh to assign BCs to: an explicitly set
+        .bnd in the Grid Conversion section, else the last generated mesh's .bnd."""
+        from app.services.bnd_io import bnd_path_for
+        panel = self.main_window.solver_config_panel
+        p = panel.input_bnd_file.text().strip()
+        if p and os.path.exists(p):
+            return p
+        vtk = getattr(self, "global_vtk_path", "")
+        if vtk:
+            b = bnd_path_for(vtk)
+            if os.path.exists(b):
+                return b
+        return ""
+
+    def detect_bc_from_mesh(self):
+        """Read the actual boundary patches (segment number + name) from the last
+        generated mesh's .bnd and fill the solver BC table, pre-selecting a BC
+        type per patch name. This is what carries the per-segment patch names set
+        in CAD / 'Edit segment BCs…' through to the solver with the CORRECT
+        segment numbers (the mesher numbers segments per patch, not 1-4=box/5=geom)."""
+        from app.services.bnd_io import read_bnd_segments
+        log = self.main_window.log_panel.log
+        bnd = self._locate_mesh_bnd()
+        if not bnd:
+            log("[ERROR] No mesh .bnd found. Generate a mesh with 'Write STAR-CD' "
+                "enabled first, or set the .bnd path in Grid Conversion.")
+            return
+        segs = read_bnd_segments(bnd)
+        if not segs:
+            log(f"[WARNING] No boundary patches found in {os.path.basename(bnd)}.")
+            return
+        panel = self.main_window.solver_config_panel
+        euler = panel.flow_solu_type.currentText() == "euler_sol"
+        # #4: honour BC types assigned per group/patch NAME in the Mesh Generator
+        # (they win over the name-based guess; the name stays as the display label).
+        group_bc = getattr(getattr(self, "global_mesh_config", None), "group_bc", {}) or {}
+        n = panel.populate_bc_from_segments(segs, euler=euler, group_bc=group_bc)
+        listing = ", ".join(f"{sid}={nm or '(unnamed)'}" for sid, nm in segs)
+        log(f"[Solver] Detected {n} boundary patch(es) from "
+            f"{os.path.basename(bnd)}: {listing}. Review the BC types, then Run.")
+
+    # ------------------------------------------------------------------ #
     # Worker callbacks
     # ------------------------------------------------------------------ #
     def _on_solver_stage(self, stage: str):

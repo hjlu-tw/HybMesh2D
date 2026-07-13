@@ -10,7 +10,10 @@ _KEY_MAP = {
     "SURFACE_MESH_SIZE": ("surface_mesh_size", float),
     "AUTO_SURFACE_SIZE": ("auto_surface_size", lambda s: int(s) != 0),
     "FARFIELD_MESH_SIZE": ("farfield_mesh_size", float),
+    "AUTO_FARFIELD_SIZE": ("auto_farfield_size", lambda s: int(s) != 0),
     "FARFIELD_GROWTH_RATE": ("farfield_growth_rate", float),
+    "FARFIELD_BIDIRECTIONAL": ("farfield_bidirectional", lambda s: int(s) != 0),
+    "FARFIELD_GROWTH_RATE_OUTER": ("farfield_growth_rate_outer", float),
     "BL_INITIAL_THICKNESS": ("bl_initial_thickness", float),
     "BL_GROWTH_RATE": ("bl_growth_rate", float),
     "BL_LAYERS": ("bl_layers", lambda s: int(float(s))),
@@ -56,7 +59,14 @@ class MeshConfig:
     surface_mesh_size: float = 0.1
     auto_surface_size: bool = True
     farfield_mesh_size: float = 1.0
+    auto_farfield_size: bool = False
     farfield_growth_rate: float = 0.1
+    # #7: bidirectional far-field grading — also grow the far-field size from the
+    # outer domain boundary inward, with its own rate (mesh stays fine near both
+    # the body and the outer boundary, coarsest in the middle). Off = single
+    # direction (body outward), the original behaviour.
+    farfield_bidirectional: bool = False
+    farfield_growth_rate_outer: float = 0.1
 
     # Section 3: Boundary Layer
     bl_initial_thickness: float = 0.01
@@ -80,7 +90,7 @@ class MeshConfig:
 
     # Section 6: Transition & Meshing Algorithm
     bl_transition_layers: int = 3
-    bl_auto_transition_layers: int = 1  # 0: OFF, 1: GLOBAL, 2: LOCAL
+    bl_auto_transition_layers: int = 2  # 0: OFF, 1: GLOBAL, 2: LOCAL (#4: default LOCAL)
     bl_transition_growth_rate: float = 1.2
     bl_transition_buffer: float = 2.0
     gmsh_algorithm: int = 6  # 6: Frontal-Delaunay
@@ -122,6 +132,12 @@ class MeshConfig:
     # (or <=0) => let the backend auto-resolve.
     geom_roles: dict = field(default_factory=dict)
 
+    # #4: physical BC type assigned per CAD group/patch NAME in the Mesh Generator
+    # ("Edit segment BCs…"). Keyed by the grouping label so the label itself is
+    # never overwritten; the solver BC table is pre-seeded from this map. Values
+    # are BC-type strings (e.g. "inlet"/"wall"/… or a free-form Custom name).
+    group_bc: dict = field(default_factory=dict)
+
     # GEOM_FILE tokens from the last load_from_file that could not be resolved
     # to an existing file (not serialized; populated by load_from_file)
     missing_geom_files: list[str] = field(default_factory=list)
@@ -133,15 +149,28 @@ class MeshConfig:
             d[attr] = getattr(self, attr)
         d["geom_files"] = self.geom_files
         d["geom_roles"] = self.geom_roles
+        d["group_bc"] = self.group_bc
         return d
 
     def load_from_dict(self, d: dict):
-        """Restore configuration parameters from a dictionary."""
-        for attr, _ in _KEY_MAP.values():
+        """Restore configuration parameters from a dictionary.
+
+        Values are coerced through the same converters used when parsing a .dat
+        file, so a hand-written pipeline JSON that quotes a number
+        (e.g. ``"bl_layers": "8"``) still lands as the right type instead of a
+        str that later crashes save_to_file's numeric formatting. A value that
+        can't be converted is kept as-is (no worse than a raw assignment)."""
+        for attr, converter in _KEY_MAP.values():
             if attr in d:
-                setattr(self, attr, d[attr])
+                v = d[attr]
+                try:
+                    v = converter(v)
+                except (TypeError, ValueError):
+                    pass
+                setattr(self, attr, v)
         self.geom_files = d.get("geom_files", [])
         self.geom_roles = d.get("geom_roles", {}) or {}
+        self.group_bc = d.get("group_bc", {}) or {}
 
     # ── Per-geometry role helpers ─────────────────────────────────────────
     # Roles live in geom_roles (keyed by the path in geom_files). These helpers
@@ -156,6 +185,29 @@ class MeshConfig:
     def _role_name(self, path: str) -> str | None:
         r = self.role_of(path)
         return r.get("role") if r else None
+
+    @staticmethod
+    def _parse_bl_token(tok: str):
+        """Parse a 'KEY=VALUE' BL-override token; returns (KEY, float) or None."""
+        if "=" not in tok:
+            return None
+        k, _, v = tok.partition("=")
+        if not k:
+            return None
+        try:
+            return (k, float(v))
+        except ValueError:
+            return None
+
+    def bl_params_of(self, path: str) -> dict:
+        """Per-geometry BL parameter overrides for `path` ({} if none)."""
+        r = self.role_of(path)
+        return dict(r.get("bl_params") or {}) if r else {}
+
+    def bc_of(self, path: str) -> str:
+        """Per-geometry wall BC override for `path` ("" if none)."""
+        r = self.role_of(path)
+        return (r.get("bc") or "") if r else ""
 
     def is_seed(self, path: str) -> bool:
         return self._role_name(path) == "seed"
@@ -211,6 +263,8 @@ class MeshConfig:
         self.geom_files = []
         # Per-geometry roles (seed geometries), rebuilt from SEED_FILE lines
         self.geom_roles = {}
+        # Per-group BC-type assignments, rebuilt from GROUP_BC lines (#4)
+        self.group_bc = {}
         # Track GEOM_FILE/SEED_FILE tokens that could not be resolved to a file
         self.missing_geom_files = []
 
@@ -251,17 +305,66 @@ class MeshConfig:
                 # an optional [bl|nobl] role token (must match the C++ parser in
                 # include/Config.hpp).
                 if key == "GEOM_FILE":
+                    # GEOM_FILE <path> [bl|nobl] [KEY=VALUE ...]; trailing
+                    # KEY=VALUE tokens are per-geometry BL overrides (see the C++
+                    # parser in include/Config.hpp — keep the two in sync).
                     gp = resolve(val_str)
                     self.geom_files.append(gp)
-                    if len(tokens) > 2 and tokens[2] == "nobl":
-                        self.geom_roles[gp] = {"role": "nobl"}
+                    role_name, bl_params, bc = None, {}, None
+                    for tok in tokens[2:]:
+                        if tok == "nobl":
+                            role_name = "nobl"
+                        elif tok == "bl":
+                            role_name = "bl"
+                        elif tok.startswith("bc="):
+                            bc = tok[3:]
+                        else:
+                            kv = self._parse_bl_token(tok)
+                            if kv:
+                                bl_params[kv[0]] = kv[1]
+                    entry = {}
+                    if bl_params:
+                        entry = {"role": "bl", "bl_params": bl_params}
+                    elif role_name == "nobl":
+                        entry = {"role": "nobl"}
+                    elif bc:
+                        # A per-geometry wall BC on a plain boundary still needs a
+                        # role dict to carry it ("bl" = boundary that grows a BL).
+                        entry = {"role": "bl"}
+                    if entry:
+                        if bc:
+                            entry["bc"] = bc
+                        self.geom_roles[gp] = entry
                 elif key == "DOMAIN_FILE":
                     # Outer-domain outline: bl -> wall (internal), nobl -> far-field
-                    # (external, default).
+                    # (external, default). Trailing KEY=VALUE tokens are per-domain
+                    # BL overrides (only meaningful for a BL-growing wall).
                     dom_path = resolve(val_str)
                     self.geom_files.append(dom_path)
-                    role = "wall" if (len(tokens) > 2 and tokens[2] == "bl") else "farfield"
-                    self.geom_roles[dom_path] = {"role": role}
+                    role, bl_params, bc = "farfield", {}, None
+                    for tok in tokens[2:]:
+                        if tok == "bl":
+                            role = "wall"
+                        elif tok == "nobl":
+                            role = "farfield"
+                        elif tok.startswith("bc="):
+                            bc = tok[3:]
+                        else:
+                            kv = self._parse_bl_token(tok)
+                            if kv:
+                                bl_params[kv[0]] = kv[1]
+                    entry = {"role": role}
+                    if bl_params and role == "wall":
+                        entry["bl_params"] = bl_params
+                    if bc:
+                        entry["bc"] = bc
+                    self.geom_roles[dom_path] = entry
+                elif key == "GROUP_BC":
+                    # GROUP_BC <name> <bc_type>; the grouping label maps to a BC
+                    # type chosen in the Mesh Generator (#4). Names/types are
+                    # single tokens (no spaces), matching how they are written.
+                    if len(tokens) >= 3:
+                        self.group_bc[tokens[1]] = tokens[2]
                 elif key == "SEED_FILE":
                     # SEED_FILE <path> [size] [radius] [mode]; order-tolerant:
                     # words source/embed = mode, numbers fill size then radius.
@@ -317,7 +420,10 @@ class MeshConfig:
             f"SURFACE_MESH_SIZE {self.surface_mesh_size:.6g}",
             f"AUTO_SURFACE_SIZE {1 if self.auto_surface_size else 0}",
             f"FARFIELD_MESH_SIZE {self.farfield_mesh_size:.6g}",
+            f"AUTO_FARFIELD_SIZE {1 if self.auto_farfield_size else 0}",
             f"FARFIELD_GROWTH_RATE {self.farfield_growth_rate:.6g}",
+            f"FARFIELD_BIDIRECTIONAL {1 if self.farfield_bidirectional else 0}",
+            f"FARFIELD_GROWTH_RATE_OUTER {self.farfield_growth_rate_outer:.6g}",
             "",
             "# ==============================================================================",
             "# 3. Boundary Layer Core Settings",
@@ -370,6 +476,13 @@ class MeshConfig:
             f"BC_GEOM {self.bc_geom}",
         ]
 
+        # #4: per-group BC-type assignments (grouping label -> BC type). Ignored by
+        # the mesher (BC still travels via the patch name); kept so the assignment
+        # round-trips through a saved .dat and re-seeds the solver table.
+        for name, bc in (self.group_bc or {}).items():
+            if str(name).strip() and str(bc).strip():
+                lines.append(f"GROUP_BC {name} {bc}")
+
         if self.output_filename:
             lines.append(f"OUTPUT_FILENAME {self.output_filename}")
 
@@ -391,15 +504,30 @@ class MeshConfig:
 
             role = self.role_of(gf)
             role_name = role.get("role") if role else None
+            # Per-geometry BL overrides -> trailing "KEY=VALUE" tokens (only for
+            # BL-growing roles). Mirrors the C++ parser in include/Config.hpp.
+            bl_tokens = ""
+            if role and role.get("bl_params"):
+                parts = [f"{k}={float(v):g}" for k, v in role["bl_params"].items()]
+                if parts:
+                    bl_tokens = " " + " ".join(parts)
+            # Per-geometry wall BC override -> trailing `bc=<name>` token.
+            bc_val = role.get("bc") if role else None
+            bc_token = f" bc={bc_val}" if bc_val else ""
             # Outer-domain outline -> DOMAIN_FILE (wall -> bl / internal, far-field ->
             # nobl / external). Only the first domain-role geom is emitted as the
             # domain; any extra falls through to GEOM_FILE.
             if role_name in ("wall", "farfield") and not domain_emitted:
                 token = "bl" if role_name == "wall" else "nobl"
-                lines.append(f"DOMAIN_FILE {rel_path} {token}")
+                # BL overrides only apply to a BL-growing wall.
+                extra = bl_tokens if role_name == "wall" else ""
+                lines.append(f"DOMAIN_FILE {rel_path} {token}{extra}{bc_token}")
                 domain_emitted = True
             elif role_name == "nobl":
-                lines.append(f"GEOM_FILE {rel_path} nobl")
+                lines.append(f"GEOM_FILE {rel_path} nobl{bc_token}")
+            elif role_name == "bl":
+                # Boundary obstacle that grows a BL (may carry BL and/or BC overrides).
+                lines.append(f"GEOM_FILE {rel_path} bl{bl_tokens}{bc_token}")
             elif role and role_name == "seed":
                 # SEED_FILE <path> [size|auto] [radius] <mode>; mode always
                 # explicit so source/embed round-trips. size/radius are

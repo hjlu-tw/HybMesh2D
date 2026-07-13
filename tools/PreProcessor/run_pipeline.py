@@ -48,11 +48,15 @@ def main() -> int:
         log(f"[FAILED] pipeline config not found: {args.config}")
         return 2
 
-    ver = PipelineConfig.file_version(args.config)
-    if ver > PIPELINE_FORMAT_VERSION:
-        log(f"[WARNING] pipeline_version {ver} is newer than this build supports "
-            f"({PIPELINE_FORMAT_VERSION}); loading best-effort.")
-    pcfg = PipelineConfig.load_from_file(args.config)
+    try:
+        ver = PipelineConfig.file_version(args.config)
+        if ver > PIPELINE_FORMAT_VERSION:
+            log(f"[WARNING] pipeline_version {ver} is newer than this build "
+                f"supports ({PIPELINE_FORMAT_VERSION}); loading best-effort.")
+        pcfg = PipelineConfig.load_from_file(args.config)
+    except (ValueError, TypeError, OSError) as e:
+        log(f"[FAILED] could not parse pipeline config {args.config}: {e}")
+        return 2
     log(f"=== HybMesh pipeline: {pcfg.name} ===")
 
     try:

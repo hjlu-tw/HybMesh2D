@@ -394,22 +394,10 @@ class EdgePropsPanel(CollapsibleSection):
         self.add_widget(self._file_seg_label)
         self.add_widget(self._curve_group)
 
-        # ── Boundary condition (per-segment) ─────────────────────────────────
-        # Editable so users can type a custom tag; blank inherits the mesh's
-        # global geometry BC. Travels to the mesher via the .meta sidecar.
-        self.bc_combo = QComboBox()
-        self.bc_combo.setEditable(True)
-        self.bc_combo.addItems(["", "wall", "inlet", "outlet", "symmetry", "farfield", "movingwall"])
-        self.bc_combo.setStyleSheet(COMBO_STYLE)
-        self.bc_combo.setToolTip(
-            "Boundary condition tag for this edge. Blank = inherit the mesh's global "
-            "geometry BC. Carried to the mesher via the geometry .meta sidecar.")
-        _bc_w = QWidget()
-        _bc_form = QFormLayout(_bc_w)
-        _bc_form.setContentsMargins(0, 0, 0, 0)
-        _bc_form.addRow(help_label("Boundary:",
-            "Boundary condition tag for this edge (blank = global geometry BC)"), self.bc_combo)
-        self.add_widget(_bc_w)
+        # NOTE: "Assign patch / group…" was moved out of this per-edge inspector
+        # into the always-visible Edge Actions panel (#1), so grouping acts on the
+        # whole selection at once instead of one edge at a time. See
+        # app/views/panels/edge_list_panel.py (group_btn).
 
         # Tool buttons (open standalone windows).
         self.distribution_btn = make_button("Distribution…", '#1b2a4a')
@@ -488,12 +476,17 @@ class EdgePropsPanel(CollapsibleSection):
 
     def _show_dialog(self, dlg):
         # Re-parent to the MAIN WINDOW (not this panel, which gets hidden when
-        # the selection changes) and make it a Tool window: it then floats above
-        # the main window — even when the canvas / a gizmo handle is clicked —
-        # but recedes when you switch to another application.
+        # the selection changes) as a normal (modeless) Dialog window. A Dialog
+        # stays above its parent window but is NOT globally always-on-top, and it
+        # behaves normally when you switch to another application (it keeps its
+        # place instead of dropping behind the main window, as a Tool window did
+        # on macOS). See #2.
         mw = self.window()
         if mw is not None and dlg.parent() is not mw:
-            dlg.setParent(mw, Qt.WindowType.Tool)
+            dlg.setParent(mw, Qt.WindowType.Dialog)
+        # A plain Dialog could still drop behind the main window on macOS; force
+        # it to stay above the app's windows (#2/#8).
+        dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()

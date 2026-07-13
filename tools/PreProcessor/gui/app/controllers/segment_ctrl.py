@@ -72,7 +72,12 @@ class SegmentControllerMixin:
                         child.setSelected(True)
                         if idx == session.current_segment_idx:
                             primary_child = child
-                node.setExpanded(True)
+                # Only auto-expand when an edge is actually selected (e.g. picked
+                # on the canvas), so it stays visible. Plain layer/geometry
+                # selection leaves the node's expand state alone — the user
+                # expands it with the disclosure arrow when they want to.
+                if selected_indices:
+                    node.setExpanded(True)
             # Make the primary edge the current item so a later layer-row resync
             # (_sync_geometry_list) sees an edge is selected and leaves it alone.
             if primary_child is not None:
@@ -212,8 +217,11 @@ class SegmentControllerMixin:
 
         n_pts = (len(session.original_points)
                  if session.original_points is not None else 0)
-        is_closed = session.project_model.is_closed
-        is_endpoint = (idx == 0 or idx == n_pts - 1) if not is_closed else False
+        # Index 0 / N-1 are structural anchors for BOTH open and closed curves:
+        # for a closed loop they are the seam, and removing that seam breakpoint
+        # (e.g. a circle detected as one segment [0, N-1]) would leave zero file
+        # segments — nothing clickable in edge mode. So they're never removable.
+        is_endpoint = (idx == 0 or idx == n_pts - 1)
         is_split = idx in session.split_indices
 
         sb.split_btn.setEnabled(not is_split)
@@ -252,6 +260,14 @@ class SegmentControllerMixin:
             return
         idx = session.selected_point_idx
         if idx not in session.split_indices:
+            return
+        # Never drop below two split points — the geometry needs at least one
+        # spanning segment, or edge mode has nothing to select.
+        n_pts = len(session.original_points) if session.original_points is not None else 0
+        if idx in (0, n_pts - 1) or len(session.split_indices) <= 2:
+            self.main_window.log_panel.log(
+                "Can't remove this breakpoint: it's a structural endpoint/seam "
+                "(the geometry needs at least one edge segment).")
             return
         keep = self.main_window.sidebar_view.keep_vertex_cb.isChecked()
         cmd = RemoveSplitCmd(
@@ -432,9 +448,8 @@ class SegmentControllerMixin:
             sb.match_previous_cb.setChecked(seg.match_previous)
             sb.match_previous_cb.blockSignals(False)
 
-            sb.bc_combo.blockSignals(True)
-            sb.bc_combo.setCurrentText(getattr(seg, "bc", "") or "")
-            sb.bc_combo.blockSignals(False)
+            # (#1) The per-edge patch/group name is now assigned via a pop-up
+            # (open_cad_patch_dialog), so there is no inline field to populate here.
 
             # Update base point values
             self.update_duplicate_base_point()
@@ -723,13 +738,9 @@ class SegmentControllerMixin:
     # ── Distribution tool window + live canvas preview ──────────────────────
 
     def _distribution_indices_or_selection(self):
-        """While the Distribution window is open, distribution edits act on the
-        CURRENT edge only (per-edge), not the whole selection."""
-        session = self.active_session()
-        sb = self.main_window.sidebar_view
-        if (session and sb._distribution_dialog.isVisible()
-                and session.current_segment_idx >= 0):
-            return [session.current_segment_idx]
+        """#3: distribution / node-count edits apply to EVERY selected edge, not
+        just the current (head/tail) one, so a multi-edge selection is edited
+        together. When only one edge is selected this is just that edge."""
         return self.get_selected_segment_indices()
 
     def _open_distribution(self):
@@ -737,29 +748,47 @@ class SegmentControllerMixin:
         self._preview_distribution()
 
     def _apply_distribution(self):
-        """Apply button: commit the distribution settings of the CURRENT edge
-        only (not every selected edge) and show its resampled preview."""
+        """Apply button: commit the current distribution settings to ALL selected
+        discrete edges (#3) and show the current edge's resampled preview."""
         session = self.active_session()
         if not session:
             return
-        idx = session.current_segment_idx
-        seg = session.project_model.get_segment(idx)
-        if not seg or seg.type != "file":
-            self.main_window.log_panel.log("Select a discrete edge to apply its distribution.")
+        indices = [i for i in self.get_selected_segment_indices()
+                   if session.project_model.get_segment(i)
+                   and session.project_model.get_segment(i).type == "file"]
+        if not indices:
+            self.main_window.log_panel.log(
+                "Select one or more discrete edges to apply their distribution.")
             return
-        old_state = seg.to_dict()
-        self._read_params_into_segment(seg)
-        new_state = seg.to_dict()
-        if new_state != old_state:
+        old_states = {}
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                old_states[idx] = seg.to_dict()
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                self._read_params_into_segment(seg)
+        states_dict = {}
+        any_changed = False
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                new_state = seg.to_dict()
+                states_dict[idx] = (old_states[idx], new_state)
+                if new_state != old_states[idx]:
+                    any_changed = True
+        if any_changed:
             def refresh():
                 if session is self.active_session():
                     self._apply_geometry_update(session)
-            cmd = UpdateSegmentStateCmd(session, idx, old_state, new_state, refresh_cb=refresh)
+            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
             session.command_history.execute(cmd)
             session.is_geometry_modified = True
             self.main_window.update_title(session.display_name, True)
         self._preview_distribution()
-        self.main_window.log_panel.log(f"Applied distribution to Edge {seg.id}.")
+        self.main_window.log_panel.log(
+            f"Applied distribution to {len(indices)} edge(s).")
 
     def _preview_distribution(self):
         """Live-render the chosen point distribution of the CURRENT discrete edge
@@ -784,6 +813,21 @@ class SegmentControllerMixin:
             self.main_window.canvas_view.clear_resampled()
             return
         self.main_window.canvas_view.load_resampled_data(np.column_stack([rx, ry]))
+
+    def _restore_resampled_after_distribution(self):
+        """When the Distribution tool closes, keep resampled nodes on the canvas
+        (previously it blanked them, so the 'Nodes' toggle showed nothing after
+        closing). If the session has a persistent full-geometry preview (from the
+        last Preview) restore that; otherwise leave the dialog's last live
+        preview in place rather than clearing it."""
+        session = self.active_session()
+        if session is not None and session.resampled_points is not None:
+            mode = self.main_window.quality_mode_combo.currentText().lower()
+            self.main_window.canvas_view.load_resampled_data(
+                session.resampled_points,
+                self.main_window.quality_check_cb.isChecked(), mode,
+                gap_indices=getattr(session, "resampled_gaps", None))
+        # else: leave the last live preview visible (do not clear).
 
     def _populate_form_from_segment(self, seg: SegmentModel):
         sb = self.main_window.sidebar_view
@@ -961,14 +1005,55 @@ class SegmentControllerMixin:
                     any_changed = True
 
         if any_changed:
-            def refresh():
-                if session is self.active_session():
-                    sb = self.main_window.sidebar_view
-                    sb.bc_combo.blockSignals(True)
-                    sb.bc_combo.setCurrentText(bc)
-                    sb.bc_combo.blockSignals(False)
-            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
+            cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=None)
             session.command_history.execute(cmd)
+
+    def open_cad_patch_dialog(self):
+        """#1/#6: pop-up to assign a patch/group label to ALL currently-selected
+        edges. The label is a free-form GROUPING tag (number or alias); the BC is
+        chosen per group later in the Mesh Generator. Offers existing group names
+        in an editable combo so edges are easily added to the same group."""
+        from PyQt6.QtWidgets import QInputDialog
+        session = self.active_session()
+        if not session:
+            return
+        indices = self.get_selected_segment_indices()
+        if not indices:
+            self.main_window.log_panel.log(
+                "Select one or more edges first, then assign a patch/group.")
+            return
+        # Shared current label (blank if the selection is mixed / unset).
+        labels = set()
+        for idx in indices:
+            seg = session.project_model.get_segment(idx)
+            if seg:
+                labels.add((getattr(seg, "bc", "") or "").strip())
+        current = labels.pop() if len(labels) == 1 else ""
+        # Existing distinct labels across this geometry (for the dropdown), in
+        # first-appearance order, so edges are easily grouped under an existing name.
+        existing = []
+        for seg in session.project_model.segments:
+            b = (getattr(seg, "bc", "") or "").strip()
+            if b and b not in existing:
+                existing.append(b)
+        items = list(existing)
+        if current and current not in items:
+            items.insert(0, current)
+        if not items:
+            items = [""]
+        cur_idx = items.index(current) if current in items else 0
+        text, ok = QInputDialog.getItem(
+            self.main_window, "Assign patch / group",
+            f"Patch / group name for {len(indices)} selected edge(s).\n"
+            "Free-form grouping label (e.g. airfoil, wall_top, 1); the physical BC\n"
+            "is chosen per group in the Mesh Generator. Blank = geometry default.",
+            items, cur_idx, True)
+        if not ok:
+            return
+        self.update_segment_bc(text)
+        shown = text.strip() or "(cleared)"
+        self.main_window.log_panel.log(
+            f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
 
     def handle_is_closed_changed(self, text: str):
         session = self.active_session()

@@ -282,11 +282,27 @@ class MeshGenControllerMixin:
             return path
         return os.path.abspath(os.path.join(root_dir, path))
 
+    @staticmethod
+    def _next_available_path(path: str) -> str:
+        """Return `path` if free, else the first `<stem>_N.<ext>` that does not
+        exist yet, so a repeated export proposes a fresh name instead of
+        silently overwriting the previous file."""
+        if not path or not os.path.exists(path):
+            return path
+        root, ext = os.path.splitext(path)
+        i = 1
+        while os.path.exists(f"{root}_{i}{ext}"):
+            i += 1
+        return f"{root}_{i}{ext}"
+
     def _resolve_export_path(self, default_fallback_path: str, ext: str) -> str:
-        """Resolve the default export path based on global configuration settings."""
+        """Resolve the default export path based on global configuration settings.
+
+        The returned path is de-duplicated (see `_next_available_path`) so each
+        export defaults to a name that does not clobber a previous export."""
         root_dir = repo_root()
         default_dir = os.path.join(root_dir, "results", "meshes")
-        
+
         user_filename = self.global_mesh_config.output_filename if self.global_mesh_config else ""
         if user_filename:
             if user_filename.endswith(".*"):
@@ -299,7 +315,7 @@ class MeshGenControllerMixin:
                 default_path = user_filename
         else:
             default_path = os.path.join(default_dir, os.path.basename(default_fallback_path))
-        return default_path
+        return self._next_available_path(default_path)
 
 
     def _on_mesh_gen_finished(self, rc: int, tmp_cfg_name: str, expected_vtk_path: str):
@@ -443,6 +459,27 @@ class MeshGenControllerMixin:
         w = getattr(self, "_mesh_worker", None)
         if w is None or not w.isRunning():
             self._pending_after_mesh = None
+
+    def export_mesh_files(self):
+        """#5: Export the generated mesh in the enabled write formats to a chosen
+        location (the Output panel's Export button). Falls back to VTK if no
+        format is toggled, and pops one save dialog per enabled format."""
+        cfg = None
+        panel = getattr(self.main_window, "mesh_config_panel", None)
+        if panel is not None:
+            try:
+                cfg = panel.get_config()
+            except Exception:
+                cfg = None
+        want_vtk = bool(cfg.export_vtk) if cfg else True
+        want_star = bool(cfg.export_starcd) if cfg else False
+        if not (want_vtk or want_star):
+            # Nothing toggled: default to VTK so the button always does something.
+            want_vtk = True
+        if want_vtk:
+            self.export_generated_vtk()
+        if want_star:
+            self.export_star_cd()
 
     def export_generated_vtk(self):
         """Export the generated VTK mesh file to a user-selected path."""
@@ -700,6 +737,13 @@ class MeshGenControllerMixin:
             )
         
         if added_any or not missing_exports:
-            self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+            panel = self.main_window.mesh_config_panel
+            # Preserve the user's Domain Source choice — set_config derives it
+            # from the roles, which would otherwise snap it back to "Rectangle
+            # box" after Add All even if the user had picked Custom geometry.
+            prev_src = panel.domain_source_combo.currentIndex()
+            panel.set_config(self.global_mesh_config)
+            if panel.domain_source_combo.currentIndex() != prev_src:
+                panel.domain_source_combo.setCurrentIndex(prev_src)
             self.sync_mesh_layers_panel()
             self.main_window.log_panel.log("All exported sessions added to mesh configuration.")

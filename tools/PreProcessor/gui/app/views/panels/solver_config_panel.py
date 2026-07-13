@@ -564,16 +564,21 @@ class SolverConfigPanel(QScrollArea):
         sec = CollapsibleSection("Boundary Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
         hint = QLabel(
-            "Segment → BC type. HybMesh2D groups: 1-4 = domain (XMin/XMax/YMin/YMax), "
-            "5 = geometry.\nLeave the table empty to keep getPGrid's own boundary flags; "
-            "add rows to override.\nTypes marked (+) take an extra value: isothermal wall "
-            "→ wall T; fixed dep-vars → 'rho u v et'; user DLL → './bc.so'.")
+            "Assign the physical BC TYPE to each boundary patch here (Fluent-style): "
+            "each row is a mesh segment (with the patch NAME it was given upstream in "
+            "CAD / the mesh generator) → pick its type.\n"
+            "Click 'Detect from Mesh' to load the ACTUAL segment numbers + patch "
+            "names from the generated mesh (recommended — the mesher numbers "
+            "segments by patch, not a fixed convention).\n"
+            "Leave the table empty to keep getPGrid's own flags; add/detect rows to "
+            "override.\nTypes marked (+) take an extra value: isothermal wall → wall "
+            "T; fixed dep-vars → 'rho u v et'; user DLL → './bc.so'.")
         hint.setStyleSheet("color:#7a82a0; font-size: 10px;")
         hint.setWordWrap(True)
         sec.add_widget(hint)
 
-        self.bc_table = QTableWidget(0, 3)
-        self.bc_table.setHorizontalHeaderLabels(["Seg", "BC Type", "Extra values"])
+        self.bc_table = QTableWidget(0, 4)
+        self.bc_table.setHorizontalHeaderLabels(["Seg", "Patch", "BC Type", "Extra values"])
         self.bc_table.setFixedHeight(170)
         self.bc_table.setStyleSheet(
             "QTableWidget{background:#181b2a;color:#a0a8c0;border:1px solid #333852;"
@@ -581,19 +586,31 @@ class SolverConfigPanel(QScrollArea):
             "color:#a0a8c0;border:none;padding:3px;}")
         hdr = self.bc_table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.bc_table.verticalHeader().setVisible(False)
         sec.add_widget(self.bc_table)
+
+        # Detect from Mesh is the recommended, primary action (own row).
+        self.bc_detect_btn = make_button("Detect from Mesh", "#1a3a2a")
+        self.bc_detect_btn.setToolTip(
+            "Read the ACTUAL boundary patches (segment number + name) from the last "
+            "generated mesh's .bnd and fill the table, pre-selecting a sensible BC "
+            "type per patch name. This is what makes the patch names you set in "
+            "CAD / 'Edit segment BCs…' reach the solver with the correct segment "
+            "numbers.")
+        sec.add_widget(self.bc_detect_btn)
 
         bc_btns = QHBoxLayout()
         bc_btns.setSpacing(4)
         self.bc_add_btn = make_button("Add Row", "#1a2a3a")
         self.bc_remove_btn = make_button("Remove Row", "#301a1a")
-        self.bc_default_btn = make_button("Fill Default", "#1a2a3a")
+        self.bc_default_btn = make_button("Box Default", "#1a2a3a")
         self.bc_default_btn.setToolTip(
-            "Fill segments 1-5: domain 1-4 → non-reflect, geometry 5 → wall "
-            "(no-slip for NS, reflect for Euler).")
+            "Rectangle-box fallback (no per-patch names): fill segments 1-5 — "
+            "domain 1-4 → non-reflect, geometry 5 → wall (no-slip for NS, reflect "
+            "for Euler). Prefer 'Detect from Mesh' when patches are named.")
         bc_btns.addWidget(self.bc_add_btn)
         bc_btns.addWidget(self.bc_remove_btn)
         bc_btns.addWidget(self.bc_default_btn)
@@ -601,14 +618,34 @@ class SolverConfigPanel(QScrollArea):
         self.bc_add_btn.clicked.connect(lambda: self._add_bc_row(0, 1, ""))
         self.bc_remove_btn.clicked.connect(self._remove_bc_row)
         self.bc_default_btn.clicked.connect(self._fill_default_bc)
+        # bc_detect_btn is wired by the controller (it knows the mesh .bnd path).
 
     def _fill_default_bc(self):
         """Populate the standard HybMesh2D group mapping (1-4 domain non-reflect,
         5 geometry wall) using the wall flag appropriate for the solution type."""
         wall = 0 if self.flow_solu_type.currentText() == "euler_sol" else 2
         self.bc_table.setRowCount(0)
-        for seg, bc in [(1, 1), (2, 1), (3, 1), (4, 1), (5, wall)]:
-            self._add_bc_row(seg, bc, "")
+        for seg, bc, name in [(1, 1, "XMin"), (2, 1, "XMax"), (3, 1, "YMin"),
+                              (4, 1, "YMax"), (5, wall, "geom")]:
+            self._add_bc_row(seg, bc, "", name)
+
+    def populate_bc_from_segments(self, segments, euler: bool = False,
+                                  group_bc: dict | None = None) -> int:
+        """Fill the BC table from a list of ``(seg_id, patch_name)`` pairs read
+        from the generated mesh, pre-selecting a sensible BC type per patch. #4:
+        when a patch NAME has an explicit BC type assigned in the Mesh Generator
+        (``group_bc[name]``), that assignment wins over guessing from the name;
+        the name is still shown (read-only) so the grouping label is preserved.
+        Returns the number of rows added."""
+        from app.services.bnd_io import default_bc_flag_for_name
+        group_bc = group_bc or {}
+        self.bc_table.setRowCount(0)
+        for sid, name in segments:
+            assigned = group_bc.get(name)
+            flag = (default_bc_flag_for_name(assigned, euler) if assigned
+                    else default_bc_flag_for_name(name, euler))
+            self._add_bc_row(sid, flag, "", name)
+        return len(segments)
 
     # ------------------------------------------------------------------ #
     # BC table helpers
@@ -631,25 +668,31 @@ class SolverConfigPanel(QScrollArea):
     def _sync_bc_extra_hint(self, combo: QComboBox):
         """Tooltip the row's extra cell according to the selected type."""
         for r in range(self.bc_table.rowCount()):
-            if self.bc_table.cellWidget(r, 1) is combo:
+            if self.bc_table.cellWidget(r, 2) is combo:
                 flag = combo.currentData()
-                item = self.bc_table.item(r, 2)
+                item = self.bc_table.item(r, 3)
                 if item is None:
                     item = QTableWidgetItem("")
-                    self.bc_table.setItem(r, 2, item)
+                    self.bc_table.setItem(r, 3, item)
                 hints = {3: "non-dimensional wall temperature, e.g. 2.5",
                          50: "rho u v et (2D) or rho u v w et (3D)",
                          11: "./bc.so (path to the DLL)"}
                 item.setToolTip(hints.get(flag, "(no extra value needed)"))
                 break
 
-    def _add_bc_row(self, seg: int, bc: int, values: str = ""):
+    def _add_bc_row(self, seg: int, bc: int, values: str = "", name: str = ""):
         r = self.bc_table.rowCount()
         self.bc_table.insertRow(r)
         self.bc_table.setItem(r, 0, QTableWidgetItem(str(seg)))
-        self.bc_table.setCellWidget(r, 1, self._make_bc_type_combo(bc))
-        self.bc_table.setItem(r, 2, QTableWidgetItem(values))
-        self._sync_bc_extra_hint(self.bc_table.cellWidget(r, 1))
+        # Patch name is a read-only display label (set upstream in CAD / mesh).
+        name_item = QTableWidgetItem(name or "")
+        name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        name_item.setToolTip("Patch name from the mesh (grouping label). The BC "
+                             "type you pick here is applied to this segment.")
+        self.bc_table.setItem(r, 1, name_item)
+        self.bc_table.setCellWidget(r, 2, self._make_bc_type_combo(bc))
+        self.bc_table.setItem(r, 3, QTableWidgetItem(values))
+        self._sync_bc_extra_hint(self.bc_table.cellWidget(r, 2))
 
     def _remove_bc_row(self):
         rows = sorted({i.row() for i in self.bc_table.selectedItems()}, reverse=True)
@@ -690,7 +733,7 @@ class SolverConfigPanel(QScrollArea):
         other = 2 if wall == 0 else 0
         for r in range(self.bc_table.rowCount()):
             seg_item = self.bc_table.item(r, 0)
-            combo = self.bc_table.cellWidget(r, 1)
+            combo = self.bc_table.cellWidget(r, 2)
             if not seg_item or combo is None:
                 continue
             if seg_item.text().strip() == "5" and combo.currentData() == other:
@@ -799,7 +842,8 @@ class SolverConfigPanel(QScrollArea):
         self.bc_table.setRowCount(0)
         for bc in cfg.bc_definitions:
             self._add_bc_row(bc.get("segment_no", 0), bc.get("bc_type", 0),
-                             str(bc.get("values", "") or ""))
+                             str(bc.get("values", "") or ""),
+                             str(bc.get("name", "") or ""))
 
         self._update_ibm_visibility()
         self._update_decompose_visibility()
@@ -897,18 +941,20 @@ class SolverConfigPanel(QScrollArea):
         cfg.bc_definitions = []
         for r in range(self.bc_table.rowCount()):
             seg_item = self.bc_table.item(r, 0)
-            combo = self.bc_table.cellWidget(r, 1)
-            val_item = self.bc_table.item(r, 2)
+            name_item = self.bc_table.item(r, 1)
+            combo = self.bc_table.cellWidget(r, 2)
+            val_item = self.bc_table.item(r, 3)
             try:
                 seg = int(seg_item.text()) if seg_item else 0
             except (ValueError, AttributeError):
                 continue
             bc = int(combo.currentData()) if combo is not None else 0
             values = val_item.text().strip() if val_item else ""
+            name = name_item.text().strip() if name_item else ""
             # Only keep the extra value for types that actually use one.
             if bc not in BC_FLAGS_NEEDING_EXTRA:
                 values = ""
             cfg.bc_definitions.append(
-                {"segment_no": seg, "bc_type": bc, "values": values})
+                {"segment_no": seg, "bc_type": bc, "values": values, "name": name})
 
         return cfg

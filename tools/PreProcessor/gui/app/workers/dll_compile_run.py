@@ -10,7 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 _DIAG_RE = re.compile(r"^(?P<file>[^:\n]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*"
                       r"(?P<level>error|warning|note):\s*(?P<msg>.*)$")
 
-# The exact flags solver_ctrl._stage_dll / solver/run.sh use, so a DLL that
+# The exact flags solver_case.stage_dll / solver/run.sh use, so a DLL that
 # compiles here is ABI-compatible with how the solver pipeline rebuilds it.
 COMPILE_FLAGS = ["-D_INCLUDE_TEMPLATE_IMPLEMENTATION", "-fPIC", "-shared", "-O3"]
 

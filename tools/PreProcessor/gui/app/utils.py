@@ -93,6 +93,19 @@ def make_button(text: str, color: str = '#26293c', *,
     b.setStyleSheet(qss)
     return b
 
+def keep_on_top(widget: QWidget) -> QWidget:
+    """Make a modeless dialog/pop-up never sink below the main window (#batch8-2).
+
+    Modal dialogs (exec()) already stay above their parent, but modeless pop-ups
+    shown with .show() can recede behind the main window on click / app-switch on
+    macOS. Setting WindowStaysOnTopHint keeps them above the app's other windows
+    (the whole app still yields when you switch to another application). Call this
+    BEFORE show() so the flag is applied without needing a re-show. Returns the
+    widget for chaining."""
+    widget.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    return widget
+
+
 def align_form_labels(layout: QFormLayout, width: int = 120):
     layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)

@@ -261,9 +261,11 @@ class CurveControllerMixin:
                                changed_cb=self._on_pending_dialog_changed,
                                confirm_text="Create Edge" if is_new else "Apply")
         dlg.setModal(False)
-        # Tool window: floats above the main window (even while dragging control
-        # points on the canvas) but recedes when switching apps.
-        dlg.setWindowFlags(Qt.WindowType.Tool)
+        # Modeless Dialog that stays above the main window (even while dragging
+        # control points on the canvas). A plain Dialog flag was not enough on
+        # macOS (it could still recede behind the main window), so add
+        # WindowStaysOnTopHint — the whole app still yields on app-switch (#2/#8).
+        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dlg.accepted.connect(self._commit_pending_edge)
         dlg.rejected.connect(self._cancel_pending_edit)
         dlg.finished.connect(lambda _r, d=dlg: d.deleteLater())
@@ -435,7 +437,8 @@ class CurveControllerMixin:
                                  changed_cb=self._on_file_dialog_changed,
                                  parent=self.main_window)
         dlg.setModal(False)
-        dlg.setWindowFlags(Qt.WindowType.Tool)
+        # Modeless, but stays above the main window on macOS (#2/#8).
+        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dlg.accepted.connect(self._commit_file_edit)
         dlg.rejected.connect(self._cancel_file_edit)
         dlg.finished.connect(lambda _r, d=dlg: d.deleteLater())

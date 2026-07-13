@@ -69,6 +69,26 @@ def stage_phi_file(src: str, work_dir: str, log=_noop) -> None:
     log(f"[IBM] phi field -> {os.path.basename(dst)}")
 
 
+def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
+                           log=_noop) -> None:
+    """Stage getPGrid's boundary-condition table so the solver finds it in its
+    cwd: copy ``grid/<bc>.def`` -> ``work/<bc>.def``.
+
+    Skipped when the user supplied an explicit BC override (``prepare_case_dir``
+    already wrote it into ``work_dir``). Shared by the GUI solver worker and the
+    headless pipeline runner so both stage the table identically.
+    """
+    if cfg.bc_definitions:
+        return
+    def_name = os.path.basename(cfg.output_bc_file) + ".def"
+    companion = os.path.join(grid_dir, def_name)
+    target = os.path.join(work_dir, def_name)
+    if (os.path.exists(companion)
+            and os.path.abspath(companion) != os.path.abspath(target)):
+        shutil.copy2(companion, target)
+        log(f"[getPGrid] segment table -> {def_name}")
+
+
 def prepare_case_dir(cfg: SolverConfig, log=_noop):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
     rename outputs, write ``input.in`` / ``.def``, and compile IBM DLLs.

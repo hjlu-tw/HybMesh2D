@@ -1,6 +1,9 @@
 import re
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel
-from PyQt6.QtCore import QTime
+import os
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel, QFileDialog
+)
+from PyQt6.QtCore import QTime, QDateTime
 from PyQt6.QtGui import QTextCursor
 
 class LogPanel(QWidget):
@@ -23,9 +26,8 @@ class LogPanel(QWidget):
         title.setStyleSheet("font-size: 10px; font-weight: bold; color: #8892b0; border: none;")
         header_layout.addWidget(title)
         header_layout.addStretch()
-        
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setStyleSheet("""
+
+        _btn_qss = """
             QPushButton {
                 background: #1b1e36;
                 color: #a5b0cf;
@@ -43,10 +45,20 @@ class LogPanel(QWidget):
             QPushButton:pressed {
                 background: #121422;
             }
-        """)
+        """
+
+        # Save the console contents to a .log file.
+        self.save_btn = QPushButton("Save Log")
+        self.save_btn.setStyleSheet(_btn_qss)
+        self.save_btn.setToolTip("Save the console output to a .log file")
+        self.save_btn.clicked.connect(self.save_log)
+        header_layout.addWidget(self.save_btn)
+
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setStyleSheet(_btn_qss)
         self.clear_btn.clicked.connect(self.clear_log)
         header_layout.addWidget(self.clear_btn)
-        
+
         self._layout.addWidget(self.header)
         
         # ── Plain text log area ──────────────────────────────────────────
@@ -127,3 +139,29 @@ class LogPanel(QWidget):
     def get_log_text(self) -> str:
         """Return the plain text content of the log (strips HTML formatting)."""
         return self.text_edit.toPlainText()
+
+    def save_log(self):
+        """Prompt for a path and write the console contents to a .log file."""
+        try:
+            from app.utils import repo_root
+            start_dir = os.path.join(repo_root(), "results")
+        except Exception:
+            start_dir = ""
+        # Stamp the default filename with the date + time so successive saves
+        # don't silently overwrite one another (console_YYYYMMDD_HHMMSS.log).
+        stamp = QDateTime.currentDateTime().toString("yyyyMMdd_HHmmss")
+        fname = f"console_{stamp}.log"
+        default = os.path.join(start_dir, fname) if start_dir else fname
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Log", default, "Log files (*.log);;Text files (*.txt);;All Files (*)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += ".log"
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.get_log_text())
+            self.log(f"Console log saved to {path}")
+        except OSError as e:
+            self.log(f"[ERROR] Failed to save log: {e}")

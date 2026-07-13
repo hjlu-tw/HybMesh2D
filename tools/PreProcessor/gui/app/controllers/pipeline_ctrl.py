@@ -43,9 +43,9 @@ class PipelineControllerMixin:
 
         self._pipeline_running = True
         self._set_run_all_enabled(False)
-        # Remember the result variable to show at the end (set via a saved
-        # pipeline file, otherwise the canvas default).
-        self._pipeline_result_var = getattr(self, "_pipeline_result_var", "")
+        # The result variable to show at the end is set by a loaded pipeline
+        # script (_apply_pipeline_config); it stays "" otherwise, and
+        # _pipe_after_solver leaves the canvas on its default variable.
         self.main_window.log_panel.log(
             "=== Run Full Pipeline: CAD -> Mesh -> Solver -> Results ===")
         self._pipe_resample(session)
@@ -236,6 +236,12 @@ class PipelineControllerMixin:
         self._apply_pipeline_config(pcfg, path)
 
     def _apply_pipeline_config(self, pcfg: PipelineConfig, path: str):
+        # A pipeline script fully defines the CAD/mesh/solver state, so start
+        # from a clean slate: clear all open sessions, the mesh + solver config,
+        # any generated mesh and loaded results. Otherwise a partial script would
+        # silently inherit leftover settings from whatever was already open.
+        self.reset_all_state()
+
         # CAD: the cad section is a PreProcessor config — reuse the JSON loader.
         if pcfg.cad.get("input_file"):
             self._apply_json_config(dict(pcfg.cad), path)

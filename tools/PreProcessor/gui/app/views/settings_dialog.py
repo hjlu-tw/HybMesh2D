@@ -13,6 +13,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Geometry Settings")
         self.setModal(False)
+        # Modeless, but never sink below the main window (#2/#8).
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setMinimumWidth(320)
         self.setStyleSheet("background: #121422; color: #a0a8c0;")
 

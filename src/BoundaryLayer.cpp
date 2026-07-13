@@ -71,7 +71,8 @@ bool BoundaryLayerGenerator::checkCollision(Point2D p, double threshold, const s
 }
 
 double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& allBoundaryNodeIds,
-                                        const std::vector<int>& growModes) {
+                                        const std::vector<int>& growModes,
+                                        const std::vector<BLParams>& blParamsPerLoop) {
     std::vector<FrontState> fronts;
     int maxNTrans = 0;
     std::set<int> allInitialBoundaryIds;
@@ -84,9 +85,14 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         fs.geomId = currentId++;
         fs.activeFront = boundaryNodeIds;
         fs.growthSign = detectGrowthDirection(boundaryNodeIds, gm);
-        
+        // Effective per-geometry BL parameters (this loop's overrides on top of
+        // the global defaults) and the front's starting layer thickness.
+        fs.bl = (fs.geomId < static_cast<int>(blParamsPerLoop.size()))
+                    ? blParamsPerLoop[fs.geomId] : m_config.globalBLParams();
+        fs.currentH = fs.bl.blInitialThickness;
+
         int n_init = static_cast<int>(boundaryNodeIds.size());
-        fs.fanNodeCounts.assign(n_init, m_config.blFanNodes);
+        fs.fanNodeCounts.assign(n_init, fs.bl.blFanNodes);
         fs.n1_init.resize(n_init); fs.n2_init.resize(n_init);
         fs.isConvexInit.assign(n_init, false); fs.isConcaveInit.assign(n_init, false);
         fs.pos_init.resize(n_init);
@@ -104,8 +110,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             while (diff > M_PI) diff -= 2*M_PI;
             while (diff < -M_PI) diff += 2*M_PI;
             double exteriorAngle = 180.0 - (fs.growthSign * diff * 180.0 / M_PI);
-            if (exteriorAngle > m_config.blConvexAngleThreshold) fs.isConvexInit[i] = true;
-            else if (exteriorAngle < m_config.blConcaveAngleThreshold) fs.isConcaveInit[i] = true;
+            if (exteriorAngle > fs.bl.blConvexAngleThreshold) fs.isConvexInit[i] = true;
+            else if (exteriorAngle < fs.bl.blConcaveAngleThreshold) fs.isConcaveInit[i] = true;
         }
 
         // Phase 3: on line/circle surface runs, replace the finite-difference
@@ -115,7 +121,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // the result is bit-for-bit identical to before. The win is on curved
         // surfaces (cylinders, leading edges) where the chord normal is only
         // O(dtheta^2)-accurate but the radial normal is exact.
-        if (m_config.blUseAnalyticGeom) {
+        if (fs.bl.blUseAnalyticGeom) {
             int nOverridden = 0;
             double maxAngleDeg = 0.0;
             int i = 0;
@@ -152,13 +158,13 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         }
 
         // 計算過渡層數
-        double h_tmp = m_config.blInitialThickness;
-        for (int l = 0; l < m_config.blLayers; ++l) h_tmp *= m_config.blGrowthRate;
-        double hFirst = h_tmp, rTrans = m_config.blTransitionGrowthRate;
-        fs.nTrans = m_config.blTransitionLayers;
-        if (m_config.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
+        double h_tmp = fs.bl.blInitialThickness;
+        for (int l = 0; l < fs.bl.blLayers; ++l) h_tmp *= fs.bl.blGrowthRate;
+        double hFirst = h_tmp, rTrans = fs.bl.blTransitionGrowthRate;
+        fs.nTrans = fs.bl.blTransitionLayers;
+        if (fs.bl.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
             fs.nTrans = std::max(0, (int)std::round(std::log(m_config.globalAvgSegmentLength / hFirst) / std::log(rTrans)));
-        } else if (m_config.blAutoTransitionLayers == 2) {
+        } else if (fs.bl.blAutoTransitionLayers == 2) {
             double totalLen = 0;
             for(int i=0; i<n_init; ++i) totalLen += (fs.pos_init[(i+1)%n_init] - fs.pos_init[i]).length();
             fs.nTrans = std::max(0, (int)std::round(std::log((totalLen/n_init) / hFirst) / std::log(rTrans)));
@@ -166,12 +172,12 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         maxNTrans = std::max(maxNTrans, fs.nTrans);
 
         // Adaptive Fan Nodes
-        double R_BL = 0.0, h_tmp2 = m_config.blInitialThickness;
-        for (int l = 0; l < m_config.blLayers; ++l) { R_BL += h_tmp2; h_tmp2 *= m_config.blGrowthRate; }
+        double R_BL = 0.0, h_tmp2 = fs.bl.blInitialThickness;
+        for (int l = 0; l < fs.bl.blLayers; ++l) { R_BL += h_tmp2; h_tmp2 *= fs.bl.blGrowthRate; }
         double R_trans = (fs.nTrans > 0) ? hFirst * (std::pow(rTrans, fs.nTrans) - 1.0) / (rTrans - 1.0) : 0.0;
         double D_total = R_BL + R_trans;
 
-        if (m_config.blAutoFanNodes > 0) {
+        if (fs.bl.blAutoFanNodes > 0) {
             std::vector<double> projectedWidths(n_init);
             double totalProjectedWidth = 0.0;
             for (int i = 0; i < n_init; ++i) {
@@ -191,7 +197,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     if (fs.growthSign > 0) { while (a2 > a1) a2 -= 2*M_PI; } else { while (a2 < a1) a2 += 2*M_PI; }
                     double arcLength = D_total * std::abs(a2 - a1);
                     double targetWidth = globalAvgWidth;
-                    if (m_config.blAutoFanNodes == 2) {
+                    if (fs.bl.blAutoFanNodes == 2) {
                         double localWidthSum = 0.0; int neighborCount = 0;
                         for (int j = 1; j <= 5; ++j) {
                             localWidthSum += projectedWidths[(i - j + n_init) % n_init];
@@ -206,7 +212,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         }
 
         // Concave Handling (Method 5)
-        if (m_config.blConcaveMethod == 5) {
+        if (fs.bl.blConcaveMethod == 5) {
             std::vector<double> S(n_init); S[0] = 0.0;
             for (int i = 1; i < n_init; ++i) S[i] = S[i-1] + (fs.pos_init[i] - fs.pos_init[i-1]).length();
             double L_total = S[n_init-1] + (fs.pos_init[0] - fs.pos_init[n_init-1]).length();
@@ -214,7 +220,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             for (int i = 0; i < n_init; ++i) if (fs.isConcaveInit[i]) concaveIndices.push_back(i);
             
             if (!concaveIndices.empty()) {
-                double global_D_inf = m_config.blConcaveInfluenceMultiplier * D_total;
+                double global_D_inf = fs.bl.blConcaveInfluenceMultiplier * D_total;
                 std::vector<double> concave_D_inf(concaveIndices.size(), global_D_inf);
                 for (size_t c = 0; c < concaveIndices.size(); ++c) {
                     int k_idx = concaveIndices[c];
@@ -267,13 +273,18 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         fronts.push_back(fs);
     }
 
-    double currentH = m_config.blInitialThickness;
-    double lastH = currentH;
-    int totalLayers = m_config.blLayers + maxNTrans;
+    // Each front carries its own thickness schedule (fs.currentH advanced with
+    // its own growth rate), so the loop runs for the deepest front's layer count
+    // and the returned outer thickness is the largest last-layer height across
+    // fronts (it drives the far-field starting size).
+    double lastH = m_config.blInitialThickness;
+    int totalLayers = 0;
+    for (const auto& fs : fronts)
+        totalLayers = std::max(totalLayers, fs.bl.blLayers + fs.nTrans);
+    (void)maxNTrans;
     std::cout << "Step: Generating " << totalLayers << " boundary layers..." << std::endl;
     for (int layer = 0; layer < totalLayers; ++layer) {
-        lastH = currentH;
-        
+
         // --- 1. 候選位置預算 (Candidate Phase) ---
         struct CandidateNode {
             int frontIdx;
@@ -288,7 +299,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
         for (int fIdx = 0; fIdx < (int)fronts.size(); ++fIdx) {
             auto& fs = fronts[fIdx];
-            if (layer >= m_config.blLayers + fs.nTrans) continue;
+            if (layer >= fs.bl.blLayers + fs.nTrans) continue;
+            double currentH = fs.currentH;  // this front's thickness for this layer
 
             int n = (int)fs.activeFront.size();
             std::vector<Vector2D> n1_list(n), n2_list(n);
@@ -310,10 +322,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 while (diff > M_PI) diff -= 2*M_PI;
                 while (diff < -M_PI) diff += 2*M_PI;
                 double exteriorAngle = 180.0 - (fs.growthSign * diff * 180.0 / M_PI);
-                if (exteriorAngle > m_config.blConvexAngleThreshold) {
+                if (exteriorAngle > fs.bl.blConvexAngleThreshold) {
                     isConvexList[i] = true;
-                    if (m_config.blConvexMethod == 2) {
-                        if (exteriorAngle <= m_config.blParaFallbackAngle) {
+                    if (fs.bl.blConvexMethod == 2) {
+                        if (exteriorAngle <= fs.bl.blParaFallbackAngle) {
                             useParaList[i] = true;
                         } else {
                             useSplitParaList[i] = true;
@@ -324,7 +336,9 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
             for (int i = 0; i < n; ++i) {
                 int nodeId = fs.activeFront[i];
-                if (m_mesh.nodes[nodeId].isFrozen) continue;
+                // isFrozen: collision-retreat pin. skipBL: per-segment BL disabled
+                // on this node (.meta grow=0) — grow no candidate either way.
+                if (m_mesh.nodes[nodeId].isFrozen || m_mesh.nodes[nodeId].skipBL) continue;
 
                 double mult = fs.nodeStepMultipliers.count(nodeId) ? fs.nodeStepMultipliers[nodeId] : 1.0;
                 bool shouldSplit = false;
@@ -332,7 +346,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 bool localUseSplitPara = false;
                 RayInfo inheritedRay = fs.rayInfoMap.count(nodeId) ? fs.rayInfoMap[nodeId] : RayInfo();
                 
-                if (m_config.blConvexMethod == 2) {
+                if (fs.bl.blConvexMethod == 2) {
                     if (layer == 0) {
                         shouldSplit = isConvexList[i];
                         localUsePara = useParaList[i];
@@ -442,22 +456,24 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // --- 2. Collision Detection & Retreat Phase ---
         std::set<int> currentLayerNodesToFreeze;
         if (m_config.enableCollisionDetection) {
-            double collisionThreshold = currentH;
-
             std::set<int> currentAllFrontsSet;
             for (const auto& fs : fronts) currentAllFrontsSet.insert(fs.activeFront.begin(), fs.activeFront.end());
 
             for (int fIdx = 0; fIdx < (int)fronts.size(); ++fIdx) {
+                // Each front's proximity threshold is its own current thickness.
+                double th = fronts[fIdx].currentH;
                 for (auto& cand : allCandidates[fIdx]) {
                     // A. 候選點 vs 已有節點
-                    if (checkCollision(cand.pos, collisionThreshold, currentAllFrontsSet, fronts[fIdx].geomId)) {
+                    if (checkCollision(cand.pos, th, currentAllFrontsSet, fronts[fIdx].geomId)) {
                         currentLayerNodesToFreeze.insert(cand.parentNodeId);
                     }
-                    // B. 候選點 vs 其他幾何候選點
+                    // B. 候選點 vs 其他幾何候選點 (use the larger of the two fronts'
+                    //    thicknesses so either front's cell size can trigger a freeze)
                     for (int fIdx2 = fIdx + 1; fIdx2 < (int)fronts.size(); ++fIdx2) {
                         if (fronts[fIdx].geomId == fronts[fIdx2].geomId) continue;
+                        double th2 = std::max(th, fronts[fIdx2].currentH);
                         for (auto& cand2 : allCandidates[fIdx2]) {
-                            if ((cand.pos - cand2.pos).lengthSq() < collisionThreshold * collisionThreshold) {
+                            if ((cand.pos - cand2.pos).lengthSq() < th2 * th2) {
                                 currentLayerNodesToFreeze.insert(cand.parentNodeId);
                                 currentLayerNodesToFreeze.insert(cand2.parentNodeId);
                             }
@@ -470,20 +486,31 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // --- 3. 提交階段 (Commit Phase) ---
         for (int fIdx = 0; fIdx < (int)fronts.size(); ++fIdx) {
             auto& fs = fronts[fIdx];
-            if (layer >= m_config.blLayers + fs.nTrans) continue;
-            
+            if (layer >= fs.bl.blLayers + fs.nTrans) continue;
+
             int n = (int)fs.activeFront.size();
             std::vector<int> nextFront;
             std::vector<std::vector<int>> p2c(n);
 
             for (int i = 0; i < n; ++i) {
                 int nodeId = fs.activeFront[i];
+                // Per-segment BL disabled: keep the node pinned on the surface and
+                // grow no child. Marked frozen so the quad-strip below skips the
+                // (degenerate) elements adjacent to it — this is intentional, so
+                // unlike a collision retreat it never throws on proximity. The BL
+                // simply tapers to zero here and the far-field mesher fills the gap.
+                if (m_mesh.nodes[nodeId].skipBL) {
+                    m_mesh.nodes[nodeId].isFrozen = true;
+                    nextFront.push_back(nodeId);
+                    p2c[i].push_back(nodeId);
+                    continue;
+                }
                 if (m_mesh.nodes[nodeId].isFrozen || currentLayerNodesToFreeze.count(nodeId)) {
                     m_mesh.nodes[nodeId].isFrozen = true;
                     nextFront.push_back(nodeId);
                     p2c[i].push_back(nodeId);
-                    
-                    if (checkCollision(m_mesh.nodes[nodeId].pos, m_config.blInitialThickness, {nodeId}, fs.geomId)) {
+
+                    if (checkCollision(m_mesh.nodes[nodeId].pos, fs.bl.blInitialThickness, {nodeId}, fs.geomId)) {
                         throw std::runtime_error("Error: Critical proximity detected after retreat at node " + std::to_string(nodeId));
                     }
                     continue;
@@ -541,11 +568,15 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 }
             }
             fs.activeFront = nextFront;
+
+            // Track the largest last-layer thickness across fronts, then advance
+            // this front's own thickness for the next layer (core growth rate
+            // within the BL, transition growth rate beyond it).
+            lastH = std::max(lastH, fs.currentH);
+            if (layer < fs.bl.blLayers - 1) fs.currentH *= fs.bl.blGrowthRate;
+            else fs.currentH *= fs.bl.blTransitionGrowthRate;
         }
         std::cout << "\r  - Boundary Layer progress: " << layer + 1 << " / " << totalLayers << " complete." << std::flush;
-
-        if (layer < m_config.blLayers - 1) currentH *= m_config.blGrowthRate;
-        else currentH *= m_config.blTransitionGrowthRate;
     }
     std::cout << std::endl;
 

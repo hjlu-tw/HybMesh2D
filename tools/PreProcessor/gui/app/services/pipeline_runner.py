@@ -76,8 +76,8 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log) -> str:
     with tempfile.NamedTemporaryFile("w", suffix="_pipe_cad.json",
                                      delete=False) as tf:
         cfg_path = tf.name
-    pm.export_config(cfg_path)
     try:
+        pm.export_config(cfg_path)
         rc = _stream([exe, cfg_path], cwd=repo, log=log)
     finally:
         _rm(cfg_path)
@@ -118,8 +118,8 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_file: str,
     with tempfile.NamedTemporaryFile("w", suffix="_pipe_mesh.dat",
                                      delete=False) as tf:
         cfg_path = tf.name
-    mc.save_to_file(cfg_path)
     try:
+        mc.save_to_file(cfg_path)
         rc = _stream([exe, "-conf", cfg_path], cwd=repo, log=log, env=_mesh_env())
     finally:
         _rm(cfg_path)
@@ -137,13 +137,12 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_file: str,
 def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log) -> str:
     sc = pcfg.build_solver_config(repo)
 
-    # Auto-link the STAR-CD output of the mesh unless the solver section names
-    # its own inputs.
-    if not (sc.input_vrt_file and sc.input_cel_file and sc.input_bnd_file):
-        base = os.path.splitext(vtk)[0]
-        sc.input_vrt_file = base + ".vrt"
-        sc.input_cel_file = base + ".cel"
-        sc.input_bnd_file = base + ".bnd"
+    # Auto-link the STAR-CD output of the mesh, filling each input independently
+    # so an explicitly-named input isn't clobbered when the others are blank.
+    base = os.path.splitext(vtk)[0]
+    sc.input_vrt_file = sc.input_vrt_file or base + ".vrt"
+    sc.input_cel_file = sc.input_cel_file or base + ".cel"
+    sc.input_bnd_file = sc.input_bnd_file or base + ".bnd"
     for f, label in [(sc.input_vrt_file, ".vrt"), (sc.input_cel_file, ".cel"),
                      (sc.input_bnd_file, ".bnd")]:
         if not os.path.exists(f):
@@ -170,13 +169,7 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log) -> str:
 
     # The solver reads "<bc>.def" from its cwd; use getPGrid's companion verbatim
     # unless the user supplied an explicit BC table (already written to work/).
-    if not sc.bc_definitions:
-        def_name = os.path.basename(sc.output_bc_file) + ".def"
-        companion = os.path.join(grid_dir, def_name)
-        target = os.path.join(work_dir, def_name)
-        if os.path.exists(companion) and os.path.abspath(companion) != os.path.abspath(target):
-            import shutil
-            shutil.copy2(companion, target)
+    solver_case.stage_bc_def_companion(sc, grid_dir, work_dir, log=log)
 
     # unicones solver (run in work_dir so relative grid/bc paths resolve).
     rc = _stream([sc.solver_binary, "-t", SOLVER_TAG, input_in],

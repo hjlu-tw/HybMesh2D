@@ -703,6 +703,7 @@ class ResultCanvasView(QWidget):
             return
         if self._line_dialog is None:
             self._line_dialog = WallQuantityDialog(self)
+            self._line_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)  # (#2/#8)
         seg = self._line_seg
 
         def sampler(var: str):
@@ -823,6 +824,7 @@ class ResultCanvasView(QWidget):
         from app.views.wall_qty_view import WallQuantityDialog
         if self._wall_dialog is None:
             self._wall_dialog = WallQuantityDialog(self)
+            self._wall_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)  # (#2/#8)
         dlg = self._wall_dialog
         result_dir = os.path.dirname(getattr(self, "_result_path", "") or "")
         dlg._last_dir = result_dir

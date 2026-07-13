@@ -245,11 +245,14 @@ class BackendControllerMixin:
 
         if not default_out:
             root_dir = repo_root()
-            filename = "output_resampled.dat"
             if session.file_path:
                 stem = os.path.splitext(os.path.basename(session.file_path))[0]
-                filename = f"{stem}_resampled.dat"
-            default_out = os.path.join(root_dir, "results", "resampled", filename)
+            else:
+                # Untitled session: name after its (unique) display name so
+                # different sessions don't all export "output_resampled.dat".
+                stem = session.display_name.lstrip("*").replace(" ", "_") or "output"
+            default_out = os.path.join(root_dir, "results", "resampled",
+                                       f"{stem}_resampled.dat")
 
         dlg = OutputDialog(default_out, self.main_window)
         if dlg.exec() != OutputDialog.DialogCode.Accepted:

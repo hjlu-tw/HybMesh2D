@@ -9,6 +9,29 @@
 #include <set>
 #include <iostream>
 
+// Per-geometry boundary-layer parameters. A geometry that grows a BL uses either
+// the global defaults (see Config::globalBLParams) or a copy with the overrides
+// declared on its GEOM_FILE / DOMAIN_FILE line applied (see Config::blParamsFor).
+struct BLParams {
+    double blInitialThickness = 0.01;
+    double blGrowthRate = 1.2;
+    int blLayers = 5;
+    int blFanNodes = 5;
+    int blAutoFanNodes = 0;
+    double blFanAngleThreshold = 60.0;
+    int blConvexMethod = 0;
+    double blParaFallbackAngle = 300.0;
+    double blConvexAngleThreshold = 260.0;
+    int blConcaveMethod = 0;
+    double blConcaveInfluenceMultiplier = 10.0;
+    double blConcaveAngleThreshold = 100.0;
+    int blTransitionLayers = 3;
+    int blAutoTransitionLayers = 0;
+    double blTransitionGrowthRate = 1.2;
+    double blTransitionBuffer = 2.0;
+    bool blUseAnalyticGeom = false;
+};
+
 struct Config {
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
@@ -45,8 +68,23 @@ struct Config {
     bool domainGrowBL = false;
     std::set<std::string> noBLGeoms;
 
+    // Per-geometry BL parameter overrides, keyed by the geometry path exactly as
+    // written on its GEOM_FILE / DOMAIN_FILE line. Values use the same KEY names
+    // as the global .dat keys (e.g. BL_INITIAL_THICKNESS). Only the listed keys
+    // override; the rest fall back to the global BL settings. Populated from
+    // trailing KEY=VALUE tokens on the geometry line (kept in sync with the GUI
+    // emitter in tools/PreProcessor/gui/app/models/mesh_config.py).
+    std::map<std::string, std::map<std::string, double>> blOverrides;
+
+    // Per-geometry wall BC override, keyed by the geometry path on its
+    // GEOM_FILE / DOMAIN_FILE line (from a trailing `bc=<name>` token). Lets each
+    // geometry use a different wall BC instead of the single global bcGeom.
+    // A per-segment .meta tag still wins over this.
+    std::map<std::string, std::string> bcOverrides;
+
     double surfaceSize = 0.1, farFieldSize = 1.0;
     bool autoSurfaceSize = true;
+    bool autoFarFieldSize = false;   // derive farFieldSize from the domain extent
     double blInitialThickness = 0.01, blGrowthRate = 1.2;
     int blLayers = 5;
 
@@ -76,6 +114,10 @@ struct Config {
     
     // 進階遠場過渡控制
     double farFieldGrowthRate = 0.1;
+    // 雙向分級：除了由幾何/邊界層外緣向外成長，另由計算域外邊界向內成長，兩側各自
+    // 使用一個成長率，於中間取較粗者 (Min 尺寸場)。預設關閉，行為與單向相同。
+    bool farFieldBidirectional = false;
+    double farFieldGrowthRateOuter = 0.1; // 外邊界側成長率 (bidirectional 時生效)
     int gmshAlgorithm = 6; // 6: Frontal-Delaunay
     int gmshOptimize = 1;  // 1: Enable mesh optimization
 
@@ -112,10 +154,18 @@ struct Config {
                 // nobl = no BL, conform at far-field size). The GUI in
                 // tools/PreProcessor/gui/app/models/mesh_config.py must emit the
                 // same token; keep the two parsers in sync.
-                std::string f, role;
+                std::string f;
                 if (ss >> f) {
                     geomFiles.push_back(f);
-                    if (ss >> role && role == "nobl") noBLGeoms.insert(f);
+                    // Optional trailing tokens: role (bl|nobl) then KEY=VALUE
+                    // per-geometry BL overrides.
+                    std::string tok;
+                    while (ss >> tok) {
+                        if (tok == "nobl") noBLGeoms.insert(f);
+                        else if (tok == "bl") { /* explicit grow-BL (default) */ }
+                        else if (tok.rfind("bc=", 0) == 0) bcOverrides[f] = tok.substr(3);
+                        else parseBLOverrideToken(tok, blOverrides[f]);
+                    }
                 }
             }
             else if (key == "SEED_FILE") {
@@ -156,8 +206,18 @@ struct Config {
                 // DOMAIN_FILE <path> [bl|nobl]  (nobl = far-field outline, no BL,
                 // external flow, default; bl = domain wall, BL grows inward ->
                 // internal flow). Replaces the old global INTERNAL_FLOW flag.
-                std::string role;
-                if (ss >> domainFile) domainGrowBL = (ss >> role && role == "bl");
+                if (ss >> domainFile) {
+                    domainGrowBL = false;
+                    // Optional trailing tokens: role (bl|nobl) then KEY=VALUE
+                    // per-domain BL overrides (only meaningful when bl / wall).
+                    std::string tok;
+                    while (ss >> tok) {
+                        if (tok == "bl") domainGrowBL = true;
+                        else if (tok == "nobl") domainGrowBL = false;
+                        else if (tok.rfind("bc=", 0) == 0) bcOverrides[domainFile] = tok.substr(3);
+                        else parseBLOverrideToken(tok, blOverrides[domainFile]);
+                    }
+                }
             }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
@@ -168,6 +228,9 @@ struct Config {
                 int val; ss >> val; autoSurfaceSize = (val != 0);
             }
             else if (key == "FARFIELD_MESH_SIZE") ss >> farFieldSize;
+            else if (key == "AUTO_FARFIELD_SIZE") {
+                int val; ss >> val; autoFarFieldSize = (val != 0);
+            }
             else if (key == "BL_INITIAL_THICKNESS") ss >> blInitialThickness;
             else if (key == "BL_GROWTH_RATE") ss >> blGrowthRate;
             else if (key == "BL_LAYERS") {
@@ -205,6 +268,10 @@ struct Config {
             else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> blTransitionGrowthRate;
             else if (key == "BL_TRANSITION_BUFFER") ss >> blTransitionBuffer;
             else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
+            else if (key == "FARFIELD_GROWTH_RATE_OUTER") ss >> farFieldGrowthRateOuter;
+            else if (key == "FARFIELD_BIDIRECTIONAL") {
+                double val; ss >> val; farFieldBidirectional = (val != 0.0);
+            }
             else if (key == "GMSH_ALGORITHM") {
                 double val; ss >> val; gmshAlgorithm = static_cast<int>(val);
             }
@@ -236,6 +303,76 @@ struct Config {
             }
         }
         return true;
+    }
+
+    // Parse a "KEY=VALUE" token into a per-geometry override map (ignored if it
+    // isn't of that form or the value isn't numeric).
+    static void parseBLOverrideToken(const std::string& tok,
+                                     std::map<std::string, double>& out) {
+        auto eq = tok.find('=');
+        if (eq == std::string::npos || eq == 0) return;
+        try { out[tok.substr(0, eq)] = std::stod(tok.substr(eq + 1)); }
+        catch (...) { /* ignore malformed values */ }
+    }
+
+    // Copy the global BL settings into a BLParams bundle.
+    BLParams globalBLParams() const {
+        BLParams p;
+        p.blInitialThickness = blInitialThickness;
+        p.blGrowthRate = blGrowthRate;
+        p.blLayers = blLayers;
+        p.blFanNodes = blFanNodes;
+        p.blAutoFanNodes = blAutoFanNodes;
+        p.blFanAngleThreshold = blFanAngleThreshold;
+        p.blConvexMethod = blConvexMethod;
+        p.blParaFallbackAngle = blParaFallbackAngle;
+        p.blConvexAngleThreshold = blConvexAngleThreshold;
+        p.blConcaveMethod = blConcaveMethod;
+        p.blConcaveInfluenceMultiplier = blConcaveInfluenceMultiplier;
+        p.blConcaveAngleThreshold = blConcaveAngleThreshold;
+        p.blTransitionLayers = blTransitionLayers;
+        p.blAutoTransitionLayers = blAutoTransitionLayers;
+        p.blTransitionGrowthRate = blTransitionGrowthRate;
+        p.blTransitionBuffer = blTransitionBuffer;
+        p.blUseAnalyticGeom = blUseAnalyticGeom;
+        return p;
+    }
+
+    static void applyBLKey(BLParams& p, const std::string& key, double v) {
+        if (key == "BL_INITIAL_THICKNESS") p.blInitialThickness = v;
+        else if (key == "BL_GROWTH_RATE") p.blGrowthRate = v;
+        else if (key == "BL_LAYERS") p.blLayers = static_cast<int>(v);
+        else if (key == "BL_FAN_NODES") p.blFanNodes = static_cast<int>(v);
+        else if (key == "BL_AUTO_FAN_NODES") p.blAutoFanNodes = static_cast<int>(v);
+        else if (key == "BL_FAN_ANGLE_THRESHOLD") p.blFanAngleThreshold = v;
+        else if (key == "BL_CONVEX_METHOD") p.blConvexMethod = static_cast<int>(v);
+        else if (key == "BL_PARA_FALLBACK_ANGLE") p.blParaFallbackAngle = v;
+        else if (key == "BL_CONVEX_ANGLE_THRESHOLD") p.blConvexAngleThreshold = v;
+        else if (key == "BL_CONCAVE_METHOD") p.blConcaveMethod = static_cast<int>(v);
+        else if (key == "BL_CONCAVE_INFLUENCE_MULTIPLIER") p.blConcaveInfluenceMultiplier = v;
+        else if (key == "BL_CONCAVE_ANGLE_THRESHOLD") p.blConcaveAngleThreshold = v;
+        else if (key == "BL_TRANSITION_LAYERS") p.blTransitionLayers = static_cast<int>(v);
+        else if (key == "BL_AUTO_TRANSITION_LAYERS") p.blAutoTransitionLayers = static_cast<int>(v);
+        else if (key == "BL_TRANSITION_GROWTH_RATE") p.blTransitionGrowthRate = v;
+        else if (key == "BL_TRANSITION_BUFFER") p.blTransitionBuffer = v;
+        else if (key == "BL_USE_ANALYTIC_GEOM") p.blUseAnalyticGeom = (v != 0.0);
+    }
+
+    // Effective BL parameters for a geometry: global defaults with any overrides
+    // declared on its GEOM_FILE / DOMAIN_FILE line applied on top.
+    BLParams blParamsFor(const std::string& file) const {
+        BLParams p = globalBLParams();
+        auto it = blOverrides.find(file);
+        if (it != blOverrides.end())
+            for (const auto& kv : it->second) applyBLKey(p, kv.first, kv.second);
+        return p;
+    }
+
+    // Effective wall BC for a geometry: its per-geometry override, else the
+    // global bcGeom. (A per-segment .meta tag still takes priority downstream.)
+    std::string bcFor(const std::string& file) const {
+        auto it = bcOverrides.find(file);
+        return (it != bcOverrides.end() && !it->second.empty()) ? it->second : bcGeom;
     }
 
     void print() const {
@@ -279,7 +416,8 @@ struct Config {
         std::cout << "[ Mesh Sizing ]\n";
         std::cout << "  - Auto Surface Sizing  : " << (autoSurfaceSize ? "[ON]" : "[OFF]") << "\n";
         std::cout << "  - Surface Mesh Size    : " << surfaceSize << (autoSurfaceSize ? " (Manual fallback)" : "") << "\n";
-        std::cout << "  - Far-field Mesh Size  : " << farFieldSize << "\n\n";
+        std::cout << "  - Auto Far-field Sizing: " << (autoFarFieldSize ? "[ON]" : "[OFF]") << "\n";
+        std::cout << "  - Far-field Mesh Size  : " << farFieldSize << (autoFarFieldSize ? " (Manual fallback)" : "") << "\n\n";
 
         std::cout << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
         std::cout << "  - Base Layers          : " << blLayers << " (Initial: " << blInitialThickness << ", Growth Rate: " << blGrowthRate << ")\n";

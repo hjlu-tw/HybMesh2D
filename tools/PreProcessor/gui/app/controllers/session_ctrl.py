@@ -36,9 +36,80 @@ class SessionControllerMixin:
             return
         self._new_session("")
 
+    def reset_all_state(self, new_blank: bool = True):
+        """Tear everything down to a clean slate: all CAD sessions/tabs/canvas
+        overlays, the global mesh + solver config, any generated mesh and any
+        loaded result. Used when loading a pipeline script so the loaded config
+        fully replaces the current one instead of merging onto it.
+
+        With ``new_blank`` a single empty CAD session is left open (so a
+        following CAD load reuses it); pass False to leave zero sessions.
+        """
+        from app.models.mesh_config import MeshConfig
+        from app.models.solver_config import SolverConfig
+        mw = self.main_window
+
+        # Cancel a CAD resample still running for a session we are about to drop,
+        # so its finished-callback can't fire against a torn-down session.
+        worker = getattr(self, "_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait()
+
+        # 1. Remove every CAD session, its canvas layer, and its tab.
+        mw.tab_widget.blockSignals(True)
+        while self.sessions:
+            session = self.sessions.pop(0)
+            session.command_history.on_change = None
+            try:
+                mw.canvas_view.remove_geometry(session.session_id)
+            except Exception:
+                pass
+        while mw.tab_widget.count() > 0:
+            mw.tab_widget.removeTab(0)
+        self.active_idx = -1
+        mw.canvas_view.clear_active_overlays()
+        mw.canvas_view.set_active_points(None)
+        mw.tab_widget.blockSignals(False)
+
+        # 2. Reset the shared mesh + solver config to defaults.
+        self.global_mesh_config = MeshConfig()
+        self.global_solver_config = SolverConfig()
+        self.global_solver_config.ensure_default_binaries()
+
+        # 3. Drop generated mesh + loaded results state.
+        self.global_vtk_mesh = None
+        self.global_vtk_path = ""
+        self.global_result_path = ""
+        self.global_result_data = None
+        self._pipeline_result_var = ""
+
+        # 4. Clear the mesh canvas/stats and push the fresh configs to the panels.
+        mw.mesh_canvas_view.clear_mesh()
+        mw.mesh_canvas_view.update_geometry_previews([])
+        mw.mesh_canvas_view.update_seed_previews([])
+        mw.mesh_stats_panel.update_stats(None)
+        mw.mesh_config_panel.set_config(self.global_mesh_config)
+        mw.solver_config_panel.set_config(self.global_solver_config)
+
+        # 5. Leave one clean CAD session so a following load reuses it.
+        if new_blank:
+            self._new_session("")
+        self.sync_mesh_layers_panel()
+
     def _new_session(self, file_path: str = "") -> GeometrySession:
         """Create a session and add a tab to the shared canvas."""
         session = GeometrySession(file_path)
+        # Number a blank session with the smallest free number among the current
+        # blank sessions, so "Untitled" starts at 1 and doesn't skip because
+        # other files have been loaded (those don't consume a number).
+        if not file_path:
+            used = {s._untitled_no for s in self.sessions
+                    if not s.file_path and getattr(s, "_untitled_no", None)}
+            n = 1
+            while n in used:
+                n += 1
+            session._untitled_no = n
         # Keep the toolbar undo/redo buttons in sync on every stack change,
         # regardless of which command dispatch path ran (the no-arg call always
         # reflects whichever session is active at the time).
@@ -49,8 +120,9 @@ class SessionControllerMixin:
         self.sessions.append(session)
         self._refresh_session_colors()
 
-        # Add tab (may trigger currentChanged → switch_tab)
-        label = os.path.basename(file_path) if file_path else "Untitled"
+        # Add tab (may trigger currentChanged → switch_tab). Blank sessions use
+        # their numbered display name ("Untitled 3") so tabs stay distinct.
+        label = os.path.basename(file_path) if file_path else session.display_name
         self.main_window.tab_widget.addTab(label)
 
         # Add geometry layer to the shared canvas
@@ -375,6 +447,7 @@ class SessionControllerMixin:
                 label = os.path.basename(file_path)
                 self.main_window.tab_widget.setTabText(self.active_idx, label)
                 session.file_path = file_path
+                session._untitled_no = None  # no longer a blank/untitled session
                 session.color = SESSION_COLORS[
                     (session.session_id - 1) % len(SESSION_COLORS)]
             else:
@@ -471,6 +544,8 @@ class SessionControllerMixin:
             label = os.path.basename(input_file) if input_file else "Untitled"
             self.main_window.tab_widget.setTabText(self.active_idx, label)
             session.file_path = input_file
+            if input_file:
+                session._untitled_no = None  # adopted a file; no longer untitled
             self._refresh_session_colors()
         else:
             session = self._new_session(input_file)

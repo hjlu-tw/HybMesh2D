@@ -13,6 +13,18 @@ from app.models.solver_config import SolverConfig
 # but do not crash — when the file version is newer than they support.
 PIPELINE_FORMAT_VERSION = 1
 
+# Solver fields that are *derived at run time* (staged case paths, binary
+# locations) rather than authored knobs. SolverConfig.to_dict() dumps the whole
+# dataclass, so a script saved after a solve would otherwise bake in absolute
+# paths to a specific machine/mesh; on reload the runner would then skip
+# auto-linking and point at those stale files. Strip them on save so a saved
+# script stays portable and always re-links to the mesh the pipeline produces.
+_SOLVER_DERIVED_KEYS = (
+    "input_vrt_file", "input_cel_file", "input_bnd_file",
+    "work_dir", "output_grid_file", "output_bc_file",
+    "getpgrid_binary", "solver_binary", "bdecompose_binary",
+)
+
 
 @dataclass
 class PipelineConfig:
@@ -198,6 +210,9 @@ class PipelineConfig:
         if mesh_config is not None:
             pc.mesh = mesh_config.to_dict()
         if solver_config is not None:
-            pc.solver = solver_config.to_dict()
+            solver = solver_config.to_dict()
+            for k in _SOLVER_DERIVED_KEYS:
+                solver.pop(k, None)
+            pc.solver = solver
         pc.results = dict(results or {})
         return pc

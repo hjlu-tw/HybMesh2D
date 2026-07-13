@@ -188,14 +188,15 @@ class AppController(
         sb.uniform_type_combo.currentTextChanged.connect(
             self.update_segment_params)
         sb.match_previous_cb.toggled.connect(self.update_match_previous)
-        sb.bc_combo.currentTextChanged.connect(self.update_segment_bc)
+        # #1: patch/group name is assigned via a pop-up (applies to all selected).
+        sb.group_btn.clicked.connect(self.open_cad_patch_dialog)
         sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
 
         # Distribution tool window: open it + drive a live resample preview.
         sb.distribution_btn.clicked.connect(self._open_distribution)
         sb.distribution_apply_btn.clicked.connect(self._apply_distribution)
         sb._distribution_dialog.finished.connect(
-            lambda _r: self.main_window.canvas_view.clear_resampled())
+            lambda _r: self._restore_resampled_after_distribution())
 
         # Duplicate & Transform tool window: opening it auto-shows the gizmo +
         # live preview; closing it clears them.
@@ -286,13 +287,22 @@ class AppController(
         mw.mesh_config_panel.geom_files_changed.connect(self.handle_mesh_geom_files_changed)
         mw.mesh_config_panel.mesh_config_changed.connect(self.handle_mesh_config_changed)
         mw.mesh_config_panel.add_all_sessions_btn.clicked.connect(self.add_all_sessions_to_mesh)
+        mw.mesh_config_panel.export_mesh_requested.connect(self.export_mesh_files)  # #5
+        # Domain Source = Custom geometry hides the rectangle box + its BC colours;
+        # selecting a geometry in the list highlights it on the mesh canvas.
+        mw.mesh_config_panel.domain_source_changed.connect(
+            mw.mesh_canvas_view.set_domain_is_custom)
+        mw.mesh_config_panel.geom_selection_changed.connect(
+            mw.mesh_canvas_view.highlight_geometry_file)
+        mw.mesh_config_panel.segment_highlight_requested.connect(
+            mw.mesh_canvas_view.highlight_segment)
 
         # Toolbar Mesh Buttons
         mw.mesh_preview_btn.clicked.connect(self.preview_mesh_generator)
         mw.mesh_generate_btn.clicked.connect(self.run_mesh_generator)
         mw.mesh_cancel_btn.clicked.connect(self.cancel_mesh_generator)
-        mw.mesh_config_panel.export_vtk_btn.clicked.connect(self.export_generated_vtk)
-        mw.mesh_config_panel.export_starcd_btn.clicked.connect(self.export_star_cd)
+        # (#8) The per-format "Export …" buttons were removed from the mesh config
+        # panel; export-to-a-path stays wired from the Results panel (below).
         mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
         mw.mesh_clear_btn.clicked.connect(self.clear_mesh_canvas)
 
@@ -302,6 +312,7 @@ class AppController(
         sp.cancel_solver_btn.clicked.connect(self.cancel_solver)
         sp.load_cfg_btn.clicked.connect(self.load_solver_config)
         sp.save_cfg_btn.clicked.connect(self.save_solver_config)
+        sp.bc_detect_btn.clicked.connect(self.detect_bc_from_mesh)
         sp.build_init_cond_btn.clicked.connect(lambda: self.open_dll_builder("init_cond"))
         sp.build_motion_btn.clicked.connect(lambda: self.open_dll_builder("motion"))
         self.init_solver()
@@ -478,21 +489,28 @@ class AppController(
             self.on_stl3d_display_changed()
 
     def _refresh_mesh_previews(self, cfg):
-        """Refresh boundary and seed geometry previews from a mesh config."""
+        """Refresh geometry (boundary + domain) and seed previews from a config.
+
+        Domain-role geometries (far-field / wall) ARE drawn — excluding them made
+        a geometry vanish the moment its role was set to a domain role."""
         mw = self.main_window
-        mw.mesh_canvas_view.update_geometry_previews(cfg.boundary_files)
+        non_seed = [g for g in cfg.geom_files if not cfg.is_seed(g)]
+        mw.mesh_canvas_view.update_geometry_previews(non_seed)
         mw.mesh_canvas_view.update_seed_previews(cfg.seed_files)
 
     def handle_mesh_geom_files_changed(self, geom_files: list[str]):
-        """Callback when geometry files in mesh config panel are modified."""
+        """Callback when the set of geometry files changes (add/browse/remove)."""
         mw = self.main_window
         # Cheap role lookup from item data (no full MeshConfig rebuild).
         roles = mw.mesh_config_panel.current_geom_roles()
         seeds = [p for p in geom_files if p in roles]
         boundaries = [p for p in geom_files if p not in roles]
+        # The geometry SET changed, so a one-time refit is wanted — let it happen
+        # once the new previews finish loading (auto_range now fits to the new
+        # set instead of the stale one).
+        mw.mesh_canvas_view.request_refit()
         mw.mesh_canvas_view.update_geometry_previews(boundaries)
         mw.mesh_canvas_view.update_seed_previews(seeds)
-        mw.mesh_canvas_view.auto_range()
 
     def handle_mesh_config_changed(self, cfg):
         """Callback when mesh config is modified or set in the config panel."""
@@ -504,6 +522,9 @@ class AppController(
         gmc = getattr(self, "global_mesh_config", None)
         if gmc is not None and cfg is not gmc:
             gmc.geom_roles = dict(getattr(cfg, "geom_roles", {}) or {})
+            # #4: keep per-group BC assignments current so the Solver "Detect from
+            # Mesh" pre-seeds them even if the user hasn't regenerated since.
+            gmc.group_bc = dict(getattr(cfg, "group_bc", {}) or {})
         mw.mesh_canvas_view.update_mesh_config(cfg)
         self._refresh_mesh_previews(cfg)
 

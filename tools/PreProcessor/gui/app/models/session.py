@@ -34,6 +34,10 @@ class GeometrySession:
 
         self.file_path: str = file_path
         self._display_name: str = ""
+        # Number shown for a blank/untitled session ("Untitled N"). Assigned by
+        # the controller from the smallest free number among current blank
+        # sessions, so it starts at 1 and doesn't skip because files were loaded.
+        self._untitled_no: int | None = None
         self.original_points: np.ndarray | None = None
         self.split_indices: list[int] = []
         self.selected_point_idx: int | None = None
@@ -64,7 +68,9 @@ class GeometrySession:
         if self._display_name:
             base = self._display_name
         elif not self.file_path:
-            base = "Untitled"
+            # Number blank sessions so several open at once stay distinguishable
+            # (and their exported artifacts don't all collide on one name).
+            base = f"Untitled {self._untitled_no}" if self._untitled_no else "Untitled"
         else:
             base = os.path.basename(self.file_path)
         return f"*{base}" if self.is_geometry_modified else base
@@ -76,7 +82,10 @@ class GeometrySession:
     @property
     def default_output_path(self) -> str:
         if not self.file_path:
-            return "output_resampled.dat"
+            # Derive from the (unique) display name so different untitled
+            # sessions export to different files instead of all "output_*".
+            base = self.display_name.lstrip("*").replace(" ", "_") or "output"
+            return f"{base}_resampled.dat"
         stem, _ = os.path.splitext(self.file_path)
         return f"{stem}_resampled.dat"
 

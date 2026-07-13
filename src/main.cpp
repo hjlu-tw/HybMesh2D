@@ -58,6 +58,7 @@ struct SurfaceMeta {
     std::vector<char> isCorner;         // parallel to the .dat points
     std::map<int, std::string> segBc;   // seg_id -> boundary condition tag
     std::map<int, std::string> segKind; // seg_id -> curve kind (v2+)
+    std::map<int, int> segGrowBL;       // seg_id -> grow boundary layer? 1/0 (v3+; absent -> 1)
     std::vector<size_t> pieceBreaks;
 };
 
@@ -81,6 +82,11 @@ SurfaceMeta loadSurfaceMeta(const std::string& datFile) {
             std::string kind;
             if (!(ifs >> kind)) return m;
             m.segKind[sid] = kind;
+        }
+        if (version >= 3) {              // v3 carries a per-segment grow-BL flag
+            int growBL = 1;
+            if (!(ifs >> growBL)) return m;
+            m.segGrowBL[sid] = growBL;
         }
     }
     if (!(ifs >> tok >> nPts) || tok != "POINTS") return m;
@@ -201,7 +207,7 @@ static std::vector<Point2D> buildDomainBoundary(Mesh& mesh, Config& config) {
         }
         config.xMin = bxMin; config.xMax = bxMax;
         config.yMin = byMin; config.yMax = byMax;
-        addTaggedLoop(mesh, outline, meta, config.bcGeom, /*geomId*/ -1);
+        addTaggedLoop(mesh, outline, meta, config.bcFor(config.domainFile), /*geomId*/ -1);
         std::cout << "  - Domain Boundary      : custom far-field outline ("
                   << outline.size() << " segment(s)) from " << config.domainFile << "\n";
         return outline;
@@ -435,6 +441,7 @@ int main(int argc, char* argv[]) {
             SurfaceMeta meta;
             bool isDomainWall;   // domain outline that grows BL inward (internal flow)
             bool growBL;         // grow a boundary layer (false = conform at far-field size)
+            BLParams bl;         // effective per-geometry BL parameters (global + overrides)
         };
         std::vector<GeomInput> inputs;
 
@@ -458,7 +465,8 @@ int main(int argc, char* argv[]) {
             }
             config.xMin = bxMin; config.xMax = bxMax;
             config.yMin = byMin; config.yMax = byMax;
-            inputs.push_back({config.domainFile, pts, meta, true, true});
+            inputs.push_back({config.domainFile, pts, meta, true, true,
+                              config.blParamsFor(config.domainFile)});
         }
 
         // Obstacles / objects (GEOM_FILE). growBL unless listed in noBLGeoms.
@@ -475,7 +483,8 @@ int main(int argc, char* argv[]) {
             SurfaceMeta meta = loadSurfaceMeta(gFile);
             reconcileMeta(meta, geomPoints.size(), gFile);
             bool bl = config.noBLGeoms.find(gFile) == config.noBLGeoms.end();
-            inputs.push_back({gFile, geomPoints, meta, false, bl});
+            inputs.push_back({gFile, geomPoints, meta, false, bl,
+                              config.blParamsFor(gFile)});
         }
 
         // ---- Pairwise collision detection -----------------------------------
@@ -511,11 +520,12 @@ int main(int argc, char* argv[]) {
         // edge loops (holes) meshed at far-field size, not grown.
         std::vector<std::vector<int>> allBoundaryIds;
         std::vector<int> growModes;
+        std::vector<BLParams> blParamsPerLoop;   // parallel to allBoundaryIds
         int taggedCorners = 0;
         int noBLGeomId = 100000;   // distinct geomIds for no-BL loops (BL self-collision)
         for (const auto& g : inputs) {
             if (!g.growBL) {
-                addTaggedLoop(mesh, g.points, g.meta, config.bcGeom, noBLGeomId++);
+                addTaggedLoop(mesh, g.points, g.meta, config.bcFor(g.file), noBLGeomId++);
                 continue;
             }
             int blIndex = static_cast<int>(allBoundaryIds.size()); // == FrontState.geomId
@@ -529,15 +539,26 @@ int main(int argc, char* argv[]) {
                     nd.segId = g.meta.segId[pi];
                     nd.isCorner = g.meta.isCorner[pi] != 0;
                     if (nd.isCorner) ++taggedCorners;
+                    // Per-segment BL toggle (.meta v3): a segment flagged grow=0
+                    // pins its nodes on the surface (no layer grows here).
+                    auto git = g.meta.segGrowBL.find(nd.segId);
+                    if (git != g.meta.segGrowBL.end() && git->second == 0)
+                        nd.skipBL = true;
                     auto it = g.meta.segBc.find(nd.segId);
                     if (it != g.meta.segBc.end() && !it->second.empty()) nd.bcTag = it->second;
                     auto kit = g.meta.segKind.find(nd.segId);
                     if (kit != g.meta.segKind.end()) nd.curveKind = curveKindFromString(kit->second);
                 }
+                // No per-segment .meta BC on this node -> use the geometry's own
+                // wall BC (its per-geometry override, or the global bcGeom). This
+                // gives each geometry an individual wall BC instead of one shared
+                // global value, while a per-segment .meta tag still wins above.
+                if (nd.bcTag.empty()) nd.bcTag = config.bcFor(g.file);
                 boundaryIds.push_back(nd.id);
             }
             allBoundaryIds.push_back(boundaryIds);
             growModes.push_back(g.isDomainWall ? 1 : -1);
+            blParamsPerLoop.push_back(g.bl);
         }
         if (taggedCorners > 0)
             std::cout << "  - Surface metadata     : " << taggedCorners << " corner node(s) tagged\n";
@@ -580,7 +601,7 @@ int main(int argc, char* argv[]) {
         }
 
         try {
-            lastH = blGen.generate(allBoundaryIds, growModes);
+            lastH = blGen.generate(allBoundaryIds, growModes, blParamsPerLoop);
         } catch (const std::exception& e) {
             std::cerr << e.what() << std::endl;
             std::cerr << "Proceeding to export partial mesh for debugging..." << std::endl;

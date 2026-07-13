@@ -662,16 +662,27 @@ class CanvasView(QWidget):
         self._active_points = points
 
     def update_split_points(self, indices: list[int]):
+        # Filter to in-range indices: after removing a breakpoint/vertex a caller
+        # may still pass a stale index that no longer exists, which would raise
+        # an IndexError here.
         if self._active_points is not None and indices:
-            sp = self._active_points[indices]
-            self.split_scatter.setData(sp[:, 0], sp[:, 1])
+            n = len(self._active_points)
+            valid = [i for i in indices if 0 <= i < n]
+            if valid:
+                sp = self._active_points[valid]
+                self.split_scatter.setData(sp[:, 0], sp[:, 1])
+            else:
+                self.split_scatter.clear()
         else:
             self.split_scatter.clear()
         # Only show in vertex mode
         self.split_scatter.setVisible(self._selection_mode == 'vertex')
 
     def update_selected_point(self, idx: int | None):
-        if self._active_points is not None and idx is not None:
+        # Guard the index: the selected vertex may have just been deleted (e.g.
+        # removing the picked breakpoint), leaving a stale out-of-range index.
+        if (self._active_points is not None and idx is not None
+                and 0 <= idx < len(self._active_points)):
             pt = self._active_points[idx]
             self.selected_scatter.setData([pt[0]], [pt[1]])
         else:
@@ -898,7 +909,14 @@ class CanvasView(QWidget):
                 self.colorbar_widget.setVisible(True)
                 
                 self.color_coded_segments.setData(points, vals, min_val, max_val, False, [], quality_mode, gap_indices)
-                self.resampled_curve.setData(points[:, 0], points[:, 1], pen=None, symbol=None)
+                # Draw resampled node markers on top of the colour-coded
+                # segments too, honouring the "Nodes" toggle. Previously the
+                # symbol was forced off in heatmap mode, so ticking "Nodes"
+                # showed nothing whenever the quality heatmap was on.
+                sym = 'o' if self._show_nodes else None
+                self.resampled_curve.setData(
+                    points[:, 0], points[:, 1], pen=None,
+                    symbol=sym, symbolBrush=pg.mkBrush(_COL_RESAMPLED), symbolSize=5)
                 self.quality_bad_scatter.clear()
             else:
                 self.colorbar_widget.setVisible(False)
