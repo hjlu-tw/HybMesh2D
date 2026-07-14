@@ -25,20 +25,30 @@ class PipelineControllerMixin:
     # Run All
     # ------------------------------------------------------------------ #
     def run_full_pipeline(self):
-        """Chain resample -> mesh -> solver -> results for the active geometry."""
+        """Chain resample -> mesh -> solver -> results for the active geometry.
+
+        The CAD/resample stage is skipped when there is no active CAD geometry to
+        resample but the mesh config already points at existing geometry files
+        (e.g. a pipeline script whose CAD section had no source file, or a mesh
+        built straight from .dat files) — mirroring the headless runner's
+        ``cad_skip()``. The pipeline then starts at meshing those files.
+        """
         if getattr(self, "_pipeline_running", False):
             self.main_window.log_panel.log("Pipeline is already running. Please wait.")
             return
+        log = self.main_window.log_panel.log
 
         session = self.active_session()
-        if session is None or (session.original_points is None
-                               and not session.project_model.segments):
-            self.main_window.log_panel.log(
-                "[Pipeline] No active geometry. Load or draw a geometry first.")
+        has_cad = session is not None and (
+            session.original_points is not None or session.project_model.segments)
+        mesh_files_ready = any(
+            os.path.exists(gf) for gf in self.global_mesh_config.geom_files)
+        if not has_cad and not mesh_files_ready:
+            log("[Pipeline] No active geometry. Load or draw a geometry first "
+                "(or add a geometry file in the Mesh Generator).")
             return
-        if not self._find_executable():
-            self.main_window.log_panel.log(
-                "[Pipeline] surface_resampler not found — run ./build.sh.")
+        if has_cad and not self._find_executable():
+            log("[Pipeline] surface_resampler not found — run ./build.sh.")
             return
 
         self._pipeline_running = True
@@ -46,9 +56,13 @@ class PipelineControllerMixin:
         # The result variable to show at the end is set by a loaded pipeline
         # script (_apply_pipeline_config); it stays "" otherwise, and
         # _pipe_after_solver leaves the canvas on its default variable.
-        self.main_window.log_panel.log(
-            "=== Run Full Pipeline: CAD -> Mesh -> Solver -> Results ===")
-        self._pipe_resample(session)
+        log("=== Run Full Pipeline: CAD -> Mesh -> Solver -> Results ===")
+        if has_cad:
+            self._pipe_resample(session)
+        else:
+            log("[Pipeline] Stage 1/3: CAD resample skipped "
+                "(no source geometry; meshing existing geometry files).")
+            self._pipe_mesh()
 
     def _set_run_all_enabled(self, enabled: bool):
         btn = getattr(self.main_window, "run_all_btn", None)
@@ -202,6 +216,15 @@ class PipelineControllerMixin:
         pcfg = PipelineConfig.from_configs(
             name, session.project_model, mesh_cfg, solver_cfg, results)
 
+        # A drawn/in-memory geometry has no source file on disk, so its per-edge
+        # segments can't be re-resampled from a reload. Flag it: the script still
+        # meshes the already-exported geometry files, but the CAD stage is inert.
+        if pcfg.cad.get("segments") and not pcfg.cad.get("input_file"):
+            self.main_window.log_panel.log(
+                "[Pipeline] [WARNING] Active geometry has no source .dat file; the "
+                "saved script cannot re-run the CAD resample. Meshing will use the "
+                "exported geometry files. Run 'Save & Export' to persist a source.")
+
         default = os.path.join(repo_root(), "config", "pipeline", f"{name}.json")
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Save Pipeline Script", default,
@@ -245,6 +268,15 @@ class PipelineControllerMixin:
         # CAD: the cad section is a PreProcessor config — reuse the JSON loader.
         if pcfg.cad.get("input_file"):
             self._apply_json_config(dict(pcfg.cad), path)
+        elif pcfg.cad.get("segments"):
+            # Segments reference a source geometry by index, but none was saved
+            # (the script was built from a drawn/in-memory geometry). Warn so the
+            # empty CAD canvas isn't a surprise; Run All will skip resampling and
+            # mesh the configured geometry files directly.
+            self.main_window.log_panel.log(
+                "[Pipeline] [WARNING] CAD section has no source geometry file; "
+                "the resample stage will be skipped and the mesh will use its "
+                "configured geometry files.")
 
         # Mesh: apply onto the shared mesh config + panel, wiring the CAD output
         # as the boundary if the section did not name its own geometry.

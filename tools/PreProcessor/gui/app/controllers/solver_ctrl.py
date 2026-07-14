@@ -184,7 +184,10 @@ class SolverControllerMixin:
 
         # Restart needs a zone dump to continue from.
         if cfg.restart and not cfg.zdump_fn_restart.strip():
-            errs.append("Restart is on but no restart zone-dump file is set.")
+            errs.append("Restart is on but no restart zone-dump file is set. A "
+                        "previous run writes it to results/solver/"
+                        f"{_sanitize(cfg.case_name)}/work/binDumpZ.dat.gui "
+                        "— point the 'Zone dump' field at it (or Browse).")
 
         # Domain decomposition implies a real MPI run. Refuse rather than silently
         # partition the grid and then run a serial solver on the un-partitioned mesh.

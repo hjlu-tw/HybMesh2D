@@ -81,6 +81,10 @@ class SolverConfigPanel(QScrollArea):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Guards signal handlers (e.g. restart auto-fill) from firing during
+        # set_config's programmatic widget updates — they should react only to
+        # genuine user interaction.
+        self._loading = False
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -175,6 +179,7 @@ class SolverConfigPanel(QScrollArea):
         self.enable_decompose.toggled.connect(self._update_decompose_visibility)
         self.enable_shock.toggled.connect(self._update_shock_visibility)
         self.restart.toggled.connect(self._update_restart_visibility)
+        self.restart.toggled.connect(self._autofill_restart_from_last_run)
         self.flow_solu_type.currentTextChanged.connect(self._on_flow_solu_changed)
         self._update_ibm_visibility()
         self._update_decompose_visibility()
@@ -456,8 +461,12 @@ class SolverConfigPanel(QScrollArea):
             "Continue from a previous run's zone-dump and convergence files.")
         sec.add_widget(self.restart)
         form = QFormLayout()
-        self.convg_fn_restart = _edit("Previous-run convergence file (e.g. unicones.enorm.r1)")
-        self.zdump_fn_restart = _edit("Previous-run zone-dump file (e.g. binDumpZ.dat.r1)")
+        self.convg_fn_restart = _edit(
+            "Previous-run convergence file — the solver writes it into the case "
+            "work dir as unicones.enorm.gui (GUI) / .cli (headless)")
+        self.zdump_fn_restart = _edit(
+            "Previous-run zone-dump file — the solver writes it into the case "
+            "work dir as binDumpZ.dat.gui (GUI) / .cli (headless)")
         form.addRow(help_label("Convg file:", "Restart convergence file"),
                     self._browse_row(self.convg_fn_restart, "Select convergence file"))
         form.addRow(help_label("Zone dump:", "Restart zone-dump file"),
@@ -726,6 +735,41 @@ class SolverConfigPanel(QScrollArea):
     def _update_restart_visibility(self):
         self._set_form_visible(self._restart_form, self.restart.isChecked())
 
+    def _autofill_restart_from_last_run(self):
+        """When the user turns Restart on with empty fields, pre-fill them from
+        this case's last run. The solver writes the zone-dump/convergence files
+        into results/solver/<case>/work/ with a tag suffix (.gui for GUI runs,
+        .cli for headless), which is easy to miss — so point the fields at the
+        actual filenames instead of leaving the user to hunt for them."""
+        if self._loading or not self.restart.isChecked():
+            return
+        try:
+            from app.services.solver_case import sanitize_case_name
+            from app.utils import repo_root
+        except Exception:
+            return
+        case = sanitize_case_name(self.case_name.text().strip() or "case")
+        work = os.path.join(repo_root(), "results", "solver", case, "work")
+        if not os.path.isdir(work):
+            return
+
+        def _pick(stem: str) -> str:
+            # GUI solves tag outputs ".gui"; prefer that, fall back to ".cli".
+            for tag in (".gui", ".cli"):
+                p = os.path.join(work, stem + tag)
+                if os.path.exists(p):
+                    return p
+            return ""
+
+        if not self.zdump_fn_restart.text().strip():
+            z = _pick("binDumpZ.dat")
+            if z:
+                self.zdump_fn_restart.setText(z)
+        if not self.convg_fn_restart.text().strip():
+            c = _pick("unicones.enorm")
+            if c:
+                self.convg_fn_restart.setText(c)
+
     def _on_flow_solu_changed(self, _text: str):
         """When the solver type flips, refresh the geometry wall row (seg 5) if it
         still holds the other type's default wall flag, so the BC stays sensible."""
@@ -754,6 +798,7 @@ class SolverConfigPanel(QScrollArea):
     # Model sync
     # ------------------------------------------------------------------ #
     def set_config(self, cfg: SolverConfig):
+        self._loading = True   # suppress restart auto-fill during programmatic load
         self.domain_type.setCurrentText(cfg.domain_type)
         self.case_name.setText(cfg.case_name)
         self.getpgrid_binary.setText(cfg.getpgrid_binary)
@@ -849,6 +894,7 @@ class SolverConfigPanel(QScrollArea):
         self._update_decompose_visibility()
         self._update_shock_visibility()
         self._update_restart_visibility()
+        self._loading = False
 
     def get_config(self, cfg: SolverConfig | None = None) -> SolverConfig:
         cfg = cfg or SolverConfig()

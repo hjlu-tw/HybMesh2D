@@ -162,9 +162,13 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         for (int l = 0; l < fs.bl.blLayers; ++l) h_tmp *= fs.bl.blGrowthRate;
         double hFirst = h_tmp, rTrans = fs.bl.blTransitionGrowthRate;
         fs.nTrans = fs.bl.blTransitionLayers;
-        if (fs.bl.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
+        // Auto transition-layer count solves for how many geometrically-growing
+        // layers reach the target size, so it needs rTrans > 1. With no growth
+        // (rTrans <= 1) std::log(rTrans) is 0/negative and the division blows up
+        // to inf/nan; keep the manual count in that case.
+        if (rTrans > 1.0 && fs.bl.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
             fs.nTrans = std::max(0, (int)std::round(std::log(m_config.globalAvgSegmentLength / hFirst) / std::log(rTrans)));
-        } else if (fs.bl.blAutoTransitionLayers == 2) {
+        } else if (rTrans > 1.0 && fs.bl.blAutoTransitionLayers == 2) {
             double totalLen = 0;
             for(int i=0; i<n_init; ++i) totalLen += (fs.pos_init[(i+1)%n_init] - fs.pos_init[i]).length();
             fs.nTrans = std::max(0, (int)std::round(std::log((totalLen/n_init) / hFirst) / std::log(rTrans)));
@@ -174,7 +178,15 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // Adaptive Fan Nodes
         double R_BL = 0.0, h_tmp2 = fs.bl.blInitialThickness;
         for (int l = 0; l < fs.bl.blLayers; ++l) { R_BL += h_tmp2; h_tmp2 *= fs.bl.blGrowthRate; }
-        double R_trans = (fs.nTrans > 0) ? hFirst * (std::pow(rTrans, fs.nTrans) - 1.0) / (rTrans - 1.0) : 0.0;
+        // Geometric-series sum of the transition layer thicknesses. When rTrans
+        // == 1 the closed form divides by zero, so use the degenerate (uniform)
+        // sum hFirst * nTrans instead.
+        double R_trans = 0.0;
+        if (fs.nTrans > 0) {
+            R_trans = (std::abs(rTrans - 1.0) < 1e-9)
+                ? hFirst * fs.nTrans
+                : hFirst * (std::pow(rTrans, fs.nTrans) - 1.0) / (rTrans - 1.0);
+        }
         double D_total = R_BL + R_trans;
 
         if (fs.bl.blAutoFanNodes > 0) {

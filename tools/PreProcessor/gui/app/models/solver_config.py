@@ -450,9 +450,26 @@ class SolverConfig:
         return asdict(self)
 
     def load_from_dict(self, d: dict):
+        # Coerce each value to the type of the current field default, mirroring
+        # MeshConfig.load_from_dict: a hand-written pipeline JSON that quotes a
+        # number (e.g. "num_half_iter": "200") still lands as the right type
+        # instead of a str that later crashes ":g"/arithmetic formatting. A value
+        # that can't be converted is kept as-is (no worse than a raw assignment).
         for k, v in d.items():
-            if hasattr(self, k):
-                setattr(self, k, v)
+            if not hasattr(self, k):
+                continue
+            cur = getattr(self, k)
+            try:
+                if isinstance(cur, bool):
+                    v = (v.strip().lower() in ("1", "true", "yes", "on")
+                         if isinstance(v, str) else bool(v))
+                elif isinstance(cur, int):        # bool already handled above
+                    v = int(float(v))
+                elif isinstance(cur, float):
+                    v = float(v)
+            except (TypeError, ValueError):
+                pass
+            setattr(self, k, v)
 
     def save_to_file(self, path: str):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

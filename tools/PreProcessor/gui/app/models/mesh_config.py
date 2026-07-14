@@ -168,7 +168,10 @@ class MeshConfig:
                 except (TypeError, ValueError):
                     pass
                 setattr(self, attr, v)
-        self.geom_files = d.get("geom_files", [])
+        # `or []`/`or {}` (not the .get default) so an explicit JSON null still
+        # lands as an empty container instead of None, which would crash
+        # save_to_file's `for gf in self.geom_files` iteration.
+        self.geom_files = d.get("geom_files") or []
         self.geom_roles = d.get("geom_roles", {}) or {}
         self.group_bc = d.get("group_bc", {}) or {}
 

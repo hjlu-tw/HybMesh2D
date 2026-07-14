@@ -108,6 +108,13 @@ class LogPanel(QWidget):
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         clean_message = ansi_escape.sub('', message)
 
+        # Callers historically prefix messages with their own [ERROR]/[WARNING]/
+        # [INFO] tag; the panel now renders its own level label from the detected
+        # level, so a leading level tag would double up ("[ERROR] [ERROR] ..."").
+        # Strip one leading level tag (component tags like [Pipeline] are kept).
+        clean_message = re.sub(r'^\s*\[(?:ERROR|WARNING|WARN|INFO)\]\s*', '',
+                               clean_message, count=1, flags=re.IGNORECASE)
+
         timestamp = QTime.currentTime().toString("hh:mm:ss")
         
         # Choose text color based on level

@@ -207,7 +207,11 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True) -> di
     # Stage 1 — CAD (optional).
     if pcfg.cad_skip():
         geom = pcfg.resolve_input_file(repo)
-        log(f"[CAD] resample skipped; using {geom}")
+        if geom:
+            log(f"[CAD] resample skipped; using {geom}")
+        else:
+            log("[CAD] resample skipped (no source geometry); "
+                "meshing configured geometry files.")
     else:
         log("=== Stage 1/3: CAD resample ===")
         geom = _run_resample(pcfg, repo, log)

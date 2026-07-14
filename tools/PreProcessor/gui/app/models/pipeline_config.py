@@ -112,11 +112,15 @@ class PipelineConfig:
     # Stage helpers
     # ------------------------------------------------------------------ #
     def cad_skip(self) -> bool:
-        """Resampling is skipped when explicitly requested or when there is no
-        per-edge segment configuration to drive it."""
+        """Resampling is skipped when explicitly requested, when there is no
+        per-edge segment configuration to drive it, or when no source geometry
+        file is given (segments reference a source by index, so with no source
+        there is nothing to resample — the mesh stage uses its geom_files)."""
         if self.cad.get("skip"):
             return True
-        return not bool(self.cad.get("segments"))
+        if not self.cad.get("segments"):
+            return True
+        return not bool(self.cad.get("input_file"))
 
     def solver_skip(self) -> bool:
         return bool(self.solver.get("skip"))
