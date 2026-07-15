@@ -105,7 +105,31 @@ class ProjectModel:
 
     # ── JSON I/O ──────────────────────────────────────────────────────────
 
+    @staticmethod
+    def migrate_config(config: dict) -> dict:
+        """Upgrade an older config dict to the current CONFIG_FORMAT_VERSION.
+
+        Extension point for backward-compatible schema migration. Version is
+        read explicitly (a *missing* ``format_version`` means a legacy v0 file,
+        NOT "current"), then each older version is upgraded field-by-field
+        through this dispatch. Only v0->v1 exists today; add an ``if v < N``
+        block here when the schema changes.
+
+        A file NEWER than this build is left as-is (callers should surface a
+        read-only warning that some settings may be ignored)."""
+        v = int(config.get("format_version", 0))
+        if v >= CONFIG_FORMAT_VERSION:
+            return config
+        data = copy.deepcopy(config)
+        # v0 -> v1: v0 files predate an explicit version field; nothing about the
+        # field layout changed, so the upgrade is just to stamp the version.
+        if v < 1:
+            v = 1
+        data["format_version"] = CONFIG_FORMAT_VERSION
+        return data
+
     def load_from_config(self, config: dict):
+        config = self.migrate_config(config)
         self.input_file = config.get("input_file", "")
         self.output_file = config.get("output_file", "")
         self.is_closed = config.get("is_closed", True)

@@ -1,8 +1,11 @@
 import copy
+import logging
 import numpy as np
 from app.commands.base import BaseCommand
 from app.services.index_helpers import remove_points_and_adjust_indices
 from app.services.geometry_service import GeometryService
+
+_log = logging.getLogger(__name__)
 
 
 def _snapshot_full_state(session) -> dict:
@@ -401,7 +404,10 @@ class CreateSegmentsFromIndicesCmd(BaseCommand):
         n = seg.parameters.get("n_points", 100)
         try:
             xs, ys = GeometryService.compute_curve_preview_pts(seg, n, self.session.original_points)
-        except Exception:
+        except Exception as e:
+            # Don't silently keep a broken curve: surface why the split aborted.
+            _log.warning("Split edge %s: curve evaluation failed: %s",
+                         getattr(seg, "id", "?"), e)
             return
 
         if xs is None or len(xs) < 2:
@@ -461,7 +467,10 @@ class BakeCurveToGeometryCmd(BaseCommand):
         n = seg.parameters.get("n_points", 100)
         try:
             xs, ys = GeometryService.compute_curve_preview_pts(seg, n, self.session.original_points)
-        except Exception:
+        except Exception as e:
+            # Don't silently keep a broken curve: surface why the bake aborted.
+            _log.warning("Convert edge %s to discrete: curve evaluation "
+                         "failed: %s", self.seg_id, e)
             return
 
         if xs is None or len(xs) < 2:

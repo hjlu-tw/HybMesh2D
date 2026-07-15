@@ -79,8 +79,32 @@ class PipelineConfig:
             "results": copy.deepcopy(self.results),
         }
 
+    @staticmethod
+    def _migrate(d: dict, from_version: int) -> dict:
+        """Upgrade an older pipeline dict to PIPELINE_FORMAT_VERSION.
+
+        Extension point for backward-compatible pipeline-script migration. Only
+        v0->v1 exists today (v0 scripts predate the explicit ``pipeline_version``
+        field; no section layout changed), so the upgrade just stamps the
+        current version. Add an ``if v < N`` block here when the schema changes.
+        A NEWER file is left as-is (callers warn it is read-only / best-effort)."""
+        v = int(from_version)
+        if v >= PIPELINE_FORMAT_VERSION:
+            return d
+        out = copy.deepcopy(d)
+        # v0 -> v1: stamp the version; no structural change.
+        if v < 1:
+            v = 1
+        out["pipeline_version"] = PIPELINE_FORMAT_VERSION
+        return out
+
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineConfig":
+        # Missing version = legacy v0 (explicit, not "current"); migrate older
+        # dicts field-by-field before reading them.
+        version = int(d.get("pipeline_version", 0))
+        if version < PIPELINE_FORMAT_VERSION:
+            d = cls._migrate(d, version)
         return cls(
             name=d.get("name", "pipeline"),
             cad=dict(d.get("cad", {}) or {}),

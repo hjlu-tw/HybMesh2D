@@ -1,0 +1,305 @@
+"""Editable analytic-edge control-point handles, endpoint markers, interactive
+shape drawing (line/circle/rectangle/triangle/polygon) and curve-segment
+rendering, extracted verbatim from CanvasView (behaviour unchanged). These
+methods read/write attributes created in CanvasView.__init__ (resolved through
+the MRO) and emit ``shape_drawn`` when an interactive draw completes."""
+from __future__ import annotations
+import pyqtgraph as pg
+import numpy as np
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
+
+
+class CanvasDrawMixin:
+    # ── Editable control-point handles for the selected analytic edge ──────
+
+    def clear_edge_handles(self):
+        """Remove the draggable control-point handles of the selected edge."""
+        for it in self._edge_handle_items:
+            self.plot_widget.removeItem(it)
+        self._edge_handle_items = []
+
+    def show_endpoint_markers(self, points):
+        """Highlight a set of (x, y) endpoints (e.g. snap targets) clearly."""
+        if points:
+            pts = np.asarray(points, dtype=float)
+            self._endpoint_markers.setData(pts[:, 0], pts[:, 1])
+        else:
+            self._endpoint_markers.clear()
+
+    def clear_endpoint_markers(self):
+        self._endpoint_markers.clear()
+
+    def show_open_endpoint_markers(self, points):
+        """Highlight open / unstitched endpoints (red) so the user can see the
+        boundary is not closed. ``points`` is a list/array of (x, y)."""
+        if points is not None and len(points) > 0:
+            pts = np.asarray(points, dtype=float)
+            self._open_endpoint_markers.setData(pts[:, 0], pts[:, 1])
+        else:
+            self._open_endpoint_markers.clear()
+
+    def clear_open_endpoint_markers(self):
+        self._open_endpoint_markers.clear()
+
+    def show_edge_handles(self, handles: list[dict]):
+        """Show draggable control points for the selected analytic edge.
+
+        ``handles`` is a list of ``{'id': str, 'pos': (x, y)}``.  Each drag is
+        reported through ``edge_handle_cb(handle_id, x, y, finished)`` so the
+        controller can push the new coordinate into the matching spin box /
+        polygon vertex.  Passing an empty list just clears the handles."""
+        self.clear_edge_handles()
+        if not handles:
+            return
+        col = '#00E5FF'
+        self._suppress_edge_cb = True
+        try:
+            for h in handles:
+                hid = h['id']
+                x, y = h['pos']
+                # Bigger, brighter handle with a solid centre dot so the
+                # endpoint is unmistakable on the canvas. ``symbol``/``size``
+                # let callers distinguish e.g. a move handle from endpoints.
+                kwargs = dict(
+                    pos=(x, y), size=h.get('size', 18), movable=True,
+                    pen=pg.mkPen(col, width=3),
+                    brush=pg.mkBrush(0, 229, 255, 90),
+                    hoverBrush=pg.mkBrush(col))
+                if 'symbol' in h:
+                    kwargs['symbol'] = h['symbol']
+                t = pg.TargetItem(**kwargs)
+                t.setZValue(206)
+                t.sigPositionChanged.connect(
+                    lambda it, _id=hid: self._emit_edge_handle(_id, it, False))
+                t.sigPositionChangeFinished.connect(
+                    lambda it, _id=hid: self._emit_edge_handle(_id, it, True))
+                self.plot_widget.addItem(t)
+                self._edge_handle_items.append(t)
+        finally:
+            self._suppress_edge_cb = False
+
+    def _emit_edge_handle(self, handle_id: str, it, finished: bool):
+        if self._suppress_edge_cb:
+            return
+        if self.edge_handle_cb is not None:
+            self.edge_handle_cb(handle_id, float(it.pos().x()),
+                                float(it.pos().y()), finished)
+
+    # ── Interactive shape drawing ──────────────────────────────────────────
+
+    # Number of points each tool collects (None = variable, finished by a
+    # double-click — used for the free polygon tool).
+    _DRAW_NPTS = {'line': 2, 'circle': 2, 'rectangle': 2, 'triangle': 3,
+                  'polygon': None}
+
+    def start_draw_mode(self, tool: str):
+        """Enter interactive shape-drawing mode for ``tool``.  Clicks place the
+        defining points (each becomes a draggable control point) with a live
+        rubber-band preview; once the shape is complete the canvas emits
+        ``shape_drawn`` (the controller then opens the numeric dialog).  The
+        initial prompt is centred in the current view so it is always visible."""
+        self.clear_draw_artifacts()
+        self._draw_tool = tool
+        self._draw_pts = []
+        # Freeze the view while drawing: placing the first point (a single point)
+        # or updating the rubber-band preview must not trigger pyqtgraph
+        # auto-ranging to a tiny extent. The view stays put until the shape is
+        # complete; explicit fit_to_* calls still work afterwards.
+        try:
+            self.plot_widget.getViewBox().disableAutoRange()
+        except Exception:
+            pass
+        self._draw_hint.setVisible(True)
+        # Centre the prompt in the current view so the user sees where to click.
+        try:
+            (x0, x1), (y0, y1) = self.plot_widget.getViewBox().viewRange()
+            self._draw_hint.setAnchor((0.5, 0.5))
+            self._draw_hint.setPos(0.5 * (x0 + x1), 0.5 * (y0 + y1))
+        except Exception:
+            pass
+        self._draw_hint.setText(self._draw_hint_text())
+        try:
+            self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+        except Exception:
+            pass
+
+    def cancel_draw_mode(self):
+        """Abort drawing entirely (e.g. right-click) and remove all artifacts."""
+        self.clear_draw_artifacts()
+
+    def clear_draw_artifacts(self):
+        """Remove the draw control points, rubber-band preview and prompt, and
+        leave draw mode.  Called by the controller once the add is committed or
+        cancelled so the control points only show *before* the edge completes."""
+        self._draw_tool = None
+        self._draw_pts = []
+        for it in self._draw_handle_items:
+            self.plot_widget.removeItem(it)
+        self._draw_handle_items = []
+        self._draw_preview.setData([], [])
+        self._draw_hint.setVisible(False)
+        try:
+            self.plot_widget.unsetCursor()
+        except Exception:
+            pass
+
+    def is_drawing(self) -> bool:
+        return self._draw_tool is not None
+
+    def _draw_hint_text(self) -> str:
+        tool = self._draw_tool
+        n = len(self._draw_pts)
+        if tool == 'line':
+            return "Click start point" if n == 0 else "Click end point"
+        if tool == 'circle':
+            return "Click centre" if n == 0 else "Click to set the radius"
+        if tool == 'rectangle':
+            return "Click a corner" if n == 0 else "Click the opposite corner"
+        if tool == 'triangle':
+            return f"Click point {n + 1} of 3"
+        if tool == 'polygon':
+            return ("Click to add vertices — double-click to finish"
+                    if n < 3 else
+                    f"{n} vertices — double-click to finish")
+        return "Click to place the start point"
+
+    def _add_draw_point(self, x: float, y: float):
+        """Append a placed point and give it a draggable control-point handle."""
+        i = len(self._draw_pts)
+        self._draw_pts.append((x, y))
+        col = '#7CFC9A'
+        t = pg.TargetItem(
+            pos=(x, y), size=12, movable=True,
+            pen=pg.mkPen(col, width=2), brush=pg.mkBrush(0, 0, 0, 0),
+            hoverBrush=pg.mkBrush(col))
+        t.setZValue(212)
+        t.sigPositionChanged.connect(
+            lambda it, _i=i: self._on_draw_handle_moved(_i, it))
+        self.plot_widget.addItem(t)
+        self._draw_handle_items.append(t)
+        self._refresh_draw_preview(None)
+        self._update_draw_hint((x, y))
+
+    def _on_draw_handle_moved(self, i: int, it):
+        """A placed control point was dragged before the edge was finished."""
+        if 0 <= i < len(self._draw_pts):
+            self._draw_pts[i] = (float(it.pos().x()), float(it.pos().y()))
+            self._refresh_draw_preview(None)
+
+    def _refresh_draw_preview(self, cursor_pt):
+        prev = self._draw_preview_points(cursor_pt)
+        if prev is not None and len(prev) > 0:
+            self._draw_preview.setData(prev[:, 0], prev[:, 1])
+        else:
+            self._draw_preview.setData([], [])
+
+    def _update_draw_hint(self, cursor_pt):
+        if self._draw_tool is None:
+            return
+        self._draw_hint.setText(self._draw_hint_text())
+        if cursor_pt is not None:
+            self._draw_hint.setPos(cursor_pt[0], cursor_pt[1])
+        elif self._draw_pts:
+            self._draw_hint.setPos(*self._draw_pts[-1])
+
+    def _draw_preview_points(self, cursor_pt):
+        """Build the rubber-band preview polyline for the in-progress shape."""
+        import math
+        tool = self._draw_tool
+        pts = list(self._draw_pts)
+        if cursor_pt is not None:
+            live = pts + [cursor_pt]
+        else:
+            live = pts
+        if not live:
+            return None
+        if tool == 'circle' and len(live) >= 2:
+            cx, cy = live[0]
+            r = math.hypot(live[1][0] - cx, live[1][1] - cy)
+            ts = np.linspace(0, 2 * math.pi, 64)
+            return np.column_stack([cx + r * np.cos(ts), cy + r * np.sin(ts)])
+        if tool == 'rectangle' and len(live) >= 2:
+            (x0, y0), (x1, y1) = live[0], live[1]
+            return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])
+        if tool in ('triangle', 'polygon') and len(live) >= 2:
+            arr = np.array(live, dtype=float)
+            # Close visually once enough vertices exist.
+            if (tool == 'triangle' and len(live) >= 3) or \
+               (tool == 'polygon' and len(self._draw_pts) >= 3 and cursor_pt is None):
+                arr = np.vstack([arr, arr[0]])
+            return arr
+        return np.array(live, dtype=float)
+
+    def _commit_draw(self):
+        """The shape is fully placed.  Stop collecting clicks but KEEP the
+        control points / preview on canvas (so they remain visible until the
+        edge is actually created) and emit the drawn points."""
+        tool = self._draw_tool
+        pts = list(self._draw_pts)
+        self._draw_tool = None           # stop collecting; artifacts stay visible
+        self._draw_hint.setVisible(False)
+        try:
+            self.plot_widget.unsetCursor()
+        except Exception:
+            pass
+        if tool and pts:
+            self.shape_drawn.emit(tool, pts)
+
+    def _handle_draw_click(self, x: float, y: float, is_double: bool):
+        tool = self._draw_tool
+        need = self._DRAW_NPTS.get(tool, 2)
+
+        # Snap the placed point to a nearby edge endpoint (incl. the first click).
+        if self.snap_cb is not None:
+            try:
+                x, y = self.snap_cb(x, y)
+            except Exception:
+                pass
+
+        if tool == 'polygon':
+            if is_double:                # finish the free polygon
+                if len(self._draw_pts) >= 3:
+                    self._commit_draw()
+                return
+            self._add_draw_point(x, y)
+            return
+
+        self._add_draw_point(x, y)
+        if need is not None and len(self._draw_pts) >= need:
+            self._commit_draw()
+
+    def update_curve_segments(self, session_id: int, segments_pts: list[np.ndarray]):
+        """Clear and redraw all curve segments to keep them visible when deselected."""
+        if session_id not in self._curve_segment_items:
+            self._curve_segment_items[session_id] = []
+
+        # Remove existing items for this session from the plot
+        for item in self._curve_segment_items[session_id]:
+            self.plot_widget.removeItem(item)
+        self._curve_segment_items[session_id].clear()
+
+        # Determine styling depending on if this session is the active one
+        is_active = (session_id == self._active_session_id)
+
+        # Add new items
+        for pts in segments_pts:
+            if pts is not None and len(pts) > 0:
+                if is_active:
+                    pen = pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine)
+                    symbol_brush = pg.mkBrush('#5c637a')
+                    symbol_size = 3
+                else:
+                    c = QColor('#5c637a')
+                    c.setAlpha(60)
+                    pen = pg.mkPen(c, width=1, style=Qt.PenStyle.SolidLine)
+                    symbol_brush = pg.mkBrush(c)
+                    symbol_size = 1.5
+
+                item = self.plot_widget.plot(
+                    pts[:, 0], pts[:, 1],
+                    pen=pen,
+                    symbol='o' if self._show_symbols else None, symbolBrush=symbol_brush, symbolSize=symbol_size
+                )
+                item.setZValue(5)
+                self._curve_segment_items[session_id].append(item)

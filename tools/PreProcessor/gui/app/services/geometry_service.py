@@ -1,10 +1,60 @@
 from __future__ import annotations
 import math
+import os
 import numpy as np
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.session import GeometrySession
 from app.models.segment import SegmentModel
+
+
+class GeometryLoadError(ValueError):
+    """A geometry .dat file could not be parsed into valid (x, y) points.
+
+    Message names the file and the specific problem so it can be surfaced to
+    the user instead of letting NaN/garbage propagate into split detection,
+    the previews, or the C++ mesher."""
+
+
+def load_points_dat(file_path: str) -> np.ndarray:
+    """Load a whitespace-separated ``.dat`` geometry file into an (N, 2+) array,
+    validating shape and finiteness up front.
+
+    Shared, single validated loader for every ``np.loadtxt`` geometry call site
+    (session/backend controllers, mesh canvas) so a malformed file fails with a
+    clear, user-facing :class:`GeometryLoadError` rather than injecting NaN or a
+    1-D/empty array downstream.
+
+    Raises :class:`GeometryLoadError` when the file is empty, not 2-D with at
+    least two columns, or contains any non-finite (NaN/Inf) coordinate.
+    """
+    name = os.path.basename(file_path) or file_path
+    pts = np.asarray(np.loadtxt(file_path), dtype=float)
+    # A single data row loads as 1-D (N,) — promote it to (1, N). A single
+    # *column* also loads as 1-D but must NOT be reinterpreted as one wide row,
+    # so require >=2 columns after the promotion (a lone column stays (1, N) with
+    # N being the row count, which we reject via the ndim/shape guard below only
+    # if it genuinely has <2 values — instead treat any original 1-D array of
+    # length !=2 as malformed, and length ==2 as a single (x, y) point row).
+    if pts.ndim == 1:
+        if pts.shape[0] == 2:
+            pts = pts.reshape(1, 2)
+        else:
+            raise GeometryLoadError(
+                f"'{name}': expected rows of 'x y' coordinates but got a single "
+                f"column / 1-D array of length {pts.shape[0]}. The file may have "
+                "only one coordinate per line or be malformed.")
+    if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 2:
+        raise GeometryLoadError(
+            f"'{name}': expected rows of at least 'x y' coordinates, got array "
+            f"of shape {pts.shape}. The file may be empty or malformed.")
+    if not np.all(np.isfinite(pts)):
+        n_bad = int(np.count_nonzero(~np.isfinite(pts)))
+        raise GeometryLoadError(
+            f"'{name}': contains {n_bad} non-finite (NaN/Inf) coordinate(s). "
+            "Check the geometry data or the curve formula that produced it.")
+    return pts
+
 
 # ── Helper functions for formula evaluation and sampling ────────────────────
 

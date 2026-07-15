@@ -95,11 +95,13 @@ class SolverControllerMixin:
             log("Fix the issues above and run again.")
             return
 
-        try:
-            work_dir, grid_dir, input_in_path = self._prepare_case_dir(cfg)
-        except Exception as e:
-            log(f"[ERROR] Failed to prepare case directory: {e}")
-            return
+        # Overwrite protection: a re-run of the same case name must not silently
+        # clobber prior results. Decide here (on the GUI thread, where we can
+        # prompt) whether to reuse the existing dir or auto-version a new one;
+        # the actual (blocking) staging + DLL compile happens in the worker.
+        overwrite = self._resolve_case_overwrite(cfg)
+        if overwrite is None:
+            return  # user cancelled
 
         panel = self.main_window.solver_config_panel
         panel.run_solver_btn.setEnabled(False)
@@ -111,8 +113,8 @@ class SolverControllerMixin:
         pb.setVisible(True)
 
         self._solver_residuals = []
-        self._solver_result_path = os.path.join(
-            work_dir, f"xtecp_sol_allz.dat{self.SOLVER_TAG}")
+        # Set once the worker reports the real (possibly auto-versioned) work dir.
+        self._solver_result_path = ""
 
         # Reset the live monitor and show the Solver mode (its canvas is the
         # residual monitor, idx 3).
@@ -125,9 +127,9 @@ class SolverControllerMixin:
             + "unicones) ---")
 
         self._solver_worker = SolverPipelineWorker(
-            cfg, getpgrid_dir=grid_dir, solver_work_dir=work_dir,
-            input_in_path=input_in_path, tag=self.SOLVER_TAG)
+            cfg, tag=self.SOLVER_TAG, prepare=True, overwrite=overwrite)
         self._solver_worker.log_signal.connect(log)
+        self._solver_worker.prepared_signal.connect(self._on_solver_prepared)
         self._solver_worker.stage_signal.connect(self._on_solver_stage)
         self._solver_worker.progress_signal.connect(self._on_solver_progress)
         self._solver_worker.residual_signal.connect(self._on_solver_residual)
@@ -211,8 +213,56 @@ class SolverControllerMixin:
         """Build case/<name>/{work,grid,dll}, stage inputs, rename outputs, write
         input.in / .def, and compile IBM DLLs. Returns (work_dir, grid_dir,
         input_in_path). Delegates to the shared, Qt-free solver_case service so
-        the GUI and the headless pipeline runner lay out cases identically."""
+        the GUI and the headless pipeline runner lay out cases identically.
+
+        Note: the interactive Run path no longer calls this on the GUI thread
+        (it would freeze the window during the g++ DLL compile); the solver
+        worker runs prepare_case_dir itself. Kept for completeness / callers
+        that want a synchronous prepare."""
         return solver_case.prepare_case_dir(cfg, log=self.main_window.log_panel.log)
+
+    def _resolve_case_overwrite(self, cfg: SolverConfig):
+        """Return True to overwrite the existing case dir, False to auto-version
+        a new one, or None if the user cancelled.
+
+        Only prompts when a case dir of this name already holds prior results;
+        otherwise returns False (nothing to preserve, so the default dir is used
+        as-is by the worker)."""
+        from PyQt6.QtWidgets import QMessageBox
+        root = repo_root()
+        case = _sanitize(cfg.case_name)
+        case_root = os.path.join(root, "results", "solver", case)
+        if not solver_case._dir_has_content(case_root):
+            return False
+
+        box = QMessageBox(self.main_window)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Case already exists")
+        box.setText(
+            f"Solver results for case '{case}' already exist at\n{case_root}")
+        box.setInformativeText(
+            "Overwrite the existing results, or keep them and run into a new "
+            "auto-versioned directory (e.g. '{}_002')?".format(case))
+        overwrite_btn = box.addButton("Overwrite", QMessageBox.ButtonRole.DestructiveRole)
+        new_btn = box.addButton("New Versioned Dir", QMessageBox.ButtonRole.AcceptRole)
+        cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(new_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is cancel_btn:
+            self.main_window.log_panel.log("Solver run cancelled (case exists).")
+            return None
+        if clicked is overwrite_btn:
+            self.main_window.log_panel.log(
+                f"[case] overwriting existing results for '{case}'.")
+            return True
+        return False
+
+    def _on_solver_prepared(self, work_dir: str):
+        """The worker finished staging the (possibly auto-versioned) case dir;
+        record where the Tecplot result will land."""
+        self._solver_result_path = os.path.join(
+            work_dir, f"xtecp_sol_allz.dat{self.SOLVER_TAG}")
 
     def _auto_link_mesh_output(self, cfg: SolverConfig) -> bool:
         """Fill cfg's getPGrid inputs from the last mesh generation's STAR-CD output."""

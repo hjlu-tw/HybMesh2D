@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QFileDialog
 from app.models.session import GeometrySession
 from app.workers.backend_run import BackendWorker
 from app.views.output_dialog import OutputDialog
-from app.services.geometry_service import GeometryService
+from app.services.geometry_service import GeometryService, load_points_dat
 
 from app.utils import find_binary_executable, repo_root
 
@@ -323,7 +323,7 @@ class BackendControllerMixin:
         try:
             if rc == 0 and os.path.exists(tmp_out):
                 try:
-                    pts = np.loadtxt(tmp_out)
+                    pts = load_points_dat(tmp_out)
                     if session not in self.sessions:
                         # Tab was closed while the backend ran; discard the
                         # result (temp files are still cleaned in `finally`).
@@ -372,7 +372,7 @@ class BackendControllerMixin:
                     f"--- Saved to: {out_path} ---")
                 if os.path.exists(out_path):
                     try:
-                        pts = np.loadtxt(out_path)
+                        pts = load_points_dat(out_path)
                         # The file is already written to disk; only update the
                         # in-memory session/UI if that session still exists.
                         if session not in self.sessions:

@@ -41,14 +41,26 @@ class SolverPipelineWorker(QThread):
     residual_signal = pyqtSignal(dict)      # {"iter":int, "cfl":float, "time":float, "L2":[...], "bound":[...]}
     finished_signal = pyqtSignal(int)       # return code (0 ok; <0 cancelled/error)
 
-    def __init__(self, config: SolverConfig, getpgrid_dir: str,
-                 solver_work_dir: str, input_in_path: str, tag: str = ".gui"):
+    # Emitted after case preparation (dir staging + DLL compile) so the
+    # controller can learn the real work dir — it may differ from the requested
+    # case name when auto-versioning kicked in to preserve prior results.
+    prepared_signal = pyqtSignal(str)       # solver_work_dir
+
+    def __init__(self, config: SolverConfig, getpgrid_dir: str | None = None,
+                 solver_work_dir: str | None = None,
+                 input_in_path: str | None = None, tag: str = ".gui",
+                 prepare: bool = False, overwrite: bool = False):
         super().__init__()
         self._config = config
         self._getpgrid_dir = getpgrid_dir
         self._solver_work_dir = solver_work_dir
         self._input_in_path = input_in_path
         self._tag = tag
+        # When ``prepare`` is set, the (blocking) case-dir staging + IBM DLL
+        # compile run inside run() on this worker thread instead of on the GUI
+        # thread, so the event loop never freezes for the g++ subprocess.
+        self._prepare = prepare
+        self._overwrite = overwrite
         self._process: subprocess.Popen | None = None
         self._cancelled = False
 
@@ -73,6 +85,18 @@ class SolverPipelineWorker(QThread):
         try:
             self._cancelled = False
             self.progress_signal.emit(0)
+
+            # Blocking case preparation (dir staging + IBM DLL g++ compile) moved
+            # off the GUI thread: run it here so the window stays responsive.
+            if self._prepare:
+                self.stage_signal.emit("Preparing case")
+                work_dir, grid_dir, input_in = solver_case.prepare_case_dir(
+                    self._config, log=self.log_signal.emit,
+                    overwrite=self._overwrite)
+                self._solver_work_dir = work_dir
+                self._getpgrid_dir = grid_dir
+                self._input_in_path = input_in
+                self.prepared_signal.emit(work_dir)
 
             if not self._run_getpgrid():
                 return

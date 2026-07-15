@@ -1,12 +1,11 @@
 from __future__ import annotations
-import os
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
     QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu, QProgressBar, QGridLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont
 from app.views.sidebar import SidebarView
 from app.views.canvas import CanvasView
 from app.views.log_panel import LogPanel
@@ -20,9 +19,13 @@ from app.views.panels.stl3d_panel import Stl3dConfigPanel
 from app.views.stl3d_canvas import Stl3dCanvasView
 from app.views.panels.result_panel import ResultControlPanel
 from app.styles import TOOLBAR_CHECKBOX_STYLE
+from app.views.main_window_menu_mixin import MainWindowMenuMixin
+from app.views.main_window_toolbar_mixin import MainWindowToolbarMixin
 
 
-class MainWindow(QMainWindow):
+# Mixins listed BEFORE QMainWindow so the Qt virtual overrides they provide
+# (eventFilter / resizeEvent) resolve super() to QMainWindow, not object.
+class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
     """
     Top-level window.
     Layout: [Sidebar] | [Tab-bar + shared CanvasView]
@@ -531,123 +534,6 @@ class MainWindow(QMainWindow):
         # Default to a small log console height.
         self.resizeDocks([log_dock], [80], Qt.Orientation.Vertical)
 
-    # ── Shortcuts ─────────────────────────────────────────────────────────
-
-    def setup_shortcuts(self, controller):
-        # 1. Initialize QShortcuts (Global hotkeys)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(controller.undo)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(controller.redo)
-        QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(controller.redo)
-        QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(controller.load_geometry)
-        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(controller.save_output)
-        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(controller.new_blank_tab)
-        QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(controller.new_blank_tab)
-        QShortcut(QKeySequence("Ctrl+W"), self).activated.connect(lambda: controller.close_tab(controller.active_idx))
-        QShortcut(QKeySequence("F5"), self).activated.connect(controller.preview_backend)
-
-        # 2. Setup standard Menu Bar
-        menubar = self.menuBar()
-        menubar.setStyleSheet("""
-            QMenuBar {
-                background-color: #090a12;
-                color: #a0a8c0;
-                border-bottom: 1px solid #1c1e36;
-            }
-            QMenuBar::item {
-                background-color: transparent;
-                padding: 4px 10px;
-            }
-            QMenuBar::item:selected {
-                background-color: #1e2235;
-                color: #ffffff;
-            }
-            QMenu {
-                background-color: #121422;
-                color: #a0a8c0;
-                border: 1px solid #1c1e36;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-            }
-            QMenu::item:selected {
-                background-color: #3b82f6;
-                color: #ffffff;
-            }
-        """)
-
-        file_menu = menubar.addMenu("File")
-
-        load_action = file_menu.addAction("Load Geometry...")
-        load_action.setShortcut("Ctrl+O")
-        load_action.triggered.connect(controller.load_geometry)
-
-        load_json_action = file_menu.addAction("Load JSON Config...")
-        load_json_action.triggered.connect(controller.load_json_config)
-
-        file_menu.addSeparator()
-
-        self.recent_menu = file_menu.addMenu("Open Recent")
-        controller.init_recent_files()
-
-        file_menu.addSeparator()
-
-        new_tab_action = file_menu.addAction("New Tab")
-        new_tab_action.setShortcut("Ctrl+T")
-        new_tab_action.triggered.connect(controller.new_blank_tab)
-
-        close_tab_action = file_menu.addAction("Close Tab")
-        close_tab_action.setShortcut("Ctrl+W")
-        close_tab_action.triggered.connect(lambda: controller.close_tab(controller.active_idx))
-
-        file_menu.addSeparator()
-
-        save_action = file_menu.addAction("Export Mesh (.dat)...")
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(controller.save_output)
-
-        save_json_action = file_menu.addAction("Save Configuration (.json)...")
-        save_json_action.triggered.connect(controller.generate_json)
-
-        file_menu.addSeparator()
-
-        save_ws_action = file_menu.addAction("Save Workspace...")
-        save_ws_action.triggered.connect(controller.save_workspace)
-
-        load_ws_action = file_menu.addAction("Load Workspace...")
-        load_ws_action.triggered.connect(controller.load_workspace)
-
-        file_menu.addSeparator()
-
-        exit_action = file_menu.addAction("Exit")
-        exit_action.triggered.connect(self.close)
-
-        # ── Pipeline menu (full CAD -> mesh -> solver -> results) ──────────
-        pipeline_menu = menubar.addMenu("Pipeline")
-
-        run_all_action = pipeline_menu.addAction("Run Full Pipeline")
-        run_all_action.setShortcut("Ctrl+R")
-        run_all_action.triggered.connect(controller.run_full_pipeline)
-
-        pipeline_menu.addSeparator()
-
-        load_pipe_action = pipeline_menu.addAction("Load Pipeline Script...")
-        load_pipe_action.triggered.connect(controller.load_pipeline_file)
-
-        save_pipe_action = pipeline_menu.addAction("Save Pipeline Script...")
-        save_pipe_action.triggered.connect(controller.save_pipeline_file)
-
-    def refresh_recent_files_menu(self, files: list[str], controller):
-        self.recent_menu.clear()
-        if not files:
-            empty_action = self.recent_menu.addAction("No Recent Files")
-            empty_action.setEnabled(False)
-            return
-        for f in files:
-            action = self.recent_menu.addAction(os.path.basename(f))
-            action.setToolTip(f)
-            # Use default argument in lambda to bind loop variable f properly
-            action.triggered.connect(lambda checked, path=f: controller.load_recent_file(path))
-
     # ── Title / tab helpers ────────────────────────────────────────────────
 
     def update_title(self, filename: str = "", modified: bool = False):
@@ -710,198 +596,6 @@ class MainWindow(QMainWindow):
 
         self.adjust_toolbar_layout()
         self.mode_changed.emit(idx)
-
-    def eventFilter(self, watched, event) -> bool:
-        if event.type() in (QEvent.Type.Show, QEvent.Type.Hide):
-            if not getattr(self, '_layout_queued', False):
-                self._layout_queued = True
-                QTimer.singleShot(0, self._run_queued_layout)
-        return super().eventFilter(watched, event)
-
-    def _run_queued_layout(self):
-        self._layout_queued = False
-        self.adjust_toolbar_layout()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.adjust_toolbar_layout()
-
-    def adjust_toolbar_layout(self):
-        # Prevent recursion
-        if getattr(self, '_adjusting_layout', False):
-            return
-        self._adjusting_layout = True
-        
-        try:
-            # Clear layout first
-            while self.tb_layout.count() > 0:
-                self.tb_layout.takeAt(0)
-                
-            # Reset all column stretches
-            for col in range(30):
-                self.tb_layout.setColumnStretch(col, 0)
-                
-            idx = self.sidebar_stack.currentIndex()
-            width = self.width()
-            
-            # Determine threshold based on mode
-            if idx == 0:
-                threshold = 1200
-                is_narrow = (width < threshold)
-                
-                if is_narrow:
-                    self.canvas_toolbar.setFixedHeight(68)
-                    # cad_sep2 is redundant in two-row mode; hide so it is not
-                    # left visible-but-unpositioned after the grid is rebuilt.
-                    self.cad_sep2.setVisible(False)
-
-                    row0_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.focus_geom_btn,
-                        self.cad_clear_btn,
-                        self.cad_preview_btn,
-                        self.cad_curve_preview_btn,
-                        self.cad_file_preview_btn,
-                    ]
-                    row1_widgets = [
-                        self.show_vertices_cb,
-                        self.show_nodes_cb,
-                        self.quality_check_cb,
-                        self.quality_mode_combo,
-                    ]
-                    
-                    # Add to row 0
-                    col_idx = 0
-                    for w in row0_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                            
-                    # Add to row 1
-                    col_idx = 0
-                    for w in row1_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 1, col_idx)
-                            col_idx += 1
-                            
-                    max_col = max(self.tb_layout.columnCount() - 1, 0)
-                    self.tb_layout.setColumnStretch(max_col + 1, 1)
-                else:
-                    self.canvas_toolbar.setFixedHeight(36)
-                    self.cad_sep2.setVisible(True)
-                    all_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.focus_geom_btn,
-                        self.cad_clear_btn,
-                        self.cad_preview_btn,
-                        self.cad_curve_preview_btn,
-                        self.cad_file_preview_btn,
-                        self.cad_sep2,
-                        self.show_vertices_cb,
-                        self.show_nodes_cb,
-                        self.quality_check_cb,
-                        self.quality_mode_combo,
-                    ]
-                    col_idx = 0
-                    for w in all_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                    self.tb_layout.setColumnStretch(col_idx, 1)
-
-            elif idx in (1, 2):  # Mesh modes
-                threshold = 1100
-                is_narrow = (width < threshold)
-                
-                if is_narrow:
-                    self.canvas_toolbar.setFixedHeight(68)
-                    # mesh_sep3 is redundant in two-row mode; hide so it is not
-                    # left visible-but-unpositioned after the grid is rebuilt.
-                    self.mesh_sep3.setVisible(False)
-                    row0_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.mesh_preview_btn,
-                        self.mesh_generate_btn,
-                        self.mesh_cancel_btn,
-                        self.mesh_sep2,
-                        self.mesh_focus_btn,
-                        self.mesh_clear_btn,
-                    ]
-                    row1_widgets = [
-                        self.mesh_show_wireframe_cb,
-                        self.mesh_show_bc_cb,
-                        self.mesh_show_domain_cb,
-                        self.mesh_sep4,
-                        self.mesh_color_label,
-                        self.mesh_color_mode_combo,
-                        self.progress_bar,
-                    ]
-                    
-                    # Add to row 0
-                    col_idx = 0
-                    for w in row0_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                            
-                    # Add to row 1
-                    col_idx = 0
-                    for w in row1_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 1, col_idx)
-                            col_idx += 1
-                            
-                    max_col = max(self.tb_layout.columnCount() - 1, 0)
-                    self.tb_layout.setColumnStretch(max_col + 1, 1)
-                else:
-                    self.canvas_toolbar.setFixedHeight(36)
-                    self.mesh_sep3.setVisible(True)
-                    all_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.mesh_preview_btn,
-                        self.mesh_generate_btn,
-                        self.mesh_cancel_btn,
-                        self.mesh_sep2,
-                        self.mesh_focus_btn,
-                        self.mesh_clear_btn,
-                        self.mesh_sep3,
-                        self.mesh_show_wireframe_cb,
-                        self.mesh_show_bc_cb,
-                        self.mesh_show_domain_cb,
-                        self.mesh_sep4,
-                        self.mesh_color_label,
-                        self.mesh_color_mode_combo,
-                        self.progress_bar,
-                    ]
-                    col_idx = 0
-                    for w in all_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                    self.tb_layout.setColumnStretch(col_idx, 1)
-
-            else:  # Solver / Results / STL3d modes — minimal toolbar; panels own their controls
-                self.canvas_toolbar.setFixedHeight(36)
-                self.mesh_sep3.setVisible(False)
-                col_idx = 0
-                # Include the progress bar so the STL3d "Generate phi" run shows it
-                # placed in the grid (after undo/redo) instead of floating at the
-                # top-left corner over the undo/redo buttons.
-                for w in (self.undo_btn, self.redo_btn, self.cad_sep1, self.progress_bar):
-                    if w.isVisible():
-                        self.tb_layout.addWidget(w, 0, col_idx)
-                        col_idx += 1
-                self.tb_layout.setColumnStretch(col_idx, 1)
-        finally:
-            self._adjusting_layout = False
 
     def closeEvent(self, event):
         if hasattr(self, "controller") and self.controller is not None:

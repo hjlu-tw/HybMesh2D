@@ -16,11 +16,18 @@ from app.models.mesh_config import MeshConfig
 
 from app.controllers import (
     SessionControllerMixin,
+    SessionIOControllerMixin,
     SegmentControllerMixin,
+    SegmentAutoDetectControllerMixin,
+    SegmentPropsControllerMixin,
+    SegmentDistributionControllerMixin,
     TransformControllerMixin,
     CurveControllerMixin,
+    CurveEditControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
+    MeshExportControllerMixin,
+    MeshLayersControllerMixin,
     OpenEndpointControllerMixin,
     SolverControllerMixin,
     PostprocessControllerMixin,
@@ -34,11 +41,18 @@ from app.models.stl3d_config import Stl3dConfig
 
 class AppController(
     SessionControllerMixin,
+    SessionIOControllerMixin,
     SegmentControllerMixin,
+    SegmentAutoDetectControllerMixin,
+    SegmentPropsControllerMixin,
+    SegmentDistributionControllerMixin,
     TransformControllerMixin,
     CurveControllerMixin,
+    CurveEditControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
+    MeshExportControllerMixin,
+    MeshLayersControllerMixin,
     OpenEndpointControllerMixin,
     SolverControllerMixin,
     PostprocessControllerMixin,
@@ -455,10 +469,26 @@ class AppController(
             if not any(getattr(s, "is_geometry_modified", False) for s in self.sessions):
                 return
             self._write_workspace_file(self._autosave_path)
-        except Exception:
+            # Recovered: note it once so the engineer knows the safety net is
+            # working again after a prior failure.
+            if getattr(self, "_autosave_failed", False):
+                self._autosave_failed = False
+                self.main_window.log_panel.log(
+                    "[Autosave] resumed — workspace checkpoint saved again.")
+        except Exception as e:
             # A background autosave must never interrupt the user (e.g. a
-            # transient NaN while editing a live curve); fail silently.
-            pass
+            # transient NaN while editing a live curve), but it must not die
+            # silently either: warn ONCE so the engineer knows the crash-recovery
+            # net has stopped and they should save manually. Subsequent identical
+            # failures are suppressed until a save succeeds again.
+            if not getattr(self, "_autosave_failed", False):
+                self._autosave_failed = True
+                try:
+                    self.main_window.log_panel.log(
+                        f"[Autosave] [WARNING] auto-save failed and is paused: {e}. "
+                        "Save your workspace manually (File > Save Workspace).")
+                except Exception:
+                    pass
 
 
     # ═════════════════════════════════════════════════════════════════════

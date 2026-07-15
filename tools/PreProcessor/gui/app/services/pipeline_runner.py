@@ -29,29 +29,43 @@ class PipelineError(RuntimeError):
 
 
 def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
-    """Run a subprocess, streaming combined stdout/stderr to ``log`` line by line.
+    """Run a subprocess, streaming stdout to ``log`` line by line. Any stderr is
+    captured separately and, on failure, logged prefixed with ``[stderr]`` so the
+    warning/error stream stays distinguishable from normal stdout output.
     Returns the process return code."""
     log(f"$ {' '.join(cmd)}   (cwd={cwd})")
-    stdin_f = open(stdin_path, "rb") if stdin_path else None
+    # Open stdin inside the try so a Popen failure can't leak the handle.
     try:
-        proc = subprocess.Popen(
-            cmd, cwd=cwd, env=env, stdin=stdin_f,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", bufsize=1,
-        )
-        for line in proc.stdout:
-            s = line.rstrip()
-            if s:
-                log(s)
-        proc.wait(timeout=timeout)
-        return proc.returncode
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        log(f"[ERROR] timed out after {timeout}s")
-        return -3
-    finally:
-        if stdin_f:
-            stdin_f.close()
+        stdin_f = open(stdin_path, "rb") if stdin_path else None
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=cwd, env=env, stdin=stdin_f,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+            )
+            for line in proc.stdout:
+                s = line.rstrip()
+                if s:
+                    log(s)
+            proc.wait(timeout=timeout)
+            # Surface any captured stderr (kept separate from stdout above),
+            # prefixed so it is clearly the error/warning stream.
+            err = (proc.stderr.read() if proc.stderr else "") or ""
+            for line in err.splitlines():
+                s = line.rstrip()
+                if s:
+                    log(f"[stderr] {s}")
+            return proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            log(f"[ERROR] timed out after {timeout}s")
+            return -3
+        finally:
+            if stdin_f:
+                stdin_f.close()
+    except OSError as e:
+        log(f"[ERROR] failed to launch {cmd[0]!r}: {e}")
+        return -1
 
 
 def _mesh_env():
@@ -73,10 +87,13 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log) -> str:
     if not pm.input_file or not os.path.exists(pm.input_file):
         raise PipelineError(f"CAD input geometry not found: {pm.input_file!r}")
 
-    with tempfile.NamedTemporaryFile("w", suffix="_pipe_cad.json",
-                                     delete=False) as tf:
-        cfg_path = tf.name
+    # Create the temp config inside the try so its removal is guaranteed even if
+    # creation or export raises before we'd otherwise reach a guard.
+    cfg_path = ""
     try:
+        with tempfile.NamedTemporaryFile("w", suffix="_pipe_cad.json",
+                                         delete=False) as tf:
+            cfg_path = tf.name
         pm.export_config(cfg_path)
         rc = _stream([exe, cfg_path], cwd=repo, log=log)
     finally:
@@ -115,10 +132,13 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_file: str,
     if not mc.geom_files:
         raise PipelineError("mesh stage has no geometry input (geom_files empty)")
 
-    with tempfile.NamedTemporaryFile("w", suffix="_pipe_mesh.dat",
-                                     delete=False) as tf:
-        cfg_path = tf.name
+    # Create the temp config inside the try so its removal is guaranteed even if
+    # creation or save raises before we'd otherwise reach a guard.
+    cfg_path = ""
     try:
+        with tempfile.NamedTemporaryFile("w", suffix="_pipe_mesh.dat",
+                                         delete=False) as tf:
+            cfg_path = tf.name
         mc.save_to_file(cfg_path)
         rc = _stream([exe, "-conf", cfg_path], cwd=repo, log=log, env=_mesh_env())
     finally:

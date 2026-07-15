@@ -123,9 +123,15 @@ class PipelineControllerMixin:
             return
         try:
             if session in self.sessions:
-                session.resampled_points = np.loadtxt(out)
-        except Exception:
-            pass
+                from app.services.geometry_service import load_points_dat
+                session.resampled_points = load_points_dat(out)
+        except Exception as e:
+            # Loading the resampled overlay is non-fatal (the file is on disk and
+            # the pipeline continues to meshing), but log it so a malformed
+            # resampler output is not silently indistinguishable from "did
+            # nothing".
+            self.main_window.log_panel.log(
+                f"[Pipeline] [WARNING] could not load resampled preview: {e}")
 
         abs_out = os.path.abspath(out)
         if abs_out not in self.global_mesh_config.geom_files:
@@ -147,6 +153,12 @@ class PipelineControllerMixin:
             self._pipeline_abort("mesh generation did not start "
                                  "(check geometry / domain / binary).")
             return
+        # A reused worker object keeps its old connections; disconnect our slot
+        # first so a second pipeline run doesn't fire _pipe_after_mesh twice.
+        try:
+            w.finished_signal.disconnect(self._pipe_after_mesh)
+        except TypeError:
+            pass  # not previously connected
         w.finished_signal.connect(self._pipe_after_mesh)
 
     def _pipe_after_mesh(self, rc):
@@ -165,6 +177,12 @@ class PipelineControllerMixin:
         if w is None or not w.isRunning():
             self._pipeline_abort("solver did not start (check config / binaries).")
             return
+        # A reused worker object keeps its old connections; disconnect our slot
+        # first so a second pipeline run doesn't fire _pipe_after_solver twice.
+        try:
+            w.finished_signal.disconnect(self._pipe_after_solver)
+        except TypeError:
+            pass  # not previously connected
         w.finished_signal.connect(self._pipe_after_solver)
 
     def _pipe_after_solver(self, rc):
@@ -247,11 +265,18 @@ class PipelineControllerMixin:
         if not path:
             return
         try:
+            # Missing version = legacy v0 (explicit). Older scripts are migrated
+            # by PipelineConfig.from_dict; a NEWER one is read-only best-effort.
             ver = PipelineConfig.file_version(path)
             if ver > PIPELINE_FORMAT_VERSION:
                 self.main_window.log_panel.log(
-                    f"[Pipeline] [WARNING] script version {ver} newer than "
-                    f"supported ({PIPELINE_FORMAT_VERSION}); loading best-effort.")
+                    f"[Pipeline] [WARNING] script version {ver} is newer than "
+                    f"supported ({PIPELINE_FORMAT_VERSION}); loading read-only, "
+                    "best-effort — some settings may be ignored.")
+            elif ver < PIPELINE_FORMAT_VERSION:
+                self.main_window.log_panel.log(
+                    f"[Pipeline] [INFO] migrating script from v{ver} to "
+                    f"v{PIPELINE_FORMAT_VERSION}.")
             pcfg = PipelineConfig.load_from_file(path)
         except Exception as e:
             self.main_window.log_panel.log(f"[Pipeline] Failed to load script: {e}")

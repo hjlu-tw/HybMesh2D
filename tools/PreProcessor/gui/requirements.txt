@@ -1,3 +1,26 @@
+# HybMesh2D PreProcessor GUI + tooling — Python runtime dependencies.
+#
+# Requires Python >= 3.9 (matches the developer environment; PyQt6 6.5 needs 3.8+).
+#
+# These are loose ranges for development convenience. For reproducible/CI
+# installs, generate a pinned lockfile from a known-good environment:
+#     pip freeze > requirements.lock.txt
+# and install with `pip install -r requirements.lock.txt`.
+
+# --- GUI toolkit ---
 PyQt6>=6.5.0,<7.0.0
 pyqtgraph>=0.13.0,<0.14.0
+
+# --- Numerics ---
 numpy>=1.20.0,<2.0.0
+# scipy: used by phi_quality (mesh-quality metrics).
+scipy>=1.7.0,<2.0.0
+
+# --- Plotting / rendering ---
+# matplotlib: contour_render, result_canvas, visualize_dat, wall_qty_view, stl3d_canvas.
+matplotlib>=3.5.0,<4.0.0
+
+# --- Meshing SDK ---
+# gmsh: provides libgmsh (loaded by the C++ HybMesh2D) plus the Python bindings.
+# Pinned to 4.15.x to match the version the C++ side links against (see THIRD_PARTY.md).
+gmsh>=4.15,<4.16

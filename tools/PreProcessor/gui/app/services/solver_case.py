@@ -26,6 +26,36 @@ def sanitize_case_name(name: str) -> str:
     return s or "case"
 
 
+def _dir_has_content(path: str) -> bool:
+    """True when ``path`` exists and is a non-empty directory."""
+    return os.path.isdir(path) and bool(os.listdir(path))
+
+
+def resolve_case_root(root: str, case: str, overwrite: bool, log=_noop) -> str:
+    """Pick the ``results/solver/<case>`` directory to write into.
+
+    When the default case dir already holds prior results and ``overwrite`` is
+    False, auto-version to ``<case>_002``, ``<case>_003``, … so a re-run never
+    silently clobbers earlier output. Returns the actual directory path (not yet
+    created). ``overwrite=True`` reuses the default dir in place.
+    """
+    default = os.path.join(root, "results", "solver", case)
+    if overwrite or not _dir_has_content(default):
+        return default
+    for n in range(2, 1000):
+        candidate = os.path.join(root, "results", "solver", f"{case}_{n:03d}")
+        if not _dir_has_content(candidate):
+            log(f"[case] '{case}' already has results; writing to "
+                f"'{os.path.basename(candidate)}' to preserve them "
+                "(pass overwrite=True to reuse the existing dir).")
+            return candidate
+    # Pathological: 998 versions exist. Fall back to overwriting the default
+    # rather than looping forever.
+    log(f"[WARNING] too many versions of case '{case}'; overwriting "
+        f"'{case}'.")
+    return default
+
+
 def stage_dll(src: str, dll_dir: str, log=_noop) -> str:
     """Compile a .cc/.cpp DLL source into ``dll_dir`` (or copy a prebuilt .so).
 
@@ -89,16 +119,26 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
         log(f"[getPGrid] segment table -> {def_name}")
 
 
-def prepare_case_dir(cfg: SolverConfig, log=_noop):
+def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
     rename outputs, write ``input.in`` / ``.def``, and compile IBM DLLs.
 
     Mutates ``cfg`` in place (paths are rewritten to the staged locations, as the
     solver worker expects). Returns ``(work_dir, grid_dir, input_in_path)``.
+
+    By default (``overwrite=False``) an existing, non-empty case dir is NOT
+    clobbered: the case auto-versions to ``<case>_002`` etc. (see
+    :func:`resolve_case_root`) so prior results are preserved. Pass
+    ``overwrite=True`` to reuse the existing dir in place.
     """
     root = repo_root()
     case = sanitize_case_name(cfg.case_name)
-    case_root = os.path.join(root, "results", "solver", case)
+    case_root = resolve_case_root(root, case, overwrite, log)
+    # If auto-versioning renamed the case, keep cfg's case_name in sync so the
+    # solver's -t tag / result path and any later references use the real dir.
+    actual_case = os.path.basename(case_root)
+    if actual_case != case:
+        cfg.case_name = actual_case
     work_dir = os.path.join(case_root, "work")
     grid_dir = os.path.join(case_root, "grid")
     dll_dir = os.path.join(case_root, "dll")
