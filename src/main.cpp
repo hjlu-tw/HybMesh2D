@@ -1,25 +1,59 @@
 #include "Mesh.hpp"
 #include "Config.hpp"
 #include "BoundaryLayer.hpp"
+#include "Logger.hpp"
+#include "Provenance.hpp"
+#include "ExitCodes.hpp"
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
 #include <filesystem>
 
 namespace fs = std::filesystem;
 
+// Emit a machine-readable failure line the GUI/CI can parse without regex on
+// prose, then return the code. Human-readable detail should already have been
+// logged via LOG_ERROR at the failure site.
+static int reportError(int code, const std::string& detail = "") {
+    std::cout << "HYBMESH_ERROR " << code << " " << exitCodeToken(code)
+              << (detail.empty() ? "" : (" " + detail)) << std::endl;
+    return code;
+}
+
+// Outcome of a geometry load, so the caller can distinguish "the file isn't
+// there / can't be opened" (a hard, user-facing error) from "the file opened
+// but held no usable points" (also an error, different message).
+enum class LoadStatus { Ok, CannotOpen, Empty };
+
 // Load a polyline. If `closed` is provided, report whether the first/last
 // points coincided (a closed loop) — refinement seeds use this to decide
 // whether to add the closing segment; boundary loads pass nullptr and ignore it.
-std::vector<Point2D> loadGeometry(const std::string& filename, bool* closed = nullptr) {
+// `status` (optional) reports why an empty result occurred.
+std::vector<Point2D> loadGeometry(const std::string& filename, bool* closed = nullptr,
+                                  LoadStatus* status = nullptr) {
     std::vector<Point2D> points;
     if (closed) *closed = false;
+    if (status) *status = LoadStatus::Ok;
     std::ifstream ifs(filename);
-    if (!ifs) return points;
+    if (!ifs.is_open()) {
+        if (status) *status = LoadStatus::CannotOpen;
+        return points;
+    }
     double x, y;
     while (ifs >> x >> y) points.push_back({x, y});
+
+    // Distinguish a clean EOF from a truncated/corrupt file: if extraction
+    // stopped before EOF, there are unconsumed non-whitespace tokens.
+    if (ifs.fail() && !ifs.eof()) {
+        LOG_WARN("Geometry file '" << filename
+                 << "' appears truncated or malformed; parsing stopped after "
+                 << points.size() << " point(s).");
+    }
+
+    if (points.empty() && status) *status = LoadStatus::Empty;
 
     // 如果起點與終點重合，移除最後一個點以避免產生重疊的邊界節點，這會導致法向量計算錯誤
     if (points.size() > 1) {
@@ -42,6 +76,20 @@ static bool parseDoubleArg(const std::string& s, double& out) {
         return true;
     } catch (const std::exception&) {
         std::cerr << "Warning: invalid numeric value '" << s
+                  << "' for a command-line argument; ignoring.\n";
+        return false;
+    }
+}
+
+// Guarded int parse for the -out_* toggle flags. std::stoi throws on a
+// non-numeric argument; catch it so a bad value logs and leaves `out` unchanged
+// (keeping the config/default) instead of aborting the whole program.
+static bool parseIntArg(const std::string& s, int& out) {
+    try {
+        out = std::stoi(s);
+        return true;
+    } catch (const std::exception&) {
+        std::cerr << "Warning: invalid integer value '" << s
                   << "' for a command-line argument; ignoring.\n";
         return false;
     }
@@ -135,8 +183,8 @@ static void reconcileMeta(SurfaceMeta& meta, size_t nPts, const std::string& fil
     if (!meta.valid) return;
     if (meta.segId.size() == nPts + 1) { meta.segId.pop_back(); meta.isCorner.pop_back(); }
     else if (meta.segId.size() != nPts) {
-        std::cerr << "Warning: metadata sidecar for " << file << " has " << meta.segId.size()
-                  << " points but geometry has " << nPts << "; ignoring sidecar.\n";
+        LOG_WARN("Metadata sidecar for " << file << " has " << meta.segId.size()
+                 << " points but geometry has " << nPts << "; ignoring sidecar.");
         meta.valid = false;
     }
 }
@@ -188,8 +236,8 @@ static std::vector<Point2D> buildDomainBoundary(Mesh& mesh, Config& config) {
     if (!config.domainFile.empty()) {
         outline = loadGeometry(config.domainFile);
         if (outline.size() < 3) {
-            std::cerr << "Warning: domain file '" << config.domainFile
-                      << "' has fewer than 3 points; using the rectangular box instead.\n";
+            LOG_WARN("Domain file '" << config.domainFile
+                     << "' has fewer than 3 points; using the rectangular box instead.");
             outline.clear();
         }
     }
@@ -336,7 +384,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (!config.loadFromFile(configFile)) return 1;
+    // loadFromFile now returns false when the file cannot be opened. An
+    // explicitly-requested -conf that cannot be opened is a fatal config error;
+    // the default path missing just falls back to built-in defaults.
+    if (!config.loadFromFile(configFile)) {
+        if (confExplicit) {
+            LOG_ERROR("Config file '" << configFile << "' could not be opened.");
+            return reportError(EXIT_ERR_CONFIG, configFile);
+        }
+        // else: defaults are in use (loadFromFile already warned).
+    }
 
     // 如果命令列提供了 -geom，則覆蓋設定檔中的幾何物件
     if (geomProvided) {
@@ -363,9 +420,9 @@ int main(int argc, char* argv[]) {
         else if (arg == "-bc_ymin" && i + 1 < argc) config.bcYMin = argv[++i];
         else if (arg == "-bc_ymax" && i + 1 < argc) config.bcYMax = argv[++i];
         else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
-        else if (arg == "-out_vtk" && i + 1 < argc) config.exportVTK = (std::stoi(argv[++i]) != 0);
-        else if (arg == "-out_starcd" && i + 1 < argc) config.exportStarCD = (std::stoi(argv[++i]) != 0);
-        else if (arg == "-out_cgns" && i + 1 < argc) config.exportCGNS = (std::stoi(argv[++i]) != 0);
+        else if (arg == "-out_vtk" && i + 1 < argc) { int v; if (parseIntArg(argv[++i], v)) config.exportVTK = (v != 0); }
+        else if (arg == "-out_starcd" && i + 1 < argc) { int v; if (parseIntArg(argv[++i], v)) config.exportStarCD = (v != 0); }
+        else if (arg == "-out_cgns" && i + 1 < argc) { int v; if (parseIntArg(argv[++i], v)) config.exportCGNS = (v != 0); }
         else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
         else if (arg == "-domain" && i + 1 < argc) config.domainFile = argv[++i];
         else if (arg == "-domain_bl") config.domainGrowBL = true; // domain wall grows BL inward (internal flow)
@@ -387,6 +444,13 @@ int main(int argc, char* argv[]) {
         else if (arg == "-conf") {
             if (i + 1 < argc) ++i;
         }
+    }
+
+    // Validate/clamp config ranges after the config load + all CLI overrides.
+    // A contradiction that cannot be clamped (empty domain span) is fatal.
+    if (!config.validate()) {
+        LOG_ERROR("Configuration failed validation (see warnings above).");
+        return reportError(EXIT_ERR_CONFIG, "validation");
     }
 
     config.print();
@@ -411,13 +475,18 @@ int main(int argc, char* argv[]) {
         if (!outParent.empty()) {
             std::error_code ec;
             fs::create_directories(outParent, ec);
-            if (ec) std::cerr << "Warning: cannot create output directory '"
-                              << outParent.string() << "': " << ec.message() << std::endl;
+            if (ec) LOG_WARN("Cannot create output directory '"
+                             << outParent.string() << "': " << ec.message());
         }
     }
 
     bool hasIntersection = false;
     bool blSuccess = true;
+    int failExit = EXIT_OK;                 // set to a distinct code on failure
+    std::string gmshVersion;                // resolved for provenance
+    std::vector<std::string> inputFiles;    // geometry inputs for provenance
+    for (const auto& f : config.geomFiles) inputFiles.push_back(f);
+    if (!config.domainFile.empty()) inputFiles.push_back(config.domainFile);
     if (config.geomFiles.empty() && config.seedFiles.empty() && config.domainFile.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
@@ -448,11 +517,17 @@ int main(int argc, char* argv[]) {
         // Domain wall first (internal flow): its bbox drives the config box so the
         // BL front validation (xMin..yMax) stays valid for geometries beyond ±10.
         if (domainIsWall) {
-            std::vector<Point2D> pts = loadGeometry(config.domainFile);
+            LoadStatus st = LoadStatus::Ok;
+            std::vector<Point2D> pts = loadGeometry(config.domainFile, nullptr, &st);
+            if (st == LoadStatus::CannotOpen) {
+                LOG_ERROR("Internal-flow domain wall '" << config.domainFile
+                          << "' could not be opened.");
+                return reportError(EXIT_ERR_GEOMETRY_LOAD, config.domainFile);
+            }
             if (pts.size() < 3) {
-                std::cerr << "Error: internal-flow domain wall '" << config.domainFile
-                          << "' has fewer than 3 points.\n";
-                return 1;
+                LOG_ERROR("Internal-flow domain wall '" << config.domainFile
+                          << "' has fewer than 3 points.");
+                return reportError(EXIT_ERR_GEOMETRY_LOAD, config.domainFile);
             }
             SurfaceMeta meta = loadSurfaceMeta(config.domainFile);
             reconcileMeta(meta, pts.size(), config.domainFile);
@@ -470,15 +545,23 @@ int main(int argc, char* argv[]) {
         }
 
         // Obstacles / objects (GEOM_FILE). growBL unless listed in noBLGeoms.
+        // A requested geometry that cannot be loaded is a HARD error: an unloadable
+        // input must not let the run quietly "succeed" with a wrong (partial) mesh.
         for (const auto& gFile : config.geomFiles) {
-            std::vector<Point2D> geomPoints = loadGeometry(gFile);
+            LoadStatus st = LoadStatus::Ok;
+            std::vector<Point2D> geomPoints = loadGeometry(gFile, nullptr, &st);
             if (geomPoints.empty()) {
-                std::cerr << "Error: Failed to load geometry from " << gFile << std::endl;
-                continue;
+                if (st == LoadStatus::CannotOpen)
+                    LOG_ERROR("Requested geometry '" << gFile << "' could not be opened "
+                              "(file not found / unreadable).");
+                else
+                    LOG_ERROR("Requested geometry '" << gFile << "' contains no usable "
+                              "points (empty or malformed).");
+                return reportError(EXIT_ERR_GEOMETRY_LOAD, gFile);
             }
             if (checkDomainIntersection(geomPoints, domainOutline)) { // no-op when domainOutline empty
-                std::cerr << "Error: Geometry " << gFile << " intersects with domain boundary. Skipping.\n";
-                continue;
+                LOG_ERROR("Geometry '" << gFile << "' intersects the domain boundary.");
+                return reportError(EXIT_ERR_INTERSECTION, gFile);
             }
             SurfaceMeta meta = loadSurfaceMeta(gFile);
             reconcileMeta(meta, geomPoints.size(), gFile);
@@ -494,13 +577,13 @@ int main(int argc, char* argv[]) {
             for (size_t i = 0; i < inputs.size(); ++i)
                 for (size_t j = i + 1; j < inputs.size(); ++j)
                     if (checkGeometriesIntersection(inputs[i].points, inputs[j].points, domainIsWall)) {
-                        std::cerr << "Error: Geometry " << inputs[i].file
-                                  << " and Geometry " << inputs[j].file
-                                  << " intersect. Process stopped.\n";
+                        LOG_ERROR("Geometry '" << inputs[i].file
+                                  << "' and geometry '" << inputs[j].file
+                                  << "' intersect. Process stopped.");
                         hasIntersection = true;
                     }
         }
-        if (hasIntersection) return 1;
+        if (hasIntersection) return reportError(EXIT_ERR_INTERSECTION);
 
         if (config.blAutoTransitionLayers == 1) {
             double totalLen = 0.0; int totalSegments = 0;
@@ -603,9 +686,10 @@ int main(int argc, char* argv[]) {
         try {
             lastH = blGen.generate(allBoundaryIds, growModes, blParamsPerLoop);
         } catch (const std::exception& e) {
-            std::cerr << e.what() << std::endl;
+            LOG_ERROR(e.what());
             std::cerr << "Proceeding to export partial mesh for debugging..." << std::endl;
             blSuccess = false;
+            failExit = EXIT_ERR_BL;
         }
 
         // 載入加密種子 (seeds)：僅供遠場 Gmsh 使用，不進邊界層、也不當域邊界。
@@ -618,8 +702,8 @@ int main(int argc, char* argv[]) {
             if (pts.empty()) {
                 // Loud (not silent): a specified seed that can't be loaded means
                 // the mesh is generated WITHOUT the intended refinement.
-                std::cerr << "Error: refinement seed '" << spec.file
-                          << "' could not be loaded (missing or empty); it will NOT refine the mesh.\n";
+                LOG_ERROR("Refinement seed '" << spec.file
+                          << "' could not be loaded (missing or empty); it will NOT refine the mesh.");
                 continue;
             }
             SeedGeom s;
@@ -635,19 +719,25 @@ int main(int argc, char* argv[]) {
             std::cout << "  - Refinement seeds     : " << seeds.size()
                       << " of " << seedRequested << " loaded\n";
             if (static_cast<int>(seeds.size()) < seedRequested)
-                std::cerr << "Error: " << (seedRequested - static_cast<int>(seeds.size()))
+                LOG_ERROR((seedRequested - static_cast<int>(seeds.size()))
                           << " of " << seedRequested
-                          << " refinement seed(s) failed to load; mesh generated WITHOUT that refinement.\n";
+                          << " refinement seed(s) failed to load; mesh generated WITHOUT that refinement.");
         }
 
         if (blSuccess) {
-            mesh.generateFarFieldGmsh(config, lastH, seeds);
-
-            if (config.blSmoothingIters > 0) {
+            bool gmshOk = mesh.generateFarFieldGmsh(config, lastH, seeds, &gmshVersion);
+            if (!gmshOk) {
+                // Gmsh threw or produced an empty mesh (already reported inside).
+                // Do NOT export an empty/partial far-field as if it succeeded.
+                blSuccess = false;
+                failExit = EXIT_ERR_GMSH;
+            } else if (config.blSmoothingIters > 0) {
                 mesh.smoothMesh(config.blSmoothingIters);
             }
-        } else {
-            hasIntersection = true; // Use this to trigger return 1 later
+        }
+
+        if (!blSuccess) {
+            hasIntersection = true; // trigger a nonzero exit later (see failExit)
         }
     }
 
@@ -655,6 +745,15 @@ int main(int argc, char* argv[]) {
     std::cout << "  - Vertices (VRT)       : " << mesh.nodes.size() << "\n";
     std::cout << "  - Elements (CEL)       : " << mesh.elements.size() << "\n";
     std::cout << "  - Boundary Edges (BND) : " << mesh.edges.size() << "\n\n";
+
+    // Strip a trailing ".vtk"/known extension to a provenance basename.
+    auto stripExt = [](std::string s) {
+        size_t dot = s.find_last_of('.');
+        size_t slash = s.find_last_of("/\\");
+        if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
+            s.erase(dot);
+        return s;
+    };
 
     if (config.exportVTK) {
         std::string vtkFile = outputFilename;
@@ -669,15 +768,19 @@ int main(int argc, char* argv[]) {
             if (vtkFile.find('.') == std::string::npos) vtkFile += ".vtk";
         }
         mesh.exportVTK(vtkFile);
+        hybmesh::writeProvenance(stripExt(vtkFile), config, inputFiles, gmshVersion,
+                                 mesh.nodes.size(), mesh.elements.size());
         std::cout << "Mesh saved to: " << vtkFile << std::endl;
     }
-    
+
     if (config.exportStarCD) {
         std::string starCDPrefix = outputFilename;
         if (starCDPrefix.length() > 4 && starCDPrefix.substr(starCDPrefix.length() - 4) == ".vtk") {
             starCDPrefix = starCDPrefix.substr(0, starCDPrefix.length() - 4);
         }
         mesh.exportStarCD(starCDPrefix, config);
+        hybmesh::writeProvenance(starCDPrefix, config, inputFiles, gmshVersion,
+                                 mesh.nodes.size(), mesh.elements.size());
         std::cout << "StarCD mesh saved to: " << starCDPrefix << ".*" << std::endl;
     }
 
@@ -687,7 +790,12 @@ int main(int argc, char* argv[]) {
             cgnsFile = cgnsFile.substr(0, cgnsFile.length() - 4);
         cgnsFile += ".cgns";
         mesh.exportCGNS(cgnsFile, config);
+        hybmesh::writeProvenance(stripExt(cgnsFile), config, inputFiles, gmshVersion,
+                                 mesh.nodes.size(), mesh.elements.size());
     }
 
-    return hasIntersection ? 1 : 0;
+    if (failExit != EXIT_OK)
+        return reportError(failExit);
+    // Backward-compat: any other unclassified stop still returns a nonzero code.
+    return hasIntersection ? EXIT_ERR_BL : EXIT_OK;
 }

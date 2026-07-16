@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <iostream>
+#include "Logger.hpp"
 
 // Per-geometry boundary-layer parameters. A geometry that grows a BL uses either
 // the global defaults (see Config::globalBLParams) or a copy with the overrides
@@ -120,6 +121,8 @@ struct Config {
     double farFieldGrowthRateOuter = 0.1; // 外邊界側成長率 (bidirectional 時生效)
     int gmshAlgorithm = 6; // 6: Frontal-Delaunay
     int gmshOptimize = 1;  // 1: Enable mesh optimization
+    // Gmsh thread count for far-field meshing. 0 = auto (hardware_concurrency).
+    int gmshNumThreads = 0;
 
     // Phase 3: 在平滑表面點以解析曲線(line/circle/spline)的法向取代有限差分。
     // 預設關閉，行為與舊版逐位元相同；開啟後角點仍維持既有 fan/merge 處理。
@@ -135,11 +138,14 @@ struct Config {
     bool enableCollisionDetection = true;
     std::string outputFilename = "";
 
+    // Load configuration from a .dat file. Returns FALSE when the file cannot be
+    // opened so the caller can decide whether a missing config is fatal (an
+    // explicitly-requested -conf) or tolerable (the default path -> use defaults).
     bool loadFromFile(const std::string& filename) {
         std::ifstream ifs(filename);
         if (!ifs) {
-            std::cerr << "Warning: Could not open config file " << filename << ". Using defaults.\n";
-            return true;
+            LOG_WARN("Could not open config file " << filename << ". Using defaults.");
+            return false;
         }
 
         std::string line, key;
@@ -278,6 +284,9 @@ struct Config {
             else if (key == "GMSH_OPTIMIZE") {
                 double val; ss >> val; gmshOptimize = static_cast<int>(val);
             }
+            else if (key == "GMSH_NUM_THREADS") {
+                double val; ss >> val; gmshNumThreads = static_cast<int>(val);
+            }
             else if (key == "BL_USE_ANALYTIC_GEOM") {
                 int val; ss >> val; blUseAnalyticGeom = (val != 0);
             }
@@ -303,6 +312,57 @@ struct Config {
             }
         }
         return true;
+    }
+
+    // Validate and clamp config ranges after load + arg override. Each fix is
+    // warned so a silently-nonsensical parameter can't produce a silently-wrong
+    // (or NaN/Inf) mesh. Returns true if the config is usable (clamped values are
+    // still usable); returns false only for a contradiction that cannot be
+    // clamped meaningfully (an empty x or y domain span).
+    bool validate() {
+        bool ok = true;
+        if (blLayers < 0) {
+            LOG_WARN("BL_LAYERS < 0 (" << blLayers << "); clamping to 0.");
+            blLayers = 0;
+        }
+        if (blInitialThickness <= 0.0) {
+            LOG_WARN("BL_INITIAL_THICKNESS <= 0 (" << blInitialThickness
+                     << "); clamping to 0.01.");
+            blInitialThickness = 0.01;
+        }
+        if (blLayers > 0 && blGrowthRate <= 1.0) {
+            LOG_WARN("BL_GROWTH_RATE <= 1.0 (" << blGrowthRate
+                     << "); a boundary layer must expand. Clamping to 1.2.");
+            blGrowthRate = 1.2;
+        }
+        if (blTransitionLayers > 0 && blTransitionGrowthRate <= 1.0) {
+            LOG_WARN("BL_TRANSITION_GROWTH_RATE <= 1.0 (" << blTransitionGrowthRate
+                     << "); transition layers must expand. Clamping to 1.2.");
+            blTransitionGrowthRate = 1.2;
+        }
+        if (surfaceSize <= 0.0) {
+            LOG_WARN("SURFACE_MESH_SIZE <= 0 (" << surfaceSize << "); clamping to 0.1.");
+            surfaceSize = 0.1;
+        }
+        if (farFieldSize <= 0.0) {
+            LOG_WARN("FARFIELD_MESH_SIZE <= 0 (" << farFieldSize << "); clamping to 1.0.");
+            farFieldSize = 1.0;
+        }
+        // Domain span: only meaningful for the rectangular box (no custom outline,
+        // no internal-flow wall — those overwrite xMin..yMax from the geometry).
+        if (domainFile.empty()) {
+            if (!(xMin < xMax)) {
+                LOG_ERROR("DOMAIN_X_MIN (" << xMin << ") must be < DOMAIN_X_MAX ("
+                          << xMax << ").");
+                ok = false;
+            }
+            if (!(yMin < yMax)) {
+                LOG_ERROR("DOMAIN_Y_MIN (" << yMin << ") must be < DOMAIN_Y_MAX ("
+                          << yMax << ").");
+                ok = false;
+            }
+        }
+        return ok;
     }
 
     // Parse a "KEY=VALUE" token into a per-geometry override map (ignored if it
@@ -375,91 +435,95 @@ struct Config {
         return (it != bcOverrides.end() && !it->second.empty()) ? it->second : bcGeom;
     }
 
-    void print() const {
-        std::cout << "==================================================\n";
-        std::cout << "              HybMesh2D Configuration             \n";
-        std::cout << "==================================================\n\n";
+    void print() const { print(std::cout); }
 
-        std::cout << "[ Input & Domain ]\n";
-        std::cout << "  - Geometry Files       : ";
+    // Stream the fully-resolved effective config to any ostream (reused by the
+    // console banner above and by the provenance sidecar writer).
+    void print(std::ostream& os) const {
+        os << "==================================================\n";
+        os << "              HybMesh2D Configuration             \n";
+        os << "==================================================\n\n";
+
+        os << "[ Input & Domain ]\n";
+        os << "  - Geometry Files       : ";
         if (geomFiles.empty()) {
-            std::cout << "NONE\n";
+            os << "NONE\n";
         } else {
-            std::cout << "\n";
+            os << "\n";
             int count = 1;
             for (const auto& f : geomFiles) {
-                std::cout << "          " << count++ << ". " << f << "\n";
+                os << "          " << count++ << ". " << f << "\n";
             }
         }
         if (!seedFiles.empty()) {
-            std::cout << "  - Refinement Seeds     : \n";
+            os << "  - Refinement Seeds     : \n";
             int sc = 1;
             for (const auto& s : seedFiles) {
                 int m = (s.mode >= 0) ? s.mode : seedMode;
-                std::cout << "          " << sc++ << ". " << s.file
+                os << "          " << sc++ << ". " << s.file
                           << " (size=" << (s.size > 0 ? std::to_string(s.size) : "auto")
                           << ", radius=" << (s.radius > 0 ? std::to_string(s.radius) : "auto")
                           << ", mode=" << (m == 1 ? "embed" : "source") << ")\n";
             }
         }
         if (!noBLGeoms.empty())
-            std::cout << "  - No-BL geometries     : " << noBLGeoms.size() << " (conform at far-field size)\n";
+            os << "  - No-BL geometries     : " << noBLGeoms.size() << " (conform at far-field size)\n";
         if (!domainFile.empty()) {
-            std::cout << "  - Flow Type            : " << (domainGrowBL ? "INTERNAL (domain wall, BL grows inward)" : "EXTERNAL (custom far-field outline)") << "\n";
-            std::cout << "  - Domain Boundary      : " << domainFile << (domainGrowBL ? " (wall, BL)" : " (far-field, no BL)") << "\n";
-            std::cout << "  - Domain Box           : " << (domainGrowBL ? "(bounded by the domain wall)" : "(bounding box of the outline)") << "\n\n";
+            os << "  - Flow Type            : " << (domainGrowBL ? "INTERNAL (domain wall, BL grows inward)" : "EXTERNAL (custom far-field outline)") << "\n";
+            os << "  - Domain Boundary      : " << domainFile << (domainGrowBL ? " (wall, BL)" : " (far-field, no BL)") << "\n";
+            os << "  - Domain Box           : " << (domainGrowBL ? "(bounded by the domain wall)" : "(bounding box of the outline)") << "\n\n";
         } else {
-            std::cout << "  - Flow Type            : EXTERNAL (rectangular box)\n";
-            std::cout << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
+            os << "  - Flow Type            : EXTERNAL (rectangular box)\n";
+            os << "  - Domain Box           : [" << xMin << ", " << xMax << "] x [" << yMin << ", " << yMax << "]\n\n";
         }
 
-        std::cout << "[ Mesh Sizing ]\n";
-        std::cout << "  - Auto Surface Sizing  : " << (autoSurfaceSize ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - Surface Mesh Size    : " << surfaceSize << (autoSurfaceSize ? " (Manual fallback)" : "") << "\n";
-        std::cout << "  - Auto Far-field Sizing: " << (autoFarFieldSize ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - Far-field Mesh Size  : " << farFieldSize << (autoFarFieldSize ? " (Manual fallback)" : "") << "\n\n";
+        os << "[ Mesh Sizing ]\n";
+        os << "  - Auto Surface Sizing  : " << (autoSurfaceSize ? "[ON]" : "[OFF]") << "\n";
+        os << "  - Surface Mesh Size    : " << surfaceSize << (autoSurfaceSize ? " (Manual fallback)" : "") << "\n";
+        os << "  - Auto Far-field Sizing: " << (autoFarFieldSize ? "[ON]" : "[OFF]") << "\n";
+        os << "  - Far-field Mesh Size  : " << farFieldSize << (autoFarFieldSize ? " (Manual fallback)" : "") << "\n\n";
 
-        std::cout << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
-        std::cout << "  - Base Layers          : " << blLayers << " (Initial: " << blInitialThickness << ", Growth Rate: " << blGrowthRate << ")\n";
-        std::cout << "  - Transition Layers    : " << blTransitionLayers << " (Auto: " 
-                  << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL")) 
+        os << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
+        os << "  - Base Layers          : " << blLayers << " (Initial: " << blInitialThickness << ", Growth Rate: " << blGrowthRate << ")\n";
+        os << "  - Transition Layers    : " << blTransitionLayers << " (Auto: "
+                  << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL"))
                   << ") | Growth Rate: " << blTransitionGrowthRate << " | Buffer: " << blTransitionBuffer << "\n";
-        std::cout << "  - Farfield Growth Rate : " << farFieldGrowthRate << "\n";
-        std::cout << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - Analytic BL Normals  : " << (blUseAnalyticGeom ? "[ON]" : "[OFF]") << "\n\n";
+        os << "  - Farfield Growth Rate : " << farFieldGrowthRate << "\n";
+        os << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n";
+        os << "  - Analytic BL Normals  : " << (blUseAnalyticGeom ? "[ON]" : "[OFF]") << "\n\n";
 
-        std::cout << "[ Corner Handling (Convex & Concave) ]\n";
-        std::cout << "  - Corner Thresholds    : Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
-        std::cout << "  - Convex Handling      : " << (blConvexMethod == 0 ? "Fan" : (blConvexMethod == 2 ? "Parallelogram" : "Unknown")) << "\n";
+        os << "[ Corner Handling (Convex & Concave) ]\n";
+        os << "  - Corner Thresholds    : Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
+        os << "  - Convex Handling      : " << (blConvexMethod == 0 ? "Fan" : (blConvexMethod == 2 ? "Parallelogram" : "Unknown")) << "\n";
         if (blConvexMethod == 0) {
-            std::cout << "      * Fan Elements         : " << blFanNodes << " nodes (Auto: " 
-                      << (blAutoFanNodes == 0 ? "OFF" : (blAutoFanNodes == 1 ? "GLOBAL" : "LOCAL")) 
+            os << "      * Fan Elements         : " << blFanNodes << " nodes (Auto: "
+                      << (blAutoFanNodes == 0 ? "OFF" : (blAutoFanNodes == 1 ? "GLOBAL" : "LOCAL"))
                       << ") | Trigger Angle > " << blFanAngleThreshold << " deg\n";
         } else if (blConvexMethod == 2) {
-            std::cout << "      * Fallback Angle       : > " << blParaFallbackAngle << " deg\n";
+            os << "      * Fallback Angle       : > " << blParaFallbackAngle << " deg\n";
         }
-        std::cout << "  - Concave Handling     : " << (blConcaveMethod == 0 ? "Vector Merge" : (blConcaveMethod == 5 ? "Thickness Blending" : "Unknown")) 
-                  << " | Merge: " << (blMergeConcave ? "[ON]" : "[OFF]") 
+        os << "  - Concave Handling     : " << (blConcaveMethod == 0 ? "Vector Merge" : (blConcaveMethod == 5 ? "Thickness Blending" : "Unknown"))
+                  << " | Merge: " << (blMergeConcave ? "[ON]" : "[OFF]")
                   << " | Smoothing: " << blSmoothingIters << " iters\n";
         if (blConcaveMethod == 5) {
-            std::cout << "      * Influence Multiplier : " << blConcaveInfluenceMultiplier << "\n";
+            os << "      * Influence Multiplier : " << blConcaveInfluenceMultiplier << "\n";
         }
-        std::cout << "\n";
+        os << "\n";
 
-        std::cout << "[ Boundary Conditions (StarCD) ]\n";
-        std::cout << "  - XMin                 : " << bcXMin << "\n";
-        std::cout << "  - XMax                 : " << bcXMax << "\n";
-        std::cout << "  - YMin                 : " << bcYMin << "\n";
-        std::cout << "  - YMax                 : " << bcYMax << "\n";
-        std::cout << "  - Geom                 : " << bcGeom << "\n\n";
+        os << "[ Boundary Conditions (StarCD) ]\n";
+        os << "  - XMin                 : " << bcXMin << "\n";
+        os << "  - XMax                 : " << bcXMax << "\n";
+        os << "  - YMin                 : " << bcYMin << "\n";
+        os << "  - YMax                 : " << bcYMax << "\n";
+        os << "  - Geom                 : " << bcGeom << "\n\n";
 
-        std::cout << "[ Features & Export Options ]\n";
-        std::cout << "  - Collision Detection  : " << (enableCollisionDetection ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - VTK Export           : " << (exportVTK ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - StarCD Export        : " << (exportStarCD ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - CGNS Export          : " << (exportCGNS ? "[ON]" : "[OFF]") << "\n";
-        std::cout << "  - Output Filename      : " << (outputFilename.empty() ? "(Auto-generated)" : outputFilename) << "\n";
-        std::cout << "==================================================\n";
+        os << "[ Features & Export Options ]\n";
+        os << "  - Collision Detection  : " << (enableCollisionDetection ? "[ON]" : "[OFF]") << "\n";
+        os << "  - VTK Export           : " << (exportVTK ? "[ON]" : "[OFF]") << "\n";
+        os << "  - StarCD Export        : " << (exportStarCD ? "[ON]" : "[OFF]") << "\n";
+        os << "  - CGNS Export          : " << (exportCGNS ? "[ON]" : "[OFF]") << "\n";
+        os << "  - Output Filename      : " << (outputFilename.empty() ? "(Auto-generated)" : outputFilename) << "\n";
+        os << "==================================================\n";
     }
 };
 

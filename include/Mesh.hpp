@@ -70,8 +70,13 @@ public:
 
     // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制
     // seeds: 加密種子 (Pointwise-like sources)，只驅動局部最小尺寸/選擇性內嵌貼合
-    void generateFarFieldGmsh(const Config& config, double finalBLThickness,
-                              const std::vector<SeedGeom>& seeds = {});
+    // Returns true on success. Returns false (and reports an actionable message)
+    // if Gmsh threw or produced an empty mesh; on failure gmsh::finalize() has
+    // still run and no partial far-field cells were added. The resolved Gmsh
+    // version string is written to `gmshVersionOut` for provenance when non-null.
+    bool generateFarFieldGmsh(const Config& config, double finalBLThickness,
+                              const std::vector<SeedGeom>& seeds = {},
+                              std::string* gmshVersionOut = nullptr);
 
     // Phase 5: 針對碰撞區域進行局部網格平滑化
     void smoothMesh(int iters);

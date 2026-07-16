@@ -7,6 +7,8 @@
 #include <sstream>
 #include <cmath>
 #include <set>
+#include <stdexcept>
+#include <cstdint>
 #include "BinIo.hh"
 #include "Form.hh"
 #include "element.hh"
@@ -199,6 +201,57 @@ bool within_Striangle(const point_& gc) {
     return true;
 }
 
+// Return the size of a file in bytes, or -1 if it cannot be opened / stat'd.
+static long long file_size_bytes(const string& fn) {
+  ifstream in(fn.c_str(), std::ios::binary | std::ios::ate);
+  if( !in.is_open() )
+    return -1;
+  std::streampos pos = in.tellg();
+  if( pos < 0 )
+    return -1;
+  return static_cast<long long>(pos);
+}
+
+// Auto-detect whether an STL file is ASCII or binary without blocking on stdin.
+// A binary STL is exactly 84 + 50*count bytes (80-byte header + 4-byte uint32
+// count + 50 bytes per triangle); when the size matches that layout for the
+// declared count we treat it as binary. Otherwise, if the file begins with the
+// ASCII token "solid" it is treated as ASCII. Returns true for ASCII.
+static bool detect_ascii_stl(const string& fn) {
+  long long sz = file_size_bytes(fn);
+  if( sz < 0 )
+    throw std::runtime_error("detect_ascii_stl: cannot open STL file: " + fn);
+
+  // Try the binary layout first: read the 4-byte little-endian count at offset 80.
+  if( sz >= 84 ) {
+    ifstream in(fn.c_str(), std::ios::binary);
+    if( in.is_open() ) {
+      in.seekg(80, std::ios::beg);
+      uint32_t count = 0;
+      if( in.read(reinterpret_cast<char*>(&count), 4) ) {
+        long long expected = 84LL + 50LL * static_cast<long long>(count);
+        if( expected == sz )
+          return false;  // binary layout matches exactly
+      }
+    }
+  }
+
+  // Fall back to the ASCII magic token "solid" at the start of the file.
+  ifstream in(fn.c_str(), std::ios::binary);
+  if( in.is_open() ) {
+    char head[6] = {0};
+    in.read(head, 5);
+    string tok(head, static_cast<size_t>(in.gcount()));
+    if( tok.rfind("solid", 0) == 0 )
+      return true;  // ASCII STL
+  }
+
+  // Neither an exact binary layout nor a "solid" header: default to binary,
+  // which validates the triangle count against the file size and reports a
+  // clear error if the file is corrupt.
+  return false;
+}
+
 class STLobject {
 
   vector<vertex_> allvtx;
@@ -226,8 +279,7 @@ public:
     if(ascii) {
       ifstream in(fn.c_str());
       if(! in.is_open() ) {
-	cerr << "error opening file: " << fn << endl;
-	exit(1);
+	throw std::runtime_error("STLobject: error opening file: " + fn);
       }
       string s, key, dum;
       double x, y, z;
@@ -262,29 +314,58 @@ public:
       // binary format
       BinRead bf(fn, true);  // force open
       string title(80, ' ');
-      bf.read(&title[0], 80);
+      if( !bf.read(&title[0], 80) )
+	throw std::runtime_error("binary STL: failed to read 80-byte header: " + fn);
       int num_triangles;
-      bf.read(num_triangles);
+      if( !bf.read(num_triangles) )
+	throw std::runtime_error("binary STL: failed to read triangle count: " + fn);
       cout << " file tille = " << title << " with " << num_triangles << " triangles\n";
-      
+
+      // Never trust the header count blindly: a corrupt/truncated file can
+      // declare billions of triangles and cause unbounded allocation / OOM /
+      // hang. Reject non-positive counts and require the file size to match the
+      // binary STL layout exactly (84 + 50*num_triangles bytes).
+      if( num_triangles <= 0 )
+	throw std::runtime_error("binary STL: non-positive triangle count (corrupt file): " + fn);
+      long long sz = file_size_bytes(fn);
+      if( sz < 0 )
+	throw std::runtime_error("binary STL: cannot determine file size: " + fn);
+      long long expected = 84LL + 50LL * static_cast<long long>(num_triangles);
+      if( sz != expected ) {
+	std::ostringstream msg;
+	msg << "binary STL: file size (" << sz << " bytes) does not match declared "
+	    << num_triangles << " triangles (expected " << expected
+	    << " bytes = 84 + 50*count) -- corrupt or truncated file: " << fn;
+	throw std::runtime_error(msg.str());
+      }
+
       vector<float> v(3);
       vector<vertex_> vtxi(3);
       short attri;
       for(int i = 0; i < num_triangles; ++i) {
-	bf.read(&v[0], 3);   // normal vector
+	if( !bf.read(&v[0], 3) )   // normal vector
+	  throw std::runtime_error("binary STL: unexpected end of file reading normals: " + fn);
 	normal_.push_back(point_ (v[0], v[1], v[2]));
 	//cout << i << " v = " << v[0] << " " << v[1] << " " << v[2] << endl;
 	for(int k = 0; k < 3; ++k) {
-	  bf.read(&v[0], 3);   // vertex
+	  if( !bf.read(&v[0], 3) )   // vertex
+	    throw std::runtime_error("binary STL: unexpected end of file reading vertices: " + fn);
 	  //cout << i << " vv = " << v[0] << " " << v[1] << " " << v[2] << endl;
 	  vtxi[k] = make_tuple(v[0], v[1], v[2]);
 	}
 	triangles.push_back(vtxi);
-	bf.read(attri);   // attribute
+	if( !bf.read(attri) )   // attribute
+	  throw std::runtime_error("binary STL: unexpected end of file reading attributes: " + fn);
       }
     }
 
     cout << "Read in " << triangles.size() << " triangles\n";
+
+    // An empty / zero-triangle STL leaves ctr_db_ and xloc_db empty; the range
+    // checks below (ctr_db_.begin()/rbegin(), xloc_db.begin()) would then
+    // dereference end() and crash. Bail out with a clear message first.
+    if( triangles.empty() )
+      throw std::runtime_error("empty or zero-triangle STL: " + fn);
 
     // processing vertices and build connectivity
     map<vertex_, int> vtx_db;
@@ -306,9 +387,11 @@ public:
       for(int k = 0; k < triangles[i].size(); ++k) {
 	map<vertex_, int>::iterator iv = vtx_db.find(triangles[i][k]);
 	if( iv == vtx_db.end() ) {
-	  cerr << "Failed to locate " << i << "-th triangle, " << k << "-th vertex\n";
-	  cerr << " vertex = " << get<0>(triangles[i][k]) << " " << get<1>(triangles[i][k]) << " " << get<2>(triangles[i][k]) << endl;
-	  exit(1);
+	  std::ostringstream msg;
+	  msg << "STLobject: failed to locate " << i << "-th triangle, " << k
+	      << "-th vertex = " << get<0>(triangles[i][k]) << " "
+	      << get<1>(triangles[i][k]) << " " << get<2>(triangles[i][k]);
+	  throw std::runtime_error(msg.str());
 	}
 	nvtx.push_back(iv->second);
       }
@@ -640,6 +723,7 @@ public:
 
 
 int main() {
+ try {
 #if 0
   STLobject stl1("teapot.stl", true);
   stl1.write_tecplot("teapot_tec.dat");
@@ -652,7 +736,7 @@ int main() {
 
   //STLobject stl4("Utah_teapot.stl", false);
   //stl4.write_tecplot("Utah_teapot_tec.dat");
-  
+
   STLobject stl5("plane.stl", false);
   stl5.write_tecplot("plane_tec.dat");
 
@@ -663,11 +747,10 @@ int main() {
   cout << "Enter STL file name = ";
   cin >> fn;
   cout << endl;
-  string byn;
-  cout << "in ascii format (y/n) ? ";
-  cin >> byn;
-  cout << endl;
-  bool ascii = byn == "y" || byn == "Y" ? true : false;
+  // Auto-detect ASCII vs binary from the file itself instead of blocking on an
+  // interactive y/n prompt (this tool runs headless in the pipeline).
+  bool ascii = detect_ascii_stl(fn);
+  cout << "Detected STL format: " << (ascii ? "ASCII" : "binary") << endl;
   string case_fn;
   cout << "Enter desired output case name = ";
   cin >> case_fn;
@@ -816,6 +899,13 @@ int main() {
 	tecout << x_grid[i][j][k] << " " << y_grid[i][j][k] << " " << z_grid[i][j][k] << " " << phi[i][j][k] << "\n";
   
   tecout.close();
-#endif  
+#endif
   return 0;
+ }
+ catch(const std::exception& e) {
+   // A CLI user still sees "print error, exit nonzero", but the failure is now
+   // recoverable (thrown, not exit()) so subprocess callers can handle it.
+   cerr << "STL3d error: " << e.what() << endl;
+   return 1;
+ }
 }

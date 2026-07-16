@@ -1,4 +1,6 @@
 #include "Mesh.hpp"
+#include "Logger.hpp"
+#include "Provenance.hpp"
 #include <fstream>
 #include <iostream>
 #include <gmsh.h>
@@ -9,6 +11,7 @@
 #include <array>
 #include <thread>
 #include <exception>
+#include <cmath>
 
 #ifdef HAVE_CGNS
 #include <cgnslib.h>
@@ -28,21 +31,31 @@ CGNS_ENUMT(BCType_t) mapCgnsBcType(const std::string& n) {
 #endif
 
 namespace {
-// True if p lies on segment a-b (within eps of the line and inside its span).
+// True if p lies on segment a-b, within a tolerance RELATIVE to the segment
+// length (so mm- and km-scale geometries both classify correctly — a fixed
+// absolute eps mislabelled far-field edges on large meshes and over-matched on
+// tiny ones). `relEps` is the perpendicular-distance tolerance as a fraction of
+// the segment length; `t` uses the same fraction for the endpoint overshoot.
 // Used to attach a domain-boundary edge's BC to the (possibly Gmsh-subdivided)
 // mesh edges that fall on it — a generalization of the axis-aligned x≈xMin test.
 bool pointOnSegment(const Point2D& p, const Point2D& a, const Point2D& b,
-                    double eps = 1e-5) {
+                    double relEps = 1e-6) {
     double abx = b.x - a.x, aby = b.y - a.y;
     double len2 = abx * abx + aby * aby;
-    if (len2 < 1e-18) {
+    if (len2 < 1e-30) {
+        // Degenerate segment: fall back to an absolute point-coincidence test
+        // scaled by the coordinate magnitude so it is still scale-aware.
+        double scale = std::max({std::abs(a.x), std::abs(a.y), 1.0});
+        double absTol = relEps * scale;
         double dx0 = p.x - a.x, dy0 = p.y - a.y;
-        return (dx0 * dx0 + dy0 * dy0) < eps * eps;
+        return (dx0 * dx0 + dy0 * dy0) < absTol * absTol;
     }
+    double len = std::sqrt(len2);
     double t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
-    if (t < -eps || t > 1.0 + eps) return false;
+    if (t < -relEps || t > 1.0 + relEps) return false;
     double dx = p.x - (a.x + t * abx), dy = p.y - (a.y + t * aby);
-    return (dx * dx + dy * dy) < eps * eps;
+    double perpTol = relEps * len;               // relative to segment length
+    return (dx * dx + dy * dy) < perpTol * perpTol;
 }
 } // namespace
 
@@ -178,8 +191,23 @@ void Mesh::addElement(const std::vector<int>& ids) {
 }
 
 void Mesh::generateCartesianMesh(double xMin, double xMax, double yMin, double yMax, double ds) {
+    // Guard the divisions: a non-positive spacing or an empty/inverted domain
+    // would produce NaN/Inf coordinates (or a divide-by-zero). Skip the fallback
+    // with a clear error instead.
+    if (!(ds > 0.0) || !(xMax > xMin) || !(yMax > yMin)) {
+        LOG_ERROR("Cannot build Cartesian fallback mesh: need spacing>0 and "
+                  "xMax>xMin and yMax>yMin (got ds=" << ds << ", x=[" << xMin << ","
+                  << xMax << "], y=[" << yMin << "," << yMax << "]). Skipping.");
+        return;
+    }
     int nx = static_cast<int>((xMax - xMin) / ds) + 1;
     int ny = static_cast<int>((yMax - yMin) / ds) + 1;
+    if (nx <= 1 || ny <= 1) {
+        LOG_ERROR("Cannot build Cartesian fallback mesh: spacing " << ds
+                  << " is too coarse for the domain (nx=" << nx << ", ny=" << ny
+                  << "). Skipping.");
+        return;
+    }
 
     double dx = (xMax - xMin) / (nx - 1);
     double dy = (yMax - yMin) / (ny - 1);
@@ -208,17 +236,27 @@ void Mesh::generateCartesianMesh(double xMin, double xMax, double yMin, double y
 void Mesh::exportVTK(const std::string& filename) const {
     std::ofstream ofs(filename);
     if (!ofs) {
-        std::cerr << "Error: Could not open file " << filename << " for writing.\n";
+        LOG_ERROR("Could not open file " << filename << " for writing.");
         return;
     }
 
+    // VTK legacy header line 2 is a free-form comment; use it (plus a VTK comment
+    // line prefixed with '#') to carry version + timestamp provenance.
     ofs << "# vtk DataFile Version 3.0\n";
-    ofs << "HybMesh2D Export\n";
+    {
+        auto banner = hybmesh::provenanceBanner();
+        // The header comment (line 2) must be a single line; concatenate.
+        std::string line2 = banner.empty() ? std::string("HybMesh2D Export") : banner[0];
+        if (banner.size() > 1) line2 += " | " + banner[1];
+        ofs << line2 << "\n";
+    }
     ofs << "ASCII\n";
     ofs << "DATASET UNSTRUCTURED_GRID\n";
 
-    // Points
+    // Points — round-trip double precision so tightly-spaced BL nodes do not
+    // collapse to coincident points (default precision is only 6 sig-figs).
     ofs << "POINTS " << nodes.size() << " double\n";
+    ofs << std::setprecision(17);
     for (const auto& node : nodes) {
         ofs << node.pos.x << " " << node.pos.y << " 0.0\n";
     }
@@ -255,7 +293,7 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
     std::string vrtFile = baseFilename + ".vrt";
     std::ofstream vofs(vrtFile);
     if (!vofs) {
-        std::cerr << "Error: Could not open " << vrtFile << " for writing.\n";
+        LOG_ERROR("Could not open " << vrtFile << " for writing.");
         return;
     }
     vofs << std::fixed << std::setprecision(8);
@@ -269,15 +307,16 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
     std::string celFile = baseFilename + ".cel";
     std::ofstream cofs(celFile);
     if (!cofs) {
-        std::cerr << "Error: Could not open " << celFile << " for writing.\n";
+        LOG_ERROR("Could not open " << celFile << " for writing.");
         return;
     }
     int cellCount = 1;
+    int degenerateSkipped = 0;   // count silently-skipped degenerate cells
     std::set<std::vector<int>> seenElements;
     for (size_t i = 0; i < elements.size(); ++i) {
         const auto& el = elements[i];
         if (el.nodeIds.size() < 3) continue; // 略過線段元素
-        
+
         // 檢查退化單元 (節點重複)
         std::vector<int> sortedIds = el.nodeIds;
         std::sort(sortedIds.begin(), sortedIds.end());
@@ -288,7 +327,7 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
                 break;
             }
         }
-        if (degenerate) continue;
+        if (degenerate) { ++degenerateSkipped; continue; }
 
         // 檢查重複單元
         if (seenElements.count(sortedIds)) continue;
@@ -314,12 +353,14 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         }
     }
     cofs.close();
+    if (degenerateSkipped > 0)
+        LOG_WARN(degenerateSkipped << " degenerate cell(s) skipped during STAR-CD .cel export.");
 
     // 3. Export .bnd (Boundaries)
     std::string bndFile = baseFilename + ".bnd";
     std::ofstream bofs(bndFile);
     if (!bofs) {
-        std::cerr << "Error: Could not open " << bndFile << " for writing.\n";
+        LOG_ERROR("Could not open " << bndFile << " for writing.");
         return;
     }
 
@@ -331,7 +372,7 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         const auto& el = elements[i];
         if (el.nodeIds.size() < 3) continue;
 
-        // 檢查退化單元
+        // 檢查退化單元 (already counted in the .cel pass above)
         std::vector<int> sortedIds = el.nodeIds;
         std::sort(sortedIds.begin(), sortedIds.end());
         bool degenerate = false;
@@ -388,15 +429,16 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
 void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
 #ifndef HAVE_CGNS
     (void)config;
-    std::cerr << "Warning: CGNS export requested but this build was configured "
-                 "without the CGNS library; skipping '" << filename << "'.\n"
-                 "         Reinstall CGNS and re-run cmake to enable it.\n";
+    LOG_WARN("CGNS export requested but this build was configured without the CGNS "
+             "library; skipping '" << filename << "'. Reinstall CGNS and re-run "
+             "cmake to enable it.");
 #else
     // --- 1. Collect valid volume cells, mirroring exportStarCD's filtering
     //        (skip line/degenerate/duplicate elements, enforce CCW winding). ---
     std::vector<std::array<cgsize_t, 3>> tris;
     std::vector<std::array<cgsize_t, 4>> quads;
     std::set<std::vector<int>> seenCells;
+    int degenerateSkipped = 0;   // count silently-skipped degenerate cells
     auto degenerate = [](std::vector<int> ids) {
         std::sort(ids.begin(), ids.end());
         for (size_t k = 0; k + 1 < ids.size(); ++k) if (ids[k] == ids[k + 1]) return true;
@@ -404,7 +446,7 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
     };
     for (const auto& el : elements) {
         if (el.nodeIds.size() < 3) continue;
-        if (degenerate(el.nodeIds)) continue;
+        if (degenerate(el.nodeIds)) { ++degenerateSkipped; continue; }
         std::vector<int> key = el.nodeIds;
         std::sort(key.begin(), key.end());
         if (!seenCells.insert(key).second) continue;
@@ -423,6 +465,8 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
         }
     }
     const cgsize_t nCells = (cgsize_t)(tris.size() + quads.size());
+    if (degenerateSkipped > 0)
+        LOG_WARN(degenerateSkipped << " degenerate cell(s) skipped during CGNS export.");
 
     // --- 2. Group boundary edges (used by exactly one cell) by BC name —
     //        same classification as exportStarCD. ---
@@ -456,7 +500,7 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
     //        sections -> boundary edge sections + BC patches. ---
     int fn = 0, B = 0, Z = 0;
     if (cg_open(filename.c_str(), CG_MODE_WRITE, &fn)) {
-        std::cerr << "Error: cg_open failed for " << filename << ": " << cg_get_error() << "\n";
+        LOG_ERROR("cg_open failed for " << filename << ": " << cg_get_error());
         return;
     }
     auto cgChk = [](const char* what, int ier) {
@@ -517,42 +561,103 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
 #endif
 }
 
-void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
-                                const std::vector<SeedGeom>& seeds) {
+bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
+                                const std::vector<SeedGeom>& seeds,
+                                std::string* gmshVersionOut) {
     gmsh::initialize();
+    // RAII scope guard: gmsh::finalize() ALWAYS runs when this scope exits (normal
+    // return, empty-mesh early-out, or a thrown gmsh exception unwinding through
+    // here), so a throw can never leak the Gmsh context up to std::terminate.
+    struct GmshFinalizeGuard {
+        ~GmshFinalizeGuard() {
+            try { gmsh::finalize(); } catch (...) { /* never throw from a dtor */ }
+        }
+    } gmshGuard;
+
+    try {
     gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端輸出
 
-    // Let Gmsh use all available cores for the far-field meshing stage.
-    // Mesh.MaxNumThreads* default to 0 (= follow General.NumThreads).
-    unsigned int nthreads = std::thread::hardware_concurrency();
-    if (nthreads == 0) nthreads = 1;
+    // Fix: deterministic triangulation. A fixed random seed makes repeated runs
+    // on identical input produce byte-identical meshes.
+    gmsh::option::setNumber("Mesh.RandomSeed", 1);
+
+    // Thread count. GMSH_NUM_THREADS overrides; 0 (default) = auto = hardware
+    // concurrency. Mesh.MaxNumThreads* default to 0 (= follow General.NumThreads).
+    unsigned int nthreads;
+    if (config.gmshNumThreads > 0) {
+        nthreads = static_cast<unsigned int>(config.gmshNumThreads);
+    } else {
+        nthreads = std::thread::hardware_concurrency();
+        if (nthreads == 0) nthreads = 1;
+    }
     gmsh::option::setNumber("General.NumThreads", static_cast<double>(nthreads));
-    std::cout << "Step: Gmsh configured to use " << nthreads << " thread(s)." << std::endl;
+    std::cout << "Step: Gmsh configured to use " << nthreads << " thread(s) (resolved from "
+              << (config.gmshNumThreads > 0 ? "GMSH_NUM_THREADS" : "hardware_concurrency")
+              << ")." << std::endl;
+
+    // Resolve the running Gmsh version for provenance (best-effort).
+    if (gmshVersionOut) {
+        try { gmsh::option::getString("General.Version", *gmshVersionOut); }
+        catch (...) { /* leave empty -> caller falls back to API macros */ }
+    }
 
     gmsh::model::add("FarField");
 
-    auto getCoordKey = [](double x, double y) {
-        return std::make_pair((long long)(std::round(x * 1e9)), (long long)(std::round(y * 1e9)));
+    // Coordinate-hash quantum for node welding: robust to mesh scale (mm..km) and
+    // guarded against long-long overflow. A fixed 1e9 factor mislabelled distinct
+    // nodes as coincident on km-scale meshes and could overflow on very large
+    // coordinates. Derive one quantum from the node bounding box: distinct nodes
+    // closer than this tol are treated as coincident (welded).
+    double bxLo = 0, bxHi = 0, byLo = 0, byHi = 0;
+    bool haveBox = false;
+    for (const auto& nd : nodes) {
+        if (!haveBox) { bxLo = bxHi = nd.pos.x; byLo = byHi = nd.pos.y; haveBox = true; }
+        bxLo = std::min(bxLo, nd.pos.x); bxHi = std::max(bxHi, nd.pos.x);
+        byLo = std::min(byLo, nd.pos.y); byHi = std::max(byHi, nd.pos.y);
+    }
+    double bboxDiag = haveBox ? std::hypot(bxHi - bxLo, byHi - byLo) : 0.0;
+    const double coordTol = std::max(1e-12, 1e-9 * bboxDiag);
+    auto getCoordKey = [coordTol](double x, double y) {
+        // Clamp to long-long range before llround to avoid UB on huge coordinates.
+        auto q = [coordTol](double v) -> long long {
+            double s = v / coordTol;
+            const double lo = -9.0e18, hi = 9.0e18; // safely inside long long range
+            if (s < lo) s = lo;
+            if (s > hi) s = hi;
+            return std::llround(s);
+        };
+        return std::make_pair(q(x), q(y));
     };
 
     // 1. 建立點與線
-    std::map<int, int> nodeToGmshTag; 
+    std::map<int, int> nodeToGmshTag;
     std::map<std::pair<long long, long long>, int> coordToGmshTag;
+    std::map<std::pair<long long, long long>, int> keyOwner; // key -> first node id
+    int weldedDistinct = 0;   // distinct nodes that welded onto an earlier node
 
     for (const auto& edge : edges) {
         for (int vid : {edge.v1, edge.v2}) {
             if (nodeToGmshTag.find(vid) == nodeToGmshTag.end()) {
                 auto key = getCoordKey(nodes[vid].pos.x, nodes[vid].pos.y);
-                if (coordToGmshTag.count(key)) {
+                auto owner = keyOwner.find(key);
+                if (owner != keyOwner.end()) {
+                    // A distinct node maps to an occupied key: keep the first
+                    // (weld), never overwrite. Count truly-distinct welds so a
+                    // coordinate collision can't silently merge unrelated nodes.
+                    if (owner->second != vid) ++weldedDistinct;
                     nodeToGmshTag[vid] = coordToGmshTag[key];
                 } else {
                     int tag = gmsh::model::geo::addPoint(nodes[vid].pos.x, nodes[vid].pos.y, 0.0);
                     nodeToGmshTag[vid] = tag;
                     coordToGmshTag[key] = tag;
+                    keyOwner[key] = vid;
                 }
             }
         }
     }
+    if (weldedDistinct > 0)
+        LOG_WARN(weldedDistinct << " distinct node(s) welded onto a coincident node "
+                 "(within coordinate tolerance " << coordTol << ").");
 
     std::vector<int> allLines;
     std::vector<Edge> filteredEdges; // 用於後續拓撲分析
@@ -930,6 +1035,19 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     std::vector<std::vector<std::size_t>> elementTags, nodeTagsByElement;
     gmsh::model::mesh::getElements(elementTypes, elementTags, nodeTagsByElement, 2);
 
+    // Fix: a zero triangle count means loop closure failed and Gmsh produced an
+    // empty far-field. Report failure, do NOT add cells / claim success, and let
+    // the caller signal a Gmsh error (finalize still runs via the scope guard).
+    size_t triCount = 0;
+    for (size_t i = 0; i < elementTypes.size(); ++i)
+        if (elementTypes[i] == 2)
+            triCount += nodeTagsByElement[i].size() / 3;
+    if (triCount == 0) {
+        LOG_ERROR("Gmsh produced an empty far-field mesh (0 triangles): the domain "
+                  "loop likely failed to close. Not exporting an empty mesh.");
+        return false; // gmshGuard finalizes on scope exit
+    }
+
     for (size_t i = 0; i < elementTypes.size(); ++i) {
         if (elementTypes[i] == 2) { // Triangles
             for (size_t j = 0; j < nodeTagsByElement[i].size(); j += 3) {
@@ -942,6 +1060,18 @@ void Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     }
 
     std::cout << "Step: Finalizing Gmsh..." << std::endl;
-    gmsh::finalize();
-    std::cout << "Mesh generation completed successfully!" << std::endl;
+    std::cout << "Mesh generation completed successfully! ("
+              << triCount << " far-field triangles)" << std::endl;
+    return true; // gmshGuard finalizes on scope exit
+    } catch (const std::exception& e) {
+        // A Gmsh throw unwinds through here; the scope guard has already ensured
+        // finalize() will run. Translate to an actionable message + failure status.
+        LOG_ERROR("Gmsh far-field meshing failed: " << e.what()
+                  << " (check that the boundary-layer fronts form closed, "
+                  "non-self-intersecting loops inside the domain).");
+        return false;
+    } catch (...) {
+        LOG_ERROR("Gmsh far-field meshing failed with an unknown error.");
+        return false;
+    }
 }

@@ -135,33 +135,39 @@ bool saveGeometry(const std::string& filename, const std::vector<Point2D>& point
 //
 // Format (token-stream, parseable with `ifstream >>`, no JSON dependency so
 // the mesher need not pull in json.hpp):
-//   HYBMESH_META 2
+//   HYBMESH_META 3
 //   COUNT <N>
 //   NPIECES <P> <break0> <break1> ...        # indices into the point list
 //   NSEGMENTS <S>
-//   <seg_id> <bc> <curve_kind>               # S lines; bc '-' = unset
+//   <seg_id> <bc> <curve_kind> <grow_bl>     # S lines; bc '-' = unset
 //   POINTS <N>
 //   <seg_id> <is_corner>                     # N lines, parallel to the .dat
 //
 // curve_kind (v2): line|circle|smooth|polyline — tells the mesher which local
 // model to rebuild from the surface points (Phase 2). v1 omitted this field.
+// grow_bl (v3): 1 = grow a boundary layer on this segment (default), 0 = don't.
+// The mesher (src/main.cpp) reads the 4th column only when version >= 3 and
+// treats a missing column (v2 sidecars) as grow=1, so old files stay valid.
 //
 // The per-point arrays are parallel to the points written by saveGeometry with
 // an EMPTY pieceBreaks (i.e. no 'nan' rows). We therefore only emit the sidecar
 // for real exports, never for the GUI's preview output.
+static const int kMetaFormatVersion = 3;   // schema version emitted by this writer
+
 bool saveMetadata(const std::string& datPath,
                   const std::vector<int>& segId,
                   const std::vector<char>& isCorner,
                   const std::vector<size_t>& pieceBreaks,
                   const std::map<int, std::string>& segBc,
-                  const std::map<int, std::string>& segKind) {
+                  const std::map<int, std::string>& segKind,
+                  const std::map<int, int>& segGrowBL = {}) {
     const std::string metaPath = datPath + ".meta";
     std::ofstream ofs(metaPath);
     if (!ofs) {
         std::cerr << "Warning: cannot write metadata sidecar '" << metaPath << "'." << std::endl;
         return false;
     }
-    ofs << "HYBMESH_META 2\n";
+    ofs << "HYBMESH_META " << kMetaFormatVersion << "\n";
     ofs << "COUNT " << segId.size() << "\n";
     ofs << "NPIECES " << pieceBreaks.size();
     for (size_t b : pieceBreaks) ofs << " " << b;
@@ -170,7 +176,12 @@ bool saveMetadata(const std::string& datPath,
     for (const auto& kv : segBc) {
         auto kit = segKind.find(kv.first);
         const std::string kind = (kit != segKind.end() && !kit->second.empty()) ? kit->second : "polyline";
-        ofs << kv.first << " " << (kv.second.empty() ? "-" : kv.second) << " " << kind << "\n";
+        // v3: always emit the grow-BL column (default 1 = grow) so the mesher's
+        // version-gated reader always finds it.
+        auto git = segGrowBL.find(kv.first);
+        const int growBL = (git != segGrowBL.end()) ? (git->second != 0 ? 1 : 0) : 1;
+        ofs << kv.first << " " << (kv.second.empty() ? "-" : kv.second) << " "
+            << kind << " " << growBL << "\n";
     }
     ofs << "POINTS " << segId.size() << "\n";
     for (size_t i = 0; i < segId.size(); ++i)
@@ -580,6 +591,7 @@ bool processElement(const json& config) {
     std::vector<char> resCorner;     // 1 if the point is a pinned structural vertex
     std::map<int, std::string> segBc; // per-segment boundary-condition tag
     std::map<int, std::string> segKind; // per-segment curve kind (Phase 2)
+    std::map<int, int> segGrowBL;     // per-segment grow-BL flag (v3; default 1)
     int segIndex = -1;
 
     // Phase 2: classify a segment's local smoothness model so the mesher can
@@ -602,6 +614,12 @@ bool processElement(const json& config) {
         const int segId = sj.value("id", segIndex);
         segBc[segId] = sj.value("bc", std::string());
         segKind[segId] = deriveCurveKind(sj);
+        // Optional per-segment grow-BL flag (v3 .meta column). The GUI may emit
+        // "grow_bl" (bool) or the legacy "no_bl"; default is grow (1).
+        {
+            bool grow = sj.value("grow_bl", !sj.value("no_bl", false));
+            segGrowBL[segId] = grow ? 1 : 0;
+        }
         // A segment starts a new disconnected piece if the GUI declares one
         // ("new_piece"), OR its first point does not coincide with the previous
         // segment's last point (a moved/duplicated edge, or a separately-drawn
@@ -1011,7 +1029,7 @@ bool processElement(const json& config) {
     // path uses 'nan' separators and is consumed solely by the GUI, where the
     // per-point arrays would no longer line up with the .dat rows.
     if (!previewMarkers)
-        saveMetadata(outPath, resSegId, resCorner, pieceBreaks, segBc, segKind);
+        saveMetadata(outPath, resSegId, resCorner, pieceBreaks, segBc, segKind, segGrowBL);
 
     // Task 5: Quality Report
     Quality::analyze(resPts).print();
