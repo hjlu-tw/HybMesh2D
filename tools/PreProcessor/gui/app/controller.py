@@ -450,6 +450,14 @@ class AppController(
         try:
             if not os.path.exists(self._autosave_path):
                 return False
+            # Headless (tests, CI, batch runs): a modal recovery prompt would
+            # block construction forever with no user to answer it. On a headless
+            # Qt platform there is no screen to show it on anyway, so skip the
+            # prompt and start clean — this is what lets the full AppController be
+            # built off-screen for end-to-end testing.
+            app = QApplication.instance()
+            if app is not None and app.platformName() in ("offscreen", "minimal"):
+                return False
             from PyQt6.QtWidgets import QMessageBox
             reply = QMessageBox.question(
                 self.main_window,
