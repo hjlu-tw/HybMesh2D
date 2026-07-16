@@ -10,6 +10,26 @@ from PyQt6.QtCore import Qt
 
 
 class CanvasEventsMixin:
+    def _active_points_have_seam(self) -> bool:
+        """True when the active display array carries an appended closing seam
+        (a copy of index 0 at the end) — as produced for a CLOSED curve by the
+        controller's geometry refresh. Detected by an exact coincidence of the
+        first and last display points over a real loop (>= 3 points), matching
+        how the seam is appended (a verbatim copy of point 0)."""
+        ap = self._active_points
+        if ap is None or len(ap) < 3:
+            return False
+        return bool(ap[0, 0] == ap[-1, 0] and ap[0, 1] == ap[-1, 1])
+
+    def _model_point_index(self, display_idx: int) -> int:
+        """Map a display-array index (which may include the appended closing
+        seam of a closed curve) back to the editable ``original_points`` index
+        space so hit-testing and the move/split code share ONE index space."""
+        if self._active_points_have_seam() \
+                and display_idx == len(self._active_points) - 1:
+            return 0
+        return display_idx
+
     def _emit_box_selected(self, x0, y0, x1, y1, extend):
         """Forward a rubber-band selection rect from the view box. Only acts
         when a session is loaded; the controller resolves what falls inside."""
@@ -81,6 +101,15 @@ class CanvasEventsMixin:
         dists = np.sqrt((self._active_points[:, 0] - x) ** 2
                         + (self._active_points[:, 1] - y) ** 2)
         nearest_idx = int(np.argmin(dists))
+
+        # For a CLOSED curve the display array carries an extra seam point
+        # (a copy of index 0 appended at the end so the polyline draws shut),
+        # while the editable model (original_points) has no such copy. Clicking
+        # that appended seam yields nearest_idx == len-1, which is out of range
+        # for the model and would make the move/split silently no-op. Fold that
+        # seam index back onto index 0 so the emitted index is always a valid
+        # original_points index (hit-test and move share ONE index space).
+        nearest_idx = self._model_point_index(nearest_idx)
 
         # Convert scene pos to pixel distance
         vb = self.plot_widget.plotItem.vb

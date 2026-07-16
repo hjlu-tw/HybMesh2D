@@ -8,7 +8,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog
 from app.views.panels.mesh_dialogs import (
-    PerGeomBLDialog, SegmentBCDialog, SegmentBLDialog,
+    PerGeomBLDialog, SegmentBCDialog,
     _BL_OVERRIDE_KEYS, _BL_INT_ATTRS, _BL_BOOL_ATTRS,
 )
 from app.models.mesh_config import MeshConfig
@@ -111,10 +111,6 @@ class MeshConfigBLMixin:
                 segs = read_meta_segments(path)
                 seg_ok = len(segs) > 0
         self.edit_seg_bc_btn.setEnabled(seg_ok)
-        # Per-segment BL button: same segmented-.meta requirement, but only for
-        # BL-growing geometries (Boundary / Domain: wall) — a no-BL/far-field body
-        # has no layer to toggle per edge.
-        self.edit_seg_bl_btn.setEnabled(seg_ok and grows_bl)
 
     def _segment_highlighter(self, path):
         """Build a canvas-highlight callback for a geometry's segments: maps each
@@ -174,34 +170,18 @@ class MeshConfigBLMixin:
         self.segment_highlight_requested.emit(None)  # clear the highlight
         if accepted:
             self._group_bc = dlg.result_group_bc()
-            self.mesh_config_changed.emit(self.get_config())
-
-    def _open_segment_bl_dialog(self):
-        """Pop up the per-segment BL toggle for the selected geometry (#1) and
-        write the grow-BL flags back to its .meta sidecar (v3 column). The mesher
-        skips BL growth on segments flagged off at the next generation."""
-        item = self.geom_list_widget.currentItem()
-        if item is None:
-            return
-        path = item.data(Qt.ItemDataRole.UserRole)
-        if not path:
-            return
-        from app.services.meta_io import (read_meta_segments, read_meta_seg_growbl,
-                                           write_meta_seg_growbl)
-        segs = read_meta_segments(path)
-        if not segs:
-            return
-        dlg = SegmentBLDialog(item.text(), segs, seg_grow=read_meta_seg_growbl(path),
-                              highlight_cb=self._segment_highlighter(path), parent=self)
-        accepted = dlg.exec() == QDialog.DialogCode.Accepted
-        self.segment_highlight_requested.emit(None)
-        if accepted and write_meta_seg_growbl(path, dlg.result_seg_grow()):
+            # #4: persist auto-created patch names for ungrouped segments that
+            # got a BC, so they group in the .meta and reach the mesher/solver.
+            seg_names = dlg.result_seg_names()
+            if seg_names:
+                from app.services.meta_io import write_meta_segbc
+                write_meta_segbc(path, seg_names)
             self.mesh_config_changed.emit(self.get_config())
 
     def _open_global_bl_dialog(self):
         """Edit the GLOBAL boundary-layer parameters in the pop-up dialog."""
         dlg = PerGeomBLDialog("Global default", dict(self._global_bl),
-                              dict(self._global_bl), self)
+                              dict(self._global_bl), parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         vals = dlg.result_params()
@@ -212,7 +192,11 @@ class MeshConfigBLMixin:
         self.mesh_config_changed.emit(self.get_config())
 
     def _open_bl_override_dialog(self):
-        """Pop up the per-geometry BL editor for the selected geometry."""
+        """Pop up the per-geometry boundary-layer editor for the selected
+        geometry: its BL parameters (top) plus, when the geometry has a segmented
+        .meta sidecar, per-segment 'grow BL?' toggles (bottom). The parameter
+        override is saved onto the geom list item; the per-segment flags are
+        written to the .meta (v3 column) and honoured by the mesher."""
         item = self.geom_list_widget.currentItem()
         if item is None:
             return
@@ -220,10 +204,27 @@ class MeshConfigBLMixin:
         if idx not in (0, 4):
             return
         rinfo = dict(item.data(self._ROLE_DATA) or {})
+
+        # Per-segment BL toggles are shown only when the geometry was exported
+        # with segments (a segmented .meta sidecar next to its .dat).
+        path = item.data(Qt.ItemDataRole.UserRole)
+        segs, seg_grow, highlight = [], None, None
+        if path:
+            from app.services.meta_io import read_meta_segments, read_meta_seg_growbl
+            segs = read_meta_segments(path)
+            if segs:
+                seg_grow = read_meta_seg_growbl(path)
+                highlight = self._segment_highlighter(path)
+
         dlg = PerGeomBLDialog(item.text(), dict(self._global_bl),
-                              rinfo.get("bl_params"), self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+                              rinfo.get("bl_params"), segments=segs,
+                              seg_grow=seg_grow, highlight_cb=highlight, parent=self)
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        if segs:
+            self.segment_highlight_requested.emit(None)  # clear the canvas highlight
+        if not accepted:
             return
+
         vals = dlg.result_params()
         if vals:
             rinfo["bl_params"] = vals
@@ -240,6 +241,13 @@ class MeshConfigBLMixin:
                 item.setData(self._ROLE_DATA, rinfo)
             else:
                 item.setData(self._ROLE_DATA, None)
+
+        # Persist per-segment grow-BL flags (independent of the parameter
+        # override — kept even when the user chose 'Use Global').
+        if segs and path:
+            from app.services.meta_io import write_meta_seg_growbl
+            write_meta_seg_growbl(path, dlg.result_seg_grow())
+
         self._sync_bl_scope()
         self.mesh_config_changed.emit(self.get_config())
 

@@ -66,6 +66,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         self._n_levels = 24          # bands when mode == "count"
         self._level_delta = 0.0      # band spacing when mode == "delta"
         self._extrema: list[dict] = []    # marked min/max points
+        self._solver_probe_pts: list[tuple] = []  # solver probe-file locations (#5)
         self._vec_target = 40
         self._vec_scale = 1.0
         self._stream_density = 1.2
@@ -247,14 +248,45 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
 
         self._building = True
         try:
-            prev = self.var_combo.currentText()
-            self.var_combo.clear()
-            self.var_combo.addItems(result.scalar_variables())
-            if prev and prev in result.scalar_variables():
-                self.var_combo.setCurrentText(prev)
+            prev = self._current_var()
+            self._populate_var_combo(result)
+            if prev:
+                self.select_variable(prev)
         finally:
             self._building = False
         self.render()
+
+    def _populate_var_combo(self, result):
+        """Fill the variable selector with readable labels (#6): raw fields
+        first, then a separator, then derived post-processing quantities. Each
+        item stores its variable CODE as item data; reads go through
+        _current_var()/select_variable() so display text can stay human."""
+        self.var_combo.clear()
+        base = result.base_scalar_variables()
+        derived = result.derived_scalar_variables()
+        for code in base:
+            self.var_combo.addItem(result.variable_label(code), code)
+        if derived:
+            # Non-selectable header + separator so the computed quantities read
+            # as a distinct group, not mixed in with the raw solver fields.
+            self.var_combo.insertSeparator(self.var_combo.count())
+            for code in derived:
+                self.var_combo.addItem("· " + result.variable_label(code), code)
+
+    def _current_var(self) -> str:
+        """The selected variable CODE (item data), falling back to its text."""
+        data = self.var_combo.currentData()
+        return data if data else self.var_combo.currentText()
+
+    def select_variable(self, code: str) -> bool:
+        """Select the combo entry whose stored code matches ``code`` (#6)."""
+        idx = self.var_combo.findData(code)
+        if idx < 0:
+            idx = self.var_combo.findText(code)
+        if idx >= 0:
+            self.var_combo.setCurrentIndex(idx)
+            return True
+        return False
 
     def clear(self):
         """Clear the loaded result and reset to the empty placeholder."""
@@ -314,7 +346,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
     def render(self):
         if self._result is None or self._triang is None:
             return
-        var = self.var_combo.currentText()
+        var = self._current_var()
         if not var:
             return
         cmap = self._cmap
@@ -439,6 +471,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
                 self._draw_cad_geometry()
 
             self._draw_probes()
+            self._draw_solver_probes()
             self._draw_line_overlay()
             self._draw_extrema()
 
@@ -559,7 +592,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         """Mark the min and/or max of the current field's nodal values."""
         if self._result is None:
             return
-        var = self.var_combo.currentText()
+        var = self._current_var()
         if not var:
             return
         node_vals = self._node_field(var)
@@ -586,7 +619,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         """Area-weighted integral / mean / std / min / max of the current field."""
         if self._result is None:
             return {}
-        var = var or self.var_combo.currentText()
+        var = var or self._current_var()
         if not var:
             return {}
         cell = np.asarray(self._result.get_cell_field(var), dtype=float)

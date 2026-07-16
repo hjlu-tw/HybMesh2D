@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QWidget, QFormLayout, QComboBox, QLabel, QCheckBox, QPushButton, QHBoxLayout, QVBoxLayout, QApplication
+from PyQt6.QtWidgets import QFormLayout, QComboBox, QLabel, QCheckBox, QHBoxLayout, QVBoxLayout, QApplication
 from PyQt6.QtCore import pyqtSignal
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, help_widget

@@ -69,9 +69,20 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
         self._show_symbols = True
         self._show_nodes = True
         self._active_session_id: int | None = None
+        # Checkbox state per session (model-tree "eye"). Drives a 3-level
+        # brightness: unchecked = dim (still drawn), checked-not-editing =
+        # brighter, editing (active) = brightest. Missing entry defaults True.
+        self._geo_checked: dict[int, bool] = {}
 
         # ── Selection mode ('vertex' or 'edge') ───────────────────────────
         self._selection_mode: str = 'edge'
+
+        # ── Draggable move-handle for the selected vertex (#6) ─────────────
+        # A single pg.TargetItem shown over the selected vertex in vertex mode;
+        # dragging it reports through ``vertex_move_cb(idx, x, y, finished)``.
+        self._vertex_move_handle = None
+        self.vertex_move_cb = None
+        self._suppress_vertex_cb = False
 
         # ── Multi-segment highlight overlays ──────────────────────────────
         self._multi_segment_curves: list[pg.PlotDataItem] = []
@@ -211,6 +222,7 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
             curve.setData(points[:, 0], points[:, 1])
         self._geometries[session_id] = curve
         self._geo_colors[session_id] = color
+        self._geo_checked.setdefault(session_id, True)
 
         # Initialize per-session curve preview and segment dictionaries
         preview_curve = self.plot_widget.plot(
@@ -243,6 +255,7 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
         if session_id in self._geometries:
             self.plot_widget.removeItem(self._geometries.pop(session_id))
             self._geo_colors.pop(session_id, None)
+            self._geo_checked.pop(session_id, None)
 
         if session_id in self._curve_preview_items:
             self.plot_widget.removeItem(self._curve_preview_items.pop(session_id))
@@ -251,68 +264,92 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
             for item in self._curve_segment_items.pop(session_id):
                 self.plot_widget.removeItem(item)
 
+    def _emphasis_level(self, sid: int) -> str:
+        """3-level emphasis for a session: 'active' (editing) > 'checked'
+        (ticked in the model tree, not editing) > 'unchecked' (dim)."""
+        if sid == self._active_session_id:
+            return 'active'
+        return 'checked' if self._geo_checked.get(sid, True) else 'unchecked'
+
     def highlight_geometry(self, active_session_id: int):
         """
-        Bold the active session's curve; mute all others.
-        Active: width=2.5, full colour, symbol size=4.
-        Inactive: width=1, 60 alpha (approx 23% opacity), symbol size=1.5.
+        Three-level brightness driven by editing state + model-tree checkbox:
+          - editing (active)          : width=2.5, full colour, symbol size=4
+          - checked, not editing      : width=1.6, alpha 200, symbol size=3
+          - unchecked                 : width=1,   alpha 60,  symbol size=1.5
+        Unchecked geometry is still drawn (dim), not hidden.
         """
         self._active_session_id = active_session_id
+        self._restyle_geometries()
+
+    def _restyle_geometries(self):
+        """Apply the current 3-level emphasis to every session's curve,
+        preview and deselected-segment items. Safe to call repeatedly."""
         for sid, curve in self._geometries.items():
             color_str = self._geo_colors.get(sid, '#64B5F6')
             curve.setSymbol('o' if self._show_symbols else None)
-            if sid == active_session_id:
+            level = self._emphasis_level(sid)
+            if level == 'active':
                 curve.setPen(pg.mkPen(color_str, width=2.5))
                 curve.setSymbolBrush(pg.mkBrush(color_str))
                 curve.setSymbolSize(4)
-            else:
-                c = QColor(color_str)
-                c.setAlpha(60)
+            elif level == 'checked':
+                c = QColor(color_str); c.setAlpha(200)
+                curve.setPen(pg.mkPen(c, width=1.6))
+                c2 = QColor(color_str); c2.setAlpha(170)
+                curve.setSymbolBrush(pg.mkBrush(c2))
+                curve.setSymbolSize(3)
+            else:  # unchecked
+                c = QColor(color_str); c.setAlpha(60)
                 curve.setPen(pg.mkPen(c, width=1))
-                c2 = QColor(color_str)
-                c2.setAlpha(40)
+                c2 = QColor(color_str); c2.setAlpha(40)
                 curve.setSymbolBrush(pg.mkBrush(c2))
                 curve.setSymbolSize(1.5)
 
-        # Highlight/dim curve previews of each session
+        # Curve previews (dashed) mirror the same three levels.
         has_resampled = False
-        x_data, y_data = self.resampled_curve.getData()
+        x_data, _ = self.resampled_curve.getData()
         if x_data is not None and len(x_data) > 0:
             has_resampled = True
 
         for sid, preview_curve in self._curve_preview_items.items():
-            is_active = (sid == active_session_id)
+            level = self._emphasis_level(sid)
+            is_active = (level == 'active')
             if is_active and has_resampled:
                 preview_curve.setSymbol(None)
             else:
                 preview_curve.setSymbol('o' if self._show_symbols else None)
-
             if is_active:
-                # Active preview: full color, dash pen
                 preview_curve.setPen(pg.mkPen(_COL_PREVIEW, width=2, style=Qt.PenStyle.DashLine))
                 preview_curve.setSymbolBrush(pg.mkBrush(_COL_PREVIEW))
                 preview_curve.setSymbolSize(4)
+            elif level == 'checked':
+                c = QColor(_COL_PREVIEW); c.setAlpha(180)
+                preview_curve.setPen(pg.mkPen(c, width=1.3, style=Qt.PenStyle.DashLine))
+                preview_curve.setSymbolBrush(pg.mkBrush(c))
+                preview_curve.setSymbolSize(3)
             else:
-                # Inactive preview: dim color
-                c = QColor(_COL_PREVIEW)
-                c.setAlpha(60)
+                c = QColor(_COL_PREVIEW); c.setAlpha(60)
                 preview_curve.setPen(pg.mkPen(c, width=1, style=Qt.PenStyle.DashLine))
                 preview_curve.setSymbolBrush(pg.mkBrush(c))
                 preview_curve.setSymbolSize(1.5)
 
-        # Highlight/dim deselected curve segments of each session
+        # Deselected curve segments (grey) mirror the same three levels.
         for sid, items in self._curve_segment_items.items():
-            if sid == active_session_id:
-                for item in items:
-                    item.setSymbol('o' if self._show_symbols else None)
+            level = self._emphasis_level(sid)
+            for item in items:
+                item.setSymbol('o' if self._show_symbols else None)
+                if level == 'active':
                     item.setPen(pg.mkPen('#5c637a', width=1.5, style=Qt.PenStyle.SolidLine))
                     item.setSymbolBrush(pg.mkBrush('#5c637a'))
                     item.setSymbolSize(3)
-            else:
-                for item in items:
-                    item.setSymbol('o' if self._show_symbols else None)
-                    c = QColor('#5c637a')
-                    c.setAlpha(60)
+                elif level == 'checked':
+                    c = QColor('#5c637a'); c.setAlpha(180)
+                    item.setPen(pg.mkPen(c, width=1.2, style=Qt.PenStyle.SolidLine))
+                    item.setSymbolBrush(pg.mkBrush(c))
+                    item.setSymbolSize(2.5)
+                else:
+                    c = QColor('#5c637a'); c.setAlpha(60)
                     item.setPen(pg.mkPen(c, width=1, style=Qt.PenStyle.SolidLine))
                     item.setSymbolBrush(pg.mkBrush(c))
                     item.setSymbolSize(1.5)
@@ -367,14 +404,20 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
         self.resampled_curve.setSymbol('o' if visible else None)
 
     def set_geometry_visible(self, session_id: int, visible: bool):
-        """Toggle the visibility of a specific geometry layer and its curve elements."""
+        """Model-tree checkbox handler. The checkbox now controls *emphasis*,
+        not hard visibility: an unchecked layer stays drawn but dim (see the
+        3-level scheme in highlight_geometry), so the user keeps spatial
+        context of every geometry while the checked / editing ones stand out."""
+        self._geo_checked[session_id] = visible
+        # Everything stays visible; only the brightness changes.
         if session_id in self._geometries:
-            self._geometries[session_id].setVisible(visible)
+            self._geometries[session_id].setVisible(True)
         if session_id in self._curve_preview_items:
-            self._curve_preview_items[session_id].setVisible(visible)
+            self._curve_preview_items[session_id].setVisible(True)
         if session_id in self._curve_segment_items:
             for item in self._curve_segment_items[session_id]:
-                item.setVisible(visible)
+                item.setVisible(True)
+        self._restyle_geometries()
 
     def set_active_overlays_visible(self, visible: bool):
         """Toggle the visibility of the active session overlays.
@@ -476,6 +519,37 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
         # Only show in vertex mode
         self.selected_scatter.setVisible(self._selection_mode == 'vertex')
 
+    def show_vertex_move_handle(self, idx: int, x: float, y: float):
+        """Show a single draggable handle at the selected vertex so it can be
+        dragged to move the underlying geometry/split point (#6). Drags report
+        through ``vertex_move_cb(idx, x, y, finished)``. Vertex mode only."""
+        self.clear_vertex_move_handle()
+        if self._selection_mode != 'vertex':
+            return
+        t = pg.TargetItem(pos=(x, y), size=16, movable=True, symbol='o',
+                          pen=pg.mkPen('#FFB347', width=3),
+                          brush=pg.mkBrush(255, 179, 71, 90),
+                          hoverBrush=pg.mkBrush('#FFB347'))
+        t.setZValue(207)
+        t.sigPositionChanged.connect(
+            lambda it, _i=idx: self._emit_vertex_move(_i, it, False))
+        t.sigPositionChangeFinished.connect(
+            lambda it, _i=idx: self._emit_vertex_move(_i, it, True))
+        self.plot_widget.addItem(t)
+        self._vertex_move_handle = t
+
+    def clear_vertex_move_handle(self):
+        if self._vertex_move_handle is not None:
+            self.plot_widget.removeItem(self._vertex_move_handle)
+            self._vertex_move_handle = None
+
+    def _emit_vertex_move(self, idx: int, it, finished: bool):
+        if self._suppress_vertex_cb:
+            return
+        if self.vertex_move_cb is not None:
+            self.vertex_move_cb(idx, float(it.pos().x()),
+                                float(it.pos().y()), finished)
+
     def set_selection_mode(self, mode: str):
         """Set the canvas click selection mode: 'vertex' or 'edge'.
 
@@ -495,6 +569,8 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
         # Vertex-mode overlays
         self.split_scatter.setVisible(is_vertex)
         self.selected_scatter.setVisible(is_vertex)
+        if not is_vertex:
+            self.clear_vertex_move_handle()
 
         # Edge-mode overlays: keep existing segment highlights visible only in edge mode
         self.active_segment_curve.setVisible(is_edge)

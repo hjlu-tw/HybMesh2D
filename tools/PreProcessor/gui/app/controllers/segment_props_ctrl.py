@@ -62,24 +62,24 @@ class SegmentPropsControllerMixin:
         indices = self.get_selected_segment_indices()
         if not indices:
             return
-        bc = (text or "").strip()
+        self._apply_bc_to_indices(session, indices, text)
 
+    def _apply_bc_to_indices(self, session, indices, text: str):
+        """Apply a patch/group tag to specific segment indices (undoable). Shared
+        by the sidebar path (current selection) and the assign-patch dialog (#8)."""
+        bc = (text or "").strip()
         old_states = {}
         for idx in indices:
             seg = session.project_model.get_segment(idx)
             if seg:
                 old_states[idx] = seg.to_dict()
-
-        for idx in indices:
-            seg = session.project_model.get_segment(idx)
-            if seg:
                 seg.bc = bc
 
         any_changed = False
         states_dict = {}
         for idx in indices:
             seg = session.project_model.get_segment(idx)
-            if seg:
+            if seg and idx in old_states:
                 new_state = seg.to_dict()
                 states_dict[idx] = (old_states[idx], new_state)
                 if new_state != old_states[idx]:
@@ -90,51 +90,71 @@ class SegmentPropsControllerMixin:
             session.command_history.execute(cmd)
 
     def open_cad_patch_dialog(self):
-        """#1/#6: pop-up to assign a patch/group label to ALL currently-selected
-        edges. The label is a free-form GROUPING tag (number or alias); the BC is
-        chosen per group later in the Mesh Generator. Offers existing group names
-        in an editable combo so edges are easily added to the same group."""
-        from PyQt6.QtWidgets import QInputDialog
+        """#8: pop-up that lists ALL edges of the active geometry (like the
+        Mesh Generator's segment-BC dialog) so the user can see every edge,
+        (multi-)select the ones to tag, and assign a free-form patch/group
+        label. The physical BC is chosen per group later in the Mesh Generator.
+        Pre-selects the edges already selected on the canvas."""
+        from PyQt6.QtWidgets import QDialog
+        from app.views.panels.mesh_dialogs import AssignPatchDialog
         session = self.active_session()
         if not session:
             return
-        indices = self.get_selected_segment_indices()
-        if not indices:
-            self.main_window.log_panel.log(
-                "Select one or more edges first, then assign a patch/group.")
+        segs = session.project_model.segments
+        if not segs:
+            self.main_window.log_panel.log("No edges to assign a patch/group to.")
             return
-        # Shared current label (blank if the selection is mixed / unset).
-        labels = set()
-        for idx in indices:
-            seg = session.project_model.get_segment(idx)
-            if seg:
-                labels.add((getattr(seg, "bc", "") or "").strip())
-        current = labels.pop() if len(labels) == 1 else ""
-        # Existing distinct labels across this geometry (for the dropdown), in
-        # first-appearance order, so edges are easily grouped under an existing name.
+
+        edges = []
         existing = []
-        for seg in session.project_model.segments:
-            b = (getattr(seg, "bc", "") or "").strip()
-            if b and b not in existing:
-                existing.append(b)
-        items = list(existing)
-        if current and current not in items:
-            items.insert(0, current)
-        if not items:
-            items = [""]
-        cur_idx = items.index(current) if current in items else 0
-        text, ok = QInputDialog.getItem(
-            self.main_window, "Assign patch / group",
-            f"Patch / group name for {len(indices)} selected edge(s).\n"
-            "Free-form grouping label (e.g. airfoil, wall_top, 1); the physical BC\n"
-            "is chosen per group in the Mesh Generator. Blank = geometry default.",
-            items, cur_idx, True)
-        if not ok:
+        for i, seg in enumerate(segs):
+            label = (getattr(seg, "bc", "") or "").strip()
+            kind = getattr(seg, "type", "") or ""
+            edges.append((i, label, kind))
+            if label and label not in existing:
+                existing.append(label)
+
+        preselect = self.get_selected_segment_indices()
+        highlight = self._patch_highlighter(session)
+
+        def _apply(indices, name):
+            self._apply_bc_to_indices(session, indices, name)
+            shown = name or "(cleared)"
+            self.main_window.log_panel.log(
+                f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
+
+        dlg = AssignPatchDialog(session.display_name, edges, existing,
+                                preselect=preselect, highlight_cb=highlight,
+                                apply_cb=_apply, parent=self.main_window)
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        # Drop the temporary multi-edge highlight the dialog painted.
+        self.main_window.canvas_view.update_active_segments([], -1)
+        if not accepted:
             return
-        self.update_segment_bc(text)
-        shown = text.strip() or "(cleared)"
-        self.main_window.log_panel.log(
-            f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
+        indices = dlg.selected_indices()
+        if not indices:
+            # OK with nothing selected: any Apply during the session already took
+            # effect, so this is a no-op, not an error.
+            return
+        _apply(indices, dlg.patch_name())
+
+    def _patch_highlighter(self, session):
+        """Return a callback(indices) that highlights those edges on the CAD
+        canvas while the assign-patch dialog selection changes (#8)."""
+        canvas = self.main_window.canvas_view
+        segs = session.project_model.segments
+
+        def _hl(indices):
+            ranges = []
+            for i in indices:
+                if 0 <= i < len(segs):
+                    s = segs[i]
+                    start = getattr(s, "start_index", None)
+                    end = getattr(s, "end_index", None)
+                    if start is not None and end is not None:
+                        ranges.append((start, end))
+            canvas.update_active_segments(ranges, 0 if ranges else -1)
+        return _hl
 
     def handle_is_closed_changed(self, text: str):
         session = self.active_session()

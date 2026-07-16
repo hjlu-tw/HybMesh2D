@@ -206,12 +206,16 @@ class MeshConfigDomainMixin:
 
         # Per-geometry boundary layer is edited in a pop-up dialog; the panel's
         # BL sections below always edit the GLOBAL default. The button is enabled
-        # only for BL-growing geometries (Boundary / Domain: wall).
-        self.edit_bl_btn = make_button("Edit BL for this geometry…", "#243a52")
+        # only for BL-growing geometries (Boundary / Domain: wall). The pop-up
+        # also carries the per-segment 'grow BL?' toggles when the geometry has a
+        # segmented .meta sidecar.
+        self.edit_bl_btn = make_button("Edit boundary layer…", "#243a52")
         self.edit_bl_btn.setToolTip(
             "Open a pop-up to give THIS geometry its own boundary layer "
-            "(thickness, growth, layers, corners, transition). The BL sections "
-            "in the panel below always edit the GLOBAL default.")
+            "(thickness, growth, layers, corners, transition). When the geometry "
+            "has segments, the same pop-up also lets you choose which segments "
+            "grow a boundary layer. The BL sections in the panel below always "
+            "edit the GLOBAL default.")
         self.edit_bl_btn.setEnabled(False)
         role_form.addRow(self.edit_bl_btn)
 
@@ -225,17 +229,6 @@ class MeshConfigDomainMixin:
             "geometries exported with segments from CAD.")
         self.edit_seg_bc_btn.setEnabled(False)
         role_form.addRow(self.edit_seg_bc_btn)
-
-        # Per-segment boundary-layer toggle (#1): choose which segments of THIS
-        # geometry grow a BL. Enabled for BL-growing geometries with a segmented
-        # .meta (same availability as the per-segment BC editor, minus seeds).
-        self.edit_seg_bl_btn = make_button("Edit segment BL…", "#243a52")
-        self.edit_seg_bl_btn.setToolTip(
-            "Open a pop-up to choose which segments of THIS geometry grow a "
-            "boundary layer (per-edge BL on/off, saved to the .meta sidecar). "
-            "Available for BL-growing geometries exported with segments from CAD.")
-        self.edit_seg_bl_btn.setEnabled(False)
-        role_form.addRow(self.edit_seg_bl_btn)
 
         align_form_labels(role_form, 130)
         self.sec_domain.add_layout(role_form)
@@ -257,7 +250,6 @@ class MeshConfigDomainMixin:
         self.geom_bc_combo.currentTextChanged.connect(self._on_geom_bc_edited)
         self.edit_bl_btn.clicked.connect(self._open_bl_override_dialog)
         self.edit_seg_bc_btn.clicked.connect(self._open_segment_bc_dialog)
-        self.edit_seg_bl_btn.clicked.connect(self._open_segment_bl_dialog)
         # #4: per-group BC-type assignments (grouping name -> BC type), edited via
         # the segment-BC dialog and round-tripped through MeshConfig.group_bc.
         self._group_bc: dict = {}

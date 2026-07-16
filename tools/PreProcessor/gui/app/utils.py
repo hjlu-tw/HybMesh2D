@@ -13,13 +13,14 @@ from PyQt6.QtWidgets import (
     QWidget
 )
 
+# BUTTON_QSS_TEMPLATE is used below; the others are re-exported for convenience
+# (many panels do `from app.utils import COMBO_STYLE`). The `X as X` form marks
+# them as intentional re-exports so they aren't reported as unused imports.
 from app.styles import (
-    COMBO_STYLE,
-    SPIN_STYLE,
     BUTTON_QSS_TEMPLATE,
-    LINEEDIT_STYLE,
-    LIST_STYLE,
-    LIST_INDICATOR_STYLE
+    COMBO_STYLE as COMBO_STYLE,
+    SPIN_STYLE as SPIN_STYLE,
+    LINEEDIT_STYLE as LINEEDIT_STYLE,
 )
 
 # Boundary Condition Colors mapping
@@ -349,4 +350,34 @@ def is_mpi_binary(path: str) -> bool:
     except OSError:
         return False
     return b"MPI_Init" in blob
+
+
+def apply_smart_spin_steps(root) -> int:
+    """Give every default-stepped QDoubleSpinBox under ``root`` a value-scaled
+    ``singleStep`` so the up/down arrows nudge by ~one order of magnitude below
+    the field's own scale, instead of Qt's blunt 1.0 default (#7).
+
+    Only boxes still on the 1.0 default are touched — any field that set an
+    explicit step at construction (growth rate 0.05, spacing 0.01, …) is left
+    alone — and integer QSpinBoxes (node counts) keep their natural step of 1.
+    Returns the number of boxes adjusted.
+    """
+    import math
+    from PyQt6.QtWidgets import QDoubleSpinBox
+    changed = 0
+    for sp in root.findChildren(QDoubleSpinBox):
+        if abs(sp.singleStep() - 1.0) > 1e-9:
+            continue   # respect an explicit per-field step
+        dec = sp.decimals()
+        v = abs(sp.value())
+        if v > 1e-12:
+            step = 10.0 ** (math.floor(math.log10(v)) - 1)
+        else:
+            step = 0.1   # neutral default when the field starts at zero
+        if dec > 0:
+            step = max(step, 10.0 ** (-dec))   # keep it representable
+        step = min(max(step, 1e-9), 100.0)
+        sp.setSingleStep(step)
+        changed += 1
+    return changed
 

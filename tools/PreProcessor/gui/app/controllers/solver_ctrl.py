@@ -242,7 +242,7 @@ class SolverControllerMixin:
             f"Solver results for case '{case}' already exist at\n{case_root}")
         box.setInformativeText(
             "Overwrite the existing results, or keep them and run into a new "
-            "auto-versioned directory (e.g. '{}_002')?".format(case))
+            f"auto-versioned directory (e.g. '{case}_002')?")
         overwrite_btn = box.addButton("Overwrite", QMessageBox.ButtonRole.DestructiveRole)
         new_btn = box.addButton("New Versioned Dir", QMessageBox.ButtonRole.AcceptRole)
         cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
@@ -388,3 +388,78 @@ class SolverControllerMixin:
             target.setText(dlg.result_path)
             self.main_window.log_panel.log(
                 f"[IBM] {dll_type} DLL source set: {dlg.result_path}")
+
+    def open_probe_coords_dialog(self):
+        """Enter probe-point coordinates in the GUI, write them to a file and
+        link it into the solver config's probe field (#10)."""
+        import os
+        from PyQt6.QtWidgets import QFileDialog
+        from app.views.probe_points_dialog import ProbePointsDialog
+        from app.utils import repo_root
+        sp = self.main_window.solver_config_panel
+        cur = sp.probe_points_def_fn.text().strip()
+        initial = ""
+        if cur and os.path.exists(cur):
+            try:
+                with open(cur) as f:
+                    initial = f.read()
+            except OSError:
+                pass
+        dlg = ProbePointsDialog(self.main_window, initial)
+        if not dlg.exec() or not dlg.points():
+            return
+        # Reuse the existing path when set, otherwise ask where to save.
+        path = cur
+        if not path:
+            default_dir = os.path.join(repo_root(), "results", "solver")
+            os.makedirs(default_dir, exist_ok=True)
+            path, _ = QFileDialog.getSaveFileName(
+                self.main_window, "Save probe-point file",
+                os.path.join(default_dir, "probe_points.dat"),
+                "Probe points (*.dat *.txt);;All Files (*)")
+            if not path:
+                return
+        try:
+            with open(path, "w") as f:
+                f.write(dlg.as_file_text())
+        except OSError as e:
+            self.main_window.log_panel.log(f"[probe] write failed: {e}")
+            return
+        sp.probe_points_def_fn.setText(path)
+        self.main_window.log_panel.log(
+            f"[probe] wrote {len(dlg.points())} point(s) → {path}")
+        # Visualise the probe locations on the Results canvas (#5): they persist
+        # across variable changes / result reloads, so they overlay the contour
+        # once a result is loaded (run the solver, then Load Result).
+        try:
+            self.main_window.result_canvas_view.set_solver_probe_points(dlg.points())
+            self.main_window.log_panel.log(
+                "[probe] locations overlaid on the Results canvas "
+                "(visible once a result is loaded).")
+        except Exception:
+            pass
+
+    def open_bc_dll_builder(self):
+        """Open the DLL builder for a BC type-11 getQ_inst_dll source (#12) and
+        drop the saved path into the selected BC row's Extra values (column 3).
+        Falls back to logging the path when no row is selected."""
+        from PyQt6.QtWidgets import QTableWidgetItem
+        from app.views.dll_builder_dialog import DllBuilderDialog
+        from app.services.dll_templates import BC_INFLOW
+        sp = self.main_window.solver_config_panel
+        row = sp.bc_table.currentRow()
+        seed = ""
+        if row >= 0 and sp.bc_table.item(row, 3) is not None:
+            seed = sp.bc_table.item(row, 3).text().strip()
+        dlg = DllBuilderDialog(self.main_window, BC_INFLOW, seed)
+        if dlg.exec() and dlg.result_path:
+            if row >= 0:
+                item = sp.bc_table.item(row, 3) or QTableWidgetItem()
+                item.setText(dlg.result_path)
+                sp.bc_table.setItem(row, 3, item)
+                self.main_window.log_panel.log(
+                    f"[BC] type-11 DLL source set on row {row}: {dlg.result_path}")
+            else:
+                self.main_window.log_panel.log(
+                    f"[BC] type-11 DLL source saved (select a BC row to attach): "
+                    f"{dlg.result_path}")

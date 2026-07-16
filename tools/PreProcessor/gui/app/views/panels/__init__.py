@@ -5,3 +5,9 @@ from app.views.panels.edge_list_panel import EdgeListPanel
 from app.views.panels.edge_props_panel import EdgePropsPanel
 from app.views.panels.advanced_panel import AdvancedPanel
 from app.views.panels.actions_panel import ActionsPanel
+
+# Re-export aggregator for the sidebar panels (explicit public API).
+__all__ = [
+    "FilePanel", "GeometryPanel", "VertexPanel", "EdgeListPanel",
+    "EdgePropsPanel", "AdvancedPanel", "ActionsPanel",
+]

@@ -131,7 +131,7 @@ class SessionIOControllerMixin:
         if not os.path.exists(file_path):
             return
 
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             workspace_data = json.load(f)
 
         # Explicit version handling: missing = legacy v0 (not "current"). Older

@@ -17,3 +17,18 @@ from app.controllers.postprocess_ctrl import PostprocessControllerMixin
 from app.controllers.stl3d_ctrl import Stl3dControllerMixin
 from app.controllers.extrude_ctrl import ExtrudeControllerMixin
 from app.controllers.pipeline_ctrl import PipelineControllerMixin
+
+# Re-export aggregator: AppController composes these mixins. Listed in __all__
+# so the re-exports are an explicit public API (and not flagged as unused).
+__all__ = [
+    "SessionControllerMixin", "SessionIOControllerMixin",
+    "SegmentControllerMixin", "SegmentAutoDetectControllerMixin",
+    "SegmentPropsControllerMixin", "SegmentDistributionControllerMixin",
+    "TransformControllerMixin", "CurveControllerMixin",
+    "CurveEditControllerMixin", "BackendControllerMixin",
+    "MeshGenControllerMixin", "MeshExportControllerMixin",
+    "MeshLayersControllerMixin", "OpenEndpointControllerMixin",
+    "SolverControllerMixin", "PostprocessControllerMixin",
+    "Stl3dControllerMixin", "ExtrudeControllerMixin",
+    "PipelineControllerMixin",
+]

@@ -207,7 +207,7 @@ class _AxisStrip(QWidget):
     LEFT_W = 46
     BOTTOM_H = 20
 
-    def __init__(self, glview: "_GLView", side: str, parent=None):
+    def __init__(self, glview: _GLView, side: str, parent=None):
         super().__init__(parent)
         self._gl = glview
         self._side = side                      # "left" or "bottom"

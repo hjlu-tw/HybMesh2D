@@ -36,6 +36,11 @@ struct FrontState {
     std::vector<Point2D> pos_init;
     std::vector<int> fanNodeCounts;
     std::set<int> paraCenterNodes;
+    // Nodes at a BL / no-BL junction whose growth ray is pinned to their own BL
+    // edge's outward normal (see the junction handling in generate()): the BL's
+    // lateral cap grows perpendicular to the BL wall at full height instead of
+    // splitting the corner with the bisector or leaning onto the no-BL edge.
+    std::set<int> junctionCapNodes;
 };
 
 class BoundaryLayerGenerator {

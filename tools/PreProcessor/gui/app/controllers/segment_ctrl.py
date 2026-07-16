@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtCore import Qt
 from app.models.session import GeometrySession
 from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd
-from app.commands.vertex_cmds import InsertVertexCmd
+from app.commands.vertex_cmds import InsertVertexCmd, ReplaceGeometryPointsCmd
 from app.commands.segment_cmds import RemoveSegmentCmd
 from app.services.geometry_service import GeometryService, project_point_to_segment
 from app.utils import CURVE_TYPE_LABELS
@@ -222,18 +222,100 @@ class SegmentControllerMixin:
         sb.split_btn.setEnabled(not is_split)
         sb.remove_split_btn.setEnabled(is_split and not is_endpoint)
 
+        # #6: expose a draggable move-handle on the canvas and seed the numeric
+        # "Move to" fields with the vertex's current position.
+        canvas = self.main_window.canvas_view
+        if (session.original_points is not None
+                and 0 <= idx < len(session.original_points)):
+            x, y = (float(session.original_points[idx][0]),
+                    float(session.original_points[idx][1]))
+            sb.move_x.blockSignals(True); sb.move_y.blockSignals(True)
+            sb.move_x.setValue(x); sb.move_y.setValue(y)
+            sb.move_x.blockSignals(False); sb.move_y.blockSignals(False)
+            sb.move_btn.setEnabled(True)
+            canvas.show_vertex_move_handle(idx, x, y)
+
     def handle_point_deselected(self):
         """Clear vertex selection when user clicks far from all vertices."""
         session = self.active_session()
         if not session:
             return
         session.selected_point_idx = None
+        self._vertex_drag_orig = None
         self.main_window.canvas_view.update_selected_point(None)
+        self.main_window.canvas_view.clear_vertex_move_handle()
 
         sb = self.main_window.sidebar_view
         sb.selected_info.setText("Selected Vertex: None")
         sb.split_btn.setEnabled(False)
         sb.remove_split_btn.setEnabled(False)
+        sb.move_btn.setEnabled(False)
+
+    def move_selected_vertex_to(self, x: float = None, y: float = None):
+        """Move the selected vertex / split point to (x, y) — from the numeric
+        'Move to' fields when x/y are omitted (#6). Undoable geometry edit."""
+        session = self.active_session()
+        if session is None or session.selected_point_idx is None \
+                or session.original_points is None:
+            return
+        idx = session.selected_point_idx
+        pts = session.original_points
+        if not (0 <= idx < len(pts)):
+            return
+        sb = self.main_window.sidebar_view
+        if x is None:
+            x = sb.move_x.value()
+        if y is None:
+            y = sb.move_y.value()
+        old = pts.copy()
+        if np.allclose(old[idx], [x, y]):
+            return
+        new = pts.copy()
+        new[idx] = [x, y]
+        cmd = ReplaceGeometryPointsCmd(
+            session, old, new,
+            refresh_cb=lambda: self._apply_geometry_update(session),
+            label="Move vertex")
+        session.command_history.execute(cmd)
+        self.main_window.log_panel.log(
+            f"Moved vertex {idx} to ({x:.4f}, {y:.4f}).")
+        self.handle_point_clicked(idx)
+
+    def _on_vertex_move_dragged(self, idx: int, x: float, y: float, finished: bool):
+        """Canvas drag of the selected vertex handle (#6): live-preview while
+        dragging, commit one undoable edit on release."""
+        session = self.active_session()
+        if session is None or session.original_points is None:
+            return
+        pts = session.original_points
+        if not (0 <= idx < len(pts)):
+            return
+        if getattr(self, "_vertex_drag_orig", None) is None:
+            self._vertex_drag_orig = pts.copy()
+        new = self._vertex_drag_orig.copy()
+        new[idx] = [x, y]
+        if finished:
+            old = self._vertex_drag_orig
+            self._vertex_drag_orig = None
+            cmd = ReplaceGeometryPointsCmd(
+                session, old, new,
+                refresh_cb=lambda: self._apply_geometry_update(session),
+                label="Move vertex")
+            session.command_history.execute(cmd)
+            self.handle_point_clicked(idx)
+            return
+        # Live: update points + redraw without touching the undo stack or the
+        # drag handle (the user is still holding it).
+        session.original_points = new
+        canvas = self.main_window.canvas_view
+        disp = new
+        if session.project_model.is_closed and len(disp) > 0 \
+                and not np.allclose(disp[0], disp[-1]):
+            disp = np.vstack((disp, disp[0]))
+        canvas.set_active_points(disp)
+        canvas.update_geometry(session.session_id, disp)
+        canvas.update_split_points(session.split_indices)
+        canvas.update_selected_point(idx)
 
     def add_split_point(self):
         session = self.active_session()

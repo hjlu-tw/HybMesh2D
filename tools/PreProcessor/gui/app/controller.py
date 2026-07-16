@@ -132,6 +132,7 @@ class AppController(
         sb.split_btn.clicked.connect(self.add_split_point)
         sb.remove_split_btn.clicked.connect(self.remove_split_point)
         sb.insert_btn.clicked.connect(self.handle_insert_point)
+        sb.move_btn.clicked.connect(lambda: self.move_selected_vertex_to())
         # Geometry layers and their edges live in one model tree; an edge-row
         # selection drives the edge properties.
         sb.geometry_tree.itemSelectionChanged.connect(self.handle_segment_list_selected)
@@ -265,6 +266,8 @@ class AppController(
         self.main_window.canvas_view.transform_handle_cb = self._on_transform_handle_dragged
         # Live drag of the selected analytic edge's control points.
         self.main_window.canvas_view.edge_handle_cb = self._on_edge_handle_dragged
+        # Live drag of the selected vertex / split point (#6).
+        self.main_window.canvas_view.vertex_move_cb = self._on_vertex_move_dragged
         # Snap placement clicks (while drawing) to nearby edge endpoints.
         self.main_window.canvas_view.snap_cb = self._snap_draw_xy
 
@@ -329,6 +332,8 @@ class AppController(
         sp.bc_detect_btn.clicked.connect(self.detect_bc_from_mesh)
         sp.build_init_cond_btn.clicked.connect(lambda: self.open_dll_builder("init_cond"))
         sp.build_motion_btn.clicked.connect(lambda: self.open_dll_builder("motion"))
+        sp.bc_dll_btn.clicked.connect(self.open_bc_dll_builder)
+        sp.probe_coords_btn.clicked.connect(self.open_probe_coords_dialog)
         self.init_solver()
 
         # Immersed-solid (STL3d) panel
@@ -418,6 +423,12 @@ class AppController(
 
         # ── Keyboard shortcuts ──────────────────────────────────────────
         self.main_window.setup_shortcuts(self)
+
+        # #7: replace the blunt 1.0 default up/down step on numeric fields with a
+        # per-field, value-scaled step (integer counts + explicitly-stepped
+        # fields are left untouched).
+        from app.utils import apply_smart_spin_steps
+        apply_smart_spin_steps(self.main_window)
 
         self._update_undo_redo_buttons()
 
@@ -622,7 +633,7 @@ class AppController(
     def _sync_file_segments(self, session: GeometrySession):
         """Rebuild file segments from split_indices then update the sidebar list."""
         session.project_model.update_file_segments_from_indices(
-            session.split_indices)
+            session.split_indices, points=session.original_points)
         if session is self.active_session():
             self._refresh_segment_list(clear_resampled=False)
         self._update_tab_title()
@@ -690,7 +701,6 @@ class AppController(
                 return False
         
         # Auto-save workspace on successful exit (disabled to start clean)
-        pass
 
         # Cancel and wait for all running background workers/threads to avoid crash on exit
         if hasattr(self, "_worker") and self._worker is not None:

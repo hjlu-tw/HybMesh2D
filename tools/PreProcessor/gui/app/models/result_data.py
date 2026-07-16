@@ -82,7 +82,7 @@ class TecplotResult:
     def list_zones(path: str) -> list[ZoneInfo]:
         """Scan only the zone headers — cheap metadata, no field data (R7)."""
         zones: list[ZoneInfo] = []
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 if _ZONE_RE.match(line):
                     n = _N_RE.search(line)
@@ -99,12 +99,12 @@ class TecplotResult:
         return zones
 
     @classmethod
-    def from_file(cls, path: str, zone: int = -1) -> "TecplotResult":
+    def from_file(cls, path: str, zone: int = -1) -> TecplotResult:
         """Load a single zone (default: last zone, i.e. most-converged solution).
 
         Raises ValueError if the file has no zones or the index is out of range.
         """
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
 
         variables: list[str] = []
@@ -223,33 +223,132 @@ class TecplotResult:
         """All variable names (node + cell), in file order."""
         return list(self.variables)
 
+    # Ratio of specific heats used by the derived-field formulas (air).
+    GAMMA = 1.4
+    # Post-processing quantities derived from the raw solver output (#11). Only
+    # those whose inputs are present are actually offered (see scalar_variables).
+    DERIVED = ("|V|", "Cp", "s", "p0", "T0")
+
+    # Human-readable labels for the variable selector (#6): the raw Tecplot codes
+    # are cryptic (`r, vort, phi…), so map each to "code — description". Keyed by
+    # the exact variable string; unknown codes fall back to the code itself.
+    VAR_LABELS = {
+        "`r": "ρ — density", "r": "ρ — density", "rho": "ρ — density",
+        "u": "u — x-velocity", "v": "v — y-velocity", "w": "w — z-velocity",
+        "T": "T — temperature", "p": "p — pressure", "M": "M — Mach number",
+        "vort": "vorticity", "phi": "φ — solid marker (IBM)",
+        "|V|": "|V| — velocity magnitude",
+        "Cp": "Cp — pressure coefficient",
+        "s": "s — entropy (rel. freestream)",
+        "p0": "p₀ — total pressure", "T0": "T₀ — total temperature",
+    }
+
+    def variable_label(self, code: str) -> str:
+        """Readable label for a variable code (#6), e.g. 'p' -> 'p — pressure'."""
+        return self.VAR_LABELS.get(code, code)
+
+    def base_scalar_variables(self) -> list[str]:
+        """Raw (non-derived) field variables, in file order (excludes x/y)."""
+        return list(self.variables[2:])
+
+    def derived_scalar_variables(self) -> list[str]:
+        """Derived post-processing quantities available for this result (#11)."""
+        base = self.base_scalar_variables()
+        return [d for d in self._derived_available() if d not in base]
+
     def scalar_variables(self) -> list[str]:
         """Variable names that carry a field value. The first two variables are
         the x/y coordinates (Tecplot convention), so exclude them by position —
         excluding by name would also drop a distinct later field variable that
-        happens to share a coordinate's name."""
-        return list(self.variables[2:])
+        happens to share a coordinate's name. Derived post-processing quantities
+        (#11) are appended after the raw fields."""
+        return self.base_scalar_variables() + self.derived_scalar_variables()
 
-    def get_cell_field(self, var: str) -> np.ndarray:
-        """Return the cell-centered values for a variable, deriving them from
-        node data by averaging if necessary."""
+    # ------------------------------------------------------------------ #
+    # Derived fields (#11): velocity magnitude, Cp, entropy, total p / T.
+    # Cf and y+ are intentionally NOT here — they are wall-line quantities
+    # that need wall-shear / wall-distance data the Tecplot output does not
+    # carry (a solver-side addition), so faking them would mislead.
+    # ------------------------------------------------------------------ #
+    def _density_field(self):
+        for name in ("`r", "r", "rho"):
+            if name in self.cell_data or name in self.node_data:
+                return self._base_cell_field(name)
+        return None
+
+    def _field_or_none(self, name: str):
+        if name in self.cell_data or name in self.node_data:
+            return self._base_cell_field(name)
+        return None
+
+    def _derived_available(self) -> list[str]:
+        u, v = self._field_or_none("u"), self._field_or_none("v")
+        rho, p = self._density_field(), self._field_or_none("p")
+        T, M = self._field_or_none("T"), self._field_or_none("M")
+        out: list[str] = []
+        if u is not None and v is not None:
+            out.append("|V|")
+        if p is not None and rho is not None:
+            out += ["Cp", "s"]
+        if p is not None and M is not None:
+            out.append("p0")
+        if T is not None and M is not None:
+            out.append("T0")
+        return out
+
+    def _compute_derived(self, var: str) -> np.ndarray:
+        g = self.GAMMA
+        u, v = self._field_or_none("u"), self._field_or_none("v")
+        rho, p = self._density_field(), self._field_or_none("p")
+        T, M = self._field_or_none("T"), self._field_or_none("M")
+        if var == "|V|":
+            return np.sqrt(u * u + v * v)
+        if var == "p0":     # isentropic total (stagnation) pressure
+            return p * np.power(1.0 + 0.5 * (g - 1.0) * M * M, g / (g - 1.0))
+        if var == "T0":     # total (stagnation) temperature
+            return T * (1.0 + 0.5 * (g - 1.0) * M * M)
+        if var == "s":      # entropy, referenced to the freestream (~0 far away)
+            p_inf = float(np.median(p))
+            rho_inf = float(np.median(rho))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                s = (np.log(np.maximum(p, 1e-30) / max(p_inf, 1e-30))
+                     - g * np.log(np.maximum(rho, 1e-30) / max(rho_inf, 1e-30)))
+            return np.nan_to_num(s)
+        if var == "Cp":     # pressure coefficient with field-estimated freestream
+            p_inf = float(np.median(p))
+            rho_inf = float(np.median(rho))
+            vmag = np.sqrt(u * u + v * v) if (u is not None and v is not None) else None
+            v_inf = float(np.median(vmag)) if vmag is not None else 1.0
+            q = 0.5 * max(rho_inf, 1e-30) * max(v_inf, 1e-9) ** 2
+            return (p - p_inf) / max(q, 1e-30)
+        raise KeyError(f"Unknown derived variable: {var}")
+
+    def _base_cell_field(self, var: str) -> np.ndarray:
+        """Cell-centered values for a RAW variable (no derived dispatch)."""
         if var in self.cell_data:
             return self.cell_data[var]
         if var in self.node_data and self.elements.size:
             return self.node_data[var][self.elements].mean(axis=1)
         raise KeyError(f"Unknown variable: {var}")
 
+    def get_cell_field(self, var: str) -> np.ndarray:
+        """Return the cell-centered values for a variable, deriving them from
+        node data by averaging if necessary. Derived quantities (#11) are
+        computed on demand."""
+        if var in self.DERIVED:
+            return self._compute_derived(var)
+        return self._base_cell_field(var)
+
     def cell_to_node(self, var: str) -> np.ndarray:
         """Average a cell-centered field onto nodes (needed for tricontourf and
         for streamline interpolation via LinearTriInterpolator — R6).
 
-        Returns the node-resident field directly if the variable is already nodal.
+        Returns the node-resident field directly if the variable is already
+        nodal; derived quantities are computed in cell space then averaged.
         """
         if var in self.node_data:
             return self.node_data[var]
-        if var not in self.cell_data:
-            raise KeyError(f"Unknown variable: {var}")
-        cell_vals = self.cell_data[var]
+        cell_vals = self.get_cell_field(var)   # handles raw + derived
         n_nodes = self.nodes.shape[0]
         acc = np.zeros(n_nodes)
         cnt = np.zeros(n_nodes)

@@ -413,8 +413,8 @@ class SolverConfig:
         a("")
 
         # ── Restart / initial conditions ──
-        # IBM DLL initial condition takes precedence (existing behaviour); else
-        # honour restart zone dump, else an explicit init_cond_depQ array.
+        # Precedence: restart zone-dump > an initial-condition DLL (IBM OR not,
+        # #4) > an explicit init_cond_depQ array > freestream default.
         if self.restart:
             a(f"   restart              \t{bl(self.restart)}")
             if self.convg_fn_restart.strip():
@@ -422,11 +422,15 @@ class SolverConfig:
             if self.zdump_fn_restart.strip():
                 a(f'   zdump_fn_restart     \t"{self.zdump_fn_restart.strip()}"')
             a("")
+        elif self.init_cond_dll.strip():
+            a(f'   init_cond_use_zdump_fn               "{self.init_cond_dll.strip()}"')
+            a("   init_cond_use_zdump_fn_usedll        true")
+            a("")
+        elif self.init_cond_depQ.strip():
+            a(f"   init_cond_depQ       \t{self.init_cond_depQ.strip()}")
+            a("")
 
         if self.immersed_solid:
-            if self.init_cond_dll:
-                a(f'   init_cond_use_zdump_fn               "{self.init_cond_dll}"')
-                a("   init_cond_use_zdump_fn_usedll        true")
             a("   immersed_solid                       true")
             a(f"   SolidPhasePhiMin                     {self.solid_phase_phi_min:g}")
             a(f"   SolidPhaseAlpha                      {self.solid_phase_alpha:g}")
@@ -435,9 +439,6 @@ class SolverConfig:
             if self.motion_dll:
                 a(f'   SolidPhaseMotionDLL                  "{self.motion_dll}"')
             a(f"   rigid_moving_body                    {bl(self.rigid_moving_body)}")
-            a("")
-        elif (not self.restart) and self.init_cond_depQ.strip():
-            a(f"   init_cond_depQ       \t{self.init_cond_depQ.strip()}")
             a("")
 
         with open(path, "w", encoding="utf-8") as f:
@@ -479,5 +480,5 @@ class SolverConfig:
     def load_from_file(self, path: str):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Solver config not found: {path}")
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             self.load_from_dict(json.load(f))

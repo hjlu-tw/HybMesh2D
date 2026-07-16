@@ -1,6 +1,5 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QFormLayout, QGroupBox, QCheckBox, QLabel, QWidget, QHBoxLayout
-from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import SPIN_STYLE, align_form_labels, help_label, help_widget
 from app.views.clean_double_spin_box import CleanDoubleSpinBox

@@ -1,10 +1,10 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
-    QLineEdit, QPushButton, QDialogButtonBox, QSpinBox, QRadioButton,
-    QButtonGroup, QWidget
+    QLineEdit, QDialogButtonBox, QSpinBox, QRadioButton,
+    QButtonGroup
 )
-from app.utils import COMBO_STYLE, SPIN_STYLE
+from app.utils import SPIN_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.polygon_editor import PolygonEditor
 

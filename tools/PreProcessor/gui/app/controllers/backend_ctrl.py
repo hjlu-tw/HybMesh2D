@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QFileDialog
 from app.models.session import GeometrySession
 from app.workers.backend_run import BackendWorker
 from app.views.output_dialog import OutputDialog
-from app.services.geometry_service import GeometryService, load_points_dat
+from app.services.geometry_service import load_points_dat
 
 from app.utils import find_binary_executable, repo_root
 

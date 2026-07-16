@@ -377,7 +377,7 @@ class CreateSegmentsFromIndicesCmd(BaseCommand):
 
         # Sync file segments to rebuild the segments list from split_indices
         self.session.project_model.update_file_segments_from_indices(
-            self.session.split_indices)
+            self.session.split_indices, points=self.session.original_points)
         self.refresh_cb()
 
     def _execute_file_segment(self, seg):
@@ -565,7 +565,8 @@ class BakeCurveToGeometryCmd(BaseCommand):
         self.session.is_geometry_modified = True
 
         # Rebuild file segments
-        self.session.project_model.update_file_segments_from_indices(self.session.split_indices)
+        self.session.project_model.update_file_segments_from_indices(
+            self.session.split_indices, points=self.session.original_points)
         self.refresh_cb()
 
     def undo(self):

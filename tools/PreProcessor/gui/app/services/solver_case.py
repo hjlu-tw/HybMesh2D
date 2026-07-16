@@ -56,16 +56,19 @@ def resolve_case_root(root: str, case: str, overwrite: bool, log=_noop) -> str:
     return default
 
 
-def stage_dll(src: str, dll_dir: str, log=_noop) -> str:
-    """Compile a .cc/.cpp DLL source into ``dll_dir`` (or copy a prebuilt .so).
+def stage_dll(src: str, out_dir: str, rel_prefix: str = "../dll",
+              log=_noop) -> str:
+    """Compile a .cc/.cpp DLL source into ``out_dir`` (or copy a prebuilt .so).
 
-    Returns the path relative to the work dir ("../dll/<name>.so") or "" if no
-    source given / compilation failed.
+    Returns the path the solver should reference from its work dir
+    (``<rel_prefix>/<name>.so``, e.g. "../dll/foo.so" for IBM DLLs staged into
+    the sibling dll/ dir, or "./foo.so" for a BC DLL staged into the work dir
+    itself) or "" if no source given / compilation failed.
     """
     if not src:
         return ""
     base = os.path.splitext(os.path.basename(src))[0]
-    out_so = os.path.join(dll_dir, f"{base}.so")
+    out_so = os.path.join(out_dir, f"{base}.so")
     if src.endswith(".so"):
         if os.path.abspath(src) != os.path.abspath(out_so):
             shutil.copy2(src, out_so)
@@ -75,7 +78,7 @@ def stage_dll(src: str, dll_dir: str, log=_noop) -> str:
             return ""
         cmd = ["g++", "-D_INCLUDE_TEMPLATE_IMPLEMENTATION", "-fPIC",
                "-shared", "-O3", "-o", out_so, src]
-        log(f"[IBM] compiling {os.path.basename(src)} -> {base}.so")
+        log(f"[DLL] compiling {os.path.basename(src)} -> {base}.so")
         try:
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode != 0:
@@ -84,7 +87,35 @@ def stage_dll(src: str, dll_dir: str, log=_noop) -> str:
         except OSError as e:
             log(f"[WARNING] g++ unavailable, cannot compile DLL: {e}")
             return ""
-    return f"../dll/{base}.so"
+    return f"{rel_prefix}/{base}.so"
+
+
+def stage_bc_dll_paths(cfg: SolverConfig, work_dir: str, log=_noop) -> None:
+    """Resolve BC type-11 (user DLL) paths so the solver can dlopen them (#7).
+
+    The BC .def line for a type-11 patch is ``<seg>  11  "./name.so"`` — a
+    quoted path the solver loads from its cwd (the work dir). The GUI's DLL
+    builder hands back a ``.cc`` source, so here we compile/copy each type-11
+    source into the work dir and rewrite the row's ``values`` to ``"./name.so"``.
+    A value that is already a bare ``./name.so`` reference (the user manages the
+    binary themselves) is just normalised + quoted. Mutates cfg.bc_definitions
+    in place; runs before generate_bc_def so the written table is correct.
+    """
+    for bc in cfg.bc_definitions:
+        if bc.get("bc_type") != 11:
+            continue
+        raw = str(bc.get("values", "") or "").strip().strip('"').strip("'")
+        if not raw:
+            continue
+        if os.path.exists(raw):
+            rel = stage_dll(raw, work_dir, rel_prefix=".", log=log)
+            if rel:
+                bc["values"] = f'"{rel}"'
+                continue
+        # A bare / relative reference whose binary the user stages themselves:
+        # keep it, but give it a leading ./ and quotes so the .def line is valid.
+        name = raw if raw.startswith(("./", "../", "/")) else "./" + raw
+        bc["values"] = f'"{name}"'
 
 
 def stage_phi_file(src: str, work_dir: str, log=_noop) -> None:
@@ -161,19 +192,29 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False):
     cfg.input_cel_file = os.path.join(grid_dir, "input.cel")
     cfg.input_bnd_file = os.path.join(grid_dir, "input.bnd")
 
-    # Solver boundary-condition table. The solver reads "<bc>.def" from its cwd;
-    # by default it uses getPGrid's own companion verbatim (copied by the runner).
-    # Only when the user fills the BC table do we write an override here.
-    if cfg.bc_definitions:
-        def_name = os.path.basename(cfg.output_bc_file) + ".def"
-        cfg.generate_bc_def(os.path.join(work_dir, def_name))
+    # Initial-condition DLL (IBM or not): compile the .cc into dll/ and reference
+    # it as ../dll/*.so. Non-IBM cases can drive the initial field from a DLL too
+    # (#4), so this is staged independently of the immersed-solid block below.
+    if cfg.init_cond_dll:
+        cfg.init_cond_dll = stage_dll(cfg.init_cond_dll, dll_dir,
+                                      rel_prefix="../dll", log=log)
 
-    # IBM DLLs: compile .cc sources into dll/, reference as ../dll/*.so.
+    # IBM extras: motion DLL into dll/, phi field into work/.
     if cfg.immersed_solid:
-        cfg.init_cond_dll = stage_dll(cfg.init_cond_dll, dll_dir, log)
-        cfg.motion_dll = stage_dll(cfg.motion_dll, dll_dir, log)
+        cfg.motion_dll = stage_dll(cfg.motion_dll, dll_dir,
+                                   rel_prefix="../dll", log=log)
         if cfg.ibm_phi_file:
             stage_phi_file(cfg.ibm_phi_file, work_dir, log)
+
+    # Solver boundary-condition table. The solver reads "<bc>.def" from its cwd;
+    # by default it uses getPGrid's own companion verbatim (copied by the runner).
+    # Only when the user fills the BC table do we write an override here. BC
+    # type-11 user DLLs are compiled into the work dir + rewritten to "./x.so"
+    # BEFORE the table is written so the .def references a loadable binary (#7).
+    if cfg.bc_definitions:
+        stage_bc_dll_paths(cfg, work_dir, log)
+        def_name = os.path.basename(cfg.output_bc_file) + ".def"
+        cfg.generate_bc_def(os.path.join(work_dir, def_name))
 
     # input.in with paths relative to the work dir.
     input_in_path = os.path.join(work_dir, "input.in")

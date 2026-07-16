@@ -4,24 +4,24 @@ import tempfile
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QComboBox, QLabel,
-    QPlainTextEdit, QListWidget, QListWidgetItem, QPushButton, QLineEdit,
-    QWidget, QFileDialog,
+    QPlainTextEdit, QListWidget, QListWidgetItem, QWidget, QFileDialog,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QTextCursor, QColor
 
 from app.services.dll_templates import (
-    templates_for, default_basename, INIT_COND,
+    templates_for, default_basename, INIT_COND, BC_INFLOW,
 )
 from app.workers.dll_compile_run import DllCompileWorker, compiler_available
 from app.views.cpp_highlighter import CppHighlighter
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, LINEEDIT_STYLE, repo_root
+from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, repo_root
 
 
 _FN_LABEL = {
     INIT_COND: "Initial Condition  —  initQ_at_p()",
     "motion": "Solid Motion  —  get_6dof_vel()",
+    BC_INFLOW: "Inflow BC (type 11)  —  getQ_inst_dll()",
 }
 _DIAG_COLOR = {"error": "#ef4444", "warning": "#eab308", "note": "#8892b0"}
 
@@ -44,7 +44,11 @@ class DllBuilderDialog(QDialog):
         self._tmp = tempfile.mkdtemp(prefix="hybmesh_dll_")
         self._compiled_ok = False
 
-        self.setWindowTitle("IBM DLL Builder")
+        # init-condition DLLs work with or without IBM (#4), so keep the title
+        # neutral; only the motion DLL is strictly IBM.
+        _titles = {BC_INFLOW: "BC DLL Builder",
+                   INIT_COND: "Initial-Condition DLL Builder"}
+        self.setWindowTitle(_titles.get(dll_type, "IBM DLL Builder"))
         self.setMinimumSize(820, 680)
         self.setStyleSheet("background:#121422; color:#a0a8c0;")
 
@@ -220,7 +224,7 @@ class DllBuilderDialog(QDialog):
         self._compiled_ok = (rc == 0)
         if rc == 0:
             self.status_lbl.setText(
-                f"✓ Compiled OK" + (f"  ({n_warn} warning(s))" if n_warn else ""))
+                "✓ Compiled OK" + (f"  ({n_warn} warning(s))" if n_warn else ""))
         else:
             self.status_lbl.setText(f"✗ Compile failed — {n_err} error(s).")
 

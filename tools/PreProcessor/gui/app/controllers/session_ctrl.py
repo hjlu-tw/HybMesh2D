@@ -66,6 +66,17 @@ class SessionControllerMixin:
         self.active_idx = -1
         mw.canvas_view.clear_active_overlays()
         mw.canvas_view.set_active_points(None)
+        # Tear down interactive-editing overlays too. These (the draw rubber-band
+        # + control points and the transform gizmos) are NOT tied to a session, so
+        # the per-session remove_geometry loop above leaves them on the canvas —
+        # they would otherwise linger as stray shapes after a pipeline load.
+        for teardown in ("clear_draw_artifacts", "clear_transform_handles"):
+            fn = getattr(mw.canvas_view, teardown, None)
+            if callable(fn):
+                try:
+                    fn()
+                except Exception:
+                    pass
         mw.tab_widget.blockSignals(False)
 
         # 2. Reset the shared mesh + solver config to defaults.

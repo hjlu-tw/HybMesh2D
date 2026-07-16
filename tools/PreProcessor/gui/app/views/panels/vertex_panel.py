@@ -1,5 +1,4 @@
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QFormLayout, QLabel, QCheckBox
-from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, align_form_labels, help_label, help_widget, SPIN_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
@@ -33,6 +32,32 @@ class VertexPanel(CollapsibleSection):
         self.selection_sec.add_widget(help_widget(self.remove_split_btn, "Remove the split at the selected vertex, merging two edges"))
         self.selection_sec.add_widget(help_widget(self.keep_vertex_cb, "Preserve the original vertex position during resampling"))
         self.selection_sec.add_widget(help_widget(self.auto_detect_btn, "Automatically detect and split edges at all sharp corners"))
+
+        # ── Move the selected vertex (drag on canvas OR type coordinates) #6 ──
+        move_form = QFormLayout()
+        self.move_x = CleanDoubleSpinBox()
+        self.move_x.setRange(-1e6, 1e6)
+        self.move_x.setDecimals(6)
+        self.move_x.setStyleSheet(SPIN_STYLE)
+        self.move_x.setToolTip("New X-coordinate for the selected vertex / split point")
+        self.move_y = CleanDoubleSpinBox()
+        self.move_y.setRange(-1e6, 1e6)
+        self.move_y.setDecimals(6)
+        self.move_y.setStyleSheet(SPIN_STYLE)
+        self.move_y.setToolTip("New Y-coordinate for the selected vertex / split point")
+        move_pos = QWidget(); mph = QHBoxLayout(move_pos)
+        mph.setContentsMargins(0, 0, 0, 0); mph.setSpacing(3)
+        for lab, s in (("x", self.move_x), ("y", self.move_y)):
+            t = QLabel(lab); t.setStyleSheet("color:#7a82a0; font-size:10px;")
+            mph.addWidget(t); mph.addWidget(s)
+        mph.addStretch()
+        move_form.addRow(help_label("Move to:", "Move the selected vertex / split point to these coordinates (or just drag it on the canvas)"), move_pos)
+        align_form_labels(move_form)
+        self.move_btn = make_button("Move Vertex", '#102438')
+        self.move_btn.setEnabled(False)
+        self.move_btn.setToolTip("Move the selected vertex / split point to the entered (X, Y). You can also drag it directly on the canvas in Vertex mode.")
+        self.selection_sec.add_layout(move_form)
+        self.selection_sec.add_widget(help_widget(self.move_btn, "Move the selected vertex / split point to the entered (X, Y)"))
 
         # 2. Insert Section
         self.insert_sec = CollapsibleSection("Insert Vertex", start_collapsed=False)

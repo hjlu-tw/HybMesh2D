@@ -38,7 +38,7 @@ def parse_columnar(path: str) -> tuple[list[str], np.ndarray]:
     """
     names: list[str] = []
     rows: list[list[float]] = []
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             s = line.strip()
             if not s:

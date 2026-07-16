@@ -52,13 +52,13 @@ class VTKMesh:
         self.polygons: list[list[int]] = []
 
     @classmethod
-    def from_file(cls, path: str) -> "VTKMesh":
+    def from_file(cls, path: str) -> VTKMesh:
         """Load and parse a VTK Legacy ASCII file from the given path."""
         mesh = cls()
         if not os.path.exists(path):
             raise FileNotFoundError(f"VTK file not found: {path}")
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             lines = f.readlines()
 
         # Simple line-by-line parser state

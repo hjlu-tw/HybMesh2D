@@ -94,7 +94,9 @@ class PostprocessControllerMixin:
     # Programmatic delegates (the canvas control bar does the same interactively)
     # ------------------------------------------------------------------ #
     def change_variable(self, var_name: str):
-        self.main_window.result_canvas_view.var_combo.setCurrentText(var_name)
+        # var_name is the variable CODE; the combo shows readable labels with the
+        # code stored as item data (#6), so select by data, not display text.
+        self.main_window.result_canvas_view.select_variable(var_name)
 
     def update_colormap(self, cmap: str):
         self.main_window.result_canvas_view.set_cmap(cmap)

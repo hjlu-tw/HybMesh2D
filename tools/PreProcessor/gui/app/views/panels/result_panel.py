@@ -3,7 +3,7 @@ import csv
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QLabel, QCheckBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
     QPushButton, QButtonGroup, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QSpinBox, QFileDialog, QScrollArea, QFrame, QComboBox,
     QListWidget, QListWidgetItem,
@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 
 from app.views.collapsible import CollapsibleSection
 from app.utils import (
-    make_button, SPIN_STYLE, align_form_labels, LINEEDIT_STYLE, COMBO_STYLE,
+    make_button, SPIN_STYLE, LINEEDIT_STYLE, COMBO_STYLE,
 )
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 

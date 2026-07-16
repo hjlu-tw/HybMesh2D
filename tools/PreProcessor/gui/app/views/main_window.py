@@ -2,7 +2,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu, QProgressBar, QGridLayout
+    QStackedWidget, QComboBox, QFrame, QScrollArea, QProgressBar, QGridLayout
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
@@ -212,7 +212,7 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
         """)
         # Pin the width to the widest tab name (measured in the bold QSS font) so
         # the selector never resizes when a longer/shorter tab is selected.
-        from PyQt6.QtGui import QFont, QFontMetrics
+        from PyQt6.QtGui import QFontMetrics
         _mc_font = QFont(self.mode_combo.font()); _mc_font.setBold(True)
         _mc_fm = QFontMetrics(_mc_font)
         _mc_w = max(_mc_fm.horizontalAdvance(self.mode_combo.itemText(i))

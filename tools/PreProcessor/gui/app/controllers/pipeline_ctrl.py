@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog
 
 from app.models.pipeline_config import PipelineConfig, PIPELINE_FORMAT_VERSION
 from app.utils import repo_root

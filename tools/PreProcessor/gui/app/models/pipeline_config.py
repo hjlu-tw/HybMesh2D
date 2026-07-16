@@ -99,7 +99,7 @@ class PipelineConfig:
         return out
 
     @classmethod
-    def from_dict(cls, d: dict) -> "PipelineConfig":
+    def from_dict(cls, d: dict) -> PipelineConfig:
         # Missing version = legacy v0 (explicit, not "current"); migrate older
         # dicts field-by-field before reading them.
         version = int(d.get("pipeline_version", 0))
@@ -119,17 +119,17 @@ class PipelineConfig:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def load_from_file(cls, path: str) -> "PipelineConfig":
+    def load_from_file(cls, path: str) -> PipelineConfig:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Pipeline config not found: {path}")
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             d = json.load(f)
         return cls.from_dict(d)
 
     @staticmethod
     def file_version(path: str) -> int:
         """Peek at a file's declared pipeline_version without fully building it."""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return int(json.load(f).get("pipeline_version", 0))
 
     # ------------------------------------------------------------------ #
@@ -224,7 +224,7 @@ class PipelineConfig:
     def from_configs(cls, name: str, project_model: ProjectModel | None,
                      mesh_config: MeshConfig | None,
                      solver_config: SolverConfig | None,
-                     results: dict | None = None) -> "PipelineConfig":
+                     results: dict | None = None) -> PipelineConfig:
         pc = cls(name=name or "pipeline")
         if project_model is not None:
             pc.cad = {

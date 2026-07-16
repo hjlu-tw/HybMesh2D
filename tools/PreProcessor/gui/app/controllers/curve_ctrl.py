@@ -14,6 +14,20 @@ CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line",
                "circle", "triangle", "quadrilateral", "polygon"]
 
 
+def _polygon_perimeter(verts) -> float:
+    """Closed-polygon perimeter (incl. the closing edge) from a list of (x, y).
+    Used to convert a target spacing into a node count for By-Spacing mode (#2)."""
+    n = len(verts)
+    if n < 2:
+        return 0.0
+    total = 0.0
+    for i in range(n):
+        x1, y1 = verts[i]
+        x2, y2 = verts[(i + 1) % n]
+        total += math.hypot(x2 - x1, y2 - y1)
+    return total
+
+
 class CurveControllerMixin:
     """Mixin containing analytic curve management, previewing, and baking logic."""
 
@@ -81,6 +95,20 @@ class CurveControllerMixin:
         # the per-type widget↔param mapping lives in shape_spec).
         if seg.curve_type in shape_spec.SIDEBAR_ATTRS or seg.curve_type == "polygon":
             seg.parameters.update(shape_spec.read_widget_params(sb, seg.curve_type))
+
+        # #2: a polygon distributed "By Spacing" derives its node count from the
+        # (now up-to-date) vertices' perimeter, so point density follows edge
+        # length; 'spacing' is kept for round-trip. Any other mode drops the key
+        # so the spinbox node count governs (the backend consumes n_points).
+        if (seg.curve_type == "polygon"
+                and sb.curve_dist_mode.currentText() == "By Spacing"):
+            spacing = max(1e-9, sb.curve_spacing.value())
+            seg.parameters["spacing"] = spacing
+            per = _polygon_perimeter(shape_spec.polygon_vertices(seg.parameters))
+            if per > 0:
+                seg.parameters["n_points"] = max(2, int(round(per / spacing)))
+        else:
+            seg.parameters.pop("spacing", None)
 
     def handle_curve_type_changed(self):
         session = self.active_session()

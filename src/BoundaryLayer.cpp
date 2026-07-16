@@ -1,9 +1,23 @@
 #include "BoundaryLayer.hpp"
+#include "Logger.hpp"
 #include <iostream>
 #include <map>
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <cstdio>
+
+// isatty: gate the '\r' in-place progress bar so a piped / CI / GUI stdout gets
+// newline-terminated progress lines instead of unflushed carriage returns.
+#if defined(_WIN32)
+#include <io.h>
+#define HYBMESH_ISATTY(fd) _isatty(fd)
+#define HYBMESH_FILENO(f)  _fileno(f)
+#else
+#include <unistd.h>
+#define HYBMESH_ISATTY(fd) isatty(fd)
+#define HYBMESH_FILENO(f)  fileno(f)
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -157,21 +171,47 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                           << maxAngleDeg << " deg vs finite-difference)\n";
         }
 
+        // Validate BL params before use. Non-positive thickness / growth make
+        // hFirst <= 0 (log of a non-positive number is NaN) and a transition rate
+        // that isn't > 1 makes the auto-count divisor 0/negative -> the round()
+        // of Inf/NaN is UB. Clamp to safe values with a one-time warning instead.
+        if (!(fs.bl.blInitialThickness > 0.0)) {
+            LOG_WARN("BL initial thickness <= 0 (" << fs.bl.blInitialThickness
+                     << ") on geometry " << fs.geomId << "; clamping to 0.01.");
+            fs.bl.blInitialThickness = 0.01;
+            fs.currentH = fs.bl.blInitialThickness;
+        }
+        if (!(fs.bl.blGrowthRate > 0.0)) {
+            LOG_WARN("BL growth rate <= 0 (" << fs.bl.blGrowthRate
+                     << ") on geometry " << fs.geomId << "; clamping to 1.2.");
+            fs.bl.blGrowthRate = 1.2;
+        }
+
         // 計算過渡層數
         double h_tmp = fs.bl.blInitialThickness;
         for (int l = 0; l < fs.bl.blLayers; ++l) h_tmp *= fs.bl.blGrowthRate;
         double hFirst = h_tmp, rTrans = fs.bl.blTransitionGrowthRate;
         fs.nTrans = fs.bl.blTransitionLayers;
         // Auto transition-layer count solves for how many geometrically-growing
-        // layers reach the target size, so it needs rTrans > 1. With no growth
-        // (rTrans <= 1) std::log(rTrans) is 0/negative and the division blows up
-        // to inf/nan; keep the manual count in that case.
-        if (rTrans > 1.0 && fs.bl.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
+        // layers reach the target size, so it needs rTrans > 1 and hFirst > 0.
+        // With no growth (rTrans <= 1) std::log(rTrans) is 0/negative and the
+        // division blows up to inf/nan; keep the manual count in that case. A
+        // rate barely above 1 can also explode the count, so clamp nTrans to a
+        // sane maximum (avoids a hang / OOM).
+        const int kMaxTransLayers = 1000;
+        if (rTrans > 1.0 && hFirst > 0.0 && fs.bl.blAutoTransitionLayers == 1 && m_config.globalAvgSegmentLength > 0) {
             fs.nTrans = std::max(0, (int)std::round(std::log(m_config.globalAvgSegmentLength / hFirst) / std::log(rTrans)));
-        } else if (rTrans > 1.0 && fs.bl.blAutoTransitionLayers == 2) {
+        } else if (rTrans > 1.0 && hFirst > 0.0 && fs.bl.blAutoTransitionLayers == 2) {
             double totalLen = 0;
             for(int i=0; i<n_init; ++i) totalLen += (fs.pos_init[(i+1)%n_init] - fs.pos_init[i]).length();
             fs.nTrans = std::max(0, (int)std::round(std::log((totalLen/n_init) / hFirst) / std::log(rTrans)));
+        }
+        if (fs.nTrans > kMaxTransLayers) {
+            LOG_WARN("auto transition-layer count (" << fs.nTrans
+                     << ") on geometry " << fs.geomId << " exceeds the cap; clamping to "
+                     << kMaxTransLayers << " (transition growth rate "
+                     << rTrans << " is very close to 1).");
+            fs.nTrans = kMaxTransLayers;
         }
         maxNTrans = std::max(maxNTrans, fs.nTrans);
 
@@ -282,6 +322,36 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 }
             }
         }
+
+        // --- BL / no-BL junction handling ---------------------------------
+        // Where a growing node borders a segment that grows NO boundary layer
+        // (skipBL, from a .meta grow=0 segment), the corner bisector would tilt
+        // the growth ray toward the no-BL edge. An earlier attempt grew the node
+        // straight ALONG the no-BL edge; that leaned the cap onto the no-BL side
+        // and skewed / inverted its cells (#2). Instead let BL HEIGHT win: grow
+        // the junction node along its own BL edge's outward normal (drop the
+        // no-BL edge from the bisector) so the lateral cap is a clean face
+        // perpendicular to the BL wall, full height. The no-BL surface simply
+        // resumes from the cap base — its junction point is subsumed by the BL
+        // over the layer's height and only carries the far field beyond it.
+        // Runs last so it overrides the fan/concave setup for these cap nodes;
+        // the direction propagates to every layer (each child inherits its
+        // candidate's dir).
+        for (int i = 0; i < n_init; ++i) {
+            int nid = boundaryNodeIds[i];
+            if (m_mesh.nodes[nid].skipBL) continue;   // this node itself grows no BL
+            int ip = (i - 1 + n_init) % n_init, in = (i + 1) % n_init;
+            bool prevSkip = m_mesh.nodes[boundaryNodeIds[ip]].skipBL;
+            bool nextSkip = m_mesh.nodes[boundaryNodeIds[in]].skipBL;
+            if (prevSkip == nextSkip) continue;       // 0 or 2 no-BL neighbours: no junction
+            // Outward normal of the BL edge (the edge whose OTHER neighbour still
+            // grows BL): n1_init is the previous edge's normal, n2_init the next.
+            Vector2D blNormal = nextSkip ? fs.n1_init[i] : fs.n2_init[i];
+            if (blNormal.length() < 1e-9) continue;   // degenerate; keep default
+            fs.nodeDirections[nid] = blNormal.normalized();
+            fs.nodeStepMultipliers[nid] = 1.0;
+            fs.junctionCapNodes.insert(nid);
+        }
         fronts.push_back(fs);
     }
 
@@ -294,6 +364,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     for (const auto& fs : fronts)
         totalLayers = std::max(totalLayers, fs.bl.blLayers + fs.nTrans);
     (void)maxNTrans;
+    const bool stdoutIsTty = HYBMESH_ISATTY(HYBMESH_FILENO(stdout)) != 0;
     std::cout << "Step: Generating " << totalLayers << " boundary layers..." << std::endl;
     for (int layer = 0; layer < totalLayers; ++layer) {
 
@@ -371,6 +442,16 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 } else {
                     shouldSplit = (layer == 0 && isConvexList[i]);
                     localUsePara = false;
+                }
+
+                // BL/no-BL junction cap: force plain single-ray growth along the
+                // BL edge's own normal (direction preset in fs.nodeDirections at
+                // init), overriding any fan/parallelogram split so the BL's
+                // lateral cap stays a clean perpendicular face across all layers.
+                if (fs.junctionCapNodes.count(nodeId)) {
+                    shouldSplit = false;
+                    localUsePara = false;
+                    localUseSplitPara = false;
                 }
 
                 if (shouldSplit) {
@@ -560,9 +641,13 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
             for (int i = 0; i < n; ++i) {
                 int i_next = (i + 1) % n;
+                // Guard: back()/front() on an empty vector is UB. A node can
+                // produce no child (e.g. skipBL, or a collision-frozen node), so
+                // skip stitching this pair if either side has no children.
+                if (p2c[i].empty() || p2c[i_next].empty()) continue;
                 int n_curr_last = p2c[i].back();
                 int n_next_first = p2c[i_next].front();
-                
+
                 bool i_frozen = m_mesh.nodes[fs.activeFront[i]].isFrozen;
                 bool next_frozen = m_mesh.nodes[fs.activeFront[i_next]].isFrozen;
 
@@ -588,9 +673,19 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             if (layer < fs.bl.blLayers - 1) fs.currentH *= fs.bl.blGrowthRate;
             else fs.currentH *= fs.bl.blTransitionGrowthRate;
         }
-        std::cout << "\r  - Boundary Layer progress: " << layer + 1 << " / " << totalLayers << " complete." << std::flush;
+        if (stdoutIsTty) {
+            // Interactive: overwrite in place with a carriage return.
+            std::cout << "\r  - Boundary Layer progress: " << layer + 1 << " / "
+                      << totalLayers << " complete." << std::flush;
+        } else {
+            // Piped / CI / GUI: emit a periodic newline-terminated line (first,
+            // last, and every 10th layer) so logs stay readable without \r noise.
+            if (layer == 0 || layer + 1 == totalLayers || (layer + 1) % 10 == 0)
+                std::cout << "  - Boundary Layer progress: " << layer + 1 << " / "
+                          << totalLayers << " complete." << std::endl;
+        }
     }
-    std::cout << std::endl;
+    if (stdoutIsTty) std::cout << std::endl;
 
     // --- 4. Final Geometric Validation (Pre-Gmsh) ---
     std::cout << "Step: Validating final boundary layer fronts before Gmsh..." << std::endl;

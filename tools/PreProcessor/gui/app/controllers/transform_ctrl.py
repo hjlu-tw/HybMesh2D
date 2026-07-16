@@ -2,7 +2,6 @@ from __future__ import annotations
 import math
 import numpy as np
 from app.models.segment import SegmentModel
-from app.models.session import GeometrySession
 from app.commands.segment_cmds import DuplicateMultipleTransformCmd
 from app.services.geometry_service import (
     GeometryService, _parse_vertices_str, format_vertices_str)

@@ -4,7 +4,7 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
     QFormLayout, QComboBox, QSpinBox, QLabel, QLineEdit, QCheckBox,
-    QPushButton, QFileDialog,
+    QPushButton,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 

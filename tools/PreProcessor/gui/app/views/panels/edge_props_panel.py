@@ -2,9 +2,8 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QComboBox, QSpinBox,
-    QCheckBox, QStackedWidget, QLineEdit, QRadioButton, QButtonGroup, QDialog
+    QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QDialog
 )
-from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
 from app.views.panels.transform_panel import TransformPanel
@@ -335,11 +334,26 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
 
         # General curve properties (applicable to all shapes)
         rf = QFormLayout()
+        # #2: a polygon may be distributed by a fixed node count OR by a target
+        # edge spacing (node count then derived from the polygon perimeter). The
+        # Mode row is shown only for polygon; other analytic curves stay node-count.
+        self.curve_dist_mode = QComboBox()
+        self.curve_dist_mode.addItems(["By Node Count", "By Spacing"])
+        self.curve_dist_mode.setStyleSheet(COMBO_STYLE)
+        self.curve_dist_mode.setToolTip("Distribute the polygon by a fixed node count or by a target edge spacing")
         self.curve_n = QSpinBox()
         self.curve_n.setRange(2, 100000)
         self.curve_n.setValue(100)
         self.curve_n.setStyleSheet(SPIN_STYLE)
         self.curve_n.setToolTip("Total number of points to distribute along this edge")
+        self.curve_spacing = CleanDoubleSpinBox()
+        self.curve_spacing.setRange(1e-6, 1e4)
+        self.curve_spacing.setValue(0.1)
+        self.curve_spacing.setDecimals(5)
+        self.curve_spacing.setSingleStep(0.01)
+        self.curve_spacing.setStyleSheet(SPIN_STYLE)
+        self.curve_spacing.setToolTip("Target distance between adjacent nodes along the polygon perimeter")
+        self.curve_spacing.setVisible(False)
         self.curve_start_node = QSpinBox()
         self.curve_start_node.setRange(-1, 1000000)
         self.curve_start_node.setValue(-1)
@@ -352,9 +366,18 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         self.curve_end_node.setSpecialValueText("None")
         self.curve_end_node.setStyleSheet(SPIN_STYLE)
         self.curve_end_node.setToolTip("Index of the anchor node at the end (or None for auto)")
+        rf.addRow(help_label("Mode:", "Distribute by a fixed node count or by a target edge spacing (polygon)"), self.curve_dist_mode)
         rf.addRow(help_label("Node Count:", "Total number of points to distribute along this edge"), self.curve_n)
+        rf.addRow(help_label("Spacing (Δs):", "Target distance between adjacent nodes along the polygon perimeter"), self.curve_spacing)
         rf.addRow(help_label("Start Anchor:", "Index of the anchor node at the start (or None for auto)"), self.curve_start_node)
         rf.addRow(help_label("End Anchor:", "Index of the anchor node at the end (or None for auto)"), self.curve_end_node)
+        self._curve_mode_label = rf.labelForField(self.curve_dist_mode)
+        self._curve_n_label = rf.labelForField(self.curve_n)
+        self._curve_spacing_label = rf.labelForField(self.curve_spacing)
+        if self._curve_spacing_label:
+            self._curve_spacing_label.setVisible(False)
+        self.curve_dist_mode.currentTextChanged.connect(
+            lambda t: self._toggle_curve_dist_mode(t == "By Spacing"))
 
         self._curve_group.add_layout(rf)
 
@@ -520,6 +543,29 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         self.curve_n.setValue(seg.parameters.get("n_points", 100))
         self.curve_start_node.setValue(seg.start_index)
         self.curve_end_node.setValue(seg.end_index)
+
+        # #2: the By-Node/By-Spacing mode row applies to polygon only; a stored
+        # 'spacing' key means the polygon is distributed by spacing.
+        is_poly = (curve_type == "polygon")
+        self.curve_dist_mode.setVisible(is_poly)
+        if self._curve_mode_label:
+            self._curve_mode_label.setVisible(is_poly)
+        spacing_mode = is_poly and ("spacing" in seg.parameters)
+        self.curve_dist_mode.blockSignals(True)
+        self.curve_dist_mode.setCurrentIndex(1 if spacing_mode else 0)
+        self.curve_dist_mode.blockSignals(False)
+        if spacing_mode:
+            self.curve_spacing.setValue(seg.parameters.get("spacing", 0.1))
+        self._toggle_curve_dist_mode(spacing_mode)
+
+    def _toggle_curve_dist_mode(self, spacing_on: bool):
+        """Swap the Node-Count row for the Spacing (Δs) row (#2)."""
+        self.curve_n.setVisible(not spacing_on)
+        if self._curve_n_label:
+            self._curve_n_label.setVisible(not spacing_on)
+        self.curve_spacing.setVisible(spacing_on)
+        if self._curve_spacing_label:
+            self._curve_spacing_label.setVisible(spacing_on)
 
     @property
     def curve_preview_btn(self):

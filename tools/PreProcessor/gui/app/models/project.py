@@ -25,8 +25,17 @@ class ProjectModel:
 
     # ── Segment management ────────────────────────────────────────────────
 
-    def update_file_segments_from_indices(self, split_indices: list[int]):
-        """Rebuild file-type segments from split indices, preserving curve segments."""
+    def update_file_segments_from_indices(self, split_indices: list[int],
+                                          points=None):
+        """Rebuild file-type segments from split indices, preserving curve segments.
+
+        When an existing BY-NODE segment is split, its node count is redistributed
+        across the resulting sub-segments in proportion to arc length so the point
+        DENSITY is preserved — instead of every sub-segment inheriting the full
+        count, which over-densified short pieces (#1). Distance-based ('spacing')
+        segments need no redistribution: the same spacing already yields uniform
+        density. ``points`` is the geometry's (N, 2) coordinates; when omitted,
+        index span is used as a length proxy."""
         curve_segs = [s for s in self.segments if s.type == "curve"]
 
         # Build a map of (start, end) → existing file segment so we preserve settings
@@ -34,6 +43,17 @@ class ProjectModel:
         for s in self.segments:
             if s.type == "file":
                 existing_map[(s.start_index, s.end_index)] = s
+
+        def _arc_len(a: int, b: int) -> float:
+            """Arc length of the point range [a, b], or index span as a fallback."""
+            if a >= b:
+                return 0.0
+            if points is not None and 0 <= a < b < len(points):
+                import numpy as np
+                seg = np.asarray(points[a:b + 1], dtype=float)
+                d = np.diff(seg, axis=0)
+                return float(np.sqrt((d * d).sum(axis=1)).sum())
+            return float(b - a)
 
         new_file_segs: list[SegmentModel] = []
         for i in range(len(split_indices) - 1):
@@ -56,6 +76,14 @@ class ProjectModel:
                     seg.strategy = best_seg.strategy
                     seg.parameters = copy.deepcopy(best_seg.parameters)
                     seg.match_previous = best_seg.match_previous
+                    # By-node count → scale to this piece's share of the parent
+                    # segment's arc length, keeping the original point density.
+                    if "spacing" not in seg.parameters and "n_points" in seg.parameters:
+                        n_old = best_seg.parameters.get("n_points", 50)
+                        L_old = _arc_len(best_seg.start_index, best_seg.end_index)
+                        if L_old > 0:
+                            share = _arc_len(start, end) / L_old
+                            seg.parameters["n_points"] = max(2, int(round(n_old * share)))
             new_file_segs.append(seg)
 
         self.segments = new_file_segs + curve_segs

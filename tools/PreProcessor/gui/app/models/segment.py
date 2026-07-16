@@ -53,7 +53,7 @@ class SegmentModel:
     # ── Serialisation ─────────────────────────────────────────────────────
 
     @classmethod
-    def from_dict(cls, segment_id: int, d: dict) -> "SegmentModel":
+    def from_dict(cls, segment_id: int, d: dict) -> SegmentModel:
         actual_id = d.get("id", segment_id)
         seg_type = d.get("type", "file")
         if seg_type == "curve":

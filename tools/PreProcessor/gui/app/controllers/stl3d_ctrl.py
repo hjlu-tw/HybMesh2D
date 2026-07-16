@@ -7,7 +7,7 @@ import numpy as np
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from app.models.stl3d_config import (
-    Stl3dConfig, stl_bounding_box, detect_stl_ascii, parse_phi_tecplot,
+    stl_bounding_box, detect_stl_ascii, parse_phi_tecplot,
 )
 from app.services.stl_loader import load_stl_triangles
 from app.services.dll_templates import render_phi_field_init

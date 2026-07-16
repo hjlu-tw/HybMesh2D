@@ -200,7 +200,7 @@ def _dirA_distances(pts: np.ndarray, tris: np.ndarray, k: int = _K_CANDIDATES) -
     a_all, b_all, c_all = tris[:, 0], tris[:, 1], tris[:, 2]
 
     KDTree = _get_kdtree()
-    if KDTree is not None and T > k:
+    if KDTree is not None and k < T:
         # Index each triangle by its centroid AND its three vertices, all tagged
         # with the triangle they belong to. A large triangle has a distant
         # centroid, so a centroid-only tree can miss it for a query point near one

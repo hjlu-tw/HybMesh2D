@@ -6,7 +6,7 @@ creates the widgets it owns and appends its section to `self._layout`."""
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QFormLayout, QLabel, QPushButton, QFileDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
+    QTableWidget, QHeaderView, QLineEdit,
 )
 
 from app.views.collapsible import CollapsibleSection
@@ -99,8 +99,6 @@ class SolverConfigBuildMixin:
             "Mixed mesh (keep quads+tris)",
             "Preserve the hybrid quad+tri mesh instead of slicing to triangles. "
             "Forces use_incenter off (undefined for quad cells).")
-        self.axisymmetric_2d = _check(
-            "Axisymmetric 2D", "Treat the 2D domain as axisymmetric (nozzles, cones)")
         self.output_grid_file = _edit("Output grid filename (.grid)")
         self.output_bc_file = _edit("Output bc filename (.bc)")
         form.addRow(help_label(".vrt:", "STAR-CD vertex file"),
@@ -111,7 +109,6 @@ class SolverConfigBuildMixin:
                     self._browse_row(self.input_bnd_file, "Select .bnd", "Boundary (*.bnd);;All Files (*)"))
         form.addRow("", help_widget(self.is_3d, "Treat the input as a 3D grid"))
         form.addRow("", help_widget(self.mixed_mesh, "Preserve hybrid quad+tri mesh"))
-        form.addRow("", help_widget(self.axisymmetric_2d, "Treat the 2D domain as axisymmetric"))
         form.addRow(help_label("Out grid:", "Output grid filename"), self.output_grid_file)
         form.addRow(help_label("Out bc:", "Output bc filename"), self.output_bc_file)
         align_form_labels(form, 100)
@@ -122,6 +119,10 @@ class SolverConfigBuildMixin:
         sec = CollapsibleSection("Flow Conditions", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
+        # Axisymmetric is a property of the solved domain (nozzles, cones), not of
+        # the getPGrid file conversion — it belongs with the flow/domain settings.
+        self.axisymmetric_2d = _check(
+            "Axisymmetric 2D", "Treat the 2D domain as axisymmetric (nozzles, cones)")
         self.flow_solu_type = _combo(
             ["ns_sol", "euler_sol"],
             "Solution type: ns_sol = viscous Navier-Stokes, euler_sol = inviscid.\n"
@@ -139,6 +140,7 @@ class SolverConfigBuildMixin:
         self.rgas = _spin(3, 0.0, 1e4, "Perfect-gas constant R (≈287 for air, SI)")
         self.stokes = _spin(4, -10.0, 10.0, "Stokes coefficient for the second viscosity")
         self.prandtl = _spin(4, 0.0, 10.0, "Prandtl number")
+        form.addRow("", help_widget(self.axisymmetric_2d, "Treat the 2D domain as axisymmetric"))
         form.addRow(help_label("Solver type:", "ns_sol (viscous) / euler_sol (inviscid)"),
                     self.flow_solu_type)
         form.addRow(help_label("Transport:", "Transport-property model"), self.transp_prop_option)
@@ -189,7 +191,13 @@ class SolverConfigBuildMixin:
         self.dissip_ctrl = _edit("Dissipation control (e.g. 1.0e-12)")
         self.epsilon = _spin(4, -1e6, 1e6, "Numerical parameter epsilon")
         self.use_incenter = _check("Use incenter", "Use triangle incenter for reconstruction")
-        self.dissip_per_cfl = _check("Dissipation per CFL", "Scale dissipation per CFL")
+        self.dissip_per_cfl = _check(
+            "Dissipation per CFL",
+            "Scale the artificial dissipation by the local CFL number so the "
+            "dissipation stays consistent when the CFL / time-step varies "
+            "(local time stepping, ramped CFL). It is a stabilisation toggle "
+            "only — the dissipation magnitude is still set by alpha / beta / "
+            "dissip_ctrl, so no extra input is required.")
         self.unsteady_lstep = _check("Unsteady local stepping", "Enable unsteady local time stepping")
         self.dt_const = _edit("Constant time step (used when 'Constant CFL' is off). Leave blank to use CFL.")
         self.cfl_schedule_fn = _edit("Optional iteration→(cfl,dt,dissip) schedule table filename")
@@ -205,7 +213,8 @@ class SolverConfigBuildMixin:
         form.addRow(help_label("epsilon:", "Numerical parameter epsilon (sigma bound)"), self.epsilon)
         form.addRow(help_label("Norm:", "Convergence error-norm type"), self.convg_norm_type)
         form.addRow("", help_widget(self.use_incenter, "Use triangle incenter"))
-        form.addRow("", help_widget(self.dissip_per_cfl, "Scale dissipation per CFL"))
+        form.addRow("", help_widget(self.dissip_per_cfl,
+            "Scale dissipation by local CFL for stability — no extra input needed"))
         form.addRow("", help_widget(self.unsteady_lstep, "Unsteady local time stepping (TALTS)"))
         align_form_labels(form, 110)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
@@ -276,8 +285,21 @@ class SolverConfigBuildMixin:
             "Probe-point coordinate file (one 'x y' per line for 2D); blank = no probes")
         self.probe_output_skip_niter = _ispin(
             1, 100_000_000, "Iterations between probe outputs")
+        # Browse to an existing file, OR enter coordinates in the GUI and let it
+        # auto-generate + link the probe file (#10). The controller owns the
+        # coords dialog + file write.
+        self.probe_coords_btn = QPushButton("Coords…")
+        self.probe_coords_btn.setFixedWidth(64)
+        self.probe_coords_btn.setToolTip(
+            "Enter probe-point coordinates in the GUI; the probe file is generated "
+            "and linked automatically.")
+        self.probe_coords_btn.setStyleSheet(
+            "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
+            "border-radius:4px;padding:2px;} QPushButton:hover{border-color:#5a9ad4;}")
+        probe_row = self._browse_row(self.probe_points_def_fn, "Select probe-point file")
+        probe_row.layout().addWidget(self.probe_coords_btn)
         form.addRow(help_label("Probe file:", "Probe-point coordinate definition file"),
-                    self._browse_row(self.probe_points_def_fn, "Select probe-point file"))
+                    probe_row)
         form.addRow(help_label("Probe /n:", "Iterations between probe outputs"),
                     self.probe_output_skip_niter)
         align_form_labels(form, 110)
@@ -310,9 +332,27 @@ class SolverConfigBuildMixin:
         ic_form = QFormLayout()
         self.init_cond_depQ = _edit(
             "Explicit initial dep-var array, e.g. '1 1 0 0 0.524' (rho u v [w] et). "
-            "Leave blank for freestream init. Ignored on restart / IBM.")
+            "Leave blank for freestream init. Ignored on restart, or when an init "
+            "DLL is set.")
         ic_form.addRow(help_label("init Q:", "Explicit initial dependent-variable array"),
                        self.init_cond_depQ)
+        # Initial-condition DLL (works with OR without IBM, #4): a getQ-style
+        # source the solver dlopens to set the initial field. 'Build…' opens the
+        # DLL builder (freestream / normal-shock templates, IBM and non-IBM), and
+        # the controller writes the resulting .cc path here. Takes precedence over
+        # the explicit array above when set.
+        self.init_cond_dll = _edit(
+            "Path to an initial-condition DLL source (.cc; compiled per-case). "
+            "Set it to drive the initial field from code instead of the explicit "
+            "'init Q' array. Works with or without IBM.")
+        self.build_init_cond_btn = make_button("Build…", "#1d2a3a")
+        self.build_init_cond_btn.setFixedWidth(64)
+        self.build_init_cond_btn.setToolTip(
+            "Generate / edit / compile an initial-condition DLL from a template "
+            "(freestream or normal shock; IBM and non-IBM variants)")
+        ic_form.addRow(help_label("init DLL:", "Initial-condition DLL source (.cc)"),
+                       self._dll_row(self.init_cond_dll, "Select init DLL source",
+                                     self.build_init_cond_btn))
         align_form_labels(ic_form, 110)
         ic_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(ic_form)
@@ -373,22 +413,19 @@ class SolverConfigBuildMixin:
         self.solid_phase_epsilon = _spin(6, 0.0, 100.0, "Solid-phase epsilon")
         self.stationary_solid = _check("Stationary solid", "Solid does not move")
         self.rigid_moving_body = _check("Rigid moving body", "Solid is a rigid moving body")
-        self.init_cond_dll = _edit("Path to init-condition DLL source (.cc; compiled per-case)")
+        # The initial-condition DLL lives in the Restart / Initial Condition
+        # section now (#4 — it works without IBM too); only the motion DLL is
+        # IBM-specific and stays here.
         self.motion_dll = _edit("Path to motion DLL source (.cc; compiled per-case)")
-        # "Build…" opens the IBM DLL builder (templates + editor + g++); the
-        # controller wires these and writes the resulting .cc path back here.
-        self.build_init_cond_btn = make_button("Build…", "#1d2a3a")
         self.build_motion_btn = make_button("Build…", "#1d2a3a")
-        for b in (self.build_init_cond_btn, self.build_motion_btn):
-            b.setFixedWidth(64)
-            b.setToolTip("Generate / edit / compile this DLL with the IBM DLL Builder")
+        self.build_motion_btn.setFixedWidth(64)
+        self.build_motion_btn.setToolTip(
+            "Generate / edit / compile this DLL with the IBM DLL Builder")
         form.addRow(help_label("phi_min:", "Minimum solid-phase phi"), self.solid_phase_phi_min)
         form.addRow(help_label("solid alpha:", "Solid-phase alpha"), self.solid_phase_alpha)
         form.addRow(help_label("solid eps:", "Solid-phase epsilon"), self.solid_phase_epsilon)
         form.addRow("", help_widget(self.stationary_solid, "Solid does not move"))
         form.addRow("", help_widget(self.rigid_moving_body, "Solid is a rigid moving body"))
-        form.addRow(help_label("init DLL:", "Init-condition DLL source (.cc)"),
-                    self._dll_row(self.init_cond_dll, "Select init DLL source", self.build_init_cond_btn))
         form.addRow(help_label("motion DLL:", "Motion DLL source (.cc)"),
                     self._dll_row(self.motion_dll, "Select motion DLL source", self.build_motion_btn))
         self.ibm_phi_file = _edit("phi field data (STL3d output), staged into the work dir as phi.dat")
@@ -458,4 +495,15 @@ class SolverConfigBuildMixin:
         self.bc_add_btn.clicked.connect(lambda: self._add_bc_row(0, 1, ""))
         self.bc_remove_btn.clicked.connect(self._remove_bc_row)
         self.bc_default_btn.clicked.connect(self._fill_default_bc)
+
+        # BC type 11 (user DLL) needs a getQ_inst_dll source; offer a template
+        # builder that writes the source path into the selected row's Extra
+        # values, mirroring the IBM init/motion builders (#12). Wired by the
+        # controller (it owns the dialog + row write-back).
+        self.bc_dll_btn = make_button("BC DLL Builder (type 11)…", "#1d2a3a")
+        self.bc_dll_btn.setToolTip(
+            "Generate / edit / compile a BC type-11 getQ_inst_dll source from a "
+            "parameter template (angled inflow, uniform inflow, or a blank "
+            "skeleton) and drop its path into the selected BC row's Extra values.")
+        sec.add_widget(self.bc_dll_btn)
         # bc_detect_btn is wired by the controller (it knows the mesh .bnd path).

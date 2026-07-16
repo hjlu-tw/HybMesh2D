@@ -172,7 +172,7 @@ class Stl3dConfig:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Stl3dConfig":
+    def from_dict(cls, d: dict) -> Stl3dConfig:
         fields = {f for f in cls.__dataclass_fields__}        # type: ignore[attr-defined]
         return cls(**{k: v for k, v in d.items() if k in fields})
 

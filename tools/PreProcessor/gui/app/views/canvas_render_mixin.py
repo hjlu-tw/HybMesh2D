@@ -179,6 +179,7 @@ class CanvasRenderMixin:
         """Clear all markers that belong to the active session."""
         self.split_scatter.clear()
         self.selected_scatter.clear()
+        self.clear_vertex_move_handle()
         self.active_segment_curve.setData([], [])
         for item in self._multi_segment_curves:
             self.plot_widget.removeItem(item)

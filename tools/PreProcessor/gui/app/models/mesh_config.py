@@ -291,7 +291,7 @@ class MeshConfig:
             self.missing_geom_files.append(val_str)
             return os.path.abspath(os.path.join(cfg_dir, val_str))
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or line.startswith("/"):

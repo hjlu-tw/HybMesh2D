@@ -169,6 +169,31 @@ class ResultCanvasInteractionMixin:
             self.ax.annotate(f"P{i+1}", (p["x"], p["y"]), color="white", fontsize=8,
                              xytext=(4, 4), textcoords="offset points")
 
+    # ── Solver probe points (#5) ────────────────────────────────────────────
+    def set_solver_probe_points(self, pts):
+        """Overlay the solver's probe-point locations on the result field (#5).
+        ``pts`` is an iterable of (x, y). Persists across variable changes and
+        result reloads (the points are physical, not tied to a field)."""
+        out = []
+        for p in (pts or []):
+            try:
+                out.append((float(p[0]), float(p[1])))
+            except (TypeError, ValueError, IndexError):
+                continue
+        self._solver_probe_pts = out
+        self.render()
+
+    def clear_solver_probe_points(self):
+        self._solver_probe_pts = []
+        self.render()
+
+    def _draw_solver_probes(self):
+        for i, (x, y) in enumerate(getattr(self, "_solver_probe_pts", [])):
+            self.ax.plot(x, y, "D", ms=7, mfc="#22d3ee", mec="#0b1020",
+                         mew=0.9, zorder=6)
+            self.ax.annotate(f"#{i+1}", (x, y), color="#22d3ee", fontsize=8,
+                             xytext=(5, -9), textcoords="offset points", zorder=6)
+
     def _draw_line_overlay(self):
         if self._line_seg:
             (x0, y0), (x1, y1) = self._line_seg
@@ -225,7 +250,7 @@ class ResultCanvasInteractionMixin:
             return np.asarray(s), np.asarray(vals)
 
         self._line_dialog.plot_over_line(
-            self._result.scalar_variables(), sampler, self.var_combo.currentText())
+            self._result.scalar_variables(), sampler, self._current_var())
         self._line_dialog.show()
         self._line_dialog.raise_()
         self._line_dialog.activateWindow()

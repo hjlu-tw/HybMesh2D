@@ -1,11 +1,14 @@
 from __future__ import annotations
 import os
 import tempfile
+from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
-from app.models.session import GeometrySession
 from app.models.vtk_mesh import VTKMesh
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.utils import find_binary_executable, repo_root
+
+if TYPE_CHECKING:
+    from app.models.mesh_config import MeshConfig
 
 class MeshGenControllerMixin:
     """Mixin containing HybMesh2D mesh generator execution, config editor mapping, and results visualization logic."""

@@ -406,7 +406,7 @@ class PolygonEditor(QWidget):
             return
         pts = []
         try:
-            with open(path, "r") as fh:
+            with open(path) as fh:
                 for line in fh:
                     p = _parse_point_line(line)
                     if p is not None:

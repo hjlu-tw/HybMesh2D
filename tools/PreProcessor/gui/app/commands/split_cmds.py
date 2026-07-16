@@ -76,7 +76,7 @@ class RemoveSplitCmd(BaseCommand):
             self.session.original_points = self._old_pts.copy()
         self.session.is_geometry_modified = self._old_modified
         self.session.project_model.update_file_segments_from_indices(
-            self.session.split_indices)
+            self.session.split_indices, points=self.session.original_points)
         self.refresh_cb()
 
 

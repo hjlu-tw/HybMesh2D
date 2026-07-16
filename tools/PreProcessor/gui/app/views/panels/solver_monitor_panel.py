@@ -2,9 +2,9 @@ from __future__ import annotations
 import math
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QFrame,
+    QWidget, QVBoxLayout, QLabel, QGridLayout, QFrame,
 )
-from PyQt6.QtCore import Qt, QTimer, QElapsedTimer
+from PyQt6.QtCore import QTimer, QElapsedTimer
 
 # Residual component labels for compressible Navier-Stokes conserved variables.
 # The solver prints 5 values per region (verified by smoke test); they map to the

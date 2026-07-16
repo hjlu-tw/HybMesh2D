@@ -30,7 +30,7 @@ def read_meta_segments(dat_path: str) -> list[tuple[int, str, str]]:
     if not os.path.exists(meta):
         return []
     try:
-        with open(meta, "r", encoding="utf-8") as f:
+        with open(meta, encoding="utf-8") as f:
             lines = f.read().splitlines()
     except OSError:
         return []
@@ -67,7 +67,7 @@ def read_meta_seg_growbl(dat_path: str) -> dict[int, bool]:
     if not os.path.exists(meta):
         return {}
     try:
-        with open(meta, "r", encoding="utf-8") as f:
+        with open(meta, encoding="utf-8") as f:
             lines = f.read().splitlines()
     except OSError:
         return {}
@@ -104,7 +104,7 @@ def write_meta_seg_growbl(dat_path: str, seg_grow: dict[int, bool]) -> bool:
     if not os.path.exists(meta):
         return False
     try:
-        with open(meta, "r", encoding="utf-8") as f:
+        with open(meta, encoding="utf-8") as f:
             lines = f.read().splitlines()
     except OSError:
         return False
@@ -163,7 +163,7 @@ def read_meta_point_segids(dat_path: str) -> list[int]:
     if not os.path.exists(meta):
         return []
     try:
-        with open(meta, "r", encoding="utf-8") as f:
+        with open(meta, encoding="utf-8") as f:
             lines = f.read().splitlines()
     except OSError:
         return []
@@ -195,7 +195,7 @@ def write_meta_segbc(dat_path: str, seg_bc: dict[int, str]) -> bool:
     if not os.path.exists(meta):
         return False
     try:
-        with open(meta, "r", encoding="utf-8") as f:
+        with open(meta, encoding="utf-8") as f:
             lines = f.read().splitlines()
     except OSError:
         return False

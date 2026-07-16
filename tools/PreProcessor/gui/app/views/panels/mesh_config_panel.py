@@ -1,5 +1,4 @@
 from __future__ import annotations
-import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
     QFormLayout, QComboBox, QSpinBox, QLabel,

@@ -35,7 +35,7 @@ def read_bnd_segments(bnd_path: str) -> list[tuple[int, str]]:
         return []
     seen: dict[int, str] = {}
     try:
-        with open(bnd_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(bnd_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 parts = line.split()
                 if len(parts) < 6:
