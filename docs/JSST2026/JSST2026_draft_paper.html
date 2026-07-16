@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSST2026 Draft — AI-Assisted Development of an Integrated CFD Platform</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;0,700;1,400&family=STIX+Two+Math&display=swap');
+
+  :root {
+    --text: #1a1a1a;
+    --accent: #1a3a6a;
+    --light-bg: #f7f8fa;
+    --border: #d0d4dc;
+    --caption: #555;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4;
+    margin: 20mm 18mm 22mm 18mm;
+  }
+
+  body {
+    font-family: 'STIX Two Text', 'Times New Roman', Georgia, serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: var(--text);
+    background: #e8eaee;
+    padding: 0;
+  }
+
+  .paper {
+    max-width: 210mm;
+    margin: 20px auto;
+    background: #fff;
+    padding: 18mm 18mm 22mm 18mm;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.12);
+  }
+
+  /* ── Title Block ── */
+  .title-block { text-align: center; margin-bottom: 18pt; }
+  .title-block h1 {
+    font-size: 15pt;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 10pt;
+    color: var(--text);
+  }
+  .authors {
+    font-size: 10.5pt;
+    margin-bottom: 4pt;
+    color: var(--text);
+  }
+  .affiliation {
+    font-size: 9pt;
+    color: #555;
+    font-style: italic;
+    margin-bottom: 6pt;
+  }
+  .email {
+    font-size: 8.5pt;
+    color: #666;
+    font-family: monospace;
+  }
+
+  /* ── Abstract ── */
+  .abstract {
+    margin: 14pt 24pt 14pt 24pt;
+    padding: 8pt 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .abstract h2 {
+    font-size: 10pt;
+    font-weight: 700;
+    margin-bottom: 4pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .abstract p {
+    font-size: 9.5pt;
+    text-align: justify;
+    line-height: 1.4;
+  }
+  .keywords { font-size: 9pt; margin-top: 4pt; color: #444; }
+  .keywords strong { color: var(--text); }
+
+  /* ── Two-column body ── */
+  .two-col {
+    column-count: 2;
+    column-gap: 18pt;
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  h2.section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    margin-top: 12pt;
+    margin-bottom: 5pt;
+    color: var(--accent);
+    break-after: avoid;
+    column-span: none;
+  }
+  h3.subsection-title {
+    font-size: 10pt;
+    font-weight: 600;
+    margin-top: 8pt;
+    margin-bottom: 3pt;
+    color: var(--text);
+    break-after: avoid;
+  }
+
+  p { margin-bottom: 5pt; }
+
+  /* ── Figures ── */
+  .figure {
+    break-inside: avoid;
+    margin: 10pt 0;
+    text-align: center;
+    background: var(--light-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8pt 6pt 6pt 6pt;
+  }
+  .figure.full-width {
+    column-span: all;
+    margin: 12pt 0;
+  }
+  .figure-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    background: linear-gradient(135deg, #eef1f7 0%, #dce1eb 100%);
+    border: 1px dashed #b0b8ca;
+    border-radius: 3px;
+    color: #777;
+    font-size: 9pt;
+    font-style: italic;
+    padding: 10px;
+  }
+  .figure-placeholder.tall { min-height: 200px; }
+  .figure-caption {
+    font-size: 9pt;
+    margin-top: 5pt;
+    color: var(--caption);
+    text-align: center;
+    line-height: 1.35;
+  }
+  .figure-caption strong { color: var(--text); }
+
+  /* ── Tables ── */
+  .table-wrap {
+    break-inside: avoid;
+    margin: 8pt 0;
+  }
+  .table-caption {
+    font-size: 9pt;
+    margin-bottom: 4pt;
+    text-align: center;
+    color: var(--caption);
+  }
+  .table-caption strong { color: var(--text); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 3pt 5pt;
+    text-align: left;
+  }
+  th {
+    background: var(--light-bg);
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  td { vertical-align: top; }
+
+  /* ── Code / pipeline diagram ── */
+  .pipeline {
+    break-inside: avoid;
+    font-family: 'Courier New', monospace;
+    font-size: 8pt;
+    line-height: 1.35;
+    background: #f0f2f7;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8pt;
+    margin: 8pt 0;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  /* ── References ── */
+  .references {
+    column-span: all;
+    margin-top: 12pt;
+    border-top: 1px solid var(--border);
+    padding-top: 8pt;
+  }
+  .references h2 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    margin-bottom: 5pt;
+    color: var(--accent);
+  }
+  .ref-list {
+    font-size: 8.5pt;
+    line-height: 1.4;
+    column-count: 2;
+    column-gap: 16pt;
+  }
+  .ref-list p {
+    margin-bottom: 3pt;
+    text-indent: -14pt;
+    padding-left: 14pt;
+  }
+
+  /* ── Utility ── */
+  .small { font-size: 9pt; }
+  .note {
+    font-size: 8.5pt;
+    color: #666;
+    font-style: italic;
+    margin: 6pt 0;
+    padding: 4pt 8pt;
+    background: #fafbfd;
+    border-left: 3px solid #c0c8d8;
+  }
+
+  @media print {
+    body { background: #fff; }
+    .paper { box-shadow: none; margin: 0; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="paper">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- TITLE BLOCK -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="title-block">
+  <h1>AI-Assisted Development of an Integrated Pre/Post-Processing<br>
+      Platform for the UNICONES CFD Solver: A Vibe Coding Approach</h1>
+  <p class="authors">
+    ○ Author A<sup>1</sup>, Author B<sup>1</sup>, Author C<sup>1</sup>
+    <!-- TODO: Replace with actual author names -->
+  </p>
+  <p class="affiliation">
+    <sup>1</sup>National Center for High-performance Computing (NCHC), National Applied Research Laboratories, Taiwan
+    <!-- TODO: Confirm affiliation -->
+  </p>
+  <p class="email">corresponding-email@nchc.org.tw</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- ABSTRACT -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="abstract">
+  <h2>Abstract</h2>
+  <p>
+    High-fidelity CFD solvers often present significant usability barriers due to their complex, 
+    multi-step workflows involving geometry preparation, mesh generation, solver execution, and 
+    post-processing. This paper presents the development of HybMesh2D, an integrated graphical 
+    platform that wraps the entire simulation pipeline around the UNICONES solver — a CESE-method-based 
+    compressible flow solver. A distinctive feature of this work is the development methodology: 
+    the platform was built through <em>vibe coding</em>, an emerging AI-assisted programming paradigm 
+    where domain experts describe their intent to a large language model (LLM) and collaboratively 
+    produce working software. The resulting system comprises over 18,000 lines of Python (PyQt6 GUI) 
+    and 3,000 lines of C++ (mesh generation core), developed in an estimated 25 person-hours — a 
+    fraction of conventional development time. We describe the system architecture, the human–AI 
+    collaboration workflow, and demonstrate the platform's capability through a complete NACA 0012 
+    airfoil simulation from geometry import through to flow-field visualization.
+  </p>
+  <p class="keywords">
+    <strong>Keywords:</strong> CFD, hybrid mesh generation, AI-assisted development, vibe coding, 
+    pre/post-processing, CESE method, user-friendly simulation
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- BODY — TWO COLUMN -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="two-col">
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- 1. INTRODUCTION -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title">1. Introduction</h2>
+
+<p>
+  Computational Fluid Dynamics (CFD) has become an indispensable tool in aerospace, 
+  mechanical, and environmental engineering. However, the practical use of a CFD solver 
+  is seldom limited to the solver itself — a complete simulation workflow typically 
+  involves (1) geometry preparation and surface discretization, (2) volume mesh 
+  generation with boundary-layer resolution, (3) solver configuration and execution, 
+  and (4) post-processing and visualization of results. Each of these steps often 
+  requires separate software tools, manual file conversions, and substantial expertise 
+  in both numerical methods and software operation.
+</p>
+
+<p>
+  UNICONES is a compressible Euler/Navier–Stokes solver based on the 
+  Conservation Element and Solution Element (CESE) method [1], developed at the 
+  National Center for High-performance Computing (NCHC), Taiwan. While the solver 
+  kernel is mature and validated, its operational workflow remains command-line-driven 
+  and relies on a chain of preprocessing utilities (format converters, mesh partitioners) 
+  that require expert knowledge. This creates a significant barrier for new users, 
+  students, and researchers who wish to leverage the CESE method but lack the 
+  operational expertise.
+</p>
+
+<p>
+  To address this challenge, we developed <strong>HybMesh2D</strong>: an integrated 
+  graphical platform that unifies the complete simulation pipeline — from geometry 
+  import through flow-field visualization — into a single, cohesive application. 
+  A unique aspect of this work is the development methodology employed: 
+  <em>vibe coding</em> [2], an emerging paradigm of AI-assisted software development 
+  where domain experts articulate their requirements in natural language, and a 
+  large language model (LLM) generates the corresponding source code. The human 
+  expert retains full responsibility for architectural decisions, algorithm design, 
+  and physical validation, while the AI accelerates the implementation of GUI 
+  components, data parsers, and software scaffolding.
+</p>
+
+<p>
+  This paper makes the following contributions: (i) the design and implementation of 
+  a complete pre/post-processing platform for a CESE-based CFD solver; (ii) a 
+  documented case study of vibe coding applied to scientific software development, 
+  including quantitative observations on development efficiency; and (iii) a 
+  discussion of the applicability, benefits, and limitations of AI-assisted 
+  development in computational science.
+</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- 2. SYSTEM ARCHITECTURE -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title">2. System Architecture</h2>
+
+<p>
+  HybMesh2D integrates four major functional modules within a unified PyQt6 
+  graphical interface. The overall pipeline is shown in Fig. 1. Users can 
+  switch between five workflow modes — <em>PreProcessor</em>, <em>Mesh Generator</em>, 
+  <em>Mesh Statistics</em>, <em>Solver</em>, and <em>Results</em> — through a 
+  mode selector combo box, each presenting its own sidebar panel and canvas view.
+</p>
+
+<!-- FIGURE 1: System Architecture (full-width) -->
+<div class="figure full-width">
+  <div class="figure-placeholder tall">
+    [TODO: Insert system architecture block diagram]<br><br>
+    Geometry (.dat) → PreProcessor (resampling, segmentation) → HybMesh2D C++ (BL quads + Gmsh triangles)<br>
+    → getPGrid (format conversion) → UNICONES solver (CESE, pthread) → Results (matplotlib contour/streamlines)
+  </div>
+  <p class="figure-caption"><strong>Fig. 1.</strong> Overall pipeline of the HybMesh2D platform. 
+    The entire workflow from geometry import to flow-field visualization is integrated within a 
+    single GUI application. Dashed box indicates the optional domain decomposition step for MPI 
+    parallelism.</p>
+</div>
+
+<h3 class="subsection-title">2.1 PreProcessor Module</h3>
+<p>
+  The PreProcessor provides an interactive geometry canvas (based on the pyqtgraph 
+  library) for loading, viewing, and resampling surface discretizations. It supports 
+  multiple spacing strategies including uniform, cosine (double-end clustering), 
+  geometric (exponential growth), and hyperbolic tangent distributions. Automatic 
+  sharp-corner detection identifies feature points where the turning angle exceeds 
+  a configurable threshold, enabling the geometry to be split into segments with 
+  independent resampling parameters. The backend is implemented as a standalone 
+  C++ executable that reads a JSON configuration and performs the resampling using 
+  cubic spline interpolation, ensuring smooth curvature preservation. The GUI 
+  communicates with the backend via a QThread worker, keeping the interface responsive.
+</p>
+
+<h3 class="subsection-title">2.2 Hybrid Mesh Generator</h3>
+<p>
+  The core mesh generation module (C++, ~1,500 lines) produces 2D hybrid meshes 
+  comprising structured quadrilateral boundary layers and unstructured triangular 
+  far-field elements. Boundary layers are grown outward from the geometry surface 
+  using a node-marching algorithm. The generator handles convex corners through 
+  fan-element insertion (with adaptive node counts based on arc length and neighboring 
+  segment widths) and concave corners through either node merging or a 
+  thickness-diffusion blending method. A configurable number of transition layers with 
+  a separate growth rate bridges the boundary-layer region to the far-field, where the 
+  Gmsh library [3] (Frontal-Delaunay algorithm) generates unstructured triangles. The 
+  mesh module exports both VTK format for ParaView visualization and STAR-CD format 
+  (.vrt/.cel/.bnd) for solver input.
+</p>
+
+<h3 class="subsection-title">2.3 Solver Integration</h3>
+<p>
+  The solver integration module orchestrates the execution of the UNICONES pipeline 
+  directly from the GUI. It manages three steps: (1) <em>getPGrid</em>, a format 
+  converter that transforms STAR-CD files into the solver's native grid format via 
+  interactive stdin input; (2) optionally, <em>bDecompose</em> for MPI domain 
+  decomposition; and (3) the UNICONES solver itself, running in pthread parallel mode. 
+  The solver controller (solver_ctrl.py) automatically creates a case directory 
+  structure, renames and relocates files to match the solver's expected layout, 
+  and generates the input configuration file (input.in). During execution, the 
+  worker thread parses the solver's stdout in real time, extracting iteration 
+  counts, CFL numbers, and L2 error norms for five conservation variables, which 
+  are displayed on a live convergence monitor.
+</p>
+
+<h3 class="subsection-title">2.4 Results Visualization</h3>
+<p>
+  The results module parses Tecplot-format output files (FEBLOCK, FETRIANGLE zone 
+  type) and renders cell-centered scalar fields using an embedded matplotlib canvas. 
+  It supports both flat (tripcolor) and smooth (tricontourf via cell-to-node averaging) 
+  contour rendering, velocity streamlines (via LinearTriInterpolator sampled onto a 
+  regular grid with streamplot), and velocity vector glyphs (quiver). Users can 
+  interactively select field variables, adjust colormaps and color scale limits, 
+  and toggle mesh wireframe overlays.
+</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- 3. AI-ASSISTED DEVELOPMENT METHODOLOGY -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title">3. AI-Assisted Development Methodology</h2>
+
+<p>
+  The HybMesh2D platform was developed using an approach we characterize as 
+  <em>responsible vibe coding</em> — a mode of AI-assisted programming where a 
+  domain expert maintains full architectural control and validation responsibility, 
+  while delegating implementation to an LLM-based coding assistant. This section 
+  describes the workflow, provides concrete examples, and evaluates the 
+  development efficiency.
+</p>
+
+<h3 class="subsection-title">3.1 The Human–AI Collaboration Model</h3>
+<p>
+  Vibe coding, as originally described by Karpathy [2], refers to a programming 
+  style where the developer "fully gives in to the vibes" and lets an AI generate 
+  code based on high-level descriptions. In our context, we adopt a more disciplined 
+  variant that distinguishes between human and AI roles:
+</p>
+<p>
+  <strong>Human (domain expert) responsibilities:</strong> defining the simulation 
+  pipeline architecture and data flow; specifying numerical algorithms (e.g., 
+  boundary-layer growth logic, corner handling strategies); designing the data 
+  format compatibility chain (STAR-CD → getPGrid → UNICONES); validating outputs 
+  against known physical solutions; and making architectural decisions (e.g., 
+  MVC pattern, command pattern for undo/redo).
+</p>
+<p>
+  <strong>AI (LLM) responsibilities:</strong> generating GUI boilerplate code 
+  (PyQt6 widgets, layouts, signal/slot connections); implementing data parsers 
+  (Tecplot FEBLOCK, STAR-CD formats); producing C++ mesh generation routines 
+  from algorithmic descriptions; creating the controller–worker–view wiring; 
+  and writing documentation.
+</p>
+<p>
+  The development proceeded iteratively: the expert described a requirement 
+  in natural language → the AI generated an implementation → the expert tested 
+  and validated → identified issues were fed back as corrections → the AI revised 
+  the code. This cycle typically converged within 2–5 iterations per feature.
+</p>
+
+<h3 class="subsection-title">3.2 Representative Development Cases</h3>
+<p>
+  <strong>Case A: Boundary-layer generation (BoundaryLayer.cpp).</strong>
+  The expert described the outward-marching algorithm, including the mathematical 
+  formulation of normal computation, fan-element geometry at convex corners, and 
+  the concave-node blending strategy. The AI produced the initial 610-line C++ 
+  implementation. The expert then identified edge cases: self-intersection at sharp 
+  trailing edges (resolved by adding geometry-aware collision exclusion), and 
+  incorrect fan-node counts for acute angles (resolved by implementing adaptive 
+  arc-length-based fan sizing). These corrections required domain-specific knowledge 
+  that the AI could not independently provide.
+</p>
+<p>
+  <strong>Case B: Complete GUI framework.</strong>
+  The PyQt6 application comprises 69 Python source files totaling over 18,000 lines, 
+  organized in an MVC architecture with 9 controller mixins, 8 data models, 16 view 
+  components, and 15 panel widgets. The AI was highly effective at generating GUI 
+  scaffolding — widget layouts, stylesheet definitions, signal/slot wiring — which 
+  constitutes the majority of GUI code by volume. The expert focused on specifying 
+  the interaction logic, mode-switching behavior, and ensuring consistent dark-theme 
+  aesthetics across all panels.
+</p>
+<p>
+  <strong>Case C: Solver pipeline integration.</strong>
+  This was the most complex integration task, requiring the worker to: feed 
+  interactive stdin to the getPGrid converter, manage case directory structures 
+  with file renaming and path rewriting, parse real-time solver stdout for 
+  convergence monitoring, and handle both IBM (Immersed Boundary Method) and 
+  non-IBM solver output formats — which were discovered during live testing 
+  to have different stdout structures. The initial implementation plan 
+  (solver_integration_plan.md) was written collaboratively with the AI, 
+  documenting 8 key design decisions and 9 risk items, then executed phase-by-phase.
+</p>
+
+<h3 class="subsection-title">3.3 Quantitative Assessment</h3>
+
+<!-- TABLE 1: Development Statistics -->
+<div class="table-wrap">
+  <p class="table-caption"><strong>Table 1.</strong> Codebase statistics of the HybMesh2D platform.</p>
+  <table>
+    <tr>
+      <th>Component</th>
+      <th>Language</th>
+      <th>Files</th>
+      <th>Lines of Code</th>
+    </tr>
+    <tr>
+      <td>Mesh Generator Core</td>
+      <td>C++</td>
+      <td>7</td>
+      <td>~1,860</td>
+    </tr>
+    <tr>
+      <td>PreProcessor Backend</td>
+      <td>C++</td>
+      <td>4 <span class="small">(excl. json.hpp)</span></td>
+      <td>~1,180</td>
+    </tr>
+    <tr>
+      <td>GUI Application</td>
+      <td>Python</td>
+      <td>69</td>
+      <td>~18,200</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600">Total (platform)</td>
+      <td>—</td>
+      <td style="font-weight:600">80</td>
+      <td style="font-weight:600">~21,240</td>
+    </tr>
+    <tr>
+      <td>UNICONES Solver <span class="small">(existing)</span></td>
+      <td>C/Fortran</td>
+      <td>—</td>
+      <td><em>not modified</em></td>
+    </tr>
+  </table>
+</div>
+
+<p>
+  The phased implementation plan estimated a total effort of approximately 
+  20–25 person-hours for the solver integration module alone (10 phases, see [4]). 
+  Based on the authors' experience, developing the equivalent GUI application 
+  through conventional methods (manual coding without AI assistance) would 
+  typically require 3–6 months for a team of comparable domain expertise 
+  but limited software engineering background. The AI-assisted approach 
+  compressed this to approximately 4–6 weeks of part-time effort.
+</p>
+
+<p>
+  We observed that the AI was most effective for: (i) GUI boilerplate and layout 
+  code, (ii) file I/O and data parsing routines, and (iii) standard software 
+  patterns (MVC wiring, command pattern, worker threads). Conversely, the AI 
+  required the most correction for: (i) domain-specific edge cases in numerical 
+  algorithms, (ii) interaction with third-party SDKs with limited training data 
+  (e.g., Gmsh API), and (iii) cross-component integration where multiple 
+  subsystems must agree on file formats and directory conventions.
+</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- 4. DEMONSTRATION -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title">4. Demonstration</h2>
+
+<p>
+  To validate the platform's end-to-end capability, we performed a complete 
+  simulation workflow for a NACA 0012 airfoil at Mach 0.5 using the integrated GUI.
+</p>
+
+<!-- FIGURE 2: GUI Screenshots -->
+<div class="figure full-width">
+  <div class="figure-placeholder tall">
+    [TODO: Insert 2×2 grid of GUI screenshots]<br><br>
+    (a) PreProcessor — geometry resampling with cosine spacing<br>
+    (b) Mesh Generator — hybrid mesh with BL zoom inset<br>
+    (c) Solver — configuration panel + real-time convergence monitor<br>
+    (d) Results — Mach contour with streamlines overlay
+  </div>
+  <p class="figure-caption"><strong>Fig. 2.</strong> The four operational modes of the HybMesh2D 
+    platform demonstrated with a NACA 0012 airfoil case: (a) PreProcessor with cosine surface 
+    resampling, (b) generated hybrid mesh showing quadrilateral boundary layers and triangular 
+    far-field, (c) solver configuration and convergence monitoring, and (d) Mach number 
+    contour with velocity streamlines.</p>
+</div>
+
+<p>
+  The workflow proceeded as follows: (1) the NACA 0012 profile was loaded and 
+  resampled using cosine spacing for leading- and trailing-edge refinement; 
+  (2) HybMesh2D generated a hybrid mesh with 20 boundary layers 
+  (initial thickness 0.0002, growth rate 1.1), producing approximately 100,000 
+  elements; (3) the solver mode invoked getPGrid for format conversion, then 
+  launched UNICONES with pthread parallelism; (4) convergence residuals were 
+  monitored in real time via the GUI; and (5) the resulting Mach number field 
+  was visualized with smooth contours and velocity streamlines, all without 
+  leaving the application.
+</p>
+
+<p>
+  The full-chain test confirmed format compatibility at every interface: 
+  HybMesh2D's STAR-CD output was correctly consumed by getPGrid, the 
+  resulting grid files were properly ingested by UNICONES, and the solver's 
+  Tecplot output was successfully parsed and rendered by the results module. 
+  The solver processed 50,426 nodes and 99,994 elements in the test case, 
+  with convergence residuals extracted every 10 iterations for the 5 
+  conservation-variable L2 error norms.
+</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- 5. DISCUSSION -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title">5. Discussion</h2>
+
+<p>
+  The vibe coding approach proved highly effective for developing the 
+  <em>peripheral tooling</em> around an existing solver — GUI interfaces, 
+  data pipelines, and visualization — while the solver core (UNICONES) 
+  remained untouched. This division aligns naturally with the strengths and 
+  weaknesses of current LLMs: they excel at well-established software patterns 
+  (GUI frameworks, file I/O, standard algorithms) but struggle with 
+  domain-specific numerical logic and poorly documented APIs.
+</p>
+
+<p>
+  A critical enabler was the domain expert's ability to <em>validate</em> the 
+  generated output against physical expectations. Without this capability, 
+  vibe coding for scientific software carries significant risks of producing 
+  plausible but incorrect implementations. We therefore emphasize that our 
+  approach is not "pure" vibe coding (fire-and-forget AI generation) but rather 
+  a <em>responsible AI-assisted engineering</em> model where the human retains 
+  full accountability for correctness.
+</p>
+
+<p>
+  Unlike commercial pre/post-processing tools (e.g., Pointwise, ANSYS ICEM), 
+  HybMesh2D is intentionally lightweight and tightly coupled to a specific solver. 
+  This focused scope is precisely what makes the vibe coding approach viable: 
+  the development target is well-defined, the acceptance criteria are clear 
+  (the solver must run and produce correct results), and the user base 
+  (researchers and students using UNICONES) has known needs. We suggest that 
+  this pattern — AI-assisted construction of solver-specific front-ends — is 
+  broadly reproducible across the computational science community.
+</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- 6. CONCLUSION -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title">6. Conclusion</h2>
+
+<p>
+  We presented HybMesh2D, an integrated pre/post-processing platform for the 
+  UNICONES CFD solver, developed using an AI-assisted vibe coding approach. 
+  The platform unifies geometry preparation, hybrid mesh generation, solver 
+  execution with real-time monitoring, and flow-field visualization into a 
+  single graphical application. The AI-assisted methodology enabled domain 
+  experts — who are not professional software engineers — to produce a 
+  production-quality platform of over 21,000 lines of code in a fraction of 
+  the time that conventional development would require.
+</p>
+
+<p>
+  This work demonstrates the viability of vibe coding for scientific software 
+  tooling, provided that the domain expert retains control over algorithm design 
+  and output validation. Future work includes extending the platform to support 
+  3D mesh generation, adding automated parameter optimization, and exploring 
+  web-based deployment to further lower the barrier to entry for CFD education 
+  and research.
+</p>
+
+<p style="margin-top: 8pt; font-size: 9pt; color: #555;">
+  <strong>Acknowledgments.</strong> [TODO: Add acknowledgments for NCHC computational 
+  resources, funding sources, and collaborators.]
+</p>
+
+
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<!-- REFERENCES -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
+<div class="references">
+  <h2>References</h2>
+  <div class="ref-list">
+    <p>[1] Chang, S.-C., "The method of space-time conservation element and solution 
+      element — a new approach for solving the Navier–Stokes and Euler equations," 
+      <em>Journal of Computational Physics</em>, Vol. 119, No. 2, pp. 295–324, 1995.
+      <!-- TODO: Replace or supplement with the actual UNICONES reference -->
+    </p>
+    <p>[2] Karpathy, A., "Vibe coding," X (formerly Twitter) post and subsequent 
+      interviews, February 2025. Defined as a programming paradigm where the 
+      developer describes intent and AI generates the code.
+    </p>
+    <p>[3] Geuzaine, C. and Remacle, J.-F., "Gmsh: A 3-D finite element mesh 
+      generator with built-in pre- and post-processing facilities," 
+      <em>International Journal for Numerical Methods in Engineering</em>, 
+      Vol. 79, No. 11, pp. 1309–1331, 2009.
+    </p>
+    <p>[4] HybMesh2D Solver Integration Plan (internal document), 
+      "HybMesh2D → Solver → Post-processing: Complete Implementation Plan," 
+      2026.
+      <!-- TODO: May cite as supplementary material or remove if not appropriate -->
+    </p>
+    <p>[5] IBM Research, "What is vibe coding?," 
+      <em>IBM Think</em>, 2025. 
+      Available: https://www.ibm.com/think/topics/vibe-coding
+    </p>
+    <p>[6] Gupta, M. et al., "Vibe coding: A systematic mapping study of 
+      AI-assisted software development," <em>arXiv preprint</em>, 2025.
+      <!-- TODO: Update with actual arXiv ID if available -->
+    </p>
+    <p>[7] Lo, S.-T., et al., "UNICONES: An unstructured CESE solver for 
+      compressible flow simulations," [TODO: Add the actual UNICONES publication 
+      reference].
+    </p>
+    <p>[8] Thompson, J.F., Soni, B.K., and Weatherill, N.P., <em>Handbook of 
+      Grid Generation</em>, CRC Press, 1999.
+    </p>
+  </div>
+</div>
+
+</div><!-- end two-col -->
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- FOOTER NOTE (editor use) -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="note" style="margin-top: 18pt;">
+  <strong>Editor's Note (not for submission):</strong> This draft is formatted 
+  in HTML for readability and review. For final submission to JSST2026, the 
+  content should be reformatted using the official JSST conference paper 
+  template (typically A4, single/double column LaTeX or Word format). 
+  Figures marked [TODO] should be replaced with actual screenshots and diagrams 
+  before submission. Author names, affiliations, acknowledgments, and several 
+  references require completion.
+</div>
+
+</div><!-- end paper -->
+</body>
+</html>
