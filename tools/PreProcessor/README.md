@@ -129,9 +129,13 @@ phi 場是**透過初始條件 DLL** 餵進求解器的。成功產生 phi 後�
 GUI 的 undo/redo 命令層有回歸測試，位於 `tools/PreProcessor/tests/`（皆為可直接執行的腳本，路徑以檔案自身位置解析，可從任何 cwd 執行）：
 
 - **`test_undo_redo.py`** — headless，不需 Qt / 顯示器（CI 安全）。以輕量 fake session 直接操作 command 與 model，涵蓋：以物件識別追蹤 segment 造成的「幽靈 edge」、`is_geometry_modified` 還原、每段邊界條件 (`bc`) 的 undo/redo、split 保留頂點時的 dirty 旗標、`ToggleMatchPrevious` 對不存在 segment 的行為、`ReplacePointsCmd` 共用基底、以及反覆 undo↔redo 循環的忠實度。
-- **`smoke_undo_redo.py`** — offscreen GUI 冒煙測試，需 `PyQt6` + `pyqtgraph`（不需顯示器；使用 `QT_QPA_PLATFORM=offscreen`）。啟動真實 `AppController` + `MainWindow`，載入 `examples/geometries/naca0012.dat`，透過實際 controller 方法驅動 undo/redo 並檢查工具列按鈕狀態。不進事件迴圈、不觸發 modal 對話框，因此不會卡住。
+- **`smoke_undo_redo.py`** — offscreen GUI 冒煙測試，需 `PyQt6` + `pyqtgraph`（不需顯示器；使用 `QT_QPA_PLATFORM=offscreen`）。啟動真實 `AppController` + `MainWindow`，載入 `examples/geometries/naca0012.dat`，透過實際 controller 方法驅動 undo/redo 並檢查工具列按鈕狀態。不進事件迴圈，因此不會卡住。
+- **`smoke_headless_appcontroller.py`** — 完整 `AppController` 的 end-to-end offscreen 冒煙測試。**刻意先留下一個 autosave `.hws` 檔**（正是過去讓 headless 卡死的觸發條件），再建構整個 controller，接著以路徑載入幾何、切換所有模式、讀回 mesh/solver 面板設定。內建 30 秒 watchdog：若未來又引入 headless 卡死，測試會以 exit 99「大聲失敗」而非無限等待。腳本自身會強制 offscreen 平台，故不需先設環境變數。
+
+> **Headless 安全性**：完整 `AppController` 現在可在無顯示器環境（`QT_QPA_PLATFORM=offscreen`）下建構與測試。過去若殘留 autosave `.hws` 檔，`_maybe_recover_autosave()` 會跳出 modal 還原對話框而永久阻塞；現在該方法在 headless 平台（`offscreen`/`minimal`）會直接跳過提示（真實 GUI 不受影響，仍會詢問是否還原）。撰寫 headless 測試時：macOS 沒有 `timeout`，請用 `threading.Timer(N, lambda: os._exit(99))` 當 watchdog，並在 `os._exit` 前 `flush` stdout（`print(..., flush=True)`）否則輸出會遺失。
 
 ```bash
-python3 tools/PreProcessor/tests/test_undo_redo.py     # 快速、無需顯示
-python3 tools/PreProcessor/tests/smoke_undo_redo.py    # offscreen GUI 端到端
+python3 tools/PreProcessor/tests/test_undo_redo.py                 # 快速、無需顯示
+python3 tools/PreProcessor/tests/smoke_undo_redo.py                # offscreen undo/redo 端到端
+python3 tools/PreProcessor/tests/smoke_headless_appcontroller.py   # offscreen 完整 AppController 端到端
 ```
