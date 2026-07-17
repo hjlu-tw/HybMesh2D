@@ -188,6 +188,14 @@ class MeshConfigSizingMixin:
                 f"background-color: {color}; border-radius: 4px; border: 1px solid #333852;"
             )
 
+    def _mark_bc_configured(self, *_):
+        """#3: a domain BC was edited — flip the config out of its neutral
+        untouched state so the BC Preview paints real colours. Ignored while
+        set_config is bulk-populating the widgets (that isn't a user edit)."""
+        if getattr(self, "_bl_updating", False):
+            return
+        self._bc_configured = True
+
     def _update_role_visibility(self):
         """Show seed params only for a selected seed geometry. Size and radius are
         independent, so radius stays editable even when the size is auto. (#2: the

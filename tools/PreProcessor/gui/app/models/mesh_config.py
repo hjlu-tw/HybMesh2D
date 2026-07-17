@@ -138,6 +138,15 @@ class MeshConfig:
     # are BC-type strings (e.g. "inlet"/"wall"/… or a free-form Custom name).
     group_bc: dict = field(default_factory=dict)
 
+    # #3: has the user actually configured the domain boundary conditions? A
+    # fresh config starts False, so the BC-Preview draws the four domain-box
+    # edges NEUTRAL (grey) instead of painting the pristine inlet/outlet model
+    # defaults as if the user had chosen them (which read as "weird" arbitrary
+    # colours on a box they never touched). Flipped True once any domain BC is
+    # edited. Loaded sessions predating this key default to True (they already
+    # carry real BCs). Round-trips through to_dict/load_from_dict.
+    bc_configured: bool = False
+
     # GEOM_FILE tokens from the last load_from_file that could not be resolved
     # to an existing file (not serialized; populated by load_from_file)
     missing_geom_files: list[str] = field(default_factory=list)
@@ -150,6 +159,7 @@ class MeshConfig:
         d["geom_files"] = self.geom_files
         d["geom_roles"] = self.geom_roles
         d["group_bc"] = self.group_bc
+        d["bc_configured"] = self.bc_configured
         return d
 
     def load_from_dict(self, d: dict):
@@ -174,6 +184,9 @@ class MeshConfig:
         self.geom_files = d.get("geom_files") or []
         self.geom_roles = d.get("geom_roles", {}) or {}
         self.group_bc = d.get("group_bc", {}) or {}
+        # #3: a session predating this key already carries real BCs, so default
+        # True (show their colours); a new session that saved it uses the value.
+        self.bc_configured = bool(d.get("bc_configured", True))
 
     # ── Per-geometry role helpers ─────────────────────────────────────────
     # Roles live in geom_roles (keyed by the path in geom_files). These helpers

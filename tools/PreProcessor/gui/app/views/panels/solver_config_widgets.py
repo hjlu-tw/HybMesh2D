@@ -4,6 +4,7 @@ unchanged). These are the module-level `_spin` / `_ispin` / `_edit` / `_check`
 and solver_config_build_mixin can import them without a circular dependency."""
 from __future__ import annotations
 from PyQt6.QtWidgets import QComboBox, QSpinBox, QLineEdit, QCheckBox
+from PyQt6.QtGui import QPalette, QColor
 
 from app.utils import COMBO_STYLE, SPIN_STYLE, LINEEDIT_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
@@ -26,10 +27,18 @@ def _ispin(lo: int, hi: int, tip: str) -> QSpinBox:
     return s
 
 
-def _edit(tip: str) -> QLineEdit:
+def _edit(tip: str, placeholder: str = "") -> QLineEdit:
     e = QLineEdit()
     e.setStyleSheet(LINEEDIT_STYLE)
     e.setToolTip(tip)
+    if placeholder:
+        e.setPlaceholderText(placeholder)
+        # LINEEDIT_STYLE pins an explicit text colour, so the placeholder would
+        # otherwise render like a real value. Force a dim tone via the palette so
+        # it reads as a format hint (#6).
+        pal = e.palette()
+        pal.setColor(QPalette.ColorRole.PlaceholderText, QColor("#5a6480"))
+        e.setPalette(pal)
     return e
 
 

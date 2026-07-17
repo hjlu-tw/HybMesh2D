@@ -46,12 +46,18 @@ class MeshCanvasBCMixin:
             ([xmin, xmax], [ymax, ymax], cfg.bc_ymax.lower()),  # top
         ]
 
+        # #3: until the user has actually configured the domain BCs, draw the
+        # four edges NEUTRAL (thin dashed grey) instead of painting the pristine
+        # inlet/outlet model defaults as bold semantic colours — those read as
+        # arbitrary "weird" colours on a box the user never touched.
+        configured = getattr(cfg, "bc_configured", True)
         for xs, ys, bc_val in sides:
-            color_str = BC_COLORS.get(bc_val, DEFAULT_BC_COLOR)
-            item = self.plot_widget.plot(
-                xs, ys,
-                pen=pg.mkPen(color_str, width=4, style=Qt.PenStyle.SolidLine)
-            )
+            if configured:
+                color_str = BC_COLORS.get(bc_val, DEFAULT_BC_COLOR)
+                pen = pg.mkPen(color_str, width=4, style=Qt.PenStyle.SolidLine)
+            else:
+                pen = pg.mkPen(DEFAULT_BC_COLOR, width=2, style=Qt.PenStyle.DashLine)
+            item = self.plot_widget.plot(xs, ys, pen=pen)
             item.setZValue(18)
             item.setVisible(self.show_bc_coloring)
             self.bc_preview_items.append(item)

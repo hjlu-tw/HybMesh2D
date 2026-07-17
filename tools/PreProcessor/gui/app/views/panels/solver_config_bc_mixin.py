@@ -41,6 +41,38 @@ class SolverConfigBCMixin:
             self._add_bc_row(sid, flag, "", name)
         return len(segments)
 
+    def resync_bc_types_from_group(self, group_bc: dict | None,
+                                   euler: bool = False) -> int:
+        """#7: refresh already-listed BC rows from the CURRENT Mesh-Generator
+        per-patch assignments (``group_bc``) without rebuilding the table. For
+        each row whose patch NAME has an explicit assignment, set its BC type to
+        that assignment; rows for patches with NO assignment keep whatever type
+        is shown (so a manual solver-table tweak on an unassigned patch stands).
+
+        This closes the stale-BC gap where a BC set in the Mesh Generator AFTER
+        the solver table was first seeded never reached the solver (the table was
+        only re-seeded on an explicit 'Detect from Mesh'). Returns how many rows
+        actually changed."""
+        group_bc = group_bc or {}
+        if not group_bc:
+            return 0
+        from app.services.bnd_io import default_bc_flag_for_name
+        changed = 0
+        for r in range(self.bc_table.rowCount()):
+            name_item = self.bc_table.item(r, 1)
+            combo = self.bc_table.cellWidget(r, 2)
+            if name_item is None or combo is None:
+                continue
+            assigned = group_bc.get(name_item.text().strip())
+            if not assigned:
+                continue
+            flag = default_bc_flag_for_name(assigned, euler)
+            idx = combo.findData(flag)
+            if idx >= 0 and idx != combo.currentIndex():
+                combo.setCurrentIndex(idx)
+                changed += 1
+        return changed
+
     # ------------------------------------------------------------------ #
     # BC table helpers
     # ------------------------------------------------------------------ #

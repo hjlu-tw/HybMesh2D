@@ -18,6 +18,7 @@ import matplotlib.colors as mcolors
 
 from app.models.result_data import TecplotResult
 from app.views.result_canvas_interaction_mixin import ResultCanvasInteractionMixin
+from app.views.result_canvas_plots_mixin import ResultCanvasPlotsMixin
 
 _BG = "#0c0d16"
 _FG = "#a0a8c0"
@@ -27,7 +28,7 @@ _COMBO_QSS = (
 _COLORMAPS = ["turbo", "viridis", "inferno", "plasma", "coolwarm", "jet", "RdBu_r"]
 
 
-class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
+class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin, QWidget):
     """Matplotlib-embedded 2D result viewer.
 
     Renders a cell-centered scalar field as a filled contour (tripcolor) or a
@@ -83,19 +84,20 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Control bar (two rows: data + file actions on top, display
-        #    toggles below, so nothing crowds) ───────────────────────────────
+        # ── Control bar (three rows so nothing crowds: data selectors, then
+        #    file / view actions, then display toggles) ─────────────────────
         bar = QWidget()
         bar.setStyleSheet("background: #06070d; border-bottom: 1px solid #1c1e36;")
         bar_v = QVBoxLayout(bar)
         bar_v.setContentsMargins(8, 4, 8, 4)
         bar_v.setSpacing(4)
-        hl = QHBoxLayout(); hl.setSpacing(6)      # row 1
-        hl2 = QHBoxLayout(); hl2.setSpacing(6)    # row 2
-        bar_v.addLayout(hl)
-        bar_v.addLayout(hl2)
+        hl = QHBoxLayout(); hl.setSpacing(6)      # row 1: data selectors
+        hl2 = QHBoxLayout(); hl2.setSpacing(6)    # row 2: file / view actions
+        hl3 = QHBoxLayout(); hl3.setSpacing(6)    # row 3: display toggles
+        for _row in (hl, hl2, hl3):
+            bar_v.addLayout(_row)
 
-        # Row 1: load + variable / zone / mode selectors, then file/view actions.
+        # Row 1: load + the variable selectors + zone / render mode.
         self.load_btn = QPushButton("Load Result")
         self.load_btn.setStyleSheet(
             "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
@@ -103,6 +105,22 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
             "QPushButton:hover{border-color:#5a9ad4;}")
         hl.addWidget(self.load_btn)
 
+        # #5: TWO-LEVEL variable picker. First pick the KIND in `kind_combo`
+        # (raw solver field vs derived post-processing quantity); `var_combo`
+        # then lists ONLY that kind's variables. Only ONE variable list is ever
+        # on screen, so the raw and derived groups no longer crowd the bar
+        # together. The Kind selector hides itself when there are no derived
+        # quantities (nothing to switch to).
+        self._base_vars: list[str] = []
+        self._derived_vars: list[str] = []
+        self.kind_label = QLabel("Show:")
+        self.kind_label.setStyleSheet(f"color:{_FG};font-size:11px;")
+        self.kind_combo = QComboBox(); self.kind_combo.setStyleSheet(_COMBO_QSS)
+        self.kind_combo.addItems(["Variable", "Derived"])
+        self.kind_combo.setToolTip(
+            "Which group the selector lists: raw solver fields (Variable) or "
+            "post-processing quantities derived from them (Derived: Cp, |V|, "
+            "entropy, total p/T).")
         self.var_combo = QComboBox(); self.var_combo.setStyleSheet(_COMBO_QSS)
         self.zone_combo = QComboBox(); self.zone_combo.setStyleSheet(_COMBO_QSS)
         self.mode_combo = QComboBox()
@@ -111,29 +129,47 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         # Colormap moved to the left sidebar (Color Scale); kept here as state.
         self._cmap = _COLORMAPS[0]
 
-        for lbl, w in [("Var:", self.var_combo), ("Zone:", self.zone_combo),
-                       ("Mode:", self.mode_combo)]:
+        hl.addWidget(self.kind_label); hl.addWidget(self.kind_combo)
+        hl.addWidget(self.var_combo)
+        for lbl, w in [("Zone:", self.zone_combo), ("Mode:", self.mode_combo)]:
             t = QLabel(lbl); t.setStyleSheet(f"color:{_FG};font-size:11px;")
             hl.addWidget(t); hl.addWidget(w)
-
         hl.addStretch()
+
+        # Row 2: file / view actions.
         self.wallqty_btn = QPushButton("Wall Qty…")
         self.wallqty_btn.setStyleSheet(self.load_btn.styleSheet())
         self.wallqty_btn.setToolTip(
             "Open the wall-quantity line plot (WallForce.dat, vsurface_qty.dat, …)")
-        hl.addWidget(self.wallqty_btn)
+        hl2.addWidget(self.wallqty_btn)
+        # #11/#8: plot surface quantities (Cp, p, …) along the perimeter.
+        self.surface_btn = QPushButton("Surface…")
+        self.surface_btn.setStyleSheet(self.load_btn.styleSheet())
+        self.surface_btn.setToolTip(
+            "Plot surface quantities (Cp, p, current variable) along the geometry "
+            "perimeter vs arc length; pick the quantity in the plot's Y selector.")
+        hl2.addWidget(self.surface_btn)
+        # #4: the solver's RECORDED probe time-history (probe_data.gui), i.e. the
+        # actual values it logged at each probe over the run.
+        self.probehist_btn = QPushButton("Probe History…")
+        self.probehist_btn.setStyleSheet(self.load_btn.styleSheet())
+        self.probehist_btn.setToolTip(
+            "Plot the solver's recorded probe time-history (probe_data.gui) vs "
+            "iteration — the values logged at each probe point during the run.")
+        hl2.addWidget(self.probehist_btn)
         self.fit_btn = QPushButton("Fit View")
         self.fit_btn.setStyleSheet(self.load_btn.styleSheet())
         self.fit_btn.setToolTip("Fit the view to the full result extent")
-        hl.addWidget(self.fit_btn)
+        hl2.addWidget(self.fit_btn)
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setStyleSheet(self.load_btn.styleSheet())
-        hl.addWidget(self.clear_btn)
+        hl2.addWidget(self.clear_btn)
         self.save_btn = QPushButton("Save PNG")
         self.save_btn.setStyleSheet(self.load_btn.styleSheet())
-        hl.addWidget(self.save_btn)
+        hl2.addWidget(self.save_btn)
+        hl2.addStretch()
 
-        # Row 2: display toggles.
+        # Row 3: display toggles.
         self.contour_cb = QCheckBox("Contour")
         self.contour_cb.setChecked(True)
         self.contour_cb.setToolTip(
@@ -144,10 +180,18 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         self.vector_cb = QCheckBox("Vectors")
         self.iso_cb = QCheckBox("Iso")      # iso-line visibility (levels set in sidebar)
         self.iso_cb.setToolTip("Show iso-contour lines (levels set in the left panel)")
-        for cb in (self.contour_cb, self.mesh_cb, self.stream_cb, self.vector_cb, self.iso_cb):
+        # #8: toggle the solver probe-point markers, and click one to read its
+        # values (added to the probe table like a manual probe).
+        self.solverprobe_cb = QCheckBox("Solver probes")
+        self.solverprobe_cb.setChecked(True)
+        self.solverprobe_cb.setToolTip(
+            "Show the solver's probe-point markers. Click a marker to read its "
+            "field values (they appear in the probe table on the left).")
+        for cb in (self.contour_cb, self.mesh_cb, self.stream_cb, self.vector_cb,
+                   self.iso_cb, self.solverprobe_cb):
             cb.setStyleSheet(f"color:{_FG};font-size:11px;")
-            hl2.addWidget(cb)
-        hl2.addStretch()
+            hl3.addWidget(cb)
+        hl3.addStretch()
         root.addWidget(bar)
 
         # ── Matplotlib figure ──────────────────────────────────────────────
@@ -168,6 +212,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         self._empty_message("No result loaded.")
 
         # Signals
+        self.kind_combo.currentIndexChanged.connect(self._on_var_kind_changed)
         self.var_combo.currentIndexChanged.connect(self._on_control_changed)
         self.mode_combo.currentIndexChanged.connect(self._on_control_changed)
         self.contour_cb.toggled.connect(self._on_control_changed)
@@ -175,12 +220,17 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         self.stream_cb.toggled.connect(self._on_control_changed)
         self.vector_cb.toggled.connect(self._on_control_changed)
         self.iso_cb.toggled.connect(self._on_iso_toggled)
+        self.solverprobe_cb.toggled.connect(lambda _=None: self.render())
         self.zone_combo.currentIndexChanged.connect(self._on_zone_changed)
         self.save_btn.clicked.connect(self._save_png)
         self.fit_btn.clicked.connect(self.reset_view)
         self.clear_btn.clicked.connect(self.clear)
         self.wallqty_btn.clicked.connect(self._open_wall_qty)
+        self.surface_btn.clicked.connect(self._open_surface_plot)
+        self.probehist_btn.clicked.connect(self._open_probe_history)
         self._wall_dialog = None
+        self._surf_dialog = None
+        self._hist_dialog = None
         self._line_dialog = None
         # CAD-like view interaction: scroll = zoom about cursor, right/middle
         # drag = pan. Left click stays reserved for probe/line tools.
@@ -257,34 +307,73 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         self.render()
 
     def _populate_var_combo(self, result):
-        """Fill the variable selector with readable labels (#6): raw fields
-        first, then a separator, then derived post-processing quantities. Each
-        item stores its variable CODE as item data; reads go through
-        _current_var()/select_variable() so display text can stay human."""
+        """#5: fill the two-level variable picker. `kind_combo` chooses the KIND
+        (Variable = raw fields, Derived = post-processing quantities); `var_combo`
+        lists ONLY the chosen kind. Item data is the variable CODE. Raw fields
+        show their symbol only (no '— description'); derived keep the full label
+        to stay discoverable. The Kind selector is hidden when nothing derived."""
+        self._base_vars = list(result.base_scalar_variables())
+        self._derived_vars = list(result.derived_scalar_variables())
+        has_d = bool(self._derived_vars)
+        self.kind_combo.setVisible(has_d)
+        self.kind_label.setVisible(has_d)
+        if not has_d and self.kind_combo.currentIndex() != 0:
+            self.kind_combo.blockSignals(True)
+            self.kind_combo.setCurrentIndex(0)
+            self.kind_combo.blockSignals(False)
+        self._fill_var_combo_for_kind()
+
+    def _fill_var_combo_for_kind(self):
+        """Repopulate `var_combo` with the variables of the currently selected
+        kind (#5). Signals are blocked so the caller controls re-rendering."""
+        result = self._result
+        if result is None:
+            return
+        derived = self.kind_combo.currentIndex() == 1 and bool(self._derived_vars)
+        self.var_combo.blockSignals(True)
         self.var_combo.clear()
-        base = result.base_scalar_variables()
-        derived = result.derived_scalar_variables()
-        for code in base:
-            self.var_combo.addItem(result.variable_label(code), code)
         if derived:
-            # Non-selectable header + separator so the computed quantities read
-            # as a distinct group, not mixed in with the raw solver fields.
-            self.var_combo.insertSeparator(self.var_combo.count())
-            for code in derived:
-                self.var_combo.addItem("· " + result.variable_label(code), code)
+            for code in self._derived_vars:
+                self.var_combo.addItem(result.variable_label(code), code)
+        else:
+            for code in self._base_vars:
+                self.var_combo.addItem(result.variable_short_label(code), code)
+        self.var_combo.blockSignals(False)
+
+    def _on_var_kind_changed(self, _idx=None):
+        """Kind switched (#5): repopulate the variable list for the new kind and
+        re-render with its first entry."""
+        if getattr(self, "_building", False):
+            return
+        self._fill_var_combo_for_kind()
+        self._on_control_changed()
 
     def _current_var(self) -> str:
-        """The selected variable CODE (item data), falling back to its text."""
+        """The active variable CODE (item data), falling back to its text."""
         data = self.var_combo.currentData()
         return data if data else self.var_combo.currentText()
 
     def select_variable(self, code: str) -> bool:
-        """Select the combo entry whose stored code matches ``code`` (#6)."""
+        """Select ``code`` (#5): switch the Kind selector to whichever group owns
+        it, repopulate, then select it in ``var_combo``."""
+        if code in self._derived_vars:
+            target_kind = 1
+        elif code in self._base_vars:
+            target_kind = 0
+        else:
+            target_kind = self.kind_combo.currentIndex()   # unknown: search live list
+        if self.kind_combo.currentIndex() != target_kind:
+            self.kind_combo.blockSignals(True)
+            self.kind_combo.setCurrentIndex(target_kind)
+            self.kind_combo.blockSignals(False)
+            self._fill_var_combo_for_kind()
         idx = self.var_combo.findData(code)
         if idx < 0:
             idx = self.var_combo.findText(code)
         if idx >= 0:
+            self.var_combo.blockSignals(True)
             self.var_combo.setCurrentIndex(idx)
+            self.var_combo.blockSignals(False)
             return True
         return False
 
@@ -295,6 +384,8 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
             self._result = None
             self._triang = None
             self.var_combo.clear()
+            self._base_vars = []
+            self._derived_vars = []
             self.zone_combo.clear()
         finally:
             self._building = False
@@ -640,27 +731,6 @@ class ResultCanvasView(ResultCanvasInteractionMixin, QWidget):
         return {"var": var, "integral": integral, "area": tot_area,
                 "mean": wmean, "std": var_w ** 0.5,
                 "min": float(cell.min()), "max": float(cell.max())}
-
-    # ------------------------------------------------------------------ #
-    def _open_wall_qty(self):
-        """Open the wall-quantity line plot, pre-pointed at the current result's
-        directory and auto-loading a known wall file if one sits beside it."""
-        from app.views.wall_qty_view import WallQuantityDialog
-        if self._wall_dialog is None:
-            self._wall_dialog = WallQuantityDialog(self)
-            self._wall_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)  # (#2/#8)
-        dlg = self._wall_dialog
-        result_dir = os.path.dirname(getattr(self, "_result_path", "") or "")
-        dlg._last_dir = result_dir
-        if result_dir:
-            for name in ("vsurface_qty.dat", "WallForce.dat", "tWall_values.dat"):
-                cand = os.path.join(result_dir, name)
-                if os.path.exists(cand):
-                    dlg.load_path(cand)
-                    break
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
 
     def _save_png(self):
         path, _ = QFileDialog.getSaveFileName(

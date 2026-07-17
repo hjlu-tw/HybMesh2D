@@ -496,6 +496,12 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self.bc_xmax.textChanged.connect(self._update_bc_indicators)
         self.bc_ymin.textChanged.connect(self._update_bc_indicators)
         self.bc_ymax.textChanged.connect(self._update_bc_indicators)
+        # #3: mark the domain BCs as user-configured on any edit, so the BC
+        # Preview switches from the neutral (grey) untouched state to real
+        # colours only once the user has actually chosen a BC.
+        self._bc_configured = False
+        for w in (self.bc_xmin, self.bc_xmax, self.bc_ymin, self.bc_ymax):
+            w.textChanged.connect(self._mark_bc_configured)
 
         # Route every BL-section edit through one handler so it lands in either
         # the global defaults or the selected geometry's override.

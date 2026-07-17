@@ -63,14 +63,19 @@ class ResultCanvasInteractionMixin:
         # Only the left button drives the probe/line tools (right/middle = pan).
         if getattr(event, "button", 1) != 1:
             return
-        if (self._interact_mode is None or self._result is None
-                or event.inaxes is not self.ax):
+        if self._result is None or event.inaxes is not self.ax:
             return
         # Don't hijack clicks while the navigation toolbar is panning/zooming.
         if getattr(self.nav, "mode", ""):
             return
         x, y = event.xdata, event.ydata
         if x is None or y is None:
+            return
+        # #8: a click on a solver-probe marker reads its values (works in any
+        # mode, so the user doesn't have to arm the probe tool first).
+        if self._query_solver_probe(x, y):
+            return
+        if self._interact_mode is None:
             return
         if self._interact_mode == "probe":
             self.add_probe_at(x, y)
@@ -97,7 +102,7 @@ class ResultCanvasInteractionMixin:
             return
         self._line_seg = (tuple(p0), tuple(p1))
         self._line_pts = []
-        var = self.var_combo.currentText()
+        var = self._current_var()          # #9: honour a derived selection too
         s, vals, _, _ = self._sample_line(p0, p1, 200, var)
         self.line_sampled.emit({"var": var, "s": s.tolist(), "vals": vals.tolist(),
                                 "p0": tuple(p0), "p1": tuple(p1)})
@@ -187,7 +192,34 @@ class ResultCanvasInteractionMixin:
         self._solver_probe_pts = []
         self.render()
 
+    def _solver_probes_visible(self) -> bool:
+        cb = getattr(self, "solverprobe_cb", None)
+        return cb.isChecked() if cb is not None else True
+
+    def _query_solver_probe(self, x: float, y: float) -> bool:
+        """#8: if (x, y) is near a solver probe marker, query that probe's exact
+        location (adds it to the probe table like a manual probe so its values
+        show) and return True. No-op / False when probes are hidden or none is
+        close enough."""
+        pts = getattr(self, "_solver_probe_pts", [])
+        if not pts or not self._solver_probes_visible():
+            return False
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        thr = 0.02 * max(abs(x1 - x0), abs(y1 - y0), 1e-9)
+        best, best_d = None, thr
+        for (px, py) in pts:
+            d = ((px - x) ** 2 + (py - y) ** 2) ** 0.5
+            if d <= best_d:
+                best_d, best = d, (px, py)
+        if best is None:
+            return False
+        self.add_probe_at(best[0], best[1])
+        return True
+
     def _draw_solver_probes(self):
+        if not self._solver_probes_visible():        # #8: checkbox toggle
+            return
         for i, (x, y) in enumerate(getattr(self, "_solver_probe_pts", [])):
             self.ax.plot(x, y, "D", ms=7, mfc="#22d3ee", mec="#0b1020",
                          mew=0.9, zorder=6)

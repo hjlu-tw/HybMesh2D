@@ -66,6 +66,9 @@ class SolverControllerMixin:
             self.main_window.log_panel.log("Solver is already running. Please wait.")
             return
 
+        # #7: make sure the BC rows reflect the latest Mesh-Generator patch
+        # assignments before we snapshot the config for the run.
+        self.resync_solver_bc_from_group()
         cfg = self.main_window.solver_config_panel.get_config()
         self.global_solver_config = cfg
         log = self.main_window.log_panel.log
@@ -329,6 +332,59 @@ class SolverControllerMixin:
         log(f"[Solver] Detected {n} boundary patch(es) from "
             f"{os.path.basename(bnd)}: {listing}. Review the BC types, then Run.")
 
+    def resync_solver_bc_from_group(self):
+        """#2/#7: make the solver BC rows reflect the CURRENT mesh + the latest
+        Mesh-Generator per-patch BC assignments, on entering Solver mode / before
+        a run — WITHOUT the user having to click 'Detect from Mesh'.
+
+        The earlier version only patched EXISTING rows by matching the patch NAME
+        against ``group_bc``. That silently did nothing when the table was empty,
+        default (XMin…/geom), or stale from an older mesh — the patch names didn't
+        match, so a BC set in the Mesh Generator reached the solver as the WRONG
+        BC (the reported bug). Now: if a mesh .bnd exists and its patch NAMES no
+        longer match the table, RE-DETECT from that .bnd (real names + segment
+        ids + group_bc). When the table already matches the mesh, only refresh
+        the BC types (preserving a manual tweak on an unassigned patch). Also
+        warns when a Mesh-Generator assignment isn't present in the current mesh
+        (the mesh predates it), since only a regenerate can carry it through."""
+        panel = self.main_window.solver_config_panel
+        log = self.main_window.log_panel.log
+        group_bc = getattr(getattr(self, "global_mesh_config", None), "group_bc", {}) or {}
+        euler = panel.flow_solu_type.currentText() == "euler_sol"
+
+        from app.services.bnd_io import read_bnd_segments
+        bnd = self._locate_mesh_bnd()
+        mesh_names: list[str] = []
+        if bnd:
+            segs = read_bnd_segments(bnd)
+            mesh_names = [nm for _sid, nm in segs]
+            table_names = [panel.bc_table.item(r, 1).text().strip()
+                           for r in range(panel.bc_table.rowCount())
+                           if panel.bc_table.item(r, 1) is not None]
+            if segs and mesh_names != table_names:
+                # Table is stale vs the mesh — seed it fresh (this applies
+                # group_bc too, via detect_bc_from_mesh -> populate_bc_from_segments).
+                self.detect_bc_from_mesh()
+            elif group_bc and panel.bc_table.rowCount():
+                n = panel.resync_bc_types_from_group(group_bc, euler=euler)
+                if n:
+                    log(f"[Solver] Updated {n} BC row(s) from the current "
+                        f"Mesh-Generator patch assignments.")
+        elif group_bc and panel.bc_table.rowCount():
+            n = panel.resync_bc_types_from_group(group_bc, euler=euler)
+            if n:
+                log(f"[Solver] Updated {n} BC row(s) from the current "
+                    f"Mesh-Generator patch assignments.")
+
+        # Warn about assignments the current mesh can't carry (it predates them):
+        # their patch name is not in the mesh .bnd, so the user must regenerate.
+        if group_bc and mesh_names:
+            missing = [nm for nm in group_bc if nm not in mesh_names]
+            if missing:
+                log("[Solver] WARNING: Mesh-Generator BC assignment(s) for "
+                    f"{', '.join(missing)} are not in the current mesh — "
+                    "regenerate the mesh so they reach the solver.")
+
     # ------------------------------------------------------------------ #
     # Worker callbacks
     # ------------------------------------------------------------------ #
@@ -436,6 +492,27 @@ class SolverControllerMixin:
             self.main_window.log_panel.log(
                 "[probe] locations overlaid on the Results canvas "
                 "(visible once a result is loaded).")
+        except Exception:
+            pass
+
+    def refresh_solver_probe_overlay(self):
+        """#4: parse the configured probe-point file and overlay its markers on
+        the Results canvas, so the probe locations stay visible after a config /
+        session reload (the file link survives, so the markers should too). A
+        no-op when no probe file is set. Called on entering Solver mode."""
+        import os
+        from app.views.probe_points_dialog import parse_probe_points
+        sp = self.main_window.solver_config_panel
+        path = sp.probe_points_def_fn.text().strip()
+        if not path or not os.path.exists(path):
+            return
+        try:
+            with open(path) as f:
+                pts = parse_probe_points(f.read())
+        except OSError:
+            return
+        try:
+            self.main_window.result_canvas_view.set_solver_probe_points(pts)
         except Exception:
             pass
 

@@ -79,6 +79,11 @@ def _verts(params: dict) -> list:
     return list(_parse_vertices_str(params.get("vertices_str", POLYGON_DEFAULT)))
 
 
+def polygon_vertices(params: dict) -> list:
+    """Public alias for :func:`_verts` — a polygon's vertices as (x, y) tuples."""
+    return _verts(params)
+
+
 def control_points(curve_type: str, params: dict) -> list:
     """Return ``[(handle_id, (x, y)), ...]`` control points for ``curve_type``,
     from its raw defining parameters (no anchoring/transform). ``custom`` (or

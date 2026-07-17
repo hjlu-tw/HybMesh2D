@@ -196,7 +196,8 @@ class PerGeomBLDialog(QDialog):
 
     def __init__(self, geom_name: str, defaults: dict, current: dict | None,
                  segments: list[tuple[int, str, str]] | None = None,
-                 seg_grow: dict | None = None, highlight_cb=None, parent=None):
+                 seg_grow: dict | None = None, highlight_cb=None,
+                 apply_cb=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Boundary Layer — {geom_name}")
         self.setStyleSheet("background:#121422; color:#cdd6f4;")
@@ -246,13 +247,23 @@ class PerGeomBLDialog(QDialog):
                 segments, seg_grow=seg_grow, highlight_cb=highlight_cb, parent=self)
             outer.addWidget(self._seg_section, stretch=1)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        # #4: an explicit Apply (when the caller wires apply_cb) commits these
+        # settings now and keeps the window open, so editing several values no
+        # longer means the dialog closes on every Enter. OK applies+closes.
+        std = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        if apply_cb is not None:
+            std |= QDialogButtonBox.StandardButton.Apply
+        buttons = QDialogButtonBox(std)
         clear_btn = buttons.addButton("Use Global", QDialogButtonBox.ButtonRole.ResetRole)
         clear_btn.setToolTip("Clear this geometry's override — follow the global BL settings.")
         clear_btn.clicked.connect(self._on_clear)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        if apply_cb is not None:
+            ap = buttons.button(QDialogButtonBox.StandardButton.Apply)
+            ap.setToolTip("Apply these boundary-layer settings now and keep this "
+                          "window open.")
+            ap.clicked.connect(lambda: apply_cb(self))
         outer.addWidget(buttons)
 
     def _on_clear(self):
@@ -407,12 +418,22 @@ class SegmentBCDialog(QDialog):
 
         self.seg_list.itemSelectionChanged.connect(self._on_selection_changed)
         self.bc_edit.activated.connect(self._on_bc_activated)
-        self.bc_edit.currentTextChanged.connect(self._on_bc_changed)
 
+        # #4: assignment is deferred to an explicit Apply (it used to commit live
+        # on every keystroke, which re-highlighted the canvas and made the window
+        # jump/recede mid-edit). Apply assigns the chosen BC type to the selected
+        # group(s) and keeps the window open; OK applies then closes; Cancel
+        # closes (earlier Applies already took effect).
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Apply
+            | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._on_ok)
         buttons.rejected.connect(self.reject)
+        apply_btn = buttons.button(QDialogButtonBox.StandardButton.Apply)
+        apply_btn.setToolTip("Assign the chosen BC type to the selected group(s) "
+                             "and keep this window open.")
+        apply_btn.clicked.connect(self._apply_bc)
         outer.addWidget(buttons)
         if self.seg_list.count():
             self.seg_list.setCurrentRow(0)
@@ -497,10 +518,12 @@ class SegmentBCDialog(QDialog):
             self._selecting = False
             self.bc_edit.lineEdit().setFocus()
 
-    def _on_bc_changed(self, text: str):
+    def _apply_bc(self):
+        """#4: commit the chosen BC type to the selected group(s) on demand
+        (Apply / OK) rather than live, and refresh the affected row labels."""
         if self._selecting:
             return
-        bc = text.strip()
+        bc = self.bc_edit.currentText().strip()
         if bc == self._CUSTOM_LABEL:
             return
         for name in self._selected_names():
@@ -511,6 +534,10 @@ class SegmentBCDialog(QDialog):
         for it in self.seg_list.selectedItems():
             name, sids = it.data(Qt.ItemDataRole.UserRole)
             it.setText(self._row_label(name, sids))
+
+    def _on_ok(self):
+        self._apply_bc()
+        self.accept()
 
     def result_group_bc(self) -> dict[str, str]:
         return {k: v for k, v in self._group_bc.items() if v}

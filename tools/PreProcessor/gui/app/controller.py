@@ -533,6 +533,9 @@ class AppController(
             
             # Update the Geometry Layers list panel in MeshConfigPanel
             self.sync_mesh_layers_panel()
+        elif idx == 3:  # Solver: pull the latest Mesh-Generator patch BCs (#7)
+            self.resync_solver_bc_from_group()
+            self.refresh_solver_probe_overlay()  # #4: re-overlay probe markers
         elif idx == 5:  # Immersed Solid (STL -> phi): refresh the 3D overlay
             self.on_stl3d_config_changed()
             self.on_stl3d_display_changed()

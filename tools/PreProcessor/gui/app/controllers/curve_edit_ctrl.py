@@ -220,6 +220,11 @@ class CurveEditControllerMixin:
             return
         seg.parameters.update(params)
         seg.parameters["n_points"] = n_points
+        # #1: a polygon switched back to By Node Count no longer sends 'spacing';
+        # clear any stale key so the backend uses the node count (mirrors the
+        # sidebar's _sync_active_curve_segment_from_ui).
+        if getattr(seg, "curve_type", "") == "polygon" and "spacing" not in params:
+            seg.parameters.pop("spacing", None)
         self._show_pending_handles()
         self._preview_pending()
 

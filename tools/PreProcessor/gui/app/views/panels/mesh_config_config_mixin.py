@@ -263,6 +263,9 @@ class MeshConfigConfigMixin:
         self.bc_xmax.setText(cfg.bc_xmax)
         self.bc_ymin.setText(cfg.bc_ymin)
         self.bc_ymax.setText(cfg.bc_ymax)
+        # #3: adopt the config's configured-state (the setText above is guarded
+        # by _bl_updating so it did not mark it as a user edit).
+        self._bc_configured = getattr(cfg, "bc_configured", True)
         # bc_geom is no longer a panel field; the model default (a geometry's wall
         # patch) is set per-geometry (Wall BC) / per-segment instead.
 
@@ -373,6 +376,7 @@ class MeshConfigConfigMixin:
         cfg.bc_xmax = self.bc_xmax.text().strip()
         cfg.bc_ymin = self.bc_ymin.text().strip()
         cfg.bc_ymax = self.bc_ymax.text().strip()
+        cfg.bc_configured = getattr(self, "_bc_configured", False)  # #3
         cfg.output_filename = self.output_filename.text().strip()
 
         cfg.export_vtk = self.export_vtk.isChecked()

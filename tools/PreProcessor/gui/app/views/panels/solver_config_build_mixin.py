@@ -333,7 +333,8 @@ class SolverConfigBuildMixin:
         self.init_cond_depQ = _edit(
             "Explicit initial dep-var array, e.g. '1 1 0 0 0.524' (rho u v [w] et). "
             "Leave blank for freestream init. Ignored on restart, or when an init "
-            "DLL is set.")
+            "DLL is set.",
+            placeholder="rho u v [w] et   e.g. 1 1 0 0 0.524")
         ic_form.addRow(help_label("init Q:", "Explicit initial dependent-variable array"),
                        self.init_cond_depQ)
         # Initial-condition DLL (works with OR without IBM, #4): a getQ-style

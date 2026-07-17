@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <vector>
 #include <cstdio>
+#include <cstdlib>
 
 // isatty: gate the '\r' in-place progress bar so a piped / CI / GUI stdout gets
 // newline-terminated progress lines instead of unflushed carriage returns.
@@ -90,6 +91,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     std::vector<FrontState> fronts;
     int maxNTrans = 0;
     std::set<int> allInitialBoundaryIds;
+    int nJuncCap = 0;   // #6: BL/no-BL junction taper tally
 
     int currentId = 0;
     for (const auto& boundaryNodeIds : allBoundaryNodeIds) {
@@ -263,6 +265,85 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
         }
 
+        // --- BL / no-BL junction: perpendicular cap + height taper (#6) ----
+        // Where a growing node borders a segment that grows NO boundary layer
+        // (skipBL, from a .meta grow=0 segment), the corner bisector would tilt
+        // the growth ray toward the no-BL edge and skew / invert the cell, and a
+        // full-height cap leaves an abrupt cliff of quads facing the no-BL run.
+        // Following how commercial prism-layer meshers terminate layers against a
+        // no-layer region, the BL here is TAPERED to (near) zero approaching the
+        // junction — a smooth "collapsing prisms" transition — instead of capping
+        // at full height or leaning onto the no-BL edge:
+        //   • the JUNCTION node (a BL node with a no-BL neighbour) grows along its
+        //     own BL edge's outward NORMAL — perpendicular, never the 45° bisector
+        //     (the reported "grows on the 角平分線" bug at a BL→no-BL end);
+        //   • every node's layer HEIGHT is scaled by a taper factor that is a
+        //     small floor at the junction and ramps smoothly back to 1 over a
+        //     taper distance (arc length) into the BL interior, so the outer
+        //     front descends toward the surface at the junction with no cliff and
+        //     the far-field mesher fills the shrinking wedge (the skipBL stitch
+        //     below already emits the filler triangle there).
+        // baseN is each node's base direction; the concave pass below bends the
+        // non-junction rays; the junction is finalised after the concave pass.
+        std::vector<bool>     isJunction(n_init, false);
+        std::vector<Vector2D> baseN(n_init);
+        for (int i = 0; i < n_init; ++i) {
+            baseN[i] = (fs.n1_init[i] + fs.n2_init[i]).normalized();   // bisector default
+            if (m_mesh.nodes[boundaryNodeIds[i]].skipBL) continue;     // grows no BL itself
+            int ip = (i - 1 + n_init) % n_init, in = (i + 1) % n_init;
+            bool prevSkip = m_mesh.nodes[boundaryNodeIds[ip]].skipBL;
+            bool nextSkip = m_mesh.nodes[boundaryNodeIds[in]].skipBL;
+            if (!prevSkip && !nextSkip) continue;                      // interior BL node: no junction
+            // Pick the BL edge to grow along. With exactly ONE no-BL neighbour it
+            // is the OTHER (BL) edge; with BOTH neighbours no-BL (an isolated BL
+            // corner, e.g. a rectangle side resampled to just its two corners) the
+            // node's own BL segment is the FORWARD edge (the resampler gives a
+            // shared corner to the segment starting there), so use n2_init —
+            // without this the corner fell through to the 45° bisector.
+            Vector2D blNormal = (nextSkip && !prevSkip) ? fs.n1_init[i] : fs.n2_init[i];
+            if (blNormal.length() < 1e-9) continue;                    // degenerate; keep bisector
+            isJunction[i] = true;
+            baseN[i] = blNormal.normalized();                          // perpendicular cap dir
+        }
+
+        // Per-node height-taper factor: a small floor at a junction node, ramping
+        // (smoothstep) back to 1.0 over L_taper of arc length into the interior.
+        // Computed by relaxing the arc-length distance to the nearest junction
+        // around the ring; stays 1.0 everywhere when the front has no junction so
+        // a normal (no no-BL) geometry is bit-for-bit unchanged.
+        std::vector<double> taperScale(n_init, 1.0);
+        {
+            std::vector<int> junctions;
+            for (int i = 0; i < n_init; ++i) if (isJunction[i]) junctions.push_back(i);
+            if (!junctions.empty()) {
+                std::vector<double> segLen(n_init, 0.0);
+                for (int i = 0; i < n_init; ++i)
+                    segLen[i] = (fs.pos_init[(i + 1) % n_init] - fs.pos_init[i]).length();
+                const double INF = 1e300;
+                std::vector<double> dist(n_init, INF);
+                for (int j : junctions) dist[j] = 0.0;
+                // Two forward+backward sweeps converge the shortest ring distance.
+                for (int rep = 0; rep < 2; ++rep) {
+                    for (int k = 0; k < n_init; ++k) {
+                        int ip = (k - 1 + n_init) % n_init;
+                        if (dist[ip] + segLen[ip] < dist[k]) dist[k] = dist[ip] + segLen[ip];
+                    }
+                    for (int k = n_init - 1; k >= 0; --k) {
+                        int in = (k + 1) % n_init;
+                        if (dist[in] + segLen[k] < dist[k]) dist[k] = dist[in] + segLen[k];
+                    }
+                }
+                const double L_taper = std::max(D_total * 2.0, 1e-12);
+                const double floorScale = 0.12;   // junction ~12% height (thin but non-degenerate)
+                for (int i = 0; i < n_init; ++i) {
+                    if (dist[i] >= INF) continue;
+                    double t = std::min(1.0, dist[i] / L_taper);
+                    double s = t * t * (3.0 - 2.0 * t);            // smoothstep 0->1
+                    taperScale[i] = floorScale + (1.0 - floorScale) * s;
+                }
+            }
+        }
+
         // Concave Handling (Method 5)
         if (fs.bl.blConcaveMethod == 5) {
             std::vector<double> S(n_init); S[0] = 0.0;
@@ -290,7 +371,12 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 }
 
                 for (int i = 0; i < n_init; ++i) {
-                    Vector2D N_i = (fs.n1_init[i] + fs.n2_init[i]).normalized();
+                    // #6: a junction node must stay perpendicular to its BL wall
+                    // (it caps/tapers), so it is never bent by the concave
+                    // influence — bending it produces a bisector-like ray at the
+                    // corner (the reported "grows on the 角平分線" bug).
+                    if (isJunction[i]) continue;
+                    Vector2D N_i = baseN[i];
                     Point2D P_base_i = fs.pos_init[i] + N_i * D_total;
                     double weight_sum = 0.0; Vector2D shift_sum = {0, 0};
                     for (size_t c = 0; c < concaveIndices.size(); ++c) {
@@ -301,9 +387,19 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         if (shortest_d < current_D_inf) {
                             double w = (current_D_inf - shortest_d) / current_D_inf;
                             weight_sum += w;
-                            Vector2D B_k = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).normalized();
-                            double len = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).length();
-                            double M_k = (len > 1e-6) ? (2.0 / len) : 1.0;
+                            // #6: a concave corner that is ALSO a BL/no-BL
+                            // junction pulls toward its perpendicular BL-edge
+                            // normal (baseN), not the bisector (which would lean
+                            // into the no-BL side).
+                            Vector2D B_k; double M_k;
+                            if (isJunction[k_idx]) {
+                                B_k = baseN[k_idx];
+                                M_k = 1.0;
+                            } else {
+                                B_k = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).normalized();
+                                double len = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).length();
+                                M_k = (len > 1e-6) ? (2.0 / len) : 1.0;
+                            }
                             Point2D C_k = fs.pos_init[k_idx] + B_k * (D_total * M_k);
                             Vector2D S_ki = C_k - (fs.pos_init[k_idx] + N_i * D_total);
                             shift_sum = shift_sum + S_ki * w;
@@ -323,37 +419,37 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
         }
 
-        // --- BL / no-BL junction handling ---------------------------------
-        // Where a growing node borders a segment that grows NO boundary layer
-        // (skipBL, from a .meta grow=0 segment), the corner bisector would tilt
-        // the growth ray toward the no-BL edge. An earlier attempt grew the node
-        // straight ALONG the no-BL edge; that leaned the cap onto the no-BL side
-        // and skewed / inverted its cells (#2). Instead let BL HEIGHT win: grow
-        // the junction node along its own BL edge's outward normal (drop the
-        // no-BL edge from the bisector) so the lateral cap is a clean face
-        // perpendicular to the BL wall, full height. The no-BL surface simply
-        // resumes from the cap base — its junction point is subsumed by the BL
-        // over the layer's height and only carries the far field beyond it.
-        // Runs last so it overrides the fan/concave setup for these cap nodes;
-        // the direction propagates to every layer (each child inherits its
-        // candidate's dir).
+        // --- BL / no-BL junction finalise + height taper (#6) -------------
+        // Junction nodes grow a SINGLE perpendicular ray along their BL-edge
+        // normal (never fan/split; the direction propagates to every layer as
+        // each child inherits its candidate's dir at commit). The taper factor
+        // is folded into every node's step multiplier so the taper region's
+        // columns shorten smoothly toward the junction (which reaches the floor
+        // height), giving the collapsing-prism transition instead of a cliff.
         for (int i = 0; i < n_init; ++i) {
             int nid = boundaryNodeIds[i];
-            if (m_mesh.nodes[nid].skipBL) continue;   // this node itself grows no BL
-            int ip = (i - 1 + n_init) % n_init, in = (i + 1) % n_init;
-            bool prevSkip = m_mesh.nodes[boundaryNodeIds[ip]].skipBL;
-            bool nextSkip = m_mesh.nodes[boundaryNodeIds[in]].skipBL;
-            if (prevSkip == nextSkip) continue;       // 0 or 2 no-BL neighbours: no junction
-            // Outward normal of the BL edge (the edge whose OTHER neighbour still
-            // grows BL): n1_init is the previous edge's normal, n2_init the next.
-            Vector2D blNormal = nextSkip ? fs.n1_init[i] : fs.n2_init[i];
-            if (blNormal.length() < 1e-9) continue;   // degenerate; keep default
-            fs.nodeDirections[nid] = blNormal.normalized();
-            fs.nodeStepMultipliers[nid] = 1.0;
-            fs.junctionCapNodes.insert(nid);
+            if (isJunction[i]) {
+                fs.nodeDirections[nid] = baseN[i];
+                fs.junctionCapNodes.insert(nid);
+                ++nJuncCap;
+            }
+            if (taperScale[i] < 1.0 - 1e-9) {
+                double base = fs.nodeStepMultipliers.count(nid) ? fs.nodeStepMultipliers[nid] : 1.0;
+                fs.nodeStepMultipliers[nid] = base * taperScale[i];
+            }
+            if (std::getenv("HYBMESH_JUNC_DEBUG") && (isJunction[i] || taperScale[i] < 0.999))
+                std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y << ")"
+                          << (isJunction[i] ? " JUNCTION" : " taper")
+                          << " taper=" << taperScale[i]
+                          << " mult=" << (fs.nodeStepMultipliers.count(nid) ? fs.nodeStepMultipliers[nid] : 1.0)
+                          << " dir(" << fs.nodeDirections[nid].x << "," << fs.nodeDirections[nid].y << ")"
+                          << std::endl;
         }
         fronts.push_back(fs);
     }
+    if (nJuncCap > 0)
+        std::cout << "  - BL/no-BL junctions   : " << nJuncCap
+                  << " tapered to zero (collapsing prisms)\n";
 
     // Each front carries its own thickness schedule (fs.currentH advanced with
     // its own growth rate), so the loop runs for the deepest front's layer count
@@ -689,15 +785,27 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
     // --- 4. Final Geometric Validation (Pre-Gmsh) ---
     std::cout << "Step: Validating final boundary layer fronts before Gmsh..." << std::endl;
+    // Filtered final ring per front: drop the no-BL nodes ABSORBED by an adjacent
+    // slide junction (#4) so the slide column is the boundary within the BL and
+    // the far-field resumes beyond it. Identical to activeFront when nothing was
+    // absorbed, so non-junction meshes are untouched. Used for BOTH the checks
+    // below and the far-field edge emission so they stay consistent.
+    std::vector<std::vector<int>> finalFronts(fronts.size());
+    for (size_t fi = 0; fi < fronts.size(); ++fi) {
+        for (int id : fronts[fi].activeFront)
+            if (!fronts[fi].absorbedNoBLNodes.count(id))
+                finalFronts[fi].push_back(id);
+    }
     for (int i = 0; i < (int)fronts.size(); ++i) {
         const auto& fs = fronts[i];
-        int nNodes = (int)fs.activeFront.size();
+        const auto& ring = finalFronts[i];
+        int nNodes = (int)ring.size();
         if (nNodes < 3) continue;
 
         // A. Self-intersection check
         for (int j = 0; j < nNodes; ++j) {
-            Point2D a = m_mesh.nodes[fs.activeFront[j]].pos;
-            Point2D b = m_mesh.nodes[fs.activeFront[(j + 1) % nNodes]].pos;
+            Point2D a = m_mesh.nodes[ring[j]].pos;
+            Point2D b = m_mesh.nodes[ring[(j + 1) % nNodes]].pos;
 
             // Check against domain boundary
             if (a.x < m_config.xMin || a.x > m_config.xMax || a.y < m_config.yMin || a.y > m_config.yMax) {
@@ -706,8 +814,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
             for (int k = j + 2; k < nNodes; ++k) {
                 if ((k + 1) % nNodes == j) continue; // Skip adjacent edges
-                Point2D c = m_mesh.nodes[fs.activeFront[k]].pos;
-                Point2D d = m_mesh.nodes[fs.activeFront[(k + 1) % nNodes]].pos;
+                Point2D c = m_mesh.nodes[ring[k]].pos;
+                Point2D d = m_mesh.nodes[ring[(k + 1) % nNodes]].pos;
 
                 if (segmentsIntersect(a, b, c, d)) {
                     Point2D pt = getIntersectionPoint(a, b, c, d);
@@ -718,17 +826,17 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
         // B. Cross-geometry intersection check
         for (int j = i + 1; j < (int)fronts.size(); ++j) {
-            const auto& fs2 = fronts[j];
-            int nNodes2 = (int)fs2.activeFront.size();
+            const auto& ring2 = finalFronts[j];
+            int nNodes2 = (int)ring2.size();
             for (int k1 = 0; k1 < nNodes; ++k1) {
-                Point2D a = m_mesh.nodes[fs.activeFront[k1]].pos;
-                Point2D b = m_mesh.nodes[fs.activeFront[(k1 + 1) % nNodes]].pos;
+                Point2D a = m_mesh.nodes[ring[k1]].pos;
+                Point2D b = m_mesh.nodes[ring[(k1 + 1) % nNodes]].pos;
                 for (int k2 = 0; k2 < nNodes2; ++k2) {
-                    Point2D c = m_mesh.nodes[fs2.activeFront[k2]].pos;
-                    Point2D d = m_mesh.nodes[fs2.activeFront[(k2 + 1) % nNodes2]].pos;
+                    Point2D c = m_mesh.nodes[ring2[k2]].pos;
+                    Point2D d = m_mesh.nodes[ring2[(k2 + 1) % nNodes2]].pos;
                     if (segmentsIntersect(a, b, c, d)) {
                         Point2D pt = getIntersectionPoint(a, b, c, d);
-                        throw std::runtime_error("Error: Intersection detected between Geometry " + std::to_string(fs.geomId) + " and Geometry " + std::to_string(fs2.geomId) + " at the final front at point (" + std::to_string(pt.x) + ", " + std::to_string(pt.y) + ").");
+                        throw std::runtime_error("Error: Intersection detected between Geometry " + std::to_string(fs.geomId) + " and Geometry " + std::to_string(fronts[j].geomId) + " at the final front at point (" + std::to_string(pt.x) + ", " + std::to_string(pt.y) + ").");
                     }
                 }
             }
@@ -787,11 +895,13 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         }
     }
 
-    for (const auto& fs : fronts) {
-        int nFinal = (int)fs.activeFront.size();
+    // Emit the far-field inner-boundary edges from the FILTERED ring (absorbed
+    // no-BL nodes dropped), so the slide column joins the far-field beyond the BL.
+    for (const auto& ring : finalFronts) {
+        int nFinal = (int)ring.size();
         for (int i = 0; i < nFinal; ++i) {
-            if (fs.activeFront[i] != fs.activeFront[(i + 1) % nFinal]) {
-                m_mesh.addEdge(fs.activeFront[i], fs.activeFront[(i + 1) % nFinal]);
+            if (ring[i] != ring[(i + 1) % nFinal]) {
+                m_mesh.addEdge(ring[i], ring[(i + 1) % nFinal]);
             }
         }
     }

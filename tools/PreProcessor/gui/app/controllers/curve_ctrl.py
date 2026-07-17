@@ -28,6 +28,19 @@ def _polygon_perimeter(verts) -> float:
     return total
 
 
+def _apply_default_polygon_spacing(params: dict):
+    """#1: newly-created polygons distribute *By Spacing* by default so density
+    follows the perimeter length instead of a fixed node count. The default
+    spacing targets ~100 nodes at the shape's own scale (perimeter / 100), so it
+    stays sensible whatever the geometry's units; it falls back to 0.1 when the
+    perimeter is unknown. Mutates ``params`` in place."""
+    per = _polygon_perimeter(shape_spec.polygon_vertices(params))
+    spacing = round(per / 100.0, 6) if per > 0 else 0.1
+    params["spacing"] = spacing
+    if per > 0:
+        params["n_points"] = max(2, int(round(per / spacing)))
+
+
 class CurveControllerMixin:
     """Mixin containing analytic curve management, previewing, and baking logic."""
 
@@ -131,6 +144,13 @@ class CurveControllerMixin:
                 for k in shape_spec.ALL_SHAPE_KEYS:
                     seg.parameters.pop(k, None)
                 seg.parameters.update(shape_spec.DEFAULTS[new_type])
+            # #1: switching to a polygon defaults it to By-Spacing distribution
+            # (density follows the perimeter). Non-polygon types drop any leftover
+            # 'spacing' so they stay node-count.
+            if new_type == "polygon":
+                _apply_default_polygon_spacing(seg.parameters)
+            else:
+                seg.parameters.pop("spacing", None)
             # Push the fresh defaults into the shape widgets before syncing back.
             self._is_populating = True
             try:
@@ -263,6 +283,8 @@ class CurveControllerMixin:
         seg.curve_mode = "parametric"
         seg.parameters = {"n_points": 50}
         seg.parameters.update(params)
+        if curve_type == "polygon":
+            _apply_default_polygon_spacing(seg.parameters)
         self._begin_pending_edit(seg)
 
     # ── Modeless create-edit session (control points + live numeric dialog) ──

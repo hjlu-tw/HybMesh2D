@@ -247,6 +247,12 @@ class TecplotResult:
         """Readable label for a variable code (#6), e.g. 'p' -> 'p — pressure'."""
         return self.VAR_LABELS.get(code, code)
 
+    def variable_short_label(self, code: str) -> str:
+        """Symbol-only label for a RAW solver field: the descriptive '— …' suffix
+        is dropped since users already know their own fields, e.g. 'p' -> 'p',
+        '`r' -> 'ρ'. Derived quantities keep the full label via variable_label()."""
+        return self.VAR_LABELS.get(code, code).split(" — ")[0]
+
     def base_scalar_variables(self) -> list[str]:
         """Raw (non-derived) field variables, in file order (excludes x/y)."""
         return list(self.variables[2:])
@@ -338,6 +344,89 @@ class TecplotResult:
         if var in self.DERIVED:
             return self._compute_derived(var)
         return self._base_cell_field(var)
+
+    # ------------------------------------------------------------------ #
+    # Wall / perimeter extraction (#11): trace the mesh boundary so a field
+    # quantity (e.g. Cp) can be plotted ALONG the geometry surface vs arc length.
+    # ------------------------------------------------------------------ #
+    def boundary_loops(self) -> list[list[int]]:
+        """Ordered boundary loops of the triangulation, as lists of node indices.
+        A boundary edge belongs to exactly one triangle; those edges are chained
+        into closed loops (the geometry surface + the far-field outer boundary)."""
+        from collections import defaultdict
+        elems = self.elements
+        if elems.size == 0:
+            return []
+        edge_count: dict = defaultdict(int)
+        for tri in elems:
+            for a, b in ((int(tri[0]), int(tri[1])),
+                         (int(tri[1]), int(tri[2])),
+                         (int(tri[2]), int(tri[0]))):
+                edge_count[(a, b) if a < b else (b, a)] += 1
+        adj: dict = defaultdict(list)
+        for (a, b), c in edge_count.items():
+            if c == 1:                       # boundary edge (single incident tri)
+                adj[a].append(b)
+                adj[b].append(a)
+        remaining = set(adj.keys())
+        used: set = set()
+        loops: list[list[int]] = []
+        while remaining:
+            start = next(iter(remaining))
+            loop = [start]
+            prev, cur = None, start
+            while True:
+                nxt = None
+                for n in adj[cur]:
+                    e = (cur, n) if cur < n else (n, cur)
+                    if e in used:
+                        continue
+                    if n != prev or len(adj[cur]) == 1:
+                        nxt = n
+                        break
+                if nxt is None:
+                    break
+                used.add((cur, nxt) if cur < nxt else (nxt, cur))
+                if nxt == start:
+                    break
+                loop.append(nxt)
+                prev, cur = cur, nxt
+            for n in loop:
+                remaining.discard(n)
+            if len(loop) >= 3:
+                loops.append(loop)
+        return loops
+
+    def geometry_boundary_loops(self) -> list[list[int]]:
+        """Boundary loops that are the geometry surface(s) — i.e. every loop
+        except the far-field outer boundary (the one spanning the full extent)."""
+        loops = self.boundary_loops()
+        if len(loops) <= 1 or self.nodes.size == 0:
+            return loops
+        gmin, gmax = self.nodes.min(axis=0), self.nodes.max(axis=0)
+
+        def is_outer(loop):
+            pts = self.nodes[loop]
+            return (np.allclose(pts.min(axis=0), gmin, atol=1e-6) and
+                    np.allclose(pts.max(axis=0), gmax, atol=1e-6))
+
+        inner = [l for l in loops if not is_outer(l)]
+        return inner if inner else loops
+
+    def perimeter_series(self, var: str):
+        """#11: sample ``var`` along each geometry surface loop, returning a list
+        of ``(s, x, y, vals)`` — arc length, node coords and the field value at
+        every boundary node — so the caller can plot e.g. Cp vs arc length."""
+        node_vals = self.cell_to_node(var)
+        out = []
+        for loop in self.geometry_boundary_loops():
+            pts = self.nodes[loop]
+            # close the loop so the arc length spans the full perimeter
+            closed = np.vstack([pts, pts[:1]])
+            seg = np.sqrt((np.diff(closed, axis=0) ** 2).sum(axis=1))
+            s = np.concatenate([[0.0], np.cumsum(seg)])[:len(loop)]
+            out.append((s, pts[:, 0], pts[:, 1], np.asarray(node_vals)[loop]))
+        return out
 
     def cell_to_node(self, var: str) -> np.ndarray:
         """Average a cell-centered field onto nodes (needed for tricontourf and

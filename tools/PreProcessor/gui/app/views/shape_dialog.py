@@ -1,8 +1,9 @@
 from __future__ import annotations
+import math
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QLineEdit, QDialogButtonBox, QSpinBox, QRadioButton,
-    QButtonGroup
+    QButtonGroup, QComboBox
 )
 from app.utils import SPIN_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
@@ -10,7 +11,18 @@ from app.views.polygon_editor import PolygonEditor
 
 # Field layout and per-type defaults are owned by app.models.shape_spec so the
 # dialog, the sidebar editor, and the curve controller never drift apart.
+from app.models import shape_spec
 from app.models.shape_spec import DEFAULTS as _DEFAULTS, FIELDS as _FIELDS
+
+
+def _polygon_perimeter(verts) -> float:
+    """Closed-polygon perimeter (incl. the closing edge) from a list of (x, y);
+    converts a target spacing into a node count for By-Spacing mode (#1)."""
+    n = len(verts)
+    if n < 2:
+        return 0.0
+    return sum(math.hypot(verts[(i + 1) % n][0] - verts[i][0],
+                          verts[(i + 1) % n][1] - verts[i][1]) for i in range(n))
 
 
 class ShapeParamDialog(QDialog):
@@ -56,12 +68,39 @@ class ShapeParamDialog(QDialog):
                 self._spins[key] = spin
                 form.addRow(QLabel(label + ":"), spin)
 
-        # Node count (applied immediately on accept).
+        # Distribution (applied immediately on accept). A polygon may be laid
+        # out By Node Count OR By Spacing (#1) — mirror the sidebar so the modal
+        # and the panel never drift. Other analytic shapes stay node-count only.
+        self._is_polygon = (self._curve_type == "polygon")
+        self._dist_mode = None
+        self._spacing_spin = None
+        self._node_label = QLabel("Node Count:")
+
         self._node_spin = QSpinBox()
         self._node_spin.setRange(2, 100000)
         self._node_spin.setValue(int(seg.parameters.get("n_points", 50)))
         self._node_spin.setStyleSheet(SPIN_STYLE)
-        form.addRow(QLabel("Node Count:"), self._node_spin)
+
+        if self._is_polygon:
+            self._dist_mode = QComboBox()
+            self._dist_mode.addItems(["By Node Count", "By Spacing"])
+            self._dist_mode.setStyleSheet(SPIN_STYLE)
+            self._spacing_spin = CleanDoubleSpinBox()
+            self._spacing_spin.setRange(1e-6, 1e4)
+            self._spacing_spin.setDecimals(5)
+            self._spacing_spin.setSingleStep(0.01)
+            self._spacing_spin.setStyleSheet(SPIN_STYLE)
+            self._spacing_spin.setValue(float(seg.parameters.get("spacing", 0.1)))
+            self._spacing_label = QLabel("Spacing (Δs):")
+            # Default to By Spacing when the polygon already carries a spacing.
+            self._dist_mode.setCurrentIndex(1 if "spacing" in seg.parameters else 0)
+            form.addRow(QLabel("Mode:"), self._dist_mode)
+            form.addRow(self._node_label, self._node_spin)
+            form.addRow(self._spacing_label, self._spacing_spin)
+            self._dist_mode.currentTextChanged.connect(self._on_dist_mode_changed)
+            self._on_dist_mode_changed(self._dist_mode.currentText())
+        else:
+            form.addRow(self._node_label, self._node_spin)
         lay.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -80,6 +119,17 @@ class ShapeParamDialog(QDialog):
         if self._poly_edit is not None:
             self._poly_edit.textChanged.connect(self._emit_changed)
         self._node_spin.valueChanged.connect(self._emit_changed)
+        if self._spacing_spin is not None:
+            self._spacing_spin.valueChanged.connect(self._emit_changed)
+
+    def _on_dist_mode_changed(self, text: str):
+        """Swap the Node-Count row for the Spacing (Δs) row (polygon, #1)."""
+        spacing_on = (text == "By Spacing")
+        self._node_spin.setVisible(not spacing_on)
+        self._node_label.setVisible(not spacing_on)
+        self._spacing_spin.setVisible(spacing_on)
+        self._spacing_label.setVisible(spacing_on)
+        self._emit_changed()
 
     def _emit_changed(self, *args):
         if self._changed_cb is not None:
@@ -92,12 +142,16 @@ class ShapeParamDialog(QDialog):
         widgets = list(self._spins.values()) + [self._node_spin]
         if self._poly_edit is not None:
             widgets.append(self._poly_edit)
+        if self._spacing_spin is not None:
+            widgets.append(self._spacing_spin)
         for w in widgets:
             w.blockSignals(True)
         try:
-            if self._curve_type == "polygon" and self._poly_edit is not None:
+            if self._is_polygon and self._poly_edit is not None:
                 if "vertices_str" in params:
                     self._poly_edit.setText(params["vertices_str"])
+                if "spacing" in params:
+                    self._spacing_spin.setValue(float(params["spacing"]))
             else:
                 for key, spin in self._spins.items():
                     if key in params:
@@ -110,11 +164,21 @@ class ShapeParamDialog(QDialog):
 
     def result_params(self) -> tuple[dict, int]:
         out: dict = {}
-        if self._curve_type == "polygon" and self._poly_edit is not None:
+        if self._is_polygon and self._poly_edit is not None:
             out["vertices_str"] = self._poly_edit.text()
-        else:
-            for key, spin in self._spins.items():
-                out[key] = spin.value()
+            # By Spacing: carry the target Δs and derive the node count from the
+            # polygon perimeter so point density follows edge length (#1). By
+            # Node Count: drop the key so the spinbox count governs downstream.
+            if self._dist_mode is not None \
+                    and self._dist_mode.currentText() == "By Spacing":
+                spacing = max(1e-6, self._spacing_spin.value())
+                out["spacing"] = spacing
+                per = _polygon_perimeter(shape_spec.polygon_vertices(out))
+                n = max(2, round(per / spacing)) if per > 0 else self._node_spin.value()
+                return out, int(n)
+            return out, self._node_spin.value()
+        for key, spin in self._spins.items():
+            out[key] = spin.value()
         return out, self._node_spin.value()
 
 

@@ -180,16 +180,19 @@ class MeshConfigBLMixin:
 
     def _open_global_bl_dialog(self):
         """Edit the GLOBAL boundary-layer parameters in the pop-up dialog."""
+        def _commit(dlg):
+            vals = dlg.result_params()
+            if vals is None:   # "Use Global" is a no-op when editing the global itself
+                return
+            self._global_bl = vals
+            self._write_bl_widgets(vals)  # keep the (hidden) backing widgets in sync
+            self.mesh_config_changed.emit(self.get_config())
+
         dlg = PerGeomBLDialog("Global default", dict(self._global_bl),
-                              dict(self._global_bl), parent=self)
+                              dict(self._global_bl), apply_cb=_commit, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        vals = dlg.result_params()
-        if vals is None:   # "Use Global" is a no-op when editing the global itself
-            return
-        self._global_bl = vals
-        self._write_bl_widgets(vals)  # keep the (hidden) backing widgets in sync
-        self.mesh_config_changed.emit(self.get_config())
+        _commit(dlg)
 
     def _open_bl_override_dialog(self):
         """Pop up the per-geometry boundary-layer editor for the selected
@@ -216,40 +219,43 @@ class MeshConfigBLMixin:
                 seg_grow = read_meta_seg_growbl(path)
                 highlight = self._segment_highlighter(path)
 
+        def _commit(dlg):
+            # #4: shared by OK and the Apply-and-keep-open button. Persists the
+            # dialog's parameter override onto the geom item plus the per-segment
+            # grow-BL flags to the .meta, then republishes the mesh config.
+            vals = dlg.result_params()
+            if vals:
+                rinfo["bl_params"] = vals
+                rinfo["role"] = "wall" if idx == 4 else "bl"
+                item.setData(self._ROLE_DATA, rinfo)
+            else:
+                # Cleared: drop bl_params; keep wall / a per-geometry BC, else plain.
+                rinfo.pop("bl_params", None)
+                if idx == 4:
+                    rinfo["role"] = "wall"
+                    item.setData(self._ROLE_DATA, rinfo)
+                elif rinfo.get("bc"):
+                    rinfo["role"] = "bl"
+                    item.setData(self._ROLE_DATA, rinfo)
+                else:
+                    item.setData(self._ROLE_DATA, None)
+            # Persist per-segment grow-BL flags (independent of the parameter
+            # override — kept even when the user chose 'Use Global').
+            if segs and path:
+                from app.services.meta_io import write_meta_seg_growbl
+                write_meta_seg_growbl(path, dlg.result_seg_grow())
+            self._sync_bl_scope()
+            self.mesh_config_changed.emit(self.get_config())
+
         dlg = PerGeomBLDialog(item.text(), dict(self._global_bl),
                               rinfo.get("bl_params"), segments=segs,
-                              seg_grow=seg_grow, highlight_cb=highlight, parent=self)
+                              seg_grow=seg_grow, highlight_cb=highlight,
+                              apply_cb=_commit, parent=self)
         accepted = dlg.exec() == QDialog.DialogCode.Accepted
         if segs:
             self.segment_highlight_requested.emit(None)  # clear the canvas highlight
-        if not accepted:
-            return
-
-        vals = dlg.result_params()
-        if vals:
-            rinfo["bl_params"] = vals
-            rinfo["role"] = "wall" if idx == 4 else "bl"
-            item.setData(self._ROLE_DATA, rinfo)
-        else:
-            # Cleared: drop bl_params; keep wall / a per-geometry BC, else plain.
-            rinfo.pop("bl_params", None)
-            if idx == 4:
-                rinfo["role"] = "wall"
-                item.setData(self._ROLE_DATA, rinfo)
-            elif rinfo.get("bc"):
-                rinfo["role"] = "bl"
-                item.setData(self._ROLE_DATA, rinfo)
-            else:
-                item.setData(self._ROLE_DATA, None)
-
-        # Persist per-segment grow-BL flags (independent of the parameter
-        # override — kept even when the user chose 'Use Global').
-        if segs and path:
-            from app.services.meta_io import write_meta_seg_growbl
-            write_meta_seg_growbl(path, dlg.result_seg_grow())
-
-        self._sync_bl_scope()
-        self.mesh_config_changed.emit(self.get_config())
+        if accepted:
+            _commit(dlg)
 
     def _apply_global_bl_to_cfg(self, cfg: MeshConfig):
         """Write the authoritative global BL values onto a MeshConfig's BL

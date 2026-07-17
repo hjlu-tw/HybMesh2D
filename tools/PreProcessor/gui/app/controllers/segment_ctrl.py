@@ -8,7 +8,8 @@ from app.models.session import GeometrySession
 from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd
 from app.commands.vertex_cmds import InsertVertexCmd, ReplaceGeometryPointsCmd
 from app.commands.segment_cmds import RemoveSegmentCmd
-from app.services.geometry_service import GeometryService, project_point_to_segment
+from app.services.geometry_service import (
+    GeometryService, project_point_to_segment, proportional_edge_move)
 from app.utils import CURVE_TYPE_LABELS
 
 class SegmentControllerMixin:
@@ -270,8 +271,8 @@ class SegmentControllerMixin:
         old = pts.copy()
         if np.allclose(old[idx], [x, y]):
             return
-        new = pts.copy()
-        new[idx] = [x, y]
+        # #2: proportional edge scaling, same as the drag interaction.
+        new = proportional_edge_move(old, session.split_indices, idx, x, y)
         cmd = ReplaceGeometryPointsCmd(
             session, old, new,
             refresh_cb=lambda: self._apply_geometry_update(session),
@@ -283,7 +284,8 @@ class SegmentControllerMixin:
 
     def _on_vertex_move_dragged(self, idx: int, x: float, y: float, finished: bool):
         """Canvas drag of the selected vertex handle (#6): live-preview while
-        dragging, commit one undoable edit on release."""
+        dragging, commit one undoable edit on release. The whole edge scales
+        proportionally with the drag (#2)."""
         session = self.active_session()
         if session is None or session.original_points is None:
             return
@@ -292,8 +294,9 @@ class SegmentControllerMixin:
             return
         if getattr(self, "_vertex_drag_orig", None) is None:
             self._vertex_drag_orig = pts.copy()
-        new = self._vertex_drag_orig.copy()
-        new[idx] = [x, y]
+        new = proportional_edge_move(self._vertex_drag_orig,
+                                     session.split_indices, idx, x, y,
+                                     is_closed=session.project_model.is_closed)
         if finished:
             old = self._vertex_drag_orig
             self._vertex_drag_orig = None

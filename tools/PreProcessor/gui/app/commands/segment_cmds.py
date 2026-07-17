@@ -556,10 +556,21 @@ class BakeCurveToGeometryCmd(BaseCommand):
             self.session.split_indices.append(seg.end_index)
             self.session.split_indices = sorted(list(set(self.session.split_indices)))
 
-        # Convert type to file
+        # Convert type to file.
         seg.type = "file"
-        seg.strategy = "uniform"
-        seg.parameters = {"n_points": len(new_points)}
+        # #1: keep the point-distribution intent across the discrete conversion.
+        # A By-Spacing edge (identified by a 'spacing' key) must RETAIN its
+        # spacing, otherwise the very next Preview silently reverts it to
+        # By-Node-Count (every consumer decides the mode purely by the presence
+        # of 'spacing'). Node-count edges reset to the freshly baked count.
+        if "spacing" in seg.parameters:
+            # By-Spacing rides on strategy == "uniform"; keep it and refresh the
+            # derived node count so the sidebar shows a sane value.
+            seg.parameters = {"spacing": seg.parameters["spacing"],
+                              "n_points": len(new_points)}
+        else:
+            seg.strategy = "uniform"
+            seg.parameters = {"n_points": len(new_points)}
         seg.match_previous = False
 
         self.session.is_geometry_modified = True

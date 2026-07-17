@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import glob
 import numpy as np
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QPushButton, QFileDialog,
@@ -84,6 +85,11 @@ class WallQuantityDialog(QDialog):
     parses as numeric columns can be plotted.
     """
 
+    # #10: solver columnar output files auto-discovered next to a result. The
+    # main field file (xtecp_sol_allz.dat) is loaded by the Results canvas; these
+    # per-surface / per-quantity outputs are surfaced here without a manual browse.
+    WALL_PATTERNS = ("vsurface*", "WallForce*", "tWall*", "turb_solu*")
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Wall Quantities")
@@ -92,6 +98,7 @@ class WallQuantityDialog(QDialog):
         self._labels: list[str] = []
         self._data = np.empty((0, 0))
         self._line_sampler = None   # set in line-probe mode: var -> (s, vals)
+        self._files: list[str] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -102,6 +109,13 @@ class WallQuantityDialog(QDialog):
         self.load_btn = QPushButton("Load .dat")
         self.load_btn.setStyleSheet(_BTN_QSS)
         bar.addWidget(self.load_btn)
+
+        # #10: auto-discovered result files (switch between them without browsing).
+        self.file_label = QLabel("File:")
+        self.file_label.setStyleSheet(f"color:{_FG};font-size:11px;")
+        self.file_combo = QComboBox(); self.file_combo.setStyleSheet(_COMBO_QSS)
+        self.file_label.setVisible(False); self.file_combo.setVisible(False)
+        bar.addWidget(self.file_label); bar.addWidget(self.file_combo)
 
         # Variable selector (line-probe mode only): re-samples the segment.
         self.var_label = QLabel("Var:")
@@ -137,6 +151,7 @@ class WallQuantityDialog(QDialog):
         self.x_combo.currentIndexChanged.connect(self._render)
         self.y_combo.currentIndexChanged.connect(self._render)
         self.line_var_combo.currentTextChanged.connect(self._on_line_var_changed)
+        self.file_combo.currentIndexChanged.connect(self._on_file_combo_changed)
 
     # ------------------------------------------------------------------ #
     def _style_axes(self):
@@ -152,6 +167,44 @@ class WallQuantityDialog(QDialog):
         self.ax.text(0.5, 0.5, text, color="#4a4e69", ha="center", va="center",
                      transform=self.ax.transAxes, fontsize=12)
         self.canvas.draw_idle()
+
+    # ------------------------------------------------------------------ #
+    def set_result_dir(self, result_dir: str) -> int:
+        """#10: auto-discover the solver's columnar output files (vsurface*,
+        WallForce*, tWall*, turb_solu*, …) beside a result and list them in the
+        File selector, loading the first — no manual browsing. Returns how many
+        were found."""
+        self._last_dir = result_dir or ""
+        found: list[str] = []
+        if result_dir and os.path.isdir(result_dir):
+            for pat in self.WALL_PATTERNS:
+                found += glob.glob(os.path.join(result_dir, pat))
+        seen, uniq = set(), []
+        for f in sorted(found):
+            if os.path.isfile(f) and f not in seen:
+                seen.add(f)
+                uniq.append(f)
+        self._files = uniq
+        self._building = True
+        try:
+            self.file_combo.clear()
+            for f in uniq:
+                self.file_combo.addItem(os.path.basename(f), f)
+        finally:
+            self._building = False
+        self.file_combo.setVisible(bool(uniq))
+        self.file_label.setVisible(bool(uniq))
+        if uniq:
+            self.file_combo.setCurrentIndex(0)
+            self.load_path(uniq[0])
+        return len(uniq)
+
+    def _on_file_combo_changed(self, _idx=None):
+        if getattr(self, "_building", False):
+            return
+        path = self.file_combo.currentData()
+        if path:
+            self.load_path(path)
 
     # ------------------------------------------------------------------ #
     def load_path(self, path: str):

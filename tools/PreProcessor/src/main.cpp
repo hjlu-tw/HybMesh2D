@@ -615,7 +615,11 @@ bool processElement(const json& config) {
         segBc[segId] = sj.value("bc", std::string());
         segKind[segId] = deriveCurveKind(sj);
         // Optional per-segment grow-BL flag (v3 .meta column). The GUI may emit
-        // "grow_bl" (bool) or the legacy "no_bl"; default is grow (1).
+        // "grow_bl" (bool) or the legacy "no_bl"; default is grow (1). A freshly
+        // resampled geometry therefore always starts with BL on every segment —
+        // the "grow BL?" choice is a mesh-stage edit made afterwards. (No prior-
+        // .meta preservation here: it made a NEW geometry reusing an output name
+        // silently inherit the old geometry's flags.)
         {
             bool grow = sj.value("grow_bl", !sj.value("no_bl", false));
             segGrowBL[segId] = grow ? 1 : 0;
@@ -845,6 +849,37 @@ bool processElement(const json& config) {
             bool useLocalSpline = (task.type == "file" && sp.size() >= 3 && !useGlobalSpline);
             if (useLocalSpline) localSpline.build(sp, s);
 
+            // #3: corner-aware resampling. A single smoothing spline over a file
+            // task rounds off any sharp corner the user did NOT split at, so the
+            // resampled nodes drift off the original edge. Detect internal corners
+            // and, when present, build ONE spline per smooth sub-piece (split at
+            // the corners): each smooth run stays G1 while every corner is kept
+            // exactly (C0) — the distribution hugs the original polyline. With no
+            // internal corner this stays inactive and the single spline is used.
+            std::vector<Spline2D> pieceSplines;   // one per smooth sub-piece
+            std::vector<double> pieceS0;          // local arc-length at piece start
+            std::vector<double> pieceS1;          // local arc-length at piece end
+            bool piecewise = false;
+            if (task.type == "file" && sp.size() >= 3) {
+                double cornerThr = task.segment_json.value(
+                    "corner_angle", task.segment_json.value("split_threshold", 30.0));
+                std::vector<int> corners = detectFeaturePoints(sp, cornerThr);
+                if (corners.size() > 2) {   // at least one INTERNAL corner
+                    piecewise = true;
+                    for (size_t k = 0; k + 1 < corners.size(); ++k) {
+                        int i0 = corners[k], i1 = corners[k + 1];
+                        std::vector<Point2D> pp(sp.begin() + i0, sp.begin() + i1 + 1);
+                        std::vector<double> ps;
+                        for (int j = i0; j <= i1; ++j) ps.push_back(s[j] - s[i0]);
+                        Spline2D spl;
+                        if ((int)pp.size() >= 3) spl.build(pp, ps);
+                        pieceSplines.push_back(spl);
+                        pieceS0.push_back(s[i0]);
+                        pieceS1.push_back(s[i1]);
+                    }
+                }
+            }
+
             std::string strat = task.segment_json.value("strategy", "uniform");
             json params = task.segment_json.value("parameters", json::object());
 
@@ -933,18 +968,61 @@ bool processElement(const json& config) {
                 for (int i = 0; i < nT; ++i) tS.push_back(L * i / (nT - 1));
             }
 
+            // #2: guarantee a mesh NODE exactly at every internal corner even
+            // when the user did NOT split there. The piecewise resampler already
+            // routes the curve THROUGH each corner, but a sample only lands on it
+            // by luck; here we pin the corner arc-lengths into the sample set so
+            // each vertex is preserved as an actual node (flagged as a corner in
+            // the loop below). A sample already near a corner is snapped onto it
+            // (keeps the node count); otherwise a node is inserted.
+            std::vector<double> cornerS;
+            if (piecewise) {
+                for (size_t k = 1; k < pieceS0.size(); ++k) cornerS.push_back(pieceS0[k]);
+                double minGap = (nT > 1) ? (L / (nT - 1)) * 0.5 : L;
+                for (double c : cornerS) {
+                    size_t best = 0; double bestd = 1e300;
+                    for (size_t i = 0; i < tS.size(); ++i) {
+                        double d = std::abs(tS[i] - c);
+                        if (d < bestd) { bestd = d; best = i; }
+                    }
+                    if (bestd < 1e-9) continue;                 // node already here
+                    bool endpoint = (best == 0 || best == tS.size() - 1);
+                    if (!endpoint && bestd < minGap) tS[best] = c;  // snap nearest
+                    else tS.push_back(c);                       // otherwise insert
+                }
+                std::sort(tS.begin(), tS.end());
+                tS.erase(std::unique(tS.begin(), tS.end(),
+                         [](double a, double b){ return std::abs(a - b) < 1e-9; }),
+                         tS.end());
+            }
+
             std::vector<Point2D> segmentPts;
             for (size_t idx_ts = 0; idx_ts < tS.size(); ++idx_ts) {
                 double ts = tS[idx_ts];
                 // The first/last sample of every task is a pinned vertex: a shape
                 // vertex, a feature (auto-split) point, or a segment endpoint.
                 // These are the structural corners the resampler guarantees to keep.
-                const bool isBoundaryPt = (idx_ts == 0 || idx_ts == tS.size() - 1);
+                bool isBoundaryPt = (idx_ts == 0 || idx_ts == tS.size() - 1);
+                // A pinned internal corner (#2) is also a structural node.
+                if (!isBoundaryPt && !cornerS.empty()) {
+                    for (double c : cornerS)
+                        if (std::abs(ts - c) < 1e-9) { isBoundaryPt = true; break; }
+                }
                 Point2D p;
                 if (idx_ts == 0) {
                     p = sp.front();
                 } else if (idx_ts == tS.size() - 1) {
                     p = sp.back();
+                } else if (piecewise) {
+                    // #3: pick the smooth sub-piece this arc-length falls in and
+                    // evaluate its own spline (keeps corners exact). A sub-piece
+                    // too short for a spline hugs the polyline via linear interp.
+                    int k = 0;
+                    while (k + 1 < (int)pieceS0.size() && ts >= pieceS0[k + 1]) ++k;
+                    if (pieceSplines[k].valid())
+                        p = pieceSplines[k].eval(ts - pieceS0[k]);
+                    else
+                        p = interpolateLinear(sp, s, ts);
                 } else {
                     if (useGlobalSpline && globalSpline.valid() && task.type == "file" && task.start_gp_idx != -1) {
                         // Map local s to global s

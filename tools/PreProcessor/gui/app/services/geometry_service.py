@@ -149,6 +149,60 @@ def project_point_to_segment(p, a, b):
     return a + t * ab, t
 
 
+def proportional_edge_move(orig: np.ndarray, split_indices, idx: int,
+                           x: float, y: float,
+                           is_closed: bool = False) -> np.ndarray:
+    """#2: move vertex ``idx`` and stretch the WHOLE edge it belongs to
+    proportionally, so a baked / discrete edge keeps its shape instead of
+    spiking at a single point. The edge is the span between its split boundaries
+    (``split_indices``) or the geometry ends; the far boundary(ies) stay pinned
+    so adjacent edges keep their connectivity. Each point's displacement is the
+    drag delta scaled by a weight that ramps linearly with arc length from the
+    pinned boundary (0) up to the dragged vertex (1): dragging an endpoint scales
+    the whole edge, dragging an interior point tapers the shift off toward both
+    ends. Returns a new points array.
+
+    #3: when ``is_closed`` and the first/last points coincide (an explicit seam,
+    e.g. after converting a closed shape to discrete), dragging either endpoint
+    also drags the other to the same target so the loop stays sealed — the head
+    and tail move together instead of tearing the seam open."""
+    new = orig.copy()
+    N = len(orig)
+    if not (0 <= idx < N):
+        return new
+    if (is_closed and N >= 2 and idx in (0, N - 1)
+            and np.allclose(orig[0], orig[-1])):
+        mirror = N - 1 if idx == 0 else 0
+        new = proportional_edge_move(new, split_indices, idx, x, y)
+        return proportional_edge_move(new, split_indices, mirror, x, y)
+    delta = np.array([x, y], dtype=float) - orig[idx]
+    bounds = sorted({0, N - 1, *(int(s) for s in (split_indices or [])
+                                 if 0 <= int(s) < N)})
+    intervals = [(a, b) for a, b in zip(bounds[:-1], bounds[1:]) if a <= idx <= b]
+    if not intervals:                     # degenerate (e.g. single point)
+        new[idx] = [x, y]
+        return new
+    for a, b in intervals:
+        seg = orig[a:b + 1]
+        if len(seg) < 2:
+            continue
+        d = np.sqrt((np.diff(seg, axis=0) ** 2).sum(axis=1))
+        s = np.concatenate([[0.0], np.cumsum(d)])
+        total = s[-1]
+        if total <= 1e-12:
+            continue
+        s_idx = s[idx - a]
+        w = np.zeros(len(s))
+        if s_idx > 1e-12:
+            m = s <= s_idx
+            w[m] = s[m] / s_idx
+        if total - s_idx > 1e-12:
+            m = s >= s_idx
+            w[m] = (total - s[m]) / (total - s_idx)
+        new[a:b + 1] = seg + np.outer(w, delta)
+    return new
+
+
 def _sample_polyline_pinned(vertices: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
     """Sample n points along a closed polyline, guaranteeing that every specified
     vertex is included in the output.

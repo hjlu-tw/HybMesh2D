@@ -41,6 +41,11 @@ struct FrontState {
     // lateral cap grows perpendicular to the BL wall at full height instead of
     // splitting the corner with the bisector or leaning onto the no-BL edge.
     std::set<int> junctionCapNodes;
+    // no-BL surface nodes ABSORBED by an adjacent SLIDE junction: they lie within
+    // the BL height along a wall/symmetry edge, so the sliding cap column is the
+    // boundary there instead. Dropped from the FINAL front ring (and thus the
+    // far-field inner boundary) so the front does not fold back on them.
+    std::set<int> absorbedNoBLNodes;
 };
 
 class BoundaryLayerGenerator {
