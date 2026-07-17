@@ -178,8 +178,37 @@ class MeshConfigBLMixin:
                 write_meta_segbc(path, seg_names)
             self.mesh_config_changed.emit(self.get_config())
 
+    def _show_bl_dialog_modeless(self, dlg, on_accept, on_finish=None):
+        """Show a PerGeomBLDialog MODELESS (setModal(False) + show) so the MAIN
+        window — in particular its Generate button — stays usable while the BL
+        editor is open. Mirrors the modeless curve-edit dialog (curve_ctrl.py):
+        Apply commits and KEEPS the window open, OK commits and closes, Cancel
+        closes. Only one BL dialog exists at a time; the reference on
+        self._bl_dialog keeps it alive (else Python GCs the modeless dialog) and is
+        cleared when it closes."""
+        dlg.setModal(False)
+        # Keep it above the main window (a plain Dialog flag can recede on macOS).
+        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dlg.accepted.connect(lambda: on_accept(dlg))   # OK -> commit
+
+        def _finish(_r, d=dlg):
+            if on_finish is not None:
+                on_finish()
+            self._bl_dialog = None
+            d.deleteLater()
+        dlg.finished.connect(_finish)
+        self._bl_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
     def _open_global_bl_dialog(self):
-        """Edit the GLOBAL boundary-layer parameters in the pop-up dialog."""
+        """Edit the GLOBAL boundary-layer parameters in a MODELESS pop-up, so the
+        main window's Generate stays clickable (Apply commits + keeps it open)."""
+        existing = getattr(self, "_bl_dialog", None)
+        if existing is not None:                       # one BL editor at a time
+            existing.raise_(); existing.activateWindow(); return
+
         def _commit(dlg):
             vals = dlg.result_params()
             if vals is None:   # "Use Global" is a no-op when editing the global itself
@@ -190,16 +219,18 @@ class MeshConfigBLMixin:
 
         dlg = PerGeomBLDialog("Global default", dict(self._global_bl),
                               dict(self._global_bl), apply_cb=_commit, parent=self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        _commit(dlg)
+        self._show_bl_dialog_modeless(dlg, on_accept=_commit)
 
     def _open_bl_override_dialog(self):
         """Pop up the per-geometry boundary-layer editor for the selected
         geometry: its BL parameters (top) plus, when the geometry has a segmented
         .meta sidecar, per-segment 'grow BL?' toggles (bottom). The parameter
         override is saved onto the geom list item; the per-segment flags are
-        written to the .meta (v3 column) and honoured by the mesher."""
+        written to the .meta (v3 column) and honoured by the mesher. Shown MODELESS
+        so the main window's Generate stays usable while it is open."""
+        existing = getattr(self, "_bl_dialog", None)
+        if existing is not None:                       # one BL editor at a time
+            existing.raise_(); existing.activateWindow(); return
         item = self.geom_list_widget.currentItem()
         if item is None:
             return
@@ -223,6 +254,14 @@ class MeshConfigBLMixin:
             # #4: shared by OK and the Apply-and-keep-open button. Persists the
             # dialog's parameter override onto the geom item plus the per-segment
             # grow-BL flags to the .meta, then republishes the mesh config.
+            # Modeless guard: the edited geometry may have been removed from the
+            # list while the dialog stayed open — bail rather than touch a deleted
+            # item (a QListWidgetItem whose C++ object is gone raises RuntimeError).
+            try:
+                if item.listWidget() is None:
+                    return
+            except RuntimeError:
+                return
             vals = dlg.result_params()
             if vals:
                 rinfo["bl_params"] = vals
@@ -251,11 +290,9 @@ class MeshConfigBLMixin:
                               rinfo.get("bl_params"), segments=segs,
                               seg_grow=seg_grow, highlight_cb=highlight,
                               apply_cb=_commit, parent=self)
-        accepted = dlg.exec() == QDialog.DialogCode.Accepted
-        if segs:
-            self.segment_highlight_requested.emit(None)  # clear the canvas highlight
-        if accepted:
-            _commit(dlg)
+        # Clear the canvas segment highlight when the dialog finally closes.
+        on_finish = (lambda: self.segment_highlight_requested.emit(None)) if segs else None
+        self._show_bl_dialog_modeless(dlg, on_accept=_commit, on_finish=on_finish)
 
     def _apply_global_bl_to_cfg(self, cfg: MeshConfig):
         """Write the authoritative global BL values onto a MeshConfig's BL
