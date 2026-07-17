@@ -91,6 +91,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 | BL Core | `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS` |
 | Corners | `BL_FAN_NODES`, `BL_AUTO_FAN_NODES`, `BL_FAN_ANGLE_THRESHOLD`, `BL_CONVEX_METHOD` |
 | Concave | `BL_CONCAVE_METHOD`, `BL_CONCAVE_ANGLE_THRESHOLD`, `BL_SMOOTHING_ITERS` |
+| BL/no-BL Junction | `BL_JUNCTION_METHOD` (0=taper-to-zero legacy, 1=4-case angle-driven, default), `BL_JUNCTION_ANGLE_C1/C2/C3` (°) |
 | Transition | `BL_TRANSITION_LAYERS`, `BL_TRANSITION_GROWTH_RATE`, `BL_TRANSITION_BUFFER` |
 | Gmsh | `GMSH_ALGORITHM` (6=Frontal-Delaunay), `GMSH_OPTIMIZE`, `FARFIELD_GROWTH_RATE`, `FARFIELD_MESH_SIZE` |
 | Output | `EXPORT_VTK`, `EXPORT_STARCD`, `BC_XMIN/XMAX/YMIN/YMAX/GEOM` |
@@ -102,7 +103,7 @@ JSON format; supports multi-element definitions with transforms (scale/rotate/tr
 
 ### Core C++ (`src/`, `include/`)
 - **`main.cpp`**: Entry point; parses config, loads geometries, runs collision checks, orchestrates BL + Gmsh pipeline
-- **`BoundaryLayer.cpp`**: Quad layer growth — normals, fan/parallel corner handling, concave merging, transition layers, smoothing
+- **`BoundaryLayer.cpp`**: Quad layer growth — normals, fan/parallel corner handling, concave merging, transition layers, smoothing. BL/no-BL junctions (a BL edge meeting a `grow=0` neighbour) use the 4-case angle-driven scheme (`BL_JUNCTION_METHOD=1`, default): the flow-facing angle θ picks case 1 (concave slide along the neighbour edge + concave blend + absorb), 2/4 (perpendicular cap), or 3 (neighbour-edge extension cap); cases 2/3/4 leave a free full-height lateral cap column whose edges are emitted as far-field constraints so the wedge is triangulated. `=0` restores the legacy taper-to-zero.
 - **`Mesh.cpp`**: Mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration, VTK and STAR-CD export
 - **`Config.hpp`**: Single-header; parses `.dat` files into ~50 typed parameters
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross products

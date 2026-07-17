@@ -128,6 +128,11 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             double exteriorAngle = 180.0 - (fs.growthSign * diff * 180.0 / M_PI);
             if (exteriorAngle > fs.bl.blConvexAngleThreshold) fs.isConvexInit[i] = true;
             else if (exteriorAngle < fs.bl.blConcaveAngleThreshold) fs.isConcaveInit[i] = true;
+            if (std::getenv("HYBMESH_CORNER_DEBUG") && m_mesh.nodes[boundaryNodeIds[i]].isCorner)
+                std::cerr << "[CORNER] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y
+                          << ") extAngle=" << exteriorAngle
+                          << (fs.isConvexInit[i] ? " CONVEX" : (fs.isConcaveInit[i] ? " CONCAVE" : " mild(bisector)"))
+                          << std::endl;
         }
 
         // Phase 3: on line/circle surface runs, replace the finite-difference
@@ -287,6 +292,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // non-junction rays; the junction is finalised after the concave pass.
         std::vector<bool>     isJunction(n_init, false);
         std::vector<Vector2D> baseN(n_init);
+        std::vector<int>      caseOf(n_init, 0);   // 4-case bin (blJunctionMethod==1); 0 = not a junction
+        std::vector<double>   junctionMult(n_init, 1.0);  // per-junction step scale (perpendicular-height correction)
         for (int i = 0; i < n_init; ++i) {
             baseN[i] = (fs.n1_init[i] + fs.n2_init[i]).normalized();   // bisector default
             if (m_mesh.nodes[boundaryNodeIds[i]].skipBL) continue;     // grows no BL itself
@@ -306,13 +313,102 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             baseN[i] = blNormal.normalized();                          // perpendicular cap dir
         }
 
+        // 4-case angle-driven junction scheme (blJunctionMethod == 1): override the
+        // perpendicular baseN above with the growth direction dictated by the
+        // flow-facing included angle theta between the BL edge and its no-BL
+        // neighbour (see the case table in Config.hpp). No height taper is applied in
+        // this scheme; cases 2/3/4 grow a free full-height lateral cap (the wedge to
+        // the neighbour edge is filled by far-field triangles) and case 1 slides the
+        // column along the neighbour edge (concave notch fill).
+        if (fs.bl.blJunctionMethod == 1) {
+            for (int i = 0; i < n_init; ++i) {
+                if (!isJunction[i]) continue;
+                int ip = (i - 1 + n_init) % n_init, in = (i + 1) % n_init;
+                bool prevSkip = m_mesh.nodes[boundaryNodeIds[ip]].skipBL;
+                bool nextSkip = m_mesh.nodes[boundaryNodeIds[in]].skipBL;
+                // Isolated BL node (both neighbours no-BL): keep the perpendicular
+                // cap that the base detection already set into baseN.
+                if (prevSkip && nextSkip) { caseOf[i] = 2; continue; }
+
+                // step points from this node INTO the no-BL run; the BL neighbour is
+                // on the other side. nBL is the BL edge's outward (into-flow) normal.
+                int step   = nextSkip ? 1 : -1;
+                Vector2D nBL = (nextSkip ? fs.n1_init[i] : fs.n2_init[i]).normalized();
+                int blNbr = (i - step + n_init) % n_init;
+                int s1    = (i + step + n_init) % n_init;
+                int s2    = (i + 2 * step + n_init) % n_init;
+                bool s2skip = m_mesh.nodes[boundaryNodeIds[s2]].skipBL;
+
+                Vector2D tBL = (fs.pos_init[blNbr] - fs.pos_init[i]).normalized(); // node -> BL interior
+                Vector2D d1  = (fs.pos_init[s1]    - fs.pos_init[i]).normalized(); // node -> first no-BL nbr
+                // The shared corner may belong to EITHER segment (the resampler gives
+                // it to the segment starting there). If the first no-BL neighbour just
+                // continues the BL edge (d1 ~ -tBL), the real corner is at s1 and the
+                // no-BL EDGE direction is s1->s2; otherwise the corner is this node and
+                // the no-BL edge is node->s1. This keeps theta = the true edge-to-edge
+                // angle regardless of which segment owns the corner point.
+                Vector2D tCorner, eNbr;
+                if (s2skip && d1.dot(tBL) < -0.7) {
+                    tCorner = (fs.pos_init[i]  - fs.pos_init[s1]).normalized();     // corner s1 -> BL interior
+                    eNbr    = (fs.pos_init[s2] - fs.pos_init[s1]).normalized();     // corner s1 -> no-BL edge
+                } else {
+                    tCorner = tBL;
+                    eNbr    = d1;
+                }
+                // theta = angle from the BL edge to the no-BL edge, swept THROUGH THE
+                // FLOW (the side nBL points to); 180 = collinear, <180 concave, >180
+                // convex — identical for internal/external flow.
+                double a = std::atan2(tCorner.cross(eNbr), tCorner.dot(eNbr));
+                if (tCorner.cross(nBL) < 0.0) a = -a;           // flow on the CW side -> flip sweep sign
+                double theta = a; if (theta <= 1e-9) theta += 2.0 * M_PI;
+                double thetaDeg = theta * 180.0 / M_PI;
+
+                int caseId; Vector2D dir;
+                if      (thetaDeg <= fs.bl.blJunctionAngleC1) { caseId = 1; dir = eNbr; }
+                else if (thetaDeg <= fs.bl.blJunctionAngleC2) { caseId = 2; dir = nBL; }
+                else if (thetaDeg <= fs.bl.blJunctionAngleC3) { caseId = 3; dir = eNbr * -1.0; }
+                else                                          { caseId = 4; dir = nBL; }
+                // Height (not edge-length) correction: what stays fixed across ALL
+                // cases is the BL's PERPENDICULAR total height D_total. A tilted cap
+                // grown a fixed EDGE length would only reach D_total*cos(tilt) high and
+                // dip below the neighbouring perpendicular columns, skewing the corner.
+                // So scale the step by 1/cos(tilt) = 1/dot(dir,nBL) — the same trick the
+                // convex parallelogram uses for its diagonal ray (cos clamped so a very
+                // sharp concave cannot blow the column length up).
+                double hmult = 1.0 / std::max(0.25, dir.dot(nBL));
+                // Case 1 overshoot guard: the slide column runs D_total*hmult ALONG the
+                // neighbour edge; if the collinear no-BL run is shorter, sliding would
+                // overshoot the wall end -> fall back to a perpendicular cap (case 2).
+                if (caseId == 1) {
+                    double need = D_total * hmult;
+                    double runLen = 0.0; int cur = i;
+                    while (runLen < need) {
+                        int nxt = (cur + step + n_init) % n_init;
+                        if (!m_mesh.nodes[boundaryNodeIds[nxt]].skipBL) break;
+                        Vector2D seg = fs.pos_init[nxt] - fs.pos_init[cur];
+                        double L = seg.length();
+                        if (L < 1e-12 || seg.normalized().dot(eNbr) < 0.5) break;
+                        runLen += L; cur = nxt;
+                    }
+                    if (runLen < need) { caseId = 2; dir = nBL; hmult = 1.0; }
+                }
+                baseN[i] = dir;
+                caseOf[i] = caseId;
+                junctionMult[i] = hmult;
+                if (std::getenv("HYBMESH_JUNC_DEBUG"))
+                    std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y
+                              << ") theta=" << thetaDeg << " case=" << caseId
+                              << " dir(" << dir.x << "," << dir.y << ")" << std::endl;
+            }
+        }
+
         // Per-node height-taper factor: a small floor at a junction node, ramping
         // (smoothstep) back to 1.0 over L_taper of arc length into the interior.
         // Computed by relaxing the arc-length distance to the nearest junction
         // around the ring; stays 1.0 everywhere when the front has no junction so
         // a normal (no no-BL) geometry is bit-for-bit unchanged.
         std::vector<double> taperScale(n_init, 1.0);
-        {
+        if (fs.bl.blJunctionMethod == 0) {
             std::vector<int> junctions;
             for (int i = 0; i < n_init; ++i) if (isJunction[i]) junctions.push_back(i);
             if (!junctions.empty()) {
@@ -344,13 +440,52 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
         }
 
-        // Concave Handling (Method 5)
-        if (fs.bl.blConcaveMethod == 5) {
+        // Mild corners get the height (not edge-length) correction UNCONDITIONALLY: a
+        // tagged corner that is neither convex-fanned nor concave-blended nor a junction
+        // grows a plain bisector; scale its step by 1/cos(half) so the bisector reaches
+        // the full perpendicular height D_total (not D_total*cos(half), which dips and
+        // skews the corner). The concave blend below refines this and tilts the
+        // neighbours when method 5 is on; this keeps the height right even for method 0.
+        for (int i = 0; i < n_init; ++i) {
+            if (!m_mesh.nodes[boundaryNodeIds[i]].isCorner) continue;
+            if (fs.isConvexInit[i] || fs.isConcaveInit[i] || isJunction[i]) continue;
+            double cosHalf = std::max(0.34, baseN[i].dot(fs.n1_init[i]));
+            fs.nodeStepMultipliers[boundaryNodeIds[i]] = 1.0 / cosHalf;
+        }
+
+        // Concave thickness-blending (method 5) AND 4-case junction blending. Runs
+        // when method 5 is selected (pure concave corners) OR when the 4-case scheme
+        // produced a case-1 (concave slide) or case-3 (convex, outward-flared
+        // extension cap) junction. Such a junction blends the nearby columns from
+        // perpendicular toward its cap direction (baseN) using the same weighted-shift
+        // maths below, so the grid lines change slope GRADUALLY over a few columns
+        // instead of jumping at the single cap column: case 1 leans them inward toward
+        // the neighbour edge, case 3 flares them outward along the extension line.
+        bool anyBlendJunction = false;
+        for (int i = 0; i < n_init; ++i) if (caseOf[i] == 1 || caseOf[i] == 3) { anyBlendJunction = true; break; }
+        if (fs.bl.blConcaveMethod == 5 || anyBlendJunction) {
             std::vector<double> S(n_init); S[0] = 0.0;
             for (int i = 1; i < n_init; ++i) S[i] = S[i-1] + (fs.pos_init[i] - fs.pos_init[i-1]).length();
             double L_total = S[n_init-1] + (fs.pos_init[0] - fs.pos_init[n_init-1]).length();
             std::vector<int> concaveIndices;
-            for (int i = 0; i < n_init; ++i) if (fs.isConcaveInit[i]) concaveIndices.push_back(i);
+            for (int i = 0; i < n_init; ++i) {
+                // 4-case junctions (scheme 1) always blend toward their case direction.
+                if (fs.bl.blJunctionMethod == 1 && (caseOf[i] == 1 || caseOf[i] == 3)) {
+                    concaveIndices.push_back(i);
+                    continue;
+                }
+                if (fs.bl.blConcaveMethod != 5) continue;
+                if (fs.bl.blJunctionMethod == 1 && isJunction[i]) continue;  // handled by its case
+                // Method 5 blends: geometric concave corners AND "mild" tagged corners —
+                // a corner that is neither convex-fanned (>convex thresh) nor concave-
+                // blended (<concave thresh): the middle-angle range that otherwise grows
+                // a plain bisector, dipping in height and jumping in slope at the corner.
+                // Both blend toward the height-corrected bisector apex (M_k=1/cos(half)),
+                // so the corner reaches full height D_total and the neighbours tilt gradually.
+                bool mild = m_mesh.nodes[boundaryNodeIds[i]].isCorner
+                            && !fs.isConvexInit[i] && !fs.isConcaveInit[i];
+                if (fs.isConcaveInit[i] || mild) concaveIndices.push_back(i);
+            }
             
             if (!concaveIndices.empty()) {
                 double global_D_inf = fs.bl.blConcaveInfluenceMultiplier * D_total;
@@ -368,6 +503,15 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     if (min_corner_dist < L_total) {
                         concave_D_inf[c] = std::min(global_D_inf, min_corner_dist * 0.9);
                     }
+                    // A MILD corner only needs a LOCAL blend ("a few lines"): cap its
+                    // influence well below the full concave range. A large influence on
+                    // a thick BL over-shifts the nearby columns and folds the front
+                    // (self-intersection); genuine concave corners / junctions keep the
+                    // full range.
+                    bool mildSrc = m_mesh.nodes[boundaryNodeIds[k_idx]].isCorner
+                                   && !fs.isConvexInit[k_idx] && !fs.isConcaveInit[k_idx]
+                                   && caseOf[k_idx] == 0;
+                    if (mildSrc) concave_D_inf[c] = std::min(concave_D_inf[c], 2.0 * D_total);
                 }
 
                 for (int i = 0; i < n_init; ++i) {
@@ -394,7 +538,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                             Vector2D B_k; double M_k;
                             if (isJunction[k_idx]) {
                                 B_k = baseN[k_idx];
-                                M_k = 1.0;
+                                M_k = junctionMult[k_idx];  // target the cap's height-corrected outer node
                             } else {
                                 B_k = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).normalized();
                                 double len = (fs.n1_init[k_idx] + fs.n2_init[k_idx]).length();
@@ -419,25 +563,62 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
         }
 
-        // --- BL / no-BL junction finalise + height taper (#6) -------------
-        // Junction nodes grow a SINGLE perpendicular ray along their BL-edge
-        // normal (never fan/split; the direction propagates to every layer as
-        // each child inherits its candidate's dir at commit). The taper factor
-        // is folded into every node's step multiplier so the taper region's
-        // columns shorten smoothly toward the junction (which reaches the floor
-        // height), giving the collapsing-prism transition instead of a cliff.
+        // --- BL / no-BL junction finalise -----------------------------------
+        // Every junction node grows a SINGLE ray along baseN[i] (never fan/split;
+        // enforced via junctionCapNodes) and the direction propagates to each layer
+        // as children inherit their candidate dir at commit.
+        //   • Scheme 0 (taper): folds the taper factor into the step multiplier so
+        //     the columns collapse toward the junction (collapsing prisms).
+        //   • Scheme 1 (4-case): no taper. Cap junctions (cases 2/3/4) seed a lateral
+        //     column (surface node) that commit extends layer by layer and emission
+        //     turns into far-field inner-boundary edges. Slide junctions (case 1)
+        //     absorb the no-BL neighbour nodes they cover so the far field resumes
+        //     beyond them along the neighbour edge.
         for (int i = 0; i < n_init; ++i) {
             int nid = boundaryNodeIds[i];
             if (isJunction[i]) {
                 fs.nodeDirections[nid] = baseN[i];
                 fs.junctionCapNodes.insert(nid);
                 ++nJuncCap;
+                if (fs.bl.blJunctionMethod == 1) {
+                    int ipf = (i - 1 + n_init) % n_init, inf = (i + 1) % n_init;
+                    bool prevSkip = m_mesh.nodes[boundaryNodeIds[ipf]].skipBL;
+                    bool nextSkip = m_mesh.nodes[boundaryNodeIds[inf]].skipBL;
+                    int c = caseOf[i] > 0 ? caseOf[i] : 2;
+                    fs.junctionCase[nid] = c;
+                    // Keep the cap's PERPENDICULAR height = D_total (scale the whole
+                    // single-ray column by 1/cos(tilt); =1 for a perpendicular cap).
+                    fs.nodeStepMultipliers[nid] = junctionMult[i];
+                    // An ISOLATED BL node (both neighbours no-BL) has two exposed sides
+                    // and no single lateral column; leave it to stitch normally (like a
+                    // plain perpendicular cap) rather than detaching it — a rare/degenerate
+                    // configuration we do not special-case further.
+                    if (prevSkip && nextSkip) {
+                        // no column / no absorb / no wedge suppression
+                    } else if (c != 1) {
+                        fs.nodeToJunctionRoot[nid] = nid;
+                        fs.junctionColumns[nid] = { nid };  // cap: lateral column starts at surface
+                    } else {
+                        fs.nodeToJunctionRoot[nid] = nid;
+                        int step = nextSkip ? 1 : -1;       // walk into the no-BL run
+                        double acc = 0.0; int cur = i;
+                        while (true) {
+                            int nxt = (cur + step + n_init) % n_init;
+                            if (!m_mesh.nodes[boundaryNodeIds[nxt]].skipBL) break;
+                            double L = (fs.pos_init[nxt] - fs.pos_init[cur]).length();
+                            if (acc + L >= D_total * junctionMult[i]) break;   // nxt is at/beyond the slide end
+                            acc += L;
+                            fs.absorbedNoBLNodes.insert(boundaryNodeIds[nxt]);
+                            cur = nxt;
+                        }
+                    }
+                }
             }
-            if (taperScale[i] < 1.0 - 1e-9) {
+            if (fs.bl.blJunctionMethod == 0 && taperScale[i] < 1.0 - 1e-9) {
                 double base = fs.nodeStepMultipliers.count(nid) ? fs.nodeStepMultipliers[nid] : 1.0;
                 fs.nodeStepMultipliers[nid] = base * taperScale[i];
             }
-            if (std::getenv("HYBMESH_JUNC_DEBUG") && (isJunction[i] || taperScale[i] < 0.999))
+            if (std::getenv("HYBMESH_JUNC_DEBUG") && fs.bl.blJunctionMethod == 0 && (isJunction[i] || taperScale[i] < 0.999))
                 std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y << ")"
                           << (isJunction[i] ? " JUNCTION" : " taper")
                           << " taper=" << taperScale[i]
@@ -449,7 +630,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     }
     if (nJuncCap > 0)
         std::cout << "  - BL/no-BL junctions   : " << nJuncCap
-                  << " tapered to zero (collapsing prisms)\n";
+                  << (m_config.blJunctionMethod == 0 ? " tapered to zero (collapsing prisms)\n"
+                                                     : " handled (4-case angle-driven)\n");
 
     // Each front carries its own thickness schedule (fs.currentH advanced with
     // its own growth rate), so the loop runs for the deepest front's layer count
@@ -728,6 +910,19 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     }
                 }
                 
+                // 4-case junction: extend this node's lateral column (single-ray
+                // growth). nodeToJunctionRoot maps any column node -> its root; cap
+                // junctions (cases 2/3/4) also accumulate the ordered column in
+                // junctionColumns for far-field emission. Case-1 (slide) roots are
+                // tracked too (for the stitch-suppression test) but keep no column.
+                if (fs.nodeToJunctionRoot.count(nodeId) && p2c[i].size() == 1) {
+                    int root = fs.nodeToJunctionRoot[nodeId];
+                    int child = p2c[i][0];
+                    fs.nodeToJunctionRoot[child] = root;
+                    auto it = fs.junctionColumns.find(root);
+                    if (it != fs.junctionColumns.end()) it->second.push_back(child);
+                }
+
                 if (p2c[i].size() > 1) {
                     for (int k = 0; k < (int)p2c[i].size() - 1; ++k) {
                         m_mesh.addElement({nodeId, p2c[i][k+1], p2c[i][k]});
@@ -741,6 +936,21 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 // produce no child (e.g. skipBL, or a collision-frozen node), so
                 // skip stitching this pair if either side has no children.
                 if (p2c[i].empty() || p2c[i_next].empty()) continue;
+
+                // 4-case scheme: suppress the wedge element between a no-BL (skipBL)
+                // node and an adjacent BL/no-BL junction column. Case 1 it would be a
+                // degenerate collinear triangle (the slide column lies on the neighbour
+                // edge); cases 2/3/4 the wedge to the neighbour edge is filled by
+                // far-field triangles instead (the column's exposed lateral edges are
+                // emitted as inner-boundary constraints in the final ring).
+                if (fs.bl.blJunctionMethod == 1) {
+                    bool i_skip    = m_mesh.nodes[fs.activeFront[i]].skipBL;
+                    bool next_skip = m_mesh.nodes[fs.activeFront[i_next]].skipBL;
+                    bool i_junc    = fs.nodeToJunctionRoot.count(fs.activeFront[i]) > 0;
+                    bool next_junc = fs.nodeToJunctionRoot.count(fs.activeFront[i_next]) > 0;
+                    if ((i_skip && next_junc) || (next_skip && i_junc)) continue;
+                }
+
                 int n_curr_last = p2c[i].back();
                 int n_next_first = p2c[i_next].front();
 
@@ -785,16 +995,52 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
     // --- 4. Final Geometric Validation (Pre-Gmsh) ---
     std::cout << "Step: Validating final boundary layer fronts before Gmsh..." << std::endl;
-    // Filtered final ring per front: drop the no-BL nodes ABSORBED by an adjacent
-    // slide junction (#4) so the slide column is the boundary within the BL and
-    // the far-field resumes beyond it. Identical to activeFront when nothing was
-    // absorbed, so non-junction meshes are untouched. Used for BOTH the checks
-    // below and the far-field edge emission so they stay consistent.
+    // Ordered boundary ring per front = the closed loop handed to the far-field
+    // mesher as this geometry's inner "hole". It follows the outer BL front over BL
+    // runs, DESCENDS / ASCENDS the lateral cap column at each 4-case cap junction
+    // (cases 2/3/4 — so the wedge between the cap and the no-BL neighbour edge is
+    // triangulated by the far field), traces the surface over no-BL runs, and drops
+    // the case-1 (slide) absorbed neighbour nodes so the boundary resumes along the
+    // neighbour edge beyond the slide. With no junctions it equals activeFront, so a
+    // normal geometry is bit-for-bit unchanged. Used for BOTH the validation below
+    // and the far-field edge emission so they stay consistent.
     std::vector<std::vector<int>> finalFronts(fronts.size());
     for (size_t fi = 0; fi < fronts.size(); ++fi) {
-        for (int id : fronts[fi].activeFront)
-            if (!fronts[fi].absorbedNoBLNodes.count(id))
-                finalFronts[fi].push_back(id);
+        const auto& fsr = fronts[fi];
+        const auto& af  = fsr.activeFront;
+        int N = (int)af.size();
+        std::map<int,int> capOuterToRoot;   // cap-junction outer node -> root (column = [surface,...,outer])
+        for (const auto& kv : fsr.junctionColumns)
+            if (!kv.second.empty()) capOuterToRoot[kv.second.back()] = kv.first;
+        auto absorbed = [&](int id){ return fsr.absorbedNoBLNodes.count(id) > 0; };
+        auto isSkip   = [&](int id){ return m_mesh.nodes[id].skipBL; };
+        auto nbrNonAbsorbed = [&](int k, int dir){
+            for (int s = 1; s <= N; ++s) {
+                int idx = ((k + dir * s) % N + N) % N;
+                if (!absorbed(af[idx])) return af[idx];
+            }
+            return af[k];
+        };
+        auto& ring = finalFronts[fi];
+        for (int k = 0; k < N; ++k) {
+            int id = af[k];
+            if (absorbed(id)) continue;
+            auto cj = capOuterToRoot.find(id);
+            if (cj != capOuterToRoot.end()) {
+                const auto& col = fsr.junctionColumns.at(cj->second);   // [surface, ..., outer=id]
+                bool nextSkip = isSkip(nbrNonAbsorbed(k, +1));
+                bool prevSkip = isSkip(nbrNonAbsorbed(k, -1));
+                if (nextSkip && !prevSkip) {
+                    for (int m = (int)col.size() - 1; m >= 0; --m) ring.push_back(col[m]);   // outer -> surface
+                } else if (prevSkip && !nextSkip) {
+                    for (int m = 0; m < (int)col.size(); ++m) ring.push_back(col[m]);         // surface -> outer
+                } else {
+                    ring.push_back(id);   // fallback (a cap junction always has one no-BL neighbour)
+                }
+            } else {
+                ring.push_back(id);
+            }
+        }
     }
     for (int i = 0; i < (int)fronts.size(); ++i) {
         const auto& fs = fronts[i];
@@ -895,8 +1141,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         }
     }
 
-    // Emit the far-field inner-boundary edges from the FILTERED ring (absorbed
-    // no-BL nodes dropped), so the slide column joins the far-field beyond the BL.
+    // Emit the far-field inner-boundary edges from the ordered boundary ring built
+    // above (outer front + lateral cap columns + surface runs, absorbed slide nodes
+    // dropped). The Gmsh side chains these into the hole loop; the cap columns become
+    // constraints so the wedge to each no-BL neighbour edge is filled with triangles.
     for (const auto& ring : finalFronts) {
         int nFinal = (int)ring.size();
         for (int i = 0; i < nFinal; ++i) {

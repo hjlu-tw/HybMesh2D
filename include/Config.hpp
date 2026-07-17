@@ -26,6 +26,14 @@ struct BLParams {
     int blConcaveMethod = 0;
     double blConcaveInfluenceMultiplier = 10.0;
     double blConcaveAngleThreshold = 100.0;
+    // BL / non-BL junction handling (see BoundaryLayer.cpp). Method 0 = taper-to-zero
+    // (collapsing prisms, legacy); 1 = 4-case angle-driven (default). C1/C2/C3 bin the
+    // flow-facing included angle theta (deg) between the BL edge and its non-BL neighbour:
+    //   (0,C1] concave slide | (C1,C2] perpendicular | (C2,C3] neighbour-extension | (C3,360) perpendicular.
+    int blJunctionMethod = 1;
+    double blJunctionAngleC1 = 135.0;
+    double blJunctionAngleC2 = 270.0;
+    double blJunctionAngleC3 = 315.0;
     int blTransitionLayers = 3;
     int blAutoTransitionLayers = 0;
     double blTransitionGrowthRate = 1.2;
@@ -105,7 +113,14 @@ struct Config {
     double blConcaveInfluenceMultiplier = 10.0;
     double blConvexAngleThreshold = 260.0;
     double blConcaveAngleThreshold = 100.0;
-    
+
+    // BL / non-BL 交界處理: 0 = taper-to-zero (collapsing prisms, 舊版), 1 = 4-case
+    // 角度驅動 (預設)。C1/C2/C3 為面向流場夾角 theta (度) 的分類門檻。
+    int blJunctionMethod = 1;
+    double blJunctionAngleC1 = 135.0;
+    double blJunctionAngleC2 = 270.0;
+    double blJunctionAngleC3 = 315.0;
+
     // 過渡層設定 (Phase 4)
     int blTransitionLayers = 3;
     int blAutoTransitionLayers = 0; // 0: OFF, 1: Global Avg, 2: Per-Geometry Avg
@@ -265,6 +280,12 @@ struct Config {
             else if (key == "BL_CONCAVE_INFLUENCE_MULTIPLIER") ss >> blConcaveInfluenceMultiplier;
             else if (key == "BL_CONVEX_ANGLE_THRESHOLD") ss >> blConvexAngleThreshold;
             else if (key == "BL_CONCAVE_ANGLE_THRESHOLD") ss >> blConcaveAngleThreshold;
+            else if (key == "BL_JUNCTION_METHOD") {
+                double val; ss >> val; blJunctionMethod = static_cast<int>(val);
+            }
+            else if (key == "BL_JUNCTION_ANGLE_C1") ss >> blJunctionAngleC1;
+            else if (key == "BL_JUNCTION_ANGLE_C2") ss >> blJunctionAngleC2;
+            else if (key == "BL_JUNCTION_ANGLE_C3") ss >> blJunctionAngleC3;
             else if (key == "BL_TRANSITION_LAYERS") {
                 double val; ss >> val; blTransitionLayers = static_cast<int>(val);
             }
@@ -390,6 +411,10 @@ struct Config {
         p.blConcaveMethod = blConcaveMethod;
         p.blConcaveInfluenceMultiplier = blConcaveInfluenceMultiplier;
         p.blConcaveAngleThreshold = blConcaveAngleThreshold;
+        p.blJunctionMethod = blJunctionMethod;
+        p.blJunctionAngleC1 = blJunctionAngleC1;
+        p.blJunctionAngleC2 = blJunctionAngleC2;
+        p.blJunctionAngleC3 = blJunctionAngleC3;
         p.blTransitionLayers = blTransitionLayers;
         p.blAutoTransitionLayers = blAutoTransitionLayers;
         p.blTransitionGrowthRate = blTransitionGrowthRate;
@@ -411,6 +436,10 @@ struct Config {
         else if (key == "BL_CONCAVE_METHOD") p.blConcaveMethod = static_cast<int>(v);
         else if (key == "BL_CONCAVE_INFLUENCE_MULTIPLIER") p.blConcaveInfluenceMultiplier = v;
         else if (key == "BL_CONCAVE_ANGLE_THRESHOLD") p.blConcaveAngleThreshold = v;
+        else if (key == "BL_JUNCTION_METHOD") p.blJunctionMethod = static_cast<int>(v);
+        else if (key == "BL_JUNCTION_ANGLE_C1") p.blJunctionAngleC1 = v;
+        else if (key == "BL_JUNCTION_ANGLE_C2") p.blJunctionAngleC2 = v;
+        else if (key == "BL_JUNCTION_ANGLE_C3") p.blJunctionAngleC3 = v;
         else if (key == "BL_TRANSITION_LAYERS") p.blTransitionLayers = static_cast<int>(v);
         else if (key == "BL_AUTO_TRANSITION_LAYERS") p.blAutoTransitionLayers = static_cast<int>(v);
         else if (key == "BL_TRANSITION_GROWTH_RATE") p.blTransitionGrowthRate = v;
@@ -494,6 +523,8 @@ struct Config {
 
         os << "[ Corner Handling (Convex & Concave) ]\n";
         os << "  - Corner Thresholds    : Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
+        os << "  - BL/no-BL Junction    : " << (blJunctionMethod == 0 ? "Taper-to-zero" : "4-case angle-driven")
+                  << " (theta bins " << blJunctionAngleC1 << " / " << blJunctionAngleC2 << " / " << blJunctionAngleC3 << " deg)\n";
         os << "  - Convex Handling      : " << (blConvexMethod == 0 ? "Fan" : (blConvexMethod == 2 ? "Parallelogram" : "Unknown")) << "\n";
         if (blConvexMethod == 0) {
             os << "      * Fan Elements         : " << blFanNodes << " nodes (Auto: "

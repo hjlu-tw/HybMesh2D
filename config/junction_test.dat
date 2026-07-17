@@ -1,0 +1,27 @@
+# Test config for the 4-case BL/non-BL junction scheme.
+# Thick, few-layer BL so the lateral cap + triangle fill is clearly visible.
+DOMAIN_X_MIN -6.0
+DOMAIN_X_MAX  10.0
+DOMAIN_Y_MIN -6.0
+DOMAIN_Y_MAX  6.0
+
+SURFACE_MESH_SIZE 0.08
+AUTO_SURFACE_SIZE 1
+FARFIELD_MESH_SIZE 0.8
+FARFIELD_GROWTH_RATE 0.15
+
+BL_INITIAL_THICKNESS 0.04
+BL_GROWTH_RATE 1.2
+BL_LAYERS 6
+BL_TRANSITION_LAYERS 0
+
+BL_CONCAVE_METHOD 5
+BL_CONCAVE_INFLUENCE_MULTIPLIER 5
+
+# 4-case angle-driven junction scheme (default); flip to 0 for the old taper.
+BL_JUNCTION_METHOD 1
+
+GMSH_ALGORITHM 6
+GMSH_OPTIMIZE 1
+EXPORT_VTK 1
+EXPORT_STARCD 0

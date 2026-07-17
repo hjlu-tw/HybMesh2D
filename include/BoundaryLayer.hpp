@@ -46,6 +46,15 @@ struct FrontState {
     // boundary there instead. Dropped from the FINAL front ring (and thus the
     // far-field inner boundary) so the front does not fold back on them.
     std::set<int> absorbedNoBLNodes;
+    // --- 4-case junction scheme (blJunctionMethod == 1) ---------------------
+    // For each BL/no-BL junction node (a growing node with a no-BL neighbour) the
+    // flow-facing angle theta is binned into case 1..4 (see generate()). Case 1
+    // (concave) slides along the neighbour edge + absorbs it; cases 2/3/4 grow a
+    // free full-height lateral cap whose exposed column edges become far-field
+    // inner-boundary constraints so the wedge to the neighbour edge is triangulated.
+    std::map<int, int> junctionCase;                 // root surface nodeId -> case 1..4
+    std::map<int, std::vector<int>> junctionColumns; // root surface nodeId -> [surface, L1, ..., outer] (cases 2/3/4)
+    std::map<int, int> nodeToJunctionRoot;           // any cap-column nodeId -> its root surface nodeId
 };
 
 class BoundaryLayerGenerator {

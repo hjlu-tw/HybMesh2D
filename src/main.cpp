@@ -639,6 +639,25 @@ int main(int argc, char* argv[]) {
                 if (nd.bcTag.empty()) nd.bcTag = config.bcFor(g.file);
                 boundaryIds.push_back(nd.id);
             }
+            // BL/no-BL junction corner ownership fix: the resampler gives a shared
+            // corner to the segment STARTING there, so at a BL->no-BL corner the
+            // vertex lands on the no-BL segment (skipBL) and the BL would stop one
+            // surface point short of the corner. Promote such a corner (a tagged
+            // corner that is skipBL but has a BL neighbour) back into the BL region so
+            // the layer reaches the actual corner vertex — symmetric with the
+            // no-BL->BL corner, which the resampler already gives to the BL segment.
+            // isCorner is required so an interior no-BL point next to the BL corner is
+            // NOT promoted (only the shared vertex is).
+            if (g.meta.valid) {
+                int nb = static_cast<int>(boundaryIds.size());
+                for (int i = 0; i < nb; ++i) {
+                    Node& cn = mesh.nodes[boundaryIds[i]];
+                    if (!cn.skipBL || !cn.isCorner) continue;
+                    bool prevBL = !mesh.nodes[boundaryIds[(i - 1 + nb) % nb]].skipBL;
+                    bool nextBL = !mesh.nodes[boundaryIds[(i + 1) % nb]].skipBL;
+                    if (prevBL || nextBL) cn.skipBL = false;
+                }
+            }
             allBoundaryIds.push_back(boundaryIds);
             growModes.push_back(g.isDomainWall ? 1 : -1);
             blParamsPerLoop.push_back(g.bl);
