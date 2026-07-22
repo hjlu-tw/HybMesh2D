@@ -85,17 +85,14 @@ class Stl3dConfigPanel(QScrollArea):
         self._layout.setSpacing(6)
         self.setWidget(content)
 
-        # ── Run / Cancel / Fit ────────────────────────────────────────────
+        # ── Run / Cancel ──────────────────────────────────────────────────
+        # Generate phi / Cancel now live in the top canvas toolbar (reparented
+        # by MainWindow), so they are created here (for controller.py wiring +
+        # enable/disable) but not added to the side panel. The old panel "Fit
+        # View" is removed — the 3D canvas toolbar already provides Fit View.
         self.run_btn = make_button("Generate phi", "#1e4620")
         self.cancel_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_btn.setEnabled(False)
-        self.fit_btn = make_button("Fit View", "#1d2a3a")
-        run_row = QHBoxLayout()
-        run_row.setSpacing(4)
-        run_row.addWidget(self.run_btn)
-        run_row.addWidget(self.cancel_btn)
-        run_row.addWidget(self.fit_btn)
-        self._layout.addLayout(run_row)
 
         # The STL↔φ fit is measured automatically after each successful run
         # (controller._on_stl3d_finished → check_stl3d_fit); the result appears in
@@ -144,13 +141,14 @@ class Stl3dConfigPanel(QScrollArea):
         self._layout.addWidget(self.fit_result_card)
 
         # One-click hand-off: stage phi + generate the reading DLL + enable IBM,
-        # then jump to the Solver tab. Enabled only after a successful run.
+        # then jump to the Solver tab. Enabled only after a successful run. Lives
+        # in the top canvas toolbar (reparented by MainWindow) beside Generate
+        # phi / Cancel, so it is created here but not added to the side panel.
         self.send_solver_btn = make_button("Send to Solver  →", "#301540")
         self.send_solver_btn.setEnabled(False)
         self.send_solver_btn.setToolTip(
             "Stage the phi field, generate the immersed-solid init DLL, enable IBM "
             "in the Solver config, and switch to the Solver tab.")
-        self._layout.addWidget(self.send_solver_btn)
 
         self.status_lbl = QLabel("Load an STL surface to begin.")
         self.status_lbl.setWordWrap(True)

@@ -272,6 +272,18 @@ python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/my_case.json -
 
 > `run_pipeline.sh` 會先設定 Gmsh 的 `DYLD_LIBRARY_PATH`（同 `run.sh`）。求解器結果檔輸出到 `results/solver/<case_name>/work/`，contour PNG 到 `results/pipeline/`。注意 `print_sol_per_niter` 需 ≤ `num_half_iter`，否則求解器不會寫出結果檔。
 
+## 近期修正 (Bug Fixes)
+
+以下修正來自一次跨 C++ 核心與 PreProcessor GUI 的程式碼審查：
+
+- **管線 stdout/stderr 死鎖**：`pipeline_runner._stream` 原本先讀完 stdout 再讀 stderr，當某階段在結束前對 stderr 寫入超過 OS pipe buffer（約 64 KB）時會永久卡死；改為以背景執行緒同時排空兩條管道。
+- **Windows log 檔名非法字元**：`Logger.hpp` 每次執行的 log 檔名含 `:`（`%H:%M:%S`），在 Windows 為非法檔名字元、永遠開不了檔；新增無冒號的 `utcTimestampFile()` 供檔名使用，log 行前綴仍保留可讀的 ISO 時間。
+- **結果欄位被衍生量遮蔽**：`TecplotResult.get_cell_field` 原本先判斷衍生量（`s`/`p0`/`T0`/`Cp`），使檔案自帶的同名原始欄位被重算值蓋掉；改為原始欄位優先，找不到才計算衍生量。
+- **暫時性 weld 可能永久化**：`backend_ctrl._write_temp_config` 對 `pm.segments`/路徑的暫時性修改，其還原未放進 `finally`；中途任何例外會讓 weld 過的座標永久寫入。已改為 try/finally 保證還原。
+- **Join Edges 中段種子無法連接**：`curve_ctrl._chain_edges` 只從種子邊的一端單向延伸，若最低索引的選取邊落在開放鏈中段，合法的鏈會被誤判為不連通；改為從頭尾雙向延伸。
+- **Join 後未選邊設定遺失**：合併離散 (file) 邊並移除點、重新編號後，存活的未選 file 邊仍持有舊索引，導致 `update_file_segments_from_indices` 依 `(start, end)` 找不到而還原成預設值（BC/spacing 遺失）；已一併重映射存活邊的索引。
+- **清理**：移除死碼 `fit_stl3d_view`；兩處內聯的 `is_closed → closed_mode` 映射改用既有的 `_legacy_closed_mode()`；`BoundaryLayer` 每節點的 `getenv` 除錯查詢改為每次 `generate()` 快取一次；合併幾乎重複的 `circle`/`arc` 取樣分支。
+
 ## 授權
 
 MIT License

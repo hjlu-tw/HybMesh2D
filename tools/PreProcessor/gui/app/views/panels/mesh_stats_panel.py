@@ -23,7 +23,7 @@ class MeshStatsPanel(CollapsibleSection):
     export_star_cd_requested = pyqtSignal()       # Emitted when user requests Star-CD export
 
     def __init__(self, parent=None):
-        super().__init__("Mesh Statistics", start_collapsed=False, parent=parent)
+        super().__init__("Mesh Statistics", start_collapsed=True, parent=parent)
 
         # Background quality-metric computation (large meshes). A generation
         # token discards results from a superseded mesh; the worker list keeps

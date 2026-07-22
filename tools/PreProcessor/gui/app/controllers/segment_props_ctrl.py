@@ -5,8 +5,12 @@ alongside SegmentControllerMixin; resolves through the shared flat self
 (active_session, get_selected_segment_indices, _apply_geometry_update)."""
 from __future__ import annotations
 from app.commands.segment_cmds import (
-    ToggleIsClosedCmd, ToggleGlobalSplineCmd, UpdateMultipleSegmentsStateCmd,
+    SetClosedModeCmd, ToggleGlobalSplineCmd, UpdateMultipleSegmentsStateCmd,
 )
+
+# Sidebar combo text <-> ProjectModel.closed_mode
+_CLOSED_MODE_BY_TEXT = {"Auto": "auto", "Closed": "closed", "Open": "open"}
+_CLOSED_TEXT_BY_MODE = {v: k for k, v in _CLOSED_MODE_BY_TEXT.items()}
 
 
 class SegmentPropsControllerMixin:
@@ -156,19 +160,30 @@ class SegmentPropsControllerMixin:
             canvas.update_active_segments(ranges, 0 if ranges else -1)
         return _hl
 
-    def handle_is_closed_changed(self, text: str):
+    def handle_closed_mode_changed(self, text: str):
         session = self.active_session()
-        if session:
-            is_closed = (text == "True")
-            if session.project_model.is_closed != is_closed:
-                def refresh():
-                    sb = self.main_window.sidebar_view
-                    sb.is_closed_combo.blockSignals(True)
-                    sb.is_closed_combo.setCurrentText(str(session.project_model.is_closed))
-                    sb.is_closed_combo.blockSignals(False)
-                    self._apply_geometry_update(session)
-                cmd = ToggleIsClosedCmd(session, is_closed, refresh)
-                session.command_history.execute(cmd)
+        if not session:
+            return
+        mode = _CLOSED_MODE_BY_TEXT.get(text)
+        if mode is None or session.project_model.closed_mode == mode:
+            return
+
+        def refresh():
+            self._sync_closed_mode_ui(session)
+            self._apply_geometry_update(session)
+        cmd = SetClosedModeCmd(session, mode, refresh)
+        session.command_history.execute(cmd)
+
+    def _sync_closed_mode_ui(self, session):
+        """Reflect the session's closed_mode in the sidebar combo, and show the
+        resolved state ("→ Closed"/"→ Open") next to it while in Auto mode."""
+        pm = session.project_model
+        sb = self.main_window.sidebar_view
+        sb.is_closed_combo.blockSignals(True)
+        sb.is_closed_combo.setCurrentText(_CLOSED_TEXT_BY_MODE.get(pm.closed_mode, "Auto"))
+        sb.is_closed_combo.blockSignals(False)
+        status = "→ Closed" if pm.is_closed else "→ Open"
+        sb.closed_mode_status.setText(status if pm.closed_mode == "auto" else "")
 
     def handle_global_spline_changed(self, checked: bool):
         session = self.active_session()

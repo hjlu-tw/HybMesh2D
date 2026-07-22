@@ -82,7 +82,7 @@ class MeshConfigOutputMixin:
         export_layout.addWidget(help_widget(self.export_vtk, "Write a .vtk file when the mesh is generated"))
         export_layout.addWidget(help_widget(self.export_starcd, "Write STAR-CD files (.vrt/.cel/.bnd) when the mesh is generated (required for the solver)"))
         export_layout.addWidget(help_widget(self.export_cgns, "Write a CGNS file when the mesh is generated"))
-        out_form.addRow(help_label("Write formats:", "Which mesh files to write when you generate. Use Export mesh… to save them to a specific path."), export_layout)
+        out_form.addRow(help_label("Formats:", "Which mesh files to write when you generate. Use Export mesh… to save them to a specific path."), export_layout)
         out_form.addRow("", help_widget(self.export_mesh_btn, "Save the generated mesh in the enabled formats to a chosen location"))
         align_form_labels(out_form, 90)
         out_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)

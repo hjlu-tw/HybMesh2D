@@ -30,6 +30,7 @@ DEFAULTS: dict[str, dict] = {
     "vertical_line": {"x": 0.0, "y0": 0.0, "y1": 1.0},
     "line": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
     "circle": {"cx": 0.0, "cy": 0.0, "r": 1.0},
+    "arc": {"cx": 0.0, "cy": 0.0, "r": 1.0, "theta0": 0.0, "theta1": math.pi / 2},
     "triangle": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0, "x2": 0.5, "y2": 1.0},
     "quadrilateral": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0,
                       "x2": 1.0, "y2": 1.0, "x3": 0.0, "y3": 1.0},
@@ -44,6 +45,8 @@ FIELDS: dict[str, list[tuple[str, str]]] = {
     "horizontal_line": [("y", "Y"), ("x0", "X Start"), ("x1", "X End")],
     "vertical_line": [("x", "X"), ("y0", "Y Start"), ("y1", "Y End")],
     "circle": [("cx", "Centre X"), ("cy", "Centre Y"), ("r", "Radius")],
+    "arc": [("cx", "Centre X"), ("cy", "Centre Y"), ("r", "Radius"),
+            ("theta0", "Start angle"), ("theta1", "End angle")],
     "triangle": [("x0", "P0 X"), ("y0", "P0 Y"), ("x1", "P1 X"),
                  ("y1", "P1 Y"), ("x2", "P2 X"), ("y2", "P2 Y")],
     "quadrilateral": [("x0", "P0 X"), ("y0", "P0 Y"), ("x1", "P1 X"),
@@ -58,6 +61,8 @@ SIDEBAR_ATTRS: dict[str, dict[str, str]] = {
     "vertical_line": {"x": "v_line_x", "y0": "v_line_y_start", "y1": "v_line_y_end"},
     "line": {"x0": "line_x0", "y0": "line_y0", "x1": "line_x1", "y1": "line_y1"},
     "circle": {"cx": "circle_cx", "cy": "circle_cy", "r": "circle_r"},
+    "arc": {"cx": "arc_cx", "cy": "arc_cy", "r": "arc_r",
+            "theta0": "arc_theta0", "theta1": "arc_theta1"},
     "triangle": {"x0": "tri_x0", "y0": "tri_y0", "x1": "tri_x1",
                  "y1": "tri_y1", "x2": "tri_x2", "y2": "tri_y2"},
     "quadrilateral": {"x0": "quad_x0", "y0": "quad_y0", "x1": "quad_x1",
@@ -101,6 +106,14 @@ def control_points(curve_type: str, params: dict) -> list:
     if curve_type == "circle":
         cx, cy, r = p.get("cx", 0.0), p.get("cy", 0.0), p.get("r", 1.0)
         return [("c", (cx, cy)), ("rim", (cx + r, cy))]
+    if curve_type == "arc":
+        cx, cy, r = p.get("cx", 0.0), p.get("cy", 0.0), p.get("r", 1.0)
+        t0, t1 = p.get("theta0", 0.0), p.get("theta1", math.pi / 2)
+        tm = 0.5 * (t0 + t1)          # midpoint of the sweep → radius/bulge handle
+        return [("c", (cx, cy)),
+                ("p0", (cx + r * math.cos(t0), cy + r * math.sin(t0))),
+                ("p1", (cx + r * math.cos(t1), cy + r * math.sin(t1))),
+                ("m", (cx + r * math.cos(tm), cy + r * math.sin(tm)))]
     if curve_type == "triangle":
         return [(f"v{i}", (p.get(f"x{i}", 0.0), p.get(f"y{i}", 0.0)))
                 for i in range(3)]
@@ -113,8 +126,29 @@ def control_points(curve_type: str, params: dict) -> list:
     return []
 
 
-def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float):
-    """Mutate ``params`` in place from a dragged control point."""
+def boundary_endpoints(curve_type: str, params: dict) -> list:
+    """The 0–2 FREE endpoints of an OPEN curve as ``[(handle_id, (x, y)), ...]``
+    — the points that may be welded onto an adjacent edge to form one connected
+    boundary. Inherently-closed / centre-defined shapes (circle, triangle,
+    quadrilateral, arc) return ``[]`` (their closure is not a weldable end).
+    A polygon yields its first and last vertex; the caller skips it when the
+    segment is flagged closed."""
+    if curve_type in ("line", "horizontal_line", "vertical_line"):
+        return control_points(curve_type, params)          # [p0, p1]
+    if curve_type == "polygon":
+        cps = control_points("polygon", params)
+        return [cps[0], cps[-1]] if len(cps) >= 2 else []
+    return []
+
+
+def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float,
+               lock_radius: bool = False):
+    """Mutate ``params`` in place from a dragged control point.
+
+    ``lock_radius`` (arc only): when True, dragging an end handle (``p0``/``p1``)
+    changes only that end's angle and keeps the radius fixed; the ``m`` (mid)
+    handle is the way to change the radius. When False an end handle re-fits both
+    radius and angle (legacy behaviour)."""
     p = params
     if curve_type == "line":
         if handle_id == "p0":
@@ -133,6 +167,25 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
         else:
             p["r"] = max(1e-6, math.hypot(x - p.get("cx", 0.0),
                                           y - p.get("cy", 0.0)))
+    elif curve_type == "arc":
+        cx, cy = p.get("cx", 0.0), p.get("cy", 0.0)
+        r = p.get("r", 1.0)
+        t0, t1 = p.get("theta0", 0.0), p.get("theta1", math.pi / 2)
+        if handle_id == "c":
+            p["cx"], p["cy"] = x, y
+        elif handle_id == "m":
+            # Drag the arc midpoint → change the radius/bulge while pinning the two
+            # endpoints in place (fit a circle through both current endpoints and
+            # the dragged mid). No-op if that makes the three points collinear.
+            p0 = (cx + r * math.cos(t0), cy + r * math.sin(t0))
+            p1 = (cx + r * math.cos(t1), cy + r * math.sin(t1))
+            fit = arc_from_3points(p0, p1, (x, y))
+            if fit is not None:
+                p["cx"], p["cy"], p["r"], p["theta0"], p["theta1"] = fit
+        else:                                    # p0 / p1 endpoints
+            if not lock_radius:
+                p["r"] = max(1e-6, math.hypot(x - cx, y - cy))
+            p["theta0" if handle_id == "p0" else "theta1"] = math.atan2(y - cy, x - cx)
     elif curve_type in ("triangle", "quadrilateral"):
         i = int(handle_id[1])
         p[f"x{i}"], p[f"y{i}"] = x, y
@@ -143,6 +196,28 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
             verts[i] = [x, y]
             from app.services.geometry_service import format_vertices_str
             p["vertices_str"] = format_vertices_str(verts)
+
+
+def arc_from_3points(p1, p2, p3):
+    """Circle through 3 points → (cx, cy, r, theta0, theta1), with the sweep
+    from p1 (start) to p2 (end) going the way that passes through p3 (a point on
+    the arc). Returns None if the three points are collinear."""
+    (ax, ay), (bx, by), (cxp, cyp) = p1, p2, p3
+    d = 2.0 * (ax * (by - cyp) + bx * (cyp - ay) + cxp * (ay - by))
+    if abs(d) < 1e-12:
+        return None
+    a2, b2, c2 = ax * ax + ay * ay, bx * bx + by * by, cxp * cxp + cyp * cyp
+    ux = (a2 * (by - cyp) + b2 * (cyp - ay) + c2 * (ay - by)) / d
+    uy = (a2 * (cxp - bx) + b2 * (ax - cxp) + c2 * (bx - ax)) / d
+    r = math.hypot(ax - ux, ay - uy)
+    t_s = math.atan2(ay - uy, ax - ux)
+    t_m = math.atan2(cyp - uy, cxp - ux)
+    t_e = math.atan2(by - uy, bx - ux)
+    two_pi = 2.0 * math.pi
+    d_e = (t_e - t_s) % two_pi
+    d_m = (t_m - t_s) % two_pi
+    theta1 = t_s + d_e if d_m <= d_e else t_s - (two_pi - d_e)
+    return (ux, uy, r, t_s, theta1)
 
 
 def params_from_points(tool: str, pts: list):
@@ -157,6 +232,12 @@ def params_from_points(tool: str, pts: list):
         cx, cy = p[0]
         r = math.hypot(p[1][0] - cx, p[1][1] - cy)
         return ({"cx": cx, "cy": cy, "r": (r if r > 1e-9 else 1.0)}, "circle")
+    if tool == "arc" and len(p) >= 3:
+        res = arc_from_3points(p[0], p[1], p[2])
+        if res is None:
+            return None, None
+        ux, uy, r, t0, t1 = res
+        return ({"cx": ux, "cy": uy, "r": r, "theta0": t0, "theta1": t1}, "arc")
     if tool == "rectangle" and len(p) >= 2:
         (x0, y0), (x1, y1) = p[0], p[1]
         return ({"x0": x0, "y0": y0, "x1": x1, "y1": y0,

@@ -298,6 +298,9 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
         self.redo_btn = create_tb_btn("Redo", "Redo last action (Ctrl+Shift+Z)")
         self.focus_geom_btn = create_tb_btn("Fit View", "Fit canvas view to selected geometry")
         self.cad_clear_btn = create_tb_btn("Clear", "Clear the active geometry from the canvas")
+        self.cad_redraw_btn = create_tb_btn(
+            "Redraw", "Redraw the canvas — clear leftover markers/handles from the "
+            "previous action and re-render the geometry")
         
         # New CAD Previews
         self.cad_preview_btn = create_tb_btn("Preview", "Run PreProcessor and preview geometry/boundary conditions")
@@ -459,7 +462,7 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
 
         # Track layouts for visibility toggling
         self.cad_tb_widgets = [
-            self.focus_geom_btn, self.cad_clear_btn,
+            self.focus_geom_btn, self.cad_clear_btn, self.cad_redraw_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2,
@@ -474,6 +477,24 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
 
         # Hide mesh widgets on start
         for w in self.mesh_tb_widgets:
+            w.setVisible(False)
+
+        # Solver "Run Solver"/"Cancel" and Immersed-Boundary "Generate phi"/
+        # "Cancel" live in the top canvas toolbar (like mesh Generate/Cancel)
+        # rather than in their side panels. The buttons are owned by the panels
+        # (so controller.py keeps its clicked/enable wiring); reparent them onto
+        # the toolbar here and drive their visibility per mode.
+        self.solver_tb_widgets = [
+            self.solver_config_panel.run_solver_btn,
+            self.solver_config_panel.cancel_solver_btn,
+        ]
+        self.ib_tb_widgets = [
+            self.stl3d_config_panel.run_btn,
+            self.stl3d_config_panel.cancel_btn,
+            self.stl3d_config_panel.send_solver_btn,
+        ]
+        for w in self.solver_tb_widgets + self.ib_tb_widgets:
+            w.setParent(self.canvas_toolbar)
             w.setVisible(False)
 
         # Shared Canvas Stack
@@ -592,6 +613,13 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
 
         for w in self.mesh_tb_widgets:
             w.setVisible(is_mesh)
+
+        # Solver / Immersed-Boundary run+cancel toolbar buttons (idx 3 / 5).
+        for w in self.solver_tb_widgets:
+            w.setVisible(idx == 3)
+        for w in self.ib_tb_widgets:
+            w.setVisible(idx == 5)
+
         self.progress_bar.setVisible(False)
 
         self.adjust_toolbar_layout()

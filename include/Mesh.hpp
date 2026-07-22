@@ -6,6 +6,8 @@
 #include "Curve.hpp"
 #include <vector>
 #include <string>
+#include <map>
+#include <utility>
 
 enum class NodeType {
     Boundary,
@@ -64,6 +66,16 @@ public:
     std::vector<Edge> edges;
     std::vector<Element> elements;
 
+    // Per-boundary-edge BC, keyed by the sorted (v1,v2) node-id pair, recorded at
+    // construction where the boundary ORDER is known. A boundary edge is a per-EDGE
+    // BC: it belongs to exactly one surface segment — the segment of its starting
+    // point (the same convention addTaggedLoop uses for far-field / no-BL edges).
+    // BL-grown surfaces do not add their wall edges to `edges`, so this map carries
+    // their per-edge BC to the exporter, which lets it tag each wall edge directly
+    // (including the edge that ends at a segment junction, whose two endpoints
+    // carry different segment tags) instead of guessing from endpoint agreement.
+    std::map<std::pair<int, int>, std::string> boundaryEdgeBc;
+
     void addNode(Point2D p, NodeType type = NodeType::Interior);
     void addEdge(int v1, int v2);
     void addElement(const std::vector<int>& ids);
@@ -98,8 +110,11 @@ private:
     // Gather the tagged domain-boundary segments from `edges` (non-empty bcTag).
     std::vector<BcRefSeg> collectBcRefSegs() const;
     // Classify one boundary edge (endpoints v1,v2) to a BC name. Priority:
+    //   0) an exact per-edge BC recorded at construction (boundaryEdgeBc) — the
+    //      authoritative per-EDGE tag for BL-grown surface edges,
     //   1) a domain reference segment it lies on (rectangle side / polygon edge),
-    //   2) a geometry per-segment Node::bcTag shared by both endpoints,
+    //   2) a geometry per-segment Node::bcTag shared by both endpoints (fallback
+    //      for Gmsh-subdivided edges not present in boundaryEdgeBc),
     //   3) config.bcGeom (also the internal-flow wall default).
     std::string classifyBoundaryBc(int v1, int v2,
                                    const std::vector<BcRefSeg>& refs,

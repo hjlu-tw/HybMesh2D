@@ -4,7 +4,7 @@ import json
 import copy
 from dataclasses import dataclass, field
 
-from app.models.project import ProjectModel
+from app.models.project import ProjectModel, _legacy_closed_mode
 from app.models.mesh_config import MeshConfig
 from app.models.solver_config import SolverConfig
 
@@ -182,6 +182,8 @@ class PipelineConfig:
         cfg = {
             "input_file": self.resolve_input_file(repo_root),
             "output_file": output_file,
+            "closed_mode": self.cad.get(
+                "closed_mode", _legacy_closed_mode(self.cad)),
             "is_closed": self.cad.get("is_closed", True),
             "global_spline": self.cad.get("global_spline", False),
             "transform": self.cad.get("transform"),
@@ -230,6 +232,7 @@ class PipelineConfig:
             pc.cad = {
                 "input_file": project_model.input_file,
                 "output_file": project_model.output_file,
+                "closed_mode": project_model.closed_mode,
                 "is_closed": project_model.is_closed,
                 "global_spline": project_model.global_spline,
                 "transform": copy.deepcopy(project_model.transform),

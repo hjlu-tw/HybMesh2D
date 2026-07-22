@@ -90,6 +90,12 @@ class SidebarView(QWidget):
 
         outer.addWidget(self._build_footer())
 
+        # FilePanel is kept alive purely as the delegation/wiring holder for its
+        # buttons (load_btn/load_stl_btn/…, now driven from the File menu) and
+        # file_name_label; it is never placed in a layout, so hide it to keep the
+        # un-managed widget from floating over the sidebar.
+        self.file_panel.setVisible(False)
+
         self._update_details()
 
     # ── Pane builders ───────────────────────────────────────────────────────
@@ -111,8 +117,20 @@ class SidebarView(QWidget):
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(6)
 
-        # Import / File (collapsed — used once per session)
-        lay.addWidget(self.file_panel)
+        # Import / File actions now live in the menu bar (File menu). Only the
+        # geometry-level "Closed Loop" property stays here, beside the tree.
+        # Reuse the (now hidden) FilePanel's combo so all controller wiring and
+        # SidebarView.__getattr__ delegation keep resolving `is_closed_combo`.
+        closed_row = QHBoxLayout()
+        closed_row.setContentsMargins(2, 0, 2, 0)
+        closed_lbl = QLabel("Closed Loop:")
+        closed_lbl.setStyleSheet(
+            "color:#a0a8c0; font-size:11px; font-weight:bold;")
+        closed_row.addWidget(closed_lbl)
+        closed_row.addWidget(self.file_panel.is_closed_combo, stretch=1)
+        # Resolved-state hint (e.g. "→ Closed") shown when the mode is Auto.
+        closed_row.addWidget(self.file_panel.closed_mode_status)
+        lay.addLayout(closed_row)
 
         # Selection-mode filter, sitting beside the tree it filters
         mode_row = QHBoxLayout()
@@ -130,7 +148,6 @@ class SidebarView(QWidget):
         lay.addWidget(self.geometry_panel.geometry_tree, stretch=1)
 
         # Edge actions act on the tree's current selection
-        self.edge_list_panel.expand()
         lay.addWidget(self.edge_list_panel)
 
         scroll.setWidget(content)
@@ -156,11 +173,10 @@ class SidebarView(QWidget):
             "color:#6a7aaa; font-style:italic; padding:8px 4px;")
         lay.addWidget(self._details_placeholder)
 
-        # Properties live here, always expanded (no hunting through accordions).
-        self.edge_props_panel.expand()
+        # Properties stay collapsed by default; selecting an edge expands them
+        # (see EdgePropertiesPanel.show_segment_props).
         lay.addWidget(self.edge_props_panel)
 
-        self.vertex_panel.expand()
         lay.addWidget(self.vertex_panel)
 
         lay.addStretch()

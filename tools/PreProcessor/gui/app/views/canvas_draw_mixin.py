@@ -42,6 +42,16 @@ class CanvasDrawMixin:
     def clear_open_endpoint_markers(self):
         self._open_endpoint_markers.clear()
 
+    def show_closing_edge(self, p_last, p_first):
+        """Draw the gold dashed segment bridging last→first (the auto-added
+        closure) so it reads as distinct from real geometry edges."""
+        p0 = np.asarray(p_last, dtype=float)
+        p1 = np.asarray(p_first, dtype=float)
+        self._closing_edge.setData([p0[0], p1[0]], [p0[1], p1[1]])
+
+    def clear_closing_edge(self):
+        self._closing_edge.setData([], [])
+
     def show_edge_handles(self, handles: list[dict]):
         """Show draggable control points for the selected analytic edge.
 
@@ -90,8 +100,8 @@ class CanvasDrawMixin:
 
     # Number of points each tool collects (None = variable, finished by a
     # double-click — used for the free polygon tool).
-    _DRAW_NPTS = {'line': 2, 'circle': 2, 'rectangle': 2, 'triangle': 3,
-                  'polygon': None}
+    _DRAW_NPTS = {'line': 2, 'circle': 2, 'arc': 3, 'rectangle': 2,
+                  'triangle': 3, 'polygon': None}
 
     def start_draw_mode(self, tool: str):
         """Enter interactive shape-drawing mode for ``tool``.  Clicks place the
@@ -154,6 +164,10 @@ class CanvasDrawMixin:
             return "Click start point" if n == 0 else "Click end point"
         if tool == 'circle':
             return "Click centre" if n == 0 else "Click to set the radius"
+        if tool == 'arc':
+            return ("Click the arc start point" if n == 0 else
+                    "Click the arc end point" if n == 1 else
+                    "Click a point on the arc")
         if tool == 'rectangle':
             return "Click a corner" if n == 0 else "Click the opposite corner"
         if tool == 'triangle':
@@ -219,6 +233,16 @@ class CanvasDrawMixin:
             r = math.hypot(live[1][0] - cx, live[1][1] - cy)
             ts = np.linspace(0, 2 * math.pi, 64)
             return np.column_stack([cx + r * np.cos(ts), cy + r * np.sin(ts)])
+        if tool == 'arc':
+            if len(live) >= 3:
+                from app.models.shape_spec import arc_from_3points
+                res = arc_from_3points(live[0], live[1], live[2])
+                if res is not None:
+                    ux, uy, r, t0, t1 = res
+                    ts = np.linspace(t0, t1, 48)
+                    return np.column_stack([ux + r * np.cos(ts), uy + r * np.sin(ts)])
+            # Before the on-arc point exists, preview the start→end chord.
+            return np.array(live, dtype=float)
         if tool == 'rectangle' and len(live) >= 2:
             (x0, y0), (x1, y1) = live[0], live[1]
             return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])

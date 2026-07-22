@@ -351,7 +351,7 @@ class CurveEditControllerMixin:
         session = self.active_session()
         seg = (session.project_model.get_segment(session.current_segment_idx)
                if session and session.current_segment_idx >= 0 else None)
-        editable = ("polygon", "triangle", "quadrilateral")
+        editable = ("polygon", "triangle", "quadrilateral", "arc")
         if (seg is None or seg.type != "curve"
                 or getattr(seg, "curve_type", "custom") not in editable):
             canvas.clear_edge_handles()
@@ -397,7 +397,9 @@ class CurveEditControllerMixin:
         # Apply the drag through the shared handle→param mapping, then push the
         # result back into the (silently-updated) sidebar widgets.
         params = shape_spec.read_widget_params(sb, ct)
-        shape_spec.apply_drag(ct, params, handle_id, x, y)
+        lock = (ct == "arc" and getattr(sb, "arc_lock_radius", None) is not None
+                and sb.arc_lock_radius.isChecked())
+        shape_spec.apply_drag(ct, params, handle_id, x, y, lock_radius=lock)
         shape_spec.write_widget_params(sb, ct, params, silent=True)
 
         # Sync the (silently-updated) widgets into the segment and re-preview.

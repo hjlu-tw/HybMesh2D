@@ -26,7 +26,7 @@ class MeshConfigDomainMixin:
 
     def _build_domain_section(self):
         # ── 1. Domain & Geometry Files ────────────────────────────────────
-        self.sec_domain = CollapsibleSection("Domain & Geometry", start_collapsed=False)
+        self.sec_domain = CollapsibleSection("Domain & Geometry", start_collapsed=True)
         self._layout.addWidget(self.sec_domain)
 
         # Domain source: the rectangular box, or a geometry acting as the outer

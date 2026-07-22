@@ -105,8 +105,8 @@ class MeshConfig:
     bc_ymin: str = "outlet"
     bc_ymax: str = "outlet"
     bc_geom: str = "wall"
-    export_vtk: bool = True
-    export_starcd: bool = False
+    export_vtk: bool = False
+    export_starcd: bool = True
     export_cgns: bool = False
     enable_collision_detection: bool = True
     output_filename: str = ""

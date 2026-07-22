@@ -38,7 +38,7 @@
 
 namespace hybmesh {
 
-inline std::string utcTimestamp() {
+inline std::tm utcTm() {
     std::time_t t = std::time(nullptr);
     std::tm tmv{};
 #if defined(_WIN32)
@@ -46,8 +46,23 @@ inline std::string utcTimestamp() {
 #else
     gmtime_r(&t, &tmv);
 #endif
+    return tmv;
+}
+
+inline std::string utcTimestamp() {
+    std::tm tmv = utcTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tmv);
+    return std::string(buf);
+}
+
+// Filename-safe UTC timestamp: no ':' (illegal in Windows filenames, which would
+// make the per-run log file impossible to create on the Windows target this
+// header otherwise supports). Keeps the readable ISO form for log-LINE prefixes.
+inline std::string utcTimestampFile() {
+    std::tm tmv = utcTm();
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y%m%dT%H%M%SZ", &tmv);
     return std::string(buf);
 }
 
@@ -78,7 +93,7 @@ private:
         if (ec) return; // cannot create dir -> console-only, no hard failure
 #endif
         std::ostringstream path;
-        path << dir << "/run-" << utcTimestamp() << "-"
+        path << dir << "/run-" << utcTimestampFile() << "-"
              << (long)HYBMESH_GETPID() << ".log";
         m_file.open(path.str(), std::ios::app);
         // If open fails, is_open() stays false and we silently stay console-only.

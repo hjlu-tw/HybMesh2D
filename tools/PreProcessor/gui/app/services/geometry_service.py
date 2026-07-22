@@ -300,10 +300,17 @@ class GeometryService:
             xs_raw = np.linspace(x0, x1, n)
             ys_raw = np.linspace(y0, y1, n)
             xs, ys = _resample_polyline_uniform(xs_raw, ys_raw, n)
-        elif seg.curve_type == "circle":
+        elif seg.curve_type in ("circle", "arc"):
+            # A circle is the full-turn special case of an arc; share one sampler
+            # so a fix to circle/arc sampling can't drift between the two.
             cx = seg.parameters.get("cx", 0.0);  cy = seg.parameters.get("cy", 0.0)
             r  = seg.parameters.get("r",  1.0)
-            ts = np.linspace(0.0, 2.0 * math.pi, n)
+            if seg.curve_type == "circle":
+                t0, t1 = 0.0, 2.0 * math.pi
+            else:
+                t0 = seg.parameters.get("theta0", 0.0)
+                t1 = seg.parameters.get("theta1", math.pi / 2)
+            ts = np.linspace(t0, t1, n)
             xs_raw = cx + r * np.cos(ts)
             ys_raw = cy + r * np.sin(ts)
             xs, ys = _resample_polyline_uniform(xs_raw, ys_raw, n)
@@ -327,10 +334,12 @@ class GeometryService:
         elif seg.curve_type == "polygon":
             v_str = seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1")
             verts = _parse_vertices_str(v_str)
-            # Force-close the polygon: the last point always connects back to the
-            # first (like triangle/quad), so a polygon is a closed loop rather
-            # than an open polyline missing its last edge.
-            if len(verts) >= 3 and not np.allclose(verts[0], verts[-1]):
+            # A polygon closes back to its first vertex when closed=True (the
+            # default, like triangle/quad). When closed=False it stays an OPEN
+            # polyline (used by "Join Edges" without force-close), so its two
+            # ends are honoured (and flagged as open endpoints).
+            if (getattr(seg, "closed", True) and len(verts) >= 3
+                    and not np.allclose(verts[0], verts[-1])):
                 verts = np.vstack([verts, verts[0]])
             xs, ys = _sample_polyline_pinned(verts, n)
         else:  # custom
@@ -483,6 +492,99 @@ class GeometryService:
         if (n - 1) not in indices:
             indices.append(n - 1)
         return indices
+
+    @staticmethod
+    def detect_closed(points: np.ndarray | None) -> bool:
+        """Decide whether a point list forms a closed loop, from geometry alone.
+
+        Industry-style tolerance detection (cf. Pointwise/Fluent node-merge
+        tolerance): the boundary is closed when its first and last points are
+        effectively the same *relative to the local point spacing*. Concretely,
+        closed when the first↔last gap is either near-zero (endpoints coincide,
+        e.g. a NACA .dat that repeats the trailing-edge point, or a circle) or no
+        larger than ~1.5× the median edge length (a polygon whose last vertex is
+        simply one edge away from the first). A genuinely open polyline (flat
+        plate, wall segment) leaves a gap many times the spacing and reads open.
+
+        Spacing-relative so it is scale-invariant. Kept separate from
+        ``open_endpoint_ctrl.find_geometry_gaps`` (which uses 4× median to flag
+        *anomalous* gaps) — different purpose, different threshold. Pure numpy /
+        session-free so the Qt-free model can call it.
+        """
+        if points is None:
+            return False
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or len(pts) < 3:
+            return False
+        d = np.hypot(np.diff(pts[:, 0]), np.diff(pts[:, 1]))
+        pos = d[d > 1e-12]
+        if len(pos) == 0:
+            return False
+        gap = float(np.hypot(pts[0, 0] - pts[-1, 0], pts[0, 1] - pts[-1, 1]))
+        med = float(np.median(pos))
+        # Coincident endpoints (gap ≈ 0, tolerance tied to the point spacing so
+        # it is scale-free) or last vertex within one edge of the first.
+        if gap <= 1e-6 * med:
+            return True
+        return gap <= 1.5 * med
+
+    @staticmethod
+    def weld_boundary_endpoints(segments, tol: float) -> int:
+        """Snap near-coincident endpoints of adjacent OPEN curve edges onto one
+        shared point so separately-drawn edges chain into a SINGLE connected
+        boundary. The GUI treats endpoints within ``tol`` (a fraction of the
+        bounding box) as connected, but the mesher only joins pieces whose
+        endpoints coincide within 1e-7 — so hand-drawn corners that miss by a
+        hair are silently split into disconnected pieces. Welding closes that
+        gap while keeping every segment (and thus its per-segment BC) separate.
+
+        Mutates ``segments`` in place (callers pass a throw-away copy). Returns
+        the number of welded clusters. File segments (shared polyline) and
+        centre-defined / closed shapes are left untouched."""
+        from app.models import shape_spec
+        items = []                       # [seg, handle_id, np.array([x, y])]
+        for seg in segments:
+            if getattr(seg, "type", "file") != "curve":
+                continue
+            ct = getattr(seg, "curve_type", "custom")
+            if ct == "polygon" and getattr(seg, "closed", True):
+                continue                 # already a self-contained loop
+            for hid, (x, y) in shape_spec.boundary_endpoints(ct, seg.parameters):
+                items.append([seg, hid, np.array([float(x), float(y)])])
+
+        n = len(items)
+        if n < 2:
+            return 0
+        parent = list(range(n))
+
+        def find(a):
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                if np.hypot(*(items[i][2] - items[j][2])) <= tol:
+                    parent[find(i)] = find(j)
+        groups: dict[int, list[int]] = {}
+        for i in range(n):
+            groups.setdefault(find(i), []).append(i)
+
+        welds = 0
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            pts = np.array([items[k][2] for k in members])
+            rep = pts.mean(axis=0)
+            if float(np.max(np.hypot(pts[:, 0] - rep[0], pts[:, 1] - rep[1]))) <= 1e-9:
+                continue                 # already coincident — nothing to do
+            for k in members:
+                seg, hid, _ = items[k]
+                shape_spec.apply_drag(seg.curve_type, seg.parameters, hid,
+                                      float(rep[0]), float(rep[1]))
+            welds += 1
+        return welds
 
     @staticmethod
     def get_segment_points(session: GeometrySession, seg: SegmentModel) -> tuple[np.ndarray, np.ndarray] | None:

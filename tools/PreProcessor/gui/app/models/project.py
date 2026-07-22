@@ -6,7 +6,16 @@ from app.models.segment import SegmentModel
 # Bump when the exported JSON config schema changes in a backward-incompatible
 # way. Readers should tolerate a missing field (treated as version 0/legacy)
 # and warn — but not crash — when the file version is newer than they support.
-CONFIG_FORMAT_VERSION = 1
+CONFIG_FORMAT_VERSION = 2
+
+
+def _legacy_closed_mode(config: dict) -> str:
+    """Map a legacy config's ``is_closed`` bool to a ``closed_mode`` string.
+
+    Older files (and hand-written dicts) carry only the boolean. We treat that
+    saved value as a *manual* choice (not auto-detect), so an existing project
+    keeps behaving exactly as it did before this feature."""
+    return "closed" if config.get("is_closed", True) else "open"
 
 
 class ProjectModel:
@@ -15,6 +24,12 @@ class ProjectModel:
     def __init__(self):
         self.input_file: str = ""
         self.output_file: str = ""
+        # closed_mode is the user intent: "auto" derives closure from the
+        # geometry, "closed"/"open" force it. is_closed is the RESOLVED effective
+        # value every meshing/resample/export call site reads — kept in sync by
+        # resolve_closure(). Fresh raw .dat/.stl loads start "auto"; loading a
+        # saved config maps its legacy bool to a manual mode (see _legacy_closed_mode).
+        self.closed_mode: str = "auto"
         self.is_closed: bool = True
         self.segments: list[SegmentModel] = []
         self._next_curve_id: int = 10001
@@ -131,6 +146,23 @@ class ProjectModel:
                 indices.add(seg.end_index)
         return sorted(indices)
 
+    # ── Closure ───────────────────────────────────────────────────────────
+
+    def resolve_closure(self, points) -> bool:
+        """Refresh the effective ``is_closed`` from ``closed_mode`` + geometry.
+
+        "auto" derives closure from the points (GeometryService.detect_closed);
+        "closed"/"open" force it. Returns the resolved value. Call whenever the
+        mode or the geometry changes (the render funnel does this)."""
+        if self.closed_mode == "closed":
+            self.is_closed = True
+        elif self.closed_mode == "open":
+            self.is_closed = False
+        else:  # "auto"
+            from app.services.geometry_service import GeometryService
+            self.is_closed = GeometryService.detect_closed(points)
+        return self.is_closed
+
     # ── JSON I/O ──────────────────────────────────────────────────────────
 
     @staticmethod
@@ -153,6 +185,11 @@ class ProjectModel:
         # field layout changed, so the upgrade is just to stamp the version.
         if v < 1:
             v = 1
+        # v1 -> v2: added closed_mode (auto/closed/open). Older files carry only
+        # the is_closed bool; map it to a manual mode so they behave unchanged.
+        if v < 2:
+            data.setdefault("closed_mode", _legacy_closed_mode(data))
+            v = 2
         data["format_version"] = CONFIG_FORMAT_VERSION
         return data
 
@@ -160,6 +197,9 @@ class ProjectModel:
         config = self.migrate_config(config)
         self.input_file = config.get("input_file", "")
         self.output_file = config.get("output_file", "")
+        # A saved config expresses explicit intent → manual mode. Missing
+        # closed_mode (legacy) maps from the is_closed bool.
+        self.closed_mode = config.get("closed_mode", _legacy_closed_mode(config))
         self.is_closed = config.get("is_closed", True)
         self.global_spline = config.get("global_spline", False)
         self.transform = copy.deepcopy(config.get("transform", None))
@@ -179,6 +219,8 @@ class ProjectModel:
             "format_version": CONFIG_FORMAT_VERSION,
             "input_file": self.input_file,
             "output_file": self.output_file,
+            "closed_mode": self.closed_mode,
+            # Resolved value kept for forward-compat (older builds read this).
             "is_closed": self.is_closed,
             "segments": [seg.to_dict() for seg in self.segments],
         }

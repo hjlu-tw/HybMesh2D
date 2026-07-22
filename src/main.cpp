@@ -658,6 +658,23 @@ int main(int argc, char* argv[]) {
                     if (prevBL || nextBL) cn.skipBL = false;
                 }
             }
+            // Record the per-edge wall BC now, while the boundary ORDER is known.
+            // A boundary edge is a per-EDGE quantity: edge i belongs to the segment
+            // of its starting node boundaryIds[i] (same convention as addTaggedLoop's
+            // edgeBc[i] for far-field / no-BL loops). BL-grown surfaces don't add
+            // their wall edges to mesh.edges, so without this the exporter could only
+            // guess an edge's BC from whether its two endpoints agree — which fails
+            // for the edge ending at a segment junction (endpoints on different
+            // segments), dropping it to the wall default. This tags it directly.
+            {
+                int nb = static_cast<int>(boundaryIds.size());
+                for (int i = 0; i < nb; ++i) {
+                    int a = boundaryIds[i], b = boundaryIds[(i + 1) % nb];
+                    const std::string& tag = mesh.nodes[a].bcTag;
+                    if (!tag.empty())
+                        mesh.boundaryEdgeBc[{std::min(a, b), std::max(a, b)}] = tag;
+                }
+            }
             allBoundaryIds.push_back(boundaryIds);
             growModes.push_back(g.isDomainWall ? 1 : -1);
             blParamsPerLoop.push_back(g.bl);

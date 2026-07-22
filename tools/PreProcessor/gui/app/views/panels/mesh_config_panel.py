@@ -79,13 +79,11 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self.setWidget(content)
 
         # ── Control Buttons ───────────────────────────────────────────────
+        # Load/Save Config live in the Mesh menu (menu bar). The buttons are
+        # kept as attributes so controller.py keeps its clicked wiring, but they
+        # are no longer shown in the side panel.
         self.load_config_btn = make_button("Load Config File")
         self.save_config_btn = make_button("Save Config File", "#301540")
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(4)
-        btn_layout.addWidget(self.load_config_btn)
-        btn_layout.addWidget(self.save_config_btn)
-        self._layout.addLayout(btn_layout)
 
         # Row 2: Preview / Run / Cancel (Redundant, not added to layout to keep sidebar clean since they are in the top toolbar)
         self.preview_btn = make_button("BC Preview", "#1e2a38")
@@ -208,7 +206,7 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         # ── Boundary Layer (global default) ───────────────────────────────
         # The BL parameters are edited in a pop-up (same dialog as the
         # per-geometry override), not duplicated as inline panel fields.
-        self.sec_bl = CollapsibleSection("Boundary Layer", start_collapsed=False)
+        self.sec_bl = CollapsibleSection("Boundary Layer", start_collapsed=True)
         self._layout.addWidget(self.sec_bl)
         self.edit_global_bl_btn = make_button(
             "Edit boundary layer (global default)…", "#243a52")

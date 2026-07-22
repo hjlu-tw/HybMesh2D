@@ -1,5 +1,5 @@
 from __future__ import annotations
-from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QHBoxLayout, QCheckBox
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, help_widget
 
@@ -20,6 +20,16 @@ class EdgeListPanel(CollapsibleSection):
         self.curve_bake_btn = make_button("Convert to Discrete", '#1b5e20')
         self.curve_bake_btn.setEnabled(False)
         self.curve_bake_btn.setToolTip("Convert the selected analytic curve into a discrete edge")
+
+        # Merge several end-to-end curve edges (e.g. 4 hand-drawn lines) into one
+        # CLOSED polygon, clearing the "boundary not closed" warning.
+        self.join_edges_btn = make_button("Join → Polygon", '#1b3a5e')
+        self.join_edges_btn.setEnabled(False)
+        self.join_edges_btn.setToolTip(
+            "Merge the selected curve edges that connect end-to-end into a single\n"
+            "CLOSED polygon edge — clears the 'boundary not closed' warning.\n"
+            "Enabled once you select ≥2 curve edges (Shift/Ctrl-click or box-select\n"
+            "in Edge mode).")
 
         # #1: "Assign patch / group…" lives here (in Edge Actions) rather than in
         # the per-edge Edge Properties inspector, so it is always reachable and
@@ -44,5 +54,18 @@ class EdgeListPanel(CollapsibleSection):
 
         self.add_layout(btn_layout)
         self.add_widget(help_widget(self.curve_bake_btn, "Convert the selected analytic curve into a discrete edge"))
+        # Join button + a persistent "Force close" toggle beside it.
+        join_row = QHBoxLayout()
+        join_row.setContentsMargins(0, 0, 0, 0)
+        join_row.addWidget(help_widget(self.join_edges_btn,
+            "Merge selected end-to-end edges into one polygon"), stretch=1)
+        self.join_force_close_cb = QCheckBox("Force close")
+        self.join_force_close_cb.setToolTip(
+            "When joining, force the result to be a CLOSED loop (bridge the\n"
+            "last→first gap). Unchecked: the result is closed only if the edges\n"
+            "already form a loop — otherwise it is left open.")
+        join_row.addWidget(self.join_force_close_cb)
+        self.add_layout(join_row)
+
         self.add_widget(help_widget(self.group_btn,
             "Assign a patch/group label to ALL selected edges (pop-up)"))

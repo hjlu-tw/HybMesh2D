@@ -340,7 +340,13 @@ class TecplotResult:
     def get_cell_field(self, var: str) -> np.ndarray:
         """Return the cell-centered values for a variable, deriving them from
         node data by averaging if necessary. Derived quantities (#11) are
-        computed on demand."""
+        computed on demand.
+
+        A RAW field carried by the file always wins over a same-named derived
+        code: a Tecplot result may already ship its own 's'/'p0'/'T0'/'Cp', and
+        the stored field must not be silently shadowed by our recompute."""
+        if var in self.cell_data or (var in self.node_data and self.elements.size):
+            return self._base_cell_field(var)
         if var in self.DERIVED:
             return self._compute_derived(var)
         return self._base_cell_field(var)

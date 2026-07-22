@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import tempfile
 import subprocess
+import threading
 
 from app.models.pipeline_config import PipelineConfig
 from app.services import solver_case
@@ -43,18 +44,34 @@ def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
             )
+            # Drain stderr on a background thread so it is read CONCURRENTLY with
+            # stdout. Reading stdout to completion first and only then reading
+            # stderr deadlocks the moment a stage writes more than the OS stderr
+            # pipe buffer (~64KB) before exiting: the child blocks on write(stderr),
+            # stops producing stdout, and we block forever in the stdout loop.
+            err_lines: list[str] = []
+
+            def _drain_stderr():
+                if not proc.stderr:
+                    return
+                for eline in proc.stderr:
+                    es = eline.rstrip()
+                    if es:
+                        err_lines.append(es)
+
+            err_thread = threading.Thread(target=_drain_stderr, daemon=True)
+            err_thread.start()
             for line in proc.stdout:
                 s = line.rstrip()
                 if s:
                     log(s)
             proc.wait(timeout=timeout)
-            # Surface any captured stderr (kept separate from stdout above),
+            # stderr is fully consumed once the pipe closes at process exit.
+            err_thread.join(timeout=timeout)
+            # Surface the captured stderr (kept separate from stdout above),
             # prefixed so it is clearly the error/warning stream.
-            err = (proc.stderr.read() if proc.stderr else "") or ""
-            for line in err.splitlines():
-                s = line.rstrip()
-                if s:
-                    log(f"[stderr] {s}")
+            for s in err_lines:
+                log(f"[stderr] {s}")
             return proc.returncode
         except subprocess.TimeoutExpired:
             proc.kill()

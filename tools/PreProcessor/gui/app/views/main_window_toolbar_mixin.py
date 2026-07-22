@@ -62,6 +62,7 @@ class MainWindowToolbarMixin:
                         self.cad_sep1,
                         self.focus_geom_btn,
                         self.cad_clear_btn,
+                        self.cad_redraw_btn,
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
@@ -98,6 +99,7 @@ class MainWindowToolbarMixin:
                         self.cad_sep1,
                         self.focus_geom_btn,
                         self.cad_clear_btn,
+                        self.cad_redraw_btn,
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
@@ -189,14 +191,22 @@ class MainWindowToolbarMixin:
                             col_idx += 1
                     self.tb_layout.setColumnStretch(col_idx, 1)
 
-            else:  # Solver / Results / STL3d modes — minimal toolbar; panels own their controls
+            else:  # Solver / Results / STL3d modes — minimal toolbar
                 self.canvas_toolbar.setFixedHeight(36)
                 self.mesh_sep3.setVisible(False)
                 col_idx = 0
-                # Include the progress bar so the STL3d "Generate phi" run shows it
-                # placed in the grid (after undo/redo) instead of floating at the
-                # top-left corner over the undo/redo buttons.
-                for w in (self.undo_btn, self.redo_btn, self.cad_sep1, self.progress_bar):
+                # Solver (idx 3) shows Run Solver / Cancel; Immersed Boundary
+                # (idx 5) shows Generate phi / Cancel — reparented from their
+                # side panels onto the toolbar (see MainWindow.__init__).
+                widgets = [self.undo_btn, self.redo_btn, self.cad_sep1]
+                if idx == 3:
+                    widgets += self.solver_tb_widgets
+                elif idx == 5:
+                    widgets += self.ib_tb_widgets
+                # Include the progress bar so a background run shows it placed in
+                # the grid instead of floating over the undo/redo buttons.
+                widgets.append(self.progress_bar)
+                for w in widgets:
                     if w.isVisible():
                         self.tb_layout.addWidget(w, 0, col_idx)
                         col_idx += 1

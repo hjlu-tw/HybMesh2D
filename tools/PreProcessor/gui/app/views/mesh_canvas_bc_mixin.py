@@ -90,6 +90,11 @@ class MeshCanvasBCMixin:
         if not self.mesh_config or not self.show_bc_coloring:
             return
 
+        # A .meta segment tag is a grouping LABEL only; the physical BC TYPE is
+        # chosen per group in "Edit segment BCs…" and lives in group_bc. Colour by
+        # the assigned TYPE (so inlet/outlet/wall… use their semantic BC_COLORS),
+        # falling back to the raw label when a group has no assigned type yet.
+        group_bc = getattr(self.mesh_config, "group_bc", {}) or {}
         for gf in self.mesh_config.geom_files:
             try:
                 pts = np.atleast_2d(np.loadtxt(gf))
@@ -114,7 +119,8 @@ class MeshCanvasBCMixin:
                     j += 1
                 end = min(j + 1, n - 1)
                 if sid >= 0 and end > i:
-                    color = self._bc_color_for_label(labels.get(sid, ""))
+                    raw = labels.get(sid, "")
+                    color = self._bc_color_for_label(group_bc.get(raw, raw))
                     run = pts[i:end + 1, :2]
                     item = self.plot_widget.plot(
                         run[:, 0], run[:, 1],

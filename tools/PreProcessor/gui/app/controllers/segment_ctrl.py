@@ -25,6 +25,19 @@ class SegmentControllerMixin:
             indices.append(session.current_segment_idx)
         return sorted(set(indices))
 
+    def _update_join_button(self, selected_indices):
+        """Enable "Join → Polygon" only when ≥2 curve edges are selected
+        (selection-driven, like "Remove Edge")."""
+        sb = self.main_window.sidebar_view
+        session = self.active_session()
+        if not session:
+            sb.join_edges_btn.setEnabled(False)
+            return
+        pm = session.project_model
+        n_curve = sum(1 for i in selected_indices
+                      if pm.get_segment(i) and pm.get_segment(i).type == "curve")
+        sb.join_edges_btn.setEnabled(n_curve >= 2)
+
     def _refresh_segment_list(self, clear_resampled: bool = True):
         session = self.active_session()
         if not session:
@@ -103,6 +116,7 @@ class SegmentControllerMixin:
                 self.main_window.canvas_view.update_active_segment(None, None)
                 self.main_window.canvas_view.clear_curve_preview(session.session_id)
 
+            self._update_join_button(selected_indices)
             self._update_canvas_curve_segments()
             if clear_resampled:
                 session.resampled_points = None
@@ -131,10 +145,8 @@ class SegmentControllerMixin:
             sb.file_name_label.setStyleSheet(
                 "color: #6a7aaa; font-style: italic; margin-bottom: 5px;")
 
-        # is_closed
-        sb.is_closed_combo.blockSignals(True)
-        sb.is_closed_combo.setCurrentText(str(pm.is_closed))
-        sb.is_closed_combo.blockSignals(False)
+        # Closure mode (Auto/Closed/Open) + resolved-state hint.
+        self._sync_closed_mode_ui(session)
 
         # Advanced
         sb.global_spline_cb.blockSignals(True)
@@ -168,6 +180,7 @@ class SegmentControllerMixin:
         sb.split_btn.setEnabled(False)
         sb.remove_split_btn.setEnabled(False)
         sb.remove_seg_btn.setEnabled(False)
+        sb.join_edges_btn.setEnabled(False)
         sb.show_segment_props(False)
         self._sync_geometry_list()
 
@@ -192,6 +205,7 @@ class SegmentControllerMixin:
         tree.clear_edge_selection()
         tree.blockSignals(False)
         sb.curve_bake_btn.setEnabled(False)
+        sb.join_edges_btn.setEnabled(False)
 
         # Clear edge highlight + active segment state
         self.handle_segment_selected(-1)
@@ -573,6 +587,7 @@ class SegmentControllerMixin:
         sb = self.main_window.sidebar_view
 
         selected_indices = sb.geometry_tree.selected_edge_indices()
+        self._update_join_button(selected_indices)
 
         if not selected_indices:
             self.main_window.canvas_view.update_active_segments_pts([])

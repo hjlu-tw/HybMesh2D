@@ -23,6 +23,25 @@ class SessionControllerMixin:
         cv.clear_duplicate_preview()
         self.main_window.log_panel.log("Cleared CAD resampled/preview overlay.")
 
+    def redraw_canvas(self):
+        """Force a clean re-render of the CAD canvas: drop any leftover handles,
+        gizmos and preview overlays from the previous action, then rebuild the
+        active geometry, its edges and the open-endpoint / closing markers."""
+        cv = self.main_window.canvas_view
+        cv.clear_draw_artifacts()
+        cv.clear_transform_handles()
+        cv.clear_edge_handles()
+        cv.clear_duplicate_preview()
+        self._show_duplicate_preview = False
+        session = self.active_session()
+        if session is not None:
+            cv.clear_curve_preview(session.session_id)
+            self._apply_geometry_update(session)
+            self._update_canvas_curve_segments()
+            self.highlight_selected_segments()
+            self.detect_open_endpoints(session)
+        self.main_window.log_panel.log("Canvas redrawn.")
+
     def new_blank_tab(self):
         # In Mesh Generator / Statistics modes the separate mesh tab strip is
         # active, so "New Tab" there adds a mesh workspace tab rather than a new
@@ -202,6 +221,13 @@ class SessionControllerMixin:
             # Sync active overlays visibility with session visibility
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
             self._update_undo_redo_buttons(session)
+
+            # Refresh closure state for the newly-active tab: resolve (Auto
+            # tracks the geometry), sync the sidebar control, and redraw the
+            # dashed closing-edge marker (a single shared canvas item).
+            session.project_model.resolve_closure(session.original_points)
+            self._sync_closed_mode_ui(session)
+            self._refresh_closing_edge(session)
 
     def close_tab(self, idx: int):
         if idx < 0 or idx >= len(self.sessions):

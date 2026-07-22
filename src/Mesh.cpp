@@ -74,6 +74,16 @@ std::string Mesh::classifyBoundaryBc(int v1, int v2,
     const Point2D& p1 = nodes[v1].pos;
     const Point2D& p2 = nodes[v2].pos;
 
+    // 0. Exact per-edge BC recorded at construction (starting-point convention),
+    //    the authoritative tag for BL-grown surface edges — which are not in
+    //    `edges`, so the reference-segment step below cannot see them. This is a
+    //    per-EDGE lookup, so an edge ending at a segment junction (its two endpoint
+    //    nodes carry different tags) still gets the segment it actually belongs to.
+    {
+        auto it = boundaryEdgeBc.find({std::min(v1, v2), std::max(v1, v2)});
+        if (it != boundaryEdgeBc.end() && !it->second.empty()) return it->second;
+    }
+
     // 1. Domain / far-field reference segment (rectangle side or polygon edge):
     //    generalizes the legacy axis (x≈xMin …) classification to any shape.
     //    For external flow the box/outline is always tagged, so this catches every
@@ -413,6 +423,11 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         int v2 = edgeNodes[kv.first].second;
 
         std::string bcName = classifyBoundaryBc(v1, v2, bcRefs, config);
+        // A per-segment tag is a grouping LABEL; resolve it to the physical BC
+        // type chosen per group in the GUI (GROUP_BC) so the patch NAME written
+        // here is a BC type the downstream solver recognises (getPGrid name-
+        // guesses the patch name and would default an unknown label to wall).
+        bcName = config.resolveGroupBc(bcName);
         int gid;
         auto git = groupIds.find(bcName);
         if (git == groupIds.end()) { gid = nextGroup++; groupIds[bcName] = gid; }
@@ -492,7 +507,9 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
     for (const auto& kv : edgeCount) {
         if (kv.second != 1) continue;
         int v1 = edgeNodes[kv.first].first, v2 = edgeNodes[kv.first].second;
-        std::string bc = classifyBoundaryBc(v1, v2, bcRefs, config);
+        // Resolve the grouping label to its physical BC type (GROUP_BC), as in
+        // the STAR-CD .bnd export, so CGNS BC patches carry the BC type name.
+        std::string bc = config.resolveGroupBc(classifyBoundaryBc(v1, v2, bcRefs, config));
         bcGroups[bc].push_back({v1, v2});
     }
 

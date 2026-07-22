@@ -91,6 +91,21 @@ struct Config {
     // A per-segment .meta tag still wins over this.
     std::map<std::string, std::string> bcOverrides;
 
+    // Patch/group NAME -> physical BC TYPE (from GROUP_BC lines emitted by the
+    // GUI Mesh Generator's "Edit segment BCs…"). A per-segment .meta tag is a
+    // grouping LABEL only; its physical BC type is chosen per group here. Used at
+    // .bnd export to write the resolved BC type as the patch name, so the
+    // downstream solver (getPGrid's getBCType, which name-guesses) sees a BC type
+    // it recognises instead of an arbitrary label it would default to wall.
+    std::map<std::string, std::string> groupBc;
+
+    // Resolve a patch/group label to its physical BC type via GROUP_BC; returns
+    // the label unchanged when no mapping exists.
+    std::string resolveGroupBc(const std::string& label) const {
+        auto it = groupBc.find(label);
+        return (it != groupBc.end() && !it->second.empty()) ? it->second : label;
+    }
+
     double surfaceSize = 0.1, farFieldSize = 1.0;
     bool autoSurfaceSize = true;
     bool autoFarFieldSize = false;   // derive farFieldSize from the domain extent
@@ -239,6 +254,14 @@ struct Config {
                         else parseBLOverrideToken(tok, blOverrides[domainFile]);
                     }
                 }
+            }
+            else if (key == "GROUP_BC") {
+                // GROUP_BC <name> <bc_type>: the grouping label <name> (carried
+                // on the per-segment .meta tag and thus onto boundary edges) maps
+                // to the physical BC type <bc_type> chosen in the GUI. Applied at
+                // .bnd export so the patch name is the BC type the solver knows.
+                std::string gname, gtype;
+                if (ss >> gname >> gtype) groupBc[gname] = gtype;
             }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;

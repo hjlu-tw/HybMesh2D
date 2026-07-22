@@ -223,26 +223,34 @@ class AddCurveSegmentCmd(BaseCommand):
             self.select_cb(-1)
 
 
-class ToggleIsClosedCmd(BaseCommand):
-    """Toggle is_closed setting for the project."""
+class SetClosedModeCmd(BaseCommand):
+    """Set the project closure mode (auto / closed / open).
 
-    def __init__(self, session, is_closed: bool, refresh_cb):
+    Stores the user *intent* (the mode); the effective is_closed is re-derived
+    via resolve_closure() so an "auto" choice tracks the geometry."""
+
+    def __init__(self, session, mode: str, refresh_cb):
         self.session = session
-        self.new_val = is_closed
-        self.old_val = session.project_model.is_closed
+        self.new_mode = mode
+        self.old_mode = session.project_model.closed_mode
         self.refresh_cb = refresh_cb
         self._old_modified = session.is_geometry_modified
 
     def description(self) -> str:
-        return "Toggle Closed"
+        return "Set Closure Mode"
+
+    def _apply(self, mode: str):
+        pm = self.session.project_model
+        pm.closed_mode = mode
+        pm.resolve_closure(self.session.original_points)
 
     def execute(self):
-        self.session.project_model.is_closed = self.new_val
+        self._apply(self.new_mode)
         self.session.is_geometry_modified = True
         self.refresh_cb()
 
     def undo(self):
-        self.session.project_model.is_closed = self.old_val
+        self._apply(self.old_mode)
         self.session.is_geometry_modified = self._old_modified
         self.refresh_cb()
 

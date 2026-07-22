@@ -139,7 +139,7 @@ class AppController(
         sb.strategy_combo.currentTextChanged.connect(
             self.handle_strategy_changed)
         sb.is_closed_combo.currentTextChanged.connect(
-            self.handle_is_closed_changed)
+            self.handle_closed_mode_changed)
         if sb.preview_btn:
             sb.preview_btn.clicked.connect(self.preview_backend)
         if sb.file_preview_btn:
@@ -153,6 +153,7 @@ class AppController(
         for label, tool in [
             ("Line", "line"),
             ("Circle", "circle"),
+            ("Arc", "arc"),
             ("Rectangle", "rectangle"),
             ("Triangle", "triangle"),
             ("Polygon", "polygon"),
@@ -174,6 +175,7 @@ class AppController(
                   sb.v_line_x, sb.v_line_y_start, sb.v_line_y_end,
                   sb.line_x0, sb.line_y0, sb.line_x1, sb.line_y1,
                   sb.circle_cx, sb.circle_cy, sb.circle_r,
+                  sb.arc_cx, sb.arc_cy, sb.arc_r, sb.arc_theta0, sb.arc_theta1,
                   sb.tri_x0, sb.tri_y0, sb.tri_x1, sb.tri_y1, sb.tri_x2, sb.tri_y2,
                   sb.quad_x0, sb.quad_y0, sb.quad_x1, sb.quad_y1,
                   sb.quad_x2, sb.quad_y2, sb.quad_x3, sb.quad_y3]:
@@ -189,6 +191,7 @@ class AppController(
         self.main_window.redo_btn.clicked.connect(self.redo)
         sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
         sb.curve_bake_btn.clicked.connect(self.bake_selected_curve)
+        sb.join_edges_btn.clicked.connect(self.join_selected_edges_to_polygon)
         self.main_window.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
         self.main_window.quality_mode_combo.currentTextChanged.connect(self.handle_quality_mode_changed)
         self.main_window.show_vertices_cb.toggled.connect(self.handle_show_vertices_toggled)
@@ -243,6 +246,7 @@ class AppController(
         sb.geometry_tree.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
         self.main_window.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
         self.main_window.cad_clear_btn.clicked.connect(self.clear_cad_canvas)
+        self.main_window.cad_redraw_btn.clicked.connect(self.redraw_canvas)
         sb.geometry_tree.context_menu_requested.connect(self.show_geometry_context_menu)
 
         # ── Wire tab signals ────────────────────────────────────────────
@@ -340,7 +344,6 @@ class AppController(
         s3 = mw.stl3d_config_panel
         s3.browse_btn.clicked.connect(self.browse_stl3d)
         s3.fit_domain_btn.clicked.connect(self.fit_stl3d_domain)
-        s3.fit_btn.clicked.connect(self.fit_stl3d_view)
         s3.run_btn.clicked.connect(self.run_stl3d)
         s3.cancel_btn.clicked.connect(self.cancel_stl3d)
         s3.config_changed.connect(self.on_stl3d_config_changed)
@@ -605,8 +608,12 @@ class AppController(
             return
         points = session.original_points.copy()
 
-        # Logically close the curve
+        # Resolve the effective closure first (Auto derives it from the
+        # geometry), so everything below reads an up-to-date pm.is_closed.
         pm = session.project_model
+        pm.resolve_closure(session.original_points)
+
+        # Logically close the curve for display / detection / overlays.
         if pm.is_closed and len(points) > 0:
             if not np.allclose(points[0], points[-1]):
                 points = np.vstack((points, points[0]))
@@ -625,6 +632,11 @@ class AppController(
             session.selected_point_idx = None
             self.main_window.canvas_view.update_selected_point(None)
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
+
+            # Mark the auto-added closing segment distinctly; keep the sidebar
+            # closure control + resolved-state hint in sync.
+            self._refresh_closing_edge(session)
+            self._sync_closed_mode_ui(session)
 
             # Reset sidebar point info
             sb = self.main_window.sidebar_view

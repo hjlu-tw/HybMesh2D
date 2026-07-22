@@ -309,6 +309,19 @@ std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Poin
             double t = 2.0 * M_PI * i / (n - 1);
             pts.push_back({cx + r_val * std::cos(t), cy + r_val * std::sin(t)});
         }
+    } else if (curve_type == "arc") {
+        // Circular arc swept from theta0 to theta1 (radians). Without this the
+        // arc fell through to the cos/sin formula fallback and resampled as a
+        // full circle, so the GUI arc only ever previewed correctly.
+        double cx = p.value("cx", 0.0);
+        double cy = p.value("cy", 0.0);
+        double r_val = p.value("r", 1.0);
+        double th0 = p.value("theta0", 0.0);
+        double th1 = p.value("theta1", M_PI / 2.0);
+        for (int i = 0; i < n; ++i) {
+            double t = th0 + (th1 - th0) * i / (n - 1);
+            pts.push_back({cx + r_val * std::cos(t), cy + r_val * std::sin(t)});
+        }
     } else if (curve_type == "triangle" || curve_type == "quadrilateral" || curve_type == "polygon") {
         std::vector<Point2D> vertices;
         if (curve_type == "triangle") {

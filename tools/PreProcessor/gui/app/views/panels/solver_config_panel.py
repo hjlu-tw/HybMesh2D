@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt
 from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, find_solver_executables
 from app.models.solver_config import PRESETS
 from app.views.panels.solver_config_widgets import _edit
+from app.views.collapsible import CollapsibleSection
 from app.views.panels.solver_config_build_mixin import SolverConfigBuildMixin
 from app.views.panels.solver_config_bc_mixin import SolverConfigBCMixin
 from app.views.panels.solver_config_sync_mixin import SolverConfigSyncMixin
@@ -50,26 +51,25 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBCMixin
         self._layout.setSpacing(6)
         self.setWidget(content)
 
-        # ── Run / Cancel buttons ──────────────────────────────────────────
+        # ── Run / Cancel + config load/save ───────────────────────────────
+        # Run Solver / Cancel now live in the top canvas toolbar (reparented by
+        # MainWindow); Load/Save Solver Config live in the Solver menu. All four
+        # buttons stay as attributes so controller.py keeps its clicked/enable
+        # wiring, but none are added to the side panel layout.
         self.run_solver_btn = make_button("Run Solver", "#1e4620")
         self.cancel_solver_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_solver_btn.setEnabled(False)
-        run_row = QHBoxLayout()
-        run_row.setSpacing(4)
-        run_row.addWidget(self.run_solver_btn)
-        run_row.addWidget(self.cancel_solver_btn)
-        self._layout.addLayout(run_row)
-
-        # Config save/load
         self.load_cfg_btn = make_button("Load Solver Config", "#1d2a3a")
         self.save_cfg_btn = make_button("Save Solver Config", "#301540")
-        cfg_row = QHBoxLayout()
-        cfg_row.setSpacing(4)
-        cfg_row.addWidget(self.load_cfg_btn)
-        cfg_row.addWidget(self.save_cfg_btn)
-        self._layout.addLayout(cfg_row)
 
-        # ── Workload preset ───────────────────────────────────────────────
+        # ── Case & Preset ─────────────────────────────────────────────────
+        # Domain type, case name and the workload preset used to sit loose at
+        # the top of the panel (outside any section); grouped into one
+        # collapsible region so every row lives in a section like the rest.
+        self.sec_case = CollapsibleSection("Case & Preset", start_collapsed=True)
+        self._layout.addWidget(self.sec_case)
+
+        # Workload preset
         preset_row = QHBoxLayout()
         preset_row.setSpacing(4)
         preset_lbl = QLabel("Preset:")
@@ -86,7 +86,7 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBCMixin
         preset_row.addWidget(preset_lbl)
         preset_row.addWidget(self.preset_combo, 1)
         preset_row.addWidget(self.apply_preset_btn)
-        self._layout.addLayout(preset_row)
+        self.sec_case.add_layout(preset_row)
         self.apply_preset_btn.clicked.connect(self._apply_preset)
 
         # Domain type selector (e2d / e3d) at top
@@ -99,7 +99,7 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBCMixin
         top_form.addRow(help_label("Domain Type:", "Solver domain dimensionality"), self.domain_type)
         top_form.addRow(help_label("Case Name:", "Case name for the solver working directory"), self.case_name)
         align_form_labels(top_form, 130)
-        self._layout.addLayout(top_form)
+        self.sec_case.add_layout(top_form)
 
         self._build_pipeline_section()
         self._build_grid_section()

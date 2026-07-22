@@ -56,6 +56,7 @@ CURVE_TYPE_LABELS = {
     "vertical_line": "V Line",
     "line": "Line",
     "circle": "Circle",
+    "arc": "Arc",
     "triangle": "Triangle",
     "quadrilateral": "Quad",
     "polygon": "Polygon",

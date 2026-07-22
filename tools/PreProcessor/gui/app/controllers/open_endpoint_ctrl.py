@@ -174,6 +174,22 @@ class OpenEndpointControllerMixin:
             parts.append(f"{len(eps)} open endpoint(s)")
         self.main_window.log_panel.log("⚠ " + ", ".join(parts) + " — boundary not closed.")
 
+    # ── Auto-closure bridge marker ────────────────────────────────────────
+    def _refresh_closing_edge(self, session):
+        """Draw a distinct dashed edge over the auto-added closing segment
+        (active session only), so an auto-bridged last→first gap is visible and
+        not mistaken for real geometry. Cleared when open, coincident, or
+        inactive. Assumes closure is already resolved on the project model."""
+        cv = self.main_window.canvas_view
+        pm = session.project_model
+        pts = session.original_points
+        if (session is self.active_session() and pm.is_closed
+                and pts is not None and len(pts) >= 2
+                and not np.allclose(pts[0], pts[-1])):
+            cv.show_closing_edge(pts[-1], pts[0])
+        else:
+            cv.clear_closing_edge()
+
     # ── Stitching (dialog-driven, undoable) ───────────────────────────────
     def stitch_gaps(self, session, gaps: list[dict], method: str):
         """Close the detected gaps using one of three methods, undoably.

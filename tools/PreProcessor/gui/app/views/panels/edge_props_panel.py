@@ -28,7 +28,7 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         self._file_seg_label.setVisible(False)
 
         # ── Curve / Shape Properties group (collapsible) ──────────────────
-        self._curve_group = CollapsibleSection("Shape", start_collapsed=False)
+        self._curve_group = CollapsibleSection("Shape", start_collapsed=True)
 
         # Curve Type Selection
         self.curve_type_combo = QComboBox()
@@ -40,7 +40,8 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
             "Circle",
             "Triangle",
             "Quadrilateral",
-            "Polygon"
+            "Polygon",
+            "Arc"
         ])
         self.curve_type_combo.setStyleSheet(COMBO_STYLE)
         self.curve_type_combo.setToolTip("Select the geometric shape type for this curve edge")
@@ -329,6 +330,46 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         layout_poly.addWidget(self.poly_vertices)
         self.shape_stack.addWidget(widget_poly)
 
+        # ── Widget 8: Arc (centre / radius / start & end angle) ──────────
+        widget_arc = QWidget()
+        layout_arc = QFormLayout(widget_arc)
+        layout_arc.setContentsMargins(0, 0, 0, 0)
+        self.arc_cx = CleanDoubleSpinBox()
+        self.arc_cx.setRange(-1e6, 1e6); self.arc_cx.setDecimals(4)
+        self.arc_cx.setStyleSheet(SPIN_STYLE)
+        self.arc_cx.setToolTip("X-coordinate of the arc centre")
+        self.arc_cy = CleanDoubleSpinBox()
+        self.arc_cy.setRange(-1e6, 1e6); self.arc_cy.setDecimals(4)
+        self.arc_cy.setStyleSheet(SPIN_STYLE)
+        self.arc_cy.setToolTip("Y-coordinate of the arc centre")
+        self.arc_r = CleanDoubleSpinBox()
+        self.arc_r.setRange(1e-6, 1e6); self.arc_r.setDecimals(4)
+        self.arc_r.setValue(1.0); self.arc_r.setStyleSheet(SPIN_STYLE)
+        self.arc_r.setToolTip("Radius of the arc")
+        self.arc_theta0 = CleanDoubleSpinBox()
+        self.arc_theta0.setRange(-13.0, 13.0); self.arc_theta0.setDecimals(5)
+        self.arc_theta0.setStyleSheet(SPIN_STYLE)
+        self.arc_theta0.setToolTip("Start angle in radians (0 = +X axis, CCW positive)")
+        self.arc_theta1 = CleanDoubleSpinBox()
+        self.arc_theta1.setRange(-13.0, 13.0); self.arc_theta1.setDecimals(5)
+        self.arc_theta1.setValue(1.5708); self.arc_theta1.setStyleSheet(SPIN_STYLE)
+        self.arc_theta1.setToolTip("End angle in radians (sweep runs from start to end)")
+        layout_arc.addRow(help_label("Center:", "Arc centre (x, y)"),
+                          self._xy_row(self.arc_cx, self.arc_cy))
+        layout_arc.addRow(help_label("Radius R:", "Radius of the arc"), self.arc_r)
+        layout_arc.addRow(help_label("Start θ:", "Start angle in radians"), self.arc_theta0)
+        layout_arc.addRow(help_label("End θ:", "End angle in radians"), self.arc_theta1)
+        self.arc_lock_radius = QCheckBox("Lock radius (drag ends = angle only)")
+        self.arc_lock_radius.setChecked(True)
+        self.arc_lock_radius.setStyleSheet("color:#a0a8c0; font-size:11px;")
+        self.arc_lock_radius.setToolTip(
+            "When on, dragging an arc END handle changes only its angle (radius "
+            "fixed). Drag the MID handle to change the radius. Turn off to let an "
+            "end handle re-fit both radius and angle.")
+        layout_arc.addRow(help_widget(self.arc_lock_radius,
+                          "Dragging an end handle changes only the angle; drag the mid handle to change the radius"))
+        self.shape_stack.addWidget(widget_arc)
+
         # Connect combobox switch
         self.curve_type_combo.currentIndexChanged.connect(self.shape_stack.setCurrentIndex)
 
@@ -474,7 +515,7 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
 
         # Align form layouts
         for layout in [pf, ef, layout_limits, layout_h_line, layout_v_line,
-                       layout_line, layout_circle, layout_tri, layout_quad,
+                       layout_line, layout_circle, layout_arc, layout_tri, layout_quad,
                        rf, sf, self.auto_split_form]:
             align_form_labels(layout)
 
@@ -513,7 +554,7 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         if self.curve_preview_btn:
             self.curve_preview_btn.setVisible(True)
 
-        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
+        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon", "arc"]
         curve_type = getattr(seg, "curve_type", "custom")
         if curve_type in CURVE_TYPES:
             idx = CURVE_TYPES.index(curve_type)

@@ -1,12 +1,13 @@
 from __future__ import annotations
 import os
+import copy
 import tempfile
 import numpy as np
 from PyQt6.QtWidgets import QFileDialog
 from app.models.session import GeometrySession
 from app.workers.backend_run import BackendWorker
 from app.views.output_dialog import OutputDialog
-from app.services.geometry_service import load_points_dat
+from app.services.geometry_service import load_points_dat, GeometryService
 
 from app.utils import find_binary_executable, repo_root
 
@@ -72,35 +73,63 @@ class BackendControllerMixin:
 
         orig_input = pm.input_file
         orig_output = pm.output_file
+        orig_segments = pm.segments
 
         created_files = []
 
-        # If geometry was modified (or it's a blank tab with curve points), save points to a temp .dat
-        if (session.is_geometry_modified or not session.file_path) and session.original_points is not None:
-            tmp_dat = tempfile.NamedTemporaryFile(
-                dir=self.temp_dir, suffix=".dat", delete=False, mode="w")
-            np.savetxt(tmp_dat.name, session.original_points, fmt="%.10f")
-            pm.input_file = tmp_dat.name
-            created_files.append(tmp_dat.name)
-            tmp_dat.close()
-        else:
-            pm.input_file = session.file_path
+        # All mutations below are TRANSIENT (weld copy, temp input path, output
+        # path). Wrap them so the project model is always restored — otherwise an
+        # exception between the swap and the restore (e.g. np.savetxt or
+        # export_config raising) would leave the welded deepcopy permanent,
+        # silently altering the user's hand-placed edge coordinates and detaching
+        # the segment objects from the undo history.
+        try:
+            # Weld near-coincident endpoints of separately-drawn boundary edges so
+            # the mesher (which only joins pieces coincident to 1e-7) chains them
+            # into ONE connected boundary instead of disconnected pieces. Operate
+            # on a copy so the user's in-memory edges keep their exact coordinates.
+            # Each edge stays a distinct segment, so its own per-segment BC is preserved.
+            if len([s for s in pm.segments if getattr(s, "type", "") == "curve"]) >= 2:
+                try:
+                    welded = copy.deepcopy(pm.segments)
+                    nw = GeometryService.weld_boundary_endpoints(
+                        welded, self._endpoint_tolerance(session))
+                    if nw:
+                        pm.segments = welded
+                        self.main_window.log_panel.log(
+                            f"Welded {nw} boundary junction(s) so the edges form one "
+                            "connected boundary (each edge keeps its own BC).")
+                except Exception as e:
+                    pm.segments = orig_segments
+                    self.main_window.log_panel.log(f"Endpoint weld skipped: {e}")
 
-        pm.output_file = output_path
+            # If geometry was modified (or it's a blank tab with curve points), save points to a temp .dat
+            if (session.is_geometry_modified or not session.file_path) and session.original_points is not None:
+                tmp_dat = tempfile.NamedTemporaryFile(
+                    dir=self.temp_dir, suffix=".dat", delete=False, mode="w")
+                np.savetxt(tmp_dat.name, session.original_points, fmt="%.10f")
+                pm.input_file = tmp_dat.name
+                created_files.append(tmp_dat.name)
+                tmp_dat.close()
+            else:
+                pm.input_file = session.file_path
 
-        # Sync transform from sidebar
-        pm.transform = self.main_window.sidebar_view.get_transform_dict()
+            pm.output_file = output_path
 
-        tmp_cfg = tempfile.NamedTemporaryFile(
-            dir=self.temp_dir, suffix=".json", delete=False, mode="w")
-        pm.export_config(tmp_cfg.name,
-                         extra={"preview_markers": True} if preview_markers else None)
-        created_files.append(tmp_cfg.name)
-        tmp_cfg.close()
+            # Sync transform from sidebar
+            pm.transform = self.main_window.sidebar_view.get_transform_dict()
 
-        # Restore original paths so we don't pollute the project model
-        pm.input_file = orig_input
-        pm.output_file = orig_output
+            tmp_cfg = tempfile.NamedTemporaryFile(
+                dir=self.temp_dir, suffix=".json", delete=False, mode="w")
+            pm.export_config(tmp_cfg.name,
+                             extra={"preview_markers": True} if preview_markers else None)
+            created_files.append(tmp_cfg.name)
+            tmp_cfg.close()
+        finally:
+            # Restore original paths / edges so we don't pollute the project model
+            pm.input_file = orig_input
+            pm.output_file = orig_output
+            pm.segments = orig_segments
 
         return tmp_cfg.name, created_files
 

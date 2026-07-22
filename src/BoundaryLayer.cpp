@@ -93,6 +93,11 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     std::set<int> allInitialBoundaryIds;
     int nJuncCap = 0;   // #6: BL/no-BL junction taper tally
 
+    // Query the debug env var ONCE — it can't change mid-run, and getenv is a
+    // locking libc lookup that would otherwise be re-run for every surface node
+    // on every front (thousands of redundant calls per generate()).
+    const bool juncDebug = (std::getenv("HYBMESH_JUNC_DEBUG") != nullptr);
+
     int currentId = 0;
     for (const auto& boundaryNodeIds : allBoundaryNodeIds) {
         allInitialBoundaryIds.insert(boundaryNodeIds.begin(), boundaryNodeIds.end());
@@ -395,7 +400,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 baseN[i] = dir;
                 caseOf[i] = caseId;
                 junctionMult[i] = hmult;
-                if (std::getenv("HYBMESH_JUNC_DEBUG"))
+                if (juncDebug)
                     std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y
                               << ") theta=" << thetaDeg << " case=" << caseId
                               << " dir(" << dir.x << "," << dir.y << ")" << std::endl;
@@ -618,7 +623,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 double base = fs.nodeStepMultipliers.count(nid) ? fs.nodeStepMultipliers[nid] : 1.0;
                 fs.nodeStepMultipliers[nid] = base * taperScale[i];
             }
-            if (std::getenv("HYBMESH_JUNC_DEBUG") && fs.bl.blJunctionMethod == 0 && (isJunction[i] || taperScale[i] < 0.999))
+            if (juncDebug && fs.bl.blJunctionMethod == 0 && (isJunction[i] || taperScale[i] < 0.999))
                 std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y << ")"
                           << (isJunction[i] ? " JUNCTION" : " taper")
                           << " taper=" << taperScale[i]

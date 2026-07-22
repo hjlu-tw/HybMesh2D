@@ -20,6 +20,7 @@ _COL_SELECTED = '#00E5FF'   # cyan — selected point
 _COL_ACTIVE   = '#FFB347'   # orange — active segment
 _COL_RESAMPLED = '#FF79C6'  # magenta — resampled result
 _COL_PREVIEW  = '#FF8C42'   # orange — formula preview
+_COL_CLOSING  = '#FFD700'   # gold — auto-added closing edge (dashed)
 
 
 class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
@@ -171,6 +172,15 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
             brush=pg.mkBrush(255, 82, 82, 70))
         self._open_endpoint_markers.setZValue(36)
         self.plot_widget.addItem(self._open_endpoint_markers)
+
+        # Auto-added closing edge — a gold dashed segment marking the last→first
+        # bridge when a closed loop has a real gap, so the auto-closure is visible
+        # and not mistaken for real geometry. Above the base polyline (z=5),
+        # below the point markers.
+        self._closing_edge = self.plot_widget.plot(
+            [], [], pen=pg.mkPen(_COL_CLOSING, width=2.5,
+                                 style=Qt.PenStyle.DashLine))
+        self._closing_edge.setZValue(15)
 
         # ── Interactive shape-drawing state ───────────────────────────────
         self._draw_tool: str | None = None   # 'line'|'circle'|'rectangle'|'triangle'|'polygon'

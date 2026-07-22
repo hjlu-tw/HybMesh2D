@@ -111,9 +111,6 @@ class Stl3dControllerMixin:
         self.on_stl3d_config_changed()
         self.main_window.stl3d_canvas.fit_view()   # re-frame on the resized box
 
-    def fit_stl3d_view(self):
-        self.main_window.stl3d_canvas.fit_view()
-
     def clear_stl3d(self):
         """Clear everything: the loaded STL surface and the phi result."""
         canvas = self.main_window.stl3d_canvas

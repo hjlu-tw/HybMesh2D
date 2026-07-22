@@ -68,6 +68,7 @@ class SessionIOControllerMixin:
             project_config = {
                 "input_file": session.project_model.input_file,
                 "output_file": session.project_model.output_file,
+                "closed_mode": session.project_model.closed_mode,
                 "is_closed": session.project_model.is_closed,
                 "segments": segments_data,
                 "global_spline": session.project_model.global_spline,
@@ -127,6 +128,7 @@ class SessionIOControllerMixin:
         from app.models.session import GeometrySession
         from app.models.segment import SegmentModel
         from app.models.vtk_mesh import VTKMesh
+        from app.models.project import _legacy_closed_mode
 
         if not os.path.exists(file_path):
             return
@@ -207,6 +209,10 @@ class SessionIOControllerMixin:
             pconf = session_dict.get("project_config", {})
             session.project_model.input_file = pconf.get("input_file", "")
             session.project_model.output_file = pconf.get("output_file", "")
+            # Saved workspace expresses explicit intent → manual mode; legacy
+            # files without closed_mode map from the is_closed bool.
+            session.project_model.closed_mode = pconf.get(
+                "closed_mode", _legacy_closed_mode(pconf))
             session.project_model.is_closed = pconf.get("is_closed", True)
             session.project_model.global_spline = pconf.get("global_spline", False)
             session.project_model.transform = pconf.get("transform", None)
