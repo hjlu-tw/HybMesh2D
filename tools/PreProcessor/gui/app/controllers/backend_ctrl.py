@@ -352,7 +352,10 @@ class BackendControllerMixin:
         try:
             if rc == 0 and os.path.exists(tmp_out):
                 try:
-                    pts = load_points_dat(tmp_out)
+                    # allow_nonfinite: the backend writes 'nan nan' piece-separator
+                    # rows (preview_markers) that _split_preview_pieces strips below;
+                    # the default finiteness guard would reject the whole preview.
+                    pts = load_points_dat(tmp_out, allow_nonfinite=True)
                     if session not in self.sessions:
                         # Tab was closed while the backend ran; discard the
                         # result (temp files are still cleaned in `finally`).

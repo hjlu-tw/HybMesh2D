@@ -123,7 +123,11 @@ class SolverPipelineWorker(QThread):
         rc = self._run_stdin_stage(self._config.getpgrid_binary, para_path,
                                    self._getpgrid_dir, label="getPGrid")
         if rc != 0:
-            if not self._cancelled:
+            if self._cancelled:
+                # Cancel mid-stage must still signal completion, or the UI stays
+                # stuck in the running state (only _on_solver_finished resets it).
+                self.finished_signal.emit(-2)
+            else:
                 self.log_signal.emit(f"[getPGrid] exited with code {rc}")
                 self.finished_signal.emit(rc if rc else -1)
             return False
@@ -155,7 +159,11 @@ class SolverPipelineWorker(QThread):
         rc = self._run_stdin_stage(self._config.bdecompose_binary, para_path,
                                    bd_dir, label="bDecompose")
         if rc != 0:
-            if not self._cancelled:
+            if self._cancelled:
+                # Cancel mid-stage must still signal completion, or the UI stays
+                # stuck in the running state (only _on_solver_finished resets it).
+                self.finished_signal.emit(-2)
+            else:
                 self.log_signal.emit(f"[bDecompose] exited with code {rc}")
                 self.finished_signal.emit(rc if rc else -1)
             return False

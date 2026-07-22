@@ -74,10 +74,20 @@ class SegmentDistributionControllerMixin:
         self.main_window.sidebar_view.switch_param_form(strategy_name)
 
     def _distribution_indices_or_selection(self):
-        """#3: distribution / node-count edits apply to EVERY selected edge, not
-        just the current (head/tail) one, so a multi-edge selection is edited
-        together. When only one edge is selected this is just that edge."""
-        return self.get_selected_segment_indices()
+        """#3: distribution / node-count edits apply to EVERY selected *discrete*
+        (type=='file') edge, so a multi-edge selection is edited together. When
+        only one edge is selected this is just that edge.
+
+        Non-file edges (polygon/curve) are excluded: _read_params_into_segment
+        does seg.parameters.clear() and only re-inserts n_points/spacing, which
+        would wipe a co-selected polygon's vertices_str (geometry data loss).
+        Mirrors the type=='file' guard in _apply_distribution."""
+        session = self.active_session()
+        if not session:
+            return []
+        return [i for i in self.get_selected_segment_indices()
+                if session.project_model.get_segment(i)
+                and session.project_model.get_segment(i).type == "file"]
 
     def _open_distribution(self):
         self.main_window.sidebar_view.open_distribution_dialog()

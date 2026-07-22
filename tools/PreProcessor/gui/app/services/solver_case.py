@@ -20,10 +20,15 @@ def _noop(_msg: str) -> None:
     pass
 
 
-def sanitize_case_name(name: str) -> str:
-    """Make a filesystem-safe case name."""
+def sanitize_case_name(name: str, default: str = "case") -> str:
+    """Make a filesystem-safe, whitespace-free token (case / phi field / STL3d
+    para.in name). Collapses any run of unsafe chars to '_' (dots/dashes kept for
+    ``*.stl``). ``default`` is returned when the sanitized result is empty.
+
+    Single source of truth for the ``[^A-Za-z0-9_.-]+`` sanitizer; callers that
+    need a different empty-name fallback pass ``default`` (e.g. "phi", "x")."""
     s = re.sub(r"[^A-Za-z0-9_.-]+", "_", (name or "").strip())
-    return s or "case"
+    return s or default
 
 
 def _dir_has_content(path: str) -> bool:

@@ -137,7 +137,13 @@ def write_meta_seg_growbl(dat_path: str, seg_grow: dict[int, bool]) -> bool:
                 if not sp:
                     out.append(lines[i + 1 + j])
                     continue
-                sid = int(sp[0])
+                try:
+                    sid = int(sp[0])
+                except ValueError:
+                    # Format drift / bad NSEGMENTS count: preserve the line
+                    # verbatim instead of crashing the save (matches the read path).
+                    out.append(lines[i + 1 + j])
+                    continue
                 bc = sp[1] if len(sp) >= 2 else "-"
                 kind = sp[2] if len(sp) >= 3 else "polyline"
                 if sid in seg_grow:
@@ -218,7 +224,13 @@ def write_meta_segbc(dat_path: str, seg_bc: dict[int, str]) -> bool:
                 if not sp:
                     out.append(lines[i + 1 + j])
                     continue
-                sid = int(sp[0])
+                try:
+                    sid = int(sp[0])
+                except ValueError:
+                    # Format drift / bad NSEGMENTS count: preserve the line
+                    # verbatim instead of crashing the save (matches the read path).
+                    out.append(lines[i + 1 + j])
+                    continue
                 kind = sp[2] if len(sp) >= 3 else "polyline"
                 grow = sp[3] if len(sp) >= 4 else None   # preserve v3 grow-BL column
                 if sid in seg_bc:

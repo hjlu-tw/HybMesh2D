@@ -1,6 +1,5 @@
 from __future__ import annotations
 import os
-import re
 import shutil
 
 import numpy as np
@@ -16,12 +15,13 @@ from app.services.phi_quality import (
 )
 from app.workers.stl3d_run import Stl3dWorker
 from app.workers.fit_check_run import FitCheckWorker
+from app.services.solver_case import sanitize_case_name
 from app.utils import repo_root, find_stl3d_binary
 
 
 def _sanitize(name: str) -> str:
-    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
-    return s or "phi"
+    # Shared sanitizer; STL3d uses "phi" as the empty-name fallback.
+    return sanitize_case_name(name, default="phi")
 
 
 class Stl3dControllerMixin:

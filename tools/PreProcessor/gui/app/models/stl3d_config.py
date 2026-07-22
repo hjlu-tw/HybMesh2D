@@ -10,12 +10,12 @@ the exact ``para.in`` line order the binary expects, and provides STL helpers
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 import os
-import re
 import struct
 
 import numpy as np
 
 from app.services.stl_loader import load_stl_triangles
+from app.services.solver_case import sanitize_case_name
 
 
 def _sanitize_token(s: str) -> str:
@@ -26,9 +26,10 @@ def _sanitize_token(s: str) -> str:
     answer by one token: Nx/Ny/Nz then read garbage and the binary attempts a
     huge/negative allocation that crashes or hangs. Collapsing unsafe runs to
     '_' keeps each name a single token (dots/dashes are kept for ``*.stl``).
+
+    Delegates to the shared sanitizer with STL3d's "x" empty-name fallback.
     """
-    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", (s or "").strip())
-    return s or "x"
+    return sanitize_case_name(s, default="x")
 
 
 def detect_stl_ascii(path: str) -> bool:

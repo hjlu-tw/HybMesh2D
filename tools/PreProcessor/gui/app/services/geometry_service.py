@@ -16,7 +16,7 @@ class GeometryLoadError(ValueError):
     the previews, or the C++ mesher."""
 
 
-def load_points_dat(file_path: str) -> np.ndarray:
+def load_points_dat(file_path: str, allow_nonfinite: bool = False) -> np.ndarray:
     """Load a whitespace-separated ``.dat`` geometry file into an (N, 2+) array,
     validating shape and finiteness up front.
 
@@ -27,6 +27,11 @@ def load_points_dat(file_path: str) -> np.ndarray:
 
     Raises :class:`GeometryLoadError` when the file is empty, not 2-D with at
     least two columns, or contains any non-finite (NaN/Inf) coordinate.
+
+    ``allow_nonfinite=True`` keeps the shape validation but permits ``nan``/``inf``
+    rows to pass through — used by the multi-piece preview loader, where the
+    backend intentionally writes ``nan nan`` piece-separator rows (preview_markers)
+    that a downstream splitter strips.
     """
     name = os.path.basename(file_path) or file_path
     pts = np.asarray(np.loadtxt(file_path), dtype=float)
@@ -48,7 +53,7 @@ def load_points_dat(file_path: str) -> np.ndarray:
         raise GeometryLoadError(
             f"'{name}': expected rows of at least 'x y' coordinates, got array "
             f"of shape {pts.shape}. The file may be empty or malformed.")
-    if not np.all(np.isfinite(pts)):
+    if not allow_nonfinite and not np.all(np.isfinite(pts)):
         n_bad = int(np.count_nonzero(~np.isfinite(pts)))
         raise GeometryLoadError(
             f"'{name}': contains {n_bad} non-finite (NaN/Inf) coordinate(s). "

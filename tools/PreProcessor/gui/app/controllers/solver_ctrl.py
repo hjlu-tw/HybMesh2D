@@ -238,6 +238,16 @@ class SolverControllerMixin:
         if not solver_case._dir_has_content(case_root):
             return False
 
+        # Run All (pipeline batch) must run unattended: never pop a modal. Preserve
+        # prior results by auto-versioning a new dir (overwrite=False) instead of
+        # blocking. The worker reports the real (versioned) work dir via
+        # prepared_signal, so the Results stage still finds the output.
+        if getattr(self, "_pipeline_running", False):
+            self.main_window.log_panel.log(
+                f"[case] '{case}' already has results; Run All auto-versions a new "
+                "directory to preserve them.")
+            return False
+
         box = QMessageBox(self.main_window)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Case already exists")
