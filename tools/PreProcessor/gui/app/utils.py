@@ -96,15 +96,62 @@ def make_button(text: str, color: str = '#26293c', *,
     return b
 
 def keep_on_top(widget: QWidget) -> QWidget:
-    """Make a modeless dialog/pop-up never sink below the main window (#batch8-2).
+    """Keep a modeless pop-up above the app's OWN main window WITHOUT floating
+    above other applications.
 
-    Modal dialogs (exec()) already stay above their parent, but modeless pop-ups
-    shown with .show() can recede behind the main window on click / app-switch on
-    macOS. Setting WindowStaysOnTopHint keeps them above the app's other windows
-    (the whole app still yields when you switch to another application). Call this
-    BEFORE show() so the flag is applied without needing a re-show. Returns the
-    widget for chaining."""
-    widget.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    Previously this set ``WindowStaysOnTopHint``, which on macOS floats the
+    window above EVERY application — even when HybMesh is in the background,
+    which users found intrusive. A ``Qt.Tool`` window instead stays above the
+    app's own windows and recedes together with the app when another
+    application is focused — i.e. above the main window only, never above other
+    apps. Call BEFORE show(). Returns the widget for chaining."""
+    flags = widget.windowFlags()
+    flags &= ~Qt.WindowType.WindowStaysOnTopHint
+    flags &= ~Qt.WindowType.WindowType_Mask          # drop Dialog/Window type bits
+    flags |= (Qt.WindowType.Tool
+              | Qt.WindowType.WindowTitleHint
+              | Qt.WindowType.WindowCloseButtonHint
+              | Qt.WindowType.WindowSystemMenuHint)
+    widget.setWindowFlags(flags)
+    return widget
+
+
+def offset_popup(widget: QWidget, ref: QWidget | None = None) -> QWidget:
+    """Position a pop-up OFF the centre of its parent window so it does not sit
+    on top of the object being edited (which is usually near the canvas centre).
+
+    Call after the dialog's contents are built and just before show()/exec();
+    moving the window also sets ``WA_Moved`` so Qt won't re-centre it on show.
+    ``ref`` is the window to offset from (defaults to the widget's parent
+    top-level window, else the primary screen)."""
+    from PyQt6.QtGui import QGuiApplication
+    ref_widget = ref
+    if ref_widget is None:
+        p = widget.parentWidget()
+        ref_widget = p.window() if p is not None else None
+    widget.adjustSize()
+    w, h = widget.width(), widget.height()
+    if (ref_widget is not None and ref_widget is not widget
+            and ref_widget.isVisible()):
+        base = ref_widget.frameGeometry()
+    else:
+        scr = QGuiApplication.primaryScreen()
+        if scr is None:
+            return widget
+        base = scr.availableGeometry()
+    # Offset toward the upper-right of the reference so the canvas centre/left
+    # stays visible while the dialog is open.
+    cx = base.center().x() + int(0.22 * base.width())
+    cy = base.center().y() - int(0.18 * base.height())
+    x, y = cx - w // 2, cy - h // 2
+    # Clamp fully onto the screen the dialog lands on.
+    scr = (ref_widget.screen() if ref_widget is not None
+           else QGuiApplication.primaryScreen())
+    if scr is not None:
+        av = scr.availableGeometry()
+        x = max(av.left(), min(x, av.right() - w))
+        y = max(av.top(), min(y, av.bottom() - h))
+    widget.move(x, y)
     return widget
 
 

@@ -548,21 +548,36 @@ class BakeCurveToGeometryCmd(BaseCommand):
             else:
                 seg.start_index = end_idx + num_new_pts - 1
                 seg.end_index = end_idx
+        elif gp is None or len(gp) == 0:
+            self.session.original_points = new_points
+            seg.start_index = 0
+            seg.end_index = len(new_points) - 1
+            self.session.split_indices += [0, len(new_points) - 1]
+            self.session.split_indices = sorted(set(self.session.split_indices))
         else:
-            # Append points
-            if gp is None or len(gp) == 0:
-                start_pos = 0
-                self.session.original_points = new_points
-            else:
-                start_pos = len(gp)
-                self.session.original_points = np.vstack([gp, new_points])
-
-            seg.start_index = start_pos
-            seg.end_index = start_pos + len(new_points) - 1
-
-            self.session.split_indices.append(seg.start_index)
-            self.session.split_indices.append(seg.end_index)
-            self.session.split_indices = sorted(list(set(self.session.split_indices)))
+            # Append a free-standing curve. If its NEAR endpoint touches the
+            # existing geometry's tail (two edges drawn to chain into one open
+            # boundary), WELD them — orient so the near end joins the tail and
+            # drop the duplicated joint point — so we get ONE connected polyline
+            # sharing that boundary index, not a disjoint piece plus a phantom
+            # bridge (and never a spurious line to the FAR endpoint). When the
+            # ends are far apart it stays a separate piece (the adjacency bridge
+            # is dropped in update_file_segments_from_indices).
+            allp = np.vstack([gp, new_points])
+            diag = float(np.hypot(np.ptp(allp[:, 0]), np.ptp(allp[:, 1])))
+            tol = max(1e-9, 0.01 * diag)
+            last = gp[-1]
+            if (np.hypot(*(last - new_points[-1]))
+                    < np.hypot(*(last - new_points[0]))):
+                new_points = new_points[::-1]        # near end joins the tail
+            weld = float(np.hypot(*(last - new_points[0]))) <= tol
+            add = new_points[1:] if weld else new_points
+            base = len(gp)
+            self.session.original_points = np.vstack([gp, add])
+            seg.start_index = base - 1 if weld else base
+            seg.end_index = len(self.session.original_points) - 1
+            self.session.split_indices += [seg.start_index, seg.end_index]
+            self.session.split_indices = sorted(set(self.session.split_indices))
 
         # Convert type to file.
         seg.type = "file"
@@ -743,3 +758,39 @@ class UpdateMultipleSegmentsStateCmd(BaseCommand):
 
     def _apply_state(self, seg, state):
         _apply_segment_state(seg, state)
+
+
+class ClearGeometryCmd(BaseCommand):
+    """CAD 'Clear All': drop every edge (file + curve), all points and split
+    boundaries from a session, leaving a blank canvas. Fully undoable — restores
+    the whole prior geometry including the closure mode/state."""
+
+    def __init__(self, session, refresh_cb):
+        self.session = session
+        self.refresh_cb = refresh_cb
+        pm = session.project_model
+        self._snap = _snapshot_full_state(session)
+        self._closed_mode = getattr(pm, "closed_mode", "auto")
+        self._is_closed = getattr(pm, "is_closed", False)
+
+    def execute(self):
+        pm = self.session.project_model
+        self.session.original_points = None
+        self.session.split_indices = []
+        self.session.selected_point_idx = None
+        self.session.current_segment_idx = -1
+        self.session.resampled_points = None
+        pm.segments = []
+        pm._next_curve_id = 1
+        self.session.is_geometry_modified = True
+        self.refresh_cb()
+
+    def undo(self):
+        _restore_full_state(self.session, self._snap)
+        pm = self.session.project_model
+        pm.closed_mode = self._closed_mode
+        pm.is_closed = self._is_closed
+        self.refresh_cb()
+
+    def description(self) -> str:
+        return "Clear all geometry"

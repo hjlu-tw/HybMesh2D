@@ -433,6 +433,14 @@ class SolverConfigBuildMixin:
         form.addRow(help_label("phi field:", "Solid phi field data from STL3d (staged as work/phi.dat)"),
                     self._browse_row(self.ibm_phi_file, "Select phi field data",
                                      "phi data (*.dat);;All Files (*)"))
+        # Analytic alternative to the STL3d phi.dat: auto-generate a phi init DLL
+        # from a CAD circle/polygon (no data file needed).
+        self.build_phi_shape_btn = make_button("φ from CAD shape…", "#1d2a3a")
+        self.build_phi_shape_btn.setToolTip(
+            "Auto-generate an analytic phi init DLL from a CAD circle/polygon — "
+            "immersed solid without an STL3d phi.dat file")
+        form.addRow(help_label("analytic φ:", "Generate phi analytically from a CAD shape (no phi.dat)"),
+                    self.build_phi_shape_btn)
         align_form_labels(form, 110)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)

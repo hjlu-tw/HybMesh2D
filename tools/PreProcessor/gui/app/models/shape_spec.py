@@ -73,6 +73,11 @@ SIDEBAR_ATTRS: dict[str, dict[str, str]] = {
 POLYGON_VERTICES_ATTR = "poly_vertices"
 POLYGON_DEFAULT = DEFAULTS["polygon"]["vertices_str"]
 
+# Parameter keys that are ANGLES: stored internally in radians (the samplers and
+# drag math need radians) but shown to the user in DEGREES. The widget helpers
+# and the modal dialog convert at the UI boundary so storage never changes.
+ANGLE_KEYS: dict[str, set[str]] = {"arc": {"theta0", "theta1"}}
+
 # Every shape-defining parameter key (cleared on a type switch before the new
 # type's defaults are applied). Derived from DEFAULTS so it can never drift.
 ALL_SHAPE_KEYS: set[str] = {k for d in DEFAULTS.values() for k in d}
@@ -174,14 +179,13 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
         if handle_id == "c":
             p["cx"], p["cy"] = x, y
         elif handle_id == "m":
-            # Drag the arc midpoint → change the radius/bulge while pinning the two
-            # endpoints in place (fit a circle through both current endpoints and
-            # the dragged mid). No-op if that makes the three points collinear.
-            p0 = (cx + r * math.cos(t0), cy + r * math.sin(t0))
-            p1 = (cx + r * math.cos(t1), cy + r * math.sin(t1))
-            fit = arc_from_3points(p0, p1, (x, y))
-            if fit is not None:
-                p["cx"], p["cy"], p["r"], p["theta0"], p["theta1"] = fit
+            # Radius handle: change ONLY the radius, about the FIXED centre. The
+            # endpoints ride out to the new radius keeping their angles, so the
+            # centre never moves (dragging it used to re-fit a circle through the
+            # two endpoints + the mid, which shifted the centre — not what a
+            # "radius" handle should do). Use the c handle to move the centre and
+            # p0/p1 to change the sweep.
+            p["r"] = max(1e-6, math.hypot(x - cx, y - cy))
         else:                                    # p0 / p1 endpoints
             if not lock_radius:
                 p["r"] = max(1e-6, math.hypot(x - cx, y - cy))
@@ -233,11 +237,18 @@ def params_from_points(tool: str, pts: list):
         r = math.hypot(p[1][0] - cx, p[1][1] - cy)
         return ({"cx": cx, "cy": cy, "r": (r if r > 1e-9 else 1.0)}, "circle")
     if tool == "arc" and len(p) >= 3:
-        res = arc_from_3points(p[0], p[1], p[2])
-        if res is None:
+        # New click sequence: p0 = centre, p1 = radius/start-angle, p2 = end
+        # angle. r is |p1-centre|; theta0 is the angle of p1 about the centre;
+        # theta1 sweeps CCW from theta0 to the angle of p2 (so the swept angle
+        # is 0..360°, matching the "CCW positive" convention).
+        (cx, cy), (rx, ry), (ax, ay) = p[0], p[1], p[2]
+        r = math.hypot(rx - cx, ry - cy)
+        if r <= 1e-9:
             return None, None
-        ux, uy, r, t0, t1 = res
-        return ({"cx": ux, "cy": uy, "r": r, "theta0": t0, "theta1": t1}, "arc")
+        t0 = math.atan2(ry - cy, rx - cx)
+        sweep = (math.atan2(ay - cy, ax - cx) - t0) % (2.0 * math.pi)
+        return ({"cx": cx, "cy": cy, "r": r,
+                 "theta0": t0, "theta1": t0 + sweep}, "arc")
     if tool == "rectangle" and len(p) >= 2:
         (x0, y0), (x1, y1) = p[0], p[1]
         return ({"x0": x0, "y0": y0, "x1": x1, "y1": y0,
@@ -249,6 +260,11 @@ def params_from_points(tool: str, pts: list):
     if tool == "polygon" and len(p) >= 3:
         from app.services.geometry_service import format_vertices_str
         return ({"vertices_str": format_vertices_str(p)}, "polygon")
+    if tool == "polyline" and len(p) >= 2:
+        # An open polyline is a polygon with closed=False (set by the caller);
+        # only two points are needed. The renderer skips the closing seam.
+        from app.services.geometry_service import format_vertices_str
+        return ({"vertices_str": format_vertices_str(p)}, "polygon")
     return None, None
 
 
@@ -258,7 +274,12 @@ def read_widget_params(owner, curve_type: str) -> dict:
     if curve_type == "polygon":
         return {"vertices_str": getattr(owner, POLYGON_VERTICES_ATTR).text()}
     attrs = SIDEBAR_ATTRS.get(curve_type, {})
-    return {key: getattr(owner, attr).value() for key, attr in attrs.items()}
+    angle_keys = ANGLE_KEYS.get(curve_type, ())
+    out: dict = {}
+    for key, attr in attrs.items():
+        v = getattr(owner, attr).value()
+        out[key] = math.radians(v) if key in angle_keys else v   # widget °→rad
+    return out
 
 
 def write_widget_params(owner, curve_type: str, params: dict, silent: bool = False):
@@ -275,10 +296,12 @@ def write_widget_params(owner, curve_type: str, params: dict, silent: bool = Fal
             w.blockSignals(False)
         return
     defaults = DEFAULTS.get(curve_type, {})
+    angle_keys = ANGLE_KEYS.get(curve_type, ())
     for key, attr in SIDEBAR_ATTRS.get(curve_type, {}).items():
         w = getattr(owner, attr)
         if silent:
             w.blockSignals(True)
-        w.setValue(params.get(key, defaults.get(key, 0.0)))
+        val = params.get(key, defaults.get(key, 0.0))
+        w.setValue(math.degrees(val) if key in angle_keys else val)  # rad→° widget
         if silent:
             w.blockSignals(False)

@@ -121,13 +121,35 @@ class MeshConfigBLMixin:
         coords_by_sid: dict[int, object] = {}
         try:
             import numpy as np
-            pts = np.atleast_2d(np.loadtxt(path))
+            pts = np.atleast_2d(np.loadtxt(path))[:, :2]
             sids = read_meta_point_segids(path)
-            if pts.shape[0] and len(sids) == pts.shape[0]:
+            n = pts.shape[0]
+            if n and len(sids) == n:
+                # Median boundary step, for the closed-loop wrap sanity check below.
+                if n >= 2:
+                    d = np.hypot(*(pts[1:] - pts[:-1]).T)
+                    med = float(np.median(d[d > 0])) if np.any(d > 0) else 0.0
+                else:
+                    med = 0.0
                 for sid in {s for s in sids if s >= 0}:
                     idxs = [i for i, s in enumerate(sids) if s == sid]
-                    if idxs:
-                        coords_by_sid[sid] = pts[idxs][:, :2]
+                    if not idxs:
+                        continue
+                    run = pts[idxs]
+                    # The resampler gives each shared CORNER to the segment that
+                    # STARTS there, so a segment's own points stop one short of its
+                    # END vertex — the highlight would miss its last little stretch.
+                    # Append the next boundary point (cyclic) so the whole edge
+                    # lights up; guard the wrap by distance so an OPEN geometry's
+                    # last segment doesn't draw a long spurious closing line.
+                    nxt = max(idxs) + 1
+                    if nxt >= n:
+                        nxt = 0
+                    if nxt not in idxs:
+                        step = float(np.hypot(*(pts[nxt] - pts[max(idxs)])))
+                        if med <= 0 or step <= 3.0 * med:
+                            run = np.vstack([run, pts[nxt]])
+                    coords_by_sid[sid] = run
         except Exception:
             coords_by_sid = {}
 
@@ -166,6 +188,8 @@ class MeshConfigBLMixin:
 
         dlg = SegmentBCDialog(item.text(), segs, group_bc=self._group_bc,
                               highlight_cb=self._segment_highlighter(path), parent=self)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.window())
         accepted = dlg.exec() == QDialog.DialogCode.Accepted
         self.segment_highlight_requested.emit(None)  # clear the highlight
         if accepted:
@@ -173,9 +197,15 @@ class MeshConfigBLMixin:
             # #4: persist auto-created patch names for ungrouped segments that
             # got a BC, so they group in the .meta and reach the mesher/solver.
             seg_names = dlg.result_seg_names()
+            from app.services.meta_io import write_meta_segbc, write_meta_group_bc
             if seg_names:
-                from app.services.meta_io import write_meta_segbc
                 write_meta_segbc(path, seg_names)
+            # Persist THIS geometry's label->BC-type map into its .meta so the
+            # mapping survives a session reset / config reload (else the labels
+            # resolve to nothing and every boundary defaults to wall at mesh time).
+            labels = {b for _sid, b, _k in segs if b} | set(seg_names.values())
+            write_meta_group_bc(path, {lbl: self._group_bc[lbl]
+                                       for lbl in labels if self._group_bc.get(lbl)})
             self.mesh_config_changed.emit(self.get_config())
 
     def _show_bl_dialog_modeless(self, dlg, on_accept, on_finish=None):
@@ -187,8 +217,11 @@ class MeshConfigBLMixin:
         self._bl_dialog keeps it alive (else Python GCs the modeless dialog) and is
         cleared when it closes."""
         dlg.setModal(False)
-        # Keep it above the main window (a plain Dialog flag can recede on macOS).
-        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        # Keep it above the app's own main window (Tool window) but not above
+        # other applications, and nudged off centre.
+        from app.utils import keep_on_top, offset_popup
+        keep_on_top(dlg)
+        offset_popup(dlg, self.window())
         dlg.accepted.connect(lambda: on_accept(dlg))   # OK -> commit
 
         def _finish(_r, d=dlg):

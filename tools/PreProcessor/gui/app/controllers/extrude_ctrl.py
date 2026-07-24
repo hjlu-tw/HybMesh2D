@@ -167,6 +167,8 @@ class ExtrudeControllerMixin:
             from app.views.extrude_source_dialog import ExtrudeSourceDialog
             dlg = ExtrudeSourceDialog(self.sessions, self._session_has_geom,
                                       self.main_window)
+            from app.utils import offset_popup
+            offset_popup(dlg, self.main_window)
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 log("[Export] Cancelled (source selection).")
                 return

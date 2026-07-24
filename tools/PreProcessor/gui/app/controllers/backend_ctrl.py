@@ -185,6 +185,8 @@ class BackendControllerMixin:
 
         from app.views.unclosed_dialog import UnclosedPointsDialog
         dlg = UnclosedPointsDialog(gaps, self.main_window)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.main_window)
         dlg.exec()
         choice = dlg.choice
 
@@ -284,6 +286,8 @@ class BackendControllerMixin:
                                        f"{stem}_resampled.dat")
 
         dlg = OutputDialog(default_out, self.main_window)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.main_window)
         if dlg.exec() != OutputDialog.DialogCode.Accepted:
             return
 

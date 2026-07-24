@@ -297,7 +297,12 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
         self.undo_btn = create_tb_btn("Undo", "Undo last action (Ctrl+Z)")
         self.redo_btn = create_tb_btn("Redo", "Redo last action (Ctrl+Shift+Z)")
         self.focus_geom_btn = create_tb_btn("Fit View", "Fit canvas view to selected geometry")
-        self.cad_clear_btn = create_tb_btn("Clear", "Clear the active geometry from the canvas")
+        self.cad_clear_btn = create_tb_btn(
+            "Clear", "Clear transient overlays (resample/duplicate preview, "
+            "handles) from the canvas — keeps the geometry")
+        self.cad_clear_all_btn = create_tb_btn(
+            "Clear All", "Remove ALL geometry (every edge, points and splits) "
+            "from the active CAD tab — undoable")
         self.cad_redraw_btn = create_tb_btn(
             "Redraw", "Redraw the canvas — clear leftover markers/handles from the "
             "previous action and re-render the geometry")
@@ -462,7 +467,8 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
 
         # Track layouts for visibility toggling
         self.cad_tb_widgets = [
-            self.focus_geom_btn, self.cad_clear_btn, self.cad_redraw_btn,
+            self.focus_geom_btn, self.cad_clear_btn, self.cad_clear_all_btn,
+            self.cad_redraw_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2,

@@ -274,7 +274,9 @@ class ResultCanvasInteractionMixin:
             return
         if self._line_dialog is None:
             self._line_dialog = WallQuantityDialog(self)
-            self._line_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)  # (#2/#8)
+            from app.utils import keep_on_top, offset_popup
+            keep_on_top(self._line_dialog)                    # above app, not other apps
+            offset_popup(self._line_dialog, self.window())    # off centre (#2/#8)
         seg = self._line_seg
 
         def sampler(var: str):

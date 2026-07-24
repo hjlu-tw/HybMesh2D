@@ -73,12 +73,15 @@ class CurveEditControllerMixin:
                                  changed_cb=self._on_file_dialog_changed,
                                  parent=self.main_window)
         dlg.setModal(False)
-        # Modeless, but stays above the main window on macOS (#2/#8).
-        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        # Modeless, kept above the app's own main window (Tool window) but not
+        # above other apps, and nudged off centre (#2/#8).
+        from app.utils import keep_on_top, offset_popup
+        keep_on_top(dlg)
         dlg.accepted.connect(self._commit_file_edit)
         dlg.rejected.connect(self._cancel_file_edit)
         dlg.finished.connect(lambda _r, d=dlg: d.deleteLater())
         self._pending_file_dialog = dlg
+        offset_popup(dlg, self.main_window)
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
@@ -225,6 +228,12 @@ class CurveEditControllerMixin:
         # sidebar's _sync_active_curve_segment_from_ui).
         if getattr(seg, "curve_type", "") == "polygon" and "spacing" not in params:
             seg.parameters.pop("spacing", None)
+        # The polygon dialog's open/closed toggle lives outside `params`; mirror
+        # it onto the segment so the live preview honours it immediately.
+        dlg = self._pending_dialog
+        if dlg is not None and hasattr(dlg, "is_closed") \
+                and getattr(seg, "curve_type", "") == "polygon":
+            seg.closed = dlg.is_closed()
         self._show_pending_handles()
         self._preview_pending()
 
@@ -295,10 +304,14 @@ class CurveEditControllerMixin:
         seg = self._pending_seg
         is_new = self._pending_is_new
         orig = self._pending_orig
+        orig_state = self._pending_orig_state
         self._clear_pending_state()
         if (not is_new) and seg is not None and orig is not None:
-            # Restore the edited edge's original shape.
+            # Restore the edited edge's original shape (incl. the open/closed
+            # flag the polygon dialog may have toggled).
             seg.parameters = orig
+            if orig_state is not None and hasattr(seg, "closed"):
+                seg.closed = bool(orig_state.get("closed", True))
             self._refresh_segment_list()
             self.main_window.log_panel.log("Edit cancelled (reverted).")
         else:
@@ -435,14 +448,11 @@ class CurveEditControllerMixin:
             return
         if seg.curve_type == "custom":
             self._edit_custom_formula(seg)
-        elif seg.curve_type == "polygon":
-            # Polygon is edited inline — the sidebar vertex table (type / append /
-            # load-from-file) plus the on-canvas vertex handles shown on select —
-            # so a double-click just selects it; no separate editor dialog.
-            return
         else:
             # Re-open the same interactive edit session (control points +
-            # modeless dialog + snapping) on the existing edge.
+            # modeless dialog + snapping) on the existing edge. Polygon/polyline
+            # included: its dialog shows the vertex table plus an open/closed
+            # toggle, alongside the on-canvas vertex handles.
             self._begin_pending_edit(seg, is_new=False)
 
     # ── Polygon on-canvas vertex insert / delete (right-click) ─────────────
@@ -532,6 +542,8 @@ class CurveEditControllerMixin:
             return
         from app.views.shape_dialog import CustomFormulaDialog
         dlg = CustomFormulaDialog(self.main_window, seg=seg)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.main_window)
         if not dlg.exec():
             return
         cfg = dlg.result_config()
@@ -563,11 +575,16 @@ class CurveEditControllerMixin:
             return
         from app.views.shape_dialog import ShapeParamDialog
         dlg = ShapeParamDialog(seg, self.main_window)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.main_window)
         if dlg.exec():
             updates, n_points = dlg.result_params()
             old_state = seg.to_dict()
             seg.parameters.update(updates)
             seg.parameters["n_points"] = n_points
+            if getattr(seg, "curve_type", "") == "polygon" \
+                    and hasattr(dlg, "is_closed"):
+                seg.closed = dlg.is_closed()
             self._record_segment_state_edit(session, seg, old_state)
             # Reflect the new values in the sidebar then re-preview.
             self._is_populating = True

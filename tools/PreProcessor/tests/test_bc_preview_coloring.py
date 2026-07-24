@@ -92,6 +92,24 @@ def main():
     # The raw-label palette's first colour (~red) must NOT be what we get for inlet.
     check("no arbitrary palette colour leaks through", "#e63946" not in got)
 
+    # #4 regression: once a mesh exists, the boundary-colouring pass used to lump
+    # the whole custom outline into ONE flat bc_geom colour (default "wall" → red)
+    # drawn on top of (masking) the correct per-segment Path-A colours above. For a
+    # custom domain it must now add NO such overlay and let the per-segment colours
+    # show. Drive _rebuild_boundary_coloring directly with a stand-in mesh.
+    import numpy as np
+
+    class _FakeMesh:
+        bounds = (-5.0, 5.0, -5.0, 5.0)   # (xmin, xmax, ymin, ymax)
+        points = np.array([[-5.0, -5.0], [5.0, -5.0], [5.0, 5.0], [-5.0, 5.0]])
+
+    mcv.mesh = _FakeMesh()
+    mcv.show_bc_coloring = True
+    mcv.bc_items = []
+    mcv._rebuild_boundary_coloring([(0, 1), (1, 2), (2, 3), (3, 0)])
+    check("custom domain adds no flat bc_geom overlay masking per-segment colours",
+          len(mcv.bc_items) == 0)
+
     print(flush=True)
     print("RESULT:", "ALL PASS" if not failures else f"{len(failures)} FAILED",
           flush=True)

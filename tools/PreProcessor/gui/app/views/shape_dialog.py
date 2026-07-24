@@ -3,7 +3,7 @@ import math
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QLineEdit, QDialogButtonBox, QSpinBox, QRadioButton,
-    QButtonGroup, QComboBox
+    QButtonGroup, QComboBox, QCheckBox
 )
 from app.utils import SPIN_STYLE
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
@@ -41,6 +41,9 @@ class ShapeParamDialog(QDialog):
         self._curve_type = getattr(seg, "curve_type", "custom")
         self._spins: dict[str, CleanDoubleSpinBox] = {}
         self._poly_edit: PolygonEditor | None = None
+        self._closed_cb: QCheckBox | None = None
+        # Angle params are stored in radians but edited here in DEGREES.
+        self._angle_keys = shape_spec.ANGLE_KEYS.get(self._curve_type, set())
         self._changed_cb = changed_cb
 
         lay = QVBoxLayout(self)
@@ -58,13 +61,30 @@ class ShapeParamDialog(QDialog):
             self._poly_edit = PolygonEditor(
                 seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1"))
             form.addRow(QLabel("Vertices:"), self._poly_edit)
+            # Open/closed toggle: a polygon closes back to its first vertex; an
+            # open polyline leaves its two ends free (drawn via the Polyline tool
+            # or toggled here).
+            self._closed_cb = QCheckBox("Closed loop (join last → first)")
+            self._closed_cb.setChecked(bool(getattr(seg, "closed", True)))
+            self._closed_cb.setToolTip(
+                "On: the polygon closes back to its first vertex.\n"
+                "Off: it stays an OPEN polyline — the two ends are free "
+                "endpoints.")
+            form.addRow(self._closed_cb)
         else:
             for key, label in _FIELDS.get(self._curve_type, []):
                 spin = CleanDoubleSpinBox()
-                spin.setRange(-1e6, 1e6)
-                spin.setDecimals(4)
                 spin.setStyleSheet(SPIN_STYLE)
-                spin.setValue(float(p.get(key, 0.0)))
+                if key in self._angle_keys:
+                    spin.setRange(-720.0, 720.0)
+                    spin.setDecimals(2)
+                    spin.setSuffix("°")
+                    spin.setValue(math.degrees(float(p.get(key, 0.0))))
+                    label = label + " (°)"
+                else:
+                    spin.setRange(-1e6, 1e6)
+                    spin.setDecimals(4)
+                    spin.setValue(float(p.get(key, 0.0)))
                 self._spins[key] = spin
                 form.addRow(QLabel(label + ":"), spin)
 
@@ -118,6 +138,8 @@ class ShapeParamDialog(QDialog):
             spin.valueChanged.connect(self._emit_changed)
         if self._poly_edit is not None:
             self._poly_edit.textChanged.connect(self._emit_changed)
+        if self._closed_cb is not None:
+            self._closed_cb.toggled.connect(self._emit_changed)
         self._node_spin.valueChanged.connect(self._emit_changed)
         if self._spacing_spin is not None:
             self._spacing_spin.valueChanged.connect(self._emit_changed)
@@ -155,7 +177,9 @@ class ShapeParamDialog(QDialog):
             else:
                 for key, spin in self._spins.items():
                     if key in params:
-                        spin.setValue(float(params[key]))
+                        v = float(params[key])
+                        spin.setValue(math.degrees(v) if key in self._angle_keys
+                                      else v)
             if n_points is not None:
                 self._node_spin.setValue(int(n_points))
         finally:
@@ -178,8 +202,14 @@ class ShapeParamDialog(QDialog):
                 return out, int(n)
             return out, self._node_spin.value()
         for key, spin in self._spins.items():
-            out[key] = spin.value()
+            v = spin.value()
+            out[key] = math.radians(v) if key in self._angle_keys else v
         return out, self._node_spin.value()
+
+    def is_closed(self) -> bool:
+        """Whether a polygon edge should be a closed loop. Shapes without the
+        toggle (everything but polygon) are always reported closed."""
+        return self._closed_cb.isChecked() if self._closed_cb is not None else True
 
 
 class FileEndpointDialog(QDialog):

@@ -1070,7 +1070,16 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
                 if (segmentsIntersect(a, b, c, d)) {
                     Point2D pt = getIntersectionPoint(a, b, c, d);
-                    throw std::runtime_error("Error: Self-intersection detected in the final front of Geometry " + std::to_string(fs.geomId) + " at point (" + std::to_string(pt.x) + ", " + std::to_string(pt.y) + ").");
+                    throw std::runtime_error(
+                        "Error: Self-intersection detected in the final front of Geometry "
+                        + std::to_string(fs.geomId) + " at point ("
+                        + std::to_string(pt.x) + ", " + std::to_string(pt.y) + "). "
+                        "The boundary layer is too thick for the local geometry there "
+                        "(fronts collide) — reduce BL_LAYERS / BL_INITIAL_THICKNESS / "
+                        "BL_GROWTH_RATE, or refine the surface, so the total BL height "
+                        "fits the feature/corner clearance. This is a geometry-vs-BL-size "
+                        "issue, not the no-BL junction scheme (a BL sized to the geometry "
+                        "keeps a constant first-layer height up to the junction).");
                 }
             }
         }
@@ -1153,8 +1162,26 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     for (const auto& ring : finalFronts) {
         int nFinal = (int)ring.size();
         for (int i = 0; i < nFinal; ++i) {
-            if (ring[i] != ring[(i + 1) % nFinal]) {
-                m_mesh.addEdge(ring[i], ring[(i + 1) % nFinal]);
+            int a = ring[i], b = ring[(i + 1) % nFinal];
+            if (a == b) continue;
+            m_mesh.addEdge(a, b);
+            // Carry the per-segment BC tag onto the emitted far-field boundary
+            // edge so a NO-BL surface run keeps its inlet/outlet/wall label after
+            // Gmsh subdivides it. Without this the edge is emitted with an empty
+            // bcTag, is excluded from collectBcRefSegs(), and after subdivision the
+            // new nodes fall through classifyBoundaryBc() to the wall default —
+            // silently mislabelling e.g. a no-BL left/right boundary that should be
+            // inlet/outlet. Only original consecutive surface pairs (the no-BL runs)
+            // are present in boundaryEdgeBc; BL outer-front and lateral-cap edges
+            // have no entry and stay untagged (they are the BL/triangle interface or
+            // a free cap, not a domain boundary). Mirrors addTaggedLoop's edge tag.
+            auto key = std::make_pair(std::min(a, b), std::max(a, b));
+            auto it = m_mesh.boundaryEdgeBc.find(key);
+            if (it != m_mesh.boundaryEdgeBc.end() && !it->second.empty()) {
+                m_mesh.edges.back().bcTag = it->second;
+                auto sit = m_mesh.boundaryEdgeSeg.find(key);
+                if (sit != m_mesh.boundaryEdgeSeg.end())
+                    m_mesh.edges.back().segKey = sit->second;
             }
         }
     }

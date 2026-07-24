@@ -218,6 +218,10 @@ static std::vector<int> addTaggedLoop(Mesh& mesh, const std::vector<Point2D>& pt
     for (int i = 0; i < n; ++i) {
         mesh.addEdge(ids[i], ids[(i + 1) % n]);
         mesh.edges.back().bcTag = edgeBc[i];
+        // Tag the edge with its source segment so the exporter can give each
+        // distinct segment its own patch id (segm_no) even when they share a BC.
+        mesh.edges.back().segKey =
+            Mesh::makeSegKey(geomId, useMeta ? meta.segId[i] : -1);
         mesh.addElement({ids[i], ids[(i + 1) % n]}); // 視覺化用
     }
     return ids;
@@ -671,8 +675,16 @@ int main(int argc, char* argv[]) {
                 for (int i = 0; i < nb; ++i) {
                     int a = boundaryIds[i], b = boundaryIds[(i + 1) % nb];
                     const std::string& tag = mesh.nodes[a].bcTag;
-                    if (!tag.empty())
-                        mesh.boundaryEdgeBc[{std::min(a, b), std::max(a, b)}] = tag;
+                    if (!tag.empty()) {
+                        auto key = std::make_pair(std::min(a, b), std::max(a, b));
+                        mesh.boundaryEdgeBc[key] = tag;
+                        // Record the source segment of this edge (its starting node)
+                        // so the exporter can assign a distinct segm_no per segment,
+                        // and so a no-BL run keeps its BC after the BL front drops
+                        // absorbed nodes (collectBcRefSegs reads this map).
+                        mesh.boundaryEdgeSeg[key] =
+                            Mesh::makeSegKey(mesh.nodes[a].geomId, mesh.nodes[a].segId);
+                    }
                 }
             }
             allBoundaryIds.push_back(boundaryIds);

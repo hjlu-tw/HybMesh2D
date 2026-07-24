@@ -22,7 +22,9 @@ class ResultCanvasPlotsMixin:
         from app.views.wall_qty_view import WallQuantityDialog
         if self._wall_dialog is None:
             self._wall_dialog = WallQuantityDialog(self)
-            self._wall_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)  # (#2/#8)
+            from app.utils import keep_on_top, offset_popup
+            keep_on_top(self._wall_dialog)                    # above app, not other apps
+            offset_popup(self._wall_dialog, self.window())    # off centre (#2/#8)
         dlg = self._wall_dialog
         result_dir = os.path.dirname(getattr(self, "_result_path", "") or "")
         # #10: auto-discover ALL of the solver's columnar outputs (vsurface*,
@@ -65,7 +67,9 @@ class ResultCanvasPlotsMixin:
         ys["x"] = np.asarray(xc_ref); ys["y"] = np.asarray(yc_ref)
         if self._surf_dialog is None:
             self._surf_dialog = WallQuantityDialog(self)
-            self._surf_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            from app.utils import keep_on_top, offset_popup
+            keep_on_top(self._surf_dialog)
+            offset_popup(self._surf_dialog, self.window())
         dlg = self._surf_dialog
         dlg.plot_series(np.asarray(s_ref), ys, xlabel="s (arc length)")
         primary = next(iter(vals_by_var), "")
@@ -106,7 +110,9 @@ class ResultCanvasPlotsMixin:
                 ys[key] = hist.column(k, var)
         if self._hist_dialog is None:
             self._hist_dialog = WallQuantityDialog(self)
-            self._hist_dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            from app.utils import keep_on_top, offset_popup
+            keep_on_top(self._hist_dialog)
+            offset_popup(self._hist_dialog, self.window())
         dlg = self._hist_dialog
         dlg.plot_series(x, ys, xlabel="probe output step")
         dlg.setWindowTitle("Solver probe history")

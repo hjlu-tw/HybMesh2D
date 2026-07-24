@@ -383,11 +383,15 @@ class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixi
 
         if self.domain_is_custom:
             # Custom-geometry domain: the outer edges belong to the outline, NOT
-            # the rectangle sides. Classifying them by bbox proximity mislabels
-            # e.g. a circle's top/right arcs as YMax/XMax (=outlet). Group every
-            # boundary edge as "geom" so it's coloured uniformly by BC Geom
-            # instead of gaining spurious inlet/outlet colours.
-            bc_groups["geom"] = list(boundary_edges)
+            # the rectangle sides, and each outline segment can carry its OWN BC
+            # (inlet/outlet/wall) set in "Edit segment BCs…". Those per-segment
+            # colours are drawn on the outline by _rebuild_geom_bc_preview (Path A,
+            # from the .meta sidecar, at ZValue 19). Do NOT also lump every boundary
+            # edge into a single "geom" group here: it would (a) ignore the
+            # per-segment BCs entirely and (b) draw one flat bc_geom colour
+            # (defaults to "wall" → red) at ZValue 20, ON TOP of and masking Path A's
+            # correct colours. Leave the geom group empty so Path A wins.
+            pass
         else:
             for u, v in boundary_edges:
                 p1 = self.mesh.points[u]

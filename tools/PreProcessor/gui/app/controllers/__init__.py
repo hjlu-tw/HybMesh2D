@@ -1,6 +1,7 @@
 from app.controllers.session_ctrl import SessionControllerMixin
 from app.controllers.session_io_ctrl import SessionIOControllerMixin
 from app.controllers.segment_ctrl import SegmentControllerMixin
+from app.controllers.segment_vertex_ctrl import SegmentVertexControllerMixin
 from app.controllers.segment_autodetect_ctrl import SegmentAutoDetectControllerMixin
 from app.controllers.segment_props_ctrl import SegmentPropsControllerMixin
 from app.controllers.segment_distribution_ctrl import SegmentDistributionControllerMixin
@@ -22,7 +23,8 @@ from app.controllers.pipeline_ctrl import PipelineControllerMixin
 # so the re-exports are an explicit public API (and not flagged as unused).
 __all__ = [
     "SessionControllerMixin", "SessionIOControllerMixin",
-    "SegmentControllerMixin", "SegmentAutoDetectControllerMixin",
+    "SegmentControllerMixin", "SegmentVertexControllerMixin",
+    "SegmentAutoDetectControllerMixin",
     "SegmentPropsControllerMixin", "SegmentDistributionControllerMixin",
     "TransformControllerMixin", "CurveControllerMixin",
     "CurveEditControllerMixin", "BackendControllerMixin",

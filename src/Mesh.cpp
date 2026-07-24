@@ -61,18 +61,38 @@ bool pointOnSegment(const Point2D& p, const Point2D& a, const Point2D& b,
 
 std::vector<Mesh::BcRefSeg> Mesh::collectBcRefSegs() const {
     std::vector<BcRefSeg> refs;
+    // (a) Explicitly tagged domain / far-field edges (addTaggedLoop box & outline,
+    //     no-BL obstacle loops, the far-field front ring).
     for (const auto& e : edges) {
         if (e.bcTag.empty()) continue;
-        refs.push_back({nodes[e.v1].pos, nodes[e.v2].pos, e.bcTag});
+        refs.push_back({nodes[e.v1].pos, nodes[e.v2].pos, e.bcTag, e.segKey});
+    }
+    // (b) Every recorded surface segment edge (BL walls + no-BL runs). BL-grown
+    //     surfaces never add their wall edges to `edges`, and a NO-BL run's edges
+    //     can be dropped from the front ring when a concave-slide (case-1) junction
+    //     absorbs them — in both cases a Gmsh-subdivided sub-edge would otherwise
+    //     miss every reference segment and fall to the wall default. Emitting these
+    //     as reference segments makes the classification independent of what the BL
+    //     front did, so a no-BL inlet/outlet keeps its BC after subdivision.
+    for (const auto& kv : boundaryEdgeBc) {
+        if (kv.second.empty()) continue;
+        long long sk = -1;
+        auto sit = boundaryEdgeSeg.find(kv.first);
+        if (sit != boundaryEdgeSeg.end()) sk = sit->second;
+        refs.push_back({nodes[kv.first.first].pos, nodes[kv.first.second].pos,
+                        kv.second, sk});
     }
     return refs;
 }
 
 std::string Mesh::classifyBoundaryBc(int v1, int v2,
                                      const std::vector<BcRefSeg>& refs,
-                                     const Config& config) const {
+                                     const Config& config,
+                                     long long* segKeyOut) const {
     const Point2D& p1 = nodes[v1].pos;
     const Point2D& p2 = nodes[v2].pos;
+    auto setKey = [&](long long k) { if (segKeyOut) *segKeyOut = k; };
+    setKey(-1);
 
     // 0. Exact per-edge BC recorded at construction (starting-point convention),
     //    the authoritative tag for BL-grown surface edges — which are not in
@@ -81,21 +101,29 @@ std::string Mesh::classifyBoundaryBc(int v1, int v2,
     //    nodes carry different tags) still gets the segment it actually belongs to.
     {
         auto it = boundaryEdgeBc.find({std::min(v1, v2), std::max(v1, v2)});
-        if (it != boundaryEdgeBc.end() && !it->second.empty()) return it->second;
+        if (it != boundaryEdgeBc.end() && !it->second.empty()) {
+            auto sit = boundaryEdgeSeg.find({std::min(v1, v2), std::max(v1, v2)});
+            setKey(sit != boundaryEdgeSeg.end() ? sit->second : -1);
+            return it->second;
+        }
     }
 
-    // 1. Domain / far-field reference segment (rectangle side or polygon edge):
-    //    generalizes the legacy axis (x≈xMin …) classification to any shape.
-    //    For external flow the box/outline is always tagged, so this catches every
-    //    far-field edge; for internal flow there are no such segments.
+    // 1. Reference segment (rectangle side / polygon edge / any surface segment):
+    //    generalizes the legacy axis (x≈xMin …) classification to any shape, and —
+    //    thanks to the boundaryEdgeBc-derived refs in collectBcRefSegs — catches the
+    //    subdivided sub-edges of a no-BL surface too.
     for (const auto& r : refs) {
-        if (pointOnSegment(p1, r.a, r.b) && pointOnSegment(p2, r.a, r.b))
+        if (pointOnSegment(p1, r.a, r.b) && pointOnSegment(p2, r.a, r.b)) {
+            setKey(r.segKey);
             return r.bc;
+        }
     }
 
     // 2. Geometry per-segment tag carried on the nodes (both endpoints agree).
-    if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag)
+    if (!nodes[v1].bcTag.empty() && nodes[v1].bcTag == nodes[v2].bcTag) {
+        setKey(makeSegKey(nodes[v1].geomId, nodes[v1].segId));
         return nodes[v1].bcTag;
+    }
 
     // 3. Default geometry / wall BC (untagged geometry surface, internal-flow wall).
     return config.bcGeom;
@@ -410,11 +438,16 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
     }
 
     // Boundary edges (used by exactly one cell), classified by their attached BC
-    // tag: a domain reference segment wins, else a geometry per-segment Node::bcTag,
-    // else the axis/geom fallback. Group ids are assigned per unique BC name in
-    // first-appearance order (name-based grouping, like STAR-CCM+/Fluent).
+    // tag: a reference segment wins, else a geometry per-segment Node::bcTag, else
+    // the axis/geom fallback. The patch NAME is the resolved physical BC type; the
+    // segment id (column 6, getPGrid's segm_no) is assigned per distinct SOURCE
+    // segment so two different segments that share a BC type (e.g. two walls) still
+    // get separate segm_no and can be edited individually in the solver BC table.
+    // Edges with no source segment (generated far-field box) fall back to one id
+    // per BC name.
     const std::vector<BcRefSeg> bcRefs = collectBcRefSegs();
-    std::map<std::string, int> groupIds;
+    std::map<long long, int> segToGid;     // source-segment key -> patch id
+    std::map<std::string, int> nameToGid;  // fallback: BC name -> patch id
     int nextGroup = 1;
     int bndCount = 1;
     for (const auto& kv : edgeCellCount) {
@@ -422,16 +455,23 @@ void Mesh::exportStarCD(const std::string& baseFilename, const Config& config) c
         int v1 = edgeNodes[kv.first].first;
         int v2 = edgeNodes[kv.first].second;
 
-        std::string bcName = classifyBoundaryBc(v1, v2, bcRefs, config);
+        long long segKey = -1;
+        std::string bcName = classifyBoundaryBc(v1, v2, bcRefs, config, &segKey);
         // A per-segment tag is a grouping LABEL; resolve it to the physical BC
         // type chosen per group in the GUI (GROUP_BC) so the patch NAME written
         // here is a BC type the downstream solver recognises (getPGrid name-
         // guesses the patch name and would default an unknown label to wall).
         bcName = config.resolveGroupBc(bcName);
         int gid;
-        auto git = groupIds.find(bcName);
-        if (git == groupIds.end()) { gid = nextGroup++; groupIds[bcName] = gid; }
-        else gid = git->second;
+        if (segKey >= 0) {
+            auto it = segToGid.find(segKey);
+            if (it == segToGid.end()) { gid = nextGroup++; segToGid[segKey] = gid; }
+            else gid = it->second;
+        } else {
+            auto it = nameToGid.find(bcName);
+            if (it == nameToGid.end()) { gid = nextGroup++; nameToGid[bcName] = gid; }
+            else gid = it->second;
+        }
 
         // 格式：bnd編號, v1, v2, 0, 0, groupId, 0, bcName (共 8 欄)
         bofs << bndCount++ << " " << (v1 + 1) << " " << (v2 + 1) << " 0 0 " << gid << " 0 " << bcName << "\n";
@@ -502,15 +542,35 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
             edgeNodes[{lo, hi}] = {a, b};
         }
     }
-    std::map<std::string, std::vector<std::pair<int, int>>> bcGroups;
+    // Group by source-segment key (fallback: BC name), mirroring exportStarCD so a
+    // CGNS patch corresponds to one source segment; each patch keeps its physical
+    // BC type name (uniquified with the patch id, since CGNS names must be unique).
+    struct CgnsPatch { std::string bc; std::vector<std::pair<int, int>> edges; };
+    std::map<int, CgnsPatch> bcGroups;     // patch id -> {bc name, edges}
+    std::map<long long, int> segToGid;
+    std::map<std::string, int> nameToGid;
+    int nextGroup = 1;
     const std::vector<BcRefSeg> bcRefs = collectBcRefSegs();
     for (const auto& kv : edgeCount) {
         if (kv.second != 1) continue;
         int v1 = edgeNodes[kv.first].first, v2 = edgeNodes[kv.first].second;
+        long long segKey = -1;
         // Resolve the grouping label to its physical BC type (GROUP_BC), as in
         // the STAR-CD .bnd export, so CGNS BC patches carry the BC type name.
-        std::string bc = config.resolveGroupBc(classifyBoundaryBc(v1, v2, bcRefs, config));
-        bcGroups[bc].push_back({v1, v2});
+        std::string bc = config.resolveGroupBc(classifyBoundaryBc(v1, v2, bcRefs, config, &segKey));
+        int gid;
+        if (segKey >= 0) {
+            auto it = segToGid.find(segKey);
+            if (it == segToGid.end()) { gid = nextGroup++; segToGid[segKey] = gid; }
+            else gid = it->second;
+        } else {
+            auto it = nameToGid.find(bc);
+            if (it == nameToGid.end()) { gid = nextGroup++; nameToGid[bc] = gid; }
+            else gid = it->second;
+        }
+        auto& patch = bcGroups[gid];
+        patch.bc = bc;
+        patch.edges.push_back({v1, v2});
     }
 
     // --- 3. Write the CGNS/HDF5 file: base -> zone -> coords -> element
@@ -555,18 +615,23 @@ void Mesh::exportCGNS(const std::string& filename, const Config& config) const {
     // Each BC group becomes a BAR_2 edge section plus a BC_t patch that
     // references that section's element range (GridLocation = EdgeCenter).
     for (const auto& kv : bcGroups) {
-        const std::string& bcName = kv.first;
-        const auto& edges = kv.second;
+        int gid = kv.first;
+        const std::string& bcName = kv.second.bc;         // physical BC type
+        const auto& edges = kv.second.edges;
+        // CGNS names must be unique per zone; one source segment = one patch, so
+        // suffix the BC type with the patch id. The BC TYPE (mapCgnsBcType) stays
+        // keyed on the type name so the physical condition is preserved.
+        std::string patchName = bcName + "_" + std::to_string(gid);
         std::vector<cgsize_t> conn;
         conn.reserve(edges.size() * 2);
         for (const auto& e : edges) { conn.push_back((cgsize_t)(e.first + 1)); conn.push_back((cgsize_t)(e.second + 1)); }
         cgsize_t eEnd = eStart + (cgsize_t)edges.size() - 1;
         int sec = 0;
-        std::string secName = bcName + "_edges";
+        std::string secName = patchName + "_edges";
         cgChk("cg_section_write BAR_2", cg_section_write(fn, B, Z, secName.c_str(), CGNS_ENUMV(BAR_2), eStart, eEnd, 0, conn.data(), &sec));
         cgsize_t range[2] = {eStart, eEnd};
         int bcIdx = 0;
-        cgChk("cg_boco_write", cg_boco_write(fn, B, Z, bcName.c_str(), mapCgnsBcType(bcName), CGNS_ENUMV(PointRange), 2, range, &bcIdx));
+        cgChk("cg_boco_write", cg_boco_write(fn, B, Z, patchName.c_str(), mapCgnsBcType(bcName), CGNS_ENUMV(PointRange), 2, range, &bcIdx));
         cgChk("cg_boco_gridlocation_write", cg_boco_gridlocation_write(fn, B, Z, bcIdx, CGNS_ENUMV(EdgeCenter)));
         eStart = eEnd + 1;
     }

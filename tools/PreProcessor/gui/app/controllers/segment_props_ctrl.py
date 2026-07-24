@@ -130,6 +130,8 @@ class SegmentPropsControllerMixin:
         dlg = AssignPatchDialog(session.display_name, edges, existing,
                                 preselect=preselect, highlight_cb=highlight,
                                 apply_cb=_apply, parent=self.main_window)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.main_window)
         accepted = dlg.exec() == QDialog.DialogCode.Accepted
         # Drop the temporary multi-edge highlight the dialog painted.
         self.main_window.canvas_view.update_active_segments([], -1)

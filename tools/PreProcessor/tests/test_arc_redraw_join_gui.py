@@ -83,21 +83,18 @@ _fp = dict(_ap)
 shape_spec.apply_drag("arc", _fp, "p1", 0.0, 3.0, lock_radius=False)
 check(abs(_fp["r"] - 3.0) < 1e-9, f"unlocked end drag re-fits radius (r={_fp['r']:.4g})")
 
-# mid handle: changes radius but pins the two endpoints in place.
+# mid handle (R4-1): changes ONLY the radius, about the FIXED centre. The
+# endpoints ride out to the new radius (their angles unchanged); the centre
+# must NOT move (it used to re-fit a circle through the endpoints + mid).
 _mp = dict(_ap)
-p0_before = (_mp["cx"] + _mp["r"] * math.cos(_mp["theta0"]),
-             _mp["cy"] + _mp["r"] * math.sin(_mp["theta0"]))
-p1_before = (_mp["cx"] + _mp["r"] * math.cos(_mp["theta1"]),
-             _mp["cy"] + _mp["r"] * math.sin(_mp["theta1"]))
-shape_spec.apply_drag("arc", _mp, "m", 0.3, 0.3, lock_radius=True)   # flatter bulge
-p0_after = (_mp["cx"] + _mp["r"] * math.cos(_mp["theta0"]),
-            _mp["cy"] + _mp["r"] * math.sin(_mp["theta0"]))
-p1_after = (_mp["cx"] + _mp["r"] * math.cos(_mp["theta1"]),
-            _mp["cy"] + _mp["r"] * math.sin(_mp["theta1"]))
-check(np.allclose(p0_before, p0_after, atol=1e-6)
-      and np.allclose(p1_before, p1_after, atol=1e-6)
-      and abs(_mp["r"] - 1.0) > 1e-3,
-      f"mid handle changes radius, endpoints pinned (r={_mp['r']:.4g})")
+cx0, cy0, t0_0, t1_0 = _mp["cx"], _mp["cy"], _mp["theta0"], _mp["theta1"]
+tm = 0.5 * (t0_0 + t1_0)
+shape_spec.apply_drag("arc", _mp, "m",
+                      cx0 + 2.0 * math.cos(tm), cy0 + 2.0 * math.sin(tm))
+check(abs(_mp["cx"] - cx0) < 1e-9 and abs(_mp["cy"] - cy0) < 1e-9
+      and abs(_mp["r"] - 2.0) < 1e-6
+      and abs(_mp["theta0"] - t0_0) < 1e-9 and abs(_mp["theta1"] - t1_0) < 1e-9,
+      f"mid handle changes radius about the FIXED centre (r={_mp['r']:.4g})")
 
 # ── Full AppController: arc widget + Redraw button ────────────────────────
 from PyQt6.QtWidgets import QApplication
@@ -142,7 +139,10 @@ if vp is not None:
 else:
     print("SKIP vertex_panel width check (panel not exposed)")
 
-# ── #4: arc-preserving join distributes vertices evenly ───────────────────
+# ── #4: MERGE-mode arc join distributes vertices evenly ───────────────────
+# The mixed (arc+line) join now asks keep-corners vs merge; the even-spacing
+# behaviour is the MERGE choice, so stub it. (KEEP mode is covered separately in
+# test_join_edges_gui.py, where the original corners are pinned instead.)
 c.new_blank_tab()
 s = c.active_session()
 pm = s.project_model
@@ -162,6 +162,7 @@ line.parameters = {"n_points": 12, "x0": -1.0, "y0": 0.0, "x1": 1.0, "y1": 0.0}
 pm.segments = [fseg, line]
 pm._next_curve_id = 10002
 c._refresh_segment_list()
+c._ask_join_keep_separate = lambda: False          # choose MERGE (smooth, even)
 c.join_selected_edges_to_polygon()
 app.processEvents()
 polys = [x for x in pm.segments if getattr(x, "curve_type", "") == "polygon"]

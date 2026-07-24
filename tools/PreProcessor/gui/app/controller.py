@@ -13,11 +13,13 @@ from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
 from app.models.session import GeometrySession
 from app.models.mesh_config import MeshConfig
+from app.models.project import ProjectModel
 
 from app.controllers import (
     SessionControllerMixin,
     SessionIOControllerMixin,
     SegmentControllerMixin,
+    SegmentVertexControllerMixin,
     SegmentAutoDetectControllerMixin,
     SegmentPropsControllerMixin,
     SegmentDistributionControllerMixin,
@@ -43,6 +45,7 @@ class AppController(
     SessionControllerMixin,
     SessionIOControllerMixin,
     SegmentControllerMixin,
+    SegmentVertexControllerMixin,
     SegmentAutoDetectControllerMixin,
     SegmentPropsControllerMixin,
     SegmentDistributionControllerMixin,
@@ -93,9 +96,8 @@ class AppController(
         self._stl3d_phi_val = None
         self._extrude_worker = None        # background 2D-profile → STL extruder
         self._extrude_pending = None       # extrude params awaiting the worker result
-        # Workers between their result signal and their finished() signal are held
-        # here so we never drop the last Python reference to a QThread whose run()
-        # is still unwinding (that aborts with "QThread destroyed while running").
+        # Held between a worker's result and finished() so a still-unwinding
+        # QThread keeps its last ref ("destroyed while running").
         self._retiring_workers: set = set()
 
         self._is_populating = False       # guard against feedback loops during form population
@@ -105,13 +107,11 @@ class AppController(
         self._pending_is_new = True       # True = creating, False = editing an existing edge
         self._pending_orig = None         # original params snapshot (to restore on cancel of an edit)
         self._pending_orig_state = None   # full state snapshot (to make committing an edit undoable)
-        # Pre-drag state snapshot for on-canvas vertex dragging of an already-
-        # committed edge, so the whole drag collapses into one undo step.
+        # Pre-drag snapshot so an on-canvas vertex drag is one undo step.
         self._drag_orig_state = None
         self._custom_preview_fitted = False
-        # Discrete-geometry editing (imported file edges): the whole connected
-        # shape is edited together by its corner vertices; each edge re-fits
-        # between its corners as they move.
+        # Discrete-geometry editing (imported file edges): the connected shape is
+        # edited by its corner vertices; each edge re-fits between its corners.
         self._pending_file = None         # (i0, i1) corners of the double-clicked edge
         self._pending_file_seg = None
         self._pending_file_dialog = None
@@ -147,8 +147,8 @@ class AppController(
         sb.save_btn.clicked.connect(self.save_output)
         sb.generate_btn.clicked.connect(self.generate_json)
         sb.extrude_stl_btn.clicked.connect(self.extrude_active_to_stl)
-        # "Add Analytic Edge" is now a shape-tool menu: pick a shape, then draw
-        # it interactively on the canvas (Custom Formula adds a blank edge).
+        # "Add Analytic Edge" is a shape-tool menu: pick a shape, draw it on the
+        # canvas (Custom Formula adds a blank edge).
         self._shape_tool_menu = QMenu(self.main_window)
         for label, tool in [
             ("Line", "line"),
@@ -156,9 +156,12 @@ class AppController(
             ("Arc", "arc"),
             ("Rectangle", "rectangle"),
             ("Triangle", "triangle"),
-            ("Polygon", "polygon"),
+            ("Polygon (closed)", "polygon"),
+            ("Polyline (open)", "polyline"),
         ]:
             act = self._shape_tool_menu.addAction(label)
+            if tool == "polyline":
+                act.setToolTip("Draw an OPEN multi-segment line (not auto-closed)")
             act.triggered.connect(lambda _checked=False, t=tool: self.enter_shape_tool(t))
         self._shape_tool_menu.addSeparator()
         custom_act = self._shape_tool_menu.addAction("Custom Formula…")
@@ -246,6 +249,7 @@ class AppController(
         sb.geometry_tree.itemDoubleClicked.connect(self.handle_geom_list_double_clicked)
         self.main_window.focus_geom_btn.clicked.connect(self.focus_to_selected_geometry)
         self.main_window.cad_clear_btn.clicked.connect(self.clear_cad_canvas)
+        self.main_window.cad_clear_all_btn.clicked.connect(self.clear_all_geometry)
         self.main_window.cad_redraw_btn.clicked.connect(self.redraw_canvas)
         sb.geometry_tree.context_menu_requested.connect(self.show_geometry_context_menu)
 
@@ -336,6 +340,7 @@ class AppController(
         sp.bc_detect_btn.clicked.connect(self.detect_bc_from_mesh)
         sp.build_init_cond_btn.clicked.connect(lambda: self.open_dll_builder("init_cond"))
         sp.build_motion_btn.clicked.connect(lambda: self.open_dll_builder("motion"))
+        sp.build_phi_shape_btn.clicked.connect(self.generate_phi_from_cad_shape)
         sp.bc_dll_btn.clicked.connect(self.open_bc_dll_builder)
         sp.probe_coords_btn.clicked.connect(self.open_probe_coords_dialog)
         self.init_solver()
@@ -623,7 +628,8 @@ class AppController(
         self.main_window.canvas_view.set_geometry_visible(session.session_id, session.is_visible)
 
         if re_detect:
-            session.split_indices = self._auto_detect_features(points)
+            session.split_indices = ProjectModel.prune_degenerate_splits(
+                self._auto_detect_features(points), points)
 
         # Only update active overlays if this is the active session
         if session is self.active_session():
@@ -655,6 +661,11 @@ class AppController(
 
     def _sync_file_segments(self, session: GeometrySession):
         """Rebuild file segments from split_indices then update the sidebar list."""
+        # Persist the de-degenerated split list so a phantom zero-length edge is
+        # gone for good (its split markers clear, and a subsequent Remove sticks
+        # instead of the rebuild resurrecting it from a stale boundary index).
+        session.split_indices = ProjectModel.prune_degenerate_splits(
+            session.split_indices, session.original_points)
         session.project_model.update_file_segments_from_indices(
             session.split_indices, points=session.original_points)
         if session is self.active_session():
@@ -686,6 +697,7 @@ class AppController(
             return
         self.main_window.log_panel.log(f"{verb} ({cmd.description()})")
         self._sync_geometry_list()
+        self.redraw_canvas(announce=False)   # leave no stray highlight/handle
         # Reseed the edit baseline so the next in-place form edit diffs against
         # the restored state. to_dict() already returns a fresh dict, so the
         # previous extra deepcopy was redundant.

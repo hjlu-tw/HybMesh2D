@@ -40,6 +40,53 @@ class ProjectModel:
 
     # ── Segment management ────────────────────────────────────────────────
 
+    @staticmethod
+    def prune_degenerate_splits(split_indices, points):
+        """Return `split_indices` with any boundary that would create a zero-length
+        (coincident-endpoint) file segment removed.
+
+        A split pair whose points collapse to one location produces a phantom
+        ~zero-length edge (e.g. "Idx 100 → 101") that the user can neither select
+        nor remove — its two endpoints are shared with both neighbours, so the
+        remove path deletes nothing (services.index_helpers) and every rebuild
+        (load / remove / convert-to-discrete / join) resurrects it. It also
+        corrupts the per-segment .meta/BC numbering (an empty segment id). Merging
+        it into its neighbour here is the single choke-point that kills it on every
+        path. The first/last indices (the geometry endpoints) are always kept."""
+        idx = sorted({int(i) for i in split_indices})
+        if points is None or len(idx) < 3:
+            return idx
+        import numpy as np
+        pts = np.asarray(points, dtype=float)
+        n = len(pts)
+        if n < 2:
+            return idx
+        mn = pts.min(axis=0)
+        mx = pts.max(axis=0)
+        diag = float(np.hypot(mx[0] - mn[0], mx[1] - mn[1]))
+        eps = max(1e-12, 1e-7 * diag)
+
+        def _degenerate(a: int, b: int) -> bool:
+            if not (0 <= a < b < n):
+                return False
+            seg = pts[a:b + 1]
+            d = np.diff(seg, axis=0)
+            return float(np.sqrt((d * d).sum(axis=1)).sum()) <= eps
+
+        last = idx[-1]
+        kept = [idx[0]]
+        for j in idx[1:]:
+            # Keep the true endpoint; drop an interior boundary coincident with the
+            # previous kept one (it only bounds a collapsed segment).
+            if j != last and _degenerate(kept[-1], j):
+                continue
+            kept.append(j)
+        # If the final interval itself collapsed, drop the second-to-last boundary
+        # so the endpoint is preserved but the phantom tail segment is not created.
+        while len(kept) >= 3 and _degenerate(kept[-2], kept[-1]):
+            kept.pop(-2)
+        return kept
+
     def update_file_segments_from_indices(self, split_indices: list[int],
                                           points=None):
         """Rebuild file-type segments from split indices, preserving curve segments.
@@ -51,6 +98,9 @@ class ProjectModel:
         segments need no redistribution: the same spacing already yields uniform
         density. ``points`` is the geometry's (N, 2) coordinates; when omitted,
         index span is used as a length proxy."""
+        # Drop any degenerate (coincident-endpoint) boundary first so no rebuild
+        # path can create/resurrect a phantom zero-length edge (see docstring).
+        split_indices = self.prune_degenerate_splits(split_indices, points)
         curve_segs = [s for s in self.segments if s.type == "curve"]
 
         # Build a map of (start, end) → existing file segment so we preserve settings
@@ -70,6 +120,30 @@ class ProjectModel:
                 return float(np.sqrt((d * d).sum(axis=1)).sum())
             return float(b - a)
 
+        # Phantom-bridge guard (item: Remove Edge / arc Convert-to-Discrete): after
+        # removing a MIDDLE file segment the two survivors become index-adjacent
+        # (S, S+1) across the hole they used to fill, and appending a disjoint piece
+        # (a converted free-standing arc) leaves the base end index-adjacent to the
+        # new range's start. Either way `split_indices` gains a consecutive pair that
+        # bridges a discontinuity — a 1-edge segment that no Remove can delete and
+        # every rebuild resurrects. It is NOT coincident (prune_degenerate_splits
+        # can't see it), but it is distinguishable: a genuine split's sub-pairs
+        # always lie WITHIN their parent's span, whereas a bridge matches no existing
+        # segment and overlaps none. Drop such adjacent, no-overlap pairs — but only
+        # on a real REBUILD of the current segmentation (some pair still lands on an
+        # existing segment); on a fresh build / geometry swap `existing_map` is empty
+        # or irrelevant, so keep every pair.
+        def _overlaps_existing(a: int, b: int) -> bool:
+            for (old_s, old_e) in existing_map:
+                if max(0, min(b, old_e) - max(a, old_s)) > 0:
+                    return True
+            return False
+
+        pairs = [(split_indices[i], split_indices[i + 1])
+                 for i in range(len(split_indices) - 1)]
+        is_rebuild = bool(existing_map) and any(
+            (a, b) in existing_map or _overlaps_existing(a, b) for a, b in pairs)
+
         new_file_segs: list[SegmentModel] = []
         for i in range(len(split_indices) - 1):
             start, end = split_indices[i], split_indices[i + 1]
@@ -78,7 +152,6 @@ class ProjectModel:
                 seg = existing_map[key]
                 seg.id = i + 1
             else:
-                seg = SegmentModel(i + 1, start, end)
                 # Try to inherit settings from most-overlapping old segment
                 best_overlap = 0
                 best_seg = None
@@ -87,6 +160,10 @@ class ProjectModel:
                     if overlap > best_overlap:
                         best_overlap = overlap
                         best_seg = old_seg
+                # A bridge across a removed segment / disjoint-append boundary.
+                if is_rebuild and best_overlap == 0 and (end - start) == 1:
+                    continue
+                seg = SegmentModel(i + 1, start, end)
                 if best_seg:
                     seg.strategy = best_seg.strategy
                     seg.parameters = copy.deepcopy(best_seg.parameters)
@@ -101,6 +178,9 @@ class ProjectModel:
                             seg.parameters["n_points"] = max(2, int(round(n_old * share)))
             new_file_segs.append(seg)
 
+        # Contiguous ids (a dropped phantom bridge would otherwise gap them).
+        for k, s in enumerate(new_file_segs):
+            s.id = k + 1
         self.segments = new_file_segs + curve_segs
 
     def renumber_segments(self):

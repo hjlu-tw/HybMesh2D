@@ -52,6 +52,10 @@ mw = c.main_window
 mw.show()
 app.processEvents()
 
+# This test exercises the MERGE outcome (one polygon). KEEP-separate is covered
+# in test_join_keep_separate_gui.py. Force MERGE so the polygon assertions hold.
+c._ask_join_keep_separate = lambda: False
+
 sess = c.active_session()
 pm = sess.project_model
 

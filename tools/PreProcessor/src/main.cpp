@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <cctype>
 #include <map>
+#include <set>
 
 #include "json.hpp"
 #include "GeomUtils.hpp"
@@ -172,8 +173,18 @@ bool saveMetadata(const std::string& datPath,
     ofs << "NPIECES " << pieceBreaks.size();
     for (size_t b : pieceBreaks) ofs << " " << b;
     ofs << "\n";
-    ofs << "NSEGMENTS " << segBc.size() << "\n";
+    // Only list segments that actually produced output points. A config segment
+    // that resampled to nothing (a degenerate / collapsed edge) would otherwise be
+    // written as an empty NSEGMENTS row whose id never appears in the POINTS block;
+    // the mesh stage then shows a phantom per-segment BL/BC row (off by one vs the
+    // visible edges), so toggling "No BL" on it is a no-op and the real edge still
+    // grows a layer, and case.bc.def gains a bogus patch.
+    std::set<int> presentSegs(segId.begin(), segId.end());
+    size_t nSegOut = 0;
+    for (const auto& kv : segBc) if (presentSegs.count(kv.first)) ++nSegOut;
+    ofs << "NSEGMENTS " << nSegOut << "\n";
     for (const auto& kv : segBc) {
+        if (!presentSegs.count(kv.first)) continue;
         auto kit = segKind.find(kv.first);
         const std::string kind = (kit != segKind.end() && !kit->second.empty()) ? kit->second : "polyline";
         // v3: always emit the grow-BL column (default 1 = grow) so the mesher's

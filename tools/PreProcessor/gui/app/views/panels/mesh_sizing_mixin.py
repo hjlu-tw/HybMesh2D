@@ -52,7 +52,9 @@ class MeshConfigSizingMixin:
             buttons.rejected.connect(dlg.reject)
             buttons.accepted.connect(dlg.accept)
             lay.addWidget(buttons)
-            keep_on_top(dlg)   # #2: never sink below the main window
+            keep_on_top(dlg)   # #2: above the app's main window, not other apps
+            from app.utils import offset_popup
+            offset_popup(dlg, self.window())   # #3: nudge off centre
             self._domain_patch_dialog = dlg
         self._domain_patch_dialog.show()
         self._domain_patch_dialog.raise_()

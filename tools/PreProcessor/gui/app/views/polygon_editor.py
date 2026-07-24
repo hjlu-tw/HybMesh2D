@@ -421,6 +421,8 @@ class PolygonEditor(QWidget):
 
     def _make_regular(self):
         dlg = RegularPolygonDialog(self)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.window())
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._set_points(dlg.vertices())
 

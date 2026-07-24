@@ -82,3 +82,50 @@ class JoinEdgesToPolygonCmd(BaseCommand):
         self.refresh_cb()
         segs = self.session.project_model.segments
         self.select_cb(max(0, min(self._added_idx - 1, len(segs) - 1)) if segs else -1)
+
+
+class KeepSeparateAndCloseCmd(BaseCommand):
+    """KEEP-mode join: keep the selected edges as SEPARATE, individually
+    selectable and vertex-editable segments (each retaining its own per-segment
+    BC), only welding their near-coincident shared endpoints so the chain is
+    watertight, and marking the project boundary closed so the gold dashed
+    closing edge is drawn and the open-endpoint warnings clear.
+
+    Contrast :class:`JoinEdgesToPolygonCmd`, which collapses every selected edge
+    into ONE polygon curve (a single BC, no per-vertex selection). This command
+    changes no segment membership — only the welded curve endpoints and the
+    project-level closure — so a discrete edge keeps its clickable points and a
+    line/arc keeps its own identity in the model tree."""
+
+    def __init__(self, session, edge_indices, closed, tol, refresh_cb):
+        self.session = session
+        self.edge_indices = list(edge_indices)
+        self.closed = bool(closed)
+        self.tol = tol
+        self.refresh_cb = refresh_cb
+        self._snap = _snapshot_full_state(session)   # captures welded params for undo
+        pm = session.project_model
+        self._old_mode = pm.closed_mode
+        self._old_is_closed = pm.is_closed
+
+    def description(self) -> str:
+        return "Join / Close Edges (keep separate)"
+
+    def execute(self):
+        from app.services.geometry_service import GeometryService
+        pm = self.session.project_model
+        curve_segs = [pm.get_segment(i) for i in self.edge_indices]
+        curve_segs = [s for s in curve_segs if s is not None and s.type == "curve"]
+        if curve_segs:
+            GeometryService.weld_boundary_endpoints(curve_segs, self.tol)
+        pm.closed_mode = "closed" if self.closed else "open"
+        pm.resolve_closure(self.session.original_points)
+        self.session.is_geometry_modified = True
+        self.refresh_cb()
+
+    def undo(self):
+        _restore_full_state(self.session, self._snap)
+        pm = self.session.project_model
+        pm.closed_mode = self._old_mode
+        pm.is_closed = self._old_is_closed
+        self.refresh_cb()

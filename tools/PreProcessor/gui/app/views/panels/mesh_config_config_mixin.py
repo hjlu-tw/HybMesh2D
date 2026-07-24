@@ -204,6 +204,15 @@ class MeshConfigConfigMixin:
 
         # #4: per-group BC-type assignments carried on the config.
         self._group_bc = dict(cfg.group_bc or {})
+        # Self-heal the label->BC-type map from each geometry's .meta trailer, so
+        # a session reset / config reload that dropped group_bc still resolves the
+        # labels in the .meta (otherwise every boundary falls back to the wall
+        # default at mesh time). An explicit GROUP_BC from the config stays
+        # authoritative (setdefault only fills gaps).
+        from app.services.meta_io import read_meta_group_bc
+        for gf in (cfg.geom_files or []):
+            for label, bc in read_meta_group_bc(gf).items():
+                self._group_bc.setdefault(label, bc)
 
         # 2. Sizing
         self.surface_mesh_size.setValue(cfg.surface_mesh_size)

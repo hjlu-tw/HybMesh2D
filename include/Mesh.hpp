@@ -42,6 +42,11 @@ struct Edge {
     // boundary edges by this attached tag rather than by domain proximity, which is
     // what lets arbitrary (non-rectangular) domains keep correct per-edge BCs.
     std::string bcTag;
+    // Source-segment key (encoded geomId+segId, see Mesh::makeSegKey). Lets the
+    // STAR-CD/CGNS exporters give each distinct source segment its OWN patch id
+    // (segm_no) even when several segments resolve to the same BC-type name, so the
+    // solver BC table can address them individually. -1 -> group by name instead.
+    long long segKey = -1;
 };
 
 struct Element {
@@ -76,6 +81,20 @@ public:
     // carry different segment tags) instead of guessing from endpoint agreement.
     std::map<std::pair<int, int>, std::string> boundaryEdgeBc;
 
+    // Parallel to boundaryEdgeBc: the source-segment key (encoded geomId+segId) of
+    // each recorded surface boundary edge, so the exporter can assign a distinct
+    // segm_no per source segment (see makeSegKey / exportStarCD grouping).
+    std::map<std::pair<int, int>, long long> boundaryEdgeSeg;
+
+    // Encode a (geomId, segId) pair into a single comparable key that uniquely
+    // identifies one source segment. -1 when either component is unknown (domain
+    // box / BL / interior nodes), which makes the exporter fall back to name-based
+    // grouping for that edge.
+    static long long makeSegKey(int geomId, int segId) {
+        if (geomId < 0 || segId < 0) return -1;
+        return static_cast<long long>(geomId) * 1000000LL + segId;
+    }
+
     void addNode(Point2D p, NodeType type = NodeType::Interior);
     void addEdge(int v1, int v2);
     void addElement(const std::vector<int>& ids);
@@ -106,19 +125,26 @@ private:
     // A tagged domain / far-field boundary segment (rectangle side or custom
     // polygon edge). Boundary cell-edges lying on it inherit its BC; this
     // generalizes the legacy axis-aligned (x≈xMin …) classification to any shape.
-    struct BcRefSeg { Point2D a, b; std::string bc; };
-    // Gather the tagged domain-boundary segments from `edges` (non-empty bcTag).
+    struct BcRefSeg { Point2D a, b; std::string bc; long long segKey = -1; };
+    // Gather the tagged boundary reference segments: the explicitly tagged domain /
+    // far-field edges in `edges`, PLUS every recorded surface segment from
+    // boundaryEdgeBc. Including the latter lets a Gmsh-subdivided sub-edge of a
+    // NO-BL surface resolve its BC by position even when the BL absorbed the
+    // original edge out of the front ring (so it was never emitted to `edges`).
     std::vector<BcRefSeg> collectBcRefSegs() const;
-    // Classify one boundary edge (endpoints v1,v2) to a BC name. Priority:
+    // Classify one boundary edge (endpoints v1,v2) to a BC name, and (if segKeyOut
+    // is non-null) report the source-segment key it belongs to. Priority:
     //   0) an exact per-edge BC recorded at construction (boundaryEdgeBc) — the
     //      authoritative per-EDGE tag for BL-grown surface edges,
-    //   1) a domain reference segment it lies on (rectangle side / polygon edge),
+    //   1) a domain reference segment it lies on (rectangle side / polygon edge /
+    //      any surface segment via boundaryEdgeBc),
     //   2) a geometry per-segment Node::bcTag shared by both endpoints (fallback
     //      for Gmsh-subdivided edges not present in boundaryEdgeBc),
     //   3) config.bcGeom (also the internal-flow wall default).
     std::string classifyBoundaryBc(int v1, int v2,
                                    const std::vector<BcRefSeg>& refs,
-                                   const Config& config) const;
+                                   const Config& config,
+                                   long long* segKeyOut = nullptr) const;
 };
 
 #endif

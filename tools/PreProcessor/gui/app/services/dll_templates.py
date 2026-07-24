@@ -153,6 +153,57 @@ def _render_init_custom(p: dict) -> str:
 """ + _INIT_TAIL
 
 
+def _render_init_solid_polygon(p: dict) -> str:
+    """Freestream outside; a stationary solid polygon (phi = 1) inside, marked by
+    a ray-crossing point-in-polygon test over the baked vertex list. ``verts`` is
+    a list of (x, y) (open ring; a repeated closing vertex is dropped). Analytic —
+    no phi.dat needed. Auto-generated from a CAD polygon/triangle/quad shape."""
+    verts = [(float(x), float(y)) for x, y in (p.get("verts") or [])]
+    if len(verts) >= 2 and verts[0] == verts[-1]:
+        verts = verts[:-1]                      # ring wraps implicitly below
+    nv = len(verts)
+    vx = ", ".join(_n(x) for x, _ in verts) or "0.0"
+    vy = ", ".join(_n(y) for _, y in verts) or "0.0"
+    return _INIT_HEAD + f"""  const double mach = {_n(p.get('mach', 0.2))};
+  const double gamma = {_n(p.get('gamma', 1.4))};
+  const double T = 1.0;
+  const int NV = {nv};
+  const double VX[{max(nv, 1)}] = {{{vx}}};
+  const double VY[{max(nv, 1)}] = {{{vy}}};
+
+  double rho = 1.0;
+  double u = 1.0, v = 0.0, w = 0.0;
+  double p = rho * T / (gamma * mach * mach);
+  double phi = 0.0;
+
+  // Point-in-polygon (ray crossing): phi = 1 inside the solid, stationary (u=v=0).
+  bool inside = false;
+  for (int i = 0, j = NV - 1; i < NV; j = i++) {{
+    if (((VY[i] > y) != (VY[j] > y)) &&
+        (x < (VX[j] - VX[i]) * (y - VY[i]) / (VY[j] - VY[i]) + VX[i]))
+      inside = !inside;
+  }}
+  if (inside) {{ phi = 1.0; u = 0.0; v = 0.0; w = 0.0; }}
+""" + _INIT_TAIL
+
+
+def render_analytic_phi_from_shape(shape_type: str, *, cx: float = 0.0,
+                                   cy: float = 0.0, radius: float = 1.0,
+                                   verts=None, mach: float = 0.2,
+                                   gamma: float = 1.4, ratio: float = 0.0) -> str:
+    """Render an init-condition DLL whose phi marks a solid derived analytically
+    from a CAD shape — no STL3d phi.dat required. circle/arc -> solid disk
+    (``ratio`` rotates it about its centre; 0 = stationary); polygon/triangle/
+    quadrilateral -> point-in-polygon. Rides the normal init_cond_dll path."""
+    st = (shape_type or "").lower()
+    if st in ("circle", "arc"):
+        return _render_init_rotating_disk(
+            {"cx": cx, "cy": cy, "radius": radius, "ratio": ratio,
+             "mach": mach, "gamma": gamma})
+    return _render_init_solid_polygon(
+        {"verts": verts or [], "mach": mach, "gamma": gamma})
+
+
 # --- Non-IBM init-condition renderers (4-var Q, no solid phi) -------------- #
 _INIT_HEAD_NOIBM = f"""//
 //  unicones initial-condition DLL — pure fluid, NO immersed boundary

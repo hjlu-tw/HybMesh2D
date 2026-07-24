@@ -225,6 +225,8 @@ class SidebarView(QWidget):
         self._update_details()
 
     def _open_settings(self):
+        from app.utils import offset_popup
+        offset_popup(self.settings_dialog, self.window())
         self.settings_dialog.show()
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()

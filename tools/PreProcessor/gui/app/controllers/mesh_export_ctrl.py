@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 import shutil
-from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from app.utils import repo_root
 
 class MeshExportControllerMixin:
@@ -139,3 +139,46 @@ class MeshExportControllerMixin:
             self.main_window.log_panel.log(f"Successfully exported Star-CD files to {dest_base}.{{vrt,cel,bnd}}")
         except Exception as e:
             self.main_window.log_panel.log(f"Failed to export Star-CD files: {e}")
+            return
+
+        # #3 STAR-CD is the solver's input format, so offer to hand the just-exported
+        # grid straight to the Solver stage. "Yes" links these .vrt/.cel/.bnd into the
+        # Solver panel and switches to the Solver tab (stopping there so the user can
+        # review BCs before running); "No" leaves the export as-is. Headless/batch
+        # exports can't service the modal — skip it (equivalent to "No").
+        app = QApplication.instance()
+        if app is not None and app.platformName() in ("offscreen", "minimal"):
+            return
+        reply = QMessageBox.question(
+            self.main_window,
+            "Send to Solver",
+            "Star-CD mesh exported.\n\nSend this mesh to the Solver now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._send_starcd_to_solver(dest_vrt, dest_cel, dest_bnd)
+
+    def _send_starcd_to_solver(self, vrt_path: str, cel_path: str, bnd_path: str):
+        """#3 Link an exported Star-CD grid into the Solver panel and switch to the
+        Solver tab. Sets the manual .vrt/.cel/.bnd inputs to the exported files (and
+        turns OFF auto-link so those exact files are used, not the temp mesh), then
+        detects the boundary patches so the BC table reflects the mesh. Stops on the
+        Solver tab — the user reviews the BCs and presses Run."""
+        panel = getattr(self.main_window, "solver_config_panel", None)
+        if panel is None:
+            self.main_window.log_panel.log(
+                "[Export] Solver panel unavailable; mesh not sent to Solver.")
+            return
+        panel.input_vrt_file.setText(vrt_path)
+        panel.input_cel_file.setText(cel_path)
+        panel.input_bnd_file.setText(bnd_path)
+        if hasattr(panel, "auto_link_mesh"):
+            panel.auto_link_mesh.setChecked(False)
+        self.main_window.mode_combo.setCurrentIndex(3)   # Solver
+        # Populate the BC table from the exported .bnd (input_bnd_file is preferred by
+        # _locate_mesh_bnd, so this reads the file we just linked).
+        if hasattr(self, "detect_bc_from_mesh"):
+            self.detect_bc_from_mesh()
+        self.main_window.log_panel.log(
+            "[Export] Sent Star-CD mesh to the Solver — review the BCs, then Run Solver.")

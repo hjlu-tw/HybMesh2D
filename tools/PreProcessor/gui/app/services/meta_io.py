@@ -193,6 +193,68 @@ def read_meta_point_segids(dat_path: str) -> list[int]:
     return []
 
 
+def _points_block_end(lines: list[str]) -> int:
+    """Index just past the last POINTS row, or len(lines) if there is no POINTS
+    block. Everything after this index is GUI-only trailer (e.g. a GROUP_BC map);
+    the C++ mesher stops reading at the end of the POINTS block, so a trailer is
+    ignored by it but round-tripped by the writers here."""
+    for i, line in enumerate(lines):
+        parts = line.split()
+        if parts and parts[0] == "POINTS":
+            try:
+                n = int(parts[1])
+            except (IndexError, ValueError):
+                n = 0
+            return min(len(lines), i + 1 + n)
+    return len(lines)
+
+
+def read_meta_group_bc(dat_path: str) -> dict[str, str]:
+    """Return {group_label: bc_type} from the .meta trailer written by
+    :func:`write_meta_group_bc`. Empty dict if absent. This is the persisted
+    half of the per-segment BC mechanism whose LABELS live in the NSEGMENTS bc
+    column; without it the label→physical-type map is lost across a session
+    reset / config reload and every boundary falls back to the wall default."""
+    meta = meta_path_for(dat_path)
+    if not os.path.exists(meta):
+        return {}
+    try:
+        with open(meta, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    for line in lines[_points_block_end(lines):]:
+        parts = line.split()
+        if len(parts) >= 3 and parts[0] == "GROUP_BC":
+            out[parts[1]] = parts[2]
+    return out
+
+
+def write_meta_group_bc(dat_path: str, group_bc: dict[str, str]) -> bool:
+    """Persist the group-label→BC-type map as a trailer after the POINTS block,
+    preserving the whole meta above it and replacing any prior trailer. Only
+    labels with a non-empty type are written. Returns False if no sidecar."""
+    meta = meta_path_for(dat_path)
+    if not os.path.exists(meta):
+        return False
+    try:
+        with open(meta, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return False
+    head = lines[:_points_block_end(lines)]
+    trailer = [f"GROUP_BC {k} {v}"
+               for k, v in group_bc.items()
+               if str(k).strip() and str(v).strip()]
+    try:
+        with open(meta, "w", encoding="utf-8") as f:
+            f.write("\n".join(head + trailer) + "\n")
+    except OSError:
+        return False
+    return True
+
+
 def write_meta_segbc(dat_path: str, seg_bc: dict[int, str]) -> bool:
     """Rewrite the .meta sidecar, replacing each listed segment's BC tag (by
     seg_id) while preserving kinds, points and piece breaks. Returns False if

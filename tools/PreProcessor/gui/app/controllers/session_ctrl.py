@@ -12,8 +12,10 @@ class SessionControllerMixin:
     """Mixin containing session management, tab switching, and file loading logic."""
 
     def clear_cad_canvas(self):
-        """Clear the transient resampled/preview overlay from the CAD canvas
-        without deleting the geometry or the model tree (non-destructive)."""
+        """Clear the transient overlays from the CAD canvas — the resample
+        preview, duplicate preview, draw rubber-band, transform gizmos and edge
+        control-point handles — WITHOUT deleting the geometry or the model tree
+        (non-destructive). Use 'Clear All' to remove the geometry itself."""
         session = self.active_session()
         if session is None:
             return
@@ -21,12 +23,47 @@ class SessionControllerMixin:
         cv = self.main_window.canvas_view
         cv.clear_resampled()
         cv.clear_duplicate_preview()
-        self.main_window.log_panel.log("Cleared CAD resampled/preview overlay.")
+        cv.clear_draw_artifacts()
+        cv.clear_transform_handles()
+        cv.clear_edge_handles()
+        self._show_duplicate_preview = False
+        cv.clear_curve_preview(session.session_id)
+        self.main_window.log_panel.log("Cleared CAD overlays (geometry kept).")
 
-    def redraw_canvas(self):
+    def clear_all_geometry(self):
+        """CAD 'Clear All': remove ALL geometry (every edge, its points and
+        splits) from the active session and wipe the canvas — undoable."""
+        session = self.active_session()
+        if session is None:
+            return
+        pm = session.project_model
+        if not pm.segments and session.original_points is None:
+            self.main_window.log_panel.log("Nothing to clear.")
+            return
+        from app.commands.segment_cmds import ClearGeometryCmd
+
+        def _refresh():
+            # Rebuild tree + layer rows + canvas. Used on BOTH execute and undo
+            # (undo runs only the command's cb), so undoing Clear All restores the
+            # model tree, not just the canvas.
+            self._refresh_segment_list()
+            self._sync_geometry_list()
+            self.redraw_canvas(announce=False)
+
+        cmd = ClearGeometryCmd(session, _refresh)
+        session.command_history.execute(cmd)
+        self._update_undo_redo_buttons(session)
+        self.main_window.update_title(session.display_name, session.is_geometry_modified)
+        self.main_window.log_panel.log("Cleared all geometry (undoable).")
+
+    def redraw_canvas(self, announce: bool = True):
         """Force a clean re-render of the CAD canvas: drop any leftover handles,
         gizmos and preview overlays from the previous action, then rebuild the
-        active geometry, its edges and the open-endpoint / closing markers."""
+        active geometry, its edges and the open-endpoint / closing markers.
+
+        This is the single canonical "rebuild everything from the model" path;
+        undo/redo route through it (announce=False) so a torn-down edit never
+        leaves a stray selection highlight or control-point handle behind."""
         cv = self.main_window.canvas_view
         cv.clear_draw_artifacts()
         cv.clear_transform_handles()
@@ -40,7 +77,8 @@ class SessionControllerMixin:
             self._update_canvas_curve_segments()
             self.highlight_selected_segments()
             self.detect_open_endpoints(session)
-        self.main_window.log_panel.log("Canvas redrawn.")
+        if announce:
+            self.main_window.log_panel.log("Canvas redrawn.")
 
     def new_blank_tab(self):
         # In Mesh Generator / Statistics modes the separate mesh tab strip is

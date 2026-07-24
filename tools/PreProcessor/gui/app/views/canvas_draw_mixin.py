@@ -101,7 +101,7 @@ class CanvasDrawMixin:
     # Number of points each tool collects (None = variable, finished by a
     # double-click — used for the free polygon tool).
     _DRAW_NPTS = {'line': 2, 'circle': 2, 'arc': 3, 'rectangle': 2,
-                  'triangle': 3, 'polygon': None}
+                  'triangle': 3, 'polygon': None, 'polyline': None}
 
     def start_draw_mode(self, tool: str):
         """Enter interactive shape-drawing mode for ``tool``.  Clicks place the
@@ -165,9 +165,9 @@ class CanvasDrawMixin:
         if tool == 'circle':
             return "Click centre" if n == 0 else "Click to set the radius"
         if tool == 'arc':
-            return ("Click the arc start point" if n == 0 else
-                    "Click the arc end point" if n == 1 else
-                    "Click a point on the arc")
+            return ("Click the arc centre" if n == 0 else
+                    "Click to set the radius (and start angle)" if n == 1 else
+                    "Click to set the end angle")
         if tool == 'rectangle':
             return "Click a corner" if n == 0 else "Click the opposite corner"
         if tool == 'triangle':
@@ -176,6 +176,10 @@ class CanvasDrawMixin:
             return ("Click to add vertices — double-click to finish"
                     if n < 3 else
                     f"{n} vertices — double-click to finish")
+        if tool == 'polyline':
+            return ("Click to add points — double-click to finish"
+                    if n < 2 else
+                    f"{n} points — double-click to finish (open polyline)")
         return "Click to place the start point"
 
     def _add_draw_point(self, x: float, y: float):
@@ -234,21 +238,34 @@ class CanvasDrawMixin:
             ts = np.linspace(0, 2 * math.pi, 64)
             return np.column_stack([cx + r * np.cos(ts), cy + r * np.sin(ts)])
         if tool == 'arc':
-            if len(live) >= 3:
-                from app.models.shape_spec import arc_from_3points
-                res = arc_from_3points(live[0], live[1], live[2])
-                if res is not None:
-                    ux, uy, r, t0, t1 = res
-                    ts = np.linspace(t0, t1, 48)
-                    return np.column_stack([ux + r * np.cos(ts), uy + r * np.sin(ts)])
-            # Before the on-arc point exists, preview the start→end chord.
-            return np.array(live, dtype=float)
+            # Click 1 = centre, click 2 = radius/start-angle, click 3 = end
+            # angle. Preview a full circle while the radius is being set, then
+            # the CCW arc while the end angle is being set.
+            n_placed = len(self._draw_pts)
+            if n_placed == 0:
+                return np.array(live, dtype=float)
+            cx, cy = self._draw_pts[0]
+            if n_placed == 1:
+                px, py = cursor_pt if cursor_pt is not None else self._draw_pts[0]
+                r = math.hypot(px - cx, py - cy)
+                if r < 1e-9:
+                    return np.array([[cx, cy]], dtype=float)
+                ts = np.linspace(0, 2 * math.pi, 64)
+                return np.column_stack([cx + r * np.cos(ts), cy + r * np.sin(ts)])
+            rx, ry = self._draw_pts[1]
+            r = math.hypot(rx - cx, ry - cy)
+            t0 = math.atan2(ry - cy, rx - cx)
+            ax, ay = cursor_pt if cursor_pt is not None else self._draw_pts[-1]
+            sweep = (math.atan2(ay - cy, ax - cx) - t0) % (2 * math.pi)
+            ts = np.linspace(t0, t0 + sweep, 64)
+            return np.column_stack([cx + r * np.cos(ts), cy + r * np.sin(ts)])
         if tool == 'rectangle' and len(live) >= 2:
             (x0, y0), (x1, y1) = live[0], live[1]
             return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])
-        if tool in ('triangle', 'polygon') and len(live) >= 2:
+        if tool in ('triangle', 'polygon', 'polyline') and len(live) >= 2:
             arr = np.array(live, dtype=float)
-            # Close visually once enough vertices exist.
+            # Close visually once enough vertices exist — but a polyline stays
+            # OPEN (never bridges last→first).
             if (tool == 'triangle' and len(live) >= 3) or \
                (tool == 'polygon' and len(self._draw_pts) >= 3 and cursor_pt is None):
                 arr = np.vstack([arr, arr[0]])
@@ -281,9 +298,10 @@ class CanvasDrawMixin:
             except Exception:
                 pass
 
-        if tool == 'polygon':
-            if is_double:                # finish the free polygon
-                if len(self._draw_pts) >= 3:
+        if tool in ('polygon', 'polyline'):
+            if is_double:                # finish the free polygon / polyline
+                min_pts = 3 if tool == 'polygon' else 2
+                if len(self._draw_pts) >= min_pts:
                     self._commit_draw()
                 return
             self._add_draw_point(x, y)

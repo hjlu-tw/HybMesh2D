@@ -26,10 +26,11 @@ class EdgeListPanel(CollapsibleSection):
         self.join_edges_btn = make_button("Join → Polygon", '#1b3a5e')
         self.join_edges_btn.setEnabled(False)
         self.join_edges_btn.setToolTip(
-            "Merge the selected curve edges that connect end-to-end into a single\n"
-            "CLOSED polygon edge — clears the 'boundary not closed' warning.\n"
-            "Enabled once you select ≥2 curve edges (Shift/Ctrl-click or box-select\n"
-            "in Edge mode).")
+            "Merge the selected edges that connect end-to-end into a single\n"
+            "polygon edge — clears the 'boundary not closed' warning.\n"
+            "Works on analytic edges (arc/line/…) AND discrete edges (e.g. a\n"
+            "rectangle after 'split at corners'). Enabled once you select ≥2\n"
+            "edges (Shift/Ctrl-click or box-select in Edge mode).")
 
         # #1: "Assign patch / group…" lives here (in Edge Actions) rather than in
         # the per-edge Edge Properties inspector, so it is always reachable and

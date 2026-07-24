@@ -45,8 +45,16 @@ class OpenEndpointControllerMixin:
             eps.append({"pt": gp[0].copy(), "ref": ("file", None, "start")})
             eps.append({"pt": gp[-1].copy(), "ref": ("file", None, "end")})
 
+        # When the user has explicitly closed the boundary (e.g. via KEEP-mode
+        # Join / Close, which keeps the edges SEPARATE but welds them into a loop),
+        # the individual open curve edges are no longer dangling — don't flag their
+        # (now shared) endpoints. "auto"/"open" still flag them so freshly drawn,
+        # not-yet-joined pieces prompt the user to close.
+        curve_closed = (pm.closed_mode == "closed")
         for idx, seg in enumerate(pm.segments):
             if seg.type != "curve":
+                continue
+            if curve_closed:
                 continue
             ct = getattr(seg, "curve_type", "custom")
             if ct in ("triangle", "quadrilateral", "circle"):
