@@ -17,8 +17,10 @@ class EndpointWeldCmd:
     """Move one open endpoint onto ``target`` (x, y).
 
     ``ref`` is the ``(kind, seg_idx, which)`` tuple produced by
-    ``OpenEndpointControllerMixin._collect_open_endpoints`` — ``kind`` ∈
-    {'file','polygon','other'}, ``which`` ∈ {'start','end'}.
+    ``OpenEndpointControllerMixin._resolve_endpoint_ref`` — ``kind`` ∈
+    {'file','polygon','other','vertex'}, ``which`` ∈ {'start','end'}. For
+    ``kind == 'vertex'`` (an arbitrary picked file point, not a flagged open
+    endpoint) ``seg_idx`` is the ``original_points`` index to move.
     """
 
     def __init__(self, session, ref, target, refresh_cb):
@@ -39,6 +41,15 @@ class EndpointWeldCmd:
             if pts is not None and len(pts) > 0:
                 arr = np.array(pts, dtype=float, copy=True)
                 arr[0 if which == "start" else -1] = [tx, ty]
+                self.session.original_points = arr
+                self.session.is_geometry_modified = True
+        elif kind == "vertex":
+            # An arbitrary picked file vertex (index in seg_idx) — move it onto
+            # the target so two specified points coincide (weld).
+            pts = self.session.original_points
+            if pts is not None and seg_idx is not None and 0 <= seg_idx < len(pts):
+                arr = np.array(pts, dtype=float, copy=True)
+                arr[seg_idx] = [tx, ty]
                 self.session.original_points = arr
                 self.session.is_geometry_modified = True
         else:

@@ -59,6 +59,21 @@ class CanvasEventsMixin:
                 best_d = d; best = (float(p[0]), float(p[1]))
         return best
 
+    def _nearest_vertex(self, sx, sy, px=28.0):
+        """The active-geometry vertex nearest scene pos (sx, sy) within ``px``
+        pixels, or None. Lets the weld tool arm ANY point, not just a red open
+        endpoint — so two arbitrary points can be welded even when the geometry
+        is already closed and shows no open-endpoint warnings."""
+        ap = self._active_points
+        if ap is None or len(ap) == 0:
+            return None
+        best = None; best_d = px
+        for p in ap:
+            d = self._pixel_dist(p[0], p[1], sx, sy)
+            if d < best_d:
+                best_d = d; best = (float(p[0]), float(p[1]))
+        return best
+
     def _on_mouse_clicked(self, event):
         # ── Endpoint weld/connect tool intercepts all clicks ──────────────
         if getattr(self, '_endpoint_tool', False):
@@ -73,8 +88,12 @@ class CanvasEventsMixin:
             pos = self.plot_widget.plotItem.vb.mapSceneToView(sp)
             x, y = pos.x(), pos.y()
             if self._endpoint_from is None:
-                # First click: arm the nearest red open endpoint.
+                # First click: arm the nearest red open endpoint, or — when none
+                # is nearby — the nearest geometry vertex, so any two points can
+                # be welded even with no open-endpoint warnings present.
                 hit = self._nearest_open_endpoint(sp.x(), sp.y())
+                if hit is None:
+                    hit = self._nearest_vertex(sp.x(), sp.y())
                 if hit is not None:
                     self._arm_endpoint(*hit)
                 return

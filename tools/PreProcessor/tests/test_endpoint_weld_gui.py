@@ -76,6 +76,28 @@ lnr = pm2.segments[0]
 check(np.allclose([lnr.parameters["x1"], lnr.parameters["y1"]], [1.0, 1.0]),
       f"line: undo restores end (got {lnr.parameters['x1']},{lnr.parameters['y1']})")
 
+# ── Weld an arbitrary INTERIOR vertex (no open endpoints): pick middle point
+#    (1,0) and weld it onto (9,9); then undo. Covers item: weld two specified
+#    points even when the geometry is closed and shows no red warnings. ───────
+c3 = AppController()
+sess3 = c3.active_session()
+pm3 = sess3.project_model
+pm3.closed_mode = "closed"          # closed -> no open-endpoint warnings at all
+sess3.original_points = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 2.0]], dtype=float)
+sess3.split_indices = [0, 2]
+pm3.update_file_segments_from_indices(sess3.split_indices, points=sess3.original_points)
+
+# source (1,0) is an interior vertex, not an endpoint; target (9,9) is a free pt.
+c3.handle_endpoint_weld(1.0, 0.0, 9.0, 9.0, True)
+app.processEvents()
+check(np.allclose(sess3.original_points[1], [9.0, 9.0]),
+      f"vertex: interior point welded onto target (got {sess3.original_points[1]})")
+check(np.allclose(sess3.original_points[0], [0.0, 0.0]),
+      "vertex: other points untouched")
+c3.undo(); app.processEvents()
+check(np.allclose(sess3.original_points[1], [1.0, 0.0]),
+      f"vertex: undo restores interior point (got {sess3.original_points[1]})")
+
 print()
 if _FAILS:
     print(f"RESULT: {len(_FAILS)} FAILED")

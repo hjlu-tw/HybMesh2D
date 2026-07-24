@@ -23,10 +23,13 @@ class MeshConfigBLMixin:
                   self.bl_fan_nodes, self.bl_fan_angle_threshold,
                   self.bl_convex_angle_threshold, self.bl_para_fallback_angle,
                   self.bl_concave_angle_threshold, self.bl_concave_influence_multiplier,
+                  self.bl_junction_angle_c1, self.bl_junction_angle_c2,
+                  self.bl_junction_angle_c3,
                   self.bl_transition_layers, self.bl_transition_growth_rate,
                   self.bl_transition_buffer):
             w.valueChanged.connect(self._on_bl_widget_changed)
         for w in (self.bl_convex_method, self.bl_concave_method,
+                  self.bl_junction_method,
                   self.bl_auto_transition_layers):
             w.currentIndexChanged.connect(self._on_bl_widget_changed)
         for w in (self.bl_auto_fan_nodes, self.bl_use_analytic_geom):
@@ -48,6 +51,10 @@ class MeshConfigBLMixin:
             "BL_CONCAVE_METHOD": [5][self.bl_concave_method.currentIndex()],
             "BL_CONCAVE_ANGLE_THRESHOLD": self.bl_concave_angle_threshold.value(),
             "BL_CONCAVE_INFLUENCE_MULTIPLIER": self.bl_concave_influence_multiplier.value(),
+            "BL_JUNCTION_METHOD": [0, 1][self.bl_junction_method.currentIndex()],
+            "BL_JUNCTION_ANGLE_C1": self.bl_junction_angle_c1.value(),
+            "BL_JUNCTION_ANGLE_C2": self.bl_junction_angle_c2.value(),
+            "BL_JUNCTION_ANGLE_C3": self.bl_junction_angle_c3.value(),
             "BL_TRANSITION_LAYERS": self.bl_transition_layers.value(),
             "BL_AUTO_TRANSITION_LAYERS": self.bl_auto_transition_layers.currentIndex(),
             "BL_TRANSITION_GROWTH_RATE": self.bl_transition_growth_rate.value(),
@@ -75,6 +82,11 @@ class MeshConfigBLMixin:
             self.bl_concave_method.setCurrentIndex(0)  # combo only offers method 5
             self.bl_concave_angle_threshold.setValue(float(g["BL_CONCAVE_ANGLE_THRESHOLD"]))
             self.bl_concave_influence_multiplier.setValue(float(g["BL_CONCAVE_INFLUENCE_MULTIPLIER"]))
+            jm = int(round(float(g["BL_JUNCTION_METHOD"])))
+            self.bl_junction_method.setCurrentIndex(jm if jm in (0, 1) else 1)
+            self.bl_junction_angle_c1.setValue(float(g["BL_JUNCTION_ANGLE_C1"]))
+            self.bl_junction_angle_c2.setValue(float(g["BL_JUNCTION_ANGLE_C2"]))
+            self.bl_junction_angle_c3.setValue(float(g["BL_JUNCTION_ANGLE_C3"]))
             self.bl_transition_layers.setValue(int(round(float(g["BL_TRANSITION_LAYERS"]))))
             ati = int(round(float(g["BL_AUTO_TRANSITION_LAYERS"])))
             self.bl_auto_transition_layers.setCurrentIndex(ati if 0 <= ati <= 2 else 0)

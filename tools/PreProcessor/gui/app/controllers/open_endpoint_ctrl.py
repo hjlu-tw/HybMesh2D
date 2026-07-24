@@ -208,20 +208,32 @@ class OpenEndpointControllerMixin:
             return
         self.main_window.canvas_view.start_endpoint_tool()
         self.main_window.log_panel.log(
-            "Weld endpoints: click a red open endpoint, then click a target — "
-            "snap onto another endpoint/vertex to WELD, or a free point to CONNECT "
-            "a line (right-click to cancel).")
+            "Weld points: click a point (a red open endpoint, or any vertex), then "
+            "click a target — snap onto another point to WELD the two, or a free "
+            "point to CONNECT a line (right-click to cancel).")
 
     def _resolve_endpoint_ref(self, session, x, y):
-        """The ``ref`` of the collected open endpoint nearest model-coord (x, y)."""
-        best = None
+        """The ``ref`` of the datum nearest model-coord (x, y): a collected open
+        endpoint's ref (kind ∈ file/polygon/other) when one is closest, else a
+        plain file vertex ``('vertex', index, None)``. The vertex fallback lets
+        the weld tool move ANY picked point, not only a flagged open endpoint."""
+        best_ref = None
         best_d = None
         for e in self._collect_open_endpoints(session):
             d = float(np.hypot(e["pt"][0] - x, e["pt"][1] - y))
             if best_d is None or d < best_d:
                 best_d = d
-                best = e
-        return best["ref"] if best is not None else None
+                best_ref = e["ref"]
+        pts = session.original_points
+        if pts is not None and len(pts) > 0:
+            pts = np.asarray(pts, dtype=float)
+            dd = np.hypot(pts[:, 0] - x, pts[:, 1] - y)
+            k = int(np.argmin(dd))
+            # Strict '<' so a coincident open endpoint (collected first) wins the
+            # tie — both move the same datum, but the endpoint ref is canonical.
+            if best_d is None or float(dd[k]) < best_d:
+                best_ref = ("vertex", k, None)
+        return best_ref
 
     def handle_endpoint_weld(self, fx: float, fy: float,
                              tx: float, ty: float, weld: bool):

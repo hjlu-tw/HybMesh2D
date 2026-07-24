@@ -159,6 +159,48 @@ class MeshExportControllerMixin:
         if reply == QMessageBox.StandardButton.Yes:
             self._send_starcd_to_solver(dest_vrt, dest_cel, dest_bnd)
 
+    def send_mesh_to_solver(self):
+        """Toolbar one-click hand-off: stage the just-generated Star-CD grid into
+        results/meshes (stable files, not the ephemeral temp mesh) and link it
+        into the Solver stage. If no mesh exists yet, offer to generate first.
+
+        The mesh is generated with Export Star-CD forced on (see
+        MeshGenControllerMixin.run_mesh_generator), so the .vrt/.cel/.bnd sit next
+        to the temp VTK — mirror export_star_cd's path derivation."""
+        vtk_path = self.global_vtk_path
+        if not vtk_path or not os.path.exists(vtk_path):
+            vtk_path = self._get_expected_vtk_path(self.global_mesh_config) \
+                if self.global_mesh_config else ""
+        if not vtk_path or not os.path.exists(vtk_path):
+            self._offer_generate_then(self.send_mesh_to_solver, "the mesh for the Solver")
+            return
+
+        base_name, _ = os.path.splitext(vtk_path)
+        src = {ext: base_name + ext for ext in (".vrt", ".cel", ".bnd")}
+        missing = [ext for ext, p in src.items() if not os.path.exists(p)]
+        if missing:
+            self.main_window.log_panel.log(
+                f"[Solver] Missing Star-CD files ({', '.join(missing)}) — the "
+                "grid could not be sent. Regenerate the mesh (Generate enables "
+                "Star-CD export automatically).")
+            return
+
+        # Copy to a stable results location so the Solver reads persistent files
+        # rather than the session temp mesh (which is cleaned between runs).
+        dest_vrt = self._resolve_export_path(src[".vrt"], ".vrt")
+        dest_base, _ = os.path.splitext(dest_vrt)
+        dest = {".vrt": dest_vrt, ".cel": dest_base + ".cel", ".bnd": dest_base + ".bnd"}
+        try:
+            os.makedirs(os.path.dirname(dest_vrt), exist_ok=True)
+            for ext in (".vrt", ".cel", ".bnd"):
+                shutil.copy2(src[ext], dest[ext])
+        except Exception as e:
+            self.main_window.log_panel.log(f"[Solver] Failed to stage mesh files: {e}")
+            return
+        self.main_window.log_panel.log(
+            f"[Solver] Staged grid → {dest_base}.{{vrt,cel,bnd}}")
+        self._send_starcd_to_solver(dest[".vrt"], dest[".cel"], dest[".bnd"])
+
     def _send_starcd_to_solver(self, vrt_path: str, cel_path: str, bnd_path: str):
         """#3 Link an exported Star-CD grid into the Solver panel and switch to the
         Solver tab. Sets the manual .vrt/.cel/.bnd inputs to the exported files (and

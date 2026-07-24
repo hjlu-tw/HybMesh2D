@@ -396,11 +396,53 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self.bl_smoothing_iters.setStyleSheet(SPIN_STYLE)
         self.bl_smoothing_iters.setToolTip("Number of Laplacian smoothing passes applied to BL cells near concave corners")
 
+        # ── BL / no-BL junction (a BL edge meeting a grow=0 neighbour) ─────
+        # These are hidden backing widgets; the user edits them in the Edit-BL
+        # dialog (mesh_dialogs._BL_FIELD_SPECS). Method 1 = 4-case angle-driven
+        # scheme whose case selection is binned by the three θ thresholds.
+        _JUNCTION_TIP = ("Flow-facing angle thresholds (deg) that bin the 4-case "
+                         "BL/no-BL junction scheme: C1 concave-slide, C2/C3 cap "
+                         "boundaries. Only used when Junction Method = 4-case.")
+        self.bl_junction_method = QComboBox()
+        self.bl_junction_method.addItems(["0: Taper-to-zero", "1: 4-case angle-driven"])
+        self.bl_junction_method.setStyleSheet(COMBO_STYLE)
+        self.bl_junction_method.setCurrentIndex(1)
+        self.bl_junction_method.setToolTip(
+            "How a BL edge meeting a no-BL neighbour is capped (1: angle-driven, default)")
+
+        # Seed the spinboxes with the model defaults (θ bins 135/270/315) so a
+        # fresh panel — before any config is loaded — reports the real defaults
+        # rather than the spinbox floor (0), matching bl_junction_method's index.
+        self.bl_junction_angle_c1 = CleanDoubleSpinBox()
+        self.bl_junction_angle_c1.setRange(0.0, 360.0)
+        self.bl_junction_angle_c1.setDecimals(2)
+        self.bl_junction_angle_c1.setValue(135.0)
+        self.bl_junction_angle_c1.setStyleSheet(SPIN_STYLE)
+        self.bl_junction_angle_c1.setToolTip(_JUNCTION_TIP)
+
+        self.bl_junction_angle_c2 = CleanDoubleSpinBox()
+        self.bl_junction_angle_c2.setRange(0.0, 360.0)
+        self.bl_junction_angle_c2.setDecimals(2)
+        self.bl_junction_angle_c2.setValue(270.0)
+        self.bl_junction_angle_c2.setStyleSheet(SPIN_STYLE)
+        self.bl_junction_angle_c2.setToolTip(_JUNCTION_TIP)
+
+        self.bl_junction_angle_c3 = CleanDoubleSpinBox()
+        self.bl_junction_angle_c3.setRange(0.0, 360.0)
+        self.bl_junction_angle_c3.setDecimals(2)
+        self.bl_junction_angle_c3.setValue(315.0)
+        self.bl_junction_angle_c3.setStyleSheet(SPIN_STYLE)
+        self.bl_junction_angle_c3.setToolTip(_JUNCTION_TIP)
+
         concave_form.addRow(help_label("Concave Method:", "Method for handling concave (inward-pointing) corners in the boundary layer"), self.bl_concave_method)
         concave_form.addRow(help_label("Concave Threshold:", "Angle threshold to classify a corner as concave"), self.bl_concave_angle_threshold)
         concave_form.addRow(help_label("Influence Mult:", "Controls how far the concave corner correction propagates along the wall"), self.bl_concave_influence_multiplier)
         concave_form.addRow("", help_widget(self.bl_merge_concave, "Merge nearby concave corners into a single correction zone"))
         concave_form.addRow(help_label("Smoothing Iters:", "Number of Laplacian smoothing passes applied to BL cells near concave corners"), self.bl_smoothing_iters)
+        concave_form.addRow(help_label("Junction Method:", "How a BL edge meeting a no-BL neighbour is capped"), self.bl_junction_method)
+        concave_form.addRow(help_label("Junction θ C1:", _JUNCTION_TIP), self.bl_junction_angle_c1)
+        concave_form.addRow(help_label("Junction θ C2:", _JUNCTION_TIP), self.bl_junction_angle_c2)
+        concave_form.addRow(help_label("Junction θ C3:", _JUNCTION_TIP), self.bl_junction_angle_c3)
         align_form_labels(concave_form, 130)
         self.sec_concave.add_layout(concave_form)
 

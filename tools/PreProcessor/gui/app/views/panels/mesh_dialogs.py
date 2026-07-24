@@ -34,6 +34,10 @@ _BL_OVERRIDE_KEYS = [
     ("BL_CONCAVE_METHOD", "bl_concave_method"),
     ("BL_CONCAVE_ANGLE_THRESHOLD", "bl_concave_angle_threshold"),
     ("BL_CONCAVE_INFLUENCE_MULTIPLIER", "bl_concave_influence_multiplier"),
+    ("BL_JUNCTION_METHOD", "bl_junction_method"),
+    ("BL_JUNCTION_ANGLE_C1", "bl_junction_angle_c1"),
+    ("BL_JUNCTION_ANGLE_C2", "bl_junction_angle_c2"),
+    ("BL_JUNCTION_ANGLE_C3", "bl_junction_angle_c3"),
     ("BL_TRANSITION_LAYERS", "bl_transition_layers"),
     ("BL_AUTO_TRANSITION_LAYERS", "bl_auto_transition_layers"),
     ("BL_TRANSITION_GROWTH_RATE", "bl_transition_growth_rate"),
@@ -42,6 +46,7 @@ _BL_OVERRIDE_KEYS = [
 ]
 # Coercion for _apply_global_bl_to_cfg (all other BL attrs are floats).
 _BL_INT_ATTRS = {"bl_layers", "bl_convex_method", "bl_fan_nodes", "bl_concave_method",
+                 "bl_junction_method",
                  "bl_transition_layers", "bl_auto_transition_layers"}
 _BL_BOOL_ATTRS = {"bl_auto_fan_nodes", "bl_use_analytic_geom"}
 
@@ -60,6 +65,10 @@ _BL_FIELD_SPECS = [
     ("BL_CONCAVE_METHOD", "Concave Method", "choice", dict(choices=[(0, "Merge"), (5, "Thickness Blending")])),
     ("BL_CONCAVE_ANGLE_THRESHOLD", "Concave Threshold (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
     ("BL_CONCAVE_INFLUENCE_MULTIPLIER", "Concave Influence", "float", dict(lo=0.0, hi=100.0, dec=2, step=0.5)),
+    ("BL_JUNCTION_METHOD", "Junction Method", "choice", dict(choices=[(0, "Taper-to-zero"), (1, "4-case angle-driven")])),
+    ("BL_JUNCTION_ANGLE_C1", "Junction θ C1 (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
+    ("BL_JUNCTION_ANGLE_C2", "Junction θ C2 (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
+    ("BL_JUNCTION_ANGLE_C3", "Junction θ C3 (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
     ("BL_TRANSITION_LAYERS", "Transition Layers", "int", dict(lo=0, hi=100)),
     ("BL_AUTO_TRANSITION_LAYERS", "Auto Transition", "choice", dict(choices=[(0, "OFF"), (1, "GLOBAL"), (2, "LOCAL")])),
     ("BL_TRANSITION_GROWTH_RATE", "Transition Growth", "float", dict(lo=1.001, hi=5.0, dec=4, step=0.05)),

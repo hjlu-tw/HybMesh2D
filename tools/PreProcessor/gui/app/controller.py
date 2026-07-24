@@ -169,10 +169,10 @@ class AppController(
                               "(parametric x(t),y(t) or explicit y=f(x))")
         custom_act.triggered.connect(lambda _checked=False: self.enter_shape_tool("custom"))
         self._shape_tool_menu.addSeparator()
-        weld_act = self._shape_tool_menu.addAction("Weld / Connect Endpoints…")
-        weld_act.setToolTip("Fix the red open endpoints: click one, then click a "
-                            "target — snap to another endpoint/vertex to weld, or a "
-                            "free point to connect a line")
+        weld_act = self._shape_tool_menu.addAction("Weld / Connect Points…")
+        weld_act.setToolTip("Weld two points: click a point (a red open endpoint "
+                            "or any vertex), then click a target — snap to another "
+                            "point to weld them, or a free point to connect a line")
         weld_act.triggered.connect(lambda _checked=False: self.enter_endpoint_tool())
         sb.add_curve_seg_btn.setMenu(self._shape_tool_menu)
         sb.curve_preview_btn.clicked.connect(self.preview_curve_formula)
@@ -337,6 +337,7 @@ class AppController(
         # panel; export-to-a-path stays wired from the Results panel (below).
         mw.mesh_focus_btn.clicked.connect(mw.mesh_canvas_view.auto_range)
         mw.mesh_clear_btn.clicked.connect(self.clear_mesh_canvas)
+        mw.mesh_send_solver_btn.clicked.connect(self.send_mesh_to_solver)
 
         # Solver panel (Phase 3)
         sp = mw.solver_config_panel

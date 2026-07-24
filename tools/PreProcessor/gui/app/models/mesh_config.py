@@ -26,6 +26,10 @@ _KEY_MAP = {
     "BL_CONCAVE_METHOD": ("bl_concave_method", lambda s: int(float(s))),
     "BL_CONCAVE_ANGLE_THRESHOLD": ("bl_concave_angle_threshold", float),
     "BL_CONCAVE_INFLUENCE_MULTIPLIER": ("bl_concave_influence_multiplier", float),
+    "BL_JUNCTION_METHOD": ("bl_junction_method", lambda s: int(float(s))),
+    "BL_JUNCTION_ANGLE_C1": ("bl_junction_angle_c1", float),
+    "BL_JUNCTION_ANGLE_C2": ("bl_junction_angle_c2", float),
+    "BL_JUNCTION_ANGLE_C3": ("bl_junction_angle_c3", float),
     "BL_MERGE_CONCAVE": ("bl_merge_concave", lambda s: int(s) != 0),
     "BL_SMOOTHING_ITERS": ("bl_smoothing_iters", lambda s: int(float(s))),
     "BL_TRANSITION_LAYERS": ("bl_transition_layers", lambda s: int(float(s))),
@@ -87,6 +91,15 @@ class MeshConfig:
     bl_concave_influence_multiplier: float = 2.5  # 10 over-blended: each edge's BL→far-field band came out curved; 2.5 keeps a straight uniform-height outer edge with only a short transition at the corner.
     bl_merge_concave: bool = False
     bl_smoothing_iters: int = 0
+
+    # BL / no-BL junction: how a BL edge meeting a grow=0 neighbour is capped.
+    # method 1 (default) = 4-case angle-driven scheme; the flow-facing angle θ is
+    # binned by the three thresholds C1 < C2 < C3 (degrees) to pick the case.
+    # method 0 = legacy taper-to-zero. See CLAUDE.md "BL/no-BL Junction".
+    bl_junction_method: int = 1
+    bl_junction_angle_c1: float = 135.0
+    bl_junction_angle_c2: float = 270.0
+    bl_junction_angle_c3: float = 315.0
 
     # Section 6: Transition & Meshing Algorithm
     bl_transition_layers: int = 3
@@ -464,6 +477,10 @@ class MeshConfig:
             f"BL_CONCAVE_METHOD {self.bl_concave_method}",
             f"BL_CONCAVE_ANGLE_THRESHOLD {self.bl_concave_angle_threshold:.6g}",
             f"BL_CONCAVE_INFLUENCE_MULTIPLIER {self.bl_concave_influence_multiplier:.6g}",
+            f"BL_JUNCTION_METHOD {self.bl_junction_method}",
+            f"BL_JUNCTION_ANGLE_C1 {self.bl_junction_angle_c1:.6g}",
+            f"BL_JUNCTION_ANGLE_C2 {self.bl_junction_angle_c2:.6g}",
+            f"BL_JUNCTION_ANGLE_C3 {self.bl_junction_angle_c3:.6g}",
             f"BL_MERGE_CONCAVE {1 if self.bl_merge_concave else 0}",
             f"BL_SMOOTHING_ITERS {self.bl_smoothing_iters}",
             "",

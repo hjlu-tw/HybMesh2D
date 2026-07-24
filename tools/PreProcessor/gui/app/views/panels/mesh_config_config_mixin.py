@@ -252,6 +252,10 @@ class MeshConfigConfigMixin:
         self.bl_concave_influence_multiplier.setValue(cfg.bl_concave_influence_multiplier)
         self.bl_merge_concave.setChecked(cfg.bl_merge_concave)
         self.bl_smoothing_iters.setValue(cfg.bl_smoothing_iters)
+        self.bl_junction_method.setCurrentIndex(cfg.bl_junction_method if cfg.bl_junction_method in (0, 1) else 1)
+        self.bl_junction_angle_c1.setValue(cfg.bl_junction_angle_c1)
+        self.bl_junction_angle_c2.setValue(cfg.bl_junction_angle_c2)
+        self.bl_junction_angle_c3.setValue(cfg.bl_junction_angle_c3)
 
         # 6. Transition
         self.bl_transition_layers.setValue(cfg.bl_transition_layers)

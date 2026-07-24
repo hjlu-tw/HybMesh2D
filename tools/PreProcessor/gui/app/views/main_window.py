@@ -405,6 +405,35 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
         self.mesh_focus_btn = create_tb_btn("Fit View", "Fit canvas to mesh or preview boundaries")
         self.mesh_clear_btn = create_tb_btn("Clear", "Clear the displayed mesh from the canvas")
 
+        # One-click hand-off of the just-generated grid to the Solver stage
+        # (stages the Star-CD .vrt/.cel/.bnd into results/meshes, links them into
+        # the Solver panel, detects BCs, and switches to the Solver tab).
+        self.mesh_send_solver_btn = create_tb_btn(
+            "Send to Solver  →",
+            "Send the generated grid to the Solver (links the Star-CD mesh and "
+            "switches to the Solver tab)")
+        self.mesh_send_solver_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #241540;
+                color: #dde2ff;
+                border: 1px solid #3a2560;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #35205e;
+                border-color: #9a6ad4;
+                color: #ffffff;
+            }
+            QPushButton:disabled {
+                background-color: #0b0c16;
+                color: #4a4e69;
+                border-color: #1b1d2e;
+            }
+        """)
+
         self.mesh_show_wireframe_cb = QCheckBox("Mesh", self.canvas_toolbar)
         self.mesh_show_wireframe_cb.setToolTip("Show/hide mesh wireframe")
         self.mesh_show_wireframe_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
@@ -476,6 +505,7 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin, QMainWindow):
 
         self.mesh_tb_widgets = [
             self.mesh_preview_btn, self.mesh_generate_btn, self.mesh_cancel_btn,
+            self.mesh_send_solver_btn,
             self.mesh_focus_btn, self.mesh_clear_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
             self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,
             self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
