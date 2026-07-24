@@ -168,6 +168,12 @@ class AppController(
         custom_act.setToolTip("Define an edge by a math equation "
                               "(parametric x(t),y(t) or explicit y=f(x))")
         custom_act.triggered.connect(lambda _checked=False: self.enter_shape_tool("custom"))
+        self._shape_tool_menu.addSeparator()
+        weld_act = self._shape_tool_menu.addAction("Weld / Connect Endpoints…")
+        weld_act.setToolTip("Fix the red open endpoints: click one, then click a "
+                            "target — snap to another endpoint/vertex to weld, or a "
+                            "free point to connect a line")
+        weld_act.triggered.connect(lambda _checked=False: self.enter_endpoint_tool())
         sb.add_curve_seg_btn.setMenu(self._shape_tool_menu)
         sb.curve_preview_btn.clicked.connect(self.preview_curve_formula)
         
@@ -270,6 +276,7 @@ class AppController(
         self.main_window.canvas_view.box_selected.connect(self.handle_canvas_box_selected)
         # Interactive shape drawing finished → create the analytic edge.
         self.main_window.canvas_view.shape_drawn.connect(self.on_shape_drawn)
+        self.main_window.canvas_view.endpoint_weld_requested.connect(self.handle_endpoint_weld)
         # Live drag of the transform base point / mirror axis on the canvas.
         self.main_window.canvas_view.transform_handle_cb = self._on_transform_handle_dragged
         # Live drag of the selected analytic edge's control points.

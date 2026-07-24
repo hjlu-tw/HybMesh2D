@@ -555,22 +555,38 @@ class BakeCurveToGeometryCmd(BaseCommand):
             self.session.split_indices += [0, len(new_points) - 1]
             self.session.split_indices = sorted(set(self.session.split_indices))
         else:
-            # Append a free-standing curve. If its NEAR endpoint touches the
-            # existing geometry's tail (two edges drawn to chain into one open
-            # boundary), WELD them — orient so the near end joins the tail and
-            # drop the duplicated joint point — so we get ONE connected polyline
-            # sharing that boundary index, not a disjoint piece plus a phantom
-            # bridge (and never a spurious line to the FAR endpoint). When the
-            # ends are far apart it stays a separate piece (the adjacency bridge
-            # is dropped in update_file_segments_from_indices).
+            # Append a free-standing curve, welding onto whichever END of the
+            # existing geometry it actually touches. We test all FOUR endpoint
+            # pairings (existing head/tail × new first/last) and pick the closest,
+            # reversing the new piece and/or the existing array so the two touching
+            # ends meet. The old code only ever anchored to the existing TAIL, so a
+            # piece adjacent at the HEAD was blindly appended and the single
+            # base-polyline renderer drew a phantom bridge across the far gap. This
+            # mirrors controllers.curve_ctrl._chain_edges. When the closest pair is
+            # still far apart it stays a separate piece (the adjacency bridge is
+            # dropped in update_file_segments_from_indices).
             allp = np.vstack([gp, new_points])
             diag = float(np.hypot(np.ptp(allp[:, 0]), np.ptp(allp[:, 1])))
             tol = max(1e-9, 0.01 * diag)
-            last = gp[-1]
-            if (np.hypot(*(last - new_points[-1]))
-                    < np.hypot(*(last - new_points[0]))):
-                new_points = new_points[::-1]        # near end joins the tail
-            weld = float(np.hypot(*(last - new_points[0]))) <= tol
+            gp0, gp1 = gp[0], gp[-1]
+            np0, np1 = new_points[0], new_points[-1]
+            # (gap, reverse_gp, reverse_new) — after reversals we concatenate
+            # A + B joining A[-1] to B[0], A=gp(/reversed), B=new(/reversed).
+            cands = [
+                (float(np.hypot(*(gp1 - np0))), False, False),  # tail ↔ new head
+                (float(np.hypot(*(gp1 - np1))), False, True),   # tail ↔ new tail
+                (float(np.hypot(*(gp0 - np0))), True,  False),  # head ↔ new head
+                (float(np.hypot(*(gp0 - np1))), True,  True),   # head ↔ new tail
+            ]
+            gap, rev_gp, rev_new = min(cands, key=lambda c: c[0])
+            if rev_new:
+                new_points = new_points[::-1]
+            if rev_gp:
+                # Flip the existing polyline so its touching end becomes the tail;
+                # every other file segment / split index mirrors accordingly.
+                self._reverse_geometry_indices(seg, len(gp))
+                gp = gp[::-1]
+            weld = gap <= tol
             add = new_points[1:] if weld else new_points
             base = len(gp)
             self.session.original_points = np.vstack([gp, add])
@@ -602,6 +618,22 @@ class BakeCurveToGeometryCmd(BaseCommand):
         self.session.project_model.update_file_segments_from_indices(
             self.session.split_indices, points=self.session.original_points)
         self.refresh_cb()
+
+    def _reverse_geometry_indices(self, baked_seg, length):
+        """Mirror every existing file segment's and split's index under a reversal
+        of ``original_points`` (idx → length-1-idx), so a free-standing piece can
+        be welded onto the geometry's HEAD by flipping the array. ``baked_seg`` is
+        skipped — its indices are (re)assigned by the caller after the flip."""
+        last = length - 1
+        for other in self.session.project_model.segments:
+            if other is baked_seg or other.type != "file":
+                continue
+            if other.start_index is not None and 0 <= other.start_index < length:
+                other.start_index = last - other.start_index
+            if other.end_index is not None and 0 <= other.end_index < length:
+                other.end_index = last - other.end_index
+        self.session.split_indices = sorted(
+            {last - i for i in self.session.split_indices if 0 <= i < length})
 
     def undo(self):
         _restore_full_state(self.session, self._snap)

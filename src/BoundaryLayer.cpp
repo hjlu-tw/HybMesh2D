@@ -369,8 +369,17 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 double thetaDeg = theta * 180.0 / M_PI;
 
                 int caseId; Vector2D dir;
-                if      (thetaDeg <= fs.bl.blJunctionAngleC1) { caseId = 1; dir = eNbr; }
-                else if (thetaDeg <= fs.bl.blJunctionAngleC2) { caseId = 2; dir = nBL; }
+                // A CONCAVE BL/no-BL junction (theta <= C1) was formerly "case 1":
+                // the BL column slid ALONG the no-BL neighbour edge and absorbed that
+                // segment's surface nodes. On internal-flow concave corners (the
+                // common case — a closed fluid domain growing its BL inward) this
+                // collapsed the layer onto the wall the user explicitly marked no-BL
+                // and did NOT preserve the layer height. Cap it PERPENDICULAR (case 2)
+                // instead: the BL keeps a constant full height at the junction and the
+                // wedge to the neighbour edge is graded by far-field triangles, never
+                // touching the no-BL surface. (BL_JUNCTION_METHOD=0 restores the legacy
+                // taper-to-zero; C1 is retained in Config for that scheme + round-trip.)
+                if      (thetaDeg <= fs.bl.blJunctionAngleC2) { caseId = 2; dir = nBL; }
                 else if (thetaDeg <= fs.bl.blJunctionAngleC3) { caseId = 3; dir = eNbr * -1.0; }
                 else                                          { caseId = 4; dir = nBL; }
                 // Height (not edge-length) correction: what stays fixed across ALL
@@ -381,22 +390,6 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 // convex parallelogram uses for its diagonal ray (cos clamped so a very
                 // sharp concave cannot blow the column length up).
                 double hmult = 1.0 / std::max(0.25, dir.dot(nBL));
-                // Case 1 overshoot guard: the slide column runs D_total*hmult ALONG the
-                // neighbour edge; if the collinear no-BL run is shorter, sliding would
-                // overshoot the wall end -> fall back to a perpendicular cap (case 2).
-                if (caseId == 1) {
-                    double need = D_total * hmult;
-                    double runLen = 0.0; int cur = i;
-                    while (runLen < need) {
-                        int nxt = (cur + step + n_init) % n_init;
-                        if (!m_mesh.nodes[boundaryNodeIds[nxt]].skipBL) break;
-                        Vector2D seg = fs.pos_init[nxt] - fs.pos_init[cur];
-                        double L = seg.length();
-                        if (L < 1e-12 || seg.normalized().dot(eNbr) < 0.5) break;
-                        runLen += L; cur = nxt;
-                    }
-                    if (runLen < need) { caseId = 2; dir = nBL; hmult = 1.0; }
-                }
                 baseN[i] = dir;
                 caseOf[i] = caseId;
                 junctionMult[i] = hmult;

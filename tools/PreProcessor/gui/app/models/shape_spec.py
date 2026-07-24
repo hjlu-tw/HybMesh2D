@@ -114,7 +114,10 @@ def control_points(curve_type: str, params: dict) -> list:
     if curve_type == "arc":
         cx, cy, r = p.get("cx", 0.0), p.get("cy", 0.0), p.get("r", 1.0)
         t0, t1 = p.get("theta0", 0.0), p.get("theta1", math.pi / 2)
-        tm = 0.5 * (t0 + t1)          # midpoint of the sweep → radius/bulge handle
+        # Radius handle angle: free, stored as a cosmetic ``theta_m`` grab-point.
+        # Defaults to the sweep midpoint (backward compatible); once the user
+        # drags it, its own angle is honoured instead of snapping back to mid.
+        tm = p.get("theta_m", 0.5 * (t0 + t1))
         return [("c", (cx, cy)),
                 ("p0", (cx + r * math.cos(t0), cy + r * math.sin(t0))),
                 ("p1", (cx + r * math.cos(t1), cy + r * math.sin(t1))),
@@ -179,13 +182,13 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
         if handle_id == "c":
             p["cx"], p["cy"] = x, y
         elif handle_id == "m":
-            # Radius handle: change ONLY the radius, about the FIXED centre. The
-            # endpoints ride out to the new radius keeping their angles, so the
-            # centre never moves (dragging it used to re-fit a circle through the
-            # two endpoints + the mid, which shifted the centre — not what a
-            # "radius" handle should do). Use the c handle to move the centre and
-            # p0/p1 to change the sweep.
+            # Radius handle: change the radius (distance to the FIXED centre) AND
+            # record its own angle, so it is no longer locked to the sweep
+            # midpoint — the user can park it anywhere around the circle while it
+            # still drives the radius. The centre never moves (use the c handle
+            # for that) and the sweep is unchanged (use p0/p1 for that).
             p["r"] = max(1e-6, math.hypot(x - cx, y - cy))
+            p["theta_m"] = math.atan2(y - cy, x - cx)
         else:                                    # p0 / p1 endpoints
             if not lock_radius:
                 p["r"] = max(1e-6, math.hypot(x - cx, y - cy))

@@ -36,11 +36,42 @@ class CanvasDrawMixin:
         if points is not None and len(points) > 0:
             pts = np.asarray(points, dtype=float)
             self._open_endpoint_markers.setData(pts[:, 0], pts[:, 1])
+            self._open_endpoint_pts = pts
         else:
             self._open_endpoint_markers.clear()
+            self._open_endpoint_pts = None
 
     def clear_open_endpoint_markers(self):
         self._open_endpoint_markers.clear()
+        self._open_endpoint_pts = None
+
+    # ── Endpoint weld/connect tool ─────────────────────────────────────────
+    def start_endpoint_tool(self):
+        """Enter the endpoint weld/connect tool: the first click picks a red open
+        endpoint, the second picks a target — snapping to a nearby endpoint welds
+        them, otherwise a line is drawn to the picked point. Right-click cancels."""
+        self.cancel_draw_mode()          # never both tools at once
+        self._endpoint_tool = True
+        self._endpoint_from = None
+        self._endpoint_pick_marker.clear()
+        try:
+            self.plot_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        except Exception:
+            pass
+
+    def stop_endpoint_tool(self):
+        self._endpoint_tool = False
+        self._endpoint_from = None
+        self._endpoint_pick_marker.clear()
+        try:
+            self.plot_widget.unsetCursor()
+        except Exception:
+            pass
+
+    def _arm_endpoint(self, x, y):
+        """Mark (x, y) as the armed source endpoint and highlight it (cyan ring)."""
+        self._endpoint_from = (float(x), float(y))
+        self._endpoint_pick_marker.setData([x], [y])
 
     def show_closing_edge(self, p_last, p_first):
         """Draw the gold dashed segment bridging last→first (the auto-added
@@ -110,6 +141,7 @@ class CanvasDrawMixin:
         ``shape_drawn`` (the controller then opens the numeric dialog).  The
         initial prompt is centred in the current view so it is always visible."""
         self.clear_draw_artifacts()
+        self.stop_endpoint_tool()        # never both tools at once
         self._draw_tool = tool
         self._draw_pts = []
         # Freeze the view while drawing: placing the first point (a single point)

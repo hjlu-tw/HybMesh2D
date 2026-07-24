@@ -37,7 +37,67 @@ class CanvasEventsMixin:
             return
         self.box_selected.emit(x0, y0, x1, y1, extend)
 
+    def _pixel_dist(self, x, y, sx, sy):
+        """Pixel distance between view-coord (x, y) and scene pos (sx, sy)."""
+        vb = self.plot_widget.plotItem.vb
+        p = vb.mapViewToScene(pg.Point(x, y))
+        return ((p.x() - sx) ** 2 + (p.y() - sy) ** 2) ** 0.5
+
+    def _nearest_open_endpoint(self, sx, sy, exclude=None, px=28.0):
+        """The open-endpoint position nearest scene pos (sx, sy) within ``px``
+        pixels, or None. ``exclude`` (x, y) is skipped (the armed source)."""
+        pts = self._open_endpoint_pts
+        if pts is None or len(pts) == 0:
+            return None
+        best = None; best_d = px
+        for p in pts:
+            if exclude is not None and abs(p[0] - exclude[0]) < 1e-9 \
+                    and abs(p[1] - exclude[1]) < 1e-9:
+                continue
+            d = self._pixel_dist(p[0], p[1], sx, sy)
+            if d < best_d:
+                best_d = d; best = (float(p[0]), float(p[1]))
+        return best
+
     def _on_mouse_clicked(self, event):
+        # ── Endpoint weld/connect tool intercepts all clicks ──────────────
+        if getattr(self, '_endpoint_tool', False):
+            btn = event.button()
+            event.accept()
+            if btn == Qt.MouseButton.RightButton:
+                self.stop_endpoint_tool()      # right-click cancels the tool
+                return
+            if btn != Qt.MouseButton.LeftButton:
+                return
+            sp = event.scenePos()
+            pos = self.plot_widget.plotItem.vb.mapSceneToView(sp)
+            x, y = pos.x(), pos.y()
+            if self._endpoint_from is None:
+                # First click: arm the nearest red open endpoint.
+                hit = self._nearest_open_endpoint(sp.x(), sp.y())
+                if hit is not None:
+                    self._arm_endpoint(*hit)
+                return
+            # Second click: snap the target to another open endpoint (weld) or a
+            # geometry vertex (weld), else connect a line to the raw point.
+            fx, fy = self._endpoint_from
+            tgt = self._nearest_open_endpoint(sp.x(), sp.y(), exclude=(fx, fy))
+            weld = tgt is not None
+            if tgt is None and self._active_points is not None \
+                    and len(self._active_points) > 0:
+                d = np.hypot(self._active_points[:, 0] - x,
+                             self._active_points[:, 1] - y)
+                k = int(np.argmin(d))
+                vp = self._active_points[k]
+                if self._pixel_dist(vp[0], vp[1], sp.x(), sp.y()) < 28.0:
+                    tgt = (float(vp[0]), float(vp[1])); weld = True
+            if tgt is None:
+                tgt = (x, y)                   # connect a line to the picked point
+            self._endpoint_pick_marker.clear()
+            self._endpoint_from = None
+            self.endpoint_weld_requested.emit(fx, fy, tgt[0], tgt[1], weld)
+            return
+
         # ── Interactive shape drawing intercepts all clicks ───────────────
         if self._draw_tool is not None:
             btn = event.button()

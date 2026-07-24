@@ -414,6 +414,11 @@ class CurveEditControllerMixin:
                 and sb.arc_lock_radius.isChecked())
         shape_spec.apply_drag(ct, params, handle_id, x, y, lock_radius=lock)
         shape_spec.write_widget_params(sb, ct, params, silent=True)
+        # ``theta_m`` (freed arc radius-handle angle) has no sidebar widget, so it
+        # is not carried by read/write_widget_params. Persist it straight onto the
+        # segment; the UI→segment sync merges with .update() and preserves it.
+        if ct == "arc" and "theta_m" in params:
+            seg.parameters["theta_m"] = params["theta_m"]
 
         # Sync the (silently-updated) widgets into the segment and re-preview.
         self.preview_curve_formula()

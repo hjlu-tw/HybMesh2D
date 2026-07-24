@@ -24,7 +24,7 @@ struct BLParams {
     double blParaFallbackAngle = 300.0;
     double blConvexAngleThreshold = 260.0;
     int blConcaveMethod = 0;
-    double blConcaveInfluenceMultiplier = 10.0;
+    double blConcaveInfluenceMultiplier = 2.5;  // arc-length reach of the concave/blend correction, in BL total heights. 10 over-blended: it tilted every column along an edge toward the corner apex, so a segment's BL→far-field edge came out curved instead of a straight uniform-height band. 2.5 keeps the outer edge straight with a short transition only at the corner (still enough to avoid front self-intersection at typical concave corners).
     double blConcaveAngleThreshold = 100.0;
     // BL / non-BL junction handling (see BoundaryLayer.cpp). Method 0 = taper-to-zero
     // (collapsing prisms, legacy); 1 = 4-case angle-driven (default). C1/C2/C3 bin the
@@ -125,7 +125,7 @@ struct Config {
     int blSmoothingIters = 0;
     bool blMergeConcave = false;
     int blConcaveMethod = 0; // 0: Default (Merge), 5: Thickness-based Blending
-    double blConcaveInfluenceMultiplier = 10.0;
+    double blConcaveInfluenceMultiplier = 2.5;  // see the primary struct above: 10 curved each edge's BL outer band; 2.5 keeps it straight with a short corner transition.
     double blConvexAngleThreshold = 260.0;
     double blConcaveAngleThreshold = 100.0;
 

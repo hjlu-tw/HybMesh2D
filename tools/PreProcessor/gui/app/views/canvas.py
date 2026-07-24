@@ -38,6 +38,7 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
     segment_context_requested = pyqtSignal(float, float)  # (x, y) — right-click menu (e.g. polygon vertex insert/delete)
     box_selected = pyqtSignal(float, float, float, float, bool)  # (x0, y0, x1, y1, extend)
     shape_drawn = pyqtSignal(str, object)  # (tool, [(x, y), ...]) — interactive draw finished
+    endpoint_weld_requested = pyqtSignal(float, float, float, float, bool)  # (from_x, from_y, to_x, to_y, weld) — weld tool
 
 
     def __init__(self, parent=None):
@@ -172,6 +173,15 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
             brush=pg.mkBrush(255, 82, 82, 70))
         self._open_endpoint_markers.setZValue(36)
         self.plot_widget.addItem(self._open_endpoint_markers)
+        # Positions of the currently-shown open endpoints (for the weld tool's
+        # hit-testing); kept in sync by show/clear_open_endpoint_markers.
+        self._open_endpoint_pts: np.ndarray | None = None
+        # Cyan ring highlighting the endpoint armed by the weld tool (first click).
+        self._endpoint_pick_marker = pg.ScatterPlotItem(
+            size=20, symbol='o', pen=pg.mkPen('#00E5FF', width=3),
+            brush=pg.mkBrush(0, 229, 255, 60))
+        self._endpoint_pick_marker.setZValue(37)
+        self.plot_widget.addItem(self._endpoint_pick_marker)
 
         # Auto-added closing edge — a gold dashed segment marking the last→first
         # bridge when a closed loop has a real gap, so the auto-closure is visible
@@ -181,6 +191,10 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
             [], [], pen=pg.mkPen(_COL_CLOSING, width=2.5,
                                  style=Qt.PenStyle.DashLine))
         self._closing_edge.setZValue(15)
+
+        # ── Endpoint weld/connect tool state ──────────────────────────────
+        self._endpoint_tool: bool = False        # True while the weld tool is active
+        self._endpoint_from: tuple | None = None  # armed source endpoint (x, y)
 
         # ── Interactive shape-drawing state ───────────────────────────────
         self._draw_tool: str | None = None   # 'line'|'circle'|'rectangle'|'triangle'|'polygon'

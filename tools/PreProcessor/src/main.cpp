@@ -163,6 +163,37 @@ bool saveMetadata(const std::string& datPath,
                   const std::map<int, std::string>& segKind,
                   const std::map<int, int>& segGrowBL = {}) {
     const std::string metaPath = datPath + ".meta";
+    // Preserve any GUI-only trailer (lines after the POINTS block, e.g. a
+    // "GROUP_BC <label> <bc_type>" map). The GUI persists the per-group BC
+    // resolution there and self-heals from it; the C++ mesher stops reading at
+    // the end of the POINTS block, so the trailer is invisible to it. Without
+    // this, re-resampling an already-BC-assigned geometry wiped the map and every
+    // boundary fell back to wall (all bc_flag=2) — most visibly when NO segment
+    // grows a BL, so every patch relies on this label→type resolution.
+    std::vector<std::string> trailer;
+    {
+        std::ifstream prev(metaPath);
+        if (prev) {
+            std::string line;
+            bool afterPoints = false;
+            long pointsRemaining = -1;
+            while (std::getline(prev, line)) {
+                std::istringstream iss(line);
+                std::string tok;
+                iss >> tok;
+                if (!afterPoints) {
+                    if (tok == "POINTS") {
+                        long np = 0; iss >> np;
+                        pointsRemaining = np;
+                        afterPoints = true;
+                    }
+                    continue;
+                }
+                if (pointsRemaining > 0) { --pointsRemaining; continue; }
+                if (!line.empty()) trailer.push_back(line);
+            }
+        }
+    }
     std::ofstream ofs(metaPath);
     if (!ofs) {
         std::cerr << "Warning: cannot write metadata sidecar '" << metaPath << "'." << std::endl;
@@ -197,6 +228,9 @@ bool saveMetadata(const std::string& datPath,
     ofs << "POINTS " << segId.size() << "\n";
     for (size_t i = 0; i < segId.size(); ++i)
         ofs << segId[i] << " " << (int)isCorner[i] << "\n";
+    // Re-emit the preserved GUI-only trailer (GROUP_BC map, etc.) verbatim.
+    for (const std::string& t : trailer)
+        ofs << t << "\n";
     return true;
 }
 

@@ -84,7 +84,7 @@ class MeshConfig:
     # Section 5: Concave Corner Handling
     bl_concave_method: int = 0  # 0: Default (Merge), 5: Thickness-based Blending
     bl_concave_angle_threshold: float = 100.0
-    bl_concave_influence_multiplier: float = 10.0
+    bl_concave_influence_multiplier: float = 2.5  # 10 over-blended: each edge's BL→far-field band came out curved; 2.5 keeps a straight uniform-height outer edge with only a short transition at the corner.
     bl_merge_concave: bool = False
     bl_smoothing_iters: int = 0
 

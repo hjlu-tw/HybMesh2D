@@ -108,6 +108,7 @@ struct SurfaceMeta {
     std::map<int, std::string> segKind; // seg_id -> curve kind (v2+)
     std::map<int, int> segGrowBL;       // seg_id -> grow boundary layer? 1/0 (v3+; absent -> 1)
     std::vector<size_t> pieceBreaks;
+    std::map<std::string, std::string> groupBc;  // trailer "GROUP_BC <label> <bc_type>": per-segment grouping label -> physical BC type (GUI-written; merged into Config.groupBc by the caller)
 };
 
 SurfaceMeta loadSurfaceMeta(const std::string& datFile) {
@@ -145,6 +146,23 @@ SurfaceMeta loadSurfaceMeta(const std::string& datFile) {
         if (!(ifs >> sid >> corner)) return m;
         m.segId.push_back(sid);
         m.isCorner.push_back((char)(corner != 0));
+    }
+    // GUI-only trailer after the POINTS block: "GROUP_BC <label> <bc_type>" lines
+    // mapping a per-segment grouping label to its physical BC type. The GUI
+    // persists this label->BC map ONLY here (not always in the config .dat), so
+    // without reading it a geometry whose .meta tags segments with grouping labels
+    // resolves every patch to the wall default — BC lost for ALL-BL, no-BL and
+    // partial-BL alike. Parsed with the stream extractor (whitespace-delimited);
+    // non-GROUP_BC tokens are skipped. The caller merges m.groupBc into
+    // Config.groupBc so resolveGroupBc() finds the mapping.
+    {
+        std::string t;
+        while (ifs >> t) {
+            if (t == "GROUP_BC") {
+                std::string name, type;
+                if (ifs >> name >> type) m.groupBc[name] = type;
+            }
+        }
     }
     m.valid = true;
     return m;
@@ -573,6 +591,16 @@ int main(int argc, char* argv[]) {
             inputs.push_back({gFile, geomPoints, meta, false, bl,
                               config.blParamsFor(gFile)});
         }
+
+        // Merge each geometry's .meta GROUP_BC trailer (grouping label -> physical
+        // BC type) into the config resolution map, so a per-segment label resolves
+        // even when the config .dat carried no GROUP_BC lines (the GUI persists the
+        // map in the .meta trailer, which the mesher otherwise never reads). This is
+        // what makes per-segment BC survive in EVERY case — all-BL, no-BL, partial.
+        // emplace() keeps any explicit config .dat mapping (it takes precedence).
+        for (const auto& g : inputs)
+            for (const auto& kv : g.meta.groupBc)
+                config.groupBc.emplace(kv.first, kv.second);
 
         // ---- Pairwise collision detection -----------------------------------
         // A domain wall legitimately contains islands, so skip the containment check
