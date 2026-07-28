@@ -6,7 +6,7 @@ the MRO) and emit ``shape_drawn`` when an interactive draw completes."""
 from __future__ import annotations
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 
 
@@ -45,17 +45,21 @@ class CanvasDrawMixin:
         self._open_endpoint_markers.clear()
         self._open_endpoint_pts = None
 
-    # ── Endpoint weld/connect tool ─────────────────────────────────────────
+    # ── Endpoint weld tool (drag-to-weld) ──────────────────────────────────
+    # Each endpoint gets a draggable handle; drag one onto another point to weld
+    # them (the dragged endpoint moves onto the drop position, snapping to the
+    # nearest endpoint/vertex when close). Dropping in free space just moves the
+    # endpoint there. Right-click cancels. (Replaces the old two-click flow.)
     def start_endpoint_tool(self):
-        """Enter the endpoint weld/connect tool: the first click picks a red open
-        endpoint, the second picks a target — snapping to a nearby endpoint welds
-        them, otherwise a line is drawn to the picked point. Right-click cancels."""
+        """Enter the drag-to-weld tool: show a draggable handle on every endpoint;
+        drag one onto a target point to weld (or into free space to move it)."""
         self.cancel_draw_mode()          # never both tools at once
         self._endpoint_tool = True
         self._endpoint_from = None
         self._endpoint_pick_marker.clear()
+        self._build_weld_handles()
         try:
-            self.plot_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.plot_widget.setCursor(Qt.CursorShape.OpenHandCursor)
         except Exception:
             pass
 
@@ -63,10 +67,102 @@ class CanvasDrawMixin:
         self._endpoint_tool = False
         self._endpoint_from = None
         self._endpoint_pick_marker.clear()
+        self._clear_weld_handles()
         try:
             self.plot_widget.unsetCursor()
         except Exception:
             pass
+
+    def _weld_source_points(self):
+        """Every draggable weld point: all edge endpoints (white markers) plus any
+        red open endpoints, de-duplicated within a tiny tolerance."""
+        pts = []
+        try:
+            xs, ys = self._endpoint_markers.getData()
+            if xs is not None and ys is not None:
+                pts.extend((float(a), float(b)) for a, b in zip(xs, ys))
+        except Exception:
+            pass
+        if self._open_endpoint_pts is not None:
+            pts.extend((float(p[0]), float(p[1])) for p in self._open_endpoint_pts)
+        uniq = []
+        for x, y in pts:
+            if not any(abs(x - ux) < 1e-9 and abs(y - uy) < 1e-9 for ux, uy in uniq):
+                uniq.append((x, y))
+        return uniq
+
+    def _clear_weld_handles(self):
+        for it in getattr(self, "_weld_handles", []):
+            self.plot_widget.removeItem(it)
+        self._weld_handles = []
+        self._weld_src = {}
+
+    def _build_weld_handles(self):
+        """(Re)create a draggable TargetItem over each weld point."""
+        self._clear_weld_handles()
+        for (x, y) in self._weld_source_points():
+            t = pg.TargetItem(pos=(x, y), size=14, movable=True, symbol='o',
+                              pen=pg.mkPen('#FF5252', width=2.4),
+                              brush=pg.mkBrush(255, 82, 82, 90),
+                              hoverBrush=pg.mkBrush('#FF8A80'))
+            t.setZValue(208)
+            t.sigPositionChanged.connect(lambda it: self._on_weld_drag(it))
+            t.sigPositionChangeFinished.connect(lambda it: self._on_weld_drop(it))
+            self.plot_widget.addItem(t)
+            self._weld_handles.append(t)
+            self._weld_src[id(t)] = (x, y)
+
+    def _rebuild_weld_handles_if_active(self):
+        if getattr(self, "_endpoint_tool", False):
+            self._build_weld_handles()
+
+    def _nearest_weld_target(self, it, px=28.0):
+        """Nearest snap point (any endpoint or active vertex) to handle ``it``'s
+        current position within ``px`` pixels, excluding its own source. None if
+        nothing is close enough (→ a free move)."""
+        p = it.pos()
+        sp = self.plot_widget.plotItem.vb.mapViewToScene(
+            pg.Point(float(p.x()), float(p.y())))
+        sx, sy = sp.x(), sp.y()
+        src = getattr(self, "_weld_src", {}).get(id(it))
+        cands = list(self._weld_source_points())
+        if self._active_points is not None:
+            cands.extend((float(q[0]), float(q[1])) for q in self._active_points)
+        best = None
+        best_d = px
+        for (cx, cy) in cands:
+            if src is not None and abs(cx - src[0]) < 1e-9 and abs(cy - src[1]) < 1e-9:
+                continue
+            d = self._pixel_dist(cx, cy, sx, sy)
+            if d < best_d:
+                best_d = d
+                best = (cx, cy)
+        return best
+
+    def _on_weld_drag(self, it):
+        """Live: ring the snap target the dragged endpoint would weld onto."""
+        tgt = self._nearest_weld_target(it)
+        if tgt is not None:
+            self._endpoint_pick_marker.setData([tgt[0]], [tgt[1]])
+        else:
+            self._endpoint_pick_marker.clear()
+
+    def _on_weld_drop(self, it):
+        """Drop: weld/move the dragged endpoint onto the snapped point (or the free
+        drop position when nothing is close)."""
+        src = getattr(self, "_weld_src", {}).get(id(it))
+        if src is None:
+            return
+        p = it.pos()
+        tgt = self._nearest_weld_target(it)
+        tx, ty = tgt if tgt is not None else (float(p.x()), float(p.y()))
+        self._endpoint_pick_marker.clear()
+        fx, fy = src
+        # Always a move/weld of the dragged endpoint to the drop/snap position.
+        self.endpoint_weld_requested.emit(fx, fy, tx, ty, True)
+        # The handler refreshes the geometry synchronously; rebuild the handles on
+        # the next tick (never mutate the item list from inside its own signal).
+        QTimer.singleShot(0, self._rebuild_weld_handles_if_active)
 
     def _arm_endpoint(self, x, y):
         """Mark (x, y) as the armed source endpoint and highlight it (cyan ring)."""

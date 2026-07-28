@@ -39,6 +39,14 @@ struct BLParams {
     double blTransitionGrowthRate = 1.2;
     double blTransitionBuffer = 2.0;
     bool blUseAnalyticGeom = false;
+    // Per-layer tangential smoothing of the advancing front. Redistributes PLAIN
+    // (non-corner/fan/junction/frozen) front nodes ALONG the front — the growth-
+    // direction component is removed so layer height is preserved — cancelling the
+    // finite-difference bisector drift that made smooth arcs/circles go wavy or
+    // self-intersect in the outer layers at high growth rate / many layers.
+    // Opt-in (0 = off): keeps existing meshes bit-identical; raise it (e.g. 2) to
+    // damp residual drift on noisy/non-uniform inputs.
+    int blFrontSmoothingIters = 0;
 };
 
 struct Config {
@@ -123,6 +131,7 @@ struct Config {
     
     // 凹角處理 (Concave Handling)
     int blSmoothingIters = 0;
+    int blFrontSmoothingIters = 0; // per-layer tangential front smoothing, opt-in (see BLParams)
     bool blMergeConcave = false;
     int blConcaveMethod = 0; // 0: Default (Merge), 5: Thickness-based Blending
     double blConcaveInfluenceMultiplier = 2.5;  // see the primary struct above: 10 curved each edge's BL outer band; 2.5 keeps it straight with a short corner transition.
@@ -294,6 +303,9 @@ struct Config {
             else if (key == "BL_SMOOTHING_ITERS") {
                 double val; ss >> val; blSmoothingIters = static_cast<int>(val);
             }
+            else if (key == "BL_FRONT_SMOOTHING_ITERS") {
+                double val; ss >> val; blFrontSmoothingIters = static_cast<int>(val);
+            }
             else if (key == "BL_MERGE_CONCAVE") {
                 int val; ss >> val; blMergeConcave = (val != 0);
             }
@@ -443,6 +455,7 @@ struct Config {
         p.blTransitionGrowthRate = blTransitionGrowthRate;
         p.blTransitionBuffer = blTransitionBuffer;
         p.blUseAnalyticGeom = blUseAnalyticGeom;
+        p.blFrontSmoothingIters = blFrontSmoothingIters;
         return p;
     }
 
@@ -468,6 +481,7 @@ struct Config {
         else if (key == "BL_TRANSITION_GROWTH_RATE") p.blTransitionGrowthRate = v;
         else if (key == "BL_TRANSITION_BUFFER") p.blTransitionBuffer = v;
         else if (key == "BL_USE_ANALYTIC_GEOM") p.blUseAnalyticGeom = (v != 0.0);
+        else if (key == "BL_FRONT_SMOOTHING_ITERS") p.blFrontSmoothingIters = static_cast<int>(v);
     }
 
     // Effective BL parameters for a geometry: global defaults with any overrides

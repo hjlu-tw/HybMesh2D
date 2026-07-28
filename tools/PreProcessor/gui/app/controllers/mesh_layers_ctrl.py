@@ -40,6 +40,30 @@ class MeshLayersControllerMixin:
         else:
             self.main_window.log_panel.log("Geometry file is already in the list.")
 
+    def _sync_global_scalars_from_panel(self):
+        """Merge the mesh panel's CURRENT numeric/scalar edits into
+        global_mesh_config before a set_config re-apply, so a value the user just
+        typed (domain bounds, mesh sizes, growth rate, BL params, output name, …)
+        is not clobbered by the stale stored config. The geometry list, per-file
+        roles and per-group BC are OWNED by the layer ops here and left untouched.
+
+        Fix: numeric spinbox edits were never written back to global_mesh_config
+        (only role/BC edits were), so add/remove/toggle-geometry — which re-apply
+        global_mesh_config via set_config — snapped those values back to their old
+        stored value."""
+        gmc = getattr(self, "global_mesh_config", None)
+        panel = getattr(self.main_window, "mesh_config_panel", None)
+        if gmc is None or panel is None:
+            return
+        try:
+            live = panel.get_config()
+        except Exception:
+            return
+        owned = {"geom_files", "geom_roles", "group_bc"}
+        for key, val in vars(live).items():
+            if key not in owned:
+                setattr(gmc, key, val)
+
     def remove_session_from_mesh_config(self, session) -> None:
         """Drop a deleted CAD session's exported geometry from the mesh
         generator input list.
@@ -62,7 +86,8 @@ class MeshLayersControllerMixin:
         cfg.prune_roles()  # drop the removed geometry's seed role, if any
 
         # Keep the panel (the authority at generate time) and the canvas
-        # previews in sync with the pruned list.
+        # previews in sync with the pruned list — preserving live numeric edits.
+        self._sync_global_scalars_from_panel()
         self.main_window.mesh_config_panel.set_config(cfg)
         self.sync_mesh_layers_panel()
         self.main_window.log_panel.log(
@@ -153,6 +178,7 @@ class MeshLayersControllerMixin:
                     if os.path.abspath(p) != os.path.abspath(abs_out_file)
                 ]
                 self.global_mesh_config.prune_roles()
+                self._sync_global_scalars_from_panel()
                 self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
                 self.sync_mesh_layers_panel()
                 self.main_window.log_panel.log(
@@ -193,6 +219,7 @@ class MeshLayersControllerMixin:
                 self.global_mesh_config.geom_files.remove(abs_out_file)
                 self.global_mesh_config.prune_roles()
 
+        self._sync_global_scalars_from_panel()
         self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
 
     def add_all_sessions_to_mesh(self):
@@ -224,6 +251,7 @@ class MeshLayersControllerMixin:
             # from the roles, which would otherwise snap it back to "Rectangle
             # box" after Add All even if the user had picked Custom geometry.
             prev_src = panel.domain_source_combo.currentIndex()
+            self._sync_global_scalars_from_panel()
             panel.set_config(self.global_mesh_config)
             if panel.domain_source_combo.currentIndex() != prev_src:
                 panel.domain_source_combo.setCurrentIndex(prev_src)

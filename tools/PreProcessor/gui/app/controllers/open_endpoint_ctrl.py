@@ -200,17 +200,17 @@ class OpenEndpointControllerMixin:
 
     # ── Interactive weld / connect tool (canvas-driven, undoable) ──────────
     def enter_endpoint_tool(self):
-        """Arm the canvas endpoint weld/connect tool (first click picks a red open
-        endpoint, second click picks the target)."""
+        """Arm the canvas drag-to-weld tool (each endpoint gets a draggable
+        handle; drag one onto a target to weld)."""
         session = self.active_session()
         if not session:
             self.main_window.log_panel.log("No geometry session active.")
             return
         self.main_window.canvas_view.start_endpoint_tool()
         self.main_window.log_panel.log(
-            "Weld points: click a point (a red open endpoint, or any vertex), then "
-            "click a target — snap onto another point to WELD the two, or a free "
-            "point to CONNECT a line (right-click to cancel).")
+            "Weld points: DRAG any endpoint handle onto another point to weld them "
+            "(it snaps to the nearest endpoint/vertex); drop in free space to move "
+            "the endpoint there. Right-click to finish.")
 
     def _resolve_endpoint_ref(self, session, x, y):
         """The ``ref`` of the datum nearest model-coord (x, y): a collected open

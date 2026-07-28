@@ -105,6 +105,19 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         int gm = (currentId < static_cast<int>(growModes.size())) ? growModes[currentId] : 0;
         fs.geomId = currentId++;
         fs.activeFront = boundaryNodeIds;
+        // Closed loops are often stored with the first point repeated as the last
+        // (seam node). Both copies share one position, so the cyclic normal
+        // stencil below sees a zero-length edge at the seam, mis-flags it as a
+        // sharp corner and fans a pile of nodes there — ballooning the BL at the
+        // seam (a clean cylinder came out as a +x teardrop). Drop the duplicate so
+        // the seam is one ordinary node, closed by the modulo wrap-around. The
+        // dropped id stays a surface node (still in allInitialBoundaryIds) and is
+        // welded away at export, so only the BL front changes.
+        if (fs.activeFront.size() >= 3 &&
+            (m_mesh.nodes[fs.activeFront.front()].pos -
+             m_mesh.nodes[fs.activeFront.back()].pos).lengthSq() < 1e-18) {
+            fs.activeFront.pop_back();
+        }
         fs.growthSign = detectGrowthDirection(boundaryNodeIds, gm);
         // Effective per-geometry BL parameters (this loop's overrides on top of
         // the global defaults) and the front's starting layer thickness.
@@ -112,16 +125,25 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     ? blParamsPerLoop[fs.geomId] : m_config.globalBLParams();
         fs.currentH = fs.bl.blInitialThickness;
 
-        int n_init = static_cast<int>(boundaryNodeIds.size());
+        int n_init = static_cast<int>(fs.activeFront.size());
         fs.fanNodeCounts.assign(n_init, fs.bl.blFanNodes);
         fs.n1_init.resize(n_init); fs.n2_init.resize(n_init);
         fs.isConvexInit.assign(n_init, false); fs.isConcaveInit.assign(n_init, false);
         fs.pos_init.resize(n_init);
+        // A tagged corner whose turn is within this many degrees of straight is a
+        // FALSE corner (e.g. the seam point the resampler tags at the start of a
+        // closed circle/arc). It must NOT get corner height-correction or mild
+        // concave blending: on a small closed loop the blend influence
+        // (~blConcaveInfluenceMultiplier * D_total) wraps the whole perimeter and
+        // drags every column toward the false corner's apex, ballooning the BL into
+        // a lopsided teardrop instead of a clean ring.
+        const double CORNER_STRAIGHT_TOL = 8.0; // degrees
+        std::vector<bool> nearStraightInit(n_init, false);
 
         for (int i = 0; i < n_init; ++i) {
-            fs.pos_init[i] = m_mesh.nodes[boundaryNodeIds[i]].pos;
-            Point2D p_prev = m_mesh.nodes[boundaryNodeIds[(i - 1 + n_init) % n_init]].pos;
-            Point2D p_next = m_mesh.nodes[boundaryNodeIds[(i + 1) % n_init]].pos;
+            fs.pos_init[i] = m_mesh.nodes[fs.activeFront[i]].pos;
+            Point2D p_prev = m_mesh.nodes[fs.activeFront[(i - 1 + n_init) % n_init]].pos;
+            Point2D p_next = m_mesh.nodes[fs.activeFront[(i + 1) % n_init]].pos;
             Vector2D v1 = (fs.pos_init[i] - p_prev).normalized();
             Vector2D v2 = (p_next - fs.pos_init[i]).normalized();
             fs.n1_init[i] = (fs.growthSign > 0 ? v1.leftNormal() : v1.rightNormal());
@@ -133,7 +155,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             double exteriorAngle = 180.0 - (fs.growthSign * diff * 180.0 / M_PI);
             if (exteriorAngle > fs.bl.blConvexAngleThreshold) fs.isConvexInit[i] = true;
             else if (exteriorAngle < fs.bl.blConcaveAngleThreshold) fs.isConcaveInit[i] = true;
-            if (std::getenv("HYBMESH_CORNER_DEBUG") && m_mesh.nodes[boundaryNodeIds[i]].isCorner)
+            nearStraightInit[i] = std::abs(exteriorAngle - 180.0) < CORNER_STRAIGHT_TOL;
+            if (std::getenv("HYBMESH_CORNER_DEBUG") && m_mesh.nodes[fs.activeFront[i]].isCorner)
                 std::cerr << "[CORNER] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y
                           << ") extAngle=" << exteriorAngle
                           << (fs.isConvexInit[i] ? " CONVEX" : (fs.isConcaveInit[i] ? " CONCAVE" : " mild(bisector)"))
@@ -152,15 +175,15 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             double maxAngleDeg = 0.0;
             int i = 0;
             while (i < n_init) {
-                CurveKind kind = m_mesh.nodes[boundaryNodeIds[i]].curveKind;
+                CurveKind kind = m_mesh.nodes[fs.activeFront[i]].curveKind;
                 int j = i;
                 while (j + 1 < n_init &&
-                       m_mesh.nodes[boundaryNodeIds[j + 1]].curveKind == kind) ++j;
+                       m_mesh.nodes[fs.activeFront[j + 1]].curveKind == kind) ++j;
                 if ((kind == CurveKind::Line || kind == CurveKind::Circle) && (j - i + 1) >= 2) {
                     std::vector<Point2D> runPts(fs.pos_init.begin() + i, fs.pos_init.begin() + j + 1);
                     auto curve = makeCurve(kind, runPts);
                     for (int k = i; k <= j; ++k) {
-                        if (m_mesh.nodes[boundaryNodeIds[k]].isCorner ||
+                        if (m_mesh.nodes[fs.activeFront[k]].isCorner ||
                             fs.isConvexInit[k] || fs.isConcaveInit[k]) continue;
                         // The growth direction for a smooth node is the bisector of
                         // the two edge normals; measure how far the exact analytic
@@ -447,6 +470,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         for (int i = 0; i < n_init; ++i) {
             if (!m_mesh.nodes[boundaryNodeIds[i]].isCorner) continue;
             if (fs.isConvexInit[i] || fs.isConcaveInit[i] || isJunction[i]) continue;
+            if (nearStraightInit[i]) continue;  // false corner (nearly straight): grow plain bisector
             double cosHalf = std::max(0.34, baseN[i].dot(fs.n1_init[i]));
             fs.nodeStepMultipliers[boundaryNodeIds[i]] = 1.0 / cosHalf;
         }
@@ -481,7 +505,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 // Both blend toward the height-corrected bisector apex (M_k=1/cos(half)),
                 // so the corner reaches full height D_total and the neighbours tilt gradually.
                 bool mild = m_mesh.nodes[boundaryNodeIds[i]].isCorner
-                            && !fs.isConvexInit[i] && !fs.isConcaveInit[i];
+                            && !fs.isConvexInit[i] && !fs.isConcaveInit[i]
+                            && !nearStraightInit[i];  // false (near-straight) corner: no blend
                 if (fs.isConcaveInit[i] || mild) concaveIndices.push_back(i);
             }
             
@@ -969,6 +994,52 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 }
             }
             fs.activeFront = nextFront;
+
+            // Per-layer TANGENTIAL smoothing of the new front. Redistributes PLAIN
+            // nodes along the front (the growth-direction component is projected out
+            // so the layer height is preserved) to cancel the finite-difference
+            // bisector drift that otherwise compounds outward — making a smooth
+            // arc/circle's outer layers go wavy/polygonal, or (growing inward) self-
+            // intersect. A node is smoothed only when it AND both neighbours are
+            // plain (not frozen/skipBL, not a pinned corner, not a fan/parallelogram
+            // ray, not a junction column), so fans, corners and 4-case caps keep
+            // their exact geometry.
+            int smIters = fs.bl.blFrontSmoothingIters;
+            if (smIters > 0 && (int)fs.activeFront.size() >= 5) {
+                int m = (int)fs.activeFront.size();
+                auto isPlain = [&](int idx) {
+                    int id = fs.activeFront[idx];
+                    const auto& nd = m_mesh.nodes[id];
+                    if (nd.isFrozen || nd.skipBL || nd.isCorner) return false;
+                    if (fs.paraCenterNodes.count(id)) return false;
+                    if (fs.nodeToJunctionRoot.count(id)) return false;
+                    auto it = fs.rayInfoMap.find(id);
+                    if (it != fs.rayInfoMap.end() && it->second.role != RayRole::None) return false;
+                    return true;
+                };
+                for (int sweep = 0; sweep < smIters; ++sweep) {
+                    std::vector<Point2D> newPos(m);
+                    for (int i = 0; i < m; ++i)
+                        newPos[i] = m_mesh.nodes[fs.activeFront[i]].pos;
+                    for (int i = 0; i < m; ++i) {
+                        int ip = (i - 1 + m) % m, in = (i + 1) % m;
+                        if (!isPlain(i) || !isPlain(ip) || !isPlain(in)) continue;
+                        int id = fs.activeFront[i];
+                        Point2D p  = m_mesh.nodes[id].pos;
+                        Point2D pp = m_mesh.nodes[fs.activeFront[ip]].pos;
+                        Point2D pn = m_mesh.nodes[fs.activeFront[in]].pos;
+                        Vector2D toMid = ((pp - p) + (pn - p)) * 0.5; // -> Laplacian target
+                        // Project OUT the growth (radial) direction: tangential only.
+                        Vector2D nrm = fs.nodeDirections.count(id)
+                                       ? fs.nodeDirections[id].normalized() : Vector2D{0, 0};
+                        if (nrm.lengthSq() > 1e-24)
+                            toMid = toMid - nrm * toMid.dot(nrm);
+                        newPos[i] = p + toMid * 0.5; // relaxation
+                    }
+                    for (int i = 0; i < m; ++i)
+                        m_mesh.nodes[fs.activeFront[i]].pos = newPos[i];
+                }
+            }
 
             // Track the largest last-layer thickness across fronts, then advance
             // this front's own thickness for the next layer (core growth rate

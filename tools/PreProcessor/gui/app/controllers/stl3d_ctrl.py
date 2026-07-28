@@ -268,8 +268,21 @@ class Stl3dControllerMixin:
         log(f"--- STL3d done: {n_solid:,} / {n:,} cells solid ({pct:.1f}%) ---")
         log(f"phi field written to {path}")
         if n_solid == 0:
-            log("[WARNING] No solid cells were marked. Check that the domain bounds "
-                "(and units) enclose the STL, or switch to the all-elements search.")
+            # Nothing to draw → the "Solid"/"Fluid" toggles look broken even though
+            # rendering is fine. Surface the domain box so the user can compare it
+            # to the STL extents (the usual cause is a domain/units mismatch).
+            cfg0 = getattr(self, "global_stl3d_config", None)
+            dom = ""
+            if cfg0 is not None:
+                try:
+                    zr = f", z∈[{pts[:,2].min():.4g},{pts[:,2].max():.4g}]" if n else ""
+                    dom = (f" Domain x∈[{cfg0.xmin:.4g},{cfg0.xmax:.4g}], "
+                           f"y∈[{cfg0.ymin:.4g},{cfg0.ymax:.4g}]{zr}.")
+                except Exception:
+                    dom = ""
+            log("[WARNING] No solid cells were marked, so both overlays are empty. "
+                "Check that the domain bounds (and units) enclose the STL, or switch "
+                "to the all-elements search." + dom)
         panel.status_lbl.setText(
             f"phi: {n_solid:,}/{n:,} solid ({pct:.1f}%)  →  {os.path.basename(path)}")
 

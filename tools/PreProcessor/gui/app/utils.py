@@ -104,7 +104,19 @@ def keep_on_top(widget: QWidget) -> QWidget:
     which users found intrusive. A ``Qt.Tool`` window instead stays above the
     app's own windows and recedes together with the app when another
     application is focused — i.e. above the main window only, never above other
-    apps. Call BEFORE show(). Returns the widget for chaining."""
+    apps. Call BEFORE show(). Returns the widget for chaining.
+
+    On macOS a ``Qt.Tool`` window only reliably floats above the app when its
+    parent is the TOP-LEVEL main window. Dialogs parented to a child widget
+    (a panel/canvas/sidebar) would otherwise drop behind the main window when
+    focus returns to the app. Re-parent to the parent's top-level window so
+    every modeless pop-up gets the same, correct stacking (mirrors the explicit
+    ``setParent(main_window, ...)`` template in edge_props_dialogs_mixin)."""
+    parent = widget.parentWidget()
+    top = parent.window() if parent is not None else None
+    if top is not None and top is not widget and parent is not top:
+        # setParent clears the window flags; they are (re)applied just below.
+        widget.setParent(top)
     flags = widget.windowFlags()
     flags &= ~Qt.WindowType.WindowStaysOnTopHint
     flags &= ~Qt.WindowType.WindowType_Mask          # drop Dialog/Window type bits

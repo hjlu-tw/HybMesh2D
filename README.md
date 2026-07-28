@@ -98,7 +98,7 @@ make
 | `SURFACE_MESH_SIZE` | 表面初始網格尺寸 | 0.02 |
 | `AUTO_SURFACE_SIZE` | 是否自動計算起始表面尺寸 (0: 關閉, 1: 開啟) | 1 |
 | `FARFIELD_MESH_SIZE` | 遠場最大網格尺寸 | 1.0 |
-| `FARFIELD_GROWTH_RATE` | 從邊界層到遠場的尺寸增長率 | 0.1 |
+| `FARFIELD_GROWTH_RATE` | 由表面往遠場的尺寸增長率。**無邊界層時同樣生效**（改由幾何表面出發成長，先前僅在有 BL 外緣時作用，無 BL 則整域為均勻遠場尺寸）。 | 0.1 |
 
 ### 2. 邊界層核心設定 (Boundary Layer Core)
 
@@ -140,6 +140,7 @@ make
 | `GMSH_ALGORITHM` | Gmsh 網格生成演算法 (預設 6: Frontal-Delaunay) | 6 |
 | `GMSH_OPTIMIZE` | 是否開啟 Gmsh 網格優化 | 1 |
 | `BL_USE_ANALYTIC_GEOM` | 在 line/circle 表面以解析法向生長 BL (需 `.meta` sidecar；對 smooth/polyline 無作用) | 0 |
+| `BL_FRONT_SMOOTHING_ITERS` | 每層對推進前緣做切向平滑的迭代次數（僅平滑一般節點，保留角點/扇形/交界；投影掉法向分量故層高不變）。0=關閉（預設，維持既有網格）；用於抑制非均勻輸入在外層殘留的漂移。 | 0 |
 
 ### 6. 輸出與進階功能 (I/O & Advanced)
 
@@ -283,6 +284,16 @@ python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/my_case.json -
 - **Join Edges 中段種子無法連接**：`curve_ctrl._chain_edges` 只從種子邊的一端單向延伸，若最低索引的選取邊落在開放鏈中段，合法的鏈會被誤判為不連通；改為從頭尾雙向延伸。
 - **Join 後未選邊設定遺失**：合併離散 (file) 邊並移除點、重新編號後，存活的未選 file 邊仍持有舊索引，導致 `update_file_segments_from_indices` 依 `(start, end)` 找不到而還原成預設值（BC/spacing 遺失）；已一併重映射存活邊的索引。
 - **清理**：移除死碼 `fit_stl3d_view`；兩處內聯的 `is_closed → closed_mode` 映射改用既有的 `_legacy_closed_mode()`；`BoundaryLayer` 每節點的 `getenv` 除錯查詢改為每次 `generate()` 快取一次；合併幾乎重複的 `circle`/`arc` 取樣分支。
+
+以下修正來自 2026-07 的八項使用回報（C++ 核心 + GUI）：
+
+- **圓柱/圓弧 BL 外層歪斜、內流自交**：封閉迴圈的接縫起點被 resampler 標成 corner，這個近乎直線（≈181°）的「假角點」觸發 method-5 混合，其影響範圍在小迴圈上會繞完整個周長、把所有 column 拉向接縫頂點，使乾淨圓柱長成歪斜淚滴狀。修正：以 `nearStraightInit`（|外角−180°|<8°）將假角點排除於步長修正與混合之外，並去除重合的首尾接縫節點。圓柱 gr1.2/L20 現為乾淨同心圓環，naca0012 不受影響。
+- **遠場增長率在無邊界層時失效**：`Mesh.cpp` 新增 `surfaceLineTags`（兩端 `geomId≥0` 的表面邊），無 BL 時改由表面出發套用 `FARFIELD_GROWTH_RATE`（並可選 `BL_FRONT_SMOOTHING_ITERS` 前緣平滑，見上表）。
+- **STAR-CD/VTK 匯出未依指定檔名**：匯出改為優先讀取 Output 欄位的即時值，而非生成當下鎖定的舊設定（「生成後才改名」曾被忽略）。
+- **Mesh Generator 左欄數值會跳回舊值**：數值 spinbox 的編輯從未寫回 `global_mesh_config`，故新增/移除/切換幾何（會重新套用設定）時被蓋回；改在每次 layer 操作前把面板即時 scalar 併回（保留 geometry/roles/BC）。左欄並加上超出寬度時可左右捲動的水平捲軸。
+- **IBM phi 勾選後看不到**：phi 散點顏色太暗且被不透明 STL 面遮住；提亮 fluid 顏色/加大點徑，並以關閉深度測試的 GL 設定讓 phi 畫在 STL 之上；`n_solid==0` 時額外印出 domain 邊界框協助診斷。
+- **跳出視窗掉到最底層**：`keep_on_top()` 將 `Qt.Tool` 彈窗重新 parent 到頂層主視窗，使 modeless 對話框穩定浮在主視窗之上（但不蓋其他 app）。
+- **Weld 改為拖曳式**：weld 工具改為在每個端點顯示可拖曳握把，拖到目標點即自動 snap 黏合（拖到空白處則移動該端點），取代原本的點兩下流程。
 
 ## 授權
 

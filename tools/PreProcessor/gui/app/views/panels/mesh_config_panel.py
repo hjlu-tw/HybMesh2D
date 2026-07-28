@@ -45,7 +45,10 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Show a horizontal scrollbar (the bottom left-right slider) when content
+        # is wider than the panel, so labels/values that overflow the narrow
+        # sidebar can be scrolled into view instead of being clipped.
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("background: #0c0d16;")
@@ -68,6 +71,26 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0px;
+            }
+        """)
+        # Match the horizontal slider (shown when content overflows the width).
+        self.horizontalScrollBar().setStyleSheet("""
+            QScrollBar:horizontal {
+                border: none;
+                background: #0c0d16;
+                height: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #2c2e43;
+                min-width: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #3e415e;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
             }
         """)
 

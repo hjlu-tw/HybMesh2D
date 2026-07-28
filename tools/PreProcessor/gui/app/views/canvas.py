@@ -195,9 +195,11 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
                                  style=Qt.PenStyle.DashLine))
         self._closing_edge.setZValue(15)
 
-        # ── Endpoint weld/connect tool state ──────────────────────────────
+        # ── Endpoint weld tool state (drag-to-weld) ───────────────────────
         self._endpoint_tool: bool = False        # True while the weld tool is active
-        self._endpoint_from: tuple | None = None  # armed source endpoint (x, y)
+        self._endpoint_from: tuple | None = None  # (legacy) armed source endpoint
+        self._weld_handles: list = []             # draggable TargetItems, one per endpoint
+        self._weld_src: dict = {}                 # id(handle) -> its original (x, y)
 
         # ── Interactive shape-drawing state ───────────────────────────────
         self._draw_tool: str | None = None   # 'line'|'circle'|'rectangle'|'triangle'|'polygon'

@@ -20,6 +20,22 @@ class MeshExportControllerMixin:
             i += 1
         return f"{root}_{i}{ext}"
 
+    def _current_output_filename(self) -> str:
+        """The output base name the user currently intends, preferring the LIVE
+        Output-panel field over the (possibly stale) config captured at the last
+        Generate. Fix #4: typing a name after generating used to be ignored
+        because export read only `global_mesh_config`."""
+        panel = getattr(self.main_window, "mesh_config_panel", None)
+        if panel is not None:
+            try:
+                name = (panel.get_config().output_filename or "").strip()
+                if name:
+                    return name
+            except Exception:
+                pass
+        return (self.global_mesh_config.output_filename
+                if self.global_mesh_config else "") or ""
+
     def _resolve_export_path(self, default_fallback_path: str, ext: str) -> str:
         """Resolve the default export path based on global configuration settings.
 
@@ -28,7 +44,7 @@ class MeshExportControllerMixin:
         root_dir = repo_root()
         default_dir = os.path.join(root_dir, "results", "meshes")
 
-        user_filename = self.global_mesh_config.output_filename if self.global_mesh_config else ""
+        user_filename = self._current_output_filename()
         if user_filename:
             if user_filename.endswith(".*"):
                 user_filename = user_filename[:-2] + ext

@@ -24,7 +24,7 @@ from app.utils import block_signals, make_button
 from app.views.stl3d_gl_widgets import (
     _GLView, _AxisStrip, _dev_cmap, _bar_button, _nice_step,
     _box_edge_segments, _C_STL, _C_STL_EDGE, _C_BOX, _C_FLUID, _C_SOLID,
-    _EDGE_GLOPTS, _DEV_VMAX_CELLS,
+    _EDGE_GLOPTS, _PHI_GLOPTS, _DEV_VMAX_CELLS,
 )
 
 
@@ -437,12 +437,14 @@ class Stl3dCanvasView(QWidget):
 
         if len(solid):
             self._solid_item = gl.GLScatterPlotItem(
-                pos=solid, color=_C_SOLID, size=6.0, pxMode=True)
+                pos=solid, color=_C_SOLID, size=6.0, pxMode=True,
+                glOptions=_PHI_GLOPTS)
             self._solid_item.setVisible(self._show["solid"])
             self.view.addItem(self._solid_item)
         if len(fluid):
             self._fluid_item = gl.GLScatterPlotItem(
-                pos=fluid, color=_C_FLUID, size=3.0, pxMode=True)
+                pos=fluid, color=_C_FLUID, size=4.0, pxMode=True,
+                glOptions=_PHI_GLOPTS)
             self._fluid_item.setVisible(self._show["fluid"])
             self.view.addItem(self._fluid_item)
 

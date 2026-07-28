@@ -75,46 +75,13 @@ class CanvasEventsMixin:
         return best
 
     def _on_mouse_clicked(self, event):
-        # ── Endpoint weld/connect tool intercepts all clicks ──────────────
+        # ── Endpoint weld tool: welding is by DRAGGING the per-endpoint
+        #    handles (see canvas_draw_mixin); a plain click does nothing here.
+        #    Right-click cancels the tool. ────────────────────────────────
         if getattr(self, '_endpoint_tool', False):
-            btn = event.button()
             event.accept()
-            if btn == Qt.MouseButton.RightButton:
-                self.stop_endpoint_tool()      # right-click cancels the tool
-                return
-            if btn != Qt.MouseButton.LeftButton:
-                return
-            sp = event.scenePos()
-            pos = self.plot_widget.plotItem.vb.mapSceneToView(sp)
-            x, y = pos.x(), pos.y()
-            if self._endpoint_from is None:
-                # First click: arm the nearest red open endpoint, or — when none
-                # is nearby — the nearest geometry vertex, so any two points can
-                # be welded even with no open-endpoint warnings present.
-                hit = self._nearest_open_endpoint(sp.x(), sp.y())
-                if hit is None:
-                    hit = self._nearest_vertex(sp.x(), sp.y())
-                if hit is not None:
-                    self._arm_endpoint(*hit)
-                return
-            # Second click: snap the target to another open endpoint (weld) or a
-            # geometry vertex (weld), else connect a line to the raw point.
-            fx, fy = self._endpoint_from
-            tgt = self._nearest_open_endpoint(sp.x(), sp.y(), exclude=(fx, fy))
-            weld = tgt is not None
-            if tgt is None and self._active_points is not None \
-                    and len(self._active_points) > 0:
-                d = np.hypot(self._active_points[:, 0] - x,
-                             self._active_points[:, 1] - y)
-                k = int(np.argmin(d))
-                vp = self._active_points[k]
-                if self._pixel_dist(vp[0], vp[1], sp.x(), sp.y()) < 28.0:
-                    tgt = (float(vp[0]), float(vp[1])); weld = True
-            if tgt is None:
-                tgt = (x, y)                   # connect a line to the picked point
-            self._endpoint_pick_marker.clear()
-            self._endpoint_from = None
-            self.endpoint_weld_requested.emit(fx, fy, tgt[0], tgt[1], weld)
+            if event.button() == Qt.MouseButton.RightButton:
+                self.stop_endpoint_tool()
             return
 
         # ── Interactive shape drawing intercepts all clicks ───────────────

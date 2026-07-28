@@ -39,7 +39,18 @@ _EDGE_GLOPTS = {
     'glBlendFunc': (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA),
 }
 _C_SOLID = (0.95, 0.30, 0.27, 1.0)   # phi = 1
-_C_FLUID = (0.45, 0.50, 0.66, 0.25)  # phi = 0 (faint)
+_C_FLUID = (0.40, 0.70, 1.0, 0.70)   # phi = 0 (was dark/near-invisible)
+
+# phi scatter GL state: depth-test OFF so the marked cells always draw OVER the
+# opaque STL surface instead of being hidden inside/behind it (that occlusion
+# made "Solid"/"Fluid" look empty even when cells were marked). Alpha-blended.
+_PHI_GLOPTS = {
+    GL_DEPTH_TEST: False,
+    GL_BLEND: True,
+    GL_ALPHA_TEST: False,
+    GL_CULL_FACE: False,
+    'glBlendFunc': (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA),
+}
 
 # Fit-deviation heatmap reference scale: deviation is shown in cell counts
 # (dev / h), green at 0 → red at this many cells. Shares the fit verdict's

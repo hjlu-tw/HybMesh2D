@@ -743,21 +743,27 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
 
     std::vector<int> allLines;
     std::vector<Edge> filteredEdges; // 用於後續拓撲分析
-    std::vector<double> frontLineTags; // 用於尺寸場的邊界來源
+    std::vector<double> frontLineTags; // 用於尺寸場的邊界來源 (邊界層外緣)
+    std::vector<double> surfaceLineTags; // 幾何表面邊 (geomId>=0)，供無邊界層時的成長場使用
 
     for (size_t i = 0; i < edges.size(); ++i) {
         int t1 = nodeToGmshTag[edges[i].v1];
         int t2 = nodeToGmshTag[edges[i].v2];
-        
+
         if (t1 == t2) continue; // 跳過零長度邊 (座標重合)
 
         int tag = gmsh::model::geo::addLine(t1, t2);
         allLines.push_back(tag);
         filteredEdges.push_back(edges[i]);
-        
-        if (nodes[edges[i].v1].type == NodeType::BoundaryLayer && 
+
+        if (nodes[edges[i].v1].type == NodeType::BoundaryLayer &&
             nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
             frontLineTags.push_back(static_cast<double>(tag));
+        }
+        // 幾何表面邊 (兩端點皆屬某個載入的幾何，geomId>=0；域外框為 -1)。
+        // 沒有邊界層時，成長場改由此表面出發，才能讓 FARFIELD_GROWTH_RATE 生效。
+        if (nodes[edges[i].v1].geomId >= 0 && nodes[edges[i].v2].geomId >= 0) {
+            surfaceLineTags.push_back(static_cast<double>(tag));
         }
     }
 
@@ -966,11 +972,17 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     // 收集所有尺寸場，最後取 Min 作為背景尺寸場。
     std::vector<double> sizeFields;
 
-    // 3.1 邊界層距離場 (僅在存在邊界層外緣時)：
-    //     Min(farFieldSize, hBase + Max(0, dist - dBuffer) * growthRate)
-    if (!frontLineTags.empty()) {
+    // 3.1 表面距離成長場：Min(farFieldSize, hBase + Max(0, dist - dBuffer) * growthRate)
+    //     來源優先取邊界層外緣 (frontLineTags)；若沒有邊界層則改由幾何表面邊
+    //     (surfaceLineTags) 出發，使 FARFIELD_GROWTH_RATE 在無邊界層時同樣生效
+    //     (先前此場被包在 frontLineTags 非空的條件內，無邊界層時整域為均勻遠場尺寸)。
+    const std::vector<double>& growthSrc =
+        !frontLineTags.empty() ? frontLineTags : surfaceLineTags;
+    if (!growthSrc.empty()) {
         int fDist = gmsh::model::mesh::field::add("Distance");
-        gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", frontLineTags);
+        gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", growthSrc);
+        // 沿表面取樣，確保長邊也能量到正確距離 (點列式距離場的通用設定)。
+        gmsh::model::mesh::field::setNumber(fDist, "Sampling", 200);
 
         // 建立緩衝區：在 dBuffer 距離內維持 hBase 尺寸，避免 1 個大網格接多個小網格
         double dBuffer = hBase * config.blTransitionBuffer;
@@ -981,6 +993,9 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         int fFinal = gmsh::model::mesh::field::add("MathEval");
         gmsh::model::mesh::field::setString(fFinal, "F", expr);
         sizeFields.push_back(static_cast<double>(fFinal));
+        if (frontLineTags.empty())
+            std::cout << "  -> No boundary layer: far-field growth grown from the "
+                         "geometry surface (rate " << config.farFieldGrowthRate << ")." << std::endl;
     }
 
     // 3.1b 雙向分級：由計算域外邊界向內成長 (#7)。以計算域邊界框的內距
