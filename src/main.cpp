@@ -484,12 +484,15 @@ int main(int argc, char* argv[]) {
     if (!config.outputFilename.empty()) {
         outputFilename = config.outputFilename;
     } else if (!config.geomFiles.empty()) {
-        if (config.geomFiles.size() == 1) {
-            std::string stem = fs::path(config.geomFiles[0]).stem().string();
-            outputFilename = "results/meshes/" + stem + "/mesh_" + stem + ".vtk";
-        } else {
-            outputFilename = "results/meshes/multiple/mesh_multiple.vtk";
+        // Case name from the boundary stems: single body -> its stem, several ->
+        // their stems joined by '_'. Must match the GUI's MeshConfig.auto_case_name
+        // (mesh_config.py) so the GUI can locate the file we write.
+        std::string caseName;
+        for (const auto& f : config.geomFiles) {
+            if (!caseName.empty()) caseName += "_";
+            caseName += fs::path(f).stem().string();
         }
+        outputFilename = "results/meshes/" + caseName + "/mesh_" + caseName + ".vtk";
     }
 
     // Ensure the output directory exists so VTK/STAR-CD exports do not silently

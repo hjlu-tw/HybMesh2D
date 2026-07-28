@@ -38,6 +38,12 @@ class MeshConfigBLMixin:
     def _read_bl_widgets(self) -> dict:
         """Current BL-section widget values as a {KEY: value} dict (KEYs match
         _BL_OVERRIDE_KEYS / the .dat parameter names)."""
+        # The C++ 4-case junction binning assumes C1 <= C2 <= C3, but the three
+        # spinboxes range 0-360 independently. Sort them so an out-of-order entry
+        # (e.g. C1=300, C2=100) can't silently misclassify the flow-facing angle.
+        jc1, jc2, jc3 = sorted((self.bl_junction_angle_c1.value(),
+                                self.bl_junction_angle_c2.value(),
+                                self.bl_junction_angle_c3.value()))
         return {
             "BL_INITIAL_THICKNESS": self.bl_initial_thickness.value(),
             "BL_GROWTH_RATE": self.bl_growth_rate.value(),
@@ -52,9 +58,9 @@ class MeshConfigBLMixin:
             "BL_CONCAVE_ANGLE_THRESHOLD": self.bl_concave_angle_threshold.value(),
             "BL_CONCAVE_INFLUENCE_MULTIPLIER": self.bl_concave_influence_multiplier.value(),
             "BL_JUNCTION_METHOD": [0, 1][self.bl_junction_method.currentIndex()],
-            "BL_JUNCTION_ANGLE_C1": self.bl_junction_angle_c1.value(),
-            "BL_JUNCTION_ANGLE_C2": self.bl_junction_angle_c2.value(),
-            "BL_JUNCTION_ANGLE_C3": self.bl_junction_angle_c3.value(),
+            "BL_JUNCTION_ANGLE_C1": jc1,
+            "BL_JUNCTION_ANGLE_C2": jc2,
+            "BL_JUNCTION_ANGLE_C3": jc3,
             "BL_TRANSITION_LAYERS": self.bl_transition_layers.value(),
             "BL_AUTO_TRANSITION_LAYERS": self.bl_auto_transition_layers.currentIndex(),
             "BL_TRANSITION_GROWTH_RATE": self.bl_transition_growth_rate.value(),

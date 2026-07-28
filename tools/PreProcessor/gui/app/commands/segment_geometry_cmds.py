@@ -243,14 +243,19 @@ class BakeCurveToGeometryCmd(BaseCommand):
                 (float(np.hypot(*(gp0 - np1))), True,  True),   # head ↔ new tail
             ]
             gap, rev_gp, rev_new = min(cands, key=lambda c: c[0])
-            if rev_new:
+            weld = gap <= tol
+            # Reversals exist only to bring the two joining endpoints together for
+            # a weld. When the closest pair is too far apart the new piece stays
+            # separate, so flipping the existing polyline (and mirroring every
+            # segment index) would needlessly mangle its orientation and drop its
+            # per-segment BC/spacing. Only reverse when we actually weld.
+            if weld and rev_new:
                 new_points = new_points[::-1]
-            if rev_gp:
+            if weld and rev_gp:
                 # Flip the existing polyline so its touching end becomes the tail;
                 # every other file segment / split index mirrors accordingly.
                 self._reverse_geometry_indices(seg, len(gp))
                 gp = gp[::-1]
-            weld = gap <= tol
             add = new_points[1:] if weld else new_points
             base = len(gp)
             self.session.original_points = np.vstack([gp, add])
@@ -296,6 +301,14 @@ class BakeCurveToGeometryCmd(BaseCommand):
                 other.start_index = last - other.start_index
             if other.end_index is not None and 0 <= other.end_index < length:
                 other.end_index = last - other.end_index
+            # Mirroring flips ascending (start<end) spans into descending ones;
+            # restore start<=end so the ascending-keyed match in
+            # update_file_segments_from_indices still finds the segment (else its
+            # BC/spacing are lost).
+            if (other.start_index is not None and other.end_index is not None
+                    and other.start_index > other.end_index):
+                other.start_index, other.end_index = (
+                    other.end_index, other.start_index)
         self.session.split_indices = sorted(
             {last - i for i in self.session.split_indices if 0 <= i < length})
 

@@ -43,8 +43,10 @@ total_targets=0
 for sub in "${DELETE[@]}"; do
     target="${RESULTS_DIR}/${sub}"
     [ -e "$target" ] || continue
-    size="$(du -sh "$target" 2>/dev/null | cut -f1)"
-    nfiles="$(find "$target" -type f 2>/dev/null | wc -l | tr -d ' ')"
+    # `|| true` so an unreadable file (du/find non-zero under pipefail) can't
+    # abort the whole script via set -e; we only need best-effort sizes here.
+    size="$(du -sh "$target" 2>/dev/null | cut -f1 || true)"
+    nfiles="$(find "$target" -type f 2>/dev/null | wc -l | tr -d ' ' || true)"
     printf "  %-14s %6s  (%s 檔)\n" "$sub/" "$size" "$nfiles"
     total_targets=$((total_targets + 1))
 done
@@ -72,4 +74,4 @@ for sub in "${DELETE[@]}"; do
     rm -rf "$target" && echo "已刪除 ${sub}/"
 done
 echo "----------------------------------------"
-echo "完成。results/ 現在大小: $(du -sh "$RESULTS_DIR" 2>/dev/null | cut -f1)"
+echo "完成。results/ 現在大小: $(du -sh "$RESULTS_DIR" 2>/dev/null | cut -f1 || true)"

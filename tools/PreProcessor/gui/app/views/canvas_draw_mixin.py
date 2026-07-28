@@ -155,6 +155,17 @@ class CanvasDrawMixin:
             return
         p = it.pos()
         tgt = self._nearest_weld_target(it)
+        if tgt is None:
+            # No snap target. A genuine free drag relocates the endpoint, but a
+            # bare click (sigPositionChangeFinished also fires with no movement)
+            # would emit a self-weld and push a no-op onto the undo stack. Skip
+            # when the handle did not actually move.
+            sp = self.plot_widget.plotItem.vb.mapViewToScene(
+                pg.Point(float(src[0]), float(src[1])))
+            if self._pixel_dist(float(p.x()), float(p.y()), sp.x(), sp.y()) < 3.0:
+                self._endpoint_pick_marker.clear()
+                QTimer.singleShot(0, self._rebuild_weld_handles_if_active)
+                return
         tx, ty = tgt if tgt is not None else (float(p.x()), float(p.y()))
         self._endpoint_pick_marker.clear()
         fx, fy = src

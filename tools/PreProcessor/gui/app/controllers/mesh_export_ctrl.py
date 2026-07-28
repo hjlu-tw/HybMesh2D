@@ -42,7 +42,6 @@ class MeshExportControllerMixin:
         The returned path is de-duplicated (see `_next_available_path`) so each
         export defaults to a name that does not clobber a previous export."""
         root_dir = repo_root()
-        default_dir = os.path.join(root_dir, "results", "meshes")
 
         user_filename = self._current_output_filename()
         if user_filename:
@@ -60,7 +59,9 @@ class MeshExportControllerMixin:
             # only swap the extension so the export stays out of the top level.
             default_path = os.path.splitext(default_fallback_path)[0] + ext
             if not os.path.isabs(default_path):
-                default_path = os.path.join(default_dir, os.path.basename(default_path))
+                # Anchor a relative per-case path under the repo root, preserving
+                # its subdirectory (basename() would flatten it back to the top).
+                default_path = os.path.abspath(os.path.join(root_dir, default_path))
         return self._next_available_path(default_path)
 
     def export_mesh_files(self):

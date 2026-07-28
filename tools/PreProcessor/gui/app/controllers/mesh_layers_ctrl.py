@@ -59,7 +59,12 @@ class MeshLayersControllerMixin:
             live = panel.get_config()
         except Exception:
             return
-        owned = {"geom_files", "geom_roles", "group_bc"}
+        # `owned` = layer-op state the panel's get_config() does not (re)build,
+        # so copying a fresh live value over it would clobber the stored one:
+        # geom list/roles/group BC are managed here, and bc_geom /
+        # missing_geom_files are left at dataclass defaults by get_config().
+        owned = {"geom_files", "geom_roles", "group_bc",
+                 "bc_geom", "missing_geom_files"}
         for key, val in vars(live).items():
             if key not in owned:
                 setattr(gmc, key, val)
