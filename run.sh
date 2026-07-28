@@ -21,8 +21,8 @@ case "$(uname -s)" in
         ;;
 esac
 
-# 確保結果輸出目錄存在
-mkdir -p Results
+# 確保結果輸出目錄存在（HybMesh2D 會自動建立各 case 的 results/meshes/<case>/ 子目錄）
+mkdir -p results/meshes
 
 # 檢查執行檔是否存在
 if [ ! -f "./build/HybMesh2D" ]; then

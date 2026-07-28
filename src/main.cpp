@@ -478,15 +478,17 @@ int main(int argc, char* argv[]) {
     config.print();
     Mesh mesh;
 
-    std::string outputFilename = "Results/mesh_cartesian.vtk";
+    // Auto output paths are per-case: results/meshes/<case>/mesh_<case>.vtk so
+    // each run lands in its own subdirectory instead of cluttering the top level.
+    std::string outputFilename = "results/meshes/cartesian/mesh_cartesian.vtk";
     if (!config.outputFilename.empty()) {
         outputFilename = config.outputFilename;
     } else if (!config.geomFiles.empty()) {
         if (config.geomFiles.size() == 1) {
-            fs::path geomPath(config.geomFiles[0]);
-            outputFilename = "Results/mesh_" + geomPath.stem().string() + ".vtk";
+            std::string stem = fs::path(config.geomFiles[0]).stem().string();
+            outputFilename = "results/meshes/" + stem + "/mesh_" + stem + ".vtk";
         } else {
-            outputFilename = "Results/mesh_multiple.vtk";
+            outputFilename = "results/meshes/multiple/mesh_multiple.vtk";
         }
     }
 

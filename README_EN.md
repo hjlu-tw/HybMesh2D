@@ -176,12 +176,33 @@ In the PreProcessor GUI, use **Mesh Generator → Domain & Geometry**: select an
 
 ## Visualization & Output
 
-1. **VTK Format**: Generates `Results/*.vtk`. View with [ParaView](https://www.paraview.org/).
+1. **VTK Format**: Generates `results/meshes/<case>/mesh_<case>.vtk`. View with [ParaView](https://www.paraview.org/).
 2. **STAR-CD Format**: Generates a triad of files:
    - `.vrt`: Vertex coordinates.
    - `.cel`: Cell definitions (Triangles and Quads).
    - `.bnd`: Boundary condition definitions with assigned BC names (geometry edges prefer the per-segment `bc` from the sidecar, falling back to `BC_GEOM`).
 3. **CGNS Format** (optional): Generates `*.cgns` (single unstructured zone with triangle/quad element sections plus one BAR_2 edge section + `BC_t` patch per boundary; BCType mapped to wall/inlet/outlet, etc.). Suitable for lossless handoff to CGNS-aware solvers. Validate with `cgnscheck`.
+
+## Output Directory Layout & Cleanup (`results/`)
+
+All artifacts are written under `results/` (the whole directory is `.gitignore`d) and split into subdirectories by purpose. Mesh output uses a **per-case** layout: each case gets its own folder, so the top level no longer accumulates loose files.
+
+| Subdirectory | Contents | Regenerable |
+|--------------|----------|-------------|
+| `results/meshes/<case>/` | Mesh output `mesh_<case>.{vtk,vrt,cel,bnd,cgns}` and `.provenance.json` | ✅ re-run to regenerate |
+| `results/solver/<case>/` | Solver case dir (`work/`, `grid/`, `dll/`); `work/binDumpZ.dat.*` is the restart zone dump | ✅ re-run (deleting `binDumpZ` loses restart) |
+| `results/resampled/` | Surface-resampler output `.dat` + `.meta` | ✅ regenerate from CAD sources |
+| `results/inputs/` | CAD source geometry `.dat` | ⚠️ source files, keep |
+| `results/logs/`, `results/pipeline/` | Run logs, pipeline scripts | — |
+
+`<case>` is derived from the boundary geometry filenames (single → its stem, several → stems joined, none → `cartesian`); the rule is shared by `MeshConfig.auto_output_name()` (GUI) and the `src/main.cpp` default (CLI).
+
+**Periodic cleanup**: `results/` only grows as different cases are run (re-running the same case overwrites, it does not accumulate). To free space, use the cleanup script (dry-run by default; `--force` actually deletes; `inputs/` is always kept):
+
+```bash
+./tools/scripts/clean_results.sh            # list what would be deleted (no delete)
+./tools/scripts/clean_results.sh --force    # actually delete regenerable artifacts
+```
 
 ## Geometry Metadata Sidecar (Geometry Association)
 

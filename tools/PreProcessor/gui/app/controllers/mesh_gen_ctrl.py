@@ -4,6 +4,7 @@ import tempfile
 from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from app.models.vtk_mesh import VTKMesh
+from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.utils import find_binary_executable, repo_root
 
@@ -236,16 +237,12 @@ class MeshGenControllerMixin:
         # Name from BOUNDARY geometries only — seeds share geom_files but must
         # not count (matches HybMesh2D, which names from geomFiles alone).
         boundaries = cfg.boundary_files
-        path = ""
         if cfg.output_filename:
             path = cfg.output_filename
         elif not cfg.geom_files or len(boundaries) == 0:
-            path = "results/meshes/mesh_cartesian.vtk"
-        elif len(boundaries) == 1:
-            stem = os.path.splitext(os.path.basename(boundaries[0]))[0]
-            path = f"results/meshes/mesh_{stem}.vtk"
+            path = MeshConfig.auto_output_name([])
         else:
-            path = "results/meshes/mesh_multiple.vtk"
+            path = MeshConfig.auto_output_name(boundaries)
 
         if os.path.isabs(path):
             return path

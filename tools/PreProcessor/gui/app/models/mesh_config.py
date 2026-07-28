@@ -232,6 +232,38 @@ class MeshConfig:
         """geom_files that are refinement seeds."""
         return [g for g in self.geom_files if self.is_seed(g)]
 
+    @staticmethod
+    def auto_case_name(boundaries: list) -> str:
+        """The <case> label used for auto-generated mesh output paths.
+
+        Derived from the boundary geometry stems: single body -> its stem,
+        several -> their stems joined, none -> "cartesian"."""
+        if not boundaries:
+            return "cartesian"
+        if len(boundaries) == 1:
+            return os.path.splitext(os.path.basename(boundaries[0]))[0]
+        return "_".join(os.path.splitext(os.path.basename(b))[0] for b in boundaries)
+
+    @staticmethod
+    def auto_output_name(boundaries: list, ext: str = ".vtk") -> str:
+        """Auto mesh output path: results/meshes/<case>/mesh_<case><ext>.
+
+        Each case gets its own subdirectory so results/meshes/ stays tidy
+        instead of accumulating loose files at its top level."""
+        case = MeshConfig.auto_case_name(boundaries)
+        return f"results/meshes/{case}/mesh_{case}{ext}"
+
+    @staticmethod
+    def is_auto_output_name(name: str) -> bool:
+        """True if `name` is empty or matches an auto-generated mesh path (the
+        flat legacy `results/meshes/mesh_*` or the per-case
+        `results/meshes/<case>/mesh_*`). Auto names are refreshed when geometry
+        changes; a name the user typed is preserved."""
+        if not name:
+            return True
+        n = name.replace("\\", "/")
+        return n.startswith("results/meshes/") and os.path.basename(n).startswith("mesh_")
+
     def prune_roles(self):
         """Drop geom_roles entries whose path is no longer in geom_files, so a
         stale seed role can't silently re-attach when a path is added again."""

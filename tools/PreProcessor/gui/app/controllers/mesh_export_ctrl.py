@@ -55,7 +55,12 @@ class MeshExportControllerMixin:
             else:
                 default_path = user_filename
         else:
-            default_path = os.path.join(default_dir, os.path.basename(default_fallback_path))
+            # `default_fallback_path` is already the per-case path
+            # (results/meshes/<case>/mesh_<case>.vtk); keep its subdirectory and
+            # only swap the extension so the export stays out of the top level.
+            default_path = os.path.splitext(default_fallback_path)[0] + ext
+            if not os.path.isabs(default_path):
+                default_path = os.path.join(default_dir, os.path.basename(default_path))
         return self._next_available_path(default_path)
 
     def export_mesh_files(self):

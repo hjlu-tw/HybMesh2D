@@ -183,12 +183,33 @@ SEED_FILE examples/geometries/wake.dat 0.02 1.0 source   # 尾流加密種子
 
 ## 視覺化與輸出
 
-1. **VTK 格式**: 生成 `Results/*.vtk`，建議使用 [ParaView](https://www.paraview.org/) 檢視。
+1. **VTK 格式**: 生成 `results/meshes/<case>/mesh_<case>.vtk`，建議使用 [ParaView](https://www.paraview.org/) 檢視。
 2. **STAR-CD 格式**: 生成一組三個檔案：
    - `.vrt`: 節點座標。
    - `.cel`: 單元（包含三角形與四邊形）定義。
    - `.bnd`: 邊界條件定義，包含設定的 BC 名稱（幾何邊優先採用 sidecar 的每段 `bc`，否則退回 `BC_GEOM`）。
 3. **CGNS 格式** (選用): 生成 `*.cgns`（非結構化單一區，含三角/四邊單元 section 與每個 BC 一組 BAR_2 edge section + `BC_t` patch；BCType 對應 wall/inlet/outlet 等）。適合無損交給支援 CGNS 的求解器。可用 `cgnscheck` 驗證。
+
+## 輸出目錄結構與清理 (`results/`)
+
+所有產物都寫在 `results/`（整個目錄已被 `.gitignore` 排除，不進版控），並依用途分子目錄。網格輸出採 **per-case** 佈局：每個案例自成一夾,頂層不再堆積散檔。
+
+| 子目錄 | 內容 | 可否重生 |
+|--------|------|----------|
+| `results/meshes/<case>/` | 網格輸出 `mesh_<case>.{vtk,vrt,cel,bnd,cgns}` 與 `.provenance.json` | ✅ 可重跑重生 |
+| `results/solver/<case>/` | 求解器 case 目錄（`work/`、`grid/`、`dll/`）；`work/binDumpZ.dat.*` 為 restart 續跑用 | ✅ 可重跑（刪 `binDumpZ` 會失去 restart） |
+| `results/resampled/` | 表面重採樣輸出 `.dat` + `.meta` | ✅ 由 CAD 來源重生 |
+| `results/inputs/` | CAD 來源幾何 `.dat` | ⚠️ 來源檔,建議保留 |
+| `results/logs/`、`results/pipeline/` | 執行紀錄、pipeline 腳本 | — |
+
+`<case>` 由邊界幾何檔名推導（單一→其 stem，多個→各 stem 串接，無幾何→`cartesian`）；此規則由 `MeshConfig.auto_output_name()`（GUI）與 `src/main.cpp` 預設（CLI）共用。
+
+**定期清理**：`results/` 只會隨著跑不同案例慢慢變大（重跑同一 case 是覆蓋、不增量）。需要釋放空間時用清理腳本（預設 dry-run,加 `--force` 才實際刪除,一律保留 `inputs/`）：
+
+```bash
+./tools/scripts/clean_results.sh            # 列出會刪什麼、釋放多少（不刪）
+./tools/scripts/clean_results.sh --force    # 實際刪除可重生產物
+```
 
 ## 幾何 metadata sidecar（幾何關聯）
 

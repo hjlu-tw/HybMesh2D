@@ -284,23 +284,19 @@ class MeshConfigConfigMixin:
 
         # Suggested name from BOUNDARY geometries only (seeds share geom_files
         # but shouldn't drive the name).
+        # Suggested name is per-case (results/meshes/<case>/mesh_<case>.*) so
+        # each geometry set exports into its own subfolder. The ".*" extension
+        # is a placeholder the export code swaps per format.
         boundaries = cfg.boundary_files
-        if not cfg.geom_files or len(boundaries) == 0:
-            default_name = "results/meshes/mesh_cartesian.*"
-        elif len(boundaries) == 1:
-            stem = os.path.splitext(os.path.basename(boundaries[0]))[0]
-            default_name = f"results/meshes/mesh_{stem}.*"
-        else:
-            # Multiple boundaries: name after all their stems so different
-            # geometry sets still export to distinct files.
-            stems = "_".join(os.path.splitext(os.path.basename(b))[0]
-                             for b in boundaries)
-            default_name = f"results/meshes/mesh_{stems}.*"
-        # An auto-generated name (empty, or the "results/meshes/mesh_*" pattern
-        # we produce) is refreshed to match the current geometry so switching
-        # geometries changes the export name; a name the user typed is kept.
+        default_name = MeshConfig.auto_output_name(
+            [] if (not cfg.geom_files or len(boundaries) == 0) else boundaries,
+            ext=".*",
+        )
+        # An auto-generated name is refreshed to match the current geometry so
+        # switching geometries changes the export name; a name the user typed
+        # is kept.
         def _is_auto(name: str) -> bool:
-            return (not name) or name.startswith("results/meshes/mesh_")
+            return MeshConfig.is_auto_output_name(name)
 
         incoming = (cfg.output_filename or "").strip()
         widget_text = self.output_filename.text().strip()
