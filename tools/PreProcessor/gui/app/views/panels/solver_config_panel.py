@@ -10,6 +10,7 @@ from app.models.solver_config import PRESETS
 from app.views.panels.solver_config_widgets import _edit
 from app.views.collapsible import CollapsibleSection
 from app.views.panels.solver_config_build_mixin import SolverConfigBuildMixin
+from app.views.panels.solver_config_build_mixin_b import SolverConfigBuildMixinB
 from app.views.panels.solver_config_bc_mixin import SolverConfigBCMixin
 from app.views.panels.solver_config_sync_mixin import SolverConfigSyncMixin
 
@@ -22,8 +23,8 @@ _SCROLLBAR_QSS = """
 """
 
 
-class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBCMixin,
-                        SolverConfigSyncMixin):
+class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMixinB,
+                        SolverConfigBCMixin, SolverConfigSyncMixin):
     """Sidebar panel editing every SolverConfig parameter.
 
     The controller (Phase 3) connects run_solver_btn / cancel_solver_btn and
