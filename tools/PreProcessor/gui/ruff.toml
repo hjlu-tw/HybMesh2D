@@ -29,7 +29,8 @@ select = ["E9", "F"]
 ignore = []
 
 [lint.per-file-ignores]
-# Test scripts and the GUI entry point manipulate sys.path before importing the
-# app package, so their imports legitimately sit below other statements.
+# Test scripts and the entry points manipulate sys.path before importing the app
+# package, so their imports legitimately sit below other statements.
 "../tests/*.py" = ["E402"]
+"../*.py" = ["E402"]        # run_pipeline.py / run_batch.py
 "main.py" = ["E402"]

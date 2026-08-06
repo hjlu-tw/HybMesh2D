@@ -104,7 +104,16 @@
   - 分級：`ok` / `changed` / `missing` / `unverified`（無記錄或版本較新 → unverified，**絕不誤判為 mismatch**）
   - 已知界限並誠實記錄在測試中：size+mtime 都被偽造成相同時，快路徑會判 ok；任何真實編輯都會改變其中之一
   - `tests/test_file_integrity.py`（19 checks）；全套 **34/34**
-- [ ] **批次處理**（**未做 — 大型功能**）：job queue 多幾何批次跑 mesh + 整體進度
+- [x] **批次處理**（2026-08-06）：`services/batch_runner.py`（Qt-free）＋ `run_batch.sh` / `run_batch.py`
+  - 三個「因為批次是你放著跑的東西」而最重要的性質，每一個都有測試鎖住：
+    - **一個壞案例不能拖垮整個佇列**：失敗記錄下來、下一個繼續。因為第 3/40 個案例的 domain 反了就終止整夜的工作，正是讓人不再用批次模式的行為。非 `PipelineError` 的意外例外同樣不中斷，但會明確標為 unexpected 而非當成一般階段失敗
+    - **各案例不能互相覆蓋**：輸出路徑由 case name 衍生，同名就會靜默互相蓋掉。碰撞在**任何東西開始跑之前**就偵測並回報，而且**回報的是來源檔名**（`case_b.json, case_dup.json`）而非把共用的名字複述一次 —— 後者不告訴使用者該去改哪個檔
+    - **exit code 只有全部成功才是 0**：「跑完但 12 個失敗」不能對 scheduler 看起來是綠的
+  - 支援 `@manifest`（一行一個路徑、`#` 註解、相對路徑相對於 manifest 自身目錄）
+  - `should_stop()` 在兩個 job 之間輪詢，讓 GUI 取消能停下佇列而不會殺掉正在寫檔的那個 job
+  - **實測**：4 個案例（2 正常、1 domain 反轉、1 同名）＋1 缺檔 → 3 ok / 1 failed / 1 skipped、碰撞指名兩個檔案、**exit code 1**
+  - 順手把 `run_pipeline.py` / `run_batch.py` 納入 CI 的 lint 範圍（先前它們在 `gui/` 之外，`ruff check .` 碰不到）
+  - `tests/test_batch_runner.py`（24 checks）；全套 **37/37**
 
 > **Phase 3 範圍說明**：自動存檔/復原（資料安全、與 Phase 0 同主題）與格式遷移地基已完成。其餘為大型 UI／跨元件（含 C++）功能，且在無顯示環境下無法互動驗證——為避免將未經實機測試的功能倉促併入，標記為待獨立進行，並附上理由。
 

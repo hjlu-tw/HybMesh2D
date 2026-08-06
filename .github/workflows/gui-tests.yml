@@ -50,6 +50,11 @@ jobs:
       - name: Lint the test suite
         working-directory: tools/PreProcessor/gui
         run: ruff check --config ruff.toml ../tests
+      # The CLI entry points live outside the GUI package, so `ruff check .` above
+      # does not reach them; they are real code and get the same gate.
+      - name: Lint the CLI entry points
+        working-directory: tools/PreProcessor/gui
+        run: ruff check --config ruff.toml ../run_pipeline.py ../run_batch.py
 
   build:
     name: Build C++ (-Werror)
