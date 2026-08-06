@@ -3,6 +3,9 @@ import os
 import numpy as np
 from PyQt6.QtWidgets import QFileDialog, QMenu, QInputDialog
 from PyQt6.QtCore import Qt
+
+from app.services import file_integrity
+from app.utils import report_warning
 from app.utils import block_signals
 
 # Bump when the .hws workspace schema changes in a backward-incompatible way.
@@ -95,6 +98,14 @@ class SessionIOControllerMixin:
 
             session_dict = {
                 "file_path": session.file_path,
+                # Detect the source .dat/.stl being re-exported or edited behind
+                # the workspace's back: the canvas would show the SAVED points
+                # while the mesh stage re-reads the changed file from disk.
+                # Reuses the previous digest when size+mtime are unchanged, so a
+                # 60-second autosave does not re-hash a large STL.
+                "source_fingerprint": file_integrity.fingerprint(
+                    session.file_path,
+                    previous=getattr(session, "source_fingerprint", None)),
                 "display_name": session.display_name.lstrip('*'),
                 "is_visible": session.is_visible,
                 "is_geometry_modified": session.is_geometry_modified,
@@ -107,6 +118,7 @@ class SessionIOControllerMixin:
                 "mesh_config": session.mesh_config.to_dict(),
                 "vtk_path": session.vtk_path
             }
+            session.source_fingerprint = session_dict["source_fingerprint"]
             sessions_data.append(session_dict)
 
         workspace_data = {
@@ -230,6 +242,9 @@ class SessionIOControllerMixin:
             self.main_window.mesh_canvas_view.clear_mesh()
 
         sessions_data = workspace_data.get("sessions", [])
+        # Collected so a multi-geometry workspace gets ONE summary at the end
+        # rather than a warning the user has to scroll back for.
+        integrity_problems: list = []
         for session_dict in sessions_data:
             session = GeometrySession()
             session.command_history.on_change = self._update_undo_redo_buttons
@@ -242,6 +257,13 @@ class SessionIOControllerMixin:
             session.current_segment_idx = session_dict.get("current_segment_idx", -1)
             session.selected_point_idx = session_dict.get("selected_point_idx", None)
             session.vtk_path = session_dict.get("vtk_path", "")
+            session.source_fingerprint = session_dict.get("source_fingerprint") or {}
+            status, target = file_integrity.check(
+                session.source_fingerprint, session.file_path)
+            note = file_integrity.describe(status, target, display_name)
+            if note:
+                self.main_window.log_panel.log(note)
+                integrity_problems.append((status, display_name))
 
             orig_pts = session_dict.get("original_points", None)
             if orig_pts is not None:
@@ -312,6 +334,23 @@ class SessionIOControllerMixin:
         self._reset_project_baseline()
 
         self.main_window.log_panel.log(f"Workspace loaded from '{os.path.basename(file_path)}'")
+        if integrity_problems:
+            changed = [n for st, n in integrity_problems if st == "changed"]
+            missing = [n for st, n in integrity_problems if st == "missing"]
+            parts = []
+            if changed:
+                parts.append(f"changed on disk: {', '.join(changed)}")
+            if missing:
+                parts.append(f"missing: {', '.join(missing)}")
+            self.main_window.log_panel.log(
+                "[Integrity] [WARNING] " + "; ".join(parts)
+                + ". The canvas shows the SAVED geometry.")
+            report_warning(
+                self.main_window, "Source Files Changed",
+                "Some geometry source files are not what they were when this "
+                "workspace was saved.\n\nThe canvas shows the saved geometry; "
+                "re-import a file to pick up its new version.",
+                detail="; ".join(parts))
 
     _CONTEXT_MENU_QSS = """
         QMenu {
