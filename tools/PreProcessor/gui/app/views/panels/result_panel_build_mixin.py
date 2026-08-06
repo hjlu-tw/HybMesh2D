@@ -1,12 +1,10 @@
 from __future__ import annotations
-import csv
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QButtonGroup, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSpinBox, QFileDialog, QScrollArea, QFrame, QComboBox,
-    QListWidget, QListWidgetItem,
+    QPushButton, QButtonGroup, QLineEdit, QTableWidget, QHeaderView, QSpinBox, QFrame, QComboBox,
+    QListWidget,
 )
 
 from app.views.collapsible import CollapsibleSection

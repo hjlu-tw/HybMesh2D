@@ -16,10 +16,13 @@ import subprocess
 import threading
 
 from app.models.pipeline_config import PipelineConfig
-from app.services import solver_case
+from app.services import solver_case, stl3d_case
+from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.utils import (
     find_binary_executable, find_solver_executables, repo_root,
 )
+# Qt-free process helpers (no PyQt import), so this module stays headless-safe.
+from app.workers.proc_util import stop_process
 
 # tag distinguishes CLI solver output (xtecp_sol_allz.dat.cli) from the GUI's.
 SOLVER_TAG = ".cli"
@@ -43,6 +46,9 @@ def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
                 cmd, cwd=cwd, env=env, stdin=stdin_f,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
+                # Own process group so the timeout path can take down the whole
+                # tree (mpirun ranks, gmsh helpers), not just the direct child.
+                start_new_session=True,
             )
             # Drain stderr on a background thread so it is read CONCURRENTLY with
             # stdout. Reading stdout to completion first and only then reading
@@ -74,7 +80,7 @@ def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
                 log(f"[stderr] {s}")
             return proc.returncode
         except subprocess.TimeoutExpired:
-            proc.kill()
+            stop_process(proc)
             log(f"[ERROR] timed out after {timeout}s")
             return -3
         finally:
@@ -86,21 +92,25 @@ def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
 
 
 def _mesh_env():
-    """Environment for HybMesh2D: inherit the caller's env (so a wrapper that
-    exports DYLD_LIBRARY_PATH for Gmsh — like run.sh — is honoured)."""
-    return os.environ.copy()
+    """Environment for HybMesh2D / surface_resampler.
+
+    Resolves the libgmsh directory here rather than inheriting it from a shell
+    wrapper: on macOS, SIP strips every ``DYLD_*`` variable when a protected
+    interpreter starts, so ``run_pipeline.sh``'s export is already gone by the
+    time this process reads ``os.environ`` (see app/services/env_setup.py)."""
+    return mesher_env()
 
 
 # --------------------------------------------------------------------------- #
 # Stage 1: CAD resample
 # --------------------------------------------------------------------------- #
-def _run_resample(pcfg: PipelineConfig, repo: str, log) -> str:
+def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0) -> str:
     exe = find_binary_executable("surface_resampler")
     if not exe:
         raise PipelineError("surface_resampler binary not found — run ./build.sh")
-    cad_out = pcfg.default_cad_output(repo)
+    cad_out = pcfg.default_cad_output(repo, index)
     os.makedirs(os.path.dirname(cad_out), exist_ok=True)
-    pm = pcfg.build_project_model(repo, cad_out)
+    pm = pcfg.build_project_model(repo, cad_out, index)
     if not pm.input_file or not os.path.exists(pm.input_file):
         raise PipelineError(f"CAD input geometry not found: {pm.input_file!r}")
 
@@ -112,7 +122,7 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log) -> str:
                                          delete=False) as tf:
             cfg_path = tf.name
         pm.export_config(cfg_path)
-        rc = _stream([exe, cfg_path], cwd=repo, log=log)
+        rc = _stream([exe, cfg_path], cwd=repo, log=log, env=_mesh_env())
     finally:
         _rm(cfg_path)
     if rc != 0:
@@ -126,20 +136,24 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log) -> str:
 # --------------------------------------------------------------------------- #
 # Stage 2: mesh generation (HybMesh2D)
 # --------------------------------------------------------------------------- #
-def _run_mesh(pcfg: PipelineConfig, repo: str, geom_file: str,
+def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
               need_starcd: bool, log) -> str:
     exe = find_binary_executable("HybMesh2D")
     if not exe:
         raise PipelineError("HybMesh2D binary not found — run ./build.sh")
 
-    mc = pcfg.build_mesh_config(geom_file)
+    mc = pcfg.build_mesh_config(geom_files)
     mc.export_vtk = True
     if need_starcd:
         mc.export_starcd = True
     # Pin a deterministic output path so we know exactly where the VTK (and the
     # sibling STAR-CD .vrt/.cel/.bnd) land.
     if not mc.output_filename:
-        stem = os.path.splitext(os.path.basename(geom_file))[0] if geom_file else pcfg.name
+        # Name the mesh after the FIRST boundary geometry (the primary body), or
+        # after the script when there is none — with several geometries in play,
+        # mc.geom_files[0] is the stable choice a re-run reproduces.
+        primary = mc.geom_files[0] if mc.geom_files else ""
+        stem = os.path.splitext(os.path.basename(primary))[0] if primary else pcfg.name
         mc.output_filename = os.path.join(repo, "results", "meshes", f"mesh_{stem}.vtk")
     vtk = mc.output_filename if os.path.isabs(mc.output_filename) \
         else os.path.abspath(os.path.join(repo, mc.output_filename))
@@ -157,6 +171,9 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_file: str,
                                          delete=False) as tf:
             cfg_path = tf.name
         mc.save_to_file(cfg_path)
+        hint = gmsh_missing_hint()
+        if hint:
+            log(hint)
         rc = _stream([exe, "-conf", cfg_path], cwd=repo, log=log, env=_mesh_env())
     finally:
         _rm(cfg_path)
@@ -171,6 +188,32 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_file: str,
 # --------------------------------------------------------------------------- #
 # Stage 3: solver (getPGrid -> unicones)
 # --------------------------------------------------------------------------- #
+def _run_stl3d(pcfg: PipelineConfig, repo: str, log) -> str:
+    """Immersed-solid stage: STL -> phi field. Returns the phi Tecplot path.
+
+    Uses the same staging service as the GUI (``services/stl3d_case``), so a case
+    described by a pipeline script lands in the same ``results/stl3d/<case>``
+    directory with the same para.in the interactive run would produce.
+    """
+    cfg = pcfg.build_stl3d_config()
+    case = stl3d_case.prepare_case_dir(cfg, root=repo)      # raises Stl3dError
+    log(f"[IB] {stl3d_case.describe(cfg)} -> {case['work_dir']}")
+
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(case["threads"])
+    # STL3d is interactive: it reads its answers from stdin, which is exactly what
+    # para.in is (see Stl3dConfig.para_in_text).
+    rc = _stream([case["binary"]], cwd=case["work_dir"], log=log, env=env,
+                 stdin_path=case["para_path"])
+    if rc != 0:
+        raise PipelineError(f"STL3d failed (code {rc})")
+    if not os.path.exists(case["phi_path"]):
+        raise PipelineError(
+            f"STL3d produced no phi field at {case['phi_path']}")
+    log(f"[IB] phi field -> {case['phi_path']}")
+    return case["phi_path"]
+
+
 def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log) -> str:
     sc = pcfg.build_solver_config(repo)
 
@@ -234,30 +277,66 @@ def _rm(path: str):
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
-def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True) -> dict:
+def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
+                 run_ib: bool = True) -> dict:
     """Run CAD -> mesh -> (solver). Returns a dict of produced artifact paths:
     {"cad_out", "vtk", "result"}. Raises :class:`PipelineError` on any stage
     failure (message already logged)."""
     repo = repo_root()
-    out = {"cad_out": "", "vtk": "", "result": ""}
+    out = {"cad_out": "", "cad_outs": [], "phi": "", "vtk": "", "result": ""}
 
-    # Stage 1 — CAD (optional).
-    if pcfg.cad_skip():
-        geom = pcfg.resolve_input_file(repo)
-        if geom:
-            log(f"[CAD] resample skipped; using {geom}")
+    # Stage 1 — CAD, once per `cads` entry. A case routinely has several
+    # geometries (airfoil + ground plane, multi-element wing, custom domain), and
+    # every resampled output becomes a boundary for the mesh stage.
+    indices = pcfg.cad_indices()
+    if not indices:
+        log("[CAD] no CAD section; meshing configured geometry files.")
+        geoms = []
+    elif pcfg.cads_all_skipped():
+        geoms = [g for g in (pcfg.resolve_input_file(repo, i) for i in indices) if g]
+        if geoms:
+            log(f"[CAD] resample skipped; using {', '.join(geoms)}")
         else:
             log("[CAD] resample skipped (no source geometry); "
                 "meshing configured geometry files.")
     else:
-        log("=== Stage 1/3: CAD resample ===")
-        geom = _run_resample(pcfg, repo, log)
-    out["cad_out"] = geom
+        log(f"=== Stage 1/3: CAD resample ({len(indices)} geometr"
+            f"{'y' if len(indices) == 1 else 'ies'}) ===")
+        geoms = []
+        for i in indices:
+            if pcfg.cad_skip(i):
+                # Not an error: an entry may deliberately feed its raw geometry
+                # straight to the mesher. Say so rather than dropping it silently.
+                raw = pcfg.resolve_input_file(repo, i)
+                log(f"[CAD] [{i + 1}/{len(indices)}] resample skipped"
+                    + (f"; using {raw}" if raw else " (no source geometry)"))
+                if raw:
+                    geoms.append(raw)
+                continue
+            log(f"[CAD] [{i + 1}/{len(indices)}] resampling...")
+            geoms.append(_run_resample(pcfg, repo, log, i))
+    out["cad_outs"] = geoms
+    # Back-compat: callers (and run_pipeline.py's summary) read "cad_out".
+    out["cad_out"] = geoms[0] if geoms else ""
+
+    # Immersed solid (optional): STL -> phi, before meshing, because the solver
+    # stage links the phi field it produces.
+    if pcfg.stl3d and run_ib and not pcfg.stl3d.get("skip"):
+        log("=== Immersed solid: STL -> phi ===")
+        try:
+            out["phi"] = _run_stl3d(pcfg, repo, log)
+        except stl3d_case.Stl3dError as e:
+            # A malformed IB section is the user's mistake, not a crash: report it
+            # in the pipeline's own vocabulary.
+            raise PipelineError(f"immersed-solid stage: {e}") from e
+    elif pcfg.stl3d:
+        why = "--no-ib" if not run_ib else '"skip": true'
+        log(f"[IB] immersed-solid stage skipped ({why}).")
 
     # Stage 2 — mesh.
     log("=== Stage 2/3: mesh generation ===")
     need_solver = run_solver and not pcfg.solver_skip()
-    out["vtk"] = _run_mesh(pcfg, repo, geom, need_starcd=need_solver, log=log)
+    out["vtk"] = _run_mesh(pcfg, repo, geoms, need_starcd=need_solver, log=log)
 
     # Stage 3 — solver.
     if need_solver:

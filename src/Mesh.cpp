@@ -221,7 +221,13 @@ void Mesh::smoothMesh(int iters) {
 }
 
 void Mesh::addEdge(int v1, int v2) {
-    edges.push_back({v1, v2});
+    // bcTag / segKey deliberately keep their in-class defaults here: a plain
+    // interior edge carries no BC tag and no source-segment key. Written out
+    // explicitly so this is not mistaken for a forgotten initialiser.
+    Edge e;
+    e.v1 = v1;
+    e.v2 = v2;
+    edges.push_back(std::move(e));
 }
 
 void Mesh::addElement(const std::vector<int>& ids) {

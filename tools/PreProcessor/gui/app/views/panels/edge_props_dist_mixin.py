@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QFormLayout, QLabel, QComboBox, QSpinBox
 from app.utils import COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.clean_double_spin_box import CleanDoubleSpinBox, SciDoubleSpinBox
 
 
 class EdgePropsDistMixin:
@@ -35,8 +35,16 @@ class EdgePropsDistMixin:
         self.uniform_n = mk_spin(2, 100000, 50)
         self.uniform_n.setToolTip("Number of evenly-spaced nodes along this edge")
         ul.addRow(help_label("Node Count:", "Number of evenly-spaced nodes along this edge"), self.uniform_n)
-        self.uniform_spacing = mk_dspin(1e-6, 1e4, 0.1, 5, 0.01)
-        self.uniform_spacing.setToolTip("Fixed distance between adjacent nodes")
+        # A physical length, so it needs the same scientific-notation treatment as
+        # the mesh sizes: a mm-scale edge resampled at Δs=2e-5 was unreachable
+        # behind the old 1e-6 floor / 5-decimal display.
+        self.uniform_spacing = SciDoubleSpinBox()
+        self.uniform_spacing.setRange(0.0, 1e6)
+        self.uniform_spacing.setValue(0.1)
+        self.uniform_spacing.setStyleSheet(spin_style)
+        self.uniform_spacing.setToolTip(
+            "Fixed distance between adjacent nodes. "
+            "Accepts scientific notation (e.g. 2e-5).")
         self.uniform_spacing.setVisible(False)
         ul.addRow(help_label("Spacing (Δs):", "Fixed distance between adjacent nodes"), self.uniform_spacing)
         self._uniform_spacing_label = ul.labelForField(self.uniform_spacing)

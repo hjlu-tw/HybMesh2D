@@ -1,22 +1,12 @@
 from __future__ import annotations
-import os
-import shutil
 
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from app.models.stl3d_config import (
-    stl_bounding_box, detect_stl_ascii, parse_phi_tecplot,
-)
-from app.services.stl_loader import load_stl_triangles
-from app.services.dll_templates import render_phi_field_init
 from app.services.phi_quality import (
     FIT_OK_CELLS, FIT_FRAC_GREEN, FIT_FRAC_AMBER, FIT_TAIL_CELLS, FIT_TAIL_FRAC,
 )
-from app.workers.stl3d_run import Stl3dWorker
 from app.workers.fit_check_run import FitCheckWorker
 from app.services.solver_case import sanitize_case_name
-from app.utils import repo_root, find_stl3d_binary
 
 
 def _sanitize(name: str) -> str:

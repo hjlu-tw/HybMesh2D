@@ -23,7 +23,6 @@ Run:  python3 tools/PreProcessor/tests/test_code_review_batch_2026_08.py
 import os
 import sys
 import threading
-import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

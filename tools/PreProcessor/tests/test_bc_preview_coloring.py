@@ -59,7 +59,9 @@ def _write_square(dat_path):
 
 def main():
     from PyQt6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication(sys.argv)
+    # Bound to a name on purpose: it keeps the QApplication alive for the
+    # duration of the test (F841 would have us drop it).
+    app = QApplication.instance() or QApplication(sys.argv)  # noqa: F841
     from app.controller import AppController
     from app.models.mesh_config import MeshConfig
     from app.utils import BC_COLORS

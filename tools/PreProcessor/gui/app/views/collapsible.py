@@ -15,6 +15,11 @@ class CollapsibleSection(QWidget):
     def __init__(self, title: str, parent=None, start_collapsed: bool = True):
         super().__init__(parent)
 
+        # Kept as a plain attribute (the button text carries padding) so the
+        # expanded/collapsed state can be persisted under a stable key — see
+        # app/services/ui_state.py.
+        self.title = title
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 2, 0, 2)
         main_layout.setSpacing(0)

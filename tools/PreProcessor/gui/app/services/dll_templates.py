@@ -3,7 +3,8 @@
 Public facade. The actual renderer bodies live in sibling modules:
 
   * ``dll_templates_core`` — type-key constants, prototypes, ``ParamSpec`` /
-    ``TemplateSpec``, ``_n``.
+    ``TemplateSpec``. (Its private ``_n`` number formatter is imported straight
+    from there by the renderer modules, not re-exported here.)
   * ``dll_render_init`` — init-condition renderers (IBM + non-IBM) and
     ``render_analytic_phi_from_shape``.
   * ``dll_render_bc`` — boundary-condition renderers.
@@ -20,11 +21,11 @@ from __future__ import annotations
 from app.services.dll_templates_core import (
     INIT_COND, SOLID_MOTION, BC_INFLOW,
     PROTO_INIT, PROTO_MOTION, PROTO_BC,
-    _n, ParamSpec, TemplateSpec,
+    ParamSpec, TemplateSpec,
 )
 from app.services.dll_render_init import (
     _render_init_freestream, _render_init_rotating_disk, _render_init_custom,
-    _render_init_solid_polygon, render_analytic_phi_from_shape,
+    render_analytic_phi_from_shape,
     _render_init_freestream_noibm, _render_init_shock_noibm,
 )
 from app.services.dll_render_bc import (
@@ -35,6 +36,22 @@ from app.services.dll_render_motion import (
     _render_motion_translation, _render_motion_custom,
 )
 from app.services.dll_phi_field import render_phi_field_init
+
+# This module is a FACADE: several of the imports above are re-exports for
+# callers (``from app.services.dll_templates import render_phi_field_init``, the
+# dialog's bulk import, the analytic-phi controller, tests) and are not used in
+# this file's own body. ``__all__`` states that explicitly — without it an
+# unused-import cleanup strips them and every importer breaks at import time.
+__all__ = [
+    # constants / specs
+    "INIT_COND", "SOLID_MOTION", "BC_INFLOW",
+    "PROTO_INIT", "PROTO_MOTION", "PROTO_BC",
+    "ParamSpec", "TemplateSpec",
+    # renderers re-exported for direct use
+    "render_analytic_phi_from_shape", "render_phi_field_init",
+    # this module's own API
+    "TEMPLATES", "templates_for", "default_basename",
+]
 
 
 # --------------------------------------------------------------------------- #

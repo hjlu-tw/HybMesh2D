@@ -1,0 +1,61 @@
+{
+  "pipeline_version": 2,
+  "name": "multi_element_demo",
+  "_comment": [
+    "Multi-body demo: the slat and flap of the JAXA 30P30N high-lift wing,",
+    "meshed together in one domain.",
+    "",
+    "The point of this example is the v2 'cads' LIST — one entry per geometry.",
+    "Before v2 a script could name only ONE CAD geometry, so a multi-body case",
+    "could not be described (or re-run) from a script at all; saving a script",
+    "from a multi-tab workspace silently dropped everything but the active tab.",
+    "",
+    "Every entry sets skip:true, i.e. feed the geometry straight to the mesher",
+    "without resampling. Drop 'skip' and add a 'segments' array to have",
+    "surface_resampler redistribute that element's surface points first; each",
+    "entry resamples independently and all outputs become mesh boundaries.",
+    "",
+    "NOTE: adding the main element (examples/geometries/30p30n_jaxa_main.dat)",
+    "makes the full three-element configuration, but the BL then has to be sized",
+    "for the slat gap (~1% chord) and the main element's flap cove — with the",
+    "settings below the offset fronts collide there. That is BL-vs-geometry",
+    "sizing, not a limitation of the multi-geometry pipeline.",
+    "",
+    "Run:  ./run_pipeline.sh config/pipeline/multi_element_demo.json --no-solver"
+  ],
+  "cads": [
+    {
+      "input_file": "examples/geometries/30p30n_jaxa_slat.dat",
+      "is_closed": true,
+      "skip": true
+    },
+    {
+      "input_file": "examples/geometries/30p30n_jaxa_flap.dat",
+      "is_closed": true,
+      "skip": true
+    }
+  ],
+  "mesh": {
+    "domain_x_min": -1.0,
+    "domain_x_max": 2.5,
+    "domain_y_min": -1.2,
+    "domain_y_max": 1.2,
+    "auto_surface_size": true,
+    "farfield_mesh_size": 0.25,
+    "farfield_growth_rate": 0.2,
+    "bl_initial_thickness": 0.0004,
+    "bl_growth_rate": 1.2,
+    "bl_layers": 6,
+    "gmsh_algorithm": 6,
+    "gmsh_optimize": 1,
+    "bc_geom": "wall",
+    "bc_xmin": "inlet",
+    "bc_xmax": "outlet",
+    "bc_ymin": "outlet",
+    "bc_ymax": "outlet"
+  },
+  "solver": {
+    "skip": true
+  },
+  "results": {}
+}

@@ -11,7 +11,6 @@ import sys
 import threading
 import functools
 
-import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

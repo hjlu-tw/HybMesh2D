@@ -1,19 +1,11 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QComboBox, QSpinBox,
-    QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QDialog
+    QLabel, QCheckBox, QLineEdit, QRadioButton, QButtonGroup
 )
-from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
-from app.views.panels.transform_panel import TransformPanel
+from app.utils import SPIN_STYLE, help_label, help_widget
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
-from app.views.adjusting_stacked_widget import AdjustingStackedWidget
 from app.views.polygon_editor import PolygonEditor
-from app.models import shape_spec
-from app.views.panels.edge_props_shapes_mixin import EdgePropsShapesMixin
-from app.views.panels.edge_props_dist_mixin import EdgePropsDistMixin
-from app.views.panels.edge_props_dialogs_mixin import EdgePropsDialogsMixin
 
 
 class EdgePropsShapeBuildMixin:

@@ -5,6 +5,26 @@ import os
 
 from PyQt6.QtWidgets import QApplication
 
+from app.workers.proc_util import kill_process
+
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
+# Shutdown join budget, per worker. An unbounded ``QThread.wait()`` on the GUI
+# thread is how a hung backend turns "close the window" into "kill -9 the app":
+# the event loop stops, nothing repaints, and there is no cancel path left. We
+# instead give each worker a bounded window, escalate to SIGKILL on its child
+# process, then give up and let process exit reap it.
+_JOIN_MS = 4000          # after cancel() (SIGTERM already sent)
+_JOIN_AFTER_KILL_MS = 2000   # after SIGKILL on the child process
+
+# Workers that outlived their join budget. Module-level so the reference (and
+# therefore the QThread) survives until the interpreter exits: dropping the last
+# reference to a *running* QThread aborts with "QThread: Destroyed while thread
+# is still running", turning a slow shutdown into a crash report.
+_abandoned_workers: list = []
+
 
 class LifecycleControllerMixin:
     def _maybe_recover_autosave(self) -> bool:
@@ -12,24 +32,18 @@ class LifecycleControllerMixin:
         try:
             if not os.path.exists(self._autosave_path):
                 return False
-            # Headless (tests, CI, batch runs): a modal recovery prompt would
-            # block construction forever with no user to answer it. On a headless
-            # Qt platform there is no screen to show it on anyway, so skip the
-            # prompt and start clean — this is what lets the full AppController be
-            # built off-screen for end-to-end testing.
-            app = QApplication.instance()
-            if app is not None and app.platformName() in ("offscreen", "minimal"):
+            # Headless (tests, CI, batch runs): recovery must NOT happen
+            # silently, so the default is False — an offscreen run starts clean
+            # rather than inheriting a stranger's autosave. This is also what lets
+            # the full AppController be built off-screen for end-to-end testing.
+            from app.utils import confirm, is_headless
+            if is_headless():
                 return False
-            from PyQt6.QtWidgets import QMessageBox
-            reply = QMessageBox.question(
-                self.main_window,
-                "Recover Unsaved Work",
-                "Unsaved work from a previous session was found — the application "
-                "may have closed unexpectedly.\n\nRecover it now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
+            if confirm(
+                    self.main_window, "Recover Unsaved Work",
+                    "Unsaved work from a previous session was found — the "
+                    "application may have closed unexpectedly.\n\nRecover it now?",
+                    headless_default=False):
                 self._read_workspace_file(self._autosave_path)
                 self.main_window.log_panel.log("Recovered autosaved workspace.")
                 return len(self.sessions) > 0
@@ -39,7 +53,9 @@ class LifecycleControllerMixin:
             try:
                 self.main_window.log_panel.log(f"Autosave recovery failed: {e}")
             except Exception:
-                pass
+                _log.debug(
+                    "could not report the autosave-recovery failure to the log "
+                    "panel", exc_info=True)
         return False
 
     def _autosave(self):
@@ -47,7 +63,13 @@ class LifecycleControllerMixin:
         try:
             if not self.sessions:
                 return
-            if not any(getattr(s, "is_geometry_modified", False) for s in self.sessions):
+            # Checkpoint when EITHER the CAD geometry or the project-level
+            # configuration (Mesh / Solver / IB panels) has changed. Keying only
+            # off geometry meant a session spent tuning the domain, BL and BCs was
+            # never checkpointed at all — the crash-recovery net had a hole exactly
+            # where the un-reproducible work was.
+            if (not any(getattr(s, "is_geometry_modified", False) for s in self.sessions)
+                    and not self.project_is_dirty()):
                 return
             self._write_workspace_file(self._autosave_path)
             # Recovered: note it once so the engineer knows the safety net is
@@ -69,7 +91,104 @@ class LifecycleControllerMixin:
                         f"[Autosave] [WARNING] auto-save failed and is paused: {e}. "
                         "Save your workspace manually (File > Save Workspace).")
                 except Exception:
+                    _log.debug(
+                        "could not report the autosave failure to the log "
+                        "panel", exc_info=True)
+
+    # ── Bounded worker shutdown ──────────────────────────────────────────
+    def _log_quiet(self, msg: str):
+        """Log during shutdown without letting a torn-down panel raise."""
+        try:
+            self.main_window.log_panel.log(msg)
+        except Exception:
+            _log.debug("log panel unavailable during shutdown", exc_info=True)
+
+    def _join_worker(self, worker, label: str) -> bool:
+        """Cancel + join one worker within the shutdown budget.
+
+        Escalates in three steps — ``cancel()`` (SIGTERM to the child's process
+        group), then SIGKILL on the child, then give up — and returns True only
+        if the thread actually finished. A worker that survives all of it is
+        parked in ``_abandoned_workers`` so its QThread is not destroyed while
+        still running; the OS reaps it at process exit.
+        """
+        if worker is None or not worker.isRunning():
+            return True
+
+        cancel = getattr(worker, "cancel", None)
+        if callable(cancel):
+            try:
+                cancel()          # non-blocking; SIGTERMs the child's tree
+            except Exception:
+                _log.warning(
+                    "worker cancel() raised; falling back to a bounded "
+                    "join", exc_info=True)
+        if worker.wait(_JOIN_MS):
+            return True
+
+        # Still running. The pure-Python workers (fit check, profile extruder)
+        # have no child to kill and no cancel path — nothing more to escalate to.
+        proc = getattr(worker, "_process", None)
+        if proc is not None:
+            self._log_quiet(f"[Shutdown] {label} did not stop; killing it.")
+            kill_process(proc)
+            if worker.wait(_JOIN_AFTER_KILL_MS):
+                return True
+
+        self._log_quiet(
+            f"[Shutdown] [WARNING] {label} is still running; leaving it to be "
+            "reaped on exit rather than blocking the shutdown.")
+        _abandoned_workers.append(worker)
+        return False
+
+    def _shutdown_workers(self):
+        """Stop every background worker/loader thread within a bounded budget."""
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QCursor
+
+        app = QApplication.instance()
+        headless = app is not None and app.platformName() in ("offscreen", "minimal")
+        if app is not None and not headless:
+            # The joins below block the event loop, so give the user the one bit
+            # of feedback still possible: a wait cursor.
+            app.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            named = [
+                (getattr(self, "_worker", None), "CAD resample"),
+                (getattr(self, "_mesh_worker", None), "mesh generator"),
+                (getattr(self, "_solver_worker", None), "solver"),
+                (getattr(self, "_stl3d_worker", None), "immersed-solid (STL3d)"),
+                (getattr(self, "_fit_worker", None), "STL/phi fit check"),
+                (getattr(self, "_extrude_worker", None), "profile extruder"),
+            ]
+            # Workers already delivered but not yet finished() (see
+            # _retiring_workers) are about to end; join them so none is destroyed
+            # mid-run on exit.
+            named += [(w, "retiring worker")
+                      for w in list(getattr(self, "_retiring_workers", ()))]
+            for worker, label in named:
+                self._join_worker(worker, label)
+
+            # Geometry/seed preview loaders: pure-Python QThreads with no child
+            # process, so a bounded wait is the only escalation available.
+            mcv = self.main_window.mesh_canvas_view
+            loaders = list(getattr(mcv, "_geom_loader_threads", []))
+            loaders += list(getattr(mcv, "_seed_loader_threads", []))
+            last = getattr(mcv, "_geom_loader_thread", None)
+            if last is not None and last not in loaders:
+                loaders.append(last)
+            for t in loaders:
+                if t is None or not t.isRunning():
+                    continue
+                try:
+                    t.loaded_signal.disconnect()
+                except TypeError:
                     pass
+                if not t.wait(_JOIN_MS):
+                    _abandoned_workers.append(t)
+        finally:
+            if app is not None and not headless:
+                app.restoreOverrideCursor()
 
     def cleanup_temp_dir(self):
         """Clean up the dedicated temp directory and all its contents on app exit."""
@@ -78,70 +197,42 @@ class LifecycleControllerMixin:
             try:
                 shutil.rmtree(self.temp_dir, ignore_errors=True)
             except Exception:
-                pass
+                _log.debug("could not remove the session temp directory", exc_info=True)
 
     def handle_close_event(self) -> bool:
         """Return True if the app can close, False to cancel closing."""
+        # Unsaved work is not only CAD geometry: an unsaved Mesh / Solver / IB
+        # configuration is just as expensive to recreate, and used to be discarded
+        # without a word.
         modified_sessions = [s for s in self.sessions if s.is_geometry_modified]
-        if modified_sessions:
-            names = ", ".join([s.display_name for s in modified_sessions])
-            from PyQt6.QtWidgets import QMessageBox
-            reply = QMessageBox.question(
-                self.main_window,
-                "Unsaved Changes",
-                f"The following sessions have unsaved changes:\n{names}\n\nDo you want to discard them and exit?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
+        project_dirty = self.project_is_dirty()
+        if modified_sessions or project_dirty:
+            what = []
+            if modified_sessions:
+                names = ", ".join([s.display_name for s in modified_sessions])
+                what.append(f"Geometry sessions: {names}")
+            if project_dirty:
+                what.append("Mesh / Solver / Immersed-Solid configuration")
+            from app.utils import confirm
+            # headless_default True: a batch run has to be able to exit. There is
+            # nobody to answer, and refusing to close would hang the process.
+            if not confirm(
+                    self.main_window, "Unsaved Changes",
+                    "The following have unsaved changes:\n"
+                    + "\n".join(f"  • {w}" for w in what)
+                    + "\n\nDo you want to discard them and exit?"):
                 return False
         
         # Auto-save workspace on successful exit (disabled to start clean)
 
-        # Cancel and wait for all running background workers/threads to avoid crash on exit
-        if hasattr(self, "_worker") and self._worker is not None:
-            if self._worker.isRunning():
-                self._worker.cancel()
-                self._worker.wait()
-                
-        if hasattr(self, "_mesh_worker") and self._mesh_worker is not None:
-            if self._mesh_worker.isRunning():
-                self._mesh_worker.cancel()
-                self._mesh_worker.wait()
+        # Remember the layout BEFORE tearing anything down, while the window and
+        # its panels still describe what the user was looking at.
+        from app.services.ui_state import save_ui_state
+        save_ui_state(self.main_window)
 
-        # Immersed-solid (STL3d) workers. Stl3dWorker supports cancel(); the fit
-        # check and profile extruder have no cancel(), so wait() them out. All
-        # three are QThreads on this controller and would abort with "QThread
-        # destroyed while running" if the window closed mid-run without a join.
-        stl3d_worker = getattr(self, "_stl3d_worker", None)
-        if stl3d_worker is not None and stl3d_worker.isRunning():
-            stl3d_worker.cancel()
-            stl3d_worker.wait()
-        for attr in ("_fit_worker", "_extrude_worker"):
-            w = getattr(self, attr, None)
-            if w is not None and w.isRunning():
-                w.wait()
-        # Workers delivered but not yet finished() (see _retiring_workers): about
-        # to terminate, but join them so none is destroyed mid-run on exit.
-        for w in list(getattr(self, "_retiring_workers", ())):
-            if w is not None and w.isRunning():
-                w.wait()
-
-        mcv = self.main_window.mesh_canvas_view
-        loader_threads = list(getattr(mcv, "_geom_loader_threads", []))
-        # Seed previews use their own loader threads; join them too so none is
-        # destroyed mid-run on exit ("QThread destroyed while running").
-        loader_threads += list(getattr(mcv, "_seed_loader_threads", []))
-        last = getattr(mcv, "_geom_loader_thread", None)
-        if last is not None and last not in loader_threads:
-            loader_threads.append(last)
-        for t in loader_threads:
-            if t is not None and t.isRunning():
-                try:
-                    t.loaded_signal.disconnect()
-                except TypeError:
-                    pass
-                t.wait()
+        # Cancel and join every background worker/thread, each within a bounded
+        # budget so a wedged backend cannot make the app unclosable.
+        self._shutdown_workers()
 
         # Clean shutdown: stop autosave and remove its file so the next launch
         # does not offer to "recover" an intentionally-closed session.
@@ -152,11 +243,13 @@ class LifecycleControllerMixin:
             if ap and os.path.exists(ap):
                 os.remove(ap)
         except Exception:
-            pass
+            _log.debug(
+                "could not stop the autosave timer / remove its "
+                "file", exc_info=True)
 
         try:
             self.main_window.canvas_view.clear()
             self.main_window.mesh_canvas_view.clear_mesh()
         except Exception:
-            pass
+            _log.debug("could not clear the canvases on shutdown", exc_info=True)
         return True

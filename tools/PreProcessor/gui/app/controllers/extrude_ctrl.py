@@ -2,9 +2,9 @@ from __future__ import annotations
 import os
 
 import numpy as np
-from PyQt6.QtWidgets import QDialog, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QDialog, QFileDialog
 
-from app.utils import repo_root
+from app.utils import repo_root, report_info, report_error, confirm
 from app.services.stl_extrude import _signed_area
 
 
@@ -175,15 +175,15 @@ class ExtrudeControllerMixin:
             session_ids = dlg.selected_ids()
             if not session_ids:
                 log("[Export] No source layer selected.")
-                QMessageBox.information(self.main_window, "Export 2D STL",
-                                        "No source layer selected.")
+                report_info(self.main_window, "Export 2D STL",
+                            "No source layer selected.")
                 return
 
         loops, used, skipped, open_names = self._collect_extrude_loops(session_ids)
         if not loops:
             log("[Export] No 2D geometry to export. Draw or import a closed "
                 "profile first (bake analytic curves so they have points).")
-            QMessageBox.information(
+            report_info(
                 self.main_window, "Export 2D STL",
                 "No 2D geometry found.\n\nDraw or import a closed profile first. "
                 "Analytic curves must be converted to discrete points first.")
@@ -198,13 +198,10 @@ class ExtrudeControllerMixin:
         if issues:
             for w in issues:
                 log(f"[Export] ⚠ {w}")
-            proceed = QMessageBox.warning(
-                self.main_window, "Export 2D STL",
-                "Heads up before exporting:\n\n• " + "\n\n• ".join(issues)
-                + "\n\nExport anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if proceed != QMessageBox.StandardButton.Yes:
+            if not confirm(
+                    self.main_window, "Export 2D STL",
+                    "Heads up before exporting:\n\n• " + "\n\n• ".join(issues)
+                    + "\n\nExport anyway?"):
                 log("[Export] Cancelled (profile warnings).")
                 return
 
@@ -252,13 +249,17 @@ class ExtrudeControllerMixin:
         if m.get("error") == "no_facets":
             log("[Export] Triangulation produced no facets — check that the "
                 "profile is a simple (non-self-intersecting) closed loop.")
-            QMessageBox.warning(self.main_window, "Export 2D STL",
-                                "Could not triangulate any profile (degenerate "
-                                "or self-intersecting loop).")
+            # A failed export is a failed WRITE: nothing landed on disk, so it is
+            # an error, not a warning (report_warning is for failed reads).
+            report_error(self.main_window, "Export 2D STL Failed",
+                         "Could not triangulate any profile, so no STL was "
+                         "written.",
+                         detail="The profile is degenerate or self-intersecting.")
             return
         if m.get("error"):
             log(f"[Export] Failed: {m['error']}")
-            QMessageBox.warning(self.main_window, "Export 2D STL", str(m["error"]))
+            report_error(self.main_window, "Export 2D STL Failed",
+                         "The STL could not be written.", detail=str(m["error"]))
             return
 
         path, n = m["path"], m["n_facets"]
@@ -267,11 +268,8 @@ class ExtrudeControllerMixin:
             f"flat 2D STL, {n:,} facets (z=0) ---")
         log(f"STL written to {path}")
 
-        reply = QMessageBox.question(
-            self.main_window, "Export 2D STL",
-            "STL saved.\n\nLoad it into the Immersed Boundary (φ) page now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes)
-        if reply == QMessageBox.StandardButton.Yes:
+        if confirm(self.main_window, "Export 2D STL",
+                   "STL saved.\n\nLoad it into the Immersed Boundary (φ) page now?",
+                   headless_default=False):
             self._load_stl3d(path, auto_fit=True)
             self.main_window.mode_combo.setCurrentIndex(5)   # Immersed Solid

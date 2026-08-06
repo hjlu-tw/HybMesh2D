@@ -7,6 +7,7 @@ from __future__ import annotations
 from app.commands.segment_cmds import (
     SetClosedModeCmd, ToggleGlobalSplineCmd, UpdateMultipleSegmentsStateCmd,
 )
+from app.utils import block_signals
 
 # Sidebar combo text <-> ProjectModel.closed_mode
 _CLOSED_MODE_BY_TEXT = {"Auto": "auto", "Closed": "closed", "Open": "open"}
@@ -49,9 +50,8 @@ class SegmentPropsControllerMixin:
             def refresh():
                 if session is self.active_session():
                     sb = self.main_window.sidebar_view
-                    sb.match_previous_cb.blockSignals(True)
-                    sb.match_previous_cb.setChecked(checked)
-                    sb.match_previous_cb.blockSignals(False)
+                    with block_signals(sb.match_previous_cb):
+                        sb.match_previous_cb.setChecked(checked)
                     self._apply_geometry_update(session)
             cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
             session.command_history.execute(cmd)
@@ -181,9 +181,8 @@ class SegmentPropsControllerMixin:
         resolved state ("→ Closed"/"→ Open") next to it while in Auto mode."""
         pm = session.project_model
         sb = self.main_window.sidebar_view
-        sb.is_closed_combo.blockSignals(True)
-        sb.is_closed_combo.setCurrentText(_CLOSED_TEXT_BY_MODE.get(pm.closed_mode, "Auto"))
-        sb.is_closed_combo.blockSignals(False)
+        with block_signals(sb.is_closed_combo):
+            sb.is_closed_combo.setCurrentText(_CLOSED_TEXT_BY_MODE.get(pm.closed_mode, "Auto"))
         status = "→ Closed" if pm.is_closed else "→ Open"
         sb.closed_mode_status.setText(status if pm.closed_mode == "auto" else "")
 
@@ -193,9 +192,8 @@ class SegmentPropsControllerMixin:
             if session.project_model.global_spline != checked:
                 def refresh():
                     sb = self.main_window.sidebar_view
-                    sb.global_spline_cb.blockSignals(True)
-                    sb.global_spline_cb.setChecked(session.project_model.global_spline)
-                    sb.global_spline_cb.blockSignals(False)
+                    with block_signals(sb.global_spline_cb):
+                        sb.global_spline_cb.setChecked(session.project_model.global_spline)
                     self._apply_geometry_update(session)
                 cmd = ToggleGlobalSplineCmd(session, checked, refresh)
                 session.command_history.execute(cmd)

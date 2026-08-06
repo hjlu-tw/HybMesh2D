@@ -5,8 +5,8 @@ from PyQt6.QtWidgets import (
     QLineEdit, QDialogButtonBox, QSpinBox, QRadioButton,
     QButtonGroup, QComboBox, QCheckBox
 )
-from app.utils import SPIN_STYLE
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.utils import SPIN_STYLE, block_signals
+from app.views.clean_double_spin_box import CleanDoubleSpinBox, SciDoubleSpinBox
 from app.views.polygon_editor import PolygonEditor
 
 # Field layout and per-type defaults are owned by app.models.shape_spec so the
@@ -105,10 +105,9 @@ class ShapeParamDialog(QDialog):
             self._dist_mode = QComboBox()
             self._dist_mode.addItems(["By Node Count", "By Spacing"])
             self._dist_mode.setStyleSheet(SPIN_STYLE)
-            self._spacing_spin = CleanDoubleSpinBox()
-            self._spacing_spin.setRange(1e-6, 1e4)
-            self._spacing_spin.setDecimals(5)
-            self._spacing_spin.setSingleStep(0.01)
+            # Same physical-length reasoning as the sidebar's Spacing field.
+            self._spacing_spin = SciDoubleSpinBox()
+            self._spacing_spin.setRange(0.0, 1e6)
             self._spacing_spin.setStyleSheet(SPIN_STYLE)
             self._spacing_spin.setValue(float(seg.parameters.get("spacing", 0.1)))
             self._spacing_label = QLabel("Spacing (Δs):")
@@ -264,9 +263,8 @@ class FileEndpointDialog(QDialog):
     def set_points(self, p0, p1):
         for s, v in ((self._x0, p0[0]), (self._y0, p0[1]),
                      (self._x1, p1[0]), (self._y1, p1[1])):
-            s.blockSignals(True)
-            s.setValue(float(v))
-            s.blockSignals(False)
+            with block_signals(s):
+                s.setValue(float(v))
 
 
 class CustomFormulaDialog(QDialog):

@@ -1,19 +1,13 @@
 from __future__ import annotations
-import csv
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QButtonGroup, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSpinBox, QFileDialog, QScrollArea, QFrame, QComboBox,
-    QListWidget, QListWidgetItem,
+    QListWidgetItem,
 )
 
-from app.views.collapsible import CollapsibleSection
 from app.utils import (
-    make_button, SPIN_STYLE, LINEEDIT_STYLE, COMBO_STYLE,
+    block_signals,
 )
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 _TABLE_QSS = (
     "QTableWidget{background:#181b2a;color:#a0a8c0;border:1px solid #333852;"
@@ -45,22 +39,21 @@ class ResultPanelCadMixin:
             return
         prev = self._cad_checked_ids()
         fresh = self.cad_list.count() == 0
-        self.cad_list.blockSignals(True)
-        self.cad_list.clear()
-        for sid, name, color, has_geom in self._controller.cad_overlay_sessions():
-            item = QListWidgetItem(name if has_geom else f"{name}  (no geometry)")
-            if has_geom:
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                checked = (sid in prev) if not fresh else True
-                item.setCheckState(Qt.CheckState.Checked if checked
-                                   else Qt.CheckState.Unchecked)
-                if color:
-                    item.setForeground(QColor(color))
-            else:
-                item.setFlags(Qt.ItemFlag.NoItemFlags)
-            item.setData(Qt.ItemDataRole.UserRole, sid)
-            self.cad_list.addItem(item)
-        self.cad_list.blockSignals(False)
+        with block_signals(self.cad_list):
+            self.cad_list.clear()
+            for sid, name, color, has_geom in self._controller.cad_overlay_sessions():
+                item = QListWidgetItem(name if has_geom else f"{name}  (no geometry)")
+                if has_geom:
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    checked = (sid in prev) if not fresh else True
+                    item.setCheckState(Qt.CheckState.Checked if checked
+                                       else Qt.CheckState.Unchecked)
+                    if color:
+                        item.setForeground(QColor(color))
+                else:
+                    item.setFlags(Qt.ItemFlag.NoItemFlags)
+                item.setData(Qt.ItemDataRole.UserRole, sid)
+                self.cad_list.addItem(item)
 
     def _apply_cad(self, *_):
         if self._canvas is None:

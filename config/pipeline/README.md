@@ -8,9 +8,12 @@ One JSON file drives the whole chain. Run it two ways:
 ./run_pipeline.sh config/pipeline/template.json --no-solver   # stop after meshing
 
 # GUI — open, auto-load the script, auto-run, ends on the Results contour
-DYLD_LIBRARY_PATH=/Users/hjlu_nchc/Library/Python/3.9/lib \
-  python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/template.json --run
+python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/template.json --run
 ```
+
+(No `DYLD_LIBRARY_PATH` needed: the GUI resolves the libgmsh directory itself and
+hands it to the mesher. Override with `HYBMESH_GMSH_LIB_DIR` for a non-standard
+gmsh install.)
 
 In the GUI you can also use **Pipeline ▸ Load Pipeline Script**, then click **▶ Run All** (top-right).
 **Pipeline ▸ Save Pipeline Script** writes your current CAD + mesh + solver settings back out to a file like these.
@@ -58,10 +61,28 @@ In the GUI you can also use **Pipeline ▸ Load Pipeline Script**, then click **
 | `bc_geom` | Body BC: `wall` (external) |
 | `bc_xmin/xmax/ymin/ymax` | Domain-edge BCs: `inlet`, `outlet`, `farfield`, `symmetry`, `wall` |
 
-### Geometry — `cad`
+### Geometry — `cads` (a list, one entry per geometry)
+```json
+"cads": [
+  { "input_file": "examples/geometries/slat.dat", "is_closed": true, "skip": true },
+  { "input_file": "examples/geometries/flap.dat", "is_closed": true, "skip": true }
+]
+```
 - `input_file`: a `.dat` (space-separated `x y` per line), path relative to the repo root.
 - `skip: true` — use the `.dat` directly as the mesh boundary (recommended when it is already well resolved).
 - To **resample** as part of the pipeline: open the geometry in the GUI (it auto-detects edges and lets you pick per-edge spacing), then **Save Pipeline Script** — it writes a `segments` block and sets `skip: false`. With segments present, resampling runs in both GUI and headless. (GUI **Run All** always resamples and auto-detects edges even without a `segments` block; headless resamples only when `segments` are present.)
+- **Multi-body cases** (multi-element wing, body + ground plane) list several entries. Each is resampled independently and **all** outputs become mesh boundaries, in list order — the mesher keys per-geometry roles and BL overrides by path and names the mesh after the first entry, so the order is part of the case. See `multi_element_demo.json`.
+- **Singular `cad`** (one object instead of `cads`) is still accepted, so pre-v2 scripts and hand-written single-geometry scripts keep working. Saving rewrites it as `cads`.
+
+### Immersed solid — `stl3d` (optional)
+A subset of the Immersed Solid panel's fields (STL path, domain box, resolution, case name). Loading a script applies it to that panel. The headless runner does **not** execute this stage — it says so and continues — so generate the phi field from the GUI's **Immersed Solid** stage, or beforehand.
+
+### Running a saved workspace instead of a script
+`run_pipeline.sh` also accepts a `.hws` workspace saved by the GUI (recognised by its contents, not its extension):
+```bash
+./run_pipeline.sh my_case.hws --no-solver
+```
+Every CAD session in the workspace becomes one resample stage, and its Mesh / Solver / Immersed-Solid configuration is used as-is. Machine-specific solver paths are stripped so the run re-links to the mesh it just produced. View-only state (cached resampled points, selection, active tab) is ignored — it is derived, not input.
 
 ### Results — `results`
 | Field | Meaning |

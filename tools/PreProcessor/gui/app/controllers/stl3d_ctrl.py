@@ -1,9 +1,7 @@
 from __future__ import annotations
 import os
-import shutil
 
-import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog
 
 from app.models.stl3d_config import (
     stl_bounding_box, detect_stl_ascii, parse_phi_tecplot,
@@ -11,13 +9,10 @@ from app.models.stl3d_config import (
 from app.services.stl_loader import load_stl_triangles
 from app.workers.exit_codes import RC_CANCELLED
 from app.services.dll_templates import render_phi_field_init
-from app.services.phi_quality import (
-    FIT_OK_CELLS, FIT_FRAC_GREEN, FIT_FRAC_AMBER, FIT_TAIL_CELLS, FIT_TAIL_FRAC,
-)
+from app.services import stl3d_case
 from app.workers.stl3d_run import Stl3dWorker
-from app.workers.fit_check_run import FitCheckWorker
 from app.services.solver_case import sanitize_case_name
-from app.utils import repo_root, find_stl3d_binary
+from app.utils import repo_root, report_warning
 
 
 def _sanitize(name: str) -> str:
@@ -60,7 +55,8 @@ class Stl3dControllerMixin:
             bbox = stl_bounding_box(path)
         except Exception as e:
             log(f"[STL3d] Failed to read STL: {e}")
-            QMessageBox.warning(self.main_window, "STL Error", str(e))
+            report_warning(self.main_window, "STL Load Failed",
+                           "The STL surface could not be read.", detail=str(e))
             return
 
         self._stl3d_bbox = bbox
@@ -154,36 +150,19 @@ class Stl3dControllerMixin:
         cfg = panel.get_config()
         self.global_stl3d_config = cfg
 
-        if not cfg.stl_path or not os.path.exists(cfg.stl_path):
-            log("[ERROR] No STL file selected. Use the STL Input browse button.")
-            return
-        binary = find_stl3d_binary()
-        if not binary:
-            log("[ERROR] STL3d binary not found under solver/preprocess/STL3d/.")
-            return
-        if cfg.xmax <= cfg.xmin or cfg.ymax <= cfg.ymin:
-            log("[ERROR] Domain X and Y ranges must have max > min.")
-            return
-
+        # Validation + staging live in services/stl3d_case.py so the GUI and the
+        # headless pipeline refuse the same cases for the same reasons and lay the
+        # work dir out identically.
         try:
-            work_dir = os.path.join(repo_root(), "results", "stl3d", _sanitize(cfg.case_name))
-            os.makedirs(work_dir, exist_ok=True)
-            # Stage under a whitespace-safe basename matching para.in line 1: STL3d
-            # reads the filename with cin>>, so a space in the source name (e.g. a
-            # CAD profile "my model" → "my model_2d.stl") would otherwise misalign
-            # the whole para.in and crash/hang the binary.
-            stl_dst = os.path.join(work_dir, cfg.stl_run_basename())
-            if os.path.abspath(cfg.stl_path) != os.path.abspath(stl_dst):
-                shutil.copy2(cfg.stl_path, stl_dst)
-            para_path = os.path.join(work_dir, "para.in")
-            with open(para_path, "w") as f:
-                f.write(cfg.para_in_text())
-        except OSError as e:
-            log(f"[ERROR] Failed to stage STL3d work dir: {e}")
+            case = stl3d_case.prepare_case_dir(cfg)
+        except stl3d_case.Stl3dError as e:
+            log(f"[ERROR] {e}")
             return
 
-        _, phi_name = cfg.output_basenames()
-        self._stl3d_phi_path = os.path.join(work_dir, phi_name)
+        work_dir = case["work_dir"]
+        para_path = case["para_path"]
+        binary = case["binary"]
+        self._stl3d_phi_path = case["phi_path"]
 
         panel.run_btn.setEnabled(False)
         panel.cancel_btn.setEnabled(True)
@@ -196,11 +175,8 @@ class Stl3dControllerMixin:
         self.main_window.claim_progress("stl3d", determinate=True)
         self.main_window.mode_combo.setCurrentIndex(5)
 
-        omp = (max(int(getattr(cfg, "omp_threads", 1) or 1), 1)
-               if getattr(cfg, "omp_enabled", False) else 1)
-        log(f"--- Starting STL3d ({cfg.nx}x{cfg.ny}x{cfg.nz} grid, "
-            f"{'all-element' if cfg.all_search else 'close x-range'} search, "
-            f"{'serial' if omp == 1 else f'OpenMP {omp} threads'}) in {work_dir} ---")
+        omp = case["threads"]
+        log(f"--- Starting STL3d ({stl3d_case.describe(cfg)}) in {work_dir} ---")
 
         log("[STL3d] Working… loading STL and building the search structure, then "
             "ray tracing (a large STL / all-element search can take a while).")

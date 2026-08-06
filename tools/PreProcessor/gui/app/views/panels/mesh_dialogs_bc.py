@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QDialog, QDialogButtonBox,
 )
 from PyQt6.QtCore import Qt
-from app.utils import COMBO_STYLE, align_form_labels, help_label
+from app.utils import COMBO_STYLE, align_form_labels, help_label, block_signals
 from app.views.bc_widget import BC_TYPE_DEFS
 
 
@@ -190,12 +190,11 @@ class SegmentBCDialog(QDialog):
         self.bc_edit.setEnabled(bool(names))
         shown = self._shared_bc(names)
         self._selecting = True
-        self.bc_edit.blockSignals(True)
-        self.bc_edit.setCurrentText(shown)
-        self.bc_edit.lineEdit().setPlaceholderText(
-            "(select an edge/group)" if not names
-            else ("(mixed)" if not shown else ""))
-        self.bc_edit.blockSignals(False)
+        with block_signals(self.bc_edit):
+            self.bc_edit.setCurrentText(shown)
+            self.bc_edit.lineEdit().setPlaceholderText(
+                "(select an edge/group)" if not names
+                else ("(mixed)" if not shown else ""))
         self._selecting = False
         if self._highlight_cb:
             self._highlight_cb(self._selected_sids())
@@ -354,10 +353,9 @@ class AssignPatchDialog(QDialog):
         idxs = self.selected_indices()
         labels = {self._label_of.get(i, "") for i in idxs}
         shared = next(iter(labels)) if len(labels) == 1 else ""
-        self.name_edit.blockSignals(True)
-        self.name_edit.setCurrentText(shared)
-        self.name_edit.lineEdit().setPlaceholderText("(mixed)" if len(labels) > 1 else "")
-        self.name_edit.blockSignals(False)
+        with block_signals(self.name_edit):
+            self.name_edit.setCurrentText(shared)
+            self.name_edit.lineEdit().setPlaceholderText("(mixed)" if len(labels) > 1 else "")
         if self._highlight_cb:
             self._highlight_cb(idxs)
 

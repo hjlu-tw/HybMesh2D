@@ -17,6 +17,10 @@ from app.views.cpp_highlighter import CppHighlighter
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, repo_root
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 _FN_LABEL = {
     INIT_COND: "Initial Condition  —  initQ_at_p()",
@@ -290,5 +294,7 @@ class DllBuilderDialog(QDialog):
             import shutil
             shutil.rmtree(self._tmp, ignore_errors=True)
         except Exception:
-            pass
+            _log.debug(
+                "could not remove the temporary compile "
+                "directory", exc_info=True)
         super().done(r)

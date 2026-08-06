@@ -86,7 +86,6 @@ def main():
     configure_logging()
 
     # Slightly smaller global font for a denser, industrial-style UI.
-    from PyQt6.QtGui import QFont
     _f = app.font()
     _ps = _f.pointSizeF()
     if _ps > 0:

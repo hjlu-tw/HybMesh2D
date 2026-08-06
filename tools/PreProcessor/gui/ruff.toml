@@ -1,0 +1,35 @@
+# Lint configuration for the PreProcessor GUI — this is what CI enforces.
+#
+# The point of a gate is that a failure MEANS something. Enabling ruff's full
+# default set here would have reported ~520 findings, ~180 of them pure style
+# (semicolons, line length) that the codebase uses deliberately; a permanently-red
+# gate teaches everyone to ignore it. So the enforced set is the rules that catch
+# REAL defects, and the style rules are switched off explicitly, with the reason.
+#
+# Run locally exactly as CI does:
+#     cd tools/PreProcessor/gui && ruff check .
+
+target-version = "py39"          # matches requirements.txt (PyQt6 6.5 needs 3.8+)
+line-length = 100                # advisory only; E501 is not enforced (see below)
+
+[lint]
+# E9  — syntax / IO errors that stop the file being parsed at all.
+# F   — pyflakes: undefined names, unused imports/variables, redefinitions,
+#       f-strings with no placeholders. These are bugs or dead code, never taste.
+select = ["E9", "F"]
+
+# Deliberately NOT enforced:
+#   E501 (line too long)      — many long lines are tables/URLs/prose comments
+#                               that read worse wrapped.
+#   E7xx (E701/E702 colons,   — `a; b` and one-line `if x: return` are used
+#         semicolons)           intentionally for dense widget setup.
+#   E741 (ambiguous name `l`) — a handful of short-lived loop variables.
+# Add them later by fixing the violations first; do not add them to `select`
+# while they still fail, or the gate stops meaning anything.
+ignore = []
+
+[lint.per-file-ignores]
+# Test scripts and the GUI entry point manipulate sys.path before importing the
+# app package, so their imports legitimately sit below other statements.
+"../tests/*.py" = ["E402"]
+"main.py" = ["E402"]

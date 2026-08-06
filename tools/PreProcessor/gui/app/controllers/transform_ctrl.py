@@ -1,10 +1,8 @@
 from __future__ import annotations
-import math
 import numpy as np
-from app.models.segment import SegmentModel
-from app.commands.segment_cmds import DuplicateMultipleTransformCmd
 from app.services.geometry_service import (
-    GeometryService, _parse_vertices_str, format_vertices_str)
+    GeometryService)
+from app.utils import block_signals
 
 class TransformControllerMixin:
     """Mixin containing geometric transform, duplication, and mirroring logic."""
@@ -100,20 +98,17 @@ class TransformControllerMixin:
             return
         px, py = pt
 
-        for w in pivot_fields:
-            w.blockSignals(True)
-        sb.dup_rot_px.setValue(px)
-        sb.dup_rot_py.setValue(py)
-        sb.dup_mh_py.setValue(py)
-        sb.dup_mv_px.setValue(px)
-        sb.dup_ma_px.setValue(px)
-        sb.dup_ma_py.setValue(py)
-        sb.dup_ps_px.setValue(px)
-        sb.dup_ps_py.setValue(py)
-        sb.dup_scale_px.setValue(px)
-        sb.dup_scale_py.setValue(py)
-        for w in pivot_fields:
-            w.blockSignals(False)
+        with block_signals(*pivot_fields):
+            sb.dup_rot_px.setValue(px)
+            sb.dup_rot_py.setValue(py)
+            sb.dup_mh_py.setValue(py)
+            sb.dup_mv_px.setValue(px)
+            sb.dup_ma_px.setValue(px)
+            sb.dup_ma_py.setValue(py)
+            sb.dup_ps_px.setValue(px)
+            sb.dup_ps_py.setValue(py)
+            sb.dup_scale_px.setValue(px)
+            sb.dup_scale_py.setValue(py)
 
     def _compute_dup_reference_point(self, session, mode):
         """Return (px, py) for the duplicate/transform reference point.
@@ -167,10 +162,9 @@ class TransformControllerMixin:
         # Keep the "Edit on Canvas" toggle in sync with the interactive state.
         btn = getattr(sb, 'dup_interactive_btn', None)
         if btn is not None:
-            btn.blockSignals(True)
-            btn.setChecked(on)
-            btn.setText("✎  Editing on Canvas" if on else "✎  Edit on Canvas")
-            btn.blockSignals(False)
+            with block_signals(btn):
+                btn.setChecked(on)
+                btn.setText("✎  Editing on Canvas" if on else "✎  Edit on Canvas")
 
         # Only show handles while the user is actively setting up a transform
         # (a live preview is active). On a fresh selection or right after Apply
@@ -219,18 +213,16 @@ class TransformControllerMixin:
 
     @staticmethod
     def _spin_set_silent(spin, value):
-        spin.blockSignals(True)
-        spin.setValue(value)
-        spin.blockSignals(False)
+        with block_signals(spin):
+            spin.setValue(value)
 
     def _force_base_mode_custom(self):
         """A manual drag means the user wants a custom reference point: switch
         Base Point to Custom (so the dragged value is kept and editable)."""
         sb = self.main_window.sidebar_view
         if sb.dup_base_mode_combo.currentText() != "Custom (Manual)":
-            sb.dup_base_mode_combo.blockSignals(True)
-            sb.dup_base_mode_combo.setCurrentText("Custom (Manual)")
-            sb.dup_base_mode_combo.blockSignals(False)
+            with block_signals(sb.dup_base_mode_combo):
+                sb.dup_base_mode_combo.setCurrentText("Custom (Manual)")
         for w in (sb.dup_rot_px, sb.dup_rot_py, sb.dup_mh_py, sb.dup_mv_px,
                   sb.dup_ma_px, sb.dup_ma_py, sb.dup_ps_px, sb.dup_ps_py,
                   sb.dup_scale_px, sb.dup_scale_py):

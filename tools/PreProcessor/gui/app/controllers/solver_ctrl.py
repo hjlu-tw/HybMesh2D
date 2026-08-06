@@ -25,7 +25,7 @@ class SolverControllerMixin:
     # ------------------------------------------------------------------ #
     def init_solver(self):
         """Populate the solver panel with the global config once at startup."""
-        self.main_window.solver_config_panel.set_config(self.global_solver_config)
+        self.push_panel_config(self.main_window.solver_config_panel, self.global_solver_config)
 
     # ------------------------------------------------------------------ #
     # Config save / load
@@ -39,7 +39,7 @@ class SolverControllerMixin:
             return
         try:
             self.global_solver_config.load_from_file(path)
-            self.main_window.solver_config_panel.set_config(self.global_solver_config)
+            self.push_panel_config(self.main_window.solver_config_panel, self.global_solver_config)
             self.main_window.log_panel.log(f"Loaded solver config from {path}")
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to load solver config: {e}")

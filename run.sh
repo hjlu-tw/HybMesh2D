@@ -1,25 +1,12 @@
 #!/bin/bash
 
 # --- Locate the Gmsh dynamic library directory (OS-aware, portable) ---------
-# Prefer asking the installed gmsh Python module where it lives (the pip wheel
-# ships libgmsh two dirs up from gmsh.py: <prefix>/lib/python/site-packages ->
-# <prefix>/lib). Fall back to this developer's known path so the local run keeps
-# working even if that probe fails.
-GMSH_LIB_DIR="$(python3 -c 'import gmsh, os; print(os.path.normpath(os.path.join(os.path.dirname(gmsh.__file__), "..", "..")))' 2>/dev/null || true)"
-if [ -z "${GMSH_LIB_DIR}" ] || ! ls "${GMSH_LIB_DIR}"/libgmsh* >/dev/null 2>&1; then
-    GMSH_LIB_DIR="/Users/hjlu_nchc/Library/Python/3.9/lib"
-fi
-
-# On macOS use DYLD_LIBRARY_PATH; on Linux use LD_LIBRARY_PATH. Prepend so an
-# existing value is preserved.
-case "$(uname -s)" in
-    Darwin)
-        export DYLD_LIBRARY_PATH="${GMSH_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
-        ;;
-    *)
-        export LD_LIBRARY_PATH="${GMSH_LIB_DIR}:${LD_LIBRARY_PATH:-}"
-        ;;
-esac
+# Shared with run_pipeline.sh and mirrored in Python by
+# tools/PreProcessor/gui/app/services/env_setup.py, so the GUI, the headless
+# pipeline and this script all resolve libgmsh the same way. Override with
+# HYBMESH_GMSH_LIB_DIR for a non-standard install.
+. "$(dirname "$0")/tools/scripts/gmsh_lib_dir.sh"
+hybmesh_export_gmsh_lib_path
 
 # 確保結果輸出目錄存在（HybMesh2D 會自動建立各 case 的 results/meshes/<case>/ 子目錄）
 mkdir -p results/meshes

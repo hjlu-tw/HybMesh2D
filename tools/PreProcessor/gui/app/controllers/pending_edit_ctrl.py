@@ -1,14 +1,6 @@
 from __future__ import annotations
-import numpy as np
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QCursor
-from PyQt6.QtWidgets import QMenu
 from app.commands.segment_cmds import (
     AddCurveSegmentCmd, UpdateSegmentStateCmd)
-from app.commands.vertex_cmds import ReplaceGeometryPointsCmd
-from app.services.geometry_service import (
-    format_vertices_str, project_point_to_segment)
-from app.models import shape_spec
 
 
 class PendingEditControllerMixin:

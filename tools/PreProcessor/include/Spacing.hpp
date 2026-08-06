@@ -60,9 +60,14 @@ public:
     }
 
     // Task 1: Advanced Curvature-based spacing
-    static std::vector<double> generateCurvature(double L, const std::vector<Point2D>& points, const std::vector<double>& s, 
+    // L / min_ds / max_ds are part of the shared spacing-strategy signature
+    // (all generateXxx take the same arguments) but are not needed by the
+    // curvature weighting, which is driven purely by local turning angle.
+    static std::vector<double> generateCurvature([[maybe_unused]] double L,
+                                               const std::vector<Point2D>& points, const std::vector<double>& s, 
                                                int nT, double sensitivity, double max_angle_deg = 2.0, 
-                                               double min_ds = 0.0, double max_ds = 1e30) {
+                                               [[maybe_unused]] double min_ds = 0.0,
+                                               [[maybe_unused]] double max_ds = 1e30) {
         std::vector<double> w(points.size(), 1.0);
         double max_angle_rad = max_angle_deg * M_PI / 180.0;
 

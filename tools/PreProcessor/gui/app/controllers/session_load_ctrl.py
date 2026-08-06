@@ -1,10 +1,10 @@
 from __future__ import annotations
 import os
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtCore import QSettings
 from app.models.session import SESSION_COLORS
-from app.utils import repo_root
+from app.utils import repo_root, report_warning
 
 
 class SessionLoadControllerMixin:
@@ -48,7 +48,8 @@ class SessionLoadControllerMixin:
             loops = load_planar_boundary_loops(file_path)
         except STLPlanarError as e:
             self.main_window.log_panel.log(f"[STL] {e}")
-            QMessageBox.warning(self.main_window, "STL Import Error", str(e))
+            report_warning(self.main_window, "STL Import Failed",
+                               "The STL file could not be imported.", detail=str(e))
             return
         except Exception as e:
             self.main_window.log_panel.log(

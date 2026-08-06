@@ -4,13 +4,16 @@ AppController — multi-session, command-pattern, preview/save-separated control
 from __future__ import annotations
 import os
 import tempfile
+from contextlib import contextmanager
+
 import numpy as np
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication, QMenu
+from PyQt6.QtWidgets import QApplication
 
 from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
+from app.commands.base import CommandHistory
 from app.models.session import GeometrySession
 from app.models.mesh_config import MeshConfig
 from app.models.project import ProjectModel
@@ -20,6 +23,7 @@ from app.controllers import (
     SessionLoadControllerMixin,
     SessionTabsControllerMixin,
     SessionIOControllerMixin,
+    ProjectStateControllerMixin,
     SegmentControllerMixin,
     SegmentCanvasControllerMixin,
     SegmentVertexControllerMixin,
@@ -47,6 +51,7 @@ from app.controllers import (
     Stl3dFitControllerMixin,
     ExtrudeControllerMixin,
     PipelineControllerMixin,
+    UndoControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 )
@@ -59,6 +64,7 @@ class AppController(
     SessionLoadControllerMixin,
     SessionTabsControllerMixin,
     SessionIOControllerMixin,
+    ProjectStateControllerMixin,
     SegmentControllerMixin,
     SegmentCanvasControllerMixin,
     SegmentVertexControllerMixin,
@@ -86,6 +92,7 @@ class AppController(
     Stl3dFitControllerMixin,
     ExtrudeControllerMixin,
     PipelineControllerMixin,
+    UndoControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 ):
@@ -95,6 +102,13 @@ class AppController(
         self.main_window.controller = self
         self.sessions: list[GeometrySession] = []
         self.active_idx: int = -1
+
+        # Undo history for project-level settings, alongside the per-session CAD
+        # histories. Created here, before anything can ask whether undo is
+        # available; its recorder is started later (init_project_undo), once the
+        # panels hold their startup values.
+        self.project_history = CommandHistory()
+        self.project_history.on_change = self._update_undo_redo_buttons
         
         self.global_mesh_config = MeshConfig()
         self.global_vtk_mesh = None
@@ -126,7 +140,12 @@ class AppController(
         # QThread keeps its last ref ("destroyed while running").
         self._retiring_workers: set = set()
 
-        self._is_populating = False       # guard against feedback loops during form population
+        # Depth counter, not a bool: nested population (an outer
+        # handle_segment_list_selected whose body triggers another populate) must
+        # not have the inner block's exit re-enable change handlers while the
+        # outer one is still writing widgets. Read it through the
+        # ``_is_populating`` property; set it only via ``populating()``.
+        self._populating_depth = 0
         self._show_duplicate_preview = False  # flag to show duplicate preview line
         self._pending_seg = None          # analytic edge being created/edited (modeless dialog open)
         self._pending_dialog = None
@@ -178,6 +197,25 @@ class AppController(
         if not recovered:
             # Open a new blank tab on startup (do not restore previous files)
             self.new_blank_tab()
+        # Baseline for project-level (Mesh / Solver / IB) dirty detection. Taken
+        # last, once the panels hold their startup state, so nothing is reported
+        # as modified before the user has touched anything.
+        self._project_baseline: dict | None = None
+        self._reset_project_baseline()
+
+        # Start recording project-level edits. After the baseline above, so the
+        # startup state is the reference and nothing is recorded before the user
+        # touches anything.
+        self.init_project_undo()
+        self._wire_project_undo_signals()
+
+        # Restore the saved window layout (size/position, Log Console dock,
+        # collapsible sections). The stage is restored separately, last, because
+        # switching stage populates panels and needs a fully-wired controller.
+        from app.services.ui_state import restore_active_stage, restore_ui_state
+        restore_ui_state(self.main_window)
+        restore_active_stage(self.main_window)
+
         self._autosave_timer = QTimer(self.main_window)
         self._autosave_timer.timeout.connect(self._autosave)
         self._autosave_timer.start(60000)  # every 60 s
@@ -187,13 +225,38 @@ class AppController(
     # Coordination and Core Orchestration Methods
     # ═════════════════════════════════════════════════════════════════════
 
+    # ── form-population guard ────────────────────────────────────────────
+    @property
+    def _is_populating(self) -> bool:
+        """True while widgets are being written from the model.
+
+        Change handlers check this to avoid feeding a programmatic write back
+        into the model as if the user had typed it.
+        """
+        return self._populating_depth > 0
+
+    @contextmanager
+    def populating(self):
+        """Write widgets from the model without the handlers writing back.
+
+        Always use this rather than assigning the flag: it is exception-safe (a
+        raise mid-population used to leave the guard stuck on, silently deadening
+        every handler for the rest of the session) and re-entrant, so a nested
+        populate cannot clear the outer one's guard on the way out.
+        """
+        self._populating_depth += 1
+        try:
+            yield
+        finally:
+            self._populating_depth -= 1
+
     def show_main_window(self):
         self.main_window.show()
 
     def handle_mode_changed(self, idx: int):
         """Update Mesh Config Panel and Mesh Canvas View when switching modes."""
         if idx in [1, 2]:  # Mesh Generator or Statistics Mode
-            self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+            self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
             
             vtk_path = self.global_vtk_path if self.global_vtk_path else (self._get_expected_vtk_path(self.global_mesh_config) if self.global_mesh_config else "")
             self.main_window.mesh_stats_panel.update_stats(self.global_vtk_mesh, vtk_path)
@@ -329,49 +392,5 @@ class AppController(
             self._refresh_segment_list(clear_resampled=False)
         self._update_tab_title()
 
-    # ═════════════════════════════════════════════════════════════════════
-    # Undo / Redo
-    # ═════════════════════════════════════════════════════════════════════
-
-    def undo(self):
-        session = self.active_session()
-        if session:
-            self._after_history_change(session, session.command_history.undo(), "Undo")
-
-    def redo(self):
-        session = self.active_session()
-        if session:
-            self._after_history_change(session, session.command_history.redo(), "Redo")
-
-    def _after_history_change(self, session, cmd, verb: str):
-        """Shared post-command bookkeeping for undo()/redo().
-
-        The toolbar buttons are refreshed by ``CommandHistory.on_change`` fired
-        from inside ``undo()``/``redo()``, so they are not re-toggled here.
-        """
-        if cmd is None:
-            self.main_window.log_panel.log(f"Nothing to {verb.lower()}.")
-            return
-        self.main_window.log_panel.log(f"{verb} ({cmd.description()})")
-        self._sync_geometry_list()
-        self.redraw_canvas(announce=False)   # leave no stray highlight/handle
-        # Reseed the edit baseline so the next in-place form edit diffs against
-        # the restored state. to_dict() already returns a fresh dict, so the
-        # previous extra deepcopy was redundant.
-        if session.current_segment_idx >= 0:
-            seg = session.project_model.get_segment(session.current_segment_idx)
-            if seg:
-                session.segment_state_snapshot = seg.to_dict()
-
-    def _update_undo_redo_buttons(self, session: GeometrySession = None):
-        """Enable or disable undo/redo buttons in toolbar based on history stack status."""
-        if session is None:
-            session = self.active_session()
-        if session:
-            can_undo = session.command_history.can_undo
-            can_redo = session.command_history.can_redo
-            self.main_window.undo_btn.setEnabled(can_undo)
-            self.main_window.redo_btn.setEnabled(can_redo)
-        else:
-            self.main_window.undo_btn.setEnabled(False)
-            self.main_window.redo_btn.setEnabled(False)
+    # Undo / redo (global, across every CAD session plus project settings) lives
+    # in controllers/undo_ctrl.py — see UndoControllerMixin.

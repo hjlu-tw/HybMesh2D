@@ -6,6 +6,7 @@ import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED
+from app.workers.proc_util import popen_kwargs, stop_process_async
 
 # STL3d echoes "<i> tracing" once per x-slice as it ray-traces, so the current
 # slice index over the total Nx gives a faithful progress fraction.
@@ -37,8 +38,7 @@ class Stl3dWorker(QThread):
 
     def cancel(self):
         self._cancelled = True
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
+        stop_process_async(self._process)
 
     def run(self):
         self._cancelled = False
@@ -51,15 +51,7 @@ class Stl3dWorker(QThread):
             with open(self._para_path, "rb") as stdin_f:
                 self._process = subprocess.Popen(
                     [self._binary],
-                    stdin=stdin_f,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    bufsize=1,
-                    cwd=self._work_dir,
-                    env=env,
+                    **popen_kwargs(stdin=stdin_f, cwd=self._work_dir, env=env),
                 )
         except OSError as e:
             self.log_signal.emit(f"[STL3d] failed to start: {e}")
@@ -70,7 +62,7 @@ class Stl3dWorker(QThread):
         traced = False
         for line in self._process.stdout:
             if self._cancelled:
-                self._process.terminate()
+                stop_process_async(self._process)
                 self.log_signal.emit("STL3d cancelled by user.")
                 self.finished_signal.emit(RC_CANCELLED)
                 return

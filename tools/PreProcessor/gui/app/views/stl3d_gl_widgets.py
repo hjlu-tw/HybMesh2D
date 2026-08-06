@@ -15,12 +15,11 @@ from OpenGL.GL import (GL_DEPTH_TEST, GL_BLEND, GL_ALPHA_TEST, GL_CULL_FACE,
                        GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QLabel,
-    QPushButton, QSpinBox,
+    QWidget, QPushButton,
 )
 
 from app.services.phi_quality import FIT_OK_CELLS
-from app.utils import block_signals, make_button
+from app.utils import make_button
 
 
 _C_STL = (0.62, 0.71, 0.92, 1.0)

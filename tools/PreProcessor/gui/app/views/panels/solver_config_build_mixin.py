@@ -5,12 +5,12 @@ created on the host panel (`self.*`) and resolves via MRO; each `_build_*`
 creates the widgets it owns and appends its section to `self._layout`."""
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QFormLayout, QLabel, QPushButton, QFileDialog,
-    QTableWidget, QHeaderView, QLineEdit,
+    QWidget, QHBoxLayout, QFormLayout, QPushButton, QFileDialog,
+    QLineEdit,
 )
 
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, align_form_labels, help_label, help_widget
+from app.utils import align_form_labels, help_label, help_widget
 from app.views.panels.solver_config_widgets import _spin, _ispin, _edit, _check, _combo
 
 

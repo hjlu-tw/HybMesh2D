@@ -1,19 +1,9 @@
 from __future__ import annotations
-import csv
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QButtonGroup, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSpinBox, QFileDialog, QScrollArea, QFrame, QComboBox,
-    QListWidget, QListWidgetItem,
+    QWidget, QVBoxLayout, QScrollArea, QFrame,
 )
 
-from app.views.collapsible import CollapsibleSection
-from app.utils import (
-    make_button, SPIN_STYLE, LINEEDIT_STYLE, COMBO_STYLE,
-)
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.panels.result_panel_build_mixin import ResultPanelBuildMixin
 from app.views.panels.result_panel_cad_mixin import ResultPanelCadMixin
 from app.views.panels.result_panel_handlers_mixin import ResultPanelHandlersMixin

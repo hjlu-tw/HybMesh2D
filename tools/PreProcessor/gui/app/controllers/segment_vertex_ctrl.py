@@ -5,6 +5,7 @@ from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd
 from app.commands.vertex_cmds import InsertVertexCmd, ReplaceGeometryPointsCmd
 from app.services.geometry_service import (
     project_point_to_segment, proportional_edge_move)
+from app.utils import block_signals
 
 
 class SegmentVertexControllerMixin:
@@ -41,9 +42,9 @@ class SegmentVertexControllerMixin:
                 and 0 <= idx < len(session.original_points)):
             x, y = (float(session.original_points[idx][0]),
                     float(session.original_points[idx][1]))
-            sb.move_x.blockSignals(True); sb.move_y.blockSignals(True)
-            sb.move_x.setValue(x); sb.move_y.setValue(y)
-            sb.move_x.blockSignals(False); sb.move_y.blockSignals(False)
+            with block_signals(sb.move_x, sb.move_y):
+                sb.move_x.setValue(x)
+                sb.move_y.setValue(y)
             sb.move_btn.setEnabled(True)
             canvas.show_vertex_move_handle(idx, x, y)
 

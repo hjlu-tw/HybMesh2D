@@ -3,13 +3,12 @@ import os
 
 from PyQt6.QtWidgets import QFileDialog
 
-from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
-from app.workers.solver_run import SolverPipelineWorker
-from app.services import solver_case
-from app.services.solver_case import sanitize_case_name as _sanitize
 from app.utils import (
-    find_solver_executables, repo_root, find_mpi_launcher, is_mpi_binary,
+    repo_root, report_info,
 )
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 
 class SolverToolsControllerMixin:
@@ -30,7 +29,7 @@ class SolverToolsControllerMixin:
         (circle -> solid disk; polygon/triangle/quad/closed custom -> point-in-
         polygon over the sampled boundary), wire it into the solver's IBM config,
         and skip the STL3d phi.dat path (ibm_phi_file left empty)."""
-        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        from PyQt6.QtWidgets import QInputDialog
         from app.services.geometry_service import GeometryService
         from app.services.dll_templates import render_analytic_phi_from_shape
         log = self.main_window.log_panel.log
@@ -50,7 +49,7 @@ class SolverToolsControllerMixin:
         shapes = ([s for s in session.project_model.segments if _is_solid(s)]
                   if session is not None else [])
         if not shapes:
-            QMessageBox.information(
+            report_info(
                 self.main_window, "Analytic phi",
                 "No closed CAD shape found. Draw a circle / polygon / triangle / "
                 "quad (closed) in the CAD tab, then try again.")
@@ -114,10 +113,7 @@ class SolverToolsControllerMixin:
     def open_probe_coords_dialog(self):
         """Enter probe-point coordinates in the GUI, write them to a file and
         link it into the solver config's probe field (#10)."""
-        import os
-        from PyQt6.QtWidgets import QFileDialog
         from app.views.probe_points_dialog import ProbePointsDialog
-        from app.utils import repo_root
         sp = self.main_window.solver_config_panel
         cur = sp.probe_points_def_fn.text().strip()
         initial = ""
@@ -161,7 +157,9 @@ class SolverToolsControllerMixin:
                 "[probe] locations overlaid on the Results canvas "
                 "(visible once a result is loaded).")
         except Exception:
-            pass
+            _log.warning(
+                "could not overlay the probe locations on the Results "
+                "canvas", exc_info=True)
 
     def refresh_solver_probe_overlay(self):
         """#4: parse the configured probe-point file and overlay its markers on
@@ -182,4 +180,6 @@ class SolverToolsControllerMixin:
         try:
             self.main_window.result_canvas_view.set_solver_probe_points(pts)
         except Exception:
-            pass
+            _log.warning(
+                "could not overlay the probe points read from "
+                "file", exc_info=True)

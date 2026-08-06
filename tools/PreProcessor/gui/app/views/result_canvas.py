@@ -1,10 +1,8 @@
 from __future__ import annotations
-import os
-import numpy as np
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox, QLabel,
-    QPushButton, QFileDialog,
+    QPushButton,
 )
 
 import matplotlib
@@ -22,6 +20,10 @@ from app.views.result_canvas_plots_mixin import ResultCanvasPlotsMixin
 from app.views.result_canvas_vector_mixin import ResultCanvasVectorMixin
 from app.views.result_canvas_controls_mixin import ResultCanvasControlsMixin
 from app.views.result_canvas_setup_mixin import ResultCanvasSetupMixin
+
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 _BG = "#0c0d16"
 _FG = "#a0a8c0"
@@ -276,7 +278,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             try:
                 self._cbar.remove()  # also removes its colorbar axes
             except Exception:
-                pass
+                _log.debug("could not remove the previous colorbar", exc_info=True)
             self._cbar = None
         self._style_axes()
 
@@ -372,7 +374,9 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
                                             colors="#f8fafc", linewidths=0.9)
                     self.ax.clabel(cs, fontsize=7, fmt="%g", colors="#f8fafc")
                 except Exception:
-                    pass
+                    _log.warning(
+                        "iso-line contouring failed; the requested iso-lines are NOT "
+                        "drawn", exc_info=True)
 
             if self.mesh_cb.isChecked():
                 self.ax.triplot(self._triang, color="#5a607a", lw=0.2, alpha=0.5)

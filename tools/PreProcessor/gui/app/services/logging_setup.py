@@ -20,6 +20,26 @@ LOGGER_NAME = "hybmesh.gui"
 _configured = False
 
 
+def get_logger(name: str | None = None) -> logging.Logger:
+    """Logger for a GUI module: ``get_logger(__name__)``.
+
+    Always a child of ``hybmesh.gui``, so everything lands in the same rotating
+    file with the module name attached. Safe before :func:`configure_logging`
+    (the records are simply dropped until a handler exists), which is what lets
+    module-level use work in tests and headless runs.
+
+    Use this instead of swallowing an exception with ``pass``. A best-effort
+    step that is *allowed* to fail belongs at ``debug(..., exc_info=True)``;
+    something that should not have failed belongs at ``warning``. Either way the
+    traceback survives in results/logs/gui.log, where a silent ``pass`` left
+    nothing at all to diagnose a field problem with.
+    """
+    if not name or name == LOGGER_NAME:
+        return logging.getLogger(LOGGER_NAME)
+    short = name[4:] if name.startswith("app.") else name
+    return logging.getLogger(f"{LOGGER_NAME}.{short}")
+
+
 def _log_dir() -> str:
     try:
         from app.utils import repo_root
@@ -31,22 +51,48 @@ def _log_dir() -> str:
     return d
 
 
+def _env_level(default: int) -> int:
+    """Log level from ``HYBMESH_LOG_LEVEL``, else ``default``.
+
+    Best-effort diagnostics are logged at DEBUG, which INFO (the default) drops.
+    An env var is what makes them reachable when a user is actually chasing a
+    problem — ``HYBMESH_LOG_LEVEL=DEBUG python3 tools/PreProcessor/gui/main.py``
+    — without leaving verbose logging on for everyone.
+    """
+    raw = (os.environ.get("HYBMESH_LOG_LEVEL") or "").strip().upper()
+    if not raw:
+        return default
+    named = getattr(logging, raw, None)
+    if isinstance(named, int):
+        return named
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def configure_logging(level: int = logging.INFO) -> logging.Logger:
     """Set up the ``hybmesh.gui`` logger with a rotating file handler and an
-    uncaught-exception hook. Idempotent."""
+    uncaught-exception hook. Idempotent.
+
+    ``HYBMESH_LOG_LEVEL`` overrides ``level`` (e.g. ``DEBUG`` to include the
+    best-effort/teardown diagnostics)."""
     global _configured
     logger = logging.getLogger(LOGGER_NAME)
     if _configured:
         return logger
-    logger.setLevel(level)
+    logger.setLevel(_env_level(level))
     logger.propagate = False
 
     try:
         path = os.path.join(_log_dir(), "gui.log")
         handler = logging.handlers.RotatingFileHandler(
             path, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
+        # %(name)s carries the module (get_logger(__name__)), so a logged
+        # best-effort failure can be traced back to its call site.
         handler.setFormatter(logging.Formatter(
-            "%(asctime)s %(levelname)-7s %(message)s", "%Y-%m-%d %H:%M:%S"))
+            "%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+            "%Y-%m-%d %H:%M:%S"))
         logger.addHandler(handler)
     except Exception:
         # Never let logging setup take the app down; the console still works.
@@ -90,4 +136,7 @@ def _maybe_show_dialog(exc_type, exc):
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         box.exec()
     except Exception:
+        # Deliberately silent: we are already inside the uncaught-exception hook,
+        # and the traceback that matters has just been written to the log file by
+        # the caller. Raising (or logging) from here would only mask it.
         pass

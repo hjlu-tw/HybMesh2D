@@ -8,6 +8,10 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 class CanvasEventsMixin:
     def _active_points_have_seam(self) -> bool:
@@ -187,7 +191,9 @@ class CanvasEventsMixin:
                     try:
                         cursor = self.snap_cb(*cursor)
                     except Exception:
-                        pass
+                        _log.warning(
+                            "snap callback failed; the draw preview is "
+                            "unsnapped", exc_info=True)
                 prev = self._draw_preview_points(cursor)
                 if prev is not None and len(prev) > 0:
                     self._draw_preview.setData(prev[:, 0], prev[:, 1])

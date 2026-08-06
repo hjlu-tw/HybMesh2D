@@ -1,23 +1,18 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QFormLayout, QComboBox, QSpinBox, QLabel,
+    QWidget, QFormLayout, QComboBox, QSpinBox, QLabel,
     QCheckBox,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import (
     make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
     help_label, help_widget,
 )
+from app.models.mesh_config import MeshConfig
 from app.views.bc_widget import BCWidget
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.clean_double_spin_box import CleanDoubleSpinBox, SciDoubleSpinBox
 
-from app.views.panels.mesh_bl_mixin import MeshConfigBLMixin
-from app.views.panels.mesh_sizing_mixin import MeshConfigSizingMixin
-from app.views.panels.mesh_config_config_mixin import MeshConfigConfigMixin
-from app.views.panels.mesh_domain_mixin import MeshConfigDomainMixin
-from app.views.panels.mesh_output_mixin import MeshConfigOutputMixin
 
 
 class MeshConfigBuildMixin:
@@ -32,11 +27,16 @@ class MeshConfigBuildMixin:
         self._layout.addWidget(self.sec_sizing)
 
         sizing_form = QFormLayout()
-        self.surface_mesh_size = CleanDoubleSpinBox()
-        self.surface_mesh_size.setRange(1e-4, 1e4)
-        self.surface_mesh_size.setDecimals(4)
+        # Scientific-notation field: the old 1e-4 floor made mm-scale geometry
+        # unmeshable at its natural size. 0 is allowed here and rejected with a
+        # message by MeshConfig.validate() unless Auto is on.
+        self.surface_mesh_size = SciDoubleSpinBox()
+        self.surface_mesh_size.setRange(0.0, 1e6)
+        self.surface_mesh_size.setValue(MeshConfig.surface_mesh_size)
         self.surface_mesh_size.setStyleSheet(SPIN_STYLE)
-        self.surface_mesh_size.setToolTip("Target element size along the geometry boundary walls")
+        self.surface_mesh_size.setToolTip(
+            "Target element size along the geometry boundary walls. "
+            "Accepts scientific notation (e.g. 5e-5).")
 
         self.auto_surface_size = QCheckBox("Auto Surface Sizing")
         self.auto_surface_size.setStyleSheet("color:#a0a8c0;")
@@ -50,11 +50,13 @@ class MeshConfigBuildMixin:
         self.auto_surface_hint.setStyleSheet("color:#6fae7a; font-size:10px;")
         self.auto_surface_hint.setVisible(False)
 
-        self.farfield_mesh_size = CleanDoubleSpinBox()
-        self.farfield_mesh_size.setRange(1e-4, 1e4)
-        self.farfield_mesh_size.setDecimals(4)
+        self.farfield_mesh_size = SciDoubleSpinBox()
+        self.farfield_mesh_size.setRange(0.0, 1e6)
+        self.farfield_mesh_size.setValue(MeshConfig.farfield_mesh_size)
         self.farfield_mesh_size.setStyleSheet(SPIN_STYLE)
-        self.farfield_mesh_size.setToolTip("Target element size in the far-field region away from geometry")
+        self.farfield_mesh_size.setToolTip(
+            "Target element size in the far-field region away from geometry. "
+            "Accepts scientific notation (e.g. 2.5e-3).")
 
         # #11: far-field size also gets an Auto option (mirrors Auto Surface).
         # When on, the mesher derives the far-field size from the domain extent;
@@ -147,11 +149,21 @@ class MeshConfigBuildMixin:
         self._layout.addWidget(self.sec_bl_core)
 
         bl_form = QFormLayout()
-        self.bl_initial_thickness = CleanDoubleSpinBox()
-        self.bl_initial_thickness.setRange(1e-6, 1.0)
-        self.bl_initial_thickness.setDecimals(6)
+        # Scientific-notation field: a y+~1 first cell on a chord-normalised
+        # geometry is routinely 1e-7..1e-8, which the old
+        # setRange(1e-6, 1.0)+setDecimals(6) silently clamped to 1e-6. The lower
+        # bound is 0 here and "must be > 0" is enforced by MeshConfig.validate(),
+        # so an invalid entry gets a message instead of a silent substitution.
+        self.bl_initial_thickness = SciDoubleSpinBox()
+        self.bl_initial_thickness.setRange(0.0, 1e4)
+        # Seed the MeshConfig default explicitly. The old field's 1e-6 *minimum*
+        # was doing this implicitly (Qt clamped the un-set 0 up to it); now that
+        # 0 is a legal entry, an un-populated panel would otherwise read 0.
+        self.bl_initial_thickness.setValue(MeshConfig.bl_initial_thickness)
         self.bl_initial_thickness.setStyleSheet(SPIN_STYLE)
-        self.bl_initial_thickness.setToolTip("Height of the first boundary layer cell adjacent to the wall")
+        self.bl_initial_thickness.setToolTip(
+            "Height of the first boundary layer cell adjacent to the wall. "
+            "Accepts scientific notation (e.g. 2.5e-7).")
 
         self.bl_growth_rate = CleanDoubleSpinBox()
         self.bl_growth_rate.setRange(1.001, 5.0)

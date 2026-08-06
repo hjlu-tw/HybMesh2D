@@ -9,6 +9,10 @@ import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 class CanvasDrawMixin:
     # ── Editable control-point handles for the selected analytic edge ──────
@@ -61,7 +65,7 @@ class CanvasDrawMixin:
         try:
             self.plot_widget.setCursor(Qt.CursorShape.OpenHandCursor)
         except Exception:
-            pass
+            _log.debug("could not set the weld-tool cursor", exc_info=True)
 
     def stop_endpoint_tool(self):
         self._endpoint_tool = False
@@ -71,7 +75,9 @@ class CanvasDrawMixin:
         try:
             self.plot_widget.unsetCursor()
         except Exception:
-            pass
+            _log.debug(
+                "could not restore the cursor after the weld "
+                "tool", exc_info=True)
 
     def _weld_source_points(self):
         """Every draggable weld point: all edge endpoints (white markers) plus any
@@ -82,7 +88,9 @@ class CanvasDrawMixin:
             if xs is not None and ys is not None:
                 pts.extend((float(a), float(b)) for a, b in zip(xs, ys))
         except Exception:
-            pass
+            _log.warning(
+                "could not read endpoint markers; some weld handles will be "
+                "missing", exc_info=True)
         if self._open_endpoint_pts is not None:
             pts.extend((float(p[0]), float(p[1])) for p in self._open_endpoint_pts)
         uniq = []
@@ -258,7 +266,7 @@ class CanvasDrawMixin:
         try:
             self.plot_widget.getViewBox().disableAutoRange()
         except Exception:
-            pass
+            _log.debug("could not freeze auto-range while drawing", exc_info=True)
         self._draw_hint.setVisible(True)
         # Centre the prompt in the current view so the user sees where to click.
         try:
@@ -266,12 +274,12 @@ class CanvasDrawMixin:
             self._draw_hint.setAnchor((0.5, 0.5))
             self._draw_hint.setPos(0.5 * (x0 + x1), 0.5 * (y0 + y1))
         except Exception:
-            pass
+            _log.debug("could not centre the draw hint in the view", exc_info=True)
         self._draw_hint.setText(self._draw_hint_text())
         try:
             self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         except Exception:
-            pass
+            _log.debug("could not set the draw cursor", exc_info=True)
 
     def cancel_draw_mode(self):
         """Abort drawing entirely (e.g. right-click) and remove all artifacts."""
@@ -291,7 +299,7 @@ class CanvasDrawMixin:
         try:
             self.plot_widget.unsetCursor()
         except Exception:
-            pass
+            _log.debug("could not restore the cursor after drawing", exc_info=True)
 
     def is_drawing(self) -> bool:
         return self._draw_tool is not None
@@ -422,7 +430,9 @@ class CanvasDrawMixin:
         try:
             self.plot_widget.unsetCursor()
         except Exception:
-            pass
+            _log.debug(
+                "could not restore the cursor after finishing the "
+                "shape", exc_info=True)
         if tool and pts:
             self.shape_drawn.emit(tool, pts)
 
@@ -435,7 +445,9 @@ class CanvasDrawMixin:
             try:
                 x, y = self.snap_cb(x, y)
             except Exception:
-                pass
+                _log.warning(
+                    "snap callback failed; the placed point was NOT "
+                    "snapped", exc_info=True)
 
         if tool in ('polygon', 'polyline'):
             if is_double:                # finish the free polygon / polyline

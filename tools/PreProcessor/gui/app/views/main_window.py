@@ -1,8 +1,7 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea, QProgressBar, QGridLayout
+    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QStackedWidget, QComboBox, QFrame, QScrollArea
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
@@ -18,7 +17,6 @@ from app.views.panels.solver_monitor_panel import SolverMonitorPanel
 from app.views.panels.stl3d_panel import Stl3dConfigPanel
 from app.views.stl3d_canvas import Stl3dCanvasView
 from app.views.panels.result_panel import ResultControlPanel
-from app.styles import TOOLBAR_CHECKBOX_STYLE
 from app.views.main_window_menu_mixin import MainWindowMenuMixin
 from app.views.main_window_toolbar_mixin import MainWindowToolbarMixin
 from app.views.main_window_toolbar_build_mixin import MainWindowToolbarBuildMixin
@@ -307,6 +305,11 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         self.log_panel.setStyleSheet(
             "background: #06070d; color: #8892b0; font-family: monospace;")
         log_dock = QDockWidget("Log Console", self)
+        # Required by QMainWindow.saveState()/restoreState(): a dock without an
+        # objectName is skipped (with a runtime warning), so its size, visibility
+        # and floating state could never be restored between sessions.
+        log_dock.setObjectName("logConsoleDock")
+        self.log_dock = log_dock
         log_dock.setWidget(self.log_panel)
         log_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
         log_dock.setMinimumHeight(48)

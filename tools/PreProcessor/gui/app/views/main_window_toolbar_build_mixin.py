@@ -1,26 +1,9 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QMainWindow, QDockWidget, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea, QProgressBar, QGridLayout
+    QWidget, QPushButton, QLabel, QCheckBox,
+    QComboBox, QProgressBar, QGridLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
-from app.views.sidebar import SidebarView
-from app.views.canvas import CanvasView
-from app.views.log_panel import LogPanel
-from app.views.mesh_canvas import MeshCanvasView
-from app.views.result_canvas import ResultCanvasView
-from app.views.panels.mesh_config_panel import MeshConfigPanel
-from app.views.panels.mesh_stats_panel import MeshStatsPanel
-from app.views.panels.solver_config_panel import SolverConfigPanel
-from app.views.panels.solver_monitor_panel import SolverMonitorPanel
-from app.views.panels.stl3d_panel import Stl3dConfigPanel
-from app.views.stl3d_canvas import Stl3dCanvasView
-from app.views.panels.result_panel import ResultControlPanel
 from app.styles import TOOLBAR_CHECKBOX_STYLE
-from app.views.main_window_menu_mixin import MainWindowMenuMixin
-from app.views.main_window_toolbar_mixin import MainWindowToolbarMixin
 
 
 # Mixins listed BEFORE QMainWindow so the Qt virtual overrides they provide

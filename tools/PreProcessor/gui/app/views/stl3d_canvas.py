@@ -7,25 +7,24 @@ the domain/resolution. After a run it shows the phi field's solid cells
 """
 from __future__ import annotations
 
-import math
 
 import numpy as np
 import pyqtgraph.opengl as gl
-from OpenGL.GL import (GL_DEPTH_TEST, GL_BLEND, GL_ALPHA_TEST, GL_CULL_FACE,
-                       GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QLabel,
-    QPushButton, QSpinBox,
+    QSpinBox,
 )
 
 from app.services.phi_quality import FIT_OK_CELLS
-from app.utils import block_signals, make_button
+from app.utils import block_signals
 from app.views.stl3d_gl_widgets import (
     _GLView, _AxisStrip, _dev_cmap, _bar_button, _nice_step,
     _box_edge_segments, _C_STL, _C_STL_EDGE, _C_BOX, _C_FLUID, _C_SOLID,
     _EDGE_GLOPTS, _PHI_GLOPTS, _DEV_VMAX_CELLS,
 )
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 
 class Stl3dCanvasView(QWidget):
@@ -320,7 +319,7 @@ class Stl3dCanvasView(QWidget):
         try:
             grid.setColor((70, 80, 115, 45))      # very faint, like the CAD grid
         except Exception:
-            pass
+            _log.debug("could not set the 3D grid colour", exc_info=True)
         self._grid_items.append(grid)
         self.view.addItem(grid)
         grid.setVisible(self._show.get("grid", True))
@@ -482,7 +481,7 @@ class Stl3dCanvasView(QWidget):
             from pyqtgraph import Vector
             self.view.opts["center"] = Vector(cx, cy, cz)
         except Exception:
-            pass
+            _log.debug("could not recentre the 3D camera", exc_info=True)
         # 2D locks the camera straight down +Z (XY plane facing the viewer);
         # 3D uses the default orbit angle.
         if getattr(self.view, "_mode_2d", False):

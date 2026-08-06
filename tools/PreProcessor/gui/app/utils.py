@@ -44,23 +44,61 @@ def report_error(parent, title: str, message: str, detail: str | None = None):
     modally; keep the log line too (callers still log), but never let a data-loss
     failure be silent. Headless/offscreen platforms skip the modal so batch and
     test runs don't block on a prompt with no one to answer it."""
-    _message_box(parent, title, message, detail, critical=True)
+    _message_box(parent, title, message, detail, "error")
 
 
 def report_warning(parent, title: str, message: str, detail: str | None = None):
     """Show a blocking warning dialog for a failed *read* (load/import). Less
     severe than report_error — no user data is at risk — but still surfaced so a
     silent load failure isn't mistaken for an empty result."""
-    _message_box(parent, title, message, detail, critical=False)
+    _message_box(parent, title, message, detail, "warning")
 
 
-def _message_box(parent, title, message, detail, critical):
+def report_info(parent, title: str, message: str, detail: str | None = None):
+    """Show a blocking information dialog: a precondition the user must satisfy
+    ("draw a closed profile first"), not a failure. Nothing went wrong, so it must
+    not carry a warning/error icon — grading everything the same way trains users
+    to dismiss real problems."""
+    _message_box(parent, title, message, detail, "info")
+
+
+def confirm(parent, title: str, question: str,
+            detail: str | None = None, headless_default: bool = True) -> bool:
+    """Ask a Yes/No question; return True for Yes.
+
+    Use this instead of a bare ``QMessageBox.question``/``warning`` prompt: it
+    carries the Question icon (a confirmation is not a warning) and, crucially,
+    it resolves to ``headless_default`` on a screenless platform instead of
+    blocking forever. Every hand-rolled prompt that skipped that check became a
+    hang in tests, CI or the headless pipeline.
+
+    ``headless_default`` is True for "proceed anyway?" prompts, which is what a
+    batch run wants. Pass False for anything destructive.
+    """
     from PyQt6.QtWidgets import QMessageBox
-    app = QApplication.instance()
-    if app is not None and app.platformName() in ("offscreen", "minimal"):
+    if is_headless():
+        return headless_default
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(title)
+    box.setText(question)
+    if detail:
+        box.setDetailedText(detail)
+    box.setStandardButtons(QMessageBox.StandardButton.Yes
+                           | QMessageBox.StandardButton.No)
+    box.setDefaultButton(QMessageBox.StandardButton.No)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
+_ICONS = {"error": "Critical", "warning": "Warning", "info": "Information"}
+
+
+def _message_box(parent, title, message, detail, severity):
+    from PyQt6.QtWidgets import QMessageBox
+    if is_headless():
         return
     box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Icon.Critical if critical else QMessageBox.Icon.Warning)
+    box.setIcon(getattr(QMessageBox.Icon, _ICONS.get(severity, "Warning")))
     box.setWindowTitle(title)
     box.setText(message)
     if detail:
@@ -364,6 +402,18 @@ def repo_root() -> str:
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../.."))
 
 
+def is_headless() -> bool:
+    """True on a Qt platform with no screen (offscreen / minimal).
+
+    A modal there would block forever: there is nothing to show it on and nobody
+    to answer it. Every confirmation prompt on a path that batch runs, the
+    headless pipeline or the test suite can reach must check this first.
+    """
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance()
+    return app is not None and app.platformName() in ("offscreen", "minimal")
+
+
 def find_binary_executable(bin_name: str) -> str | None:
     """Locate binary executable in PATH environment or local build candidates."""
     path_run = shutil.which(bin_name)
@@ -457,8 +507,14 @@ def apply_smart_spin_steps(root) -> int:
     """
     import math
     from PyQt6.QtWidgets import QDoubleSpinBox
+    from app.views.clean_double_spin_box import SciDoubleSpinBox
     changed = 0
     for sp in root.findChildren(QDoubleSpinBox):
+        if isinstance(sp, SciDoubleSpinBox):
+            # Scientific fields recompute a decade-relative step on every press
+            # (stepBy), which a single fixed step chosen at startup cannot match:
+            # their value can move several orders of magnitude in one session.
+            continue
         if abs(sp.singleStep() - 1.0) > 1e-9:
             continue   # respect an explicit per-field step
         dec = sp.decimals()

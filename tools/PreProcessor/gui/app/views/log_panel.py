@@ -152,6 +152,9 @@ class LogPanel(QWidget):
                     else logging.WARNING if level == "WARNING" else logging.INFO)
             _lg.log(_lvl, clean_message)
         except Exception:
+            # Deliberately silent, and the only place in the GUI that should be:
+            # this IS the write-to-log-file path, so logging the failure would
+            # re-enter it. The on-screen console below still shows the message.
             pass
 
         # Escape potential HTML characters in message to prevent formatting injection

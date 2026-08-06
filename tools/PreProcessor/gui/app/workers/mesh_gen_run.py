@@ -3,7 +3,9 @@ import re
 import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
+from app.workers.proc_util import popen_kwargs, stop_process_async, kill_process
 
 # Ordered stage markers emitted by HybMesh2D on stdout, mapped to a coarse
 # completion percentage. Matched as substrings, in order, so progress is
@@ -59,9 +61,11 @@ class MeshGenWorker(QThread):
             self.progress_signal.emit(pct)
 
     def cancel(self):
+        # Non-blocking: SIGTERM the whole process tree now and let the escalation
+        # to SIGKILL happen off-thread, so the Cancel button never freezes the UI
+        # (and a mesher that ignores SIGTERM still dies).
         self._cancelled = True
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
+        stop_process_async(self._process)
 
     def run(self):
         try:
@@ -71,18 +75,19 @@ class MeshGenWorker(QThread):
             )
             self._cancelled = False
             cwd = os.path.dirname(os.path.dirname(os.path.abspath(self.executable_path)))
+            # HybMesh2D loads libgmsh through @rpath; the loader search path has
+            # to be handed over explicitly here (a shell wrapper's export cannot
+            # survive into this process — see app/services/env_setup.py).
+            hint = gmsh_missing_hint()
+            if hint:
+                self.log_signal.emit(hint)
             self._process = subprocess.Popen(
                 [self.executable_path, "-conf", self.config_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,  # line-buffered
-                cwd=cwd,
+                env=mesher_env(),
+                **popen_kwargs(cwd=cwd),
             )
 
-            
+
             self._progress = 0
             for line in self._process.stdout:
                 if self._cancelled:
@@ -93,17 +98,17 @@ class MeshGenWorker(QThread):
                     self._emit_progress(stripped)
 
             if self._cancelled:
-                if self._process.poll() is None:
-                    self._process.terminate()
+                stop_process_async(self._process)
                 self.log_signal.emit("Mesh generation cancelled by user.")
                 self.finished_signal.emit(RC_CANCELLED)
                 return
 
+            # stdout is at EOF, so the process is finishing; this only bounds a
+            # child that closed its pipe but will not exit.
             self._process.wait(timeout=600)  # 10 min timeout
             self.finished_signal.emit(self._process.returncode)
         except subprocess.TimeoutExpired:
-            if self._process:
-                self._process.kill()
+            kill_process(self._process)
             self.log_signal.emit("Mesh generation timed out (10 min).")
             self.finished_signal.emit(RC_TIMEOUT)
         except Exception as e:

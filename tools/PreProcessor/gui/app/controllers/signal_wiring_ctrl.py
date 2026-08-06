@@ -3,6 +3,7 @@ controller.py small. All methods run on the composed AppController instance."""
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QMenu
+from app.utils import block_signals
 
 
 class SignalWiringMixin:
@@ -175,7 +176,6 @@ class SignalWiringMixin:
         self.main_window.canvas_view.snap_cb = self._snap_draw_xy
 
         # Wire Selection Mode dropdown (now in the sidebar, beside the tree)
-        mw = self.main_window
         def _on_selection_mode_changed(index):
             mode = 'vertex' if index == 0 else 'edge'
             # Drop any edge/vertex selection carried over from the previous mode
@@ -271,9 +271,8 @@ class SignalWiringMixin:
             def sync_fn(checked):
                 canvas_method(checked)
                 for cb in (cb_sidebar, cb_toolbar):
-                    cb.blockSignals(True)
-                    cb.setChecked(checked)
-                    cb.blockSignals(False)
+                    with block_signals(cb):
+                        cb.setChecked(checked)
             return sync_fn
 
         sync_wireframe = _make_sync_checkbox_fn(
@@ -303,14 +302,12 @@ class SignalWiringMixin:
             mw.mesh_canvas_view.set_color_mode(mode_val)
             
             # Sync toolbar
-            mw.mesh_color_mode_combo.blockSignals(True)
-            mw.mesh_color_mode_combo.setCurrentText(text)
-            mw.mesh_color_mode_combo.blockSignals(False)
+            with block_signals(mw.mesh_color_mode_combo):
+                mw.mesh_color_mode_combo.setCurrentText(text)
             
             # Sync sidebar panel
-            mw.mesh_stats_panel.color_mode_combo.blockSignals(True)
-            mw.mesh_stats_panel.color_mode_combo.setCurrentText(text)
-            mw.mesh_stats_panel.color_mode_combo.blockSignals(False)
+            with block_signals(mw.mesh_stats_panel.color_mode_combo):
+                mw.mesh_stats_panel.color_mode_combo.setCurrentText(text)
 
         mw.mesh_show_wireframe_cb.toggled.connect(sync_wireframe)
         mw.mesh_stats_panel.show_wireframe_cb.toggled.connect(sync_wireframe)

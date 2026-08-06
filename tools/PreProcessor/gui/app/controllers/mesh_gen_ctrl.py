@@ -2,12 +2,12 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
-from app.utils import find_binary_executable, repo_root
+from app.utils import find_binary_executable, repo_root, confirm
 
 if TYPE_CHECKING:
     from app.models.mesh_config import MeshConfig
@@ -52,7 +52,7 @@ class MeshGenControllerMixin:
 
         try:
             self.global_mesh_config.load_from_file(path)
-            self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+            self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
             self.main_window.log_panel.log(f"Loaded mesh configuration from {path}")
             missing = getattr(self.global_mesh_config, "missing_geom_files", [])
             if missing:
@@ -424,13 +424,13 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log(
                 "Mesh generation is running; please wait for it to finish, then export.")
             return
-        resp = QMessageBox.question(
-            self.main_window, "No Mesh Generated",
-            f"No mesh has been generated yet, so {what} cannot be exported.\n\n"
-            "Generate the mesh now and export automatically when it finishes?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes)
-        if resp != QMessageBox.StandardButton.Yes:
+        # headless_default False: a batch export must fail loudly rather than
+        # silently kick off a mesh run nobody asked for.
+        if not confirm(
+                self.main_window, "No Mesh Generated",
+                f"No mesh has been generated yet, so {what} cannot be exported."
+                "\n\nGenerate the mesh now and export automatically when it "
+                "finishes?", headless_default=False):
             return
         self._pending_after_mesh = retry_fn
         self.main_window.log_panel.log(

@@ -1,8 +1,12 @@
 from __future__ import annotations
 import os
 import numpy as np
-from PyQt6.QtWidgets import QMessageBox
 from app.models.session import GeometrySession
+
+from app.services.logging_setup import get_logger
+from app.utils import block_signals
+
+_log = get_logger(__name__)
 
 
 class SessionTabsControllerMixin:
@@ -45,7 +49,9 @@ class SessionTabsControllerMixin:
             try:
                 mw.canvas_view.remove_geometry(session.session_id)
             except Exception:
-                pass
+                _log.debug(
+                    "could not remove a session's canvas layer during "
+                    "reset", exc_info=True)
         while mw.tab_widget.count() > 0:
             mw.tab_widget.removeTab(0)
         self.active_idx = -1
@@ -61,7 +67,9 @@ class SessionTabsControllerMixin:
                 try:
                     fn()
                 except Exception:
-                    pass
+                    _log.debug(
+                        "canvas teardown step failed during "
+                        "reset", exc_info=True)
         mw.tab_widget.blockSignals(False)
 
         # 2. Reset the shared mesh + solver config to defaults.
@@ -81,8 +89,8 @@ class SessionTabsControllerMixin:
         mw.mesh_canvas_view.update_geometry_previews([])
         mw.mesh_canvas_view.update_seed_previews([])
         mw.mesh_stats_panel.update_stats(None)
-        mw.mesh_config_panel.set_config(self.global_mesh_config)
-        mw.solver_config_panel.set_config(self.global_solver_config)
+        self.push_panel_config(mw.mesh_config_panel, self.global_mesh_config)
+        self.push_panel_config(mw.solver_config_panel, self.global_solver_config)
 
         # 5. Leave one clean CAD session so a following load reuses it.
         if new_blank:
@@ -144,11 +152,10 @@ class SessionTabsControllerMixin:
             # Select corresponding session row in the model tree
             sb = self.main_window.sidebar_view
             tree = sb.geometry_tree
-            tree.blockSignals(True)
-            node = tree.session_item(session.session_id)
-            if node is not None:
-                tree.setCurrentItem(node)
-            tree.blockSignals(False)
+            with block_signals(tree):
+                node = tree.session_item(session.session_id)
+                if node is not None:
+                    tree.setCurrentItem(node)
 
             # Switch active geometries on the shared canvas
             self.main_window.canvas_view.highlight_geometry(session.session_id)
@@ -199,14 +206,12 @@ class SessionTabsControllerMixin:
         if idx < 0 or idx >= len(self.sessions):
             return
         session = self.sessions[idx]
-        if session.is_geometry_modified:
-            reply = QMessageBox.question(
-                self.main_window,
-                "Unsaved Changes",
-                f"'{session.display_name}' has unsaved changes. Close anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if reply == QMessageBox.StandardButton.No:
-                return
+        # headless_default True: a batch run must be able to close a tab.
+        from app.utils import confirm
+        if session.is_geometry_modified and not confirm(
+                self.main_window, "Unsaved Changes",
+                f"'{session.display_name}' has unsaved changes. Close anyway?"):
+            return
 
         # If a resample backend is still running for THIS session, cancel and
         # wait for it before tearing the session down, so its finished-callback
@@ -229,11 +234,10 @@ class SessionTabsControllerMixin:
         self.main_window.canvas_view.remove_geometry(session.session_id)
 
         # Block signals during tab removal and list popping to keep states synchronized
-        self.main_window.tab_widget.blockSignals(True)
-        self.main_window.tab_widget.removeTab(idx)
-        self.sessions.pop(idx)
-        self._refresh_session_colors()
-        self.main_window.tab_widget.blockSignals(False)
+        with block_signals(self.main_window.tab_widget):
+            self.main_window.tab_widget.removeTab(idx)
+            self.sessions.pop(idx)
+            self._refresh_session_colors()
 
         # Deleting a geometry must also drop it from the mesh generator input
         # list, so a removed geometry never silently reappears in the next
@@ -267,9 +271,8 @@ class SessionTabsControllerMixin:
                 self.active_idx -= 1
             # If idx > active_idx, self.active_idx is unchanged
 
-            self.main_window.tab_widget.blockSignals(True)
-            self.main_window.tab_widget.setCurrentIndex(self.active_idx)
-            self.main_window.tab_widget.blockSignals(False)
+            with block_signals(self.main_window.tab_widget):
+                self.main_window.tab_widget.setCurrentIndex(self.active_idx)
             self._sync_geometry_list()
             self.switch_tab(self.active_idx)
 

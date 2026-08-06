@@ -9,6 +9,7 @@ from app.models.solver_config import SolverConfig
 from app.services import solver_case
 from app.utils import find_mpi_launcher
 from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
+from app.workers.proc_util import popen_kwargs, stop_process_async, kill_process
 
 # Bound the interactive pre-processors (getPGrid / bDecompose) so a wedged stage
 # that stops producing output cannot hang the whole pipeline indefinitely. The
@@ -85,8 +86,7 @@ class SolverPipelineWorker(QThread):
     # ------------------------------------------------------------------ #
     def cancel(self):
         self._cancelled = True
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
+        stop_process_async(self._process)
 
     def run(self):
         try:
@@ -192,15 +192,11 @@ class SolverPipelineWorker(QThread):
         self.log_signal.emit(
             f"[Solver] {' '.join(cmd)}  (cwd={self._solver_work_dir})")
         try:
+            # Own process group: under `mpirun -np N` the launcher forks one rank
+            # per partition, and signalling only the launcher would leave the
+            # ranks running (still holding the case dir and the restart dump).
             self._process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                cwd=self._solver_work_dir,
+                cmd, **popen_kwargs(cwd=self._solver_work_dir),
             )
         except OSError as e:
             self.log_signal.emit(f"[Solver] failed to start: {e}")
@@ -209,7 +205,7 @@ class SolverPipelineWorker(QThread):
 
         for line in self._process.stdout:
             if self._cancelled:
-                self._process.terminate()
+                stop_process_async(self._process)
                 self.log_signal.emit("Solver cancelled by user.")
                 self.finished_signal.emit(RC_CANCELLED)
                 return False
@@ -238,15 +234,7 @@ class SolverPipelineWorker(QThread):
         try:
             with open(para_path, "rb") as stdin_f:
                 self._process = subprocess.Popen(
-                    [binary],
-                    stdin=stdin_f,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    bufsize=1,
-                    cwd=cwd,
+                    [binary], **popen_kwargs(stdin=stdin_f, cwd=cwd),
                 )
         except OSError as e:
             self.log_signal.emit(f"[{label}] failed to start: {e}")
@@ -254,7 +242,7 @@ class SolverPipelineWorker(QThread):
 
         for line in self._process.stdout:
             if self._cancelled:
-                self._process.terminate()
+                stop_process_async(self._process)
                 self.log_signal.emit(f"{label} cancelled by user.")
                 return RC_CANCELLED
             stripped = line.rstrip()
@@ -265,7 +253,7 @@ class SolverPipelineWorker(QThread):
         try:
             self._process.wait(timeout=_PREP_STAGE_TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            self._process.kill()
+            kill_process(self._process)
             self.log_signal.emit(
                 f"[{label}] timed out after {_PREP_STAGE_TIMEOUT_S}s; killed.")
             return RC_TIMEOUT

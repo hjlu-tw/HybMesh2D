@@ -21,6 +21,9 @@ object exposing the named widgets works.
 """
 from __future__ import annotations
 import math
+from contextlib import nullcontext
+
+from app.utils import block_signals
 
 
 # Per-type clean defaults, applied on a type switch so the shared shape widgets
@@ -177,8 +180,6 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
                                           y - p.get("cy", 0.0)))
     elif curve_type == "arc":
         cx, cy = p.get("cx", 0.0), p.get("cy", 0.0)
-        r = p.get("r", 1.0)
-        t0, t1 = p.get("theta0", 0.0), p.get("theta1", math.pi / 2)
         if handle_id == "c":
             p["cx"], p["cy"] = x, y
         elif handle_id == "m":
@@ -290,21 +291,21 @@ def write_widget_params(owner, curve_type: str, params: dict, silent: bool = Fal
     falling back to ``DEFAULTS`` for missing keys. When ``silent`` the widgets'
     signals are blocked so the write does not trigger live-preview re-entrancy.
     Unknown types write nothing."""
+    # `_hush` gives the same paired block/unblock as before, but via a context
+    # manager: an exception between the two halves used to leave the widget
+    # permanently unable to emit — silently dead, with no traceback either.
+    def _hush(widget):
+        return block_signals(widget) if silent else nullcontext()
+
     if curve_type == "polygon":
         w = getattr(owner, POLYGON_VERTICES_ATTR)
-        if silent:
-            w.blockSignals(True)
-        w.setText(params.get("vertices_str", POLYGON_DEFAULT))
-        if silent:
-            w.blockSignals(False)
+        with _hush(w):
+            w.setText(params.get("vertices_str", POLYGON_DEFAULT))
         return
     defaults = DEFAULTS.get(curve_type, {})
     angle_keys = ANGLE_KEYS.get(curve_type, ())
     for key, attr in SIDEBAR_ATTRS.get(curve_type, {}).items():
         w = getattr(owner, attr)
-        if silent:
-            w.blockSignals(True)
-        val = params.get(key, defaults.get(key, 0.0))
-        w.setValue(math.degrees(val) if key in angle_keys else val)  # rad→° widget
-        if silent:
-            w.blockSignals(False)
+        with _hush(w):
+            val = params.get(key, defaults.get(key, 0.0))
+            w.setValue(math.degrees(val) if key in angle_keys else val)  # rad→° widget

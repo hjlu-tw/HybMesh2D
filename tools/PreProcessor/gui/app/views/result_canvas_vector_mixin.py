@@ -1,24 +1,10 @@
 from __future__ import annotations
-import os
 import numpy as np
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox, QLabel,
-    QPushButton, QFileDialog,
-)
 
 import matplotlib
 matplotlib.use("QtAgg")
-from matplotlib.backends.backend_qtagg import (
-    FigureCanvasQTAgg, NavigationToolbar2QT,
-)
-from matplotlib.figure import Figure
 import matplotlib.tri as mtri
-import matplotlib.colors as mcolors
 
-from app.models.result_data import TecplotResult
-from app.views.result_canvas_interaction_mixin import ResultCanvasInteractionMixin
-from app.views.result_canvas_plots_mixin import ResultCanvasPlotsMixin
 
 _BG = "#0c0d16"
 _FG = "#a0a8c0"

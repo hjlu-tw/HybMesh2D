@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt
 from app.utils import (
     make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label,
 )
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.clean_double_spin_box import CleanDoubleSpinBox, SciDoubleSpinBox
 
 
 # Boundary-layer parameters that can be overridden per geometry: the .dat/C++
@@ -51,7 +51,9 @@ _BL_BOOL_ATTRS = {"bl_auto_fan_nodes", "bl_use_analytic_geom"}
 # Field specs for the per-geometry BL override dialog. (KEY, label, kind, opts);
 # kind: float | int | choice | bool. Keys match _BL_OVERRIDE_KEYS.
 _BL_FIELD_SPECS = [
-    ("BL_INITIAL_THICKNESS", "Initial Thickness", "float", dict(lo=1e-6, hi=1.0, dec=6, step=0.001)),
+    # sci=True: a physical length that routinely needs 1e-7..1e-8 (y+~1 on a
+    # chord-normalised geometry), which a fixed-notation box cannot express.
+    ("BL_INITIAL_THICKNESS", "Initial Thickness", "float", dict(lo=0.0, hi=1e4, sci=True)),
     ("BL_GROWTH_RATE", "Growth Rate", "float", dict(lo=1.001, hi=5.0, dec=4, step=0.05)),
     ("BL_LAYERS", "Layers", "int", dict(lo=0, hi=100)),
     ("BL_CONVEX_METHOD", "Convex Method", "choice", dict(choices=[(0, "Fan"), (2, "Parallelogram")])),
@@ -279,8 +281,14 @@ class PerGeomBLDialog(QDialog):
 
     def _make_widget(self, kind, opt):
         if kind == "float":
-            w = CleanDoubleSpinBox(); w.setRange(opt["lo"], opt["hi"])
-            w.setDecimals(opt["dec"]); w.setSingleStep(opt.get("step", 0.1))
+            if opt.get("sci"):
+                # Scientific field: it pins its own decimals and steps by decade,
+                # so "dec"/"step" do not apply.
+                w = SciDoubleSpinBox()
+                w.setRange(opt["lo"], opt["hi"])
+            else:
+                w = CleanDoubleSpinBox(); w.setRange(opt["lo"], opt["hi"])
+                w.setDecimals(opt["dec"]); w.setSingleStep(opt.get("step", 0.1))
             w.setStyleSheet(SPIN_STYLE)
         elif kind == "int":
             w = QSpinBox(); w.setRange(opt["lo"], opt["hi"]); w.setStyleSheet(SPIN_STYLE)

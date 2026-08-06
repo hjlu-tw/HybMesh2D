@@ -1,11 +1,8 @@
 from __future__ import annotations
-import os
-import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QTreeWidgetItem
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtWidgets import QTreeWidgetItem
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from app.models.session import GeometrySession, SESSION_COLORS
-from app.utils import repo_root
+from app.utils import block_signals
 
 
 class SessionControllerMixin:
@@ -88,43 +85,42 @@ class SessionControllerMixin:
         disturb them, nor steal selection away from a currently-selected edge."""
         sb = self.main_window.sidebar_view
         tree = sb.geometry_tree
-        tree.blockSignals(True)
+        with block_signals(tree):
 
-        live_ids = {s.session_id for s in self.sessions}
-        # Drop rows whose session was closed.
-        for i in reversed(range(tree.topLevelItemCount())):
-            if tree.session_id_of(tree.topLevelItem(i)) not in live_ids:
-                tree.takeTopLevelItem(i)
+            live_ids = {s.session_id for s in self.sessions}
+            # Drop rows whose session was closed.
+            for i in reversed(range(tree.topLevelItemCount())):
+                if tree.session_id_of(tree.topLevelItem(i)) not in live_ids:
+                    tree.takeTopLevelItem(i)
 
-        # One row per session, in session order. Reuse the existing row for a
-        # session_id (take/insert preserves its edge children) so a resync does
-        # not wipe the active layer's edges.
-        for i, session in enumerate(self.sessions):
-            item = tree.session_item(session.session_id)
-            if item is None:
-                item = QTreeWidgetItem()
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                item.setData(0, Qt.ItemDataRole.UserRole, ("session", session.session_id))
-                tree.insertTopLevelItem(i, item)
-            else:
-                cur = tree.indexOfTopLevelItem(item)
-                if cur != i:
-                    tree.takeTopLevelItem(cur)
+            # One row per session, in session order. Reuse the existing row for a
+            # session_id (take/insert preserves its edge children) so a resync does
+            # not wipe the active layer's edges.
+            for i, session in enumerate(self.sessions):
+                item = tree.session_item(session.session_id)
+                if item is None:
+                    item = QTreeWidgetItem()
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setData(0, Qt.ItemDataRole.UserRole, ("session", session.session_id))
                     tree.insertTopLevelItem(i, item)
-            item.setText(0, session.display_name)
-            item.setCheckState(
-                0, Qt.CheckState.Checked if session.is_visible else Qt.CheckState.Unchecked)
-            if hasattr(session, "color") and session.color:
-                item.setForeground(0, QColor(session.color))
+                else:
+                    cur = tree.indexOfTopLevelItem(item)
+                    if cur != i:
+                        tree.takeTopLevelItem(cur)
+                        tree.insertTopLevelItem(i, item)
+                item.setText(0, session.display_name)
+                item.setCheckState(
+                    0, Qt.CheckState.Checked if session.is_visible else Qt.CheckState.Unchecked)
+                if hasattr(session, "color") and session.color:
+                    item.setForeground(0, QColor(session.color))
 
-        # Highlight the active layer row — but only when no edge is selected, so
-        # we never clobber an active edge selection (edges share this widget).
-        if not tree.selected_edge_indices() and 0 <= self.active_idx < len(self.sessions):
-            node = tree.session_item(self.sessions[self.active_idx].session_id)
-            if node is not None:
-                tree.setCurrentItem(node)
+            # Highlight the active layer row — but only when no edge is selected, so
+            # we never clobber an active edge selection (edges share this widget).
+            if not tree.selected_edge_indices() and 0 <= self.active_idx < len(self.sessions):
+                node = tree.session_item(self.sessions[self.active_idx].session_id)
+                if node is not None:
+                    tree.setCurrentItem(node)
 
-        tree.blockSignals(False)
 
     def handle_geom_visibility_changed(self, item, column: int = 0):
         sb = self.main_window.sidebar_view

@@ -1,15 +1,14 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QVBoxLayout, QFormLayout,
     QLabel, QComboBox, QSpinBox,
-    QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QDialog
+    QCheckBox, QDialog
 )
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
+from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget, block_signals
 from app.views.panels.transform_panel import TransformPanel
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.adjusting_stacked_widget import AdjustingStackedWidget
-from app.views.polygon_editor import PolygonEditor
 from app.models import shape_spec
 from app.views.panels.edge_props_shapes_mixin import EdgePropsShapesMixin
 from app.views.panels.edge_props_dist_mixin import EdgePropsDistMixin
@@ -242,14 +241,12 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         curve_type = getattr(seg, "curve_type", "custom")
         if curve_type in CURVE_TYPES:
             idx = CURVE_TYPES.index(curve_type)
-            self.curve_type_combo.blockSignals(True)
-            self.curve_type_combo.setCurrentIndex(idx)
-            self.curve_type_combo.blockSignals(False)
+            with block_signals(self.curve_type_combo):
+                self.curve_type_combo.setCurrentIndex(idx)
             self.shape_stack.setCurrentIndex(idx)
         else:
-            self.curve_type_combo.blockSignals(True)
-            self.curve_type_combo.setCurrentIndex(0)
-            self.curve_type_combo.blockSignals(False)
+            with block_signals(self.curve_type_combo):
+                self.curve_type_combo.setCurrentIndex(0)
             self.shape_stack.setCurrentIndex(0)
 
         # Populate shape-specific inputs from the shared param↔widget mapping.
@@ -276,9 +273,8 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         if self._curve_mode_label:
             self._curve_mode_label.setVisible(is_poly)
         spacing_mode = is_poly and ("spacing" in seg.parameters)
-        self.curve_dist_mode.blockSignals(True)
-        self.curve_dist_mode.setCurrentIndex(1 if spacing_mode else 0)
-        self.curve_dist_mode.blockSignals(False)
+        with block_signals(self.curve_dist_mode):
+            self.curve_dist_mode.setCurrentIndex(1 if spacing_mode else 0)
         if spacing_mode:
             self.curve_spacing.setValue(seg.parameters.get("spacing", 0.1))
         self._toggle_curve_dist_mode(spacing_mode)

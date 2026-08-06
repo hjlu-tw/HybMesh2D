@@ -1,12 +1,10 @@
 from __future__ import annotations
 import os
 import copy
-import numpy as np
 from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtCore import Qt
 from app.commands.segment_cmds import RemoveSegmentCmd
-from app.services.geometry_service import GeometryService
-from app.utils import CURVE_TYPE_LABELS
+from app.utils import CURVE_TYPE_LABELS, block_signals
 
 class SegmentControllerMixin:
     """Mixin containing edge segment, break point (split), and properties management logic."""
@@ -60,41 +58,40 @@ class SegmentControllerMixin:
 
         self._is_refreshing_list = True
         try:
-            tree.blockSignals(True)
-            # Edges only ever live under the active session node; clearing every
-            # node first guarantees no stale children survive a tab switch.
-            tree.clear_all_edges()
-            node = tree.session_item(session.session_id)
-            primary_child = None
-            if node is not None:
-                for idx, seg in enumerate(session.project_model.segments):
-                    if seg.type == "curve":
-                        c_type = getattr(seg, "curve_type", "custom")
-                        lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
-                        c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
-                        lbl = f"Edge {seg.id}: {c_label}"
-                    else:
-                        lbl = (f"Edge {seg.id}: "
-                               f"Idx {seg.start_index} → {seg.end_index}")
-                    child = QTreeWidgetItem([lbl])
-                    child.setData(0, Qt.ItemDataRole.UserRole,
-                                  ("edge", session.session_id, idx))
-                    node.addChild(child)
-                    if idx in selected_indices:
-                        child.setSelected(True)
-                        if idx == session.current_segment_idx:
-                            primary_child = child
-                # Only auto-expand when an edge is actually selected (e.g. picked
-                # on the canvas), so it stays visible. Plain layer/geometry
-                # selection leaves the node's expand state alone — the user
-                # expands it with the disclosure arrow when they want to.
-                if selected_indices:
-                    node.setExpanded(True)
-            # Make the primary edge the current item so a later layer-row resync
-            # (_sync_geometry_list) sees an edge is selected and leaves it alone.
-            if primary_child is not None:
-                tree.setCurrentItem(primary_child)
-            tree.blockSignals(False)
+            with block_signals(tree):
+                # Edges only ever live under the active session node; clearing every
+                # node first guarantees no stale children survive a tab switch.
+                tree.clear_all_edges()
+                node = tree.session_item(session.session_id)
+                primary_child = None
+                if node is not None:
+                    for idx, seg in enumerate(session.project_model.segments):
+                        if seg.type == "curve":
+                            c_type = getattr(seg, "curve_type", "custom")
+                            lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
+                            c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
+                            lbl = f"Edge {seg.id}: {c_label}"
+                        else:
+                            lbl = (f"Edge {seg.id}: "
+                                   f"Idx {seg.start_index} → {seg.end_index}")
+                        child = QTreeWidgetItem([lbl])
+                        child.setData(0, Qt.ItemDataRole.UserRole,
+                                      ("edge", session.session_id, idx))
+                        node.addChild(child)
+                        if idx in selected_indices:
+                            child.setSelected(True)
+                            if idx == session.current_segment_idx:
+                                primary_child = child
+                    # Only auto-expand when an edge is actually selected (e.g. picked
+                    # on the canvas), so it stays visible. Plain layer/geometry
+                    # selection leaves the node's expand state alone — the user
+                    # expands it with the disclosure arrow when they want to.
+                    if selected_indices:
+                        node.setExpanded(True)
+                # Make the primary edge the current item so a later layer-row resync
+                # (_sync_geometry_list) sees an edge is selected and leaves it alone.
+                if primary_child is not None:
+                    tree.setCurrentItem(primary_child)
 
             if selected_indices:
                 if session.current_segment_idx not in selected_indices:
@@ -152,9 +149,8 @@ class SegmentControllerMixin:
         self._sync_closed_mode_ui(session)
 
         # Advanced
-        sb.global_spline_cb.blockSignals(True)
-        sb.global_spline_cb.setChecked(pm.global_spline)
-        sb.global_spline_cb.blockSignals(False)
+        with block_signals(sb.global_spline_cb):
+            sb.global_spline_cb.setChecked(pm.global_spline)
         sb.set_transform_from_dict(pm.transform)
 
         # Selection state
@@ -204,9 +200,8 @@ class SegmentControllerMixin:
 
         # Clear edge selection without re-triggering selection handlers
         tree = sb.geometry_tree
-        tree.blockSignals(True)
-        tree.clear_edge_selection()
-        tree.blockSignals(False)
+        with block_signals(tree):
+            tree.clear_edge_selection()
         sb.curve_bake_btn.setEnabled(False)
         sb.join_edges_btn.setEnabled(False)
 
@@ -249,9 +244,8 @@ class SegmentControllerMixin:
         sb = self.main_window.sidebar_view
         tree = sb.geometry_tree
         if index < 0:
-            tree.blockSignals(True)
-            tree.clear_edge_selection()
-            tree.blockSignals(False)
+            with block_signals(tree):
+                tree.clear_edge_selection()
             sb.curve_bake_btn.setEnabled(False)
             self.handle_segment_selected(-1)
             return
@@ -264,12 +258,11 @@ class SegmentControllerMixin:
         item = tree.edge_item_by_index(session.session_id, index)
         # Single-select: drop any prior (e.g. box) selection so only `index`
         # remains highlighted.
-        tree.blockSignals(True)
-        tree.clear_edge_selection()
-        if item is not None:
-            item.setSelected(True)
-            tree.setCurrentItem(item)
-        tree.blockSignals(False)
+        with block_signals(tree):
+            tree.clear_edge_selection()
+            if item is not None:
+                item.setSelected(True)
+                tree.setCurrentItem(item)
         sb.curve_bake_btn.setEnabled(seg.type == "curve")
 
         self.handle_segment_selected(index)
@@ -320,47 +313,46 @@ class SegmentControllerMixin:
         sb.remove_seg_btn.setEnabled(True)
 
         # Populate sidebar
-        self._is_populating = True
+        # The canvas cleanup below stays in a finally: it must run even if
+        # populating raises, or a stale duplicate-preview line is left on screen.
         try:
-            sb.show_segment_props(True)
-            is_curve = (seg.type == "curve")
-            if is_curve:
-                lbl_val = CURVE_TYPE_LABELS.get(seg.curve_type, seg.curve_type.capitalize())
-                shape = lbl_val(seg) if callable(lbl_val) else lbl_val
-                sb.segment_type_label.setText(f"Edge {seg.id}  ·  Analytic ({shape})")
-                sb.show_curve_segment(seg)
-                sb.strategy_combo.setVisible(False)
-                sb.param_stack.setVisible(False)
-            else:
-                sb.segment_type_label.setText(f"Edge {seg.id}  ·  Discrete")
-                sb.show_file_segment(seg.start_index, seg.end_index)
-                sb.strategy_combo.setVisible(True)
-                sb.param_stack.setVisible(True)
-                sb.strategy_combo.blockSignals(True)
-                sb.strategy_combo.setCurrentText(seg.strategy)
-                sb.strategy_combo.blockSignals(False)
-                sb.switch_param_form(seg.strategy)
-                self._populate_form_from_segment(seg)
+            with self.populating():
+                sb.show_segment_props(True)
+                is_curve = (seg.type == "curve")
+                if is_curve:
+                    lbl_val = CURVE_TYPE_LABELS.get(seg.curve_type, seg.curve_type.capitalize())
+                    shape = lbl_val(seg) if callable(lbl_val) else lbl_val
+                    sb.segment_type_label.setText(f"Edge {seg.id}  ·  Analytic ({shape})")
+                    sb.show_curve_segment(seg)
+                    sb.strategy_combo.setVisible(False)
+                    sb.param_stack.setVisible(False)
+                else:
+                    sb.segment_type_label.setText(f"Edge {seg.id}  ·  Discrete")
+                    sb.show_file_segment(seg.start_index, seg.end_index)
+                    sb.strategy_combo.setVisible(True)
+                    sb.param_stack.setVisible(True)
+                    with block_signals(sb.strategy_combo):
+                        sb.strategy_combo.setCurrentText(seg.strategy)
+                    sb.switch_param_form(seg.strategy)
+                    self._populate_form_from_segment(seg)
 
-            # Show transform duplicate group for all segments
-            sb._transform_dup_group.setVisible(True)
+                # Show transform duplicate group for all segments
+                sb._transform_dup_group.setVisible(True)
 
-            sb.match_previous_cb.blockSignals(True)
-            sb.match_previous_cb.setChecked(seg.match_previous)
-            sb.match_previous_cb.blockSignals(False)
+                with block_signals(sb.match_previous_cb):
+                    sb.match_previous_cb.setChecked(seg.match_previous)
 
-            # (#1) The per-edge patch/group name is now assigned via a pop-up
-            # (open_cad_patch_dialog), so there is no inline field to populate here.
+                # (#1) The per-edge patch/group name is now assigned via a pop-up
+                # (open_cad_patch_dialog), so there is no inline field to populate here.
 
-            # Update base point values
-            self.update_duplicate_base_point()
-            self._show_duplicate_preview = False
+                # Update base point values
+                self.update_duplicate_base_point()
+                self._show_duplicate_preview = False
 
-            # Snapshot params for undo
-            session.param_snapshot = copy.deepcopy(seg.parameters)
-            session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
+                # Snapshot params for undo
+                session.param_snapshot = copy.deepcopy(seg.parameters)
+                session.segment_state_snapshot = copy.deepcopy(seg.to_dict())
         finally:
-            self._is_populating = False
             self.main_window.canvas_view.clear_duplicate_preview()
 
         # Show the draggable base-point / axis handle for the selected edge.

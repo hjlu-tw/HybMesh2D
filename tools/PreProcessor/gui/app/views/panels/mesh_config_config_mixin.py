@@ -12,6 +12,7 @@ import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidgetItem, QFileDialog
 from app.models.mesh_config import MeshConfig
+from app.utils import block_signals
 
 
 class MeshConfigConfigMixin:
@@ -184,23 +185,21 @@ class MeshConfigConfigMixin:
             dsrc = 0
         else:
             dsrc = 1
-        self.domain_source_combo.blockSignals(True)
-        self.domain_source_combo.setCurrentIndex(dsrc)
-        self.domain_source_combo.blockSignals(False)
+        with block_signals(self.domain_source_combo):
+            self.domain_source_combo.setCurrentIndex(dsrc)
         self._update_domain_source_visibility()
 
         # Geometries (with per-file role carried as item data). Block selection
         # signals during the rebuild, then resync the role editor once.
-        self.geom_list_widget.blockSignals(True)
-        self.geom_list_widget.clear()
-        for f in cfg.geom_files:
-            item = QListWidgetItem(os.path.basename(f))
-            item.setData(Qt.ItemDataRole.UserRole, f)
-            rinfo = cfg.geom_roles.get(f)
-            if rinfo:
-                item.setData(self._ROLE_DATA, dict(rinfo))
-            self.geom_list_widget.addItem(item)
-        self.geom_list_widget.blockSignals(False)
+        with block_signals(self.geom_list_widget):
+            self.geom_list_widget.clear()
+            for f in cfg.geom_files:
+                item = QListWidgetItem(os.path.basename(f))
+                item.setData(Qt.ItemDataRole.UserRole, f)
+                rinfo = cfg.geom_roles.get(f)
+                if rinfo:
+                    item.setData(self._ROLE_DATA, dict(rinfo))
+                self.geom_list_widget.addItem(item)
 
         # #4: per-group BC-type assignments carried on the config.
         self._group_bc = dict(cfg.group_bc or {})

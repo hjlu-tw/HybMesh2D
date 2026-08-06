@@ -1,6 +1,7 @@
 from __future__ import annotations
 import numpy as np
 from app.services.geometry_service import GeometryService
+from app.utils import block_signals
 
 
 class SegmentCanvasControllerMixin:
@@ -11,9 +12,8 @@ class SegmentCanvasControllerMixin:
         """Clear the edge selection and its canvas highlight (empty-canvas click)."""
         sb = self.main_window.sidebar_view
         tree = sb.geometry_tree
-        tree.blockSignals(True)
-        tree.clear_edge_selection()
-        tree.blockSignals(False)
+        with block_signals(tree):
+            tree.clear_edge_selection()
         session.current_segment_idx = -1
         self.handle_segment_selected(-1)
         self.highlight_selected_segments()
@@ -132,22 +132,21 @@ class SegmentCanvasControllerMixin:
         # Find and select/toggle the matching edge row in the model tree.
         found_item = tree.edge_item_by_index(session.session_id, best_seg_idx)
 
-        tree.blockSignals(True)
-        if found_item:
-            if extend_selection:
-                found_item.setSelected(not found_item.isSelected())
-                if found_item.isSelected():
+        with block_signals(tree):
+            if found_item:
+                if extend_selection:
+                    found_item.setSelected(not found_item.isSelected())
+                    if found_item.isSelected():
+                        tree.setCurrentItem(found_item)
+                        session.current_segment_idx = best_seg_idx
+                    else:
+                        sel = tree.selected_edge_indices()
+                        session.current_segment_idx = sel[0] if sel else -1
+                else:
+                    tree.clear_edge_selection()
+                    found_item.setSelected(True)
                     tree.setCurrentItem(found_item)
                     session.current_segment_idx = best_seg_idx
-                else:
-                    sel = tree.selected_edge_indices()
-                    session.current_segment_idx = sel[0] if sel else -1
-            else:
-                tree.clear_edge_selection()
-                found_item.setSelected(True)
-                tree.setCurrentItem(found_item)
-                session.current_segment_idx = best_seg_idx
-        tree.blockSignals(False)
 
         seg = session.project_model.get_segment(session.current_segment_idx)
         sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
@@ -187,16 +186,15 @@ class SegmentCanvasControllerMixin:
         sb = self.main_window.sidebar_view
         tree = sb.geometry_tree
         last_idx = -1
-        tree.blockSignals(True)
-        if not extend:
-            tree.clear_edge_selection()
-        for item in tree.edge_items(session.session_id):
-            idx = tree.edge_index(item)
-            if idx in hit_set:
-                item.setSelected(True)
-                tree.setCurrentItem(item)
-                last_idx = idx
-        tree.blockSignals(False)
+        with block_signals(tree):
+            if not extend:
+                tree.clear_edge_selection()
+            for item in tree.edge_items(session.session_id):
+                idx = tree.edge_index(item)
+                if idx in hit_set:
+                    item.setSelected(True)
+                    tree.setCurrentItem(item)
+                    last_idx = idx
 
         if last_idx >= 0:
             session.current_segment_idx = last_idx

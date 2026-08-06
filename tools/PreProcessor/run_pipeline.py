@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """Headless end-to-end pipeline runner.
 
-Reads a single JSON pipeline script and runs CAD resample -> mesh generation ->
-solver -> contour render, writing a contour PNG at the end. No GUI / display
-required.
+Reads a single JSON pipeline script — or a ``.hws`` workspace saved by the GUI —
+and runs CAD resample -> mesh generation -> solver -> contour render, writing a
+contour PNG at the end. No GUI / display required.
+
+A workspace is accepted directly (recognised by its contents, not its extension)
+so a case configured interactively can be re-run headlessly without re-authoring
+it as a script. Every CAD session becomes one resample stage.
 
 Usage:
     python3 tools/PreProcessor/run_pipeline.py config/pipeline/my_case.json
     python3 tools/PreProcessor/run_pipeline.py my_case.json --png out.png
     python3 tools/PreProcessor/run_pipeline.py my_case.json --no-solver
+    python3 tools/PreProcessor/run_pipeline.py saved_case.hws --no-solver
+    python3 tools/PreProcessor/run_pipeline.py ib_case.json --no-ib
 
 Prefer the ``run_pipeline.sh`` wrapper at the repo root, which also exports the
 Gmsh dylib path (DYLD_LIBRARY_PATH) that HybMesh2D needs.
@@ -33,10 +39,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="Run the full HybMesh CAD -> mesh -> solver -> contour "
                     "pipeline from a single JSON script.")
-    ap.add_argument("config", help="pipeline JSON file")
+    ap.add_argument("config",
+                    help="pipeline JSON script, or a .hws workspace")
     ap.add_argument("--png", help="override the output contour PNG path")
     ap.add_argument("--no-solver", action="store_true",
                     help="stop after mesh generation (no solve / contour)")
+    ap.add_argument("--no-ib", action="store_true",
+                    help="skip the immersed-solid (STL -> phi) stage, e.g. when "
+                         "the phi field was generated already")
     ap.add_argument("--no-contour", action="store_true",
                     help="run the solver but skip contour rendering")
     args = ap.parse_args()
@@ -47,6 +57,9 @@ def main() -> int:
     if not os.path.exists(args.config):
         log(f"[FAILED] pipeline config not found: {args.config}")
         return 2
+    if PipelineConfig.is_workspace_file(args.config):
+        log(f"[INFO] {os.path.basename(args.config)} is a workspace; running its "
+            "CAD sessions, mesh, solver and IB configuration as a pipeline.")
 
     try:
         ver = PipelineConfig.file_version(args.config)
@@ -61,7 +74,8 @@ def main() -> int:
 
     try:
         out = pipeline_runner.run_pipeline(
-            pcfg, log=log, run_solver=not args.no_solver)
+            pcfg, log=log, run_solver=not args.no_solver,
+            run_ib=not args.no_ib)
     except pipeline_runner.PipelineError as e:
         log(f"[FAILED] {e}")
         return 1

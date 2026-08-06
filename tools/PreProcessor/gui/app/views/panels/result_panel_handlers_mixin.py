@@ -1,19 +1,13 @@
 from __future__ import annotations
 import csv
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QButtonGroup, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSpinBox, QFileDialog, QScrollArea, QFrame, QComboBox,
-    QListWidget, QListWidgetItem,
+    QTableWidgetItem,
+    QFileDialog,
 )
 
-from app.views.collapsible import CollapsibleSection
 from app.utils import (
-    make_button, SPIN_STYLE, LINEEDIT_STYLE, COMBO_STYLE,
+    block_signals,
 )
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 _TABLE_QSS = (
     "QTableWidget{background:#181b2a;color:#a0a8c0;border:1px solid #333852;"
@@ -37,9 +31,8 @@ class ResultPanelHandlersMixin:
         canvas.probe_added.connect(self._on_probe_added)
         canvas.extrema_found.connect(self._on_extrema_found)
         # Reflect the canvas's current colormap in the sidebar selector.
-        self.cmap_combo.blockSignals(True)
-        self.cmap_combo.setCurrentText(getattr(canvas, "_cmap", _COLORMAPS[0]))
-        self.cmap_combo.blockSignals(False)
+        with block_signals(self.cmap_combo):
+            self.cmap_combo.setCurrentText(getattr(canvas, "_cmap", _COLORMAPS[0]))
 
     def _set_mode(self, mode):
         if self._canvas is None:
@@ -214,10 +207,9 @@ class ResultPanelHandlersMixin:
             self.lbl_std.setText("—")
             self.lbl_integral.setText("—")
         if self.auto_cb.isChecked():
-            self.vmin.blockSignals(True); self.vmax.blockSignals(True)
-            self.vmin.setValue(info.get("vmin", 0.0))
-            self.vmax.setValue(info.get("vmax", 1.0))
-            self.vmin.blockSignals(False); self.vmax.blockSignals(False)
+            with block_signals(self.vmin, self.vmax):
+                self.vmin.setValue(info.get("vmin", 0.0))
+                self.vmax.setValue(info.get("vmax", 1.0))
         # A new result drops the canvas's probes -> clear the tables.
         if self._canvas is not None and not getattr(self._canvas, "_probes", []):
             self.probe_table.setRowCount(0)

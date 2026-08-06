@@ -1,17 +1,11 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QFormLayout, QComboBox, QSpinBox, QLabel,
-    QCheckBox,
+    QWidget, QVBoxLayout, QScrollArea, QFrame,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from app.views.collapsible import CollapsibleSection
 from app.utils import (
-    make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
-    help_label, help_widget,
+    make_button,
 )
-from app.views.bc_widget import BCWidget
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
 
 from app.views.panels.mesh_bl_mixin import MeshConfigBLMixin
 from app.views.panels.mesh_sizing_mixin import MeshConfigSizingMixin

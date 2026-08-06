@@ -18,7 +18,7 @@ from app.utils import (
     make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
     help_label, help_widget,
 )
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
+from app.views.clean_double_spin_box import SciDoubleSpinBox
 
 
 class MeshConfigDomainMixin:
@@ -54,27 +54,23 @@ class MeshConfigDomainMixin:
         self._domain_box_widget = QWidget()
         dom_form = QFormLayout(self._domain_box_widget)
         dom_form.setContentsMargins(0, 0, 0, 0)
-        self.domain_x_min = CleanDoubleSpinBox()
-        self.domain_x_min.setRange(-1e6, 1e6)
-        self.domain_x_min.setDecimals(4)
+        self.domain_x_min = SciDoubleSpinBox()
+        self.domain_x_min.setRange(-1e9, 1e9)
         self.domain_x_min.setStyleSheet(SPIN_STYLE)
         self.domain_x_min.setToolTip("Left boundary of the rectangular computational domain")
 
-        self.domain_x_max = CleanDoubleSpinBox()
-        self.domain_x_max.setRange(-1e6, 1e6)
-        self.domain_x_max.setDecimals(4)
+        self.domain_x_max = SciDoubleSpinBox()
+        self.domain_x_max.setRange(-1e9, 1e9)
         self.domain_x_max.setStyleSheet(SPIN_STYLE)
         self.domain_x_max.setToolTip("Right boundary of the rectangular computational domain")
 
-        self.domain_y_min = CleanDoubleSpinBox()
-        self.domain_y_min.setRange(-1e6, 1e6)
-        self.domain_y_min.setDecimals(4)
+        self.domain_y_min = SciDoubleSpinBox()
+        self.domain_y_min.setRange(-1e9, 1e9)
         self.domain_y_min.setStyleSheet(SPIN_STYLE)
         self.domain_y_min.setToolTip("Bottom boundary of the rectangular computational domain")
 
-        self.domain_y_max = CleanDoubleSpinBox()
-        self.domain_y_max.setRange(-1e6, 1e6)
-        self.domain_y_max.setDecimals(4)
+        self.domain_y_max = SciDoubleSpinBox()
+        self.domain_y_max.setRange(-1e9, 1e9)
         self.domain_y_max.setStyleSheet(SPIN_STYLE)
         self.domain_y_max.setToolTip("Top boundary of the rectangular computational domain")
 
@@ -161,18 +157,16 @@ class MeshConfigDomainMixin:
             "The rectangular box (Domain X/Y Min/Max) is used unless one geometry has a "
             "Domain role. At most one Domain geometry.")
 
-        self.seed_size = CleanDoubleSpinBox()
+        self.seed_size = SciDoubleSpinBox()
         self.seed_size.setRange(0.0, 1e4)
-        self.seed_size.setDecimals(5)
         self.seed_size.setSpecialValueText("auto")   # value 0 displays as "auto"
         self.seed_size.setStyleSheet(SPIN_STYLE)
         self.seed_size.setToolTip(
             "Target minimum element size at the seed "
             "(0 = auto: follows the seed's own resampled point spacing).")
 
-        self.seed_radius = CleanDoubleSpinBox()
+        self.seed_radius = SciDoubleSpinBox()
         self.seed_radius.setRange(0.0, 1e6)
-        self.seed_radius.setDecimals(5)
         self.seed_radius.setSpecialValueText("auto")
         self.seed_radius.setStyleSheet(SPIN_STYLE)
         self.seed_radius.setToolTip(

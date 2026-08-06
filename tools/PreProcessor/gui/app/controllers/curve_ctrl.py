@@ -1,15 +1,11 @@
 from __future__ import annotations
-import copy
 import math
 import numpy as np
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QMessageBox
 from app.models.segment import SegmentModel
 from app.commands.segment_cmds import (
     AddCurveSegmentCmd, BakeCurveToGeometryCmd)
-from app.commands.join_cmds import JoinEdgesToPolygonCmd, KeepSeparateAndCloseCmd
 from app.services.geometry_service import (
-    GeometryService, format_vertices_str, _resample_polyline_uniform)
+    GeometryService)
 from app.models import shape_spec
 
 # Curve-type list, indexed by the type combo's row order.
@@ -158,11 +154,8 @@ class CurveControllerMixin:
             else:
                 seg.parameters.pop("spacing", None)
             # Push the fresh defaults into the shape widgets before syncing back.
-            self._is_populating = True
-            try:
+            with self.populating():
                 sb.show_curve_segment(seg)
-            finally:
-                self._is_populating = False
 
         self._sync_active_curve_segment_from_ui()
         # Update the edge row's label in the model tree

@@ -1,14 +1,8 @@
 from __future__ import annotations
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtWidgets import QWidget, QHBoxLayout
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from app.views.canvas_items import ColorBarWidget, ColorCodedSegmentsItem, SelectableViewBox
-from app.views.canvas_render_mixin import CanvasRenderMixin
-from app.views.canvas_transform_mixin import CanvasTransformMixin
-from app.views.canvas_draw_mixin import CanvasDrawMixin
-from app.views.canvas_events_mixin import CanvasEventsMixin
 
 
 # ── Dark-theme palette ────────────────────────────────────────────────────────

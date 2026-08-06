@@ -1,9 +1,13 @@
 from __future__ import annotations
 import os
 import shutil
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog
 from app.models.mesh_config import MeshConfig
-from app.utils import repo_root
+from app.utils import repo_root, confirm
+
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 class MeshExportControllerMixin:
     """Mixin containing mesh file-export logic (VTK, Star-CD) and export-path resolution."""
@@ -32,8 +36,15 @@ class MeshExportControllerMixin:
                 name = (panel.get_config().output_filename or "").strip()
                 if name:
                     return name
-            except Exception:
-                pass
+            except Exception as e:
+                # Worth telling the user: the export is about to land under a
+                # different name than the one they just typed.
+                _log.warning(
+                    "could not read the live output name from the mesh panel; "
+                    "falling back to the stored name", exc_info=True)
+                self.main_window.log_panel.log(
+                    "[Export] [WARNING] could not read the Output name field "
+                    f"({e}); using the name from the last Generate instead.")
         return (self.global_mesh_config.output_filename
                 if self.global_mesh_config else "") or ""
 
@@ -192,17 +203,9 @@ class MeshExportControllerMixin:
         # Solver panel and switches to the Solver tab (stopping there so the user can
         # review BCs before running); "No" leaves the export as-is. Headless/batch
         # exports can't service the modal — skip it (equivalent to "No").
-        app = QApplication.instance()
-        if app is not None and app.platformName() in ("offscreen", "minimal"):
-            return
-        reply = QMessageBox.question(
-            self.main_window,
-            "Send to Solver",
-            "Star-CD mesh exported.\n\nSend this mesh to the Solver now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        if confirm(self.main_window, "Send to Solver",
+                   "Star-CD mesh exported.\n\nSend this mesh to the Solver now?",
+                   headless_default=False):
             self._send_starcd_to_solver(dest_vrt, dest_cel, dest_bnd)
 
     def send_mesh_to_solver(self):

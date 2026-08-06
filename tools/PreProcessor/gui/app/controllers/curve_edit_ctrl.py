@@ -1,11 +1,7 @@
 from __future__ import annotations
 import numpy as np
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QMenu
-from app.commands.segment_cmds import (
-    AddCurveSegmentCmd, UpdateSegmentStateCmd)
-from app.commands.vertex_cmds import ReplaceGeometryPointsCmd
 from app.services.geometry_service import (
     format_vertices_str, project_point_to_segment)
 from app.models import shape_spec
@@ -249,11 +245,8 @@ class CurveEditControllerMixin:
         seg.t_max = cfg["t_max"]
         seg.parameters["n_points"] = cfg["n_points"]
         self._record_segment_state_edit(session, seg, old_state)
-        self._is_populating = True
-        try:
+        with self.populating():
             self.main_window.sidebar_view.show_curve_segment(seg)
-        finally:
-            self._is_populating = False
         self.preview_curve_formula()
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
@@ -280,11 +273,8 @@ class CurveEditControllerMixin:
                 seg.closed = dlg.is_closed()
             self._record_segment_state_edit(session, seg, old_state)
             # Reflect the new values in the sidebar then re-preview.
-            self._is_populating = True
-            try:
+            with self.populating():
                 self.main_window.sidebar_view.show_curve_segment(seg)
-            finally:
-                self._is_populating = False
             self.preview_curve_formula()
             self._refresh_edge_handles()
             session.is_geometry_modified = True

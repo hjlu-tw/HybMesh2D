@@ -138,14 +138,30 @@ class Stl3dConfig:
         return _sanitize_token(os.path.basename(self.stl_path) or "input.stl")
 
     def para_in_text(self) -> str:
-        """Serialise to the exact 6-line stdin order STL3d's main() reads.
+        """Serialise to the exact stdin order STL3d's main() reads.
 
-        The STL filename and case name are sanitised to single tokens: STL3d
-        reads them with ``cin >>`` and a space would misalign every later answer.
+        Must match ``solver/preprocess/STL3d/src/stl3d.cpp`` exactly — five
+        ``cin >>`` reads, in this order::
+
+            <stl filename>            # cin >> fn
+            <case name>               # cin >> case_fn
+            xmin xmax ymin ymax zmin zmax
+            Nx Ny Nz
+            y|n                       # all-element search
+
+        There is deliberately NO ascii y/n line: stl3d.cpp auto-detects the STL
+        format from the file (``detect_ascii_stl``) rather than prompting, so an
+        extra line here would be consumed as the CASE NAME and shift every later
+        answer by one — the case name would then be read as the domain, `cin`
+        would fail on the non-numeric token, and the run would silently produce an
+        empty phi field under the wrong filename. ``self.ascii`` is kept as
+        display-only information for the panel.
+
+        The STL filename and case name are sanitised to single tokens: STL3d reads
+        them with ``cin >>`` and a space would misalign every later answer.
         """
         lines = [
             self.stl_run_basename(),
-            "y" if self.ascii else "n",
             _sanitize_token(self.case_name or "phi"),
             " ".join(_fmt(v) for v in self.domain),
             f"{int(self.nx)} {int(self.ny)} {int(self.nz)}",

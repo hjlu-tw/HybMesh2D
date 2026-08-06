@@ -2,7 +2,8 @@ from __future__ import annotations
 import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QListWidgetItem, QMessageBox
+from PyQt6.QtWidgets import QListWidgetItem
+from app.utils import block_signals, report_info
 
 class MeshLayersControllerMixin:
     """Mixin managing the Geometry Layers list of the mesh generator — syncing
@@ -34,7 +35,7 @@ class MeshLayersControllerMixin:
         if abs_path not in cfg.geom_files:
             cfg.geom_files.append(abs_path)
             self.global_mesh_config = cfg
-            self.main_window.mesh_config_panel.set_config(cfg)
+            self.push_panel_config(self.main_window.mesh_config_panel, cfg)
             self.main_window.log_panel.log(f"Added resampled geometry to configuration: {abs_path}")
             self.sync_mesh_layers_panel()
         else:
@@ -93,7 +94,7 @@ class MeshLayersControllerMixin:
         # Keep the panel (the authority at generate time) and the canvas
         # previews in sync with the pruned list — preserving live numeric edits.
         self._sync_global_scalars_from_panel()
-        self.main_window.mesh_config_panel.set_config(cfg)
+        self.push_panel_config(self.main_window.mesh_config_panel, cfg)
         self.sync_mesh_layers_panel()
         self.main_window.log_panel.log(
             f"Removed deleted geometry '{os.path.basename(abs_out)}' from the "
@@ -106,65 +107,64 @@ class MeshLayersControllerMixin:
         if not hasattr(panel, 'layers_list_widget'):
             return
 
-        panel.layers_list_widget.blockSignals(True)
-        panel.layers_list_widget.clear()
+        with block_signals(panel.layers_list_widget):
+            panel.layers_list_widget.clear()
 
-        for session in self.sessions:
-            name = session.display_name
-            out_file = session.project_model.output_file
-            display_text = name
+            for session in self.sessions:
+                name = session.display_name
+                out_file = session.project_model.output_file
+                display_text = name
 
-            abs_out_file = ""
-            if out_file:
-                abs_out_file = os.path.abspath(out_file)
-                if not os.path.exists(abs_out_file):
-                    display_text += " (not exported)"
-            else:
-                display_text += " (no output file)"
+                abs_out_file = ""
+                if out_file:
+                    abs_out_file = os.path.abspath(out_file)
+                    if not os.path.exists(abs_out_file):
+                        display_text += " (not exported)"
+                else:
+                    display_text += " (no output file)"
 
-            item = QListWidgetItem(display_text)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item = QListWidgetItem(display_text)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
 
-            if abs_out_file and abs_out_file in self.global_mesh_config.geom_files:
+                if abs_out_file and abs_out_file in self.global_mesh_config.geom_files:
+                    item.setCheckState(Qt.CheckState.Checked)
+                else:
+                    item.setCheckState(Qt.CheckState.Unchecked)
+
+                item.setData(Qt.ItemDataRole.UserRole, (session.session_id, abs_out_file))
+                if hasattr(session, "color") and session.color:
+                    item.setForeground(QColor(session.color))
+
+                panel.layers_list_widget.addItem(item)
+
+            # Surface any geometry files that WILL be meshed but are not backed by a
+            # live CAD layer (e.g. loaded from a saved mesh config, browsed in, or
+            # left over from a closed tab). They would otherwise be invisible here
+            # yet still meshed — so list them explicitly, checked, with uncheck =
+            # remove, giving one complete view of what the mesh will contain.
+            session_outs = set()
+            for session in self.sessions:
+                out_file = session.project_model.output_file
+                if out_file:
+                    session_outs.add(os.path.abspath(out_file))
+
+            for gf in self.global_mesh_config.geom_files:
+                abs_gf = os.path.abspath(gf)
+                if abs_gf in session_outs:
+                    continue
+                tag = "external file" if os.path.exists(abs_gf) else "missing file"
+                item = QListWidgetItem(f"{os.path.basename(abs_gf)}  ({tag})")
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(Qt.CheckState.Checked)
-            else:
-                item.setCheckState(Qt.CheckState.Unchecked)
+                # session_id None marks an external/orphan entry: uncheck to remove.
+                item.setData(Qt.ItemDataRole.UserRole, (None, abs_gf))
+                item.setForeground(QColor("#8a93ad"))
+                item.setToolTip(
+                    "Geometry file included in the mesh but not tied to a CAD "
+                    "layer.\nUncheck to remove it from the mesh."
+                )
+                panel.layers_list_widget.addItem(item)
 
-            item.setData(Qt.ItemDataRole.UserRole, (session.session_id, abs_out_file))
-            if hasattr(session, "color") and session.color:
-                item.setForeground(QColor(session.color))
-
-            panel.layers_list_widget.addItem(item)
-
-        # Surface any geometry files that WILL be meshed but are not backed by a
-        # live CAD layer (e.g. loaded from a saved mesh config, browsed in, or
-        # left over from a closed tab). They would otherwise be invisible here
-        # yet still meshed — so list them explicitly, checked, with uncheck =
-        # remove, giving one complete view of what the mesh will contain.
-        session_outs = set()
-        for session in self.sessions:
-            out_file = session.project_model.output_file
-            if out_file:
-                session_outs.add(os.path.abspath(out_file))
-
-        for gf in self.global_mesh_config.geom_files:
-            abs_gf = os.path.abspath(gf)
-            if abs_gf in session_outs:
-                continue
-            tag = "external file" if os.path.exists(abs_gf) else "missing file"
-            item = QListWidgetItem(f"{os.path.basename(abs_gf)}  ({tag})")
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked)
-            # session_id None marks an external/orphan entry: uncheck to remove.
-            item.setData(Qt.ItemDataRole.UserRole, (None, abs_gf))
-            item.setForeground(QColor("#8a93ad"))
-            item.setToolTip(
-                "Geometry file included in the mesh but not tied to a CAD "
-                "layer.\nUncheck to remove it from the mesh."
-            )
-            panel.layers_list_widget.addItem(item)
-
-        panel.layers_list_widget.blockSignals(False)
 
     def handle_mesh_layer_toggled(self, item: QListWidgetItem):
         """Called when a geometry layer checkbox is checked or unchecked in the Mesh Generator panel."""
@@ -184,7 +184,7 @@ class MeshLayersControllerMixin:
                 ]
                 self.global_mesh_config.prune_roles()
                 self._sync_global_scalars_from_panel()
-                self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+                self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
                 self.sync_mesh_layers_panel()
                 self.main_window.log_panel.log(
                     f"Removed external geometry '{os.path.basename(abs_out_file)}' "
@@ -205,16 +205,15 @@ class MeshLayersControllerMixin:
 
         if is_checked:
             if not abs_out_file or not os.path.exists(abs_out_file):
-                QMessageBox.warning(
+                report_info(
                     self.main_window,
                     "Geometry Not Exported",
                     f"The geometry '{session.display_name}' has not been saved/exported yet.\n"
                     "Please switch to CAD mode and run 'Save & Export' first."
                 )
                 panel = self.main_window.mesh_config_panel
-                panel.layers_list_widget.blockSignals(True)
-                item.setCheckState(Qt.CheckState.Unchecked)
-                panel.layers_list_widget.blockSignals(False)
+                with block_signals(panel.layers_list_widget):
+                    item.setCheckState(Qt.CheckState.Unchecked)
                 return
 
             if abs_out_file not in self.global_mesh_config.geom_files:
@@ -225,7 +224,7 @@ class MeshLayersControllerMixin:
                 self.global_mesh_config.prune_roles()
 
         self._sync_global_scalars_from_panel()
-        self.main_window.mesh_config_panel.set_config(self.global_mesh_config)
+        self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
 
     def add_all_sessions_to_mesh(self):
         """Add all sessions that have valid exported output files to the global mesh config."""

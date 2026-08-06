@@ -1,6 +1,5 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QHBoxLayout
-from PyQt6.QtCore import Qt
 
 
 class SettingsDialog(QDialog):

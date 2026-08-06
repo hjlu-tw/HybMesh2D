@@ -5,6 +5,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from app.views.mesh_canvas_loader import GeomLoaderThread
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 class MeshCanvasGeomMixin:
     """Geometry-preview loading + highlighting concern for MeshCanvasView.
@@ -176,7 +180,7 @@ class MeshCanvasGeomMixin:
             try:
                 self.plot_widget.removeItem(item)
             except Exception:
-                pass
+                _log.debug("could not remove an error-highlight item", exc_info=True)
         self._error_highlight_items = []
 
     def highlight_segment(self, coords):
@@ -189,7 +193,7 @@ class MeshCanvasGeomMixin:
             try:
                 self.plot_widget.removeItem(item)
             except Exception:
-                pass
+                _log.debug("could not remove the segment-highlight item", exc_info=True)
             self._seg_highlight_item = None
         if coords is None or len(coords) < 1:
             return
@@ -211,7 +215,9 @@ class MeshCanvasGeomMixin:
             try:
                 self.plot_widget.removeItem(self._sel_highlight_item)
             except Exception:
-                pass
+                _log.debug(
+                    "could not remove the selection-highlight "
+                    "item", exc_info=True)
             self._sel_highlight_item = None
 
         import os

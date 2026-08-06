@@ -146,17 +146,12 @@ class BackendControllerMixin:
         if sig == getattr(session, "_open_decision_sig", None):
             return True  # this configuration was already acknowledged
 
-        from PyQt6.QtWidgets import QMessageBox
-        reply = QMessageBox.warning(
-            self.main_window,
-            "Open boundary",
-            f"{len(open_eps)} open endpoint(s) detected — the boundary is not "
-            "closed. The mesher will bridge the gap with a straight line.\n\n"
-            "Preview anyway?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        from app.utils import confirm
+        if not confirm(
+                self.main_window, "Open boundary",
+                f"{len(open_eps)} open endpoint(s) detected — the boundary is not "
+                "closed. The mesher will bridge the gap with a straight line.\n\n"
+                "Preview anyway?"):
             return False
         session._open_decision_sig = sig
         self.main_window.log_panel.log(

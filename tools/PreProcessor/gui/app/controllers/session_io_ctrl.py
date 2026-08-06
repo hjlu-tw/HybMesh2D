@@ -1,13 +1,20 @@
 from __future__ import annotations
 import os
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QMenu, QInputDialog
+from PyQt6.QtWidgets import QFileDialog, QMenu, QInputDialog
 from PyQt6.QtCore import Qt
+from app.utils import block_signals
 
 # Bump when the .hws workspace schema changes in a backward-incompatible way.
 # A missing field on load is treated as version 0 (legacy); a file whose
 # version exceeds this is loaded best-effort with a warning rather than refused.
-WORKSPACE_FORMAT_VERSION = 1
+#
+#   v1 -> v2: added the top-level "project" section (mesh / solver / immersed-
+#             solid configuration). Before v2 a workspace only held the CAD
+#             sessions, so saving and reloading silently reset every Mesh,
+#             Solver and IB panel to defaults — the case could not be
+#             reproduced from its own workspace file.
+WORKSPACE_FORMAT_VERSION = 2
 
 
 class SessionIOControllerMixin:
@@ -26,6 +33,8 @@ class SessionIOControllerMixin:
             file_path += ".hws"
         try:
             self._write_workspace_file(file_path)
+            # The mesh/solver/IB state is now on disk, so it is no longer unsaved.
+            self._reset_project_baseline()
             self.main_window.log_panel.log(f"Workspace manually saved to '{os.path.basename(file_path)}'")
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to save workspace: {e}")
@@ -103,7 +112,8 @@ class SessionIOControllerMixin:
         workspace_data = {
             "format_version": WORKSPACE_FORMAT_VERSION,
             "active_idx": self.active_idx,
-            "sessions": sessions_data
+            "sessions": sessions_data,
+            "project": self._collect_project_state(),
         }
 
         # Serialise fully (allow_nan=False) before opening the file so a failure
@@ -150,16 +160,21 @@ class SessionIOControllerMixin:
         """Upgrade an older .hws workspace dict to WORKSPACE_FORMAT_VERSION.
 
         Extension point for backward-compatible workspace migration, routed
-        through by ``_read_workspace_file``. Only v0->v1 exists today (v0 files
-        predate the explicit version field; no field layout changed), so the
-        upgrade just stamps the current version. Add an ``if v < N`` block here
-        when the workspace schema changes incompatibly."""
+        through by ``_read_workspace_file``. Add an ``if v < N`` block here when
+        the workspace schema changes incompatibly."""
         import copy as _copy
         v = int(from_version)
         out = _copy.deepcopy(data)
         # v0 -> v1: stamp the version; no structural change.
         if v < 1:
             v = 1
+        # v1 -> v2: the "project" section did not exist. Nothing to recover — the
+        # mesh/solver/IB state was simply never written — so seed it empty and let
+        # the loader keep the freshly-reset defaults. Kept explicit so a v1 file
+        # takes the same code path as a v2 one instead of hitting a missing key.
+        if v < 2:
+            out.setdefault("project", {})
+            v = 2
         out["format_version"] = WORKSPACE_FORMAT_VERSION
         return out
 
@@ -195,28 +210,24 @@ class SessionIOControllerMixin:
             )
             workspace_data = self._migrate_workspace(workspace_data, file_version)
 
-        if self.sessions:
-            reply = QMessageBox.question(
-                self.main_window,
-                "Load Workspace",
-                "Loading a workspace will close all current tabs. Do you want to proceed?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
-                return
+        # headless_default True: a batch run has to be able to load a workspace.
+        from app.utils import confirm
+        if self.sessions and not confirm(
+                self.main_window, "Load Workspace",
+                "Loading a workspace will close all current tabs. "
+                "Do you want to proceed?"):
+            return
 
-        self.main_window.tab_widget.blockSignals(True)
-        while self.sessions:
-            session = self.sessions.pop(0)
-            self.main_window.canvas_view.remove_geometry(session.session_id)
-        while self.main_window.tab_widget.count() > 0:
-            self.main_window.tab_widget.removeTab(0)
-        self.active_idx = -1
-        self.main_window.canvas_view.clear_active_overlays()
-        self.main_window.canvas_view.set_active_points(None)
-        self.main_window.mesh_canvas_view.clear_mesh()
-        self.main_window.tab_widget.blockSignals(False)
+        with block_signals(self.main_window.tab_widget):
+            while self.sessions:
+                session = self.sessions.pop(0)
+                self.main_window.canvas_view.remove_geometry(session.session_id)
+            while self.main_window.tab_widget.count() > 0:
+                self.main_window.tab_widget.removeTab(0)
+            self.active_idx = -1
+            self.main_window.canvas_view.clear_active_overlays()
+            self.main_window.canvas_view.set_active_points(None)
+            self.main_window.mesh_canvas_view.clear_mesh()
 
         sessions_data = workspace_data.get("sessions", [])
         for session_dict in sessions_data:
@@ -286,11 +297,19 @@ class SessionIOControllerMixin:
         self._refresh_session_colors()
         self._sync_geometry_list()
 
+        # Mesh / Solver / Immersed-Solid configuration (v2+). Applied after the
+        # sessions exist so the mesh panel's geometry list resolves against them.
+        self._apply_project_state(workspace_data.get("project", {}))
+
         target_idx = workspace_data.get("active_idx", -1)
         if 0 <= target_idx < len(self.sessions):
             self.active_idx = target_idx
             self.main_window.tab_widget.setCurrentIndex(self.active_idx)
             self.switch_tab(self.active_idx)
+
+        # Everything just loaded IS the saved state — snapshot it as the baseline
+        # so a freshly-opened workspace does not immediately look modified.
+        self._reset_project_baseline()
 
         self.main_window.log_panel.log(f"Workspace loaded from '{os.path.basename(file_path)}'")
 

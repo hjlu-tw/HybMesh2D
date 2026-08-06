@@ -9,7 +9,6 @@ resolves normally."""
 from __future__ import annotations
 import os
 import numpy as np
-from PyQt6.QtCore import Qt
 
 
 class ResultCanvasPlotsMixin:

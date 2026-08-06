@@ -1,24 +1,14 @@
 from __future__ import annotations
-import os
 import numpy as np
-from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox, QLabel,
-    QPushButton, QFileDialog,
+    QFileDialog,
 )
 
 import matplotlib
 matplotlib.use("QtAgg")
-from matplotlib.backends.backend_qtagg import (
-    FigureCanvasQTAgg, NavigationToolbar2QT,
-)
-from matplotlib.figure import Figure
-import matplotlib.tri as mtri
-import matplotlib.colors as mcolors
 
 from app.models.result_data import TecplotResult
-from app.views.result_canvas_interaction_mixin import ResultCanvasInteractionMixin
-from app.views.result_canvas_plots_mixin import ResultCanvasPlotsMixin
+from app.utils import block_signals
 
 _BG = "#0c0d16"
 _FG = "#a0a8c0"
@@ -37,9 +27,8 @@ class ResultCanvasControlsMixin:
         """Set iso levels from the sidebar; syncs the top-bar 'Iso' checkbox."""
         self._iso_levels = list(levels)
         self._iso_on = bool(on)
-        self.iso_cb.blockSignals(True)
-        self.iso_cb.setChecked(self._iso_on)
-        self.iso_cb.blockSignals(False)
+        with block_signals(self.iso_cb):
+            self.iso_cb.setChecked(self._iso_on)
         self.render()
 
     def _on_iso_toggled(self, on: bool):
@@ -144,9 +133,8 @@ class ResultCanvasControlsMixin:
         self.kind_combo.setVisible(has_d)
         self.kind_label.setVisible(has_d)
         if not has_d and self.kind_combo.currentIndex() != 0:
-            self.kind_combo.blockSignals(True)
-            self.kind_combo.setCurrentIndex(0)
-            self.kind_combo.blockSignals(False)
+            with block_signals(self.kind_combo):
+                self.kind_combo.setCurrentIndex(0)
         self._fill_var_combo_for_kind()
 
     def _fill_var_combo_for_kind(self):
@@ -156,15 +144,14 @@ class ResultCanvasControlsMixin:
         if result is None:
             return
         derived = self.kind_combo.currentIndex() == 1 and bool(self._derived_vars)
-        self.var_combo.blockSignals(True)
-        self.var_combo.clear()
-        if derived:
-            for code in self._derived_vars:
-                self.var_combo.addItem(result.variable_label(code), code)
-        else:
-            for code in self._base_vars:
-                self.var_combo.addItem(result.variable_short_label(code), code)
-        self.var_combo.blockSignals(False)
+        with block_signals(self.var_combo):
+            self.var_combo.clear()
+            if derived:
+                for code in self._derived_vars:
+                    self.var_combo.addItem(result.variable_label(code), code)
+            else:
+                for code in self._base_vars:
+                    self.var_combo.addItem(result.variable_short_label(code), code)
 
     def _on_var_kind_changed(self, _idx=None):
         """Kind switched (#5): repopulate the variable list for the new kind and
