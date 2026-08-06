@@ -211,7 +211,7 @@ class DllBuilderDialog(QDialog):
         self._worker.finished_signal.connect(self._on_compiled)
         self._worker.start()
 
-    def _on_compiled(self, rc: int, _output: str, diags: list):
+    def _on_compiled(self, rc: int, output: str, diags: list):
         self.compile_btn.setEnabled(self._compiler is not None)
         for d in diags:
             loc = f"{d['file']}:{d['line']}" + (f":{d['col']}" if d['col'] else "")
@@ -226,7 +226,21 @@ class DllBuilderDialog(QDialog):
             self.status_lbl.setText(
                 "✓ Compiled OK" + (f"  ({n_warn} warning(s))" if n_warn else ""))
         else:
-            self.status_lbl.setText(f"✗ Compile failed — {n_err} error(s).")
+            # A non-zero exit with no parsed diagnostics means the failure was a
+            # linker/driver error the file:line:col regex can't match (e.g.
+            # "undefined reference…", "collect2: ld returned 1"). Showing
+            # "0 error(s)" with an empty list would hide the real cause, so surface
+            # the raw compiler output here in the dialog (the log panel isn't
+            # visible from this modal).
+            if not diags and (output or "").strip():
+                for raw in output.strip().splitlines()[-12:]:
+                    it = QListWidgetItem(raw)
+                    it.setForeground(QColor(_DIAG_COLOR.get("error", "#f44336")))
+                    self.diag_list.addItem(it)
+                self.status_lbl.setText(
+                    f"✗ Compile failed (exit {rc}) — see output below.")
+            else:
+                self.status_lbl.setText(f"✗ Compile failed — {n_err} error(s).")
 
     def _goto_diag(self, item: QListWidgetItem):
         line = item.data(Qt.ItemDataRole.UserRole)
@@ -261,6 +275,16 @@ class DllBuilderDialog(QDialog):
         self.accept()
 
     def done(self, r: int):
+        # If a compile is still running, wait for it before rmtree'ing its temp
+        # dir — otherwise the worker could be mid-write into a directory we are
+        # deleting, and _on_compiled could fire on an already-dismissed dialog.
+        w = getattr(self, "_worker", None)
+        if w is not None and w.isRunning():
+            try:
+                w.finished_signal.disconnect(self._on_compiled)
+            except (TypeError, RuntimeError):
+                pass
+            w.wait(3000)
         # Best-effort cleanup of the temp compile dir.
         try:
             import shutil

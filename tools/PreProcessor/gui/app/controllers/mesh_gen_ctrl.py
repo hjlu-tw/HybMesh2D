@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
+from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import find_binary_executable, repo_root
 
 if TYPE_CHECKING:
@@ -58,9 +59,15 @@ class MeshGenControllerMixin:
                 self.main_window.log_panel.log(
                     f"[WARNING] Geometry file(s) not found (paths may be broken): {', '.join(missing)}"
                 )
+            for w in getattr(self.global_mesh_config, "parse_warnings", []):
+                self.main_window.log_panel.log(f"[WARNING] {w}")
             self.sync_mesh_layers_panel()
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to load mesh config: {e}")
+            self.main_window.log_panel.log(f"[ERROR] Failed to load mesh config: {e}")
+            from app.utils import report_warning
+            report_warning(self.main_window, "Load Mesh Config Failed",
+                           "The mesh configuration could not be loaded.",
+                           detail=str(e))
 
     def save_mesh_config(self):
         """Extract config settings from UI panel and save them to a file."""
@@ -88,7 +95,11 @@ class MeshGenControllerMixin:
             self.global_mesh_config = cfg
             self.main_window.log_panel.log(f"Saved mesh configuration to {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to save mesh config: {e}")
+            self.main_window.log_panel.log(f"[ERROR] Failed to save mesh config: {e}")
+            from app.utils import report_error
+            report_error(self.main_window, "Save Mesh Config Failed",
+                         "The mesh configuration could not be saved to disk.",
+                         detail=str(e))
 
     def preview_mesh_generator(self):
         """Update and fit the canvas view to the current geometry input files and domain box coordinates."""
@@ -145,6 +156,7 @@ class MeshGenControllerMixin:
         # Diagnostic: report the geometry files actually handed to HybMesh2D.
         # (A geometry that previews on the canvas but is missing/empty here is the
         # usual cause of "mesh generates but shows no boundary/BL".)
+        geom_bbox = None  # (xmin, ymin, xmax, ymax) of the boundary geometry
         if not cfg.geom_files:
             self.main_window.log_panel.log(
                 "[WARNING] No geometry files in the mesh config — the mesh will "
@@ -152,26 +164,26 @@ class MeshGenControllerMixin:
                 "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
                 "Layers) so it is written to a .dat first.")
         else:
-            for gf in cfg.geom_files:
-                if not os.path.exists(gf):
-                    self.main_window.log_panel.log(
-                        f"[WARNING] Geometry file missing: {gf}")
-                else:
-                    try:
-                        with open(gf) as _f:
-                            npts = sum(1 for ln in _f if ln.strip())
-                        self.main_window.log_panel.log(
-                            f"[geom] {os.path.basename(gf)} ({npts} points)")
-                    except OSError:
-                        pass
+            bbox = self._scan_geometry_files(cfg)
+            geom_bbox = bbox
 
-        if cfg.domain_x_min >= cfg.domain_x_max:
-            self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
+        # Pre-flight parameter validation: block on errors (invalid domain,
+        # non-positive sizes, shrinking BL) BEFORE launching the backend, and
+        # log advisory warnings. This turns a cryptic C++ crash into an
+        # actionable message pointing at the offending parameter.
+        errors, warnings = cfg.validate(geom_bbox=geom_bbox)
+        for w in warnings:
+            self.main_window.log_panel.log(f"[WARNING] {w}")
+        if errors:
+            for e in errors:
+                self.main_window.log_panel.log(f"[ERROR] {e}")
+            from app.utils import report_error
+            report_error(
+                self.main_window, "Invalid Mesh Parameters",
+                "The mesh cannot be generated — please fix the following:\n\n"
+                + "\n".join(f"• {e}" for e in errors))
             return
-        if cfg.domain_y_min >= cfg.domain_y_max:
-            self.main_window.log_panel.log("[ERROR] Domain Y Min must be strictly less than Y Max.")
-            return
-        
+
         # Overrule solver output path to temporary folder to prevent generating permanent files on disk
         temp_vtk_path = os.path.abspath(os.path.join(self.temp_dir, "global_mesh.vtk"))
         expected_vtk = temp_vtk_path
@@ -208,15 +220,55 @@ class MeshGenControllerMixin:
         self._mesh_worker.finished_signal.connect(
             lambda rc: self._on_mesh_gen_finished(rc, tmp_cfg.name, expected_vtk)
         )
-        # Determinate progress driven by parsed stdout markers (R5).
-        pb = self.main_window.progress_bar
-        pb.setRange(0, 100)
-        pb.setValue(0)
-        pb.setVisible(True)
+        # Determinate progress driven by parsed stdout markers (R5). Claimed so a
+        # CAD resample finishing mid-run cannot hide the bar we are driving.
+        self.main_window.claim_progress("mesh", determinate=True)
         self._mesh_worker.start()
 
+    def _scan_geometry_files(self, cfg) -> tuple | None:
+        """Log each geometry file's point count (a body that previews but is
+        missing/empty here is the usual cause of "no boundary/BL") and return the
+        combined bounding box of the boundary geometry as (xmin, ymin, xmax,
+        ymax), or None if nothing usable was read. Seeds and the outer-domain
+        outline are excluded from the bbox (containment is only about bodies)."""
+        import numpy as np
+        boundary = set(cfg.boundary_files)
+        mins = [float("inf"), float("inf")]
+        maxs = [float("-inf"), float("-inf")]
+        have = False
+        for gf in cfg.geom_files:
+            if not os.path.exists(gf):
+                self.main_window.log_panel.log(f"[WARNING] Geometry file missing: {gf}")
+                continue
+            try:
+                pts = np.loadtxt(gf, ndmin=2)
+            except Exception:
+                # Fall back to a bare point count so at least the diagnostic prints.
+                try:
+                    with open(gf) as _f:
+                        npts = sum(1 for ln in _f if ln.strip())
+                    self.main_window.log_panel.log(
+                        f"[geom] {os.path.basename(gf)} ({npts} points)")
+                except OSError:
+                    pass
+                continue
+            self.main_window.log_panel.log(
+                f"[geom] {os.path.basename(gf)} ({len(pts)} points)")
+            if gf in boundary and pts.size and pts.shape[1] >= 2:
+                xy = pts[:, :2]
+                xy = xy[np.isfinite(xy).all(axis=1)]
+                if xy.size:
+                    mins[0] = min(mins[0], float(xy[:, 0].min()))
+                    mins[1] = min(mins[1], float(xy[:, 1].min()))
+                    maxs[0] = max(maxs[0], float(xy[:, 0].max()))
+                    maxs[1] = max(maxs[1], float(xy[:, 1].max()))
+                    have = True
+        if not have:
+            return None
+        return (mins[0], mins[1], maxs[0], maxs[1])
+
     def _on_mesh_gen_progress(self, pct: int):
-        self.main_window.progress_bar.setValue(pct)
+        self.main_window.set_progress("mesh", pct)
 
     def cancel_mesh_generator(self):
         """Cancel background mesh generation thread."""
@@ -250,7 +302,7 @@ class MeshGenControllerMixin:
 
     def _on_mesh_gen_finished(self, rc: int, tmp_cfg_name: str, expected_vtk_path: str):
         """Handle execution thread termination, load VTK result, and refresh canvas."""
-        self.main_window.progress_bar.setVisible(False)
+        self.main_window.release_progress("mesh")
         self.main_window.mesh_config_panel.run_mesh_btn.setEnabled(True)
         self.main_window.mesh_config_panel.cancel_mesh_btn.setEnabled(False)
         self.main_window.mesh_generate_btn.setEnabled(True)
@@ -281,9 +333,9 @@ class MeshGenControllerMixin:
             else:
                 self.main_window.log_panel.log(f"Error: Expected VTK file not found at {expected_vtk_path}")
         else:
-            if rc == -2:
+            if rc == RC_CANCELLED:
                 self.main_window.log_panel.log("--- Mesh Generation Cancelled by User ---")
-            elif rc == -3:
+            elif rc == RC_TIMEOUT:
                 self.main_window.log_panel.log("--- Mesh Generation Timed Out (10 min) ---")
             else:
                 self.main_window.log_panel.log(f"--- Mesh Generation Failed (code {rc}) ---")
@@ -296,7 +348,7 @@ class MeshGenControllerMixin:
 
             # Clear previous error highlights first, then try to detect and highlight new ones
             self.main_window.mesh_canvas_view.clear_error_highlights()
-            if rc not in (-2, -3):
+            if rc not in (RC_CANCELLED, RC_TIMEOUT):
                 self._try_highlight_self_intersection_error()
 
         # Auto-export chain (Export-before-Generate foolproofing): run the pending

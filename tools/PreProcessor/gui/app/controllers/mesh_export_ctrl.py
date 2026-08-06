@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import shutil
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from app.models.mesh_config import MeshConfig
 from app.utils import repo_root
 
 class MeshExportControllerMixin:
@@ -36,6 +37,19 @@ class MeshExportControllerMixin:
         return (self.global_mesh_config.output_filename
                 if self.global_mesh_config else "") or ""
 
+    def _is_session_temp_path(self, path: str) -> bool:
+        """True if `path` lives inside the per-session temp dir, which
+        `LifecycleControllerMixin.cleanup_temp_dir` rmtree's on exit. Export and
+        solver-staging defaults must never resolve there."""
+        tmp = getattr(self, "temp_dir", "")
+        if not tmp or not path:
+            return False
+        try:
+            tmp = os.path.abspath(tmp)
+            return os.path.commonpath([os.path.abspath(path), tmp]) == tmp
+        except ValueError:      # different drives (Windows) -> not under temp
+            return False
+
     def _resolve_export_path(self, default_fallback_path: str, ext: str) -> str:
         """Resolve the default export path based on global configuration settings.
 
@@ -54,7 +68,7 @@ class MeshExportControllerMixin:
             else:
                 default_path = user_filename
         else:
-            # `default_fallback_path` is already the per-case path
+            # `default_fallback_path` is usually the per-case path
             # (results/meshes/<case>/mesh_<case>.vtk); keep its subdirectory and
             # only swap the extension so the export stays out of the top level.
             default_path = os.path.splitext(default_fallback_path)[0] + ext
@@ -62,6 +76,16 @@ class MeshExportControllerMixin:
                 # Anchor a relative per-case path under the repo root, preserving
                 # its subdirectory (basename() would flatten it back to the top).
                 default_path = os.path.abspath(os.path.join(root_dir, default_path))
+            if self._is_session_temp_path(default_path):
+                # …but callers pass `global_vtk_path`, which after a Generate is
+                # the session temp mesh (<temp>/global_mesh.vtk). Keeping that
+                # directory would default the export — and the solver staging in
+                # send_mesh_to_solver — into a tree wiped on exit. Re-derive the
+                # stable per-case name instead.
+                cfg = self.global_mesh_config
+                auto = MeshConfig.auto_output_name(
+                    cfg.boundary_files if cfg else [], ext)
+                default_path = os.path.abspath(os.path.join(root_dir, auto))
         return self._next_available_path(default_path)
 
     def export_mesh_files(self):

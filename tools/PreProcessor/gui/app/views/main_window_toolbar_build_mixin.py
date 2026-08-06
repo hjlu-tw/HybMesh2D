@@ -89,6 +89,10 @@ class MainWindowToolbarBuildMixin:
         self.cad_file_preview_btn = create_tb_btn("Apply", "Apply and preview the selected imported file segment")
         self.cad_curve_preview_btn.setVisible(False)
         self.cad_file_preview_btn.setVisible(False)
+        # Cancel the running resample (surface_resampler). Disabled until a run
+        # is in flight — mirrors mesh Generate/Cancel.
+        self.cad_cancel_btn = create_tb_btn("Cancel", "Cancel the running resample")
+        self.cad_cancel_btn.setEnabled(False)
 
         # Separators
         def create_sep():
@@ -270,11 +274,15 @@ class MainWindowToolbarBuildMixin:
             }
         """)
 
+        # No stage owns the shared progress bar yet (see claim_progress).
+        self._progress_owner = None
+
         # Track layouts for visibility toggling
         self.cad_tb_widgets = [
             self.focus_geom_btn, self.cad_clear_btn, self.cad_clear_all_btn,
             self.cad_redraw_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
+            self.cad_cancel_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2,
         ]
@@ -308,3 +316,36 @@ class MainWindowToolbarBuildMixin:
         for w in self.solver_tb_widgets + self.ib_tb_widgets:
             w.setParent(self.canvas_toolbar)
             w.setVisible(False)
+
+    # ---- Shared progress bar ownership --------------------------------- #
+    # One bar is shared by every stage (CAD resample, mesh, solver, STL3d) and
+    # those runs can overlap — a CAD Preview does not block mesh Generate. The
+    # claim/release pair makes the LAST run to start own the bar, so a finishing
+    # run can no longer hide or reset a bar another run is still driving.
+
+    def claim_progress(self, owner: str, determinate: bool = False):
+        """Take over the toolbar progress bar for `owner` and show it.
+
+        `determinate` picks the 0-100 range for runs that parse a % from stdout;
+        the default is the indeterminate busy animation."""
+        self._progress_owner = owner
+        pb = self.progress_bar
+        pb.setRange(0, 100) if determinate else pb.setRange(0, 0)
+        pb.setValue(0)
+        pb.setVisible(True)
+
+    def set_progress(self, owner: str, pct: int):
+        """Advance the bar only while `owner` still holds it, so a background run
+        cannot drive the percentage another stage is displaying."""
+        if self._progress_owner != owner:
+            return
+        self.progress_bar.setValue(pct)
+
+    def release_progress(self, owner: str):
+        """Hide the bar — but only if `owner` still holds it. A run that started
+        later owns the bar now and must keep showing its own progress."""
+        if self._progress_owner != owner:
+            return
+        self._progress_owner = None
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(False)

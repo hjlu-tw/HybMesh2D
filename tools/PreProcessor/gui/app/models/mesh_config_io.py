@@ -18,6 +18,9 @@ def load_config_from_file(cfg, path: str):
     cfg.group_bc = {}
     # Track GEOM_FILE/SEED_FILE tokens that could not be resolved to a file
     cfg.missing_geom_files = []
+    # Track KEY VALUE lines whose value could not be converted (so the user is
+    # told their setting was ignored instead of it silently reverting to default)
+    cfg.parse_warnings = []
 
     cfg_dir = os.path.dirname(path)
 
@@ -149,7 +152,8 @@ def load_config_from_file(cfg, path: str):
                 try:
                     setattr(cfg, attr, converter(val_str))
                 except ValueError:
-                    pass
+                    cfg.parse_warnings.append(
+                        f"{key}: could not parse value '{val_str}'; kept the default.")
 
 
 def save_config_to_file(cfg, path: str):

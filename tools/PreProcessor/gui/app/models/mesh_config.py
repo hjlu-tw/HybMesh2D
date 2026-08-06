@@ -232,17 +232,42 @@ class MeshConfig:
         """geom_files that are refinement seeds."""
         return [g for g in self.geom_files if self.is_seed(g)]
 
+    # <case> length cap, in characters. results/meshes/<case>/mesh_<case><ext>
+    # puts <case> in a single path component, which must stay inside the 255-byte
+    # NAME_MAX; 60 chars is safe even for 4-byte UTF-8 stems.
+    CASE_NAME_MAX_LEN = 60
+
+    @staticmethod
+    def clamp_case_name(name: str) -> str:
+        """Clamp a <case> label to CASE_NAME_MAX_LEN characters.
+
+        A many-body case joins every boundary stem, which easily runs past
+        NAME_MAX and makes the mesh write fail. Keep a readable prefix and
+        disambiguate it with an FNV-1a digest of the full name so two long
+        cases never collide. src/main.cpp mirrors this exactly — the GUI looks
+        for the file at the path the mesher writes, so both must agree."""
+        limit = MeshConfig.CASE_NAME_MAX_LEN
+        if len(name) <= limit:
+            return name
+        h = 0x811C9DC5
+        for b in name.encode("utf-8"):
+            h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+        return f"{name[:limit - 9]}_{h:08x}"
+
     @staticmethod
     def auto_case_name(boundaries: list) -> str:
         """The <case> label used for auto-generated mesh output paths.
 
         Derived from the boundary geometry stems: single body -> its stem,
-        several -> their stems joined, none -> "cartesian"."""
+        several -> their stems joined, none -> "cartesian". Always clamped (see
+        clamp_case_name) so the resulting path component is writable."""
         if not boundaries:
             return "cartesian"
         if len(boundaries) == 1:
-            return os.path.splitext(os.path.basename(boundaries[0]))[0]
-        return "_".join(os.path.splitext(os.path.basename(b))[0] for b in boundaries)
+            name = os.path.splitext(os.path.basename(boundaries[0]))[0]
+        else:
+            name = "_".join(os.path.splitext(os.path.basename(b))[0] for b in boundaries)
+        return MeshConfig.clamp_case_name(name)
 
     @staticmethod
     def auto_output_name(boundaries: list, ext: str = ".vtk") -> str:
@@ -255,20 +280,106 @@ class MeshConfig:
 
     @staticmethod
     def is_auto_output_name(name: str) -> bool:
-        """True if `name` is empty or matches an auto-generated mesh path (the
-        flat legacy `results/meshes/mesh_*` or the per-case
-        `results/meshes/<case>/mesh_*`). Auto names are refreshed when geometry
-        changes; a name the user typed is preserved."""
+        """True if `name` is empty or is exactly a name this class would have
+        generated: the flat legacy `results/meshes/mesh_<case><ext>` or the
+        per-case `results/meshes/<case>/mesh_<case><ext>`.
+
+        Auto names are refreshed when geometry changes, so this must stay a
+        narrow match: anything else — including a user's own file inside a
+        results/meshes/ subfolder — is a typed name and must be preserved."""
         if not name:
             return True
         n = name.replace("\\", "/")
-        return n.startswith("results/meshes/") and os.path.basename(n).startswith("mesh_")
+        prefix = "results/meshes/"
+        if not n.startswith(prefix):
+            return False
+        parts = n[len(prefix):].split("/")
+        if len(parts) == 1:
+            # Legacy flat layout: results/meshes/mesh_<case><ext>
+            return parts[0].startswith("mesh_")
+        if len(parts) != 2:
+            return False
+        # Per-case layout: the file must be that case's own mesh_<case><ext>,
+        # not merely some mesh_*.vtk the user parked in the case folder.
+        case, base = parts
+        return os.path.splitext(base)[0] == f"mesh_{case}"
 
     def prune_roles(self):
         """Drop geom_roles entries whose path is no longer in geom_files, so a
         stale seed role can't silently re-attach when a path is added again."""
         present = set(self.geom_files) | {os.path.abspath(g) for g in self.geom_files}
         self.geom_roles = {k: v for k, v in self.geom_roles.items() if k in present}
+
+    def validate(self, geom_bbox: tuple | None = None) -> tuple[list[str], list[str]]:
+        """Pre-flight parameter sanity check, returning (errors, warnings).
+
+        Errors are conditions that would make the backend crash or produce
+        garbage (invalid domain, non-positive sizes, shrinking BL); the caller
+        must block the run on any error. Warnings are advisory (no BL grown,
+        BL stack likely to overrun the domain, geometry outside the domain box)
+        and let the run proceed. Catching these here — rather than after a
+        cryptic C++ crash — is what an industrial pre-processor does.
+
+        ``geom_bbox`` is an optional (xmin, ymin, xmax, ymax) of the boundary
+        geometry; when supplied, containment against the domain is checked.
+        """
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # ── Domain ────────────────────────────────────────────────────────
+        if self.domain_x_min >= self.domain_x_max:
+            errors.append("Domain X Min must be strictly less than X Max.")
+        if self.domain_y_min >= self.domain_y_max:
+            errors.append("Domain Y Min must be strictly less than Y Max.")
+
+        # ── Mesh sizes ────────────────────────────────────────────────────
+        if not self.auto_surface_size and self.surface_mesh_size <= 0:
+            errors.append("Surface mesh size must be > 0 (or enable Auto).")
+        if not self.auto_farfield_size and self.farfield_mesh_size <= 0:
+            errors.append("Far-field mesh size must be > 0 (or enable Auto).")
+
+        # ── Boundary layer (only meaningful when layers are grown) ────────
+        if self.bl_layers < 0:
+            errors.append("BL layer count cannot be negative.")
+        elif self.bl_layers == 0:
+            warnings.append("BL layers = 0: no boundary layer will be grown.")
+        else:
+            if self.bl_initial_thickness <= 0:
+                errors.append("BL initial thickness must be > 0.")
+            if self.bl_growth_rate < 1.0:
+                errors.append(
+                    "BL growth rate must be >= 1.0 (a rate < 1 shrinks each layer).")
+            # Total BL stack thickness vs domain size (advisory).
+            if self.bl_initial_thickness > 0 and self.bl_growth_rate >= 1.0:
+                g, n, t0 = self.bl_growth_rate, self.bl_layers, self.bl_initial_thickness
+                total = (t0 * n if abs(g - 1.0) < 1e-9
+                         else t0 * (g ** n - 1.0) / (g - 1.0))
+                half = 0.5 * min(self.domain_x_max - self.domain_x_min,
+                                 self.domain_y_max - self.domain_y_min)
+                if half > 0 and total > half:
+                    warnings.append(
+                        f"Estimated BL stack thickness (~{total:.4g}) exceeds half "
+                        f"the smaller domain extent (~{half:.4g}); the boundary "
+                        "layer may overrun the domain.")
+
+        # ── Transition ────────────────────────────────────────────────────
+        if self.bl_transition_layers < 0:
+            errors.append("Transition layer count cannot be negative.")
+        if self.bl_transition_layers > 0 and self.bl_transition_growth_rate < 1.0:
+            warnings.append(
+                "Transition growth rate < 1.0 shrinks each transition layer.")
+
+        # ── Geometry containment (advisory; needs a bbox) ─────────────────
+        if geom_bbox is not None:
+            gx0, gy0, gx1, gy1 = geom_bbox
+            if (gx0 < self.domain_x_min or gx1 > self.domain_x_max
+                    or gy0 < self.domain_y_min or gy1 > self.domain_y_max):
+                warnings.append(
+                    f"Geometry bounds ([{gx0:.4g}, {gx1:.4g}] x [{gy0:.4g}, "
+                    f"{gy1:.4g}]) extend outside the domain box; the mesh may be "
+                    "clipped or the run may fail.")
+
+        return errors, warnings
 
     def load_from_file(self, path: str):
         """Parse configuration parameters from a text file."""

@@ -6,6 +6,17 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTime, QDateTime
 from PyQt6.QtGui import QTextCursor
 
+# Native-crash / linker / interpreter failure signatures that don't contain the
+# literal word "error" or "failed". Without these, the line that actually
+# explains a crash (segfault, abort, fatal, undefined reference, traceback) is
+# classified INFO and rendered in muted grey — indistinguishable from noise.
+_CRASH_TOKENS = (
+    "fatal", "segmentation", "segfault", "abort trap", "core dumped",
+    "terminate called", "undefined reference", "traceback",
+    "bad_alloc", "libc++abi", "collect2:",
+)
+
+
 class LogPanel(QWidget):
     """An enhanced console panel for displaying logs, featuring color coding, timestamps, and log rotation."""
 
@@ -97,7 +108,11 @@ class LogPanel(QWidget):
                 # words "error norm" is still surfaced as ERROR.
                 if "el2 error norm" in lower_msg:
                     level = "INFO"
-                elif "error" in lower_msg or "failed" in lower_msg:
+                elif ("error" in lower_msg or "failed" in lower_msg
+                      # Native-crash / linker signatures that don't contain the
+                      # word "error" would otherwise render as muted INFO — the one
+                      # line that explains a crash must stand out as ERROR.
+                      or any(tok in lower_msg for tok in _CRASH_TOKENS)):
                     level = "ERROR"
                 elif "warning" in lower_msg or "warn" in lower_msg:
                     level = "WARNING"
@@ -128,6 +143,17 @@ class LogPanel(QWidget):
             color = "#8892b0"  # Muted Blue-grey
             lvl_lbl = "[INFO]"
             
+        # Mirror to the durable rotating log file so the console output survives
+        # the session (the on-screen console is bounded and cleared on exit).
+        try:
+            import logging
+            _lg = logging.getLogger("hybmesh.gui")
+            _lvl = (logging.ERROR if level == "ERROR"
+                    else logging.WARNING if level == "WARNING" else logging.INFO)
+            _lg.log(_lvl, clean_message)
+        except Exception:
+            pass
+
         # Escape potential HTML characters in message to prevent formatting injection
         safe_message = clean_message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         

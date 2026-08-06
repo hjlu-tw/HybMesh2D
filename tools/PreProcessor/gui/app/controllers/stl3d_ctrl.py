@@ -9,6 +9,7 @@ from app.models.stl3d_config import (
     stl_bounding_box, detect_stl_ascii, parse_phi_tecplot,
 )
 from app.services.stl_loader import load_stl_triangles
+from app.workers.exit_codes import RC_CANCELLED
 from app.services.dll_templates import render_phi_field_init
 from app.services.phi_quality import (
     FIT_OK_CELLS, FIT_FRAC_GREEN, FIT_FRAC_AMBER, FIT_TAIL_CELLS, FIT_TAIL_FRAC,
@@ -192,10 +193,7 @@ class Stl3dControllerMixin:
         self._stl3d_phi_pts = self._stl3d_phi_val = None
         panel.clear_fit_result()
         self.main_window.stl3d_canvas.clear_fit_deviation()
-        pb = self.main_window.progress_bar
-        pb.setRange(0, 100)
-        pb.setValue(0)
-        pb.setVisible(True)
+        self.main_window.claim_progress("stl3d", determinate=True)
         self.main_window.mode_combo.setCurrentIndex(5)
 
         omp = (max(int(getattr(cfg, "omp_threads", 1) or 1), 1)
@@ -222,16 +220,16 @@ class Stl3dControllerMixin:
     # Worker callbacks
     # ------------------------------------------------------------------ #
     def _on_stl3d_progress(self, pct: int):
-        self.main_window.progress_bar.setValue(pct)
+        self.main_window.set_progress("stl3d", pct)
 
     def _on_stl3d_finished(self, rc: int):
-        self.main_window.progress_bar.setVisible(False)
+        self.main_window.release_progress("stl3d")
         panel = self.main_window.stl3d_config_panel
         panel.run_btn.setEnabled(True)
         panel.cancel_btn.setEnabled(False)
         log = self.main_window.log_panel.log
 
-        if rc == -2:
+        if rc == RC_CANCELLED:
             log("--- STL3d Cancelled by User ---")
             return
         if rc != 0:

@@ -1,6 +1,8 @@
 import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
+
 
 class BackendWorker(QThread):
     """Runs the C++ surface_resampler binary in a background thread."""
@@ -42,16 +44,16 @@ class BackendWorker(QThread):
                 if self._cancelled:
                     self._process.terminate()
                     self.log_signal.emit("Backend cancelled by user.")
-                    self.finished_signal.emit(-2)
+                    self.finished_signal.emit(RC_CANCELLED)
                     return
                 stripped = line.rstrip()
                 if stripped:
                     self.log_signal.emit(stripped)
-            
+
             if self._cancelled:
                 self._process.terminate()
                 self.log_signal.emit("Backend cancelled by user.")
-                self.finished_signal.emit(-2)
+                self.finished_signal.emit(RC_CANCELLED)
                 return
 
             self._process.wait(timeout=600)  # 10 min timeout
@@ -60,7 +62,7 @@ class BackendWorker(QThread):
             if self._process:
                 self._process.kill()
             self.log_signal.emit("Backend timed out (10 min).")
-            self.finished_signal.emit(-3)
+            self.finished_signal.emit(RC_TIMEOUT)
         except Exception as e:
             self.log_signal.emit(f"Failed to start backend: {e}")
-            self.finished_signal.emit(-1)
+            self.finished_signal.emit(RC_EXCEPTION)

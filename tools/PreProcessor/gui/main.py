@@ -80,6 +80,11 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
+    # Durable diagnostics: rotating log file + uncaught-exception hook, so a
+    # crash leaves a traceback in results/logs/gui.log instead of vanishing.
+    from app.services.logging_setup import configure_logging
+    configure_logging()
+
     # Slightly smaller global font for a denser, industrial-style UI.
     from PyQt6.QtGui import QFont
     _f = app.font()

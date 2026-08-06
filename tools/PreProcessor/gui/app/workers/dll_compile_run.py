@@ -6,6 +6,8 @@ import subprocess
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from app.workers.exit_codes import RC_EXCEPTION
+
 # Matches g++ diagnostics: "file.cc:12:5: error: ...".
 _DIAG_RE = re.compile(r"^(?P<file>[^:\n]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*"
                       r"(?P<level>error|warning|note):\s*(?P<msg>.*)$")
@@ -61,7 +63,7 @@ class DllCompileWorker(QThread):
             r = subprocess.run(cmd, capture_output=True, text=True)
         except OSError as e:
             self.log_signal.emit(f"[compile] failed to launch compiler: {e}")
-            self.finished_signal.emit(-1, str(e), [])
+            self.finished_signal.emit(RC_EXCEPTION, str(e), [])
             return
         output = (r.stdout or "") + (r.stderr or "")
         if output.strip():

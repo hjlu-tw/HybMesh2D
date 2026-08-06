@@ -6,6 +6,7 @@ import numpy as np
 from PyQt6.QtWidgets import QFileDialog
 from app.models.session import GeometrySession
 from app.workers.backend_run import BackendWorker
+from app.workers.exit_codes import describe
 from app.views.output_dialog import OutputDialog
 from app.services.geometry_service import load_points_dat, GeometryService
 
@@ -248,8 +249,6 @@ class BackendControllerMixin:
             session, tmp_out_name, preview_markers=True)
         to_cleanup = created_files + [tmp_out_name]
 
-        if self.main_window.sidebar_view.preview_btn:
-            self.main_window.sidebar_view.preview_btn.setEnabled(False)
         self.main_window.log_panel.log("--- Preview: Starting Backend ---")
         self._run_backend(exe, cfg_path, session,
                           on_finish=lambda rc: self._on_preview_finished(
@@ -295,7 +294,6 @@ class BackendControllerMixin:
         session.project_model.output_file = out_path
         cfg_path, created_files = self._write_temp_config(session, out_path)
 
-        self.main_window.sidebar_view.save_btn.setEnabled(False)
         self.main_window.log_panel.log("--- Save: Starting Backend ---")
         self._run_backend(exe, cfg_path, session,
                           on_finish=lambda rc: self._on_save_finished(
@@ -333,26 +331,66 @@ class BackendControllerMixin:
         pm.input_file = orig_input
         self.main_window.log_panel.log(f"Config exported: {path}")
 
+    def _backend_running(self) -> bool:
+        w = getattr(self, "_worker", None)
+        return w is not None and w.isRunning()
+
+    def _set_backend_running_ui(self, running: bool):
+        """Toggle the resample buttons + progress bar as one unit so a run can
+        never leave a button stuck disabled (the old per-caller disable could
+        strand the Save button if a Preview was already in flight)."""
+        sb = self.main_window.sidebar_view
+        for btn in (sb.preview_btn, sb.file_preview_btn, sb.save_btn):
+            if btn is not None:
+                btn.setEnabled(not running)
+        cancel = getattr(self.main_window, "cad_cancel_btn", None)
+        if cancel is not None:
+            cancel.setEnabled(running)
+        # The progress bar is shared with the mesh/solver/STL3d stages, whose runs
+        # can overlap this one; claim/release so finishing here cannot hide or
+        # reset a bar another stage is driving. Indeterminate: the resampler
+        # emits no % markers.
+        if running:
+            self.main_window.claim_progress("cad")
+        else:
+            self.main_window.release_progress("cad")
+
+    def cancel_backend(self):
+        """Cancel the in-flight resample (Preview/Save)."""
+        w = getattr(self, "_worker", None)
+        if w is not None and w.isRunning():
+            self.main_window.log_panel.log("Cancelling resample…")
+            w.cancel()
+
     def _run_backend(self, exe: str, cfg_path: str,
                      session: GeometrySession, on_finish):
-        if hasattr(self, "_worker") and self._worker is not None and self._worker.isRunning():
+        if self._backend_running():
             self.main_window.log_panel.log("Backend is already running. Please wait.")
             return
         # Keep the shared log across runs/pages (don't clear); just mark a new
         # run. Users can clear manually via the log panel's Clear button.
         self.main_window.log_panel.log("--- Running PreProcessor (resample) ---")
+        self._set_backend_running_ui(True)
         self._worker = BackendWorker(exe, cfg_path)
         # Remember which session this run belongs to so close_tab can cancel it
         # and the finished-callback can tell whether the session still exists.
         self._worker_session = session
         self._worker.log_signal.connect(self.main_window.log_panel.log)
+        # Clear the running-state UI for EVERY caller, connected BEFORE on_finish
+        # so the buttons come back even if the callback raises. Callers such as
+        # the pipeline's _pipe_after_resample never restored it themselves, which
+        # left Preview/Apply/Save disabled for the rest of the session.
+        self._worker.finished_signal.connect(self._on_backend_finished_ui)
         self._worker.finished_signal.connect(on_finish)
         self._worker.start()
 
+    def _on_backend_finished_ui(self):
+        """Zero-arg slot: restore the idle UI whatever the run's outcome was."""
+        self._set_backend_running_ui(False)
+
     def _on_preview_finished(self, rc: int, tmp_out: str, to_cleanup: list[str],
                              session: GeometrySession):
-        if self.main_window.sidebar_view.preview_btn:
-            self.main_window.sidebar_view.preview_btn.setEnabled(True)
+        # UI state is restored by _on_backend_finished_ui (connected first).
         try:
             if rc == 0 and os.path.exists(tmp_out):
                 try:
@@ -389,8 +427,12 @@ class BackendControllerMixin:
                 except Exception as e:
                     self.main_window.log_panel.log(f"Preview load error: {e}")
             else:
-                self.main_window.log_panel.log(
-                    f"--- Preview Backend Failed (code {rc}) ---")
+                reason = describe(rc)
+                if reason:
+                    self.main_window.log_panel.log(f"--- Preview {reason} ---")
+                else:
+                    self.main_window.log_panel.log(
+                        f"--- Preview Backend Failed (code {rc}) ---")
         finally:
             for path in to_cleanup:
                 try:
@@ -401,7 +443,7 @@ class BackendControllerMixin:
 
     def _on_save_finished(self, rc: int, out_path: str, to_cleanup: list[str],
                           session: GeometrySession):
-        self.main_window.sidebar_view.save_btn.setEnabled(True)
+        # UI state is restored by _on_backend_finished_ui (connected first).
         try:
             if rc == 0:
                 self.main_window.log_panel.log(
@@ -432,8 +474,12 @@ class BackendControllerMixin:
                     except Exception as e:
                         self.main_window.log_panel.log(f"Result load error: {e}")
             else:
-                self.main_window.log_panel.log(
-                    f"--- Backend Failed (code {rc}) ---")
+                reason = describe(rc)
+                if reason:
+                    self.main_window.log_panel.log(f"--- Save {reason} ---")
+                else:
+                    self.main_window.log_panel.log(
+                        f"--- Backend Failed (code {rc}) ---")
         finally:
             for path in to_cleanup:
                 try:

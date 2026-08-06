@@ -382,7 +382,9 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         for w in self.ib_tb_widgets:
             w.setVisible(idx == 5)
 
-        self.progress_bar.setVisible(False)
+        # A run in flight keeps its progress bar across a mode switch; hide the
+        # bar only when no stage owns it (see claim_progress/release_progress).
+        self.progress_bar.setVisible(self._progress_owner is not None)
 
         self.adjust_toolbar_layout()
         self.mode_changed.emit(idx)

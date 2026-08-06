@@ -28,6 +28,8 @@ class SignalWiringMixin:
         if sb.file_preview_btn:
             sb.file_preview_btn.clicked.connect(self.preview_backend)
         sb.save_btn.clicked.connect(self.save_output)
+        if getattr(self.main_window, "cad_cancel_btn", None) is not None:
+            self.main_window.cad_cancel_btn.clicked.connect(self.cancel_backend)
         sb.generate_btn.clicked.connect(self.generate_json)
         sb.extrude_stl_btn.clicked.connect(self.extrude_active_to_stl)
         # "Add Analytic Edge" is a shape-tool menu: pick a shape, draw it on the

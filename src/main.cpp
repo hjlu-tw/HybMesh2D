@@ -6,6 +6,9 @@
 #include "ExitCodes.hpp"
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <map>
@@ -93,6 +96,45 @@ static bool parseIntArg(const std::string& s, int& out) {
                   << "' for a command-line argument; ignoring.\n";
         return false;
     }
+}
+
+// <case> length cap, in UTF-8 code points. results/meshes/<case>/mesh_<case>.vtk
+// puts <case> in a single path component, which must stay inside the 255-byte
+// NAME_MAX; 60 code points is safe even for 4-byte sequences.
+static const size_t CASE_NAME_MAX_LEN = 60;
+
+// Clamp a <case> label so the per-case output path is writable. A many-body run
+// joins every boundary stem and easily runs past NAME_MAX, which would make
+// create_directories and every export fail. Keep a readable prefix and
+// disambiguate with an FNV-1a digest of the full name.
+//
+// MUST match MeshConfig.clamp_case_name (tools/PreProcessor/gui/app/models/
+// mesh_config.py): the GUI looks for the mesh at the path computed there, so a
+// divergence means "expected VTK file not found" after a successful run.
+static std::string clampCaseName(const std::string& name) {
+    // Count code points, not bytes, so the cut matches Python's str slicing.
+    size_t nchars = 0;
+    for (unsigned char c : name)
+        if ((c & 0xC0) != 0x80) ++nchars;   // skip UTF-8 continuation bytes
+    if (nchars <= CASE_NAME_MAX_LEN) return name;
+
+    uint32_t h = 0x811C9DC5u;               // FNV-1a over the full name
+    for (unsigned char c : name) {
+        h ^= c;
+        h *= 0x01000193u;
+    }
+    const size_t keep = CASE_NAME_MAX_LEN - 9;   // room for '_' + 8 hex digits
+    size_t cut = 0, seen = 0;
+    while (cut < name.size() && seen < keep) {
+        ++cut;
+        while (cut < name.size() && (static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80)
+            ++cut;                          // keep whole code points
+        ++seen;
+    }
+    std::ostringstream oss;
+    oss << name.substr(0, cut) << "_" << std::hex << std::setfill('0')
+        << std::setw(8) << h;
+    return oss.str();
 }
 
 // Phase 1: optional metadata sidecar produced by the preprocessor next to the
@@ -492,18 +534,26 @@ int main(int argc, char* argv[]) {
             if (!caseName.empty()) caseName += "_";
             caseName += fs::path(f).stem().string();
         }
+        // Clamped (see clampCaseName): a many-body join would otherwise exceed
+        // NAME_MAX and make every write below fail.
+        caseName = clampCaseName(caseName);
         outputFilename = "results/meshes/" + caseName + "/mesh_" + caseName + ".vtk";
     }
 
     // Ensure the output directory exists so VTK/STAR-CD exports do not silently
-    // vanish on a fresh clone or case-sensitive filesystem.
+    // vanish on a fresh clone or case-sensitive filesystem. This is fatal: if the
+    // directory cannot be created, every export below fails too, and continuing
+    // would exit 0 with no mesh anywhere on disk.
     {
         fs::path outParent = fs::path(outputFilename).parent_path();
         if (!outParent.empty()) {
             std::error_code ec;
             fs::create_directories(outParent, ec);
-            if (ec) LOG_WARN("Cannot create output directory '"
-                             << outParent.string() << "': " << ec.message());
+            if (ec && !fs::is_directory(outParent)) {
+                LOG_ERROR("Cannot create output directory '"
+                          << outParent.string() << "': " << ec.message());
+                return reportError(EXIT_ERR_EXPORT, outParent.string());
+            }
         }
     }
 

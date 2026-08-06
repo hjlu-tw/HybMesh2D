@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QTimer, QElapsedTimer
 
+from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
+
 # Residual component labels for compressible Navier-Stokes conserved variables.
 # The solver prints 5 values per region (verified by smoke test); they map to the
 # conservation residuals in this order.
@@ -183,8 +185,10 @@ class SolverMonitorPanel(QWidget):
         self._timer.stop()
         if rc == 0:
             self.stage_value.setText("finished")
-        elif rc == -2:
+        elif rc == RC_CANCELLED:
             self.stage_value.setText("cancelled")
+        elif rc == RC_TIMEOUT:
+            self.stage_value.setText("timed out")
         else:
             self.stage_value.setText(f"failed ({rc})")
 

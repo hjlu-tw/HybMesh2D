@@ -56,6 +56,16 @@ class PostprocessControllerMixin:
             self.main_window.result_canvas_view.load_result_path(path)
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to load result: {e}")
+            # Only interrupt a person. This is also reached from the solver's
+            # finished handler, which Run All chains in batch mode ("no per-stage
+            # dialogs"): a modal there opens a nested event loop that blocks the
+            # rest of the pipeline until someone physically clicks OK, so an
+            # unattended run would hang instead of failing with the log line above.
+            if not getattr(self, "_pipeline_running", False):
+                from app.utils import report_warning
+                report_warning(self.main_window, "Load Result Failed",
+                               f"'{os.path.basename(path)}' could not be loaded as a "
+                               "result field.", detail=str(e))
             return
 
         # from_file() only raises when the data region is shorter than the

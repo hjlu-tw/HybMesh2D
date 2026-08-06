@@ -67,12 +67,14 @@ class MainWindowToolbarMixin:
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
+                        self.cad_cancel_btn,
                     ]
                     row1_widgets = [
                         self.show_vertices_cb,
                         self.show_nodes_cb,
                         self.quality_check_cb,
                         self.quality_mode_combo,
+                        self.progress_bar,
                     ]
 
                     # Add to row 0
@@ -105,11 +107,13 @@ class MainWindowToolbarMixin:
                         self.cad_preview_btn,
                         self.cad_curve_preview_btn,
                         self.cad_file_preview_btn,
+                        self.cad_cancel_btn,
                         self.cad_sep2,
                         self.show_vertices_cb,
                         self.show_nodes_cb,
                         self.quality_check_cb,
                         self.quality_mode_combo,
+                        self.progress_bar,
                     ]
                     col_idx = 0
                     for w in all_widgets:

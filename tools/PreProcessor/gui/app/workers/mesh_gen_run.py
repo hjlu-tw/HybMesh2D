@@ -3,6 +3,8 @@ import re
 import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
+
 # Ordered stage markers emitted by HybMesh2D on stdout, mapped to a coarse
 # completion percentage. Matched as substrings, in order, so progress is
 # monotonic even if some lines are missing. The boundary-layer stage (5–55%)
@@ -94,7 +96,7 @@ class MeshGenWorker(QThread):
                 if self._process.poll() is None:
                     self._process.terminate()
                 self.log_signal.emit("Mesh generation cancelled by user.")
-                self.finished_signal.emit(-2)
+                self.finished_signal.emit(RC_CANCELLED)
                 return
 
             self._process.wait(timeout=600)  # 10 min timeout
@@ -103,7 +105,7 @@ class MeshGenWorker(QThread):
             if self._process:
                 self._process.kill()
             self.log_signal.emit("Mesh generation timed out (10 min).")
-            self.finished_signal.emit(-3)
+            self.finished_signal.emit(RC_TIMEOUT)
         except Exception as e:
             self.log_signal.emit(f"Failed to start mesh generator: {e}")
-            self.finished_signal.emit(-1)
+            self.finished_signal.emit(RC_EXCEPTION)

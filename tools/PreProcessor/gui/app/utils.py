@@ -36,6 +36,39 @@ BC_COLORS = {
 }
 DEFAULT_BC_COLOR = '#9ca3af'
 
+def report_error(parent, title: str, message: str, detail: str | None = None):
+    """Show a blocking error dialog for a failed *data* operation (save/export).
+
+    A failed write that only lands in the log panel is easy to miss — the user
+    walks away believing their work is on disk. Industrial tools surface these
+    modally; keep the log line too (callers still log), but never let a data-loss
+    failure be silent. Headless/offscreen platforms skip the modal so batch and
+    test runs don't block on a prompt with no one to answer it."""
+    _message_box(parent, title, message, detail, critical=True)
+
+
+def report_warning(parent, title: str, message: str, detail: str | None = None):
+    """Show a blocking warning dialog for a failed *read* (load/import). Less
+    severe than report_error — no user data is at risk — but still surfaced so a
+    silent load failure isn't mistaken for an empty result."""
+    _message_box(parent, title, message, detail, critical=False)
+
+
+def _message_box(parent, title, message, detail, critical):
+    from PyQt6.QtWidgets import QMessageBox
+    app = QApplication.instance()
+    if app is not None and app.platformName() in ("offscreen", "minimal"):
+        return
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Critical if critical else QMessageBox.Icon.Warning)
+    box.setWindowTitle(title)
+    box.setText(message)
+    if detail:
+        box.setDetailedText(detail)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    box.exec()
+
+
 @contextmanager
 def block_signals(*widgets: QObject):
     """Context manager to block signals of multiple Qt widgets temporarily."""

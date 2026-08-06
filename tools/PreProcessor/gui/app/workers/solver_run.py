@@ -8,6 +8,13 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from app.models.solver_config import SolverConfig
 from app.services import solver_case
 from app.utils import find_mpi_launcher
+from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
+
+# Bound the interactive pre-processors (getPGrid / bDecompose) so a wedged stage
+# that stops producing output cannot hang the whole pipeline indefinitely. The
+# long-running solver stage is left unbounded on purpose (a CFD solve can take
+# arbitrarily long and streams residuals, so a stall is visible in the monitor).
+_PREP_STAGE_TIMEOUT_S = 900
 
 # Convergence markers echoed by unicones on stdout (verified by smoke test, R1):
 #   Global Iteration count <N> :
@@ -109,7 +116,7 @@ class SolverPipelineWorker(QThread):
             self.finished_signal.emit(0)
         except Exception as e:  # pragma: no cover - defensive
             self.log_signal.emit(f"Solver pipeline failed: {e}")
-            self.finished_signal.emit(-1)
+            self.finished_signal.emit(RC_EXCEPTION)
 
     # ------------------------------------------------------------------ #
     # Stage 1: getPGrid (STAR-CD -> .grid/.bc), interactive via stdin
@@ -126,10 +133,10 @@ class SolverPipelineWorker(QThread):
             if self._cancelled:
                 # Cancel mid-stage must still signal completion, or the UI stays
                 # stuck in the running state (only _on_solver_finished resets it).
-                self.finished_signal.emit(-2)
+                self.finished_signal.emit(RC_CANCELLED)
             else:
                 self.log_signal.emit(f"[getPGrid] exited with code {rc}")
-                self.finished_signal.emit(rc if rc else -1)
+                self.finished_signal.emit(rc if rc else RC_EXCEPTION)
             return False
 
         # The solver reads its segment table "<bc>.def" from its own cwd (work
@@ -162,10 +169,10 @@ class SolverPipelineWorker(QThread):
             if self._cancelled:
                 # Cancel mid-stage must still signal completion, or the UI stays
                 # stuck in the running state (only _on_solver_finished resets it).
-                self.finished_signal.emit(-2)
+                self.finished_signal.emit(RC_CANCELLED)
             else:
                 self.log_signal.emit(f"[bDecompose] exited with code {rc}")
-                self.finished_signal.emit(rc if rc else -1)
+                self.finished_signal.emit(rc if rc else RC_EXCEPTION)
             return False
         self.progress_signal.emit(25)
         return True
@@ -197,14 +204,14 @@ class SolverPipelineWorker(QThread):
             )
         except OSError as e:
             self.log_signal.emit(f"[Solver] failed to start: {e}")
-            self.finished_signal.emit(-1)
+            self.finished_signal.emit(RC_EXCEPTION)
             return False
 
         for line in self._process.stdout:
             if self._cancelled:
                 self._process.terminate()
                 self.log_signal.emit("Solver cancelled by user.")
-                self.finished_signal.emit(-2)
+                self.finished_signal.emit(RC_CANCELLED)
                 return False
             stripped = line.rstrip()
             if stripped:
@@ -243,17 +250,25 @@ class SolverPipelineWorker(QThread):
                 )
         except OSError as e:
             self.log_signal.emit(f"[{label}] failed to start: {e}")
-            return -1
+            return RC_EXCEPTION
 
         for line in self._process.stdout:
             if self._cancelled:
                 self._process.terminate()
                 self.log_signal.emit(f"{label} cancelled by user.")
-                return -2
+                return RC_CANCELLED
             stripped = line.rstrip()
             if stripped:
                 self.log_signal.emit(f"[{label}] {stripped}")
-        self._process.wait()
+        # stdout hit EOF: the stage should exit promptly. Bound the wait so a
+        # process that closed its pipe but won't terminate cannot hang forever.
+        try:
+            self._process.wait(timeout=_PREP_STAGE_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            self.log_signal.emit(
+                f"[{label}] timed out after {_PREP_STAGE_TIMEOUT_S}s; killed.")
+            return RC_TIMEOUT
         return self._process.returncode
 
     def _parse_solver_output(self, line: str):

@@ -28,7 +28,11 @@ class SessionIOControllerMixin:
             self._write_workspace_file(file_path)
             self.main_window.log_panel.log(f"Workspace manually saved to '{os.path.basename(file_path)}'")
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to save workspace: {e}")
+            self.main_window.log_panel.log(f"[ERROR] Failed to save workspace: {e}")
+            from app.utils import report_error
+            report_error(self.main_window, "Save Workspace Failed",
+                         "The workspace could not be saved — your changes are "
+                         "NOT on disk.", detail=str(e))
 
     def load_workspace(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -39,7 +43,12 @@ class SessionIOControllerMixin:
         try:
             self._read_workspace_file(file_path)
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to load workspace: {e}")
+            self.main_window.log_panel.log(f"[ERROR] Failed to load workspace: {e}")
+            from app.utils import report_warning
+            report_warning(self.main_window, "Load Workspace Failed",
+                           f"'{os.path.basename(file_path)}' could not be loaded. "
+                           "It may be corrupt or from an incompatible version.",
+                           detail=str(e))
 
     def _write_workspace_file(self, file_path: str):
         import json
@@ -100,9 +109,41 @@ class SessionIOControllerMixin:
         # Serialise fully (allow_nan=False) before opening the file so a failure
         # leaves any previous workspace file intact rather than half-written.
         text = json.dumps(workspace_data, indent=2, allow_nan=False)
-        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(text)
+        abs_path = os.path.abspath(file_path)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        # Atomic write: serialise to a sibling temp file, flush+fsync it, then
+        # os.replace() over the target. A crash / disk-full mid-write can then
+        # only leave the (discarded) temp behind — never a truncated workspace or,
+        # worse, a corrupt autosave recovery file. os.replace is atomic on the
+        # same filesystem, which the sibling temp guarantees.
+        import tempfile as _tempfile
+        d = os.path.dirname(abs_path) or "."
+        fd, tmp_path = _tempfile.mkstemp(
+            dir=d, prefix=".hws-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
+            # mkstemp forces 0600, and os.replace stamps that onto the target —
+            # silently making an existing group/world-readable workspace private.
+            # Restore the mode the file already had, or the umask default for a
+            # new one, so saving never changes who can open the workspace.
+            try:
+                mode = os.stat(abs_path).st_mode & 0o777
+            except OSError:
+                umask = os.umask(0)         # read-only peek; restore immediately
+                os.umask(umask)
+                mode = 0o666 & ~umask
+            os.chmod(tmp_path, mode)
+            os.replace(tmp_path, abs_path)
+        except Exception:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
     def _migrate_workspace(data: dict, from_version: int) -> dict:

@@ -253,7 +253,11 @@ class PipelineControllerMixin:
             pcfg.save_to_file(path)
             self.main_window.log_panel.log(f"[Pipeline] Saved script to {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"[Pipeline] Failed to save script: {e}")
+            self.main_window.log_panel.log(f"[Pipeline] [ERROR] Failed to save script: {e}")
+            from app.utils import report_error
+            report_error(self.main_window, "Save Pipeline Script Failed",
+                         "The pipeline script could not be saved to disk.",
+                         detail=str(e))
 
     def load_pipeline_file(self):
         start = os.path.join(repo_root(), "config", "pipeline")
@@ -279,7 +283,11 @@ class PipelineControllerMixin:
                     f"v{PIPELINE_FORMAT_VERSION}.")
             pcfg = PipelineConfig.load_from_file(path)
         except Exception as e:
-            self.main_window.log_panel.log(f"[Pipeline] Failed to load script: {e}")
+            self.main_window.log_panel.log(f"[Pipeline] [ERROR] Failed to load script: {e}")
+            from app.utils import report_warning
+            report_warning(self.main_window, "Load Pipeline Script Failed",
+                           "The pipeline script could not be loaded.",
+                           detail=str(e))
             return
         self._apply_pipeline_config(pcfg, path)
 

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QFileDialog
 
 from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
+from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import solver_case
 from app.services.solver_case import sanitize_case_name as _sanitize
 from app.utils import (
@@ -41,7 +42,11 @@ class SolverControllerMixin:
             self.main_window.solver_config_panel.set_config(self.global_solver_config)
             self.main_window.log_panel.log(f"Loaded solver config from {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to load solver config: {e}")
+            self.main_window.log_panel.log(f"[ERROR] Failed to load solver config: {e}")
+            from app.utils import report_warning
+            report_warning(self.main_window, "Load Solver Config Failed",
+                           "The solver configuration could not be loaded.",
+                           detail=str(e))
 
     def save_solver_config(self):
         root = repo_root()
@@ -56,7 +61,11 @@ class SolverControllerMixin:
             self.global_solver_config = cfg
             self.main_window.log_panel.log(f"Saved solver config to {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to save solver config: {e}")
+            self.main_window.log_panel.log(f"[ERROR] Failed to save solver config: {e}")
+            from app.utils import report_error
+            report_error(self.main_window, "Save Solver Config Failed",
+                         "The solver configuration could not be saved to disk.",
+                         detail=str(e))
 
     # ------------------------------------------------------------------ #
     # Run / cancel
@@ -110,10 +119,7 @@ class SolverControllerMixin:
         panel.run_solver_btn.setEnabled(False)
         panel.cancel_solver_btn.setEnabled(True)
 
-        pb = self.main_window.progress_bar
-        pb.setRange(0, 100)
-        pb.setValue(0)
-        pb.setVisible(True)
+        self.main_window.claim_progress("solver", determinate=True)
 
         self._solver_residuals = []
         # Set once the worker reports the real (possibly auto-versioned) work dir.
@@ -310,7 +316,7 @@ class SolverControllerMixin:
         self.main_window.solver_monitor_panel.on_stage(stage)
 
     def _on_solver_progress(self, pct: int):
-        self.main_window.progress_bar.setValue(pct)
+        self.main_window.set_progress("solver", pct)
 
     def _on_solver_residual(self, data: dict):
         self._solver_residuals.append(data)
@@ -321,7 +327,7 @@ class SolverControllerMixin:
             f"[convg] iter={data.get('iter')} cfl={data.get('cfl')} L2: {l2s}")
 
     def _on_solver_finished(self, rc: int):
-        self.main_window.progress_bar.setVisible(False)
+        self.main_window.release_progress("solver")
         self.main_window.solver_monitor_panel.on_finished(rc)
         panel = self.main_window.solver_config_panel
         panel.run_solver_btn.setEnabled(True)
@@ -340,8 +346,10 @@ class SolverControllerMixin:
                 self.main_window.log_panel.log(
                     "[INFO] No Tecplot result file yet (check print_sol_per_niter "
                     "vs the iterations actually run).")
-        elif rc == -2:
+        elif rc == RC_CANCELLED:
             self.main_window.log_panel.log("--- Solver Cancelled by User ---")
+        elif rc == RC_TIMEOUT:
+            self.main_window.log_panel.log("--- Solver Pipeline Timed Out ---")
         else:
             self.main_window.log_panel.log(f"--- Solver Pipeline Failed (code {rc}) ---")
 
