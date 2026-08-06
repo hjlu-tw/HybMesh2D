@@ -198,6 +198,7 @@ class SignalWiringMixin:
         # ── Wire Mesh Generation signals ───────────────────────────────
         mw = self.main_window
         mw.mode_changed.connect(self.handle_mode_changed)
+        mw.mode_changed.connect(mw.update_status_stage)
         
         mw.mesh_config_panel.load_config_btn.clicked.connect(self.load_mesh_config)
         mw.mesh_config_panel.save_config_btn.clicked.connect(self.save_mesh_config)

@@ -128,7 +128,7 @@
 | N7 | **36** 處 `except Exception: pass` 靜默吞例外（已有 rotating log 卻沒用；先前報 52 是 grep 把非 `Exception` 的處理器也算進去） | `canvas_draw_mixin.py` 等 | 中 | [x] 已修 |
 | N8 | 105 處 `blockSignals` + 20 處 `_is_populating` → 無單一資料流方向 | 全 views/controllers | 中 | [~] 護欄部分已修；架構重構未做 |
 | N9 | 零 i18n（`tr()` grep = 0），全字串硬編英文 | 全 GUI | 低 | [ ] 未做 |
-| N10 | 沒有 status bar（模式/座標/選取數/單位/背景進度無常駐顯示） | `main_window.py` | 低 | [ ] 未做 |
+| N10 | 沒有 status bar（模式/座標/選取數/單位/背景進度無常駐顯示） | `main_window.py` | 低 | [x] 已修 |
 | N11 | 視窗版面不持久化（`QSettings` 只用於 recent files） | `session_load_ctrl.py:239` | 低 | [x] 已修 |
 | N12 | 錯誤嚴重度未分級 —— **原判斷前提有誤**（只數了靜態 `QMessageBox.critical()`，漏掉已用 `Icon.Critical` 的 `report_error()`）；真實缺口是匯出失敗誤報為 warning + 多處 modal 無 headless guard | 全 controllers | 低 | [x] 已修 |
 | N13 | 22 測試檔 / 173 模組；CI 未跑 lint、未 build C++（介面漂移無守門） | `tests/run_all.sh`、`.github/workflows/gui-tests.yml` | 低 | [x] 已修 |
@@ -307,6 +307,22 @@ geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
 - [x] **驗收（實測）**：要求 1e-3 / 2e-4 / 5e-5 的端點間距，實得誤差 **≤0.02%** 且兩端對稱；
   geometric 單邊 5e-4 誤差 0.00%；極端粗的請求安全退化無 NaN。新增
   `tests/test_end_spacing_distribution.py`（33 checks）；全套 **33/33 PASS**
+
+### 已完成：status bar（N10，2026-08-06）
+
+`main_window_statusbar_mixin.py` 新增常駐狀態列，放今天**無處可去**的三項資訊：
+
+- **Stage**：跟隨 `mode_changed`，用短名（combo 的 "PreProcessor (CAD)" 對狀態欄太長）
+- **Selection**：邊數／選取的頂點，**並且一定標明屬於哪個 layer** —— 開了多個幾何時「2 edges」本身是有歧義的。今天完全沒有任何地方顯示選取數
+- **Activity**：進度列**只顯示有東西在動、從不說是什麼在動**。改由既有的 `claim/set/release_progress` 三個方法驅動（所以現有與未來的所有呼叫點自動涵蓋，不需逐點修改），且**放在 owner guard 之後** —— 非擁有者不能改掉別人的標籤。未知的 owner 原樣顯示而非留白，讓新呼叫點看得見而不是靜默消失
+
+**刻意不放的兩項**（測試會鎖住，避免日後被「順手補上」）：
+- **游標座標**：三個 canvas 都已有跟著游標的 `coord_label`（而且 R9 才修過它離開時清空）。固定讀值反而不如浮動標籤，且**兩個會互相矛盾的座標顯示比一個更糟**
+- **單位**：還沒有單位系統，一個永遠顯示同一件事的欄位會訓練使用者不再看狀態列
+
+`flash_status()` 讓原本只進 log panel 的訊息（如 undo）也能在不開 log 的情況下被看到，且**不會覆蓋常駐欄位**。
+
+`tests/test_status_bar.py`（24 checks）；全套 **36/36**。**需你實機確認**：狀態列高度與各欄位寬度。
 
 ### 建議下一步順序
 

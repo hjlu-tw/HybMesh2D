@@ -9,6 +9,29 @@ from app.utils import CURVE_TYPE_LABELS, block_signals
 class SegmentControllerMixin:
     """Mixin containing edge segment, break point (split), and properties management logic."""
 
+    def refresh_status_selection(self):
+        """Update the status bar's Selection field for the CAD stage.
+
+        Called from the selection handlers rather than computed inside
+        get_selected_segment_indices(), which is a pure query used on hot paths
+        (and by non-interactive callers) and must not have a UI side effect.
+        """
+        session = self.active_session()
+        mw = self.main_window
+        if session is None:
+            mw.set_status_selection()
+            return
+        n_edges = len(self.get_selected_segment_indices())
+        parts = []
+        if n_edges:
+            parts.append(f"{n_edges} edge" + ("s" if n_edges != 1 else ""))
+        if getattr(session, "selected_point_idx", None) is not None:
+            parts.append(f"vertex {session.selected_point_idx}")
+        # Always name the layer: with several geometries open, "2 edges" is
+        # ambiguous about which body they belong to.
+        parts.append(f"in '{session.display_name.lstrip('*')}'")
+        mw.set_status_selection(" · ".join(parts) if len(parts) > 1 else "")
+
     def get_selected_segment_indices(self) -> list[int]:
         session = self.active_session()
         if not session:
@@ -123,6 +146,9 @@ class SegmentControllerMixin:
                 self.main_window.canvas_view.clear_resampled()
         finally:
             self._is_refreshing_list = False
+        # After the guard is cleared, and in a finally so it runs even if the
+        # rebuild raised: a stale selection read-out is worse than none.
+        self.refresh_status_selection()
 
 
     def _sync_sidebar_to_session(self):

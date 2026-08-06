@@ -316,6 +316,10 @@ class MainWindowToolbarBuildMixin:
         pb.setRange(0, 100) if determinate else pb.setRange(0, 0)
         pb.setValue(0)
         pb.setVisible(True)
+        # Name the work in the status bar: the bar alone showed movement but never
+        # WHAT was moving. Mirrored from the three ownership methods so every
+        # existing and future call site is covered without touching them.
+        self.set_status_activity(owner)
 
     def set_progress(self, owner: str, pct: int):
         """Advance the bar only while `owner` still holds it, so a background run
@@ -323,6 +327,8 @@ class MainWindowToolbarBuildMixin:
         if self._progress_owner != owner:
             return
         self.progress_bar.setValue(pct)
+        # After the guard, so a non-owner cannot relabel the status bar either.
+        self.set_status_activity(owner, pct)
 
     def release_progress(self, owner: str):
         """Hide the bar — but only if `owner` still holds it. A run that started
@@ -332,3 +338,4 @@ class MainWindowToolbarBuildMixin:
         self._progress_owner = None
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(False)
+        self.set_status_activity(None)

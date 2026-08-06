@@ -20,12 +20,14 @@ from app.views.panels.result_panel import ResultControlPanel
 from app.views.main_window_menu_mixin import MainWindowMenuMixin
 from app.views.main_window_toolbar_mixin import MainWindowToolbarMixin
 from app.views.main_window_toolbar_build_mixin import MainWindowToolbarBuildMixin
+from app.views.main_window_statusbar_mixin import MainWindowStatusBarMixin
 
 
 # Mixins listed BEFORE QMainWindow so the Qt virtual overrides they provide
 # (eventFilter / resizeEvent) resolve super() to QMainWindow, not object.
 class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
-                 MainWindowToolbarBuildMixin, QMainWindow):
+                 MainWindowToolbarBuildMixin, MainWindowStatusBarMixin,
+                 QMainWindow):
     """
     Top-level window.
     Layout: [Sidebar] | [Tab-bar + shared CanvasView]
@@ -319,6 +321,9 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
         # Default to a small log console height.
         self.resizeDocks([log_dock], [80], Qt.Orientation.Vertical)
+
+        # Status bar last: it reads the mode combo and the panels.
+        self._build_status_bar()
 
     # ── Title / tab helpers ────────────────────────────────────────────────
 

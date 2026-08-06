@@ -357,6 +357,7 @@ class AppController(
             self.main_window.canvas_view.update_split_points(session.split_indices)
             session.selected_point_idx = None
             self.main_window.canvas_view.update_selected_point(None)
+            self.refresh_status_selection()
             self.main_window.canvas_view.set_active_overlays_visible(session.is_visible)
 
             # Mark the auto-added closing segment distinctly; keep the sidebar
