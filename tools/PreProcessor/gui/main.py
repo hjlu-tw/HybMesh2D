@@ -85,6 +85,17 @@ def main():
     from app.services.logging_setup import configure_logging
     configure_logging()
 
+    # UI language: installed BEFORE any widget is created, because strings are
+    # translated as widgets are constructed. `--lang xx` overrides the saved choice
+    # for one run, which is what makes a translation reviewable without changing
+    # the user's setting.
+    from app.services import i18n
+    lang_override = ""
+    for i, a in enumerate(sys.argv[1:]):
+        if a == "--lang" and i + 2 <= len(sys.argv[1:]):
+            lang_override = sys.argv[i + 2]
+    i18n.install(app, lang_override)
+
     # Slightly smaller global font for a denser, industrial-style UI.
     _f = app.font()
     _ps = _f.pointSizeF()
@@ -117,6 +128,9 @@ def main():
         if a == "--run":
             auto_run = True
             i += 1
+            continue
+        if a == "--lang" and i + 1 < len(argv):
+            i += 2                      # already consumed above
             continue
         rest_args.append(a)
         i += 1

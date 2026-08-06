@@ -147,7 +147,7 @@
 | N6 | Undo 僅覆蓋 CAD 幾何；Mesh/Solver/BC/IB 編輯不可回復，且 stack 隨分頁切換 | `commands/base.py`、`controller.py:336` | 中 | [x] 已修 |
 | N7 | **36** 處 `except Exception: pass` 靜默吞例外（已有 rotating log 卻沒用；先前報 52 是 grep 把非 `Exception` 的處理器也算進去） | `canvas_draw_mixin.py` 等 | 中 | [x] 已修 |
 | N8 | 105 處 `blockSignals` + 20 處 `_is_populating` → 無單一資料流方向 | 全 views/controllers | 中 | [~] 護欄部分已修；架構重構未做 |
-| N9 | 零 i18n（`tr()` grep = 0），全字串硬編英文 | 全 GUI | 低 | [ ] 未做 |
+| N9 | 零 i18n（`tr()` grep = 0），全字串硬編英文 | 全 GUI | 低 | [~] 機制完成 + 常駐介面已翻譯；面板/對話框字串未包裝 |
 | N10 | 沒有 status bar（模式/座標/選取數/單位/背景進度無常駐顯示） | `main_window.py` | 低 | [x] 已修 |
 | N11 | 視窗版面不持久化（`QSettings` 只用於 recent files） | `session_load_ctrl.py:239` | 低 | [x] 已修 |
 | N12 | 錯誤嚴重度未分級 —— **原判斷前提有誤**（只數了靜態 `QMessageBox.critical()`，漏掉已用 `Icon.Critical` 的 `report_error()`）；真實缺口是匯出失敗誤報為 warning + 多處 modal 無 headless guard | 全 controllers | 低 | [x] 已修 |
@@ -343,6 +343,25 @@ geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
 `flash_status()` 讓原本只進 log panel 的訊息（如 undo）也能在不開 log 的情況下被看到，且**不會覆蓋常駐欄位**。
 
 `tests/test_status_bar.py`（24 checks）；全套 **36/36**。**需你實機確認**：狀態列高度與各欄位寬度。
+
+### 部分完成：N9 i18n（2026-08-06）
+
+> 範圍誠實說明：**機制完整可用、常駐介面（選單列 + 狀態列）已完整翻譯成繁體中文**（78/78 字串）。
+> 面板欄位標籤、對話框內文、log 訊息**仍是英文** —— 那是數千個字串的機械工作，見下方「剩餘範圍」。
+
+- [x] **呼叫端用標準 Qt**：`self.tr()` / `QCoreApplication.translate()` / `QT_TRANSLATE_NOOP()`。
+  日後若裝了 `lrelease`，換成編譯式 `.qm` **不需改動任何一個呼叫點**
+- [x] **後端用 JSON 目錄**（`services/i18n.py::JsonTranslator`）：`lrelease`（把 `.ts` 編成 `.qm` 的工具）
+  **不在 PyQt6 wheel 裡**，強制要求它會讓翻譯在一般開發機上無法建置。JSON 目錄可 diff、可在 PR 中審閱、無建置步驟
+- [x] **實測踩到一個災難級 bug 並修掉**：Qt 文件說「回傳 null QString 表示無翻譯」，但 Python 覆寫回傳 `""` 會給 Qt 一個**空**字串，Qt 把它當成有效翻譯 —— **每個未翻譯的標籤都會顯示成空白**。改為回傳英文原文。這是本項最重要的一條測試
+- [x] **語言選單**（`說明 ▸ 語言`）：以**各語言自己的寫法**列出（`English` / `繁體中文`）—— 語言選單必須讓「看不懂當前介面語言的人」也能讀。切換後**下次啟動生效**：即時重譯要走遍每個 widget 重設每個字串，面板並非為此而建，承諾即時切換卻只做一半比明講需要重啟更糟
+- [x] **覆蓋率工具** `tools/scripts/i18n_extract.py`：靜態掃描已包裝字串並與目錄比對，報告缺漏與過時項；`--ts` 可另外用 `pylupdate6`（**有**裝）產生標準 `.ts` 給 Qt Linguist
+  - 過程中修掉工具本身兩個會**誤導人刪掉真實翻譯**的缺陷：(1) 看不懂隱式字串串接，導致目錄 key 只對到第一段、執行時永遠命中不了（這是真實 bug，已修正 tooltip 的 key）；(2) 表格內延後翻譯的字串被誤報為 stale → 改用 Qt 標準的 `QT_TRANSLATE_NOOP` 標記
+- [x] `tests/test_i18n.py`（26 checks）；全套 **39/39**
+
+**剩餘範圍**（未包裝）：`views/panels/` 的欄位標籤與 tooltip（最大宗）、`views/*dialog*.py` 的對話框、
+`log_panel` 的訊息、`report_error/warning/info` 的呼叫端字串。做法已定型 —— 包裝 + 補目錄 + 跑覆蓋率工具，
+純機械工作，可分批進行且每批都能用工具驗證。
 
 ### 建議下一步順序
 

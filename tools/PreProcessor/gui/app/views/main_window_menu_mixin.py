@@ -91,140 +91,142 @@ class MainWindowMenuMixin:
             return act
 
         # ── File (project / workspace level — page-agnostic) ───────────────
-        file_menu = menubar.addMenu("File")
-        add(file_menu, "New Session", controller.new_blank_tab,
+        file_menu = menubar.addMenu(self.tr("File"))
+        add(file_menu, self.tr("New Session"), controller.new_blank_tab,
             shortcut=["Ctrl+N", "Ctrl+T"],
-            tip="Create a new empty geometry workspace tab")
-        self.recent_menu = file_menu.addMenu("Open Recent")
+            tip=self.tr("Create a new empty geometry workspace tab"))
+        self.recent_menu = file_menu.addMenu(self.tr("Open Recent"))
         controller.init_recent_files()
         file_menu.addSeparator()
-        add(file_menu, "Save Workspace...", controller.save_workspace)
-        add(file_menu, "Load Workspace...", controller.load_workspace)
+        add(file_menu, self.tr("Save Workspace..."), controller.save_workspace)
+        add(file_menu, self.tr("Load Workspace..."), controller.load_workspace)
         file_menu.addSeparator()
-        add(file_menu, "Close Tab",
+        add(file_menu, self.tr("Close Tab"),
             lambda: controller.close_tab(controller.active_idx),
             shortcut="Ctrl+W")
-        add(file_menu, "Exit", self.close)
+        add(file_menu, self.tr("Exit"), self.close)
 
         # ── Edit ────────────────────────────────────────────────────────────
-        edit_menu = menubar.addMenu("Edit")
-        add(edit_menu, "Undo", controller.undo, shortcut="Ctrl+Z")
-        add(edit_menu, "Redo", controller.redo,
+        edit_menu = menubar.addMenu(self.tr("Edit"))
+        add(edit_menu, self.tr("Undo"), controller.undo, shortcut="Ctrl+Z")
+        add(edit_menu, self.tr("Redo"), controller.redo,
             shortcut=["Ctrl+Shift+Z", "Ctrl+Y"])
 
         # ── CAD (PreProcessor) ────────────────────────────────────────────
-        cad_menu = menubar.addMenu("CAD")
-        add(cad_menu, "Import Geometry (.dat)...", controller.load_geometry,
+        cad_menu = menubar.addMenu(self.tr("CAD"))
+        add(cad_menu, self.tr("Import Geometry (.dat)..."), controller.load_geometry,
             mode=self._MODE_CAD, shortcut="Ctrl+O",
-            tip="Open a .dat geometry file from disk")
-        add(cad_menu, "Import STL Surface (z=0)...", controller.load_stl_geometry,
+            tip=self.tr("Open a .dat geometry file from disk"))
+        add(cad_menu, self.tr("Import STL Surface (z=0)..."), controller.load_stl_geometry,
             mode=self._MODE_CAD,
-            tip="Load a planar (z=0) STL surface as boundary points")
-        add(cad_menu, "Load Configuration (.json)...", controller.load_json_config,
+            tip=self.tr("Load a planar (z=0) STL surface as boundary points"))
+        add(cad_menu, self.tr("Load Configuration (.json)..."), controller.load_json_config,
             mode=self._MODE_CAD,
-            tip="Open a .json config with geometry and resampling settings")
+            tip=self.tr("Open a .json config with geometry and resampling settings"))
         cad_menu.addSeparator()
-        add(cad_menu, "Export Resampled Geometry (.dat)...", controller.save_output,
+        add(cad_menu, self.tr("Export Resampled Geometry (.dat)..."), controller.save_output,
             mode=self._MODE_CAD, shortcut="Ctrl+S",
-            tip="Run the resampler and save the resampled boundary geometry (.dat)")
-        add(cad_menu, "Save Configuration (.json)...", controller.generate_json,
+            tip=self.tr("Run the resampler and save the resampled boundary geometry (.dat)"))
+        add(cad_menu, self.tr("Save Configuration (.json)..."), controller.generate_json,
             mode=self._MODE_CAD)
-        add(cad_menu, "Extrude to STL...", controller.extrude_active_to_stl,
+        add(cad_menu, self.tr("Extrude to STL..."), controller.extrude_active_to_stl,
             mode=self._MODE_CAD)
         cad_menu.addSeparator()
-        add(cad_menu, "Join Edges into Polygon", controller.join_selected_edges_to_polygon,
+        add(cad_menu, self.tr("Join Edges into Polygon"), controller.join_selected_edges_to_polygon,
             mode=self._MODE_CAD,
-            tip="Merge selected end-to-end curve edges into one closed polygon "
-                "(clears the 'boundary not closed' warning)")
+            tip=self.tr("Merge selected end-to-end curve edges into one closed polygon "
+                    "(clears the 'boundary not closed' warning)"))
         cad_menu.addSeparator()
-        add(cad_menu, "Preview", controller.preview_backend,
+        add(cad_menu, self.tr("Preview"), controller.preview_backend,
             mode=self._MODE_CAD, shortcut="F5",
-            tip="Run the PreProcessor and preview geometry / boundary conditions")
+            tip=self.tr("Run the PreProcessor and preview geometry / boundary conditions"))
 
         # ── Mesh Generator ─────────────────────────────────────────────────
-        mesh_menu = menubar.addMenu("Mesh")
-        add(mesh_menu, "Load Mesh Config...", controller.load_mesh_config,
+        mesh_menu = menubar.addMenu(self.tr("Mesh"))
+        add(mesh_menu, self.tr("Load Mesh Config..."), controller.load_mesh_config,
             mode=self._MODE_MESH)
-        add(mesh_menu, "Save Mesh Config...", controller.save_mesh_config,
+        add(mesh_menu, self.tr("Save Mesh Config..."), controller.save_mesh_config,
             mode=self._MODE_MESH)
         mesh_menu.addSeparator()
-        add(mesh_menu, "Add All Sessions", controller.add_all_sessions_to_mesh,
+        add(mesh_menu, self.tr("Add All Sessions"), controller.add_all_sessions_to_mesh,
             mode=self._MODE_MESH,
-            tip="Add all exported PreProcessor sessions to this mesh config")
+            tip=self.tr("Add all exported PreProcessor sessions to this mesh config"))
         mesh_menu.addSeparator()
-        add(mesh_menu, "BC Preview", controller.preview_mesh_generator,
+        add(mesh_menu, self.tr("BC Preview"), controller.preview_mesh_generator,
             mode=self._MODE_MESH)
-        add(mesh_menu, "Generate Mesh", controller.run_mesh_generator,
+        add(mesh_menu, self.tr("Generate Mesh"), controller.run_mesh_generator,
             mode=self._MODE_MESH)
-        add(mesh_menu, "Cancel", controller.cancel_mesh_generator,
+        add(mesh_menu, self.tr("Cancel"), controller.cancel_mesh_generator,
             mode=self._MODE_MESH)
-        add(mesh_menu, "Export Mesh...", controller.export_mesh_files,
+        add(mesh_menu, self.tr("Export Mesh..."), controller.export_mesh_files,
             mode=self._MODE_MESH,
-            tip="Export the generated mesh (VTK / STAR-CD)")
+            tip=self.tr("Export the generated mesh (VTK / STAR-CD)"))
 
         # ── Solver ──────────────────────────────────────────────────────────
-        solver_menu = menubar.addMenu("Solver")
-        add(solver_menu, "Load Solver Config...", controller.load_solver_config,
+        solver_menu = menubar.addMenu(self.tr("Solver"))
+        add(solver_menu, self.tr("Load Solver Config..."), controller.load_solver_config,
             mode=self._MODE_SOLVER)
-        add(solver_menu, "Save Solver Config...", controller.save_solver_config,
+        add(solver_menu, self.tr("Save Solver Config..."), controller.save_solver_config,
             mode=self._MODE_SOLVER)
         solver_menu.addSeparator()
-        add(solver_menu, "Detect BC from Mesh", controller.detect_bc_from_mesh,
+        add(solver_menu, self.tr("Detect BC from Mesh"), controller.detect_bc_from_mesh,
             mode=self._MODE_SOLVER)
-        dll_menu = solver_menu.addMenu("Build DLL")
-        add(dll_menu, "Initial Condition...",
+        dll_menu = solver_menu.addMenu(self.tr("Build DLL"))
+        add(dll_menu, self.tr("Initial Condition..."),
             lambda: controller.open_dll_builder("init_cond"),
             mode=self._MODE_SOLVER)
-        add(dll_menu, "Motion...",
+        add(dll_menu, self.tr("Motion..."),
             lambda: controller.open_dll_builder("motion"),
             mode=self._MODE_SOLVER)
-        add(dll_menu, "Boundary Condition...", controller.open_bc_dll_builder,
+        add(dll_menu, self.tr("Boundary Condition..."), controller.open_bc_dll_builder,
             mode=self._MODE_SOLVER)
         solver_menu.addSeparator()
-        add(solver_menu, "Run Solver", controller.run_solver_pipeline,
+        add(solver_menu, self.tr("Run Solver"), controller.run_solver_pipeline,
             mode=self._MODE_SOLVER)
-        add(solver_menu, "Cancel", controller.cancel_solver,
+        add(solver_menu, self.tr("Cancel"), controller.cancel_solver,
             mode=self._MODE_SOLVER)
 
         # ── Results ──────────────────────────────────────────────────────────
-        results_menu = menubar.addMenu("Results")
-        add(results_menu, "Load Result...", controller.open_result_dialog,
+        results_menu = menubar.addMenu(self.tr("Results"))
+        add(results_menu, self.tr("Load Result..."), controller.open_result_dialog,
             mode=self._MODE_RESULTS)
-        add(results_menu, "Save PNG...", controller.export_result_screenshot,
+        add(results_menu, self.tr("Save PNG..."), controller.export_result_screenshot,
             mode=self._MODE_RESULTS)
 
         # ── IBM (Immersed Boundary, φ) — sits to the right of Results ────────
-        ib_menu = menubar.addMenu("IBM")
-        add(ib_menu, "Import STL...", controller.browse_stl3d, mode=self._MODE_IB)
-        add(ib_menu, "Fit Domain to STL", controller.fit_stl3d_domain,
+        ib_menu = menubar.addMenu(self.tr("IBM"))
+        add(ib_menu, self.tr("Import STL..."), controller.browse_stl3d, mode=self._MODE_IB)
+        add(ib_menu, self.tr("Fit Domain to STL"), controller.fit_stl3d_domain,
             mode=self._MODE_IB)
         ib_menu.addSeparator()
-        add(ib_menu, "Generate φ Grid", controller.run_stl3d, mode=self._MODE_IB)
-        add(ib_menu, "Cancel", controller.cancel_stl3d, mode=self._MODE_IB)
+        add(ib_menu, self.tr("Generate φ Grid"), controller.run_stl3d, mode=self._MODE_IB)
+        add(ib_menu, self.tr("Cancel"), controller.cancel_stl3d, mode=self._MODE_IB)
         ib_menu.addSeparator()
-        add(ib_menu, "Send Grid to Solver", controller.send_stl3d_to_solver,
+        add(ib_menu, self.tr("Send Grid to Solver"), controller.send_stl3d_to_solver,
             mode=self._MODE_IB)
 
         # ── Pipeline (cross-stage; the orchestrator drives the page itself) ──
-        pipeline_menu = menubar.addMenu("Pipeline")
-        add(pipeline_menu, "Run Full Pipeline", controller.run_full_pipeline,
+        pipeline_menu = menubar.addMenu(self.tr("Pipeline"))
+        add(pipeline_menu, self.tr("Run Full Pipeline"), controller.run_full_pipeline,
             shortcut="Ctrl+R",
-            tip="CAD resample → mesh → solver → results contour")
+            tip=self.tr("CAD resample → mesh → solver → results contour"))
         pipeline_menu.addSeparator()
-        add(pipeline_menu, "Load Pipeline Script...", controller.load_pipeline_file)
-        add(pipeline_menu, "Save Pipeline Script...", controller.save_pipeline_file)
+        add(pipeline_menu, self.tr("Load Pipeline Script..."), controller.load_pipeline_file)
+        add(pipeline_menu, self.tr("Save Pipeline Script..."), controller.save_pipeline_file)
 
         # ── Help ───────────────────────────────────────────────────────────
         from PyQt6.QtWidgets import QMessageBox
-        help_menu = menubar.addMenu("Help")
-        add(help_menu, "About HybMesh2D", lambda: QMessageBox.about(
+        help_menu = menubar.addMenu(self.tr("Help"))
+        self._build_language_menu(help_menu)
+        help_menu.addSeparator()
+        add(help_menu, self.tr("About HybMesh2D"), lambda: QMessageBox.about(
             self, "About HybMesh2D",
             "<b>HybMesh2D</b><br>"
             "2D hybrid mesh generator (boundary-layer quads + far-field "
             "triangles) for CFD, with a PyQt6 pre-processor.<br><br>"
             "Menus follow the workflow: "
             "CAD → Mesh → Solver → Results."))
-        add(help_menu, "Keyboard Shortcuts", lambda: QMessageBox.information(
+        add(help_menu, self.tr("Keyboard Shortcuts"), lambda: QMessageBox.information(
             self, "Keyboard Shortcuts", self._shortcuts_help_text()))
 
     @staticmethod
@@ -253,3 +255,46 @@ class MainWindowMenuMixin:
             action.setToolTip(f)
             # Use default argument in lambda to bind loop variable f properly
             action.triggered.connect(lambda checked, path=f: controller.load_recent_file(path))
+
+    # ── Language ──────────────────────────────────────────────────────────
+    def _build_language_menu(self, parent_menu):
+        """A checkable language submenu.
+
+        The choice applies at the NEXT launch. Re-translating a live window means
+        walking every widget and re-setting every string, which the panels are not
+        built for; promising a live switch and half delivering it would be worse than
+        saying plainly that a restart is needed.
+        """
+        from PyQt6.QtGui import QActionGroup
+
+        from app.services import i18n
+
+        menu = parent_menu.addMenu(self.tr("Language"))
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        current = i18n.current_language()
+        #: Endonyms — a language is listed the way its own speakers write it, which is
+        #: the point of a language menu: it must be readable to someone who cannot
+        #: read the current UI language.
+        names = {"en": "English", "zh_TW": "繁體中文"}
+        for code in i18n.available_languages():
+            act = menu.addAction(names.get(code, code))
+            act.setCheckable(True)
+            act.setChecked(code == current)
+            group.addAction(act)
+            act.triggered.connect(
+                lambda _checked=False, c=code: self._choose_language(c))
+        return menu
+
+    def _choose_language(self, code: str):
+        from app.services import i18n
+        if code == i18n.current_language():
+            return
+        i18n.save_language(code)
+        self.log_panel.log(
+            f"[UI] language set to {code} — restart to apply "
+            "(open panels keep their current strings until then).")
+        from app.utils import report_info
+        report_info(self, self.tr("Language"),
+                    self.tr("The interface language will change the next time "
+                            "HybMesh2D starts."))
