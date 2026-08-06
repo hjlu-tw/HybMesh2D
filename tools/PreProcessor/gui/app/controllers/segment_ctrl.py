@@ -180,6 +180,9 @@ class SegmentControllerMixin:
         sb.remove_split_btn.setEnabled(False)
         sb.remove_seg_btn.setEnabled(False)
         sb.join_edges_btn.setEnabled(False)
+        # No active geometry -> the metrics must read "—" rather than keep the
+        # previous geometry's numbers, which would be actively misleading.
+        sb.geom_stats_panel.clear()
         sb.show_segment_props(False)
         self._sync_geometry_list()
 

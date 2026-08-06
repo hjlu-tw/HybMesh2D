@@ -375,6 +375,16 @@ class AppController(
         self._sync_file_segments(session)
         self._update_undo_redo_buttons(session)
 
+        # Live metrics for the active geometry. Fed the CLOSED point array (the
+        # local `points`, which already has the closing vertex appended when the
+        # geometry is closed) so the perimeter and the worst expansion ratio
+        # include the seam interval — that is a real mesh edge, and the worst jump
+        # is often exactly there.
+        if session is self.active_session():
+            self.main_window.sidebar_view.geom_stats_panel.update_stats(
+                points, closed=bool(pm.is_closed),
+                n_segments=len(session.project_model.segments))
+
         # Warn (red markers + log) about open / unstitched boundary endpoints.
         if session is self.active_session():
             self.detect_open_endpoints(session)

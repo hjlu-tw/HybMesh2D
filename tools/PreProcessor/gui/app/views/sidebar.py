@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from app.views.panels import (
-    FilePanel, GeometryPanel, VertexPanel,
+    FilePanel, GeometryPanel, VertexPanel, GeomStatsPanel,
     EdgeListPanel, EdgePropsPanel, AdvancedPanel, ActionsPanel
 )
 from app.views.settings_dialog import SettingsDialog
@@ -50,6 +50,7 @@ class SidebarView(QWidget):
         self.edge_list_panel = EdgeListPanel(self)
         self.edge_props_panel = EdgePropsPanel(self)
         self.vertex_panel = VertexPanel(self)
+        self.geom_stats_panel = GeomStatsPanel(self)
         self.advanced_panel = AdvancedPanel(self)
         self.actions_panel = ActionsPanel(self)
 
@@ -178,6 +179,10 @@ class SidebarView(QWidget):
         lay.addWidget(self.edge_props_panel)
 
         lay.addWidget(self.vertex_panel)
+
+        # Read-out, so it sits below the editable panels; collapsed by default
+        # because the sidebar is a fixed 360 px and edge properties come first.
+        lay.addWidget(self.geom_stats_panel)
 
         lay.addStretch()
         scroll.setWidget(content)
