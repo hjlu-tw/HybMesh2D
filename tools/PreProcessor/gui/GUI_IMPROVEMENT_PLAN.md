@@ -280,7 +280,22 @@
 2. **N10**（status bar）— 中型 UI，需有顯示環境驗證
 3. **N9 + 單位系統** — 需獨立規劃（單位系統與 N4 同源，建議一起設計）
 4. 逐步把 `ruff.toml` 的 `select` 擴到風格規則 —— **但要先修違規再加**，不要讓 gate 變回永遠紅的狀態
-5. 值得單獨檢視：`solver/preprocess/` 底下其他「Python 寫 / C++ 讀」的介面（getPGrid、bDecompose 的 para.in）是否也有同類漂移 —— STL3d 這次是靜默失效，不能假設別處沒事
+5. ~~值得單獨檢視：`solver/preprocess/` 底下其他「Python 寫 / C++ 讀」的介面~~ → **已稽核，見下**
+
+### 已完成：solver para.in 漂移稽核（2026-08-06，同日第九批）
+
+STL3d 那次是**靜默失效且 exit code 0**，所以「其他介面應該沒事」不能當成假設。把剩下兩個
+「Python 寫 / C++ 讀」的介面都查了：
+
+- [x] **getPGrid — 正確（11 個 live read 對 11 行答案）**
+  - 逐行核對控制流後確認：`generate_getpgrid_para` 的順序與 `getPGrid.cpp` 完全對應，檔名都落在期待檔名的那個 read 上
+  - **但發現一顆活的地雷**：source 裡有一個 `#if 0` 區塊包著 `cin >> yn48`（"Is this a quad or hex mesh?"）。它今天被編譯掉，這正是 11 個答案能對齊的原因 —— 一旦有人重新啟用，後面每個答案都會位移一格，就是 STL3d 那種靜默失效
+  - 另外兩個分支相依的 read 也已釐清：Patran 的 `fn_neutral` 在 else 分支（GUI 永遠答 "y" 走 starcd，不會讀到）；`mixedf`/`slicing_yn` 只在 stifcons 答 "y" 時存在，而 writer 硬編 "y"，所以兩個都在路徑上
+- [x] **bDecompose — 正確**
+  - 它**只有預編譯 binary、沒有原始碼**，所以無法從程式碼讀出 stdin 順序。唯一的 ground truth 是 work 目錄裡出貨的 `para.in`；writer 的輸出與它逐行相同
+- [x] **守門**：新增 `tests/test_solver_para_in_parity.py` —— 剝除 `#if 0` 後解析 `getPGrid.cpp` 的 `cin >>` 序列並逐位比對（檔名槽必須是檔名、y/n 槽必須是 y/n），`#if 0` 若被啟用則測試失敗；bDecompose 則比對出貨的參考檔
+  - 寫測試時我自己踩到一個坑並修掉：用 `index("cin >> fn_bc")` 會誤命中 `cin >> fn_bcflags`（前綴匹配），必須用 `\b` 字界
+- **結論：沒有新的靜默漂移。** 三個介面裡只有 STL3d 是壞的，已修
 
 ---
 
