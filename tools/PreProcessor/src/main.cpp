@@ -1012,10 +1012,19 @@ bool processElement(const json& config) {
                 double dlt = params.value("intensity", 2.0);
                 double s0 = readPositiveSpacing(params, "spacing_start");
                 double s1 = readPositiveSpacing(params, "spacing_end");
-                if (s0 > 0 && s1 > 0) {
-                    // When the requested spacing equals L, log(1)=0 -> dlt=0; keep a
-                    // small positive floor so generateTanh stays well-defined.
-                    dlt = std::max(1e-3, std::log(L / std::min(s0, s1)) * 0.5);
+                // tanh clustering is SYMMETRIC, so it has one end spacing, not
+                // two: whichever end the user specified (or the finer of the two)
+                // is solved for. Solved by bisection rather than the old
+                // log(L/min(s0,s1))*0.5 heuristic, which did not reproduce the
+                // requested spacing and needed BOTH ends set to do anything at all
+                // -- a one-sided request silently fell back to `intensity`.
+                double ds_end = (s0 > 0 && s1 > 0) ? std::min(s0, s1)
+                                                   : (s0 > 0 ? s0 : s1);
+                if (ds_end > 0) {
+                    double solved = Spacing::solveTanhDelta(L, nT, ds_end);
+                    // 0 means "coarser than uniform" -> uniform is the honest
+                    // answer; generateTanh degenerates to it at dlt ~ 0.
+                    dlt = solved;
                 }
                 tS = Spacing::generateTanh(L, nT, dlt);
             } else if (strat == "curvature") {

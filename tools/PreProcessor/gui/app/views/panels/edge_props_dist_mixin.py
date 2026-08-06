@@ -24,6 +24,25 @@ class EdgePropsDistMixin:
             s.setStyleSheet(spin_style)
             return s
 
+        def mk_sci_spin(tip: str):
+            """A physical-length field (see the SciDoubleSpinBox rule in
+            CLAUDE.md): scientific notation, no floor. 0 means "not set", which is
+            how the resampler distinguishes a one-sided from a two-sided spec."""
+            s = SciDoubleSpinBox()
+            s.setRange(0.0, 1e6)
+            s.setSpecialValueText("unset")     # 0 reads as "unset", not "0 metres"
+            s.setStyleSheet(spin_style)
+            s.setToolTip(tip)
+            return s
+
+        def _rows(form: QFormLayout, **widgets) -> dict:
+            """Map name -> (label, field) so a mode toggle can hide whole rows.
+
+            Hiding the field alone leaves its label behind, which is what made the
+            earlier uniform toggle need a hand-kept ``_uniform_spacing_label``.
+            """
+            return {name: (form.labelForField(w), w) for name, w in widgets.items()}
+
         # 0 — Uniform
         uw = QWidget()
         ul = QFormLayout(uw)
@@ -61,8 +80,37 @@ class EdgePropsDistMixin:
         self.tanh_n.setToolTip("Number of nodes with hyperbolic tangent clustering at both ends")
         self.tanh_intensity = mk_dspin(0.1, 10.0, 2.0, 2, 0.1)
         self.tanh_intensity.setToolTip("Clustering intensity (higher = more nodes at endpoints)")
+        # End-spacing mode. A y+-driven end cell size could previously only be
+        # approximated by guessing an intensity. The resampler now SOLVES the
+        # clustering for a requested end spacing (Spacing::solveTanhDelta); the old
+        # log(L/min(s0,s1))*0.5 heuristic it replaced was ~40x off and needed both
+        # ends set to do anything at all.
+        self.tanh_type_combo = QComboBox()
+        self.tanh_type_combo.addItems(["By Intensity", "By End Spacing"])
+        self.tanh_type_combo.setStyleSheet(combo_style)
+        self.tanh_type_combo.setToolTip(
+            "Choose between an abstract clustering intensity and an explicit "
+            "end-node spacing")
+        # ONE field, not two: tanh clustering is symmetric, so it physically
+        # cannot produce different first/last spacings. Offering two would be a
+        # promise the distribution cannot keep.
+        self.tanh_spacing_ends = mk_sci_spin(
+            "Node spacing at BOTH ends of the edge (tanh clustering is symmetric)")
+        tl.addRow(help_label("Mode:", "Intensity or explicit end spacings"),
+                  self.tanh_type_combo)
         tl.addRow(help_label("Node Count:", "Number of nodes with hyperbolic tangent clustering at both ends"), self.tanh_n)
         tl.addRow(help_label("Intensity:", "Clustering intensity (higher = more nodes at endpoints)"), self.tanh_intensity)
+        tl.addRow(help_label("Δs at ends:",
+                             "Node spacing at BOTH ends (tanh is symmetric)"),
+                  self.tanh_spacing_ends)
+        _t_hint = QLabel("tanh is symmetric → one spacing governs both ends")
+        _t_hint.setStyleSheet("color:#556688; font-size:10px;")
+        tl.addRow("", _t_hint)
+        self._tanh_rows = _rows(tl, intensity=self.tanh_intensity,
+                                ends=self.tanh_spacing_ends)
+        self.tanh_type_combo.currentTextChanged.connect(
+            lambda t: self._toggle_tanh_mode(t == "By End Spacing"))
+        self._toggle_tanh_mode(False)
         self.param_stack.addWidget(tw)
 
         # 2 — Cosine
@@ -93,12 +141,38 @@ class EdgePropsDistMixin:
         self.geo_ratio.setToolTip("Growth ratio at the start of the edge (>1 means expanding)")
         self.geo_ratio_end = mk_dspin(1.0, 5.0, 1.0, 3, 0.05)
         self.geo_ratio_end.setToolTip("Growth ratio at the end of the edge (1.0 = uniform at end)")
+        # Same reasoning as tanh: the resampler accepts spacing_start /
+        # spacing_end for geometric (one-sided from either end, or a two-sided
+        # blend) and derives the growth from them. That is how a boundary-layer-
+        # like distribution is actually specified, so it needs to be reachable.
+        self.geo_type_combo = QComboBox()
+        self.geo_type_combo.addItems(["By Growth Ratio", "By End Spacing"])
+        self.geo_type_combo.setStyleSheet(combo_style)
+        self.geo_type_combo.setToolTip(
+            "Choose between growth ratios and explicit first/last node spacings")
+        self.geo_spacing_start = mk_sci_spin(
+            "First-node spacing at the START of the edge (0 = not set)")
+        self.geo_spacing_end = mk_sci_spin(
+            "Last-node spacing at the END of the edge (0 = not set)")
+        gl2.addRow(help_label("Mode:", "Growth ratios or explicit end spacings"),
+                   self.geo_type_combo)
         gl2.addRow(help_label("Node Count:", "Number of nodes with geometric (exponential) spacing"), self.geo_n)
         gl2.addRow(help_label("Growth Ratio (start):", "Growth ratio at the start of the edge (>1 means expanding)"), self.geo_ratio)
         gl2.addRow(help_label("Growth Ratio (end):", "Growth ratio at the end of the edge (1.0 = uniform at end)"), self.geo_ratio_end)
-        _hint = QLabel("Growth ratio = 1.0 → uniform at end")
+        gl2.addRow(help_label("Δs start:", "First-node spacing at the START of the edge (0 = not set)"),
+                   self.geo_spacing_start)
+        gl2.addRow(help_label("Δs end:", "Last-node spacing at the END of the edge (0 = not set)"),
+                   self.geo_spacing_end)
+        _hint = QLabel("Growth ratio = 1.0 → uniform at end;  Δs = 0 → that end unset")
         _hint.setStyleSheet("color:#556688; font-size:10px;")
         gl2.addRow("", _hint)
+        self._geo_rows = _rows(gl2, ratio=self.geo_ratio,
+                               ratio_end=self.geo_ratio_end,
+                               s0=self.geo_spacing_start,
+                               s1=self.geo_spacing_end)
+        self.geo_type_combo.currentTextChanged.connect(
+            lambda t: self._toggle_geo_mode(t == "By End Spacing"))
+        self._toggle_geo_mode(False)
         self.param_stack.addWidget(gw)
 
         # Align form layouts
@@ -118,6 +192,26 @@ class EdgePropsDistMixin:
         self.uniform_spacing.setVisible(is_spacing)
         if self._uniform_spacing_label:
             self._uniform_spacing_label.setVisible(is_spacing)
+
+    @staticmethod
+    def _set_rows_visible(rows: dict, names, visible: bool):
+        """Show/hide whole label+field rows by name (see the ``_rows`` helper)."""
+        for name in names:
+            lbl, field = rows.get(name, (None, None))
+            if field is not None:
+                field.setVisible(visible)
+            if lbl is not None:
+                lbl.setVisible(visible)
+
+    def _toggle_tanh_mode(self, by_spacing: bool):
+        """Intensity <-> explicit end spacings. Node count applies to both."""
+        self._set_rows_visible(self._tanh_rows, ("intensity",), not by_spacing)
+        self._set_rows_visible(self._tanh_rows, ("ends",), by_spacing)
+
+    def _toggle_geo_mode(self, by_spacing: bool):
+        """Growth ratios <-> explicit end spacings. Node count applies to both."""
+        self._set_rows_visible(self._geo_rows, ("ratio", "ratio_end"), not by_spacing)
+        self._set_rows_visible(self._geo_rows, ("s0", "s1"), by_spacing)
 
     def _on_curve_mode_toggled(self, is_parametric: bool):
         self._param_widget.setVisible(is_parametric)

@@ -59,6 +59,44 @@ public:
         return tS;
     }
 
+    // Clustering parameter `dlt` that makes generateTanh's FIRST interval equal
+    // `ds_first`, found by bisection.
+    //
+    // Previously the caller mapped a requested spacing to dlt with the heuristic
+    // `log(L / min(s0,s1)) * 0.5`, which does not reproduce the requested spacing
+    // (it was off by ~40x for a chord-scale edge) and could only use one of the two
+    // ends. A boundary-layer-like distribution is specified BY its first cell size,
+    // so that has to be solved for, not approximated.
+    //
+    // generateTanh's first interval is monotonically DECREASING in dlt (more
+    // clustering -> finer ends), which is what makes plain bisection safe here.
+    // Returns 0 when the request is not achievable (>= the uniform spacing), so the
+    // caller can fall back to uniform rather than clamp to a misleading value.
+    static double solveTanhDelta(double L, int nT, double ds_first) {
+        if (nT < 3 || L <= 0.0 || ds_first <= 0.0) return 0.0;
+        const double uniform = L / (nT - 1);
+        // At dlt -> 0 the distribution IS uniform, so nothing coarser than uniform
+        // can be asked for.
+        if (ds_first >= uniform) return 0.0;
+
+        auto first_interval = [&](double dlt) {
+            const double xi = 1.0 / (nT - 1);
+            return L * 0.5 * (1.0 + std::tanh(dlt * (2.0 * xi - 1.0)) / std::tanh(dlt));
+        };
+
+        double lo = 1e-6, hi = 1.0;
+        // Grow the bracket until the finest achievable interval is at or below the
+        // request; 60 is far past the point where tanh saturates in double.
+        while (first_interval(hi) > ds_first && hi < 60.0) hi *= 2.0;
+        if (first_interval(hi) > ds_first) return hi;   // unreachable: finest we can do
+        for (int it = 0; it < 200; ++it) {
+            const double mid = 0.5 * (lo + hi);
+            if (first_interval(mid) > ds_first) lo = mid;
+            else hi = mid;
+        }
+        return 0.5 * (lo + hi);
+    }
+
     // Task 1: Advanced Curvature-based spacing
     // L / min_ds / max_ds are part of the shared spacing-strategy signature
     // (all generateXxx take the same arguments) but are not needed by the

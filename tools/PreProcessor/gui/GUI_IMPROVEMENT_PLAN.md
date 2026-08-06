@@ -60,7 +60,7 @@
 - [x] **R3 距離式重取樣 UI** → 查證後**本已實作**（uniform「By Spacing」）
   - [x] UI 已有 `uniform_type_combo`（By Node Count / By Spacing）+ `uniform_spacing`（`edge_props_panel.py:438-454`）
   - [x] `segment_ctrl._read_params_into_segment` 寫入 `parameters["spacing"]`（:765）；`to_dict` 序列化；C++ `params.contains("spacing")` 走距離式
-  - [ ] 殘留小缺口（**未做，低優先**）：非 uniform 策略（tanh/geometric）的 `spacing_start/end` 仍未在 UI 暴露
+  - [x] 殘留小缺口**已補**（2026-08-06）：tanh/geometric 的 `spacing_start/end` 現在有 **By End Spacing** 模式。詳見下方「end-spacing 分佈」
 - [x] **R5 進度百分比**
   - [x] `MeshGenWorker` 解析 stdout 既有標記（`Step:`、`Boundary Layer progress: a / b`）→ `progress_signal(int)`，單調遞增
   - [x] 進度條改 `setRange(0,100)`+`setValue`（`mesh_gen_ctrl._on_mesh_gen_progress`）
@@ -273,6 +273,26 @@
   - 我自己也曾在 `validate()` 多加一條「Z 範圍必須 max > min」—— 但這是 2D 專案，STL 是 z=0 平板，`zmin == zmax` 是正常情況，該檢查會拒絕**所有**正常案例。已改為只拒絕反向範圍（`zmax < zmin`）
 - [x] **同類的靜態守門**：新增 `tests/test_stl3d_case_parity.py` —— 直接從 `stl3d.cpp` 解析 `cin >>` 序列，逐行比對 `para.in` 的行數與每行 token 數。這個 bug 的本質就是 Python writer ↔ C++ reader 漂移，與 `test_gui_cpp_config_parity.py` 同一類，所以用同一種方式鎖住
 - [x] **驗收（實測）**：naca0012.stl → 30x24x1 網格 → phi 場 720 點、其中 202 點標記為固體（翼型內部，物理上合理）；`para.in` 5 行與 binary 對齊；全套 **31/31 PASS**
+
+### 已完成：end-spacing 分佈（2026-08-06，第十批）— 補完 Phase 1 殘留
+
+牆面第一格尺寸原本只能靠猜一個抽象的 intensity / growth ratio 逼近。tanh 與
+geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
+
+- [x] **tanh 的 spacing 支援其實是壞的**：`main.cpp` 用啟發式 `log(L/min(s0,s1))*0.5`
+  把要求映射成 clustering 參數 —— **實測差約 40 倍**（要求 1e-4 實得 2.5e-6），
+  而且**要求兩端都給**，單邊請求會靜默退回 `intensity`。改為
+  `Spacing::solveTanhDelta()`（bisection 真求解，`generateTanh` 的第一段對 dlt 單調遞減，
+  所以二分法安全；比 uniform 還粗的請求回 0 → 退化為 uniform 而非夾到誤導值）
+- [x] **tanh 本質對稱，我原先的 UI 設計錯了**：先做成兩個獨立欄位（Δs start / Δs end），
+  但 tanh 物理上不可能兩端不同 —— 那是**分佈做不到的承諾**。改為單一「Δs at ends」欄位；
+  只有 geometric（真的非對稱、且本來就是真求解）保留 start/end 兩個欄位
+- [x] 兩個模式**互斥寫入**：選了 spacing 就不寫 intensity/ratio（一個量兩個來源就是漂移的起點）；
+  未設定的端點（顯示 "unset"）**省略而非寫成 0.0**，那是 resampler 區分單邊/雙邊的依據
+- [x] 模式由 **key 是否存在**推斷（與 uniform 的 `spacing` 同慣例），手寫或舊 config 可無縫 round-trip
+- [x] **驗收（實測）**：要求 1e-3 / 2e-4 / 5e-5 的端點間距，實得誤差 **≤0.02%** 且兩端對稱；
+  geometric 單邊 5e-4 誤差 0.00%；極端粗的請求安全退化無 NaN。新增
+  `tests/test_end_spacing_distribution.py`（33 checks）；全套 **33/33 PASS**
 
 ### 建議下一步順序
 

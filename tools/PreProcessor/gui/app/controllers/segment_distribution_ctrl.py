@@ -11,6 +11,22 @@ from app.commands.segment_cmds import UpdateMultipleSegmentsStateCmd
 from app.services.geometry_service import GeometryService
 
 
+def _set_spacing(seg: SegmentModel, start_widget, end_widget) -> None:
+    """Write ``spacing_start`` / ``spacing_end`` for a By-End-Spacing edge.
+
+    A zero (shown as "unset") means *that end is not specified*, which is how the
+    resampler distinguishes a one-sided distribution from a two-sided blend — so a
+    zero must be OMITTED, not written as 0.0. Writing it would make
+    ``readPositiveSpacing`` see a present-but-invalid value on both ends.
+    """
+    for key, widget in (("spacing_start", start_widget), ("spacing_end", end_widget)):
+        value = float(widget.value())
+        if value > 0.0:
+            seg.parameters[key] = value
+        else:
+            seg.parameters.pop(key, None)
+
+
 class SegmentDistributionControllerMixin:
     """Point-distribution dialog + strategy/param form (moved from SegmentControllerMixin)."""
 
@@ -181,9 +197,12 @@ class SegmentDistributionControllerMixin:
         def block(b):
             for w in [sb.uniform_n, sb.tanh_n, sb.tanh_intensity,
                       sb.cosine_n, sb.curv_n, sb.curv_sens,
-                      sb.geo_n, sb.geo_ratio, sb.geo_ratio_end, sb.uniform_spacing]:
+                      sb.geo_n, sb.geo_ratio, sb.geo_ratio_end, sb.uniform_spacing,
+                      sb.tanh_spacing_ends,
+                      sb.geo_spacing_start, sb.geo_spacing_end]:
                 w.blockSignals(b)
-            sb.uniform_type_combo.blockSignals(b)
+            for c in (sb.uniform_type_combo, sb.tanh_type_combo, sb.geo_type_combo):
+                c.blockSignals(b)
 
         block(True)
         p = seg.parameters
@@ -198,7 +217,18 @@ class SegmentDistributionControllerMixin:
                 sb._toggle_uniform_mode(False)
         elif seg.strategy == "tanh":
             sb.tanh_n.setValue(p.get("n_points", 50))
+            # Presence of a spacing key IS the mode (same convention as uniform's
+            # "spacing"), so a config written by hand or by an older build round-
+            # trips without needing a separate mode flag.
+            by_spacing = "spacing_start" in p or "spacing_end" in p
+            sb.tanh_type_combo.setCurrentText(
+                "By End Spacing" if by_spacing else "By Intensity")
             sb.tanh_intensity.setValue(p.get("intensity", 2.0))
+            # Either key restores the single symmetric field (an older config, or a
+            # hand-written one, may carry spacing_end instead of spacing_start).
+            sb.tanh_spacing_ends.setValue(
+                p.get("spacing_start") or p.get("spacing_end") or 0.0)
+            sb._toggle_tanh_mode(by_spacing)
         elif seg.strategy == "cosine":
             sb.cosine_n.setValue(p.get("n_points", 50))
         elif seg.strategy == "curvature":
@@ -206,8 +236,14 @@ class SegmentDistributionControllerMixin:
             sb.curv_sens.setValue(p.get("sensitivity", 1.5))
         elif seg.strategy == "geometric":
             sb.geo_n.setValue(p.get("n_points", 50))
+            by_spacing = "spacing_start" in p or "spacing_end" in p
+            sb.geo_type_combo.setCurrentText(
+                "By End Spacing" if by_spacing else "By Growth Ratio")
             sb.geo_ratio.setValue(p.get("ratio", 1.2))
             sb.geo_ratio_end.setValue(p.get("ratio_end", 1.0))
+            sb.geo_spacing_start.setValue(p.get("spacing_start", 0.0))
+            sb.geo_spacing_end.setValue(p.get("spacing_end", 0.0))
+            sb._toggle_geo_mode(by_spacing)
         block(False)
 
     def update_segment_params(self):
@@ -262,7 +298,20 @@ class SegmentDistributionControllerMixin:
                 seg.parameters["n_points"] = sb.uniform_n.value()
         elif seg.strategy == "tanh":
             seg.parameters["n_points"] = sb.tanh_n.value()
-            seg.parameters["intensity"] = sb.tanh_intensity.value()
+            if sb.tanh_type_combo.currentText() == "By End Spacing":
+                # The resampler solves the clustering from the spacing, so
+                # intensity must NOT also be written — two sources for one
+                # quantity is how they drift apart. Written as spacing_start
+                # because tanh is symmetric (see the UI comment).
+                ds = float(sb.tanh_spacing_ends.value())
+                seg.parameters.pop("spacing_end", None)
+                if ds > 0.0:
+                    seg.parameters["spacing_start"] = ds
+                else:
+                    seg.parameters.pop("spacing_start", None)
+                    seg.parameters["intensity"] = sb.tanh_intensity.value()
+            else:
+                seg.parameters["intensity"] = sb.tanh_intensity.value()
         elif seg.strategy == "cosine":
             seg.parameters["n_points"] = sb.cosine_n.value()
         elif seg.strategy == "curvature":
@@ -270,9 +319,12 @@ class SegmentDistributionControllerMixin:
             seg.parameters["sensitivity"] = sb.curv_sens.value()
         elif seg.strategy == "geometric":
             seg.parameters["n_points"] = sb.geo_n.value()
-            seg.parameters["ratio"] = sb.geo_ratio.value()
-            end_ratio = sb.geo_ratio_end.value()
-            if end_ratio != 1.0:
-                seg.parameters["ratio_end"] = end_ratio
+            if sb.geo_type_combo.currentText() == "By End Spacing":
+                _set_spacing(seg, sb.geo_spacing_start, sb.geo_spacing_end)
             else:
-                seg.parameters.pop("ratio_end", None)
+                seg.parameters["ratio"] = sb.geo_ratio.value()
+                end_ratio = sb.geo_ratio_end.value()
+                if end_ratio != 1.0:
+                    seg.parameters["ratio_end"] = end_ratio
+                else:
+                    seg.parameters.pop("ratio_end", None)
