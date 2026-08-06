@@ -175,6 +175,22 @@ class SignalWiringMixin:
         # Snap placement clicks (while drawing) to nearby edge endpoints.
         self.main_window.canvas_view.snap_cb = self._snap_draw_xy
 
+        # ── Canvas tools: measure, grid snap, view history ────────────────
+        mw_ = self.main_window
+        cv = mw_.canvas_view
+        # The snap step/flag are read by _snap_draw_xy through the window, so the
+        # checkbox and spin box need no handler of their own: toggling them changes
+        # the NEXT placement rather than mutating anything now.
+        mw_.grid_snap_on = False
+        mw_.grid_snap_cb.toggled.connect(self._on_grid_snap_toggled)
+        mw_.grid_snap_step.valueChanged.connect(self._on_grid_snap_step_changed)
+
+        mw_.measure_btn.toggled.connect(self._on_measure_toggled)
+        cv.measure_done_cb = self._on_measure_done
+        cv.view_history_changed_cb = self._on_view_history_changed
+        mw_.view_back_btn.clicked.connect(cv.view_back)
+        mw_.view_fwd_btn.clicked.connect(cv.view_forward)
+
         # Wire Selection Mode dropdown (now in the sidebar, beside the tree)
         def _on_selection_mode_changed(index):
             mode = 'vertex' if index == 0 else 'edge'

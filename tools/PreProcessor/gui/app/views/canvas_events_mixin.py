@@ -88,6 +88,31 @@ class CanvasEventsMixin:
                 self.stop_endpoint_tool()
             return
 
+        # ── Measure tool: intercepts clicks BEFORE selection/hit-testing, so
+        #    measuring never also re-selects an edge under the cursor. Right-click
+        #    leaves the tool, matching the draw tool's convention. ───────────
+        if getattr(self, '_measure_tool', False):
+            event.accept()
+            if event.button() == Qt.MouseButton.RightButton:
+                self.stop_measure_tool(keep_result=True)
+                return
+            mp = self.plot_widget.getViewBox().mapSceneToView(event.scenePos())
+            x, y = mp.x(), mp.y()
+            # Measuring a gap between two geometry points is the common case, so the
+            # same snap the placement tools use applies here too.
+            if self.snap_cb is not None:
+                try:
+                    x, y = self.snap_cb(x, y)
+                except Exception:
+                    _log.warning("snap callback failed during measure; using the "
+                                 "raw cursor position", exc_info=True)
+            result = self.handle_measure_click(x, y)
+            if result:
+                cb = getattr(self, "measure_done_cb", None)
+                if cb is not None:
+                    cb(result)
+            return
+
         # ── Interactive shape drawing intercepts all clicks ───────────────
         if self._draw_tool is not None:
             btn = event.button()
@@ -184,6 +209,10 @@ class CanvasEventsMixin:
             mp = self.plot_widget.plotItem.vb.mapSceneToView(pos)
             self.coord_label.setPos(mp.x(), mp.y())
             self.coord_label.setText(f"X: {mp.x():.4f}\nY: {mp.y():.4f}")
+            # Live rubber band for the measure tool's second point.
+            if getattr(self, "_measure_tool", False):
+                self.update_measure_preview(mp.x(), mp.y())
+
             # Live rubber-band preview while drawing a shape.
             if self._draw_tool is not None and self._draw_pts:
                 cursor = (mp.x(), mp.y())

@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import (
     QComboBox, QProgressBar, QGridLayout
 )
 from app.styles import TOOLBAR_CHECKBOX_STYLE
+from app.utils import SPIN_STYLE
+from app.views.clean_double_spin_box import SciDoubleSpinBox
 
 
 # Mixins listed BEFORE QMainWindow so the Qt virtual overrides they provide
@@ -65,6 +67,33 @@ class MainWindowToolbarBuildMixin:
         self.cad_redraw_btn = create_tb_btn(
             "Redraw", "Redraw the canvas — clear leftover markers/handles from the "
             "previous action and re-render the geometry")
+
+        # ── Canvas tools: measure, grid snap, view history ────────────────
+        # The canvas could draw and drag but not MEASURE: checking a slat gap or the
+        # clearance a boundary layer must fit into meant exporting the geometry.
+        self.measure_btn = create_tb_btn(
+            "Measure", "Measure a span: click two points to read distance, dx/dy "
+            "and angle. Click again to start a new span.")
+        self.measure_btn.setCheckable(True)
+
+        self.grid_snap_cb = QCheckBox("Snap")
+        self.grid_snap_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
+        self.grid_snap_cb.setToolTip(
+            "Snap placement clicks to a grid. Snapping to an existing geometry "
+            "endpoint always wins over the grid.")
+        self.grid_snap_step = SciDoubleSpinBox()
+        self.grid_snap_step.setRange(0.0, 1e6)
+        self.grid_snap_step.setValue(0.1)
+        self.grid_snap_step.setToolTip("Grid spacing for snapping")
+        self.grid_snap_step.setStyleSheet(SPIN_STYLE)
+        self.grid_snap_step.setWidthCap(80)
+
+        self.view_back_btn = create_tb_btn(
+            "◀ View", "Go back to the previous canvas view (zoom/pan history)")
+        self.view_fwd_btn = create_tb_btn(
+            "View ▶", "Go forward again through the canvas view history")
+        self.view_back_btn.setEnabled(False)
+        self.view_fwd_btn.setEnabled(False)
         
         # New CAD Previews
         self.cad_preview_btn = create_tb_btn("Preview", "Run PreProcessor and preview geometry/boundary conditions")
@@ -266,6 +295,8 @@ class MainWindowToolbarBuildMixin:
             self.cad_redraw_btn,
             self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
             self.cad_cancel_btn,
+            self.measure_btn, self.grid_snap_cb, self.grid_snap_step,
+            self.view_back_btn, self.view_fwd_btn,
             self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
             self.cad_sep2,
         ]

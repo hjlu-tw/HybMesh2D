@@ -209,14 +209,38 @@ class CurveDrawControllerMixin:
         return x, y, False
 
     def _snap_draw_xy(self, x, y):
-        """Canvas snap_cb: snap a placement click/cursor to a nearby endpoint."""
+        """Canvas snap_cb: snap a placement click/cursor to an endpoint, else the grid.
+
+        Endpoint snapping runs FIRST and wins. Landing exactly on an existing
+        geometry point matters more than landing on an abstract grid line: if the grid
+        ran last unconditionally it would drag a just-welded endpoint back off the
+        geometry, silently reopening the gap the user was closing.
+        """
+        from app.services.canvas_tools import compose_snap
+
+        # Read the spin box directly: keeping a mirrored `grid_snap_step_value`
+        # would be one quantity with two sources, which is exactly how they drift.
+        mw = self.main_window
+        widget = getattr(mw, "grid_snap_step", None)
+        step = float(widget.value()) if widget is not None else 0.0
+        if not getattr(mw, "grid_snap_on", False):
+            step = 0.0
+
         session = self.active_session()
         if not session:
-            return x, y
+            gx, gy, _ = compose_snap(x, y, grid_step=step)
+            return gx, gy
         # Exclude the edge currently being edited (if any) from the targets.
         exclude = self._pending_seg or self._pending_file_seg
-        sx, sy, _ = self._snap_point(x, y, self._snap_targets(session, exclude=exclude))
-        return sx, sy
+        targets = self._snap_targets(session, exclude=exclude)
+
+        def endpoint_snap(px, py):
+            sx, sy, _hit = self._snap_point(px, py, targets)
+            return sx, sy
+
+        gx, gy, _on_endpoint = compose_snap(
+            x, y, endpoint_snap=endpoint_snap, grid_step=step)
+        return gx, gy
 
     def _edit_in_progress(self) -> bool:
         return self._pending_seg is not None or self._pending_file is not None
@@ -231,3 +255,45 @@ class CurveDrawControllerMixin:
     def _shape_params_from_points(tool: str, pts: list):
         """Map the drawn canvas points → (parameters, curve_type)."""
         return shape_spec.params_from_points(tool, pts)
+
+    # ── Canvas tools: measure / grid snap / view history ──────────────────
+    def _on_grid_snap_toggled(self, on: bool):
+        """Grid snap is read at placement time, so toggling only affects the NEXT
+        click — nothing already placed moves."""
+        mw = self.main_window
+        mw.grid_snap_on = bool(on)
+        step = mw.grid_snap_step.value()
+        mw.log_panel.log(
+            f"[Canvas] grid snap {'ON' if on else 'OFF'}"
+            + (f" (step {step:g})" if on else ""))
+
+    def _on_grid_snap_step_changed(self, value: float):
+        # Nothing to store: _snap_draw_xy reads the spin box itself.
+        if getattr(self.main_window, "grid_snap_on", False):
+            self.main_window.log_panel.log(f"[Canvas] grid snap step {value:g}")
+
+    def _on_measure_toggled(self, on: bool):
+        cv = self.main_window.canvas_view
+        if on:
+            cv.start_measure_tool()
+            self.main_window.log_panel.log(
+                "[Measure] click two points to read distance / dx / dy / angle "
+                "(click again to start a new span).")
+            self.main_window.flash_status("Measure: click two points")
+        else:
+            # Keep the last span drawn: the number is still worth reading after the
+            # tool is switched off.
+            cv.stop_measure_tool(keep_result=True)
+
+    def _on_measure_done(self, m: dict):
+        """A completed span: report it where the user is already looking."""
+        from app.services.canvas_tools import format_measure
+        if not m:
+            return
+        text = format_measure(m)
+        self.main_window.log_panel.log(f"[Measure] {text}")
+        self.main_window.flash_status(f"Measured  {text}", 8000)
+
+    def _on_view_history_changed(self, can_back: bool, can_forward: bool):
+        self.main_window.view_back_btn.setEnabled(bool(can_back))
+        self.main_window.view_fwd_btn.setEnabled(bool(can_forward))

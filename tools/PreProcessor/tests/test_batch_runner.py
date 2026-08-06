@@ -59,7 +59,6 @@ _wd.start()
 
 import json  # noqa: E402
 
-from app.models.pipeline_config import PipelineConfig  # noqa: E402
 from app.services import batch_runner as br  # noqa: E402
 from app.services import pipeline_runner  # noqa: E402
 

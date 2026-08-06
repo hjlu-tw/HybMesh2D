@@ -10,6 +10,7 @@ from app.views.canvas_draw_mixin import CanvasDrawMixin
 from app.views.canvas_events_mixin import CanvasEventsMixin
 from app.views.canvas_geometry_mixin import CanvasGeometryMixin
 from app.views.canvas_selection_mixin import CanvasSelectionMixin
+from app.views.canvas_tools_mixin import CanvasToolsMixin
 
 
 # ── Dark-theme palette ────────────────────────────────────────────────────────
@@ -26,7 +27,8 @@ _COL_CLOSING  = '#FFD700'   # gold — auto-added closing edge (dashed)
 
 class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
                  CanvasDrawMixin, CanvasEventsMixin,
-                 CanvasGeometryMixin, CanvasSelectionMixin):
+                 CanvasGeometryMixin, CanvasSelectionMixin,
+                 CanvasToolsMixin):
     """
     Shared interactive canvas that can display multiple geometry sessions
     simultaneously.  Only the ACTIVE session has editable markers
@@ -234,6 +236,10 @@ class CanvasView(QWidget, CanvasRenderMixin, CanvasTransformMixin,
         self._mouse_timer.setSingleShot(True)
         self._mouse_timer.timeout.connect(self._throttled_mouse_update)
         self._last_mouse_pos = None
+
+        # Measure tool + view history (overlay items and the range hook need the
+        # plot widget, so this runs last).
+        self._init_canvas_tools()
 
     # ═════════════════════════════════════════════════════════════════════
     # Multi-geometry management

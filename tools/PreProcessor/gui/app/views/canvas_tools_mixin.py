@@ -1,0 +1,160 @@
+"""Measure tool + view history for the CAD canvas.
+
+The canvas could draw and drag but not *measure*: checking a slat gap, a chord, or the
+clearance a boundary layer has to fit into meant exporting the geometry and computing
+it elsewhere. It also had no way back to a previous zoom — a mis-scrolled wheel meant
+re-framing by hand.
+
+The arithmetic and the history stack live in the Qt-free
+:mod:`app.services.canvas_tools`; this mixin is only the canvas state and the drawn
+overlay.
+"""
+from __future__ import annotations
+
+import pyqtgraph as pg
+from PyQt6.QtCore import Qt
+
+from app.services.canvas_tools import ViewHistory, format_measure, measure
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
+_MEASURE_COLOR = "#f5c542"
+
+
+class CanvasToolsMixin:
+    def _init_canvas_tools(self):
+        """Set up measure state and start recording view ranges."""
+        self._measure_tool = False
+        self._measure_first = None          # first clicked point, or None
+        self._measure_result = {}
+
+        # Dashed rubber band + a text read-out, both created once and hidden.
+        self._measure_line = pg.PlotDataItem(
+            pen=pg.mkPen(_MEASURE_COLOR, width=1.4,
+                         style=Qt.PenStyle.DashLine))
+        self._measure_line.setZValue(95)
+        self.plot_widget.addItem(self._measure_line)
+        self._measure_text = pg.TextItem("", color=_MEASURE_COLOR,
+                                         anchor=(0.5, 1.4))
+        self._measure_text.setZValue(96)
+        self.plot_widget.addItem(self._measure_text, ignoreBounds=True)
+        self._measure_line.setVisible(False)
+        self._measure_text.setVisible(False)
+
+        self.view_history = ViewHistory()
+        vb = self.plot_widget.getViewBox()
+        vb.sigRangeChanged.connect(self._on_view_range_changed)
+        # Seed with the current view so the first "back" has somewhere to go.
+        self.view_history.push(vb.viewRange())
+
+    # ── view history ─────────────────────────────────────────────────────
+    def _on_view_range_changed(self, *_args):
+        vb = self.plot_widget.getViewBox()
+        if self.view_history.push(vb.viewRange()):
+            self._notify_view_history()
+
+    def _apply_view(self, view):
+        """Set the view without recording it as a new navigation step."""
+        if view is None:
+            return False
+        self.view_history.restoring = True
+        try:
+            vb = self.plot_widget.getViewBox()
+            vb.setRange(xRange=view[0], yRange=view[1], padding=0)
+        finally:
+            self.view_history.restoring = False
+        self._notify_view_history()
+        return True
+
+    def view_back(self) -> bool:
+        return self._apply_view(self.view_history.back())
+
+    def view_forward(self) -> bool:
+        return self._apply_view(self.view_history.forward())
+
+    def _notify_view_history(self):
+        """Let the window enable/disable its back/forward buttons."""
+        cb = getattr(self, "view_history_changed_cb", None)
+        if cb is not None:
+            cb(self.view_history.can_back, self.view_history.can_forward)
+
+    # ── measure tool ─────────────────────────────────────────────────────
+    def start_measure_tool(self):
+        """Enter measure mode: two clicks define the span."""
+        # Never two placement tools at once — the same rule the draw/weld tools use.
+        for stop in ("cancel_draw_mode", "stop_endpoint_tool"):
+            fn = getattr(self, stop, None)
+            if callable(fn):
+                fn()
+        self._measure_tool = True
+        self._measure_first = None
+        self._measure_result = {}
+        self._measure_line.setVisible(False)
+        self._measure_text.setVisible(False)
+        try:
+            self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+        except Exception:
+            _log.debug("could not set the measure cursor", exc_info=True)
+
+    def stop_measure_tool(self, keep_result: bool = True):
+        """Leave measure mode. The last span stays drawn unless told otherwise, so
+        the number is still readable after the tool is switched off."""
+        self._measure_tool = False
+        self._measure_first = None
+        if not keep_result:
+            self._measure_result = {}
+            self._measure_line.setVisible(False)
+            self._measure_text.setVisible(False)
+        try:
+            self.plot_widget.unsetCursor()
+        except Exception:
+            _log.debug("could not restore the cursor after measuring",
+                       exc_info=True)
+
+    @property
+    def measuring(self) -> bool:
+        return bool(self._measure_tool)
+
+    def handle_measure_click(self, x: float, y: float) -> dict:
+        """Feed a click to the measure tool. Returns the completed result, or {}.
+
+        The first click anchors; the second completes the span and the NEXT click
+        starts a fresh one — chaining spans is what you do when stepping along a
+        multi-element gap, and forcing a tool re-activation between them would be
+        friction for no gain.
+        """
+        if self._measure_first is None:
+            self._measure_first = (float(x), float(y))
+            self._measure_line.setData([x, x], [y, y])
+            self._measure_line.setVisible(True)
+            self._measure_text.setVisible(False)
+            return {}
+        m = measure(self._measure_first, (x, y))
+        self._measure_first = None
+        self._measure_result = m
+        if m:
+            self._draw_measure(m)
+        return m
+
+    def update_measure_preview(self, x: float, y: float):
+        """Rubber-band the span while the second point is still being chosen."""
+        if not self._measure_tool or self._measure_first is None:
+            return
+        m = measure(self._measure_first, (x, y))
+        if m:
+            self._draw_measure(m)
+
+    def _draw_measure(self, m: dict):
+        (x0, y0), (x1, y1) = m["p0"], m["p1"]
+        self._measure_line.setData([x0, x1], [y0, y1])
+        self._measure_line.setVisible(True)
+        self._measure_text.setText(format_measure(m))
+        self._measure_text.setPos(0.5 * (x0 + x1), 0.5 * (y0 + y1))
+        self._measure_text.setVisible(True)
+
+    def clear_measure(self):
+        self._measure_result = {}
+        self._measure_first = None
+        self._measure_line.setVisible(False)
+        self._measure_text.setVisible(False)
