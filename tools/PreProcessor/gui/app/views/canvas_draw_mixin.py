@@ -57,7 +57,7 @@ class CanvasDrawMixin:
     def start_endpoint_tool(self):
         """Enter the drag-to-weld tool: show a draggable handle on every endpoint;
         drag one onto a target point to weld (or into free space to move it)."""
-        self.cancel_draw_mode()          # never both tools at once
+        self.activate_exclusive_tool("weld")   # never two tools at once
         self._endpoint_tool = True
         self._endpoint_from = None
         self._endpoint_pick_marker.clear()
@@ -256,7 +256,7 @@ class CanvasDrawMixin:
         ``shape_drawn`` (the controller then opens the numeric dialog).  The
         initial prompt is centred in the current view so it is always visible."""
         self.clear_draw_artifacts()
-        self.stop_endpoint_tool()        # never both tools at once
+        self.activate_exclusive_tool("draw")   # never two tools at once
         self._draw_tool = tool
         self._draw_pts = []
         # Freeze the view while drawing: placing the first point (a single point)

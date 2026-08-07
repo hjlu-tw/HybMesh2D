@@ -70,13 +70,36 @@ def measure(p0, p1) -> dict:
     }
 
 
+def _measure_rows(m: dict) -> tuple:
+    """The four read-out values as ``(label, text)`` pairs, in reading order."""
+    return (("d", f"{m['distance']:.6g}"),
+            ("dx", f"{m['dx']:.6g}"),
+            ("dy", f"{m['dy']:.6g}"),
+            ("angle", f"{m['angle_deg']:.2f}°"))
+
+
 def format_measure(m: dict) -> str:
-    """One-line read-out for the status bar / log."""
+    """One-line read-out for the status bar / log, which is a single-line surface."""
     if not m:
         return "—"
-    return (f"d = {m['distance']:.6g}   "
-            f"dx = {m['dx']:.6g}   dy = {m['dy']:.6g}   "
-            f"angle = {m['angle_deg']:.2f}°")
+    return "   ".join(f"{k} = {v}" for k, v in _measure_rows(m))
+
+
+def format_measure_lines(m: dict) -> str:
+    """Stacked read-out — one value per line — for the on-canvas label.
+
+    The label sits on the span it is measuring, so the one-line form ran a wide banner
+    of text across the very geometry being measured, and at any real zoom it reached
+    past both ends of the span. Four short rows keep it to a compact plate.
+
+    Labels are padded to a common width so the ``=`` line up into a column; that only
+    holds in a fixed-width font, which is why the canvas label sets one.
+    """
+    if not m:
+        return "—"
+    rows = _measure_rows(m)
+    w = max(len(k) for k, _ in rows)
+    return "\n".join(f"{k:<{w}} = {v}" for k, v in rows)
 
 
 class ViewHistory:

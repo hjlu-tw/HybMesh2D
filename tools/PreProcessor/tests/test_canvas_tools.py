@@ -62,8 +62,8 @@ _wd.daemon = True
 _wd.start()
 
 from app.services.canvas_tools import (  # noqa: E402
-    MAX_VIEW_HISTORY, ViewHistory, compose_snap, format_measure, measure,
-    snap_to_grid,
+    MAX_VIEW_HISTORY, ViewHistory, compose_snap, format_measure,
+    format_measure_lines, measure, snap_to_grid,
 )
 
 # ── 1. grid rounding ──────────────────────────────────────────────────────
@@ -107,6 +107,22 @@ for bad in (None, (0,), "xy", (float("nan"), 0.0), (0.0, float("inf"))):
           f"3. degenerate second point {bad!r} yields {{}}")
 check(format_measure({}) == "—", "3. an empty result formats as a dash")
 check("d = 5" in format_measure(m), "3. the read-out leads with the distance")
+check("\n" not in format_measure(m),
+      "3. the status-bar form stays one line — that surface has only one")
+
+# The on-canvas plate stacks the same four values, one per row, so it does not run a
+# banner of text across the geometry it is measuring.
+lines = format_measure_lines(m).split("\n")
+check(len(lines) == 4, f"3. the canvas read-out is four lines (got {len(lines)})")
+check([ln.split("=")[0].strip() for ln in lines] == ["d", "dx", "dy", "angle"],
+      f"3. ...one value per line, in reading order ({lines})")
+check(len({ln.index("=") for ln in lines}) == 1,
+      f"3. ...with the '=' in one column, which a fixed-width font renders "
+      f"as aligned ({lines})")
+check(all(v in format_measure_lines(m) for v in ("5", "3", "4")),
+      "3. ...carrying the same numbers as the one-line form")
+check(format_measure_lines({}) == "—",
+      "3. ...and an empty result is still a dash, not four empty rows")
 
 # ── 4/5. view history ─────────────────────────────────────────────────────
 h = ViewHistory()
@@ -162,6 +178,7 @@ check(not r.push(None) and not r.push(((0, float("nan")), (0, 1))),
       "5. None / non-finite views are refused")
 
 # ── 6/7/8. live in the app ────────────────────────────────────────────────
+from PyQt6.QtGui import QFont  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication(sys.argv)
@@ -206,6 +223,16 @@ else:
     res = cv.handle_measure_click(1.0, 1.0)
     check(res and abs(res["distance"] - math.sqrt(2)) < 1e-12,
           f"7. the second click completes the span ({res.get('distance')})")
+    # Reported: the plate drawn on the canvas laid all four values out in one long
+    # row, straight across the geometry being measured.
+    drawn = cv._measure_text.toPlainText()
+    check(len(drawn.split("\n")) == 4,
+          f"7. the plate drawn on the canvas is four rows, not one row ({drawn!r})")
+    check(cv._measure_text.textItem.font().fixedPitch()
+          or "mono" in cv._measure_text.textItem.font().family().lower()
+          or cv._measure_text.textItem.font().styleHint()
+          == QFont.StyleHint.Monospace,
+          "7. ...in a fixed-width font, which is what makes the '=' column line up")
     check(cv.handle_measure_click(2.0, 2.0) == {},
           "7. a further click starts a NEW span (chaining along a gap)")
     mw.measure_btn.setChecked(False)
@@ -213,6 +240,52 @@ else:
           "7. switching the tool off keeps the last span readable")
     cv.clear_measure()
     check(not cv._measure_result, "7. clear_measure drops it")
+
+    # ── 10. one tool at a time, in EVERY direction ────────────────────────
+    # Reported: press Measure, then press Polygon, and the canvas was still measuring.
+    # Exclusion was written pairwise inside each start_*, so of the six directions
+    # between three tools only three existed — Measure stopped the others, nothing
+    # stopped Measure. The cursor was the visible half; the invisible half is that the
+    # measure tool intercepts clicks before drawing, so Polygon collected measurement
+    # spans and never placed a point.
+    from app.views.canvas_tools_mixin import EXCLUSIVE_TOOLS  # noqa: E402
+
+    starters = {"measure": lambda: mw.measure_btn.setChecked(True),
+                "draw": lambda: cv.start_draw_mode("polygon"),
+                "weld": cv.start_endpoint_tool}
+    check(set(starters) == {t[0] for t in EXCLUSIVE_TOOLS},
+          "10. every exclusive tool is covered by this check — a tool added to "
+          f"EXCLUSIVE_TOOLS must be started here too ({[t[0] for t in EXCLUSIVE_TOOLS]})")
+    for first, start_first in starters.items():
+        for second, start_second in starters.items():
+            if first == second:
+                continue
+            for name, flag, stop in EXCLUSIVE_TOOLS:   # a clean slate each time
+                getattr(cv, stop)()
+            start_first()
+            start_second()
+            live = [n for n, flag, _ in EXCLUSIVE_TOOLS if getattr(cv, flag, None)]
+            check(live == [second],
+                  f"10. {first} then {second}: only {second} is live (got {live})")
+    for name, flag, stop in EXCLUSIVE_TOOLS:
+        getattr(cv, stop)()
+
+    # The toolbar toggle has to follow the canvas, not just the user's click.
+    mw.measure_btn.setChecked(True)
+    cv.start_draw_mode("polygon")
+    check(not mw.measure_btn.isChecked(),
+          "10. ...and the Measure button un-checks when a tool takes over — a "
+          "pressed-looking button for a tool that is off is the bug the user sees")
+    cv.cancel_draw_mode()
+    check(cv.start_measure_tool() is None and cv.measuring,
+          "10. Measure can be re-entered afterwards")
+    cv.stop_measure_tool(keep_result=False)
+    try:
+        cv.activate_exclusive_tool("nosuchtool")
+        check(False, "10. an unknown tool name must raise, not silently no-op")
+    except ValueError:
+        check(True, "10. an unknown tool name raises rather than silently leaving "
+                    "that tool non-exclusive")
 
     # 7. view history through the canvas.
     # Recording is DEBOUNCED: a view is stored once it stops moving, so that one
@@ -257,6 +330,67 @@ else:
           "7. ...to the view it came from")
     check(not mw.view_fwd_btn.isEnabled(),
           "7. at the end of the history Forward disables again")
+
+# ── 9. the measure overlay is distinguishable from the data ───────────────
+# Reported: the measure colour duplicated another one. It did — amber #f5c542 sat on top
+# of the closing edge, the active segment and two session colours. Plain white would be
+# worse: white rings are the endpoint markers, i.e. what you look at while measuring.
+import re as _re  # noqa: E402
+
+from app.models.session import SESSION_COLORS  # noqa: E402
+from app.views.canvas_tools_mixin import _MEASURE_COLOR  # noqa: E402
+
+_canvas_src = open(os.path.join(_GUI, "app", "views", "canvas.py"),
+                   encoding="utf-8").read()
+_in_use = {c.upper() for c in _re.findall(r"#[0-9A-Fa-f]{6}", _canvas_src)}
+_in_use |= {c.upper() for c in SESSION_COLORS}
+check(_MEASURE_COLOR.upper() not in _in_use,
+      f"9. the measure colour is used by nothing else on the canvas "
+      f"({_MEASURE_COLOR}; {len(_in_use)} colours already in play)")
+
+
+# Distance is measured in CIELAB, not RGB: RGB Euclidean says nothing about whether two
+# colours look alike, and "looks like another one" is the entire complaint. ΔE below ~10
+# is the same colour at a glance; the old amber scored 6.1 and plain white 0.0 (it IS the
+# endpoint-marker colour). 25 is a deliberately conservative floor.
+def _rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _lab(c):
+    def _lin(u):
+        u /= 255.0
+        return u / 12.92 if u <= 0.04045 else ((u + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (_lin(v) for v in c)
+    x = r * 0.4124 + g * 0.3576 + b * 0.1805
+    y = r * 0.2126 + g * 0.7152 + b * 0.0722
+    z = r * 0.0193 + g * 0.1192 + b * 0.9505
+
+    def _f(t):
+        return t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+
+    fx, fy, fz = _f(x / 0.95047), _f(y), _f(z / 1.08883)
+    return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+
+
+def _delta_e(a, b):
+    return sum((u - v) ** 2 for u, v in zip(_lab(a), _lab(b))) ** 0.5
+
+
+_MIN_DELTA_E = 25.0
+_near = sorted((_delta_e(_rgb(_MEASURE_COLOR), _rgb(c)), c) for c in _in_use)
+check(_near[0][0] >= _MIN_DELTA_E,
+      f"9. ...and is perceptually far from all of them (nearest {_near[0][1]} at "
+      f"ΔE {_near[0][0]:.1f}, floor {_MIN_DELTA_E:.0f}; the reported amber scored 6.1)")
+
+# Shape, not only hue: the read-out sits on a filled plate, which nothing else has, so it
+# reads as a label before the colour registers.
+check(cv._measure_text.fill is not None
+      and cv._measure_text.fill.color().alpha() > 0,
+      "9. the read-out has a filled background plate, so it does not depend on hue "
+      "alone to read as an annotation")
 
 _wd.cancel()
 if _FAILS:

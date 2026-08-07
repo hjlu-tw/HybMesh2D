@@ -6,6 +6,7 @@ from app.models.segment import SegmentModel
 from app.services.geometry_service import GeometryService
 from app.models import shape_spec
 from app.controllers.curve_ctrl import _apply_default_polygon_spacing
+from app.utils import block_signals
 
 
 class CurveDrawControllerMixin:
@@ -284,6 +285,16 @@ class CurveDrawControllerMixin:
             # Keep the last span drawn: the number is still worth reading after the
             # tool is switched off.
             cv.stop_measure_tool(keep_result=True)
+
+    def _on_measure_ended(self):
+        """The canvas left measure mode — by right-click, or because another tool took
+        over. Un-check the toggle so the toolbar shows the tool that is actually live;
+        the button used to stay pressed while Polygon was drawing."""
+        btn = self.main_window.measure_btn
+        if not btn.isChecked():
+            return
+        with block_signals(btn):
+            btn.setChecked(False)
 
     def _on_measure_done(self, m: dict):
         """A completed span: report it where the user is already looking."""

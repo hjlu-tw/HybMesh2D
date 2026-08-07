@@ -187,6 +187,7 @@ class SignalWiringMixin:
 
         mw_.measure_btn.toggled.connect(self._on_measure_toggled)
         cv.measure_done_cb = self._on_measure_done
+        cv.measure_ended_cb = self._on_measure_ended
         cv.view_history_changed_cb = self._on_view_history_changed
         mw_.view_back_btn.clicked.connect(cv.view_back)
         mw_.view_fwd_btn.clicked.connect(cv.view_forward)
