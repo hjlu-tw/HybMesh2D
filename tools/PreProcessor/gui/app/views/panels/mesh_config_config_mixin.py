@@ -166,6 +166,18 @@ class MeshConfigConfigMixin:
 
     def set_config(self, cfg: MeshConfig):
         """Populate widget values from a MeshConfig model instance."""
+        # `_loading` tells the controller's panel->model sync that the widgets are
+        # mid-population, so a valueChanged fired here is NOT a user edit and must not
+        # be read back into the model. Deliberately a fact the PANEL knows rather than
+        # something the caller must remember: a direct set_config that forgets
+        # push_panel_config should cost a spurious undo step, never a corrupted model.
+        self._loading = True
+        try:
+            self._set_config_body(cfg)
+        finally:
+            self._loading = False
+
+    def _set_config_body(self, cfg: MeshConfig):
         # Suppress the BL change handler while bulk-populating, and reset the BL
         # edit scope to global; the selection sync at the end re-points it.
         self._bl_updating = True

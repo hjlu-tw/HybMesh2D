@@ -52,23 +52,16 @@ class MeshLayersControllerMixin:
         (only role/BC edits were), so add/remove/toggle-geometry — which re-apply
         global_mesh_config via set_config — snapped those values back to their old
         stored value."""
-        gmc = getattr(self, "global_mesh_config", None)
-        panel = getattr(self.main_window, "mesh_config_panel", None)
-        if gmc is None or panel is None:
-            return
-        try:
-            live = panel.get_config()
-        except Exception:
-            return
-        # `owned` = layer-op state the panel's get_config() does not (re)build,
-        # so copying a fresh live value over it would clobber the stored one:
-        # geom list/roles/group BC are managed here, and bc_geom /
-        # missing_geom_files are left at dataclass defaults by get_config().
-        owned = {"geom_files", "geom_roles", "group_bc",
-                 "bc_geom", "missing_geom_files"}
-        for key, val in vars(live).items():
-            if key not in owned:
-                setattr(gmc, key, val)
+        # Delegates to the single panel->model sync (N8: one data-flow direction).
+        # The extra-preserve set is what makes THIS call site different: the geometry
+        # list, per-file roles and per-group BC are mid-mutation by the layer operation
+        # running right now, so the stored value must win over the panel for those
+        # three. Fields the panel simply cannot author (bc_geom, missing_geom_files)
+        # are preserved by panel_sync_ctrl itself and are no longer duplicated here —
+        # keeping two copies of that list is how they drifted apart in the first place.
+        self.sync_panel_to_model(
+            "mesh_config_panel",
+            extra_preserve=("geom_files", "geom_roles", "group_bc"))
 
     def remove_session_from_mesh_config(self, session) -> None:
         """Drop a deleted CAD session's exported geometry from the mesh

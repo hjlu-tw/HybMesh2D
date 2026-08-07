@@ -38,6 +38,22 @@ class SolverConfigUnitsMixin:
         self.linf = new_linf
         return changed
 
+    def normalize(self) -> None:
+        """Restore this config's own invariants. Called after a panel->model sync.
+
+        ``linf`` has a widget, so the sync copies it from the panel — but the length
+        unit does NOT (it is declared on the Mesh panel and therefore preserved). Left
+        alone, a sync could land ``length_unit = mm`` next to ``linf = 1``, an
+        inconsistency the sync itself created and which ``unit_check`` would then
+        report as if the user had caused it.
+
+        Re-deriving only applies while ``linf_from_unit`` is set. With it off the widget
+        IS the authority — that is the whole point of the manual mode — so the panel's
+        value stands.
+        """
+        if self.linf_from_unit:
+            self.linf = self.derived_linf()
+
     def derived_linf(self) -> float:
         """What ``linf`` would be for the declared unit."""
         from app.services import units

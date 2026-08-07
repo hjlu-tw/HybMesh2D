@@ -16,38 +16,39 @@ class ProjectStateControllerMixin:
     def _collect_project_state(self) -> dict:
         """Serialize the Mesh / Solver / Immersed-Solid configuration.
 
-        Read from the *panels*, not from ``global_mesh_config`` and friends: the
-        globals are only refreshed when a stage actually runs (Generate Mesh,
-        Run Solver, ...), so a user who configures a case and saves without
-        running would otherwise checkpoint stale defaults. The global is the
-        fallback for a panel that cannot be read (partially-built UI).
+        Refresh each model from its panel first, then serialize the MODELS. This used
+        to serialize ``panel.get_config()`` directly, because the models were only
+        refreshed when a stage actually ran and a user who configured a case and saved
+        without running would have checkpointed stale defaults.
+
+        That workaround lost data of its own, and it was not hypothetical: a fresh
+        ``get_config()`` leaves every field the panel does not author at its dataclass
+        default, so saving a workspace turned ``bc_geom = symmetry`` back into ``wall``
+        and (once units existed) a millimetre solver config back into metres — taking
+        Linf's meaning with it. The panel is not a complete description of the model and
+        never was.
+
+        With the panel->model sync running on every edit (controllers/panel_sync_ctrl.py)
+        the models are already current, so this is belt-and-braces rather than the thing
+        keeping the save fresh.
 
         Unlike a pipeline script — which strips machine-specific derived paths to
         stay portable — a workspace is local working state, so staged case paths
         and binary locations are kept: reopening it should put the engineer back
         exactly where they left off.
         """
-        mw = self.main_window
         out: dict = {}
+        if hasattr(self, "sync_panels_to_models"):
+            self.sync_panels_to_models()
 
-        def grab(panel_attr: str, global_attr: str, key: str):
-            panel = getattr(mw, panel_attr, None)
-            cfg = None
-            if panel is not None and hasattr(panel, "get_config"):
-                try:
-                    cfg = panel.get_config()
-                except Exception as e:
-                    self.main_window.log_panel.log(
-                        f"[WARNING] Could not read the {key} panel state; saving "
-                        f"the last applied configuration instead ({e}).")
-            if cfg is None:
-                cfg = getattr(self, global_attr, None)
+        def grab(global_attr: str, key: str):
+            cfg = getattr(self, global_attr, None)
             if cfg is not None and hasattr(cfg, "to_dict"):
                 out[key] = cfg.to_dict()
 
-        grab("mesh_config_panel", "global_mesh_config", "mesh_config")
-        grab("solver_config_panel", "global_solver_config", "solver_config")
-        grab("stl3d_config_panel", "global_stl3d_config", "stl3d_config")
+        grab("global_mesh_config", "mesh_config")
+        grab("global_solver_config", "solver_config")
+        grab("global_stl3d_config", "stl3d_config")
 
         # Generated artefacts, so a reopened workspace can re-display them.
         out["vtk_path"] = getattr(self, "global_vtk_path", "") or ""

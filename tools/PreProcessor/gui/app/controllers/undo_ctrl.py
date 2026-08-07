@@ -142,20 +142,28 @@ class UndoControllerMixin:
             panel = getattr(mw, panel_attr, None)
             sig = getattr(panel, signal_name, None) if panel is not None else None
             if sig is not None:
-                sig.connect(lambda *_a: self.schedule_project_snapshot())
+                sig.connect(
+                    lambda *_a, pa=panel_attr: self.on_panel_edited(pa))
 
         for panel_attr in ("mesh_config_panel", "solver_config_panel",
                            "stl3d_config_panel"):
             panel = getattr(mw, panel_attr, None)
             if panel is not None:
-                self._wire_widget_edits(panel)
+                self._wire_widget_edits(panel, panel_attr)
 
-    def _wire_widget_edits(self, root):
-        """Connect the 'user changed me' signal of every input widget under root."""
+    def _wire_widget_edits(self, root, panel_attr: str):
+        """Connect the 'user changed me' signal of every input widget under root.
+
+        The slot is :meth:`on_panel_edited`, not the snapshot scheduler directly: this
+        one traversal is the only place that knows "the user touched this panel", so it
+        is also where the stage model is refreshed from it (N8's single data-flow
+        direction — see controllers/panel_sync_ctrl.py). Two separate traversals for
+        the two consequences would be two chances to cover different widget sets.
+        """
         from PyQt6.QtWidgets import (
             QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit, QPlainTextEdit,
         )
-        slot = lambda *_a: self.schedule_project_snapshot()  # noqa: E731
+        slot = lambda *_a: self.on_panel_edited(panel_attr)  # noqa: E731
         for w in root.findChildren(QAbstractSpinBox):
             sig = getattr(w, "valueChanged", None)
             if sig is not None:

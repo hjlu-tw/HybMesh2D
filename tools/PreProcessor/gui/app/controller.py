@@ -53,6 +53,7 @@ from app.controllers import (
     PipelineControllerMixin,
     UndoControllerMixin,
     UnitsControllerMixin,
+    PanelSyncControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 )
@@ -95,6 +96,7 @@ class AppController(
     PipelineControllerMixin,
     UndoControllerMixin,
     UnitsControllerMixin,
+    PanelSyncControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 ):
@@ -311,17 +313,12 @@ class AppController(
         # a distinct cfg arrives (i.e. from a role edit), never on the self-apply.
         gmc = getattr(self, "global_mesh_config", None)
         if gmc is not None and cfg is not gmc:
-            # The model unit lives on the shared config too, so the CAD sidebar and
-            # the solver's Linf follow a unit change made here (sync below).
-            gmc.length_unit = getattr(cfg, "length_unit", gmc.length_unit)
-            gmc.length_unit_metres = getattr(cfg, "length_unit_metres",
-                                             gmc.length_unit_metres)
-            gmc.length_unit_name = getattr(cfg, "length_unit_name",
-                                           gmc.length_unit_name)
-            gmc.geom_roles = dict(getattr(cfg, "geom_roles", {}) or {})
-            # #4: keep per-group BC assignments current so the Solver "Detect from
-            # Mesh" pre-seeds them even if the user hasn't regenerated since.
-            gmc.group_bc = dict(getattr(cfg, "group_bc", {}) or {})
+            # One sync, not a hand-picked subset. This used to copy geom_roles and
+            # group_bc only (and later the length unit), which meant every OTHER field
+            # the user had edited stayed stale in the model until the stage next ran.
+            # sync_panel_to_model copies everything the panel authors and preserves
+            # what it does not — see controllers/panel_sync_ctrl.py.
+            self.sync_panel_to_model("mesh_config_panel")
         mw.mesh_canvas_view.update_mesh_config(cfg)
         self._refresh_mesh_previews(cfg)
         # Relabel the CAD-stage length fields and re-derive the solver's Linf. Cheap

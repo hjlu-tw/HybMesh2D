@@ -146,7 +146,7 @@
 | N5 | `cancel()` 只 SIGTERM 不升級、關閉時 `wait()` 無 timeout、子孫行程不被清 → 可能凍結不掉 | `*_run.py`、`lifecycle_ctrl.py` | 中 | [x] 已修 |
 | N6 | Undo 僅覆蓋 CAD 幾何；Mesh/Solver/BC/IB 編輯不可回復，且 stack 隨分頁切換 | `commands/base.py`、`controller.py:336` | 中 | [x] 已修 |
 | N7 | **36** 處 `except Exception: pass` 靜默吞例外（已有 rotating log 卻沒用；先前報 52 是 grep 把非 `Exception` 的處理器也算進去） | `canvas_draw_mixin.py` 等 | 中 | [x] 已修 |
-| N8 | 105 處 `blockSignals` + 20 處 `_is_populating` → 無單一資料流方向 | 全 views/controllers | 中 | [~] 護欄部分已修；架構重構未做 |
+| N8 | 105 處 `blockSignals` + 20 處 `_is_populating` → 無單一資料流方向 | 全 views/controllers | 中 | [x] 已修（護欄 2026-08-06 + 架構 2026-08-07） |
 | N9 | 零 i18n（`tr()` grep = 0），全字串硬編英文 | 全 GUI | 低 | [~] 機制完成 + 常駐介面已翻譯；面板/對話框字串未包裝 |
 | N10 | 沒有 status bar（模式/座標/選取數/單位/背景進度無常駐顯示） | `main_window.py` | 低 | [x] 已修 |
 | N11 | 視窗版面不持久化（`QSettings` 只用於 recent files） | `session_load_ctrl.py:239` | 低 | [x] 已修 |
@@ -256,7 +256,7 @@
   - `_is_populating` 改為唯讀 property（讀 `_populating_depth > 0`），寫入只能透過 `controller.populating()`
   - `segment_ctrl` 原本 `finally` 裡還有一行 canvas 清理，轉換後保留在 `try/finally` 中 —— 例外路徑仍會清掉殘留的 duplicate preview（未因重構而丟掉）
 - [x] **驗收**：`test_signal_guards.py`（18 checks）—— **靜態**鎖住「不得再出現未保護的 `blockSignals`」與「不得直接賦值 `_is_populating`」，加上 context manager 的例外安全/嵌套行為，以及「選取邊（重度 populate）不會回寫模型、不產生 undo step」的功能驗證。全套 **28/28 PASS**，lint 未變差（兩檔還變好）
-- [ ] **未做（架構部分）**：把 panel↔model 同步收斂成單一 `apply_panel_to_config()` / `apply_config_to_panel()` 對，建立單一資料流方向。N6 的 `push_panel_config()` 已經是「單一寫入口」的雛形，可作為起點。這是獨立的重構專案，需要逐面板進行並有互動驗證。
+- [x] **架構部分已完成（2026-08-07）** —— 見下方專節
 
 ### 已完成：N11 + N12（2026-08-06，同日第六批）
 
@@ -343,6 +343,56 @@ geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
 `flash_status()` 讓原本只進 log panel 的訊息（如 undo）也能在不開 log 的情況下被看到，且**不會覆蓋常駐欄位**。
 
 `tests/test_status_bar.py`（24 checks）；全套 **36/36**。**需你實機確認**：狀態列高度與各欄位寬度。
+
+### 已完成：N8 架構部分 —— 單一資料流方向（2026-08-07）
+
+**先量測，不憑感覺重寫。** 結果推翻了我對缺陷位置的假設：controller 伸手進面板 widget 讀設定值
+的地方**只有 1 處**，面板封裝其實不差。真正的缺陷是**模型落後於面板** —— `global_*_config`
+只在「該階段實際執行時」才更新，中間一直是舊的。而每一個繞過這個落後的作法都是一份**不同的**部分複製：
+
+| 位置 | 當時的做法 |
+|---|---|
+| `_sync_global_scalars_from_panel` | 複製全部，除了一份**寫死**的排除集合 |
+| `handle_mesh_config_changed` | 只複製 `geom_roles` / `group_bc`（後來加上單位）**另外三個欄位** |
+| solver 模型 | **完全不更新** |
+| `_collect_project_state` | 乾脆繞過模型，直接序列化面板 |
+
+一個量、四個真相來源，每個都「在某個時刻」是對的。我自己就撞到：做單位系統時
+`global_solver_config.fs_unit_re` 讀到 200，而面板顯示 2.2853e5。
+
+- [x] **`controllers/panel_sync_ctrl.py`**：`sync_panel_to_model()` 在**每一次**使用者編輯時執行
+  - 重用既有的 widget introspection（`undo_ctrl._wire_widget_edits`）—— 那是全專案唯一知道
+    「使用者動了這個面板」的地方，所以也該是同步發生的地方。改為呼叫 `on_panel_edited()`：
+    **先同步模型，再排 undo snapshot**（快照本來就該記錄編輯**後**的狀態）
+  - 兩個 traversal 會變成兩次「覆蓋到不同 widget 集合」的機會，所以只留一個
+- [x] **`PRESERVED_FIELDS`（面板不擁有的欄位）不是可選項**：solver 面板**沒有** `length_unit`
+  的 widget，整份複製會把它歸零、連 `Linf` 的意義一起帶走
+  - 由 `services/config_ownership.py` **用 AST** 從面板自己的原始碼推導並 gate 住 ——
+    先用 regex 有假陰性：`cfg.xmin, cfg.xmax = ...` 這種 tuple 賦值抓不到，害 IB 面板一半的
+    欄位看起來「沒有被寫入」
+  - gate 另外斷言「擷取器真的找到相當數量的賦值」—— 我一度把來源根目錄算錯一層，glob 全部
+    命中 0 個檔案，那會讓整個 gate **空洞地通過**
+- [x] **`extra_preserve` 與 `PRESERVED_FIELDS` 刻意分開**：「面板無法擁有這個欄位」和
+  「我現在正在改這個欄位」是兩種不同的主張。把它們混在一起，正是當初那份排除清單看起來
+  像「擁有權」但其實不是的原因
+- [x] **守衛必須是面板自己的旗標，不能靠呼叫端自律**（我第一版做錯並立刻被抓到）
+  - 第一版靠「呼叫端有沒有用 `push_panel_config`」判斷是否在填值。這把「忘記走 funnel」的
+    代價從**多記一個 undo step** 升級成**污染模型** —— 三個既有測試當場失敗
+  - 改為 `set_config` 自己在 `try/finally` 裡設 `_loading`，同步檢查那個旗標。面板知道自己
+    正在填值，而且不可能忘記
+  - 三個面板都改成 `set_config` / `_set_config_body` 拆分，例外時旗標仍會清掉 ——
+    旗標卡住 = 該面板從此**靜默地永遠不再同步**，比原本的落後更糟
+- [x] **模型可定義 `normalize()`** 修復同步會破壞的自身不變量：`SolverConfig` 重新由（被保留的）
+  單位推導 `linf`，因為 `linf` 有 widget 而它所依據的單位沒有 —— 否則同步**自己**會造出
+  `length_unit=mm` 配 `linf=1` 的矛盾狀態，然後 `unit_check()` 會回報一個並非使用者造成的問題
+- [x] **順手修掉一個既有的真實資料流失**：workspace 存檔序列化 `panel.get_config()`，
+  所有「面板不擁有」的欄位都被寫成 dataclass 預設值 —— `bc_geom = symmetry` 存成 `wall`
+  （單位系統上線後還會把 solver 的 mm 存成 m）。改為先同步再序列化模型，且仍然保有
+  「沒跑過任何階段也能存到剛才的編輯」這個當初繞過模型的理由
+- [x] `tests/test_panel_model_sync.py`（29 checks）；全套 **41/41**，lint 全綠，所有 GUI 檔案 < 500 行
+
+**未做**：`_collect_project_state` 之外還有其他讀 `get_config()` 的地方（各階段 Run 前），
+那些行為正確（Run 本來就要即時值），沒有動它們的理由。
 
 ### 已完成：長度單位系統（2026-08-07）
 

@@ -87,7 +87,17 @@ class SolverConfigSyncMixin:
     # Model sync
     # ------------------------------------------------------------------ #
     def set_config(self, cfg: SolverConfig):
-        self._loading = True   # suppress restart auto-fill during programmatic load
+        # `_loading` suppresses the restart auto-fill AND tells the controller's
+        # panel->model sync that these widget signals are population, not user edits.
+        # try/finally: an exception mid-population used to leave the flag stuck True,
+        # which now means the panel would never sync again — silently stale.
+        self._loading = True
+        try:
+            self._set_config_body(cfg)
+        finally:
+            self._loading = False
+
+    def _set_config_body(self, cfg: SolverConfig):
         self.domain_type.setCurrentText(cfg.domain_type)
         self.case_name.setText(cfg.case_name)
         self.getpgrid_binary.setText(cfg.getpgrid_binary)
@@ -185,7 +195,6 @@ class SolverConfigSyncMixin:
         self._update_decompose_visibility()
         self._update_shock_visibility()
         self._update_restart_visibility()
-        self._loading = False
 
     def get_config(self, cfg: SolverConfig | None = None) -> SolverConfig:
         cfg = cfg or SolverConfig()

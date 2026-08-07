@@ -127,6 +127,26 @@ Layered PyQt6 application:
 - **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py` (mesh visualization), `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
 - **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd` — snapshot of the Mesh/Solver/IB configuration)
 
+**Stage config data flow is one-directional** (`controllers/panel_sync_ctrl.py`): the
+**model is the truth, the panel is a view**.
+- **panel → model**: `sync_panel_to_model(panel_attr)` runs on *every* user edit (the
+  widget-introspection traversal in `undo_ctrl._wire_widget_edits` calls
+  `on_panel_edited`, which syncs first and then schedules the undo snapshot). So
+  `global_mesh_config` / `global_solver_config` / `global_stl3d_config` are never stale;
+  nothing should read a panel widget to get a config value.
+- **model → panel**: `push_panel_config(panel, cfg)` (undo-suppressed), as before.
+- `PRESERVED_FIELDS` lists what each panel does **not** author and must never overwrite
+  (e.g. the solver panel has no widget for `length_unit`, so a wholesale copy would wipe
+  it and take `Linf` with it). `tests/test_panel_model_sync.py` proves each set equals
+  what that panel's `get_config` actually assigns, **by AST** — so a model field added
+  without a widget fails the build instead of silently going stale or being wiped.
+- A model may define `normalize()` to restore its own invariants after a sync (SolverConfig
+  re-derives `linf` from the preserved unit).
+- **`set_config` sets the panel's own `_loading` flag under try/finally**, and the sync
+  checks *that*, not the caller's discipline: a direct `set_config` that forgets
+  `push_panel_config` must cost at most a spurious undo step, never a corrupted model.
+  New panels must follow the same `set_config` / `_set_config_body` split.
+
 **Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`). Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab drops exactly its own commands; ordering across them is by the monotonic `seq` that `CommandHistory._push` stamps — undo takes the highest, redo the lowest waiting on a redo stack. Undo raises the tab owning the command before applying it. Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one step. **Any code pushing config into those panels must go through `controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is recorded as a user edit.
 - **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process group — every worker `cancel()` must route through these, never a bare `terminate()`)
 

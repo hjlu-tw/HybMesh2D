@@ -394,6 +394,17 @@ class Stl3dConfigPanel(QScrollArea):
         return cfg
 
     def set_config(self, cfg: Stl3dConfig):
+        # This panel already blocks its widgets' signals, so nothing escapes; the
+        # `_loading` flag is set anyway so all three stage panels answer the
+        # controller's "are you populating?" question the same way, and a widget added
+        # outside the blocked list cannot quietly become an exception.
+        self._loading = True
+        try:
+            self._set_config_body(cfg)
+        finally:
+            self._loading = False
+
+    def _set_config_body(self, cfg: Stl3dConfig):
         widgets = [self.xmin, self.xmax, self.ymin, self.ymax, self.zmin, self.zmax,
                    self.nx, self.ny, self.nz, self.case_name, self.ascii_combo,
                    self.search_combo, self.stl_path]
