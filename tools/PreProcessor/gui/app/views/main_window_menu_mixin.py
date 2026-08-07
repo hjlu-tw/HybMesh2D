@@ -210,6 +210,8 @@ class MainWindowMenuMixin:
         add(pipeline_menu, self.tr("Run Full Pipeline"), controller.run_full_pipeline,
             shortcut="Ctrl+R",
             tip=self.tr("CAD resample → mesh → solver → results contour"))
+        add(pipeline_menu, self.tr("Batch Queue..."), controller.open_batch_dialog,
+            tip=self.tr("Queue several pipeline scripts and run them unattended"))
         pipeline_menu.addSeparator()
         add(pipeline_menu, self.tr("Load Pipeline Script..."), controller.load_pipeline_file)
         add(pipeline_menu, self.tr("Save Pipeline Script..."), controller.save_pipeline_file)

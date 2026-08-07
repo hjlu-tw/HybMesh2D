@@ -154,6 +154,10 @@ class LifecycleControllerMixin:
             app.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         try:
             named = [
+                # Batch first: it is the only worker that can be minutes or hours
+                # from finishing, and it owns a child process tree of its own. Joining
+                # a shorter worker ahead of it just spends the shutdown budget waiting.
+                (getattr(self, "_batch_worker", None), "batch queue"),
                 (getattr(self, "_worker", None), "CAD resample"),
                 (getattr(self, "_mesh_worker", None), "mesh generator"),
                 (getattr(self, "_solver_worker", None), "solver"),

@@ -1,6 +1,7 @@
 from app.controllers.session_ctrl import SessionControllerMixin
 from app.controllers.session_io_ctrl import SessionIOControllerMixin
 from app.controllers.project_state_ctrl import ProjectStateControllerMixin
+from app.controllers.batch_ctrl import BatchControllerMixin
 from app.controllers.panel_sync_ctrl import PanelSyncControllerMixin
 from app.controllers.undo_ctrl import UndoControllerMixin
 from app.controllers.units_ctrl import UnitsControllerMixin
@@ -41,7 +42,7 @@ from app.controllers.lifecycle_ctrl import LifecycleControllerMixin
 __all__ = [
     "SessionControllerMixin", "SessionIOControllerMixin",
     "ProjectStateControllerMixin", "UndoControllerMixin",
-    "PanelSyncControllerMixin",
+    "PanelSyncControllerMixin", "BatchControllerMixin",
     "UnitsControllerMixin",
     "SegmentControllerMixin", "SegmentCanvasControllerMixin",
     "SegmentVertexControllerMixin",

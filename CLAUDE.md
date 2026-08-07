@@ -36,6 +36,17 @@ python3 tools/PreProcessor/gui/main.py [optional_geometry_file]
 ./build/surface_resampler config/your_config.json
 ```
 
+**Run a batch of pipeline scripts (headless):**
+```bash
+./run_batch.sh case_a.json case_b.hws --no-solver     # or @manifest.txt (one path per line)
+```
+In the GUI the same queue is **Pipeline ▸ Batch Queue…** — a modeless dialog with per-case
+status. Its **Cancel stops the case already running**, not just the queue: `run_batch`'s
+`should_stop()` only fires between cases, so `pipeline_runner` threads an `on_process`
+callback down to every stage subprocess and the worker kills the live one via
+`proc_util.stop_process_async`. Case-name collisions (which would make two cases overwrite
+each other's mesh) are shown as soon as scripts are queued, not at run time.
+
 **Run full pipeline (CAD → mesh → solver → contour) headless from one JSON script:**
 ```bash
 ./run_pipeline.sh config/pipeline/naca_demo.json           # -> results/pipeline/*.png

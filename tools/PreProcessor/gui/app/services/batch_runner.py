@@ -113,12 +113,17 @@ def find_collisions(jobs) -> dict:
 
 
 def run_batch(jobs, log=_noop, progress=None, run_solver: bool = True,
-              run_ib: bool = True, should_stop=None) -> dict:
+              run_ib: bool = True, should_stop=None, on_process=None) -> dict:
     """Run every runnable job in order. Returns a summary dict.
 
     ``progress(done, total, label)`` is called before each job so a caller can drive
-    a progress bar; ``should_stop()`` is polled between jobs so a GUI Cancel stops
-    the queue without killing the job already in flight mid-write.
+    a progress bar. ``should_stop()`` is polled between jobs, so the queue stops
+    cleanly at a case boundary rather than leaving a half-written output directory.
+
+    ``on_process(proc)`` is forwarded to the pipeline runner and fires for each stage
+    subprocess, which is what lets a GUI Cancel end the case that is *already running*.
+    Both are needed and they are not alternatives: killing the child stops the work,
+    and the stop flag stops the queue from starting the next case.
     """
     runnable = [j for j in jobs if j.config is not None and j.status != "skipped"]
     total = len(runnable)
@@ -146,7 +151,8 @@ def run_batch(jobs, log=_noop, progress=None, run_solver: bool = True,
         t0 = time.time()
         try:
             job.artifacts = pipeline_runner.run_pipeline(
-                job.config, log=log, run_solver=run_solver, run_ib=run_ib)
+                job.config, log=log, run_solver=run_solver, run_ib=run_ib,
+                on_process=on_process)
             job.status = "ok"
         except pipeline_runner.PipelineError as e:
             # Expected failure mode (a stage returned non-zero, a file was

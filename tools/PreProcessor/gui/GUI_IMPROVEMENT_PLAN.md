@@ -344,6 +344,37 @@ geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
 
 `tests/test_status_bar.py`（24 checks）；全套 **36/36**。**需你實機確認**：狀態列高度與各欄位寬度。
 
+### 已完成：批次佇列 GUI（2026-08-07）
+
+`services/batch_runner` 早就備好 `progress()` / `should_stop()` 掛勾，缺的是從 GUI 驅動、觀看、停止它的方法。
+
+- [x] **Modeless 對話框，不是新的 stage 頁**：stage 頁（CAD → Mesh → Solver → IB → Results）是
+  **同一個 case** 的步驟；批次是**跨多個 case** 的操作，不屬於那個序列。Modeless 是因為批次的意義
+  就是放著讓它跑。對話框只建立一次不重建 —— 花時間組好的佇列必須在關窗後還在
+- [x] **`should_stop()` 單獨用會讓 Cancel 變成謊言**：它只在 case **之間**被輪詢。這對「不留下寫一半的
+  輸出目錄」是對的，但單靠它，Cancel 按下去要等到當前網格／求解跑完（數分鐘到數小時）才有反應
+  - `pipeline_runner._stream` 新增 `on_process(proc)`，並貫穿每個 stage helper 與
+    `run_pipeline`/`run_batch`（全部 keyword-only、預設 `None`，headless CLI 完全不受影響 —— 已實測）
+  - worker 用 `proc_util.stop_process_async` 殺掉當前 child：SIGTERM→grace→SIGKILL **over the
+    process group**，因為一個 stage 是**行程樹**（mpirun ranks、gmsh helpers），只殺直接 child 會留孤兒
+  - **兩者都需要，不是二選一**：殺 child 停掉正在做的工作，stop flag 阻止下一個 case 開始
+  - 覆蓋啟動競態：cancel 在 child 還沒生出來時抵達不能遺失（`_note_process` 註冊後重檢旗標）
+  - 實測：`sleep 60` 的 child 在 cancel 後 rc = -15；先 cancel 再註冊的 child 同樣被殺
+- [x] **名稱衝突在「排入佇列時」就顯示**，不是等到執行時。輸出路徑由 case name 推導，共用名稱等於
+  一個 case 靜默毀掉另一個的網格。`find_collisions` 本來就回報**來源檔名**（可行動的事實），
+  在加入腳本時就顯示才是還能便宜修好的時機；執行前再用 `confirm()` 擋一次
+- [x] **無法讀取的腳本變成看得見的 `skipped` 列並附原因**。安靜地跑完 10 個裡的 9 個，比整批失敗更糟
+- [x] 關閉走既有的 `lifecycle_ctrl._join_worker` 有界升級（批次排**第一個** —— 它是唯一可能離結束
+  還有數小時的 worker）。我一開始另寫了 `stop_batch_worker`，重複，已刪
+- [x] **我自己的 gate 抓到的兩件事**：i18n 覆蓋率報告指出新選單字串未翻譯；ruff 抓到簡化表格顏色
+  處理後留下的死 import。另外 `show_summary` 有真實順序 bug —— `_refresh()` 會用佇列數量重寫狀態
+  標籤，導致摘要在「結果最重要的那一刻」被蓋掉
+- [x] `tests/test_batch_queue_gui.py`（28 checks，含用**真實 binary** 跑完兩個 case 的端到端批次）；
+  全套 **42/42**
+
+**未做**：佇列順序拖曳重排、單一 case 重試按鈕 —— 兩者都是純 UI 便利性，沒有正確性風險，
+沒有先做的理由。
+
 ### 已完成：N8 架構部分 —— 單一資料流方向（2026-08-07）
 
 **先量測，不憑感覺重寫。** 結果推翻了我對缺陷位置的假設：controller 伸手進面板 widget 讀設定值

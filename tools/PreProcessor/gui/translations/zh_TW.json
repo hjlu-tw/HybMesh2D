@@ -94,6 +94,8 @@
     "Fit Domain to STL": "將計算域貼合 STL",
 
     "Run Full Pipeline": "執行完整流程",
+    "Batch Queue...": "批次佇列…",
+    "Queue several pipeline scripts and run them unattended": "將多個流程腳本排入佇列並無人監看地執行",
     "CAD resample → mesh → solver → results contour": "CAD 重取樣 → 網格 → 求解器 → 結果等值圖",
     "Load Pipeline Script...": "載入流程腳本…",
     "Save Pipeline Script...": "儲存流程腳本…",

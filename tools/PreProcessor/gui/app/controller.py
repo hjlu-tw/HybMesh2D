@@ -54,6 +54,7 @@ from app.controllers import (
     UndoControllerMixin,
     UnitsControllerMixin,
     PanelSyncControllerMixin,
+    BatchControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 )
@@ -97,6 +98,7 @@ class AppController(
     UndoControllerMixin,
     UnitsControllerMixin,
     PanelSyncControllerMixin,
+    BatchControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 ):

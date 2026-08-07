@@ -32,11 +32,19 @@ class PipelineError(RuntimeError):
     """A pipeline stage failed; message is human-readable and already logged."""
 
 
-def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
+def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800,
+            on_process=None) -> int:
     """Run a subprocess, streaming stdout to ``log`` line by line. Any stderr is
     captured separately and, on failure, logged prefixed with ``[stderr]`` so the
     warning/error stream stays distinguishable from normal stdout output.
-    Returns the process return code."""
+    Returns the process return code.
+
+    ``on_process(proc)`` is called as soon as the child exists, so a caller can cancel
+    a stage that is already running. Without it a GUI Cancel could only take effect
+    between stages, which for a mesh or a solve means minutes to hours of "cancelling"
+    — a button that does not do what it says. The child is in its own process group
+    (below), so ``proc_util.stop_process`` can take down its whole tree.
+    """
     log(f"$ {' '.join(cmd)}   (cwd={cwd})")
     # Open stdin inside the try so a Popen failure can't leak the handle.
     try:
@@ -50,6 +58,8 @@ def _stream(cmd, cwd, log, env=None, stdin_path=None, timeout=1800) -> int:
                 # tree (mpirun ranks, gmsh helpers), not just the direct child.
                 start_new_session=True,
             )
+            if on_process is not None:
+                on_process(proc)
             # Drain stderr on a background thread so it is read CONCURRENTLY with
             # stdout. Reading stdout to completion first and only then reading
             # stderr deadlocks the moment a stage writes more than the OS stderr
@@ -104,7 +114,8 @@ def _mesh_env():
 # --------------------------------------------------------------------------- #
 # Stage 1: CAD resample
 # --------------------------------------------------------------------------- #
-def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0) -> str:
+def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
+                  on_process=None) -> str:
     exe = find_binary_executable("surface_resampler")
     if not exe:
         raise PipelineError("surface_resampler binary not found — run ./build.sh")
@@ -122,7 +133,8 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0) -> str:
                                          delete=False) as tf:
             cfg_path = tf.name
         pm.export_config(cfg_path)
-        rc = _stream([exe, cfg_path], cwd=repo, log=log, env=_mesh_env())
+        rc = _stream([exe, cfg_path], cwd=repo, log=log, env=_mesh_env(),
+                     on_process=on_process)
     finally:
         _rm(cfg_path)
     if rc != 0:
@@ -137,7 +149,7 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0) -> str:
 # Stage 2: mesh generation (HybMesh2D)
 # --------------------------------------------------------------------------- #
 def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
-              need_starcd: bool, log) -> str:
+              need_starcd: bool, log, on_process=None) -> str:
     exe = find_binary_executable("HybMesh2D")
     if not exe:
         raise PipelineError("HybMesh2D binary not found — run ./build.sh")
@@ -174,7 +186,8 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
         hint = gmsh_missing_hint()
         if hint:
             log(hint)
-        rc = _stream([exe, "-conf", cfg_path], cwd=repo, log=log, env=_mesh_env())
+        rc = _stream([exe, "-conf", cfg_path], cwd=repo, log=log, env=_mesh_env(),
+                     on_process=on_process)
     finally:
         _rm(cfg_path)
     if rc != 0:
@@ -188,7 +201,7 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
 # --------------------------------------------------------------------------- #
 # Stage 3: solver (getPGrid -> unicones)
 # --------------------------------------------------------------------------- #
-def _run_stl3d(pcfg: PipelineConfig, repo: str, log) -> str:
+def _run_stl3d(pcfg: PipelineConfig, repo: str, log, on_process=None) -> str:
     """Immersed-solid stage: STL -> phi field. Returns the phi Tecplot path.
 
     Uses the same staging service as the GUI (``services/stl3d_case``), so a case
@@ -204,6 +217,7 @@ def _run_stl3d(pcfg: PipelineConfig, repo: str, log) -> str:
     # STL3d is interactive: it reads its answers from stdin, which is exactly what
     # para.in is (see Stl3dConfig.para_in_text).
     rc = _stream([case["binary"]], cwd=case["work_dir"], log=log, env=env,
+                 on_process=on_process,
                  stdin_path=case["para_path"])
     if rc != 0:
         raise PipelineError(f"STL3d failed (code {rc})")
@@ -214,7 +228,8 @@ def _run_stl3d(pcfg: PipelineConfig, repo: str, log) -> str:
     return case["phi_path"]
 
 
-def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log) -> str:
+def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
+                on_process=None) -> str:
     sc = pcfg.build_solver_config(repo)
 
     # Auto-link the STAR-CD output of the mesh, filling each input independently
@@ -243,7 +258,8 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log) -> str:
     # getPGrid: interactive, answers fed on stdin via para.in (run in grid_dir).
     para = os.path.join(grid_dir, "para.in")
     sc.generate_getpgrid_para(para)
-    rc = _stream([sc.getpgrid_binary], cwd=grid_dir, log=log, stdin_path=para)
+    rc = _stream([sc.getpgrid_binary], cwd=grid_dir, log=log, stdin_path=para,
+                 on_process=on_process)
     if rc != 0:
         raise PipelineError(f"getPGrid failed (code {rc})")
 
@@ -253,6 +269,7 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log) -> str:
 
     # unicones solver (run in work_dir so relative grid/bc paths resolve).
     rc = _stream([sc.solver_binary, "-t", SOLVER_TAG, input_in],
+                 on_process=on_process,
                  cwd=work_dir, log=log)
     if rc != 0:
         raise PipelineError(f"unicones solver failed (code {rc})")
@@ -278,7 +295,7 @@ def _rm(path: str):
 # Orchestration
 # --------------------------------------------------------------------------- #
 def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
-                 run_ib: bool = True) -> dict:
+                 run_ib: bool = True, on_process=None) -> dict:
     """Run CAD -> mesh -> (solver). Returns a dict of produced artifact paths:
     {"cad_out", "vtk", "result"}. Raises :class:`PipelineError` on any stage
     failure (message already logged)."""
@@ -314,7 +331,7 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
                     geoms.append(raw)
                 continue
             log(f"[CAD] [{i + 1}/{len(indices)}] resampling...")
-            geoms.append(_run_resample(pcfg, repo, log, i))
+            geoms.append(_run_resample(pcfg, repo, log, i, on_process=on_process))
     out["cad_outs"] = geoms
     # Back-compat: callers (and run_pipeline.py's summary) read "cad_out".
     out["cad_out"] = geoms[0] if geoms else ""
@@ -324,7 +341,7 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     if pcfg.stl3d and run_ib and not pcfg.stl3d.get("skip"):
         log("=== Immersed solid: STL -> phi ===")
         try:
-            out["phi"] = _run_stl3d(pcfg, repo, log)
+            out["phi"] = _run_stl3d(pcfg, repo, log, on_process=on_process)
         except stl3d_case.Stl3dError as e:
             # A malformed IB section is the user's mistake, not a crash: report it
             # in the pipeline's own vocabulary.
@@ -336,12 +353,14 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     # Stage 2 — mesh.
     log("=== Stage 2/3: mesh generation ===")
     need_solver = run_solver and not pcfg.solver_skip()
-    out["vtk"] = _run_mesh(pcfg, repo, geoms, need_starcd=need_solver, log=log)
+    out["vtk"] = _run_mesh(pcfg, repo, geoms, need_starcd=need_solver, log=log,
+                           on_process=on_process)
 
     # Stage 3 — solver.
     if need_solver:
         log("=== Stage 3/3: solver ===")
-        out["result"] = _run_solver(pcfg, repo, out["vtk"], log)
+        out["result"] = _run_solver(pcfg, repo, out["vtk"], log,
+                                    on_process=on_process)
     else:
         log("=== solver stage skipped ===")
     return out
