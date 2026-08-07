@@ -115,6 +115,26 @@ check(not h.push(((0, 1), (0, 1))),
       "4. an identical consecutive view is collapsed (a wheel notch is not a step)")
 check(not h.push(((0, 1 + 1e-15), (0, 1))),
       "4. ...and so is a near-identical one, within tolerance")
+# The tolerance is a FRACTION OF THE SPAN, not an absolute distance: it used to be
+# 1e-9, which only ever merged bit-identical views, so pyqtgraph's per-axis range
+# signals pushed two entries a hair apart and one press of Back looked broken.
+tolh = ViewHistory()                      # its own instance: the shared `h` below
+tolh.push(((0, 1), (0, 1)))               # continues a sequence these must not disturb
+check(not tolh.push(((0, 1.005), (0, 1))),
+      "4. a sub-1% nudge is the same navigation step")
+check(tolh.push(((0, 1.5), (0, 1.5))),
+      "4. ...but a real zoom is a new one")
+big = ViewHistory()
+big.push(((0, 2000), (0, 1000)))
+check(not big.push(((0, 2010), (0, 1000))),
+      "4. the tolerance is scale-free: 10 units on a 2000-unit span is the same step, "
+      "so a millimetre model and a metre model behave identically")
+check(big.push(((0, 2600), (0, 1000))),
+      "4. ...while 600 units on that span is not")
+degen = ViewHistory()
+degen.push(((5, 5), (5, 5)))
+check(not degen.push(((5, 5), (5, 5))),
+      "4. a degenerate (zero-span) view does not divide by zero")
 h.push(((0, 2), (0, 2)))
 h.push(((0, 3), (0, 3)))
 check(len(h) == 3 and h.can_back and not h.can_forward,
@@ -195,19 +215,46 @@ else:
     check(not cv._measure_result, "7. clear_measure drops it")
 
     # 7. view history through the canvas.
+    # Recording is DEBOUNCED: a view is stored once it stops moving, so that one
+    # wheel-zoom or drag-pan is one entry. Without that, pyqtgraph's per-axis range
+    # signals stored two entries a hair apart and the first press of Back appeared to
+    # do nothing at all.
+    from PyQt6.QtCore import QEventLoop, QTimer  # noqa: E402
+    from app.views.canvas_tools_mixin import VIEW_PUSH_IDLE_MS  # noqa: E402
+
+    def settle(extra=200):
+        loop = QEventLoop()
+        QTimer.singleShot(VIEW_PUSH_IDLE_MS + extra, loop.quit)
+        loop.exec()
+
     vb = cv.plot_widget.getViewBox()
+    settle()
     before = len(cv.view_history)
-    for hi in (1, 2, 3):
-        vb.setRange(xRange=(0, hi), yRange=(0, hi), padding=0)
-    check(len(cv.view_history) > before,
-          f"7. panning/zooming records views ({before} -> {len(cv.view_history)})")
+    spans = []
+    for lo, hi in ((0.0, 4.0), (1.0, 3.0), (1.8, 2.2)):
+        vb.setRange(xRange=(lo, hi), yRange=(lo, hi), padding=0)
+        settle()
+        spans.append(round(vb.viewRange()[0][1] - vb.viewRange()[0][0], 4))
+    check(len(cv.view_history) == before + 3,
+          f"7. three gestures record exactly three views, not one per axis signal "
+          f"({before} -> {len(cv.view_history)})")
     check(mw.view_back_btn.isEnabled(),
           "7. the Back button enables once there is history")
-    x_at_end = vb.viewRange()[0]
-    check(cv.view_back() and vb.viewRange()[0] != x_at_end,
-          "7. Back moves the viewbox")
+
+    span_now = vb.viewRange()[0][1] - vb.viewRange()[0][0]
+    check(cv.view_back(), "7. Back moves the viewbox")
+    span_back = vb.viewRange()[0][1] - vb.viewRange()[0][0]
+    check(abs(span_back - span_now) > 0.5 * abs(span_now),
+          f"7. ...by a WHOLE gesture — one press used to land a hair from where you "
+          f"already were ({span_now:.3f} -> {span_back:.3f})")
     check(mw.view_fwd_btn.isEnabled(), "7. ...and enables Forward")
+    settle()
+    check(len(cv.view_history) == before + 3,
+          "7. going back does not record the restored view as a new step")
     check(cv.view_forward(), "7. Forward returns")
+    check(abs((vb.viewRange()[0][1] - vb.viewRange()[0][0]) - span_now)
+          < 0.05 * abs(span_now),
+          "7. ...to the view it came from")
     check(not mw.view_fwd_btn.isEnabled(),
           "7. at the end of the history Forward disables again")
 

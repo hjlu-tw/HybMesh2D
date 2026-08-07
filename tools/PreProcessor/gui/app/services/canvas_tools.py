@@ -82,12 +82,20 @@ def format_measure(m: dict) -> str:
 class ViewHistory:
     """Back/forward stack of canvas view ranges.
 
-    A view is ``((x0, x1), (y0, y1))``. Consecutive near-identical views are
-    collapsed: pyqtgraph emits a range change for every wheel notch and every pan
-    step, and recording each one would make "back" mean "undo one pixel".
+    A view is ``((x0, x1), (y0, y1))``. Two views count as the same navigation step
+    when every edge is within ``tol`` of the other's, **measured as a fraction of the
+    span** — 1% of the visible width, not an absolute distance, because a canvas showing
+    a 2000 mm domain and one showing a 0.02 m aerofoil need the same answer.
+
+    An earlier version documented this collapsing but set ``tol = 1e-9``, which only ever
+    merged bit-identical views. pyqtgraph emits a range change per axis, so a single
+    ``setRange`` pushed two entries a hair apart and one press of Back visibly did
+    nothing. The tolerance is the second half of the fix; the first is not recording
+    until the view stops moving (see ``canvas_tools_mixin``), so Back means "back one
+    gesture" rather than "back one wheel notch".
     """
 
-    def __init__(self, max_len: int = MAX_VIEW_HISTORY, tol: float = 1e-9):
+    def __init__(self, max_len: int = MAX_VIEW_HISTORY, tol: float = 0.01):
         self._views: list = []
         self._index = -1
         self._max = int(max_len)
@@ -98,11 +106,22 @@ class ViewHistory:
 
     # ------------------------------------------------------------------ #
     def _same(self, a, b) -> bool:
+        """True when ``a`` and ``b`` are the same navigation step.
+
+        Compared per axis against that axis's span, so the test is scale-free. A
+        degenerate span falls back to the coordinate magnitude rather than dividing by
+        zero.
+        """
         try:
-            return all(abs(u - v) <= self._tol * max(1.0, abs(u), abs(v))
-                       for pair_a, pair_b in zip(a, b)
-                       for u, v in zip(pair_a, pair_b))
-        except (TypeError, ValueError):
+            for pair_a, pair_b in zip(a, b):
+                span = max(abs(pair_a[1] - pair_a[0]), abs(pair_b[1] - pair_b[0]))
+                if span <= 0:
+                    span = max(1.0, abs(pair_a[0]), abs(pair_b[0]))
+                if any(abs(u - v) > self._tol * span
+                       for u, v in zip(pair_a, pair_b)):
+                    return False
+            return True
+        except (TypeError, ValueError, IndexError):
             return False
 
     def push(self, view) -> bool:

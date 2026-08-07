@@ -12,9 +12,13 @@ overlay.
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 
 from app.services.canvas_tools import ViewHistory, format_measure, measure
+
+#: Idle time before a view is recorded. Long enough that a wheel-zoom or a drag-pan is
+#: one history entry, short enough that Back is available as soon as you stop moving.
+VIEW_PUSH_IDLE_MS = 350
 from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
@@ -44,12 +48,27 @@ class CanvasToolsMixin:
 
         self.view_history = ViewHistory()
         vb = self.plot_widget.getViewBox()
+        # Recorded only once the view stops moving. pyqtgraph emits a range change per
+        # axis and per wheel notch, so pushing on the signal itself made "back" mean
+        # "back one notch" — and, because x and y arrive separately, one press of Back
+        # often landed on a view a hair from where you already were and looked broken.
+        # A browser records one entry per gesture; so does this.
+        self._view_push_timer = QTimer(self)
+        self._view_push_timer.setSingleShot(True)
+        self._view_push_timer.setInterval(VIEW_PUSH_IDLE_MS)
+        self._view_push_timer.timeout.connect(self._push_current_view)
         vb.sigRangeChanged.connect(self._on_view_range_changed)
         # Seed with the current view so the first "back" has somewhere to go.
         self.view_history.push(vb.viewRange())
 
     # ── view history ─────────────────────────────────────────────────────
     def _on_view_range_changed(self, *_args):
+        """Restart the idle timer; the view is recorded when it settles."""
+        if self.view_history.restoring:
+            return
+        self._view_push_timer.start()
+
+    def _push_current_view(self):
         vb = self.plot_widget.getViewBox()
         if self.view_history.push(vb.viewRange()):
             self._notify_view_history()
@@ -58,6 +77,9 @@ class CanvasToolsMixin:
         """Set the view without recording it as a new navigation step."""
         if view is None:
             return False
+        # A pending push would otherwise fire just after the restore and record the
+        # view we just navigated to as a NEW step, truncating the forward branch.
+        self._view_push_timer.stop()
         self.view_history.restoring = True
         try:
             vb = self.plot_widget.getViewBox()
