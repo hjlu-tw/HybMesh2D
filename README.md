@@ -20,6 +20,8 @@ HybMesh2D 是一個用於生成 2D 混合網格（Hybrid Mesh）的 C++ 工具�
 - **內部網格 / 內流 (Internal Flow)**：可對封閉 CAD 幾何生成「內部」網格 —— 邊界層往**內**生長、三角形填滿內部核心，且不建立獨立遠場外框 (`DOMAIN_FILE <path> bl`)。域內可再放障礙物島嶼形成環狀域。
 - **逐幾何角色 (Per-geometry Role)**：每個幾何可獨立選擇生長邊界層 (`bl`)，或不長邊界層、以遠場尺寸貼合 (`nobl`)。生長方向為確定性：計算域壁面往內、障礙物往外（不再用面積啟發式猜測）。
 - **完整流程管線 (Full Pipeline)**：以單一 JSON 腳本一鍵串起 CAD 重採樣 → 網格生成 → UNICONES 求解 → 結果 contour。GUI 提供 **▶ Run All** 按鈕，headless 提供 `run_pipeline.sh`（無視窗、直接輸出 contour PNG），兩者共用同一份腳本與階段邏輯。詳見下方「完整流程管線」。
+- **批次佇列 (Batch Queue)**：一次排入多個 pipeline 腳本連續執行，GUI 與 CLI 共用同一個 runner；GUI 的 Cancel 會**中止正在跑的那個 case**（不只停下佇列）。詳見下方「批次佇列」。
+- **長度單位 (Length Units)**：模型宣告單一長度單位（m/cm/mm/µm/in/ft/自訂）。這不是裝飾——求解器是有量綱的，`Linf` 由單位推導而非手填，並在 Solver 面板即時顯示參考雷諾數。詳見下方「長度單位與參考雷諾數」。
 
 ## 網格架構與過渡機制
 
@@ -154,6 +156,9 @@ make
 | `BC_YMIN` / `YMAX` | STAR-CD 邊界名稱設定 | inlet / outlet |
 | `BC_GEOM` | STAR-CD 幾何表面邊界名稱 | wall |
 | `OUTPUT_FILENAME` | 指定輸出的檔案基本名稱 | (空) |
+| `LENGTH_UNIT` | 模型座標的長度單位（`m`/`cm`/`mm`/`um`/`in`/`ft`/`custom`）。mesher **只記錄不換算**（它只拿長度彼此相比），會印在 banner 並寫進 provenance sidecar | m |
+| `LENGTH_UNIT_METRES` | `LENGTH_UNIT custom` 時，一個模型單位等於幾公尺 | 1.0 |
+| `LENGTH_UNIT_NAME` | 自訂單位的顯示名稱 | (空) |
 
 ### 7. 加密種子 (Refinement Seeds)
 
@@ -294,7 +299,66 @@ python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/my_case.json -
 
 > `run_pipeline.sh` 會先設定 Gmsh 的 `DYLD_LIBRARY_PATH`（同 `run.sh`）。求解器結果檔輸出到 `results/solver/<case_name>/work/`，contour PNG 到 `results/pipeline/`。注意 `print_sol_per_niter` 需 ≤ `num_half_iter`，否則求解器不會寫出結果檔。
 
+## 批次佇列 (Batch Queue)
+
+同一份 runner 可依序跑多個 pipeline 腳本（`.json` 或 `.hws` 工作區皆可）。
+
+**Headless：**
+
+```bash
+./run_batch.sh case_a.json case_b.hws --no-solver
+./run_batch.sh @manifest.txt            # 清單檔，一行一個路徑
+```
+
+**GUI：Pipeline ▸ Batch Queue…**（modeless 對話框，關掉主視窗以外的操作不會清空已排好的佇列），提供逐案狀態表：
+
+- **Cancel 會中止正在執行的那個 case**，不是等它跑完才停。`should_stop()` 只在 case 之間輪詢，這對「不留下寫到一半的輸出目錄」是對的，但單靠它按下 Cancel 後可能數分鐘到數小時毫無反應；因此 `pipeline_runner` 另外把每個階段的子行程往上交（`on_process`），worker 以 SIGTERM → 寬限 → SIGKILL 對整個 process group 中止（階段是一棵行程樹：mpirun ranks、gmsh helper，只殺直接子行程會留下孤兒）。兩個機制缺一不可：一個停下手上的工作，一個阻止佇列開始下一個 case。
+- **案例名稱衝突在「排入佇列時」就提示**，不是等到執行。輸出路徑由 case 名稱推導，同名等於一個 case 默默覆蓋另一個的網格。
+- 讀不到的腳本會顯示為帶原因的跳過列 —— 安靜地跑完 10 個裡的 9 個，比明確失敗更糟。
+
+## 長度單位與參考雷諾數 (Length Units)
+
+模型宣告**單一**長度單位（Mesh 面板最上一列，或設定檔的 `LENGTH_UNIT`）：`m` / `cm` / `mm` / `µm` / `in` / `ft` / 自訂。
+
+這不是顯示用的標籤——**求解器是有量綱的**。依 UNICONES 手冊，`fs_UnitRe` 是「每公尺」的單位雷諾數、`Linf` 是「每個網格單位等於幾公尺」（手冊自己的範例即用 `Linf 0.0254` 表示英吋網格），所以
+
+```
+Re = fs_UnitRe × Linf
+```
+
+一個以 mm 建立、卻把 `Linf` 留在 1 的網格，會用**1000 倍**的雷諾數去跑一個外觀完全正常的網格。
+
+規則：
+
+- **`Linf` 由宣告的單位推導，不是手打的。** 舊有、手動設過 `linf` 又沒有 `length_unit` 的設定檔，載入時會關掉推導以保住原本的雷諾數；`unit_check()` 則會指出這個 `linf` 實際隱含的是哪個單位。
+- **改單位只是改標示，永遠不換算數值。** 只有兩處會真的換算：`Linf`，以及**匯入時**的座標（匯入單位對話框，每次匯入問一次，預設不換算，headless 時靜默且不動作）。
+- **單位顯示在 spin box 自己的 suffix 上**，不寫進標籤文字——後綴跟著擁有該數值的元件走，不會被忘記。只有物理長度有單位；增長率、角度、計數沒有。
+- 對「看似合理但其實錯誤」的單位，真正的防線是 Solver 面板的**參考雷諾數即時讀數**，以及 `run_pipeline.py` 的 `[INFO] reference Reynolds number` 那一行。尺寸合理性檢查只抓得到嚴重錯誤，它也如此聲明。
+- Mesher **只記錄、不換算** `LENGTH_UNIT`（它只拿長度彼此相比），會印在 banner，因此也會落進 provenance sidecar。
+
+## PreProcessor GUI 使用性
+
+- **CAD 畫布工具（CAD 工具列）**
+  - **Measure**：兩次點擊量一段距離，讀出 `d / dx / dy / angle`（四行、等寬字型、深色底板，貼在被量線段上）。
+  - **Snap**：格點吸附 + 可調步長。
+  - **◀ / ▶**：畫布視角的上一步 / 下一步（縮放與平移的歷史，像瀏覽器的上下頁）。一次滾輪縮放或拖曳平移記作**一筆**歷史。
+  - 這些工具互斥：啟用其中一個會自動離開另外兩個（含 weld 工具），工具列的切換按鈕跟著畫布狀態走。
+- **狀態列**：常駐顯示目前階段 / 選取狀態 / 進行中的工作。
+- **Geometry Statistics（CAD 側欄，預設收合）**：點數、開/封閉、bbox、周長、點距 min/mean/max，以及**均勻度**——相鄰間距的最大擴張比、超過閾值的數量與**位置**。相鄰間距跳動超過約 1.2× 的幾何會長出品質不良的邊界層，過去只能等生成網格失敗才發現。
+- **來源檔變更偵測**：工作區會連同幾何點座標一起記錄來源檔的指紋（size + mtime + SHA-256）。若 `.dat`/`.stl` 在存檔後被 CAD 重新匯出、被腳本重新產生或手動編輯，重新開啟時會明確告知——否則畫布顯示的是存檔當時的點，而網格階段是重新讀檔，等於對使用者從未看過的幾何生成網格。
+- **By End Spacing**：`tanh` 與 `geometric` 兩種分佈策略可直接指定端點間距（第一格尺寸），不必再用抽象的 intensity / 增長比去猜。（`tanh` 的間距求解改為 bisection `solveTanhDelta()`，舊的啟發式對應實測差約 40 倍，且必須兩端都設定才會生效。）
+- **介面語言**：**Help ▸ Language**（English / 繁體中文），下次啟動生效。目前完整翻譯的是常駐介面（選單列 + 狀態列）；面板欄位、對話框內文與日誌訊息仍為英文。
+
 ## 近期修正 (Bug Fixes)
+
+以下修正來自 2026-08 的 GUI 使用回報與後續驗證：
+
+- **CAD 工具列文字被截斷**：排版靠 `threshold = 1200` 決定單排或雙排，而這行有兩個錯誤——它比的是**視窗**寬度，但工具列比視窗窄（側欄佔掉其餘空間，1600px 視窗只留 1240px 工具列）；而且硬編數字在新增、改名或翻譯任何控制項後就過期（中文標籤不等於英文寬度）。改為 `_row_width()` 以各元件自己的 sizeHint 加上間距與邊界實際量測，兩個門檻值皆移除。已知限制：視窗小於約 900px 時兩排仍會溢出，需要可水平捲動的工具列（另案）。
+- **snap 控制項變成兩個浮動視窗**：`grid_snap_cb` 與 `grid_snap_step` 建立時沒有 parent，而在 Qt 中無 parent 的 QWidget 就是**頂層視窗**——因此出現兩個關不掉、也不隨主視窗結束的浮動面板；另外三個畫布工具則從未被加進工具列的排版清單，等於隱形。兩種失效都是無聲的。已補上 parent 與兩種排版的清單，並加上針對此類錯誤的檢查（主視窗必須是唯一可見的頂層元件；`*_tb_widgets` 中每個元件都必須被排版或明確隱藏）。
+- **視角上一步只退了一根頭髮**：`ViewHistory` 的容差 `1e-9` 只合併位元完全相同的視角，但 pyqtgraph 的 `sigRangeChanged` 是**每軸各發一次**，一次 `setRange` 就推入兩筆僅差毫釐的紀錄，按一次 ◀ 只是回到你正在看的那一格。改為：容差取 span 的 1%（尺度無關，在單位可變之後更重要），並以 350 ms 靜止後才記錄，使一次滾輪縮放或拖曳平移成為一筆歷史。
+- **量測工具與繪製工具互搶點擊**：互斥原本寫在各個 `start_*` 內兩兩處理，三個工具有六個方向卻只實作三個——Measure 會停掉另外兩個，但啟動 Polygon/Line 或 weld **不會**停掉 Measure。由於 measure 比繪製更早攔截點擊，Measure 開著時畫 Polygon 只會不斷量距離、一個點都放不下去。改為單一 `EXCLUSIVE_TOOLS` 表，六個方向由結構保證對稱，並讓工具列按鈕跟隨畫布狀態彈起。
+- **量測讀數與幾何難以分辨**：畫布上已有約 25 種顏色，舊的琥珀色 `#f5c542` 與自動封閉邊 `#FFD700`、作用中線段 `#FFB347` 及兩個 session 色的最小 CIELAB ΔE 只有 **6.1**（一眼看去同色）；純白更糟，ΔE 為 **0**，因為白圈正是端點標記。改用最小 ΔE 達 **64** 的 `#DD11FF`，並加上其他項目都沒有的深色底板，讓它在顏色被辨識之前就先讀作「標籤」而非幾何。
+- **階段設定的模型落後於面板**：`global_*_config` 只在該階段真的執行時才更新，於是出現四份各自不完整的補救複製（兩種欄位不同的部分複製、solver 完全沒同步、工作區存檔直接序列化面板）。同一個數值有四個真相來源，各自只在某個時刻是對的。改為單向資料流：**面板編輯 → 同步到模型**，模型才是真相；面板不擁有的欄位（`PRESERVED_FIELDS`）由 AST 從面板自身原始碼推導並在建置時把關，因此新增一個沒有對應元件的模型欄位會讓建置失敗，而不是默默失效或被清空。順帶修掉一個既有的資料遺失：工作區存檔會把未擁有的欄位寫成 dataclass 預設值（`bc_geom = symmetry` 被存成 `wall`）。
 
 以下修正來自一次跨 C++ 核心與 PreProcessor GUI 的程式碼審查：
 

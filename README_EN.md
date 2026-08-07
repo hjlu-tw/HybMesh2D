@@ -19,6 +19,9 @@ HybMesh2D is a C++ tool for generating 2D hybrid meshes. It generates high-quali
 - **Custom Domain Shape**: The outer domain can be the rectangular box (`DOMAIN_X/Y_MIN/MAX`) or a custom closed polyline (`DOMAIN_FILE`). Polygons, circles, and sectors are all represented as resampled polylines that flow through the full BL/collision/export pipeline; each outline segment can carry its own BC via the sidecar.
 - **Internal Flow (Interior Meshing)**: Mesh the *interior* of a closed CAD geometry — the boundary layer grows **inward**, triangles fill the core, and no separate far-field box is built (`DOMAIN_FILE <path> bl`). Islands can be placed inside to form an annular domain.
 - **Per-Geometry Role**: Each geometry independently either grows a boundary layer (`bl`) or grows none and conforms at far-field size (`nobl`). Growth direction is deterministic: the domain wall grows inward, obstacles grow outward (no area-based heuristic).
+- **Full Pipeline**: One JSON script chains CAD resampling → mesh generation → the UNICONES solver → a result contour. The GUI offers a **▶ Run All** button; `run_pipeline.sh` runs the same script headless and writes a contour PNG. Both share one schema and one set of stage logic. See "Full Pipeline" below.
+- **Batch Queue**: Queue several pipeline scripts and run them back to back, from the GUI or the CLI, through one runner. The GUI's Cancel stops the **case already running**, not just the queue. See "Batch Queue" below.
+- **Length Units**: The model declares one length unit (m/cm/mm/µm/in/ft/custom). This is not cosmetic — the solver is dimensional, so `Linf` is *derived* from the unit rather than typed, and the resulting reference Reynolds number is shown live on the Solver panel. See "Length Units" below.
 
 ## Mesh Architecture & Transition
 
@@ -147,6 +150,9 @@ The executable will be located at `build/HybMesh2D`.
 | `BC_YMIN` / `YMAX` | STAR-CD boundary name strings | inlet / outlet |
 | `BC_GEOM` | STAR-CD surface boundary name string | wall |
 | `OUTPUT_FILENAME` | Base name for output files | (empty) |
+| `LENGTH_UNIT` | Length unit of the model coordinates (`m`/`cm`/`mm`/`um`/`in`/`ft`/`custom`). The mesher **records it but never converts** (it only compares lengths with each other); it prints it in the banner, so it also lands in the provenance sidecar | m |
+| `LENGTH_UNIT_METRES` | Metres per model unit, when `LENGTH_UNIT custom` | 1.0 |
+| `LENGTH_UNIT_NAME` | Display name of the custom unit | (empty) |
 
 ### 7. Refinement Seeds
 
@@ -230,6 +236,89 @@ The Mesh Generator tab manages inputs through a **single geometry list**: add wi
 The **Domain Source** selector chooses `Rectangle box` (shows the X/Y Min/Max box) or `Custom geometry` (hides the box; the domain then comes from whichever geometry has a Domain role).
 
 **Multiple bodies / annular domains:** draw each shape as its own PreProcessor session, Save & Export each, then in the Mesh Generator click `Add All` to include them all and assign a Role to each. An annular domain = the outer shape as `Domain: wall` + the inner island as `Boundary`.
+
+## Full Pipeline (CAD → Mesh → Solver → Results)
+
+A **single JSON script** chains the whole workflow (CAD resampling → mesh generation → the UNICONES solver → a result contour) into one action. The GUI and the headless CLI **share that script and the stage logic**, so they cannot drift apart.
+
+**GUI:** the **▶ Run All** button at the top right (visible in every mode) runs CAD → mesh → solver for the active geometry and switches to the Results tab with the contour loaded. The **Pipeline** menu additionally offers Run / Load / Save Pipeline Script.
+
+**Headless (no window, writes a PNG):**
+
+```bash
+./run_pipeline.sh config/pipeline/template.json              # → results/pipeline/<name>_M.png
+./run_pipeline.sh config/pipeline/template.json --no-solver  # stop after meshing
+```
+
+The GUI can also load and immediately run a script at start-up:
+
+```bash
+python3 tools/PreProcessor/gui/main.py --pipeline config/pipeline/my_case.json --run
+```
+
+**Script format**: one JSON with `cads` / `mesh` / `solver` / `stl3d` / `results` sections, each mapping 1:1 onto an existing config model (`ProjectModel` / `MeshConfig` / `SolverConfig` / `Stl3dConfig`). `cads` is a *list*, so a multi-body case round-trips. Copy `config/pipeline/template.json` and change a few numbers (Mach, angle of attack, Reynolds number, iterations, BCs…). Field-by-field notes: [config/pipeline/README.md](config/pipeline/README.md).
+
+```json
+{
+  "cads":   [ { "input_file": "examples/geometries/naca0012.dat", "skip": true } ],
+  "mesh":   { "domain_x_min": -4, "domain_x_max": 8, "bl_layers": 15, "bc_geom": "wall" },
+  "solver": { "preset": "Laminar NS (subsonic, steady)", "fs_mach": 0.3,
+              "fs_flow_angle": 4.0, "fs_unit_re": 1000, "num_half_iter": 2000 },
+  "results":{ "variable": "M", "save_png": "results/pipeline/case_M.png" }
+}
+```
+
+> `run_pipeline.sh` sets Gmsh's `DYLD_LIBRARY_PATH` first (like `run.sh`). Solver results go to `results/solver/<case_name>/work/`, contour PNGs to `results/pipeline/`. Note that `print_sol_per_niter` must be ≤ `num_half_iter`, or the solver writes no result file.
+
+## Batch Queue
+
+One runner executes several pipeline scripts in sequence (`.json` scripts or `.hws` workspaces).
+
+**Headless:**
+
+```bash
+./run_batch.sh case_a.json case_b.hws --no-solver
+./run_batch.sh @manifest.txt            # manifest file, one path per line
+```
+
+**GUI: Pipeline ▸ Batch Queue…** — a modeless dialog (a queue you assembled survives closing the window) with a per-case status table:
+
+- **Cancel stops the case already running**, not just the queue. `should_stop()` is polled only *between* cases — right for not leaving a half-written output directory, but on its own Cancel would do nothing visible for minutes or hours. So `pipeline_runner` hands the live child process of every stage up to its caller (`on_process`), and the worker kills it with SIGTERM → grace → SIGKILL over the **process group** (a stage is a process tree — mpirun ranks, gmsh helpers — and killing only the direct child orphans the rest). Both mechanisms are needed: one stops the work in flight, the other stops the queue starting the next case.
+- **Case-name collisions are reported when scripts are queued**, not when the run starts. Output paths derive from the case name, so a shared name means one case silently destroying another's mesh.
+- An unreadable script becomes a visible skipped row **with the reason** — a batch that quietly runs 9 of your 10 cases is worse than one that fails.
+
+## Length Units
+
+The model declares **one** length unit (top row of the Mesh panel, or `LENGTH_UNIT` in the config): `m` / `cm` / `mm` / `µm` / `in` / `ft` / custom.
+
+This is not a display label — **the solver is dimensional**. Per the UNICONES manual, `fs_UnitRe` is a *per metre* unit Reynolds number and `Linf` is *metres per grid unit* (its own sample uses `Linf 0.0254` for an inch grid), so
+
+```
+Re = fs_UnitRe × Linf
+```
+
+A mesh authored in mm but left at `Linf = 1` runs at **1000×** the intended Reynolds number, on a mesh that looks perfect.
+
+Rules:
+
+- **`Linf` is derived from the declared unit, not typed.** A pre-existing config with a hand-set `linf` and no `length_unit` keeps derivation off on load, so its Reynolds number is preserved; `unit_check()` then reports which unit that `linf` actually implies.
+- **Changing the unit relabels; it never rescales.** Only two things convert numbers: `Linf`, and coordinates at *import* (the import-unit dialog, asked once per import action, defaulting to no conversion, silent and no-op when headless).
+- **Units appear as the spin box's own suffix**, never baked into label text — the suffix rides on the widget owning the number and cannot be forgotten. Only physical lengths get one; growth rates, angles and counts do not.
+- The visible defence against a *plausible* wrong unit is the live **reference Reynolds number** read-out on the Solver panel, plus the `[INFO] reference Reynolds number` line from `run_pipeline.py`. The size-plausibility check only catches gross errors, and says so.
+- The mesher **records but never converts** `LENGTH_UNIT` (it only compares lengths with each other); it prints it in the banner, so it also lands in the provenance sidecar.
+
+## PreProcessor GUI Usability
+
+- **Canvas tools (CAD toolbar)**
+  - **Measure**: two clicks span a distance, reading out `d / dx / dy / angle` (four rows, fixed-width font, on a dark plate sitting on the span it measures).
+  - **Snap**: grid snapping with an adjustable step.
+  - **◀ / ▶**: canvas view back/forward — zoom and pan history, like a browser. One wheel-zoom or drag-pan is **one** history entry.
+  - These tools are mutually exclusive: starting one leaves the other two (including the weld tool), and the toolbar toggles follow the canvas.
+- **Status bar**: a persistent line showing the current stage, the selection, and any activity.
+- **Geometry Statistics** (CAD sidebar, collapsed by default): point count, open/closed, bounding box, perimeter, spacing min/mean/max, and **uniformity** — the largest expansion ratio between neighbouring intervals, how many exceed the threshold, and **where**. A geometry whose neighbouring intervals jump by more than ~1.2× grows a poor boundary layer, which used to be discoverable only by generating a mesh and looking at the failure.
+- **Source-file change detection**: a workspace stores each session's geometry points next to a fingerprint of the source file (size + mtime + SHA-256). If the `.dat`/`.stl` was re-exported from CAD, regenerated by a script, or hand-edited after the workspace was saved, reopening it says so — otherwise the canvas shows the saved points while the mesh stage re-reads from disk, i.e. it meshes geometry the user never saw.
+- **By End Spacing**: the `tanh` and `geometric` strategies can be given the end spacing (first cell size) directly, instead of approximating it through an abstract intensity or growth ratio. (`tanh`'s spacing is now solved by bisection in `solveTanhDelta()`; the previous heuristic mapping missed the requested spacing by ~40× and required *both* ends to be set.)
+- **Interface language**: **Help ▸ Language** (English / 繁體中文), applied at the next launch. Fully translated today: the always-visible chrome (menu bar + status bar). Panel field labels, dialog bodies and log messages are still English.
 
 ## License
 
