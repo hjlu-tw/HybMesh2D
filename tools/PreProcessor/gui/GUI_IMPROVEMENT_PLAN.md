@@ -344,6 +344,31 @@ geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
 
 `tests/test_status_bar.py`（24 checks）；全套 **36/36**。**需你實機確認**：狀態列高度與各欄位寬度。
 
+### 修正：畫布工具列控制項從未被放上工具列（2026-08-07，使用者回報）
+
+使用者回報「兩個寫著 snap 跟 0.1 m 的彈出視窗，關掉主視窗後不會一起關閉」。
+
+**這比外觀問題嚴重，而且是我先前交付時說錯了範圍。** 我當初把畫布工具（Measure / Snap /
+吸附間距 / ◀ View / View ▶）列為「已完成，需實機確認工具列擁擠度」。實際情況是**這五個控制項
+從來沒有被加進工具列的版面清單**：
+
+- `main_window_toolbar_mixin` 的 CAD 版面是**逐一列舉** widget 的清單，五個都不在裡面
+- 其中 `grid_snap_cb` / `grid_snap_step` 建立時**沒有 parent** —— Qt 中無 parent 的 QWidget
+  **就是頂層視窗**，所以它們變成兩個浮動小窗，而且不隨主視窗關閉
+- 另外三個（`create_tb_btn` 建立，有 parent）則是單純看不到、無法使用
+
+兩半都是**靜默**的：沒有警告，widget 也確實「存在」，任何屬性測試都照樣通過。我原本宣稱
+「已完成」是不對的 —— 它們當時完全無法使用。
+
+- [x] 兩個 widget 補上 `self.canvas_toolbar` 作為 parent
+- [x] 五個控制項加入 CAD 工具列的**兩種**排列（寬螢幕單列、窄螢幕雙列），放在第二列與其他檢視切換一起
+- [x] **gate（`test_ui_state_and_dialogs.py` 第 9 節）**，鎖住整個 bug class 而非這一次的實例：
+  1. 建好主視窗後，**唯一**可見的頂層 widget 必須是主視窗本身
+  2. 每個 stage 的 `*_tb_widgets` 中的每個 widget，都必須被 `tb_layout` 定位**或**是刻意隱藏的
+     （分隔線在雙列模式下隱藏）—— 「兩者皆非」就是宣告了卻沒放上去
+  3. 且都不得是頂層視窗
+- [x] **實測 gate 真的會抓**：暫時把 parent 拿掉重跑，第 9 節如期失敗；還原後全過
+
 ### 已完成：批次佇列 GUI（2026-08-07）
 
 `services/batch_runner` 早就備好 `progress()` / `should_stop()` 掛勾，缺的是從 GUI 驅動、觀看、停止它的方法。

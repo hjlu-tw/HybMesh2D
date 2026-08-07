@@ -76,12 +76,15 @@ class MainWindowToolbarBuildMixin:
             "and angle. Click again to start a new span.")
         self.measure_btn.setCheckable(True)
 
-        self.grid_snap_cb = QCheckBox("Snap")
+        # Parented to the toolbar. A QWidget created with no parent is a TOP-LEVEL
+        # WINDOW in Qt, so these two appeared as two stray floating windows that did
+        # not close with the main window — which is exactly what happened.
+        self.grid_snap_cb = QCheckBox("Snap", self.canvas_toolbar)
         self.grid_snap_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
         self.grid_snap_cb.setToolTip(
             "Snap placement clicks to a grid. Snapping to an existing geometry "
             "endpoint always wins over the grid.")
-        self.grid_snap_step = SciDoubleSpinBox()
+        self.grid_snap_step = SciDoubleSpinBox(self.canvas_toolbar)
         self.grid_snap_step.setRange(0.0, 1e6)
         self.grid_snap_step.setValue(0.1)
         self.grid_snap_step.setToolTip("Grid spacing for snapping")

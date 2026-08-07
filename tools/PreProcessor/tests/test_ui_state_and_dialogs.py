@@ -245,6 +245,47 @@ check("report_error(" in extrude_src,
 check(not RAW.search(extrude_src),
       "8. ...and no raw QMessageBox call is left in that file")
 
+# ── 9. toolbar widgets are owned and placed ───────────────────────────────
+# A QWidget created with NO PARENT is a top-level window in Qt. Five canvas-tool
+# controls were built that way and never added to a toolbar layout, so two of them
+# appeared as stray floating windows that did not close with the main window, and all
+# five were unreachable. Both halves of that are checked here because both are silent:
+# nothing warns, and the widget "exists" so any attribute test still passes.
+from PyQt6.QtWidgets import QApplication as _QApp  # noqa: E402
+from app.controller import AppController as _AppController  # noqa: E402
+
+_ctl = _AppController()
+_mw = _ctl.main_window
+_mw.show()
+_QApp.instance().processEvents()
+
+_tops = [w for w in _QApp.instance().topLevelWidgets() if w.isVisible()]
+check(_tops == [_mw],
+      f"9. the main window is the ONLY visible top-level widget — a parentless widget "
+      f"becomes its own window and outlives the main window "
+      f"({[type(w).__name__ for w in _tops]})")
+
+_STAGE_LISTS = (("cad_tb_widgets", 0), ("mesh_tb_widgets", 1),
+                ("solver_tb_widgets", 3), ("ib_tb_widgets", 5))
+for _attr, _stage in _STAGE_LISTS:
+    _widgets = getattr(_mw, _attr, None)
+    if not _widgets:
+        continue
+    _mw.mode_combo.setCurrentIndex(_stage)
+    _QApp.instance().processEvents()
+    # A widget must be positioned by the toolbar layout, or deliberately hidden
+    # (separators are hidden in the two-row arrangement). "Neither" means it was
+    # declared for visibility toggling and then never laid out.
+    _orphans = [w for w in _widgets
+                if _mw.tb_layout.indexOf(w) < 0 and not w.isHidden()]
+    check(not _orphans,
+          f"9. every widget in {_attr} is placed in the toolbar (or hidden on "
+          f"purpose); unplaced: "
+          f"{[w.text() if hasattr(w, 'text') else type(w).__name__ for w in _orphans]}")
+    _unowned = [w for w in _widgets if w.isWindow()]
+    check(not _unowned,
+          f"9. ...and none of them is a top-level window ({_unowned})")
+
 _wd.cancel()
 if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED", flush=True)

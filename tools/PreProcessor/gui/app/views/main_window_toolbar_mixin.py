@@ -70,6 +70,11 @@ class MainWindowToolbarMixin:
                         self.cad_cancel_btn,
                     ]
                     row1_widgets = [
+                        self.measure_btn,
+                        self.grid_snap_cb,
+                        self.grid_snap_step,
+                        self.view_back_btn,
+                        self.view_fwd_btn,
                         self.show_vertices_cb,
                         self.show_nodes_cb,
                         self.quality_check_cb,
@@ -109,6 +114,11 @@ class MainWindowToolbarMixin:
                         self.cad_file_preview_btn,
                         self.cad_cancel_btn,
                         self.cad_sep2,
+                        self.measure_btn,
+                        self.grid_snap_cb,
+                        self.grid_snap_step,
+                        self.view_back_btn,
+                        self.view_fwd_btn,
                         self.show_vertices_cb,
                         self.show_nodes_cb,
                         self.quality_check_cb,
