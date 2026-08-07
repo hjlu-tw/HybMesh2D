@@ -9,8 +9,36 @@ class MainWindowToolbarMixin:
 
     Mixed into ``MainWindow`` (after ``QMainWindow``); every method references
     ``self.*`` widgets/flags that ``MainWindow.__init__`` creates, resolved at
-    call time via the MRO. Extracted verbatim — no behaviour change.
+    call time via the MRO.
+
+    **One row or two is measured, not guessed.** This used to compare the WINDOW width
+    against a hardcoded threshold, which was wrong twice over: the toolbar is narrower
+    than the window (the sidebar takes the rest), and a fixed number goes stale the
+    moment a control is added, renamed, or translated — a Chinese label is not the width
+    of an English one. Adding the canvas tools pushed the single row to ~1509px of
+    content inside a 1240px toolbar, so labels were cut off at any window size above the
+    threshold. :meth:`_row_fits` asks the widgets how wide they actually need to be.
     """
+
+    def _row_width(self, widgets) -> int:
+        """Width one row of ``widgets`` needs: size hints + spacing + margins."""
+        shown = [w for w in widgets if w.isVisible()]
+        if not shown:
+            return 0
+        margins = self.tb_layout.contentsMargins()
+        return (sum(w.sizeHint().width() for w in shown)
+                + self.tb_layout.horizontalSpacing() * (len(shown) - 1)
+                + margins.left() + margins.right())
+
+    def _row_fits(self, widgets) -> bool:
+        """Whether ``widgets`` fit on one row of the toolbar as it is now.
+
+        Measured against the TOOLBAR's width, not the window's. Falls back to the window
+        width only before the first layout pass, when the toolbar has no width yet and
+        refusing to answer would make the arrangement flap on startup.
+        """
+        avail = self.canvas_toolbar.width() or self.width()
+        return self._row_width(widgets) <= avail
 
     def eventFilter(self, watched, event) -> bool:
         if event.type() in (QEvent.Type.Show, QEvent.Type.Hide):
@@ -43,12 +71,39 @@ class MainWindowToolbarMixin:
                 self.tb_layout.setColumnStretch(col, 0)
 
             idx = self.sidebar_stack.currentIndex()
-            width = self.width()
 
-            # Determine threshold based on mode
             if idx == 0:
-                threshold = 1200
-                is_narrow = (width < threshold)
+                # The single-row arrangement is spelled out FIRST so it can be
+                # measured before it is chosen.
+                cad_single_row = [
+                    self.undo_btn,
+                    self.redo_btn,
+                    self.cad_sep1,
+                    self.focus_geom_btn,
+                    self.cad_clear_btn,
+                    self.cad_clear_all_btn,
+                    self.cad_redraw_btn,
+                    self.cad_preview_btn,
+                    self.cad_curve_preview_btn,
+                    self.cad_file_preview_btn,
+                    self.cad_cancel_btn,
+                    self.cad_sep2,
+                    self.measure_btn,
+                    self.grid_snap_cb,
+                    self.grid_snap_step,
+                    self.view_back_btn,
+                    self.view_fwd_btn,
+                    self.show_vertices_cb,
+                    self.show_nodes_cb,
+                    self.quality_check_cb,
+                    self.quality_mode_combo,
+                    self.progress_bar,
+                ]
+                # cad_sep2 only exists in the single-row arrangement, so it must be
+                # visible while measuring or the row is under-measured by its width
+                # on every pass that follows a two-row one.
+                self.cad_sep2.setVisible(True)
+                is_narrow = not self._row_fits(cad_single_row)
 
                 if is_narrow:
                     self.canvas_toolbar.setFixedHeight(68)
@@ -100,31 +155,7 @@ class MainWindowToolbarMixin:
                     self.tb_layout.setColumnStretch(max_col + 1, 1)
                 else:
                     self.canvas_toolbar.setFixedHeight(36)
-                    self.cad_sep2.setVisible(True)
-                    all_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.focus_geom_btn,
-                        self.cad_clear_btn,
-                        self.cad_clear_all_btn,
-                        self.cad_redraw_btn,
-                        self.cad_preview_btn,
-                        self.cad_curve_preview_btn,
-                        self.cad_file_preview_btn,
-                        self.cad_cancel_btn,
-                        self.cad_sep2,
-                        self.measure_btn,
-                        self.grid_snap_cb,
-                        self.grid_snap_step,
-                        self.view_back_btn,
-                        self.view_fwd_btn,
-                        self.show_vertices_cb,
-                        self.show_nodes_cb,
-                        self.quality_check_cb,
-                        self.quality_mode_combo,
-                        self.progress_bar,
-                    ]
+                    all_widgets = cad_single_row
                     col_idx = 0
                     for w in all_widgets:
                         if w.isVisible():
@@ -133,8 +164,28 @@ class MainWindowToolbarMixin:
                     self.tb_layout.setColumnStretch(col_idx, 1)
 
             elif idx in (1, 2):  # Mesh modes
-                threshold = 1100
-                is_narrow = (width < threshold)
+                mesh_single_row = [
+                    self.undo_btn,
+                    self.redo_btn,
+                    self.cad_sep1,
+                    self.mesh_preview_btn,
+                    self.mesh_generate_btn,
+                    self.mesh_cancel_btn,
+                    self.mesh_send_solver_btn,
+                    self.mesh_sep2,
+                    self.mesh_focus_btn,
+                    self.mesh_clear_btn,
+                    self.mesh_sep3,
+                    self.mesh_show_wireframe_cb,
+                    self.mesh_show_bc_cb,
+                    self.mesh_show_domain_cb,
+                    self.mesh_sep4,
+                    self.mesh_color_label,
+                    self.mesh_color_mode_combo,
+                    self.progress_bar,
+                ]
+                self.mesh_sep3.setVisible(True)     # see the CAD branch
+                is_narrow = not self._row_fits(mesh_single_row)
 
                 if is_narrow:
                     self.canvas_toolbar.setFixedHeight(68)
@@ -181,27 +232,7 @@ class MainWindowToolbarMixin:
                     self.tb_layout.setColumnStretch(max_col + 1, 1)
                 else:
                     self.canvas_toolbar.setFixedHeight(36)
-                    self.mesh_sep3.setVisible(True)
-                    all_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.mesh_preview_btn,
-                        self.mesh_generate_btn,
-                        self.mesh_cancel_btn,
-                        self.mesh_send_solver_btn,
-                        self.mesh_sep2,
-                        self.mesh_focus_btn,
-                        self.mesh_clear_btn,
-                        self.mesh_sep3,
-                        self.mesh_show_wireframe_cb,
-                        self.mesh_show_bc_cb,
-                        self.mesh_show_domain_cb,
-                        self.mesh_sep4,
-                        self.mesh_color_label,
-                        self.mesh_color_mode_combo,
-                        self.progress_bar,
-                    ]
+                    all_widgets = mesh_single_row
                     col_idx = 0
                     for w in all_widgets:
                         if w.isVisible():

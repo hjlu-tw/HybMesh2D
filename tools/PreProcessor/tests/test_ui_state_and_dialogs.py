@@ -286,6 +286,58 @@ for _attr, _stage in _STAGE_LISTS:
     check(not _unowned,
           f"9. ...and none of them is a top-level window ({_unowned})")
 
+# ── 10. the toolbar arrangement is measured, not guessed ──────────────────
+# This used to compare the WINDOW width against a hardcoded threshold, which was wrong
+# twice: the toolbar is narrower than the window (the sidebar takes the rest), and a
+# fixed number goes stale whenever a control is added, renamed or translated. The
+# result was a single row whose labels were simply cut off.
+check("threshold" not in open(
+          os.path.join(_APP, "views", "main_window_toolbar_mixin.py"),
+          encoding="utf-8").read().split('"""')[2],
+      "10. no hardcoded width threshold is left in the layout code")
+
+# Back to CAD: section 9 left the stage on IB, whose toolbar is short enough to fit
+# anywhere — measuring that would make this section pass without testing the crowded
+# row it exists for.
+_mw.mode_combo.setCurrentIndex(0)
+_QApp.instance().processEvents()
+
+for _w in (1800, 1500, 1300, 1100, 950):
+    _mw.resize(_w, 900)
+    _QApp.instance().processEvents()
+    _mw.adjust_toolbar_layout()
+    _QApp.instance().processEvents()
+    _avail = _mw.canvas_toolbar.width()
+    # Whatever arrangement was chosen, every occupied row must fit. A row wider than
+    # the toolbar is exactly the "labels cut off" the user reported.
+    _need = [0] * max(_mw.tb_layout.rowCount(), 1)
+    _counts = [0] * len(_need)
+    for _i in range(_mw.tb_layout.count()):
+        _it = _mw.tb_layout.itemAt(_i)
+        _wd_ = _it.widget()
+        if _wd_ is None:
+            continue
+        _r, _c, _rs, _cs = _mw.tb_layout.getItemPosition(_i)
+        _need[_r] += _wd_.sizeHint().width()
+        _counts[_r] += 1
+    _margins = _mw.tb_layout.contentsMargins()
+    _need = [n + _mw.tb_layout.horizontalSpacing() * max(c - 1, 0)
+             + _margins.left() + _margins.right()
+             for n, c in zip(_need, _counts)]
+    _worst = max(_need) if _need else 0
+    check(_worst <= _avail,
+          f"10. at a {_w}px window the chosen arrangement fits the {_avail}px toolbar "
+          f"(rows need {_need})")
+
+# And the fallback is honest: when even two rows cannot fit, two rows is still what is
+# chosen — the alternative is a single row that is even more truncated.
+_mw.resize(700, 900)
+_QApp.instance().processEvents()
+_mw.adjust_toolbar_layout()
+_QApp.instance().processEvents()
+check(_mw.canvas_toolbar.height() > 50,
+      "10. an extremely narrow window still gets the two-row arrangement")
+
 _wd.cancel()
 if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED", flush=True)

@@ -91,10 +91,13 @@ class MainWindowToolbarBuildMixin:
         self.grid_snap_step.setStyleSheet(SPIN_STYLE)
         self.grid_snap_step.setWidthCap(80)
 
+        # Arrows only. Back/forward navigation is universally understood from the
+        # glyph, so the word "View" cost toolbar width without adding information —
+        # and the CAD row is the most crowded one in the app.
         self.view_back_btn = create_tb_btn(
-            "◀ View", "Go back to the previous canvas view (zoom/pan history)")
+            "◀", "Go back to the previous canvas view (zoom/pan history)")
         self.view_fwd_btn = create_tb_btn(
-            "View ▶", "Go forward again through the canvas view history")
+            "▶", "Go forward again through the canvas view history")
         self.view_back_btn.setEnabled(False)
         self.view_fwd_btn.setEnabled(False)
         
