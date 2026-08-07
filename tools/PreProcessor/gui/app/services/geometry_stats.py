@@ -87,8 +87,14 @@ def compute(points, *, closed: bool = False, n_segments: int = 0) -> dict:
     return out
 
 
-def fmt(stats: dict) -> dict:
-    """``compute`` output as display strings ("—" for anything unavailable)."""
+def fmt(stats: dict, unit: str = "") -> dict:
+    """``compute`` output as display strings ("—" for anything unavailable).
+
+    ``unit`` is appended to the rows that ARE lengths (extent, bounds, perimeter,
+    spacing) and withheld from the ones that are not (point/edge counts, topology,
+    and the expansion ratio — a ratio of two lengths is dimensionless, and labelling
+    it "1.35x mm" would be nonsense presented with authority).
+    """
     if not stats:
         return {k: "—" for k in
                 ("points", "edges", "closed", "bbox", "size", "length",
@@ -99,14 +105,19 @@ def fmt(stats: dict) -> dict:
             return "—"
         return fmt_str % tuple(stats[k] for k in keys)
 
+    u = f" {unit}" if unit else ""
     out = {
         "points": f"{stats['n_points']:,}",
         "edges": f"{stats['n_segments']:,}" if stats.get("n_segments") else "—",
         "closed": "closed" if stats.get("closed") else "open",
-        "bbox": g("[%.6g, %.6g] x [%.6g, %.6g]", "xmin", "xmax", "ymin", "ymax"),
-        "size": g("%.6g x %.6g", "width", "height"),
-        "length": g("%.6g", "length"),
-        "spacing": g("min %.4g / mean %.4g / max %.4g", "ds_min", "ds_mean", "ds_max"),
+        # The unit goes once at the end of a compound read-out rather than on each
+        # number: "[0, 4.5] x [0, 1.8] m" reads; four repeats of "m" does not.
+        "bbox": g("[%.6g, %.6g] x [%.6g, %.6g]" + u,
+                  "xmin", "xmax", "ymin", "ymax"),
+        "size": g("%.6g x %.6g" + u, "width", "height"),
+        "length": g("%.6g" + u, "length"),
+        "spacing": g("min %.4g / mean %.4g / max %.4g" + u,
+                     "ds_min", "ds_mean", "ds_max"),
     }
     if "ratio_max" in stats:
         over, total = stats["ratio_over"], stats["ratio_total"]

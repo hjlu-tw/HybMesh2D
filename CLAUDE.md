@@ -104,6 +104,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 | Transition | `BL_TRANSITION_LAYERS`, `BL_TRANSITION_GROWTH_RATE`, `BL_TRANSITION_BUFFER` |
 | Gmsh | `GMSH_ALGORITHM` (6=Frontal-Delaunay), `GMSH_OPTIMIZE`, `FARFIELD_GROWTH_RATE`, `FARFIELD_MESH_SIZE` |
 | Output | `EXPORT_VTK`, `EXPORT_STARCD`, `BC_XMIN/XMAX/YMIN/YMAX/GEOM` |
+| Units | `LENGTH_UNIT` (m/cm/mm/um/in/ft/custom), `LENGTH_UNIT_METRES`, `LENGTH_UNIT_NAME` |
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
@@ -134,6 +135,34 @@ Layered PyQt6 application:
 Scroll-wheel on QSpinBox/QDoubleSpinBox is intentionally disabled (overridden in `main.py`).
 
 **Numeric fields**: any field holding a *physical length* (BL initial thickness, mesh sizes, domain coordinates, resampling spacing, seed size/radius) must use `views/clean_double_spin_box.py::SciDoubleSpinBox`, not `CleanDoubleSpinBox`. It accepts/displays scientific notation, steps by decade, and has no hardcoded floor — a fixed-notation box silently clamps the 1e-7..1e-8 first-cell heights real CFD needs. Range lower bounds stay at 0 and invalid values are rejected by `MeshConfig.validate()` with a message, never by UI clamping.
+
+**Length units** (`app/services/units.py`, Qt-free): the model declares ONE length unit
+(Mesh panel, top row). It is **not cosmetic** — the solver is dimensional. Per the UNICONES
+manual `fs_UnitRe` is *per metre* and `Linf` is *metres per grid unit* ("input 1 if
+dimensional in meters"; its own sample uses `Linf 0.0254` for an inch grid), so
+**Re = fs_UnitRe × Linf**. A mm mesh left at `Linf = 1` runs at 1000× the intended Reynolds
+number with a mesh that looks perfect.
+
+Rules:
+- **`Linf` is derived from the declared unit**, not typed. `SolverConfig.linf_from_unit`
+  is True for anything new; `load_from_dict` turns it **off** for a config that has a
+  hand-set `linf` and no `length_unit`, so a pre-units case keeps its Reynolds number.
+  `unit_check()` then reports the discrepancy naming the unit that `linf` implies.
+- **Changing the unit relabels; it never rescales.** Only two things convert numbers:
+  `Linf`, and coordinates at *import* (`views/import_unit_dialog.py`, asked once per
+  import action, defaulting to no conversion, silent + no-op when headless).
+- **Units are shown as the spin box's own `setSuffix`**, never baked into label text —
+  the suffix rides on the widget owning the number and cannot be forgotten. Only
+  physical lengths get one; growth rates, angles and counts must not.
+  `views/panels/mesh_units_mixin.py::LENGTH_FIELDS` must equal the panel's
+  `SciDoubleSpinBox` set — `tests/test_units.py` fails the build otherwise, which is how
+  a field added later cannot silently lose its unit.
+- The visible defence against a *plausible* wrong unit is the **reference Reynolds
+  number** read-out on the Solver panel (`views/panels/solver_units_mixin.py`) and the
+  `[INFO] reference Reynolds number` line in `run_pipeline.py`. The size-plausibility
+  check only catches gross errors and says so.
+- The mesher **records but never converts** `LENGTH_UNIT` (it only compares lengths with
+  each other); it prints it in the banner, so it also lands in the provenance sidecar.
 
 **User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` call — `report_error` (failed write, data at risk → Critical), `report_warning` (failed read → Warning), `report_info` (a precondition, nothing broke → Information), `confirm(..., headless_default=)` (Yes/No). All of them no-op or return the default on a headless platform, which is what keeps tests, CI and the headless pipeline from hanging on a modal. Any new dock widget needs `setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
 

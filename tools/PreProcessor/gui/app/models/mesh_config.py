@@ -9,6 +9,19 @@ from app.models.mesh_config_keys import _KEY_MAP
 
 @dataclass
 class MeshConfig:
+    # Section 0: Units
+    # The unit EVERY length in this config is expressed in — domain bounds, mesh
+    # sizes, BL thickness, seed radii. The mesher never converts them (it only
+    # compares lengths against each other), so this is a label as far as meshing is
+    # concerned. It is not a label to the solver: Linf is metres-per-grid-unit and
+    # Re = fs_UnitRe × Linf, so this is where a mm geometry meshed as metres turns
+    # into a Reynolds number that is wrong by 1000×. See services/units.py.
+    length_unit: str = "m"
+    # Only meaningful when length_unit == "custom" — e.g. a unit-chord aerofoil grid
+    # whose coordinates run 0…1 and whose chord is 25.4 mm.
+    length_unit_metres: float = 1.0
+    length_unit_name: str = ""
+
     # Section 1: Domain
     domain_x_min: float = -10.0
     domain_x_max: float = 10.0

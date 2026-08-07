@@ -13,11 +13,13 @@ from app.views.panels.mesh_config_config_mixin import MeshConfigConfigMixin
 from app.views.panels.mesh_domain_mixin import MeshConfigDomainMixin
 from app.views.panels.mesh_output_mixin import MeshConfigOutputMixin
 from app.views.panels.mesh_config_build_mixin import MeshConfigBuildMixin
+from app.views.panels.mesh_units_mixin import MeshConfigUnitsMixin
 
 
 class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
                       MeshConfigConfigMixin, MeshConfigDomainMixin,
-                      MeshConfigOutputMixin, MeshConfigBuildMixin):
+                      MeshConfigOutputMixin, MeshConfigBuildMixin,
+                      MeshConfigUnitsMixin):
     """Scrollable panel containing editor widgets for all Background_para.dat options."""
     geom_files_changed = pyqtSignal(list)
     mesh_config_changed = pyqtSignal(object)
@@ -117,6 +119,10 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self.add_all_sessions_btn = make_button("Add All", "#1a2a3a")
         self.add_all_sessions_btn.setToolTip("Add all exported PreProcessor sessions to this mesh configuration")
 
+        # ── 0. Model unit ─────────────────────────────────────────────────
+        # First, and not collapsible: it is what every number below means.
+        self._build_units_section()
+
         # ── 1. Domain & Geometry Files ────────────────────────────────────
         # Section builder (combo + bounding box + geometry list + role editor)
         # relocated to MeshConfigDomainMixin.
@@ -155,6 +161,10 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         # the global defaults or the selected geometry's override.
         self._wire_bl_widgets()
         self._global_bl = self._read_bl_widgets()
+
+        # Now that every section's fields exist, stamp the unit on the length ones
+        # (the call inside _build_units_section ran before they were created).
+        self._apply_unit_suffixes()
 
         self._update_domain_source_visibility()
     # Geometry-list / role handlers + get_config/set_config: MeshConfigConfigMixin.

@@ -6,11 +6,12 @@ creates the widgets it owns and appends its section to `self._layout`."""
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QFormLayout, QPushButton, QFileDialog,
-    QLineEdit,
+    QLineEdit, QLabel,
 )
 
 from app.views.collapsible import CollapsibleSection
-from app.utils import align_form_labels, help_label, help_widget
+from app.utils import align_form_labels, help_label, help_widget, SPIN_STYLE
+from app.views.clean_double_spin_box import SciDoubleSpinBox
 from app.views.panels.solver_config_widgets import _spin, _ispin, _edit, _check, _combo
 
 
@@ -135,7 +136,24 @@ class SolverConfigBuildMixin:
         self.fs_unit_re = _spin(2, 0.0, 1e9, "Free-stream unit Reynolds number per meter")
         self.fs_flow_angle = _spin(3, -180.0, 180.0,
                                    "Free-stream flow angle / angle of attack (degrees)")
-        self.linf = _spin(6, 1e-6, 1e6, "Reference length scale (m); 1 if mesh already in metres")
+        # Linf is a PHYSICAL LENGTH in metres, so it follows the SciDoubleSpinBox
+        # rule: a fixed-notation box with a 1e-6 floor cannot express a custom unit
+        # like 2.54e-7 m and would silently clamp it.
+        self.linf = SciDoubleSpinBox()
+        self.linf.setRange(0.0, 1e6)
+        self.linf.setSuffix(" m")
+        self.linf.setStyleSheet(SPIN_STYLE)
+        self.linf.setToolTip(
+            "Metres per grid unit — NOT a free normalisation length.\n"
+            "The manual: \"Length scale used to normalize grid coordinates (in "
+            "meter), input 1 if dimensional in meters\"; an inch grid uses 0.0254.\n\n"
+            "Since fs_UnitRe is per metre, Re = fs_UnitRe x Linf. Derived from the "
+            "Mesh panel's model unit while 'from model unit' is ticked.")
+        self.linf_from_unit = _check(
+            "from model unit",
+            "Keep Linf equal to the Mesh panel's model unit (metres per unit).\n"
+            "Untick only to hold a hand-set Linf — which is how a config written "
+            "before units existed is loaded, so its Reynolds number is preserved.")
         self.gamma = _spin(4, 1.0, 2.0, "Ratio of specific heats Cp/Cv (1.4 for air)")
         self.rgas = _spin(3, 0.0, 1e4, "Perfect-gas constant R (≈287 for air, SI)")
         self.stokes = _spin(4, -10.0, 10.0, "Stokes coefficient for the second viscosity")
@@ -148,8 +166,22 @@ class SolverConfigBuildMixin:
         form.addRow(help_label("AoA (deg):", "Free-stream flow angle / angle of attack"),
                     self.fs_flow_angle)
         form.addRow(help_label("T_inf (K):", "Free-stream temperature"), self.fs_tinf)
-        form.addRow(help_label("Unit Re:", "Free-stream unit Reynolds number"), self.fs_unit_re)
-        form.addRow(help_label("L_inf (m):", "Reference length scale"), self.linf)
+        form.addRow(help_label("Unit Re:", "Free-stream unit Reynolds number (per metre)"),
+                    self.fs_unit_re)
+        form.addRow(help_label("L_inf (m):", "Metres per grid unit — the model unit"),
+                    self.linf)
+        form.addRow("", help_widget(self.linf_from_unit,
+                                    "Derive Linf from the Mesh panel's model unit"))
+        # The derived quantity, shown because it is the one an engineer recognises.
+        # A unit error hides inside Linf; it is obvious in Re.
+        self.ref_reynolds = QLabel("—")
+        self.ref_reynolds.setStyleSheet("color:#8a93ad; font-size:11px;")
+        self.ref_reynolds.setToolTip(
+            "Reference Reynolds number the solver will run at: fs_UnitRe x Linf.\n"
+            "This is the number to sanity-check — a wrong model unit is invisible in "
+            "Linf but unmistakable here.")
+        form.addRow(help_label("→ Re:", "Reference Reynolds number = Unit Re x L_inf"),
+                    self.ref_reynolds)
         form.addRow(help_label("gamma:", "Ratio of specific heats"), self.gamma)
         form.addRow(help_label("Rgas:", "Perfect-gas constant"), self.rgas)
         form.addRow(help_label("Stokes:", "Second-viscosity Stokes coefficient"), self.stokes)

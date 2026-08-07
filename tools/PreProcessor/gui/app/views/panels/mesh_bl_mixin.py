@@ -269,7 +269,9 @@ class MeshConfigBLMixin:
             self.mesh_config_changed.emit(self.get_config())
 
         dlg = PerGeomBLDialog("Global default", dict(self._global_bl),
-                              dict(self._global_bl), apply_cb=_commit, parent=self)
+                              dict(self._global_bl), apply_cb=_commit, parent=self,
+                              length_unit=self.unit_selector.unit(),
+                              length_unit_name=self.unit_selector.custom_name())
         self._show_bl_dialog_modeless(dlg, on_accept=_commit)
 
     def _open_bl_override_dialog(self):
@@ -340,7 +342,9 @@ class MeshConfigBLMixin:
         dlg = PerGeomBLDialog(item.text(), dict(self._global_bl),
                               rinfo.get("bl_params"), segments=segs,
                               seg_grow=seg_grow, highlight_cb=highlight,
-                              apply_cb=_commit, parent=self)
+                              apply_cb=_commit, parent=self,
+                              length_unit=self.unit_selector.unit(),
+                              length_unit_name=self.unit_selector.custom_name())
         # Clear the canvas segment highlight when the dialog finally closes.
         on_finish = (lambda: self.segment_highlight_requested.emit(None)) if segs else None
         self._show_bl_dialog_modeless(dlg, on_accept=_commit, on_finish=on_finish)

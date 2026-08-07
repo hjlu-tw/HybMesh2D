@@ -104,6 +104,57 @@ class PipelineConfig:
             self.cads[0] = value
 
     # ------------------------------------------------------------------ #
+    # Units
+    # ------------------------------------------------------------------ #
+    def unit_warnings(self) -> list:
+        """Cross-stage length-unit problems in this script. Never raises.
+
+        The unit rides inside each section's dict (``mesh.length_unit``,
+        ``solver.linf``), so a script assembled by hand or by editing two halves can
+        state one unit for the geometry and a contradictory ``Linf`` for the solver.
+        Nothing downstream would complain: the mesh would be perfect and the Reynolds
+        number silently wrong by the ratio between them. A headless run has no Solver
+        panel to show the reference Re on, so this is where it gets said.
+        """
+        from app.services import units
+        out = []
+        mesh_unit = units.parse(self.mesh.get("length_unit", ""), "")
+        if not mesh_unit:
+            return out
+        mesh_metres = units.metres_per_unit(
+            mesh_unit, self.mesh.get("length_unit_metres", 1.0) or 1.0)
+
+        for i, cad in enumerate(self.cads or []):
+            cad_unit = units.parse(cad.get("length_unit", ""), "")
+            if cad_unit and cad_unit != mesh_unit:
+                out.append(
+                    f"cads[{i}] is in {units.plural(cad_unit)} but mesh is in "
+                    f"{units.plural(mesh_unit)}. The mesher does not convert "
+                    f"coordinates, so the geometry would be meshed at the wrong scale.")
+
+        linf = self.solver.get("linf")
+        if linf is None:
+            return out
+        try:
+            linf = float(linf)
+        except (TypeError, ValueError):
+            out.append(f"solver.linf is not a number ({linf!r}).")
+            return out
+        if linf <= 0:
+            out.append(f"solver.linf is {linf:g}; it is metres per grid unit and "
+                       f"must be positive (Re = fs_UnitRe x Linf).")
+        elif abs(linf - mesh_metres) > 1e-12 * max(1.0, mesh_metres):
+            implied = units.unit_for_linf(linf)
+            what = (f"a grid in {units.plural(implied)}" if implied
+                    else f"1 grid unit = {linf:g} m")
+            out.append(
+                f"solver.linf = {linf:g} means {what}, but mesh.length_unit is "
+                f"{units.name(mesh_unit)} ({mesh_metres:g} m). Re = fs_UnitRe x Linf, "
+                f"so the Reynolds number is off by "
+                f"{max(linf, mesh_metres) / min(linf, mesh_metres):g}x.")
+        return out
+
+    # ------------------------------------------------------------------ #
     # Persistence
     # ------------------------------------------------------------------ #
     def to_dict(self) -> dict:

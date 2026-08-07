@@ -170,6 +170,9 @@ class MeshConfigConfigMixin:
         # edit scope to global; the selection sync at the end re-points it.
         self._bl_updating = True
         self._bl_target_item = None
+        # 0. Units — applied before the length fields so their suffixes are already
+        # right when the values land, rather than flickering from the old unit.
+        self._units_from_config(cfg)
         # 1. Domain
         self.domain_x_min.setValue(cfg.domain_x_min)
         self.domain_x_max.setValue(cfg.domain_x_max)
@@ -334,6 +337,10 @@ class MeshConfigConfigMixin:
     def get_config(self) -> MeshConfig:
         """Collect widget values and return a MeshConfig model instance."""
         cfg = MeshConfig()
+
+        # 0. Units — read first so anything below that wants to reason about
+        # magnitude has the unit available on cfg.
+        self._units_to_config(cfg)
 
         # 1. Domain
         cfg.domain_x_min = self.domain_x_min.value()

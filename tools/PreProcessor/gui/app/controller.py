@@ -52,6 +52,7 @@ from app.controllers import (
     ExtrudeControllerMixin,
     PipelineControllerMixin,
     UndoControllerMixin,
+    UnitsControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 )
@@ -93,6 +94,7 @@ class AppController(
     ExtrudeControllerMixin,
     PipelineControllerMixin,
     UndoControllerMixin,
+    UnitsControllerMixin,
     SignalWiringMixin,
     LifecycleControllerMixin,
 ):
@@ -309,12 +311,24 @@ class AppController(
         # a distinct cfg arrives (i.e. from a role edit), never on the self-apply.
         gmc = getattr(self, "global_mesh_config", None)
         if gmc is not None and cfg is not gmc:
+            # The model unit lives on the shared config too, so the CAD sidebar and
+            # the solver's Linf follow a unit change made here (sync below).
+            gmc.length_unit = getattr(cfg, "length_unit", gmc.length_unit)
+            gmc.length_unit_metres = getattr(cfg, "length_unit_metres",
+                                             gmc.length_unit_metres)
+            gmc.length_unit_name = getattr(cfg, "length_unit_name",
+                                           gmc.length_unit_name)
             gmc.geom_roles = dict(getattr(cfg, "geom_roles", {}) or {})
             # #4: keep per-group BC assignments current so the Solver "Detect from
             # Mesh" pre-seeds them even if the user hasn't regenerated since.
             gmc.group_bc = dict(getattr(cfg, "group_bc", {}) or {})
         mw.mesh_canvas_view.update_mesh_config(cfg)
         self._refresh_mesh_previews(cfg)
+        # Relabel the CAD-stage length fields and re-derive the solver's Linf. Cheap
+        # and idempotent, so it runs on every config change rather than only on the
+        # unit combo — a unit that reaches the mesh config by any other route (a
+        # loaded .dat, a pipeline script, a workspace) must propagate too.
+        self.sync_length_unit()
 
 
     def active_session(self) -> GeometrySession | None:
@@ -384,7 +398,8 @@ class AppController(
         if session is self.active_session():
             self.main_window.sidebar_view.geom_stats_panel.update_stats(
                 points, closed=bool(pm.is_closed),
-                n_segments=len(session.project_model.segments))
+                n_segments=len(session.project_model.segments),
+                unit=self.length_unit_symbol())
 
         # Warn (red markers + log) about open / unstitched boundary endpoints.
         if session is self.active_session():

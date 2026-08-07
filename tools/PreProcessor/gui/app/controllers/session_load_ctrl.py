@@ -14,9 +14,17 @@ class SessionLoadControllerMixin:
         file_paths, _ = QFileDialog.getOpenFileNames(
             self.main_window, "Open Geometry File(s)",
             "examples/geometries", "Data Files (*.dat)")
+        if not file_paths:
+            return
+        # A .dat carries no unit, so this is where the 1000x mistake is caught. Asked
+        # once for the whole selection (an assembly's parts are one decision) and
+        # defaulting to no conversion, so an unread dialog cannot damage the import.
+        factor = self._ask_import_scale(len(file_paths))
+        if factor is None:
+            return
         for fp in file_paths:
             if os.path.exists(fp):
-                self._load_geometry_file(fp)
+                self._load_geometry_file(fp, unit_scale=factor)
             else:
                 self.main_window.log_panel.log(f"File not found: {fp}")
 
@@ -30,13 +38,26 @@ class SessionLoadControllerMixin:
         file_paths, _ = QFileDialog.getOpenFileNames(
             self.main_window, "Import STL Surface(s) — z=0 only",
             "examples/geometries", "STL Files (*.stl)")
+        if not file_paths:
+            return
+        # STL is the worst offender: the format has no unit field at all, and CAD
+        # packages export millimetres by default.
+        factor = self._ask_import_scale(len(file_paths))
+        if factor is None:
+            return
         for fp in file_paths:
             if os.path.exists(fp):
-                self._load_stl_file(fp)
+                self._load_stl_file(fp, unit_scale=factor)
             else:
                 self.main_window.log_panel.log(f"File not found: {fp}")
 
-    def _load_stl_file(self, file_path: str):
+    def _ask_import_scale(self, n_files: int):
+        """Scale factor for an import (1.0 = none), or None if cancelled."""
+        from app.views.import_unit_dialog import ask_import_unit
+        code, metres, nm = self.model_length_unit()
+        return ask_import_unit(self.main_window, code, n_files, metres, nm)
+
+    def _load_stl_file(self, file_path: str, unit_scale: float = 1.0):
         """Load a planar (z=0) STL, auto-detect its boundary outline as surface
         points, and bring each detected loop in as a geometry session.
 
@@ -66,7 +87,8 @@ class SessionLoadControllerMixin:
             except Exception as e:
                 self.main_window.log_panel.log(f"[STL] Could not stage loop {i + 1}: {e}")
                 continue
-            self._load_geometry_file(dat_path, record_recent=False)
+            self._load_geometry_file(dat_path, record_recent=False,
+                                     unit_scale=unit_scale)
 
         # Record the original STL (not the temp .dat) in the recent-files list.
         self.update_recent_files(os.path.abspath(file_path))
@@ -75,12 +97,13 @@ class SessionLoadControllerMixin:
             f"Imported STL '{os.path.basename(file_path)}' — detected "
             f"{len(loops)} boundary loop(s), {n_total} surface points (z=0 plane).")
 
-    def _load_geometry_file(self, file_path: str, record_recent: bool = True):
+    def _load_geometry_file(self, file_path: str, record_recent: bool = True,
+                            unit_scale: float = 1.0):
         if file_path.lower().endswith(".json"):
             self._load_json_config_direct(file_path)
             return
         if file_path.lower().endswith(".stl"):
-            self._load_stl_file(file_path)
+            self._load_stl_file(file_path, unit_scale=unit_scale)
             return
         try:
             # Check if active session is empty/untitled and has no loaded points
@@ -101,6 +124,14 @@ class SessionLoadControllerMixin:
             session.project_model.output_file = session.default_output_path
             from app.services.geometry_service import load_points_dat
             session.original_points = load_points_dat(file_path)
+            # Unit conversion happens HERE, once, before split detection or anything
+            # else derives from the coordinates — a later rescale would leave every
+            # derived index and spacing referring to the old scale.
+            if unit_scale != 1.0 and session.original_points is not None:
+                session.original_points = session.original_points * unit_scale
+                self.main_window.log_panel.log(
+                    f"  scaled by {unit_scale:.10g} to the model unit "
+                    f"({self.length_unit_symbol()})")
 
             abs_path = os.path.abspath(file_path)
             if abs_path not in session.mesh_config.geom_files:

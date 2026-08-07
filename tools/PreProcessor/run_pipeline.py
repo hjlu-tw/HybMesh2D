@@ -72,6 +72,26 @@ def main() -> int:
         return 2
     log(f"=== HybMesh pipeline: {pcfg.name} ===")
 
+    # Units. Reported, not enforced: a mismatch is often deliberate mid-experiment,
+    # and refusing to run would be worse than saying so loudly. A headless run has no
+    # Solver panel showing the reference Reynolds number, so this line is the only
+    # place a 1000x Linf error becomes visible before the results are believed.
+    from app.services import units as _units
+    _mesh_unit = _units.parse(pcfg.mesh.get("length_unit", ""), "")
+    if _mesh_unit:
+        _m = _units.metres_per_unit(
+            _mesh_unit, pcfg.mesh.get("length_unit_metres", 1.0) or 1.0)
+        log(f"[INFO] model unit: {_units.describe(_mesh_unit, _m)}")
+        try:
+            _re = float(pcfg.solver.get("fs_unit_re", 0)) * float(
+                pcfg.solver.get("linf", 0) or 0)
+            if _re > 0:
+                log(f"[INFO] reference Reynolds number: fs_UnitRe x Linf = {_re:.6g}")
+        except (TypeError, ValueError):
+            pass
+    for _w in pcfg.unit_warnings():
+        log(f"[WARNING] units: {_w}")
+
     try:
         out = pipeline_runner.run_pipeline(
             pcfg, log=log, run_solver=not args.no_solver,

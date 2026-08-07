@@ -70,10 +70,16 @@ class GeomStatsPanel(QWidget):
         """Show "—" everywhere (no geometry, or an empty session)."""
         self.update_stats(None)
 
-    def update_stats(self, points, *, closed: bool = False, n_segments: int = 0):
-        """Recompute and display. ``points`` may be None/empty."""
+    def update_stats(self, points, *, closed: bool = False, n_segments: int = 0,
+                     unit: str = ""):
+        """Recompute and display. ``points`` may be None/empty.
+
+        ``unit`` labels the length rows. Without it the read-out is a set of bare
+        numbers, which for a panel whose whole purpose is to let someone judge sizes
+        before meshing is half a feature.
+        """
         stats = geometry_stats.compute(points, closed=closed, n_segments=n_segments)
-        text = geometry_stats.fmt(stats)
+        text = geometry_stats.fmt(stats, unit)
         for key, value in self._values.items():
             value.setText(text.get(key, "—"))
         # Only the uniformity row changes colour: it is the only one that carries a

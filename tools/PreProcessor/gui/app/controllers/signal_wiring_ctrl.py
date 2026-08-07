@@ -259,6 +259,9 @@ class SignalWiringMixin:
         sp.build_phi_shape_btn.clicked.connect(self.generate_phi_from_cad_shape)
         sp.bc_dll_btn.clicked.connect(self.open_bc_dll_builder)
         sp.probe_coords_btn.clicked.connect(self.open_probe_coords_dialog)
+        # Linf mode: ticking "from model unit" must re-derive Linf immediately, or the
+        # panel shows a stale reference Reynolds number until the next run.
+        sp.linf_from_unit.toggled.connect(self.on_linf_mode_changed)
         self.init_solver()
 
         # Immersed-solid (STL3d) panel

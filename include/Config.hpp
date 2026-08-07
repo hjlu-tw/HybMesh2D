@@ -167,6 +167,30 @@ struct Config {
     // 預設關閉，行為與舊版逐位元相同；開啟後角點仍維持既有 fan/merge 處理。
     bool blUseAnalyticGeom = false;
 
+    // Units. The unit every length in this config (and in the geometry files) is
+    // expressed in. The mesher deliberately does NOT convert anything: it only ever
+    // compares lengths against each other, so rescaling them would change nothing
+    // except the chance of a bug. It records the unit because the SOLVER is
+    // dimensional — Linf is metres-per-grid-unit and Re = fs_UnitRe * Linf — so a
+    // mesh must not travel downstream without saying what its coordinates mean.
+    // lengthUnitMetres is used only for lengthUnit == "custom".
+    std::string lengthUnit = "m";
+    double lengthUnitMetres = 1.0;
+    std::string lengthUnitName = "";
+
+    // Metres per model unit, i.e. the solver's Linf. Kept here (rather than in the
+    // GUI alone) so a hand-written config still reports a coherent unit.
+    double metresPerUnit() const {
+        if (lengthUnit == "custom") return lengthUnitMetres > 0.0 ? lengthUnitMetres : 1.0;
+        if (lengthUnit == "m")  return 1.0;
+        if (lengthUnit == "cm") return 1.0e-2;
+        if (lengthUnit == "mm") return 1.0e-3;
+        if (lengthUnit == "um") return 1.0e-6;
+        if (lengthUnit == "in") return 0.0254;
+        if (lengthUnit == "ft") return 0.3048;
+        return 1.0;   // unknown code: behave as dimensionless rather than refuse to run
+    }
+
     // StarCD 邊界字串
     std::string bcXMin = "wall", bcXMax = "wall", bcYMin = "wall", bcYMax = "wall", bcGeom = "wall";
 
@@ -366,6 +390,16 @@ struct Config {
             else if (key == "OUTPUT_FILENAME") {
                 ss >> outputFilename;
             }
+            else if (key == "LENGTH_UNIT") {
+                std::string u; ss >> u;
+                if (!u.empty()) lengthUnit = u;
+            }
+            else if (key == "LENGTH_UNIT_METRES") {
+                double v; if (ss >> v && v > 0.0) lengthUnitMetres = v;
+            }
+            else if (key == "LENGTH_UNIT_NAME") {
+                ss >> lengthUnitName;
+            }
         }
         return true;
     }
@@ -511,6 +545,12 @@ struct Config {
         os << "==================================================\n\n";
 
         os << "[ Input & Domain ]\n";
+        // Printed first, and deliberately in the banner rather than only in the
+        // config file: every length below is meaningless without it, and this is the
+        // number the solver needs as Linf (Re = fs_UnitRe * Linf).
+        os << "  - Model Unit           : "
+           << (lengthUnitName.empty() ? lengthUnit : lengthUnitName)
+           << "  (1 unit = " << metresPerUnit() << " m; solver Linf)\n";
         os << "  - Geometry Files       : ";
         if (geomFiles.empty()) {
             os << "NONE\n";

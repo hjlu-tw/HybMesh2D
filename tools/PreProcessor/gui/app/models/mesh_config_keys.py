@@ -5,6 +5,11 @@ from __future__ import annotations
 # Kept in its own tiny module so mesh_config.py and mesh_config_io.py can both
 # import it without a circular import.
 _KEY_MAP = {
+    # Units: a label to the mesher, a real number to the solver (Linf). See
+    # app/services/units.py for why the two differ.
+    "LENGTH_UNIT": ("length_unit", str),
+    "LENGTH_UNIT_METRES": ("length_unit_metres", float),
+    "LENGTH_UNIT_NAME": ("length_unit_name", str),
     "DOMAIN_X_MIN": ("domain_x_min", float),
     "DOMAIN_X_MAX": ("domain_x_max", float),
     "DOMAIN_Y_MIN": ("domain_y_min", float),

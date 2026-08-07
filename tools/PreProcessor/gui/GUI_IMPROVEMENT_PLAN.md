@@ -86,7 +86,7 @@
 
 - [x] **自動存檔 / 崩潰復原**：`controller.py` 每 60s checkpoint 已修改的 session 至穩定路徑 `tempfile.gettempdir()/hybmesh_preprocessor_autosave.hws`；啟動偵測殘留檔→提示復原；乾淨關閉刪除檔並停止 timer；背景寫檔失敗（如暫態 NaN）靜默略過
 - [x] **格式遷移工具**（地基）：`format_version` 已落地，載入端對缺欄位視為 legacy(0) 容錯、較新版本給警告。v0→v1 為加欄位相容，無需破壞性遷移；待真正不相容變更時再加 migrate 函式
-- [ ] **單位系統**（**未做 — 大型跨元件，建議獨立進行**）：需 config/JSON 加 `"unit"`、GUI 載入轉換、且 **C++ 端對應**；牽涉求解器數值，風險高，不宜與本批一起倉促導入
+- [x] **單位系統**（2026-08-07）—— 見下方專節
 - [x] **幾何統計面板**（2026-08-06）：CAD sidebar 新增「Geometry Statistics」摺疊區（預設收起 —— sidebar 固定 360px，edge properties 優先）
   - `services/geometry_stats.py`（Qt-free）：點數/段數/開閉/bbox/範圍/周長/間距 min-mean-max/**均勻度**
   - **最有價值的是均勻度**：相鄰間距的最大擴張比。超過 1.2× 會讓 BL 長得很差，而在此之前只能「產生網格看它爆掉」才發現。門檻與 `.dat` quality heatmap 一致，兩者不會互相矛盾
@@ -343,6 +343,54 @@ geometric 現在都有 **By End Spacing** 模式。過程中修正兩件事：
 `flash_status()` 讓原本只進 log panel 的訊息（如 undo）也能在不開 log 的情況下被看到，且**不會覆蓋常駐欄位**。
 
 `tests/test_status_bar.py`（24 checks）；全套 **36/36**。**需你實機確認**：狀態列高度與各欄位寬度。
+
+### 已完成：長度單位系統（2026-08-07）
+
+> 我原本把這項列為「純跨元件工程、風險高」。查了求解器手冊後**前提要修正**：這不是標示問題，
+> 是**數值正確性**問題，而且錨點就寫在手冊裡。
+
+`docs/UNICONES User Manual V0.6.pdf`：`fs_UnitRe` 是 **per meter**，`Linf` 是
+「Length scale used to normalize grid coordinates (**in meter**), input 1 if dimensional in
+meters」，手冊自己的範例寫 `Linf 0.0254 //to convert mesh to meter`（網格用英寸）。所以
+
+    Re = fs_UnitRe × Linf，而 Linf 就是「1 個網格單位等於幾公尺」
+
+**mm 幾何用預設 `Linf = 1` 跑，雷諾數就差 1000 倍，而網格圖看起來完全正常。** 這才是這一項要關掉的 bug。
+
+- [x] **`Linf` 由宣告單位推導，不是自己填**（`SolverConfig.linf_from_unit`，新設定預設 True）
+  - `load_from_dict` 對「有手填 `linf`、沒有 `length_unit`」的舊檔**關掉**推導並保留原值 ——
+    否則會把一個原本跑得正確的案例的雷諾數悄悄改掉。改成由 `unit_check()` **報告**差異，
+    而且講具體：「`Linf = 0.0254` 意思是英寸網格，但宣告單位是公尺，Re 差 39.37 倍」
+- [x] **改單位只換標示，絕不重新縮放**。只有兩件事會動數值：`Linf`，以及**匯入時**的座標
+  （`views/import_unit_dialog.py`：每次匯入動作只問一次、預設不換算、headless 靜默 no-op）
+  - 匯入對話框把後果寫成數字（「座標將乘以 0.001」），而不是「將進行單位換算」—— 這是刻意破壞性的操作
+- [x] **單位顯示用 spin box 自己的 `setSuffix`，不寫進 label 文字**：後綴掛在持有那個數字的
+  widget 上，不會被漏掉；改寫 label 要跨五個 mixin 抓幾十個 QLabel 參照，而且以後新增欄位一定漏
+  - 實測 `SciDoubleSpinBox` 與 suffix 完全相容：`1.2e-07 mm` 往返正確、含/不含後綴輸入都通過驗證、
+    `specialValueText`（"auto"/"unset"）不被破壞
+  - **只有物理長度有單位**；成長率、角度、層數不能有 —— 給無因次量掛單位是「看起來很權威的謊」
+  - `LENGTH_FIELDS` 必須等於面板的 `SciDoubleSpinBox` 集合，`tests/test_units.py` 靜態擋住
+    （N4 的規則反過來給了我一份精確清單）
+- [x] **自訂單位是一等公民**：0…1 的單弦翼型網格（弦長 25.4 mm）不是公尺也不是英寸，
+  就是「1 單位 = 0.0254 m」。支援它之後「Linf 由單位推導」對**每個**專案都成立
+- [x] **真正的防線是把錯誤變成看得見的數字**：Solver 面板即時顯示
+  `→ Re = fs_UnitRe × Linf`。手冊的 double-cone 案例精確重現 **Re = 5805**；同一個網格改宣告成 mm
+  就顯示 **228.5**
+  - **尺寸合理性啟發式幾乎沒用，程式碼裡直接寫明**：4500 mm 誤當 4500 m 對一艘船完全合理，
+    任何寬到不會誤判的區間都抓不到它。只保留「離譜級」防線（1e-8…1e6 m），不假裝知道答案
+- [x] headless：`run_pipeline.py` 印 `[INFO] model unit` 與 `[INFO] reference Reynolds number`，
+  並用 `PipelineConfig.unit_warnings()` 檢查 `cads`/`mesh`/`solver` 三段是否互相矛盾（**報告不阻擋**）
+- [x] **C++ 端**：`Config.hpp` 解析 `LENGTH_UNIT` / `_METRES` / `_NAME`，banner 印
+  `- Model Unit`（因此也進 provenance sidecar）。**只記錄、不換算** —— 網格器只拿長度互相比較，
+  換算它們只會多一個 bug 的機會。GUI↔C++ 鍵 parity 由既有 gate 擋住
+- [x] 我自己踩到並修掉的兩個 bug：
+  1. 用 `push_panel_config(panel, scfg)` 同步 `Linf` 會呼叫 `set_config`，把使用者剛打進 Solver
+     面板的 `Unit Re` 一起覆蓋掉。衍生欄位只能改自己那一個 widget（包在 `suppress_project_undo()` 裡）
+  2. `ndarray.ptp()` 在 NumPy 2.0 已移除
+- [x] `tests/test_units.py`（57 checks，含用**真實已建置 binary** 驗 `LENGTH_UNIT in` → 0.0254）；
+  全套 **40/40**，實跑 naca0012 網格與 headless pipeline 驗證
+
+**未做**：`.dat`/`.stl` 匯出時不寫單位（兩種格式都沒有單位欄位；資訊留在 config/workspace/provenance 裡）。
 
 ### 部分完成：N9 i18n（2026-08-06）
 

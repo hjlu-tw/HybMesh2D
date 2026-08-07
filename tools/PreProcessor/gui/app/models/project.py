@@ -38,6 +38,15 @@ class ProjectModel:
         self.global_spline: bool = False
         self.transform: dict | None = None  # scale, rotate, translate
 
+        # The unit this geometry's coordinates and every spacing in it are expressed
+        # in (see app/services/units.py). Nothing here converts on the strength of it:
+        # changing the unit relabels, and rescaling coordinates is the explicit
+        # import-conversion path. It travels downstream because the solver's Linf is
+        # metres-per-grid-unit, so losing it means losing the Reynolds number.
+        self.length_unit: str = "m"
+        self.length_unit_metres: float = 1.0   # only for length_unit == "custom"
+        self.length_unit_name: str = ""
+
     # ── Segment management ────────────────────────────────────────────────
 
     @staticmethod
@@ -283,6 +292,15 @@ class ProjectModel:
         self.is_closed = config.get("is_closed", True)
         self.global_spline = config.get("global_spline", False)
         self.transform = copy.deepcopy(config.get("transform", None))
+        # A config predating units keeps the default: its numbers were already
+        # self-consistent, so declaring them metres changes no mesh and no Linf.
+        from app.services import units
+        self.length_unit = units.parse(config.get("length_unit", ""), "m")
+        try:
+            self.length_unit_metres = float(config.get("length_unit_metres", 1.0)) or 1.0
+        except (TypeError, ValueError):
+            self.length_unit_metres = 1.0
+        self.length_unit_name = str(config.get("length_unit_name", "") or "")
 
         self.segments = []
         for i, sj in enumerate(config.get("segments", [])):
@@ -303,7 +321,15 @@ class ProjectModel:
             # Resolved value kept for forward-compat (older builds read this).
             "is_closed": self.is_closed,
             "segments": [seg.to_dict() for seg in self.segments],
+            # Always written, even when it is the default: a geometry config whose
+            # unit is merely implied is how a millimetre model ends up meshed as
+            # metres. The resampler ignores the value (it only compares lengths).
+            "length_unit": self.length_unit,
         }
+        if self.length_unit == "custom":
+            config["length_unit_metres"] = self.length_unit_metres
+            if self.length_unit_name:
+                config["length_unit_name"] = self.length_unit_name
         if self.global_spline:
             config["global_spline"] = True
         if self.transform:

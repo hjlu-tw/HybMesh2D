@@ -206,7 +206,13 @@ class PerGeomBLDialog(QDialog):
     def __init__(self, geom_name: str, defaults: dict, current: dict | None,
                  segments: list[tuple[int, str, str]] | None = None,
                  seg_grow: dict | None = None, highlight_cb=None,
-                 apply_cb=None, parent=None):
+                 apply_cb=None, parent=None, length_unit: str = "",
+                 length_unit_name: str = ""):
+        # The unit is passed in rather than read from a global: this dialog holds the
+        # first-cell height, the one number in the whole GUI where getting the unit
+        # wrong by 1000x still produces a mesh that looks plausible.
+        self._length_unit = length_unit
+        self._length_unit_name = length_unit_name
         super().__init__(parent)
         self.setWindowTitle(f"Boundary Layer — {geom_name}")
         self.setStyleSheet("background:#121422; color:#cdd6f4;")
@@ -286,6 +292,12 @@ class PerGeomBLDialog(QDialog):
                 # so "dec"/"step" do not apply.
                 w = SciDoubleSpinBox()
                 w.setRange(opt["lo"], opt["hi"])
+                # sci=True marks a physical length, so it is exactly the set that
+                # carries the model unit.
+                if getattr(self, "_length_unit", ""):
+                    from app.services import units
+                    w.setSuffix(" " + units.symbol(self._length_unit,
+                                                   self._length_unit_name))
             else:
                 w = CleanDoubleSpinBox(); w.setRange(opt["lo"], opt["hi"])
                 w.setDecimals(opt["dec"]); w.setSingleStep(opt.get("step", 0.1))

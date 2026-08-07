@@ -13,6 +13,7 @@ from app.views.panels.solver_config_build_mixin import SolverConfigBuildMixin
 from app.views.panels.solver_config_build_mixin_b import SolverConfigBuildMixinB
 from app.views.panels.solver_config_bc_mixin import SolverConfigBCMixin
 from app.views.panels.solver_config_sync_mixin import SolverConfigSyncMixin
+from app.views.panels.solver_units_mixin import SolverUnitsMixin
 
 
 _SCROLLBAR_QSS = """
@@ -24,7 +25,8 @@ _SCROLLBAR_QSS = """
 
 
 class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMixinB,
-                        SolverConfigBCMixin, SolverConfigSyncMixin):
+                        SolverConfigBCMixin, SolverConfigSyncMixin,
+                        SolverUnitsMixin):
     """Sidebar panel editing every SolverConfig parameter.
 
     The controller (Phase 3) connects run_solver_btn / cancel_solver_btn and
@@ -136,3 +138,5 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMi
         self._update_decompose_visibility()
         self._update_shock_visibility()
         self._update_restart_visibility()
+        # Linf mode + the derived reference-Reynolds read-out (SolverUnitsMixin).
+        self._wire_unit_widgets()

@@ -1,7 +1,9 @@
 from __future__ import annotations
 import os
-import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
+
+from app.models.solver_config_io import SolverConfigIOMixin
+from app.models.solver_config_units import SolverConfigUnitsMixin
 
 
 def _repo_root() -> str:
@@ -95,7 +97,7 @@ PRESETS: dict[str, dict] = {
 
 
 @dataclass
-class SolverConfig:
+class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
     """Full configuration for the unicones solver pipeline.
 
     Drives three stages: getPGrid (STAR-CD -> .grid/.bc), the optional
@@ -148,7 +150,27 @@ class SolverConfig:
     fs_tinf: float = 273.0
     fs_unit_re: float = 200.0
     fs_flow_angle: float = 0.0          # angle of attack (deg), manual fs_flow_angle
+    # Linf is metres-per-grid-unit, NOT a free normalisation length: the manual says
+    # "Length scale used to normalize grid coordinates (in meter), input 1 if
+    # dimensional in meters", and its own sample reads `Linf 0.0254 //to convert mesh
+    # to meter` for an inch grid. Since fs_UnitRe is per metre, Re = fs_UnitRe * Linf
+    # — so a millimetre mesh left at Linf = 1 gives a Reynolds number 1000x wrong
+    # while every mesh picture still looks perfect.
     linf: float = 1.0
+    # The model length unit Linf is derived from (see services/units.py). Kept here so
+    # the solver stage knows what the grid coordinates mean without asking the CAD
+    # stage, which matters for a case dir prepared from a bare .vrt/.cel/.bnd.
+    length_unit: str = "m"
+    length_unit_metres: float = 1.0     # only for length_unit == "custom"
+    # When True (the default for anything created after units existed), linf is kept
+    # equal to metres_per_unit(length_unit) and the field is read-only in the GUI.
+    #
+    # It exists to be switched OFF, once: a config written before this key existed
+    # carries a hand-set Linf and no unit, so deriving would silently overwrite a real
+    # physical setting with 1.0 and change Re. from_dict turns it off for exactly
+    # those, keeps their number, and unit_check() then reports the discrepancy in
+    # concrete terms instead of correcting it behind the user's back.
+    linf_from_unit: bool = True
     gamma: float = 1.4
     rgas: float = 287.0
     stokes: float = 0.0
@@ -443,42 +465,3 @@ class SolverConfig:
 
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(L) + "\n")
-
-    # ------------------------------------------------------------------ #
-    # Persistence (JSON)
-    # ------------------------------------------------------------------ #
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    def load_from_dict(self, d: dict):
-        # Coerce each value to the type of the current field default, mirroring
-        # MeshConfig.load_from_dict: a hand-written pipeline JSON that quotes a
-        # number (e.g. "num_half_iter": "200") still lands as the right type
-        # instead of a str that later crashes ":g"/arithmetic formatting. A value
-        # that can't be converted is kept as-is (no worse than a raw assignment).
-        for k, v in d.items():
-            if not hasattr(self, k):
-                continue
-            cur = getattr(self, k)
-            try:
-                if isinstance(cur, bool):
-                    v = (v.strip().lower() in ("1", "true", "yes", "on")
-                         if isinstance(v, str) else bool(v))
-                elif isinstance(cur, int):        # bool already handled above
-                    v = int(float(v))
-                elif isinstance(cur, float):
-                    v = float(v)
-            except (TypeError, ValueError):
-                pass
-            setattr(self, k, v)
-
-    def save_to_file(self, path: str):
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2)
-
-    def load_from_file(self, path: str):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Solver config not found: {path}")
-        with open(path, encoding="utf-8") as f:
-            self.load_from_dict(json.load(f))
