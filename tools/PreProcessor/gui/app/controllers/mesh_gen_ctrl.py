@@ -104,12 +104,15 @@ class MeshGenControllerMixin:
     def preview_mesh_generator(self):
         """Update and fit the canvas view to the current geometry input files and domain box coordinates."""
         cfg = self.main_window.mesh_config_panel.get_config()
-        if cfg.domain_x_min >= cfg.domain_x_max:
-            self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
-            return
-        if cfg.domain_y_min >= cfg.domain_y_max:
-            self.main_window.log_panel.log("[ERROR] Domain Y Min must be strictly less than Y Max.")
-            return
+        # Only the rectangular box has coordinates to check: a custom domain
+        # outline hides those fields and supplies the extent itself.
+        if cfg.domain_file is None:
+            if cfg.domain_x_min >= cfg.domain_x_max:
+                self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
+                return
+            if cfg.domain_y_min >= cfg.domain_y_max:
+                self.main_window.log_panel.log("[ERROR] Domain Y Min must be strictly less than Y Max.")
+                return
         self.global_mesh_config = cfg
 
         self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
@@ -156,7 +159,8 @@ class MeshGenControllerMixin:
         # Diagnostic: report the geometry files actually handed to HybMesh2D.
         # (A geometry that previews on the canvas but is missing/empty here is the
         # usual cause of "mesh generates but shows no boundary/BL".)
-        geom_bbox = None  # (xmin, ymin, xmax, ymax) of the boundary geometry
+        geom_bbox = None    # (xmin, ymin, xmax, ymax) of the boundary geometry
+        domain_bbox = None  # ditto for the custom outer-domain outline, if any
         if not cfg.geom_files:
             self.main_window.log_panel.log(
                 "[WARNING] No geometry files in the mesh config — the mesh will "
@@ -164,14 +168,13 @@ class MeshGenControllerMixin:
                 "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
                 "Layers) so it is written to a .dat first.")
         else:
-            bbox = self._scan_geometry_files(cfg)
-            geom_bbox = bbox
+            geom_bbox, domain_bbox = self._scan_geometry_files(cfg)
 
         # Pre-flight parameter validation: block on errors (invalid domain,
         # non-positive sizes, shrinking BL) BEFORE launching the backend, and
         # log advisory warnings. This turns a cryptic C++ crash into an
         # actionable message pointing at the offending parameter.
-        errors, warnings = cfg.validate(geom_bbox=geom_bbox)
+        errors, warnings = cfg.validate(geom_bbox=geom_bbox, domain_bbox=domain_bbox)
         for w in warnings:
             self.main_window.log_panel.log(f"[WARNING] {w}")
         if errors:
@@ -225,17 +228,24 @@ class MeshGenControllerMixin:
         self.main_window.claim_progress("mesh", determinate=True)
         self._mesh_worker.start()
 
-    def _scan_geometry_files(self, cfg) -> tuple | None:
+    def _scan_geometry_files(self, cfg) -> tuple:
         """Log each geometry file's point count (a body that previews but is
-        missing/empty here is the usual cause of "no boundary/BL") and return the
-        combined bounding box of the boundary geometry as (xmin, ymin, xmax,
-        ymax), or None if nothing usable was read. Seeds and the outer-domain
-        outline are excluded from the bbox (containment is only about bodies)."""
+        missing/empty here is the usual cause of "no boundary/BL") and return
+        ``(geom_bbox, domain_bbox)``, each an (xmin, ymin, xmax, ymax) or None
+        when nothing usable was read.
+
+        The two are kept apart because containment is about bodies inside the
+        domain: `geom_bbox` covers the boundary bodies only (seeds and the
+        outer-domain outline excluded), `domain_bbox` covers the custom outline
+        that *is* the domain."""
         import numpy as np
         boundary = set(cfg.boundary_files)
+        domain_path = cfg.domain_file
         mins = [float("inf"), float("inf")]
         maxs = [float("-inf"), float("-inf")]
-        have = False
+        dmins = [float("inf"), float("inf")]
+        dmaxs = [float("-inf"), float("-inf")]
+        have = have_dom = False
         for gf in cfg.geom_files:
             if not os.path.exists(gf):
                 self.main_window.log_panel.log(f"[WARNING] Geometry file missing: {gf}")
@@ -254,18 +264,21 @@ class MeshGenControllerMixin:
                 continue
             self.main_window.log_panel.log(
                 f"[geom] {os.path.basename(gf)} ({len(pts)} points)")
-            if gf in boundary and pts.size and pts.shape[1] >= 2:
+            is_boundary, is_domain = gf in boundary, gf == domain_path
+            if (is_boundary or is_domain) and pts.size and pts.shape[1] >= 2:
                 xy = pts[:, :2]
                 xy = xy[np.isfinite(xy).all(axis=1)]
                 if xy.size:
-                    mins[0] = min(mins[0], float(xy[:, 0].min()))
-                    mins[1] = min(mins[1], float(xy[:, 1].min()))
-                    maxs[0] = max(maxs[0], float(xy[:, 0].max()))
-                    maxs[1] = max(maxs[1], float(xy[:, 1].max()))
-                    have = True
-        if not have:
-            return None
-        return (mins[0], mins[1], maxs[0], maxs[1])
+                    lo = [float(xy[:, 0].min()), float(xy[:, 1].min())]
+                    hi = [float(xy[:, 0].max()), float(xy[:, 1].max())]
+                    if is_boundary:
+                        mins = [min(mins[i], lo[i]) for i in (0, 1)]
+                        maxs = [max(maxs[i], hi[i]) for i in (0, 1)]
+                        have = True
+                    if is_domain:
+                        dmins, dmaxs, have_dom = lo, hi, True
+        return ((mins[0], mins[1], maxs[0], maxs[1]) if have else None,
+                (dmins[0], dmins[1], dmaxs[0], dmaxs[1]) if have_dom else None)
 
     def _on_mesh_gen_progress(self, pct: int):
         self.main_window.set_progress("mesh", pct)

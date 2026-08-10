@@ -323,7 +323,8 @@ class MeshConfig:
         present = set(self.geom_files) | {os.path.abspath(g) for g in self.geom_files}
         self.geom_roles = {k: v for k, v in self.geom_roles.items() if k in present}
 
-    def validate(self, geom_bbox: tuple | None = None) -> tuple[list[str], list[str]]:
+    def validate(self, geom_bbox: tuple | None = None,
+                 domain_bbox: tuple | None = None) -> tuple[list[str], list[str]]:
         """Pre-flight parameter sanity check, returning (errors, warnings).
 
         Errors are conditions that would make the backend crash or produce
@@ -335,15 +336,40 @@ class MeshConfig:
 
         ``geom_bbox`` is an optional (xmin, ymin, xmax, ymax) of the boundary
         geometry; when supplied, containment against the domain is checked.
+        ``domain_bbox`` is the same for the custom outer-domain outline, and is
+        what containment is checked against when one is defined.
+
+        **Every domain check here is about the domain the run will actually
+        use.** With a custom outline (`domain_file`) the rectangular box is
+        hidden in the panel and overwritten from the geometry by the mesher, so
+        validating it would block a perfectly valid run on numbers nobody set
+        or can see. Config.hpp::validate() gates its own domain-span check on
+        `domainFile.empty()` for exactly this reason — the two must agree.
         """
         errors: list[str] = []
         warnings: list[str] = []
+        custom_domain = self.domain_file is not None
 
         # ── Domain ────────────────────────────────────────────────────────
-        if self.domain_x_min >= self.domain_x_max:
-            errors.append("Domain X Min must be strictly less than X Max.")
-        if self.domain_y_min >= self.domain_y_max:
-            errors.append("Domain Y Min must be strictly less than Y Max.")
+        if not custom_domain:
+            if self.domain_x_min >= self.domain_x_max:
+                errors.append("Domain X Min must be strictly less than X Max.")
+            if self.domain_y_min >= self.domain_y_max:
+                errors.append("Domain Y Min must be strictly less than Y Max.")
+        elif domain_bbox is None:
+            warnings.append(
+                "Custom domain outline could not be read; its extent-based "
+                "checks (BL overrun, geometry containment) were skipped.")
+
+        # The extent every advisory check below measures against: the outline's
+        # bounds for a custom domain, the rectangular box otherwise.
+        if custom_domain:
+            dom = domain_bbox
+        elif self.domain_x_min < self.domain_x_max and self.domain_y_min < self.domain_y_max:
+            dom = (self.domain_x_min, self.domain_y_min,
+                   self.domain_x_max, self.domain_y_max)
+        else:
+            dom = None
 
         # ── Mesh sizes ────────────────────────────────────────────────────
         if not self.auto_surface_size and self.surface_mesh_size <= 0:
@@ -352,9 +378,13 @@ class MeshConfig:
             errors.append("Far-field mesh size must be > 0 (or enable Auto).")
 
         # ── Boundary layer (only meaningful when layers are grown) ────────
+        # A geometry may override BL_LAYERS to a positive count (the mesher
+        # honours it — Config.hpp::applyBLOverride), so a global 0 does not mean
+        # "no boundary layer anywhere" and must not claim it does.
+        bl_grown = self.bl_layers > 0 or self._any_geom_grows_bl()
         if self.bl_layers < 0:
             errors.append("BL layer count cannot be negative.")
-        elif self.bl_layers == 0:
+        elif not bl_grown:
             warnings.append("BL layers = 0: no boundary layer will be grown.")
         else:
             if self.bl_initial_thickness <= 0:
@@ -363,12 +393,12 @@ class MeshConfig:
                 errors.append(
                     "BL growth rate must be >= 1.0 (a rate < 1 shrinks each layer).")
             # Total BL stack thickness vs domain size (advisory).
-            if self.bl_initial_thickness > 0 and self.bl_growth_rate >= 1.0:
+            if (self.bl_layers > 0 and self.bl_initial_thickness > 0
+                    and self.bl_growth_rate >= 1.0 and dom):
                 g, n, t0 = self.bl_growth_rate, self.bl_layers, self.bl_initial_thickness
                 total = (t0 * n if abs(g - 1.0) < 1e-9
                          else t0 * (g ** n - 1.0) / (g - 1.0))
-                half = 0.5 * min(self.domain_x_max - self.domain_x_min,
-                                 self.domain_y_max - self.domain_y_min)
+                half = 0.5 * min(dom[2] - dom[0], dom[3] - dom[1])
                 if half > 0 and total > half:
                     warnings.append(
                         f"Estimated BL stack thickness (~{total:.4g}) exceeds half "
@@ -382,17 +412,31 @@ class MeshConfig:
             warnings.append(
                 "Transition growth rate < 1.0 shrinks each transition layer.")
 
-        # ── Geometry containment (advisory; needs a bbox) ─────────────────
-        if geom_bbox is not None:
+        # ── Geometry containment (advisory; needs both bboxes) ────────────
+        if geom_bbox is not None and dom:
             gx0, gy0, gx1, gy1 = geom_bbox
-            if (gx0 < self.domain_x_min or gx1 > self.domain_x_max
-                    or gy0 < self.domain_y_min or gy1 > self.domain_y_max):
+            if (gx0 < dom[0] or gx1 > dom[2] or gy0 < dom[1] or gy1 > dom[3]):
+                where = ("the custom domain outline's bounds "
+                         f"([{dom[0]:.4g}, {dom[2]:.4g}] x [{dom[1]:.4g}, {dom[3]:.4g}])"
+                         if custom_domain else "the domain box")
                 warnings.append(
                     f"Geometry bounds ([{gx0:.4g}, {gx1:.4g}] x [{gy0:.4g}, "
-                    f"{gy1:.4g}]) extend outside the domain box; the mesh may be "
+                    f"{gy1:.4g}]) extend outside {where}; the mesh may be "
                     "clipped or the run may fail.")
 
         return errors, warnings
+
+    def _any_geom_grows_bl(self) -> bool:
+        """True if some geometry overrides BL_LAYERS to a positive count, so a
+        global count of 0 does not mean "no boundary layer anywhere"."""
+        for g in self.geom_files:
+            n = self.bl_params_of(g).get("BL_LAYERS")
+            try:
+                if n is not None and float(n) > 0:
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
 
     def load_from_file(self, path: str):
         """Parse configuration parameters from a text file."""
