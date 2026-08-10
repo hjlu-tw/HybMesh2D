@@ -16,6 +16,20 @@ _CRASH_TOKENS = (
     "bad_alloc", "libc++abi", "collect2:",
 )
 
+# The C++ side stamps every log line itself as "[<ISO UTC>] [LEVEL] msg"
+# (include/Logger.hpp), and proc_util folds stderr into stdout, so all of those
+# reach this panel. The panel renders its OWN clock + level label, so an
+# unstripped stamp reads "[14:29:06] [INFO] [2026-08-10T06:29:06Z] [INFO] msg".
+# The timestamp is optional in this pattern because GUI-side callers pass a bare
+# "[ERROR] ..." tag. A matched tag is authoritative: it beats the keyword
+# heuristics below, which would otherwise mis-tag e.g. an INFO line that merely
+# contains the word "error".
+_LEVEL_PREFIX = re.compile(
+    r'^\s*(?:\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\s*)?'
+    r'\[(?P<level>ERROR|WARNING|WARN|INFO)\]\s*',
+    re.IGNORECASE,
+)
+
 
 class LogPanel(QWidget):
     """An enhanced console panel for displaying logs, featuring color coding, timestamps, and log rotation."""
@@ -92,43 +106,49 @@ class LogPanel(QWidget):
         if not message:
             return
             
-        # Auto-detect level if not specified
+        # Colour-coded output is tagged by ANSI escapes, which the strip below
+        # removes — so read them off the raw message first.
         if level is None:
             if "\x1b[1;31m" in message or "\x1b[31m" in message:
                 level = "ERROR"
             elif "\x1b[1;33m" in message or "\x1b[33m" in message:
                 level = "WARNING"
-            else:
-                lower_msg = message.lower()
-                # "eL2 error norm ..." is the solver's per-iteration residual
-                # metric echoed on stdout, not a failure — don't let the "error"
-                # substring in "error norm" mis-tag these convergence lines as
-                # ERROR. Match the solver's own "eL2 error norm" token (not a bare
-                # "error norm"), so a genuine error that happens to contain the
-                # words "error norm" is still surfaced as ERROR.
-                if "el2 error norm" in lower_msg:
-                    level = "INFO"
-                elif ("error" in lower_msg or "failed" in lower_msg
-                      # Native-crash / linker signatures that don't contain the
-                      # word "error" would otherwise render as muted INFO — the one
-                      # line that explains a crash must stand out as ERROR.
-                      or any(tok in lower_msg for tok in _CRASH_TOKENS)):
-                    level = "ERROR"
-                elif "warning" in lower_msg or "warn" in lower_msg:
-                    level = "WARNING"
-                else:
-                    level = "INFO"
-                
+
         # Strip ANSI escape codes to clean up garbled control characters
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         clean_message = ansi_escape.sub('', message)
 
-        # Callers historically prefix messages with their own [ERROR]/[WARNING]/
-        # [INFO] tag; the panel now renders its own level label from the detected
-        # level, so a leading level tag would double up ("[ERROR] [ERROR] ..."").
-        # Strip one leading level tag (component tags like [Pipeline] are kept).
-        clean_message = re.sub(r'^\s*\[(?:ERROR|WARNING|WARN|INFO)\]\s*', '',
-                               clean_message, count=1, flags=re.IGNORECASE)
+        # Drop the emitter's own "[<ISO>] [LEVEL]" stamp (see _LEVEL_PREFIX) so it
+        # doesn't double up with the panel's, and adopt the level it declared.
+        # Component tags like [Pipeline] are not level tags and are kept.
+        m = _LEVEL_PREFIX.match(clean_message)
+        if m:
+            clean_message = clean_message[m.end():]
+            if level is None:
+                tag = m.group("level").upper()
+                level = "WARNING" if tag == "WARN" else tag
+
+        # Only guess when nothing authoritative said otherwise.
+        if level is None:
+            lower_msg = clean_message.lower()
+            # "eL2 error norm ..." is the solver's per-iteration residual
+            # metric echoed on stdout, not a failure — don't let the "error"
+            # substring in "error norm" mis-tag these convergence lines as
+            # ERROR. Match the solver's own "eL2 error norm" token (not a bare
+            # "error norm"), so a genuine error that happens to contain the
+            # words "error norm" is still surfaced as ERROR.
+            if "el2 error norm" in lower_msg:
+                level = "INFO"
+            elif ("error" in lower_msg or "failed" in lower_msg
+                  # Native-crash / linker signatures that don't contain the
+                  # word "error" would otherwise render as muted INFO — the one
+                  # line that explains a crash must stand out as ERROR.
+                  or any(tok in lower_msg for tok in _CRASH_TOKENS)):
+                level = "ERROR"
+            elif "warning" in lower_msg or "warn" in lower_msg:
+                level = "WARNING"
+            else:
+                level = "INFO"
 
         timestamp = QTime.currentTime().toString("hh:mm:ss")
         
@@ -160,10 +180,15 @@ class LogPanel(QWidget):
         # Escape potential HTML characters in message to prevent formatting injection
         safe_message = clean_message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         
+        # pre-wrap, not the HTML default: append() parses this as rich text, which
+        # folds every run of spaces into one. The mesher's column-aligned blocks
+        # (the parameter banner, "[ Mesh Size Field ]") are built from padding, so
+        # without this they arrive in the console as ragged one-space soup.
+        # pre-wrap rather than pre so a long advisory line still wraps.
         html = (
             f'<span style="color:#6b738c;">[{timestamp}]</span> '
             f'<span style="color:{color}; font-weight:bold;">{lvl_lbl}</span> '
-            f'<span style="color:#dde6ff;">{safe_message}</span>'
+            f'<span style="color:#dde6ff; white-space:pre-wrap;">{safe_message}</span>'
         )
         self.text_edit.append(html)
         self.text_edit.moveCursor(QTextCursor.MoveOperation.End)

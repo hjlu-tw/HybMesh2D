@@ -38,6 +38,7 @@
   "MainWindow": {
     "File": "檔案",
     "Edit": "編輯",
+    "View": "檢視",
     "CAD": "CAD",
     "Mesh": "網格",
     "Solver": "求解器",
@@ -63,6 +64,9 @@
     "Save Configuration (.json)...": "儲存設定檔 (.json)…",
     "Export Resampled Geometry (.dat)...": "匯出重取樣幾何 (.dat)…",
     "Run the resampler and save the resampled boundary geometry (.dat)": "執行重取樣並儲存重取樣後的邊界幾何 (.dat)",
+
+    "Log Console": "日誌主控台",
+    "Show or hide the log console at the bottom": "顯示或隱藏底部的日誌主控台",
 
     "Join Edges into Polygon": "將邊接合為多邊形",
     "Merge selected end-to-end curve edges into one closed polygon (clears the 'boundary not closed' warning)": "將選取的首尾相接曲線邊合併為一個閉合多邊形（會清除「邊界未閉合」警告）",

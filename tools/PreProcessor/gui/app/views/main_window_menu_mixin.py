@@ -112,6 +112,21 @@ class MainWindowMenuMixin:
         add(edit_menu, self.tr("Redo"), controller.redo,
             shortcut=["Ctrl+Shift+Z", "Ctrl+Y"])
 
+        # ── View (dock visibility) ─────────────────────────────────────────
+        # The Log Console dock has a close button but nothing re-opened it, and
+        # ui_state persists its hidden state, so closing it once lost every run
+        # log for good (there is no QToolBar either, so Qt's own dock context
+        # menu has nothing to pop up from). toggleViewAction() is Qt's own
+        # action for the dock, so the check state follows the close button too.
+        log_dock = getattr(self, "log_dock", None)
+        if log_dock is not None:
+            view_menu = menubar.addMenu(self.tr("View"))
+            log_act = log_dock.toggleViewAction()
+            log_act.setText(self.tr("Log Console"))
+            log_act.setShortcut(QKeySequence("Ctrl+L"))
+            log_act.setToolTip(self.tr("Show or hide the log console at the bottom"))
+            view_menu.addAction(log_act)
+
         # ── CAD (PreProcessor) ────────────────────────────────────────────
         cad_menu = menubar.addMenu(self.tr("CAD"))
         add(cad_menu, self.tr("Import Geometry (.dat)..."), controller.load_geometry,
