@@ -98,5 +98,14 @@ class CollapsibleSection(QWidget):
 
     def _on_toggle(self, checked: bool):
         self.content_frame.setVisible(checked)
+        # Hiding/showing a child only POSTS the layout request, so until that event
+        # is delivered this widget keeps reporting the sizeHint of the state it
+        # just left. Anything that sizes itself from a section — a dialog fitting
+        # its window to whichever groups are open — would then act on the previous
+        # state. Invalidate now so sizeHint() answers for the state on screen.
+        lay = self.layout()
+        if lay is not None:
+            lay.invalidate()
+        self.updateGeometry()
         self.toggle_btn.setArrowType(
             Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)

@@ -52,6 +52,10 @@ def _headless() -> bool:
     return is_headless()
 
 
+def _section_key(scope: str, title: str, suffix: str = "") -> str:
+    return f"{_PREFIX}/sections/{scope}/{title}{suffix}"
+
+
 def _sections(main_window):
     """Yield ``(key, section)`` for every collapsible section in the sidebar.
 
@@ -75,7 +79,47 @@ def _sections(main_window):
             n = seen.get(title, 0)
             seen[title] = n + 1
             suffix = "" if n == 0 else f"#{n}"
-            yield f"{_PREFIX}/sections/{scope}/{title}{suffix}", sec
+            yield _section_key(scope, title, suffix), sec
+
+
+def save_section_states(scope: str, sections) -> None:
+    """Persist the expanded flag of collapsible sections that do NOT live in the
+    sidebar — a dialog's own accordion, which :func:`_sections` cannot reach
+    (it walks ``sidebar_stack``). ``scope`` namespaces the keys, so pass a stable
+    string (the dialog's class name). Never raises."""
+    if _headless():
+        return
+    try:
+        s = _settings()
+        for sec in sections:
+            title = getattr(sec, "title", "")
+            if not title:
+                continue
+            s.setValue(_section_key(scope, title), bool(sec.is_expanded))
+        s.sync()
+    except Exception:
+        _log.warning("could not save the %s section state", scope, exc_info=True)
+
+
+def restore_section_states(scope: str, sections) -> None:
+    """Apply the flags saved by :func:`save_section_states`. Sections never saved
+    keep whatever default the caller built them with. Never raises."""
+    if _headless():
+        return
+    try:
+        s = _settings()
+        for sec in sections:
+            title = getattr(sec, "title", "")
+            if not title:
+                continue
+            saved = s.value(_section_key(scope, title))
+            if saved is None:
+                continue                      # never saved -> keep the default
+            want = saved if isinstance(saved, bool) else str(saved).lower() == "true"
+            if want != sec.is_expanded:
+                sec.expand() if want else sec.collapse()
+    except Exception:
+        _log.warning("could not restore the %s section state", scope, exc_info=True)
 
 
 def save_ui_state(main_window) -> None:

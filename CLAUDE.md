@@ -197,7 +197,27 @@ Rules:
 
 **User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` call — `report_error` (failed write, data at risk → Critical), `report_warning` (failed read → Warning), `report_info` (a precondition, nothing broke → Information), `confirm(..., headless_default=)` (Yes/No). All of them no-op or return the default on a headless platform, which is what keeps tests, CI and the headless pipeline from hanging on a modal. Any new dock widget needs `setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
 
-**Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless.
+**Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless. `restore_ui_state` only walks `sidebar_stack`, so a **dialog's** accordion persists itself through `save_section_states(scope, sections)` / `restore_section_states(...)` with an explicit scope string.
+
+**Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
+`mesh_bl_field_specs.py`): the 21 BL parameters are collapsible groups
+(`_BL_FIELD_GROUPS`, mirroring the `.dat` parameter groups) with only *Layer Growth*
+open, plus Expand all / Collapse all. **`_BL_FIELD_GROUPS` must partition
+`_BL_FIELD_SPECS` exactly** — a key in no group is a parameter the user cannot reach
+that is still written back on OK — gated by `tests/test_bl_dialog_sections.py`, with
+stray keys falling into a trailing "Other" group as a backstop. A group holding a value
+that differs from the global default expands itself, so a per-geometry override never
+hides behind a collapsed header. The window follows the open groups
+(`_relayout` → `_autofit_height`), bounded by the screen and never below a height the
+user set by dragging. Two Qt facts that fit depends on, both learned the hard way:
+`QScrollArea::sizeHint()` is **clamped to 24 font heights**, so the dialog's own
+`sizeHint()` stops growing after a group or two (the fit measures the scroll's shortfall
+against its cap and the leftover slack instead); and hiding a widget only *posts* the
+layout request, so `CollapsibleSection._on_toggle` invalidates its own layout — without
+that, every reader (including the sidebar) sizes itself from the state the section just
+left. The leftover-space absorber (trailing spacer / per-segment list) is
+**stretch 0 + Expanding**, never a stretched item, which would compete proportionally
+with the capped scroll area and leave the groups short of their own cap.
 
 **Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)` (`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, which is a re-entrant depth counter (a bare bool let a nested populate clear the outer guard). `tests/test_signal_guards.py` statically fails the build on either.
 

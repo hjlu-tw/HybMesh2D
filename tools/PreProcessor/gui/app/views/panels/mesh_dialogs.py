@@ -7,11 +7,12 @@ working via the re-exports below."""
 from __future__ import annotations
 from .mesh_dialogs_bl import (
     _BL_OVERRIDE_KEYS, _BL_INT_ATTRS, _BL_BOOL_ATTRS, _BL_FIELD_SPECS,
-    SegmentBLSection, PerGeomBLDialog,
+    _BL_FIELD_GROUPS, SegmentBLSection, PerGeomBLDialog,
 )
 from .mesh_dialogs_bc import SegmentBCDialog, AssignPatchDialog
 
 __all__ = [
     "_BL_OVERRIDE_KEYS", "_BL_INT_ATTRS", "_BL_BOOL_ATTRS", "_BL_FIELD_SPECS",
+    "_BL_FIELD_GROUPS",
     "SegmentBLSection", "PerGeomBLDialog", "SegmentBCDialog", "AssignPatchDialog",
 ]
