@@ -338,9 +338,11 @@ class MeshConfigBuildMixin:
         _JUNCTION_TIP = ("Flow-facing angle thresholds (deg) that bin the BL/no-BL "
                          "junction scheme: C2/C3 pick the cap direction "
                          "(perpendicular / along the reversed neighbour edge). "
-                         "C1 is kept for Taper-to-zero and config round-trip only — "
-                         "concave junctions are capped perpendicular, not slid along "
-                         "the neighbour edge. Only used when Junction Method = 4-case.")
+                         "Below 95 deg the corner is too narrow for any cap — the "
+                         "column slides along the neighbour edge instead; that bound "
+                         "is geometric and not adjustable, so C1 is kept for "
+                         "Taper-to-zero and config round-trip only. "
+                         "Only used when Junction Method = 4-case.")
         self.bl_junction_method = QComboBox()
         self.bl_junction_method.addItems(["0: Taper-to-zero", "1: 4-case angle-driven"])
         self.bl_junction_method.setStyleSheet(COMBO_STYLE)

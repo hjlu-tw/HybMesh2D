@@ -55,6 +55,14 @@ struct FrontState {
     std::map<int, int> junctionCase;                 // root surface nodeId -> case 1..4
     std::map<int, std::vector<int>> junctionColumns; // root surface nodeId -> [surface, L1, ..., outer] (cases 2/3/4)
     std::map<int, int> nodeToJunctionRoot;           // any cap-column nodeId -> its root surface nodeId
+    // Case 1 (slide) only. The slide RE-DISCRETIZES the no-BL wall run it absorbs:
+    // its column lies ON that wall, so the column's lateral edges are the domain
+    // boundary there, in place of the absorbed surface edges. Both halves are kept
+    // so the BC of the replaced wall can be carried onto the replacing edges by
+    // construction (see the slide-BC registration in generate()) — geometry cannot
+    // recover it, because the column is a straight ray while the wall may curve.
+    std::map<int, std::vector<int>> slideColumns;    // root -> [surface, L1, ..., outer]
+    std::map<int, std::vector<int>> slideWallRun;    // root -> [root, absorbed..., first surviving node]
 };
 
 class BoundaryLayerGenerator {

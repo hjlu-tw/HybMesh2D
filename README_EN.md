@@ -188,7 +188,7 @@ A *junction* is a BL-growing node whose neighbouring segment grows **no** bounda
 | :--- | :--- | :--- |
 | `BL_JUNCTION_METHOD` | 0: taper to zero (legacy); 1: angle-driven cap | 1 |
 | `BL_JUNCTION_ANGLE_C1` | (deg) retained for method 0 and config round-trip only — see the note below | 135.0 |
-| `BL_JUNCTION_ANGLE_C2` | (deg) θ ≤ C2 → cap perpendicular, along the BL normal | 270.0 |
+| `BL_JUNCTION_ANGLE_C2` | (deg) 95 < θ ≤ C2 → cap perpendicular, along the BL normal | 270.0 |
 | `BL_JUNCTION_ANGLE_C3` | (deg) C2 < θ ≤ C3 → cap along the reversed neighbour edge; θ > C3 → cap perpendicular | 315.0 |
 
 **Definition of θ**: the included angle swept from the BL edge to the no-BL edge **through the flow side**. 180° is collinear, < 180° concave, > 180° convex. Because it is defined on the flow side, internal and external flow use the same bins — nothing has to be reconfigured per case.
@@ -197,14 +197,19 @@ A *junction* is a BL-growing node whose neighbouring segment grows **no** bounda
 
 | θ range | Growth direction |
 | :--- | :--- |
-| θ ≤ C2 | **Perpendicular cap** along that BL edge's own outward normal |
+| θ ≤ 95° | **Slide** along the no-BL neighbour edge, absorbing the no-BL nodes it covers |
+| 95° < θ ≤ C2 | **Perpendicular cap** along that BL edge's own outward normal |
 | C2 < θ ≤ C3 | Cap along the **reversed no-BL neighbour edge** (extension cap) |
 | θ > C3 | Perpendicular cap |
 | Both neighbours no-BL (isolated BL node) | Perpendicular cap |
 
 This scheme applies **no height taper**. What stays fixed across every case is the BL's *perpendicular* total height `D_total`: a tilted cap grown to a fixed *edge length* would only reach `D_total × cos(tilt)`, dipping below the neighbouring perpendicular columns and skewing the corner — so the step is scaled by `1 / cos(tilt)` (the cosine is floored, so a very sharp concave cannot blow the column length up). A cap leaves a free **full-height lateral column** whose exposed side edges are emitted as far-field constraints, so the wedge is filled with triangles rather than covered by quads.
 
-> **Why is C1 still here?** A concave junction (θ ≤ C1) used to be "case 1": the BL column slid *along* the no-BL neighbour edge and absorbed that segment's surface nodes. On internal-flow concave corners — a closed fluid domain growing its BL inward, i.e. the common case — this collapsed the layer onto the very wall the user had explicitly marked no-BL, and did not preserve the layer height. Concave junctions are therefore capped perpendicular too; `C1` survives only for `BL_JUNCTION_METHOD=0` and config round-trip, and changing it does not affect the default scheme.
+> **Why does θ ≤ 95° slide, and why is that bound not a parameter?** A cap only works while it points *into* the fluid wedge at the corner. That wedge spans θ, whereas a perpendicular cap sits at 90° from the BL edge — so at θ ≤ 90° the perpendicular cap points at or past the no-BL wall and the column walks straight out of the domain: below 90° the final front crosses the no-BL surface run (`HYBMESH_ERROR 5 BL`, "self-intersection"), and at exactly 90° — a plain rectangular duct with one wall marked No-BL — the cap lands *on* the wall, the front doubles back on itself and Gmsh gets a degenerate hole boundary (`HYBMESH_ERROR 6 GMSH`). Such a junction has to lean onto the neighbour edge; it is the wedge that is too narrow for a cap, not the BL that is too thick. Just above 90° a cap is admissible but leaves a sliver wedge running its whole length, so a small guard band leans too. The bound is geometric rather than a preference, which is why it is fixed at 95° instead of being read from `C1`.
+>
+> **Why is C1 still here?** `C1` used to be that bound, at 135° — wide enough that it also slid at corners with room for an honest perpendicular cap, needlessly collapsing the layer onto the wall the user had marked no-BL. `C1` survives only for `BL_JUNCTION_METHOD=0` and config round-trip; changing it does not affect the default scheme.
+
+**Very sharp wedges (`[WARN] Very sharp BL/no-BL wedge at (x, y)`)**: a slide only works while the concave blend can lean the squeezed columns over. The wedge closes at θ, so the corner compromises `D_total / tan θ` of wall, while the blend reaches `BL_CONCAVE_INFLUENCE_MULTIPLIER × D_total` — the limit is therefore `tan θ × influence ≈ 1`, **independent of the BL height**. At the default influence 2.5 that is 21.8°, and the mesher does break between 22° (meshes) and 21° (fails); raising the influence to 5.0 moves the break to between 15° and 10°, lowering it to 1.5 moves it to between 35° and 30°. Past that limit the run fails downstream as a front self-intersection or a Gmsh error whose message points at the BL size anywhere on the model, so the junction now **warns up front**, naming the corner. It is advisory only — nothing is auto-corrected. Reduce the BL height there (per-geometry overrides are allowed), let the neighbouring segment grow a BL too, open the corner, or raise the influence multiplier to the value the warning quotes.
 
 **Method 0 (legacy, taper to zero)**: the junction node grows along its own BL edge's normal (never the bisector), and every node's layer height is scaled by a taper factor — a small floor (~12%) at the junction, ramping smoothly back to 1 over an arc-length distance into the BL interior. The outer front descends toward the surface with no cliff and the far-field mesher fills the shrinking wedge.
 

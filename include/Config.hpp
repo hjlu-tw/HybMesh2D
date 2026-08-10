@@ -27,9 +27,15 @@ struct BLParams {
     double blConcaveInfluenceMultiplier = 2.5;  // arc-length reach of the concave/blend correction, in BL total heights. 10 over-blended: it tilted every column along an edge toward the corner apex, so a segment's BL→far-field edge came out curved instead of a straight uniform-height band. 2.5 keeps the outer edge straight with a short transition only at the corner (still enough to avoid front self-intersection at typical concave corners).
     double blConcaveAngleThreshold = 100.0;
     // BL / non-BL junction handling (see BoundaryLayer.cpp). Method 0 = taper-to-zero
-    // (collapsing prisms, legacy); 1 = 4-case angle-driven (default). C1/C2/C3 bin the
-    // flow-facing included angle theta (deg) between the BL edge and its non-BL neighbour:
-    //   (0,C1] concave slide | (C1,C2] perpendicular | (C2,C3] neighbour-extension | (C3,360) perpendicular.
+    // (collapsing prisms, legacy); 1 = 4-case angle-driven (default). The flow-facing
+    // included angle theta (deg) between the BL edge and its non-BL neighbour bins as:
+    //   (0,95] slide along the neighbour edge | (95,C2] perpendicular cap
+    //   | (C2,C3] neighbour-extension cap     | (C3,360) perpendicular cap.
+    // The 95 is geometric, not a preference: a cap must point INTO the fluid wedge,
+    // which spans theta, while the perpendicular sits at 90 deg — so at theta <= 90 a
+    // cap provably leaves the domain through the no-BL wall (+5 deg of guard band
+    // against degenerate slivers). C1 is therefore NOT read by method 1; it still bins
+    // method 0 and round-trips through the GUI/config.
     int blJunctionMethod = 1;
     double blJunctionAngleC1 = 135.0;
     double blJunctionAngleC2 = 270.0;
