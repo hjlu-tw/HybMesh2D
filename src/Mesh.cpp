@@ -937,21 +937,56 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         std::cout << "  -> Detected Collision Zone Mesh Size (hGap): " << hGap << std::endl;
     }
     if (config.autoSurfaceSize) {
-        double totalLen = 0.0;
-        int count = 0;
-        for (const auto& edge : edges) {
-            if (nodes[edge.v1].type == NodeType::BoundaryLayer &&
-                nodes[edge.v2].type == NodeType::BoundaryLayer) {
-                totalLen += (nodes[edge.v1].pos - nodes[edge.v2].pos).length();
-                count++;
+        // Average edge length over the edges a predicate accepts (0 if none).
+        auto avgEdgeLen = [this](auto&& accept) {
+            double total = 0.0;
+            int count = 0;
+            for (const auto& edge : edges) {
+                if (accept(nodes[edge.v1], nodes[edge.v2])) {
+                    total += (nodes[edge.v1].pos - nodes[edge.v2].pos).length();
+                    count++;
+                }
             }
-        }
-        if (count > 0) {
-            hEnd = totalLen / (double)count;
+            return count > 0 ? total / (double)count : 0.0;
+        };
+
+        // The auto surface size is "how finely the surface is already discretised".
+        // Prefer the boundary-layer outer front; without one, measure the surface
+        // itself. Falling straight through to BL_INITIAL_THICKNESS (as this used to)
+        // is catastrophic for a no-BL run: that parameter is a first-cell height,
+        // typically 100-1000x smaller than the point spacing, so Gmsh was asked to
+        // resolve the whole boundary at ~1e-4 and appeared to hang.
+        double h = avgEdgeLen([](const Node& a, const Node& b) {
+            return a.type == NodeType::BoundaryLayer && b.type == NodeType::BoundaryLayer;
+        });
+        if (h > 0) {
+            hEnd = h;
             std::cout << "  -> Final Surface Mesh Size (Auto Avg): " << hEnd << std::endl;
-        } else if (finalBLThickness > 0) {
-            hEnd = finalBLThickness;
-            std::cout << "  -> Final Surface Mesh Size (Fallback to BL height): " << hEnd << std::endl;
+        } else {
+            // Loaded geometry surfaces (geomId >= 0; the domain outline is -1).
+            h = avgEdgeLen([](const Node& a, const Node& b) {
+                return a.geomId >= 0 && b.geomId >= 0;
+            });
+            if (h > 0) {
+                hEnd = h;
+                std::cout << "  -> Final Surface Mesh Size (Auto from no-BL surface spacing): "
+                          << hEnd << std::endl;
+            } else if (!config.domainFile.empty()) {
+                // Internal flow with no obstacle: the custom domain outline is the
+                // only discretised boundary, so its own spacing is the surface size.
+                h = avgEdgeLen([](const Node& a, const Node& b) {
+                    return a.geomId < 0 && b.geomId < 0;
+                });
+                if (h > 0) {
+                    hEnd = h;
+                    std::cout << "  -> Final Surface Mesh Size (Auto from domain outline spacing): "
+                              << hEnd << std::endl;
+                }
+            }
+            if (h <= 0 && finalBLThickness > 0) {
+                hEnd = finalBLThickness;
+                std::cout << "  -> Final Surface Mesh Size (Fallback to BL height): " << hEnd << std::endl;
+            }
         }
     } else {
         std::cout << "  -> Final Surface Mesh Size (Manual): " << hEnd << std::endl;

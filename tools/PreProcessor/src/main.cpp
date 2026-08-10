@@ -1045,7 +1045,8 @@ bool processElement(const json& config) {
             std::vector<double> cornerS;
             if (piecewise) {
                 for (size_t k = 1; k < pieceS0.size(); ++k) cornerS.push_back(pieceS0[k]);
-                double minGap = (nT > 1) ? (L / (nT - 1)) * 0.5 : L;
+                double nominal = (nT > 1) ? (L / (nT - 1)) : L;
+                double minGap = nominal * 0.5;
                 for (double c : cornerS) {
                     size_t best = 0; double bestd = 1e300;
                     for (size_t i = 0; i < tS.size(); ++i) {
@@ -1054,6 +1055,14 @@ bool processElement(const json& config) {
                     }
                     if (bestd < 1e-9) continue;                 // node already here
                     bool endpoint = (best == 0 || best == tS.size() - 1);
+                    // A corner a hair from an ENDPOINT sample cannot be snapped (the
+                    // endpoint is pinned to the segment's own vertex), so it used to
+                    // be inserted unconditionally — emitting two nodes a hair apart
+                    // and a sliver edge orders of magnitude shorter than its
+                    // neighbours. On a closed loop that sliver sits at the seam and
+                    // makes the outline self-intersect there. Below 5% of the nominal
+                    // spacing the corner IS the endpoint; drop it.
+                    if (endpoint && bestd < 0.05 * nominal) continue;
                     if (!endpoint && bestd < minGap) tS[best] = c;  // snap nearest
                     else tS.push_back(c);                       // otherwise insert
                 }
@@ -1133,6 +1142,27 @@ bool processElement(const json& config) {
             if (segmentPts.size() >= 2) {
                 last_ds = (segmentPts.back() - segmentPts[segmentPts.size() - 2]).length();
             }
+        }
+    }
+
+    // Weld the seam of a closed element. Every INTERNAL segment boundary is already
+    // deduped as the tasks are walked, but the wrap-around (last segment's end back
+    // onto the first segment's start) is not: the two come from independently
+    // resampled/aligned tasks, so they can land a hair apart. That hair becomes a
+    // sliver edge orders of magnitude shorter than its neighbours, which makes the
+    // exported outline self-intersect at the seam — the boundary layer then collides
+    // with itself there, and Gmsh can spin indefinitely triangulating around it.
+    // Snapping (rather than dropping) keeps resSegId/resCorner aligned with resPts;
+    // the mesher drops the exact duplicate when it loads the loop.
+    if (config.value("is_closed", false) && pieceBreaks.empty() && resPts.size() > 2) {
+        double gap = (resPts.back() - resPts.front()).length();
+        double span = std::min((resPts[1] - resPts[0]).length(),
+                               (resPts[resPts.size() - 1] - resPts[resPts.size() - 2]).length());
+        if (gap > 0.0 && span > 0.0 && gap <= 0.05 * span) {
+            std::cerr << "Warning: closed geometry seam was " << gap
+                      << " open (local point spacing " << span
+                      << "); welding the last point onto the first." << std::endl;
+            resPts.back() = resPts.front();
         }
     }
 

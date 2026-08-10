@@ -58,13 +58,35 @@ std::vector<Point2D> loadGeometry(const std::string& filename, bool* closed = nu
 
     if (points.empty() && status) *status = LoadStatus::Empty;
 
-    // 如果起點與終點重合，移除最後一個點以避免產生重疊的邊界節點，這會導致法向量計算錯誤
+    // 如果起點與終點重合 (或近乎重合)，移除最後一個點以避免產生重疊的邊界節點，
+    // 這會導致法向量計算錯誤。
+    //
+    // 容差取接縫兩側「實際的點距」，而不是固定的 1e-6：重取樣是逐段獨立進行的，
+    // 首段起點與末段終點對不齊時會留下一個比鄰邊小上數個數量級的接縫邊 (實測
+    // 3.8e-5 對 0.05，相差 1300 倍)。固定容差抓不到它，於是這條 sliver 邊會進到
+    // 封閉迴圈裡，造成兩個很難診斷的症狀：
+    //   * 邊界層在接縫處自交 (內流域尤其明顯，前緣往內長就撞在一起)；
+    //   * 外形在接縫處自我相交，Gmsh 於該處三角化時停不下來 (看起來像當掉)。
+    // 5% 的鄰邊長度是安全的門檻：真正開放的曲線，兩端不會落在一個點距的 5% 內。
     if (points.size() > 1) {
-        double dx = points.front().x - points.back().x;
-        double dy = points.front().y - points.back().y;
-        if (dx * dx + dy * dy < 1e-12) {
+        const double gap = (points.front() - points.back()).length();
+        double span = 0.0;   // local point spacing either side of the seam
+        double tol = 1e-6;
+        if (points.size() > 2) {
+            span = std::min((points[1] - points[0]).length(),
+                            (points[points.size() - 1] - points[points.size() - 2]).length());
+            if (span > 0.0) tol = std::max(tol, 0.05 * span);
+        }
+        if (gap <= tol) {
             points.pop_back();
             if (closed) *closed = true;
+            // Silent only when the file was already exactly closed; a real gap that
+            // we welded is a defect in the upstream geometry and must be visible.
+            if (gap > 0.0)
+                LOG_WARN("Geometry file '" << filename << "' is not exactly closed: the first "
+                         "and last points are " << gap << " apart against a local point spacing "
+                         "of " << span << ". The seam was welded; fix it upstream so no sliver "
+                         "edge is produced there.");
         }
     }
     return points;
@@ -877,26 +899,35 @@ int main(int argc, char* argv[]) {
     std::cout << "  - Elements (CEL)       : " << mesh.elements.size() << "\n";
     std::cout << "  - Boundary Edges (BND) : " << mesh.edges.size() << "\n\n";
 
-    // Strip a trailing ".vtk"/known extension to a provenance basename.
-    auto stripExt = [](std::string s) {
+    // Extension position in the FILE NAME (npos when there is none). Must ignore a
+    // dot in a directory component — a path like ~/.claude/out would otherwise get a
+    // suffix spliced into the directory name and every export would fail to open.
+    auto extPos = [](const std::string& s) -> size_t {
         size_t dot = s.find_last_of('.');
         size_t slash = s.find_last_of("/\\");
-        if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
-            s.erase(dot);
+        if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
+            return std::string::npos;
+        return dot;
+    };
+
+    // Strip a trailing ".vtk"/known extension to a provenance basename.
+    auto stripExt = [&extPos](std::string s) {
+        size_t dot = extPos(s);
+        if (dot != std::string::npos) s.erase(dot);
         return s;
     };
 
     if (config.exportVTK) {
         std::string vtkFile = outputFilename;
+        size_t dotPos = extPos(vtkFile);
         if (!blSuccess) {
-            size_t dotPos = vtkFile.find_last_of('.');
             if (dotPos != std::string::npos) {
                 vtkFile.insert(dotPos, "_er");
             } else {
                 vtkFile += "_er.vtk";
             }
         } else {
-            if (vtkFile.find('.') == std::string::npos) vtkFile += ".vtk";
+            if (dotPos == std::string::npos) vtkFile += ".vtk";
         }
         mesh.exportVTK(vtkFile);
         hybmesh::writeProvenance(stripExt(vtkFile), config, inputFiles, gmshVersion,
