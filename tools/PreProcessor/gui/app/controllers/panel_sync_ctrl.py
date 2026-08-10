@@ -139,6 +139,35 @@ class PanelSyncControllerMixin:
         for panel_attr, _model_attr in PANEL_MODELS:
             self.sync_panel_to_model(panel_attr)
 
+    def push_models_to_panels(self) -> None:
+        """Seed every stage panel from its model. Call once, at startup.
+
+        A panel is built with whatever Qt leaves in an un-set widget — 0, or the
+        range floor — not with its model's defaults, and until the user first
+        entered that stage nothing populated it. That was harmless while the
+        models were only refreshed when a stage ran; it stopped being harmless
+        the moment the sync above made the panel authoritative, because the
+        startup baseline reads every panel back into its model. An un-populated
+        panel then *becomes* the defaults: BL layers 0 (no boundary layer grown
+        at all), growth 1.001, Gmsh MeshAdapt, the outer BCs all inlet.
+
+        So the pair needs a starting point, and it has to be model → panel:
+        the dataclass defaults are the ones written down, reviewed and shared
+        with Config.hpp.
+        """
+        # One suppression around the WHOLE loop, not one per push: each
+        # push_panel_config ends by re-reading every panel (to re-baseline the undo
+        # recorder), and mid-loop that would read the panels this loop has not
+        # reached yet — seeding the Mesh panel would clobber the solver model with
+        # the untouched solver panel. Nesting keeps that read for the outer exit,
+        # by which point all three panels hold their models' values.
+        with self.suppress_project_undo():
+            for panel_attr, model_attr in PANEL_MODELS:
+                panel = getattr(self.main_window, panel_attr, None)
+                model = getattr(self, model_attr, None)
+                if panel is not None and model is not None:
+                    self.push_panel_config(panel, model)
+
     def on_panel_edited(self, panel_attr: str) -> None:
         """A stage panel was edited by the user.
 

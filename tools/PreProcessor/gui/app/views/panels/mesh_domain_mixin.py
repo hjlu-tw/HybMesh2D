@@ -50,27 +50,37 @@ class MeshConfigDomainMixin:
         align_form_labels(dsrc_form, 130)
         self.sec_domain.add_layout(dsrc_form)
 
-        # Bounding box (shown only for the "Rectangle box" source)
+        # Bounding box (shown only for the "Rectangle box" source). Seeded from
+        # the model's own defaults below: a spin box left at Qt's 0 makes an
+        # untouched panel report a degenerate 0..0 domain, which then fails
+        # validation on numbers the user never set and — with the fields hidden
+        # under a custom domain — cannot even see.
+        from app.models.mesh_config import MeshConfig
+        _dflt = MeshConfig()
         self._domain_box_widget = QWidget()
         dom_form = QFormLayout(self._domain_box_widget)
         dom_form.setContentsMargins(0, 0, 0, 0)
         self.domain_x_min = SciDoubleSpinBox()
         self.domain_x_min.setRange(-1e9, 1e9)
+        self.domain_x_min.setValue(_dflt.domain_x_min)
         self.domain_x_min.setStyleSheet(SPIN_STYLE)
         self.domain_x_min.setToolTip("Left boundary of the rectangular computational domain")
 
         self.domain_x_max = SciDoubleSpinBox()
         self.domain_x_max.setRange(-1e9, 1e9)
+        self.domain_x_max.setValue(_dflt.domain_x_max)
         self.domain_x_max.setStyleSheet(SPIN_STYLE)
         self.domain_x_max.setToolTip("Right boundary of the rectangular computational domain")
 
         self.domain_y_min = SciDoubleSpinBox()
         self.domain_y_min.setRange(-1e9, 1e9)
+        self.domain_y_min.setValue(_dflt.domain_y_min)
         self.domain_y_min.setStyleSheet(SPIN_STYLE)
         self.domain_y_min.setToolTip("Bottom boundary of the rectangular computational domain")
 
         self.domain_y_max = SciDoubleSpinBox()
         self.domain_y_max.setRange(-1e9, 1e9)
+        self.domain_y_max.setValue(_dflt.domain_y_max)
         self.domain_y_max.setStyleSheet(SPIN_STYLE)
         self.domain_y_max.setToolTip("Top boundary of the rectangular computational domain")
 

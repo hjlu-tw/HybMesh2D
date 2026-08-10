@@ -112,6 +112,48 @@ for panel_attr, model_attr in PANEL_MODELS:
 sp = mw.solver_config_panel
 mp = mw.mesh_config_panel
 
+# ── 9. startup: the models' defaults survive being read back ──────────────
+# Must run before any edit below. Making the panel authoritative gave the pair a
+# starting-point problem: a panel is built holding Qt's un-set widget values (0, or
+# the spin box floor), and every push_panel_config ends by re-reading ALL panels, so
+# the first push (init_solver's) read the untouched Mesh panel into the mesh model.
+# The GUI's real defaults silently became BL layers 0 (no boundary layer grown at
+# all), growth rate 1.001, Gmsh MeshAdapt, and the outer BCs all inlet. The fix is
+# push_models_to_panels() before anything reads the other way; this pins it.
+from app.models.mesh_config import MeshConfig as _MC  # noqa: E402
+from app.models.solver_config import SolverConfig as _SC  # noqa: E402
+from app.models.stl3d_config import Stl3dConfig as _S3  # noqa: E402
+
+_solver_dflt = _SC()
+_solver_dflt.ensure_default_binaries()
+#: Fields whose startup value is deliberately not the dataclass default.
+_STARTUP_OK = {
+    # The concave combo offers method 5 only (the merge default is CLI-side), and the
+    # export name is derived from the loaded geometry, not a fixed string.
+    "global_mesh_config": {"bl_concave_method", "output_filename"},
+    "global_solver_config": set(),
+    "global_stl3d_config": set(),
+}
+for _model_attr, _dflt in (("global_mesh_config", _MC()),
+                           ("global_solver_config", _solver_dflt),
+                           ("global_stl3d_config", _S3())):
+    _live = getattr(ctl, _model_attr)
+    _lost = {k: (v, getattr(_live, k)) for k, v in vars(_dflt).items()
+             if k not in _STARTUP_OK[_model_attr] and getattr(_live, k) != v}
+    check(not _lost, f"9. {_model_attr} still holds its defaults after startup "
+                     f"(clobbered: {sorted(_lost)[:6]})")
+
+_gm = ctl.global_mesh_config
+check((_gm.bl_layers, _gm.bl_growth_rate, _gm.bl_transition_layers) == (5, 1.2, 3),
+      f"9. ...naming the ones that were lost: BL layers/growth/transition = "
+      f"{_gm.bl_layers}/{_gm.bl_growth_rate}/{_gm.bl_transition_layers}, not 0/1.001/0")
+check((_gm.gmsh_algorithm, _gm.gmsh_optimize, _gm.bc_ymax) == (6, 1, "outlet"),
+      f"9. ...and Gmsh Frontal-Delaunay + optimize + outlet BCs survive "
+      f"({_gm.gmsh_algorithm}, {_gm.gmsh_optimize}, {_gm.bc_ymax})")
+check(not ctl.project_is_dirty(),
+      "9. and a freshly started app is not already 'modified' (the baseline is taken "
+      "from panels that agree with their models)")
+
 check(ctl.global_solver_config.fs_unit_re != 2.2853e5,
       "2. (precondition) the model does not already hold the probe value")
 sp.fs_unit_re.setValue(2.2853e5)

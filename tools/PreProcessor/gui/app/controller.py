@@ -175,6 +175,15 @@ class AppController(
         self.temp_dir = tempfile.mkdtemp(prefix="hybmesh_preprocessor_")
         QApplication.instance().aboutToQuit.connect(self.cleanup_temp_dir)
 
+        # Seed each stage panel from its model, BEFORE anything can read a panel
+        # back. A panel is built holding Qt's un-set widget values (0, or the spin
+        # box floor), not its model's defaults, and the panel→model sync fires for
+        # ALL panels on every push_panel_config — so the first push (init_solver's)
+        # would otherwise read the untouched Mesh panel and overwrite the mesh
+        # defaults with BL layers 0, growth 1.001, Gmsh MeshAdapt, outer BCs inlet.
+        # Done here, before the signals are wired, so the population is silent.
+        self.push_models_to_panels()
+
         self._wire_sidebar_signals()
         self._wire_tab_signals()
         self._wire_canvas_signals()
