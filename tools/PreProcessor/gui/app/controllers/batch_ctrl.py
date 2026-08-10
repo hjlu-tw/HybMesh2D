@@ -18,8 +18,11 @@ class BatchControllerMixin:
         dlg = getattr(self, "_batch_dialog", None)
         if dlg is None:
             from app.views.batch_dialog import BatchDialog
-            # Parented to the main window so it inherits the app icon, stays above it
-            # and is destroyed with it — the project's rule for every dialog.
+            # Parented to the main window so it inherits the app icon and is
+            # destroyed with it. Deliberately NOT keep_on_top()'d, unlike the
+            # editing pop-ups: a batch runs for minutes and the user is meant to
+            # keep working, so this window must be free to go behind the main
+            # one instead of jumping back on top at every activation.
             dlg = BatchDialog(self.main_window)
             dlg.log_sink = self._batch_log
             dlg.run_requested.connect(self.run_batch_queue)

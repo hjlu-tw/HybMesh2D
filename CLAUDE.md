@@ -197,6 +197,22 @@ Rules:
 
 **User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` call — `report_error` (failed write, data at risk → Critical), `report_warning` (failed read → Warning), `report_info` (a precondition, nothing broke → Information), `confirm(..., headless_default=)` (Yes/No). All of them no-op or return the default on a headless platform, which is what keeps tests, CI and the headless pipeline from hanging on a modal. Any new dock widget needs `setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
 
+**Pop-up stacking**: every modeless pop-up goes through `app/utils.py::keep_on_top(w)`
+**before** `show()`, which re-parents it to the **top-level** window, leaves it an
+ordinary normal-level `Qt.Dialog`, and installs a `_PopupRaiser` event filter that
+re-raises it whenever the main window is activated. Both shortcuts are wrong and were
+each shipped once: `WindowStaysOnTopHint` floats the pop-up above **every** application
+(intrusive), and `Qt.Tool` — an NSPanel with `hidesOnDeactivate` — makes the pop-up
+**disappear** the moment the user clicks another app while the main window stays visible
+(measured on Qt 6.10: `isExposed()` → False). Disabling the auto-hide is not an escape:
+Qt6 ignores `WA_MacAlwaysShowToolWindow` (the cocoa plugin reads the
+`_q_macAlwaysShowToolWindow` *window property*) and a Tool window sits at
+NSFloatingWindowLevel, i.e. back to floating over the other app. Re-parenting is load
+bearing twice over — the raiser finds pop-ups in the top-level's direct child list, and a
+pop-up parented to a panel is hidden with that panel. Gated by
+`tests/test_popup_stacking.py`. `BatchDialog` opts out on purpose (it runs for minutes and
+must be free to sit behind the main window).
+
 **Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless. `restore_ui_state` only walks `sidebar_stack`, so a **dialog's** accordion persists itself through `save_section_states(scope, sections)` / `restore_section_states(...)` with an explicit scope string.
 
 **Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
