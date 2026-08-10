@@ -801,6 +801,42 @@ int main(int argc, char* argv[]) {
         if (domainIsWall)
             std::cout << "  - Internal flow        : domain wall grows BL inward\n";
 
+        // A GROUP_BC entry whose label NO segment carries resolves to nothing, and
+        // every patch then silently falls back to the wall default. The label lives in
+        // the .meta NSEGMENTS bc column while the label->type map lives in the .meta
+        // trailer / config, and only the trailer survives a re-resample (saveMetadata
+        // rewrites the NSEGMENTS block from the pipeline config, where BCs are a
+        // later, mesh-stage edit). So re-resampling an already-BC-assigned geometry
+        // leaves the map without its labels, and the whole mesh exports as `wall` —
+        // indistinguishable, from the solver, from a boundary-condition bug. Say so
+        // here, where both halves are in hand.
+        if (!config.groupBc.empty()) {
+            std::set<std::string> carried;
+            for (const auto& nd : mesh.nodes)
+                if (!nd.bcTag.empty()) carried.insert(nd.bcTag);
+            std::vector<std::string> orphan;
+            for (const auto& kv : config.groupBc)
+                if (!carried.count(kv.first)) orphan.push_back(kv.first);
+            if (!orphan.empty()) {
+                std::ostringstream names;
+                for (size_t i = 0; i < orphan.size(); ++i)
+                    names << (i ? ", " : "") << orphan[i];
+                bool all = orphan.size() == config.groupBc.size();
+                LOG_WARN((all ? "NO boundary segment carries any of the "
+                              : "Some GROUP_BC labels are unused: ")
+                         << orphan.size() << " GROUP_BC label(s) mapped in this run ("
+                         << names.str() << "). A label is stored per segment in the "
+                         "geometry's .meta (NSEGMENTS bc column) and the mapping in its "
+                         "trailer; re-resampling the geometry rewrites the former and "
+                         "keeps the latter, so the map can outlive its labels. "
+                         << (all ? "Every patch will therefore export as the wall "
+                                   "default (" : "The affected patches fall back to (")
+                         << config.bcGeom << "), whatever the config says. Re-apply the "
+                         "per-segment BCs (GUI: Mesh > per-segment BC dialog, then OK) "
+                         "and re-run.");
+            }
+        }
+
         // Report the analytic-curve coverage and sanity-check a fit (diagnostic).
         {
             int nLine = 0, nCircle = 0, nSmooth = 0, nPoly = 0;
