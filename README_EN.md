@@ -180,6 +180,36 @@ Command line:
 
 In the PreProcessor GUI, use **Mesh Generator → Domain & Geometry**: select any geometry file, switch its role (Boundary / Seed) and set the seed size, influence radius, and mode. Seeds are drawn as dashed orange lines on the canvas.
 
+### 8. BL/no-BL Junction
+
+A *junction* is a BL-growing node whose neighbouring segment grows **no** boundary layer (`grow=0` in the `.meta` sidecar — the per-segment **No-BL** setting in the GUI's mesh stage). Using the ordinary corner bisector there tilts the growth ray toward the no-BL edge and skews, or even inverts, that cell.
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `BL_JUNCTION_METHOD` | 0: taper to zero (legacy); 1: angle-driven cap | 1 |
+| `BL_JUNCTION_ANGLE_C1` | (deg) retained for method 0 and config round-trip only — see the note below | 135.0 |
+| `BL_JUNCTION_ANGLE_C2` | (deg) θ ≤ C2 → cap perpendicular, along the BL normal | 270.0 |
+| `BL_JUNCTION_ANGLE_C3` | (deg) C2 < θ ≤ C3 → cap along the reversed neighbour edge; θ > C3 → cap perpendicular | 315.0 |
+
+**Definition of θ**: the included angle swept from the BL edge to the no-BL edge **through the flow side**. 180° is collinear, < 180° concave, > 180° convex. Because it is defined on the flow side, internal and external flow use the same bins — nothing has to be reconfigured per case.
+
+**Method 1 (default, angle-driven cap)**
+
+| θ range | Growth direction |
+| :--- | :--- |
+| θ ≤ C2 | **Perpendicular cap** along that BL edge's own outward normal |
+| C2 < θ ≤ C3 | Cap along the **reversed no-BL neighbour edge** (extension cap) |
+| θ > C3 | Perpendicular cap |
+| Both neighbours no-BL (isolated BL node) | Perpendicular cap |
+
+This scheme applies **no height taper**. What stays fixed across every case is the BL's *perpendicular* total height `D_total`: a tilted cap grown to a fixed *edge length* would only reach `D_total × cos(tilt)`, dipping below the neighbouring perpendicular columns and skewing the corner — so the step is scaled by `1 / cos(tilt)` (the cosine is floored, so a very sharp concave cannot blow the column length up). A cap leaves a free **full-height lateral column** whose exposed side edges are emitted as far-field constraints, so the wedge is filled with triangles rather than covered by quads.
+
+> **Why is C1 still here?** A concave junction (θ ≤ C1) used to be "case 1": the BL column slid *along* the no-BL neighbour edge and absorbed that segment's surface nodes. On internal-flow concave corners — a closed fluid domain growing its BL inward, i.e. the common case — this collapsed the layer onto the very wall the user had explicitly marked no-BL, and did not preserve the layer height. Concave junctions are therefore capped perpendicular too; `C1` survives only for `BL_JUNCTION_METHOD=0` and config round-trip, and changing it does not affect the default scheme.
+
+**Method 0 (legacy, taper to zero)**: the junction node grows along its own BL edge's normal (never the bisector), and every node's layer height is scaled by a taper factor — a small floor (~12%) at the junction, ramping smoothly back to 1 over an arc-length distance into the BL interior. The outer front descends toward the surface with no cliff and the far-field mesher fills the shrinking wedge.
+
+All four parameters are editable in the GUI under **Mesh panel → Concave section**, or in the **Edit BL** dialog.
+
 ## Visualization & Output
 
 1. **VTK Format**: Generates `results/meshes/<case>/mesh_<case>.vtk`. View with [ParaView](https://www.paraview.org/).
