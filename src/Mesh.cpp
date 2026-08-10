@@ -12,6 +12,7 @@
 #include <thread>
 #include <exception>
 #include <cmath>
+#include <limits>
 
 #ifdef HAVE_CGNS
 #include <cgnslib.h>
@@ -116,6 +117,34 @@ std::string Mesh::classifyBoundaryBc(int v1, int v2,
         if (pointOnSegment(p1, r.a, r.b) && pointOnSegment(p2, r.a, r.b)) {
             setKey(r.segKey);
             return r.bc;
+        }
+    }
+
+    // 1b. Both endpoints lie on the same SOURCE SEGMENT but on different sub-edges
+    //     of it, so no single reference covers the pair. Reference segments are one
+    //     per surface point pair, while a boundary edge lying on that surface is
+    //     spaced by something else entirely — a Gmsh-subdivided far-field edge, or
+    //     the lateral column of a BL/no-BL slide junction, whose nodes step by BL
+    //     layer height. Either routinely straddles a surface point and then fell
+    //     through to the wall default, silently relabelling part of a no-BL
+    //     inlet/outlet wall. Match each endpoint on its own and accept only when
+    //     both land on the SAME segKey: an edge straddling two different segments
+    //     still falls through, so a real BC boundary is never smeared across.
+    {
+        std::map<long long, std::string> onP1;      // segKey -> bc, for refs holding p1
+        for (const auto& r : refs)
+            if (r.segKey >= 0 && pointOnSegment(p1, r.a, r.b)) onP1.emplace(r.segKey, r.bc);
+        if (!onP1.empty()) {
+            long long hitKey = -1; const std::string* hitBc = nullptr; bool ambiguous = false;
+            for (const auto& r : refs) {
+                if (r.segKey < 0) continue;
+                auto it = onP1.find(r.segKey);
+                if (it == onP1.end()) continue;
+                if (!pointOnSegment(p2, r.a, r.b)) continue;
+                if (hitBc && hitKey != r.segKey) { ambiguous = true; break; }
+                hitKey = r.segKey; hitBc = &it->second;
+            }
+            if (hitBc && !ambiguous) { setKey(hitKey); return *hitBc; }
         }
     }
 
@@ -1019,14 +1048,31 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     //     (先前此場被包在 frontLineTags 非空的條件內，無邊界層時整域為均勻遠場尺寸)。
     const std::vector<double>& growthSrc =
         !frontLineTags.empty() ? frontLineTags : surfaceLineTags;
-    if (!growthSrc.empty()) {
+    const bool haveSurfaceGrowth = !growthSrc.empty();
+    // 建立緩衝區：在 dBuffer 距離內維持基準尺寸，避免 1 個大網格接多個小網格。
+    // 兩個緩衝區都提升到外層，供本函式最後的尺寸場天花板回報 (3.4) 重算場值用。
+    const double dBuffer = hBase * config.blTransitionBuffer;
+    const double dBufferOuter = hEnd * config.blTransitionBuffer;
+    // 成長場來源的線段端點：3.4 要在網格節點上重算距離，這裡沿用與 growthSrc
+    // 完全相同的判準，兩者才不會各自表述。
+    std::vector<std::array<double, 4>> growthSrcSegs;
+    if (haveSurfaceGrowth) {
+        const bool fromFront = !frontLineTags.empty();
+        for (const auto& e : edges) {
+            const Node& a = nodes[e.v1];
+            const Node& b = nodes[e.v2];
+            bool isSrc = fromFront
+                ? (a.type == NodeType::BoundaryLayer && b.type == NodeType::BoundaryLayer)
+                : (a.geomId >= 0 && b.geomId >= 0);
+            if (isSrc) growthSrcSegs.push_back({a.pos.x, a.pos.y, b.pos.x, b.pos.y});
+        }
+    }
+    if (haveSurfaceGrowth) {
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", growthSrc);
         // 沿表面取樣，確保長邊也能量到正確距離 (點列式距離場的通用設定)。
         gmsh::model::mesh::field::setNumber(fDist, "Sampling", 200);
 
-        // 建立緩衝區：在 dBuffer 距離內維持 hBase 尺寸，避免 1 個大網格接多個小網格
-        double dBuffer = hBase * config.blTransitionBuffer;
         std::string expr = "Min(" + std::to_string(farFieldSize) + ", " +
                            std::to_string(hBase) + " + Max(0, F" + std::to_string(fDist) + " - " +
                            std::to_string(dBuffer) + ") * " + std::to_string(config.farFieldGrowthRate) + ")";
@@ -1045,7 +1091,6 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     //      Min，因此靠近外邊界處也維持較細、中間最粗。矩形域為精確值，自訂外形以
     //      邊界框近似 (xMin..yMax 兩者皆已填好)。
     if (config.farFieldBidirectional) {
-        double dBufferOuter = hEnd * config.blTransitionBuffer;
         std::string dOuter = "Min(Min(x-(" + std::to_string(config.xMin) + "),(" +
                              std::to_string(config.xMax) + ")-x),Min(y-(" +
                              std::to_string(config.yMin) + "),(" +
@@ -1195,6 +1240,110 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
                 addElement({n1, n2, n3});
             }
         }
+    }
+
+    // 3.4 尺寸場天花板回報：FARFIELD_MESH_SIZE 是尺寸場的「上限 (Min)」而非目標
+    //     值。成長率若在這個計算域裡根本長不到該上限，調整它會完全沒有效果 ——
+    //     產生逐字相同的網格，使用者只會看到「改了卻沒反應」，而且無從得知門檻在
+    //     哪。因此這裡回報「不含上限時尺寸場長到多高」(uncappedMax)：上限唯有低於
+    //     它才會改變網格。
+    //
+    //     Gmsh 沒有提供尺寸場取值的 API，而量測三角形邊長會被拉長的元素高估
+    //     (實測 0.35 的最長邊對應 0.30 的場值，於是把「無效的上限」報成有效)，
+    //     所以改為在生成的網格節點上，用與 3.1/3.1b 相同的算式重算場值。節點密布
+    //     全域，其最大值即場的天花板。加密種子 (3.2) 只會讓場變小，不影響天花板。
+    auto distToGrowthSrc = [&](double px, double py) {
+        double best = std::numeric_limits<double>::max();
+        for (const auto& s : growthSrcSegs) {
+            double vx = s[2] - s[0], vy = s[3] - s[1];
+            double wx = px - s[0], wy = py - s[1];
+            double vv = vx * vx + vy * vy;
+            double t = (vv > 0.0) ? std::clamp((wx * vx + wy * vy) / vv, 0.0, 1.0) : 0.0;
+            best = std::min(best, std::hypot(wx - t * vx, wy - t * vy));
+        }
+        return best;
+    };
+    // 暴力距離是 O(節點 x 線段)。大網格改為抽樣節點：天花板是最大值，密集抽樣
+    // 已足夠，且寧可少算也不要讓回報本身變成生成時間的瓶頸。
+    const size_t nMeshNodes = nodeTags.size();
+    size_t stride = 1;
+    if (haveSurfaceGrowth && !growthSrcSegs.empty()) {
+        const size_t budget = 50000000; // ~0.1 s
+        size_t work = nMeshNodes * growthSrcSegs.size();
+        if (work > budget) stride = (work + budget - 1) / budget;
+    }
+
+    double uncappedMax = 0.0;      // 不含 farFieldSize 上限時，場的最大值
+    size_t sampled = 0, cappedSamples = 0; // 上限真正生效的節點比例
+    bool haveUncapped = haveSurfaceGrowth || config.farFieldBidirectional;
+    for (size_t i = 0; i < nMeshNodes; i += stride) {
+        double px = coord[3 * i], py = coord[3 * i + 1];
+        double s = std::numeric_limits<double>::max();
+        if (haveSurfaceGrowth && !growthSrcSegs.empty()) {
+            double d = distToGrowthSrc(px, py);
+            s = std::min(s, hBase + std::max(0.0, d - dBuffer) * config.farFieldGrowthRate);
+        }
+        if (config.farFieldBidirectional) {
+            double dOut = std::min(std::min(px - config.xMin, config.xMax - px),
+                                   std::min(py - config.yMin, config.yMax - py));
+            s = std::min(s, hEnd + std::max(0.0, dOut - dBufferOuter) *
+                                       config.farFieldGrowthRateOuter);
+        }
+        if (s < std::numeric_limits<double>::max()) {
+            uncappedMax = std::max(uncappedMax, s);
+            ++sampled;
+            if (s > farFieldSize) ++cappedSamples;
+        }
+    }
+    const double cappedFrac = sampled ? (double)cappedSamples / (double)sampled : 0.0;
+
+    std::cout << "\n[ Mesh Size Field ]" << std::endl;
+    std::cout << "  - Surface size (hEnd)     : " << hEnd << std::endl;
+    std::cout << "  - Far-field size cap      : " << farFieldSize
+              << (config.autoFarFieldSize ? "  (AUTO_FARFIELD_SIZE, from domain extent)"
+                                          : "  (FARFIELD_MESH_SIZE)")
+              << std::endl;
+    if (haveUncapped) {
+        std::cout << "  - Growth reaches          : " << uncappedMax
+                  << "  (size field max before the cap"
+                  << (stride > 1 ? ", sampled)" : ")") << std::endl;
+        std::cout << "  - Effective ceiling       : " << std::min(farFieldSize, uncappedMax)
+                  << std::endl;
+    } else {
+        std::cout << "  - Growth reaches          : (no growth field active - uniform "
+                     "far-field at the cap)" << std::endl;
+    }
+
+    if (haveUncapped && farFieldSize > uncappedMax) {
+        // 這個上限從頭到尾沒有參與運算：明講門檻與該調哪個成長率，否則使用者只能
+        // 靠試誤才會發現 far-field size 在某個值以上完全等價。
+        std::ostringstream knob;
+        if (haveSurfaceGrowth)
+            knob << "FARFIELD_GROWTH_RATE=" << config.farFieldGrowthRate;
+        if (config.farFieldBidirectional) {
+            if (haveSurfaceGrowth) knob << " / ";
+            knob << "FARFIELD_GROWTH_RATE_OUTER=" << config.farFieldGrowthRateOuter;
+        }
+        LOG_INFO("The far-field size cap (" << farFieldSize << ") is never reached: growth "
+                 "only takes the size field to " << uncappedMax << " in this domain, so "
+                 "every cap above that yields an identical mesh. Lower it below "
+                 << uncappedMax << " to have any effect, or raise the growth rate ("
+                 << knob.str() << ") to coarsen further.");
+    } else if (!haveUncapped) {
+        LOG_INFO("No growth field is active, so the far-field size cap (" << farFieldSize
+                 << ") is simply the uniform far-field size.");
+    } else if (cappedFrac < 0.01) {
+        // 上限低於天花板，但只削到域內極小一塊：技術上生效，實務上調它幾乎不動
+        // 網格。單報「生效」會讓使用者以為手上這顆旋鈕有用。
+        LOG_INFO("The far-field size cap (" << farFieldSize << ") sits just under the size "
+                 "field's ceiling (" << uncappedMax << ") and clips only "
+                 << std::fixed << std::setprecision(2) << (cappedFrac * 100.0)
+                 << "% of the domain, so changing it barely moves the mesh. Lower it "
+                    "further, or raise the growth rate, for a visible effect.");
+    } else {
+        LOG_INFO("The far-field size cap (" << farFieldSize << ") is active over "
+                 << std::fixed << std::setprecision(1) << (cappedFrac * 100.0)
+                 << "% of the domain - it is what limits the coarsest cells there.");
     }
 
     std::cout << "Step: Finalizing Gmsh..." << std::endl;
