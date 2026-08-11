@@ -14,6 +14,15 @@ is the intrusive behaviour ``WindowStaysOnTopHint`` was removed for. Instead the
 pop-up is an ordinary normal-level window and ``_PopupRaiser`` lifts it back
 above the main window whenever that window is activated.
 
+USER-REPORTED follow-up (2026-08-11): "the CAD tab's arc pop-up opens BELOW the
+main window." Dropping the Tool level exposed *when* the raise happens: a raise
+issued from inside the event that reorders the windows is undone when the
+platform finishes handling that event. The arc/line/… editor is shown from the
+canvas mouse press that finishes the shape (``_begin_pending_edit``), so its
+own ``show(); raise_()`` lost to the press, and the activation raise lost the
+same way. Both raises are now deferred by one event-loop turn (``raise_later``),
+and the pop-up re-raises itself on Show so every call site is covered.
+
 Checks:
  1. keep_on_top() produces a normal-level Dialog window — no Tool bit (which
     would auto-hide on macOS), no WindowStaysOnTopHint (which would float over
@@ -26,6 +35,10 @@ Checks:
     window are left alone.
  5. The raiser never consumes the activation event, and is installed once per
     top-level window however many pop-ups are opened.
+ 6. The raise is DEFERRED, not synchronous (the arc regression), and merely
+    showing a pop-up schedules one — no call site has to remember to raise.
+ 7. A pop-up deleted between the event and the deferred raise is survivable
+    (modeless dialogs are deleteLater()'d on close).
 
 Run:  python3 tools/PreProcessor/tests/test_popup_stacking.py
 """
@@ -143,6 +156,41 @@ activate(mw)
 check(dlg.raises == n_dlg + 1 and second.raises == n_second + 1,
       f"5. one raise per pop-up per activation (dlg +{dlg.raises - n_dlg}, "
       f"second +{second.raises - n_second}) — no duplicated filters")
+
+# ── 6. the raise is deferred, and a plain show() schedules one ──────────────
+# The arc regression: a raise issued INSIDE the event that reorders the windows
+# is undone when the platform finishes that event, so nothing may be raised
+# before control returns to the event loop.
+n_dlg = dlg.raises
+QApplication.sendEvent(mw, QEvent(QEvent.Type.WindowActivate))   # no processEvents
+check(dlg.raises == n_dlg,
+      "6. the activation raise is DEFERRED, not issued inside the event")
+app.processEvents()
+check(dlg.raises == n_dlg + 1,
+      f"6. ...and lands on the next event-loop turn (+{dlg.raises - n_dlg})")
+
+third = SpyDialog(panel)        # a call site that only show()s, never raise_()s
+keep_on_top(third)
+third.show()                    # opened from a canvas press, like the arc editor
+check(third.raises == 0, "6. showing a pop-up does not raise inside the show")
+app.processEvents()
+check(third.raises >= 1,
+      f"6. ...the pop-up raises itself one turn after being shown "
+      f"({third.raises}) — no call site has to remember")
+
+# ── 7. a pop-up closed before its deferred raise does not blow up ───────────
+doomed = SpyDialog(panel)
+keep_on_top(doomed)
+doomed.show()                   # schedules a deferred raise
+doomed.deleteLater()            # ...and dies first, as a modeless dialog does
+try:
+    app.processEvents()
+    app.processEvents()
+    ok = True
+except RuntimeError as e:       # pragma: no cover - the bug this guards
+    ok = False
+    print(f"    deferred raise raised: {e}")
+check(ok, "7. deleting a pop-up before its deferred raise is survivable")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)
