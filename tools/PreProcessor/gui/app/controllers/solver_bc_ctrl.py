@@ -14,14 +14,25 @@ class SolverBcControllerMixin:
     # Bridge mesh boundary patches -> solver BC table (D)
     # ------------------------------------------------------------------ #
     def _locate_mesh_bnd(self) -> str:
-        """Find the STAR-CD .bnd of the mesh to assign BCs to: an explicitly set
-        .bnd in the Grid Conversion section, else the last generated mesh's .bnd."""
+        """Find the STAR-CD .bnd of the mesh to assign BCs to.
+
+        It must be the file the RUN will use, or the table describes one grid
+        while the solver reads another. So auto-link wins when it is on (the run
+        overwrites the panel's paths from the last generated mesh anyway, and
+        the field can still be showing an earlier 'Send to Solver' export);
+        otherwise the explicitly set .bnd in Grid Conversion, else the last
+        generated mesh's .bnd."""
         from app.services.bnd_io import bnd_path_for
         panel = self.main_window.solver_config_panel
+        auto = getattr(panel, "auto_link_mesh", None)
+        vtk = getattr(self, "global_vtk_path", "")
+        if auto is not None and auto.isChecked() and vtk:
+            b = bnd_path_for(vtk)
+            if os.path.exists(b):
+                return b
         p = panel.input_bnd_file.text().strip()
         if p and os.path.exists(p):
             return p
-        vtk = getattr(self, "global_vtk_path", "")
         if vtk:
             b = bnd_path_for(vtk)
             if os.path.exists(b):
@@ -67,9 +78,9 @@ class SolverBcControllerMixin:
         BC (the reported bug). Now: if a mesh .bnd exists and its patch NAMES no
         longer match the table, RE-DETECT from that .bnd (real names + segment
         ids + group_bc). When the table already matches the mesh, only refresh
-        the BC types (preserving a manual tweak on an unassigned patch). Also
-        warns when a Mesh-Generator assignment isn't present in the current mesh
-        (the mesh predates it), since only a regenerate can carry it through."""
+        the BC types (preserving a manual tweak on an unassigned patch). Finally
+        it audits the mesh against the assigned BCs, since only a regenerate can
+        carry an assignment the mesh predates into the solver."""
         panel = self.main_window.solver_config_panel
         log = self.main_window.log_panel.log
         group_bc = getattr(getattr(self, "global_mesh_config", None), "group_bc", {}) or {}
@@ -77,7 +88,6 @@ class SolverBcControllerMixin:
 
         from app.services.bnd_io import read_bnd_segments
         bnd = self._locate_mesh_bnd()
-        mesh_names: list[str] = []
         if bnd:
             segs = read_bnd_segments(bnd)
             mesh_names = [nm for _sid, nm in segs]
@@ -99,14 +109,16 @@ class SolverBcControllerMixin:
                 log(f"[Solver] Updated {n} BC row(s) from the current "
                     f"Mesh-Generator patch assignments.")
 
-        # Warn about assignments the current mesh can't carry (it predates them):
-        # their patch name is not in the mesh .bnd, so the user must regenerate.
-        if group_bc and mesh_names:
-            missing = [nm for nm in group_bc if nm not in mesh_names]
-            if missing:
-                log("[Solver] WARNING: Mesh-Generator BC assignment(s) for "
-                    f"{', '.join(missing)} are not in the current mesh — "
-                    "regenerate the mesh so they reach the solver.")
+        # Warn about assignments the current mesh can't carry (it predates them).
+        # NOT by comparing group_bc's keys with the patch names: a key is a
+        # segment LABEL while a patch name is the BC TYPE the mesher resolved
+        # that label to, so every key looked "missing" and the warning fired on
+        # every single run — including for meshes that were perfectly correct,
+        # and telling the user to regenerate a mesh that already had their BCs.
+        # The audit compares like with like (assigned type vs patch name, plus
+        # the mesh's age against the .meta the labels live in).
+        if bnd:
+            self.warn_if_mesh_bc_stale(bnd)
 
     def open_bc_dll_builder(self):
         """Open the DLL builder for a BC type-11 getQ_inst_dll source (#12) and

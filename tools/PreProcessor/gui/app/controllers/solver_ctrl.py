@@ -75,9 +75,6 @@ class SolverControllerMixin:
             self.main_window.log_panel.log("Solver is already running. Please wait.")
             return
 
-        # #7: make sure the BC rows reflect the latest Mesh-Generator patch
-        # assignments before we snapshot the config for the run.
-        self.resync_solver_bc_from_group()
         cfg = self.main_window.solver_config_panel.get_config()
         self.global_solver_config = cfg
         log = self.main_window.log_panel.log
@@ -86,6 +83,18 @@ class SolverControllerMixin:
         if self.main_window.solver_config_panel.auto_link_mesh.isChecked():
             if not self._auto_link_mesh_output(cfg):
                 return
+
+        # #7: make sure the BC rows reflect the latest Mesh-Generator patch
+        # assignments. AFTER the auto-link, not before: the rows are seeded from
+        # the mesh .bnd, and with auto-link on that file is only decided above —
+        # resyncing first read whatever stale path the panel still displayed, so
+        # the table could describe one grid while the run used another.
+        self.resync_solver_bc_from_group()
+        # ...and pick the refreshed rows back up. Only the BC table can have
+        # changed above, and re-reading the whole config would overwrite the
+        # grid paths the auto-link just put on cfg.
+        cfg.bc_definitions = (
+            self.main_window.solver_config_panel.get_config().bc_definitions)
 
         for f, label in [(cfg.input_vrt_file, ".vrt"),
                          (cfg.input_cel_file, ".cel"),
@@ -105,6 +114,16 @@ class SolverControllerMixin:
             for p in problems:
                 log(f"[ERROR] {p}")
             log("Fix the issues above and run again.")
+            return
+
+        # Everything else about this run is valid — but does the grid actually
+        # carry the boundary conditions the Mesh stage assigned? A mesh generated
+        # before the per-segment BCs were applied exports every patch as `wall`,
+        # and the run then looks exactly like a converged, unchanged answer.
+        # Asked last, so the user is never prompted about a run that then aborts
+        # on a missing binary.
+        if not self._confirm_mesh_bc_state(cfg.input_bnd_file):
+            log("Solver run cancelled — regenerate the mesh to carry the BCs in.")
             return
 
         # Overwrite protection: a re-run of the same case name must not silently
@@ -302,6 +321,27 @@ class SolverControllerMixin:
         cfg.input_vrt_file, cfg.input_cel_file, cfg.input_bnd_file = vrt, cel, bnd
         log(f"[Solver] Auto-linked mesh output: {os.path.basename(base)}.{{vrt,cel,bnd}}")
         return True
+
+    def _confirm_mesh_bc_state(self, bnd_path: str) -> bool:
+        """True to go ahead with this grid.
+
+        USER-REPORTED: "I updated the STAR-CD boundary conditions and the solver
+        still gives the same result." The grid it ran was all-`wall` — the BCs
+        had been re-applied after that mesh was generated, and every step from
+        there (export, send, run) simply passed the stale file along. The mesher
+        does warn, but at mesh time, several clicks earlier. So the last step
+        before the solve looks at the grid itself and makes the user choose;
+        `headless_default=True` keeps batch/CI runs (which regenerate the mesh in
+        the same pass) moving. The lines are not logged here — the resync a few
+        lines up already did that for the same grid."""
+        problems = self.mesh_bc_problems(bnd_path)
+        if not problems:
+            return True
+        from app.utils import confirm
+        return confirm(
+            self.main_window, "Boundary conditions may not be in this grid",
+            problems[0] + "\n\nRun the solver on it anyway?",
+            detail="\n\n".join(problems[1:]), headless_default=True)
 
     # ------------------------------------------------------------------ #
     # Bridge mesh boundary patches -> solver BC table (D)

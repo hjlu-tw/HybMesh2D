@@ -198,15 +198,20 @@ class MeshExportControllerMixin:
             self.main_window.log_panel.log(f"Failed to export Star-CD files: {e}")
             return
 
+        # These files are what the solver (here or on another machine) will run,
+        # so say it now if they don't carry the assigned per-segment BCs.
+        stale = self.warn_if_mesh_bc_stale(dest_bnd)
+
         # #3 STAR-CD is the solver's input format, so offer to hand the just-exported
         # grid straight to the Solver stage. "Yes" links these .vrt/.cel/.bnd into the
         # Solver panel and switches to the Solver tab (stopping there so the user can
         # review BCs before running); "No" leaves the export as-is. Headless/batch
         # exports can't service the modal — skip it (equivalent to "No").
         if confirm(self.main_window, "Send to Solver",
-                   "Star-CD mesh exported.\n\nSend this mesh to the Solver now?",
+                   "Star-CD mesh exported.\n\nSend this mesh to the Solver now?"
+                   + ("\n\n⚠ " + stale[0] if stale else ""),
                    headless_default=False):
-            self._send_starcd_to_solver(dest_vrt, dest_cel, dest_bnd)
+            self._send_starcd_to_solver(dest_vrt, dest_cel, dest_bnd, warn=False)
 
     def send_mesh_to_solver(self):
         """Toolbar one-click hand-off: stage the just-generated Star-CD grid into
@@ -250,7 +255,8 @@ class MeshExportControllerMixin:
             f"[Solver] Staged grid → {dest_base}.{{vrt,cel,bnd}}")
         self._send_starcd_to_solver(dest[".vrt"], dest[".cel"], dest[".bnd"])
 
-    def _send_starcd_to_solver(self, vrt_path: str, cel_path: str, bnd_path: str):
+    def _send_starcd_to_solver(self, vrt_path: str, cel_path: str, bnd_path: str,
+                               warn: bool = True):
         """#3 Link an exported Star-CD grid into the Solver panel and switch to the
         Solver tab. Sets the manual .vrt/.cel/.bnd inputs to the exported files (and
         turns OFF auto-link so those exact files are used, not the temp mesh), then
@@ -273,3 +279,38 @@ class MeshExportControllerMixin:
             self.detect_bc_from_mesh()
         self.main_window.log_panel.log(
             "[Export] Sent Star-CD mesh to the Solver — review the BCs, then Run Solver.")
+        # warn=False when the caller has already surfaced the same audit for this
+        # grid (export_star_cd puts it on its own prompt) — repeating a warning
+        # is how a real one gets ignored.
+        if warn:
+            self.warn_if_mesh_bc_stale(bnd_path, dialog=True)
+
+    # ------------------------------------------------------------------ #
+    def mesh_bc_problems(self, bnd_path: str) -> list[str]:
+        """The ways this grid disagrees with the BCs the Mesh stage assigned.
+
+        A mesh generated BEFORE the per-segment BCs were applied exports every
+        patch as the wall default, and the solver then runs a sealed box that
+        looks exactly like a converged, boring answer — the reported "I changed
+        the BCs and got the same result". The mesher warns at MESH time, which
+        the user has already walked past by the time the grid is exported, so it
+        is audited again wherever it leaves the Mesh stage. Silent (returns the
+        lines) so a caller that is about to show them in a prompt does not also
+        fill the log with the same text."""
+        from app.services.mesh_bc_audit import audit_mesh_bc
+        cfg = getattr(self, "global_mesh_config", None)
+        if cfg is None:
+            return []
+        geoms = [g for g in (cfg.geom_files or []) if not cfg.is_seed(g)]
+        return audit_mesh_bc(bnd_path, geoms, cfg.group_bc)
+
+    def warn_if_mesh_bc_stale(self, bnd_path: str, dialog: bool = False) -> list[str]:
+        """:meth:`mesh_bc_problems`, logged (and optionally shown)."""
+        problems = self.mesh_bc_problems(bnd_path)
+        for p in problems:
+            self.main_window.log_panel.log(f"[BC] {p}")
+        if problems and dialog:
+            from app.utils import report_warning
+            report_warning(self.main_window, "Mesh boundary conditions are stale",
+                           problems[0], detail="\n\n".join(problems[1:]))
+        return problems
