@@ -172,11 +172,20 @@ class ResultCanvasControlsMixin:
     def _on_zone_changed(self):
         if self._building or self._result is None:
             return
+        z = self.zone_combo.currentData()
+        # Picking a zone by hand is a manual step, so it goes through the same
+        # cached path (and the same frame counter) as Prev/Next.
+        if self._series is not None and z is not None:
+            self.stop_playback()
+            self.show_frame(int(z))
+            return
         path = getattr(self, "_result_path", "")
         if path:
-            z = self.zone_combo.currentData()
             self.set_result(TecplotResult.from_file(path, zone=z if z is not None else -1))
 
     def _on_control_changed(self):
+        # The pinned playback range belongs to ONE variable; switching variables
+        # must not colour the new field with the old field's range.
+        self._invalidate_range_lock()
         if not self._building:
             self.render()

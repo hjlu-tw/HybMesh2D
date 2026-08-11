@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from app.models.tecplot_index import ZoneInfo, index_for
+
 # ----------------------------------------------------------------------------
 # Tecplot FEBLOCK parser for unicones solver output (xtecp_sol_allz.dat.*).
 #
@@ -22,21 +24,13 @@ import numpy as np
 # areas — is triangle-based), duplicating each cell value onto both triangles.
 #
 # Transient runs append multiple zones. Zones are parsed lazily: list_zones()
-# scans only the headers (R7); from_file() materialises one zone's arrays.
+# reads only the headers (R7); from_file() seeks straight to ONE zone's byte
+# range (app/models/tecplot_index.py) and materialises just that zone's arrays,
+# so animating through the zones does not re-read the whole file per frame.
 # ----------------------------------------------------------------------------
 
-_ZONE_RE = re.compile(r"^\s*zone\b", re.IGNORECASE)
-_N_RE = re.compile(r"\bN\s*=\s*(\d+)", re.IGNORECASE)
-_E_RE = re.compile(r"\bE\s*=\s*(\d+)", re.IGNORECASE)
-_ZONETYPE_RE = re.compile(r"ZONETYPE\s*=\s*(\w+)", re.IGNORECASE)
-_TITLE_RE = re.compile(r't\s*=\s*"([^"]*)"', re.IGNORECASE)
 # A VARLOCATION entry like "[3-10] = CELLCENTERED" or "[1] = NODAL"
 _VARLOC_RE = re.compile(r"\[\s*(\d+)\s*(?:-\s*(\d+))?\s*\]\s*=\s*(\w+)", re.IGNORECASE)
-
-
-def _parse_variables(line: str) -> list[str]:
-    """Extract the quoted variable names from a `variables = "x", "y", ...` line."""
-    return re.findall(r'"([^"]*)"', line)
 
 
 def _parse_varlocation(line: str, n_vars: int) -> list[str]:
@@ -56,16 +50,6 @@ def _parse_varlocation(line: str, n_vars: int) -> list[str]:
 
 
 @dataclass
-class ZoneInfo:
-    """Header metadata for one zone (no field data loaded)."""
-    index: int
-    title: str
-    n_nodes: int
-    n_elems: int
-    zonetype: str
-
-
-@dataclass
 class TecplotResult:
     """One materialised zone of a Tecplot FEBLOCK solver result."""
 
@@ -81,73 +65,48 @@ class TecplotResult:
     @staticmethod
     def list_zones(path: str) -> list[ZoneInfo]:
         """Scan only the zone headers — cheap metadata, no field data (R7)."""
-        zones: list[ZoneInfo] = []
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if _ZONE_RE.match(line):
-                    n = _N_RE.search(line)
-                    e = _E_RE.search(line)
-                    zt = _ZONETYPE_RE.search(line)
-                    title = _TITLE_RE.search(line)
-                    zones.append(ZoneInfo(
-                        index=len(zones),
-                        title=title.group(1) if title else f"zone {len(zones)}",
-                        n_nodes=int(n.group(1)) if n else 0,
-                        n_elems=int(e.group(1)) if e else 0,
-                        zonetype=zt.group(1) if zt else "",
-                    ))
-        return zones
+        return list(index_for(path).zones)
 
     @classmethod
     def from_file(cls, path: str, zone: int = -1) -> TecplotResult:
         """Load a single zone (default: last zone, i.e. most-converged solution).
 
+        Only that zone's byte range is read (see ``tecplot_index``), so the cost
+        is proportional to one zone rather than to the whole transient history.
+
         Raises ValueError if the file has no zones or the index is out of range.
         """
-        with open(path, encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-
-        variables: list[str] = []
-        zone_starts: list[int] = []   # line index of each "zone ..." header
-        for i, line in enumerate(lines):
-            if not variables and line.lstrip().lower().startswith("variables"):
-                variables = _parse_variables(line)
-            if _ZONE_RE.match(line):
-                zone_starts.append(i)
+        idx = index_for(path)
+        variables = idx.variables
+        n_zones = len(idx.zones)
 
         if not variables:
             raise ValueError(f"No 'variables =' line found in {path}")
-        if not zone_starts:
+        if not n_zones:
             raise ValueError(f"No zones found in {path}")
 
         if zone < 0:
-            zone += len(zone_starts)
-        if not (0 <= zone < len(zone_starts)):
-            raise ValueError(f"Zone {zone} out of range (file has {len(zone_starts)})")
+            zone += n_zones
+        if not (0 <= zone < n_zones):
+            raise ValueError(f"Zone {zone} out of range (file has {n_zones})")
 
-        header_idx = zone_starts[zone]
-        header = lines[header_idx]
-        n = _N_RE.search(header)
-        e = _E_RE.search(header)
-        n_nodes = int(n.group(1)) if n else 0
-        n_elems = int(e.group(1)) if e else 0
-        zt = _ZONETYPE_RE.search(header)
-        title = _TITLE_RE.search(header)
-        zinfo = ZoneInfo(zone, title.group(1) if title else f"zone {zone}",
-                         n_nodes, n_elems, zt.group(1) if zt else "")
+        # Zone-local lines: line 0 IS this zone's header, and the slice already
+        # ends where the next zone begins.
+        lines = idx.read_zone_lines(zone)
+        zinfo = idx.zones[zone]
+        n_nodes, n_elems = zinfo.n_nodes, zinfo.n_elems
 
         # The DATAPACKING/VARLOCATION line may be on the header line itself or
         # the following line(s). Find it, then numeric data starts after it.
-        data_start = header_idx + 1
-        varloc_text = header
-        for j in range(header_idx, min(header_idx + 3, len(lines))):
+        data_start = 1
+        varloc_text = lines[0]
+        for j in range(0, min(3, len(lines))):
             if "DATAPACKING" in lines[j].upper() or "VARLOCATION" in lines[j].upper():
-                varloc_text = lines[j] if j == header_idx else varloc_text + lines[j]
+                varloc_text = lines[j] if j == 0 else varloc_text + lines[j]
                 data_start = j + 1
         loc = _parse_varlocation(varloc_text, len(variables))
 
-        # Numeric region for this zone runs to the next zone header (or EOF).
-        data_end = zone_starts[zone + 1] if zone + 1 < len(zone_starts) else len(lines)
+        data_end = len(lines)
 
         counts = [n_nodes if loc[i] == "NODAL" else n_elems
                   for i in range(len(variables))]
@@ -215,7 +174,7 @@ class TecplotResult:
             cell_data=cell_data,
             node_data=node_data,
             zone=zinfo,
-            zones=[ZoneInfo(k, "", 0, 0, "") for k in range(len(zone_starts))],
+            zones=list(idx.zones),
         )
 
     # ------------------------------------------------------------------ #

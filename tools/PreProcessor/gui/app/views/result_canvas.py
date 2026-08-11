@@ -20,6 +20,7 @@ from app.views.result_canvas_plots_mixin import ResultCanvasPlotsMixin
 from app.views.result_canvas_vector_mixin import ResultCanvasVectorMixin
 from app.views.result_canvas_controls_mixin import ResultCanvasControlsMixin
 from app.views.result_canvas_setup_mixin import ResultCanvasSetupMixin
+from app.views.result_playback_mixin import ResultPlaybackMixin
 
 from app.services.logging_setup import get_logger
 
@@ -35,7 +36,7 @@ _COLORMAPS = ["turbo", "viridis", "inferno", "plasma", "coolwarm", "jet", "RdBu_
 
 class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
                        ResultCanvasVectorMixin, ResultCanvasControlsMixin,
-                       ResultCanvasSetupMixin, QWidget):
+                       ResultPlaybackMixin, ResultCanvasSetupMixin, QWidget):
     """Matplotlib-embedded 2D result viewer.
 
     Renders a cell-centered scalar field as a filled contour (tripcolor) or a
@@ -80,6 +81,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         self._stream_density = 1.2
         self._stream_lw_speed = True
         self._interp_cache: dict[str, mtri.LinearTriInterpolator] = {}
+        self._init_playback()
 
         # CAD geometry overlay: raw polyline pieces (list of (N,2) arrays) from
         # the open project segments, drawn over the field each render.
@@ -142,6 +144,11 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             t = QLabel(lbl); t.setStyleSheet(f"color:{_FG};font-size:11px;")
             hl.addWidget(t); hl.addWidget(w)
         hl.addStretch()
+
+        # Row 1b: transient playback transport. A steady run has one zone and
+        # nothing to animate, so the whole group hides itself until a result with
+        # several frames is loaded (see _update_playback_ui).
+        self._build_playback_bar(bar_v)
 
         # Row 2: file / view actions.
         self.wallqty_btn = QPushButton("Wall Qty…")
@@ -294,10 +301,16 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             dmin = float(finite.min()) if finite.size else 0.0
             dmax = float(finite.max()) if finite.size else 1.0
             mean = float(finite.mean()) if finite.size else 0.0
-            if self._clim_auto or self._clim is None:
-                vmin, vmax = dmin, dmax
-            else:
+            # In auto mode a transient run uses the range pinned across ALL its
+            # frames (playback_clim), so the colours mean the same thing in every
+            # frame; a manual range still wins over both.
+            locked = self.playback_clim()
+            if not self._clim_auto and self._clim is not None:
                 vmin, vmax = self._clim
+            elif locked is not None:
+                vmin, vmax = locked
+            else:
+                vmin, vmax = dmin, dmax
             # Symmetric scale (about zero) is useful for signed fields (vorticity,
             # pressure coefficient); applied before the flat-field widening.
             if self._symmetric:
@@ -394,8 +407,14 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             self._draw_line_overlay()
             self._draw_extrema()
 
-            self.ax.set_title(
-                f"{var}  —  {r.zone.title if r.zone else ''}", color=_FG, fontsize=10)
+            # Title names the frame for a transient run: every zone the solver
+            # writes carries the same title ("time 0"), so the position in the
+            # file is the only thing that tells two frames apart.
+            if self._frame_count() > 1:
+                subtitle = self._series.frame_label(self._frame)
+            else:
+                subtitle = r.zone.title if r.zone else ""
+            self.ax.set_title(f"{var}  —  {subtitle}", color=_FG, fontsize=10)
             # Preserve the user's zoom/pan across re-renders (variable/overlay
             # changes); set_result clears it so a new mesh auto-fits.
             if self._user_view is not None:
