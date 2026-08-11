@@ -134,7 +134,7 @@ Layered PyQt6 application:
 
 - **`controller.py`**: Top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
 - **`controllers/`**: Business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
-- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields; serialized via `to_dict()`/`from_dict()`), `project.py`, `mesh_config.py`, `session.py`, `vtk_mesh.py`. Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/main.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
+- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields; serialized via `to_dict()`/`from_dict()`), `project.py`, `mesh_config.py`, `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py` (see "Transient results" below). Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/main.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
 - **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py` (mesh visualization), `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
 - **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd` — snapshot of the Mesh/Solver/IB configuration)
 
@@ -197,21 +197,35 @@ Rules:
 
 **User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` call — `report_error` (failed write, data at risk → Critical), `report_warning` (failed read → Warning), `report_info` (a precondition, nothing broke → Information), `confirm(..., headless_default=)` (Yes/No). All of them no-op or return the default on a headless platform, which is what keeps tests, CI and the headless pipeline from hanging on a modal. Any new dock widget needs `setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
 
-**Pop-up stacking**: every modeless pop-up goes through `app/utils.py::keep_on_top(w)`
-**before** `show()`, which re-parents it to the **top-level** window, leaves it an
-ordinary normal-level `Qt.Dialog`, and installs a `_PopupRaiser` event filter that
-re-raises it whenever the main window is activated. Both shortcuts are wrong and were
-each shipped once: `WindowStaysOnTopHint` floats the pop-up above **every** application
-(intrusive), and `Qt.Tool` — an NSPanel with `hidesOnDeactivate` — makes the pop-up
-**disappear** the moment the user clicks another app while the main window stays visible
-(measured on Qt 6.10: `isExposed()` → False). Disabling the auto-hide is not an escape:
-Qt6 ignores `WA_MacAlwaysShowToolWindow` (the cocoa plugin reads the
-`_q_macAlwaysShowToolWindow` *window property*) and a Tool window sits at
-NSFloatingWindowLevel, i.e. back to floating over the other app. Re-parenting is load
-bearing twice over — the raiser finds pop-ups in the top-level's direct child list, and a
-pop-up parented to a panel is hidden with that panel. Gated by
+**Pop-up stacking** (`app/popup_stack.py`, re-exported from `app/utils.py`): every
+modeless pop-up goes through `keep_on_top(w)` **before** `show()`, which re-parents it to
+the **top-level** window, leaves it an ordinary normal-level `Qt.Dialog`, and installs the
+two filters that put it back on top — `_PopupRaiser` (on the main window, for every
+activation) and `_ShowRaiser` (on the pop-up, so a call site that only `show()`s is
+covered). Both shortcuts on the window LEVEL are wrong and were each shipped once:
+`WindowStaysOnTopHint` floats the pop-up above **every** application (intrusive), and
+`Qt.Tool` — an NSPanel with `hidesOnDeactivate` — makes the pop-up **disappear** the
+moment the user clicks another app while the main window stays visible (measured on
+Qt 6.10: `isExposed()` → False). Disabling the auto-hide is not an escape: Qt6 ignores
+`WA_MacAlwaysShowToolWindow` (the cocoa plugin reads the `_q_macAlwaysShowToolWindow`
+*window property*) and a Tool window sits at NSFloatingWindowLevel, i.e. back to floating
+over the other app. **Every raise goes through `raise_later()`** — a raise issued from
+inside the event that reorders the windows is undone when the platform finishes that
+event, which is why the arc/line editor (shown from the canvas press that completes the
+shape) opened *underneath* the main window once the Tool level was gone. Re-parenting is
+load bearing twice over — the raiser finds pop-ups in the top-level's direct child list,
+and a pop-up parented to a panel is hidden with that panel. Gated by
 `tests/test_popup_stacking.py`. `BatchDialog` opts out on purpose (it runs for minutes and
 must be free to sit behind the main window).
+
+**Duplicate/transform closure**: `transform_apply_ctrl` is type-preserving (a line stays a
+line…), and the copy inherits the source's `closed` flag — except in the polygon-bake
+fallback (arcs, formula curves, discrete file edges), where the flag is *re-derived from
+the points* by `_baked_edge_is_closed`. `SegmentModel.closed` defaults True and is only
+ever read for `curve_type == "polygon"`, so every other kind of edge carries True while
+drawing open; copying that flag onto a baked polygon is what silently closed a duplicated
+arc. Discrete edges must not take the PROJECT's closure either — one segment of a closed
+imported outline is itself an open polyline. Gated by `tests/test_transform_closure.py`.
 
 **Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless. `restore_ui_state` only walks `sidebar_stack`, so a **dialog's** accordion persists itself through `save_section_states(scope, sections)` / `restore_section_states(...)` with an explicit scope string.
 
@@ -234,6 +248,74 @@ that, every reader (including the sidebar) sizes itself from the state the secti
 left. The leftover-space absorber (trailing spacer / per-segment list) is
 **stretch 0 + Expanding**, never a stretched item, which would compete proportionally
 with the capped scroll area and leave the groups short of their own cap.
+
+**Transient results (Results tab playback)**: a transient run appends one Tecplot
+zone per dumped step, so the Results view is a movie. `models/tecplot_index.py`
+scans the file ONCE for the byte offset of every `zone` header and caches that
+index by (path, mtime, size); `TecplotResult.from_file` then seeks to one zone's
+byte range instead of `readlines()`-ing the whole file and rescanning it — 0.35 s
+→ 0.07 s per frame on a 113 MB / 10-zone run, which is what makes playback
+affordable at all. `models/result_series.py` adds the bounded (by BYTES, not
+frame count) LRU frame cache and the per-variable global range.
+`views/result_playback_mixin.py` owns the transport (Play/Pause, Prev, Next,
+speed, Loop). **Looping is opt-in**: by default a run plays through once and stops
+on the last frame (the converged solution), and the same checkbox governs the step
+buttons, which clamp at the ends — and grey themselves out there — instead of
+wrapping to the far end of the run. Play at the end of a finished non-looping run
+rewinds first. Two further rules decide whether the animation is readable:
+- **The colour scale is pinned across the whole run**, because auto-scaling each
+  frame to its own min/max repaints the same colours onto a changing range — a
+  vorticity field decaying 0.089 → 0.019 looks *identical* frame to frame. The
+  first use of any transport control scans all frames for the current variable
+  (cached, so it is paid once) and pins that range. A **manual** clim always
+  wins: the lock fixes auto-scaling, it does not overrule an explicit choice, and
+  it is dropped when the displayed variable changes.
+- **`set_result` reuses the triangulation when the incoming frame has the same
+  nodes**, which also keeps probes/line/extrema alive across a step (they mark
+  geometry, and the geometry did not move). Field caches are always dropped.
+Frames are labelled by POSITION (`Frame 4 / 10`): the solver writes `t = "time 0"`
+for *every* zone, so the file carries no real timestamp to show. Gated by
+`tests/test_result_playback.py`, which pins the byte-range parse to be identical
+to a whole-file scan.
+
+**The grid must carry the BCs before it leaves the Mesh stage**
+(`services/mesh_bc_audit.py`, Qt-free): a mesh generated BEFORE the per-segment
+BCs were applied exports **every** patch as the wall default, and the solve then
+looks exactly like a converged, unchanged answer — the reported "I updated the
+STAR-CD boundary conditions and got the same result". The mesher's own
+`NO boundary segment carries any of the GROUP_BC label(s)` warning fires at MESH
+time, several clicks before the grid is exported, sent and run, so
+`audit_mesh_bc()` re-checks the actual file at each of those three points
+(`mesh_export_ctrl.mesh_bc_problems` / `warn_if_mesh_bc_stale`, and
+`solver_ctrl._confirm_mesh_bc_state`, which *asks* rather than deciding —
+`headless_default=True` so batch/CI, which regenerate in the same pass, are not
+blocked). Two independent signals: an assigned BC **type** with no patch of that
+name in the `.bnd`, and a geometry `.meta` **newer** than the mesh (per-segment
+BC and No-BL flags live there, and changing one segment from inlet to outlet
+leaves both names in the file, so content alone cannot see it). Note the two
+namespaces this replaced a bug in: a `group_bc` key is a segment **label**, a
+`.bnd` patch name is the **BC type** the mesher resolved it to — comparing them
+directly (the old warning) marks every assignment missing on every run. Also:
+BC detection resolves the .bnd the RUN will use (auto-link wins in
+`_locate_mesh_bnd`, and `resync_solver_bc_from_group` runs *after* the auto-link),
+or the table describes one grid while the solver reads another. Gated by
+`tests/test_mesh_bc_audit.py`.
+
+**Portable case export** (`services/case_export.py`, Qt-free; Solver toolbar
+"Export Case ⇪" + Solver menu): copies a case's INPUTS into a folder that reruns
+on another machine — `grid/` (mesh + `.def` + the getPGrid sources), `work/`
+(`input.in`, `.def`, `phi.dat`, restart dump), `dll/` (`.so` **and** the `.cc` it
+was compiled from, pulled from `results/solver/dll_src` by basename), plus
+`run_case.sh` and `MANIFEST.txt`. Selection is an **allow-list**, so a new output
+file can never sneak in, and everything rejected is NAMED in the manifest (split
+into known-output vs unrecognised) — a skipped input is a visible line, not a
+surprise on the far machine. **Every quoted value in `input.in` is a file path**
+(see `SolverConfig.generate_input_in`), and the GUI writes absolute ones for any
+file the user browsed to; those are staged into `work/` and rewritten to
+`./<name>`, which is the other half of portability. The solver binary is
+deliberately excluded. Gated by `tests/test_case_export.py`; verified end-to-end
+by regenerating the grid with getPGrid from the exported folder and running
+unicones on it.
 
 **Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)` (`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, which is a re-entrant depth counter (a bare bool let a nested populate clear the outer guard). `tests/test_signal_guards.py` statically fails the build on either.
 
