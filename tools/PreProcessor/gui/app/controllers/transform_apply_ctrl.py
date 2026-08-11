@@ -127,13 +127,12 @@ class TransformApplyControllerMixin:
         new_seg.end_index = -1
         # Inherit the source edge's closure so a moved/duplicated closed loop
         # stays closed (and an open polyline stays open) after the transform.
-        # A discrete (file) edge's closure lives on the project; analytic edges
-        # carry their own `closed` flag. C++ re-adds the closing vertex only when
-        # this is True, so a closed loop keeps a clean single seam.
-        if seg.type == "file":
-            new_seg.closed = bool(session.project_model.is_closed)
-        else:
-            new_seg.closed = getattr(seg, "closed", True)
+        # This is the right answer for the type-preserving branches below, where
+        # the copy is the same KIND of shape as the source. The polygon-bake
+        # fallback re-derives it from the actual points instead — see
+        # `_baked_edge_is_closed`. C++ re-adds the closing vertex only when this
+        # is True, so a closed loop keeps a clean single seam.
+        new_seg.closed = getattr(seg, "closed", True)
 
         ct = getattr(seg, "curve_type", "custom")
         p = seg.parameters
@@ -207,7 +206,7 @@ class TransformApplyControllerMixin:
                 new_seg.parameters["vertices_str"] = format_vertices_str(t)
             return new_seg
 
-        # ── Fallback: discrete (file) edges and custom-formula curves ────────
+        # ── Fallback: arcs, discrete (file) edges and custom-formula curves ──
         # No closed-form image under the transform → bake the transformed sample
         # points into a Polygon (the industrial 'explode' equivalent).
         pts_tuple = GeometryService.get_segment_points(session, seg)
@@ -220,9 +219,35 @@ class TransformApplyControllerMixin:
             return None
         txs, tys = res
         new_seg.curve_type = "polygon"
+        new_seg.closed = self._baked_edge_is_closed(seg, xs, ys)
         new_seg.parameters["vertices_str"] = format_vertices_str(zip(txs, tys))
         new_seg.parameters["n_points"] = len(txs)
         return new_seg
+
+    @staticmethod
+    def _baked_edge_is_closed(seg, xs, ys) -> bool:
+        """Is the edge being baked into a Polygon actually a LOOP?
+
+        USER-REPORTED: duplicating an OPEN edge produced a closed one. The
+        `closed` flag is only ever consulted for polygons, so every other kind
+        of edge carries the `True` default while drawing perfectly open — an
+        arc, a formula curve, a sub-edge of an imported outline. Copying that
+        flag onto the baked polygon is what added the closing chord. The source
+        edge's own points answer the question instead, and they answer it for
+        the case the old ``project_model.is_closed`` fallback got wrong too: one
+        segment of a CLOSED imported geometry is itself an open polyline.
+
+        An arc is decided from its sweep rather than its samples: a nearly-full
+        arc's endpoint gap can fall inside the spacing-relative loop tolerance,
+        and "closed" for an arc means exactly 'goes all the way round'.
+        """
+        if seg.type == "curve" and getattr(seg, "curve_type", "") == "arc":
+            sweep = abs(float(seg.parameters.get("theta1", math.pi / 2))
+                        - float(seg.parameters.get("theta0", 0.0)))
+            return sweep >= 2.0 * math.pi - 1e-9
+        pts = np.column_stack([np.asarray(xs, dtype=float),
+                               np.asarray(ys, dtype=float)])
+        return GeometryService.detect_closed(pts)
 
     def _apply_transform(self, xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         """Apply the selected geometric transform to the points xs and ys."""
