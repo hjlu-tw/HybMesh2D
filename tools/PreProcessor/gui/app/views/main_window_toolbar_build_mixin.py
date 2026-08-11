@@ -324,9 +324,19 @@ class MainWindowToolbarBuildMixin:
         # rather than in their side panels. The buttons are owned by the panels
         # (so controller.py keeps its clicked/enable wiring); reparent them onto
         # the toolbar here and drive their visibility per mode.
+        # Packaging a finished case is a Solver-stage action, so it rides the
+        # same toolbar as Run/Cancel (owned here, not by the panel — nothing in
+        # the panel drives its enabled state).
+        self.solver_export_case_btn = create_tb_btn(
+            "Export Case  ⇪",
+            "Copy this case's INPUTS (grid / dll / work) into a self-contained "
+            "folder — and optionally a .tar.gz — that reruns on another machine. "
+            "Results and the solver binary are not included.")
+
         self.solver_tb_widgets = [
             self.solver_config_panel.run_solver_btn,
             self.solver_config_panel.cancel_solver_btn,
+            self.solver_export_case_btn,
         ]
         self.ib_tb_widgets = [
             self.stl3d_config_panel.run_btn,

@@ -200,6 +200,11 @@ class MainWindowMenuMixin:
             mode=self._MODE_SOLVER)
         add(solver_menu, self.tr("Cancel"), controller.cancel_solver,
             mode=self._MODE_SOLVER)
+        solver_menu.addSeparator()
+        add(solver_menu, self.tr("Export Portable Case..."),
+            controller.export_portable_case, mode=self._MODE_SOLVER,
+            tip=self.tr("Copy this case's INPUTS (grid / dll / work) into a "
+                        "self-contained folder that reruns on another machine"))
 
         # ── Results ──────────────────────────────────────────────────────────
         results_menu = menubar.addMenu(self.tr("Results"))

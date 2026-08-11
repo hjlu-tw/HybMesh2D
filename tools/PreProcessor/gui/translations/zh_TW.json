@@ -85,6 +85,8 @@
     "Send Grid to Solver": "將網格送至求解器",
 
     "Run Solver": "執行求解器",
+    "Export Portable Case...": "匯出可攜案例…",
+    "Copy this case's INPUTS (grid / dll / work) into a self-contained folder that reruns on another machine": "將此案例的「輸入檔」（grid／dll／work）複製到一個自足的資料夾，可直接搬到另一台機器重跑",
     "Load Solver Config...": "載入求解器設定…",
     "Save Solver Config...": "儲存求解器設定…",
     "Detect BC from Mesh": "從網格偵測邊界條件",

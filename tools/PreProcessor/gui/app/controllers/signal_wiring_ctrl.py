@@ -252,6 +252,8 @@ class SignalWiringMixin:
         sp = mw.solver_config_panel
         sp.run_solver_btn.clicked.connect(self.run_solver_pipeline)
         sp.cancel_solver_btn.clicked.connect(self.cancel_solver)
+        # Owned by the toolbar, not the panel (see _build_canvas_toolbar).
+        mw.solver_export_case_btn.clicked.connect(self.export_portable_case)
         sp.load_cfg_btn.clicked.connect(self.load_solver_config)
         sp.save_cfg_btn.clicked.connect(self.save_solver_config)
         sp.bc_detect_btn.clicked.connect(self.detect_bc_from_mesh)
