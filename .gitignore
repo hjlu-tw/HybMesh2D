@@ -1,6 +1,5 @@
 build/
 bin/
-*.vtk
 HybMesh2D
 CMakeFiles/
 CMakeCache.txt
@@ -11,8 +10,20 @@ Makefile
 # Output / result directories
 Results/
 
+# Mesh exports. Every mesh run writes these, and it writes them next to whatever
+# geometry or config it was launched from — not just under results/ — so they
+# turn up in examples/geometries/, config/mesh/ and the repo root. Matched by
+# extension because none of the four has ever been tracked (`git ls-files`), and
+# a reference grid worth keeping can still go in with `git add -f`.
+*.vtk
+*.vrt
+*.cel
+*.bnd
+
 # Solver pipeline binaries + case data (large prebuilt binaries, kept out of VCS)
 solver/
 
 # Editor / tooling artifacts
 .antigravitycli/
+# Browser "save page as" sidecar folders (docs/**/ *.html.download/)
+*.html.download/
