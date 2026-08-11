@@ -603,30 +603,53 @@ public:
     double tol = a * get<0>(p) + b * get<1>(p) + c * get<2>(p) - 1;
     return fabs(tol) < 1.e-12;
   }
+  // First element-center strip at or after x in xloc_db, CLAMPED so the result
+  // is always usable.
+  //
+  // xloc_db is keyed by element CENTER x, while xmin/xmax come from the
+  // VERTICES -- a centroid sits strictly inside the surface, so the largest
+  // center x is below xmax. A ray in that strip passes trace_ray()'s range
+  // check yet has no key at or after it, so a plain lower_bound() returns
+  // end() and dereferencing it is undefined: that is what segfaulted on a flat
+  // 2D profile, whose fan tessellation leaves every centroid far inside the
+  // extent (max center x 5.856 vs xmax 6.070), killing the last ~30 of 128
+  // x-slices. Clamp instead of dereferencing:
+  //   want_last = true  -> the last (nearest) strip, for a value that must name
+  //                        a real element: the reference length, a range start
+  //   want_last = false -> ctr_db_.end(), the exclusive end of such a range
+  // xloc_db is never empty here (the constructor rejects a zero-triangle STL,
+  // and trace_ray() guards it anyway).
+  cmap_itr ctr_strip_at_or_after(double x, bool want_last) const {
+    map<double, cmap_itr>::const_iterator it = xloc_db.lower_bound(x);
+    if( it != xloc_db.end() )
+      return it->second;
+    return want_last ? prev(xloc_db.end())->second : ctr_db_.end();
+  }
+
 // returns an out of domain gc so that it can be screened out
   // trace ray defined by (x, y) and return false if not intersect
   // with the object, if it does intersect, return an array of
   //  intersections defined by a z-array
   bool trace_ray(double x, const vector<double>& y, vector<set<double> >& zs, bool all_search = false) const {
+    zs.resize(y.size());
     // check if out of range
-    if( (x < xmin || x > xmax) ) {
+    if( xloc_db.empty() || x < xmin || x > xmax ) {
       //cout << "x = " << x << " is out of range\n";
-      zs.resize(y.size());
       return false;
     }
     // extract candidate elements first
-    int index = xloc_db.lower_bound(x)->second->second;
+    int index = ctr_strip_at_or_after(x, true)->second;
     double dx = elem_maxs_[index];
     double expandf = 100;
     double xip = min(x + expandf*dx, xmax);
     double xim = max(x - expandf*dx, xmin);
-    cmap_itr i1 = xloc_db.lower_bound(xim)->second;
-    cmap_itr i2 = xloc_db.lower_bound(xip)->second;
+    cmap_itr i1 = ctr_strip_at_or_after(xim, true);
+    cmap_itr i2 = ctr_strip_at_or_after(xip, false);
     if( all_search) {
       i1 = ctr_db_.begin();
       i2 = ctr_db_.end();
     }
-   
+
     //cout << "set range xim = " << xim << "  to xip " << xip << endl;
     //cout << "selected x range = " << get<0>(i1->first) << " to " << get<0>(i2->first) << endl;
     vector<int> candidates;
@@ -638,12 +661,17 @@ public:
     }
     //cout << "candidates size = " << candidates.size() << endl;
 
+    if( candidates.empty() )
+      // The window landed between strips (or past the last one): there is
+      // nothing to intersect on this slice, and the y/z bounds below would
+      // dereference an empty set.
+      return false;
+
     double ypmin = *ysloc.begin() - dx;  // add a small buffer
     double ypmax = *ysloc.rbegin() + dx;
     double zpmin = *zsloc.begin() - dx;  // add a small buffer
     double zpmax = *zsloc.rbegin() + dx;
     //cout << " max y&z = " << ypmin << " " << ypmax << " " << zpmin << " " << zpmax << endl;
-    zs.resize(y.size());
 
     for(int i = 0; i < y.size(); ++i) {
       double yi = y[i];
