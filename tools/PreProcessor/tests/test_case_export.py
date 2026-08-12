@@ -65,7 +65,8 @@ from app.services import case_export  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
-def build_case(root, *, with_outputs=True, abs_refs=True, restart_dump=True):
+def build_case(root, *, with_outputs=True, abs_refs=True, restart_dump=True,
+               restart_ref=False):
     """A case laid out exactly as solver_case.prepare_case_dir leaves one."""
     case = os.path.join(root, "mycase")
     for sub in ("grid", "work", "dll"):
@@ -105,6 +106,9 @@ def build_case(root, *, with_outputs=True, abs_refs=True, restart_dump=True):
     if abs_refs:
         lines += [f'   probe_points_def_fn  "{probe}"',
                   '   zdump_fn_restart  "/nowhere/vanished.dat"']
+    if restart_ref:
+        # A real restart run: input.in names the dump that lives in work/.
+        lines += ['   zdump_fn_restart  "binDumpZ.dat.gui"']
     w("work/input.in", "\n".join(lines) + "\n")
     return case, src, probe
 
@@ -294,6 +298,77 @@ check(not os.path.exists(os.path.join(gui_dest, "work",
 check(not os.path.exists(gui_dest.rstrip("/") + ".tar.gz"),
       "9. headless answers 'no' to the archive prompt instead of blocking on a "
       "modal nobody can click")
+
+# ── 10. the export folder may not CONTAIN the case either ─────────────────
+# Only the dest-inside-case direction was guarded. Naming results/solver as the target
+# while exporting results/solver/mycase wrote grid/, work/, run_case.sh and MANIFEST.txt
+# into the shared cases directory — and with the tarball option, archived every other
+# case's hundreds of MB of output with them.
+try:
+    case_export.export_case(case, os.path.dirname(os.path.abspath(case)))
+    check(False, "10. exporting INTO the case's parent must be refused")
+except case_export.CaseExportError as e:
+    check("contain" in str(e).lower(),
+          f"10. a destination that contains the case is refused, naming why ({e})")
+check(not os.path.isdir(os.path.join(tmp, "grid")),
+      "10. ...and nothing was written into it before the refusal")
+
+# ── 11. the allow-list is a list, not a glob ──────────────────────────────
+# `_WORK_KEEP`'s ".in" suffix accepted every *.in in work/, which both made its own
+# "input.in" entry dead and broke the module's stated promise that a new output cannot
+# sneak in. A file kept by REFERENCE (input.in naming it) is the supported route.
+stray = os.path.join(case, "work", "monitor.in")
+with open(stray, "w") as f:
+    f.write("not an input")
+p11 = case_export.plan_export(case)
+check(not p11.has("work/monitor.in"),
+      "11. an unrecognised *.in in work/ is NOT copied just for its extension")
+check(any(rel == "work/monitor.in" for rel, _s in p11.skipped_other),
+      f"11. ...it is NAMED as a skip, which is how it gets noticed "
+      f"({[r for r, _ in p11.skipped_other]})")
+check(p11.has("work/input.in"), "11. while input.in itself still ships")
+os.remove(stray)
+
+for _name, _keep in (("_GRID_KEEP", case_export._GRID_KEEP),
+                     ("_WORK_KEEP", case_export._WORK_KEEP),
+                     ("_DLL_KEEP", case_export._DLL_KEEP)):
+    _exact, _sfx = _keep
+    _subsumed = sorted(n for n in _exact if _sfx and n.endswith(_sfx))
+    check(not _subsumed,
+          f"11. {_name}'s suffixes must not subsume its own exact names — a suffix that "
+          f"does turns the allow-list into a glob, silently ({_subsumed})")
+
+# ── 12. a declined file is not smuggled back in by reference ──────────────
+ref_case, ref_src, _ = build_case(os.path.join(tmp, "restartref"), restart_ref=True)
+p_with = case_export.plan_export(ref_case, include_restart=True)
+check(p_with.has("work/binDumpZ.dat.gui"),
+      "12. (precondition) with include_restart the dump ships")
+p_without = case_export.plan_export(ref_case, include_restart=False)
+check(not p_without.has("work/binDumpZ.dat.gui"),
+      "12. include_restart=False is respected even though input.in references the dump "
+      "— 'referenced by input.in' must not overrule an explicit exclusion")
+check(any("deliberately NOT exported" in w for w in p_without.warnings),
+      f"12. ...and the reference is reported rather than silently dropped "
+      f"({p_without.warnings})")
+_inc = {i.rel for i in p_without.items}
+_skip = {rel for rel, _s in p_without.skipped_output}
+check(not (_inc & _skip),
+      f"12. no path is listed as both INCLUDED and SKIPPED in one plan ({_inc & _skip})")
+
+# ── 13. every write is explicitly UTF-8 ───────────────────────────────────
+# MANIFEST.txt embeds the case path verbatim and the UI ships a zh_TW translation, so a
+# platform-default encoding fails on a non-ASCII path AFTER every file has been copied.
+src_txt = open(os.path.join(_GUI, "app", "services", "case_export.py"),
+               encoding="utf-8").read()
+check('"w") as f:' not in src_txt and src_txt.count('"w", encoding="utf-8"') == 3,
+      "13. all three writes (manifest, run script, rewritten input.in) name UTF-8, like "
+      "every read in the module already does")
+uni_case, uni_src, _ = build_case(os.path.join(tmp, "案例"))
+uni_dest = os.path.join(tmp, "匯出")
+case_export.export_case(uni_case, uni_dest, dll_src_dirs=(uni_src,))
+man = open(os.path.join(uni_dest, "MANIFEST.txt"), encoding="utf-8").read()
+check("案例" in man,
+      "13. ...and a case exported from a non-ASCII path really round-trips")
 
 shutil.rmtree(tmp, ignore_errors=True)
 

@@ -52,7 +52,12 @@ _RESTART_RE = re.compile(r"^binDump", re.IGNORECASE)
 # Per-subdirectory allow-lists: (exact names, suffixes).
 _GRID_KEEP = ({"para.in", "input.vrt", "input.cel", "input.bnd"},
               (".grid", ".bc", ".def"))
-_WORK_KEEP = ({"input.in", "phi.dat"}, (".def", ".in"))
+# No ".in" suffix here: it would subsume the exact "input.in" entry and, worse, turn
+# this allow-list into a glob — a future solver writing work/restart.in or work/monitor.in
+# would be copied as an input with no skip line to notice it, which is exactly the
+# guarantee the allow-list exists to make. An input.in that references some other *.in
+# (a CFL schedule, say) still travels: _resolve_input_in ships it BY REFERENCE.
+_WORK_KEEP = ({"input.in", "phi.dat"}, (".def",))
 _DLL_KEEP = (set(), (".so", ".cc", ".cpp", ".c", ".h", ".hpp"))
 
 _SUBDIRS = ("grid", "work", "dll")
@@ -225,6 +230,12 @@ def _resolve_input_in(plan: ExportPlan) -> None:
         return
 
     taken = {i.rel for i in plan.items}
+    # Files the caller DELIBERATELY excluded (include_restart=False). "Referenced by
+    # input.in" must not quietly overrule that: the restart dump is the largest file in
+    # work/, and re-adding it also listed the same path under INCLUDED *and* under
+    # "SKIPPED — produced by the run" in the manifest, a contradiction the named-skip
+    # design exists to make impossible.
+    declined = {rel for rel, _size in plan.skipped_output}
     for raw in _QUOTED_RE.findall(text):
         ref = raw.strip()
         if not ref:
@@ -239,7 +250,14 @@ def _resolve_input_in(plan: ExportPlan) -> None:
             continue
         if inside:
             rel = os.path.relpath(resolved, plan.case_dir).replace(os.sep, "/")
-            if rel not in taken:            # referenced => an input, by definition
+            if rel in declined:
+                # Still rewrite the path below, so the exported input.in points at a
+                # local name rather than at this machine's filesystem.
+                plan.warnings.append(
+                    f"input.in references '{ref}', which was deliberately NOT exported "
+                    f"({rel} — see the skipped list). Turn the restart off on the target, "
+                    "or export again with the restart dump included.")
+            elif rel not in taken:          # referenced => an input, by definition
                 plan.items.append(ExportItem(resolved, rel, "referenced by input.in"))
                 taken.add(rel)
             if os.path.isabs(ref):          # absolute, but inside: make it relative
@@ -301,6 +319,17 @@ def export_case(case_dir: str, dest_dir: str, *, dll_src_dirs=(),
     if _is_inside(dest_dir, plan.case_dir):
         raise CaseExportError(
             "the export folder cannot sit inside the case it is exporting")
+    # ...nor CONTAIN it. Naming results/solver as the target while exporting
+    # results/solver/naca_run passed the check above and wrote grid/, work/, run_case.sh
+    # and MANIFEST.txt straight into the shared cases directory — and with the tarball
+    # option, archived every other case's output along with them. That is the "ship a
+    # result set nobody asked for" outcome this module exists to prevent, arrived at from
+    # the other direction.
+    if _is_inside(plan.case_dir, dest_dir):
+        raise CaseExportError(
+            "the export folder cannot contain the case it is exporting "
+            f"({plan.case_dir} is inside {dest_dir}) — pick a folder beside it or "
+            "somewhere else entirely")
     try:
         os.makedirs(dest_dir, exist_ok=True)
         for item in plan.items:
@@ -310,7 +339,7 @@ def export_case(case_dir: str, dest_dir: str, *, dll_src_dirs=(),
         _write_input_in(plan, dest_dir)
         _write_run_script(plan, dest_dir, solver_tag)
         manifest = _manifest_text(plan, solver_tag)
-        with open(os.path.join(dest_dir, "MANIFEST.txt"), "w") as f:
+        with open(os.path.join(dest_dir, "MANIFEST.txt"), "w", encoding="utf-8") as f:
             f.write(manifest)
     except OSError as e:
         raise CaseExportError(f"could not write the export: {e}") from e
@@ -345,7 +374,7 @@ def _write_input_in(plan: ExportPlan, dest_dir: str) -> None:
         text = f.read()
     for raw, new in plan.rewrites.items():
         text = text.replace(f'"{raw}"', f'"{new}"')
-    with open(target, "w") as f:
+    with open(target, "w", encoding="utf-8") as f:
         f.write(text)
 
 
@@ -396,7 +425,7 @@ def _write_run_script(plan: ExportPlan, dest_dir: str, solver_tag: str) -> None:
     text = _RUN_SCRIPT % {"tag": solver_tag,
                           "dll_block": _DLL_BLOCK if has_dll else ""}
     path = os.path.join(dest_dir, "run_case.sh")
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     os.chmod(path, 0o755)
 
