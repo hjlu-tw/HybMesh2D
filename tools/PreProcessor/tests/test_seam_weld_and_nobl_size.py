@@ -173,6 +173,38 @@ def main():
     check("the '_er' suffix did not land in the directory name",
           "Could not open file" not in log)
 
+    # --- 4. one basename per run, whatever the -out extension -----------------
+    # The extension helpers were wired into the VTK branch only, so `mesh_run.dat`
+    # produced mesh_run + mesh_run.dat.vrt and TWO provenance sidecars: the .bnd a
+    # `<base>.bnd` guess (GUI auto-link, run_case.sh) looks for was not there.
+    named = os.path.join(tmp, "named")
+    os.makedirs(named, exist_ok=True)
+    rc, log, out = _run(tmp, f"GEOM_FILE {dat}", os.path.join("named", "mesh_run.dat"),
+                        extra="EXPORT_STARCD 1\n")
+    produced = sorted(os.listdir(named))
+    check("STAR-CD and VTK agree on the basename for a non-.vtk -out name "
+          f"(got {produced})",
+          "mesh_run.vrt" in produced and "mesh_run.dat" in produced
+          and not any(p.startswith("mesh_run.dat.") and p.endswith(".vrt")
+                      for p in produced))
+    check(f"...and one run writes ONE provenance sidecar (got {produced})",
+          len([p for p in produced if p.endswith(".provenance.json")]) == 1)
+
+    # --- 5. the coincidence fraction is shared, not copied --------------------
+    # The resampler welds a seam under this fraction and the mesher drops the duplicate
+    # under the same one. They are separate binaries: tighten one alone and the gap band
+    # in which a sliver survives reopens, which is defect 1 above.
+    mesher_src = open(os.path.join(_REPO, "src", "main.cpp"),
+                      encoding="utf-8").read()
+    resamp_src = open(os.path.join(_REPO, "tools", "PreProcessor", "src", "main.cpp"),
+                      encoding="utf-8").read()
+    for name, src in (("the mesher", mesher_src), ("the resampler", resamp_src)):
+        check(f"{name} takes the coincidence fraction from PointTolerance.hpp",
+              "PointTolerance.hpp" in src
+              and "POINT_COINCIDENCE_FRACTION" in src)
+        check(f"...and {name} no longer hardcodes 0.05 for it",
+              "0.05 * span" not in src and "0.05 * nominal" not in src)
+
     print()
     print("RESULT:", "ALL PASS" if not failures else f"{len(failures)} FAILED: {failures}")
     return 1 if failures else 0

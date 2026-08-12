@@ -4,6 +4,7 @@
 #include "Logger.hpp"
 #include "Provenance.hpp"
 #include "ExitCodes.hpp"
+#include "PointTolerance.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -75,7 +76,8 @@ std::vector<Point2D> loadGeometry(const std::string& filename, bool* closed = nu
         if (points.size() > 2) {
             span = std::min((points[1] - points[0]).length(),
                             (points[points.size() - 1] - points[points.size() - 2]).length());
-            if (span > 0.0) tol = std::max(tol, 0.05 * span);
+            if (span > 0.0)
+                tol = std::max(tol, hybmesh::POINT_COINCIDENCE_FRACTION * span);
         }
         if (gap <= tol) {
             points.pop_back();
@@ -972,10 +974,12 @@ int main(int argc, char* argv[]) {
     }
 
     if (config.exportStarCD) {
-        std::string starCDPrefix = outputFilename;
-        if (starCDPrefix.length() > 4 && starCDPrefix.substr(starCDPrefix.length() - 4) == ".vtk") {
-            starCDPrefix = starCDPrefix.substr(0, starCDPrefix.length() - 4);
-        }
+        // stripExt, not a literal ".vtk": with `-out mesh_run.dat` the VTK branch above
+        // treats .dat as the extension while this one found no ".vtk" to strip, so one
+        // run wrote mesh_run + mesh_run.dat.vrt and handed writeProvenance two different
+        // basenames — and left a .bnd that a `<base>.bnd` guess (the GUI auto-link,
+        // run_case.sh) no longer finds.
+        std::string starCDPrefix = stripExt(outputFilename);
         mesh.exportStarCD(starCDPrefix, config);
         hybmesh::writeProvenance(starCDPrefix, config, inputFiles, gmshVersion,
                                  mesh.nodes.size(), mesh.elements.size());
@@ -983,10 +987,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (config.exportCGNS) {
-        std::string cgnsFile = outputFilename;
-        if (cgnsFile.length() > 4 && cgnsFile.substr(cgnsFile.length() - 4) == ".vtk")
-            cgnsFile = cgnsFile.substr(0, cgnsFile.length() - 4);
-        cgnsFile += ".cgns";
+        std::string cgnsFile = stripExt(outputFilename) + ".cgns";
         mesh.exportCGNS(cgnsFile, config);
         hybmesh::writeProvenance(stripExt(cgnsFile), config, inputFiles, gmshVersion,
                                  mesh.nodes.size(), mesh.elements.size());

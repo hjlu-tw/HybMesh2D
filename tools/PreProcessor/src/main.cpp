@@ -13,6 +13,7 @@
 #include <set>
 
 #include "json.hpp"
+#include "PointTolerance.hpp"
 #include "GeomUtils.hpp"
 #include "Spline.hpp"
 #include "Spacing.hpp"
@@ -1062,7 +1063,8 @@ bool processElement(const json& config) {
                     // neighbours. On a closed loop that sliver sits at the seam and
                     // makes the outline self-intersect there. Below 5% of the nominal
                     // spacing the corner IS the endpoint; drop it.
-                    if (endpoint && bestd < 0.05 * nominal) continue;
+                    if (endpoint &&
+                        bestd < hybmesh::POINT_COINCIDENCE_FRACTION * nominal) continue;
                     if (!endpoint && bestd < minGap) tS[best] = c;  // snap nearest
                     else tS.push_back(c);                       // otherwise insert
                 }
@@ -1158,7 +1160,8 @@ bool processElement(const json& config) {
         double gap = (resPts.back() - resPts.front()).length();
         double span = std::min((resPts[1] - resPts[0]).length(),
                                (resPts[resPts.size() - 1] - resPts[resPts.size() - 2]).length());
-        if (gap > 0.0 && span > 0.0 && gap <= 0.05 * span) {
+        if (gap > 0.0 && span > 0.0 &&
+            gap <= hybmesh::POINT_COINCIDENCE_FRACTION * span) {
             std::cerr << "Warning: closed geometry seam was " << gap
                       << " open (local point spacing " << span
                       << "); welding the last point onto the first." << std::endl;

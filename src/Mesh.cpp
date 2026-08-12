@@ -780,6 +780,11 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     std::vector<Edge> filteredEdges; // 用於後續拓撲分析
     std::vector<double> frontLineTags; // 用於尺寸場的邊界來源 (邊界層外緣)
     std::vector<double> surfaceLineTags; // 幾何表面邊 (geomId>=0)，供無邊界層時的成長場使用
+    // 與上面兩份 tag 清單「同一趟、同一判準」收集端點座標，供 3.4 的尺寸場天花板
+    // 回報在網格節點上重算場值。回報唯有量到與 Gmsh 實際吃到的同一組曲線才有意義，
+    // 因此不另寫一份判準 —— 先前在 260 行之後重寫一次，任何一邊改了規則
+    // (例如放寬無邊界層的退路) 都會讓回報悄悄量到另一組線段。
+    std::vector<std::array<double, 4>> frontSegs, surfaceSegs;
 
     for (size_t i = 0; i < edges.size(); ++i) {
         int t1 = nodeToGmshTag[edges[i].v1];
@@ -791,14 +796,19 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         allLines.push_back(tag);
         filteredEdges.push_back(edges[i]);
 
-        if (nodes[edges[i].v1].type == NodeType::BoundaryLayer &&
-            nodes[edges[i].v2].type == NodeType::BoundaryLayer) {
+        const Node& na = nodes[edges[i].v1];
+        const Node& nb = nodes[edges[i].v2];
+        const std::array<double, 4> seg{na.pos.x, na.pos.y, nb.pos.x, nb.pos.y};
+
+        if (na.type == NodeType::BoundaryLayer && nb.type == NodeType::BoundaryLayer) {
             frontLineTags.push_back(static_cast<double>(tag));
+            frontSegs.push_back(seg);
         }
         // 幾何表面邊 (兩端點皆屬某個載入的幾何，geomId>=0；域外框為 -1)。
         // 沒有邊界層時，成長場改由此表面出發，才能讓 FARFIELD_GROWTH_RATE 生效。
-        if (nodes[edges[i].v1].geomId >= 0 && nodes[edges[i].v2].geomId >= 0) {
+        if (na.geomId >= 0 && nb.geomId >= 0) {
             surfaceLineTags.push_back(static_cast<double>(tag));
+            surfaceSegs.push_back(seg);
         }
     }
 
@@ -1053,20 +1063,10 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     // 兩個緩衝區都提升到外層，供本函式最後的尺寸場天花板回報 (3.4) 重算場值用。
     const double dBuffer = hBase * config.blTransitionBuffer;
     const double dBufferOuter = hEnd * config.blTransitionBuffer;
-    // 成長場來源的線段端點：3.4 要在網格節點上重算距離，這裡沿用與 growthSrc
-    // 完全相同的判準，兩者才不會各自表述。
-    std::vector<std::array<double, 4>> growthSrcSegs;
-    if (haveSurfaceGrowth) {
-        const bool fromFront = !frontLineTags.empty();
-        for (const auto& e : edges) {
-            const Node& a = nodes[e.v1];
-            const Node& b = nodes[e.v2];
-            bool isSrc = fromFront
-                ? (a.type == NodeType::BoundaryLayer && b.type == NodeType::BoundaryLayer)
-                : (a.geomId >= 0 && b.geomId >= 0);
-            if (isSrc) growthSrcSegs.push_back({a.pos.x, a.pos.y, b.pos.x, b.pos.y});
-        }
-    }
+    // 成長場來源的線段端點：與 growthSrc 取自同一趟收集 (見上方 frontSegs /
+    // surfaceSegs)，選哪一份就跟著 growthSrc 選哪一份，因此判準只有一處。
+    const std::vector<std::array<double, 4>>& growthSrcSegs =
+        !frontLineTags.empty() ? frontSegs : surfaceSegs;
     if (haveSurfaceGrowth) {
         int fDist = gmsh::model::mesh::field::add("Distance");
         gmsh::model::mesh::field::setNumbers(fDist, "CurvesList", growthSrc);
