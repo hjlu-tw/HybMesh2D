@@ -280,6 +280,34 @@ else:
     check(cv.start_measure_tool() is None and cv.measuring,
           "10. Measure can be re-entered afterwards")
     cv.stop_measure_tool(keep_result=False)
+
+    # ── 10b. a FINISHED shape's artifacts go too ──────────────────────────
+    # _commit_draw clears _draw_tool but deliberately leaves the control-point handles
+    # and the rubber band on screen until the (modeless) shape dialog is resolved — so
+    # the user can start another tool while they are still painted. Exclusion gated on
+    # the flag skipped cancel_draw_mode for exactly that state, and the finished
+    # polygon's handles stayed on the canvas on top of the new tool's.
+    from app.utils import block_signals as _block  # noqa: E402
+
+    cv.start_draw_mode("polygon")
+    with _block(cv):                     # complete it without opening the shape dialog
+        cv._handle_draw_click(0.0, 0.0, False)
+        cv._handle_draw_click(1.0, 0.0, False)
+        cv._handle_draw_click(1.0, 1.0, False)
+        cv._handle_draw_click(1.0, 1.0, True)        # double-click finishes a polygon
+    check(cv._draw_tool is None,
+          "10b. (precondition) completing a shape stops collecting clicks")
+    check(cv._draw_pts and cv._draw_handle_items,
+          f"10b. (precondition) ...while its points and handles stay on the canvas for "
+          f"the modeless dialog ({len(cv._draw_pts)} pts, "
+          f"{len(cv._draw_handle_items)} handles)")
+    cv.start_measure_tool()
+    check(cv._draw_pts == [] and cv._draw_handle_items == [],
+          f"10b. starting another tool clears the finished shape's leftover artifacts, "
+          f"which outlive its flag ({len(cv._draw_pts)} pts, "
+          f"{len(cv._draw_handle_items)} handles)")
+    cv.stop_measure_tool(keep_result=False)
+
     try:
         cv.activate_exclusive_tool("nosuchtool")
         check(False, "10. an unknown tool name must raise, not silently no-op")

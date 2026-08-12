@@ -161,12 +161,23 @@ class CanvasToolsMixin:
         Passing a name that is not in :data:`EXCLUSIVE_TOOLS` is a programming error and
         raises, rather than silently leaving that tool non-exclusive — which is exactly
         the failure this table replaced.
+
+        Every other tool's stop is called UNCONDITIONALLY, not only when its flag is set:
+        a tool's leftovers can outlive its flag. ``_commit_draw`` clears ``_draw_tool``
+        while deliberately leaving the control-point handles and the rubber band on
+        screen ("stop collecting; artifacts stay visible") until the shape dialog is
+        resolved — and that dialog is modeless, so the user can pick another tool first.
+        Gating on the flag skipped ``cancel_draw_mode``, and the finished shape's handles
+        stayed painted over the new tool's. The stops are idempotent, and the one thing
+        the gate was protecting against — ``stop_measure_tool`` un-checking the toolbar
+        toggle, whose signal comes back in here — is guarded inside that method by its
+        own real-transition check, which is where it belongs.
         """
         known = [t[0] for t in EXCLUSIVE_TOOLS]
         if name not in known:
             raise ValueError(f"unknown canvas tool {name!r}; expected one of {known}")
-        for tool, flag, stop in EXCLUSIVE_TOOLS:
-            if tool == name or not getattr(self, flag, None):
+        for tool, _flag, stop in EXCLUSIVE_TOOLS:
+            if tool == name:
                 continue
             fn = getattr(self, stop, None)
             if callable(fn):
