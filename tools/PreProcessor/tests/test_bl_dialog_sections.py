@@ -5,7 +5,11 @@ The dialog carries 21 parameters. As one flat form the three numbers that
 actually define the layer stack (first-cell height, growth rate, layer count)
 sat above a wall of corner/junction/transition knobs, all expanded, so finding
 anything meant scrolling the whole list. They are now collapsible groups
-(``_BL_FIELD_GROUPS``) with only "Layer Growth" open.
+(``_BL_FIELD_GROUPS``), and USER-REQUESTED, all of them start CLOSED: the dialog
+opens as a short list of headers and the window is only as tall as what you
+opened. A group is still opened by the state you left it in, or by holding a
+per-geometry override — that second one is a safety property (an override must
+not hide behind a collapsed header), not a default.
 
 The risk that grouping introduces is a parameter that no group lists: it would
 never be built, so the dialog would silently write back whatever value it was
@@ -17,7 +21,7 @@ Checks:
  2. The built dialog really has a widget for every spec key (the invariant that
     matters — a table can be right while the build drops rows).
  3. Every group is non-empty and its keys keep the spec order within the group.
- 4. Exactly one group starts expanded, and it is the layer-stack one.
+ 4. NO group starts expanded, and a dialog without overrides opens collapsed.
  5. A per-geometry override whose value differs from the global default expands
     its own group, so an override can never hide behind a collapsed header.
  6. _value_differs is relative: it separates 1e-8 first-cell heights and does
@@ -82,13 +86,16 @@ check(all(keys for _t, _e, _h, keys in _BL_FIELD_GROUPS),
 check(all(t.strip() and h.strip() for t, _e, h, _k in _BL_FIELD_GROUPS),
       "3. every group has a title and a one-line hint")
 
-# ── 4. only the layer-stack group starts expanded ─────────────────────────
+# ── 4. nothing starts expanded ─────────────────────────────────────────────
+# USER-REQUESTED: the dialog opens as a short list of headers, so the window is only as
+# tall as what the user asked to see. Anything that opens a group from here on is either
+# the user's own remembered choice or the override rule in check 5 — never a default.
 expanded = [t for t, e, _h, _k in _BL_FIELD_GROUPS if e]
-check(expanded == ["Layer Growth"],
-      f"4. exactly the layer-stack group starts expanded (got {expanded})")
+check(expanded == [],
+      f"4. no group starts expanded (got {expanded})")
 open_now = [s.title for s in dlg._sections if s.is_expanded]
-check(open_now == ["Layer Growth"],
-      f"4. ...and the built dialog opens only that one (got {open_now})")
+check(open_now == [],
+      f"4. ...and a dialog with no overrides opens fully collapsed (got {open_now})")
 
 # ── 5. an override expands its own group ──────────────────────────────────
 # Same defaults, but this geometry overrides a TRANSITION value, whose group is
@@ -102,10 +109,13 @@ check("Transition Layers" in open2,
 check("Convex Corners" not in open2,
       "5. ...and groups with no override stay collapsed")
 
-# The global dialog seeds current == defaults, so nothing extra opens.
+# The global dialog seeds current == defaults, so nothing differs and nothing opens.
 dlg3 = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
-check([s.title for s in dlg3._sections if s.is_expanded] == ["Layer Growth"],
-      "5. the GLOBAL editor (current == defaults) opens only the default group")
+check([s.title for s in dlg3._sections if s.is_expanded] == [],
+      "5. the GLOBAL editor (current == defaults) opens fully collapsed")
+check(len(open2) == 1,
+      f"5. ...while the override case opens exactly the group that holds it, not the "
+      f"whole dialog ({open2})")
 
 # ── 6. the difference test is relative, not absolute ──────────────────────
 check(_value_differs(2.5e-7, 5.0e-7) and not _value_differs(2.5e-7, 2.5e-7),
@@ -146,7 +156,7 @@ try:
 finally:
     ui_state._settings = _real
 check(not _touched, "8. neither call touches QSettings when headless")
-check([s.title for s in dlg._sections if s.is_expanded] == ["Layer Growth"],
+check([s.title for s in dlg._sections if s.is_expanded] == [],
       "8. ...and a headless restore leaves the built defaults alone")
 
 # ── 9. Expand all / Collapse all reach every group ────────────────────────
@@ -194,8 +204,11 @@ if scr is not None:
           "11. ...but never past the screen bound")
 fit._set_all_sections(False)
 app.processEvents()
-check(fit.height() < h_default,
-      f"11. 'Collapse all' folds it back up ({h_open} -> {fit.height()})")
+check(fit.height() < h_open and abs(fit.height() - h_default) <= 2,
+      f"11. 'Collapse all' folds it back to the height it opened at — with every group "
+      f"closed by default that IS the fully-collapsed height, so the window must return "
+      f"to it exactly rather than merely shrink ({h_default} -> {h_open} -> "
+      f"{fit.height()})")
 
 # ── 12. a height the USER chose is a floor, not a suggestion ───────────────
 fit.resize(fit.width(), 620)
@@ -208,6 +221,35 @@ fit._set_all_sections(False)
 app.processEvents()
 check(fit.height() == 620,
       f"12. ...and collapsing never shrinks below it (got {fit.height()})")
+
+# ── 13. a parameter the selected scheme cannot read is not editable ────────
+# BL_JUNCTION_ANGLE_C1 binned the old junction scheme. Method 1 — the default — decides
+# its slide by a hard-coded 95 deg (below ~90 a perpendicular cap provably leaves the
+# domain), so C1 has no effect there: editing it changed a number, was written back on
+# OK, round-tripped through the config, and never changed a mesh. The explanation existed
+# only on the mesh panel's HIDDEN backing widgets, i.e. not where it is edited.
+spec_tips = {k: o.get("tip", "") for k, _lbl, _kind, o in _BL_FIELD_SPECS}
+check("Method 0" in spec_tips.get("BL_JUNCTION_ANGLE_C1", ""),
+      "13. the C1 field carries its own explanation, in the dialog the user edits")
+
+jd = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+m_w, m_kind = jd._widgets["BL_JUNCTION_METHOD"]
+c1_w = jd._widgets["BL_JUNCTION_ANGLE_C1"][0]
+c2_w = jd._widgets["BL_JUNCTION_ANGLE_C2"][0]
+jd._set_widget_value(m_w, m_kind, 1)
+app.processEvents()
+check(not c1_w.isEnabled(),
+      "13. with the default 4-case scheme selected, C1 is greyed out rather than "
+      "offering an adjustment it cannot make")
+check(c2_w.isEnabled(),
+      "13. ...while C2, which that scheme DOES read, stays editable")
+jd._set_widget_value(m_w, m_kind, 0)
+app.processEvents()
+check(c1_w.isEnabled(),
+      "13. and it comes back for Taper-to-zero, which is the scheme that reads it")
+check("BL_JUNCTION_ANGLE_C1" in (jd.result_params() or {}),
+      "13. a disabled field is still written back, so the value round-trips through "
+      "the config instead of being lost on OK")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

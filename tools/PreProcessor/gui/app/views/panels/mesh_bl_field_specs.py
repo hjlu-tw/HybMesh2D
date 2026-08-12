@@ -60,7 +60,16 @@ _BL_FIELD_SPECS = [
     ("BL_CONCAVE_ANGLE_THRESHOLD", "Concave Threshold (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
     ("BL_CONCAVE_INFLUENCE_MULTIPLIER", "Concave Influence", "float", dict(lo=0.0, hi=100.0, dec=2, step=0.5)),
     ("BL_JUNCTION_METHOD", "Junction Method", "choice", dict(choices=[(0, "Taper-to-zero"), (1, "4-case angle-driven")])),
-    ("BL_JUNCTION_ANGLE_C1", "Junction θ C1 (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
+    # C1 binned the old scheme's concave slide. Method 1 does not read it: its slide
+    # bound is geometric (a cap must point into the fluid wedge, so below ~90 deg it
+    # provably leaves the domain) and therefore hard-coded in BoundaryLayer.cpp. The
+    # field stays for method 0 and for config round-trip, and says so — a knob that
+    # cannot do anything must not look adjustable.
+    ("BL_JUNCTION_ANGLE_C1", "Junction θ C1 (deg)", "float",
+     dict(lo=0.0, hi=360.0, dec=2, step=1.0,
+          tip="Only used by Junction Method 0 (Taper-to-zero). Method 1's slide bound "
+              "is geometric (95 deg) and not adjustable, so this value has no effect "
+              "there — it is kept for method 0 and for config round-trip.")),
     ("BL_JUNCTION_ANGLE_C2", "Junction θ C2 (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
     ("BL_JUNCTION_ANGLE_C3", "Junction θ C3 (deg)", "float", dict(lo=0.0, hi=360.0, dec=2, step=1.0)),
     ("BL_TRANSITION_LAYERS", "Transition Layers", "int", dict(lo=0, hi=100)),
@@ -71,17 +80,22 @@ _BL_FIELD_SPECS = [
 ]
 
 # How the dialog LAYS OUT those fields: (title, start_expanded, hint, [keys]).
-# 21 fields in one flat form meant scrolling past every corner and junction knob
-# to reach the three numbers that actually define the layer stack, so the fields
-# are grouped by the job they do and only the first group opens. Groups follow the
-# .dat parameter groups (see CLAUDE.md / include/Config.hpp) so a user reading a
-# config file finds the same partition here.
+# 21 fields in one flat form meant scrolling past every corner and junction knob to
+# reach the three numbers that actually define the layer stack, so the fields are
+# grouped by the job they do. USER-REQUESTED: every group starts CLOSED, so the dialog
+# opens as a short list of headers and the window is only as tall as what you asked to
+# see. Two things still open a group, and neither is a default: the state the user left
+# it in last time (ui_state), and a group holding a per-geometry OVERRIDE — that one is
+# a safety property, not a preference, since a value that differs from the global must
+# not hide behind a collapsed header. Groups follow the .dat parameter groups (see
+# CLAUDE.md / include/Config.hpp) so a user reading a config file finds the same
+# partition here.
 # INVARIANT: these keys must partition _BL_FIELD_SPECS exactly — a key listed in
 # no group would be an unreachable parameter, i.e. a setting that silently keeps
 # whatever value it had. Gated by tests/test_bl_dialog_sections.py, and any
 # stray key still gets built into a trailing "Other" group below.
 _BL_FIELD_GROUPS = [
-    ("Layer Growth", True,
+    ("Layer Growth", False,
      "The layer stack itself: first-cell height, growth per layer, layer count.",
      ["BL_INITIAL_THICKNESS", "BL_GROWTH_RATE", "BL_LAYERS"]),
     # Second, right under the stack it continues: the transition rows are part of

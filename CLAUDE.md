@@ -230,9 +230,13 @@ imported outline is itself an open polyline. Gated by `tests/test_transform_clos
 **Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless. `restore_ui_state` only walks `sidebar_stack`, so a **dialog's** accordion persists itself through `save_section_states(scope, sections)` / `restore_section_states(...)` with an explicit scope string.
 
 **Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
-`mesh_bl_field_specs.py`): the 21 BL parameters are collapsible groups
-(`_BL_FIELD_GROUPS`, mirroring the `.dat` parameter groups) with only *Layer Growth*
-open, plus Expand all / Collapse all. **`_BL_FIELD_GROUPS` must partition
+`mesh_bl_field_specs.py`, accordion + window fitting in `mesh_bl_dialog_layout.py`):
+the 21 BL parameters are collapsible groups (`_BL_FIELD_GROUPS`, mirroring the `.dat`
+parameter groups), **all closed to start** (USER-REQUESTED — the dialog opens as a list
+of headers and the window is only as tall as what was opened), plus Expand all /
+Collapse all. Only two things open a group and neither is a default: the state the user
+left it in (`ui_state.save/restore_section_states`), and an override (below).
+**`_BL_FIELD_GROUPS` must partition
 `_BL_FIELD_SPECS` exactly** — a key in no group is a parameter the user cannot reach
 that is still written back on OK — gated by `tests/test_bl_dialog_sections.py`, with
 stray keys falling into a trailing "Other" group as a backstop. A group holding a value
