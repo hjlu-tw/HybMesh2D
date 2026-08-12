@@ -90,9 +90,8 @@ class MeshGenControllerMixin:
             return
 
         try:
-            cfg = self.main_window.mesh_config_panel.get_config()
+            cfg = self.config_from_panel("mesh_config_panel")
             cfg.save_to_file(path)
-            self.global_mesh_config = cfg
             self.main_window.log_panel.log(f"Saved mesh configuration to {path}")
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to save mesh config: {e}")
@@ -103,17 +102,18 @@ class MeshGenControllerMixin:
 
     def preview_mesh_generator(self):
         """Update and fit the canvas view to the current geometry input files and domain box coordinates."""
-        cfg = self.main_window.mesh_config_panel.get_config()
-        # Only the rectangular box has coordinates to check: a custom domain
-        # outline hides those fields and supplies the extent itself.
-        if cfg.domain_file is None:
-            if cfg.domain_x_min >= cfg.domain_x_max:
-                self.main_window.log_panel.log("[ERROR] Domain X Min must be strictly less than X Max.")
-                return
-            if cfg.domain_y_min >= cfg.domain_y_max:
-                self.main_window.log_panel.log("[ERROR] Domain Y Min must be strictly less than Y Max.")
-                return
-        self.global_mesh_config = cfg
+        cfg = self.config_from_panel("mesh_config_panel")
+        # ONE definition of "is this domain box usable", shared with validate() — the
+        # preview used to restate the custom-outline exemption inline, so a change to
+        # what makes a domain valid would have had to be made in two places. Only the
+        # domain is checked here (not the whole pre-flight): a preview is what the user
+        # looks at WHILE editing, so it must not refuse to draw the geometry because
+        # some unrelated size has not been filled in yet.
+        errors = cfg.domain_box_errors()
+        if errors:
+            for e in errors:
+                self.main_window.log_panel.log(f"[ERROR] {e}")
+            return
 
         self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
         if self.global_vtk_mesh:
@@ -135,8 +135,7 @@ class MeshGenControllerMixin:
         mc.update_seed_previews([])
         self.main_window.mesh_stats_panel.update_stats(None)
         # Re-show the current boundaries + seeds from the current config (reflects edits).
-        cfg = self.main_window.mesh_config_panel.get_config()
-        self.global_mesh_config = cfg
+        cfg = self.config_from_panel("mesh_config_panel")
         mc.update_mesh_config(cfg, fit_view=False)
         self._refresh_mesh_previews(cfg)
         self.main_window.log_panel.log(
@@ -153,8 +152,9 @@ class MeshGenControllerMixin:
             self.main_window.log_panel.log("HybMesh2D binary not found. Please build the C++ project.")
             return
 
-        # Extract current config values from UI
-        cfg = self.main_window.mesh_config_panel.get_config()
+        # Extract current config values from UI (via the model, so the fields the panel
+        # cannot author — bc_geom above all — are not reset on the way to the mesher).
+        cfg = self.config_from_panel("mesh_config_panel")
 
         # Diagnostic: report the geometry files actually handed to HybMesh2D.
         # (A geometry that previews on the canvas but is missing/empty here is the
@@ -191,7 +191,6 @@ class MeshGenControllerMixin:
         temp_vtk_path = os.path.abspath(os.path.join(self.temp_dir, "global_mesh.vtk"))
         expected_vtk = temp_vtk_path
 
-        self.global_mesh_config = cfg
         self.main_window.mesh_canvas_view.update_mesh_config(cfg)
 
         import copy

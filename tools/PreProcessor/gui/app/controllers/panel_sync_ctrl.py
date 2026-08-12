@@ -130,6 +130,28 @@ class PanelSyncControllerMixin:
             normalize()
         return changed
 
+    def config_from_panel(self, panel_attr: str):
+        """The model, refreshed from its panel — what a stage action should run on.
+
+        Use this instead of ``panel.get_config()`` wherever the result is going to be
+        kept. ``get_config`` builds a FRESH dataclass, so every field the panel does not
+        author (:data:`PRESERVED_FIELDS`) comes back as its class default; storing that
+        as the model silently reset those fields. ``bc_geom`` — the geometry wall patch,
+        which only the per-geometry/segment BC dialogs set — reverted to "wall", so a
+        case loaded with ``BC_GEOM symp`` had its geometry patch exported as a wall by
+        the very next Preview or Generate, indistinguishable from the stale-BC bug the
+        mesh audit was written to catch. The solver panel's ``length_unit`` (and with it
+        ``Linf``, i.e. the Reynolds number) and ``work_dir`` went the same way.
+
+        Syncing applies exactly the authored fields onto the existing model and lets it
+        re-derive its invariants, so nothing the panel cannot see is lost. Returns the
+        model itself, not a copy: callers that need to mutate before writing (the temp
+        config a mesh run writes) already deep-copy.
+        """
+        self.sync_panel_to_model(panel_attr)
+        model_attr = dict(PANEL_MODELS).get(panel_attr)
+        return getattr(self, model_attr, None) if model_attr else None
+
     def sync_panels_to_models(self) -> None:
         """Refresh every stage model from its panel.
 

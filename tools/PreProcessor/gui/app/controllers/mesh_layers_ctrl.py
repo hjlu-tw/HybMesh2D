@@ -31,10 +31,9 @@ class MeshLayersControllerMixin:
             )
             return
 
-        cfg = self.main_window.mesh_config_panel.get_config()
+        cfg = self.config_from_panel("mesh_config_panel")
         if abs_path not in cfg.geom_files:
             cfg.geom_files.append(abs_path)
-            self.global_mesh_config = cfg
             self.push_panel_config(self.main_window.mesh_config_panel, cfg)
             self.main_window.log_panel.log(f"Added resampled geometry to configuration: {abs_path}")
             self.sync_mesh_layers_panel()

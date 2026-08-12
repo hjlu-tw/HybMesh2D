@@ -307,6 +307,96 @@ check(ctl._collect_project_state()["mesh_config"].get("bl_layers") == 31,
       "8. while STILL capturing an edit made without ever running the stage — the "
       "property the panel-reading workaround existed for")
 
+# ── 10. no call site may REPLACE a model with a panel-built config ────────
+# The sync above is the only route that honours PRESERVED_FIELDS. `self.global_X_config =
+# panel.get_config()` bypasses it wholesale: get_config builds a FRESH dataclass, so every
+# unauthored field lands back on its class default. Measured before the fix: pressing
+# Preview or Generate reset bc_geom to "wall", so a case loaded with BC_GEOM=symp exported
+# its geometry patch as a wall — the all-wall grid the mesh-BC audit exists to catch, only
+# produced fresh so the audit sees nothing wrong. Static, because the next call site added
+# must fail the build rather than wait to be noticed in a solve.
+import ast  # noqa: E402
+
+_MODEL_ATTRS = {m for _p, m in PANEL_MODELS}
+# stl3d is exempt only while its panel authors EVERY field, i.e. while a wholesale copy
+# cannot lose anything. The assert makes the exemption self-destruct: add a preserved
+# field to that panel and this test starts demanding the same treatment for its two
+# `self.global_stl3d_config = cfg` sites in stl3d_ctrl.
+check(PRESERVED_FIELDS.get("stl3d_config_panel") == frozenset(),
+      "10. (precondition) the IB panel still authors every field of its model, which is "
+      "the only reason stl3d_ctrl may assign it wholesale")
+_GATED = _MODEL_ATTRS - {"global_stl3d_config"}
+
+
+def _is_get_config_call(node) -> bool:
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get_config")
+
+
+def _model_target(node):
+    """The model attribute this Assign writes to, or None."""
+    for t in node.targets:
+        if (isinstance(t, ast.Attribute) and t.attr in _GATED
+                and isinstance(t.value, ast.Name) and t.value.id == "self"):
+            return t.attr
+    return None
+
+
+_offenders = []
+for _root, _dirs, _files in os.walk(os.path.join(_GUI, "app")):
+    for _f in sorted(_files):
+        if not _f.endswith(".py"):
+            continue
+        _p = os.path.join(_root, _f)
+        _tree = ast.parse(open(_p, encoding="utf-8").read(), filename=_p)
+        for _fn in [n for n in ast.walk(_tree)
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            # Names that hold a panel-built config inside THIS function.
+            _tainted = {t.id for n in ast.walk(_fn) if isinstance(n, ast.Assign)
+                        and _is_get_config_call(n.value)
+                        for t in n.targets if isinstance(t, ast.Name)}
+            for _n in ast.walk(_fn):
+                if not isinstance(_n, ast.Assign):
+                    continue
+                _attr = _model_target(_n)
+                if _attr is None:
+                    continue
+                _v = _n.value
+                if _is_get_config_call(_v) or (isinstance(_v, ast.Name)
+                                               and _v.id in _tainted):
+                    _offenders.append(
+                        f"{os.path.relpath(_p, _GUI)}:{_n.lineno} "
+                        f"self.{_attr} = <panel.get_config()>  in {_fn.name}()")
+
+check(not _offenders,
+      "10. no call site replaces a stage model with a panel-built config — that bypasses "
+      "PRESERVED_FIELDS and silently resets every field the panel cannot author. Use "
+      f"controller.config_from_panel(panel_attr) instead. Offenders: {_offenders}")
+
+# ── 11. ...and the model survives the actions that used to reset it ───────
+check(ctl.config_from_panel("mesh_config_panel") is ctl.global_mesh_config,
+      "11. config_from_panel returns the MODEL (not a fresh copy), so a caller that "
+      "keeps it keeps the preserved fields with it")
+
+ctl.global_mesh_config.bc_geom = "symp"
+ctl.global_solver_config.length_unit = "mm"
+ctl.global_solver_config.length_unit_metres = 1.0e-3
+ctl.global_solver_config.linf_from_unit = True
+mp.bl_layers.setValue(7)                      # a real user edit, mid-session
+ctl.preview_mesh_generator()
+check(ctl.global_mesh_config.bc_geom == "symp",
+      f"11. Preview no longer resets bc_geom — this is the exported geometry patch, so "
+      f"the old reset turned a symmetry wall into a solid wall on the very next preview "
+      f"({ctl.global_mesh_config.bc_geom})")
+check(ctl.global_mesh_config.bl_layers == 7,
+      f"11. ...while still picking the edit up ({ctl.global_mesh_config.bl_layers})")
+
+_cfg_for_run = ctl.config_from_panel("solver_config_panel")
+check(_cfg_for_run.length_unit == "mm" and _cfg_for_run.linf == 1.0e-3,
+      f"11. and the config a solver run/save is built from keeps the declared unit, so "
+      f"Linf is not silently multiplied by 1000 ({_cfg_for_run.length_unit}, "
+      f"{_cfg_for_run.linf})")
+
 _wd.cancel()
 if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED", flush=True)

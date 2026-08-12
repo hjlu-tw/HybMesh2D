@@ -50,7 +50,11 @@ class SolverControllerMixin:
 
     def save_solver_config(self):
         root = repo_root()
-        cfg = self.main_window.solver_config_panel.get_config()
+        # Via the model: a fresh panel-built config carries the DEFAULT length_unit, and
+        # the saved JSON would then pair "m" with the mm-derived Linf it also writes —
+        # reloading it re-derives Linf from "m" and silently multiplies the case's
+        # Reynolds number by 1000.
+        cfg = self.config_from_panel("solver_config_panel")
         default = os.path.join(root, "config", f"{_sanitize(cfg.case_name)}_solver.json")
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Save Solver Config", default, "JSON (*.json);;All Files (*)")
@@ -58,7 +62,6 @@ class SolverControllerMixin:
             return
         try:
             cfg.save_to_file(path)
-            self.global_solver_config = cfg
             self.main_window.log_panel.log(f"Saved solver config to {path}")
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to save solver config: {e}")
@@ -75,8 +78,7 @@ class SolverControllerMixin:
             self.main_window.log_panel.log("Solver is already running. Please wait.")
             return
 
-        cfg = self.main_window.solver_config_panel.get_config()
-        self.global_solver_config = cfg
+        cfg = self.config_from_panel("solver_config_panel")
         log = self.main_window.log_panel.log
 
         # Auto-link the STAR-CD output of the last mesh generation (D6).
@@ -90,11 +92,15 @@ class SolverControllerMixin:
         # resyncing first read whatever stale path the panel still displayed, so
         # the table could describe one grid while the run used another.
         self.resync_solver_bc_from_group()
-        # ...and pick the refreshed rows back up. Only the BC table can have
-        # changed above, and re-reading the whole config would overwrite the
-        # grid paths the auto-link just put on cfg.
-        cfg.bc_definitions = (
-            self.main_window.solver_config_panel.get_config().bc_definitions)
+        # ...and pick the refreshed rows back up. The grid paths are the one thing the
+        # auto-link above owns right now — it wrote them onto cfg and not onto the panel,
+        # which still shows whatever an earlier "Send to Solver" left there — so they are
+        # preserved while everything else is re-read. That is exactly what extra_preserve
+        # is for; building a second throwaway config to copy one field out of it was the
+        # older way of saying the same thing.
+        self.sync_panel_to_model(
+            "solver_config_panel",
+            extra_preserve=("input_vrt_file", "input_cel_file", "input_bnd_file"))
 
         for f, label in [(cfg.input_vrt_file, ".vrt"),
                          (cfg.input_cel_file, ".cel"),

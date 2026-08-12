@@ -119,9 +119,20 @@ else:
     check(m is not None and "DOMAIN_X_MIN" in m.group(1) and "DOMAIN_Y_MIN" in m.group(1),
           "4. Config.hpp gates its domain-span check on domainFile.empty()")
 
-    py = inspect.getsource(MeshConfig.validate)
-    check("custom_domain" in py and "if not custom_domain:" in py,
-          "4. ...and MeshConfig.validate() gates the same check the same way")
+    # The Python side gates it in domain_box_errors(), which validate() and the canvas
+    # preview both call — asserted behaviourally rather than by source text so moving it
+    # again does not break the parity check while the parity still holds.
+    py = inspect.getsource(MeshConfig.domain_box_errors)
+    check("domain_file is not None" in py,
+          "4. ...and MeshConfig gates the same check the same way (domain_box_errors)")
+    _c = MeshConfig()
+    _c.domain_x_min = _c.domain_x_max = _c.domain_y_min = _c.domain_y_max = 0.0
+    _degenerate = _c.validate()[0]
+    _c.geom_files = [OUTLINE]
+    _c.geom_roles = {OUTLINE: {"role": "farfield"}}
+    check(len(_degenerate) == 2 and _c.validate()[0] == [],
+          f"4. ...proved by behaviour: the same degenerate box errors without a custom "
+          f"outline and is exempt with one ({_degenerate} -> {_c.validate()[0]})")
 
 # ── 5. a fresh panel reports the model defaults, not 0..0 ─────────────────
 try:
@@ -165,8 +176,62 @@ scan_src = inspect.getsource(mgc.MeshGenControllerMixin._scan_geometry_files)
 check("domain_file" in scan_src,
       "7. _scan_geometry_files scans the custom outline's bounds too")
 prev_src = inspect.getsource(mgc.MeshGenControllerMixin.preview_mesh_generator)
-check("domain_file is None" in prev_src,
-      "7. the canvas preview no longer refuses to draw a custom domain")
+check("domain_box_errors()" in prev_src and "domain_x_min >=" not in prev_src,
+      "7. the canvas preview asks the MODEL whether the box is usable instead of "
+      "restating the custom-outline exemption inline — one rule, two callers")
+cfg_custom = MeshConfig()
+cfg_custom.geom_files = [OUTLINE]
+cfg_custom.geom_roles = {OUTLINE: {"role": "farfield"}}
+cfg_custom.domain_x_min = cfg_custom.domain_x_max = 0.0     # the hidden, unset box
+check(cfg_custom.domain_box_errors() == [],
+      "7. ...and that rule exempts a custom domain, so the preview still draws it")
+box_only = MeshConfig()
+box_only.domain_x_min = box_only.domain_x_max = 0.0
+box_only.domain_y_min = box_only.domain_y_max = 0.0
+check(len(box_only.domain_box_errors()) == 2,
+      f"7. ...while a degenerate rectangular box is still refused "
+      f"({box_only.domain_box_errors()})")
+
+# ── 8. BL parameters are checked PER FRONT, against the values it uses ─────
+# `bl_grown` correctly stopped claiming "no boundary layer" when only a geometry grows
+# one — but it also routed a global BL_LAYERS of 0 into the branch that validates the
+# GLOBAL thickness/growth, so a project whose only BL comes from a per-geometry override
+# (with its own thickness) was BLOCKED over a global number no front reads.
+ovr = MeshConfig()
+ovr.bl_layers = 0
+ovr.bl_initial_thickness = 0.0            # unused: no global front is grown
+ovr.geom_files = [BODY]
+ovr.geom_roles = {BODY: {"role": "bl",
+                         "bl_params": {"BL_LAYERS": 8, "BL_INITIAL_THICKNESS": 1e-5}}}
+check(ovr.validate()[0] == [],
+      f"8. a per-geometry BL front with its own thickness is not blocked by the unused "
+      f"global one ({ovr.validate()[0]})")
+check(ovr.bl_fronts() == [((BODY,), 1e-5, 1.2)],
+      f"8. ...and the front reports the values it will actually be grown with "
+      f"({ovr.bl_fronts()})")
+
+# The check must not get weaker: a geometry that overrides only the COUNT inherits the
+# global thickness (Config.hpp::applyBLOverride merges), so a zero there is still fatal.
+inh = MeshConfig()
+inh.bl_layers = 0
+inh.bl_initial_thickness = 0.0
+inh.geom_files = [BODY, OUTLINE]
+inh.geom_roles = {p: {"role": "bl", "bl_params": {"BL_LAYERS": 4}}
+                  for p in (BODY, OUTLINE)}
+inh_errors = inh.validate()[0]
+check(any("initial thickness" in e for e in inh_errors),
+      f"8. a front INHERITING a zero global thickness is still an error ({inh_errors})")
+check(sum(1 for e in inh_errors if "initial thickness" in e) == 1
+      and any(BODY in e and OUTLINE in e for e in inh_errors),
+      f"8. ...naming every geometry that inherits it, once, rather than repeating the "
+      f"same line per geometry ({inh_errors})")
+
+glob = MeshConfig()
+glob.bl_initial_thickness = 0.0
+check(any("initial thickness" in e and "used by" not in e
+          for e in glob.validate()[0]),
+      f"8. and the plain global front still reports it WITHOUT a geometry name, since "
+      f"the global fields are what the user must fix ({glob.validate()[0]})")
 
 if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED", flush=True)

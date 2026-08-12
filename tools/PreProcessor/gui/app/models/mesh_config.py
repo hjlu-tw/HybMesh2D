@@ -351,18 +351,13 @@ class MeshConfig:
         custom_domain = self.domain_file is not None
 
         # ── Domain ────────────────────────────────────────────────────────
-        if not custom_domain:
-            if self.domain_x_min >= self.domain_x_max:
-                errors.append("Domain X Min must be strictly less than X Max.")
-            if self.domain_y_min >= self.domain_y_max:
-                errors.append("Domain Y Min must be strictly less than Y Max.")
-        elif domain_bbox is None:
+        errors += self.domain_box_errors()
+        if custom_domain and domain_bbox is None:
             warnings.append(
                 "Custom domain outline could not be read; its extent-based "
                 "checks (BL overrun, geometry containment) were skipped.")
 
-        # The extent every advisory check below measures against: the outline's
-        # bounds for a custom domain, the rectangular box otherwise.
+        # What the advisory checks measure against: the outline's bounds, else the box.
         if custom_domain:
             dom = domain_bbox
         elif self.domain_x_min < self.domain_x_max and self.domain_y_min < self.domain_y_max:
@@ -378,20 +373,24 @@ class MeshConfig:
             errors.append("Far-field mesh size must be > 0 (or enable Auto).")
 
         # ── Boundary layer (only meaningful when layers are grown) ────────
-        # A geometry may override BL_LAYERS to a positive count (the mesher
-        # honours it — Config.hpp::applyBLOverride), so a global 0 does not mean
-        # "no boundary layer anywhere" and must not claim it does.
-        bl_grown = self.bl_layers > 0 or self._any_geom_grows_bl()
+        # Checked PER FRONT: "the BL parameters" is not one set of numbers. Validating
+        # the global ones whenever ANY front grows rejects a run over a parameter no
+        # front reads; validating them only when the global count is positive lets a
+        # geometry inherit a zero thickness unchecked. See bl_fronts().
+        fronts = self.bl_fronts()
         if self.bl_layers < 0:
             errors.append("BL layer count cannot be negative.")
-        elif not bl_grown:
+        elif not fronts:
             warnings.append("BL layers = 0: no boundary layer will be grown.")
         else:
-            if self.bl_initial_thickness <= 0:
-                errors.append("BL initial thickness must be > 0.")
-            if self.bl_growth_rate < 1.0:
-                errors.append(
-                    "BL growth rate must be >= 1.0 (a rate < 1 shrinks each layer).")
+            for labels, t0, growth in fronts:
+                where = f" (used by {', '.join(labels)})" if labels else ""
+                if t0 <= 0:
+                    errors.append(f"BL initial thickness must be > 0{where}.")
+                if growth < 1.0:
+                    errors.append(
+                        "BL growth rate must be >= 1.0 (a rate < 1 shrinks each "
+                        f"layer){where}.")
             # Total BL stack thickness vs domain size (advisory).
             if (self.bl_layers > 0 and self.bl_initial_thickness > 0
                     and self.bl_growth_rate >= 1.0 and dom):
@@ -426,17 +425,68 @@ class MeshConfig:
 
         return errors, warnings
 
-    def _any_geom_grows_bl(self) -> bool:
-        """True if some geometry overrides BL_LAYERS to a positive count, so a
-        global count of 0 does not mean "no boundary layer anywhere"."""
+    def domain_box_errors(self) -> list[str]:
+        """Errors in the rectangular domain box — empty when a custom outline is in use.
+
+        The one definition, shared by :meth:`validate` and the Mesh-Generator preview.
+        With a custom outline the box is hidden in the panel and overwritten from the
+        geometry by the mesher, so checking it would block a valid run on numbers nobody
+        set or can see; ``Config.hpp::validate()`` gates its own span check on
+        ``domainFile.empty()`` for the same reason, and the three must agree.
+        """
+        if self.domain_file is not None:
+            return []
+        out = []
+        if self.domain_x_min >= self.domain_x_max:
+            out.append("Domain X Min must be strictly less than X Max.")
+        if self.domain_y_min >= self.domain_y_max:
+            out.append("Domain Y Min must be strictly less than Y Max.")
+        return out
+
+    @staticmethod
+    def _as_float(value, fallback: float) -> float:
+        """``value`` as a float, else ``fallback``. Override dicts come from a workspace
+        or a hand-written config, so a value can be a string or junk; an unreadable
+        override falls back to the global rather than failing the whole pre-flight."""
+        if value is None:
+            return fallback
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    def bl_fronts(self) -> list[tuple]:
+        """``(labels, initial_thickness, growth_rate)`` per DISTINCT set of values grown.
+
+        Empty when nothing grows a boundary layer at all. ``labels`` is the geometry
+        names using those values, and is EMPTY when the global front uses them — so a
+        message built from it points at the global BL fields exactly when those are the
+        fields to fix, and names the geometries otherwise.
+
+        A geometry's override is merged ON TOP of the global BLParams by the mesher
+        (``Config.hpp::applyBLOverride``), so a geometry overriding only the layer count
+        is still grown with the GLOBAL thickness and growth rate: hence resolving the
+        effective values per front, and grouping by the values rather than the front.
+        """
+        global_key = ((self.bl_initial_thickness, self.bl_growth_rate)
+                      if self.bl_layers > 0 else None)
+        by_values: dict = {}          # (t0, growth) -> [geometry label, ...]
+        if global_key is not None:
+            by_values[global_key] = []
         for g in self.geom_files:
-            n = self.bl_params_of(g).get("BL_LAYERS")
-            try:
-                if n is not None and float(n) > 0:
-                    return True
-            except (TypeError, ValueError):
+            p = self.bl_params_of(g)
+            if not p:
                 continue
-        return False
+            if self._as_float(p.get("BL_LAYERS"), float(self.bl_layers)) <= 0:
+                continue
+            key = (self._as_float(p.get("BL_INITIAL_THICKNESS"), self.bl_initial_thickness),
+                   self._as_float(p.get("BL_GROWTH_RATE"), self.bl_growth_rate))
+            labels = by_values.setdefault(key, [])
+            # Sharing the global front's numbers => unlabelled: the global fields own them.
+            if key != global_key:
+                labels.append(os.path.basename(g))
+        return [(tuple(labels), t0, growth)
+                for (t0, growth), labels in by_values.items()]
 
     def load_from_file(self, path: str):
         """Parse configuration parameters from a text file."""
