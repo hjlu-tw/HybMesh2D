@@ -112,7 +112,13 @@ _CACHE: dict[str, tuple[tuple, TecplotIndex]] = {}
 _CACHE_MAX = 4
 
 
-def _stamp(path: str) -> tuple:
+def stamp(path: str) -> tuple:
+    """Identity of the file's CONTENT as far as the index is concerned.
+
+    Public because a holder of an index (``ResultSeries``) has to be able to ask
+    "is my index still describing this file?" without re-reading it — a transient
+    result can be rewritten by a re-run while the Results tab still has it open.
+    """
     st = os.stat(path)
     return (st.st_mtime_ns, st.st_size)
 
@@ -120,14 +126,19 @@ def _stamp(path: str) -> tuple:
 def index_for(path: str) -> TecplotIndex:
     """Return the cached index for ``path``, building it if missing or stale."""
     key = os.path.abspath(path)
-    stamp = _stamp(path)
+    st = stamp(path)
     hit = _CACHE.get(key)
-    if hit is not None and hit[0] == stamp:
+    if hit is not None and hit[0] == st:
+        # Re-insert so eviction below is least-recently-USED, not first-inserted. Without
+        # this the index for the file being animated is the OLDEST entry and the fifth
+        # distinct path evicts it, putting the next frame back to a whole-file rescan
+        # (~0.07 s -> ~0.35 s) — the cost this module exists to remove.
+        _CACHE[key] = _CACHE.pop(key)
         return hit[1]
     idx = build_index(path)
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.pop(next(iter(_CACHE)))
-    _CACHE[key] = (stamp, idx)
+    _CACHE[key] = (st, idx)
     return idx
 
 

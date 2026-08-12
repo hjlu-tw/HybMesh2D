@@ -174,6 +174,9 @@ class ResultPlaybackMixin:
         n = self._frame_count()
         if n < 2 or self._playing:
             return
+        # Also here, not only in show_frame: pressing Play mid-run does not change frame,
+        # so without this the frame already on screen would keep its per-frame scale
+        # until the first tick — a visible jump one frame in.
         self._lock_color_range()
         # Play at the end of a finished, non-looping run means "play it again":
         # rewind, rather than starting a run with nowhere to go and stopping on
@@ -209,7 +212,6 @@ class ResultPlaybackMixin:
             target = max(0, min(n - 1, target))
             if target == self._frame:
                 return
-        self._lock_color_range()
         self.show_frame(target)
 
     def _advance_frame(self):
@@ -228,10 +230,18 @@ class ResultPlaybackMixin:
         self.show_frame(nxt)
 
     def show_frame(self, k: int):
-        """Display frame ``k`` (0-based), keeping the zone selector in step."""
+        """Display frame ``k`` (0-based), keeping the zone selector in step.
+
+        Every route to another frame goes through here — Prev/Next, the timer, the
+        rewind, AND the zone combo box — so this is where the colour scale is pinned.
+        It used to be pinned by the two transport callers instead, which left the most
+        obvious way to compare frames (picking them from the combo) auto-scaling each
+        frame to its own min/max: the very effect the lock exists to remove.
+        """
         n = self._frame_count()
         if not (0 <= k < n):
             return
+        self._lock_color_range()
         self._frame = k
         try:
             result = self._series.frame(k)

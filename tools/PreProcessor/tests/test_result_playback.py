@@ -73,15 +73,21 @@ from app.views.result_canvas import ResultCanvasView  # noqa: E402
 # A unit square split into two triangles, written as N zones whose cell field
 # GROWS with the frame — so a per-frame colour scale and a global one differ.
 # --------------------------------------------------------------------------- #
-def write_transient(path, n_zones=5, title="time 0"):
+def write_transient(path, n_zones=5, title="time 0", offset=0.0,
+                    distinct_titles=False):
+    """``offset`` shifts every field value, so two generations of the same file are
+    distinguishable — which is how a frame served from a stale cache is caught.
+    ``distinct_titles`` gives each zone its own title (the solver does not, but the
+    label path indexes the zone list only in that case)."""
     L = ['Title = "test"', 'variables = "x", "y", "p", "u"']
     for k in range(n_zones):
-        L += [f'zone t = "{title}" N=4 E=2 ZONETYPE=FETRIANGLE',
+        t = f"{title} {k}" if distinct_titles else title
+        L += [f'zone t = "{t}" N=4 E=2 ZONETYPE=FETRIANGLE',
               ' DATAPACKING = BLOCK VARLOCATION = ( [1-2] = NODAL, [3-4] = CELLCENTERED )',
               '0 1 1 0',                       # x
               '0 0 1 1',                       # y
-              f'{k + 1.0} {k + 2.0}',          # p: frame-dependent, 1..n+1
-              f'{-(k + 1.0)} {k + 1.0}',       # u: symmetric about 0
+              f'{k + 1.0 + offset} {k + 2.0 + offset}',   # p: frame-dependent
+              f'{-(k + 1.0 + offset)} {k + 1.0 + offset}',  # u: symmetric about 0
               '1 2 3', '1 3 4']
     with open(path, "w") as f:
         f.write("\n".join(L) + "\n")
@@ -308,6 +314,132 @@ v.clear()
 check(v._series is None and v._frame_count() == 0
       and not any(w.isVisibleTo(v) for w in v._playback_widgets),
       "5. Clear tears the transport down with the result")
+
+# ── 6. the zone combo is a transport control too ──────────────────────────
+# Picking a frame from the dropdown is the most obvious way to compare two steps, and
+# it used to render them WITHOUT the pinned scale: the lock was applied by step_frame
+# and start_playback, not by show_frame, which every route shares. So the same two
+# frames looked different depending on how you got to them — and someone comparing
+# frames by hand (the likeliest user) got exactly the per-frame auto-scaling the lock
+# exists to remove. A FRESH view is essential here: once any other control has run,
+# the lock is already in place and the bug is invisible.
+v2 = ResultCanvasView()
+v2.load_result_path(multi)
+v2.select_variable("p")
+v2.set_clim_auto(True)
+check(v2.playback_clim() is None,
+      "6. (precondition) a freshly loaded run has nothing pinned yet")
+v2.zone_combo.setCurrentIndex(1)
+check(v2._frame == 1,
+      f"6. picking a zone by hand moves the frame counter ({v2._frame})")
+check(v2.playback_clim() == (1.0, 6.0),
+      f"6. ...and pins the run-wide colour scale, like Prev/Next do "
+      f"({v2.playback_clim()})")
+v2.zone_combo.setCurrentIndex(0)
+_via_combo = v2.playback_clim()
+v2.step_frame(1)
+check(v2.playback_clim() == _via_combo == (1.0, 6.0),
+      f"6. the two routes to a frame agree about its colours — the property that was "
+      f"broken ({v2.playback_clim()} vs {_via_combo})")
+v2.clear()
+
+# ── 7. one series speaks for ONE file ─────────────────────────────────────
+# The frame COUNT/labels came from an index snapshotted in __init__ while the frame
+# DATA came from whatever from_file re-resolved, so a run rewritten under an open
+# Results tab (a re-run into the same case dir, or a headless run_pipeline.sh) mixed
+# two solutions: cached indices replayed the OLD file, uncached ones read the NEW one,
+# under a colour scale pinned to the old range. Read as physics, that is a wrong answer
+# presented as a converged one.
+churn = os.path.join(tmp, "rerun.dat.gui")
+write_transient(churn, n_zones=5)
+s2 = ResultSeries(churn)
+check(s2.n_frames == 5 and float(s2.frame(0).get_cell_field("p").max()) == 2.0,
+      "7. (precondition) five frames, frame 1's p peaking at 2")
+check(s2.global_range("p") == (1.0, 6.0),
+      "7. (precondition) and a pinned range over the whole run")
+
+write_transient(churn, n_zones=3, offset=100.0)      # the re-run: fewer, different
+os.utime(churn, (0, 0))                              # a distinct stamp on any fs
+check(s2.n_frames == 3,
+      f"7. the frame count follows the file that is on disk NOW ({s2.n_frames})")
+check(s2.frame_label(0) == "Frame 1 / 3",
+      f"7. ...so does the read-out ({s2.frame_label(0)!r})")
+check(float(s2.frame(0).get_cell_field("p").max()) == 102.0,
+      f"7. a frame index still sitting in the LRU is re-read from the NEW file "
+      f"instead of replaying the previous run "
+      f"({float(s2.frame(0).get_cell_field('p').max())})")
+check(not s2.has_global_range("p"),
+      "7. the range pinned to the old run is dropped, not kept over new data")
+check(s2.global_range("p") == (101.0, 104.0),
+      f"7. ...and rescans to the new run's own range ({s2.global_range('p')})")
+
+# The transport's frame index can outlive a file that shrank under it; a LABEL must
+# never be the thing that raises (it is called from the UI refresh, not a load path).
+titled = os.path.join(tmp, "titled.dat")
+write_transient(titled, n_zones=4, distinct_titles=True)
+s3 = ResultSeries(titled)
+check("time 0 2" in s3.frame_label(2),
+      f"7. a file whose zones DO differ still shows the title ({s3.frame_label(2)!r})")
+write_transient(titled, n_zones=2, distinct_titles=True)
+os.utime(titled, (0, 0))
+try:
+    stale_label = s3.frame_label(3)
+except IndexError:
+    stale_label = "<IndexError>"
+check(stale_label == "Frame 4 / 2",
+      f"7. and a label for a now-out-of-range frame degrades instead of raising "
+      f"({stale_label!r})")
+
+# ── 8. the byte cap counts what a frame really holds ──────────────────────
+# from_file parses ONE token buffer and hands out slices, so caching any one field array
+# keeps the whole buffer — including the element-connectivity region, which no field
+# array covers. Charging only the slices under-reported every frame, so the 512 MB cap
+# really admitted ~1.25x that: a machine sized to the bound swaps instead of evicting.
+from app.models.result_series import _frame_nbytes  # noqa: E402
+
+r0 = TecplotResult.from_file(multi, zone=0)
+check(r0.raw_nbytes > 0,
+      f"8. a parsed frame records the size of the buffer it was sliced from "
+      f"({r0.raw_nbytes})")
+_slices = sum(a.nbytes for d in (r0.cell_data, r0.node_data) for a in d.values())
+_counted = _frame_nbytes(r0)
+check(_counted >= r0.raw_nbytes + r0.nodes.nbytes + r0.elements.nbytes,
+      f"8. the accounting includes that shared buffer ({_counted} >= "
+      f"{r0.raw_nbytes + r0.nodes.nbytes + r0.elements.nbytes})")
+check(_counted > _slices + r0.nodes.nbytes + r0.elements.nbytes,
+      f"8. ...which is strictly more than the slices alone — the connectivity region is "
+      f"the part that used to be invisible ({_counted} vs "
+      f"{_slices + r0.nodes.nbytes + r0.elements.nbytes})")
+check(_frame_nbytes(TecplotResult()) == 0,
+      "8. a result not parsed from a file still measures as empty, not as a crash")
+
+# ── 9. the index cache is LRU, not FIFO ───────────────────────────────────
+# A cache hit did not re-insert the key, so eviction was by INSERTION order: the index
+# for the file being animated is the oldest entry and the fifth distinct path evicted it,
+# putting the next frame back to a whole-file rescan.
+tecplot_index.clear_index_cache()
+lru_paths = [write_transient(os.path.join(tmp, f"lru{i}.dat"), n_zones=2)
+             for i in range(tecplot_index._CACHE_MAX)]
+for p in lru_paths:
+    tecplot_index.index_for(p)
+oldest = tecplot_index.index_for(lru_paths[0])       # USE it: now the most recent
+tecplot_index.index_for(write_transient(os.path.join(tmp, "lru_extra.dat"), n_zones=2))
+check(tecplot_index.index_for(lru_paths[0]) is oldest,
+      "9. an entry that is still being used survives eviction (LRU), instead of being "
+      "dropped for being the first one inserted")
+check(len(tecplot_index._CACHE) <= tecplot_index._CACHE_MAX,
+      f"9. ...and the cache still obeys its size ({len(tecplot_index._CACHE)})")
+
+# invalidate() is the escape hatch for a change the (mtime, size) stamp cannot see, so
+# it must force a rebuild rather than re-ask the shared cache — which would hand back
+# the very index it was told to discard.
+inv = ResultSeries(multi)
+before = inv._index
+inv.frame(0)
+inv.invalidate()
+check(inv._index is not before and inv.n_frames == 5 and inv.cached_frames() == 0,
+      "9. invalidate() rebuilds the index and drops the frames even when the file looks "
+      "unchanged (a rewrite inside one mtime tick at the same size)")
 
 _wd.cancel()
 if _FAILS:

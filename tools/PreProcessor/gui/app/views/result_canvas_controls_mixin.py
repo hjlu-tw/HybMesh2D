@@ -173,8 +173,9 @@ class ResultCanvasControlsMixin:
         if self._building or self._result is None:
             return
         z = self.zone_combo.currentData()
-        # Picking a zone by hand is a manual step, so it goes through the same
-        # cached path (and the same frame counter) as Prev/Next.
+        # Picking a zone by hand goes through show_frame, i.e. the same cached path, the
+        # same frame counter AND the same pinned colour scale as Prev/Next — the scale
+        # being the one this used to miss, which made the two routes render differently.
         if self._series is not None and z is not None:
             self.stop_playback()
             self.show_frame(int(z))

@@ -60,6 +60,11 @@ class TecplotResult:
     node_data: dict = field(default_factory=dict)   # {var: (N,)}
     zone: ZoneInfo | None = None
     zones: list = field(default_factory=list)       # all ZoneInfo in the file
+    #: Bytes of the single token buffer the field arrays are VIEWS into (0 when this
+    #: result was not parsed from a file). The cache accounting needs it: one slice
+    #: being referenced keeps the whole buffer — connectivity region included —
+    #: resident, and that region is covered by no field array.
+    raw_nbytes: int = 0
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -68,15 +73,19 @@ class TecplotResult:
         return list(index_for(path).zones)
 
     @classmethod
-    def from_file(cls, path: str, zone: int = -1) -> TecplotResult:
+    def from_file(cls, path: str, zone: int = -1, index=None) -> TecplotResult:
         """Load a single zone (default: last zone, i.e. most-converged solution).
 
         Only that zone's byte range is read (see ``tecplot_index``), so the cost
         is proportional to one zone rather than to the whole transient history.
 
+        ``index`` lets a caller that already holds an index for this file read THROUGH
+        it, so its zone list and the data it gets back describe the same snapshot of the
+        file (see ``ResultSeries``). Omitted, the shared cache is asked as before.
+
         Raises ValueError if the file has no zones or the index is out of range.
         """
-        idx = index_for(path)
+        idx = index if index is not None else index_for(path)
         variables = idx.variables
         n_zones = len(idx.zones)
 
@@ -175,6 +184,7 @@ class TecplotResult:
             node_data=node_data,
             zone=zinfo,
             zones=list(idx.zones),
+            raw_nbytes=int(tokens.nbytes),
         )
 
     # ------------------------------------------------------------------ #
