@@ -6,7 +6,83 @@ from app.utils import block_signals
 
 class SegmentCanvasControllerMixin:
     """Mixin containing canvas-driven edge selection: click/box hit-testing,
-    highlight rendering, and segment polyline helpers."""
+    highlight rendering, and segment polyline helpers.
+
+    Also owns the two things the base-geometry layer needs from the model —
+    when to wipe it (:meth:`_clear_geometry_canvas`) and where it must NOT join
+    consecutive points (:meth:`_geometry_connect`) — both called from
+    ``controller._apply_geometry_update``."""
+
+    def _clear_geometry_canvas(self, session):
+        """Wipe what the session's DISCRETE geometry drew, for a session that no
+        longer has any (Clear All, or the last file edge converted away).
+
+        USER-REPORTED: 'Clear All' then 'Redraw' left the old geometry on the
+        canvas. The rebuild is driven by ``_apply_geometry_update``, which
+        returned as its first statement when ``original_points`` was None — so
+        the model was empty, every rebuild path agreed the model was empty, and
+        the pyqtgraph items simply kept the last data anyone had pushed into
+        them. Nothing else re-clears them, because clearing IS this method's job.
+
+        Analytic (curve) edges are deliberately untouched: a session can have a
+        drawn circle and no discrete points at all, and those items belong to
+        ``_update_canvas_curve_segments``.
+        """
+        cv = self.main_window.canvas_view
+        cv.update_geometry(session.session_id, None)
+        if session is not self.active_session():
+            return
+        cv.set_active_points(None)
+        cv.update_split_points([])
+        cv.update_selected_point(None)
+        cv.clear_closing_edge()
+        cv.clear_open_endpoint_markers()
+        cv.clear_resampled()
+        sb = self.main_window.sidebar_view
+        sb.geom_stats_panel.update_stats(
+            None, closed=False, n_segments=len(session.project_model.segments),
+            unit=self.length_unit_symbol())
+        sb.selected_info.setText("Selected Vertex: None")
+        sb.split_btn.setEnabled(False)
+        sb.remove_split_btn.setEnabled(False)
+        self.refresh_status_selection()
+
+    @staticmethod
+    def _geometry_connect(pm, n_orig: int, n_pts: int):
+        """Where the base polyline must BREAK, as a pyqtgraph connect array.
+
+        USER-REPORTED: converting the four sides of a quadrilateral to discrete
+        out of order drew a diagonal. Two pieces that do not touch are still
+        adjacent in ``original_points``, and the geometry is drawn as a single
+        polyline, so the canvas joined them — a line that belongs to no edge,
+        cannot be selected, and looks exactly like geometry.
+
+        The breaks are read off the MODEL, not guessed from point spacing: the
+        rebuild in ``update_file_segments_from_indices`` already drops the
+        bridging index pair, so an index interval covered by no file segment is
+        precisely a discontinuity. (A spacing heuristic would also break a
+        legitimately long straight edge next to a finely sampled arc.)
+
+        Returns None — connect everything, the fast path — when the model has
+        fewer than two file segments or every interval is covered.
+        """
+        file_segs = [s for s in pm.segments if s.type == "file"]
+        if len(file_segs) < 2 or n_pts < 3 or n_orig < 2:
+            return None
+        cov = np.zeros(n_pts, dtype=np.uint8)
+        for s in file_segs:
+            a, b = sorted((int(s.start_index), int(s.end_index)))
+            a, b = max(0, a), min(n_orig - 1, b)
+            if b > a:
+                cov[a:b] = 1
+        if n_pts > n_orig:
+            # The caller appended the first point to close the display loop;
+            # that seam is a real edge, and no file segment spans it.
+            cov[n_orig - 1] = 1
+        cov[-1] = 0                       # nothing follows the last point
+        if cov[:n_pts - 1].all():
+            return None
+        return cov
 
     def _deselect_all_edges(self, session):
         """Clear the edge selection and its canvas highlight (empty-canvas click)."""

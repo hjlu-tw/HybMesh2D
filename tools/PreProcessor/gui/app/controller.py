@@ -353,6 +353,7 @@ class AppController(
     def _apply_geometry_update(self, session: GeometrySession,
                                re_detect: bool = False):
         if session.original_points is None:
+            self._clear_geometry_canvas(session)
             self._update_undo_redo_buttons(session)
             return
         points = session.original_points.copy()
@@ -367,8 +368,12 @@ class AppController(
             if not np.allclose(points[0], points[-1]):
                 points = np.vstack((points, points[0]))
 
-        # Update geometry on the shared canvas
-        self.main_window.canvas_view.update_geometry(session.session_id, points)
+        # Update geometry on the shared canvas. The base geometry is ONE
+        # polyline item, so it is told where NOT to join consecutive points.
+        self.main_window.canvas_view.update_geometry(
+            session.session_id, points,
+            connect=self._geometry_connect(
+                pm, len(session.original_points), len(points)))
         self.main_window.canvas_view.set_geometry_visible(session.session_id, session.is_visible)
 
         if re_detect:

@@ -2,23 +2,28 @@
 
 A transient run appends one zone per dumped step, so the Results view is a movie
 that was only ever shown one frame at a time. This mixin adds the transport
-controls — Play/Pause, Prev, Next, speed and Loop — over
-:class:`~app.models.result_series.ResultSeries`.
+controls — First, Prev, Play/Pause, Next, Last, speed, Loop and the colour-scale
+lock — over :class:`~app.models.result_series.ResultSeries`.
 
 **Looping is opt-in.** A run plays through once and stops on the last frame (the
 converged solution, and where the view opens anyway); the Loop checkbox turns the
 animation into a repeating one. The same switch governs the step buttons, which
-clamp at the ends rather than jumping to the far end of the run.
+clamp at the ends rather than jumping to the far end of the run. First/Last are
+the deliberate jumps to an end and ignore Loop entirely.
 
 Two things make the animation readable rather than merely possible:
 
-* **The colour scale is locked across the whole run.** Auto-scaling every frame
-  to its own min/max repaints the same colours onto a changing range, so a field
-  that grows by 10x looks identical from frame to frame. The first use of any
-  transport control scans all frames for the current variable (cached per
-  variable, see ``ResultSeries.global_range``) and pins that range for the run.
-  A range the user set by hand always wins — locking is a fix for auto-scaling,
-  not an override of an explicit choice.
+* **The colour scale can be locked across the whole run** (the "Lock scale" box,
+  which only exists for a transient result). Auto-scaling every frame to its own
+  min/max repaints the same colours onto a changing range, so a field that decays
+  by 5x looks identical from frame to frame; ticking the box scans all frames for
+  the current variable (cached per variable, see ``ResultSeries.global_range``)
+  and pins that range for the run.
+
+  USER-REQUESTED (2026-08-12): the lock is **off by default**, because
+  "Auto (fit to data)" has to mean what it says — the data on screen, i.e. the
+  frame being shown. A range the user set by hand always wins over both: the
+  lock is a fix for auto-scaling, not an override of an explicit choice.
 * **The mesh is not rebuilt per frame.** ``set_result`` reuses the triangulation
   when the incoming frame has the same nodes, which also keeps probes/lines/
   extrema alive across a step (they are pinned to geometry that did not move).
@@ -67,6 +72,8 @@ class ResultPlaybackMixin:
         row = QHBoxLayout()
         row.setSpacing(6)
 
+        self.first_btn = QPushButton("⏮ First")
+        self.first_btn.setToolTip("Jump to the first frame of the run")
         self.prev_btn = QPushButton("◀ Prev")
         self.prev_btn.setToolTip(
             "Show the previous frame (stops at the first unless Loop is on)")
@@ -74,7 +81,11 @@ class ResultPlaybackMixin:
         self.next_btn = QPushButton("Next ▶")
         self.next_btn.setToolTip(
             "Show the next frame (stops at the last unless Loop is on)")
-        for b in (self.prev_btn, self.play_btn, self.next_btn):
+        self.last_btn = QPushButton("Last ⏭")
+        self.last_btn.setToolTip(
+            "Jump to the last frame — the converged solution of the run")
+        for b in (self.first_btn, self.prev_btn, self.play_btn,
+                  self.next_btn, self.last_btn):
             b.setStyleSheet(_BTN_QSS)
 
         self.frame_label = QLabel("")
@@ -103,26 +114,44 @@ class ResultPlaybackMixin:
             "Repeat the run continuously. Off: Play stops at the last frame, "
             "and Prev/Next stop at the ends instead of wrapping round.")
 
-        for w in (self.prev_btn, self.play_btn, self.next_btn,
-                  self.frame_label, speed_label, self.speed_combo, self.loop_cb):
+        # Off by default so "Auto (fit to data)" fits the frame on screen. On,
+        # every frame is drawn on the whole run's range, which is what makes a
+        # decaying field visibly decay instead of looking identical throughout.
+        self.lock_scale_cb = QCheckBox("Lock scale")
+        self.lock_scale_cb.setChecked(False)
+        self.lock_scale_cb.setStyleSheet(f"color:{_FG};font-size:11px;")
+        self.lock_scale_cb.setToolTip(
+            "Pin the colour scale to this variable's range over ALL frames, so "
+            "colours mean the same thing throughout the run.\n"
+            "Off (default): 'Auto (fit to data)' fits each frame on its own.\n"
+            "A range typed into Min/Max wins over both.")
+
+        for w in (self.first_btn, self.prev_btn, self.play_btn, self.next_btn,
+                  self.last_btn, self.frame_label, speed_label,
+                  self.speed_combo, self.loop_cb, self.lock_scale_cb):
             row.addWidget(w)
         row.addStretch()
         # Directly under row 1 (the data selectors it belongs with), not appended
         # after the display toggles.
         bar_v.insertLayout(1, row)
 
-        self._playback_widgets = [self.prev_btn, self.play_btn, self.next_btn,
+        self._playback_widgets = [self.first_btn, self.prev_btn, self.play_btn,
+                                  self.next_btn, self.last_btn,
                                   self.frame_label, speed_label,
-                                  self.speed_combo, self.loop_cb]
+                                  self.speed_combo, self.loop_cb,
+                                  self.lock_scale_cb]
         for w in self._playback_widgets:
             w.setVisible(False)
 
+        self.first_btn.clicked.connect(lambda: self.go_to_end(-1))
         self.prev_btn.clicked.connect(lambda: self.step_frame(-1))
         self.next_btn.clicked.connect(lambda: self.step_frame(1))
+        self.last_btn.clicked.connect(lambda: self.go_to_end(1))
         self.play_btn.clicked.connect(self.toggle_playback)
         self.speed_combo.currentIndexChanged.connect(self._on_speed_changed)
         # Ticking Loop at an end must re-enable the step button parked there.
         self.loop_cb.toggled.connect(lambda _=None: self._update_playback_ui())
+        self.lock_scale_cb.toggled.connect(self._on_lock_scale_toggled)
 
     def _init_playback(self):
         self._series: ResultSeries | None = None
@@ -164,6 +193,11 @@ class ResultPlaybackMixin:
 
     def _looping(self) -> bool:
         cb = getattr(self, "loop_cb", None)
+        return bool(cb.isChecked()) if cb is not None else False
+
+    def _scale_locked(self) -> bool:
+        """Whether the colour scale is pinned to the whole run (opt-in)."""
+        cb = getattr(self, "lock_scale_cb", None)
         return bool(cb.isChecked()) if cb is not None else False
 
     def toggle_playback(self):
@@ -213,6 +247,21 @@ class ResultPlaybackMixin:
             if target == self._frame:
                 return
         self.show_frame(target)
+
+    def go_to_end(self, direction: int):
+        """Jump to the first (``direction < 0``) or last frame of the run.
+
+        Deliberately NOT governed by Loop: "take me to the end" has one meaning
+        whether or not the animation wraps, and unlike Prev/Next there is no
+        far end to be surprised by.
+        """
+        n = self._frame_count()
+        if n < 2:
+            return
+        self.stop_playback()
+        target = 0 if direction < 0 else n - 1
+        if target != self._frame:
+            self.show_frame(target)
 
     def _advance_frame(self):
         n = self._frame_count()
@@ -284,11 +333,13 @@ class ResultPlaybackMixin:
     def _lock_color_range(self):
         """Pin the colour scale to the current variable's range over ALL frames.
 
-        Skipped when the user set the range by hand (their choice stands) or when
-        the file has a single frame (nothing to keep steady). The scan is paid
-        once per variable — afterwards the answer is cached on the series.
+        Skipped unless the user ticked "Lock scale" — auto means the frame on
+        screen — and also when the range was set by hand (their choice stands)
+        or the file has a single frame (nothing to keep steady). The scan is paid
+        once per variable; afterwards the answer is cached on the series.
         """
-        if self._series is None or self._frame_count() < 2 or not self._clim_auto:
+        if (self._series is None or self._frame_count() < 2
+                or not self._clim_auto or not self._scale_locked()):
             return
         var = self._current_var()
         if not var:
@@ -323,6 +374,17 @@ class ResultPlaybackMixin:
             self._log(f"[Results] '{var}' locked to [{rng[0]:.6g}, {rng[1]:.6g}] "
                       "for playback (all frames share one colour scale).")
 
+    def _on_lock_scale_toggled(self, on: bool):
+        """Tick = scan the run and pin its range; untick = back to per-frame auto."""
+        if on:
+            self._lock_color_range()
+        else:
+            self._range_lock = None
+            self._range_lock_var = ""
+            self._log("[Results] colour scale follows each frame again "
+                      "(Auto fits the frame on screen).")
+        self.render()
+
     def _invalidate_range_lock(self):
         """Called when the displayed variable changes — the lock is per-variable."""
         if self._range_lock is not None and self._range_lock_var != self._current_var():
@@ -335,7 +397,8 @@ class ResultPlaybackMixin:
         ``render`` consults this ONLY in auto mode, so a manual colour range is
         never silently replaced by the animation's.
         """
-        if self._range_lock is None or not self._clim_auto:
+        if (self._range_lock is None or not self._clim_auto
+                or not self._scale_locked()):
             return None
         if self._range_lock_var != self._current_var():
             return None
@@ -357,8 +420,14 @@ class ResultPlaybackMixin:
         # Without Loop, an end of the run is a real boundary: grey the step
         # button out there rather than leaving a click that does nothing.
         loop = self._looping()
-        self.prev_btn.setEnabled(multi and (loop or self._frame > 0))
-        self.next_btn.setEnabled(multi and (loop or self._frame < n - 1))
+        at_first, at_last = self._frame <= 0, self._frame >= n - 1
+        self.prev_btn.setEnabled(multi and (loop or not at_first))
+        self.next_btn.setEnabled(multi and (loop or not at_last))
+        # First/Last are jumps, not steps: Loop does not make "go to the first
+        # frame" mean anything different, and standing ON that frame is the one
+        # case where the button has nothing to do.
+        self.first_btn.setEnabled(multi and not at_first)
+        self.last_btn.setEnabled(multi and not at_last)
         self.frame_label.setText(
             self._series.frame_label(self._frame) if multi else "")
 

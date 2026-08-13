@@ -114,7 +114,9 @@ class CurveJoinControllerMixin:
         """Order edges into one connected chain by endpoint coincidence,
         orienting each edge's point array head-to-tail. Returns
         (ordered_edges, is_loop) or (None, False) if not one chain. Each
-        ordered entry has 'pts' running start→end along the chain.
+        ordered entry has 'pts' running start→end along the chain, and 'src' —
+        the caller's own edge dict, so a caller that needs the ORDER of the
+        edges (not just the merged points) can read its 'idx'/'id' back out.
 
         The chain grows from BOTH of the seed edge's ends: the seed (edges[0], the
         lowest-index selection) may sit in the MIDDLE of an open chain, so a
@@ -123,7 +125,8 @@ class CurveJoinControllerMixin:
         n = len(edges)
         used = [False] * n
         used[0] = True
-        chain = [edges[0]["pts"]]      # oriented point arrays, head→tail
+        # Oriented (point array, source edge) pairs, head→tail along the chain.
+        chain = [{"pts": edges[0]["pts"], "src": edges[0]}]
         head_free = edges[0]["p0"]     # dangling end at the head of the chain
         tail_free = edges[0]["p1"]     # dangling end at the tail of the chain
         for _ in range(n - 1):
@@ -134,14 +137,14 @@ class CurveJoinControllerMixin:
                 p0, p1, pts = edges[j]["p0"], edges[j]["p1"], edges[j]["pts"]
                 # Extend at the tail (chain ... -> tail_free -> new edge).
                 if np.hypot(*(p0 - tail_free)) <= tol:
-                    chain.append(pts);        tail_free = p1
+                    chain.append({"pts": pts, "src": edges[j]});        tail_free = p1
                 elif np.hypot(*(p1 - tail_free)) <= tol:
-                    chain.append(pts[::-1]);  tail_free = p0
+                    chain.append({"pts": pts[::-1], "src": edges[j]});  tail_free = p0
                 # Extend at the head (new edge -> head_free -> chain ...).
                 elif np.hypot(*(p1 - head_free)) <= tol:
-                    chain.insert(0, pts);        head_free = p0
+                    chain.insert(0, {"pts": pts, "src": edges[j]});        head_free = p0
                 elif np.hypot(*(p0 - head_free)) <= tol:
-                    chain.insert(0, pts[::-1]);  head_free = p1
+                    chain.insert(0, {"pts": pts[::-1], "src": edges[j]});  head_free = p1
                 else:
                     continue
                 used[j] = True
@@ -149,9 +152,8 @@ class CurveJoinControllerMixin:
                 break
             if not attached:
                 return None, False
-        ordered = [{"pts": p} for p in chain]
         is_loop = bool(np.hypot(*(tail_free - head_free)) <= tol)
-        return ordered, is_loop
+        return chain, is_loop
 
     @staticmethod
     def _chain_corners(ordered, is_loop):

@@ -34,6 +34,7 @@ from app.commands.segment_structure_cmds import (
 from app.commands.segment_geometry_cmds import (
     CreateSegmentsFromIndicesCmd,
     BakeCurveToGeometryCmd,
+    BakeCurvesToGeometryCmd,
 )
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     "UpdateMultipleSegmentsStateCmd",
     "CreateSegmentsFromIndicesCmd",
     "BakeCurveToGeometryCmd",
+    "BakeCurvesToGeometryCmd",
     "DuplicateTransformCmd",
     "DuplicateMultipleTransformCmd",
     "ClearGeometryCmd",

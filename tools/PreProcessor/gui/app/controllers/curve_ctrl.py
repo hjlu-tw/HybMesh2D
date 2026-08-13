@@ -3,7 +3,7 @@ import math
 import numpy as np
 from app.models.segment import SegmentModel
 from app.commands.segment_cmds import (
-    AddCurveSegmentCmd, BakeCurveToGeometryCmd)
+    AddCurveSegmentCmd, BakeCurveToGeometryCmd, BakeCurvesToGeometryCmd)
 from app.services.geometry_service import (
     GeometryService)
 from app.models import shape_spec
@@ -58,25 +58,100 @@ class CurveControllerMixin:
             f"Added Analytic Edge {cmd.added_seg.id}.")
 
     def bake_selected_curve(self):
+        """Convert the selected analytic edge(s) to discrete points.
+
+        With SEVERAL edges selected the conversion order is worked out from the
+        geometry, not from the click order (USER-REQUESTED): the edges are
+        chained by endpoint coincidence and baked head-to-tail, so the four
+        sides of a quadrilateral end up as one continuous boundary whichever
+        order they were picked in. Baking welds each piece onto whichever END of
+        the polyline it touches, so out-of-order edges land as disjoint pieces
+        and the single base polyline draws a straight line across the gap — the
+        phantom "diagonal" that prompted this. Edges that do NOT form one chain
+        are baked in selection order and the log says why.
+        """
         session = self.active_session()
-        if not session or session.current_segment_idx < 0:
+        if not session:
             return
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg or seg.type != "curve":
-            return
-        
-        n = seg.parameters.get("n_points", 100)
-        xs, ys = GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
-        if xs is None or len(xs) < 2:
-            self.main_window.log_panel.log("Cannot convert curve: invalid preview points.")
+        pm = session.project_model
+
+        def is_curve(i):
+            seg = pm.get_segment(i)
+            return bool(seg and seg.type == "curve")
+
+        indices = [i for i in self.get_selected_segment_indices() if is_curve(i)]
+        if not indices:
+            # The tree selection may hold no analytic edge at all — it still
+            # lists the discrete edges a previous conversion produced, and a
+            # context-menu / programmatic caller sets only current_segment_idx.
+            # That single edge stays the target, exactly as it was before
+            # multi-selection was understood here.
+            cur = getattr(session, "current_segment_idx", -1)
+            if not is_curve(cur):
+                return
+            indices = [cur]
+        if not self._bakeable(session, [pm.get_segment(i) for i in indices]):
             return
 
-        cmd = BakeCurveToGeometryCmd(session, session.current_segment_idx, self._refresh_segment_list)
-        session.command_history.execute(cmd)
-        self.main_window.log_panel.log(f"Converted Edge {cmd.seg_id} to Discrete.")
+        if len(indices) > 1:
+            indices = self._bake_order(session, indices)
+            cmd = BakeCurvesToGeometryCmd(session, indices,
+                                          self._refresh_segment_list)
+            session.command_history.execute(cmd)
+            self.main_window.log_panel.log(
+                "Converted Edge " + ", ".join(str(i) for i in cmd.seg_ids)
+                + " to Discrete (one connected boundary).")
+        else:
+            cmd = BakeCurveToGeometryCmd(session, indices[0],
+                                         self._refresh_segment_list)
+            session.command_history.execute(cmd)
+            self.main_window.log_panel.log(f"Converted Edge {cmd.seg_id} to Discrete.")
         self.main_window.canvas_view.clear_curve_preview(session.session_id)
         self._apply_geometry_update(session)
         self._update_canvas_curve_segments()
+
+    def _bakeable(self, session, segs) -> bool:
+        """Every selected edge must evaluate to a usable polyline before ANY of
+        them is baked — a half-converted selection is the worst outcome."""
+        for seg in segs:
+            n = seg.parameters.get("n_points", 100)
+            try:
+                xs, _ys = GeometryService.compute_curve_preview_pts(
+                    seg, n, session.original_points)
+            except Exception as e:
+                self.main_window.log_panel.log(
+                    f"Cannot convert Edge {seg.id}: {e}")
+                return False
+            if xs is None or len(xs) < 2:
+                self.main_window.log_panel.log(
+                    f"Cannot convert Edge {seg.id}: invalid preview points.")
+                return False
+        return True
+
+    def _bake_order(self, session, indices):
+        """Order selected edge indices head-to-tail along the boundary they form.
+
+        Falls back to the given (selection) order when they are not one chain —
+        several separate shapes are a legitimate thing to convert at once, and
+        each still welds correctly within itself.
+        """
+        pm = session.project_model
+        edges = []
+        for i in indices:
+            seg = pm.get_segment(i)
+            res = GeometryService.get_segment_points(session, seg)
+            if res is None or len(res[0]) < 2:
+                return indices
+            pts = np.column_stack(res).astype(float)
+            edges.append({"idx": i, "id": seg.id, "pts": pts,
+                          "p0": pts[0].copy(), "p1": pts[-1].copy()})
+        ordered, _is_loop = self._chain_edges(edges, self._endpoint_tolerance(session))
+        if ordered is None:
+            self.main_window.log_panel.log(
+                "The selected edges do not form one connected chain — converting "
+                "them in selection order; disjoint pieces stay separate.")
+            return indices
+        return [e["src"]["idx"] for e in ordered]
 
     # ── Join / Close edges → one closed polygon ────────────────────────────
 

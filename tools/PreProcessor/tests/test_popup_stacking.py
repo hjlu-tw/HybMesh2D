@@ -23,6 +23,14 @@ own ``show(); raise_()`` lost to the press, and the activation raise lost the
 same way. Both raises are now deferred by one event-loop turn (``raise_later``),
 and the pop-up re-raises itself on Show so every call site is covered.
 
+USER-REPORTED follow-up (2026-08-12): "the arc pop-up starts above the main
+window, but after I drag the base point it goes below." Activation is the wrong
+(and only) trigger: once the main window is active, further clicks reorder it in
+front of the pop-up without Qt sending another ``WindowActivate`` at all, and a
+raise deferred into the middle of a drag is undone when the platform finishes
+the drag. ``_ClickRaiser`` re-raises when the click ENDS (mouse release), which
+is after the reordering has settled and fires however often the user clicks.
+
 Checks:
  1. keep_on_top() produces a normal-level Dialog window — no Tool bit (which
     would auto-hide on macOS), no WindowStaysOnTopHint (which would float over
@@ -39,6 +47,10 @@ Checks:
     showing a pop-up schedules one — no call site has to remember to raise.
  7. A pop-up deleted between the event and the deferred raise is survivable
     (modeless dialogs are deleteLater()'d on close).
+ 8. A click that ENDS on the main window re-raises the pop-up even though the
+    window was already active (no WindowActivate) — the drag regression — and
+    the app-wide filter is installed once, stays transparent, and ignores both
+    non-release events and clicks inside the pop-up itself.
 
 Run:  python3 tools/PreProcessor/tests/test_popup_stacking.py
 """
@@ -61,12 +73,14 @@ def check(cond, msg):
         _FAILS.append(msg)
 
 
-from PyQt6.QtCore import QEvent, Qt                                  # noqa: E402
+from PyQt6.QtCore import QEvent, QPointF, Qt                         # noqa: E402
+from PyQt6.QtGui import QMouseEvent                                  # noqa: E402
 from PyQt6.QtWidgets import (                                        # noqa: E402
     QApplication, QDialog, QMainWindow, QWidget,
 )
 from app.utils import (                                              # noqa: E402
-    KEEP_ON_TOP_PROP, _PopupRaiser, _RAISER_PROP, keep_on_top,
+    _CLICK_RAISER_PROP, _ClickRaiser, _PopupRaiser, _RAISER_PROP,
+    KEEP_ON_TOP_PROP, keep_on_top,
 )
 
 app = QApplication.instance() or QApplication(sys.argv)
@@ -191,6 +205,68 @@ except RuntimeError as e:       # pragma: no cover - the bug this guards
     ok = False
     print(f"    deferred raise raised: {e}")
 check(ok, "7. deleting a pop-up before its deferred raise is survivable")
+
+# ── 8. a click that ENDS on the main window lifts the pop-up again ──────────
+# The drag regression: the main window is ALREADY active by then, so no
+# WindowActivate is sent and the activation raiser never hears about the click
+# that just buried the pop-up.
+def release_on(widget):
+    ev = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(1.0, 1.0),
+                     widget.mapToGlobal(QPointF(1.0, 1.0)),
+                     Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+                     Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(widget, ev)
+    app.processEvents()
+
+
+check(app.property(_CLICK_RAISER_PROP) is True,
+      "8. a click raiser is installed on the QApplication (once, by keep_on_top)")
+
+dlg.show()
+app.processEvents()
+n_dlg = dlg.raises
+activate(mw)                       # the FIRST click: activation covers it
+n_after_activate = dlg.raises
+release_on(panel)                  # ...every later click sends no activation
+check(dlg.raises > n_after_activate,
+      f"8. a click ending on the main window re-raises the pop-up "
+      f"({n_after_activate} -> {dlg.raises}) — the drag regression")
+
+n_dlg = dlg.raises
+QApplication.sendEvent(panel, QMouseEvent(
+    QEvent.Type.MouseButtonPress, QPointF(1.0, 1.0),
+    panel.mapToGlobal(QPointF(1.0, 1.0)), Qt.MouseButton.LeftButton,
+    Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+app.processEvents()
+check(dlg.raises == n_dlg,
+      "8. the PRESS is ignored — raising mid-drag is exactly what the platform "
+      "undoes when the drag ends")
+
+n_dlg = dlg.raises
+release_on(dlg)                    # a click inside the pop-up itself
+check(dlg.raises == n_dlg,
+      "8. a click inside the pop-up raises nothing (a pop-up owns no pop-ups)")
+
+check(_ClickRaiser(mw).eventFilter(
+          panel, QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(1.0, 1.0),
+                             QPointF(1.0, 1.0), Qt.MouseButton.LeftButton,
+                             Qt.MouseButton.NoButton,
+                             Qt.KeyboardModifier.NoModifier)) is False,
+      "8. the click raiser never consumes the click")
+check(_ClickRaiser(mw).eventFilter(mw, QEvent(QEvent.Type.Paint)) is False,
+      "8. ...and returns immediately on everything that is not a release")
+
+# A non-widget receiver (timers, the QApplication itself) must not blow up.
+try:
+    _ClickRaiser(mw).eventFilter(app, QMouseEvent(
+        QEvent.Type.MouseButtonRelease, QPointF(0.0, 0.0), QPointF(0.0, 0.0),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier))
+    ok = True
+except AttributeError as e:        # pragma: no cover - the bug this guards
+    ok = False
+    print(f"    non-widget receiver raised: {e}")
+check(ok, "8. a release delivered to a non-widget object is survivable")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

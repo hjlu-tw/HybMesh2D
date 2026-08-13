@@ -14,10 +14,12 @@ class TransformApplyControllerMixin:
         """Apply the selected geometric transform to every selected edge.
 
         The transform is type-preserving (like industrial CAD): a line stays a
-        line, a circle stays a circle, polygons/triangles/quads keep their type
-        — only their defining parameters are transformed. Discrete (file) edges
-        and custom-formula curves, which have no closed-form image under the
-        transform, fall back to a Polygon of the transformed sample points.
+        line, a circle stays a circle, an arc stays an arc (radius, centre and
+        sweep transformed), polygons/triangles/quads keep their type — only
+        their defining parameters change. Discrete (file) edges and
+        custom-formula curves, which have no closed-form image under the
+        transform, fall back to a Polygon of the transformed sample points, and
+        the log says so per edge rather than leaving the user to notice.
         Operates on all edges selected in the model tree; originals are kept
         unless 'Delete original' is set."""
         session = self.active_session()
@@ -44,6 +46,7 @@ class TransformApplyControllerMixin:
         new_segs = []
         seg_indices = []
         new_ids = []
+        baked = []
         next_id = session.project_model._next_curve_id
 
         for idx in indices:
@@ -55,11 +58,15 @@ class TransformApplyControllerMixin:
             if seg.type == "curve" and idx == session.current_segment_idx:
                 self._sync_active_curve_segment_from_ui()
 
+            src_type = ("discrete" if seg.type != "curve"
+                        else getattr(seg, "curve_type", "custom"))
             new_seg = self._build_transformed_segment(session, seg, next_id)
             if new_seg is None:
                 self.main_window.log_panel.log(
                     f"Edge {seg.id} has no valid points — skipped.")
                 continue
+            if new_seg.curve_type == "polygon" and src_type != "polygon":
+                baked.append((seg.id, src_type))
 
             new_segs.append(new_seg)
             seg_indices.append(idx)
@@ -97,6 +104,13 @@ class TransformApplyControllerMixin:
         self.main_window.log_panel.log(
             f"{action_name} {len(new_segs)} edge(s) as Edge {ids_str} "
             f"({sb.dup_type_combo.currentText()}).")
+        for sid, src_type in baked:
+            # Say WHICH edge lost its type and why. Everything analytic keeps
+            # it; these two kinds have no closed-form image under a transform,
+            # so the copy is the transformed sample points.
+            self.main_window.log_panel.log(
+                f"Edge {sid} ({src_type}) has no transformed closed form — the "
+                f"copy is a Polygon of its points.")
         self._show_duplicate_preview = False
         self.main_window.canvas_view.clear_duplicate_preview()
         self.main_window.canvas_view.clear_transform_handles()
@@ -166,6 +180,26 @@ class TransformApplyControllerMixin:
                 new_seg.parameters.update({"x0": ax, "y0": ay, "x1": bx, "y1": by})
             return new_seg
 
+        # ── Arc (same similarity argument as the circle, plus its sweep) ─────
+        # The image of an arc under any of these transforms is another arc of
+        # the same radius-times-scale: the centre moves like a point, and the
+        # two sweep angles move like directions. Baking it into a polygon (what
+        # this used to do) threw away the radius, the angles and every later
+        # edit — USER-REPORTED. A non-uniform scale makes it an elliptic arc,
+        # which the model cannot hold, so that one still falls through.
+        if seg.type == "curve" and ct == "arc" and not self._nonuniform_scale_active():
+            arc = self._transformed_arc(p, T)
+            if arc is None:
+                return None
+            new_seg.curve_type = "arc"
+            new_seg.parameters.update(arc)
+            # The inherited `closed` is the meaningless True default for an arc
+            # (nothing reads it outside polygons). Set it from the sweep anyway,
+            # so the flag still tells the truth if this copy is later baked or
+            # joined — same rule as `_baked_edge_is_closed`.
+            new_seg.closed = abs(arc["theta1"] - arc["theta0"]) >= 2.0 * math.pi - 1e-9
+            return new_seg
+
         # ── Circle (similarity transforms keep it circular) ──────────────────
         # A non-uniform scale turns a circle into an ellipse, which the circle
         # model can't represent (one radius); skip the analytic path so it falls
@@ -206,7 +240,8 @@ class TransformApplyControllerMixin:
                 new_seg.parameters["vertices_str"] = format_vertices_str(t)
             return new_seg
 
-        # ── Fallback: arcs, discrete (file) edges and custom-formula curves ──
+        # ── Fallback: discrete (file) edges, custom-formula curves, and the
+        # circle/arc under a non-uniform scale (an ellipse the model can't hold).
         # No closed-form image under the transform → bake the transformed sample
         # points into a Polygon (the industrial 'explode' equivalent).
         pts_tuple = GeometryService.get_segment_points(session, seg)
@@ -223,6 +258,56 @@ class TransformApplyControllerMixin:
         new_seg.parameters["vertices_str"] = format_vertices_str(zip(txs, tys))
         new_seg.parameters["n_points"] = len(txs)
         return new_seg
+
+    @staticmethod
+    def _transformed_arc(p, T):
+        """Map an arc's ``(cx, cy, r, theta0, theta1)`` through the transform.
+
+        Every output is read off three transformed POINTS — the centre, the arc
+        start, and the quarter-sweep point — so ONE code path covers rotation,
+        translation, mirroring, point symmetry and uniform scale. In particular
+        a mirror's reversed sweep (``theta1 < theta0``, which both samplers walk
+        happily) falls out of the geometry instead of needing a per-transform
+        sign rule that only the mirrors would exercise.
+
+        The quarter point rather than the midpoint is what keeps a full-turn arc
+        unambiguous: the midpoint's cross product carries ``sin(sweep/2)``, which
+        vanishes at |sweep| = 2π — exactly the arc that is hardest to notice
+        going the wrong way round.
+        """
+        cx = float(p.get("cx", 0.0))
+        cy = float(p.get("cy", 0.0))
+        r = float(p.get("r", 1.0))
+        t0 = float(p.get("theta0", 0.0))
+        t1 = float(p.get("theta1", math.pi / 2))
+        sweep = t1 - t0
+        tq = t0 + 0.25 * sweep
+        # ``theta_m`` is the cosmetic radius-grab handle. It is an angle on the
+        # same circle, so it maps the same way — copied verbatim it would leave
+        # the copy's handle parked somewhere the user never put it.
+        has_m = "theta_m" in p
+        tm = float(p.get("theta_m", 0.0))
+        probe = [(cx, cy),
+                 (cx + r * math.cos(t0), cy + r * math.sin(t0)),
+                 (cx + r * math.cos(tq), cy + r * math.sin(tq))]
+        if has_m:
+            probe.append((cx + r * math.cos(tm), cy + r * math.sin(tm)))
+        pts = T(probe)
+        if pts is None:
+            return None
+        (ncx, ncy), (sx, sy), (qx, qy) = pts[:3]
+        nr = math.hypot(sx - ncx, sy - ncy)
+        if nr <= 0.0:                    # a zero scale factor: nothing to draw
+            return None
+        ntheta0 = math.atan2(sy - ncy, sx - ncx)
+        cross = (sx - ncx) * (qy - ncy) - (sy - ncy) * (qx - ncx)
+        nsweep = abs(sweep) if cross >= 0.0 else -abs(sweep)
+        out = {"cx": ncx, "cy": ncy, "r": nr,
+               "theta0": ntheta0, "theta1": ntheta0 + nsweep}
+        if has_m:
+            mx, my = pts[3]
+            out["theta_m"] = math.atan2(my - ncy, mx - ncx)
+        return out
 
     @staticmethod
     def _baked_edge_is_closed(seg, xs, ys) -> bool:

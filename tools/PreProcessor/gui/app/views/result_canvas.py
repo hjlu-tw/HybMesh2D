@@ -301,9 +301,10 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             dmin = float(finite.min()) if finite.size else 0.0
             dmax = float(finite.max()) if finite.size else 1.0
             mean = float(finite.mean()) if finite.size else 0.0
-            # In auto mode a transient run uses the range pinned across ALL its
-            # frames (playback_clim), so the colours mean the same thing in every
-            # frame; a manual range still wins over both.
+            # Auto = the frame on screen (dmin/dmax). A transient run whose
+            # "Lock scale" box is ticked uses the range pinned across ALL its
+            # frames instead (playback_clim), so colours mean the same thing in
+            # every frame; a manual range still wins over both.
             locked = self.playback_clim()
             if not self._clim_auto and self._clim is not None:
                 vmin, vmax = self._clim

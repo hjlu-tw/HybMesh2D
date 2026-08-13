@@ -21,6 +21,15 @@ an arc, which is decided by its sweep — a nearly-full arc's endpoint gap can s
 inside the spacing tolerance, and for an arc "closed" means 'goes all the way
 round'.
 
+USER-REQUESTED follow-up (2026-08-12): "duplicate 之後可以不要直接轉成 polygon,
+而是保留原本的類型及參數嗎" — an arc is a similarity-invariant shape like the
+circle beside it, so it now duplicates AS AN ARC (section 6): the centre moves
+like a point, the radius scales, and the sweep is re-derived from the geometry,
+which is what makes a MIRROR come back reversed (theta1 < theta0) instead of
+inside out. Only the two kinds with no closed form under a transform — discrete
+edges and formula curves — still bake, plus a circle/arc under a NON-uniform
+scale, which is an ellipse the model cannot hold.
+
 Checks (each: transform the edge, inspect the produced segment):
  1. an open arc duplicates OPEN (the reported bug), a full-circle arc closed
  2. an open formula curve duplicates open; a closed one (parametric circle) closed
@@ -28,6 +37,9 @@ Checks (each: transform the edge, inspect the produced segment):
  4. ...while the edge that spans the whole loop duplicates closed
  5. the type-preserving branches still inherit the flag (open polyline stays
     open, closed polygon stays closed) and keep their analytic type
+ 6. an arc keeps its type AND its parameters under every similarity transform
+    (compared against the transformed sample points, i.e. the copy IS the
+    source moved), and falls back to a polygon only under a non-uniform scale
 
 Run:  python3 tools/PreProcessor/tests/test_transform_closure.py
 """
@@ -133,6 +145,8 @@ arc = curve("arc", {"cx": 0.0, "cy": 0.0, "r": 1.0,
 out = ctrl._build_transformed_segment(session, arc, 5)
 check(out is not None and out.closed is False,
       f"1. a quarter arc duplicates OPEN (closed={getattr(out, 'closed', None)})")
+check(out is not None and out.curve_type == "arc",
+      "1. ...as an arc — the flag has to be right whether or not it is baked")
 check(out is not None and getattr(arc, "closed", True) is True,
       "1. ...even though the source arc carries the closed=True default")
 
@@ -198,6 +212,122 @@ circle = curve("circle", {"cx": 0.0, "cy": 0.0, "r": 1.0, "n_points": 40})
 out = ctrl._build_transformed_segment(session, circle, 5)
 check(out is not None and out.curve_type == "circle" and out.closed is True,
       "5. a circle still duplicates as a circle")
+
+# ── 6. an arc duplicates as an ARC, parameters and all ─────────────────────
+from app.services.geometry_service import GeometryService        # noqa: E402
+
+
+class _Rotate90:
+    """Rotate +90° about the origin."""
+    dup_type_combo = _Combo(0)
+    dup_rot_angle = _Spin(90.0)
+    dup_rot_px = _Spin(0.0)
+    dup_rot_py = _Spin(0.0)
+
+
+class _MirrorVertical:
+    """Flip x about x = 0 — the orientation-REVERSING case."""
+    dup_type_combo = _Combo(2)
+    dup_mv_px = _Spin(0.0)
+
+
+class _ScaleUniform:
+    dup_type_combo = _Combo(6)
+    dup_scale_sx = _Spin(2.0)
+    dup_scale_sy = _Spin(2.0)
+    dup_scale_px = _Spin(0.0)
+    dup_scale_py = _Spin(0.0)
+
+
+class _ScaleNonUniform:
+    dup_type_combo = _Combo(6)
+    dup_scale_sx = _Spin(2.0)
+    dup_scale_sy = _Spin(1.0)
+    dup_scale_px = _Spin(0.0)
+    dup_scale_py = _Spin(0.0)
+
+
+def moved_points(seg):
+    """The source arc's own samples, put through the active transform."""
+    xs, ys = GeometryService.compute_curve_preview_pts(
+        seg, seg.parameters.get("n_points", 50), session.original_points)
+    return ctrl._apply_transform(np.asarray(xs, float), np.asarray(ys, float))
+
+
+def copy_points(out):
+    xs, ys = GeometryService.compute_curve_preview_pts(
+        out, out.parameters.get("n_points", 50), session.original_points)
+    return np.asarray(xs, float), np.asarray(ys, float)
+
+
+src = curve("arc", {"cx": 0.3, "cy": -0.2, "r": 1.5,
+                    "theta0": 0.4, "theta1": 0.4 + 1.9, "n_points": 60})
+for name, sb in (("translate", _Sidebar()), ("rotate", _Rotate90()),
+                 ("mirror", _MirrorVertical()), ("uniform scale", _ScaleUniform())):
+    ctrl.main_window.sidebar_view = sb
+    out = ctrl._build_transformed_segment(session, src, 7)
+    ok_type = out is not None and out.curve_type == "arc"
+    check(ok_type, f"6. an arc survives a {name} as an arc, not a polygon "
+                   f"(got {getattr(out, 'curve_type', None)})")
+    if not ok_type:
+        continue
+    check(abs(abs(out.parameters["theta1"] - out.parameters["theta0"])
+              - 1.9) < 1e-9,
+          f"6. ... keeping its 1.9 rad sweep under {name} "
+          f"({out.parameters['theta1'] - out.parameters['theta0']:.6f})")
+    ex, ey = moved_points(src)
+    gx, gy = copy_points(out)
+    err = float(max(np.max(np.abs(gx - ex)), np.max(np.abs(gy - ey))))
+    check(err < 1e-9,
+          f"6. ... and drawing exactly where the moved source does under "
+          f"{name} (max error {err:.2e})")
+
+ctrl.main_window.sidebar_view = _MirrorVertical()
+out = ctrl._build_transformed_segment(session, src, 7)
+check(out.parameters["theta1"] < out.parameters["theta0"],
+      "6. a MIRRORED arc comes back with a reversed sweep (theta1 < theta0) — "
+      "a reflection cannot preserve the direction of travel")
+
+ctrl.main_window.sidebar_view = _ScaleUniform()
+out = ctrl._build_transformed_segment(session, src, 7)
+check(abs(out.parameters["r"] - 3.0) < 1e-9,
+      f"6. a 2x uniform scale doubles the radius ({out.parameters['r']})")
+
+# The cosmetic radius-grab handle is an angle on the same circle and has to
+# travel with it; copied verbatim it lands somewhere the user never put it.
+with_m = curve("arc", {"cx": 0.0, "cy": 0.0, "r": 1.0, "theta0": 0.0,
+                       "theta1": math.pi / 2, "theta_m": math.pi / 4,
+                       "n_points": 40})
+ctrl.main_window.sidebar_view = _Rotate90()
+out = ctrl._build_transformed_segment(session, with_m, 7)
+check(abs(out.parameters["theta_m"] - 3.0 * math.pi / 4) < 1e-9,
+      f"6. the radius-grab handle rotates with the arc "
+      f"({math.degrees(out.parameters['theta_m']):.1f}°, expected 135°)")
+plain = curve("arc", {"cx": 0.0, "cy": 0.0, "r": 1.0, "theta0": 0.0,
+                      "theta1": math.pi / 2, "n_points": 40})
+out = ctrl._build_transformed_segment(session, plain, 7)
+check("theta_m" not in out.parameters,
+      "6. ...and an arc that never had one does not acquire one (it would pin "
+      "the handle instead of leaving it at the sweep midpoint)")
+
+ctrl.main_window.sidebar_view = _ScaleNonUniform()
+out = ctrl._build_transformed_segment(session, src, 7)
+check(out is not None and out.curve_type == "polygon",
+      "6. a NON-uniform scale still bakes: the image is an ellipse arc, which "
+      "the arc model (one radius) cannot hold")
+ctrl.main_window.sidebar_view = _Sidebar()
+
+full = curve("arc", {"cx": 0.0, "cy": 0.0, "r": 1.0,
+                     "theta0": 0.0, "theta1": 2.0 * math.pi, "n_points": 40})
+ctrl.main_window.sidebar_view = _MirrorVertical()
+out = ctrl._build_transformed_segment(session, full, 7)
+check(out is not None and out.curve_type == "arc"
+      and abs(abs(out.parameters["theta1"] - out.parameters["theta0"])
+              - 2.0 * math.pi) < 1e-9 and out.closed is True,
+      "6. a mirrored FULL-turn arc keeps a full turn and stays closed — the "
+      "sweep sign is read off a QUARTER point, because the midpoint's cross "
+      "product vanishes at exactly this sweep")
+ctrl.main_window.sidebar_view = _Sidebar()
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

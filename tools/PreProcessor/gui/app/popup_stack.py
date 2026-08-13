@@ -4,24 +4,29 @@ Split out of ``app/utils.py`` (which was over the file-size budget) — the
 behaviour and the public names are unchanged, and ``app.utils`` re-exports
 ``keep_on_top`` / ``offset_popup`` so every existing call site still works.
 
-Two things are load bearing here and both were shipped wrong once:
+Three things are load bearing here and each was shipped wrong once:
 
 * The window LEVEL (see :func:`keep_on_top`) — ``Qt.Tool`` auto-hides on macOS,
   ``WindowStaysOnTopHint`` floats above other applications.
 * WHEN the raise happens (see :func:`raise_later`) — a raise issued from inside
   the event that reorders the windows is undone by the platform when that event
   finishes.
+* WHAT triggers the raise (see :class:`_ClickRaiser`) — an activation is only
+  the FIRST click on the main window; every one after it reorders the windows
+  without changing which is active, so activation alone leaves the pop-up buried.
 """
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QApplication, QWidget
 
 # Marker written by keep_on_top(); _PopupRaiser lifts only the windows carrying
 # it, so ordinary children (docks, the central widget) are left alone.
 KEEP_ON_TOP_PROP = "_hybmesh_keep_on_top"
 _RAISER_PROP = "_hybmesh_popup_raiser"
 _SHOW_RAISER_PROP = "_hybmesh_popup_show_raiser"
+_CLICK_RAISER_PROP = "_hybmesh_popup_click_raiser"
+_PENDING_PROP = "_hybmesh_raise_pending"
 
 
 def raise_later(widget: QWidget) -> None:
@@ -36,9 +41,19 @@ def raise_later(widget: QWidget) -> None:
     editor while the press is still being handled, so the window that ends up
     on top is the main window, under which the brand-new dialog is buried).
     One turn later the ordering has settled and the raise holds.
+
+    At most one raise is in flight per widget: a single click is seen by the
+    app-wide filter once per widget it propagates through (the canvas AND the
+    main window), and stacking a timer per hop would multiply every later
+    trigger too.
     """
+    if widget.property(_PENDING_PROP):
+        return
+    widget.setProperty(_PENDING_PROP, True)
+
     def _do():
         try:
+            widget.setProperty(_PENDING_PROP, False)
             if widget.isVisible():
                 widget.raise_()
         except RuntimeError:
@@ -51,25 +66,72 @@ def raise_later(widget: QWidget) -> None:
     QTimer.singleShot(0, _do)
 
 
+def raise_popups_of(window: QWidget) -> int:
+    """Schedule a deferred raise for every visible keep-on-top pop-up of
+    ``window``. Returns how many were scheduled.
+
+    Which pop-ups exist is read back from Qt's own child list each time rather
+    than kept in a registry — modeless dialogs are ``deleteLater()``d on close,
+    and a registry of C++ objects that die behind Python's back is exactly the
+    bookkeeping this avoids.
+    """
+    n = 0
+    for child in window.findChildren(
+            QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
+        if (child.isWindow() and child.isVisible()
+                and child.property(KEEP_ON_TOP_PROP)):
+            raise_later(child)              # after the OS finishes ordering
+            n += 1
+    return n
+
+
 class _PopupRaiser(QObject):
     """Lift a window's ``keep_on_top`` pop-ups whenever that window is activated.
 
     This is the half of keep_on_top() that replaces the ``Qt.Tool`` window
     level: a normal-level pop-up CAN be buried by the main window when the user
-    clicks it, so it is raised again on activation. Which pop-ups exist is read
-    back from Qt's own child list each time rather than kept in a registry —
-    modeless dialogs are ``deleteLater()``d on close, and a registry of C++
-    objects that die behind Python's back is exactly the bookkeeping this avoids.
+    clicks it, so it is raised again on activation.
     """
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.WindowActivate:
-            for child in obj.findChildren(
-                    QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
-                if (child.isWindow() and child.isVisible()
-                        and child.property(KEEP_ON_TOP_PROP)):
-                    raise_later(child)          # after the OS finishes ordering
+            raise_popups_of(obj)
         return False                       # never consume the activation
+
+
+class _ClickRaiser(QObject):
+    """Lift the clicked window's pop-ups again when a click on it ENDS.
+
+    USER-REPORTED: the arc editor opens above the main window, and then sinks
+    below it as soon as a control point is dragged on the canvas. Activation is
+    not enough on its own, for two independent reasons:
+
+    * The main window is already the ACTIVE window after the first click, so a
+      second click reorders it in front of the pop-up without Qt ever sending
+      another ``WindowActivate`` — there is no event for the raiser to hear.
+    * Even when activation does fire, its deferred raise lands in the middle of
+      the drag (the mouse is still down, the platform still owns the ordering),
+      and the window server puts the clicked window back in front when the drag
+      finishes.
+
+    Both are cured by re-raising when the interaction is OVER, so this filter
+    sits on the QApplication — the only object that sees mouse events delivered
+    to arbitrary child widgets — and reacts to the RELEASE. Everything that is
+    not a release returns on the first line, so the cost on the event stream is
+    one type comparison.
+    """
+
+    def eventFilter(self, obj, event):
+        if event.type() not in (QEvent.Type.MouseButtonRelease,
+                                QEvent.Type.NonClientAreaMouseButtonRelease):
+            return False
+        if isinstance(obj, QWidget):
+            win = obj.window()
+            # A click inside a pop-up has nothing to lift (a pop-up owns no
+            # pop-ups), so this walks the main window's children only.
+            if win is not None:
+                raise_popups_of(win)
+        return False                       # never consume the click
 
 
 class _ShowRaiser(QObject):
@@ -93,6 +155,17 @@ def _install_raiser(window: QWidget):
         return
     window.installEventFilter(_PopupRaiser(window))
     window.setProperty(_RAISER_PROP, True)
+
+
+def _install_click_raiser():
+    """One _ClickRaiser for the whole application (parented to it, so it lives
+    as long as the app). Installed lazily from keep_on_top(), i.e. an app that
+    never opens a pop-up never pays for the filter."""
+    app = QApplication.instance()
+    if app is None or app.property(_CLICK_RAISER_PROP):
+        return
+    app.installEventFilter(_ClickRaiser(app))
+    app.setProperty(_CLICK_RAISER_PROP, True)
 
 
 def _install_show_raiser(widget: QWidget):
@@ -123,10 +196,12 @@ def keep_on_top(widget: QWidget) -> QWidget:
 
     So the pop-up stays an ordinary normal-level window — visible while another
     app is in front, and coverable by it — and it is raised back above the main
-    window on two occasions: when that window is activated (_PopupRaiser) and
-    when the pop-up itself is shown (_ShowRaiser). Both raises are DEFERRED by
-    one event-loop turn; see :func:`raise_later` for why a synchronous one is
-    silently undone.
+    window on three occasions: when that window is activated (_PopupRaiser),
+    when a click on it finishes (_ClickRaiser — the only one that survives a
+    canvas DRAG, and the only one that fires at all once the main window is
+    already active), and when the pop-up itself is shown (_ShowRaiser). Every
+    raise is DEFERRED by one event-loop turn; see :func:`raise_later` for why a
+    synchronous one is silently undone.
 
     Parenting to the TOP-LEVEL window is what makes this work: the raiser finds
     the pop-up in that window's child list, and a pop-up parented to a
@@ -148,6 +223,7 @@ def keep_on_top(widget: QWidget) -> QWidget:
     widget.setWindowFlags(flags)
     widget.setProperty(KEEP_ON_TOP_PROP, True)
     _install_show_raiser(widget)
+    _install_click_raiser()
     host = top if top is not None else widget.parentWidget()
     if host is not None and host is not widget:
         _install_raiser(host)

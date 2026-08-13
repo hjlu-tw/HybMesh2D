@@ -117,13 +117,17 @@ class BakeCurveToGeometryCmd(BaseCommand):
     and baking them into the session's original_points.
     """
 
-    def __init__(self, session, seg_idx: int, refresh_cb):
+    def __init__(self, session, seg_idx: int, refresh_cb, *, snapshot: bool = True):
         self.session = session
         self.seg_idx = seg_idx
         self.refresh_cb = refresh_cb
 
-        # Save old state for undo
-        self._snap = _snapshot_full_state(session)
+        # Save old state for undo. ``snapshot=False`` makes this a bare
+        # operation for a caller that owns the undo step itself (see
+        # BakeCurvesToGeometryCmd, which bakes a whole chain as ONE step) —
+        # such an instance is never pushed onto a history, so it is never
+        # asked to undo.
+        self._snap = _snapshot_full_state(session) if snapshot else None
 
         seg = self.session.project_model.get_segment(self.seg_idx)
         self.seg_id = seg.id if seg else None
@@ -311,6 +315,57 @@ class BakeCurveToGeometryCmd(BaseCommand):
                     other.end_index, other.start_index)
         self.session.split_indices = sorted(
             {last - i for i in self.session.split_indices if 0 <= i < length})
+
+    def undo(self):
+        if self._snap is None:              # a bare operation owns no undo
+            return
+        _restore_full_state(self.session, self._snap)
+        self.refresh_cb()
+
+
+class BakeCurvesToGeometryCmd(BaseCommand):
+    """Convert SEVERAL analytic edges to discrete points as ONE undoable step.
+
+    The order matters and is the caller's: each bake welds its points onto
+    whichever END of the existing polyline it actually touches, so a chain baked
+    in connectivity order welds into one continuous boundary, while the same
+    edges baked in click order leave disjoint pieces — which the single base
+    polyline then draws a straight line across (the "diagonal" a user reported
+    after converting the four sides of a quad in the wrong order).
+
+    ``seg_indices`` are indices into ``project_model.segments`` as it stands
+    BEFORE the first bake. They are resolved to segment OBJECTS at the start of
+    every execute (which is also what makes a redo correct): baking rebuilds the
+    file segments and rewrites the list as ``file segments + curve segments``, so
+    an index captured beforehand points somewhere else by the second step.
+    """
+
+    def __init__(self, session, seg_indices, refresh_cb):
+        self.session = session
+        self.seg_indices = list(seg_indices)
+        self.refresh_cb = refresh_cb
+        self._snap = _snapshot_full_state(session)
+        segs = session.project_model.segments
+        self.seg_ids = [segs[i].id for i in self.seg_indices
+                        if 0 <= i < len(segs)]
+
+    def description(self) -> str:
+        return ("Convert Edges " + ", ".join(str(i) for i in self.seg_ids)
+                + " to Discrete")
+
+    def execute(self):
+        segs = self.session.project_model.segments
+        targets = [segs[i] for i in self.seg_indices if 0 <= i < len(segs)]
+        for obj in targets:
+            live = self.session.project_model.segments
+            idx = next((k for k, s in enumerate(live) if s is obj), -1)
+            if idx < 0 or obj.type != "curve":
+                continue
+            # snapshot=False: this command already holds the one snapshot that
+            # undoes the whole chain.
+            BakeCurveToGeometryCmd(self.session, idx, lambda: None,
+                                   snapshot=False).execute()
+        self.refresh_cb()
 
     def undo(self):
         _restore_full_state(self.session, self._snap)

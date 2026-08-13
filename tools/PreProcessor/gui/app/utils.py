@@ -171,11 +171,14 @@ def make_button(text: str, color: str = '#26293c', *,
 # app.utils. The `X as X` form marks these as intentional re-exports.
 from app.popup_stack import (                                    # noqa: E402
     KEEP_ON_TOP_PROP as KEEP_ON_TOP_PROP,
+    _ClickRaiser as _ClickRaiser,
+    _CLICK_RAISER_PROP as _CLICK_RAISER_PROP,
     _PopupRaiser as _PopupRaiser,
     _RAISER_PROP as _RAISER_PROP,
     keep_on_top as keep_on_top,
     offset_popup as offset_popup,
     raise_later as raise_later,
+    raise_popups_of as raise_popups_of,
 )
 
 

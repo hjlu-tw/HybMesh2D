@@ -11,19 +11,21 @@ only half the job — two things decide whether the animation is usable at all:
     This test pins the parse to be IDENTICAL to a whole-file scan — a faster
     loader that reads a different array is not a faster loader.
 
- 2. **The colour scale must not move.** Auto-scaling each frame to its own
-    min/max repaints the same colours onto a changing range, so a field that
-    doubles looks unchanged. The transport pins the range over ALL frames — but
-    never over a range the user typed in by hand.
+ 2. **The colour scale must be the user's choice.** Auto-scaling each frame to
+    its own min/max repaints the same colours onto a changing range, so a field
+    that doubles looks unchanged — ticking "Lock scale" pins the range over ALL
+    frames instead. USER-REQUESTED (2026-08-12): that lock is OFF by default,
+    because "Auto (fit to data)" must fit the data on screen, i.e. the current
+    frame. Neither ever overrides a range the user typed in by hand.
 
 What is pinned here:
   1. Index: zone count/offsets, and a byte-range parse == whole-file parse.
   2. Series: frames cached and served, global range spans every frame, and the
      cache honours its byte cap instead of growing without bound.
   3. Transport: hidden for a steady (1-zone) result, wraps at both ends, Play
-     toggles, and leaving the Results page stops the timer.
-  4. The colour lock applies in auto mode, is dropped when the variable changes,
-     and NEVER overrides a manual range.
+     toggles, First/Last jump to an end, and leaving the page stops the timer.
+  4. The colour lock is opt-in, applies in auto mode, is dropped when the
+     variable changes, and NEVER overrides a manual range.
   5. Stepping keeps the pinned probes (frames of one run share their mesh).
 
 Run:  python3 tools/PreProcessor/tests/test_result_playback.py
@@ -247,6 +249,28 @@ check(v._frame == 0,
       "3b. with Loop on the animation wraps past the end and keeps going")
 v.loop_cb.setChecked(False)
 
+# ── 3c. First / Last: one click to either end of the run ──────────────────
+v.show_frame(2)
+v.go_to_end(1)
+check(v._frame == 4, "3c. Last jumps straight to the final frame")
+check(not v.last_btn.isEnabled() and v.first_btn.isEnabled(),
+      "3c. ... and greys itself out there, like the step buttons do")
+v.go_to_end(-1)
+check(v._frame == 0, "3c. First jumps straight back to frame 1")
+check(not v.first_btn.isEnabled() and v.last_btn.isEnabled(),
+      "3c. ... symmetrically at the other end")
+v.loop_cb.setChecked(True)
+check(not v.first_btn.isEnabled(),
+      "3c. Loop does not re-enable First on the first frame: a jump to an end "
+      "has one meaning, and there is no far end to wrap to")
+v.loop_cb.setChecked(False)
+v.show_frame(2)
+v.start_playback()
+v.go_to_end(1)
+check(v._frame == 4 and not v._playing,
+      "3c. jumping to an end pauses the animation, like Prev/Next do")
+v.show_frame(2)          # leave room to step in both directions below
+
 v.show_frame(2)
 check(v._frame == 2 and v.zone_combo.currentIndex() == 2,
       "3. the zone selector follows the frame (one source of truth on screen)")
@@ -270,13 +294,25 @@ check(not v._playing and not v._play_timer.isActive(),
       "not keep loading frames against the run the user switched to watch")
 v.show()
 
-# ── 4. the colour lock ────────────────────────────────────────────────────
+# ── 4. the colour lock (opt-in) ───────────────────────────────────────────
 v.select_variable("p")
 v.set_clim_auto(True)
+check(not v.lock_scale_cb.isChecked(),
+      "4. 'Lock scale' is OFF by default — Auto (fit to data) fits the data on "
+      "SCREEN, which is the frame being shown")
 v.step_frame(1)
+check(v.playback_clim() is None,
+      f"4. so stepping pins nothing and each frame keeps its own range "
+      f"({v.playback_clim()})")
+
+v.lock_scale_cb.setChecked(True)
 check(v.playback_clim() == (1.0, 6.0),
-      f"4. stepping pins the colour scale to the run-wide range, so a frame's "
-      f"colours mean the same thing in every frame ({v.playback_clim()})")
+      f"4. ticking the box pins the run-wide range immediately — no need to "
+      f"step first to see the colours settle ({v.playback_clim()})")
+v.step_frame(-1)
+check(v.playback_clim() == (1.0, 6.0),
+      f"4. ... and stepping keeps it, so a frame's colours mean the same thing "
+      f"in every frame ({v.playback_clim()})")
 v.select_variable("u")
 check(v.playback_clim() is None,
       "4. switching variables drops the lock — 'u' must not be coloured with "
@@ -285,6 +321,10 @@ v.step_frame(1)
 check(v.playback_clim() == (-5.0, 5.0),
       f"4. ... and the next step pins the NEW variable's own run-wide range "
       f"({v.playback_clim()})")
+v.lock_scale_cb.setChecked(False)
+check(v.playback_clim() is None,
+      "4. unticking hands the scale straight back to the current frame")
+v.lock_scale_cb.setChecked(True)
 v.set_clim(0.0, 1.0)
 check(v.playback_clim() is None and v._clim == (0.0, 1.0),
       "4. a manual colour range wins over the lock — locking fixes AUTO-scaling, "
@@ -324,6 +364,10 @@ check(v._series is None and v._frame_count() == 0
 # exists to remove. A FRESH view is essential here: once any other control has run,
 # the lock is already in place and the bug is invisible.
 v2 = ResultCanvasView()
+# Tick the lock BEFORE the load: with no series attached there is nothing to
+# scan, so the precondition below still holds and the combo is the first control
+# that could pin anything.
+v2.lock_scale_cb.setChecked(True)
 v2.load_result_path(multi)
 v2.select_variable("p")
 v2.set_clim_auto(True)

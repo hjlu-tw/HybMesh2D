@@ -39,12 +39,26 @@ class CanvasGeometryMixin:
         self._curve_preview_items[session_id] = preview_curve
         self._curve_segment_items[session_id] = []
 
-    def update_geometry(self, session_id: int, points: np.ndarray | None):
-        """Update an existing geometry layer."""
+    def update_geometry(self, session_id: int, points: np.ndarray | None,
+                        connect: np.ndarray | None = None):
+        """Update an existing geometry layer.
+
+        ``connect`` is pyqtgraph's per-point flag array (1 = join point i to
+        i+1). The whole geometry is ONE polyline item, so without it two pieces
+        that merely sit next to each other in ``original_points`` are drawn
+        joined — a straight line across the gap that looks like real geometry
+        and belongs to no edge. The caller derives the breaks from the model
+        (see ``controller._geometry_connect``); ``None`` keeps the plain
+        connect-everything path.
+        """
         if session_id not in self._geometries:
             return
         if points is not None and len(points) > 0:
-            self._geometries[session_id].setData(points[:, 0], points[:, 1])
+            if connect is not None:
+                self._geometries[session_id].setData(
+                    points[:, 0], points[:, 1], connect=connect)
+            else:
+                self._geometries[session_id].setData(points[:, 0], points[:, 1])
         else:
             self._geometries[session_id].setData([], [])
 

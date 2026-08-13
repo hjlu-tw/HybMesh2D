@@ -102,6 +102,27 @@ app.processEvents()
 check(n_file(pm) == 0 and sess.original_points is None,
       f"Clear All removes all geometry (got {n_file(pm)} edges)")
 check(n_multi(mw.canvas_view) == 0, "Clear All leaves no selection highlight")
+
+# ── item 5 (USER-REPORTED): Redraw after Clear All must leave a BLANK canvas ──
+# _apply_geometry_update returned on its first line when original_points was
+# None, so every rebuild path agreed the model was empty while the pyqtgraph
+# items kept the last geometry pushed into them — the residue the user saw.
+c.redraw_canvas(announce=False)
+app.processEvents()
+gx, gy = mw.canvas_view._geometries[sess.session_id].getData()
+check(gx is None or len(gx) == 0,
+      f"Redraw after Clear All wipes the base geometry from the canvas "
+      f"(got {0 if gx is None else len(gx)} points)")
+check(mw.canvas_view._active_points is None,
+      "...and drops the hit-test points with it, so a click cannot select a "
+      "vertex of geometry that no longer exists")
+sx, _sy = mw.canvas_view.split_scatter.getData()
+check(sx is None or len(sx) == 0,
+      f"...and the split markers go too (got {0 if sx is None else len(sx)})")
+cx, _cy = mw.canvas_view._closing_edge.getData()
+check(cx is None or len(cx) == 0,
+      "...and the gold closing edge, which described a loop that is gone")
+
 c.undo()
 app.processEvents()
 check(n_file(pm) == n_before and sess.original_points is not None,
