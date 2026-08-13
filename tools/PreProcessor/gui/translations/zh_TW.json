@@ -94,6 +94,8 @@
     "Motion...": "運動…",
 
     "Load Result...": "載入結果…",
+    "Define Surface...": "定義表面…",
+    "Choose which curve is 'the surface' (mesh boundary, φ iso-line, Fit Δ interface, analytic φ or CAD) and where arc length starts": "選擇哪一條曲線算是「表面」（網格邊界、φ 等值線、Fit Δ 介面格點、解析 φ 形狀或 CAD 圖形），以及弧長從哪裡開始",
     "Save PNG...": "儲存 PNG…",
 
     "Generate φ Grid": "產生 φ 網格",

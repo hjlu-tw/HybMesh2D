@@ -319,6 +319,55 @@ for *every* zone, so the file carries no real timestamp to show. Gated by
 `tests/test_result_playback.py`, which pins the byte-range parse to be identical
 to a whole-file scan.
 
+**"The surface" of a surface plot is a CHOICE, and so is where s = 0 is**
+(`services/surface_source.py` + `services/surface_sample.py`, both Qt-free;
+`controllers/surface_source_ctrl.py` decides availability; `views/surface_source_dialog.py`
++ `views/result_canvas_surface_mixin.py` are the UI). Results ▸ **Surface…** used to
+mean exactly one curve — the inner boundary loops of the solved triangulation —
+which is the only honest answer for a body-fitted mesh and **no answer at all for
+an immersed-boundary run**, where the solid never touches a mesh boundary. Six
+sources are now offered, all listed even when unusable, each with the reason on the
+row ("no STL3d φ field loaded (run the IB stage)"): `mesh` (unchanged, and the only
+one whose points ARE mesh nodes, so it keeps `node_ids` and reads **exact** nodal
+values), `field_iso` (φ = 0.5 on the solved mesh), `grid_iso` (the same on the
+STL3d structured φ), `interface_cells` (**the Fit Δ points**, i.e.
+`phi_quality.interface_points` — now public precisely so the plotted surface is the
+one the fit report measured), `analytic` (the analytic φ shape itself, read through
+`services/analytic_shape.py`, which the φ-DLL generator now shares so the plotted
+body cannot drift from the solved one) and `cad`. Rules that are not cosmetic:
+- **Iso-lines are chained by mesh EDGE identity, never by welding coordinates**:
+  one crossing point per crossed edge, computed from the canonically sorted node
+  pair so both owning triangles get the identical coordinate, then a walk
+  triangle→triangle through shared edge keys. There is no distance tolerance
+  anywhere — a tolerance on a fine mesh either fragments one contour or fuses two
+  that merely pass close. Every crossing triangle has degree exactly 2, so a
+  component is a cycle (closed) or a path (the iso-line left through the boundary),
+  and `closed` is reported from *arriving back at the entry edge*, not guessed.
+- **s = 0 is required, not defaulted (USER-REQUESTED)**: the old path inherited the
+  origin from `next(iter(set))` inside the boundary tracer — reproducible for one
+  file, but two runs of the same body could start their arc length in different
+  places, which is exactly when you want to overlay the curves. Show/Plot stay
+  disabled until a rule (x min / x max / y min / y max) is picked, traversal
+  handedness is forced from the polygon's signed area, and the canvas marks the
+  origin + direction while the plot's axis label repeats the coordinate.
+- **Arc length of a closed curve now reaches the full perimeter.** The removed
+  `TecplotResult.perimeter_series` computed the closing chord and then sliced it
+  off, so its last sample was one chord short of where it started.
+- **Off-node samples are interpolated, and δ = 0 by default.** For an immersed
+  solid the interface holds the SOLID state, so an outward-normal offset δ (one
+  cell is typical) is offered — but nothing is moved silently, and the title states
+  `exact nodal` vs `interpolated, δ=…`. Outward comes from the polygon's own signed
+  area, not from the requested handedness, or the offset would point *into* the
+  body on exactly the curves that were reversed. Samples outside the mesh come back
+  NaN (a visible gap), never a fabricated value.
+- **The Fit Δ cloud is cell CENTRES with no connectivity**, so it is ordered by a
+  greedy nearest-neighbour walk that can jump a thin waist or take the wrong
+  branch; when a hop is >5× the typical one the curve says so in `note` instead of
+  returning a plausible-looking arc length. Prefer the iso-line for measurement.
+Nothing is extracted while the dialog is being edited — the widgets only build a
+`SurfaceSpec`. Gated by `tests/test_surface_source.py` (geometry) and
+`tests/test_surface_source_gui.py` (the dialog, the overlay and both result kinds).
+
 **The grid must carry the BCs before it leaves the Mesh stage**
 (`services/mesh_bc_audit.py`, Qt-free): a mesh generated BEFORE the per-segment
 BCs were applied exports **every** patch as the wall default, and the solve then

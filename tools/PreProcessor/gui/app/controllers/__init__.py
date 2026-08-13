@@ -29,6 +29,7 @@ from app.controllers.solver_bc_ctrl import SolverBcControllerMixin
 from app.controllers.solver_tools_ctrl import SolverToolsControllerMixin
 from app.controllers.case_export_ctrl import CaseExportControllerMixin
 from app.controllers.postprocess_ctrl import PostprocessControllerMixin
+from app.controllers.surface_source_ctrl import SurfaceSourceControllerMixin
 from app.controllers.stl3d_ctrl import Stl3dControllerMixin
 from app.controllers.stl3d_fit_ctrl import Stl3dFitControllerMixin
 from app.controllers.session_load_ctrl import SessionLoadControllerMixin
@@ -58,7 +59,7 @@ __all__ = [
     "MeshLayersControllerMixin", "OpenEndpointControllerMixin",
     "SolverControllerMixin", "SolverBcControllerMixin",
     "SolverToolsControllerMixin", "CaseExportControllerMixin",
-    "PostprocessControllerMixin",
+    "PostprocessControllerMixin", "SurfaceSourceControllerMixin",
     "Stl3dControllerMixin", "Stl3dFitControllerMixin",
     "SessionLoadControllerMixin", "SessionTabsControllerMixin",
     "ExtrudeControllerMixin",

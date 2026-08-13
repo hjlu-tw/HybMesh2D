@@ -27,6 +27,12 @@ class ResultPanelHandlersMixin:
         """Connect to the result canvas (called by the controller)."""
         self._canvas = canvas
         self._controller = controller
+        # The canvas needs the controller too: the surface sources that are not
+        # the mesh boundary (STL3d φ, the analytic φ shape, the CAD outlines) all
+        # live outside the result file, and the Surface… dialog is opened from the
+        # canvas's own toolbar rather than from this panel.
+        if hasattr(canvas, "set_controller"):
+            canvas.set_controller(controller)
         canvas.result_rendered.connect(self._on_rendered)
         canvas.probe_added.connect(self._on_probe_added)
         canvas.extrema_found.connect(self._on_extrema_found)

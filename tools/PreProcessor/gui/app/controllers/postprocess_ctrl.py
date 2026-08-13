@@ -120,6 +120,11 @@ class PostprocessControllerMixin:
     def export_result_screenshot(self):
         self.main_window.result_canvas_view._save_png()
 
+    def open_surface_definition(self):
+        """Results ▸ Define Surface… — the same picker as the canvas's Surface…
+        button (which curve counts as the surface, and where s = 0 is)."""
+        self.main_window.result_canvas_view.open_surface_dialog()
+
     # ------------------------------------------------------------------ #
     # Geometry overlay data provider (used by ResultControlPanel)
     # ------------------------------------------------------------------ #

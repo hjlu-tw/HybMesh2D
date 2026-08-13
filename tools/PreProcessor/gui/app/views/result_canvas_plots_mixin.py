@@ -1,18 +1,20 @@
 """External line-plot dialog openers for ResultCanvasView, split out as a mixin
 to keep result_canvas.py under the file-length budget (behaviour unchanged).
 
-Owns the buttons that pop up the WallQuantityDialog with different data:
-wall-quantity columnar outputs, surface (perimeter) quantities, and the solver's
-recorded probe time-history. Lands on the ResultCanvasView instance, so all
-``self.*`` state (_result, _result_path, _current_var, the cached dialogs)
-resolves normally."""
+Owns the buttons that pop up the WallQuantityDialog with different data: the
+solver's wall-quantity columnar outputs and its recorded probe time-history. Lands
+on the ResultCanvasView instance, so all ``self.*`` state (_result, _result_path,
+_current_var, the cached dialogs) resolves normally.
+
+The surface (arc-length) plot used to live here too; it moved to
+``result_canvas_surface_mixin`` when "the surface" stopped being a single implied
+curve — the mesh boundary — and became a choice the user makes."""
 from __future__ import annotations
 import os
-import numpy as np
 
 
 class ResultCanvasPlotsMixin:
-    """WallQuantity / Surface / Probe-history dialog openers."""
+    """WallQuantity / Probe-history dialog openers."""
 
     # ------------------------------------------------------------------ #
     def _open_wall_qty(self):
@@ -29,50 +31,6 @@ class ResultCanvasPlotsMixin:
         # #10: auto-discover ALL of the solver's columnar outputs (vsurface*,
         # WallForce*, tWall*, turb_solu*) and list them in the File selector.
         dlg.set_result_dir(result_dir)
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
-
-    def _open_surface_plot(self):
-        """#11/#8: sample surface quantities along the geometry perimeter (arc
-        length) and open them in the line-plot viewer, so Cp / p / the active
-        field are all pickable in the plot's Y selector. Cp is always offered
-        when the result can derive it (not only when it is the active variable)."""
-        from app.views.wall_qty_view import WallQuantityDialog
-        if self._result is None:
-            return
-        avail = set(self._result.scalar_variables())
-        # Cp first so it is the default Y; then the active variable, then raw p.
-        wanted = [q for q in ("Cp", self._current_var(), "p") if q and q in avail]
-        wanted = list(dict.fromkeys(wanted))     # de-dup, preserve order
-        s_ref = xc_ref = yc_ref = None
-        vals_by_var: dict = {}
-        for q in wanted:
-            try:
-                series = self._result.perimeter_series(q)
-            except Exception:
-                continue
-            if not series:
-                continue
-            # Use the longest loop as the main surface (multi-element: biggest).
-            s, xc, yc, vals = max(series, key=lambda t: len(t[0]))
-            if s_ref is None:
-                s_ref, xc_ref, yc_ref = s, xc, yc
-            vals_by_var[q] = vals
-        if s_ref is None:
-            return
-        ys = {q: np.asarray(v) for q, v in vals_by_var.items()}
-        # Offer x/y coords as alternative abscissae (Cp-vs-x is conventional).
-        ys["x"] = np.asarray(xc_ref); ys["y"] = np.asarray(yc_ref)
-        if self._surf_dialog is None:
-            self._surf_dialog = WallQuantityDialog(self)
-            from app.utils import keep_on_top, offset_popup
-            keep_on_top(self._surf_dialog)
-            offset_popup(self._surf_dialog, self.window())
-        dlg = self._surf_dialog
-        dlg.plot_series(np.asarray(s_ref), ys, xlabel="s (arc length)")
-        primary = next(iter(vals_by_var), "")
-        dlg.setWindowTitle(f"Surface {primary} vs arc length")
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()

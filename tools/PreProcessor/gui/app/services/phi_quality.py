@@ -272,12 +272,17 @@ def _nearest_point_dist(query: np.ndarray, ref: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # Interface (reconstructed boundary) extraction
 # --------------------------------------------------------------------------- #
-def _interface_points(solid_flat: np.ndarray, nx: int, ny: int, nz: int,
-                      pts: np.ndarray) -> np.ndarray:
+def interface_points(solid_flat: np.ndarray, nx: int, ny: int, nz: int,
+                     pts: np.ndarray) -> np.ndarray:
     """Grid coords of solid cells with at least one fluid face-neighbour.
 
     Tecplot POINT order is i fastest, then j, then k, so the flat field
     reshapes to [k, j, i].
+
+    Public because the Results surface plot offers these same points as a surface
+    source ("Fit Δ interface cells"): plotting a DIFFERENT reconstruction from the
+    one the fit report measures would let the two disagree about where the solid
+    boundary is.
     """
     g = solid_flat.reshape(nz, ny, nx)
     fluid = ~g
@@ -389,7 +394,7 @@ def compute_fit_metrics(tris: np.ndarray, pts: np.ndarray, phi: np.ndarray,
                    v_rel=((v_phi - v_stl) / v_stl if v_stl > 0 else float("nan")))
 
     # 2) Surface deviation.
-    ipts = _interface_points(solid, nx, ny, nz, pts)
+    ipts = interface_points(solid, nx, ny, nz, pts)
     res["n_interface"] = int(len(ipts))
     if len(ipts) == 0:
         res["error"] = "no interface cells were found"

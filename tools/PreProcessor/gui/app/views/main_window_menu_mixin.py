@@ -210,6 +210,11 @@ class MainWindowMenuMixin:
         results_menu = menubar.addMenu(self.tr("Results"))
         add(results_menu, self.tr("Load Result..."), controller.open_result_dialog,
             mode=self._MODE_RESULTS)
+        add(results_menu, self.tr("Define Surface..."),
+            controller.open_surface_definition, mode=self._MODE_RESULTS,
+            tip=self.tr("Choose which curve is 'the surface' (mesh boundary, φ "
+                        "iso-line, Fit Δ interface, analytic φ or CAD) and where "
+                        "arc length starts"))
         add(results_menu, self.tr("Save PNG..."), controller.export_result_screenshot,
             mode=self._MODE_RESULTS)
 

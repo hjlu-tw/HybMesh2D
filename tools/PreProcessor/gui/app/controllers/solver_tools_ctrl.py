@@ -30,24 +30,15 @@ class SolverToolsControllerMixin:
         polygon over the sampled boundary), wire it into the solver's IBM config,
         and skip the STL3d phi.dat path (ibm_phi_file left empty)."""
         from PyQt6.QtWidgets import QInputDialog
-        from app.services.geometry_service import GeometryService
+        from app.services.analytic_shape import describe, shape_dict, solid_shapes
         from app.services.dll_templates import render_analytic_phi_from_shape
         log = self.main_window.log_panel.log
 
         session = self.active_session()
-
-        def _is_solid(seg):
-            if getattr(seg, "type", "") != "curve":
-                return False
-            ct = getattr(seg, "curve_type", "")
-            if ct in ("circle", "triangle", "quadrilateral"):
-                return True
-            if ct in ("polygon", "custom"):
-                return bool(getattr(seg, "closed", False))
-            return False
-
-        shapes = ([s for s in session.project_model.segments if _is_solid(s)]
-                  if session is not None else [])
+        # Which edges qualify, and the shape read off each one, come from
+        # services/analytic_shape so the Results "Analytic φ shape" surface source
+        # plots the same body this DLL marks (see that module's docstring).
+        shapes = solid_shapes(session)
         if not shapes:
             report_info(
                 self.main_window, "Analytic phi",
@@ -65,21 +56,16 @@ class SolverToolsControllerMixin:
                 return
             seg = shapes[labels.index(choice)]
 
-        ct = getattr(seg, "curve_type", "")
-        if ct == "circle":
-            cx = float(seg.parameters.get("cx", 0.0))
-            cy = float(seg.parameters.get("cy", 0.0))
-            r = float(seg.parameters.get("r", 1.0))
-            src = render_analytic_phi_from_shape("circle", cx=cx, cy=cy, radius=r)
-            desc = f"disk @({cx:g},{cy:g}) r={r:g}"
+        shape = shape_dict(session, seg)
+        if shape is None:
+            log("[IBM] Could not read the shape's boundary points.")
+            return
+        desc = describe(shape)
+        if shape["type"] == "circle":
+            src = render_analytic_phi_from_shape(
+                "circle", cx=shape["cx"], cy=shape["cy"], radius=shape["r"])
         else:
-            pr = GeometryService.get_segment_points(session, seg)
-            if pr is None or len(pr[0]) < 3:
-                log("[IBM] Could not read the shape's boundary points.")
-                return
-            verts = list(zip((float(x) for x in pr[0]), (float(y) for y in pr[1])))
-            src = render_analytic_phi_from_shape("polygon", verts=verts)
-            desc = f"{ct} point-in-polygon ({len(verts)} verts)"
+            src = render_analytic_phi_from_shape("polygon", verts=shape["verts"])
 
         dll_dir = os.path.join(repo_root(), "results", "solver", "dll_src")
         try:

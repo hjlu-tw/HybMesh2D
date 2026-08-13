@@ -92,6 +92,10 @@ class ResultCanvasSetupMixin:
             self._line_pts = []
             self._line_seg = None
             self._extrema = []
+            # The surface SPEC is the user's choice and survives; the extracted
+            # curve belongs to the old mesh/field, so it is rebuilt from the spec
+            # (and reported as dropped if the new result cannot produce it).
+            self.refresh_surface()
         # Preserve the current zoom/pan across reloads and zone switches (no
         # auto-fit). The first-ever load has no saved view, so it still fits;
         # 'Fit View' or Clear re-fits on demand.
@@ -126,6 +130,7 @@ class ResultCanvasSetupMixin:
         self._extrema = []
         self._cad_polylines = []
         self._cad_on = False
+        self._reset_surface_state()
         self._user_view = None   # Clear re-fits the next load
         if self._cbar is not None:
             try:

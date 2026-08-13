@@ -20,7 +20,9 @@ from app.views.result_canvas_plots_mixin import ResultCanvasPlotsMixin
 from app.views.result_canvas_vector_mixin import ResultCanvasVectorMixin
 from app.views.result_canvas_controls_mixin import ResultCanvasControlsMixin
 from app.views.result_canvas_setup_mixin import ResultCanvasSetupMixin
+from app.views.result_canvas_surface_mixin import ResultCanvasSurfaceMixin
 from app.views.result_playback_mixin import ResultPlaybackMixin
+from app.services.surface_source import SurfaceSpec
 
 from app.services.logging_setup import get_logger
 
@@ -35,6 +37,7 @@ _COLORMAPS = ["turbo", "viridis", "inferno", "plasma", "coolwarm", "jet", "RdBu_
 
 
 class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
+                       ResultCanvasSurfaceMixin,
                        ResultCanvasVectorMixin, ResultCanvasControlsMixin,
                        ResultPlaybackMixin, ResultCanvasSetupMixin, QWidget):
     """Matplotlib-embedded 2D result viewer.
@@ -88,6 +91,18 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         self._cad_polylines: list = []
         self._cad_on = False
         self._cad_color = "#e5e7eb"
+
+        # Surface source (what "the surface" of a surface plot is). The spec is
+        # the user's CHOICE and survives result reloads; the extracted curve does
+        # not, because it belongs to one mesh. `_ctrl` is set by the Results panel's
+        # bind() and provides the non-mesh sources (STL3d φ, analytic φ, CAD).
+        self._ctrl = None
+        self._surface_spec = SurfaceSpec()
+        self._surface_curve = None
+        self._surface_pieces: list = []
+        self._surface_start = None
+        self._surface_info = ""
+        self._surface_on = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -156,12 +171,15 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         self.wallqty_btn.setToolTip(
             "Open the wall-quantity line plot (WallForce.dat, vsurface_qty.dat, …)")
         hl2.addWidget(self.wallqty_btn)
-        # #11/#8: plot surface quantities (Cp, p, …) along the perimeter.
+        # #11/#8: plot surface quantities (Cp, p, …) along the perimeter. Which
+        # curve counts as "the surface" is a choice (mesh boundary / φ iso-line /
+        # Fit Δ interface cells / analytic φ / CAD), so the button opens the picker.
         self.surface_btn = QPushButton("Surface…")
         self.surface_btn.setStyleSheet(self.load_btn.styleSheet())
         self.surface_btn.setToolTip(
-            "Plot surface quantities (Cp, p, current variable) along the geometry "
-            "perimeter vs arc length; pick the quantity in the plot's Y selector.")
+            "Define the surface (mesh boundary, φ iso-line, Fit Δ interface cells, "
+            "analytic φ shape or CAD geometry) and plot Cp / p / the active "
+            "variable along it vs arc length.")
         hl2.addWidget(self.surface_btn)
         # #4: the solver's RECORDED probe time-history (probe_data.gui), i.e. the
         # actual values it logged at each probe over the run.
@@ -194,6 +212,12 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         self.vector_cb = QCheckBox("Vectors")
         self.iso_cb = QCheckBox("Iso")      # iso-line visibility (levels set in sidebar)
         self.iso_cb.setToolTip("Show iso-contour lines (levels set in the left panel)")
+        # The defined surface + its s=0 marker. Ticking it with nothing defined
+        # opens the picker rather than doing nothing visible.
+        self.surface_cb = QCheckBox("Surface")
+        self.surface_cb.setToolTip(
+            "Show the defined surface curve on the field, with the arc-length "
+            "origin (s=0) and traversal direction marked. Define it in Surface….")
         # #8: toggle the solver probe-point markers, and click one to read its
         # values (added to the probe table like a manual probe).
         self.solverprobe_cb = QCheckBox("Solver probes")
@@ -202,7 +226,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             "Show the solver's probe-point markers. Click a marker to read its "
             "field values (they appear in the probe table on the left).")
         for cb in (self.contour_cb, self.mesh_cb, self.stream_cb, self.vector_cb,
-                   self.iso_cb, self.solverprobe_cb):
+                   self.iso_cb, self.surface_cb, self.solverprobe_cb):
             cb.setStyleSheet(f"color:{_FG};font-size:11px;")
             hl3.addWidget(cb)
         hl3.addStretch()
@@ -234,16 +258,18 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         self.stream_cb.toggled.connect(self._on_control_changed)
         self.vector_cb.toggled.connect(self._on_control_changed)
         self.iso_cb.toggled.connect(self._on_iso_toggled)
+        self.surface_cb.toggled.connect(self._on_surface_toggled)
         self.solverprobe_cb.toggled.connect(lambda _=None: self.render())
         self.zone_combo.currentIndexChanged.connect(self._on_zone_changed)
         self.save_btn.clicked.connect(self._save_png)
         self.fit_btn.clicked.connect(self.reset_view)
         self.clear_btn.clicked.connect(self.clear)
         self.wallqty_btn.clicked.connect(self._open_wall_qty)
-        self.surface_btn.clicked.connect(self._open_surface_plot)
+        self.surface_btn.clicked.connect(self.open_surface_dialog)
         self.probehist_btn.clicked.connect(self._open_probe_history)
         self._wall_dialog = None
         self._surf_dialog = None
+        self._surf_src_dialog = None
         self._hist_dialog = None
         self._line_dialog = None
         # CAD-like view interaction: scroll = zoom about cursor, right/middle
@@ -402,6 +428,9 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             # CAD geometry overlay (independent of the displayed field).
             if self._cad_on:
                 self._draw_cad_geometry()
+            # The defined surface + its s=0 origin, above the CAD outline (they
+            # can coincide, and which one the plot used has to be the visible one).
+            self._draw_surface_overlay()
 
             self._draw_probes()
             self._draw_solver_probes()

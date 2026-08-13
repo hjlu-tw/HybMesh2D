@@ -388,20 +388,11 @@ class TecplotResult:
         inner = [l for l in loops if not is_outer(l)]
         return inner if inner else loops
 
-    def perimeter_series(self, var: str):
-        """#11: sample ``var`` along each geometry surface loop, returning a list
-        of ``(s, x, y, vals)`` — arc length, node coords and the field value at
-        every boundary node — so the caller can plot e.g. Cp vs arc length."""
-        node_vals = self.cell_to_node(var)
-        out = []
-        for loop in self.geometry_boundary_loops():
-            pts = self.nodes[loop]
-            # close the loop so the arc length spans the full perimeter
-            closed = np.vstack([pts, pts[:1]])
-            seg = np.sqrt((np.diff(closed, axis=0) ** 2).sum(axis=1))
-            s = np.concatenate([[0.0], np.cumsum(seg)])[:len(loop)]
-            out.append((s, pts[:, 0], pts[:, 1], np.asarray(node_vals)[loop]))
-        return out
+    # Sampling a field along a surface loop lives in services/surface_source +
+    # services/surface_sample: "the surface" is no longer implicitly this mesh's
+    # boundary (it can be a φ iso-line, the analytic solid or the CAD outline),
+    # and s = 0 is a stated rule rather than wherever the loop tracer started.
+    # ``geometry_boundary_loops`` above is still the mesh-boundary source.
 
     def cell_to_node(self, var: str) -> np.ndarray:
         """Average a cell-centered field onto nodes (needed for tricontourf and
