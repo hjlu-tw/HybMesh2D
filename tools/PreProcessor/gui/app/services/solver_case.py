@@ -13,6 +13,7 @@ import shutil
 import subprocess
 
 from app.models.solver_config import SolverConfig
+from app.services.case_sources import stage_case_sources
 from app.utils import repo_root
 
 
@@ -187,9 +188,16 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
         log(f"[getPGrid] segment table -> {def_name}")
 
 
-def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False):
+def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
+                     sources=(), generated_sources=()):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
     rename outputs, write ``input.in`` / ``.def``, and compile IBM DLLs.
+
+    ``sources`` are the CAD/STL files the case was built from and
+    ``generated_sources`` the ``(name, text)`` it can only reconstruct (the mesh
+    parameter file, which the GUI writes to a temp path it then deletes). Both
+    land in ``grid/cad/`` (see ``services/case_sources``) so the case carries the
+    geometry and the settings it describes, not only the mesh cut from them.
 
     Mutates ``cfg`` in place (paths are rewritten to the staged locations, as the
     solver worker expects). Returns ``(work_dir, grid_dir, input_in_path)``.
@@ -216,7 +224,14 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False):
 
     # getPGrid runs in grid_dir: stage the STAR-CD inputs there with the
     # basenames para.in will reference, and have it write <case>.grid/.bc there.
-    stem = case
+    #
+    # ``actual_case``, NOT ``case``: auto-versioning renames the DIRECTORY, and
+    # a stem left on the pre-version name puts case.grid inside case_002/. That
+    # runs (input.in names the file it wrote), so it is invisible until the user
+    # later types the versioned name by hand — then the same directory holds
+    # case.grid AND case_002.grid, two 1.3 MB grids distinguishable only by which
+    # one input.in happens to reference. USER-REPORTED (2026-08-13).
+    stem = actual_case
     cfg.output_grid_file = f"{stem}.grid"
     cfg.output_bc_file = f"{stem}.bc"
     for src, base in [(cfg.input_vrt_file, "input.vrt"),
@@ -228,6 +243,9 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False):
     cfg.input_vrt_file = os.path.join(grid_dir, "input.vrt")
     cfg.input_cel_file = os.path.join(grid_dir, "input.cel")
     cfg.input_bnd_file = os.path.join(grid_dir, "input.bnd")
+
+    # The geometry this grid was cut from, and the settings that cut it.
+    stage_case_sources(sources, grid_dir, log, generated=generated_sources)
 
     # Initial-condition DLL (IBM or not): compile the .cc into dll/ and reference
     # it as ../dll/*.so. Non-IBM cases can drive the initial field from a DLL too

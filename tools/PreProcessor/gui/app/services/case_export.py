@@ -23,7 +23,9 @@ What ships (an ALLOW-list, so an output can never sneak in by being new):
 
 Anything not on the list is skipped and NAMED in the manifest, split into "known
 output", "not used by this run" and "not recognised" — a skipped input is then a
-visible line, not an omission discovered on the far machine.
+visible line, not an omission discovered on the far machine. Files the export
+*generates* (``run_case.sh``, the manifest, and any ``extra_files`` the caller
+supplies — the GUI ``.hws``) are named there too, under their own heading.
 
 **The allow-list decides by NAME, so two of its entries also have to ask whether
 the run uses them** — ``work/phi.dat`` and ``dll/*``, see :func:`_unused_reason`.
@@ -33,7 +35,8 @@ USER-REPORTED: "I didn't configure IBM, why is there a phi.dat and a dll/?".
 ``input.in`` is a file path, and the GUI happily writes an absolute one for a
 probe-point or CFL-schedule file the user picked from anywhere on disk. Those
 resolve to nothing on another machine, so each is copied into ``work/`` and the
-reference rewritten to ``./<name>``.
+reference rewritten to ``./<name>``. The same problem in the GUI's own workspace
+is solved in ``services/case_workspace``.
 
 Qt-free: the GUI layer asks the questions, this does the work (and the tests can
 drive it without a display).
@@ -46,13 +49,24 @@ import shutil
 import tarfile
 from dataclasses import dataclass, field
 
-# run_case.sh + MANIFEST.txt are generated next door (this module was over the
-# GUI file-size budget). They are imported under their old private names so
+# Everything the export WRITES rather than copies lives next door (this module
+# was over the GUI file-size budget). Imported under their old private names so
 # every call site here reads as it did.
+from app.services import case_sources
 from app.services.case_export_docs import (
     GETPGRID_INPUT,
     manifest_text as _manifest_text,
+    write_extras as _write_extras,
+    write_input_in as _write_input_in,
     write_run_script as _write_run_script,
+)
+# "Is this file an input of THIS run, or a fossil of the previous one?" — read
+# off work/input.in rather than guessed from the name. Same reason: file budget.
+from app.services.case_export_usage import (
+    declares_immersed_solid as _declares_immersed_solid,
+    input_in_text as _input_in_text,
+    loaded_shared_objects as _loaded_shared_objects,
+    unused_reason as _unused_reason,
 )
 
 # Files a run PRODUCES. Only used to explain a skip in the manifest — the
@@ -79,6 +93,17 @@ _DLL_KEEP = (set(), (".so", ".cc", ".cpp", ".c", ".h", ".hpp"))
 
 _SUBDIRS = ("grid", "work", "dll")
 
+# The CAD/STL the case was cut from, staged into grid/cad/ by
+# ``services/case_sources``. Everything in it was put there BY the case
+# preparation, so nothing a run produces can appear — but it is still an
+# allow-list, because "we control that folder" is exactly the assumption that
+# stops being true later. Nested, so the walk has to descend one level; without
+# that the folder was not skipped-and-named, it was invisible.
+_SOURCE_SUBDIR = f"grid/{case_sources.SOURCE_DIR_NAME}"
+_SOURCE_KEEP = ({case_sources.SOURCES_INDEX},
+                (".dat", ".meta", ".stl", ".txt", ".csv", ".json",
+                 ".igs", ".iges", ".stp", ".step"))
+
 # Files that travel under a different name. ``para.in`` says nothing about what
 # reads it, and there is a second para.in in this project (the STL3d stage), so
 # the copy is named after the program whose stdin it is. The rename lives here,
@@ -87,10 +112,6 @@ _RENAMES = {"grid/para.in": f"grid/{GETPGRID_INPUT}"}
 
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
 _QUOTED_RE = re.compile(r'"([^"]*)"')
-
-# The immersed solid is declared in input.in itself, which makes "does this run
-# read phi.dat?" a fact. Read off the file, so a hand-edited input.in is obeyed.
-_IMMERSED_RE = re.compile(r"^\s*immersed_solid\s+true\b", re.IGNORECASE | re.MULTILINE)
 
 
 class CaseExportError(Exception):
@@ -118,6 +139,11 @@ class ExportPlan:
     skipped_other: list = field(default_factory=list)    # (rel, size) unrecognised
     rewrites: dict = field(default_factory=dict)      # input.in: raw -> portable
     warnings: list = field(default_factory=list)
+    # (rel, size, note) for files WRITTEN by the export rather than copied out
+    # of the case (the GUI workspace). Apart from `items` because the manifest's
+    # INCLUDED block means "this came from the case" and sizes there are read
+    # off `item.src`, which a generated file does not have.
+    extras: list = field(default_factory=list)
 
     @property
     def total_bytes(self) -> int:
@@ -164,70 +190,6 @@ def _keeps(name: str, keep) -> bool:
 # --------------------------------------------------------------------------- #
 # Planning
 # --------------------------------------------------------------------------- #
-def _input_in_text(case_dir: str) -> str:
-    """``work/input.in`` as text, or "" when it cannot be read."""
-    try:
-        with open(os.path.join(case_dir, "work", "input.in"),
-                  encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except OSError:
-        return ""
-
-
-def _loaded_shared_objects(case_dir: str) -> set:
-    """Basenames of the ``*.so`` this run actually dlopens.
-
-    Every DLL reference is a quoted path: ``init_cond_use_zdump_fn`` /
-    ``SolidPhaseMotionDLL`` in ``input.in``, and a type-11 (user BC) row's
-    ``"./name.so"`` in the ``*.def`` staged next to it — so a BC DLL counts as
-    loaded even though ``input.in`` alone never mentions it.
-    """
-    text = _input_in_text(case_dir)
-    work = os.path.join(case_dir, "work")
-    try:
-        names = sorted(os.listdir(work))
-    except OSError:
-        names = []
-    for name in names:
-        if not name.endswith(".def"):
-            continue
-        try:
-            with open(os.path.join(work, name), encoding="utf-8",
-                      errors="replace") as f:
-                text += "\n" + f.read()
-        except OSError:
-            continue
-    return {os.path.basename(r.strip()) for r in _QUOTED_RE.findall(text)
-            if r.strip().endswith(".so")}
-
-
-def _unused_reason(sub: str, name: str, loaded_so: set, immersed: bool) -> str:
-    """Why an allow-listed file is no part of THIS run — "" when it is part of it.
-
-    ``work/phi.dat`` and everything in ``dll/`` are kept by NAME, and a reused case
-    directory (``prepare_case_dir`` writes in place) still holds both long after the
-    immersed-solid run that produced them: fossils presented as "input" that the
-    exported ``input.in`` never reads. That same ``input.in`` answers it — it
-    declares ``immersed_solid`` (the phase field's only reader is the init DLL, so
-    with neither a declaration nor a DLL nothing touches ``phi.dat``) and it names
-    every DLL it loads. A source travels with its own ``.so``
-    (``_add_dll_sources``); a header travels with whatever source ships, since it
-    is the rebuild that needs it.
-    """
-    if sub == "dll":
-        if name.endswith((".h", ".hpp")):
-            return ""
-        if f"{os.path.splitext(name)[0]}.so" not in loaded_so:
-            return ("nothing in work/input.in or the BC .def loads it — left "
-                    "over from an earlier run in this case directory")
-    elif sub == "work" and name == "phi.dat":
-        if not (immersed or loaded_so):
-            return ("immersed-solid phase field, but this run declares no "
-                    "immersed_solid and loads no DLL to read it — left over "
-                    "from an earlier run in this case directory")
-    return ""
-
-
 def plan_export(case_dir: str, *, dll_src_dirs=(),
                 include_restart: bool | str = "auto") -> ExportPlan:
     """Decide what a portable copy of ``case_dir`` contains. Touches no files.
@@ -247,14 +209,16 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                   for r in _QUOTED_RE.findall(input_in)
                   if r.strip()}
     loaded_so = _loaded_shared_objects(case_dir)
-    immersed = _IMMERSED_RE.search(input_in) is not None
-    keeps = {"grid": _GRID_KEEP, "work": _WORK_KEEP, "dll": _DLL_KEEP}
+    immersed = _declares_immersed_solid(input_in)
+    keeps = {"grid": _GRID_KEEP, "work": _WORK_KEEP, "dll": _DLL_KEEP,
+             _SOURCE_SUBDIR: _SOURCE_KEEP}
     found_any = False
-    for sub in _SUBDIRS:
-        d = os.path.join(case_dir, sub)
+    for sub in _SUBDIRS + (_SOURCE_SUBDIR,):
+        d = os.path.join(case_dir, *sub.split("/"))
         if not os.path.isdir(d):
             continue
-        found_any = True
+        # grid/cad/ existing does not make this a case directory; grid/ does.
+        found_any = found_any or sub in _SUBDIRS
         for name in sorted(os.listdir(d)):
             src = os.path.join(d, name)
             if not os.path.isfile(src):
@@ -425,14 +389,26 @@ def _check_completeness(plan: ExportPlan) -> None:
 # --------------------------------------------------------------------------- #
 def export_case(case_dir: str, dest_dir: str, *, dll_src_dirs=(),
                 include_restart: bool | str = "auto", make_tarball: bool = False,
-                solver_tag: str = ".run", log=_noop) -> dict:
+                solver_tag: str = ".run", plan: "ExportPlan | None" = None,
+                extra_files=(), log=_noop) -> dict:
     """Write a portable copy of ``case_dir`` into ``dest_dir``.
+
+    ``plan`` lets a caller that already planned (to ask about the restart dump,
+    say) hand that exact plan back rather than have it rebuilt here — which
+    matters as soon as anything is derived FROM the plan, since a second plan
+    built with different arguments describes a different package than the one
+    landing on disk.
+
+    ``extra_files`` is an iterable of ``(rel, text, note)`` written into the
+    package and recorded in ``plan.extras`` so the manifest names them: nothing
+    arrives unaccounted for, and a file the export generated is no exception.
 
     Returns a summary dict: ``dest``, ``tarball``, ``plan``, ``n_files``,
     ``bytes``. Raises :class:`CaseExportError` if nothing can be written.
     """
-    plan = plan_export(case_dir, dll_src_dirs=dll_src_dirs,
-                       include_restart=include_restart)
+    if plan is None:
+        plan = plan_export(case_dir, dll_src_dirs=dll_src_dirs,
+                           include_restart=include_restart)
     if not plan.items:
         raise CaseExportError(
             f"{case_dir} holds no input files to export (only outputs?)")
@@ -459,6 +435,7 @@ def export_case(case_dir: str, dest_dir: str, *, dll_src_dirs=(),
             os.makedirs(os.path.dirname(target), exist_ok=True)
             shutil.copy2(item.src, target)
         _write_input_in(plan, dest_dir)
+        _write_extras(plan, dest_dir, extra_files)
         _write_run_script(plan, dest_dir, solver_tag)
         manifest = _manifest_text(plan, solver_tag)
         with open(os.path.join(dest_dir, "MANIFEST.txt"), "w", encoding="utf-8") as f:
@@ -483,18 +460,3 @@ def export_case(case_dir: str, dest_dir: str, *, dll_src_dirs=(),
 
     return {"dest": dest_dir, "tarball": tarball, "plan": plan,
             "n_files": len(plan.items), "bytes": plan.total_bytes}
-
-
-def _write_input_in(plan: ExportPlan, dest_dir: str) -> None:
-    """Copy input.in with its off-machine paths rewritten to local ones."""
-    if not plan.rewrites:
-        return
-    target = os.path.join(dest_dir, "work", "input.in")
-    if not os.path.isfile(target):
-        return
-    with open(target, encoding="utf-8", errors="replace") as f:
-        text = f.read()
-    for raw, new in plan.rewrites.items():
-        text = text.replace(f'"{raw}"', f'"{new}"')
-    with open(target, "w", encoding="utf-8") as f:
-        f.write(text)

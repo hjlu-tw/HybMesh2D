@@ -35,6 +35,50 @@ class CaseExportControllerMixin:
         guess = os.path.join(repo_root(), "results", "solver", name)
         return guess if name and os.path.isdir(guess) else ""
 
+    def _build_case_workspace_text(self, plan, dest_dir: str):
+        """The .hws to drop into the package, as ``(json_text, report)``.
+
+        Returns None — with the reason logged and shown — when the workspace
+        cannot be serialised (non-finite coordinates being the one real case).
+        Failing the WORKSPACE must not fail the export: the solver package is
+        the part someone is waiting on.
+        """
+        import json
+        from app.services import case_workspace
+        try:
+            ws, report = case_workspace.build_case_workspace(
+                self.workspace_dict(), plan, dest_dir)
+            return json.dumps(ws, indent=2, allow_nan=False), report
+        except (ValueError, TypeError) as e:
+            _log.warning("could not build the exported workspace", exc_info=True)
+            self.main_window.log_panel.log(
+                f"[export] [WARNING] no .hws written: {e}")
+            return None
+
+    @staticmethod
+    def _log_workspace_report(report, log) -> None:
+        """Name what the exported workspace still points at OFF the package.
+
+        The export's allow-list only carries solver inputs, so a CAD .dat, a
+        mesh .vtk or a solver binary keeps its original path — correct on this
+        machine, absent on any other. Naming them here is the same promise the
+        manifest makes about skipped files: nothing goes missing silently.
+        """
+        if report is None:
+            return
+        log(f"[export]   workspace: {report.n_repointed} path(s) now point "
+            "into the exported folder")
+        seen = []
+        for _key, path in report.outside:
+            if path not in seen:
+                seen.append(path)
+        for path in seen:
+            log(f"[export]   workspace: (outside the package) {path}")
+        if seen:
+            log("[export]   workspace: those are not solver-case files, so they "
+                "do not travel — the geometry itself is stored inside the .hws, "
+                "but re-resampling / re-meshing on another machine needs them.")
+
     # ------------------------------------------------------------------ #
     def export_portable_case(self):
         """Ask for a case + destination, then write a self-contained copy."""
@@ -85,6 +129,17 @@ class CaseExportControllerMixin:
                 "case then starts from scratch there.",
                 headless_default=True)
 
+        # Asked before the archive question, because it decides what is IN the
+        # folder and the archive is taken of the finished folder.
+        want_hws = confirm(
+            win, "Export Case",
+            f"Also write a GUI workspace ({os.path.basename(target)}.hws) into "
+            "the folder?\n\n"
+            "run_case.sh reruns the SOLVER; the workspace is what reopens the "
+            "case in this GUI. Its solver paths point into the exported folder, "
+            "and they follow the folder if you move it.",
+            headless_default=True)
+
         also_tar = confirm(
             win, "Export Case",
             "Also write a .tar.gz archive next to the folder?\n\n"
@@ -92,10 +147,33 @@ class CaseExportControllerMixin:
             "to scp to the other machine.",
             headless_default=False)
 
+        # Re-plan with the answers actually given: the plan above was built to
+        # DETECT the restart dump, before the user said whether to carry it. The
+        # workspace is derived from the plan, so it has to be derived from the
+        # plan that is written — not from one that merely resembles it.
+        try:
+            plan = case_export.plan_export(case_dir, dll_src_dirs=(dll_src,),
+                                           include_restart=include_restart)
+        except case_export.CaseExportError as e:
+            report_error(win, "Export Case", str(e))
+            return
+
+        extra_files = []
+        ws_report = None
+        if want_hws:
+            hws_rel = os.path.basename(os.path.abspath(target)) + ".hws"
+            built = self._build_case_workspace_text(plan, target)
+            if built is not None:
+                text, ws_report = built
+                extra_files.append(
+                    (hws_rel, text,
+                     "GUI workspace — File > Load Workspace"))
+
         try:
             summary = case_export.export_case(
                 case_dir, target, dll_src_dirs=(dll_src,),
-                include_restart=include_restart,
+                include_restart=include_restart, plan=plan,
+                extra_files=extra_files,
                 make_tarball=bool(also_tar), log=log)
         except case_export.CaseExportError as e:
             report_error(win, "Export Case", "Could not export the case.",
@@ -117,11 +195,18 @@ class CaseExportControllerMixin:
         # visible where the user is already looking, not only on the far machine.
         for rel, _size, why in plan.skipped_unused:
             log(f"[export]   (not used by this run) {rel} — {why}")
+        for rel, _size, note in plan.extras:
+            log(f"[export]   {rel} — {note}")
+        self._log_workspace_report(ws_report, log)
+        hws = next((r for r, _s, _n in plan.extras if r.endswith(".hws")), "")
         detail = "\n".join(
             [f"{summary['n_files']} file(s), "
              f"{case_export.human_size(summary['bytes'])}",
              f"Folder: {summary['dest']}"]
             + ([f"Archive: {summary['tarball']}"] if summary["tarball"] else [])
+            + ([f"Workspace: {hws} "
+                f"({ws_report.n_repointed if ws_report else 0} path(s) "
+                f"re-pointed into the folder)"] if hws else [])
             + ([""] + [f"! {w}" for w in plan.warnings] if plan.warnings else []))
         report_info(
             win, "Export Case",

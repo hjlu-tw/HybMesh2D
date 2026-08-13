@@ -472,14 +472,15 @@ check(p_bc.has("dll/user.so"),
 # ── 13. every write is explicitly UTF-8 ───────────────────────────────────
 # MANIFEST.txt embeds the case path verbatim and the UI ships a zh_TW translation, so a
 # platform-default encoding fails on a non-ASCII path AFTER every file has been copied.
-# Both halves of the service: the selection (case_export) and the two generated
-# documents (case_export_docs), which is where two of the three writes live.
+# Every module the service writes through: the selection (case_export) and the generated
+# files (case_export_docs), which is where all four writes now live — manifest, run
+# script, rewritten input.in, and the caller's extras (the .hws).
 src_txt = "".join(
     open(os.path.join(_GUI, "app", "services", mod), encoding="utf-8").read()
-    for mod in ("case_export.py", "case_export_docs.py"))
-check('"w") as f:' not in src_txt and src_txt.count('"w", encoding="utf-8"') == 3,
-      "13. all three writes (manifest, run script, rewritten input.in) name UTF-8, like "
-      "every read in the module already does")
+    for mod in ("case_export.py", "case_export_docs.py", "case_export_usage.py"))
+check('"w") as f:' not in src_txt and src_txt.count('"w", encoding="utf-8"') == 4,
+      "13. all four writes (manifest, run script, rewritten input.in, extras) name "
+      "UTF-8, like every read in the module already does")
 uni_case, uni_src, _ = build_case(os.path.join(tmp, "案例"))
 uni_dest = os.path.join(tmp, "匯出")
 case_export.export_case(uni_case, uni_dest, dll_src_dirs=(uni_src,))

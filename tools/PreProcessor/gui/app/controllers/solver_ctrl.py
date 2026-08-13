@@ -7,10 +7,14 @@ from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import solver_case
+from app.services.case_sources import mesh_provenance_paths
+from app.services.logging_setup import get_logger
 from app.services.solver_case import sanitize_case_name as _sanitize
 from app.utils import (
     find_solver_executables, repo_root, find_mpi_launcher, is_mpi_binary,
 )
+
+_log = get_logger(__name__)
 
 
 class SolverControllerMixin:
@@ -21,6 +25,72 @@ class SolverControllerMixin:
     """
 
     SOLVER_TAG = ".gui"
+
+    # ------------------------------------------------------------------ #
+    def _case_source_files(self) -> list:
+        """The CAD/STL this case is built from, for staging into grid/cad/.
+
+        Three things per case, and each answers a different question. The
+        session's ``file_path`` is what the user IMPORTED (the drawing of
+        record); ``output_file`` is the resampled ``.dat`` the mesher actually
+        read, which is a different curve and the one the grid corresponds to;
+        and the STL3d ``stl_path`` is the immersed body, which never touches the
+        mesh at all and would otherwise be recorded nowhere in the case.
+
+        Order is import-then-resampled per tab so the folder reads in pipeline
+        order. Sidecars (``.dat.meta``, carrying the per-segment BCs) are pulled
+        in by the staging service, not listed here.
+
+        The mesh run's ``.provenance.json`` joins them: it is written beside the
+        mesh output and records the git sha, the gmsh version and the full config
+        as text, which is the difference between "which body?" and "which run?".
+        """
+        out: list = []
+        for session in getattr(self, "sessions", []) or []:
+            pm = getattr(session, "project_model", None)
+            for path in (getattr(session, "file_path", ""),
+                         getattr(pm, "input_file", "") if pm else "",
+                         getattr(pm, "output_file", "") if pm else ""):
+                if path:
+                    out.append(path)
+        stl = getattr(getattr(self, "global_stl3d_config", None), "stl_path", "")
+        if stl:
+            out.append(stl)
+        # ``global_vtk_path`` is where the mesh REALLY landed (set by the mesh
+        # worker, so it already reflects any auto-named output); the config's
+        # ``output_filename`` covers a case whose mesh was generated in an
+        # earlier session. The field is ``output_filename``, not ``output_file``
+        # — a getattr on the wrong name silently returns the default and stages
+        # nothing, which is invisible because a missing provenance file is a
+        # legal outcome anyway.
+        out.extend(mesh_provenance_paths(
+            getattr(self, "global_vtk_path", ""),
+            getattr(getattr(self, "global_mesh_config", None),
+                    "output_filename", "")))
+        return out
+
+    def _case_generated_files(self) -> list:
+        """``(name, text)`` the case can only reconstruct, not copy.
+
+        Just the mesh parameter file: the GUI never writes a persistent one — a
+        run serialises the live config into ``temp_dir/*_mesh_para.dat`` and that
+        directory is removed on exit — so without regenerating it here, the case
+        would record every input except the one that shaped its grid.
+        """
+        from app.models.mesh_config_io import config_to_text
+        cfg = getattr(self, "global_mesh_config", None)
+        if cfg is None:
+            return []
+        case = _sanitize(getattr(self, "global_solver_config", None)
+                         and self.global_solver_config.case_name or "case")
+        try:
+            return [(f"Background_para_{case}.dat", config_to_text(cfg))]
+        except Exception:
+            # A case that stages its geometry but not its settings is still worth
+            # having; a run that dies here is not.
+            _log.warning("could not serialise the mesh config for the case's "
+                         "cad/ folder", exc_info=True)
+            return []
 
     # ------------------------------------------------------------------ #
     def init_solver(self):
@@ -161,7 +231,9 @@ class SolverControllerMixin:
             + "unicones) ---")
 
         self._solver_worker = SolverPipelineWorker(
-            cfg, tag=self.SOLVER_TAG, prepare=True, overwrite=overwrite)
+            cfg, tag=self.SOLVER_TAG, prepare=True, overwrite=overwrite,
+            sources=self._case_source_files(),
+            generated_sources=self._case_generated_files())
         self._solver_worker.log_signal.connect(log)
         self._solver_worker.prepared_signal.connect(self._on_solver_prepared)
         self._solver_worker.stage_signal.connect(self._on_solver_stage)

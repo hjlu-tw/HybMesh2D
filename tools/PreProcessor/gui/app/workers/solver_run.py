@@ -57,7 +57,8 @@ class SolverPipelineWorker(QThread):
     def __init__(self, config: SolverConfig, getpgrid_dir: str | None = None,
                  solver_work_dir: str | None = None,
                  input_in_path: str | None = None, tag: str = ".gui",
-                 prepare: bool = False, overwrite: bool = False):
+                 prepare: bool = False, overwrite: bool = False,
+                 sources=(), generated_sources=()):
         super().__init__()
         self._config = config
         self._getpgrid_dir = getpgrid_dir
@@ -69,6 +70,10 @@ class SolverPipelineWorker(QThread):
         # thread, so the event loop never freezes for the g++ subprocess.
         self._prepare = prepare
         self._overwrite = overwrite
+        # CAD/STL this case was built from: copied into grid/cad/ by the same
+        # staging step, so the case carries its own geometry.
+        self._sources = list(sources or ())
+        self._generated_sources = list(generated_sources or ())
         self._process: subprocess.Popen | None = None
         self._cancelled = False
 
@@ -99,7 +104,8 @@ class SolverPipelineWorker(QThread):
                 self.stage_signal.emit("Preparing case")
                 work_dir, grid_dir, input_in = solver_case.prepare_case_dir(
                     self._config, log=self.log_signal.emit,
-                    overwrite=self._overwrite)
+                    overwrite=self._overwrite, sources=self._sources,
+                    generated_sources=self._generated_sources)
                 self._solver_work_dir = work_dir
                 self._getpgrid_dir = grid_dir
                 self._input_in_path = input_in

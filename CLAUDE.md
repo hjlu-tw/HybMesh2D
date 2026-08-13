@@ -447,7 +447,39 @@ file the user browsed to; those are staged into `work/` and rewritten to
 `./<name>`, which is the other half of portability. The solver binary is
 deliberately excluded. Gated by `tests/test_case_export.py`; verified end-to-end
 by regenerating the grid with getPGrid from the exported folder and running
-unicones on it.
+unicones on it. Everything the export *writes* rather than copies lives in
+`case_export_docs.py` (`run_case.sh`, `MANIFEST.txt`, the rewritten `input.in`,
+and `write_extras`); the "is this file an input of THIS run or a fossil of the
+last one?" reading of `input.in` lives in `case_export_usage.py`. Both splits
+are the file-size budget, not new concepts.
+
+**The package also reopens in the GUI, not just in a shell**
+(`services/case_workspace.py`, Qt-free). `run_case.sh` reruns the SOLVER; there
+is no importer for an exported case, so "load the case I exported" had no answer
+— USER-REQUESTED (2026-08-13). Export Case now *asks* (a third prompt, after the
+restart dump and the tarball) and writes `<folder>.hws` into the package via
+`export_case(..., extra_files=...)`, so the manifest names it under its own
+heading like everything else. Three rules decide whether the workspace is worth
+shipping: **(1) re-point by file IDENTITY, never by string** — the map is keyed
+by `(st_dev, st_ino)`, so `results/` vs `Results/` on a case-insensitive volume
+or a symlinked scratch dir is still the same file, and a path the package does
+NOT carry (the CAD `.dat`, the mesh, a declined restart dump) is left alone and
+REPORTED in the log rather than rewritten to a name that resolves to nothing;
+**(2) the caller's plan is the authority** — `export_case` now accepts `plan=`
+because the workspace is derived from the plan, and a second plan built with
+different arguments would describe a different package than the one on disk
+(decline the restart dump and its path must stay put); **(3) the stamp survives
+a move** — a package exists to be copied elsewhere, which strands absolute paths
+a second time, so the exported workspace records `exported_case_root` and
+`rebase_case_workspace` (called from `_read_workspace_file` on **every** load)
+swaps that prefix for wherever the `.hws` is actually being opened from. Note
+what does NOT travel: CAD/mesh sources are no part of a solver case, so the
+geometry rides *inside* the `.hws` (`original_points` are stored verbatim) and
+still draws, but re-resampling or re-meshing needs those files — the export log
+and the manifest both say so. `Save Workspace` and the export share one builder
+(`session_io_ctrl.workspace_dict()`), so an exported workspace can never
+describe less than a saved one. Gated by `tests/test_case_workspace_export.py`,
+which drives the real Export Case slot, moves the folder, and loads it back.
 
 **Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)` (`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, which is a re-entrant depth counter (a bare bool let a nested populate clear the outer guard). `tests/test_signal_guards.py` statically fails the build on either.
 
@@ -463,7 +495,8 @@ unicones on it.
 A single unified JSON script drives the whole chain; the GUI and the headless CLI share the same schema and stage logic.
 - **`models/pipeline_config.py`** (`PipelineConfig`, Qt-free): the unified schema (`cads`/`mesh`/`solver`/`stl3d`/`results`, each mapping 1:1 onto `ProjectModel`/`MeshConfig`/`SolverConfig`/`Stl3dConfig`) + converters. `PIPELINE_FORMAT_VERSION` (v2). `cads` is a **list** — one entry per geometry, so a multi-body case round-trips; the singular `cad` key is still read and exposed as a property (first entry) for pre-v2 scripts. `from_workspace_dict()` turns a `.hws` workspace into a runnable script, so `run_pipeline.sh` accepts either. Examples: `config/pipeline/naca_demo.json` (single), `multi_element_demo.json` (multi-body).
 - **`services/pipeline_runner.py`** (Qt-free, blocking): runs the 3 CLI stages via subprocess (surface_resampler → HybMesh2D → getPGrid→unicones); `run_pipeline()` returns the produced artifact paths.
-- **`services/solver_case.py`** (Qt-free): case-dir orchestration (`results/solver/<name>/{work,grid,dll}`), extracted so `solver_ctrl._prepare_case_dir` and the headless runner share one source of truth.
+- **`services/solver_case.py`** (Qt-free): case-dir orchestration (`results/solver/<name>/{work,grid,dll}`), extracted so `solver_ctrl._prepare_case_dir` and the headless runner share one source of truth. **The grid stem is the RESOLVED case name, not the requested one**: auto-versioning renames the *directory* (`case` → `case_002`), and a stem left on the pre-version name writes `case.grid` into `case_002/`. That runs — `input.in` names the file it just wrote — so it stays invisible until the user later types the versioned name by hand and the same directory ends up holding `case.grid` *and* `case_002.grid`, two 1.3 MB grids distinguishable only by which one `input.in` references. USER-REPORTED (2026-08-13).
+- **`services/case_sources.py`** (Qt-free): copies the CAD/STL a case was cut from into **`grid/cad/`**, so the case describes its own geometry instead of only the mesh (the source otherwise lives in `examples/geometries/` or a Desktop, free to be edited or deleted while the case looks complete). Fed by `solver_ctrl._case_source_files` / `_case_generated_files` and `pipeline_runner._case_sources` — the imported source, the resampled `.dat` the mesher read, the immersed STL, the mesh `.provenance.json`, and the **mesh parameter file**, which is *generated* rather than copied because the GUI only ever materialises one in `temp_dir` and deletes it on exit (`mesh_config_io.config_to_text`, split out of `save_config_to_file` so the staged config is byte-identical to a hand-saved one; it takes the destination path because a geometry outside the repo is emitted relative to the config file). Rules: **copy, never move** (the mesher, the GUI session and other cases still point at the original — and a *move* is unimplementable anyway, since one resampled `.dat` legitimately feeds several cases and the pipeline is not one-directional); **a hard link is not the cheap version of a copy** — one inode means editing the CAD afterwards silently rewrites what the case holds, which is the property the copy exists to deny; **sidecars follow their file** (`<name>.dat.meta` carries the per-segment BC labels and No-BL flags, so the `.dat` without it is a different geometry); **collisions are renamed, not overwritten** (two bodies can both be `profile.dat`); generated files are staged **last** and marked `(generated)` in the index, because a reconstruction must not read as evidence. `SOURCES.txt` maps every staged name back to its absolute origin, rewritten in full each run so a body no longer in the case leaves no line — and it is the *only* index there is, so **`tools/scripts/case_sources_index.py`** reads them back to answer the question the case dir cannot ("if I change this CAD, which cases go stale?"), matching by `(st_dev, st_ino)` then path then substring, exit 1 on no match. `case_export` descends into `grid/cad/` with its own allow-list — a nested folder the exporter cannot see is neither shipped *nor named as skipped*.
 - **`services/stl3d_case.py`** (Qt-free): the same for the immersed-solid stage — `validate()`, `work_dir_for()`, `prepare_case_dir()` (stages the STL under a whitespace-safe name + writes `para.in`). Both `stl3d_ctrl.run_stl3d` and the headless runner's IB stage go through it. **`Stl3dConfig.para_in_text()` must match `solver/preprocess/STL3d/src/stl3d.cpp`'s `cin >>` sequence line for line** — there are five reads and deliberately no ascii y/n line (the binary auto-detects); an extra line is consumed as the case name and the run silently produces an empty phi field with exit code 0. `tests/test_stl3d_case_parity.py` parses the C++ and gates this. **Inside `stl3d.cpp`, `STLobject` carries two different x extents and they must not be confused**: `xloc_db` (the candidate index `trace_ray` looks rays up in) is keyed by element **centre** x, while `xmin`/`xmax` (the ray culling window) come from the **vertices** — and have to, since a centroid sits strictly inside the surface and a centre-based box clips whole regions off a coarse or fan-shaped tessellation. Every ray in the strip between the last centre and `xmax` therefore passes the culling check with nothing at or after it in the index, so `lower_bound()` returns `end()`; dereferencing that (`->second->second`) is what killed a GUI IB run with `[STL3d] exited with code -11`. A **flat 2D profile is the worst case** — an ear-clipped/fan triangulation drags every centroid toward the apex, leaving the far ~20-30% of the x extent centroid-free (measured 5.856 vs 6.070, i.e. the last 41 of 128 slices). `ctr_strip_at_or_after()` clamps instead: a range *start* falls back to the last strip, a range *end* to `ctr_db_.end()`, so the far strip is really traced rather than silently clipped. Gated by `tests/test_stl3d_flat_profile_trace.py`, which compiles `stl3d.cpp` itself (CI does not build STL3d, and a stale binary must not be able to pass it).
 - **`services/contour_render.py`** (Qt-free): renders a Tecplot result to a contour PNG (matplotlib Agg) for headless runs.
 - **`controllers/pipeline_ctrl.py`** (`PipelineControllerMixin`): GUI **Run All** — chains the existing per-stage QThread workers on their `finished_signal` (batch mode: no per-stage dialogs), ending on the auto-loaded Results contour. Also Save/Load pipeline script.
@@ -472,6 +505,7 @@ A single unified JSON script drives the whole chain; the GUI and the headless CL
 ### Visualization (`tools/scripts/`)
 - **`visualize_dat.py`**: Matplotlib visualization for `.dat` files; `--quality` flag adds expansion-ratio heatmap
 - **`generate_letters.py`**: Generates letter-shaped geometry files
+- **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
 
 ## Common Tasks
 

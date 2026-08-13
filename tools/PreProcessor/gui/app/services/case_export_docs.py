@@ -1,11 +1,18 @@
-"""The two documents a portable case carries: ``run_case.sh`` and ``MANIFEST.txt``.
+"""Everything a portable case export WRITES rather than copies.
 
 Split out of ``services/case_export`` (which was over the file-size budget). The
-selection logic lives there; this module only turns a finished
-:class:`~app.services.case_export.ExportPlan` into text a person on the far
-machine reads. Qt-free, like its parent.
+*selection* logic — what travels and what does not — lives there; this module
+turns a finished :class:`~app.services.case_export.ExportPlan` into the files
+that are generated on the way out:
 
-Both documents describe the SAME package, so they are written from the same plan
+* ``run_case.sh`` and ``MANIFEST.txt``, the two documents a person on the far
+  machine reads;
+* ``work/input.in``, copied and then rewritten so its off-machine paths resolve;
+* any *extras* the caller generated (the GUI ``.hws`` workspace).
+
+Qt-free, like its parent.
+
+All of them describe the SAME package, so they are written from the same plan
 and share the constants that name things — ``GETPGRID_INPUT`` in particular: a
 rename that the run script does not know about would break ``--regrid`` while
 the manifest cheerfully claimed it worked.
@@ -84,6 +91,44 @@ def write_run_script(plan, dest_dir: str, solver_tag: str) -> None:
     os.chmod(path, 0o755)
 
 
+def write_input_in(plan, dest_dir: str) -> None:
+    """Copy input.in with its off-machine paths rewritten to local ones."""
+    if not plan.rewrites:
+        return
+    target = os.path.join(dest_dir, "work", "input.in")
+    if not os.path.isfile(target):
+        return
+    with open(target, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    for raw, new in plan.rewrites.items():
+        text = text.replace(f'"{raw}"', f'"{new}"')
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def write_extras(plan, dest_dir: str, extra_files) -> None:
+    """Write the export's own generated files and record them on the plan.
+
+    ``rel`` is refused unless it stays inside the package: these names come from
+    a caller, and a package that can be made to write outside its own folder is
+    worse than one missing a file — the export would be modifying the machine it
+    was only supposed to read."""
+    from app.services.case_export import _is_inside
+
+    for rel, text, note in extra_files or ():
+        rel = str(rel).replace("\\", "/").strip("/")
+        target = os.path.normpath(os.path.join(dest_dir, *rel.split("/")))
+        if not rel or not _is_inside(target, dest_dir):
+            plan.warnings.append(
+                f"refused to write the extra file '{rel}' — it would land "
+                "outside the export folder.")
+            continue
+        os.makedirs(os.path.dirname(target) or dest_dir, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(text)
+        plan.extras.append((rel, len(text.encode("utf-8")), note))
+
+
 def manifest_text(plan, solver_tag: str) -> str:
     """The package's own record: everything included, everything skipped (and
     why), every rewritten path, and the handful of facts the person running it
@@ -100,6 +145,12 @@ def manifest_text(plan, solver_tag: str) -> str:
          "-" * 66]
     for item in sorted(plan.items, key=lambda i: i.rel):
         L.append(f"  {item.rel:<44} {human_size(_size(item.src)):>9}  {item.reason}")
+    if getattr(plan, "extras", None):
+        total = sum(s for _r, s, _n in plan.extras)
+        L += ["", f"ALSO WRITTEN BY THE EXPORT — generated, not copied from the "
+              f"case ({human_size(total)})", "-" * 66]
+        for rel, size, note in sorted(plan.extras):
+            L.append(f"  {rel:<44} {human_size(size):>9}  {note}")
     if plan.rewrites:
         L += ["", "PATHS REWRITTEN IN work/input.in (they pointed off this machine)",
               "-" * 66]
@@ -144,5 +195,17 @@ def manifest_text(plan, solver_tag: str) -> str:
           "run from scratch.",
           f"  * Output is tagged '{solver_tag}' "
           f"(work/xtecp_sol_allz.dat{solver_tag}).",
-          ""]
+          ]
+    if any(r.endswith(".hws") for r, _s, _n in getattr(plan, "extras", ())):
+        L += ["  * The *.hws is the HybMesh2D GUI workspace — open it with "
+              "File > Load Workspace.",
+              "    Its solver paths point INTO this folder and re-point "
+              "themselves if the folder",
+              "    is moved. The CAD/mesh SOURCES are not part of a solver case, "
+              "so they do not",
+              "    travel: the geometry itself is stored inside the .hws and "
+              "still draws, but",
+              "    re-resampling or re-meshing needs those files (see the export "
+              "log for names)."]
+    L += [""]
     return "\n".join(L)

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QFileDialog, QMenu, QInputDialog
 from PyQt6.QtCore import Qt
 
 from app.services import file_integrity
+from app.services.case_workspace import rebase_case_workspace
 from app.utils import report_warning
 from app.utils import block_signals
 
@@ -62,8 +63,14 @@ class SessionIOControllerMixin:
                            "It may be corrupt or from an incompatible version.",
                            detail=str(e))
 
-    def _write_workspace_file(self, file_path: str):
-        import json
+    def workspace_dict(self) -> dict:
+        """The whole workspace as a JSON-ready dict.
+
+        Split out of :meth:`_write_workspace_file` so the portable-case export
+        can take the same snapshot, re-point its paths into the package and
+        write it there (``services/case_workspace``). One builder, so an exported
+        workspace can never describe less than a saved one.
+        """
         import copy
 
         # Reject non-finite coordinates up front with a clear, named error.
@@ -121,16 +128,19 @@ class SessionIOControllerMixin:
             session.source_fingerprint = session_dict["source_fingerprint"]
             sessions_data.append(session_dict)
 
-        workspace_data = {
+        return {
             "format_version": WORKSPACE_FORMAT_VERSION,
             "active_idx": self.active_idx,
             "sessions": sessions_data,
             "project": self._collect_project_state(),
         }
 
+    def _write_workspace_file(self, file_path: str):
+        import json
+
         # Serialise fully (allow_nan=False) before opening the file so a failure
         # leaves any previous workspace file intact rather than half-written.
-        text = json.dumps(workspace_data, indent=2, allow_nan=False)
+        text = json.dumps(self.workspace_dict(), indent=2, allow_nan=False)
         abs_path = os.path.abspath(file_path)
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         # Atomic write: serialise to a sibling temp file, flush+fsync it, then
@@ -203,6 +213,17 @@ class SessionIOControllerMixin:
 
         with open(file_path, encoding="utf-8") as f:
             workspace_data = json.load(f)
+
+        # A workspace written INTO a portable case package carries absolute paths
+        # into that package. The package's whole purpose is to be copied
+        # somewhere else, so re-point them at wherever this .hws is actually
+        # being opened from before anything reads them. A no-op for every
+        # ordinary workspace (no stamp) and for a package still in place.
+        moved = rebase_case_workspace(workspace_data, file_path)
+        if moved:
+            self.main_window.log_panel.log(
+                f"[INFO] Exported-case workspace: re-pointed {moved} path(s) at "
+                f"'{os.path.dirname(os.path.abspath(file_path))}'.")
 
         # Explicit version handling: missing = legacy v0 (not "current"). Older
         # files are migrated field-by-field through _migrate_workspace; a NEWER
