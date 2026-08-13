@@ -10,16 +10,24 @@ What ships (an ALLOW-list, so an output can never sneak in by being new):
 
 * ``grid/``  — the mesh the solver reads (``*.grid``/``*.bc``) plus its boundary
   table (``*.def``) and the getPGrid inputs that regenerate them
-  (``input.vrt``/``.cel``/``.bnd`` + ``para.in``).
-* ``work/``  — ``input.in``, the ``*.def`` table, ``phi.dat`` for an immersed
-  solid, and the restart zone dump when one is present.
+  (``input.vrt``/``.cel``/``.bnd`` + ``para.in``, which is written out under the
+  self-explaining name ``getPGrid.in`` — see ``_RENAMES``).
+* ``work/``  — ``input.in``, the ``*.def`` table, ``phi.dat`` when the run has an
+  immersed solid, and the restart zone dump **only when ``input.in`` actually
+  restarts from it** (``include_restart="auto"``, the default). It is the largest
+  file in a case and an OUTPUT that a restart run happens to read back, so
+  shipping it unasked is how a 100 MB package appears with nothing to say why.
 * ``dll/``   — the compiled ``*.so`` **and** the ``*.cc`` it came from, pulled
   from ``results/solver/dll_src`` by basename. The binary alone is not portable
   (it is this machine's arch and libstdc++); the source is what actually travels.
 
 Anything not on the list is skipped and NAMED in the manifest, split into "known
-output" and "not recognised" — a skipped input is then a visible line, not a
-silent omission discovered on the far machine.
+output", "not used by this run" and "not recognised" — a skipped input is then a
+visible line, not an omission discovered on the far machine.
+
+**The allow-list decides by NAME, so two of its entries also have to ask whether
+the run uses them** — ``work/phi.dat`` and ``dll/*``, see :func:`_unused_reason`.
+USER-REPORTED: "I didn't configure IBM, why is there a phi.dat and a dll/?".
 
 **Absolute paths are the other half of portability.** Every quoted value in
 ``input.in`` is a file path, and the GUI happily writes an absolute one for a
@@ -37,6 +45,15 @@ import re
 import shutil
 import tarfile
 from dataclasses import dataclass, field
+
+# run_case.sh + MANIFEST.txt are generated next door (this module was over the
+# GUI file-size budget). They are imported under their old private names so
+# every call site here reads as it did.
+from app.services.case_export_docs import (
+    GETPGRID_INPUT,
+    manifest_text as _manifest_text,
+    write_run_script as _write_run_script,
+)
 
 # Files a run PRODUCES. Only used to explain a skip in the manifest — the
 # copy decision is made by the allow-lists below, never by this list.
@@ -62,8 +79,18 @@ _DLL_KEEP = (set(), (".so", ".cc", ".cpp", ".c", ".h", ".hpp"))
 
 _SUBDIRS = ("grid", "work", "dll")
 
+# Files that travel under a different name. ``para.in`` says nothing about what
+# reads it, and there is a second para.in in this project (the STL3d stage), so
+# the copy is named after the program whose stdin it is. The rename lives here,
+# in the plan, so the manifest and run_case.sh cannot disagree about it.
+_RENAMES = {"grid/para.in": f"grid/{GETPGRID_INPUT}"}
+
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
 _QUOTED_RE = re.compile(r'"([^"]*)"')
+
+# The immersed solid is declared in input.in itself, which makes "does this run
+# read phi.dat?" a fact. Read off the file, so a hand-edited input.in is obeyed.
+_IMMERSED_RE = re.compile(r"^\s*immersed_solid\s+true\b", re.IGNORECASE | re.MULTILINE)
 
 
 class CaseExportError(Exception):
@@ -87,6 +114,7 @@ class ExportPlan:
     case_dir: str
     items: list = field(default_factory=list)         # ExportItem
     skipped_output: list = field(default_factory=list)   # (rel, size) produced files
+    skipped_unused: list = field(default_factory=list)   # (rel, size, why) not this run's
     skipped_other: list = field(default_factory=list)    # (rel, size) unrecognised
     rewrites: dict = field(default_factory=dict)      # input.in: raw -> portable
     warnings: list = field(default_factory=list)
@@ -136,12 +164,90 @@ def _keeps(name: str, keep) -> bool:
 # --------------------------------------------------------------------------- #
 # Planning
 # --------------------------------------------------------------------------- #
-def plan_export(case_dir: str, *, dll_src_dirs=(), include_restart: bool = True) -> ExportPlan:
-    """Decide what a portable copy of ``case_dir`` contains. Touches no files."""
+def _input_in_text(case_dir: str) -> str:
+    """``work/input.in`` as text, or "" when it cannot be read."""
+    try:
+        with open(os.path.join(case_dir, "work", "input.in"),
+                  encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _loaded_shared_objects(case_dir: str) -> set:
+    """Basenames of the ``*.so`` this run actually dlopens.
+
+    Every DLL reference is a quoted path: ``init_cond_use_zdump_fn`` /
+    ``SolidPhaseMotionDLL`` in ``input.in``, and a type-11 (user BC) row's
+    ``"./name.so"`` in the ``*.def`` staged next to it — so a BC DLL counts as
+    loaded even though ``input.in`` alone never mentions it.
+    """
+    text = _input_in_text(case_dir)
+    work = os.path.join(case_dir, "work")
+    try:
+        names = sorted(os.listdir(work))
+    except OSError:
+        names = []
+    for name in names:
+        if not name.endswith(".def"):
+            continue
+        try:
+            with open(os.path.join(work, name), encoding="utf-8",
+                      errors="replace") as f:
+                text += "\n" + f.read()
+        except OSError:
+            continue
+    return {os.path.basename(r.strip()) for r in _QUOTED_RE.findall(text)
+            if r.strip().endswith(".so")}
+
+
+def _unused_reason(sub: str, name: str, loaded_so: set, immersed: bool) -> str:
+    """Why an allow-listed file is no part of THIS run — "" when it is part of it.
+
+    ``work/phi.dat`` and everything in ``dll/`` are kept by NAME, and a reused case
+    directory (``prepare_case_dir`` writes in place) still holds both long after the
+    immersed-solid run that produced them: fossils presented as "input" that the
+    exported ``input.in`` never reads. That same ``input.in`` answers it — it
+    declares ``immersed_solid`` (the phase field's only reader is the init DLL, so
+    with neither a declaration nor a DLL nothing touches ``phi.dat``) and it names
+    every DLL it loads. A source travels with its own ``.so``
+    (``_add_dll_sources``); a header travels with whatever source ships, since it
+    is the rebuild that needs it.
+    """
+    if sub == "dll":
+        if name.endswith((".h", ".hpp")):
+            return ""
+        if f"{os.path.splitext(name)[0]}.so" not in loaded_so:
+            return ("nothing in work/input.in or the BC .def loads it — left "
+                    "over from an earlier run in this case directory")
+    elif sub == "work" and name == "phi.dat":
+        if not (immersed or loaded_so):
+            return ("immersed-solid phase field, but this run declares no "
+                    "immersed_solid and loads no DLL to read it — left over "
+                    "from an earlier run in this case directory")
+    return ""
+
+
+def plan_export(case_dir: str, *, dll_src_dirs=(),
+                include_restart: bool | str = "auto") -> ExportPlan:
+    """Decide what a portable copy of ``case_dir`` contains. Touches no files.
+
+    ``include_restart`` — True/False force the zone dump in or out; "auto" (the
+    default) ships it only when ``work/input.in`` names it, i.e. when the run
+    really is a restart. ``SolverConfig.generate_input_in`` writes
+    ``zdump_fn_restart`` only under ``restart``, so the reference is an exact
+    signal rather than a guess.
+    """
     if not os.path.isdir(case_dir):
         raise CaseExportError(f"Not a case directory: {case_dir}")
     plan = ExportPlan(case_dir=os.path.abspath(case_dir))
 
+    input_in = _input_in_text(case_dir)
+    referenced = {os.path.basename(r.strip())
+                  for r in _QUOTED_RE.findall(input_in)
+                  if r.strip()}
+    loaded_so = _loaded_shared_objects(case_dir)
+    immersed = _IMMERSED_RE.search(input_in) is not None
     keeps = {"grid": _GRID_KEEP, "work": _WORK_KEEP, "dll": _DLL_KEEP}
     found_any = False
     for sub in _SUBDIRS:
@@ -157,13 +263,26 @@ def plan_export(case_dir: str, *, dll_src_dirs=(), include_restart: bool = True)
             restart = _RESTART_RE.match(name) is not None
             if restart:
                 # The zone dump is an output that doubles as the input of a
-                # restart run — carried by request, never by the allow-list.
-                (plan.items.append(ExportItem(src, rel, "restart zone dump"))
-                 if include_restart else
+                # restart run — carried by request or by input.in, never by the
+                # allow-list.
+                by_ref = name in referenced
+                reason = ("restart zone dump — input.in restarts from it"
+                          if by_ref else "restart zone dump (asked for)")
+                wanted = include_restart is True or (
+                    include_restart == "auto" and by_ref)
+                (plan.items.append(ExportItem(src, rel, reason)) if wanted else
                  plan.skipped_output.append((rel, _size(src))))
                 continue
             if _keeps(name, keeps[sub]):
-                plan.items.append(ExportItem(src, rel, "input"))
+                why = _unused_reason(sub, name, loaded_so, immersed)
+                if why:
+                    plan.skipped_unused.append((rel, _size(src), why))
+                    continue
+                dest = _RENAMES.get(rel, rel)
+                plan.items.append(ExportItem(
+                    src, dest,
+                    f"input (renamed from {os.path.basename(rel)})"
+                    if dest != rel else "input"))
             elif _is_output(name):
                 plan.skipped_output.append((rel, _size(src)))
             else:
@@ -229,7 +348,10 @@ def _resolve_input_in(plan: ExportPlan) -> None:
         plan.warnings.append(f"could not read work/input.in: {e}")
         return
 
-    taken = {i.rel for i in plan.items}
+    # Destination names, plus the source names of anything that travels renamed:
+    # a reference to grid/para.in must not re-add the file the plan already
+    # carries as grid/getPGrid.in.
+    taken = {i.rel for i in plan.items} | set(_RENAMES)
     # Files the caller DELIBERATELY excluded (include_restart=False). "Referenced by
     # input.in" must not quietly overrule that: the restart dump is the largest file in
     # work/, and re-adding it also listed the same path under INCLUDED *and* under
@@ -302,7 +424,7 @@ def _check_completeness(plan: ExportPlan) -> None:
 # Writing
 # --------------------------------------------------------------------------- #
 def export_case(case_dir: str, dest_dir: str, *, dll_src_dirs=(),
-                include_restart: bool = True, make_tarball: bool = False,
+                include_restart: bool | str = "auto", make_tarball: bool = False,
                 solver_tag: str = ".run", log=_noop) -> dict:
     """Write a portable copy of ``case_dir`` into ``dest_dir``.
 
@@ -376,95 +498,3 @@ def _write_input_in(plan: ExportPlan, dest_dir: str) -> None:
         text = text.replace(f'"{raw}"', f'"{new}"')
     with open(target, "w", encoding="utf-8") as f:
         f.write(text)
-
-
-_RUN_SCRIPT = """#!/bin/sh
-# Run this case on this machine. Written by HybMesh2D's portable-case export.
-#
-#   ./run_case.sh              run the solver on the grid included here
-#   ./run_case.sh --regrid     rebuild <case>.grid/.bc from the STAR-CD inputs
-#                              first (needed when the included binary grid was
-#                              written by a different architecture)
-#
-# Binaries are NOT included. Put unicones / getPGrid on PATH, or point these at
-# them:  UNICONES=/path/to/unicones GETPGRID=/path/to/getPGrid ./run_case.sh
-set -e
-HERE=$(cd "$(dirname "$0")" && pwd)
-UNICONES=${UNICONES:-unicones}
-GETPGRID=${GETPGRID:-getPGrid}
-TAG=${TAG:-%(tag)s}
-
-if [ "$1" = "--regrid" ]; then
-    echo "[run_case] regenerating the grid with $GETPGRID"
-    cd "$HERE/grid" && "$GETPGRID" < para.in
-    cd "$HERE"
-fi
-
-%(dll_block)scd "$HERE/work"
-echo "[run_case] $UNICONES -t $TAG input.in"
-exec "$UNICONES" -t "$TAG" input.in
-"""
-
-# Substituted INTO _RUN_SCRIPT as a value, so its '%' is not a format spec and
-# must stay single (unlike the escapes in _RUN_SCRIPT itself).
-_DLL_BLOCK = """# Recompile the user DLL(s): a .so built elsewhere will not load here.
-if [ -n "$REBUILD_DLL" ]; then
-    for src in "$HERE"/dll/*.cc; do
-        [ -e "$src" ] || continue
-        echo "[run_case] g++ -shared $src"
-        g++ -D_INCLUDE_TEMPLATE_IMPLEMENTATION -fPIC -shared -O3 \\
-            -o "${src%.cc}.so" "$src"
-    done
-fi
-
-"""
-
-
-def _write_run_script(plan: ExportPlan, dest_dir: str, solver_tag: str) -> None:
-    has_dll = any(i.rel.startswith("dll/") for i in plan.items)
-    text = _RUN_SCRIPT % {"tag": solver_tag,
-                          "dll_block": _DLL_BLOCK if has_dll else ""}
-    path = os.path.join(dest_dir, "run_case.sh")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.chmod(path, 0o755)
-
-
-def _manifest_text(plan: ExportPlan, solver_tag: str) -> str:
-    L = [f"Portable solver case: {os.path.basename(plan.case_dir)}",
-         f"Exported from: {plan.case_dir}",
-         "",
-         "Run it:  ./run_case.sh          (unicones / getPGrid must be on PATH)",
-         "         ./run_case.sh --regrid (rebuild the grid from the STAR-CD inputs)",
-         "",
-         f"INCLUDED ({len(plan.items)} file(s), {human_size(plan.total_bytes)})",
-         "-" * 66]
-    for item in sorted(plan.items, key=lambda i: i.rel):
-        L.append(f"  {item.rel:<44} {human_size(_size(item.src)):>9}  {item.reason}")
-    if plan.rewrites:
-        L += ["", "PATHS REWRITTEN IN work/input.in (they pointed off this machine)",
-              "-" * 66]
-        for raw, new in sorted(plan.rewrites.items()):
-            L.append(f"  {raw}  ->  {new}")
-    if plan.skipped_output:
-        total = sum(s for _, s in plan.skipped_output)
-        L += ["", f"SKIPPED — produced by the run ({human_size(total)})", "-" * 66]
-        L += [f"  {r:<44} {human_size(s):>9}" for r, s in plan.skipped_output]
-    if plan.skipped_other:
-        L += ["", "SKIPPED — not recognised as a solver input; check whether the "
-              "run needs one", "-" * 66]
-        L += [f"  {r:<44} {human_size(s):>9}" for r, s in plan.skipped_other]
-    if plan.warnings:
-        L += ["", "WARNINGS", "-" * 66] + [f"  ! {w}" for w in plan.warnings]
-    L += ["", "NOTES",
-          "-" * 66,
-          "  * The solver binary is deliberately NOT included.",
-          "  * dll/*.so was built on the exporting machine. On a different "
-          "architecture,",
-          "    rebuild with:  REBUILD_DLL=1 ./run_case.sh",
-          "  * grid/*.grid is c_binary. If the solver rejects it, regenerate "
-          "with --regrid.",
-          f"  * Output is tagged '{solver_tag}' "
-          f"(work/xtecp_sol_allz.dat{solver_tag}).",
-          ""]
-    return "\n".join(L)

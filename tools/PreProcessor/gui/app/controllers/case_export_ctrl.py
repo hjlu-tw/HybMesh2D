@@ -69,6 +69,22 @@ class CaseExportControllerMixin:
             return
         target = target[:-7] if target.endswith(".tar.gz") else target
 
+        # The zone dump is by far the largest file in a case and it is an OUTPUT
+        # that only a RESTART run reads back, so the plan leaves it out unless
+        # input.in names it ("auto"). When it is being carried, say so with its
+        # size rather than letting a 100 MB package turn up unexplained.
+        include_restart = "auto"
+        dump = next((i for i in plan.items if i.reason.startswith("restart")), None)
+        if dump is not None:
+            include_restart = confirm(
+                win, "Export Case",
+                f"Include the restart snapshot {dump.rel} "
+                f"({case_export.human_size(os.path.getsize(dump.src))})?\n\n"
+                "work/input.in restarts from it, so the target needs it to "
+                "continue this run. Answer No to export the inputs only — the "
+                "case then starts from scratch there.",
+                headless_default=True)
+
         also_tar = confirm(
             win, "Export Case",
             "Also write a .tar.gz archive next to the folder?\n\n"
@@ -79,6 +95,7 @@ class CaseExportControllerMixin:
         try:
             summary = case_export.export_case(
                 case_dir, target, dll_src_dirs=(dll_src,),
+                include_restart=include_restart,
                 make_tarball=bool(also_tar), log=log)
         except case_export.CaseExportError as e:
             report_error(win, "Export Case", "Could not export the case.",
@@ -94,6 +111,12 @@ class CaseExportControllerMixin:
         log(f"[export] portable case '{name}' -> {summary['dest']}")
         for item in sorted(plan.items, key=lambda i: i.rel):
             log(f"[export]   {item.rel}")
+        # A file the case holds but this run does not use (a phi field / DLL left
+        # by an earlier immersed-solid run in the same case dir) is named here as
+        # well as in the manifest — that it is absent from the package should be
+        # visible where the user is already looking, not only on the far machine.
+        for rel, _size, why in plan.skipped_unused:
+            log(f"[export]   (not used by this run) {rel} — {why}")
         detail = "\n".join(
             [f"{summary['n_files']} file(s), "
              f"{case_export.human_size(summary['bytes'])}",

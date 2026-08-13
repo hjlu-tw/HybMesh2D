@@ -21,10 +21,20 @@ What is pinned here:
   3. Absolute paths in input.in are staged + rewritten; in-case relative ones are
      left exactly as they were.
   4. A reference to a file that does not exist warns instead of silently dropping.
-  5. The restart zone dump is opt-out, and named as an output when excluded.
-  6. run_case.sh is valid sh and runs the solver from work/.
+  5. The restart zone dump travels only when input.in restarts from it, and is
+     named as a skipped output otherwise.
+  6. run_case.sh is valid sh, runs the solver from work/, and hard-codes no
+     compiler.
   7. Refusing to export into the case itself (which would copy into the source).
   8. The tarball, and a manifest that accounts for every file.
+ 14. grid/para.in travels as grid/getPGrid.in, and run_case.sh reads THAT name.
+ 15. work/phi.dat and dll/* travel only when the run actually uses them: a reused
+     case directory keeps an earlier immersed-solid run's leftovers, and the
+     allow-list matches on NAME alone.
+
+USER-REPORTED (2026-08-12), all three in section 5/6/14: "rename grid/para.in to
+something obvious"; "why is work/binDumpZ.dat.gui in there?"; and "run_case.sh
+uses g++ — what if the other machine wants icpc? Don't hard-code it, suggest it."
 
 Run:  python3 tools/PreProcessor/tests/test_case_export.py
 """
@@ -66,7 +76,7 @@ from app.services import case_export  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 def build_case(root, *, with_outputs=True, abs_refs=True, restart_dump=True,
-               restart_ref=False):
+               restart_ref=False, dll_ref=True, immersed=False):
     """A case laid out exactly as solver_case.prepare_case_dir leaves one."""
     case = os.path.join(root, "mycase")
     for sub in ("grid", "work", "dll"):
@@ -101,8 +111,13 @@ def build_case(root, *, with_outputs=True, abs_refs=True, restart_dump=True,
     w("work/scratch.note", "?")          # neither input nor known output
 
     lines = ['   grid_fname  "../grid/mycase.grid"',
-             '   bc_fname    "../grid/mycase.bc"',
-             '   init_cond_use_zdump_fn  "../dll/user.so"']
+             '   bc_fname    "../grid/mycase.bc"']
+    # A DLL is loaded only when input.in names it, and phi.dat is read BY such a
+    # DLL — so a case with neither is one where both are fossils of an earlier run.
+    if dll_ref:
+        lines += ['   init_cond_use_zdump_fn  "../dll/user.so"']
+    if immersed:
+        lines += ['   immersed_solid                       true']
     if abs_refs:
         lines += [f'   probe_points_def_fn  "{probe}"',
                   '   zdump_fn_restart  "/nowhere/vanished.dat"']
@@ -114,7 +129,9 @@ def build_case(root, *, with_outputs=True, abs_refs=True, restart_dump=True,
 
 
 tmp = tempfile.mkdtemp(prefix="hybmesh_export_")
-case, dll_src, probe = build_case(tmp)
+# restart_ref: this case's input.in really does restart from the dump, which is
+# what makes the dump an INPUT of this run (see section 5).
+case, dll_src, probe = build_case(tmp, restart_ref=True)
 dest = os.path.join(tmp, "out")
 
 summary = case_export.export_case(case, dest, dll_src_dirs=(dll_src,),
@@ -134,7 +151,8 @@ check(all(on_disk(d) for d in ("grid", "work", "dll")),
       "1. the export has grid/ work/ dll/, the layout the solver expects")
 check(all(on_disk(*p.split("/")) for p in
           ("grid/mycase.grid", "grid/mycase.bc", "grid/mycase.bc.def",
-           "grid/input.vrt", "grid/input.cel", "grid/input.bnd", "grid/para.in",
+           "grid/input.vrt", "grid/input.cel", "grid/input.bnd",
+           "grid/getPGrid.in",
            "work/input.in", "work/mycase.bc.def", "work/phi.dat")),
       "1. every input travels: the grid+bc, the .def table, the getPGrid "
       "sources, input.in and the IBM phi field")
@@ -171,10 +189,29 @@ check('"/nowhere/vanished.dat"' in text,
       "4. ... and left verbatim, so the exported case fails the same way this "
       "one would rather than differently")
 
-# ── 5. the restart dump is opt-out ────────────────────────────────────────
+# ── 5. the restart dump travels only when the run restarts from it ────────
+# USER-REPORTED: "why is there a work/binDumpZ.dat.gui?" — it is an OUTPUT that a
+# restart run reads back, and it is the largest file in the case, so shipping it
+# unasked is how a 100 MB package appears with nothing to explain it.
 check(on_disk("work", "binDumpZ.dat.gui"),
-      "5. the restart zone dump ships by default (a restart run needs it as "
-      "an input)")
+      "5. the restart zone dump ships when input.in restarts from it — then it "
+      "IS an input of this run")
+check(any(i.rel.endswith("binDumpZ.dat.gui") and "input.in" in i.reason
+          for i in plan.items),
+      "5. ... and the manifest reason says WHY it is there, not just that it is")
+
+no_ref_case, no_ref_src, _ = build_case(os.path.join(tmp, "noref"),
+                                        restart_ref=False)
+auto = case_export.plan_export(no_ref_case, dll_src_dirs=(no_ref_src,))
+check(not auto.has("work/binDumpZ.dat.gui")
+      and any(r == "work/binDumpZ.dat.gui" for r, _ in auto.skipped_output),
+      "5. a case that does NOT restart leaves the dump behind by default, and "
+      "still names it in the skipped list rather than dropping it silently")
+forced = case_export.plan_export(no_ref_case, dll_src_dirs=(no_ref_src,),
+                                 include_restart=True)
+check(forced.has("work/binDumpZ.dat.gui"),
+      "5. include_restart=True still carries it — someone who wants to continue "
+      "the run over there can ask for it")
 no_dump = case_export.plan_export(case, dll_src_dirs=(dll_src,),
                                   include_restart=False)
 check(not no_dump.has("work/binDumpZ.dat.gui")
@@ -196,6 +233,17 @@ check("unicones" in body and not on_disk("work", "unicones"),
 check("REBUILD_DLL" in body,
       "6. it can recompile the DLL, because a .so built here will not load on "
       "a different architecture")
+
+# USER-REPORTED: "what if the other machine uses icpc? Don't hard-code it."
+check("CXX=${CXX:-g++}" in body and '"$CXX"' in body,
+      "6. the compiler is a DEFAULT, not a decision — CXX overrides it, which "
+      "is the name an HPC user already expects")
+check("CXXFLAGS" in body and "CXX=icpc" in body,
+      "6. ... and the script says so in its own comments, so the suggestion "
+      "arrives with the package instead of living in our heads")
+check(subprocess.run(
+          ["sh", "-c", f"CXX=echo REBUILD_DLL=1 sh -n {script}"]).returncode == 0,
+      "6. the script still parses with the compiler overridden")
 
 # ── 7. refuse to export into the case ─────────────────────────────────────
 refused = False
@@ -355,11 +403,80 @@ _skip = {rel for rel, _s in p_without.skipped_output}
 check(not (_inc & _skip),
       f"12. no path is listed as both INCLUDED and SKIPPED in one plan ({_inc & _skip})")
 
+# ── 14. para.in travels under a name that says what reads it ──────────────
+# USER-REPORTED: "grid/para.in — give it a more intuitive name." It is getPGrid's
+# stdin input, and there is a second para.in in this project (the STL3d stage),
+# so the copy is named after the program that consumes it. run_case.sh must feed
+# it that same name: a rename the script does not know about breaks --regrid.
+check(not on_disk("grid", "para.in"),
+      "14. the ambiguous para.in name does not reach the package")
+check(open(os.path.join(dest, "grid", "getPGrid.in")).read() == "grid/para.in",
+      "14. grid/getPGrid.in IS the case's para.in, byte for byte — only the "
+      "name changed")
+check(f"< {case_export.GETPGRID_INPUT}" in body,
+      f"14. run_case.sh --regrid feeds getPGrid the exported name "
+      f"({case_export.GETPGRID_INPUT}), not the one it had here")
+check("getPGrid.in" in manifest and "para.in" in manifest,
+      "14. the manifest records BOTH names, so the rename is auditable rather "
+      "than a file that mysteriously vanished")
+
+# ── 15. the allow-list also asks whether the RUN uses the file ────────────
+# USER-REPORTED (2026-08-12): "I didn't configure IBM — why is there a phi.dat and
+# a dll/ in the exported case?" Because prepare_case_dir reuses a case directory in
+# place: an earlier immersed-solid run left work/phi.dat and dll/*.so behind, they
+# pass the allow-list on NAME alone, and 730 KB of fossil was presented as "input".
+# input.in decides: it declares immersed_solid and names every DLL it loads.
+plain_case, plain_src, _ = build_case(os.path.join(tmp, "noibm"), dll_ref=False)
+p15 = case_export.plan_export(plain_case, dll_src_dirs=(plain_src,))
+unused = {rel: why for rel, _s, why in p15.skipped_unused}
+check(not p15.has("work/phi.dat") and not p15.has("dll/user.so"),
+      "15. a run whose input.in loads no DLL and declares no immersed solid "
+      "carries neither the phi field nor the DLL")
+check("work/phi.dat" in unused and "dll/user.so" in unused,
+      f"15. ...and both are NAMED as skipped-with-a-reason, so the absence is a "
+      f"line in the manifest rather than a silent difference ({sorted(unused)})")
+check(all("earlier run" in w for w in unused.values()),
+      f"15. ...the reason says what they actually are ({list(unused.values())})")
+check(not p15.has("dll/user.cc"),
+      "15. and the .cc is not fetched from dll_src for a .so that is not shipped")
+check(p15.has("work/input.in") and p15.has("grid/mycase.grid"),
+      "15. (control) the run's real inputs are unaffected")
+
+p15_dest = os.path.join(tmp, "noibm_out")
+case_export.export_case(plain_case, p15_dest, dll_src_dirs=(plain_src,))
+man15 = open(os.path.join(p15_dest, "MANIFEST.txt"), encoding="utf-8").read()
+check("not used by this run" in man15 and "phi.dat" in man15,
+      "15. the manifest has its own section for them — the far machine can tell "
+      "'left behind on purpose' from 'forgotten'")
+check(not os.path.exists(os.path.join(p15_dest, "dll")),
+      "15. dll/ is not even created when nothing in it belongs to the run")
+
+# The immersed solid is declared in input.in, so an IBM run that loads no DLL of
+# its own (a restart, say) still takes its phi field.
+ibm_case, ibm_src, _ = build_case(os.path.join(tmp, "ibm"), dll_ref=False,
+                                  immersed=True)
+p_ibm = case_export.plan_export(ibm_case, dll_src_dirs=(ibm_src,))
+check(p_ibm.has("work/phi.dat"),
+      "15. an input.in declaring immersed_solid keeps phi.dat even with no DLL "
+      "reference — the declaration is the authority, not a guess about IBM")
+
+# A type-11 (user BC) DLL is named by the BC .def, never by input.in.
+bc_case, bc_src, _ = build_case(os.path.join(tmp, "bcdll"), dll_ref=False)
+with open(os.path.join(bc_case, "work", "mycase.bc.def"), "w") as f:
+    f.write('3  11  "./user.so"\n')
+p_bc = case_export.plan_export(bc_case, dll_src_dirs=(bc_src,))
+check(p_bc.has("dll/user.so"),
+      "15. a DLL named only by the type-11 BC .def row still ships — 'loaded' "
+      "means loaded by the case, not mentioned in input.in")
+
 # ── 13. every write is explicitly UTF-8 ───────────────────────────────────
 # MANIFEST.txt embeds the case path verbatim and the UI ships a zh_TW translation, so a
 # platform-default encoding fails on a non-ASCII path AFTER every file has been copied.
-src_txt = open(os.path.join(_GUI, "app", "services", "case_export.py"),
-               encoding="utf-8").read()
+# Both halves of the service: the selection (case_export) and the two generated
+# documents (case_export_docs), which is where two of the three writes live.
+src_txt = "".join(
+    open(os.path.join(_GUI, "app", "services", mod), encoding="utf-8").read()
+    for mod in ("case_export.py", "case_export_docs.py"))
 check('"w") as f:' not in src_txt and src_txt.count('"w", encoding="utf-8"') == 3,
       "13. all three writes (manifest, run script, rewritten input.in) name UTF-8, like "
       "every read in the module already does")

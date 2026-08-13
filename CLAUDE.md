@@ -200,9 +200,15 @@ Rules:
 **Pop-up stacking** (`app/popup_stack.py`, re-exported from `app/utils.py`): every
 modeless pop-up goes through `keep_on_top(w)` **before** `show()`, which re-parents it to
 the **top-level** window, leaves it an ordinary normal-level `Qt.Dialog`, and installs the
-two filters that put it back on top — `_PopupRaiser` (on the main window, for every
-activation) and `_ShowRaiser` (on the pop-up, so a call site that only `show()`s is
-covered). Both shortcuts on the window LEVEL are wrong and were each shipped once:
+three filters that put it back on top — `_PopupRaiser` (on the main window, for every
+activation), `_ClickRaiser` (on the **QApplication**, for every mouse RELEASE) and
+`_ShowRaiser` (on the pop-up, so a call site that only `show()`s is covered).
+Activation alone is not enough and that is not a detail: it fires on the FIRST click of
+the main window only, so every click after it reorders the window in front of the pop-up
+with no Qt event to hear, and a raise deferred into the middle of a canvas *drag* is
+undone when the drag ends. Releasing is the moment the platform has finished reordering.
+The app-wide filter returns on its first line for anything that is not a release, and
+`raise_later` keeps at most one raise in flight per widget. Both shortcuts on the window LEVEL are wrong and were each shipped once:
 `WindowStaysOnTopHint` floats the pop-up above **every** application (intrusive), and
 `Qt.Tool` — an NSPanel with `hidesOnDeactivate` — makes the pop-up **disappear** the
 moment the user clicks another app while the main window stays visible (measured on
@@ -219,13 +225,40 @@ and a pop-up parented to a panel is hidden with that panel. Gated by
 must be free to sit behind the main window).
 
 **Duplicate/transform closure**: `transform_apply_ctrl` is type-preserving (a line stays a
-line…), and the copy inherits the source's `closed` flag — except in the polygon-bake
-fallback (arcs, formula curves, discrete file edges), where the flag is *re-derived from
-the points* by `_baked_edge_is_closed`. `SegmentModel.closed` defaults True and is only
+line, an **arc stays an arc**…), and the copy inherits the source's `closed` flag — except
+in the polygon-bake fallback (formula curves, discrete file edges, and a circle/arc under
+a NON-uniform scale, which is an ellipse the model cannot hold), where the flag is
+*re-derived from the points* by `_baked_edge_is_closed`. The arc's image is read off three
+TRANSFORMED POINTS — centre, arc start, quarter-sweep point — so one code path serves
+every similarity transform and a mirror's reversed sweep (`theta1 < theta0`, which both
+samplers walk) comes out of the geometry rather than a per-transform sign rule; the
+quarter point rather than the midpoint, because `sin(sweep/2)` vanishes at exactly
+|sweep| = 2π. Whatever still bakes is NAMED in the log with the reason. `SegmentModel.closed` defaults True and is only
 ever read for `curve_type == "polygon"`, so every other kind of edge carries True while
 drawing open; copying that flag onto a baked polygon is what silently closed a duplicated
 arc. Discrete edges must not take the PROJECT's closure either — one segment of a closed
 imported outline is itself an open polyline. Gated by `tests/test_transform_closure.py`.
+
+**The discrete geometry is ONE polyline, and both ends of that have to be handled.**
+A session stores every discrete point in `original_points`, indexed by `split_indices`
+into file segments, and the canvas draws it as a single pyqtgraph item.
+- **Baking order matters.** `BakeCurveToGeometryCmd` welds a converted edge onto
+  whichever END of the polyline it touches, so an edge touching neither lands as a
+  separate piece. `bake_selected_curve` therefore chains a multi-edge selection with
+  `_chain_edges` (the same one Join uses) and bakes head-to-tail as ONE undo step
+  (`BakeCurvesToGeometryCmd`) — the selection is index-sorted, so the DRAWING order,
+  which the user cannot fix by clicking differently, was deciding the result.
+- **Where the polyline must NOT join comes from the model.** `_geometry_connect`
+  (in `segment_canvas_ctrl`) breaks it at any index interval covered by no file
+  segment — `update_file_segments_from_indices` already drops the bridging pair —
+  and passes that as pyqtgraph's `connect` array. Without it two disjoint pieces are
+  drawn joined: a "diagonal" that belongs to no edge and cannot be selected away.
+  Deliberately not a spacing heuristic, which would also break a long straight edge
+  beside a finely sampled arc.
+- **An empty model still has to be drawn.** `_apply_geometry_update` returns early
+  when `original_points is None`, so `_clear_geometry_canvas` does the wiping —
+  layer, hit-test points, split markers, closing edge, stats — but never the
+  analytic (curve) items, which a session can legitimately have on their own.
 
 **Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless. `restore_ui_state` only walks `sidebar_stack`, so a **dialog's** accordion persists itself through `save_section_states(scope, sections)` / `restore_section_states(...)` with an explicit scope string.
 
@@ -261,18 +294,22 @@ byte range instead of `readlines()`-ing the whole file and rescanning it — 0.3
 → 0.07 s per frame on a 113 MB / 10-zone run, which is what makes playback
 affordable at all. `models/result_series.py` adds the bounded (by BYTES, not
 frame count) LRU frame cache and the per-variable global range.
-`views/result_playback_mixin.py` owns the transport (Play/Pause, Prev, Next,
-speed, Loop). **Looping is opt-in**: by default a run plays through once and stops
-on the last frame (the converged solution), and the same checkbox governs the step
-buttons, which clamp at the ends — and grey themselves out there — instead of
-wrapping to the far end of the run. Play at the end of a finished non-looping run
-rewinds first. Two further rules decide whether the animation is readable:
-- **The colour scale is pinned across the whole run**, because auto-scaling each
-  frame to its own min/max repaints the same colours onto a changing range — a
-  vorticity field decaying 0.089 → 0.019 looks *identical* frame to frame. The
-  first use of any transport control scans all frames for the current variable
-  (cached, so it is paid once) and pins that range. A **manual** clim always
-  wins: the lock fixes auto-scaling, it does not overrule an explicit choice, and
+`views/result_playback_mixin.py` owns the transport (First, Prev, Play/Pause,
+Next, Last, speed, Loop, Lock scale). **Looping is opt-in**: by default a run plays
+through once and stops on the last frame (the converged solution), and the same
+checkbox governs the step buttons, which clamp at the ends — and grey themselves
+out there — instead of wrapping to the far end of the run. Play at the end of a
+finished non-looping run rewinds first. First/Last are jumps rather than steps, so
+Loop does not apply to them; they grey out only on the frame they lead to. Two
+further rules decide whether the animation is readable:
+- **The colour scale can be pinned across the whole run** ("Lock scale", shown only
+  for a multi-zone result), because auto-scaling each frame to its own min/max
+  repaints the same colours onto a changing range — a vorticity field decaying
+  0.089 → 0.019 looks *identical* frame to frame. Ticking it scans all frames for
+  the current variable (cached, so it is paid once) and pins that range.
+  **It is OFF by default (USER-REQUESTED)**: "Auto (fit to data)" has to mean the
+  data on screen, i.e. the frame being shown. A **manual** clim always wins over
+  both: the lock fixes auto-scaling, it does not overrule an explicit choice, and
   it is dropped when the displayed variable changes.
 - **`set_result` reuses the triangulation when the incoming frame has the same
   nodes**, which also keeps probes/line/extrema alive across a step (they mark
@@ -305,15 +342,57 @@ BC detection resolves the .bnd the RUN will use (auto-link wins in
 or the table describes one grid while the solver reads another. Gated by
 `tests/test_mesh_bc_audit.py`.
 
-**Portable case export** (`services/case_export.py`, Qt-free; Solver toolbar
-"Export Case ⇪" + Solver menu): copies a case's INPUTS into a folder that reruns
-on another machine — `grid/` (mesh + `.def` + the getPGrid sources), `work/`
-(`input.in`, `.def`, `phi.dat`, restart dump), `dll/` (`.so` **and** the `.cc` it
+**A re-save of the geometry must not throw the Mesh-stage edits away**
+(`meta_io.snapshot_seg_edits` / `restore_seg_edits`): both halves of a per-segment
+BC live in the `.meta` — the **label** in the NSEGMENTS bc column, the label→type
+map in the trailer — and the resampler REWRITES that sidecar from the CAD config
+on every save. It carries the trailer through verbatim but the bc column comes
+back `-` and the v3 grow column comes back 1, so a CAD tweak + Save leaves the map
+pointing at labels nothing carries: the mesher warns
+(`NO boundary segment carries any of the … GROUP_BC label(s)`), every patch
+exports as `wall`, and the GUI still shows the BCs it holds in memory. USER-REPORTED
+(2026-08-12) as "I set the BCs in Edit Seg BC, why `no boundary patch named inlet,
+outlet`?". The fix is in the CALLER, not the resampler — which stopped preserving
+the prior sidecar itself on purpose, because a NEW geometry written over an existing
+output name then inherited the old geometry's flags (`src/main.cpp`). Only the
+caller knows the file it is overwriting is the same geometry: `save_output`
+snapshots **only when `project_model.output_file` already is that path**,
+`_pipe_resample` / `_run_resample` because the path is the session's / script's own.
+Two rules keep the restore honest: it is **refused when the segment id set changed**
+(a label is bound to a segment by id, so after an edge is added or removed
+re-applying by id would move the inlet onto another piece of wall) and reported as
+dropped instead; and every restore is **named in the log** by BC type, since a
+silent restore of the wrong thing beats nothing at all. Gated by
+`tests/test_seg_edit_carryover.py`, which drives the real `surface_resampler` so
+the wipe it compensates for cannot quietly stop happening.
+
+**Portable case export** (`services/case_export.py` + `case_export_docs.py`, both
+Qt-free; Solver toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into
+a folder that reruns on another machine — `grid/` (mesh + `.def` + the getPGrid
+sources, whose `para.in` travels as **`getPGrid.in`**: `_RENAMES` owns that mapping
+so `run_case.sh --regrid` and the manifest cannot disagree), `work/` (`input.in`,
+`.def`, `phi.dat`, and the restart dump **only when `input.in` restarts from it** —
+`include_restart="auto"`, since `binDump*` is an output that only a restart run
+reads back and is the largest file in the case), `dll/` (`.so` **and** the `.cc` it
 was compiled from, pulled from `results/solver/dll_src` by basename), plus
-`run_case.sh` and `MANIFEST.txt`. Selection is an **allow-list**, so a new output
+`run_case.sh` and `MANIFEST.txt`. `run_case.sh` **suggests** a compiler rather than
+choosing one (`CXX=${CXX:-g++}`, `CXXFLAGS`) — the package is for someone else's
+machine, which may build with icpc. Selection is an **allow-list**, so a new output
 file can never sneak in, and everything rejected is NAMED in the manifest (split
-into known-output vs unrecognised) — a skipped input is a visible line, not a
-surprise on the far machine. **Every quoted value in `input.in` is a file path**
+into known-output, not-used-by-this-run and unrecognised) — a skipped input is a
+visible line, not a surprise on the far machine. **The allow-list matches on NAME,
+so `work/phi.dat` and `dll/*` also have to ask whether the RUN uses them**
+(`_unused_reason`): `prepare_case_dir` reuses a case directory in place, so a case
+that once ran an immersed solid still holds both after being re-run without one —
+USER-REPORTED (2026-08-12) as "I didn't configure IBM, why is there a phi.dat and a
+dll/?". `input.in` decides, being the file the far machine actually runs: it
+declares `immersed_solid` and it names every DLL it dlopens by quoted path (plus a
+type-11 BC row in `work/*.def`, which is the one DLL `input.in` never mentions).
+A `.so` that no longer travels also stops pulling its `.cc` out of `dll_src`.
+`solver_case.report_stale_ibm_artifacts` names the same leftover at case-prep time
+and never deletes it — with immersed solid ON but no phi field chosen, the init DLL
+reads `phi.dat` by that fixed name, so the previous geometry's solid would converge
+to a believable answer for the wrong shape. **Every quoted value in `input.in` is a file path**
 (see `SolverConfig.generate_input_in`), and the GUI writes absolute ones for any
 file the user browsed to; those are staged into `work/` and rewritten to
 `./<name>`, which is the other half of portability. The solver binary is

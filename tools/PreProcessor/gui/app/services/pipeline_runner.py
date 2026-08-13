@@ -16,7 +16,7 @@ import subprocess
 import threading
 
 from app.models.pipeline_config import PipelineConfig
-from app.services import solver_case, stl3d_case
+from app.services import meta_io, solver_case, stl3d_case
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.utils import (
     find_binary_executable, find_solver_executables, repo_root,
@@ -125,6 +125,13 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
     if not pm.input_file or not os.path.exists(pm.input_file):
         raise PipelineError(f"CAD input geometry not found: {pm.input_file!r}")
 
+    # The resampler rewrites <out>.meta from the CAD config, which resets the
+    # MESH-stage per-segment edits (BC label, No BL) — so a script re-run would
+    # mesh with every patch on the wall default. Carry them across exactly as the
+    # GUI's Save does; the output path is the script's own, so the .meta being
+    # snapshotted describes this same geometry (meta_io.restore_seg_edits).
+    snap = meta_io.snapshot_seg_edits(cad_out) if os.path.exists(cad_out) else None
+
     # Create the temp config inside the try so its removal is guaranteed even if
     # creation or export raises before we'd otherwise reach a guard.
     cfg_path = ""
@@ -142,6 +149,9 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
     if not os.path.exists(cad_out):
         raise PipelineError(f"resampler produced no output at {cad_out}")
     log(f"[CAD] resampled -> {cad_out}")
+    for line in meta_io.describe_seg_edit_restore(
+            meta_io.restore_seg_edits(cad_out, snap), (snap or {}).get("group_bc")):
+        log(f"[CAD] {line}")
     return cad_out
 
 

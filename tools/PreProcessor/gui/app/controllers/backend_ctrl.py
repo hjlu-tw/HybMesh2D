@@ -9,6 +9,7 @@ from app.workers.backend_run import BackendWorker
 from app.workers.exit_codes import describe
 from app.views.output_dialog import OutputDialog
 from app.services.geometry_service import load_points_dat, GeometryService
+from app.services import meta_io
 
 from app.utils import find_binary_executable, repo_root
 
@@ -286,13 +287,21 @@ class BackendControllerMixin:
             return
 
         out_path = dlg.output_path
+        # The resampler rewrites <out>.meta from the CAD config, resetting the
+        # MESH-stage per-segment edits (BC label, No BL). Snapshot them so the save
+        # puts them back — ONLY when this session already owns that output file, so a
+        # NEW geometry saved over an existing name inherits nothing (see meta_io).
+        prior = session.project_model.output_file
+        snap = (meta_io.snapshot_seg_edits(out_path)
+                if prior and os.path.abspath(prior) == os.path.abspath(out_path)
+                else None)
         session.project_model.output_file = out_path
         cfg_path, created_files = self._write_temp_config(session, out_path)
 
         self.main_window.log_panel.log("--- Save: Starting Backend ---")
         self._run_backend(exe, cfg_path, session,
                           on_finish=lambda rc: self._on_save_finished(
-                              rc, out_path, created_files, session))
+                              rc, out_path, created_files, session, snap))
 
     def generate_json(self):
         session = self.active_session()
@@ -437,12 +446,19 @@ class BackendControllerMixin:
                     self.main_window.log_panel.log(f"Failed to delete temp file {path}: {e}")
 
     def _on_save_finished(self, rc: int, out_path: str, to_cleanup: list[str],
-                          session: GeometrySession):
+                          session: GeometrySession, seg_edits: dict | None = None):
         # UI state is restored by _on_backend_finished_ui (connected first).
         try:
             if rc == 0:
                 self.main_window.log_panel.log(
                     f"--- Saved to: {out_path} ---")
+                # Put the Mesh-stage per-segment edits back onto the .meta the
+                # resampler just rewrote (meta_io.restore_seg_edits) — before any
+                # early return, and whether or not the session is still open.
+                for line in meta_io.describe_seg_edit_restore(
+                        meta_io.restore_seg_edits(out_path, seg_edits),
+                        (seg_edits or {}).get("group_bc")):
+                    self.main_window.log_panel.log(line)
                 if os.path.exists(out_path):
                     try:
                         pts = load_points_dat(out_path)

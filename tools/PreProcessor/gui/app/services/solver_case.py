@@ -135,6 +135,38 @@ def stage_phi_file(src: str, work_dir: str, log=_noop) -> None:
     log(f"[IBM] phi field -> {os.path.basename(dst)}")
 
 
+def report_stale_ibm_artifacts(cfg: SolverConfig, work_dir: str,
+                               log=_noop) -> None:
+    """Name a ``work/phi.dat`` this run did not stage, so it cannot pass for one.
+
+    A case directory is reused in place (``overwrite=True``), and ``phi.dat`` is
+    only ever WRITTEN here by :func:`stage_phi_file`. So an existing one after a
+    run that staged nothing is the previous run's field, and it is invisible: no
+    log line mentions it and it sits next to this run's real inputs. Two ways
+    that matters, one harmless and one not:
+
+    * immersed solid OFF — nothing reads it (the export lists it as unused), but
+      it still looks like an input to whoever browses the case.
+    * immersed solid ON with no phi field chosen — the init DLL reads ``phi.dat``
+      by that fixed name, so the run silently uses the OLD geometry's solid and
+      converges to a believable answer for the wrong shape.
+
+    Reporting only; nothing is deleted, because a phi field is expensive to
+    regenerate and the user may well mean to reuse it.
+    """
+    phi = os.path.join(work_dir, "phi.dat")
+    if not os.path.exists(phi):
+        return
+    if cfg.immersed_solid and not cfg.ibm_phi_file:
+        log("[WARNING] immersed solid is ON but no phi field was given: the run "
+            "will use the work/phi.dat already in this case directory (from an "
+            "earlier run). Check it matches this geometry.")
+    elif not cfg.immersed_solid:
+        log("[IBM] work/phi.dat is left over from an earlier immersed-solid run "
+            "in this case directory; this run does not read it (and Export Case "
+            "leaves it out).")
+
+
 def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
                            log=_noop) -> None:
     """Stage getPGrid's boundary-condition table so the solver finds it in its
@@ -210,6 +242,9 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False):
                                    rel_prefix="../dll", log=log)
         if cfg.ibm_phi_file:
             stage_phi_file(cfg.ibm_phi_file, work_dir, log)
+    # A phi field this run did not stage belongs to an earlier one: say so rather
+    # than leave it sitting among the inputs (see report_stale_ibm_artifacts).
+    report_stale_ibm_artifacts(cfg, work_dir, log)
 
     # Solver boundary-condition table. The solver reads "<bc>.def" from its cwd;
     # by default it uses getPGrid's own companion verbatim (copied by the runner).
