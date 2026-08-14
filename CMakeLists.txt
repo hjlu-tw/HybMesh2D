@@ -181,6 +181,17 @@ add_executable(surface_resampler
 target_include_directories(surface_resampler PRIVATE tools/PreProcessor/include)
 target_link_libraries(surface_resampler HybMeshUtils)
 
+# 5b. C++ 單元測試 (ctest)
+# 預設 ON 是刻意的：如果預設建置不含測試，`run_all.sh` 的 ctest 掛鉤就會對絕大
+# 多數人靜默 skip，而「可連結的 seam」又退回成理論上存在。多編幾個小 TU 的成本
+# 可以忽略。CI 的 build job 直接跑 `ctest --test-dir build`（test job 只下載
+# binary、沒有 build tree，跑不了 ctest）。
+option(HYBMESH_BUILD_TESTS "Build the C++ unit tests (ctest)" ON)
+enable_testing()
+if(HYBMESH_BUILD_TESTS)
+    add_subdirectory(tests/cpp)
+endif()
+
 # 6. 輸出目錄設置
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 

@@ -75,6 +75,12 @@ HybMesh2D is a C++ tool for generating 2D hybrid meshes (boundary layer quads + 
 ```
 Outputs: `./build/HybMesh2D` and `./build/surface_resampler`
 
+**Run the C++ unit tests:**
+```bash
+ctest --test-dir build --output-on-failure
+```
+Registered by `tests/cpp/CMakeLists.txt` and built by default (`HYBMESH_BUILD_TESTS=ON` — off by default would mean the ctest hook silently skips for almost everyone, and a seam nobody exercises is theoretical). `bash tools/PreProcessor/tests/run_all.sh` runs them too, counted into its total, self-skipping when there is no build tree — so that stays the ONE command a developer runs.
+
 **Run main mesh generator:**
 ```bash
 ./run.sh -conf config/Background_para.dat -geom examples/geometries/naca0012.dat
@@ -199,6 +205,28 @@ definition left on `HybMesh2D` would apply to the shim alone and silently degrad
 every banner and sidecar to `git unknown`), and the **CGNS-before-Gmsh link order**
 is `PUBLIC` on the library so it propagates unchanged to everything that links it —
 that ordering is load bearing (see the `cgsize_t` note in `CMakeLists.txt`).
+
+**The tests live in `tests/cpp/`** — one executable per file, registered with ctest,
+`check.hpp` for assertions (**record-and-continue**, not abort-on-first: ctest runs one
+executable per file, so seeing every failing case from a single CI run beats bisecting
+them, and `report()` reprints the FIRST failure last so the cause is not buried under
+its consequences). A test **links a library target, never a list of sources** —
+compiling `src/*.cpp` into a test executable works and quietly reintroduces what the
+seam removed: a second build of the implementation, testable but not the one the binary
+runs. `tests/test_cpp_linkable_seam.py` gates all of it, because this property decays
+in silence — adding a `.cpp` to `add_executable` builds and runs perfectly well, and
+the loss surfaces only as a test nobody can write. Its seven checks go past "the shim
+is the only source", because that alone has holes and each hole *looks* satisfied:
+`#include "cli.cpp"` links fine and puts the implementation where no library holds it;
+a test listing `../../src/Mesh.cpp` recompiles the implementation; a new
+`add_executable` becomes a second home for logic; a `tests/cpp/test_*.cpp` that CMake
+never registered passes by never running. All four were verified by injection, and the
+two blind spots that remain are named in the test's own docstring rather than papered
+over. One caveat on the neighbouring instrument: `golden_mesh.py` does **not** compare
+the `.bnd` `segm_no` column, so a defect confined to a boundary edge's source-segment
+key is invisible to it — measured, by mutating `recordBoundaryEdge` to write the
+segment key before the overwrite refusal: the C++ unit test caught it in 0.5 s while
+all 68 other tests and the 9-case golden set passed.
 
 - **`main.cpp`**: HybMesh2D's entry point and deliberately nothing else — see above.
 - **`cli.cpp`**: The whole command line (`hybmesh::runCli`); parses config, loads geometries, runs collision checks, orchestrates BL + Gmsh pipeline. **`OUTPUT_FILENAME` may end in the GUI's `.*` all-formats placeholder, which is a wildcard and not an extension** — stripped once, before `validate()`/`print()`, so the banner, the provenance sidecar and every writer share one basename. Taking it literally wrote the VTK into a file *named* `mesh_<case>.*` (the export block's `extPos()` finds that dot, so `.vtk` was never appended), and before `stripExt` it did the same to STAR-CD — which is where the `results/meshes/cartesian/mesh_cartesian.*.vrt` files on disk came from. See "The Output field's `.*`" below.

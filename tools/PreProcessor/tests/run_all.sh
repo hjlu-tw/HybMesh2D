@@ -32,6 +32,33 @@ for t in "${scripts[@]}"; do
         failed+=("$t")
     fi
 done
+# The C++ unit tests (ctest). They live in the build tree, so this self-skips
+# when there is none — the same convention the binary-dependent Python tests use,
+# which is what keeps `run_all.sh` the ONE command a developer runs while still
+# counting the C++ side into the total. Each registered test is invoked through
+# ctest rather than by running the executable directly: going around the
+# registration would let a test that CMake never registered pass silently, which
+# is exactly what test_cpp_linkable_seam.py check 6 exists to prevent.
+BUILD_DIR="$(cd ../../.. && pwd)/build"
+if [ -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
+    while read -r t; do
+        [ -n "$t" ] || continue
+        if ctest --test-dir "$BUILD_DIR" -R "^${t}\$" --output-on-failure \
+                >/tmp/hybmesh_test.$$.log 2>&1; then
+            echo "PASS  $t (C++)"
+            pass=$((pass + 1))
+        else
+            echo "FAIL  $t (C++)"
+            sed 's/^/    | /' /tmp/hybmesh_test.$$.log | tail -20
+            fail=$((fail + 1))
+            failed+=("$t (C++)")
+        fi
+    done < <(ctest --test-dir "$BUILD_DIR" -N 2>/dev/null |
+             sed -n 's/^ *Test *#[0-9]*: *//p')
+else
+    echo "SKIP  C++ unit tests (no build tree at $BUILD_DIR — run ./build.sh)"
+fi
+
 rm -f /tmp/hybmesh_test.$$.log
 echo "-------------------------------------------"
 echo "TOTAL: $((pass + fail))   PASS: $pass   FAIL: $fail"
