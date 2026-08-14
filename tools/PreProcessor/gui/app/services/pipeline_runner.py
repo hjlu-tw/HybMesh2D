@@ -15,6 +15,7 @@ import tempfile
 import subprocess
 import threading
 
+from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import case_sources, meta_io, solver_case, stl3d_case
 from app.services.logging_setup import get_logger
@@ -161,6 +162,31 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
 # --------------------------------------------------------------------------- #
 # Stage 2: mesh generation (HybMesh2D)
 # --------------------------------------------------------------------------- #
+def _mesh_output_path(mc: MeshConfig, script_name: str, repo: str) -> str:
+    """The absolute ``.vtk`` path this stage will make the mesher write.
+
+    Pinned rather than discovered, so we know exactly where the VTK — and the
+    sibling STAR-CD ``.vrt``/``.cel``/``.bnd`` — land. Two things it has to get
+    right:
+
+    * an **empty** name is auto-named after the FIRST boundary geometry (the
+      primary body), or after the script when there is none: with several
+      geometries in play ``geom_files[0]`` is the choice a re-run reproduces;
+    * a name carrying the GUI Output field's ``.*`` all-formats placeholder (it
+      travels verbatim in a workspace / pipeline script) resolves to the real
+      ``.vtk``. The mesher would otherwise write a file literally NAMED
+      ``<case>.*`` — which the caller's existence check then accepted, so the
+      pipeline "succeeded" and handed the contour stage a glob.
+    """
+    name = mc.output_filename
+    if not name:
+        primary = mc.geom_files[0] if mc.geom_files else ""
+        stem = os.path.splitext(os.path.basename(primary))[0] if primary else script_name
+        name = os.path.join(repo, "results", "meshes", f"mesh_{stem}.vtk")
+    name = MeshConfig.output_path_for(name, ".vtk")
+    return name if os.path.isabs(name) else os.path.abspath(os.path.join(repo, name))
+
+
 def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
               need_starcd: bool, log, on_process=None) -> str:
     exe = find_binary_executable("HybMesh2D")
@@ -171,17 +197,7 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     mc.export_vtk = True
     if need_starcd:
         mc.export_starcd = True
-    # Pin a deterministic output path so we know exactly where the VTK (and the
-    # sibling STAR-CD .vrt/.cel/.bnd) land.
-    if not mc.output_filename:
-        # Name the mesh after the FIRST boundary geometry (the primary body), or
-        # after the script when there is none — with several geometries in play,
-        # mc.geom_files[0] is the stable choice a re-run reproduces.
-        primary = mc.geom_files[0] if mc.geom_files else ""
-        stem = os.path.splitext(os.path.basename(primary))[0] if primary else pcfg.name
-        mc.output_filename = os.path.join(repo, "results", "meshes", f"mesh_{stem}.vtk")
-    vtk = mc.output_filename if os.path.isabs(mc.output_filename) \
-        else os.path.abspath(os.path.join(repo, mc.output_filename))
+    vtk = _mesh_output_path(mc, pcfg.name, repo)
     mc.output_filename = vtk
     os.makedirs(os.path.dirname(vtk), exist_ok=True)
 

@@ -299,12 +299,13 @@ class MeshConfigConfigMixin:
         # Suggested name from BOUNDARY geometries only (seeds share geom_files
         # but shouldn't drive the name).
         # Suggested name is per-case (results/meshes/<case>/mesh_<case>.*) so
-        # each geometry set exports into its own subfolder. The ".*" extension
-        # is a placeholder the export code swaps per format.
+        # each geometry set exports into its own subfolder. FORMAT_PLACEHOLDER is
+        # not an extension — this field is where it enters the model, and every
+        # consumer resolves it through MeshConfig.output_base / output_path_for.
         boundaries = cfg.boundary_files
         default_name = MeshConfig.auto_output_name(
             [] if (not cfg.geom_files or len(boundaries) == 0) else boundaries,
-            ext=".*",
+            ext=MeshConfig.FORMAT_PLACEHOLDER,
         )
         # An auto-generated name is refreshed to match the current geometry so
         # switching geometries changes the export name; a name the user typed

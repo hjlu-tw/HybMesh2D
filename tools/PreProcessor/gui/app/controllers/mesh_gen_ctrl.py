@@ -302,7 +302,10 @@ class MeshGenControllerMixin:
         # not count (matches HybMesh2D, which names from geomFiles alone).
         boundaries = cfg.boundary_files
         if cfg.output_filename:
-            path = cfg.output_filename
+            # A .vtk path, as the name promises: the Output field may hold the
+            # ".*" all-formats placeholder, and callers here go on to test this
+            # path for existence or hand it to the mesh stats panel as a file.
+            path = MeshConfig.output_path_for(cfg.output_filename, ".vtk")
         elif not cfg.geom_files or len(boundaries) == 0:
             path = MeshConfig.auto_output_name([])
         else:

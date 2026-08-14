@@ -70,10 +70,9 @@ class MeshExportControllerMixin:
 
         user_filename = self._current_output_filename()
         if user_filename:
-            if user_filename.endswith(".*"):
-                user_filename = user_filename[:-2] + ext
-            else:
-                user_filename = os.path.splitext(user_filename)[0] + ext
+            # One resolver for the Output field's ".*" placeholder (MeshConfig.
+            # output_base) — this used to be the only place that understood it.
+            user_filename = MeshConfig.output_path_for(user_filename, ext)
             if not os.path.isabs(user_filename):
                 default_path = os.path.abspath(os.path.join(root_dir, user_filename))
             else:

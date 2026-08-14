@@ -534,6 +534,20 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // ".*" is the GUI's "whichever formats are enabled" placeholder — its Output
+    // field shows results/meshes/<case>/mesh_<case>.* — and it reaches us verbatim
+    // through a saved config, a pipeline script or -out_name. It is a WILDCARD, not
+    // an extension: extPos() below finds that dot, so ".vtk" was never appended and
+    // the VTK was written into a file literally NAMED "mesh_<case>.*" (and, before
+    // stripExt existed, a "mesh_<case>.*.vrt" STAR-CD set beside it — those files
+    // are still findable on disk). Stripped once here, before validate()/print(),
+    // so the banner, the provenance sidecar and every writer share one basename.
+    // An empty remainder falls through to the auto-generated name below.
+    if (config.outputFilename.size() >= 2 &&
+        config.outputFilename.compare(config.outputFilename.size() - 2, 2, ".*") == 0) {
+        config.outputFilename.erase(config.outputFilename.size() - 2);
+    }
+
     // Validate/clamp config ranges after the config load + all CLI overrides.
     // A contradiction that cannot be clamped (empty domain span) is fatal.
     if (!config.validate()) {

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 # and the to_dict/load_from_dict references below keep working; the canonical
 # definition lives in mesh_config_keys.py (shared with mesh_config_io.py).
 from app.models.mesh_config_keys import _KEY_MAP
+from app.models import mesh_output_names
 
 @dataclass
 class MeshConfig:
@@ -245,77 +246,17 @@ class MeshConfig:
         """geom_files that are refinement seeds."""
         return [g for g in self.geom_files if self.is_seed(g)]
 
-    # <case> length cap, in characters. results/meshes/<case>/mesh_<case><ext>
-    # puts <case> in a single path component, which must stay inside the 255-byte
-    # NAME_MAX; 60 chars is safe even for 4-byte UTF-8 stems.
-    CASE_NAME_MAX_LEN = 60
-
-    @staticmethod
-    def clamp_case_name(name: str) -> str:
-        """Clamp a <case> label to CASE_NAME_MAX_LEN characters.
-
-        A many-body case joins every boundary stem, which easily runs past
-        NAME_MAX and makes the mesh write fail. Keep a readable prefix and
-        disambiguate it with an FNV-1a digest of the full name so two long
-        cases never collide. src/main.cpp mirrors this exactly — the GUI looks
-        for the file at the path the mesher writes, so both must agree."""
-        limit = MeshConfig.CASE_NAME_MAX_LEN
-        if len(name) <= limit:
-            return name
-        h = 0x811C9DC5
-        for b in name.encode("utf-8"):
-            h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
-        return f"{name[:limit - 9]}_{h:08x}"
-
-    @staticmethod
-    def auto_case_name(boundaries: list) -> str:
-        """The <case> label used for auto-generated mesh output paths.
-
-        Derived from the boundary geometry stems: single body -> its stem,
-        several -> their stems joined, none -> "cartesian". Always clamped (see
-        clamp_case_name) so the resulting path component is writable."""
-        if not boundaries:
-            return "cartesian"
-        if len(boundaries) == 1:
-            name = os.path.splitext(os.path.basename(boundaries[0]))[0]
-        else:
-            name = "_".join(os.path.splitext(os.path.basename(b))[0] for b in boundaries)
-        return MeshConfig.clamp_case_name(name)
-
-    @staticmethod
-    def auto_output_name(boundaries: list, ext: str = ".vtk") -> str:
-        """Auto mesh output path: results/meshes/<case>/mesh_<case><ext>.
-
-        Each case gets its own subdirectory so results/meshes/ stays tidy
-        instead of accumulating loose files at its top level."""
-        case = MeshConfig.auto_case_name(boundaries)
-        return f"results/meshes/{case}/mesh_{case}{ext}"
-
-    @staticmethod
-    def is_auto_output_name(name: str) -> bool:
-        """True if `name` is empty or is exactly a name this class would have
-        generated: the flat legacy `results/meshes/mesh_<case><ext>` or the
-        per-case `results/meshes/<case>/mesh_<case><ext>`.
-
-        Auto names are refreshed when geometry changes, so this must stay a
-        narrow match: anything else — including a user's own file inside a
-        results/meshes/ subfolder — is a typed name and must be preserved."""
-        if not name:
-            return True
-        n = name.replace("\\", "/")
-        prefix = "results/meshes/"
-        if not n.startswith(prefix):
-            return False
-        parts = n[len(prefix):].split("/")
-        if len(parts) == 1:
-            # Legacy flat layout: results/meshes/mesh_<case><ext>
-            return parts[0].startswith("mesh_")
-        if len(parts) != 2:
-            return False
-        # Per-case layout: the file must be that case's own mesh_<case><ext>,
-        # not merely some mesh_*.vtk the user parked in the case folder.
-        case, base = parts
-        return os.path.splitext(base)[0] == f"mesh_{case}"
+    # Output naming lives in models/mesh_output_names.py (one topic, and this
+    # file's size budget); re-exported here so MeshConfig.auto_output_name(...)
+    # and friends stay the API every caller already uses.
+    CASE_NAME_MAX_LEN = mesh_output_names.CASE_NAME_MAX_LEN
+    FORMAT_PLACEHOLDER = mesh_output_names.FORMAT_PLACEHOLDER
+    clamp_case_name = staticmethod(mesh_output_names.clamp_case_name)
+    auto_case_name = staticmethod(mesh_output_names.auto_case_name)
+    auto_output_name = staticmethod(mesh_output_names.auto_output_name)
+    output_base = staticmethod(mesh_output_names.output_base)
+    output_path_for = staticmethod(mesh_output_names.output_path_for)
+    is_auto_output_name = staticmethod(mesh_output_names.is_auto_output_name)
 
     def prune_roles(self):
         """Drop geom_roles entries whose path is no longer in geom_files, so a
