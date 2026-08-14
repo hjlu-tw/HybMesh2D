@@ -194,7 +194,7 @@ def main():
     # The resampler welds a seam under this fraction and the mesher drops the duplicate
     # under the same one. They are separate binaries: tighten one alone and the gap band
     # in which a sliver survives reopens, which is defect 1 above.
-    mesher_src = open(os.path.join(_REPO, "src", "main.cpp"),
+    mesher_src = open(os.path.join(_REPO, "src", "cli.cpp"),
                       encoding="utf-8").read()
     resamp_src = open(os.path.join(_REPO, "tools", "PreProcessor", "src", "main.cpp"),
                       encoding="utf-8").read()

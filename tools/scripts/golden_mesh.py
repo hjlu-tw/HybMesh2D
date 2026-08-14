@@ -28,7 +28,10 @@ Usage:
 `capture` runs every case and writes <dir>/<case>.json. `compare` runs them all
 again into a temp dir and diffs against <dir>, reporting the worst coordinate
 deviation seen — so a match at exactly 0.0 stays distinguishable from a match
-that merely fits inside the tolerance.
+that merely fits inside the tolerance. That distinction is load bearing: one
+case genuinely wobbles run to run (see TOL), so a comparator that only printed
+SAME/DIFF would leave you unable to tell noise from a real change you had just
+happened to make small.
 
 Dependency direction, deliberately: the duct / wedge geometries are IMPORTED
 from tools/PreProcessor/tests/test_nobl_junction_acute.py, not copied. A tool
@@ -59,10 +62,20 @@ import numpy as np                                    # noqa: E402
 import test_nobl_junction_acute as junc               # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 
-# Relative tolerance on a node coordinate. Pure code motion should give exactly
-# 0.0; the tolerance exists so a genuinely equivalent but differently-ordered
-# floating-point expression is not reported as a mesh change.
-TOL = 1e-12
+# Relative tolerance on a node coordinate.
+#
+# MEASURED, not guessed, and the measurement corrects a belief this repo held:
+# the mesher's nondeterminism is NOT confined to node numbering. `wedge_45`
+# returns a coordinate that differs by ~1.2e-13 in roughly 1 run out of 12 (two
+# such wobbles compounding gave 2.5e-13, the worst seen in ~20 runs); the other
+# eight cases were bit-identical every time. So exact equality would flake on one
+# case in ten, and a tolerance is required rather than merely prudent.
+#
+# 1e-10 sits ~400x above that noise and still several orders of magnitude below
+# anything an algorithmic change produces. It deliberately DOES hide pure
+# floating-point reassociation, which is not the kind of change this tool exists
+# to detect.
+TOL = 1e-10
 
 
 def _env() -> dict:

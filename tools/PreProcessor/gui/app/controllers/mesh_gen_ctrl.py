@@ -295,7 +295,7 @@ class MeshGenControllerMixin:
 
 
     def _get_expected_vtk_path(self, cfg: MeshConfig) -> str:
-        """Calculate the expected output VTK filename matching main.cpp logic."""
+        """Calculate the expected output VTK filename matching src/cli.cpp logic."""
         root_dir = repo_root()
 
         # Name from BOUNDARY geometries only — seeds share geom_files but must

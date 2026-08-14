@@ -11,7 +11,7 @@ Only the export dialog ever understood it. Consequences found on disk
 (2026-08-13, from a user's `.hws` whose `output_filename` was
 `results/meshes/cartesian/mesh_cartesian.*`):
 
-* `src/main.cpp` took it literally. ``extPos()`` finds the dot before the ``*``,
+* `src/cli.cpp` took it literally. ``extPos()`` finds the dot before the ``*``,
   so ``.vtk`` was never appended and **the VTK was written into a file NAMED
   ``mesh_<case>.*``** — verified with the shipped binary before the fix. Older
   builds (before ``stripExt``, 2026-08-12) did the same to STAR-CD, leaving

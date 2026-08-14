@@ -117,16 +117,24 @@ include_directories(include ${GMSH_INCLUDE_DIR})
 add_library(HybMeshUtils INTERFACE)
 target_include_directories(HybMeshUtils INTERFACE include)
 
-# 4. 核心執行檔: HybMesh2D
-add_executable(HybMesh2D
-    src/main.cpp
+# 4. 核心實作庫: hybmesh_core
+# 實作全部住在這個 library 裡，執行檔只是 src/main.cpp 那五行 shim。這是刻意的：
+# 測試連結到的必須就是 binary 真正在跑的那份程式碼，而執行檔既然不編譯任何實作，
+# 就沒有地方可以放「測試連不到」的邏輯。tests/cpp 連的就是這個 target。
+add_library(hybmesh_core STATIC
+    src/cli.cpp
     src/Mesh.cpp
     src/BoundaryLayer.cpp
 )
+target_include_directories(hybmesh_core PUBLIC include ${GMSH_INCLUDE_DIR})
 
-# Stamp provenance into the binary. The C++ side has an `#ifndef HYBMESH_GIT_SHA`
-# fallback, so these definitions only override the default when available.
-target_compile_definitions(HybMesh2D PRIVATE
+# Stamp provenance into the LIBRARY, not into the executable. The code that reads
+# these macros (src/cli.cpp, via Provenance.hpp) compiles as part of hybmesh_core
+# now, so a definition left on HybMesh2D would apply to the shim only and silently
+# degrade every banner and provenance sidecar to "unknown". PUBLIC so a test
+# linking the library reports the same build. The C++ side has an
+# `#ifndef HYBMESH_GIT_SHA` fallback, so these only override when available.
+target_compile_definitions(hybmesh_core PUBLIC
     HYBMESH_GIT_SHA="${HYBMESH_GIT_SHA}"
     HYBMESH_VERSION="${HYBMESH_VERSION}")
 
@@ -145,15 +153,20 @@ find_library(CGNS_LIBRARY NAMES cgns
     HINTS /opt/homebrew/opt/cgns/lib /opt/homebrew/lib /usr/local/lib)
 if(CGNS_INCLUDE_DIR AND CGNS_LIBRARY)
     message(STATUS "CGNS export ENABLED: ${CGNS_LIBRARY}")
-    target_compile_definitions(HybMesh2D PRIVATE HAVE_CGNS)
-    target_include_directories(HybMesh2D PRIVATE ${CGNS_INCLUDE_DIR})
-    target_link_libraries(HybMesh2D ${CGNS_LIBRARY})  # 必須先於 Gmsh
+    target_compile_definitions(hybmesh_core PUBLIC HAVE_CGNS)
+    target_include_directories(hybmesh_core PUBLIC ${CGNS_INCLUDE_DIR})
+    target_link_libraries(hybmesh_core PUBLIC ${CGNS_LIBRARY})  # 必須先於 Gmsh
 else()
     message(STATUS "CGNS not found — exportCGNS compiled as a no-op stub.")
 endif()
 
-# 連結 Gmsh (排在 CGNS 之後，見上方說明)
-target_link_libraries(HybMesh2D ${GMSH_LIBRARY})
+# 連結 Gmsh (排在 CGNS 之後，見上方說明)。PUBLIC 讓連結順序原封不動傳遞到每個
+# 連結 hybmesh_core 的 target，否則上面那段 cgsize_t 的說明就白寫了。
+target_link_libraries(hybmesh_core PUBLIC ${GMSH_LIBRARY})
+
+# 4c. 核心執行檔: HybMesh2D — 只有 shim，不編譯任何實作 (見 4. 的說明)
+add_executable(HybMesh2D src/main.cpp)
+target_link_libraries(HybMesh2D PRIVATE hybmesh_core)
 
 # 設置 RPATH 以確保執行時能找到 dylib
 set_target_properties(HybMesh2D PROPERTIES

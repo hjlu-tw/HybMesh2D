@@ -216,7 +216,7 @@ def write_isolated_corner_duct(path):
 
     Getting there needs BOTH halves, and the second one is not obvious. The TOP
     segment emits only its starting corner, so in the ring that node is flanked by
-    the right wall's last point and the left wall's first point — but `main.cpp`'s
+    the right wall's last point and the left wall's first point — but `src/cli.cpp`'s
     corner rescue (`if (prevBL || nextBL) cn.skipBL = false;`) then promotes the
     top-LEFT corner back to BL because its neighbour grows one, and the isolated
     node is left with a BL neighbour after all. The rescue is gated on `isCorner`,

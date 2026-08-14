@@ -92,7 +92,7 @@ class VTKMesh:
                         continue
                     pt_tokens = pt_line.split()
                     # A line can contain multiple points or one point (x, y, z)
-                    # Typically, main.cpp writes one point per line: "x y 0.0"
+                    # Typically, the mesher writes one point per line: "x y 0.0"
                     for k in range(0, len(pt_tokens), 3):
                         if k + 1 < len(pt_tokens):
                             pts.append([float(pt_tokens[k]), float(pt_tokens[k+1])])
@@ -113,7 +113,7 @@ class VTKMesh:
                         continue
                     c_tokens = c_line.split()
                     # A line contains: size id0 id1 id2 ...
-                    # Typically, main.cpp writes one cell per line
+                    # Typically, the mesher writes one cell per line
                     idx = 0
                     while idx < len(c_tokens):
                         size = int(c_tokens[idx])

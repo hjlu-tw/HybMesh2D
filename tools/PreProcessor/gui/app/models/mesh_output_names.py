@@ -8,9 +8,9 @@ all-formats placeholder.
 Two of these are contracts with code outside this file and must not drift:
 
 * ``clamp_case_name`` / ``auto_case_name`` / ``auto_output_name`` are mirrored in
-  ``src/main.cpp`` — the GUI looks for the mesh at the path the mesher writes, so
+  ``src/cli.cpp`` — the GUI looks for the mesh at the path the mesher writes, so
   a divergence means the mesh "vanishes" after a successful run.
-* ``FORMAT_PLACEHOLDER`` is understood by ``src/main.cpp`` too, which strips it
+* ``FORMAT_PLACEHOLDER`` is understood by ``src/cli.cpp`` too, which strips it
   before it can be mistaken for a real extension.
 
 :class:`MeshConfig` re-exports every function here as a staticmethod, so
@@ -35,7 +35,7 @@ def clamp_case_name(name: str) -> str:
     A many-body case joins every boundary stem, which easily runs past NAME_MAX
     and makes the mesh write fail. Keep a readable prefix and disambiguate it
     with an FNV-1a digest of the full name so two long cases never collide.
-    src/main.cpp mirrors this exactly.
+    src/cli.cpp mirrors this exactly.
     """
     if len(name) <= CASE_NAME_MAX_LEN:
         return name

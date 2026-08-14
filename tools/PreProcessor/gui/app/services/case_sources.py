@@ -65,7 +65,7 @@ def mesh_provenance_paths(*mesh_outputs) -> list:
     """The ``*.provenance.json`` sidecars beside the given mesh output paths.
 
     The mesher writes one per export format, named after the output stem with
-    every known extension stripped (``src/main.cpp``: ``stripExt`` +
+    every known extension stripped (``src/cli.cpp``: ``stripExt`` +
     ``writeProvenance``). Non-existent candidates are returned anyway — the
     staging service drops what is not on disk — so this stays a pure name
     computation rather than a second place that decides what exists.
