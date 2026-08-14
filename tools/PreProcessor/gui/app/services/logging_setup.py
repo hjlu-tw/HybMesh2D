@@ -18,6 +18,7 @@ import sys
 
 LOGGER_NAME = "hybmesh.gui"
 _configured = False
+_handler_attached = False
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
@@ -71,16 +72,25 @@ def _env_level(default: int) -> int:
         return default
 
 
-def configure_logging(level: int = logging.INFO) -> logging.Logger:
-    """Set up the ``hybmesh.gui`` logger with a rotating file handler and an
-    uncaught-exception hook. Idempotent.
+def ensure_file_logging(level: int = logging.INFO) -> logging.Logger:
+    """Attach the rotating file handler if nothing has attached one yet.
 
-    ``HYBMESH_LOG_LEVEL`` overrides ``level`` (e.g. ``DEBUG`` to include the
-    best-effort/teardown diagnostics)."""
-    global _configured
+    Idempotent, and deliberately does NOT install the excepthook: this is called
+    lazily from library code (:func:`app.services.user_log.log`) so that a
+    process which never runs the GUI's ``main()`` still leaves its user-facing
+    log on disk, and a library call must not quietly take over ``sys.excepthook``
+    on the way. :func:`configure_logging` is the entry point that does both.
+
+    Without this, a record emitted before anything configured the logger was
+    simply dropped — measured: a headless ``user_log.log()`` left
+    ``results/logs/gui.log`` byte-for-byte unchanged, so the durable log that the
+    seam exists to guarantee did not actually exist outside the GUI process.
+    """
+    global _handler_attached
     logger = logging.getLogger(LOGGER_NAME)
-    if _configured:
+    if _handler_attached:
         return logger
+    _handler_attached = True          # set first: a failure must not retry per call
     logger.setLevel(_env_level(level))
     logger.propagate = False
 
@@ -97,7 +107,19 @@ def configure_logging(level: int = logging.INFO) -> logging.Logger:
     except Exception:
         # Never let logging setup take the app down; the console still works.
         pass
+    return logger
 
+
+def configure_logging(level: int = logging.INFO) -> logging.Logger:
+    """Set up the ``hybmesh.gui`` logger with a rotating file handler and an
+    uncaught-exception hook. Idempotent.
+
+    ``HYBMESH_LOG_LEVEL`` overrides ``level`` (e.g. ``DEBUG`` to include the
+    best-effort/teardown diagnostics)."""
+    global _configured
+    logger = ensure_file_logging(level)
+    if _configured:
+        return logger
     _install_excepthook(logger)
     _configured = True
     logger.info("=== GUI session started (pid %s) ===", os.getpid())

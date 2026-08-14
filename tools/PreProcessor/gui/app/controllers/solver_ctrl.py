@@ -288,8 +288,8 @@ class SolverControllerMixin:
                 errs.append("IBM rigid moving body is on but no motion DLL source is set.")
             if not cfg.init_cond_dll.strip():
                 self.log(
- "[WARNING] IBM is on without an init-condition DLL; the solid "
- "phase will start from freestream init.")
+                    "[WARNING] IBM is on without an init-condition DLL; the solid "
+                    "phase will start from freestream init.")
 
         # Restart needs a zone dump to continue from.
         if cfg.restart and not cfg.zdump_fn_restart.strip():
@@ -348,8 +348,8 @@ class SolverControllerMixin:
         # prepared_signal, so the Results stage still finds the output.
         if getattr(self, "_pipeline_running", False):
             self.log(
- f"[case] '{case}' already has results; Run All auto-versions a new "
- "directory to preserve them.")
+                f"[case] '{case}' already has results; Run All auto-versions a new "
+                "directory to preserve them.")
             return False
 
         box = QMessageBox(self.main_window)
@@ -371,7 +371,7 @@ class SolverControllerMixin:
             return None
         if clicked is overwrite_btn:
             self.log(
- f"[case] overwriting existing results for '{case}'.")
+                f"[case] overwriting existing results for '{case}'.")
             return True
         return False
 
@@ -459,7 +459,7 @@ class SolverControllerMixin:
         l2 = data.get("L2") or []
         l2s = " ".join(f"{v:.2e}" for v in l2[:5])
         self.log(
- f"[convg] iter={data.get('iter')} cfl={data.get('cfl')} L2: {l2s}")
+            f"[convg] iter={data.get('iter')} cfl={data.get('cfl')} L2: {l2s}")
 
     def _on_solver_finished(self, rc: int):
         self.main_window.release_progress("solver")
@@ -479,8 +479,8 @@ class SolverControllerMixin:
                     self.auto_load_solver_result()
             else:
                 self.log(
- "[INFO] No Tecplot result file yet (check print_sol_per_niter "
- "vs the iterations actually run).")
+                    "[INFO] No Tecplot result file yet (check print_sol_per_niter "
+                    "vs the iterations actually run).")
         elif rc == RC_CANCELLED:
             self.log("--- Solver Cancelled by User ---")
         elif rc == RC_TIMEOUT:

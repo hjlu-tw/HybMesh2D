@@ -38,8 +38,8 @@ class CurveDrawControllerMixin:
         self._show_duplicate_preview = False
         canvas.start_draw_mode(tool)
         self.log(
- f"Add {tool}: click on the canvas to place points; drag a point to "
- f"adjust (right-click to cancel).")
+            f"Add {tool}: click on the canvas to place points; drag a point to "
+            f"adjust (right-click to cancel).")
 
     def on_shape_drawn(self, tool: str, pts: list):
         """The interactive drawing is complete — start a modeless edit session:
@@ -265,8 +265,8 @@ class CurveDrawControllerMixin:
         mw.grid_snap_on = bool(on)
         step = mw.grid_snap_step.value()
         self.log(
-    f"[Canvas] grid snap {'ON' if on else 'OFF'}"
-    + (f" (step {step:g})" if on else ""))
+            f"[Canvas] grid snap {'ON' if on else 'OFF'}"
+            + (f" (step {step:g})" if on else ""))
 
     def _on_grid_snap_step_changed(self, value: float):
         # Nothing to store: _snap_draw_xy reads the spin box itself.
@@ -278,8 +278,8 @@ class CurveDrawControllerMixin:
         if on:
             cv.start_measure_tool()
             self.log(
- "[Measure] click two points to read distance / dx / dy / angle "
- "(click again to start a new span).")
+                "[Measure] click two points to read distance / dx / dy / angle "
+                "(click again to start a new span).")
             self.main_window.flash_status("Measure: click two points")
         else:
             # Keep the last span drawn: the number is still worth reading after the

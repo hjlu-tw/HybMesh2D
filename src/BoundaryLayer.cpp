@@ -232,61 +232,61 @@ std::vector<JunctionDecision> BoundaryLayerGenerator::classifyJunctions(
 }
 
 void BoundaryLayerGenerator::carrySlideWallBc(const std::vector<FrontState>& fronts) {
-// A case-1 (slide) junction replaces a stretch of the no-BL wall: the absorbed
-// surface edges are dropped and the sliding column's lateral edges (plus the
-// closing edge to the first surviving no-BL node) are the domain boundary there
-// instead. Carry the replaced wall's BC onto them BY CONSTRUCTION, exactly as the
-// surface edges themselves were recorded — position cannot recover it. The column
-// is a straight ray along the FIRST neighbour chord, so on a curved no-BL wall
-// (any resampled smooth curve) its nodes sit off the wall polyline by up to a
-// chord sagitta, while classifyBoundaryBc's pointOnSegment accepts only 1e-6 of a
-// chord: measured 6e-8 .. 1.8e-6 against a 2.0e-8 tolerance. Every column edge
-// past the first therefore fell through to the wall default, and a no-BL
-// inlet/outlet silently exported a `wall` band exactly D_total long at each of
-// its BL junctions — the solver then ran a wall across part of the inlet. A
-// STRAIGHT no-BL wall has no drift, which is why the straight-duct coverage in
-// tests/test_nobl_junction_acute.py never caught this.
-for (const auto& fsr : fronts) {
-    for (const auto& kv : fsr.slideColumns) {
-        const std::vector<int>& col = kv.second;         // [surface, L1, ..., outer]
-        auto wit = fsr.slideWallRun.find(kv.first);
-        if (col.size() < 2 || wit == fsr.slideWallRun.end()) continue;
-        const std::vector<int>& run = wit->second;       // [root, absorbed..., survivor]
-        if (run.size() < 2) continue;
-        // Arc length along the replaced wall run, so each replacing edge can be
-        // matched to the wall edge it covers (a slide spanning two no-BL segments
-        // with different BCs then still splits at the right place).
-        std::vector<double> sRun(run.size(), 0.0);
-        for (size_t k = 1; k < run.size(); ++k)
-            sRun[k] = sRun[k - 1]
-                    + (m_mesh.nodes[run[k]].pos - m_mesh.nodes[run[k - 1]].pos).length();
-        std::vector<int> chain = col;
-        chain.push_back(run.back());
-        const Point2D rootPos = m_mesh.nodes[col.front()].pos;
-        double sPrev = 0.0;
-        for (size_t j = 0; j + 1 < chain.size(); ++j) {
-            int a = chain[j], b = chain[j + 1];
-            if (a == b) continue;
-            // Column nodes sit on a straight ray from the root, so their distance
-            // from it IS the arc position; the closing edge ends at the run's end.
-            double sNext = (j + 2 == chain.size())
-                         ? sRun.back()
-                         : std::min(sRun.back(),
-                                    (m_mesh.nodes[b].pos - rootPos).length());
-            double sMid = 0.5 * (sPrev + sNext);
-            sPrev = sNext;
-            size_t w = 0;
-            while (w + 2 < run.size() && sRun[w + 1] <= sMid) ++w;
-            // Per-edge convention: an edge belongs to its STARTING node's segment.
-            // run[0] is the junction node, which the resampler may have given to
-            // either side of the corner, so never read the BC off it — every edge
-            // of this chain lies on the NO-BL wall, whose first node is run[1].
-            const Node& src = m_mesh.nodes[run[w == 0 ? 1 : w]];
-            // overwrite=false: never restamp a real surface edge.
-            m_mesh.recordBoundaryEdge(a, b, src, /*overwrite=*/false);
+    // A case-1 (slide) junction replaces a stretch of the no-BL wall: the absorbed
+    // surface edges are dropped and the sliding column's lateral edges (plus the
+    // closing edge to the first surviving no-BL node) are the domain boundary there
+    // instead. Carry the replaced wall's BC onto them BY CONSTRUCTION, exactly as the
+    // surface edges themselves were recorded — position cannot recover it. The column
+    // is a straight ray along the FIRST neighbour chord, so on a curved no-BL wall
+    // (any resampled smooth curve) its nodes sit off the wall polyline by up to a
+    // chord sagitta, while classifyBoundaryBc's pointOnSegment accepts only 1e-6 of a
+    // chord: measured 6e-8 .. 1.8e-6 against a 2.0e-8 tolerance. Every column edge
+    // past the first therefore fell through to the wall default, and a no-BL
+    // inlet/outlet silently exported a `wall` band exactly D_total long at each of
+    // its BL junctions — the solver then ran a wall across part of the inlet. A
+    // STRAIGHT no-BL wall has no drift, which is why the straight-duct coverage in
+    // tests/test_nobl_junction_acute.py never caught this.
+    for (const auto& fsr : fronts) {
+        for (const auto& kv : fsr.slideColumns) {
+            const std::vector<int>& col = kv.second;         // [surface, L1, ..., outer]
+            auto wit = fsr.slideWallRun.find(kv.first);
+            if (col.size() < 2 || wit == fsr.slideWallRun.end()) continue;
+            const std::vector<int>& run = wit->second;       // [root, absorbed..., survivor]
+            if (run.size() < 2) continue;
+            // Arc length along the replaced wall run, so each replacing edge can be
+            // matched to the wall edge it covers (a slide spanning two no-BL segments
+            // with different BCs then still splits at the right place).
+            std::vector<double> sRun(run.size(), 0.0);
+            for (size_t k = 1; k < run.size(); ++k)
+                sRun[k] = sRun[k - 1]
+                        + (m_mesh.nodes[run[k]].pos - m_mesh.nodes[run[k - 1]].pos).length();
+            std::vector<int> chain = col;
+            chain.push_back(run.back());
+            const Point2D rootPos = m_mesh.nodes[col.front()].pos;
+            double sPrev = 0.0;
+            for (size_t j = 0; j + 1 < chain.size(); ++j) {
+                int a = chain[j], b = chain[j + 1];
+                if (a == b) continue;
+                // Column nodes sit on a straight ray from the root, so their distance
+                // from it IS the arc position; the closing edge ends at the run's end.
+                double sNext = (j + 2 == chain.size())
+                             ? sRun.back()
+                             : std::min(sRun.back(),
+                                        (m_mesh.nodes[b].pos - rootPos).length());
+                double sMid = 0.5 * (sPrev + sNext);
+                sPrev = sNext;
+                size_t w = 0;
+                while (w + 2 < run.size() && sRun[w + 1] <= sMid) ++w;
+                // Per-edge convention: an edge belongs to its STARTING node's segment.
+                // run[0] is the junction node, which the resampler may have given to
+                // either side of the corner, so never read the BC off it — every edge
+                // of this chain lies on the NO-BL wall, whose first node is run[1].
+                const Node& src = m_mesh.nodes[run[w == 0 ? 1 : w]];
+                // overwrite=false: never restamp a real surface edge.
+                m_mesh.recordBoundaryEdge(a, b, src, /*overwrite=*/false);
+            }
         }
     }
-}
 }
 
 double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& allBoundaryNodeIds,
@@ -562,7 +562,6 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 junctionMult[i] = juncPlan[i].mult;
             }
         }
-
 
         // Per-node height-taper factor: a small floor at a junction node, ramping
         // (smoothstep) back to 1.0 over L_taper of arc length into the interior.

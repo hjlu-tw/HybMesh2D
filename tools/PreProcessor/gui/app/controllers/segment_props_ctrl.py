@@ -125,7 +125,7 @@ class SegmentPropsControllerMixin:
             self._apply_bc_to_indices(session, indices, name)
             shown = name or "(cleared)"
             self.log(
- f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
+                f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
 
         dlg = AssignPatchDialog(session.display_name, edges, existing,
                                 preselect=preselect, highlight_cb=highlight,

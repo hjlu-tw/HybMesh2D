@@ -45,7 +45,7 @@ class PendingEditControllerMixin:
             idx = next((i for i, s in enumerate(segs) if s.id == seg.id), -1)
             if idx < 0:
                 self.log(
- "Edit not recorded: the edge is no longer present.")
+                    "Edit not recorded: the edge is no longer present.")
                 return False
             seg = segs[idx]
         new_state = seg.to_dict()

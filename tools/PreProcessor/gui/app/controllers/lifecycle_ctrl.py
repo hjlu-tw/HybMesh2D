@@ -77,7 +77,7 @@ class LifecycleControllerMixin:
             if getattr(self, "_autosave_failed", False):
                 self._autosave_failed = False
                 self.log(
- "[Autosave] resumed — workspace checkpoint saved again.")
+                    "[Autosave] resumed — workspace checkpoint saved again.")
         except Exception as e:
             # A background autosave must never interrupt the user (e.g. a
             # transient NaN while editing a live curve), but it must not die
@@ -88,8 +88,8 @@ class LifecycleControllerMixin:
                 self._autosave_failed = True
                 try:
                     self.log(
-  f"[Autosave] [WARNING] auto-save failed and is paused: {e}. "
-  "Save your workspace manually (File > Save Workspace).")
+                        f"[Autosave] [WARNING] auto-save failed and is paused: {e}. "
+                        "Save your workspace manually (File > Save Workspace).")
                 except Exception:
                     _log.debug(
                         "could not report the autosave failure to the log "

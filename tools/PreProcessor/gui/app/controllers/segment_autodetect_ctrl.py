@@ -32,7 +32,7 @@ class SegmentAutoDetectControllerMixin:
             refresh_cb=lambda: self._apply_geometry_update(session))
         session.command_history.execute(cmd)
         self.log(
- f"Auto-detected {len(new_indices) - 1} edges based on sharp angles (threshold: {angle_threshold_deg}°).")
+            f"Auto-detected {len(new_indices) - 1} edges based on sharp angles (threshold: {angle_threshold_deg}°).")
 
     def auto_detect_segments_from_button(self):
         """Slot for the Auto Detect Segments button."""
@@ -60,7 +60,7 @@ class SegmentAutoDetectControllerMixin:
                     refresh_cb=lambda: self._apply_geometry_update(session))
                 session.command_history.execute(cmd)
                 self.log(
- f"Auto-detected {len(new_indices) - 1} sub-edges for edge {seg.id} (threshold: {angle_threshold}°).")
+                    f"Auto-detected {len(new_indices) - 1} sub-edges for edge {seg.id} (threshold: {angle_threshold}°).")
             else:
                 self.log("No sharp corners detected for selected edge.")
             return

@@ -79,9 +79,9 @@ class PostprocessControllerMixin:
             self.main_window.result_canvas_view.clear()
             self.global_result_data = None
             self.log(
- f"[ERROR] {os.path.basename(path)} has no usable mesh data "
- f"({n_nodes} node(s), {n_elems} element(s)) — file may be "
- "truncated or malformed.")
+                f"[ERROR] {os.path.basename(path)} has no usable mesh data "
+                f"({n_nodes} node(s), {n_elems} element(s)) — file may be "
+                "truncated or malformed.")
             return
 
         self.global_result_data = result
@@ -89,8 +89,8 @@ class PostprocessControllerMixin:
         self.main_window.mode_combo.setCurrentIndex(self.RESULTS_MODE_INDEX)
         zones = result.zones if result else []
         self.log(
- f"Loaded result {os.path.basename(path)} "
- f"({len(zones)} zone(s)).")
+            f"Loaded result {os.path.basename(path)} "
+            f"({len(zones)} zone(s)).")
 
     def auto_load_solver_result(self):
         """Called after a successful solver run to surface the Tecplot output."""
@@ -160,6 +160,6 @@ class PostprocessControllerMixin:
                 polys.append(piece)
         if not polys:
             self.log(
- "[Results] CAD overlay: no geometry selected / found in the open "
- "project(s).")
+                "[Results] CAD overlay: no geometry selected / found in the open "
+                "project(s).")
         return polys

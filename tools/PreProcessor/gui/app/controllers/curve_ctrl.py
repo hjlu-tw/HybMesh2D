@@ -55,7 +55,7 @@ class CurveControllerMixin:
         )
         session.command_history.execute(cmd)
         self.log(
- f"Added Analytic Edge {cmd.added_seg.id}.")
+            f"Added Analytic Edge {cmd.added_seg.id}.")
 
     def bake_selected_curve(self):
         """Convert the selected analytic edge(s) to discrete points.
@@ -99,8 +99,8 @@ class CurveControllerMixin:
                                           self._refresh_segment_list)
             session.command_history.execute(cmd)
             self.log(
- "Converted Edge " + ", ".join(str(i) for i in cmd.seg_ids)
- + " to Discrete (one connected boundary).")
+                "Converted Edge " + ", ".join(str(i) for i in cmd.seg_ids)
+                + " to Discrete (one connected boundary).")
         else:
             cmd = BakeCurveToGeometryCmd(session, indices[0],
                                          self._refresh_segment_list)
@@ -120,11 +120,11 @@ class CurveControllerMixin:
                     seg, n, session.original_points)
             except Exception as e:
                 self.log(
- f"Cannot convert Edge {seg.id}: {e}")
+                    f"Cannot convert Edge {seg.id}: {e}")
                 return False
             if xs is None or len(xs) < 2:
                 self.log(
- f"Cannot convert Edge {seg.id}: invalid preview points.")
+                    f"Cannot convert Edge {seg.id}: invalid preview points.")
                 return False
         return True
 
@@ -148,8 +148,8 @@ class CurveControllerMixin:
         ordered, _is_loop = self._chain_edges(edges, self._endpoint_tolerance(session))
         if ordered is None:
             self.log(
- "The selected edges do not form one connected chain — converting "
- "them in selection order; disjoint pieces stay separate.")
+                "The selected edges do not form one connected chain — converting "
+                "them in selection order; disjoint pieces stay separate.")
             return indices
         return [e["src"]["idx"] for e in ordered]
 
@@ -282,7 +282,7 @@ class CurveControllerMixin:
                     # A broken curve formula shouldn't silently drop the edge's
                     # preview — log it so the user can see which edge is bad.
                     self.log(
-  f"[Curve] [WARNING] Edge {seg.id} preview failed: {e}")
+                        f"[Curve] [WARNING] Edge {seg.id} preview failed: {e}")
         self.main_window.canvas_view.update_curve_segments(session.session_id, segments_pts)
         # Keep the always-on endpoint markers in sync with the current edges.
         self._refresh_endpoint_markers()

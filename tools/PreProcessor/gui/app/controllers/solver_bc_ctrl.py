@@ -146,8 +146,8 @@ class SolverBcControllerMixin:
                 item.setText(dlg.result_path)
                 sp.bc_table.setItem(row, 3, item)
                 self.log(
- f"[BC] type-11 DLL source set on row {row}: {dlg.result_path}")
+                    f"[BC] type-11 DLL source set on row {row}: {dlg.result_path}")
             else:
                 self.log(
- f"[BC] type-11 DLL source saved (select a BC row to attach): "
- f"{dlg.result_path}")
+                    f"[BC] type-11 DLL source saved (select a BC row to attach): "
+                    f"{dlg.result_path}")

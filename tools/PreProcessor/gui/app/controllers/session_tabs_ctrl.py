@@ -222,7 +222,7 @@ class SessionTabsControllerMixin:
         if (worker is not None and worker.isRunning()
                 and getattr(self, "_worker_session", None) is session):
             self.log(
- f"Cancelling backend for '{session.display_name}'...")
+                f"Cancelling backend for '{session.display_name}'...")
             worker.cancel()
             worker.wait()
 

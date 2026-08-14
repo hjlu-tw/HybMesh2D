@@ -52,7 +52,7 @@ class CaseExportControllerMixin:
         except (ValueError, TypeError) as e:
             _log.warning("could not build the exported workspace", exc_info=True)
             self.log(
- f"[export] [WARNING] no .hws written: {e}")
+                f"[export] [WARNING] no .hws written: {e}")
             return None
 
     @staticmethod

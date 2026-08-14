@@ -38,7 +38,7 @@ class TransformApplyControllerMixin:
         if sb.dup_type_combo.currentIndex() == 3:
             if math.hypot(sb.dup_ma_dx.value(), sb.dup_ma_dy.value()) < 1e-12:
                 self.log(
- "Mirror axis direction is zero — cannot mirror.")
+                    "Mirror axis direction is zero — cannot mirror.")
                 return
 
         delete_original = sb.dup_delete_orig_cb.isChecked()
@@ -63,7 +63,7 @@ class TransformApplyControllerMixin:
             new_seg = self._build_transformed_segment(session, seg, next_id)
             if new_seg is None:
                 self.log(
- f"Edge {seg.id} has no valid points — skipped.")
+                    f"Edge {seg.id} has no valid points — skipped.")
                 continue
             if new_seg.curve_type == "polygon" and src_type != "polygon":
                 baked.append((seg.id, src_type))
@@ -102,15 +102,15 @@ class TransformApplyControllerMixin:
         action_name = "Moved/Transformed" if delete_original else "Duplicated"
         ids_str = ", ".join(str(i) for i in new_ids)
         self.log(
- f"{action_name} {len(new_segs)} edge(s) as Edge {ids_str} "
- f"({sb.dup_type_combo.currentText()}).")
+            f"{action_name} {len(new_segs)} edge(s) as Edge {ids_str} "
+            f"({sb.dup_type_combo.currentText()}).")
         for sid, src_type in baked:
             # Say WHICH edge lost its type and why. Everything analytic keeps
             # it; these two kinds have no closed-form image under a transform,
             # so the copy is the transformed sample points.
             self.log(
- f"Edge {sid} ({src_type}) has no transformed closed form — the "
- f"copy is a Polygon of its points.")
+                f"Edge {sid} ({src_type}) has no transformed closed form — the "
+                f"copy is a Polygon of its points.")
         self._show_duplicate_preview = False
         self.main_window.canvas_view.clear_duplicate_preview()
         self.main_window.canvas_view.clear_transform_handles()

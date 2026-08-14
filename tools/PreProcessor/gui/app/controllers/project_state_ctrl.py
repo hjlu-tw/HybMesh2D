@@ -144,6 +144,6 @@ class ProjectStateControllerMixin:
                 setattr(self, attr, p)
             elif p:
                 self.log(
- f"[INFO] Saved {key} '{os.path.basename(p)}' no longer exists; "
- "re-run the stage to regenerate it.")
+                    f"[INFO] Saved {key} '{os.path.basename(p)}' no longer exists; "
+                    "re-run the stage to regenerate it.")
 

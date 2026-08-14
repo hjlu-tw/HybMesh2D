@@ -57,8 +57,8 @@ class MeshGenControllerMixin:
             missing = getattr(self.global_mesh_config, "missing_geom_files", [])
             if missing:
                 self.log(
- f"[WARNING] Geometry file(s) not found (paths may be broken): {', '.join(missing)}"
- )
+                    f"[WARNING] Geometry file(s) not found (paths may be broken): {', '.join(missing)}"
+                )
             for w in getattr(self.global_mesh_config, "parse_warnings", []):
                 self.log(f"[WARNING] {w}")
             self.sync_mesh_layers_panel()
@@ -139,7 +139,7 @@ class MeshGenControllerMixin:
         mc.update_mesh_config(cfg, fit_view=False)
         self._refresh_mesh_previews(cfg)
         self.log(
- "Cleared previous mesh and surface points; showing current boundaries.")
+            "Cleared previous mesh and surface points; showing current boundaries.")
 
     def run_mesh_generator(self):
         """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background."""
@@ -163,10 +163,10 @@ class MeshGenControllerMixin:
         domain_bbox = None  # ditto for the custom outer-domain outline, if any
         if not cfg.geom_files:
             self.log(
- "[WARNING] No geometry files in the mesh config — the mesh will "
- "have no boundary/BL. If you drew with 'Add analytic edge', run "
- "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
- "Layers) so it is written to a .dat first.")
+                "[WARNING] No geometry files in the mesh config — the mesh will "
+                "have no boundary/BL. If you drew with 'Add analytic edge', run "
+                "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
+                "Layers) so it is written to a .dat first.")
         else:
             geom_bbox, domain_bbox = self._scan_geometry_files(cfg)
 
@@ -257,12 +257,12 @@ class MeshGenControllerMixin:
                     with open(gf) as _f:
                         npts = sum(1 for ln in _f if ln.strip())
                     self.log(
-  f"[geom] {os.path.basename(gf)} ({npts} points)")
+                        f"[geom] {os.path.basename(gf)} ({npts} points)")
                 except OSError:
                     pass
                 continue
             self.log(
- f"[geom] {os.path.basename(gf)} ({len(pts)} points)")
+                f"[geom] {os.path.basename(gf)} ({len(pts)} points)")
             is_boundary, is_domain = gf in boundary, gf == domain_path
             if (is_boundary or is_domain) and pts.size and pts.shape[1] >= 2:
                 xy = pts[:, :2]
@@ -375,7 +375,7 @@ class MeshGenControllerMixin:
                 pending()
             else:
                 self.log(
- "[Export] Mesh generation did not produce a usable mesh; export skipped.")
+                    "[Export] Mesh generation did not produce a usable mesh; export skipped.")
 
     def _try_highlight_self_intersection_error(self):
         """Parse log output for self-intersection or cross-geometry intersection errors and highlight the offending geometry and coordinates."""
@@ -398,8 +398,8 @@ class MeshGenControllerMixin:
                 x, y = None, None
 
             self.log(
- f"[GUI] Intersection detected between Geometry {geom_id1} and Geometry {geom_id2} — highlighted on canvas."
- )
+                f"[GUI] Intersection detected between Geometry {geom_id1} and Geometry {geom_id2} — highlighted on canvas."
+            )
             self.main_window.mesh_canvas_view.highlight_error_geometry([geom_id1, geom_id2])
             if x is not None and y is not None:
                 self.main_window.mesh_canvas_view.highlight_self_intersection_point(x, y)
@@ -421,8 +421,8 @@ class MeshGenControllerMixin:
                 x, y = None, None
 
             self.log(
- f"[GUI] Self-intersection detected in Geometry {geom_id} — highlighted on canvas."
- )
+                f"[GUI] Self-intersection detected in Geometry {geom_id} — highlighted on canvas."
+            )
             self.main_window.mesh_canvas_view.highlight_error_geometry(geom_id)
             if x is not None and y is not None:
                 self.main_window.mesh_canvas_view.highlight_self_intersection_point(x, y)
@@ -437,7 +437,7 @@ class MeshGenControllerMixin:
         w = getattr(self, "_mesh_worker", None)
         if w is not None and w.isRunning():
             self.log(
- "Mesh generation is running; please wait for it to finish, then export.")
+                "Mesh generation is running; please wait for it to finish, then export.")
             return
         # headless_default False: a batch export must fail loudly rather than
         # silently kick off a mesh run nobody asked for.
@@ -449,7 +449,7 @@ class MeshGenControllerMixin:
             return
         self._pending_after_mesh = retry_fn
         self.log(
- f"[Export] No mesh yet — generating first, then exporting {what}.")
+            f"[Export] No mesh yet — generating first, then exporting {what}.")
         self.run_mesh_generator()
         # If generation did not actually start (e.g. binary missing, invalid
         # domain), drop the pending action so it can't fire on a later run.

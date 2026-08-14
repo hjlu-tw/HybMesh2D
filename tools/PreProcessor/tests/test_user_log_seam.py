@@ -140,15 +140,20 @@ check("4. sinks unregister cleanly", user_log.sinks() == ())
 # The two exemptions below are the seam itself: MainWindow registers the panel
 # as a sink, and LogPanel is that sink.
 EXEMPT = {"app/views/main_window.py", "app/views/log_panel.py"}
+# Walk the WHOLE gui tree, not a list of subpackages: an earlier version listed
+# six of them and so never scanned app/controller.py (the object that owns the
+# replacement method), app/utils.py, or main.py — the three files most likely to
+# grow a reach-through and the least likely to be noticed.
 offenders = []
-for sub in ("app/controllers", "app/views", "app/services", "app/workers",
-            "app/models", "app/commands"):
-    for dirpath, _d, files in os.walk(os.path.join(_GUI, sub)):
-        for fn in sorted(files):
-            if not fn.endswith(".py"):
-                continue
+scanned = set()
+for dirpath, _d, files in os.walk(_GUI):
+    if os.path.basename(dirpath) == "__pycache__":
+        continue
+    for fn in sorted(files):
+        if fn.endswith(".py"):
             path = os.path.join(dirpath, fn)
             rel = os.path.relpath(path, _GUI)
+            scanned.add(rel)
             if rel in EXEMPT:
                 continue
             tree = ast.parse(open(path, encoding="utf-8").read())
@@ -160,6 +165,12 @@ for sub in ("app/controllers", "app/views", "app/services", "app/workers",
 check("5. nothing reaches through the view tree to log_panel.log "
       f"({len(offenders)} found)" + (f": {offenders[:5]}" if offenders else ""),
       not offenders)
+
+# The gap this closes was invisible: a subpackage list that silently omits a file
+# still passes. Assert the walk REACHED the files a reach-through would hide in,
+# so shrinking the scan is a failure rather than a quieter pass.
+for must in ("app/controller.py", "app/utils.py", "main.py"):
+    check(f"5. the reach-through scan actually covers {must}", must in scanned)
 
 # controller.py must expose the replacement, or the rule above has no answer.
 _ctl = ast.parse(open(os.path.join(_GUI, "app/controller.py"), encoding="utf-8").read())

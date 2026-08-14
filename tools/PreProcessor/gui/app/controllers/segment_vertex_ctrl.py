@@ -91,7 +91,7 @@ class SegmentVertexControllerMixin:
             label="Move vertex")
         session.command_history.execute(cmd)
         self.log(
- f"Moved vertex {idx} to ({x:.4f}, {y:.4f}).")
+            f"Moved vertex {idx} to ({x:.4f}, {y:.4f}).")
         self.handle_point_clicked(idx)
 
     def _on_vertex_move_dragged(self, idx: int, x: float, y: float, finished: bool):
@@ -143,7 +143,7 @@ class SegmentVertexControllerMixin:
             refresh_cb=lambda: self._apply_geometry_update(session))
         session.command_history.execute(cmd)
         self.log(
- f"Added split point at index {idx}.")
+            f"Added split point at index {idx}.")
         self.handle_point_clicked(idx)
 
     def remove_split_point(self):
@@ -158,8 +158,8 @@ class SegmentVertexControllerMixin:
         n_pts = len(session.original_points) if session.original_points is not None else 0
         if idx in (0, n_pts - 1) or len(session.split_indices) <= 2:
             self.log(
- "Can't remove this breakpoint: it's a structural endpoint/seam "
- "(the geometry needs at least one edge segment).")
+                "Can't remove this breakpoint: it's a structural endpoint/seam "
+                "(the geometry needs at least one edge segment).")
             return
         keep = self.main_window.sidebar_view.keep_vertex_cb.isChecked()
         cmd = RemoveSplitCmd(
@@ -169,7 +169,7 @@ class SegmentVertexControllerMixin:
         session.command_history.execute(cmd)
         action = "kept" if keep else "deleted"
         self.log(
- f"Removed split point at {idx} (vertex {action}).")
+            f"Removed split point at {idx} (vertex {action}).")
         if keep:
             self.handle_point_clicked(idx)
 
@@ -206,5 +206,5 @@ class SegmentVertexControllerMixin:
             refresh_cb=lambda: self._apply_geometry_update(session))
         session.command_history.execute(cmd)
         self.log(
- f"Inserted ({x:.4f}, {y:.4f}) at index {insert_idx}.")
+            f"Inserted ({x:.4f}, {y:.4f}) at index {insert_idx}.")
         self.handle_point_clicked(insert_idx)

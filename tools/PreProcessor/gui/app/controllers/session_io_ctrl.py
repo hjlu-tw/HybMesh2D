@@ -230,8 +230,8 @@ class SessionIOControllerMixin:
         moved = rebase_case_workspace(workspace_data, file_path)
         if moved:
             self.log(
- f"[INFO] Exported-case workspace: re-pointed {moved} path(s) at "
- f"'{os.path.dirname(os.path.abspath(file_path))}'.")
+                f"[INFO] Exported-case workspace: re-pointed {moved} path(s) at "
+                f"'{os.path.dirname(os.path.abspath(file_path))}'.")
 
         # Explicit version handling: missing = legacy v0 (not "current"). Older
         # files are migrated field-by-field through _migrate_workspace; a NEWER
@@ -239,16 +239,16 @@ class SessionIOControllerMixin:
         file_version = int(workspace_data.get("format_version", 0))
         if file_version > WORKSPACE_FORMAT_VERSION:
             self.log(
- f"[WARNING] Workspace format version {file_version} is newer than "
- f"this build supports ({WORKSPACE_FORMAT_VERSION}). Loading read-only, "
- "best-effort — some data may be ignored. Save with this build to "
- "write a compatible file."
- )
+                f"[WARNING] Workspace format version {file_version} is newer than "
+                f"this build supports ({WORKSPACE_FORMAT_VERSION}). Loading read-only, "
+                "best-effort — some data may be ignored. Save with this build to "
+                "write a compatible file."
+            )
         elif file_version < WORKSPACE_FORMAT_VERSION:
             self.log(
- f"[INFO] Migrating workspace from format v{file_version} to "
- f"v{WORKSPACE_FORMAT_VERSION}."
- )
+                f"[INFO] Migrating workspace from format v{file_version} to "
+                f"v{WORKSPACE_FORMAT_VERSION}."
+            )
             workspace_data = self._migrate_workspace(workspace_data, file_version)
 
         # Asked only when there is work to lose (has_unsaved_work), else `main.py
@@ -307,9 +307,9 @@ class SessionIOControllerMixin:
                                ("resampled_points", session.resampled_points)):
                 if arr is not None and not np.all(np.isfinite(arr)):
                     self.log(
-  f"[WARNING] '{display_name}' has non-finite (NaN/Inf) "
-  f"values in {label}; geometry may render incorrectly."
- )
+                        f"[WARNING] '{display_name}' has non-finite (NaN/Inf) "
+                        f"values in {label}; geometry may render incorrectly."
+                    )
 
             pconf = session_dict.get("project_config", {})
             session.project_model.input_file = pconf.get("input_file", "")
@@ -374,8 +374,8 @@ class SessionIOControllerMixin:
             if missing:
                 parts.append(f"missing: {', '.join(missing)}")
             self.log(
- "[Integrity] [WARNING] " + "; ".join(parts)
- + ". The canvas shows the SAVED geometry.")
+                "[Integrity] [WARNING] " + "; ".join(parts)
+                + ". The canvas shows the SAVED geometry.")
             report_warning(
                 self.main_window, "Source Files Changed",
                 "Some geometry source files are not what they were when this "

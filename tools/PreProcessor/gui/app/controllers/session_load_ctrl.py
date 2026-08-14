@@ -74,7 +74,7 @@ class SessionLoadControllerMixin:
             return
         except Exception as e:
             self.log(
- f"[STL] Failed to read '{os.path.basename(file_path)}': {e}")
+                f"[STL] Failed to read '{os.path.basename(file_path)}': {e}")
             return
 
         base = os.path.splitext(os.path.basename(file_path))[0]
@@ -94,8 +94,8 @@ class SessionLoadControllerMixin:
         self.update_recent_files(os.path.abspath(file_path))
         n_total = sum(len(p) for p in loops)
         self.log(
- f"Imported STL '{os.path.basename(file_path)}' — detected "
- f"{len(loops)} boundary loop(s), {n_total} surface points (z=0 plane).")
+            f"Imported STL '{os.path.basename(file_path)}' — detected "
+            f"{len(loops)} boundary loop(s), {n_total} surface points (z=0 plane).")
 
     def _load_geometry_file(self, file_path: str, record_recent: bool = True,
                             unit_scale: float = 1.0):
@@ -110,14 +110,14 @@ class SessionLoadControllerMixin:
         kind = PipelineConfig.classify_file(file_path)
         if kind == "workspace":
             self.log(
- f"'{os.path.basename(file_path)}' is a HybMesh workspace — "
- "opening it as one (this replaces all open tabs).")
+                f"'{os.path.basename(file_path)}' is a HybMesh workspace — "
+                "opening it as one (this replaces all open tabs).")
             self.open_workspace_path(file_path)
             return
         if kind == "pipeline":
             self.log(
- f"'{os.path.basename(file_path)}' is a pipeline script — "
- "loading it as one (this replaces all open tabs).")
+                f"'{os.path.basename(file_path)}' is a pipeline script — "
+                "loading it as one (this replaces all open tabs).")
             self.open_pipeline_path(file_path)
             return
         if file_path.lower().endswith(".json"):
@@ -151,8 +151,8 @@ class SessionLoadControllerMixin:
             if unit_scale != 1.0 and session.original_points is not None:
                 session.original_points = session.original_points * unit_scale
                 self.log(
- f"  scaled by {unit_scale:.10g} to the model unit "
- f"({self.length_unit_symbol()})")
+                    f"  scaled by {unit_scale:.10g} to the model unit "
+                    f"({self.length_unit_symbol()})")
 
             abs_path = os.path.abspath(file_path)
             if abs_path not in session.mesh_config.geom_files:
@@ -166,8 +166,8 @@ class SessionLoadControllerMixin:
             n_pts = len(session.original_points)
             n_seg = max(0, len(session.split_indices) - 1)
             self.log(
- f"Loaded '{os.path.basename(file_path)}' — "
- f"{n_pts} points, {n_seg} auto-detected edges.")
+                f"Loaded '{os.path.basename(file_path)}' — "
+                f"{n_pts} points, {n_seg} auto-detected edges.")
         except Exception as e:
             self.log(f"Error loading file: {e}")
 
@@ -203,16 +203,16 @@ class SessionLoadControllerMixin:
         cfg_version = int(config.get("format_version", 0))
         if cfg_version > CONFIG_FORMAT_VERSION:
             self.log(
- f"[WARNING] Config format version {cfg_version} is newer than this "
- f"build supports ({CONFIG_FORMAT_VERSION}). Loading read-only, "
- "best-effort — some settings may be ignored. Save with this build "
- "to write a compatible file."
- )
+                f"[WARNING] Config format version {cfg_version} is newer than this "
+                f"build supports ({CONFIG_FORMAT_VERSION}). Loading read-only, "
+                "best-effort — some settings may be ignored. Save with this build "
+                "to write a compatible file."
+            )
         elif cfg_version < CONFIG_FORMAT_VERSION:
             self.log(
- f"[INFO] Migrating config from format v{cfg_version} to "
- f"v{CONFIG_FORMAT_VERSION}."
- )
+                f"[INFO] Migrating config from format v{cfg_version} to "
+                f"v{CONFIG_FORMAT_VERSION}."
+            )
 
         input_file = config.get("input_file", "")
         if not input_file:
@@ -236,7 +236,7 @@ class SessionLoadControllerMixin:
         # If input file doesn't exist, ask user
         if input_file and not os.path.exists(input_file):
             self.log(
- f"input_file '{input_file}' not found. Please select .dat manually.")
+                f"input_file '{input_file}' not found. Please select .dat manually.")
             input_file, _ = QFileDialog.getOpenFileName(
                 self.main_window, "Select Geometry File",
                 "", "Data Files (*.dat)")
@@ -282,8 +282,8 @@ class SessionLoadControllerMixin:
 
         self.update_recent_files(config_path)
         self.log(
- f"Loaded config '{os.path.basename(config_path)}' — "
- f"{len(session.project_model.segments)} segments.")
+            f"Loaded config '{os.path.basename(config_path)}' — "
+            f"{len(session.project_model.segments)} segments.")
 
     def update_recent_files(self, file_path: str):
         if not file_path:

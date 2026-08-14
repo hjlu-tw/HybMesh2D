@@ -22,7 +22,7 @@ class SolverToolsControllerMixin:
         if dlg.exec() and dlg.result_path:
             target.setText(dlg.result_path)
             self.log(
- f"[IBM] {dll_type} DLL source set: {dlg.result_path}")
+                f"[IBM] {dll_type} DLL source set: {dlg.result_path}")
 
     def generate_phi_from_cad_shape(self):
         """Auto-generate an ANALYTIC immersed-solid phi init DLL from a CAD shape
@@ -133,15 +133,15 @@ class SolverToolsControllerMixin:
             return
         sp.probe_points_def_fn.setText(path)
         self.log(
- f"[probe] wrote {len(dlg.points())} point(s) → {path}")
+            f"[probe] wrote {len(dlg.points())} point(s) → {path}")
         # Visualise the probe locations on the Results canvas (#5): they persist
         # across variable changes / result reloads, so they overlay the contour
         # once a result is loaded (run the solver, then Load Result).
         try:
             self.main_window.result_canvas_view.set_solver_probe_points(dlg.points())
             self.log(
- "[probe] locations overlaid on the Results canvas "
- "(visible once a result is loaded).")
+                "[probe] locations overlaid on the Results canvas "
+                "(visible once a result is loaded).")
         except Exception:
             _log.warning(
                 "could not overlay the probe locations on the Results "

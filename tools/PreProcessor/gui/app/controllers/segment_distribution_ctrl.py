@@ -75,8 +75,8 @@ class SegmentDistributionControllerMixin:
             cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
             session.command_history.execute(cmd)
             self.log(
- f"Updated strategy to '{strategy_name}' for {len(indices)} selected edges."
- )
+                f"Updated strategy to '{strategy_name}' for {len(indices)} selected edges."
+            )
         # Refresh the live distribution preview (if its window is open).
         self._preview_distribution()
 
@@ -120,7 +120,7 @@ class SegmentDistributionControllerMixin:
                    and session.project_model.get_segment(i).type == "file"]
         if not indices:
             self.log(
- "Select one or more discrete edges to apply their distribution.")
+                "Select one or more discrete edges to apply their distribution.")
             return
         old_states = {}
         for idx in indices:
@@ -150,7 +150,7 @@ class SegmentDistributionControllerMixin:
             self.main_window.update_title(session.display_name, True)
         self._preview_distribution()
         self.log(
- f"Applied distribution to {len(indices)} edge(s).")
+            f"Applied distribution to {len(indices)} edge(s).")
 
     def _preview_distribution(self):
         """Live-render the chosen point distribution of the CURRENT discrete edge

@@ -208,9 +208,9 @@ class OpenEndpointControllerMixin:
             return
         self.main_window.canvas_view.start_endpoint_tool()
         self.log(
- "Weld points: DRAG any endpoint handle onto another point to weld them "
- "(it snaps to the nearest endpoint/vertex); drop in free space to move "
- "the endpoint there. Right-click to finish.")
+            "Weld points: DRAG any endpoint handle onto another point to weld them "
+            "(it snaps to the nearest endpoint/vertex); drop in free space to move "
+            "the endpoint there. Right-click to finish.")
 
     def _resolve_endpoint_ref(self, session, x, y):
         """The ``ref`` of the datum nearest model-coord (x, y): a collected open
@@ -253,13 +253,13 @@ class OpenEndpointControllerMixin:
             session.command_history.execute(cmd)
             self._update_undo_redo_buttons(session)
             self.log(
- f"Welded endpoint → ({tx:.4g}, {ty:.4g}).")
+                f"Welded endpoint → ({tx:.4g}, {ty:.4g}).")
         else:
             # Connect: draw a straight line from the endpoint to the picked point
             # (reuses the normal add-line create-edit flow, undoable on commit).
             self.on_shape_drawn("line", [(fx, fy), (tx, ty)])
             self.log(
- f"Connecting a line to ({tx:.4g}, {ty:.4g}) — confirm in the dialog.")
+                f"Connecting a line to ({tx:.4g}, {ty:.4g}) — confirm in the dialog.")
 
     # ── Stitching (dialog-driven, undoable) ───────────────────────────────
     def stitch_gaps(self, session, gaps: list[dict], method: str):

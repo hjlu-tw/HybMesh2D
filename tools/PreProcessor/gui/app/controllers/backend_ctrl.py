@@ -99,8 +99,8 @@ class BackendControllerMixin:
                     if nw:
                         pm.segments = welded
                         self.log(
-      f"Welded {nw} boundary junction(s) so the edges form one "
-      "connected boundary (each edge keeps its own BC).")
+                            f"Welded {nw} boundary junction(s) so the edges form one "
+                            "connected boundary (each edge keeps its own BC).")
                 except Exception as e:
                     pm.segments = orig_segments
                     self.log(f"Endpoint weld skipped: {e}")
@@ -156,7 +156,7 @@ class BackendControllerMixin:
             return False
         session._open_decision_sig = sig
         self.log(
- f"Preview: proceeding with {len(open_eps)} open endpoint(s).")
+            f"Preview: proceeding with {len(open_eps)} open endpoint(s).")
         return True
 
     def _resolve_unclosed_before_preview(self, session) -> bool:
@@ -194,7 +194,7 @@ class BackendControllerMixin:
             session._gap_decision = "keep_open"
             session._preview_break_internal = True
             self.log(
- f"Preview: keeping {len(gaps)} gap(s) open (not bridged).")
+                f"Preview: keeping {len(gaps)} gap(s) open (not bridged).")
             return True
 
         # choice == "stitch"
@@ -204,7 +204,7 @@ class BackendControllerMixin:
             session._gap_decision = "line"
             session._preview_break_internal = False
             self.log(
- f"Preview: closing {len(gaps)} gap(s) with a straight line.")
+                f"Preview: closing {len(gaps)} gap(s) with a straight line.")
             return True
 
         # midpoint / snap mutate the points (undoable); the gaps then disappear
@@ -228,7 +228,7 @@ class BackendControllerMixin:
         exe = self._find_executable()
         if not exe:
             self.log(
- "Executable not found. Please build the C++ project.")
+                "Executable not found. Please build the C++ project.")
             return
 
         # Unclosed-point check: a moved-away edge can leave a gap that preview
@@ -261,7 +261,7 @@ class BackendControllerMixin:
         exe = self._find_executable()
         if not exe:
             self.log(
- "Executable not found. Please build the C++ project.")
+                "Executable not found. Please build the C++ project.")
             return
 
         default_out = session.project_model.output_file
@@ -427,7 +427,7 @@ class BackendControllerMixin:
                         self.main_window.canvas_view.clear_segment_highlight()
                         self.preview_curve_formula()
                     self.log(
-  f"Preview done ({len(pts)} points).")
+                        f"Preview done ({len(pts)} points).")
                 except Exception as e:
                     self.log(f"Preview load error: {e}")
             else:
@@ -436,7 +436,7 @@ class BackendControllerMixin:
                     self.log(f"--- Preview {reason} ---")
                 else:
                     self.log(
-  f"--- Preview Backend Failed (code {rc}) ---")
+                        f"--- Preview Backend Failed (code {rc}) ---")
         finally:
             for path in to_cleanup:
                 try:
@@ -451,7 +451,7 @@ class BackendControllerMixin:
         try:
             if rc == 0:
                 self.log(
- f"--- Saved to: {out_path} ---")
+                    f"--- Saved to: {out_path} ---")
                 # Put the Mesh-stage per-segment edits back onto the .meta the
                 # resampler just rewrote (meta_io.restore_seg_edits) — before any
                 # early return, and whether or not the session is still open.
@@ -474,7 +474,7 @@ class BackendControllerMixin:
                             self.main_window.canvas_view.clear_segment_highlight()
                             self.preview_curve_formula()
                         self.log(
-      f"Loaded result ({len(pts)} points).")
+                            f"Loaded result ({len(pts)} points).")
 
                         # Do NOT auto-add the exported geometry to the mesh
                         # config — the Mesh Generator page starts blank and the
@@ -490,7 +490,7 @@ class BackendControllerMixin:
                     self.log(f"--- Save {reason} ---")
                 else:
                     self.log(
-  f"--- Backend Failed (code {rc}) ---")
+                        f"--- Backend Failed (code {rc}) ---")
         finally:
             for path in to_cleanup:
                 try:

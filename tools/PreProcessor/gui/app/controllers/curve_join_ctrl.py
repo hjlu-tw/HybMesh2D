@@ -34,7 +34,7 @@ class CurveJoinControllerMixin:
                         if s.type in ("curve", "file")]
         if len(joinable) < 2:
             self.log(
- "Join needs at least 2 edges — select them in the tree/canvas.")
+                "Join needs at least 2 edges — select them in the tree/canvas.")
             return
 
         edges, all_straight = [], True
@@ -43,7 +43,7 @@ class CurveJoinControllerMixin:
             pr = GeometryService.get_segment_points(session, s)
             if pr is None or len(pr[0]) < 2:
                 self.log(
- f"Join aborted: Edge {s.id} has no usable points.")
+                    f"Join aborted: Edge {s.id} has no usable points.")
                 return
             pts = np.column_stack(pr).astype(float)
             edges.append({"idx": i, "id": s.id, "pts": pts,
@@ -56,8 +56,8 @@ class CurveJoinControllerMixin:
         ordered, is_loop = self._chain_edges(edges, tol)
         if ordered is None:
             self.log(
- "Join aborted: the selected edges do not form a single "
- "connected chain (endpoints must meet within tolerance).")
+                "Join aborted: the selected edges do not form a single "
+                "connected chain (endpoints must meet within tolerance).")
             return
 
         try:
@@ -83,8 +83,8 @@ class CurveJoinControllerMixin:
                 refresh_cb=self._refresh_segment_list)
             session.command_history.execute(cmd)
             self.log(
- f"Joined {len(edges)} edges into a {state} boundary — kept as "
- f"{len(edges)} separate, vertex-editable edges.")
+                f"Joined {len(edges)} edges into a {state} boundary — kept as "
+                f"{len(edges)} separate, vertex-editable edges.")
         else:
             # MERGE: one polygon. All-straight keeps clean corners; a curved/
             # discrete chain follows its sampled points (smoothed).
@@ -104,8 +104,8 @@ class CurveJoinControllerMixin:
             session.command_history.execute(cmd)
             shape = "corner polygon" if all_straight else "smoothed polyline"
             self.log(
- f"Joined {len(edges)} edges into a {state} {shape} "
- f"({len(verts)} vertices).")
+                f"Joined {len(edges)} edges into a {state} {shape} "
+                f"({len(verts)} vertices).")
         self._apply_geometry_update(session)
         self._update_canvas_curve_segments()
         self.detect_open_endpoints(session)

@@ -166,7 +166,12 @@ def log(message, level: str | None = None) -> None:
     _lvl = (logging.ERROR if resolved == "ERROR"
             else logging.WARNING if resolved == "WARNING" else logging.INFO)
     try:
-        logging.getLogger("hybmesh.gui").log(_lvl, clean)
+        # Attach the file handler if this process never ran the GUI's main().
+        # Without it the record below is DROPPED (measured: a headless call left
+        # results/logs/gui.log byte-for-byte unchanged), which would make the
+        # "no sink still logs" guarantee true only inside the GUI.
+        from app.services.logging_setup import ensure_file_logging
+        ensure_file_logging().log(_lvl, clean)
     except Exception:
         # Deliberately silent, and one of the few places that should be: this IS
         # the write-to-log-file path, so logging the failure would re-enter it.
