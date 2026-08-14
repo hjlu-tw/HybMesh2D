@@ -27,3 +27,19 @@ solver/
 .antigravitycli/
 # Browser "save page as" sidecar folders (docs/**/ *.html.download/)
 *.html.download/
+
+# Claude Code runtime state. NOT the same thing as `.agents/` + `skills-lock.json`,
+# which ARE tracked: those pin which skills this repo uses, the way a lockfile
+# does, and `docs/agents/` is referenced by CLAUDE.md. This directory only holds
+# per-machine runtime state (e.g. scheduled_tasks.lock).
+.claude/
+
+# Editor / tool backup copies. A `.bak` beside a tracked file is a local undo
+# buffer, never an input — config/pipeline/*.hws.bak is how they turn up here.
+*.bak
+
+# Local working configs. The mesh parameter file and pipeline/workspace scripts
+# are written per-experiment next to the case being tuned; the ones worth keeping
+# live in config/pipeline/ under their own names and go in with `git add -f`.
+config/mesh/Background_para_I_coarse.dat
+config/pipeline/cyl0d5_Rot1d0.hws
