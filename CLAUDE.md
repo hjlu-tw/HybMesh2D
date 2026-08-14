@@ -436,6 +436,23 @@ in its name, banner reports the resolved basename), and **statically fails the b
 if any other GUI file grows its own `endswith(".*")`** — a second private copy is how
 this diverged in the first place.
 
+**The last generated mesh is not where a reopened case left it**
+(`services/mesh_grid_lookup.py::resolve_case_grid`, Qt-free): Generate Mesh writes its
+output into the GUI's **temp dir** on purpose (`<temp>/global_mesh.*`, so generating
+does not litter the repo — the stable per-case files appear on Export / Send to
+Solver), and that directory is removed on exit, so `global_vtk_path` is **always**
+empty or dangling in a reopened workspace. Auto-link read only that and answered
+`No mesh generated yet` for a case whose grid was on disk and whose own Grid
+Conversion fields still pointed at it — USER-REPORTED (2026-08-13) together with the
+`.hws` failure above. The resolver tries this session's mesh, then the triple the case
+is **already wired to** (what the workspace restored, i.e. what the user last actually
+sent to the solver — trusted over any guess), then the per-case exported mesh, and
+takes the first whose `.vrt` + `.cel` + `.bnd` all exist; it names which one and why in
+the log, and names every candidate when none works. `_locate_mesh_bnd` asks the SAME
+resolver, or the BC table describes one grid while the run reads another. Whether that
+grid is STALE stays the mesh-BC audit's job (`_confirm_mesh_bc_state`), not a refusal
+to run. Both blocks gated by `tests/test_open_project_by_path.py`.
+
 **A re-save of the geometry must not throw the Mesh-stage edits away**
 (`meta_io.snapshot_seg_edits` / `restore_seg_edits`): both halves of a per-segment
 BC live in the `.meta` — the **label** in the NSEGMENTS bc column, the label→type

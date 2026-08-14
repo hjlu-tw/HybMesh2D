@@ -8,6 +8,7 @@ from app.workers.solver_run import SolverPipelineWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import solver_case
 from app.services.case_sources import mesh_provenance_paths
+from app.services.mesh_grid_lookup import resolve_case_grid
 from app.services.logging_setup import get_logger
 from app.services.solver_case import sanitize_case_name as _sanitize
 from app.utils import (
@@ -380,24 +381,40 @@ class SolverControllerMixin:
         self._solver_result_path = os.path.join(
             work_dir, f"xtecp_sol_allz.dat{self.SOLVER_TAG}")
 
+    def _resolve_mesh_grid(self, cfg: SolverConfig | None = None):
+        """``(trio, note, tried)`` — the STAR-CD grid this case will actually use.
+
+        The candidate order and why a reopened workspace needs more than the last
+        generated mesh live in :func:`services.mesh_grid_lookup.resolve_case_grid`;
+        this only gathers the three inputs from controller state. Shared with
+        ``_locate_mesh_bnd``, so the BC table cannot describe one grid while the
+        run reads another.
+        """
+        mesh_cfg = getattr(self, "global_mesh_config", None)
+        return resolve_case_grid(
+            getattr(self, "global_vtk_path", ""),
+            (getattr(cfg, "input_vrt_file", ""), getattr(cfg, "input_cel_file", ""),
+             getattr(cfg, "input_bnd_file", "")) if cfg is not None else None,
+            self._get_expected_vtk_path(mesh_cfg) if mesh_cfg is not None else "")
+
     def _auto_link_mesh_output(self, cfg: SolverConfig) -> bool:
-        """Fill cfg's getPGrid inputs from the last mesh generation's STAR-CD output."""
+        """Fill cfg's getPGrid inputs from the STAR-CD grid this case will use."""
         log = self.main_window.log_panel.log
-        vtk_path = getattr(self, "global_vtk_path", "")
-        if not vtk_path:
-            log("[ERROR] No mesh generated yet. Generate a mesh (with STAR-CD export) "
-                "or uncheck auto-link and pick .vrt/.cel/.bnd manually.")
+        trio, note, tried = self._resolve_mesh_grid(cfg)
+        if trio is None:
+            if not tried:
+                log("[ERROR] No mesh generated yet. Generate a mesh (with STAR-CD export) "
+                    "or uncheck auto-link and pick .vrt/.cel/.bnd manually.")
+            else:
+                log("[ERROR] No complete STAR-CD grid (.vrt + .cel + .bnd) found. "
+                    "Tried: " + "; ".join(tried)
+                    + ". Enable 'Write STAR-CD' and regenerate or re-export the "
+                    "mesh, or uncheck auto-link and pick the files manually.")
             return False
-        base = os.path.splitext(vtk_path)[0]
-        vrt, cel, bnd = base + ".vrt", base + ".cel", base + ".bnd"
-        missing = [p for p in (vrt, cel, bnd) if not os.path.exists(p)]
-        if missing:
-            log("[ERROR] Mesh STAR-CD files missing: "
-                + ", ".join(os.path.basename(m) for m in missing)
-                + ". Enable 'Export STAR-CD' and regenerate the mesh.")
-            return False
-        cfg.input_vrt_file, cfg.input_cel_file, cfg.input_bnd_file = vrt, cel, bnd
-        log(f"[Solver] Auto-linked mesh output: {os.path.basename(base)}.{{vrt,cel,bnd}}")
+        cfg.input_vrt_file, cfg.input_cel_file, cfg.input_bnd_file = trio
+        base = os.path.splitext(trio[0])[0]
+        log(f"[Solver] Auto-linked mesh output: {os.path.basename(base)}."
+            f"{{vrt,cel,bnd}} — {note}.")
         return True
 
     def _confirm_mesh_bc_state(self, bnd_path: str) -> bool:

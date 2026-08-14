@@ -21,15 +21,20 @@ class SolverBcControllerMixin:
         overwrites the panel's paths from the last generated mesh anyway, and
         the field can still be showing an earlier 'Send to Solver' export);
         otherwise the explicitly set .bnd in Grid Conversion, else the last
-        generated mesh's .bnd."""
+        generated mesh's .bnd.
+
+        With auto-link on this asks ``_resolve_mesh_grid`` — the very resolver the
+        run uses — rather than re-deriving the path from ``global_vtk_path``, which
+        is empty in any session that did not itself generate the mesh."""
         from app.services.bnd_io import bnd_path_for
         panel = self.main_window.solver_config_panel
         auto = getattr(panel, "auto_link_mesh", None)
         vtk = getattr(self, "global_vtk_path", "")
-        if auto is not None and auto.isChecked() and vtk:
-            b = bnd_path_for(vtk)
-            if os.path.exists(b):
-                return b
+        if auto is not None and auto.isChecked():
+            trio, _note, _tried = self._resolve_mesh_grid(
+                getattr(self, "global_solver_config", None))
+            if trio is not None:
+                return trio[2]
         p = panel.input_bnd_file.text().strip()
         if p and os.path.exists(p):
             return p
