@@ -99,6 +99,27 @@ class SessionLoadControllerMixin:
 
     def _load_geometry_file(self, file_path: str, record_recent: bool = True,
                             unit_scale: float = 1.0):
+        # This is the "open this path" dispatcher (the CLI, the recent-files menu
+        # and the STL stager all arrive here), so a project file must be
+        # recognised BEFORE the coordinate reader sees it — a workspace handed to
+        # np.loadtxt failed with "could not convert string '{' to float64", which
+        # names neither the file nor the fact that it is a workspace. Classified
+        # by content, so a script saved as .hws (or the reverse) still opens as
+        # what it is. The check costs one byte for real geometry data.
+        from app.models.pipeline_config import PipelineConfig
+        kind = PipelineConfig.classify_file(file_path)
+        if kind == "workspace":
+            self.main_window.log_panel.log(
+                f"'{os.path.basename(file_path)}' is a HybMesh workspace — "
+                "opening it as one (this replaces all open tabs).")
+            self.open_workspace_path(file_path)
+            return
+        if kind == "pipeline":
+            self.main_window.log_panel.log(
+                f"'{os.path.basename(file_path)}' is a pipeline script — "
+                "loading it as one (this replaces all open tabs).")
+            self.open_pipeline_path(file_path)
+            return
         if file_path.lower().endswith(".json"):
             self._load_json_config_direct(file_path)
             return

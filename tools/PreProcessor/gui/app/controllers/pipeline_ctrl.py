@@ -329,9 +329,26 @@ class PipelineControllerMixin:
             start = repo_root()
         path, _ = QFileDialog.getOpenFileName(
             self.main_window, "Load Pipeline Script", start,
-            "Pipeline JSON (*.json);;All Files (*)")
+            "Pipeline script or workspace (*.json *.hws);;All Files (*)")
         if not path:
             return
+        self.open_pipeline_path(path)
+
+    def open_pipeline_path(self, path: str) -> bool:
+        """Load a pipeline script — or a ``.hws`` workspace — from a known path.
+
+        A workspace is routed to the WORKSPACE loader rather than through
+        ``PipelineConfig.from_workspace_dict``: that conversion exists so the
+        headless runner can *run* a ``.hws``, and it deliberately drops working
+        state (cached resampled points, the generated mesh/result paths, the
+        active tab). Inside the GUI the full loader is available and strictly
+        better, so opening a workspace here must not silently downgrade it.
+        """
+        if PipelineConfig.classify_file(path) == "workspace":
+            self.main_window.log_panel.log(
+                f"[Pipeline] '{os.path.basename(path)}' is a HybMesh workspace — "
+                "loading it as a workspace (full state), not as a script.")
+            return self.open_workspace_path(path)
         try:
             # Missing version = legacy v0 (explicit). Older scripts are migrated
             # by PipelineConfig.from_dict; a NEWER one is read-only best-effort.
@@ -352,8 +369,9 @@ class PipelineControllerMixin:
             report_warning(self.main_window, "Load Pipeline Script Failed",
                            "The pipeline script could not be loaded.",
                            detail=str(e))
-            return
+            return False
         self._apply_pipeline_config(pcfg, path)
+        return True
 
     def _apply_pipeline_config(self, pcfg: PipelineConfig, path: str):
         # A pipeline script fully defines the CAD/mesh/solver state, so start

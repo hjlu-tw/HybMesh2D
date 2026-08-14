@@ -53,15 +53,23 @@ class SessionIOControllerMixin:
             "HybMesh Workspace Files (*.hws);;All Files (*)")
         if not file_path:
             return
+        self.open_workspace_path(file_path)
+
+    def open_workspace_path(self, file_path: str) -> bool:
+        """Load a workspace from a path the caller already has — a command-line
+        argument, or a ``.hws`` handed to the geometry / pipeline loader. The
+        File ▸ Load Workspace dialog comes through here too, so a workspace
+        opened without a dialog reports failure the same way."""
         try:
             self._read_workspace_file(file_path)
+            return True
         except Exception as e:
             self.main_window.log_panel.log(f"[ERROR] Failed to load workspace: {e}")
-            from app.utils import report_warning
             report_warning(self.main_window, "Load Workspace Failed",
                            f"'{os.path.basename(file_path)}' could not be loaded. "
                            "It may be corrupt or from an incompatible version.",
                            detail=str(e))
+            return False
 
     def workspace_dict(self) -> dict:
         """The whole workspace as a JSON-ready dict.
@@ -243,9 +251,11 @@ class SessionIOControllerMixin:
             )
             workspace_data = self._migrate_workspace(workspace_data, file_version)
 
-        # headless_default True: a batch run has to be able to load a workspace.
+        # Asked only when there is work to lose (has_unsaved_work), else `main.py
+        # case.hws` opens a modal over an empty canvas; headless_default True
+        # because a batch run has to be able to load a workspace unattended.
         from app.utils import confirm
-        if self.sessions and not confirm(
+        if self.has_unsaved_work() and not confirm(
                 self.main_window, "Load Workspace",
                 "Loading a workspace will close all current tabs. "
                 "Do you want to proceed?"):

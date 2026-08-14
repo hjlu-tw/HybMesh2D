@@ -38,13 +38,42 @@ def _read_list_file(path: str) -> list[str]:
     return paths
 
 
+def split_project_files(paths: list[str]) -> tuple[str, list[str]]:
+    """Split existing paths into (project_file, geometry_files).
+
+    A *project* file is a workspace (``.hws``) or a pipeline script — recognised
+    by content, so the extension does not have to be right. Only one can be open
+    at a time (loading either replaces every tab), so a second one is refused
+    rather than quietly cancelling the first.
+
+    Splitting them out is what makes `main.py case.hws` work at all: every
+    positional argument used to go to the geometry loader, which read the
+    workspace as columns of numbers and reported
+    "could not convert string '{' to float64".
+    """
+    from app.models.pipeline_config import PipelineConfig
+
+    project = ""
+    geometry = []
+    for fp in paths:
+        kind = PipelineConfig.classify_file(fp)
+        if not kind:
+            geometry.append(fp)
+        elif not project:
+            project = fp
+        else:
+            print(f"Warning: ignoring '{fp}' — only one workspace/pipeline "
+                  f"script can be open at a time (using '{project}').")
+    return project, geometry
+
+
 def collect_geometry_files(args: list[str]) -> list[str]:
-    """Expand command-line args into geometry file paths.
+    """Expand command-line args into file paths.
 
     An argument is treated as a *list file* (a manifest of paths, one per line)
     when it starts with '@' or ends with '.txt' / '.list'; otherwise it is a
-    geometry file path. This lets several files be opened at once via, e.g.,
-    `main.py @geoms.txt` instead of listing every path on the command line.
+    geometry / project file path. This lets several files be opened at once via,
+    e.g., `main.py @geoms.txt` instead of listing every path on the command line.
     """
     file_paths = []
     for arg in args:
@@ -137,31 +166,40 @@ def main():
 
     from PyQt6.QtCore import QTimer
 
-    # Load any geometry files provided as command line arguments. Multiple
-    # files may be passed directly, or via a list file (@list.txt / *.txt /
-    # *.list) holding one path per line. Each file opens in its own tab.
-    file_paths = collect_geometry_files(rest_args)
-    if file_paths:
-        # Use QTimer.singleShot to ensure the UI is fully rendered before loading.
-        def load_all():
-            for fp in file_paths:
-                controller.load_geometry_from_path(fp)
-
-        QTimer.singleShot(100, load_all)
-
+    # Files given as command line arguments. Several may be passed directly, or
+    # via a list file (@list.txt / *.txt / *.list) holding one path per line.
+    # A workspace / pipeline script is loaded as such; every geometry file opens
+    # in its own tab.
+    project_path, geometry_paths = split_project_files(
+        collect_geometry_files(rest_args))
     if pipeline_path:
-        from app.models.pipeline_config import PipelineConfig
+        if not os.path.exists(pipeline_path):
+            print(f"Warning: --pipeline file not found: {pipeline_path}")
+            pipeline_path = None
+        elif project_path:
+            print(f"Warning: ignoring '{project_path}' — --pipeline "
+                  f"'{pipeline_path}' takes precedence.")
+    if pipeline_path:
+        project_path = pipeline_path
 
-        def load_pipeline():
-            try:
-                pcfg = PipelineConfig.load_from_file(pipeline_path)
-                controller._apply_pipeline_config(pcfg, os.path.abspath(pipeline_path))
-                if auto_run:
-                    QTimer.singleShot(500, controller.run_full_pipeline)
-            except Exception as e:
-                print(f"Failed to load pipeline '{pipeline_path}': {e}")
+    if project_path or geometry_paths:
+        # One deferred load, in one order, so the UI is fully rendered first.
+        # The project MUST go first: loading a workspace or a script resets all
+        # state and closes every tab, so a geometry loaded before it was silently
+        # discarded (the old code loaded geometry at 100 ms and the pipeline at
+        # 200 ms).
+        def startup_load():
+            if project_path:
+                controller.open_pipeline_path(os.path.abspath(project_path))
+            for fp in geometry_paths:
+                controller.load_geometry_from_path(fp)
+            if auto_run:
+                QTimer.singleShot(500, controller.run_full_pipeline)
 
-        QTimer.singleShot(200, load_pipeline)
+        QTimer.singleShot(100, startup_load)
+    elif auto_run:
+        print("Warning: --run ignored — no workspace, pipeline script or "
+              "geometry file was given to run.")
 
     controller.show_main_window()
     sys.exit(app.exec())

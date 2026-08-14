@@ -26,8 +26,11 @@ Outputs: `./build/HybMesh2D` and `./build/surface_resampler`
 
 **Run preprocessor GUI:**
 ```bash
-python3 tools/PreProcessor/gui/main.py [optional_geometry_file]
+python3 tools/PreProcessor/gui/main.py [geometry.dat | case.hws | pipeline.json | @list.txt ...]
 ```
+Positional arguments are recognised by **content**, not extension — see "A path is not
+a kind" under Architecture. One project file (`.hws` / pipeline script) per launch,
+plus any number of geometry files; `--run` then executes Run All.
 
 **Run preprocessor CLI (after GUI exports a JSON config):**
 ```bash
@@ -390,6 +393,27 @@ BC detection resolves the .bnd the RUN will use (auto-link wins in
 `_locate_mesh_bnd`, and `resync_solver_bc_from_group` runs *after* the auto-link),
 or the table describes one grid while the solver reads another. Gated by
 `tests/test_mesh_bc_audit.py`.
+
+**A path is not a kind: project files are recognised by CONTENT**
+(`services/project_file_kind.py`, Qt-free — `classify_project_file` → `"workspace"` /
+`"pipeline"` / `""`; `PipelineConfig.classify_file` / `is_workspace_file` delegate to
+it, so the extension never has to be right). `main.py` handed every positional
+argument to the geometry loader, so `main.py case.hws` ran `np.loadtxt` over JSON and
+reported `could not convert string '{' to float64` — a message naming neither the file
+nor the problem. USER-REPORTED (2026-08-13). Every "open this path" entry point now
+dispatches through the one classifier: the CLI's positional args,
+`_load_geometry_file` (which the recent-files menu and the STL stager also reach), and
+Pipeline ▸ Load, whose dialog accepts `*.hws` too. Rules: a **workspace opened in the
+GUI goes to the workspace loader**, never through `PipelineConfig.from_workspace_dict`
+— that conversion exists so the headless runner can *run* a `.hws` and deliberately
+drops working state (cached resampled points, generated mesh/result paths, the active
+tab); the CLI loads the **project first and geometry after**, because either project
+load resets all state and closes every tab (geometry used to load at 100 ms and the
+pipeline at 200 ms, so `--pipeline x.json geom.dat` silently discarded the geometry);
+and only ONE project file is accepted per launch, the rest named and refused. The
+"this will close all current tabs" prompt is gated on `has_unsaved_work()` — the GUI
+always opens with one pristine blank session, so otherwise opening a workspace from
+the command line put a modal in front of an empty canvas.
 
 **The Output field's `.*` is a placeholder, and only one module may read it**
 (`models/mesh_output_names.py`, Qt-free — `output_base` / `output_path_for` /

@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from app.models.project import ProjectModel, _legacy_closed_mode
 from app.models.mesh_config import MeshConfig
 from app.models.solver_config import SolverConfig
+from app.services.project_file_kind import (
+    WORKSPACE, classify_project_file, looks_like_workspace,
+)
 
 # Bump when the unified pipeline JSON schema changes in a backward-incompatible
 # way. Readers tolerate a missing field (treated as version 0/legacy) and warn —
@@ -230,19 +233,22 @@ class PipelineConfig:
         """True for a ``.hws`` workspace dict rather than a pipeline script.
 
         Decided by contents, not by extension, so a renamed file still loads as
-        what it actually is.
+        what it actually is. The shape test itself lives in
+        ``services/project_file_kind``, shared with the by-path classifier so the
+        two cannot drift apart.
         """
-        return bool(isinstance(d, dict) and "sessions" in d
-                    and "cads" not in d and "cad" not in d)
+        return looks_like_workspace(d)
+
+    @classmethod
+    def classify_file(cls, path: str) -> str:
+        """What ``path`` actually holds: ``"workspace"``, ``"pipeline"`` or ``""``
+        — see :func:`app.services.project_file_kind.classify_project_file`."""
+        return classify_project_file(path)
 
     @classmethod
     def is_workspace_file(cls, path: str) -> bool:
         """True if ``path`` holds a workspace (used for the CLI's notice)."""
-        try:
-            with open(path, encoding="utf-8") as f:
-                return cls._looks_like_workspace(json.load(f))
-        except (OSError, ValueError):
-            return False
+        return classify_project_file(path) == WORKSPACE
 
     @classmethod
     def load_from_file(cls, path: str) -> PipelineConfig:

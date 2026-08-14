@@ -89,6 +89,22 @@ class ProjectStateControllerMixin:
         except Exception:
             return False
 
+    def has_unsaved_work(self) -> bool:
+        """True if replacing the whole project would discard something authored.
+
+        The GUI always opens with one pristine blank session, so "this will close
+        all current tabs — proceed?" fired even for `main.py case.hws`: a modal in
+        front of an empty canvas, before the user has done anything. A session
+        counts as authored once it has a source file, points or an edge.
+        """
+        for s in getattr(self, "sessions", []) or []:
+            pm = getattr(s, "project_model", None)
+            if (getattr(s, "file_path", "")
+                    or getattr(s, "original_points", None) is not None
+                    or (pm is not None and pm.segments)):
+                return True
+        return bool(self.project_is_dirty())
+
     def _apply_project_state(self, project: dict):
         """Restore the Mesh / Solver / IB configuration written by
         :meth:`_collect_project_state`, and push it to the panels.
