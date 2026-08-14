@@ -36,6 +36,26 @@ import numpy as np
 KINDS = ("rotate", "mirror_h", "mirror_v", "mirror_axis",
          "point_symmetry", "translate", "scale")
 
+#: Base-mode row -> name, and the display text each row carries. The combo's
+#: wording used to be compared as a bare string in three places across two
+#: layers, so rewording "Custom (Manual)" would have silently stopped the
+#: manual-pivot branch from ever matching — the same defect `kind` was given a
+#: name to avoid.
+BASE_MODES = ("centre", "custom", "start", "end")
+BASE_MODE_TEXT = {
+    "centre": "Center (selection)",
+    "custom": "Custom (Manual)",
+    "start": "Start Point",
+    "end": "End Point",
+}
+_BASE_MODE_BY_TEXT = {text: name for name, text in BASE_MODE_TEXT.items()}
+
+
+def base_mode_for_text(text: str) -> str:
+    """The base-mode name for the combo's wording; unknown text is the centre."""
+    return _BASE_MODE_BY_TEXT.get(text, "centre")
+
+
 #: Below this, a mirror-axis direction vector has no direction.
 AXIS_EPS = 1e-12
 #: Below this, two scale factors are the same number. A separate constant from
@@ -55,7 +75,8 @@ class TransformSpec:
 
     kind: str
     label: str = ""
-    base_mode: str = ""
+    #: One of BASE_MODES, not the combo's wording.
+    base_mode: str = "centre"
     delete_original: bool = False
 
     angle_deg: float = 0.0
@@ -81,6 +102,11 @@ class TransformSpec:
         """A scale whose X and Y factors differ — affine, but not a similarity."""
         return (self.kind == "scale"
                 and abs(self.factors[0] - self.factors[1]) > SCALE_EPS)
+
+    @property
+    def manual_reference(self) -> bool:
+        """True when the user places the pivot rather than the mode deriving it."""
+        return self.base_mode == "custom"
 
     @property
     def has_reference_point(self) -> bool:

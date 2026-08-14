@@ -24,6 +24,11 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
     # from a class built by the Qt metaclass, which a plain mixin is not.
     distribution_edited = pyqtSignal()
     curve_edited = pyqtSignal()
+    #: '' | 'file' | 'curve' — which CAD toolbar preview button applies
+    #: to what is being shown. Emitted instead of reaching up through
+    #: self.window() for buttons this panel does not own; the window
+    #: connects it and shows its own widgets.
+    preview_kind_changed = pyqtSignal(str)
     curve_type_changed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -229,10 +234,7 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         # The toolbar "Apply" duplicated "Preview" (both run the full resampler),
         # so it is no longer shown — use the toolbar "Preview" for a full preview
         # and the Distribution window's Apply for a single edge.
-        if self.file_preview_btn:
-            self.file_preview_btn.setVisible(False)
-        if self.curve_preview_btn:
-            self.curve_preview_btn.setVisible(False)
+        self.preview_kind_changed.emit("")
         self._file_seg_label.setText(f"Start Index: {start}    End Index: {end}")
 
     def show_curve_segment(self, seg):
@@ -242,10 +244,7 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         # resampling-strategy Distribution does not apply to analytic edges.
         self.distribution_btn.setVisible(False)
         self._distribution_dialog.hide()
-        if self.file_preview_btn:
-            self.file_preview_btn.setVisible(False)
-        if self.curve_preview_btn:
-            self.curve_preview_btn.setVisible(True)
+        self.preview_kind_changed.emit("curve")
 
         curve_type = getattr(seg, "curve_type", "custom")
         if curve_type in CURVE_TYPES:
@@ -297,16 +296,6 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         if self._curve_spacing_label:
             self._curve_spacing_label.setVisible(spacing_on)
 
-    @property
-    def curve_preview_btn(self):
-        win = self.window()
-        return win.cad_curve_preview_btn if (win and hasattr(win, "cad_curve_preview_btn")) else None
-
-    @property
-    def file_preview_btn(self):
-        win = self.window()
-        return win.cad_file_preview_btn if (win and hasattr(win, "cad_file_preview_btn")) else None
-
     def show_segment_props(self, visible: bool):
         self.setVisible(visible)
         if visible:
@@ -314,7 +303,49 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
             # than leaving them behind a collapsed header the user must hunt for.
             self.expand()
         if not visible:
-            if self.curve_preview_btn:
-                self.curve_preview_btn.setVisible(False)
-            if self.file_preview_btn:
-                self.file_preview_btn.setVisible(False)
+            self.preview_kind_changed.emit("")
+
+    # ── What this panel's tool windows answer ────────────────────────────
+    # The sidebar used to reach _transform_dup_group and _distribution_dialog
+    # directly. They are this panel's internals: it composes them, so it is the
+    # one that may name them, and the sidebar asks the panel instead.
+
+    def distribution_tool_visible(self) -> bool:
+        return self._distribution_dialog.isVisible()
+
+    def wire_distribution_dialog_closed(self, slot):
+        self._distribution_dialog.finished.connect(lambda _result: slot())
+
+    def wire_transform_dialog_closed(self, slot):
+        self._transform_dialog.finished.connect(lambda _result: slot())
+
+    def transform_spec(self):
+        return self._transform_dup_group.transform_spec()
+
+    def set_transform_reference_editable(self, editable: bool):
+        self._transform_dup_group.set_transform_reference_editable(editable)
+
+    def set_transform_reference(self, point):
+        self._transform_dup_group.set_transform_reference(point)
+
+    def set_transform_reference_applicable(self, applicable: bool):
+        self._transform_dup_group.set_transform_reference_applicable(applicable)
+
+    def use_custom_transform_reference(self):
+        self._transform_dup_group.use_custom_transform_reference()
+
+    def set_transform_handle(self, handle: str, x: float, y: float):
+        self._transform_dup_group.set_transform_handle(handle, x, y)
+
+    def show_transform_panel(self, visible: bool):
+        self._transform_dup_group.setVisible(visible)
+
+    def connect_transform_signals(self, on_edited, on_type_changed,
+                                  on_base_mode_changed):
+        tp = self._transform_dup_group
+        tp.transform_edited.connect(on_edited)
+        tp.transform_type_changed.connect(on_type_changed)
+        tp.transform_base_mode_changed.connect(on_base_mode_changed)
+
+    def wire_duplicate_requested(self, slot):
+        self._transform_dup_group.dup_btn.clicked.connect(slot)

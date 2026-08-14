@@ -119,18 +119,15 @@ class SidebarView(SidebarActionsMixin, SidebarDisplayMixin, QWidget):
         _ep.distribution_edited.connect(self.distribution_edited)
         _ep.distribution_btn.clicked.connect(self.distribution_open_requested)
         _ep.distribution_apply_btn.clicked.connect(self.distribution_apply_requested)
-        _ep._distribution_dialog.finished.connect(
-            lambda _r: self.distribution_closed.emit())
-        _tp = _ep._transform_dup_group
-        _tp.wire_transform_edits(self.duplicate_edited.emit,
-                                 self.duplicate_type_changed.emit,
-                                 self.duplicate_base_mode_changed.emit)
-        _tp.dup_btn.clicked.connect(self.duplicate_requested)
+        _ep.wire_distribution_dialog_closed(self.distribution_closed.emit)
+        _ep.connect_transform_signals(self.duplicate_edited,
+                                      self.duplicate_type_changed,
+                                      self.duplicate_base_mode_changed)
+        _ep.wire_duplicate_requested(self.duplicate_requested.emit)
         _ep.transform_btn.clicked.connect(self.transform_open_requested)
         _ep.wire_curve_edits(self.curve_edited.emit,
                              self.curve_type_changed.emit)
-        _ep._transform_dialog.finished.connect(
-            lambda _r: self.transform_closed.emit())
+        _ep.wire_transform_dialog_closed(self.transform_closed.emit)
         self.vertex_panel = VertexPanel(self)
         self.geom_stats_panel = GeomStatsPanel(self)
         # Named, not left to __getattr__: the tree is part of this sidebar's
@@ -387,36 +384,36 @@ class SidebarView(SidebarActionsMixin, SidebarDisplayMixin, QWidget):
         """Whether the distribution tool window is open (its live preview runs
         only while it is). The caller asks a question; that the tool is a QDialog
         is ours."""
-        return self.edge_props_panel._distribution_dialog.isVisible()
+        return self.edge_props_panel.distribution_tool_visible()
 
     # ── Duplicate & Transform ───────────────────────────────────────────
     def transform_spec(self):
         """What the Duplicate & Transform form currently says."""
-        return self.edge_props_panel._transform_dup_group.transform_spec()
+        return self.edge_props_panel.transform_spec()
 
     def set_transform_reference_editable(self, editable: bool):
         """Whether the user owns the pivot fields, or the base mode drives them."""
-        self.edge_props_panel._transform_dup_group.set_transform_reference_editable(
+        self.edge_props_panel.set_transform_reference_editable(
             editable)
 
     def set_transform_reference(self, point):
         """Display the computed pivot every transform turns about."""
-        self.edge_props_panel._transform_dup_group.set_transform_reference(point)
+        self.edge_props_panel.set_transform_reference(point)
 
     def set_transform_reference_applicable(self, applicable: bool):
-        self.edge_props_panel._transform_dup_group.set_transform_reference_applicable(
+        self.edge_props_panel.set_transform_reference_applicable(
             applicable)
 
     def use_custom_transform_reference(self):
-        self.edge_props_panel._transform_dup_group.use_custom_transform_reference()
+        self.edge_props_panel.use_custom_transform_reference()
 
     def set_transform_handle(self, handle: str, x: float, y: float):
         """Place the canvas handle the user dragged."""
-        self.edge_props_panel._transform_dup_group.set_transform_handle(
+        self.edge_props_panel.set_transform_handle(
             handle, x, y)
 
     def show_transform_panel(self, visible: bool):
-        self.edge_props_panel._transform_dup_group.setVisible(visible)
+        self.edge_props_panel.show_transform_panel(visible)
 
     def show_file_segment(self, start: int, end: int):
         self.edge_props_panel.show_file_segment(start, end)

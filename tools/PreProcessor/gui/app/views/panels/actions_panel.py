@@ -21,7 +21,3 @@ class ActionsPanel(CollapsibleSection):
         self.add_widget(help_widget(self.save_btn, "Export the resampled geometry to a .dat mesh file"))
         self.add_widget(help_widget(self.generate_btn, "Save the current configuration to a .json file for CLI processing"))
 
-    @property
-    def preview_btn(self):
-        win = self.window()
-        return win.cad_preview_btn if (win and hasattr(win, "cad_preview_btn")) else None

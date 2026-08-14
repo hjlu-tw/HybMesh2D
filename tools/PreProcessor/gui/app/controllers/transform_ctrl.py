@@ -77,7 +77,7 @@ class TransformControllerMixin:
         # Pivot / axis spin boxes are user-editable only in Custom mode; for
         # every other mode they are driven by the computed reference point and
         # shown read-only. (Mirror-axis direction fields are always editable.)
-        manual = spec.base_mode == "Custom (Manual)"
+        manual = spec.manual_reference
         sb.set_transform_reference_editable(manual)
         if manual:
             return
@@ -89,12 +89,14 @@ class TransformControllerMixin:
     def _compute_dup_reference_point(self, session, mode):
         """Return (px, py) for the duplicate/transform reference point.
 
-        "Center (selection)" uses the bounding-box centre of every selected
-        edge so a multi-edge Rotate/Scale pivots about the group instead of
-        flying off around the origin; "Start/End Point" use the active edge's
-        first/last point.
+        `mode` is a BASE_MODES name, not the combo's wording. "centre" uses the
+        bounding-box centre of every selected edge so a multi-edge Rotate/Scale
+        pivots about the group instead of flying off around the origin;
+        "start"/"end" use the active edge's first/last point. "custom" never
+        arrives here — the caller returns before computing anything, because in
+        that mode the point is the user's.
         """
-        if mode == "Center (selection)":
+        if mode == "centre":
             xs_parts, ys_parts = [], []
             for idx in self.get_selected_segment_indices():
                 s = session.project_model.get_segment(idx)
@@ -119,7 +121,7 @@ class TransformControllerMixin:
         if pts is None or len(pts[0]) == 0:
             return None
         xs, ys = pts
-        if mode == "Start Point":
+        if mode == "start":
             return (float(xs[0]), float(ys[0]))
         return (float(xs[-1]), float(ys[-1]))
 
@@ -168,7 +170,7 @@ class TransformControllerMixin:
             canvas.show_transform_handles({'point': spec.scale_pivot})
         elif spec.kind == "translate":
             # Drag the selection centre to a destination.
-            anchor = self._compute_dup_reference_point(session, "Center (selection)")
+            anchor = self._compute_dup_reference_point(session, "centre")
             if anchor is None:
                 canvas.clear_transform_handles()
                 return
@@ -191,7 +193,7 @@ class TransformControllerMixin:
             # shift vector is derived here — the form stores a delta, not a
             # point, and only the controller knows where the selection is.
             anchor = self._compute_dup_reference_point(
-                self.active_session(), "Center (selection)")
+                self.active_session(), "centre")
             if anchor is not None:
                 sb.set_transform_handle("translate", x - anchor[0], y - anchor[1])
         else:

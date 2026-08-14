@@ -1,11 +1,20 @@
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QWidget
 from app.utils import (make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
                        block_signals, help_label, help_widget)
-from app.models.transform_spec import TransformSpec, kind_for_index
+from app.models.transform_spec import (BASE_MODES, BASE_MODE_TEXT, TransformSpec,
+                                       base_mode_for_text, kind_for_index)
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.adjusting_stacked_widget import AdjustingStackedWidget
 
 class TransformPanel(QGroupBox):
+    # Signals, not injected callbacks. Every other form on this sidebar reports
+    # by signal; a QGroupBox is built by the Qt metaclass, so the reason the
+    # EdgeProps mixins could not declare their own does not apply here.
+    transform_edited = pyqtSignal()
+    transform_type_changed = pyqtSignal()
+    transform_base_mode_changed = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__("Duplicate & Transform", parent=parent)
         self.setStyleSheet(
@@ -35,12 +44,10 @@ class TransformPanel(QGroupBox):
         self.dup_base_form = QFormLayout(self.dup_base_widget)
         self.dup_base_form.setContentsMargins(0, 0, 0, 0)
         self.dup_base_mode_combo = QComboBox()
-        self.dup_base_mode_combo.addItems([
-            "Center (selection)",
-            "Custom (Manual)",
-            "Start Point",
-            "End Point"
-        ])
+        # The rows ARE BASE_MODES, in order: one list, so the combo and the
+        # model cannot disagree about which row means what.
+        self.dup_base_mode_combo.addItems(
+            [BASE_MODE_TEXT[m] for m in BASE_MODES])
         self.dup_base_mode_combo.setStyleSheet(COMBO_STYLE)
         _base_tip = ("Reference point for the transform. 'Center (selection)' "
                      "uses the bounding-box centre of all selected edges so "
@@ -194,6 +201,8 @@ class TransformPanel(QGroupBox):
         for layout in [self.dup_base_form, fl_rot, fl_mh, fl_mv, fl_ma, fl_ps, fl_trans, fl_scale]:
             align_form_labels(layout)
 
+        self._wire_transform_edits()
+
     # ── The Duplicate & Transform form's interface ───────────────────────
     # Two controllers used to read and write these twenty widgets by name. They
     # now exchange a TransformSpec, which is Qt-free and owns the geometry (see
@@ -203,9 +212,17 @@ class TransformPanel(QGroupBox):
     #: in any other mode they display the computed reference point, and a value
     #: typed into a read-only-by-intent field would be overwritten without
     #: warning on the next recompute.
-    _PIVOT_FIELDS = ("dup_rot_px", "dup_rot_py", "dup_mh_py", "dup_mv_px",
-                     "dup_ma_px", "dup_ma_py", "dup_ps_px", "dup_ps_py",
-                     "dup_scale_px", "dup_scale_py")
+    #: (x field, y field) per pivot, so a reference point is written by NAMING
+    #: which coordinate goes where. It used to be decided by `name.endswith
+    #: ("_py")`, which is correct only while every field keeps that suffix — a
+    #: rename would have silently put x into a y box with nothing to catch it.
+    _PIVOT_PAIRS = (("dup_rot_px", "dup_rot_py"),
+                    (None, "dup_mh_py"),
+                    ("dup_mv_px", None),
+                    ("dup_ma_px", "dup_ma_py"),
+                    ("dup_ps_px", "dup_ps_py"),
+                    ("dup_scale_px", "dup_scale_py"))
+    _PIVOT_FIELDS = tuple(n for pair in _PIVOT_PAIRS for n in pair if n)
     #: Fields that change the transform's result (the mode combos are separate,
     #: since selecting a type is not the same event as editing its parameters).
     _VALUE_FIELDS = _PIVOT_FIELDS + (
@@ -229,21 +246,24 @@ class TransformPanel(QGroupBox):
     def _widgets(self, names):
         return [getattr(self, n) for n in names if n]
 
-    def wire_transform_edits(self, on_edited, on_type_changed, on_base_mode_changed):
+    def _wire_transform_edits(self):
         """Collapse seventeen value widgets into one 'the transform changed'."""
         for w in self._widgets(self._VALUE_FIELDS):
-            w.valueChanged.connect(lambda *_: on_edited())
-        self.dup_delete_orig_cb.toggled.connect(lambda *_: on_edited())
-        self.dup_type_combo.currentIndexChanged.connect(lambda *_: on_type_changed())
+            w.valueChanged.connect(lambda *_: self.transform_edited.emit())
+        self.dup_delete_orig_cb.toggled.connect(
+            lambda *_: self.transform_edited.emit())
+        self.dup_type_combo.currentIndexChanged.connect(
+            lambda *_: self.transform_type_changed.emit())
         self.dup_base_mode_combo.currentIndexChanged.connect(
-            lambda *_: on_base_mode_changed())
+            lambda *_: self.transform_base_mode_changed.emit())
 
     def transform_spec(self) -> TransformSpec:
         """What the Duplicate & Transform form currently says."""
         return TransformSpec(
             kind=kind_for_index(self.dup_type_combo.currentIndex()),
             label=self.dup_type_combo.currentText(),
-            base_mode=self.dup_base_mode_combo.currentText(),
+            base_mode=base_mode_for_text(
+                self.dup_base_mode_combo.currentText()),
             delete_original=self.dup_delete_orig_cb.isChecked(),
             angle_deg=self.dup_rot_angle.value(),
             rot_pivot=(self.dup_rot_px.value(), self.dup_rot_py.value()),
@@ -275,10 +295,11 @@ class TransformPanel(QGroupBox):
         if point is None:
             return
         px, py = point
-        fields = self._widgets(self._PIVOT_FIELDS)
-        with block_signals(*fields):
-            for name in self._PIVOT_FIELDS:
-                getattr(self, name).setValue(py if name.endswith("_py") else px)
+        with block_signals(*self._widgets(self._PIVOT_FIELDS)):
+            for x_name, y_name in self._PIVOT_PAIRS:
+                for name, value in ((x_name, px), (y_name, py)):
+                    if name:
+                        getattr(self, name).setValue(value)
 
     def set_transform_reference_applicable(self, applicable: bool):
         """Translate is defined by a shift, so it has no base point to choose."""
@@ -289,9 +310,10 @@ class TransformPanel(QGroupBox):
 
     def use_custom_transform_reference(self):
         """A manual drag means the user wants a custom reference point."""
-        if self.dup_base_mode_combo.currentText() != "Custom (Manual)":
+        custom = BASE_MODE_TEXT["custom"]
+        if self.dup_base_mode_combo.currentText() != custom:
             with block_signals(self.dup_base_mode_combo):
-                self.dup_base_mode_combo.setCurrentText("Custom (Manual)")
+                self.dup_base_mode_combo.setCurrentText(custom)
         for w in self._widgets(self._PIVOT_FIELDS):
             w.setEnabled(True)
 

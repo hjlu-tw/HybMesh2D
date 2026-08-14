@@ -64,6 +64,11 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
 
         self.sidebar_view = SidebarView(self.sidebar_stack)
         self.sidebar_stack.addWidget(self.sidebar_view)
+        # The edge inspector says which preview applies to what it is showing;
+        # these buttons are the toolbar's, so the window shows them. The panel
+        # used to fetch them back out of self.window() and set them itself.
+        self.sidebar_view.edge_props_panel.preview_kind_changed.connect(
+            self._show_cad_preview_for)
 
         # Mesh Configuration Sidebar Page (directly in stack)
         self.mesh_config_panel = MeshConfigPanel(self.sidebar_stack)
@@ -386,9 +391,7 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         if is_pre:
             props = self.sidebar_view.edge_props_panel
             is_curve_active = props.isVisible() and props._curve_group.isVisible()
-            self.cad_curve_preview_btn.setVisible(is_curve_active)
-            # The toolbar "Apply" (file preview) duplicated "Preview"; keep hidden.
-            self.cad_file_preview_btn.setVisible(False)
+            self._show_cad_preview_for("curve" if is_curve_active else "")
 
         for w in self.mesh_tb_widgets:
             w.setVisible(is_mesh)
@@ -415,3 +418,14 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         # late log line (a worker winding down) must not reach it.
         user_log.remove_sink(self._user_log_sink)
         event.accept()
+
+    def _show_cad_preview_for(self, kind: str):
+        """Show the CAD toolbar preview button that applies to `kind`.
+
+        '' hides both. The toolbar "Apply" (file preview) duplicated "Preview" —
+        both run the full resampler — so it stays hidden; the parameter is kept
+        because the edge inspector genuinely distinguishes the two cases and the
+        decision to hide one of them is the toolbar's, not the panel's.
+        """
+        self.cad_curve_preview_btn.setVisible(kind == "curve")
+        self.cad_file_preview_btn.setVisible(False)

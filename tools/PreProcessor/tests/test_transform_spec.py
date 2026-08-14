@@ -21,7 +21,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "gui"))
 
 from app.models.transform_spec import (  # noqa: E402
-    KINDS, TransformSpec, kind_for_index)
+    BASE_MODES, BASE_MODE_TEXT, KINDS, TransformSpec, base_mode_for_text,
+    kind_for_index)
 
 failures = []
 
@@ -127,6 +128,24 @@ check("7. translate has no reference point",
       not TransformSpec("translate").has_reference_point)
 check("7. every other kind has one",
       all(TransformSpec(k).has_reference_point for k in KINDS if k != "translate"))
+
+# ── 7b. the base mode is a NAME, not the combo's wording ─────────────────
+# The wording was compared as a bare string in three places across two layers,
+# so rewording "Custom (Manual)" would have stopped the manual-pivot branch
+# matching, with nothing to notice.
+check("7b. every base mode has display text, and only those",
+      set(BASE_MODE_TEXT) == set(BASE_MODES))
+check("7b. the combo's wording maps back to its name",
+      base_mode_for_text("Custom (Manual)") == "custom"
+      and base_mode_for_text("Start Point") == "start")
+check("7b. unrecognised wording falls back to the centre, not to custom",
+      base_mode_for_text("Reworded Later") == "centre")
+check("7b. only the custom mode hands the pivot to the user",
+      TransformSpec("rotate", base_mode="custom").manual_reference
+      and not any(TransformSpec("rotate", base_mode=m).manual_reference
+                  for m in BASE_MODES if m != "custom"))
+check("7b. a spec defaults to the derived centre, not to manual",
+      not TransformSpec("rotate").manual_reference)
 
 # ── 8. the caller's arrays are never modified in place ───────────────────
 xs, ys = XS.copy(), YS.copy()
