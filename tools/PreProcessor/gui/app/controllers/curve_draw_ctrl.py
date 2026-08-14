@@ -27,7 +27,7 @@ class CurveDrawControllerMixin:
         opens automatically, pre-filled with the drawn values."""
         session = self.active_session()
         if not session:
-            self.main_window.log_panel.log("No geometry session active.")
+            self.log("No geometry session active.")
             return
         if tool == "custom":
             self.open_custom_formula_dialog()
@@ -37,9 +37,9 @@ class CurveDrawControllerMixin:
         canvas.clear_transform_handles()
         self._show_duplicate_preview = False
         canvas.start_draw_mode(tool)
-        self.main_window.log_panel.log(
-            f"Add {tool}: click on the canvas to place points; drag a point to "
-            f"adjust (right-click to cancel).")
+        self.log(
+ f"Add {tool}: click on the canvas to place points; drag a point to "
+ f"adjust (right-click to cancel).")
 
     def on_shape_drawn(self, tool: str, pts: list):
         """The interactive drawing is complete — start a modeless edit session:
@@ -55,7 +55,7 @@ class CurveDrawControllerMixin:
         params, curve_type = self._shape_params_from_points(tool, pts)
         if params is None:
             canvas.clear_draw_artifacts()
-            self.main_window.log_panel.log(f"Could not build {tool}.")
+            self.log(f"Could not build {tool}.")
             return
 
         # Drop the green drawing artifacts; the edit session uses its own
@@ -264,22 +264,22 @@ class CurveDrawControllerMixin:
         mw = self.main_window
         mw.grid_snap_on = bool(on)
         step = mw.grid_snap_step.value()
-        mw.log_panel.log(
-            f"[Canvas] grid snap {'ON' if on else 'OFF'}"
-            + (f" (step {step:g})" if on else ""))
+        self.log(
+    f"[Canvas] grid snap {'ON' if on else 'OFF'}"
+    + (f" (step {step:g})" if on else ""))
 
     def _on_grid_snap_step_changed(self, value: float):
         # Nothing to store: _snap_draw_xy reads the spin box itself.
         if getattr(self.main_window, "grid_snap_on", False):
-            self.main_window.log_panel.log(f"[Canvas] grid snap step {value:g}")
+            self.log(f"[Canvas] grid snap step {value:g}")
 
     def _on_measure_toggled(self, on: bool):
         cv = self.main_window.canvas_view
         if on:
             cv.start_measure_tool()
-            self.main_window.log_panel.log(
-                "[Measure] click two points to read distance / dx / dy / angle "
-                "(click again to start a new span).")
+            self.log(
+ "[Measure] click two points to read distance / dx / dy / angle "
+ "(click again to start a new span).")
             self.main_window.flash_status("Measure: click two points")
         else:
             # Keep the last span drawn: the number is still worth reading after the
@@ -302,7 +302,7 @@ class CurveDrawControllerMixin:
         if not m:
             return
         text = format_measure(m)
-        self.main_window.log_panel.log(f"[Measure] {text}")
+        self.log(f"[Measure] {text}")
         self.main_window.flash_status(f"Measured  {text}", 8000)
 
     def _on_view_history_changed(self, can_back: bool, can_forward: bool):

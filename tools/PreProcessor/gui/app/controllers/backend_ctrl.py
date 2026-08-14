@@ -98,12 +98,12 @@ class BackendControllerMixin:
                         welded, self._endpoint_tolerance(session))
                     if nw:
                         pm.segments = welded
-                        self.main_window.log_panel.log(
-                            f"Welded {nw} boundary junction(s) so the edges form one "
-                            "connected boundary (each edge keeps its own BC).")
+                        self.log(
+      f"Welded {nw} boundary junction(s) so the edges form one "
+      "connected boundary (each edge keeps its own BC).")
                 except Exception as e:
                     pm.segments = orig_segments
-                    self.main_window.log_panel.log(f"Endpoint weld skipped: {e}")
+                    self.log(f"Endpoint weld skipped: {e}")
 
             # If geometry was modified (or it's a blank tab with curve points), save points to a temp .dat
             if (session.is_geometry_modified or not session.file_path) and session.original_points is not None:
@@ -155,8 +155,8 @@ class BackendControllerMixin:
                 "Preview anyway?"):
             return False
         session._open_decision_sig = sig
-        self.main_window.log_panel.log(
-            f"Preview: proceeding with {len(open_eps)} open endpoint(s).")
+        self.log(
+ f"Preview: proceeding with {len(open_eps)} open endpoint(s).")
         return True
 
     def _resolve_unclosed_before_preview(self, session) -> bool:
@@ -193,8 +193,8 @@ class BackendControllerMixin:
             session._gap_decision_sig = sig
             session._gap_decision = "keep_open"
             session._preview_break_internal = True
-            self.main_window.log_panel.log(
-                f"Preview: keeping {len(gaps)} gap(s) open (not bridged).")
+            self.log(
+ f"Preview: keeping {len(gaps)} gap(s) open (not bridged).")
             return True
 
         # choice == "stitch"
@@ -203,8 +203,8 @@ class BackendControllerMixin:
             session._gap_decision_sig = sig
             session._gap_decision = "line"
             session._preview_break_internal = False
-            self.main_window.log_panel.log(
-                f"Preview: closing {len(gaps)} gap(s) with a straight line.")
+            self.log(
+ f"Preview: closing {len(gaps)} gap(s) with a straight line.")
             return True
 
         # midpoint / snap mutate the points (undoable); the gaps then disappear
@@ -212,7 +212,7 @@ class BackendControllerMixin:
         session._gap_decision_sig = None
         session._gap_decision = None
         session._preview_break_internal = False
-        self.main_window.log_panel.log(f"Stitched {len(gaps)} gap(s) ({method}).")
+        self.log(f"Stitched {len(gaps)} gap(s) ({method}).")
         return True
 
     def preview_backend(self):
@@ -223,12 +223,12 @@ class BackendControllerMixin:
         if (not session.project_model.input_file
                 and not session.project_model.segments
                 and session.original_points is None):
-            self.main_window.log_panel.log("No geometry loaded.")
+            self.log("No geometry loaded.")
             return
         exe = self._find_executable()
         if not exe:
-            self.main_window.log_panel.log(
-                "Executable not found. Please build the C++ project.")
+            self.log(
+ "Executable not found. Please build the C++ project.")
             return
 
         # Unclosed-point check: a moved-away edge can leave a gap that preview
@@ -245,7 +245,7 @@ class BackendControllerMixin:
             session, tmp_out_name, preview_markers=True)
         to_cleanup = created_files + [tmp_out_name]
 
-        self.main_window.log_panel.log("--- Preview: Starting Backend ---")
+        self.log("--- Preview: Starting Backend ---")
         self._run_backend(exe, cfg_path, session,
                           on_finish=lambda rc: self._on_preview_finished(
                               rc, tmp_out_name, to_cleanup, session))
@@ -256,12 +256,12 @@ class BackendControllerMixin:
         if not session:
             return
         if not session.project_model.input_file and not session.project_model.segments:
-            self.main_window.log_panel.log("No geometry loaded.")
+            self.log("No geometry loaded.")
             return
         exe = self._find_executable()
         if not exe:
-            self.main_window.log_panel.log(
-                "Executable not found. Please build the C++ project.")
+            self.log(
+ "Executable not found. Please build the C++ project.")
             return
 
         default_out = session.project_model.output_file
@@ -298,7 +298,7 @@ class BackendControllerMixin:
         session.project_model.output_file = out_path
         cfg_path, created_files = self._write_temp_config(session, out_path)
 
-        self.main_window.log_panel.log("--- Save: Starting Backend ---")
+        self.log("--- Save: Starting Backend ---")
         self._run_backend(exe, cfg_path, session,
                           on_finish=lambda rc: self._on_save_finished(
                               rc, out_path, created_files, session, snap))
@@ -309,7 +309,7 @@ class BackendControllerMixin:
             return
         self._sync_active_curve_segment_from_ui()
         if not session.project_model.input_file and not session.project_model.segments:
-            self.main_window.log_panel.log("No geometry loaded.")
+            self.log("No geometry loaded.")
             return
 
         root_dir = repo_root()
@@ -333,7 +333,7 @@ class BackendControllerMixin:
         pm.export_config(path)
 
         pm.input_file = orig_input
-        self.main_window.log_panel.log(f"Config exported: {path}")
+        self.log(f"Config exported: {path}")
 
     def _backend_running(self) -> bool:
         w = getattr(self, "_worker", None)
@@ -363,23 +363,23 @@ class BackendControllerMixin:
         """Cancel the in-flight resample (Preview/Save)."""
         w = getattr(self, "_worker", None)
         if w is not None and w.isRunning():
-            self.main_window.log_panel.log("Cancelling resample…")
+            self.log("Cancelling resample…")
             w.cancel()
 
     def _run_backend(self, exe: str, cfg_path: str,
                      session: GeometrySession, on_finish):
         if self._backend_running():
-            self.main_window.log_panel.log("Backend is already running. Please wait.")
+            self.log("Backend is already running. Please wait.")
             return
         # Keep the shared log across runs/pages (don't clear); just mark a new
         # run. Users can clear manually via the log panel's Clear button.
-        self.main_window.log_panel.log("--- Running PreProcessor (resample) ---")
+        self.log("--- Running PreProcessor (resample) ---")
         self._set_backend_running_ui(True)
         self._worker = BackendWorker(exe, cfg_path)
         # Remember which session this run belongs to so close_tab can cancel it
         # and the finished-callback can tell whether the session still exists.
         self._worker_session = session
-        self._worker.log_signal.connect(self.main_window.log_panel.log)
+        self._worker.log_signal.connect(self.log)
         # Clear the running-state UI for EVERY caller, connected BEFORE on_finish
         # so the buttons come back even if the callback raises. Callers such as
         # the pipeline's _pipe_after_resample never restored it themselves, which
@@ -426,39 +426,39 @@ class BackendControllerMixin:
                         # is not obscured by the selection highlight
                         self.main_window.canvas_view.clear_segment_highlight()
                         self.preview_curve_formula()
-                    self.main_window.log_panel.log(
-                        f"Preview done ({len(pts)} points).")
+                    self.log(
+  f"Preview done ({len(pts)} points).")
                 except Exception as e:
-                    self.main_window.log_panel.log(f"Preview load error: {e}")
+                    self.log(f"Preview load error: {e}")
             else:
                 reason = describe(rc)
                 if reason:
-                    self.main_window.log_panel.log(f"--- Preview {reason} ---")
+                    self.log(f"--- Preview {reason} ---")
                 else:
-                    self.main_window.log_panel.log(
-                        f"--- Preview Backend Failed (code {rc}) ---")
+                    self.log(
+  f"--- Preview Backend Failed (code {rc}) ---")
         finally:
             for path in to_cleanup:
                 try:
                     if os.path.exists(path):
                         os.remove(path)
                 except Exception as e:
-                    self.main_window.log_panel.log(f"Failed to delete temp file {path}: {e}")
+                    self.log(f"Failed to delete temp file {path}: {e}")
 
     def _on_save_finished(self, rc: int, out_path: str, to_cleanup: list[str],
                           session: GeometrySession, seg_edits: dict | None = None):
         # UI state is restored by _on_backend_finished_ui (connected first).
         try:
             if rc == 0:
-                self.main_window.log_panel.log(
-                    f"--- Saved to: {out_path} ---")
+                self.log(
+ f"--- Saved to: {out_path} ---")
                 # Put the Mesh-stage per-segment edits back onto the .meta the
                 # resampler just rewrote (meta_io.restore_seg_edits) — before any
                 # early return, and whether or not the session is still open.
                 for line in meta_io.describe_seg_edit_restore(
                         meta_io.restore_seg_edits(out_path, seg_edits),
                         (seg_edits or {}).get("group_bc")):
-                    self.main_window.log_panel.log(line)
+                    self.log(line)
                 if os.path.exists(out_path):
                     try:
                         pts = load_points_dat(out_path)
@@ -473,8 +473,8 @@ class BackendControllerMixin:
                             self.main_window.canvas_view.load_resampled_data(pts, show_q, mode)
                             self.main_window.canvas_view.clear_segment_highlight()
                             self.preview_curve_formula()
-                        self.main_window.log_panel.log(
-                            f"Loaded result ({len(pts)} points).")
+                        self.log(
+      f"Loaded result ({len(pts)} points).")
 
                         # Do NOT auto-add the exported geometry to the mesh
                         # config — the Mesh Generator page starts blank and the
@@ -483,18 +483,18 @@ class BackendControllerMixin:
                         # session becomes available (unchecked) to import.
                         self.sync_mesh_layers_panel()
                     except Exception as e:
-                        self.main_window.log_panel.log(f"Result load error: {e}")
+                        self.log(f"Result load error: {e}")
             else:
                 reason = describe(rc)
                 if reason:
-                    self.main_window.log_panel.log(f"--- Save {reason} ---")
+                    self.log(f"--- Save {reason} ---")
                 else:
-                    self.main_window.log_panel.log(
-                        f"--- Backend Failed (code {rc}) ---")
+                    self.log(
+  f"--- Backend Failed (code {rc}) ---")
         finally:
             for path in to_cleanup:
                 try:
                     if os.path.exists(path):
                         os.remove(path)
                 except Exception as e:
-                    self.main_window.log_panel.log(f"Failed to delete temp file {path}: {e}")
+                    self.log(f"Failed to delete temp file {path}: {e}")

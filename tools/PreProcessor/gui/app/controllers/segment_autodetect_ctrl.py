@@ -17,7 +17,7 @@ class SegmentAutoDetectControllerMixin:
         """Auto-detect segment boundaries based on sharp angles."""
         session = self.active_session()
         if not session or session.original_points is None:
-            self.main_window.log_panel.log("No geometry loaded.")
+            self.log("No geometry loaded.")
             return
 
         points = session.original_points.copy()
@@ -31,8 +31,8 @@ class SegmentAutoDetectControllerMixin:
             session, new_indices,
             refresh_cb=lambda: self._apply_geometry_update(session))
         session.command_history.execute(cmd)
-        self.main_window.log_panel.log(
-            f"Auto-detected {len(new_indices) - 1} edges based on sharp angles (threshold: {angle_threshold_deg}°).")
+        self.log(
+ f"Auto-detected {len(new_indices) - 1} edges based on sharp angles (threshold: {angle_threshold_deg}°).")
 
     def auto_detect_segments_from_button(self):
         """Slot for the Auto Detect Segments button."""
@@ -50,7 +50,7 @@ class SegmentAutoDetectControllerMixin:
 
         if seg:
             if seg.type == "file" and session.original_points is None:
-                self.main_window.log_panel.log("No geometry loaded for file segment.")
+                self.log("No geometry loaded for file segment.")
                 return
 
             new_indices = self._auto_detect_features_for_segment(seg_idx, angle_threshold)
@@ -59,14 +59,14 @@ class SegmentAutoDetectControllerMixin:
                     session, seg_idx, new_indices,
                     refresh_cb=lambda: self._apply_geometry_update(session))
                 session.command_history.execute(cmd)
-                self.main_window.log_panel.log(
-                    f"Auto-detected {len(new_indices) - 1} sub-edges for edge {seg.id} (threshold: {angle_threshold}°).")
+                self.log(
+ f"Auto-detected {len(new_indices) - 1} sub-edges for edge {seg.id} (threshold: {angle_threshold}°).")
             else:
-                self.main_window.log_panel.log("No sharp corners detected for selected edge.")
+                self.log("No sharp corners detected for selected edge.")
             return
 
         if session.original_points is None:
-            self.main_window.log_panel.log("No geometry loaded.")
+            self.log("No geometry loaded.")
             return
         self.auto_detect_segments(angle_threshold_deg=angle_threshold)
 

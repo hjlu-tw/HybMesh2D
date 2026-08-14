@@ -106,7 +106,7 @@ class SegmentPropsControllerMixin:
             return
         segs = session.project_model.segments
         if not segs:
-            self.main_window.log_panel.log("No edges to assign a patch/group to.")
+            self.log("No edges to assign a patch/group to.")
             return
 
         edges = []
@@ -124,8 +124,8 @@ class SegmentPropsControllerMixin:
         def _apply(indices, name):
             self._apply_bc_to_indices(session, indices, name)
             shown = name or "(cleared)"
-            self.main_window.log_panel.log(
-                f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
+            self.log(
+ f"Assigned patch/group '{shown}' to {len(indices)} edge(s).")
 
         dlg = AssignPatchDialog(session.display_name, edges, existing,
                                 preselect=preselect, highlight_cb=highlight,

@@ -39,9 +39,9 @@ class PipelineControllerMixin:
         ``cad_skip()``. The pipeline then starts at meshing those files.
         """
         if getattr(self, "_pipeline_running", False):
-            self.main_window.log_panel.log("Pipeline is already running. Please wait.")
+            self.log("Pipeline is already running. Please wait.")
             return
-        log = self.main_window.log_panel.log
+        log = self.log
 
         session = self.active_session()
         has_cad = session is not None and (
@@ -93,7 +93,7 @@ class PipelineControllerMixin:
             btn.setEnabled(enabled)
 
     def _pipeline_abort(self, msg: str):
-        self.main_window.log_panel.log(f"[Pipeline] Aborted: {msg}")
+        self.log(f"[Pipeline] Aborted: {msg}")
         self._pipeline_running = False
         # Drop any geometries still queued for resampling, so a later stray
         # continuation cannot resume half of an aborted run.
@@ -114,9 +114,9 @@ class PipelineControllerMixin:
                 pts = np.vstack((pts, pts[0]))
             session.split_indices = self._auto_detect_features(pts)
             self._sync_file_segments(session)
-            self.main_window.log_panel.log(
-                f"[Pipeline] auto-detected {max(0, len(session.split_indices) - 1)} "
-                "edge(s) for resampling.")
+            self.log(
+ f"[Pipeline] auto-detected {max(0, len(session.split_indices) - 1)} "
+ "edge(s) for resampling.")
 
         # Write the resampled geometry to the generated-artifacts area
         # (results/resampled/), not next to the source geometry.
@@ -137,7 +137,7 @@ class PipelineControllerMixin:
 
         self.main_window.mode_combo.setCurrentIndex(0)  # show CAD while resampling
         cfg_path, created = self._write_temp_config(session, out)
-        self.main_window.log_panel.log("[Pipeline] Stage 1/3: resampling geometry...")
+        self.log("[Pipeline] Stage 1/3: resampling geometry...")
         self._run_backend(
             self._find_executable(), cfg_path, session,
             on_finish=lambda rc: self._pipe_after_resample(rc, out, created,
@@ -156,7 +156,7 @@ class PipelineControllerMixin:
         for line in meta_io.describe_seg_edit_restore(
                 meta_io.restore_seg_edits(out, seg_edits),
                 (seg_edits or {}).get("group_bc")):
-            self.main_window.log_panel.log(f"[Pipeline] {line}")
+            self.log(f"[Pipeline] {line}")
         try:
             if session in self.sessions:
                 from app.services.geometry_service import load_points_dat
@@ -166,22 +166,22 @@ class PipelineControllerMixin:
             # the pipeline continues to meshing), but log it so a malformed
             # resampler output is not silently indistinguishable from "did
             # nothing".
-            self.main_window.log_panel.log(
-                f"[Pipeline] [WARNING] could not load resampled preview: {e}")
+            self.log(
+ f"[Pipeline] [WARNING] could not load resampled preview: {e}")
 
         abs_out = os.path.abspath(out)
         if abs_out not in self.global_mesh_config.geom_files:
             self.global_mesh_config.geom_files.append(abs_out)
         self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
         self.sync_mesh_layers_panel()
-        self.main_window.log_panel.log(f"[Pipeline] resampled -> {out}")
+        self.log(f"[Pipeline] resampled -> {out}")
         # Continue down the CAD queue; _pipe_resample_next() meshes once empty.
         self._pipe_resample_next()
 
     # ---- Stage 2: mesh generation ------------------------------------- #
     def _pipe_mesh(self):
         self.main_window.mode_combo.setCurrentIndex(1)  # Mesh Generator view
-        self.main_window.log_panel.log("[Pipeline] Stage 2/3: generating mesh...")
+        self.log("[Pipeline] Stage 2/3: generating mesh...")
         # run_mesh_generator already forces STAR-CD export on the temp mesh, so
         # the solver's auto-link finds the .vrt/.cel/.bnd next to the temp VTK.
         self.run_mesh_generator()
@@ -206,7 +206,7 @@ class PipelineControllerMixin:
 
     # ---- Stage 3: solver ---------------------------------------------- #
     def _pipe_solver(self):
-        self.main_window.log_panel.log("[Pipeline] Stage 3/3: running solver...")
+        self.log("[Pipeline] Stage 3/3: running solver...")
         # Ensure the solver pulls the mesh we just generated.
         self.main_window.solver_config_panel.auto_link_mesh.setChecked(True)
         self.run_solver_pipeline()
@@ -226,8 +226,8 @@ class PipelineControllerMixin:
         self._pipeline_running = False
         self._set_run_all_enabled(True)
         if rc != 0:
-            self.main_window.log_panel.log(
-                f"[Pipeline] solver stage failed (code {rc}).")
+            self.log(
+ f"[Pipeline] solver stage failed (code {rc}).")
             return
         # _on_solver_finished already auto-loaded the result and switched to the
         # Results view; just apply the preferred contour variable if we have one.
@@ -239,8 +239,8 @@ class PipelineControllerMixin:
                 _log.warning(
                     "could not select the preferred contour "
                     "variable", exc_info=True)
-        self.main_window.log_panel.log(
-            "=== Pipeline complete — result contour shown in the Results tab. ===")
+        self.log(
+ "=== Pipeline complete — result contour shown in the Results tab. ===")
 
     # ------------------------------------------------------------------ #
     # Save / load the unified pipeline JSON
@@ -248,7 +248,7 @@ class PipelineControllerMixin:
     def save_pipeline_file(self):
         session = self.active_session()
         if session is None:
-            self.main_window.log_panel.log("[Pipeline] No active geometry to save.")
+            self.log("[Pipeline] No active geometry to save.")
             return
         # Freshen the active analytic edge and transform from the sidebar so the
         # saved CAD section matches what is on screen.
@@ -263,9 +263,9 @@ class PipelineControllerMixin:
             _log.warning(
                 "could not sync the on-screen CAD state into the pipeline "
                 "script; the saved script may not match the canvas", exc_info=True)
-            self.main_window.log_panel.log(
-                "[Pipeline] [WARNING] could not read the latest on-screen CAD "
-                f"edits ({e}); the saved script may not match the canvas.")
+            self.log(
+ "[Pipeline] [WARNING] could not read the latest on-screen CAD "
+ f"edits ({e}); the saved script may not match the canvas.")
 
         mesh_cfg = self.main_window.mesh_config_panel.get_config()
         solver_cfg = self.main_window.solver_config_panel.get_config()
@@ -291,9 +291,9 @@ class PipelineControllerMixin:
             name, [s.project_model for s in ordered], mesh_cfg, solver_cfg,
             results, stl3d_config=getattr(self, "global_stl3d_config", None))
         if len(ordered) > 1:
-            self.main_window.log_panel.log(
-                f"[Pipeline] script describes {len(ordered)} CAD geometries "
-                f"(tab order: {', '.join(s.display_name.lstrip('*') for s in ordered)}).")
+            self.log(
+ f"[Pipeline] script describes {len(ordered)} CAD geometries "
+ f"(tab order: {', '.join(s.display_name.lstrip('*') for s in ordered)}).")
 
         # A drawn/in-memory geometry has no source file on disk, so its per-edge
         # segments can't be re-resampled from a reload. Flag it per entry: the
@@ -301,11 +301,11 @@ class PipelineControllerMixin:
         # entry is inert.
         for sess, cad in zip(ordered, pcfg.cads):
             if cad.get("segments") and not cad.get("input_file"):
-                self.main_window.log_panel.log(
-                    f"[Pipeline] [WARNING] '{sess.display_name.lstrip('*')}' has no "
-                    "source .dat file; the saved script cannot re-run its CAD "
-                    "resample. Meshing will use the exported geometry files. Run "
-                    "'Save & Export' to persist a source.")
+                self.log(
+ f"[Pipeline] [WARNING] '{sess.display_name.lstrip('*')}' has no "
+ "source .dat file; the saved script cannot re-run its CAD "
+ "resample. Meshing will use the exported geometry files. Run "
+ "'Save & Export' to persist a source.")
 
         default = os.path.join(repo_root(), "config", "pipeline", f"{name}.json")
         path, _ = QFileDialog.getSaveFileName(
@@ -315,9 +315,9 @@ class PipelineControllerMixin:
             return
         try:
             pcfg.save_to_file(path)
-            self.main_window.log_panel.log(f"[Pipeline] Saved script to {path}")
+            self.log(f"[Pipeline] Saved script to {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"[Pipeline] [ERROR] Failed to save script: {e}")
+            self.log(f"[Pipeline] [ERROR] Failed to save script: {e}")
             from app.utils import report_error
             report_error(self.main_window, "Save Pipeline Script Failed",
                          "The pipeline script could not be saved to disk.",
@@ -345,26 +345,26 @@ class PipelineControllerMixin:
         better, so opening a workspace here must not silently downgrade it.
         """
         if PipelineConfig.classify_file(path) == "workspace":
-            self.main_window.log_panel.log(
-                f"[Pipeline] '{os.path.basename(path)}' is a HybMesh workspace — "
-                "loading it as a workspace (full state), not as a script.")
+            self.log(
+ f"[Pipeline] '{os.path.basename(path)}' is a HybMesh workspace — "
+ "loading it as a workspace (full state), not as a script.")
             return self.open_workspace_path(path)
         try:
             # Missing version = legacy v0 (explicit). Older scripts are migrated
             # by PipelineConfig.from_dict; a NEWER one is read-only best-effort.
             ver = PipelineConfig.file_version(path)
             if ver > PIPELINE_FORMAT_VERSION:
-                self.main_window.log_panel.log(
-                    f"[Pipeline] [WARNING] script version {ver} is newer than "
-                    f"supported ({PIPELINE_FORMAT_VERSION}); loading read-only, "
-                    "best-effort — some settings may be ignored.")
+                self.log(
+ f"[Pipeline] [WARNING] script version {ver} is newer than "
+ f"supported ({PIPELINE_FORMAT_VERSION}); loading read-only, "
+ "best-effort — some settings may be ignored.")
             elif ver < PIPELINE_FORMAT_VERSION:
-                self.main_window.log_panel.log(
-                    f"[Pipeline] [INFO] migrating script from v{ver} to "
-                    f"v{PIPELINE_FORMAT_VERSION}.")
+                self.log(
+ f"[Pipeline] [INFO] migrating script from v{ver} to "
+ f"v{PIPELINE_FORMAT_VERSION}.")
             pcfg = PipelineConfig.load_from_file(path)
         except Exception as e:
-            self.main_window.log_panel.log(f"[Pipeline] [ERROR] Failed to load script: {e}")
+            self.log(f"[Pipeline] [ERROR] Failed to load script: {e}")
             from app.utils import report_warning
             report_warning(self.main_window, "Load Pipeline Script Failed",
                            "The pipeline script could not be loaded.",
@@ -392,13 +392,13 @@ class PipelineControllerMixin:
                 # saved (the entry came from a drawn/in-memory geometry). Warn so
                 # the missing tab isn't a surprise; Run All skips its resample and
                 # meshes the configured geometry files directly.
-                self.main_window.log_panel.log(
-                    f"[Pipeline] [WARNING] CAD entry {i + 1} has no source "
-                    "geometry file; its resample stage will be skipped and the "
-                    "mesh will use its configured geometry files.")
+                self.log(
+ f"[Pipeline] [WARNING] CAD entry {i + 1} has no source "
+ "geometry file; its resample stage will be skipped and the "
+ "mesh will use its configured geometry files.")
         if loaded > 1:
-            self.main_window.log_panel.log(
-                f"[Pipeline] opened {loaded} CAD geometries from the script.")
+            self.log(
+ f"[Pipeline] opened {loaded} CAD geometries from the script.")
 
         # Mesh: apply onto the shared mesh config + panel, wiring the CAD output
         # as the boundary if the section did not name its own geometry.
@@ -428,9 +428,9 @@ class PipelineControllerMixin:
         if pcfg.stl3d:
             self.global_stl3d_config = pcfg.build_stl3d_config()
             self.push_panel_config(self.main_window.stl3d_config_panel, self.global_stl3d_config)
-            self.main_window.log_panel.log(
-                "[Pipeline] applied the immersed-solid (IB) section; run the "
-                "Immersed Solid stage to generate phi.")
+            self.log(
+ "[Pipeline] applied the immersed-solid (IB) section; run the "
+ "Immersed Solid stage to generate phi.")
 
         # Results: remember the preferred contour variable for after the solve.
         self._pipeline_result_var = pcfg.results.get("variable", "")
@@ -438,6 +438,6 @@ class PipelineControllerMixin:
         # this, loading a script would leave the project looking unsaved and the
         # exit prompt would ask about changes the user never made.
         self._reset_project_baseline()
-        self.main_window.log_panel.log(
-            f"[Pipeline] Loaded script '{os.path.basename(path)}'. "
-            "Click Run All to execute.")
+        self.log(
+ f"[Pipeline] Loaded script '{os.path.basename(path)}'. "
+ "Click Run All to execute.")

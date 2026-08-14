@@ -409,7 +409,7 @@ class SegmentControllerMixin:
 
         cmd = RemoveSegmentCmd(session, idx, self._on_segment_removed)
         session.command_history.execute(cmd)
-        self.main_window.log_panel.log(f"Removed Edge {seg.id}.")
+        self.log(f"Removed Edge {seg.id}.")
 
     def _on_segment_removed(self):
         session = self.active_session()

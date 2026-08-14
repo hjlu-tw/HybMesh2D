@@ -250,7 +250,7 @@ class CurveEditControllerMixin:
         self.preview_curve_formula()
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
-        self.main_window.log_panel.log(f"Edited Custom Formula Edge {seg.id}.")
+        self.log(f"Edited Custom Formula Edge {seg.id}.")
 
     def open_edge_param_dialog(self):
         session = self.active_session()
@@ -279,4 +279,4 @@ class CurveEditControllerMixin:
             self._refresh_edge_handles()
             session.is_geometry_modified = True
             self.main_window.update_title(session.display_name, True)
-            self.main_window.log_panel.log(f"Edited Edge {seg.id}.")
+            self.log(f"Edited Edge {seg.id}.")

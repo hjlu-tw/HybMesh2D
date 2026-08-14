@@ -275,7 +275,7 @@ class UndoControllerMixin:
 
     def _run_history_step(self, best, verb: str):
         if best is None:
-            self.main_window.log_panel.log(f"Nothing to {verb.lower()}.")
+            self.log(f"Nothing to {verb.lower()}.")
             self._update_undo_redo_buttons()
             return
         _seq, label, hist, session = best
@@ -289,7 +289,7 @@ class UndoControllerMixin:
         if cmd is None:                     # raced away; nothing applied
             self._update_undo_redo_buttons()
             return
-        self.main_window.log_panel.log(f"{verb} ({cmd.description()}) — {label}")
+        self.log(f"{verb} ({cmd.description()}) — {label}")
         if session is not None:
             self._after_session_history_change(session)
         self._update_undo_redo_buttons()

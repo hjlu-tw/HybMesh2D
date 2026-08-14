@@ -14,31 +14,31 @@ class MeshLayersControllerMixin:
         """Auto-add the resampled output file of the active PreProcessor session into the mesh generator input list."""
         session = self.active_session()
         if not session:
-            self.main_window.log_panel.log("No active session. Please create or import geometry first.")
+            self.log("No active session. Please create or import geometry first.")
             return
 
         if not session.project_model.output_file:
-            self.main_window.log_panel.log(
-                "No resampled output file specified. Run 'Save & Export' in PreProcessor mode first."
-            )
+            self.log(
+ "No resampled output file specified. Run 'Save & Export' in PreProcessor mode first."
+ )
             return
 
         path = session.project_model.output_file
         abs_path = os.path.abspath(path)
         if not os.path.exists(abs_path):
-            self.main_window.log_panel.log(
-                f"Resampled file does not exist at '{abs_path}'. Run 'Save & Export' first."
-            )
+            self.log(
+ f"Resampled file does not exist at '{abs_path}'. Run 'Save & Export' first."
+ )
             return
 
         cfg = self.config_from_panel("mesh_config_panel")
         if abs_path not in cfg.geom_files:
             cfg.geom_files.append(abs_path)
             self.push_panel_config(self.main_window.mesh_config_panel, cfg)
-            self.main_window.log_panel.log(f"Added resampled geometry to configuration: {abs_path}")
+            self.log(f"Added resampled geometry to configuration: {abs_path}")
             self.sync_mesh_layers_panel()
         else:
-            self.main_window.log_panel.log("Geometry file is already in the list.")
+            self.log("Geometry file is already in the list.")
 
     def _sync_global_scalars_from_panel(self):
         """Merge the mesh panel's CURRENT numeric/scalar edits into
@@ -88,10 +88,10 @@ class MeshLayersControllerMixin:
         self._sync_global_scalars_from_panel()
         self.push_panel_config(self.main_window.mesh_config_panel, cfg)
         self.sync_mesh_layers_panel()
-        self.main_window.log_panel.log(
-            f"Removed deleted geometry '{os.path.basename(abs_out)}' from the "
-            "mesh generator input list."
-        )
+        self.log(
+ f"Removed deleted geometry '{os.path.basename(abs_out)}' from the "
+ "mesh generator input list."
+ )
 
     def sync_mesh_layers_panel(self):
         """Update the Geometry Layers QListWidget in the MeshConfigPanel based on current sessions."""
@@ -178,10 +178,10 @@ class MeshLayersControllerMixin:
                 self._sync_global_scalars_from_panel()
                 self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
                 self.sync_mesh_layers_panel()
-                self.main_window.log_panel.log(
-                    f"Removed external geometry '{os.path.basename(abs_out_file)}' "
-                    "from the mesh geometry list."
-                )
+                self.log(
+ f"Removed external geometry '{os.path.basename(abs_out_file)}' "
+ "from the mesh geometry list."
+ )
             return
 
         session = None
@@ -237,9 +237,9 @@ class MeshLayersControllerMixin:
 
         if missing_exports:
             names = ", ".join(missing_exports)
-            self.main_window.log_panel.log(
-                f"[WARNING] The following sessions cannot be added because they have not been exported yet: {names}"
-            )
+            self.log(
+ f"[WARNING] The following sessions cannot be added because they have not been exported yet: {names}"
+ )
 
         if added_any or not missing_exports:
             panel = self.main_window.mesh_config_panel
@@ -252,4 +252,4 @@ class MeshLayersControllerMixin:
             if panel.domain_source_combo.currentIndex() != prev_src:
                 panel.domain_source_combo.setCurrentIndex(prev_src)
             self.sync_mesh_layers_panel()
-            self.main_window.log_panel.log("All exported sessions added to mesh configuration.")
+            self.log("All exported sessions added to mesh configuration.")

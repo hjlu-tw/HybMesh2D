@@ -41,7 +41,7 @@ class FileEditControllerMixin:
             corners.add(si)
             corners.add(ei)
         if not specs or not corners:
-            self.main_window.log_panel.log("This geometry can't be edited directly.")
+            self.log("This geometry can't be edited directly.")
             return
 
         # Corners of the double-clicked edge (shown in the numeric dialog).
@@ -184,7 +184,7 @@ class FileEditControllerMixin:
             self._apply_geometry_update(session)
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
-        self.main_window.log_panel.log("Updated geometry shape.")
+        self.log("Updated geometry shape.")
 
     def _cancel_file_edit(self):
         session = self.active_session()
@@ -194,7 +194,7 @@ class FileEditControllerMixin:
         self._clear_file_edit_state()
         if session is not None:
             self._apply_geometry_update(session)
-        self.main_window.log_panel.log("Shape edit cancelled (reverted).")
+        self.log("Shape edit cancelled (reverted).")
 
     def _clear_file_edit_state(self):
         self._pending_file = None

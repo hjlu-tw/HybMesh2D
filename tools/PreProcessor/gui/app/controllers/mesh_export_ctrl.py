@@ -42,9 +42,9 @@ class MeshExportControllerMixin:
                 _log.warning(
                     "could not read the live output name from the mesh panel; "
                     "falling back to the stored name", exc_info=True)
-                self.main_window.log_panel.log(
-                    "[Export] [WARNING] could not read the Output name field "
-                    f"({e}); using the name from the last Generate instead.")
+                self.log(
+ "[Export] [WARNING] could not read the Output name field "
+ f"({e}); using the name from the last Generate instead.")
         return (self.global_mesh_config.output_filename
                 if self.global_mesh_config else "") or ""
 
@@ -142,9 +142,9 @@ class MeshExportControllerMixin:
 
         try:
             shutil.copy2(vtk_path, dest_path)
-            self.main_window.log_panel.log(f"Successfully exported VTK mesh to {dest_path}")
+            self.log(f"Successfully exported VTK mesh to {dest_path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to export VTK mesh: {e}")
+            self.log(f"Failed to export VTK mesh: {e}")
 
     def export_star_cd(self):
         """Export the generated Star-CD mesh files (.vrt, .cel, .bnd) to a user-selected prefix."""
@@ -167,10 +167,10 @@ class MeshExportControllerMixin:
         if not os.path.exists(bnd_path): missing.append(".bnd")
 
         if missing:
-            self.main_window.log_panel.log(
-                f"[INFO] Missing Star-CD files: {', '.join(missing)}. "
-                "Ensure 'Export Star-CD' is enabled in the configuration panel, and regenerate the mesh."
-            )
+            self.log(
+ f"[INFO] Missing Star-CD files: {', '.join(missing)}. "
+ "Ensure 'Export Star-CD' is enabled in the configuration panel, and regenerate the mesh."
+ )
             return
 
         default_path = self._resolve_export_path(vrt_path, ".vrt")
@@ -192,9 +192,9 @@ class MeshExportControllerMixin:
             shutil.copy2(vrt_path, dest_vrt)
             shutil.copy2(cel_path, dest_cel)
             shutil.copy2(bnd_path, dest_bnd)
-            self.main_window.log_panel.log(f"Successfully exported Star-CD files to {dest_base}.{{vrt,cel,bnd}}")
+            self.log(f"Successfully exported Star-CD files to {dest_base}.{{vrt,cel,bnd}}")
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to export Star-CD files: {e}")
+            self.log(f"Failed to export Star-CD files: {e}")
             return
 
         # These files are what the solver (here or on another machine) will run,
@@ -232,10 +232,10 @@ class MeshExportControllerMixin:
         src = {ext: base_name + ext for ext in (".vrt", ".cel", ".bnd")}
         missing = [ext for ext, p in src.items() if not os.path.exists(p)]
         if missing:
-            self.main_window.log_panel.log(
-                f"[Solver] Missing Star-CD files ({', '.join(missing)}) — the "
-                "grid could not be sent. Regenerate the mesh (Generate enables "
-                "Star-CD export automatically).")
+            self.log(
+ f"[Solver] Missing Star-CD files ({', '.join(missing)}) — the "
+ "grid could not be sent. Regenerate the mesh (Generate enables "
+ "Star-CD export automatically).")
             return
 
         # Copy to a stable results location so the Solver reads persistent files
@@ -248,10 +248,10 @@ class MeshExportControllerMixin:
             for ext in (".vrt", ".cel", ".bnd"):
                 shutil.copy2(src[ext], dest[ext])
         except Exception as e:
-            self.main_window.log_panel.log(f"[Solver] Failed to stage mesh files: {e}")
+            self.log(f"[Solver] Failed to stage mesh files: {e}")
             return
-        self.main_window.log_panel.log(
-            f"[Solver] Staged grid → {dest_base}.{{vrt,cel,bnd}}")
+        self.log(
+ f"[Solver] Staged grid → {dest_base}.{{vrt,cel,bnd}}")
         self._send_starcd_to_solver(dest[".vrt"], dest[".cel"], dest[".bnd"])
 
     def _send_starcd_to_solver(self, vrt_path: str, cel_path: str, bnd_path: str,
@@ -263,8 +263,8 @@ class MeshExportControllerMixin:
         Solver tab — the user reviews the BCs and presses Run."""
         panel = getattr(self.main_window, "solver_config_panel", None)
         if panel is None:
-            self.main_window.log_panel.log(
-                "[Export] Solver panel unavailable; mesh not sent to Solver.")
+            self.log(
+ "[Export] Solver panel unavailable; mesh not sent to Solver.")
             return
         panel.input_vrt_file.setText(vrt_path)
         panel.input_cel_file.setText(cel_path)
@@ -276,8 +276,8 @@ class MeshExportControllerMixin:
         # _locate_mesh_bnd, so this reads the file we just linked).
         if hasattr(self, "detect_bc_from_mesh"):
             self.detect_bc_from_mesh()
-        self.main_window.log_panel.log(
-            "[Export] Sent Star-CD mesh to the Solver — review the BCs, then Run Solver.")
+        self.log(
+ "[Export] Sent Star-CD mesh to the Solver — review the BCs, then Run Solver.")
         # warn=False when the caller has already surfaced the same audit for this
         # grid (export_star_cd puts it on its own prompt) — repeating a warning
         # is how a real one gets ignored.
@@ -307,7 +307,7 @@ class MeshExportControllerMixin:
         """:meth:`mesh_bc_problems`, logged (and optionally shown)."""
         problems = self.mesh_bc_problems(bnd_path)
         for p in problems:
-            self.main_window.log_panel.log(f"[BC] {p}")
+            self.log(f"[BC] {p}")
         if problems and dialog:
             from app.utils import report_warning
             report_warning(self.main_window, "Mesh boundary conditions are stale",

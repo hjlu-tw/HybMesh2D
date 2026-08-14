@@ -39,9 +39,9 @@ class SessionIOControllerMixin:
             self._write_workspace_file(file_path)
             # The mesh/solver/IB state is now on disk, so it is no longer unsaved.
             self._reset_project_baseline()
-            self.main_window.log_panel.log(f"Workspace manually saved to '{os.path.basename(file_path)}'")
+            self.log(f"Workspace manually saved to '{os.path.basename(file_path)}'")
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to save workspace: {e}")
+            self.log(f"[ERROR] Failed to save workspace: {e}")
             from app.utils import report_error
             report_error(self.main_window, "Save Workspace Failed",
                          "The workspace could not be saved — your changes are "
@@ -64,7 +64,7 @@ class SessionIOControllerMixin:
             self._read_workspace_file(file_path)
             return True
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to load workspace: {e}")
+            self.log(f"[ERROR] Failed to load workspace: {e}")
             report_warning(self.main_window, "Load Workspace Failed",
                            f"'{os.path.basename(file_path)}' could not be loaded. "
                            "It may be corrupt or from an incompatible version.",
@@ -229,26 +229,26 @@ class SessionIOControllerMixin:
         # ordinary workspace (no stamp) and for a package still in place.
         moved = rebase_case_workspace(workspace_data, file_path)
         if moved:
-            self.main_window.log_panel.log(
-                f"[INFO] Exported-case workspace: re-pointed {moved} path(s) at "
-                f"'{os.path.dirname(os.path.abspath(file_path))}'.")
+            self.log(
+ f"[INFO] Exported-case workspace: re-pointed {moved} path(s) at "
+ f"'{os.path.dirname(os.path.abspath(file_path))}'.")
 
         # Explicit version handling: missing = legacy v0 (not "current"). Older
         # files are migrated field-by-field through _migrate_workspace; a NEWER
         # file is loaded read-only best-effort with a clear warning.
         file_version = int(workspace_data.get("format_version", 0))
         if file_version > WORKSPACE_FORMAT_VERSION:
-            self.main_window.log_panel.log(
-                f"[WARNING] Workspace format version {file_version} is newer than "
-                f"this build supports ({WORKSPACE_FORMAT_VERSION}). Loading read-only, "
-                "best-effort — some data may be ignored. Save with this build to "
-                "write a compatible file."
-            )
+            self.log(
+ f"[WARNING] Workspace format version {file_version} is newer than "
+ f"this build supports ({WORKSPACE_FORMAT_VERSION}). Loading read-only, "
+ "best-effort — some data may be ignored. Save with this build to "
+ "write a compatible file."
+ )
         elif file_version < WORKSPACE_FORMAT_VERSION:
-            self.main_window.log_panel.log(
-                f"[INFO] Migrating workspace from format v{file_version} to "
-                f"v{WORKSPACE_FORMAT_VERSION}."
-            )
+            self.log(
+ f"[INFO] Migrating workspace from format v{file_version} to "
+ f"v{WORKSPACE_FORMAT_VERSION}."
+ )
             workspace_data = self._migrate_workspace(workspace_data, file_version)
 
         # Asked only when there is work to lose (has_unsaved_work), else `main.py
@@ -293,7 +293,7 @@ class SessionIOControllerMixin:
                 session.source_fingerprint, session.file_path)
             note = file_integrity.describe(status, target, display_name)
             if note:
-                self.main_window.log_panel.log(note)
+                self.log(note)
                 integrity_problems.append((status, display_name))
 
             orig_pts = session_dict.get("original_points", None)
@@ -306,10 +306,10 @@ class SessionIOControllerMixin:
             for label, arr in (("original_points", session.original_points),
                                ("resampled_points", session.resampled_points)):
                 if arr is not None and not np.all(np.isfinite(arr)):
-                    self.main_window.log_panel.log(
-                        f"[WARNING] '{display_name}' has non-finite (NaN/Inf) "
-                        f"values in {label}; geometry may render incorrectly."
-                    )
+                    self.log(
+  f"[WARNING] '{display_name}' has non-finite (NaN/Inf) "
+  f"values in {label}; geometry may render incorrectly."
+ )
 
             pconf = session_dict.get("project_config", {})
             session.project_model.input_file = pconf.get("input_file", "")
@@ -364,7 +364,7 @@ class SessionIOControllerMixin:
         # so a freshly-opened workspace does not immediately look modified.
         self._reset_project_baseline()
 
-        self.main_window.log_panel.log(f"Workspace loaded from '{os.path.basename(file_path)}'")
+        self.log(f"Workspace loaded from '{os.path.basename(file_path)}'")
         if integrity_problems:
             changed = [n for st, n in integrity_problems if st == "changed"]
             missing = [n for st, n in integrity_problems if st == "missing"]
@@ -373,9 +373,9 @@ class SessionIOControllerMixin:
                 parts.append(f"changed on disk: {', '.join(changed)}")
             if missing:
                 parts.append(f"missing: {', '.join(missing)}")
-            self.main_window.log_panel.log(
-                "[Integrity] [WARNING] " + "; ".join(parts)
-                + ". The canvas shows the SAVED geometry.")
+            self.log(
+ "[Integrity] [WARNING] " + "; ".join(parts)
+ + ". The canvas shows the SAVED geometry.")
             report_warning(
                 self.main_window, "Source Files Changed",
                 "Some geometry source files are not what they were when this "

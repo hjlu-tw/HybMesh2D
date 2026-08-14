@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.models.result_series import ResultSeries
+from app.services import user_log
 from app.services.logging_setup import get_logger
 from app.utils import block_signals
 
@@ -432,10 +433,11 @@ class ResultPlaybackMixin:
             self._series.frame_label(self._frame) if multi else "")
 
     def _log(self, msg: str):
-        """Log to the main window's console when there is one (tests have none)."""
-        win = self.window()
-        panel = getattr(win, "log_panel", None)
-        if panel is not None:
-            panel.log(msg)
-        else:
-            _log.info("%s", msg)
+        """Say something to the user about playback.
+
+        This used to hand-roll the "is there a console to write to?" fallback by
+        walking up to the window and poking at ``log_panel``; the sink registry
+        answers that now, so a test (or a headless run) with no window keeps the
+        message instead of it depending on who happens to be on screen.
+        """
+        user_log.log(msg)

@@ -74,7 +74,9 @@ check(True, "1. logging before configure_logging() does not raise")
 # ── 2. no new silent handlers ─────────────────────────────────────────────
 # Each entry is silent ON PURPOSE; the reason must be in a comment at the site.
 ALLOWED_SILENT = {
-    ("app/views/log_panel.py", "this IS the write-to-log-file path"),
+    # Moved out of app/views/log_panel.py when the user-facing log grew a seam:
+    # the file mirror belongs to the service, so the widget no longer writes it.
+    ("app/services/user_log.py", "this IS the write-to-log-file path"),
     ("app/services/logging_setup.py", "logging setup / excepthook"),
     ("app/workers/proc_util.py", "escalation thread terminal catch"),
 }

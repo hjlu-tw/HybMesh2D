@@ -143,7 +143,7 @@ class ProjectStateControllerMixin:
             if p and os.path.exists(p):
                 setattr(self, attr, p)
             elif p:
-                self.main_window.log_panel.log(
-                    f"[INFO] Saved {key} '{os.path.basename(p)}' no longer exists; "
-                    "re-run the stage to regenerate it.")
+                self.log(
+ f"[INFO] Saved {key} '{os.path.basename(p)}' no longer exists; "
+ "re-run the stage to regenerate it.")
 

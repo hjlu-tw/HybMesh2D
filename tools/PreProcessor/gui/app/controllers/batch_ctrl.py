@@ -35,7 +35,7 @@ class BatchControllerMixin:
 
     def _batch_log(self, msg: str):
         """Batch output goes to the log panel the user already watches."""
-        self.main_window.log_panel.log(str(msg))
+        self.log(str(msg))
 
     # ── running ──────────────────────────────────────────────────────────
     def run_batch_queue(self):

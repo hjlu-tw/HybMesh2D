@@ -19,7 +19,7 @@ class Stl3dFitControllerMixin:
         """Measure volume/area + surface deviation between the STL and the phi
         field in a background thread, then log a report and paint a deviation
         heatmap (see ``_on_stl3d_fit_done``)."""
-        log = self.main_window.log_panel.log
+        log = self.log
         if getattr(self, "_fit_worker", None) is not None and self._fit_worker.isRunning():
             log("[STL3d] Fit check already running. Please wait.")
             return
@@ -45,7 +45,7 @@ class Stl3dFitControllerMixin:
 
     def _on_stl3d_fit_done(self, m: dict):
         """Render the fit report + deviation heatmap from the worker result."""
-        log = self.main_window.log_panel.log
+        log = self.log
         panel = self.main_window.stl3d_config_panel
         # The worker has delivered its result; note which phi field it measured,
         # then drop the reference.

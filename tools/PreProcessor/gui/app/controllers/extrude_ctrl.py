@@ -154,7 +154,7 @@ class ExtrudeControllerMixin:
         Method name kept for the existing button/menu wiring; it no longer
         extrudes in z — each profile is triangulated into a planar lamina.
         """
-        log = self.main_window.log_panel.log
+        log = self.log
         if getattr(self, "_extrude_worker", None) is not None and self._extrude_worker.isRunning():
             log("[Export] An STL export is already running. Please wait.")
             return
@@ -233,7 +233,7 @@ class ExtrudeControllerMixin:
 
     def _on_extrude_done(self, m: dict):
         """Report the extrusion result and offer the Immersed Solid hand-off."""
-        log = self.main_window.log_panel.log
+        log = self.log
         # Keep the finished worker alive until its finished() signal fires before
         # releasing it — dropping the last reference to a QThread whose run() is
         # still unwinding can abort with "QThread destroyed while running".

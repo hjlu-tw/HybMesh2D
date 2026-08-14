@@ -180,7 +180,7 @@ class OpenEndpointControllerMixin:
             parts.append(f"{len(gaps)} unclosed gap(s) (max {max(g['dist'] for g in gaps):.4g})")
         if eps:
             parts.append(f"{len(eps)} open endpoint(s)")
-        self.main_window.log_panel.log("⚠ " + ", ".join(parts) + " — boundary not closed.")
+        self.log("⚠ " + ", ".join(parts) + " — boundary not closed.")
 
     # ── Auto-closure bridge marker ────────────────────────────────────────
     def _refresh_closing_edge(self, session):
@@ -204,13 +204,13 @@ class OpenEndpointControllerMixin:
         handle; drag one onto a target to weld)."""
         session = self.active_session()
         if not session:
-            self.main_window.log_panel.log("No geometry session active.")
+            self.log("No geometry session active.")
             return
         self.main_window.canvas_view.start_endpoint_tool()
-        self.main_window.log_panel.log(
-            "Weld points: DRAG any endpoint handle onto another point to weld them "
-            "(it snaps to the nearest endpoint/vertex); drop in free space to move "
-            "the endpoint there. Right-click to finish.")
+        self.log(
+ "Weld points: DRAG any endpoint handle onto another point to weld them "
+ "(it snaps to the nearest endpoint/vertex); drop in free space to move "
+ "the endpoint there. Right-click to finish.")
 
     def _resolve_endpoint_ref(self, session, x, y):
         """The ``ref`` of the datum nearest model-coord (x, y): a collected open
@@ -245,21 +245,21 @@ class OpenEndpointControllerMixin:
         if weld:
             ref = self._resolve_endpoint_ref(session, fx, fy)
             if ref is None:
-                self.main_window.log_panel.log("No open endpoint at the picked point.")
+                self.log("No open endpoint at the picked point.")
                 return
             from app.commands.endpoint_cmds import EndpointWeldCmd
             cmd = EndpointWeldCmd(session, ref, (tx, ty),
                                   refresh_cb=lambda: self._apply_geometry_update(session))
             session.command_history.execute(cmd)
             self._update_undo_redo_buttons(session)
-            self.main_window.log_panel.log(
-                f"Welded endpoint → ({tx:.4g}, {ty:.4g}).")
+            self.log(
+ f"Welded endpoint → ({tx:.4g}, {ty:.4g}).")
         else:
             # Connect: draw a straight line from the endpoint to the picked point
             # (reuses the normal add-line create-edit flow, undoable on commit).
             self.on_shape_drawn("line", [(fx, fy), (tx, ty)])
-            self.main_window.log_panel.log(
-                f"Connecting a line to ({tx:.4g}, {ty:.4g}) — confirm in the dialog.")
+            self.log(
+ f"Connecting a line to ({tx:.4g}, {ty:.4g}) — confirm in the dialog.")
 
     # ── Stitching (dialog-driven, undoable) ───────────────────────────────
     def stitch_gaps(self, session, gaps: list[dict], method: str):

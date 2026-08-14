@@ -50,12 +50,12 @@ class PostprocessControllerMixin:
     def load_result(self, path: str):
         """Load a Tecplot result file into the Results canvas and show it."""
         if not path or not os.path.exists(path):
-            self.main_window.log_panel.log(f"[ERROR] Result file not found: {path}")
+            self.log(f"[ERROR] Result file not found: {path}")
             return
         try:
             self.main_window.result_canvas_view.load_result_path(path)
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to load result: {e}")
+            self.log(f"[ERROR] Failed to load result: {e}")
             # Only interrupt a person. This is also reached from the solver's
             # finished handler, which Run All chains in batch mode ("no per-stage
             # dialogs"): a modal there opens a nested event loop that blocks the
@@ -78,19 +78,19 @@ class PostprocessControllerMixin:
         if n_nodes == 0 or n_elems == 0:
             self.main_window.result_canvas_view.clear()
             self.global_result_data = None
-            self.main_window.log_panel.log(
-                f"[ERROR] {os.path.basename(path)} has no usable mesh data "
-                f"({n_nodes} node(s), {n_elems} element(s)) — file may be "
-                "truncated or malformed.")
+            self.log(
+ f"[ERROR] {os.path.basename(path)} has no usable mesh data "
+ f"({n_nodes} node(s), {n_elems} element(s)) — file may be "
+ "truncated or malformed.")
             return
 
         self.global_result_data = result
         self.global_result_path = path
         self.main_window.mode_combo.setCurrentIndex(self.RESULTS_MODE_INDEX)
         zones = result.zones if result else []
-        self.main_window.log_panel.log(
-            f"Loaded result {os.path.basename(path)} "
-            f"({len(zones)} zone(s)).")
+        self.log(
+ f"Loaded result {os.path.basename(path)} "
+ f"({len(zones)} zone(s)).")
 
     def auto_load_solver_result(self):
         """Called after a successful solver run to surface the Tecplot output."""
@@ -159,7 +159,7 @@ class PostprocessControllerMixin:
                     piece = np.vstack([piece, piece[0]])
                 polys.append(piece)
         if not polys:
-            self.main_window.log_panel.log(
-                "[Results] CAD overlay: no geometry selected / found in the open "
-                "project(s).")
+            self.log(
+ "[Results] CAD overlay: no geometry selected / found in the open "
+ "project(s).")
         return polys

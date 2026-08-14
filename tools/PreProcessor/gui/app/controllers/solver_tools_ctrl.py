@@ -21,8 +21,8 @@ class SolverToolsControllerMixin:
         offset_popup(dlg, self.main_window)
         if dlg.exec() and dlg.result_path:
             target.setText(dlg.result_path)
-            self.main_window.log_panel.log(
-                f"[IBM] {dll_type} DLL source set: {dlg.result_path}")
+            self.log(
+ f"[IBM] {dll_type} DLL source set: {dlg.result_path}")
 
     def generate_phi_from_cad_shape(self):
         """Auto-generate an ANALYTIC immersed-solid phi init DLL from a CAD shape
@@ -32,7 +32,7 @@ class SolverToolsControllerMixin:
         from PyQt6.QtWidgets import QInputDialog
         from app.services.analytic_shape import describe, shape_dict, solid_shapes
         from app.services.dll_templates import render_analytic_phi_from_shape
-        log = self.main_window.log_panel.log
+        log = self.log
 
         session = self.active_session()
         # Which edges qualify, and the shape read off each one, come from
@@ -129,19 +129,19 @@ class SolverToolsControllerMixin:
             with open(path, "w") as f:
                 f.write(dlg.as_file_text())
         except OSError as e:
-            self.main_window.log_panel.log(f"[probe] write failed: {e}")
+            self.log(f"[probe] write failed: {e}")
             return
         sp.probe_points_def_fn.setText(path)
-        self.main_window.log_panel.log(
-            f"[probe] wrote {len(dlg.points())} point(s) → {path}")
+        self.log(
+ f"[probe] wrote {len(dlg.points())} point(s) → {path}")
         # Visualise the probe locations on the Results canvas (#5): they persist
         # across variable changes / result reloads, so they overlay the contour
         # once a result is loaded (run the solver, then Load Result).
         try:
             self.main_window.result_canvas_view.set_solver_probe_points(dlg.points())
-            self.main_window.log_panel.log(
-                "[probe] locations overlaid on the Results canvas "
-                "(visible once a result is loaded).")
+            self.log(
+ "[probe] locations overlaid on the Results canvas "
+ "(visible once a result is loaded).")
         except Exception:
             _log.warning(
                 "could not overlay the probe locations on the Results "

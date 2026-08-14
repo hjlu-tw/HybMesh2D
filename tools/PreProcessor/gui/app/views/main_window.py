@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
+from app.services import user_log
 from app.views.sidebar import SidebarView
 from app.views.canvas import CanvasView
 from app.views.log_panel import LogPanel
@@ -322,6 +323,14 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         # Default to a small log console height.
         self.resizeDocks([log_dock], [80], Qt.Orientation.Vertical)
 
+        # This window is the on-screen ADAPTER of the user log; everything else
+        # emits through app.services.user_log and never reaches in here. The sink
+        # resolves `log_panel.log` at CALL time on purpose: a test that swaps that
+        # method out to capture messages must still intercept them. Released in
+        # closeEvent, or a closed window's deleted C++ panel stays on the list.
+        self._user_log_sink = lambda m: self.log_panel.log(m)
+        user_log.add_sink(self._user_log_sink)
+
         # Status bar last: it reads the mode combo and the panels.
         self._build_status_bar()
 
@@ -402,4 +411,7 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
             if not self.controller.handle_close_event():
                 event.ignore()
                 return
+        # Stop displaying: after this the panel's C++ object may be gone, and a
+        # late log line (a worker winding down) must not reach it.
+        user_log.remove_sink(self._user_log_sink)
         event.accept()

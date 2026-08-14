@@ -11,6 +11,7 @@ import numpy as np
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
+from app.services import user_log
 from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
 from app.commands.base import CommandHistory
@@ -268,6 +269,21 @@ class AppController(
             yield
         finally:
             self._populating_depth -= 1
+
+    # ── user-facing log ──────────────────────────────────────────────────
+    def log(self, message, level: str | None = None):
+        """Say something to the USER (the OUTPUT CONSOLE + the durable log file).
+
+        Use this, never ``self.main_window.log_panel.log(...)``: reaching through
+        the view tree ties the message to a window that a headless run does not
+        have, which is how every batch/CI/pipeline run used to discard its own
+        progress report. See :mod:`app.services.user_log`.
+
+        For DEVELOPER diagnostics (a step allowed to fail, a traceback) use
+        ``get_logger(__name__)`` instead — that is a different log with a
+        different audience.
+        """
+        user_log.log(message, level)
 
     def show_main_window(self):
         self.main_window.show()

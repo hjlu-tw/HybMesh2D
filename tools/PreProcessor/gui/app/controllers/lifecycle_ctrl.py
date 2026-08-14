@@ -45,13 +45,13 @@ class LifecycleControllerMixin:
                     "application may have closed unexpectedly.\n\nRecover it now?",
                     headless_default=False):
                 self._read_workspace_file(self._autosave_path)
-                self.main_window.log_panel.log("Recovered autosaved workspace.")
+                self.log("Recovered autosaved workspace.")
                 return len(self.sessions) > 0
             # User declined: drop the stale autosave so we don't ask again.
             os.remove(self._autosave_path)
         except Exception as e:
             try:
-                self.main_window.log_panel.log(f"Autosave recovery failed: {e}")
+                self.log(f"Autosave recovery failed: {e}")
             except Exception:
                 _log.debug(
                     "could not report the autosave-recovery failure to the log "
@@ -76,8 +76,8 @@ class LifecycleControllerMixin:
             # working again after a prior failure.
             if getattr(self, "_autosave_failed", False):
                 self._autosave_failed = False
-                self.main_window.log_panel.log(
-                    "[Autosave] resumed — workspace checkpoint saved again.")
+                self.log(
+ "[Autosave] resumed — workspace checkpoint saved again.")
         except Exception as e:
             # A background autosave must never interrupt the user (e.g. a
             # transient NaN while editing a live curve), but it must not die
@@ -87,9 +87,9 @@ class LifecycleControllerMixin:
             if not getattr(self, "_autosave_failed", False):
                 self._autosave_failed = True
                 try:
-                    self.main_window.log_panel.log(
-                        f"[Autosave] [WARNING] auto-save failed and is paused: {e}. "
-                        "Save your workspace manually (File > Save Workspace).")
+                    self.log(
+  f"[Autosave] [WARNING] auto-save failed and is paused: {e}. "
+  "Save your workspace manually (File > Save Workspace).")
                 except Exception:
                     _log.debug(
                         "could not report the autosave failure to the log "
@@ -99,7 +99,7 @@ class LifecycleControllerMixin:
     def _log_quiet(self, msg: str):
         """Log during shutdown without letting a torn-down panel raise."""
         try:
-            self.main_window.log_panel.log(msg)
+            self.log(msg)
         except Exception:
             _log.debug("log panel unavailable during shutdown", exc_info=True)
 

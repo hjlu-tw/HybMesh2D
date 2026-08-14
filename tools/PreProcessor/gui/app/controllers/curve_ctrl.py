@@ -46,7 +46,7 @@ class CurveControllerMixin:
     def add_curve_segment(self):
         session = self.active_session()
         if not session:
-            self.main_window.log_panel.log("No geometry session active.")
+            self.log("No geometry session active.")
             return
         cmd = AddCurveSegmentCmd(
             session,
@@ -54,8 +54,8 @@ class CurveControllerMixin:
             select_cb=self._select_segment_by_index
         )
         session.command_history.execute(cmd)
-        self.main_window.log_panel.log(
-            f"Added Analytic Edge {cmd.added_seg.id}.")
+        self.log(
+ f"Added Analytic Edge {cmd.added_seg.id}.")
 
     def bake_selected_curve(self):
         """Convert the selected analytic edge(s) to discrete points.
@@ -98,14 +98,14 @@ class CurveControllerMixin:
             cmd = BakeCurvesToGeometryCmd(session, indices,
                                           self._refresh_segment_list)
             session.command_history.execute(cmd)
-            self.main_window.log_panel.log(
-                "Converted Edge " + ", ".join(str(i) for i in cmd.seg_ids)
-                + " to Discrete (one connected boundary).")
+            self.log(
+ "Converted Edge " + ", ".join(str(i) for i in cmd.seg_ids)
+ + " to Discrete (one connected boundary).")
         else:
             cmd = BakeCurveToGeometryCmd(session, indices[0],
                                          self._refresh_segment_list)
             session.command_history.execute(cmd)
-            self.main_window.log_panel.log(f"Converted Edge {cmd.seg_id} to Discrete.")
+            self.log(f"Converted Edge {cmd.seg_id} to Discrete.")
         self.main_window.canvas_view.clear_curve_preview(session.session_id)
         self._apply_geometry_update(session)
         self._update_canvas_curve_segments()
@@ -119,12 +119,12 @@ class CurveControllerMixin:
                 xs, _ys = GeometryService.compute_curve_preview_pts(
                     seg, n, session.original_points)
             except Exception as e:
-                self.main_window.log_panel.log(
-                    f"Cannot convert Edge {seg.id}: {e}")
+                self.log(
+ f"Cannot convert Edge {seg.id}: {e}")
                 return False
             if xs is None or len(xs) < 2:
-                self.main_window.log_panel.log(
-                    f"Cannot convert Edge {seg.id}: invalid preview points.")
+                self.log(
+ f"Cannot convert Edge {seg.id}: invalid preview points.")
                 return False
         return True
 
@@ -147,9 +147,9 @@ class CurveControllerMixin:
                           "p0": pts[0].copy(), "p1": pts[-1].copy()})
         ordered, _is_loop = self._chain_edges(edges, self._endpoint_tolerance(session))
         if ordered is None:
-            self.main_window.log_panel.log(
-                "The selected edges do not form one connected chain — converting "
-                "them in selection order; disjoint pieces stay separate.")
+            self.log(
+ "The selected edges do not form one connected chain — converting "
+ "them in selection order; disjoint pieces stay separate.")
             return indices
         return [e["src"]["idx"] for e in ordered]
 
@@ -281,8 +281,8 @@ class CurveControllerMixin:
                 except Exception as e:
                     # A broken curve formula shouldn't silently drop the edge's
                     # preview — log it so the user can see which edge is bad.
-                    self.main_window.log_panel.log(
-                        f"[Curve] [WARNING] Edge {seg.id} preview failed: {e}")
+                    self.log(
+  f"[Curve] [WARNING] Edge {seg.id} preview failed: {e}")
         self.main_window.canvas_view.update_curve_segments(session.session_id, segments_pts)
         # Keep the always-on endpoint markers in sync with the current edges.
         self._refresh_endpoint_markers()
@@ -348,7 +348,7 @@ class CurveControllerMixin:
         session.command_history.execute(cmd)
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
-        self.main_window.log_panel.log(f"Added Custom Formula Edge {seg.id}.")
+        self.log(f"Added Custom Formula Edge {seg.id}.")
 
     def _preview_custom_formula(self, cfg: dict):
         """Live-render a custom-formula config to the canvas while its dialog is

@@ -51,8 +51,8 @@ class CaseExportControllerMixin:
             return json.dumps(ws, indent=2, allow_nan=False), report
         except (ValueError, TypeError) as e:
             _log.warning("could not build the exported workspace", exc_info=True)
-            self.main_window.log_panel.log(
-                f"[export] [WARNING] no .hws written: {e}")
+            self.log(
+ f"[export] [WARNING] no .hws written: {e}")
             return None
 
     @staticmethod
@@ -83,7 +83,7 @@ class CaseExportControllerMixin:
     def export_portable_case(self):
         """Ask for a case + destination, then write a self-contained copy."""
         win = self.main_window
-        log = win.log_panel.log
+        log = self.log
 
         case_dir = self._default_case_dir()
         if not case_dir:

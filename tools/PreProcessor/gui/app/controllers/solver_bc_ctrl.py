@@ -51,7 +51,7 @@ class SolverBcControllerMixin:
         in CAD / 'Edit segment BCs…' through to the solver with the CORRECT
         segment numbers (the mesher numbers segments per patch, not 1-4=box/5=geom)."""
         from app.services.bnd_io import read_bnd_segments
-        log = self.main_window.log_panel.log
+        log = self.log
         bnd = self._locate_mesh_bnd()
         if not bnd:
             log("[ERROR] No mesh .bnd found. Generate a mesh with 'Write STAR-CD' "
@@ -87,7 +87,7 @@ class SolverBcControllerMixin:
         it audits the mesh against the assigned BCs, since only a regenerate can
         carry an assignment the mesh predates into the solver."""
         panel = self.main_window.solver_config_panel
-        log = self.main_window.log_panel.log
+        log = self.log
         group_bc = getattr(getattr(self, "global_mesh_config", None), "group_bc", {}) or {}
         euler = panel.flow_solu_type.currentText() == "euler_sol"
 
@@ -145,9 +145,9 @@ class SolverBcControllerMixin:
                 item = sp.bc_table.item(row, 3) or QTableWidgetItem()
                 item.setText(dlg.result_path)
                 sp.bc_table.setItem(row, 3, item)
-                self.main_window.log_panel.log(
-                    f"[BC] type-11 DLL source set on row {row}: {dlg.result_path}")
+                self.log(
+ f"[BC] type-11 DLL source set on row {row}: {dlg.result_path}")
             else:
-                self.main_window.log_panel.log(
-                    f"[BC] type-11 DLL source saved (select a BC row to attach): "
-                    f"{dlg.result_path}")
+                self.log(
+ f"[BC] type-11 DLL source saved (select a BC row to attach): "
+ f"{dlg.result_path}")

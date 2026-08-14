@@ -46,7 +46,7 @@ class Stl3dControllerMixin:
             self._load_stl3d(path, auto_fit=True)
 
     def _load_stl3d(self, path: str, auto_fit: bool):
-        log = self.main_window.log_panel.log
+        log = self.log
         panel = self.main_window.stl3d_config_panel
         canvas = self.main_window.stl3d_canvas
         log(f"Reading STL {os.path.basename(path)} … (parsing triangles)")
@@ -99,7 +99,7 @@ class Stl3dControllerMixin:
 
     def fit_stl3d_domain(self):
         if getattr(self, "_stl3d_bbox", None) is None:
-            self.main_window.log_panel.log("[STL3d] Load an STL surface first.")
+            self.log("[STL3d] Load an STL surface first.")
             return
         panel = self.main_window.stl3d_config_panel
         cfg = panel.get_config()
@@ -124,7 +124,7 @@ class Stl3dControllerMixin:
         panel.send_solver_btn.setEnabled(False)
         panel.clear_fit_result()
         panel.status_lbl.setText("Load an STL surface to begin.")
-        self.main_window.log_panel.log("[STL3d] Cleared STL surface and phi result.")
+        self.log("[STL3d] Cleared STL surface and phi result.")
 
     def clear_stl3d_phi(self):
         """Clear only the phi result (keep the STL surface and domain box)."""
@@ -135,13 +135,13 @@ class Stl3dControllerMixin:
         self._stl3d_phi_pts = self._stl3d_phi_val = None
         panel.send_solver_btn.setEnabled(False)
         panel.clear_fit_result()
-        self.main_window.log_panel.log("[STL3d] Cleared phi result (STL kept).")
+        self.log("[STL3d] Cleared phi result (STL kept).")
 
     # ------------------------------------------------------------------ #
     # Run / cancel
     # ------------------------------------------------------------------ #
     def run_stl3d(self):
-        log = self.main_window.log_panel.log
+        log = self.log
         if getattr(self, "_stl3d_worker", None) is not None and self._stl3d_worker.isRunning():
             log("STL3d is already running. Please wait.")
             return
@@ -189,7 +189,7 @@ class Stl3dControllerMixin:
     def cancel_stl3d(self):
         w = getattr(self, "_stl3d_worker", None)
         if w is not None and w.isRunning():
-            self.main_window.log_panel.log("Cancelling STL3d...")
+            self.log("Cancelling STL3d...")
             w.cancel()
 
     # ------------------------------------------------------------------ #
@@ -203,7 +203,7 @@ class Stl3dControllerMixin:
         panel = self.main_window.stl3d_config_panel
         panel.run_btn.setEnabled(True)
         panel.cancel_btn.setEnabled(False)
-        log = self.main_window.log_panel.log
+        log = self.log
 
         if rc == RC_CANCELLED:
             log("--- STL3d Cancelled by User ---")
@@ -278,7 +278,7 @@ class Stl3dControllerMixin:
     def send_stl3d_to_solver(self):
         """Stage the phi field, generate the immersed-solid init DLL (grid spec
         baked in), enable IBM in the solver config, and switch to the Solver tab."""
-        log = self.main_window.log_panel.log
+        log = self.log
         cfg = self.global_stl3d_config          # the config the phi result was run with
         phi_tec = getattr(self, "_stl3d_phi_path", "")
         if not phi_tec or not os.path.exists(phi_tec):

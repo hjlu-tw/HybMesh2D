@@ -44,8 +44,8 @@ class PendingEditControllerMixin:
             # edit is still recorded rather than silently dropped.
             idx = next((i for i, s in enumerate(segs) if s.id == seg.id), -1)
             if idx < 0:
-                self.main_window.log_panel.log(
-                    "Edit not recorded: the edge is no longer present.")
+                self.log(
+ "Edit not recorded: the edge is no longer present.")
                 return False
             seg = segs[idx]
         new_state = seg.to_dict()
@@ -74,7 +74,7 @@ class PendingEditControllerMixin:
                 preconfigured_seg=seg,
             )
             session.command_history.execute(cmd)
-            self.main_window.log_panel.log(f"Added {seg.curve_type} Edge {seg.id}.")
+            self.log(f"Added {seg.curve_type} Edge {seg.id}.")
         else:
             # Editing an existing edge: params were mutated in place — record the
             # change (undoable) then redraw and reselect it.
@@ -85,7 +85,7 @@ class PendingEditControllerMixin:
                     session.project_model.segments.index(seg))
             except ValueError:
                 pass
-            self.main_window.log_panel.log(f"Updated {seg.curve_type} Edge {seg.id}.")
+            self.log(f"Updated {seg.curve_type} Edge {seg.id}.")
         session.is_geometry_modified = True
         self.main_window.update_title(session.display_name, True)
 
@@ -102,9 +102,9 @@ class PendingEditControllerMixin:
             if orig_state is not None and hasattr(seg, "closed"):
                 seg.closed = bool(orig_state.get("closed", True))
             self._refresh_segment_list()
-            self.main_window.log_panel.log("Edit cancelled (reverted).")
+            self.log("Edit cancelled (reverted).")
         else:
-            self.main_window.log_panel.log("Add edge cancelled.")
+            self.log("Add edge cancelled.")
 
     def _clear_pending_state(self):
         session = self.active_session()

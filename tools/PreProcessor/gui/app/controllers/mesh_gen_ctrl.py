@@ -53,17 +53,17 @@ class MeshGenControllerMixin:
         try:
             self.global_mesh_config.load_from_file(path)
             self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
-            self.main_window.log_panel.log(f"Loaded mesh configuration from {path}")
+            self.log(f"Loaded mesh configuration from {path}")
             missing = getattr(self.global_mesh_config, "missing_geom_files", [])
             if missing:
-                self.main_window.log_panel.log(
-                    f"[WARNING] Geometry file(s) not found (paths may be broken): {', '.join(missing)}"
-                )
+                self.log(
+ f"[WARNING] Geometry file(s) not found (paths may be broken): {', '.join(missing)}"
+ )
             for w in getattr(self.global_mesh_config, "parse_warnings", []):
-                self.main_window.log_panel.log(f"[WARNING] {w}")
+                self.log(f"[WARNING] {w}")
             self.sync_mesh_layers_panel()
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to load mesh config: {e}")
+            self.log(f"[ERROR] Failed to load mesh config: {e}")
             from app.utils import report_warning
             report_warning(self.main_window, "Load Mesh Config Failed",
                            "The mesh configuration could not be loaded.",
@@ -92,9 +92,9 @@ class MeshGenControllerMixin:
         try:
             cfg = self.config_from_panel("mesh_config_panel")
             cfg.save_to_file(path)
-            self.main_window.log_panel.log(f"Saved mesh configuration to {path}")
+            self.log(f"Saved mesh configuration to {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to save mesh config: {e}")
+            self.log(f"[ERROR] Failed to save mesh config: {e}")
             from app.utils import report_error
             report_error(self.main_window, "Save Mesh Config Failed",
                          "The mesh configuration could not be saved to disk.",
@@ -112,13 +112,13 @@ class MeshGenControllerMixin:
         errors = cfg.domain_box_errors()
         if errors:
             for e in errors:
-                self.main_window.log_panel.log(f"[ERROR] {e}")
+                self.log(f"[ERROR] {e}")
             return
 
         self.main_window.mesh_canvas_view.update_mesh_config(cfg, fit_view=False)
         if self.global_vtk_mesh:
             self.main_window.mesh_canvas_view.render_mesh(self.global_vtk_mesh, fit_view=False)
-        self.main_window.log_panel.log("Mesh generator preview updated.")
+        self.log("Mesh generator preview updated.")
 
     def clear_mesh_canvas(self):
         """Clear the previously generated mesh AND the previous boundary/surface-
@@ -138,18 +138,18 @@ class MeshGenControllerMixin:
         cfg = self.config_from_panel("mesh_config_panel")
         mc.update_mesh_config(cfg, fit_view=False)
         self._refresh_mesh_previews(cfg)
-        self.main_window.log_panel.log(
-            "Cleared previous mesh and surface points; showing current boundaries.")
+        self.log(
+ "Cleared previous mesh and surface points; showing current boundaries.")
 
     def run_mesh_generator(self):
         """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background."""
         if hasattr(self, '_mesh_worker') and self._mesh_worker is not None and self._mesh_worker.isRunning():
-            self.main_window.log_panel.log("Mesh generation is already running. Please wait.")
+            self.log("Mesh generation is already running. Please wait.")
             return
 
         exe = self._find_mesh_gen_executable()
         if not exe:
-            self.main_window.log_panel.log("HybMesh2D binary not found. Please build the C++ project.")
+            self.log("HybMesh2D binary not found. Please build the C++ project.")
             return
 
         # Extract current config values from UI (via the model, so the fields the panel
@@ -162,11 +162,11 @@ class MeshGenControllerMixin:
         geom_bbox = None    # (xmin, ymin, xmax, ymax) of the boundary geometry
         domain_bbox = None  # ditto for the custom outer-domain outline, if any
         if not cfg.geom_files:
-            self.main_window.log_panel.log(
-                "[WARNING] No geometry files in the mesh config — the mesh will "
-                "have no boundary/BL. If you drew with 'Add analytic edge', run "
-                "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
-                "Layers) so it is written to a .dat first.")
+            self.log(
+ "[WARNING] No geometry files in the mesh config — the mesh will "
+ "have no boundary/BL. If you drew with 'Add analytic edge', run "
+ "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
+ "Layers) so it is written to a .dat first.")
         else:
             geom_bbox, domain_bbox = self._scan_geometry_files(cfg)
 
@@ -176,10 +176,10 @@ class MeshGenControllerMixin:
         # actionable message pointing at the offending parameter.
         errors, warnings = cfg.validate(geom_bbox=geom_bbox, domain_bbox=domain_bbox)
         for w in warnings:
-            self.main_window.log_panel.log(f"[WARNING] {w}")
+            self.log(f"[WARNING] {w}")
         if errors:
             for e in errors:
-                self.main_window.log_panel.log(f"[ERROR] {e}")
+                self.log(f"[ERROR] {e}")
             from app.utils import report_error
             report_error(
                 self.main_window, "Invalid Mesh Parameters",
@@ -214,10 +214,10 @@ class MeshGenControllerMixin:
 
         # Keep the shared log across runs/pages (don't clear); the header below
         # separates runs. Users can clear manually via the log panel.
-        self.main_window.log_panel.log("--- Starting HybMesh2D Mesh Generation ---")
+        self.log("--- Starting HybMesh2D Mesh Generation ---")
         
         self._mesh_worker = MeshGenWorker(exe, tmp_cfg.name)
-        self._mesh_worker.log_signal.connect(self.main_window.log_panel.log)
+        self._mesh_worker.log_signal.connect(self.log)
         self._mesh_worker.progress_signal.connect(self._on_mesh_gen_progress)
         self._mesh_worker.finished_signal.connect(
             lambda rc: self._on_mesh_gen_finished(rc, tmp_cfg.name, expected_vtk)
@@ -247,7 +247,7 @@ class MeshGenControllerMixin:
         have = have_dom = False
         for gf in cfg.geom_files:
             if not os.path.exists(gf):
-                self.main_window.log_panel.log(f"[WARNING] Geometry file missing: {gf}")
+                self.log(f"[WARNING] Geometry file missing: {gf}")
                 continue
             try:
                 pts = np.loadtxt(gf, ndmin=2)
@@ -256,13 +256,13 @@ class MeshGenControllerMixin:
                 try:
                     with open(gf) as _f:
                         npts = sum(1 for ln in _f if ln.strip())
-                    self.main_window.log_panel.log(
-                        f"[geom] {os.path.basename(gf)} ({npts} points)")
+                    self.log(
+  f"[geom] {os.path.basename(gf)} ({npts} points)")
                 except OSError:
                     pass
                 continue
-            self.main_window.log_panel.log(
-                f"[geom] {os.path.basename(gf)} ({len(pts)} points)")
+            self.log(
+ f"[geom] {os.path.basename(gf)} ({len(pts)} points)")
             is_boundary, is_domain = gf in boundary, gf == domain_path
             if (is_boundary or is_domain) and pts.size and pts.shape[1] >= 2:
                 xy = pts[:, :2]
@@ -285,7 +285,7 @@ class MeshGenControllerMixin:
     def cancel_mesh_generator(self):
         """Cancel background mesh generation thread."""
         if hasattr(self, '_mesh_worker') and self._mesh_worker is not None and self._mesh_worker.isRunning():
-            self.main_window.log_panel.log("Cancelling mesh generation...")
+            self.log("Cancelling mesh generation...")
             self._mesh_worker.cancel()
 
     def _find_mesh_gen_executable(self) -> str | None:
@@ -328,11 +328,11 @@ class MeshGenControllerMixin:
             if os.path.exists(tmp_cfg_name):
                 os.remove(tmp_cfg_name)
         except Exception as e:
-            self.main_window.log_panel.log(f"Failed to delete temp config file {tmp_cfg_name}: {e}")
+            self.log(f"Failed to delete temp config file {tmp_cfg_name}: {e}")
 
         # Check return code
         if rc == 0:
-            self.main_window.log_panel.log("--- Mesh Generation Success ---")
+            self.log("--- Mesh Generation Success ---")
             self.main_window.mesh_canvas_view.clear_error_highlights()
             if os.path.exists(expected_vtk_path):
                 try:
@@ -342,18 +342,18 @@ class MeshGenControllerMixin:
                     self.main_window.mesh_canvas_view.update_mesh_config(self.global_mesh_config, fit_view=False)
                     self.main_window.mesh_canvas_view.render_mesh(mesh, fit_view=False)
                     self.main_window.mesh_stats_panel.update_stats(mesh, expected_vtk_path)
-                    self.main_window.log_panel.log(f"Successfully loaded and rendered mesh from {expected_vtk_path}")
+                    self.log(f"Successfully loaded and rendered mesh from {expected_vtk_path}")
                 except Exception as e:
-                    self.main_window.log_panel.log(f"Failed to load generated mesh VTK: {e}")
+                    self.log(f"Failed to load generated mesh VTK: {e}")
             else:
-                self.main_window.log_panel.log(f"Error: Expected VTK file not found at {expected_vtk_path}")
+                self.log(f"Error: Expected VTK file not found at {expected_vtk_path}")
         else:
             if rc == RC_CANCELLED:
-                self.main_window.log_panel.log("--- Mesh Generation Cancelled by User ---")
+                self.log("--- Mesh Generation Cancelled by User ---")
             elif rc == RC_TIMEOUT:
-                self.main_window.log_panel.log("--- Mesh Generation Timed Out (10 min) ---")
+                self.log("--- Mesh Generation Timed Out (10 min) ---")
             else:
-                self.main_window.log_panel.log(f"--- Mesh Generation Failed (code {rc}) ---")
+                self.log(f"--- Mesh Generation Failed (code {rc}) ---")
 
             # Clear the previous mesh results from session and UI
             self.global_vtk_mesh = None
@@ -374,8 +374,8 @@ class MeshGenControllerMixin:
             if self.global_vtk_path and os.path.exists(self.global_vtk_path):
                 pending()
             else:
-                self.main_window.log_panel.log(
-                    "[Export] Mesh generation did not produce a usable mesh; export skipped.")
+                self.log(
+ "[Export] Mesh generation did not produce a usable mesh; export skipped.")
 
     def _try_highlight_self_intersection_error(self):
         """Parse log output for self-intersection or cross-geometry intersection errors and highlight the offending geometry and coordinates."""
@@ -397,13 +397,13 @@ class MeshGenControllerMixin:
             except ValueError:
                 x, y = None, None
 
-            self.main_window.log_panel.log(
-                f"[GUI] Intersection detected between Geometry {geom_id1} and Geometry {geom_id2} — highlighted on canvas."
-            )
+            self.log(
+ f"[GUI] Intersection detected between Geometry {geom_id1} and Geometry {geom_id2} — highlighted on canvas."
+ )
             self.main_window.mesh_canvas_view.highlight_error_geometry([geom_id1, geom_id2])
             if x is not None and y is not None:
                 self.main_window.mesh_canvas_view.highlight_self_intersection_point(x, y)
-                self.main_window.log_panel.log(f"[GUI] Intersection coordinate: ({x}, {y})")
+                self.log(f"[GUI] Intersection coordinate: ({x}, {y})")
             return
 
         # Try to find self-intersection:
@@ -420,13 +420,13 @@ class MeshGenControllerMixin:
             except ValueError:
                 x, y = None, None
 
-            self.main_window.log_panel.log(
-                f"[GUI] Self-intersection detected in Geometry {geom_id} — highlighted on canvas."
-            )
+            self.log(
+ f"[GUI] Self-intersection detected in Geometry {geom_id} — highlighted on canvas."
+ )
             self.main_window.mesh_canvas_view.highlight_error_geometry(geom_id)
             if x is not None and y is not None:
                 self.main_window.mesh_canvas_view.highlight_self_intersection_point(x, y)
-                self.main_window.log_panel.log(f"[GUI] Self-intersection coordinate: ({x}, {y})")
+                self.log(f"[GUI] Self-intersection coordinate: ({x}, {y})")
             return
 
         self.main_window.mesh_canvas_view.clear_error_highlights()
@@ -436,8 +436,8 @@ class MeshGenControllerMixin:
         agree, run the mesh generator now and re-run `retry_fn` once it finishes."""
         w = getattr(self, "_mesh_worker", None)
         if w is not None and w.isRunning():
-            self.main_window.log_panel.log(
-                "Mesh generation is running; please wait for it to finish, then export.")
+            self.log(
+ "Mesh generation is running; please wait for it to finish, then export.")
             return
         # headless_default False: a batch export must fail loudly rather than
         # silently kick off a mesh run nobody asked for.
@@ -448,8 +448,8 @@ class MeshGenControllerMixin:
                 "finishes?", headless_default=False):
             return
         self._pending_after_mesh = retry_fn
-        self.main_window.log_panel.log(
-            f"[Export] No mesh yet — generating first, then exporting {what}.")
+        self.log(
+ f"[Export] No mesh yet — generating first, then exporting {what}.")
         self.run_mesh_generator()
         # If generation did not actually start (e.g. binary missing, invalid
         # domain), drop the pending action so it can't fire on a later run.

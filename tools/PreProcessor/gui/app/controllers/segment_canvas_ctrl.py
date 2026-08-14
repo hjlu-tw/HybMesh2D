@@ -283,4 +283,4 @@ class SegmentCanvasControllerMixin:
         self.highlight_selected_segments()
 
         if hit_set:
-            self.main_window.log_panel.log(f"Box-selected {len(hit_set)} edge(s).")
+            self.log(f"Box-selected {len(hit_set)} edge(s).")

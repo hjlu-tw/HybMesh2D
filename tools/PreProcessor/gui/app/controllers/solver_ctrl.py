@@ -111,9 +111,9 @@ class SolverControllerMixin:
         try:
             self.global_solver_config.load_from_file(path)
             self.push_panel_config(self.main_window.solver_config_panel, self.global_solver_config)
-            self.main_window.log_panel.log(f"Loaded solver config from {path}")
+            self.log(f"Loaded solver config from {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to load solver config: {e}")
+            self.log(f"[ERROR] Failed to load solver config: {e}")
             from app.utils import report_warning
             report_warning(self.main_window, "Load Solver Config Failed",
                            "The solver configuration could not be loaded.",
@@ -133,9 +133,9 @@ class SolverControllerMixin:
             return
         try:
             cfg.save_to_file(path)
-            self.main_window.log_panel.log(f"Saved solver config to {path}")
+            self.log(f"Saved solver config to {path}")
         except Exception as e:
-            self.main_window.log_panel.log(f"[ERROR] Failed to save solver config: {e}")
+            self.log(f"[ERROR] Failed to save solver config: {e}")
             from app.utils import report_error
             report_error(self.main_window, "Save Solver Config Failed",
                          "The solver configuration could not be saved to disk.",
@@ -146,11 +146,11 @@ class SolverControllerMixin:
     # ------------------------------------------------------------------ #
     def run_solver_pipeline(self):
         if getattr(self, "_solver_worker", None) is not None and self._solver_worker.isRunning():
-            self.main_window.log_panel.log("Solver is already running. Please wait.")
+            self.log("Solver is already running. Please wait.")
             return
 
         cfg = self.config_from_panel("solver_config_panel")
-        log = self.main_window.log_panel.log
+        log = self.log
 
         # Auto-link the STAR-CD output of the last mesh generation (D6).
         if self.main_window.solver_config_panel.auto_link_mesh.isChecked():
@@ -246,7 +246,7 @@ class SolverControllerMixin:
     def cancel_solver(self):
         w = getattr(self, "_solver_worker", None)
         if w is not None and w.isRunning():
-            self.main_window.log_panel.log("Cancelling solver...")
+            self.log("Cancelling solver...")
             w.cancel()
 
     # ------------------------------------------------------------------ #
@@ -287,9 +287,9 @@ class SolverControllerMixin:
             if cfg.rigid_moving_body and not cfg.motion_dll.strip():
                 errs.append("IBM rigid moving body is on but no motion DLL source is set.")
             if not cfg.init_cond_dll.strip():
-                self.main_window.log_panel.log(
-                    "[WARNING] IBM is on without an init-condition DLL; the solid "
-                    "phase will start from freestream init.")
+                self.log(
+ "[WARNING] IBM is on without an init-condition DLL; the solid "
+ "phase will start from freestream init.")
 
         # Restart needs a zone dump to continue from.
         if cfg.restart and not cfg.zdump_fn_restart.strip():
@@ -326,7 +326,7 @@ class SolverControllerMixin:
         (it would freeze the window during the g++ DLL compile); the solver
         worker runs prepare_case_dir itself. Kept for completeness / callers
         that want a synchronous prepare."""
-        return solver_case.prepare_case_dir(cfg, log=self.main_window.log_panel.log)
+        return solver_case.prepare_case_dir(cfg, log=self.log)
 
     def _resolve_case_overwrite(self, cfg: SolverConfig):
         """Return True to overwrite the existing case dir, False to auto-version
@@ -347,9 +347,9 @@ class SolverControllerMixin:
         # blocking. The worker reports the real (versioned) work dir via
         # prepared_signal, so the Results stage still finds the output.
         if getattr(self, "_pipeline_running", False):
-            self.main_window.log_panel.log(
-                f"[case] '{case}' already has results; Run All auto-versions a new "
-                "directory to preserve them.")
+            self.log(
+ f"[case] '{case}' already has results; Run All auto-versions a new "
+ "directory to preserve them.")
             return False
 
         box = QMessageBox(self.main_window)
@@ -367,11 +367,11 @@ class SolverControllerMixin:
         box.exec()
         clicked = box.clickedButton()
         if clicked is cancel_btn:
-            self.main_window.log_panel.log("Solver run cancelled (case exists).")
+            self.log("Solver run cancelled (case exists).")
             return None
         if clicked is overwrite_btn:
-            self.main_window.log_panel.log(
-                f"[case] overwriting existing results for '{case}'.")
+            self.log(
+ f"[case] overwriting existing results for '{case}'.")
             return True
         return False
 
@@ -399,7 +399,7 @@ class SolverControllerMixin:
 
     def _auto_link_mesh_output(self, cfg: SolverConfig) -> bool:
         """Fill cfg's getPGrid inputs from the STAR-CD grid this case will use."""
-        log = self.main_window.log_panel.log
+        log = self.log
         trio, note, tried = self._resolve_mesh_grid(cfg)
         if trio is None:
             if not tried:
@@ -447,7 +447,7 @@ class SolverControllerMixin:
     # Worker callbacks
     # ------------------------------------------------------------------ #
     def _on_solver_stage(self, stage: str):
-        self.main_window.log_panel.log(f"[Stage] {stage}")
+        self.log(f"[Stage] {stage}")
         self.main_window.solver_monitor_panel.on_stage(stage)
 
     def _on_solver_progress(self, pct: int):
@@ -458,8 +458,8 @@ class SolverControllerMixin:
         self.main_window.solver_monitor_panel.on_residual(data)
         l2 = data.get("L2") or []
         l2s = " ".join(f"{v:.2e}" for v in l2[:5])
-        self.main_window.log_panel.log(
-            f"[convg] iter={data.get('iter')} cfl={data.get('cfl')} L2: {l2s}")
+        self.log(
+ f"[convg] iter={data.get('iter')} cfl={data.get('cfl')} L2: {l2s}")
 
     def _on_solver_finished(self, rc: int):
         self.main_window.release_progress("solver")
@@ -469,24 +469,24 @@ class SolverControllerMixin:
         panel.cancel_solver_btn.setEnabled(False)
 
         if rc == 0:
-            self.main_window.log_panel.log("--- Solver Pipeline Success ---")
+            self.log("--- Solver Pipeline Success ---")
             path = getattr(self, "_solver_result_path", "")
             if path and os.path.exists(path):
                 self.global_result_path = path
-                self.main_window.log_panel.log(f"Result available: {path}")
+                self.log(f"Result available: {path}")
                 # Auto-load into the Results view (PostprocessControllerMixin).
                 if hasattr(self, "auto_load_solver_result"):
                     self.auto_load_solver_result()
             else:
-                self.main_window.log_panel.log(
-                    "[INFO] No Tecplot result file yet (check print_sol_per_niter "
-                    "vs the iterations actually run).")
+                self.log(
+ "[INFO] No Tecplot result file yet (check print_sol_per_niter "
+ "vs the iterations actually run).")
         elif rc == RC_CANCELLED:
-            self.main_window.log_panel.log("--- Solver Cancelled by User ---")
+            self.log("--- Solver Cancelled by User ---")
         elif rc == RC_TIMEOUT:
-            self.main_window.log_panel.log("--- Solver Pipeline Timed Out ---")
+            self.log("--- Solver Pipeline Timed Out ---")
         else:
-            self.main_window.log_panel.log(f"--- Solver Pipeline Failed (code {rc}) ---")
+            self.log(f"--- Solver Pipeline Failed (code {rc}) ---")
 
     def _find_solver_executables(self) -> dict:
         return find_solver_executables()

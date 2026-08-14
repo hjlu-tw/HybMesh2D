@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 from PyQt6.QtGui import QKeySequence
+from app.services import user_log
 
 
 class MainWindowMenuMixin:
@@ -318,7 +319,7 @@ class MainWindowMenuMixin:
         if code == i18n.current_language():
             return
         i18n.save_language(code)
-        self.log_panel.log(
+        user_log.log(
             f"[UI] language set to {code} — restart to apply "
             "(open panels keep their current strings until then).")
         from app.utils import report_info

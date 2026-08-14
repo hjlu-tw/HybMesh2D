@@ -25,7 +25,7 @@ class SessionControllerMixin:
         cv.clear_edge_handles()
         self._show_duplicate_preview = False
         cv.clear_curve_preview(session.session_id)
-        self.main_window.log_panel.log("Cleared CAD overlays (geometry kept).")
+        self.log("Cleared CAD overlays (geometry kept).")
 
     def clear_all_geometry(self):
         """CAD 'Clear All': remove ALL geometry (every edge, its points and
@@ -35,7 +35,7 @@ class SessionControllerMixin:
             return
         pm = session.project_model
         if not pm.segments and session.original_points is None:
-            self.main_window.log_panel.log("Nothing to clear.")
+            self.log("Nothing to clear.")
             return
         from app.commands.segment_cmds import ClearGeometryCmd
 
@@ -51,7 +51,7 @@ class SessionControllerMixin:
         session.command_history.execute(cmd)
         self._update_undo_redo_buttons(session)
         self.main_window.update_title(session.display_name, session.is_geometry_modified)
-        self.main_window.log_panel.log("Cleared all geometry (undoable).")
+        self.log("Cleared all geometry (undoable).")
 
     def redraw_canvas(self, announce: bool = True):
         """Force a clean re-render of the CAD canvas: drop any leftover handles,
@@ -75,7 +75,7 @@ class SessionControllerMixin:
             self.highlight_selected_segments()
             self.detect_open_endpoints(session)
         if announce:
-            self.main_window.log_panel.log("Canvas redrawn.")
+            self.log("Canvas redrawn.")
 
 
     def _sync_geometry_list(self):
