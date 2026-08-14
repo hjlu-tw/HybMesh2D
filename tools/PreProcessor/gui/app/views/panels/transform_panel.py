@@ -257,20 +257,25 @@ class TransformPanel(QGroupBox):
             scale_pivot=(self.dup_scale_px.value(), self.dup_scale_py.value()),
         )
 
-    def set_transform_reference(self, point):
-        """Show the reference point every transform will pivot about.
+    def set_transform_reference_editable(self, editable: bool):
+        """Who owns the reference point: the user (Custom), or the base mode.
 
-        `point` is None when the user owns it (Custom base mode): the fields
-        become editable and keep whatever is in them. A point means the mode
-        computed it, so the fields display it and are read-only.
+        Deliberately separate from set_transform_reference. They were one call
+        keyed on `point is None`, so a mode that computed NO point (an empty
+        selection) skipped the call entirely and left the fields editable —
+        typing into one then looked accepted and was silently overwritten on the
+        next recompute. Editability follows the MODE; only the values wait for
+        a point.
         """
-        fields = self._widgets(self._PIVOT_FIELDS)
-        editable = point is None
-        for w in fields:
+        for w in self._widgets(self._PIVOT_FIELDS):
             w.setEnabled(editable)
-        if editable:
+
+    def set_transform_reference(self, point):
+        """Display the computed reference point in every pivot field."""
+        if point is None:
             return
         px, py = point
+        fields = self._widgets(self._PIVOT_FIELDS)
         with block_signals(*fields):
             for name in self._PIVOT_FIELDS:
                 getattr(self, name).setValue(py if name.endswith("_py") else px)
@@ -290,19 +295,18 @@ class TransformPanel(QGroupBox):
         for w in self._widgets(self._PIVOT_FIELDS):
             w.setEnabled(True)
 
-    def set_transform_handle(self, handle: str, x: float, y: float) -> bool:
-        """Place the canvas handle the user dragged; True if it landed anywhere.
+    def set_transform_handle(self, handle: str, x: float, y: float):
+        """Place the canvas handle the user dragged.
 
         Silent: a drag already IS the user's edit, so echoing it back through
-        valueChanged would re-enter the preview once per mouse move.
+        valueChanged would re-enter the preview once per mouse move. A handle
+        that drives nothing for the current transform is a no-op — the caller
+        has no decision to make either way.
         """
         kind = kind_for_index(self.dup_type_combo.currentIndex())
         names = self._HANDLE_FIELDS.get((handle, kind)) \
-            or self._HANDLE_FIELDS.get((handle, None))
-        if not names:
-            return False
+            or self._HANDLE_FIELDS.get((handle, None), ())
         for name, value in zip(names, (x, y)):
             if name:
                 with block_signals(getattr(self, name)):
                     getattr(self, name).setValue(value)
-        return True

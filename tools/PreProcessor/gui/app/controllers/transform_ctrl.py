@@ -2,7 +2,6 @@ from __future__ import annotations
 import numpy as np
 from app.services.geometry_service import (
     GeometryService)
-from app.utils import block_signals
 
 class TransformControllerMixin:
     """Mixin containing geometric transform, duplication, and mirroring logic."""
@@ -78,14 +77,14 @@ class TransformControllerMixin:
         # Pivot / axis spin boxes are user-editable only in Custom mode; for
         # every other mode they are driven by the computed reference point and
         # shown read-only. (Mirror-axis direction fields are always editable.)
-        if spec.base_mode == "Custom (Manual)":
-            sb.set_transform_reference(None)
+        manual = spec.base_mode == "Custom (Manual)"
+        sb.set_transform_reference_editable(manual)
+        if manual:
             return
-
-        pt = self._compute_dup_reference_point(session, spec.base_mode)
-        if pt is None:
-            return
-        sb.set_transform_reference(pt)
+        # A mode that cannot compute a point (nothing selected) still leaves the
+        # fields read-only above; only their VALUES are skipped.
+        sb.set_transform_reference(
+            self._compute_dup_reference_point(session, spec.base_mode))
 
     def _compute_dup_reference_point(self, session, mode):
         """Return (px, py) for the duplicate/transform reference point.
@@ -135,13 +134,6 @@ class TransformControllerMixin:
 
         has_sel = bool(session) and session.current_segment_idx >= 0
         on = has_sel and bool(self._show_duplicate_preview)
-
-        # Keep the "Edit on Canvas" toggle in sync with the interactive state.
-        btn = getattr(sb, 'dup_interactive_btn', None)
-        if btn is not None:
-            with block_signals(btn):
-                btn.setChecked(on)
-                btn.setText("✎  Editing on Canvas" if on else "✎  Edit on Canvas")
 
         # Only show handles while the user is actively setting up a transform
         # (a live preview is active). On a fresh selection or right after Apply

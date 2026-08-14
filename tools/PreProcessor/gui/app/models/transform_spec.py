@@ -38,6 +38,10 @@ KINDS = ("rotate", "mirror_h", "mirror_v", "mirror_axis",
 
 #: Below this, a mirror-axis direction vector has no direction.
 AXIS_EPS = 1e-12
+#: Below this, two scale factors are the same number. A separate constant from
+#: AXIS_EPS on purpose: one is the length of a direction vector, the other a
+#: difference between two ratios, and they are free to diverge.
+SCALE_EPS = 1e-12
 
 
 def kind_for_index(index: int) -> str:
@@ -76,7 +80,7 @@ class TransformSpec:
     def is_nonuniform_scale(self) -> bool:
         """A scale whose X and Y factors differ — affine, but not a similarity."""
         return (self.kind == "scale"
-                and abs(self.factors[0] - self.factors[1]) > AXIS_EPS)
+                and abs(self.factors[0] - self.factors[1]) > SCALE_EPS)
 
     @property
     def has_reference_point(self) -> bool:

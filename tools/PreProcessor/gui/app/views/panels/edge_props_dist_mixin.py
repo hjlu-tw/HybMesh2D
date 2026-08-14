@@ -213,6 +213,16 @@ class EdgePropsDistMixin:
             getattr(self, name).currentTextChanged.connect(
                 lambda *_: self.distribution_edited.emit())
 
+    #: Distribution fields holding a PHYSICAL LENGTH, so they carry the model's
+    #: unit as a suffix (see the SciDoubleSpinBox / units rules in CLAUDE.md).
+    #: Growth ratios, intensities and node counts are dimensionless and must not.
+    _LENGTH_FIELDS = ("uniform_spacing", "tanh_spacing_ends",
+                      "geo_spacing_start", "geo_spacing_end")
+
+    def set_length_suffix(self, symbol: str):
+        for name in self._LENGTH_FIELDS:
+            getattr(self, name).setSuffix(f" {symbol}")
+
     def distribution_spec(self, strategy: str) -> DistributionSpec:
         """What the form currently says, for `strategy`."""
         return DistributionSpec(
@@ -247,8 +257,14 @@ class EdgePropsDistMixin:
             if spec.strategy == "uniform":
                 self.uniform_type_combo.setCurrentText(
                     "By Spacing" if spec.by_spacing else "By Node Count")
-                self.uniform_n.setValue(spec.n_points)
-                self.uniform_spacing.setValue(spec.spacing)
+                # Only the ACTIVE mode's field is written. The other one holds no
+                # value in `parameters` (mode is key presence, so exactly one is
+                # stored), and writing the spec's default into it would silently
+                # reset whatever the user last typed in the hidden field.
+                if spec.by_spacing:
+                    self.uniform_spacing.setValue(spec.spacing)
+                else:
+                    self.uniform_n.setValue(spec.n_points)
                 self._toggle_uniform_mode(spec.by_spacing)
             elif spec.strategy == "tanh":
                 self.tanh_type_combo.setCurrentText(

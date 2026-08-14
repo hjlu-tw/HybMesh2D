@@ -7,6 +7,18 @@ from app.utils import block_signals
 
 
 class SignalWiringMixin:
+    def _cad_resample_buttons(self):
+        """The CAD toolbar buttons that start a resample, skipping any this
+        window does not have (the toolbar is built per stage).
+
+        Lives beside the wiring because that is where "which buttons are these"
+        is decided; backend_ctrl disables the same list during a run, and two
+        drifting copies would strand a button enabled mid-run.
+        """
+        return [b for b in (getattr(self.main_window, "cad_preview_btn", None),
+                            getattr(self.main_window, "cad_file_preview_btn", None))
+                if b is not None]
+
     def _wire_sidebar_signals(self):
         # ── Wire static signals (sidebar → controller) ──────────────────
         sb = self.main_window.sidebar_view
@@ -29,10 +41,8 @@ class SignalWiringMixin:
         # SidebarView properties that read them back off self.window(); wiring
         # them where they live is both shorter and one less thing the sidebar
         # has to know about the window that contains it.
-        for attr in ("cad_preview_btn", "cad_file_preview_btn"):
-            btn = getattr(self.main_window, attr, None)
-            if btn is not None:
-                btn.clicked.connect(self.preview_backend)
+        for btn in self._cad_resample_buttons():
+            btn.clicked.connect(self.preview_backend)
         sb.save_btn.clicked.connect(self.save_output)
         if getattr(self.main_window, "cad_cancel_btn", None) is not None:
             self.main_window.cad_cancel_btn.clicked.connect(self.cancel_backend)

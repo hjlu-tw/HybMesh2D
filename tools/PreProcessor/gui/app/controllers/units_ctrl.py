@@ -22,12 +22,6 @@ from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
 
-#: CAD sidebar attributes holding a physical length (see the SciDoubleSpinBox rule).
-_SIDEBAR_LENGTH_FIELDS = (
-    "uniform_spacing", "tanh_spacing_ends", "geo_spacing_start", "geo_spacing_end",
-)
-
-
 class UnitsControllerMixin:
     # ── reading the model unit ───────────────────────────────────────────
     def model_length_unit(self) -> tuple:
@@ -59,10 +53,8 @@ class UnitsControllerMixin:
         # CAD sidebar spacings + the canvas grid-snap step.
         if mw is not None:
             sb = getattr(mw, "sidebar_view", None)
-            for attr in _SIDEBAR_LENGTH_FIELDS:
-                w = getattr(sb, attr, None) if sb is not None else None
-                if w is not None and hasattr(w, "setSuffix"):
-                    w.setSuffix(f" {sym}")
+            if sb is not None:
+                sb.set_length_suffix(sym)
             snap = getattr(mw, "grid_snap_step", None)
             if snap is not None and hasattr(snap, "setSuffix"):
                 snap.setSuffix(f" {sym}")

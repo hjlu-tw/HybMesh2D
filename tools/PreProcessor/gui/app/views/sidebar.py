@@ -92,6 +92,11 @@ class SidebarView(QWidget):
             lambda _r: self.transform_closed.emit())
         self.vertex_panel = VertexPanel(self)
         self.geom_stats_panel = GeomStatsPanel(self)
+        # Named, not left to __getattr__: the tree is part of this sidebar's
+        # interface (Q8 — it owns its own interface, so it is exposed rather
+        # than wrapped), and every other name resolving through the forwarder
+        # is a leak scheduled for removal along with the forwarder itself.
+        self.geometry_tree = self.geometry_panel.geometry_tree
         self.advanced_panel = AdvancedPanel(self)
         self.actions_panel = ActionsPanel(self)
 
@@ -302,6 +307,17 @@ class SidebarView(QWidget):
         the main window's and are addressed there; this one is ours."""
         self.actions_panel.save_btn.setEnabled(enabled)
 
+    def set_length_suffix(self, symbol: str):
+        """Show `symbol` on every sidebar field holding a physical length.
+
+        The unit controller used to hold the list of field NAMES and fetch each
+        one with getattr(sb, name) — invisible to the seam gate (a string is not
+        an attribute access) and, worse, silent: once __getattr__ goes, getattr
+        returns None and the suffixes simply stop appearing with nothing raised.
+        The list belongs to the panel that owns the widgets anyway.
+        """
+        self.edge_props_panel.set_length_suffix(symbol)
+
     # ── Point distribution ──────────────────────────────────────────────
     def distribution_spec(self, strategy: str):
         """What the distribution form currently says, as a DistributionSpec."""
@@ -322,8 +338,13 @@ class SidebarView(QWidget):
         """What the Duplicate & Transform form currently says."""
         return self.edge_props_panel._transform_dup_group.transform_spec()
 
+    def set_transform_reference_editable(self, editable: bool):
+        """Whether the user owns the pivot fields, or the base mode drives them."""
+        self.edge_props_panel._transform_dup_group.set_transform_reference_editable(
+            editable)
+
     def set_transform_reference(self, point):
-        """Show the pivot every transform turns about; None = the user owns it."""
+        """Display the computed pivot every transform turns about."""
         self.edge_props_panel._transform_dup_group.set_transform_reference(point)
 
     def set_transform_reference_applicable(self, applicable: bool):
@@ -333,9 +354,9 @@ class SidebarView(QWidget):
     def use_custom_transform_reference(self):
         self.edge_props_panel._transform_dup_group.use_custom_transform_reference()
 
-    def set_transform_handle(self, handle: str, x: float, y: float) -> bool:
-        """Place the canvas handle the user dragged; False if it drives nothing."""
-        return self.edge_props_panel._transform_dup_group.set_transform_handle(
+    def set_transform_handle(self, handle: str, x: float, y: float):
+        """Place the canvas handle the user dragged."""
+        self.edge_props_panel._transform_dup_group.set_transform_handle(
             handle, x, y)
 
     def show_transform_panel(self, visible: bool):
