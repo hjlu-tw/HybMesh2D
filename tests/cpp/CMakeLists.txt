@@ -29,3 +29,19 @@ foreach(t IN LISTS HYBMESH_CORE_TESTS)
         BUILD_WITH_INSTALL_RPATH TRUE)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
+
+# Tests of the DECISION LAYER. These link hybmesh_pure and NOTHING ELSE — in
+# particular not gmsh and not hybmesh_core. That is not tidiness: it is what
+# proves the module under test really needs no heavy environment, because the
+# moment it uses Mesh or gmsh these executables stop linking. A rule saying
+# "keep this module pure" would be a claim; this is the build failing.
+# No rpath either, deliberately: needing one would mean a dylib crept in.
+set(HYBMESH_PURE_TESTS
+    test_junction_scheme
+)
+
+foreach(t IN LISTS HYBMESH_PURE_TESTS)
+    add_executable(${t} ${t}.cpp)
+    target_link_libraries(${t} PRIVATE hybmesh_pure hybmesh_test_check)
+    add_test(NAME ${t} COMMAND ${t})
+endforeach()

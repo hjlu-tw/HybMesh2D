@@ -59,6 +59,30 @@ EXPECTED_EXECUTABLES = {
 # The one source the mesher's executable may compile.
 SHIM = "src/main.cpp"
 
+# The library holding the decision layer: gmsh-free and Mesh-free, so its tests
+# link it ALONE and are not linked against libgmsh at all.
+PURE_LIB = "hybmesh_pure"
+
+# What makes a file heavy. Reached transitively, not directly: BoundaryLayer.cpp
+# includes only BoundaryLayer.hpp and gets Mesh.hpp through it, so a direct-include
+# check would call it pure and would let any new module do the same.
+HEAVY_HEADERS_ROOT = {"Mesh.hpp", "gmsh.h"}
+
+# The DENY-list, and the direction is the whole point: a new src/*.cpp is assumed
+# PURE, and making it heavy costs an entry here with a reason. An allow-list would
+# have the failure mode backwards — forgetting to enrol a new pure module would
+# exempt it from the rule, with no symptom. Same shape as
+# test_gui_cpp_config_parity.py's KNOWN_CPP_ONLY.
+HEAVY_SOURCES = {
+    "src/cli.cpp": "the command line: owns config loading, geometry IO and every export",
+    "src/Mesh.cpp": "the mesh data structure itself, and the gmsh far-field integration",
+    "src/BoundaryLayer.cpp": "grows the layers, mutating the mesh as it goes",
+}
+HEAVY_HEADERS = {
+    "include/Mesh.hpp": "IS the mesh interface (and pulls gmsh in for the far field)",
+    "include/BoundaryLayer.hpp": "the generator holds a Mesh& and a Config&",
+}
+
 failures = []
 
 
@@ -104,6 +128,35 @@ def targets(text, name):
         if toks:
             out[toks[0]] = toks[1:]
     return out
+
+
+def includes(path):
+    """The quoted/angled include names in one file, comments not stripped —
+    #include is a preprocessor line, so a commented-out one is dead anyway and
+    flagging it is the safe direction."""
+    return [m.group(1) for m in
+            re.finditer(r'^\s*#\s*include\s*[<"]([^">]+)[">]',
+                        read(path), re.MULTILINE)]
+
+
+def heavy_reach(path, seen=None):
+    """The heavy headers `path` reaches, following project headers TRANSITIVELY.
+
+    Only include/ is followed: system and third-party headers cannot lead back to
+    this project. gmsh.h is not in include/, so it registers as a leaf by name.
+    """
+    if seen is None:
+        seen = set()
+    hit = set()
+    for name in includes(path):
+        base = os.path.basename(name)
+        if base in HEAVY_HEADERS_ROOT:
+            hit.add(base)
+        nxt = os.path.join(_REPO, "include", base)
+        if base not in seen and os.path.exists(nxt):
+            seen.add(base)
+            hit |= heavy_reach(nxt, seen)
+    return hit
 
 
 def cmake_files():
@@ -190,6 +243,47 @@ def main():
         # --- 7. tests link the library, they do not rebuild it ---------------
         check("tests/cpp never names src/ (it links hybmesh_core instead)",
               "src/" not in tests_txt)
+
+    # --- 8. the decision layer holds everything that is not heavy ------------
+    pure = [t for t in libs.get(PURE_LIB, []) if t.endswith(".cpp")]
+    check(f"{PURE_LIB} exists and holds sources ({pure})", bool(pure))
+    misplaced = [s for s in on_disk
+                 if s != SHIM and s not in HEAVY_SOURCES and s not in pure]
+    check(f"every non-heavy src/*.cpp is in {PURE_LIB} (misplaced: {misplaced})",
+          not misplaced)
+
+    # --- 9. the decision layer really is gmsh-free and Mesh-free -------------
+    # The build proves this too — the pure tests link hybmesh_pure and no gmsh, so
+    # a USE of Mesh breaks the link. This catches the other half: an INCLUDE that
+    # has not been used yet, which the linker cannot see.
+    impure = {s: sorted(heavy_reach(os.path.join(_REPO, s))) for s in pure}
+    impure = {s: h for s, h in impure.items() if h}
+    check(f"nothing in {PURE_LIB} reaches Mesh.hpp or gmsh.h ({impure})", not impure)
+
+    # --- 10. heavy is the exception and must be declared ---------------------
+    undeclared = {}
+    for s in on_disk:
+        if s == SHIM or s in HEAVY_SOURCES:
+            continue
+        h = sorted(heavy_reach(os.path.join(_REPO, s)))
+        if h:
+            undeclared[s] = h
+    check("no undeclared heavy source under src/ "
+          f"({undeclared}; add it to HEAVY_SOURCES with a reason, or keep it pure)",
+          not undeclared)
+
+    # --- 11. the same, for headers ------------------------------------------
+    hdr_undeclared = {}
+    for name in sorted(os.listdir(os.path.join(_REPO, "include"))):
+        rel = "include/" + name
+        if not name.endswith(".hpp") or rel in HEAVY_HEADERS:
+            continue
+        h = sorted(heavy_reach(os.path.join(_REPO, rel)))
+        if h:
+            hdr_undeclared[rel] = h
+    check("no undeclared heavy header under include/ "
+          f"({hdr_undeclared}; add it to HEAVY_HEADERS with a reason)",
+          not hdr_undeclared)
 
     print()
     print("RESULT:", "ALL PASS" if not failures else f"{len(failures)} FAILED: {failures}")

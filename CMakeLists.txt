@@ -117,6 +117,19 @@ include_directories(include ${GMSH_INCLUDE_DIR})
 add_library(HybMeshUtils INTERFACE)
 target_include_directories(HybMeshUtils INTERFACE include)
 
+# 3b. 決策層: hybmesh_pure
+# gmsh-free / Mesh-free 的純判定模組。這條規則與 GUI 那邊「services/*.py 必須
+# Qt-free」同構，理由也一樣：測它不該需要重型執行環境。而且這裡不只是宣稱——
+# 純模組的測試只 link hybmesh_pure、**不** link ${GMSH_LIBRARY}，所以一旦模組真的
+# 用到 Mesh 或 gmsh，那支測試會在連結期就失敗。grep 抓得到 include，連結器抓得到
+# use，兩者互補，缺一不可。
+# 新增的 src/*.cpp 預設就該落在這裡；要成為重型檔必須具名進
+# tools/PreProcessor/tests/test_cpp_linkable_seam.py 的 HEAVY_SOURCES 並附理由。
+add_library(hybmesh_pure STATIC
+    src/JunctionScheme.cpp
+)
+target_include_directories(hybmesh_pure PUBLIC include)
+
 # 4. 核心實作庫: hybmesh_core
 # 實作全部住在這個 library 裡，執行檔只是 src/main.cpp 那五行 shim。這是刻意的：
 # 測試連結到的必須就是 binary 真正在跑的那份程式碼，而執行檔既然不編譯任何實作，
@@ -127,6 +140,7 @@ add_library(hybmesh_core STATIC
     src/BoundaryLayer.cpp
 )
 target_include_directories(hybmesh_core PUBLIC include ${GMSH_INCLUDE_DIR})
+target_link_libraries(hybmesh_core PUBLIC hybmesh_pure)
 
 # Stamp provenance into the LIBRARY, not into the executable. The code that reads
 # these macros (src/cli.cpp, via Provenance.hpp) compiles as part of hybmesh_core

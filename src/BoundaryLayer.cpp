@@ -85,152 +85,6 @@ bool BoundaryLayerGenerator::checkCollision(Point2D p, double threshold, const s
     return false;
 }
 
-// See BoundaryLayer.hpp for what this decides and why it is separable. Extracted
-// verbatim out of generate(), where it was 135 of that function's 1300 lines and
-// could not be read, reasoned about or tested without the whole growth loop
-// around it.
-std::vector<JunctionDecision> BoundaryLayerGenerator::classifyJunctions(
-        const FrontState& fs,
-        const std::vector<int>& boundaryNodeIds,
-        const std::vector<bool>& isJunction,
-        const std::vector<Vector2D>& baseN,
-        double D_total, bool juncDebug) const {
-    const int n_init = static_cast<int>(boundaryNodeIds.size());
-    std::vector<JunctionDecision> out(n_init);
-    for (int i = 0; i < n_init; ++i) {
-        if (!isJunction[i]) continue;
-        int ip = (i - 1 + n_init) % n_init, in = (i + 1) % n_init;
-        bool prevSkip = m_mesh.nodes[boundaryNodeIds[ip]].skipBL;
-        bool nextSkip = m_mesh.nodes[boundaryNodeIds[in]].skipBL;
-        // Isolated BL node (both neighbours no-BL): keep the perpendicular cap
-        // direction the base detection already chose for it.
-        if (prevSkip && nextSkip) { out[i] = JunctionDecision{2, baseN[i], 1.0}; continue; }
-
-        // step points from this node INTO the no-BL run; the BL neighbour is
-        // on the other side. nBL is the BL edge's outward (into-flow) normal.
-        int step   = nextSkip ? 1 : -1;
-        Vector2D nBL = (nextSkip ? fs.n1_init[i] : fs.n2_init[i]).normalized();
-        int blNbr = (i - step + n_init) % n_init;
-        int s1    = (i + step + n_init) % n_init;
-        int s2    = (i + 2 * step + n_init) % n_init;
-        bool s2skip = m_mesh.nodes[boundaryNodeIds[s2]].skipBL;
-
-        Vector2D tBL = (fs.pos_init[blNbr] - fs.pos_init[i]).normalized(); // node -> BL interior
-        Vector2D d1  = (fs.pos_init[s1]    - fs.pos_init[i]).normalized(); // node -> first no-BL nbr
-        // The shared corner may belong to EITHER segment (the resampler gives
-        // it to the segment starting there). If the first no-BL neighbour just
-        // continues the BL edge (d1 ~ -tBL), the real corner is at s1 and the
-        // no-BL EDGE direction is s1->s2; otherwise the corner is this node and
-        // the no-BL edge is node->s1. This keeps theta = the true edge-to-edge
-        // angle regardless of which segment owns the corner point.
-        Vector2D tCorner, eNbr;
-        if (s2skip && d1.dot(tBL) < -0.7) {
-            tCorner = (fs.pos_init[i]  - fs.pos_init[s1]).normalized();     // corner s1 -> BL interior
-            eNbr    = (fs.pos_init[s2] - fs.pos_init[s1]).normalized();     // corner s1 -> no-BL edge
-        } else {
-            tCorner = tBL;
-            eNbr    = d1;
-        }
-        // theta = angle from the BL edge to the no-BL edge, swept THROUGH THE
-        // FLOW (the side nBL points to); 180 = collinear, <180 concave, >180
-        // convex — identical for internal/external flow.
-        double a = std::atan2(tCorner.cross(eNbr), tCorner.dot(eNbr));
-        if (tCorner.cross(nBL) < 0.0) a = -a;           // flow on the CW side -> flip sweep sign
-        double theta = a; if (theta <= 1e-9) theta += 2.0 * M_PI;
-        double thetaDeg = theta * 180.0 / M_PI;
-
-        int caseId; Vector2D dir;
-        // A cap only works while it points INTO the fluid wedge at the corner.
-        // That wedge spans theta (BL edge -> no-BL edge, measured through the
-        // flow); a PERPENDICULAR cap sits at 90 deg from the BL edge. So for
-        // theta <= 90 the perpendicular points AT or PAST the no-BL edge and
-        // the column leaves the domain through the wall it is supposed to stop
-        // at: the final front then crosses the no-BL surface run (theta < 90)
-        // or lands exactly on it and hands Gmsh a doubled-back hole boundary
-        // (theta == 90 — i.e. EVERY rectangular internal-flow duct with one
-        // wall marked no-BL). Such a junction must lean onto the neighbour
-        // edge; it is the wedge that is too narrow for a cap, not the BL that
-        // is too thick. Just above 90 a cap is admissible but leaves a sliver
-        // wedge (width D_total*tan(theta-90)) running the cap's whole length,
-        // so a small guard band leans too: tilting the column by <= 5 deg is
-        // cheaper than a triangle strip < 0.09*D_total wide, and it keeps the
-        // decision robust against a "90 deg" corner that floats to 90.000001.
-        // Leaning = case 1: the column SLIDES along the neighbour edge and
-        // absorbs the no-BL nodes it covers (so the ring resumes beyond the
-        // slide instead of doubling back), and the 1/cos(tilt) correction
-        // below keeps its PERPENDICULAR height at D_total.
-        //
-        // This bound is geometric, not a preference, so it is fixed here
-        // rather than read from BL_JUNCTION_ANGLE_C1: C1 defaulted to 135 deg,
-        // which slid at corners wide enough for an honest perpendicular cap
-        // and needlessly collapsed the layer onto the no-BL wall (fixed in
-        // 6a830f7 by dropping case 1 altogether — which is what broke every
-        // theta <= 90 junction). C1 still drives BL_JUNCTION_METHOD=0 and
-        // config round-trip. Above the band, cases 2/3/4 are unchanged.
-        const double kSlideMaxTheta = 95.0;   // deg; see above
-        if      (thetaDeg <= kSlideMaxTheta)          { caseId = 1; dir = eNbr; }
-        else if (thetaDeg <= fs.bl.blJunctionAngleC2) { caseId = 2; dir = nBL; }
-        else if (thetaDeg <= fs.bl.blJunctionAngleC3) { caseId = 3; dir = eNbr * -1.0; }
-        else                                          { caseId = 4; dir = nBL; }
-        // Height (not edge-length) correction: what stays fixed across ALL
-        // cases is the BL's PERPENDICULAR total height D_total. A tilted cap
-        // grown a fixed EDGE length would only reach D_total*cos(tilt) high and
-        // dip below the neighbouring perpendicular columns, skewing the corner.
-        // So scale the step by 1/cos(tilt) = 1/dot(dir,nBL) — the same trick the
-        // convex parallelogram uses for its diagonal ray (cos clamped so a very
-        // sharp concave cannot blow the column length up).
-        double hmult = 1.0 / std::max(0.25, dir.dot(nBL));
-        out[i] = JunctionDecision{caseId, dir, hmult};
-
-        // A slide at a VERY SHARP wedge cannot be graded, and today that
-        // surfaces only as a bare front self-intersection / Gmsh failure whose
-        // message points at the BL size anywhere on the model. Warn here, while
-        // the cause is still identifiable.
-        //
-        // The wedge closes at theta, so at arc distance x from the corner the
-        // clearance to the no-BL edge is only x*tan(theta): every column within
-        // D_total/tan(theta) of the corner has to be leaned over, and only the
-        // concave blend does that, over blConcaveInfluenceMultiplier * D_total
-        // of arc length. Once the squeezed run outgrows that reach, the columns
-        // beyond it still grow perpendicular into a gap too narrow to hold them
-        // and the front folds — i.e. the criterion is tan(theta) * influence < 1,
-        // independent of D_total. Measured: at the default influence 2.5 the
-        // break sits between 22 deg (meshes) and 21 deg (fails), against a
-        // predicted atan(1/2.5) = 21.8; influence 5.0 moves it to between 15 and
-        // 10 deg and influence 1.5 to between 35 and 30 deg, both as predicted.
-        // 1.15 is a small margin so the warning lands BEFORE the failure, and
-        // the global influence is used deliberately — concave_D_inf's extra cap
-        // for a nearby corner is a different mechanism and does not fail this way.
-        if (caseId == 1 && thetaDeg < 90.0) {
-            double tanT = std::tan(thetaDeg * M_PI / 180.0);   // > 0 below 90 deg
-            if (tanT * fs.bl.blConcaveInfluenceMultiplier < 1.15) {
-                double squeezed = (tanT > 1e-9) ? D_total / tanT : 0.0;
-                double needMult = std::ceil(((tanT > 1e-9) ? 1.0 / tanT : 99.0) * 10.0) / 10.0;
-                LOG_WARN("Very sharp BL/no-BL wedge at ("
-                         << fs.pos_init[i].x << ", " << fs.pos_init[i].y
-                         << "): the no-BL neighbour closes on the layer at only "
-                         << thetaDeg << " deg. The corner squeezes the BL (total height "
-                         << D_total << ") over " << squeezed << " of wall, but the corner "
-                         "blend only reaches " << (fs.bl.blConcaveInfluenceMultiplier * D_total)
-                         << ", so the columns in between may not fit. If this run ends in a "
-                         "front self-intersection or a Gmsh failure, THIS corner is the "
-                         "likely cause, not the BL size elsewhere. Fix it by reducing the BL "
-                         "height here (BL_LAYERS / BL_INITIAL_THICKNESS / BL_GROWTH_RATE, "
-                         "per-geometry overrides allowed), by letting the neighbouring "
-                         "segment grow a BL too, or by opening the corner. Raising "
-                         "BL_CONCAVE_INFLUENCE_MULTIPLIER to " << needMult << " also covers "
-                         "it, at the cost of a longer blend at every other corner of this "
-                         "geometry.");
-            }
-        }
-        if (juncDebug)
-            std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y
-                      << ") theta=" << thetaDeg << " case=" << caseId
-                      << " dir(" << dir.x << "," << dir.y << ")" << std::endl;
-    }
-    return out;
-}
-
 void BoundaryLayerGenerator::carrySlideWallBc(const std::vector<FrontState>& fronts) {
     // A case-1 (slide) junction replaces a stretch of the no-BL wall: the absorbed
     // surface edges are dropped and the sliding column's lateral edges (plus the
@@ -553,13 +407,53 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // the neighbour edge is filled by far-field triangles) and case 1 slides the
         // column along the neighbour edge (concave notch fill).
         if (fs.bl.blJunctionMethod == 1) {
-            const std::vector<JunctionDecision> juncPlan =
-                classifyJunctions(fs, boundaryNodeIds, isJunction, baseN, D_total, juncDebug);
+            // Assemble the narrow input the binning actually needs (see
+            // JunctionScheme.hpp): per node a position, its two edge normals, the
+            // perpendicular the base detection chose, and whether it grows — plus
+            // three config scalars and the total height. Nothing else of FrontState
+            // or the mesh takes part.
+            std::vector<hybmesh::JunctionNode> ring(static_cast<size_t>(n_init));
             for (int i = 0; i < n_init; ++i) {
-                if (juncPlan[i].caseId == 0) continue;
-                baseN[i]        = juncPlan[i].dir;
-                caseOf[i]       = juncPlan[i].caseId;
-                junctionMult[i] = juncPlan[i].mult;
+                ring[i] = {fs.pos_init[i], fs.n1_init[i], fs.n2_init[i], baseN[i],
+                           m_mesh.nodes[boundaryNodeIds[i]].skipBL, isJunction[i]};
+            }
+            const hybmesh::JunctionParams jp{fs.bl.blJunctionAngleC2,
+                                             fs.bl.blJunctionAngleC3,
+                                             fs.bl.blConcaveInfluenceMultiplier,
+                                             D_total};
+            const hybmesh::JunctionClassification plan =
+                hybmesh::classifyJunctions(ring, jp);
+            for (int i = 0; i < n_init; ++i) {
+                const hybmesh::JunctionDecision& d = plan.decisions[i];
+                if (d.caseId == 0) continue;
+                baseN[i]        = d.dir;
+                caseOf[i]       = d.caseId;
+                junctionMult[i] = d.mult;
+                // A negative angle means none was computed (isolated BL corner),
+                // which is why that node produced no trace line before either.
+                if (juncDebug && d.thetaDeg >= 0.0)
+                    std::cerr << "[JUNC] pos(" << fs.pos_init[i].x << "," << fs.pos_init[i].y
+                              << ") theta=" << d.thetaDeg << " case=" << d.caseId
+                              << " dir(" << d.dir.x << "," << d.dir.y << ")" << std::endl;
+            }
+            // The wedge warning is returned as data so the threshold is testable;
+            // the message is user-facing prose about config keys and belongs here.
+            for (const hybmesh::JunctionWarning& w : plan.warnings) {
+                LOG_WARN("Very sharp BL/no-BL wedge at ("
+                         << w.pos.x << ", " << w.pos.y
+                         << "): the no-BL neighbour closes on the layer at only "
+                         << w.thetaDeg << " deg. The corner squeezes the BL (total height "
+                         << D_total << ") over " << w.squeezedLen << " of wall, but the corner "
+                         "blend only reaches " << w.blendReach
+                         << ", so the columns in between may not fit. If this run ends in a "
+                         "front self-intersection or a Gmsh failure, THIS corner is the "
+                         "likely cause, not the BL size elsewhere. Fix it by reducing the BL "
+                         "height here (BL_LAYERS / BL_INITIAL_THICKNESS / BL_GROWTH_RATE, "
+                         "per-geometry overrides allowed), by letting the neighbouring "
+                         "segment grow a BL too, or by opening the corner. Raising "
+                         "BL_CONCAVE_INFLUENCE_MULTIPLIER to " << w.needMult << " also covers "
+                         "it, at the cost of a longer blend at every other corner of this "
+                         "geometry.");
             }
         }
 

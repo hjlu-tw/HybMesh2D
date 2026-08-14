@@ -3,6 +3,7 @@
 
 #include "Mesh.hpp"
 #include "Config.hpp"
+#include "JunctionScheme.hpp"
 #include <vector>
 #include <map>
 #include <set>
@@ -65,19 +66,6 @@ struct FrontState {
     std::map<int, std::vector<int>> slideWallRun;    // root -> [root, absorbed..., first surviving node]
 };
 
-// One surface node's resolved BL/no-BL junction decision under the 4-case
-// angle-driven scheme (BL_JUNCTION_METHOD == 1). `caseId == 0` means the node is
-// not a junction and the other fields are meaningless.
-//
-// The three fields used to be three parallel per-node arrays filled in place in
-// the middle of generate(); they are one decision and are now returned as one.
-struct JunctionDecision {
-    int      caseId = 0;   // 1 = slide, 2/4 = perpendicular cap, 3 = extension cap
-    Vector2D dir;          // growth ray for this node
-    double   mult = 1.0;   // step scale (1/cos(tilt)) that holds the PERPENDICULAR
-                           // height at D_total for a tilted cap
-};
-
 class BoundaryLayerGenerator {
 public:
     BoundaryLayerGenerator(Mesh& mesh, const Config& config);
@@ -100,27 +88,11 @@ private:
     double detectGrowthDirection(const std::vector<int>& nodeIds, int growMode = 0);
     bool checkCollision(Point2D p, double threshold, const std::set<int>& ignoreIds, int currentGeomId);
 
-    // Bin every BL/no-BL junction node of one front into the 4-case scheme, from
-    // the flow-facing included angle theta between its BL edge and its no-BL
-    // neighbour edge (the case table lives in Config.hpp; the geometric 95-degree
-    // slide bound and the very-sharp-wedge warning are explained at the definition).
-    //
-    // Pure with respect to the mesh: it READS node skipBL flags and the front's
-    // initial geometry and returns one decision per surface node, touching no
-    // state. That is what lets the angle binning be reasoned about — and tested —
-    // without running a layer of growth, which was impossible while it sat inline
-    // in the middle of generate()'s 1300 lines.
-    //
-    // `isJunction` and `baseN` come from the base detection that runs first;
-    // baseN is passed in (rather than special-cased on return) so an isolated BL
-    // corner, which keeps the perpendicular direction already chosen for it, needs
-    // no exception at the call site.
-    std::vector<JunctionDecision> classifyJunctions(
-            const FrontState& fs,
-            const std::vector<int>& boundaryNodeIds,
-            const std::vector<bool>& isJunction,
-            const std::vector<Vector2D>& baseN,
-            double D_total, bool juncDebug) const;
+    // The junction binning itself is NOT a member: it needs neither the mesh nor
+    // FrontState, so it lives in the decision layer as `hybmesh::classifyJunctions`
+    // (include/JunctionScheme.hpp), where a test reaches it without building a
+    // mesh. generate() assembles the narrow input and applies the returned
+    // decisions; see the call site.
 
     // Carry the BC of each no-BL wall run that a case-1 slide replaced onto the
     // column edges replacing it (Mesh::recordBoundaryEdge, matched by arc length).
