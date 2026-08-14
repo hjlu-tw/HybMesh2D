@@ -4,7 +4,64 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Important: Git and Commit Policy
 
-**NEVER execute git commands or commit changes automatically.** Always wait for explicit user instructions before performing git operations (git status, git add, git commit, git push, etc.).
+**Still never run a mutating git command on your own** — `add`, `commit`, `push`,
+`checkout`, `reset`, `rebase`, `merge`, branch creation or deletion all wait for
+an explicit instruction. Read-only inspection (`git status`, `git diff`,
+`git log`) is free: you need it to do the job below.
+
+**What changed (2026-08-14, USER-REQUESTED): you must now raise the subject
+yourself instead of staying silent.** The old rule made the assistant wait to be
+asked, so work piled up uncommitted and unreviewed.
+
+**Prompt for a commit** once the working tree holds a *coherent, finished* unit
+of work — a feature that runs, a bug fixed with its test, a refactor that
+builds. Say what you'd commit and propose a message; do not run it. Signals that
+one has accumulated, any of which is enough:
+
+- a task the user framed as one job is done and verified;
+- roughly **200+ changed lines** or **5+ touched files** since the last commit;
+- the next step would start an unrelated concern (mixing them makes a commit
+  that cannot be reverted cleanly);
+- something risky comes next (a large refactor, a dependency bump, a migration)
+  — a checkpoint before it is worth more than one after.
+
+Raise it **once per threshold crossing**, in a sentence or two at a natural
+pause, never mid-edit and never repeatedly for the same pile. "No" ends it for
+that unit of work.
+
+**Ask about a code review** when the uncommitted-or-unpushed body of work grows
+past what a commit prompt covers — about **3+ commits' worth**, **500+ changed
+lines**, or a whole stage of a feature landing. Offer `/code-review` (Standards
++ Spec) and let the user decline. Prefer asking *before* a branch is pushed or a
+PR opened, since that is when a review is cheapest to act on.
+
+These numbers are defaults, not gates — a 30-line change to `BoundaryLayer.cpp`
+can deserve both prompts, and 400 lines of new test data can deserve neither.
+Judge by whether a reviewer would want a boundary there.
+
+## Important: Dispatch subagents ONE AT A TIME
+
+**Never fan out subagents in parallel** — not even for work that is genuinely
+independent, and not even when parallel would obviously be faster. Dispatch one,
+wait for it, **write its result into the destination file**, and only then
+dispatch the next. This overrides the default habit of parallelising independent
+work, and overrides the tool documentation's advice to batch several Agent calls
+into one message.
+
+The reason is the failure mode, not the speed: a parallel fan-out lands several
+agents' output in the main context at once, so hitting the token ceiling while
+collecting them loses **every round's work at once**. Serial execution caps the
+worst case at the round in flight.
+
+Two rules that make serial rounds affordable: give each subagent an explicit
+scope boundary plus "this area is already covered, do not re-read it", and ask
+it to return a **finished section ready to paste** (with `file:line` citations
+and a length cap) rather than raw notes. If a subagent dies to an API error,
+resume that same agent with `SendMessage` — it recovers from its own transcript,
+so nothing is re-investigated.
+
+Worked example: `docs/architecture_overview.md` §3–§4 (four serial rounds,
+955 lines, one round resumed after an API error with zero rework).
 
 ## Project Overview
 
