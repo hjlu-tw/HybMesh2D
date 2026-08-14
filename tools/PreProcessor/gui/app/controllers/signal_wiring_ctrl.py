@@ -80,23 +80,12 @@ class SignalWiringMixin:
         if _curve_preview is not None:
             _curve_preview.clicked.connect(self.preview_curve_formula)
         
-        # Wire live preview for curve editing
-        for w in [sb.curve_t_min, sb.curve_t_max, sb.curve_n,
-                  sb.curve_start_node, sb.curve_end_node,
-                  sb.h_line_y, sb.h_line_x_start, sb.h_line_x_end,
-                  sb.v_line_x, sb.v_line_y_start, sb.v_line_y_end,
-                  sb.line_x0, sb.line_y0, sb.line_x1, sb.line_y1,
-                  sb.circle_cx, sb.circle_cy, sb.circle_r,
-                  sb.arc_cx, sb.arc_cy, sb.arc_r, sb.arc_theta0, sb.arc_theta1,
-                  sb.tri_x0, sb.tri_y0, sb.tri_x1, sb.tri_y1, sb.tri_x2, sb.tri_y2,
-                  sb.quad_x0, sb.quad_y0, sb.quad_x1, sb.quad_y1,
-                  sb.quad_x2, sb.quad_y2, sb.quad_x3, sb.quad_y3]:
-            w.valueChanged.connect(self.preview_curve_formula)
-        for w in [sb.curve_x_formula, sb.curve_y_formula, sb.curve_formula]:
-            w.textChanged.connect(self.preview_curve_formula)
-        sb.poly_vertices.textChanged.connect(self.preview_curve_formula)
-        sb.curve_mode_param.toggled.connect(self.handle_curve_type_changed)
-        sb.curve_type_combo.currentIndexChanged.connect(self.handle_curve_type_changed)
+        # The analytic-edge form reports ONE fact. This replaced a hand-listed
+        # 38 shape spin boxes plus three formula fields and the polygon editor;
+        # the shape widgets are now found from shape_spec's own parameter table,
+        # so a shape that gains a field cannot be left unwired.
+        sb.curve_edited.connect(self.preview_curve_formula)
+        sb.curve_type_changed.connect(self.handle_curve_type_changed)
 
         # Undo / Redo / Remove / Quality Check
         self.main_window.undo_btn.clicked.connect(self.undo)

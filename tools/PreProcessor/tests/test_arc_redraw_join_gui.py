@@ -100,7 +100,9 @@ check(abs(_mp["cx"] - cx0) < 1e-9 and abs(_mp["cy"] - cy0) < 1e-9
 from PyQt6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication(sys.argv)
 from app.controller import AppController
-from app.controllers.curve_ctrl import CURVE_TYPES
+# The combo's row order belongs to the shape model, not to a controller:
+# the controller and the panel each used to keep their own copy.
+from app.models.curve_edit_spec import CURVE_TYPES
 
 c = AppController()
 mw = c.main_window

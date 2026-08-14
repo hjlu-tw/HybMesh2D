@@ -1,5 +1,4 @@
 from __future__ import annotations
-import math
 import numpy as np
 from app.models.segment import SegmentModel
 from app.commands.segment_cmds import (
@@ -7,25 +6,7 @@ from app.commands.segment_cmds import (
 from app.services.geometry_service import (
     GeometryService)
 from app.models import shape_spec
-
-# Curve-type list, indexed by the type combo's row order.
-CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line",
-               "circle", "triangle", "quadrilateral", "polygon", "arc"]
-
-
-def _polygon_perimeter(verts) -> float:
-    """Closed-polygon perimeter (incl. the closing edge) from a list of (x, y).
-    Used to convert a target spacing into a node count for By-Spacing mode (#2)."""
-    n = len(verts)
-    if n < 2:
-        return 0.0
-    total = 0.0
-    for i in range(n):
-        x1, y1 = verts[i]
-        x2, y2 = verts[(i + 1) % n]
-        total += math.hypot(x2 - x1, y2 - y1)
-    return total
-
+from app.models.curve_edit_spec import polygon_perimeter
 
 def _apply_default_polygon_spacing(params: dict):
     """#1: newly-created polygons distribute *By Spacing* by default so density
@@ -33,7 +14,7 @@ def _apply_default_polygon_spacing(params: dict):
     spacing targets ~100 nodes at the shape's own scale (perimeter / 100), so it
     stays sensible whatever the geometry's units; it falls back to 0.1 when the
     perimeter is unknown. Mutates ``params`` in place."""
-    per = _polygon_perimeter(shape_spec.polygon_vertices(params))
+    per = polygon_perimeter(shape_spec.polygon_vertices(params))
     spacing = round(per / 100.0, 6) if per > 0 else 0.1
     params["spacing"] = spacing
     if per > 0:
@@ -163,42 +144,11 @@ class CurveControllerMixin:
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg or seg.type != "curve":
             return
-        
-        sb = self.main_window.sidebar_view
-        idx = sb.curve_type_combo.currentIndex()
-        if 0 <= idx < len(CURVE_TYPES):
-            seg.curve_type = CURVE_TYPES[idx]
-        else:
-            seg.curve_type = "custom"
-
-        seg.curve_mode = "parametric" if sb.curve_mode_param.isChecked() else "explicit"
-        seg.x_formula = sb.curve_x_formula.text()
-        seg.y_formula = sb.curve_y_formula.text()
-        seg.formula = sb.curve_formula.text()
-        seg.t_min = sb.curve_t_min.value()
-        seg.t_max = sb.curve_t_max.value()
-        seg.parameters["n_points"] = sb.curve_n.value()
-        seg.start_index = sb.curve_start_node.value()
-        seg.end_index = sb.curve_end_node.value()
-
-        # Sync shape-defining parameters from the sidebar widgets (one source of
-        # the per-type widget↔param mapping lives in shape_spec).
-        if seg.curve_type in shape_spec.SIDEBAR_ATTRS or seg.curve_type == "polygon":
-            seg.parameters.update(shape_spec.read_widget_params(sb, seg.curve_type))
-
-        # #2: a polygon distributed "By Spacing" derives its node count from the
-        # (now up-to-date) vertices' perimeter, so point density follows edge
-        # length; 'spacing' is kept for round-trip. Any other mode drops the key
-        # so the spinbox node count governs (the backend consumes n_points).
-        if (seg.curve_type == "polygon"
-                and sb.curve_dist_mode.currentText() == "By Spacing"):
-            spacing = max(1e-9, sb.curve_spacing.value())
-            seg.parameters["spacing"] = spacing
-            per = _polygon_perimeter(shape_spec.polygon_vertices(seg.parameters))
-            if per > 0:
-                seg.parameters["n_points"] = max(2, int(round(per / spacing)))
-        else:
-            seg.parameters.pop("spacing", None)
+        # Twelve widget reads and the polygon node-count rule used to sit here.
+        # The form answers with a spec that writes only the fields it authors,
+        # and the rule (measure the perimeter AFTER the shape params land) went
+        # with it, where it can be checked without a QApplication.
+        self.main_window.sidebar_view.curve_spec().apply_to(seg)
 
     def handle_curve_type_changed(self):
         session = self.active_session()
@@ -213,8 +163,7 @@ class CurveControllerMixin:
         # over stale values (e.g. a vertices_str left from a transformed polygon
         # — the cause of the "polygon default = last transform residual" bug).
         sb = self.main_window.sidebar_view
-        idx = sb.curve_type_combo.currentIndex()
-        new_type = CURVE_TYPES[idx] if 0 <= idx < len(CURVE_TYPES) else "custom"
+        new_type = sb.curve_spec().curve_type
         if new_type != seg.curve_type and not self._is_populating:
             seg.curve_type = new_type
             if new_type in shape_spec.DEFAULTS:

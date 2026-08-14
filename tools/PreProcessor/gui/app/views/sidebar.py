@@ -64,6 +64,12 @@ class SidebarView(QWidget):
     duplicate_requested = pyqtSignal()
     transform_open_requested = pyqtSignal()
     transform_closed = pyqtSignal()
+    # Analytic edges. `curve_edited` replaces a hand-listed 38 shape
+    # spin boxes plus the formula fields; the shape widgets are found
+    # from shape_spec's own parameter table, so a shape that gains a
+    # field is wired by the same edit that gives it a parameter.
+    curve_edited = pyqtSignal()
+    curve_type_changed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -88,6 +94,8 @@ class SidebarView(QWidget):
                                  self.duplicate_base_mode_changed.emit)
         _tp.dup_btn.clicked.connect(self.duplicate_requested)
         _ep.transform_btn.clicked.connect(self.transform_open_requested)
+        _ep.wire_curve_edits(self.curve_edited.emit,
+                             self.curve_type_changed.emit)
         _ep._transform_dialog.finished.connect(
             lambda _r: self.transform_closed.emit())
         self.vertex_panel = VertexPanel(self)
@@ -317,6 +325,10 @@ class SidebarView(QWidget):
         The list belongs to the panel that owns the widgets anyway.
         """
         self.edge_props_panel.set_length_suffix(symbol)
+
+    def curve_spec(self):
+        """What the analytic-edge form currently says."""
+        return self.edge_props_panel.curve_spec()
 
     # ── Point distribution ──────────────────────────────────────────────
     def distribution_spec(self, strategy: str):

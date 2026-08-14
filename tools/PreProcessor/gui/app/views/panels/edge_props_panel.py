@@ -11,6 +11,7 @@ from app.views.panels.transform_panel import TransformPanel
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.adjusting_stacked_widget import AdjustingStackedWidget
 from app.models import shape_spec
+from app.models.curve_edit_spec import CURVE_TYPES
 from app.views.panels.edge_props_shapes_mixin import EdgePropsShapesMixin
 from app.views.panels.edge_props_dist_mixin import EdgePropsDistMixin
 from app.views.panels.edge_props_dialogs_mixin import EdgePropsDialogsMixin
@@ -22,6 +23,8 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
     # here rather than on EdgePropsDistMixin because PyQt only collects signals
     # from a class built by the Qt metaclass, which a plain mixin is not.
     distribution_edited = pyqtSignal()
+    curve_edited = pyqtSignal()
+    curve_type_changed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__("Edge Properties", start_collapsed=True, parent=parent)
@@ -244,7 +247,6 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
         if self.curve_preview_btn:
             self.curve_preview_btn.setVisible(True)
 
-        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon", "arc"]
         curve_type = getattr(seg, "curve_type", "custom")
         if curve_type in CURVE_TYPES:
             idx = CURVE_TYPES.index(curve_type)

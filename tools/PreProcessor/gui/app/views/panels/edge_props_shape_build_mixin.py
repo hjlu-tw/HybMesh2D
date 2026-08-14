@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import (
 from app.utils import SPIN_STYLE, help_label, help_widget
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.polygon_editor import PolygonEditor
+from app.models import shape_spec
+from app.models.curve_edit_spec import CurveEditSpec, curve_type_for_index
 
 
 class EdgePropsShapeBuildMixin:
@@ -337,3 +339,55 @@ class EdgePropsShapeBuildMixin:
                 layout_line, layout_circle, layout_arc, layout_tri, layout_quad]
 
         # Connect combobox switch
+
+    # ── The analytic-edge form's interface ───────────────────────────────
+    def _curve_scalar_widgets(self):
+        """The curve fields that are not shape parameters."""
+        return [self.curve_t_min, self.curve_t_max, self.curve_n,
+                self.curve_start_node, self.curve_end_node, self.curve_spacing]
+
+    def _shape_widgets(self):
+        """Every shape-defining widget, taken from shape_spec's own table.
+
+        The wiring used to hand-list thirty-eight spin boxes. shape_spec already
+        holds the per-type parameter -> widget mapping that the read/write pair
+        uses, so a shape gaining a field is wired by the same edit that gives it
+        a parameter, instead of by remembering a second list in a controller.
+        """
+        names = {attr for attrs in shape_spec.SIDEBAR_ATTRS.values()
+                 for attr in attrs.values()}
+        return [getattr(self, n) for n in sorted(names) if hasattr(self, n)]
+
+    def wire_curve_edits(self, on_edited, on_type_changed):
+        """Collapse every analytic-edge widget into one 'the edge changed'."""
+        for w in self._curve_scalar_widgets() + self._shape_widgets():
+            w.valueChanged.connect(lambda *_: on_edited())
+        for w in (self.curve_x_formula, self.curve_y_formula, self.curve_formula,
+                  self.poly_vertices):
+            w.textChanged.connect(lambda *_: on_edited())
+        self.curve_dist_mode.currentTextChanged.connect(lambda *_: on_edited())
+        self.curve_mode_param.toggled.connect(lambda *_: on_type_changed())
+        self.curve_type_combo.currentIndexChanged.connect(
+            lambda *_: on_type_changed())
+
+    def curve_spec(self) -> CurveEditSpec:
+        """What the analytic-edge form currently says."""
+        curve_type = curve_type_for_index(self.curve_type_combo.currentIndex())
+        shape_params = {}
+        if curve_type in shape_spec.SIDEBAR_ATTRS or curve_type == "polygon":
+            shape_params = shape_spec.read_widget_params(self, curve_type)
+        return CurveEditSpec(
+            curve_type=curve_type,
+            parametric=self.curve_mode_param.isChecked(),
+            x_formula=self.curve_x_formula.text(),
+            y_formula=self.curve_y_formula.text(),
+            formula=self.curve_formula.text(),
+            t_min=self.curve_t_min.value(),
+            t_max=self.curve_t_max.value(),
+            n_points=self.curve_n.value(),
+            start_index=self.curve_start_node.value(),
+            end_index=self.curve_end_node.value(),
+            shape_params=shape_params,
+            by_spacing=self.curve_dist_mode.currentText() == "By Spacing",
+            spacing=self.curve_spacing.value(),
+        )
