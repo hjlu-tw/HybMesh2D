@@ -98,7 +98,7 @@ class SignalWiringMixin:
         self.main_window.quality_mode_combo.currentTextChanged.connect(self.handle_quality_mode_changed)
         self.main_window.show_vertices_cb.toggled.connect(self.handle_show_vertices_toggled)
         self.main_window.show_nodes_cb.toggled.connect(self.handle_show_nodes_toggled)
-        sb.dup_btn.clicked.connect(self.duplicate_with_transform)
+        sb.duplicate_requested.connect(self.duplicate_with_transform)
 
         # The distribution form reports ONE fact. The ten spin boxes and the
         # combo this replaced were listed here by hand, so tanh_spacing_ends,
@@ -116,21 +116,13 @@ class SignalWiringMixin:
         sb.distribution_closed.connect(self._restore_resampled_after_distribution)
 
         # Duplicate & Transform tool window: opening it auto-shows the gizmo +
-        # live preview; closing it clears them.
-        sb.transform_btn.clicked.connect(self._open_transform)
-        sb._transform_dialog.finished.connect(lambda _r: self._close_transform())
-
-        # Wire duplicate live preview connections
-        sb.dup_type_combo.currentIndexChanged.connect(self.handle_dup_type_changed)
-        sb.dup_base_mode_combo.currentIndexChanged.connect(self.handle_dup_base_mode_changed)
-        sb.dup_delete_orig_cb.toggled.connect(self.on_duplicate_param_changed)
-        for w in [sb.dup_rot_angle, sb.dup_rot_px, sb.dup_rot_py,
-                  sb.dup_mh_py, sb.dup_mv_px,
-                  sb.dup_ma_px, sb.dup_ma_py, sb.dup_ma_dx, sb.dup_ma_dy,
-                  sb.dup_ps_px, sb.dup_ps_py,
-                  sb.dup_trans_dx, sb.dup_trans_dy,
-                  sb.dup_scale_sx, sb.dup_scale_sy, sb.dup_scale_px, sb.dup_scale_py]:
-            w.valueChanged.connect(self.on_duplicate_param_changed)
+        # live preview; closing it clears them. The seventeen spin boxes this
+        # replaced were listed here by hand; the form reports one edit now.
+        sb.transform_open_requested.connect(self._open_transform)
+        sb.transform_closed.connect(self._close_transform)
+        sb.duplicate_type_changed.connect(self.handle_dup_type_changed)
+        sb.duplicate_base_mode_changed.connect(self.handle_dup_base_mode_changed)
+        sb.duplicate_edited.connect(self.on_duplicate_param_changed)
 
         # Advanced settings
         sb.global_spline_cb.toggled.connect(self.handle_global_spline_changed)

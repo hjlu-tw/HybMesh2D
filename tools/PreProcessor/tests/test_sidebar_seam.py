@@ -66,10 +66,17 @@ INTERFACE_VERBS = {
     # the footer button the sidebar really owns (the three CAD toolbar
     # buttons it used to hand out belong to the main window)
     "set_save_enabled",
+    # Duplicate & Transform
+    "transform_spec", "set_transform_reference",
+    "set_transform_reference_applicable", "use_custom_transform_reference",
+    "set_transform_handle", "show_transform_panel",
 }
 INTERFACE_SIGNALS = {
     "distribution_edited", "distribution_open_requested",
     "distribution_apply_requested", "distribution_closed",
+    "duplicate_edited", "duplicate_type_changed",
+    "duplicate_base_mode_changed", "duplicate_requested",
+    "transform_open_requested", "transform_closed",
 }
 # Sub-modules that own their own interface. Q8: expose them by name, do not wrap
 # them — a wrapper over a deep module is a shallow module.
@@ -79,21 +86,16 @@ INTERFACE = INTERFACE_VERBS | INTERFACE_SIGNALS | INTERFACE_SUBMODULES
 
 # ── The frozen leak baseline — may only shrink ────────────────────────────
 # Generated 2026-08-14 at 854f53e, trimmed as groups migrate:
-# 174 (file, widget) pairs over 13 files.
+# 114 (file, widget) pairs over 11 files.
 # A pair NOT listed here is a new reach-through and fails check 2.
 BASELINE = {
     "app/controllers/signal_wiring_ctrl.py": {
-        '_transform_dialog', 'add_curve_seg_btn', 'arc_cx', 'arc_cy', 'arc_r',
-        'arc_theta0', 'arc_theta1', 'auto_detect_btn', 'auto_split_btn',
-        'circle_cx', 'circle_cy', 'circle_r', 'curve_bake_btn',
-        'curve_end_node', 'curve_formula', 'curve_mode_param', 'curve_n',
-        'curve_start_node', 'curve_t_max', 'curve_t_min', 'curve_type_combo',
-        'curve_x_formula', 'curve_y_formula', 'dup_base_mode_combo', 'dup_btn',
-        'dup_delete_orig_cb', 'dup_ma_dx', 'dup_ma_dy', 'dup_ma_px',
-        'dup_ma_py', 'dup_mh_py', 'dup_mv_px', 'dup_ps_px', 'dup_ps_py',
-        'dup_rot_angle', 'dup_rot_px', 'dup_rot_py', 'dup_scale_px',
-        'dup_scale_py', 'dup_scale_sx', 'dup_scale_sy', 'dup_trans_dx',
-        'dup_trans_dy', 'dup_type_combo', 'extrude_stl_btn', 'generate_btn',
+        'add_curve_seg_btn', 'arc_cx', 'arc_cy', 'arc_r', 'arc_theta0',
+        'arc_theta1', 'auto_detect_btn', 'auto_split_btn', 'circle_cx',
+        'circle_cy', 'circle_r', 'curve_bake_btn', 'curve_end_node',
+        'curve_formula', 'curve_mode_param', 'curve_n', 'curve_start_node',
+        'curve_t_max', 'curve_t_min', 'curve_type_combo', 'curve_x_formula',
+        'curve_y_formula', 'extrude_stl_btn', 'generate_btn',
         'global_spline_cb', 'group_btn', 'h_line_x_end', 'h_line_x_start',
         'h_line_y', 'insert_btn', 'is_closed_combo', 'join_edges_btn',
         'line_x0', 'line_x1', 'line_y0', 'line_y1', 'load_btn', 'load_json_btn',
@@ -101,33 +103,20 @@ BASELINE = {
         'poly_vertices', 'quad_x0', 'quad_x1', 'quad_x2', 'quad_x3', 'quad_y0',
         'quad_y1', 'quad_y2', 'quad_y3', 'remove_seg_btn', 'remove_split_btn',
         'save_btn', 'select_mode_combo', 'split_btn', 'strategy_combo',
-        'transform_btn', 'tri_x0', 'tri_x1', 'tri_x2', 'tri_y0', 'tri_y1',
-        'tri_y2', 'v_line_x', 'v_line_y_end', 'v_line_y_start'
-    },
-    "app/controllers/transform_apply_ctrl.py": {
-        'dup_delete_orig_cb', 'dup_ma_dx', 'dup_ma_dy', 'dup_ma_px',
-        'dup_ma_py', 'dup_mh_py', 'dup_mv_px', 'dup_ps_px', 'dup_ps_py',
-        'dup_rot_angle', 'dup_rot_px', 'dup_rot_py', 'dup_scale_px',
-        'dup_scale_py', 'dup_scale_sx', 'dup_scale_sy', 'dup_trans_dx',
-        'dup_trans_dy', 'dup_type_combo'
-    },
-    "app/controllers/transform_ctrl.py": {
-        'dup_base_mode_combo', 'dup_ma_dx', 'dup_ma_dy', 'dup_ma_px',
-        'dup_ma_py', 'dup_mh_py', 'dup_mv_px', 'dup_ps_px', 'dup_ps_py',
-        'dup_rot_angle', 'dup_rot_px', 'dup_rot_py', 'dup_scale_px',
-        'dup_scale_py', 'dup_trans_dx', 'dup_trans_dy', 'dup_type_combo'
-    },
-    "app/controllers/segment_ctrl.py": {
-        '_transform_dup_group', 'curve_bake_btn', 'file_name_label',
-        'global_spline_cb', 'join_edges_btn', 'match_previous_cb',
-        'param_stack', 'remove_seg_btn', 'remove_split_btn',
-        'segment_type_label', 'selected_info', 'split_btn', 'strategy_combo'
+        'tri_x0', 'tri_x1', 'tri_x2', 'tri_y0', 'tri_y1', 'tri_y2', 'v_line_x',
+        'v_line_y_end', 'v_line_y_start'
     },
     "app/controllers/curve_ctrl.py": {
         'curve_dist_mode', 'curve_end_node', 'curve_formula',
         'curve_mode_param', 'curve_n', 'curve_spacing', 'curve_start_node',
         'curve_t_max', 'curve_t_min', 'curve_type_combo', 'curve_x_formula',
         'curve_y_formula'
+    },
+    "app/controllers/segment_ctrl.py": {
+        'curve_bake_btn', 'file_name_label', 'global_spline_cb',
+        'join_edges_btn', 'match_previous_cb', 'param_stack', 'remove_seg_btn',
+        'remove_split_btn', 'segment_type_label', 'selected_info', 'split_btn',
+        'strategy_combo'
     },
     "app/controllers/segment_vertex_ctrl.py": {
         'insert_x', 'insert_y', 'keep_vertex_cb', 'move_btn', 'move_x',

@@ -55,6 +55,15 @@ class SidebarView(QWidget):
     distribution_open_requested = pyqtSignal()
     distribution_apply_requested = pyqtSignal()
     distribution_closed = pyqtSignal()
+    # Duplicate & Transform. `duplicate_edited` replaces a list of seventeen
+    # spin boxes; type and base-mode changes stay separate signals because
+    # choosing a transform is not the same event as tuning its parameters.
+    duplicate_edited = pyqtSignal()
+    duplicate_type_changed = pyqtSignal()
+    duplicate_base_mode_changed = pyqtSignal()
+    duplicate_requested = pyqtSignal()
+    transform_open_requested = pyqtSignal()
+    transform_closed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -73,6 +82,14 @@ class SidebarView(QWidget):
         _ep.distribution_apply_btn.clicked.connect(self.distribution_apply_requested)
         _ep._distribution_dialog.finished.connect(
             lambda _r: self.distribution_closed.emit())
+        _tp = _ep._transform_dup_group
+        _tp.wire_transform_edits(self.duplicate_edited.emit,
+                                 self.duplicate_type_changed.emit,
+                                 self.duplicate_base_mode_changed.emit)
+        _tp.dup_btn.clicked.connect(self.duplicate_requested)
+        _ep.transform_btn.clicked.connect(self.transform_open_requested)
+        _ep._transform_dialog.finished.connect(
+            lambda _r: self.transform_closed.emit())
         self.vertex_panel = VertexPanel(self)
         self.geom_stats_panel = GeomStatsPanel(self)
         self.advanced_panel = AdvancedPanel(self)
@@ -299,6 +316,30 @@ class SidebarView(QWidget):
         only while it is). The caller asks a question; that the tool is a QDialog
         is ours."""
         return self.edge_props_panel._distribution_dialog.isVisible()
+
+    # ── Duplicate & Transform ───────────────────────────────────────────
+    def transform_spec(self):
+        """What the Duplicate & Transform form currently says."""
+        return self.edge_props_panel._transform_dup_group.transform_spec()
+
+    def set_transform_reference(self, point):
+        """Show the pivot every transform turns about; None = the user owns it."""
+        self.edge_props_panel._transform_dup_group.set_transform_reference(point)
+
+    def set_transform_reference_applicable(self, applicable: bool):
+        self.edge_props_panel._transform_dup_group.set_transform_reference_applicable(
+            applicable)
+
+    def use_custom_transform_reference(self):
+        self.edge_props_panel._transform_dup_group.use_custom_transform_reference()
+
+    def set_transform_handle(self, handle: str, x: float, y: float) -> bool:
+        """Place the canvas handle the user dragged; False if it drives nothing."""
+        return self.edge_props_panel._transform_dup_group.set_transform_handle(
+            handle, x, y)
+
+    def show_transform_panel(self, visible: bool):
+        self.edge_props_panel._transform_dup_group.setVisible(visible)
 
     def show_file_segment(self, start: int, end: int):
         self.edge_props_panel.show_file_segment(start, end)

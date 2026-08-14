@@ -59,6 +59,7 @@ import numpy as np                                              # noqa: E402
 from app.controllers.transform_apply_ctrl import (              # noqa: E402
     TransformApplyControllerMixin)
 from app.models.segment import SegmentModel                     # noqa: E402
+from app.models.transform_spec import TransformSpec             # noqa: E402
 
 _FAILS = []
 
@@ -70,27 +71,19 @@ def check(cond, msg):
 
 
 # ── minimal stand-ins: the transform reads plain values off the sidebar ──────
-class _Spin:
-    def __init__(self, v):
-        self._v = v
+def _sidebar(spec):
+    """A stub sidebar that answers one question: what transform is set up?
 
-    def value(self):
-        return self._v
-
-
-class _Combo:
-    def __init__(self, i):
-        self._i = i
-
-    def currentIndex(self):
-        return self._i
+    It used to have to fake the individual spin boxes and combo the controller
+    read by name. The controller asks for a TransformSpec now, so the stub is
+    the spec — which is the testability this seam was cut for.
+    """
+    return type("_Sidebar", (), {"transform_spec": staticmethod(lambda: spec)})()
 
 
-class _Sidebar:
+def _Sidebar():
     """Translate by (10, 0) — a rigid motion, so closure cannot change."""
-    dup_type_combo = _Combo(5)
-    dup_trans_dx = _Spin(10.0)
-    dup_trans_dy = _Spin(0.0)
+    return _sidebar(TransformSpec("translate", delta=(10.0, 0.0)))
 
 
 class _MainWindow:
@@ -217,34 +210,25 @@ check(out is not None and out.curve_type == "circle" and out.closed is True,
 from app.services.geometry_service import GeometryService        # noqa: E402
 
 
-class _Rotate90:
+def _Rotate90():
     """Rotate +90° about the origin."""
-    dup_type_combo = _Combo(0)
-    dup_rot_angle = _Spin(90.0)
-    dup_rot_px = _Spin(0.0)
-    dup_rot_py = _Spin(0.0)
+    return _sidebar(TransformSpec("rotate", angle_deg=90.0))
 
 
-class _MirrorVertical:
+def _MirrorVertical():
     """Flip x about x = 0 — the orientation-REVERSING case."""
-    dup_type_combo = _Combo(2)
-    dup_mv_px = _Spin(0.0)
+    return _sidebar(TransformSpec("mirror_v", axis_x=0.0))
 
 
-class _ScaleUniform:
-    dup_type_combo = _Combo(6)
-    dup_scale_sx = _Spin(2.0)
-    dup_scale_sy = _Spin(2.0)
-    dup_scale_px = _Spin(0.0)
-    dup_scale_py = _Spin(0.0)
+def _ScaleUniform():
+    return _sidebar(TransformSpec("scale", factors=(2.0, 2.0),
+                                  scale_pivot=(0.0, 0.0)))
 
 
-class _ScaleNonUniform:
-    dup_type_combo = _Combo(6)
-    dup_scale_sx = _Spin(2.0)
-    dup_scale_sy = _Spin(1.0)
-    dup_scale_px = _Spin(0.0)
-    dup_scale_py = _Spin(0.0)
+def _ScaleNonUniform():
+    """Affine but not a similarity — a circle's image is an ellipse."""
+    return _sidebar(TransformSpec("scale", factors=(2.0, 1.0),
+                                  scale_pivot=(0.0, 0.0)))
 
 
 def moved_points(seg):

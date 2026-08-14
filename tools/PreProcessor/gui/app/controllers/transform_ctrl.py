@@ -69,46 +69,23 @@ class TransformControllerMixin:
             return
 
         sb = self.main_window.sidebar_view
-        t_idx = sb.dup_type_combo.currentIndex()
-        if t_idx == 5: # Translate — no reference point
-            sb.dup_base_mode_combo.setEnabled(False)
-            sb.dup_trans_dx.setEnabled(True)
-            sb.dup_trans_dy.setEnabled(True)
+        spec = sb.transform_spec()
+        if not spec.has_reference_point:
+            sb.set_transform_reference_applicable(False)
             return
 
-        sb.dup_base_mode_combo.setEnabled(True)
-        mode = sb.dup_base_mode_combo.currentText()
-
+        sb.set_transform_reference_applicable(True)
         # Pivot / axis spin boxes are user-editable only in Custom mode; for
         # every other mode they are driven by the computed reference point and
         # shown read-only. (Mirror-axis direction fields are always editable.)
-        pivot_fields = [
-            sb.dup_rot_px, sb.dup_rot_py, sb.dup_mh_py, sb.dup_mv_px,
-            sb.dup_ma_px, sb.dup_ma_py, sb.dup_ps_px, sb.dup_ps_py,
-            sb.dup_scale_px, sb.dup_scale_py,
-        ]
-        manual = (mode == "Custom (Manual)")
-        for w in pivot_fields:
-            w.setEnabled(manual)
-        if manual:
+        if spec.base_mode == "Custom (Manual)":
+            sb.set_transform_reference(None)
             return
 
-        pt = self._compute_dup_reference_point(session, mode)
+        pt = self._compute_dup_reference_point(session, spec.base_mode)
         if pt is None:
             return
-        px, py = pt
-
-        with block_signals(*pivot_fields):
-            sb.dup_rot_px.setValue(px)
-            sb.dup_rot_py.setValue(py)
-            sb.dup_mh_py.setValue(py)
-            sb.dup_mv_px.setValue(px)
-            sb.dup_ma_px.setValue(px)
-            sb.dup_ma_py.setValue(py)
-            sb.dup_ps_px.setValue(px)
-            sb.dup_ps_py.setValue(py)
-            sb.dup_scale_px.setValue(px)
-            sb.dup_scale_py.setValue(py)
+        sb.set_transform_reference(pt)
 
     def _compute_dup_reference_point(self, session, mode):
         """Return (px, py) for the duplicate/transform reference point.
@@ -179,26 +156,26 @@ class TransformControllerMixin:
         # Transform gizmo and edge control points must not overlap on canvas.
         canvas.clear_edge_handles()
 
-        t_idx = sb.dup_type_combo.currentIndex()
-        if t_idx == 0:    # Rotate — pivot + draggable angle handle
+        # The gizmo mirrors the form, so it is placed from the same spec the
+        # transform itself is computed from — no second reading of the widgets,
+        # and no second copy of "which field is this transform's pivot".
+        spec = sb.transform_spec()
+        if spec.kind == "rotate":       # pivot + draggable angle handle
             canvas.show_transform_handles({'rotate': {
-                'pivot': (sb.dup_rot_px.value(), sb.dup_rot_py.value()),
-                'angle': sb.dup_rot_angle.value()}})
-        elif t_idx == 1:  # Mirror Horizontal — horizontal axis line
-            canvas.show_transform_handles({'hline': sb.dup_mh_py.value()})
-        elif t_idx == 2:  # Mirror Vertical — vertical axis line
-            canvas.show_transform_handles({'vline': sb.dup_mv_px.value()})
-        elif t_idx == 3:  # Mirror Axis — pivot + direction
+                'pivot': spec.rot_pivot, 'angle': spec.angle_deg}})
+        elif spec.kind == "mirror_h":   # horizontal axis line
+            canvas.show_transform_handles({'hline': spec.axis_y})
+        elif spec.kind == "mirror_v":   # vertical axis line
+            canvas.show_transform_handles({'vline': spec.axis_x})
+        elif spec.kind == "mirror_axis":
             canvas.show_transform_handles({'axis': {
-                'pivot': (sb.dup_ma_px.value(), sb.dup_ma_py.value()),
-                'dir': (sb.dup_ma_dx.value(), sb.dup_ma_dy.value())}})
-        elif t_idx == 4:  # Point Symmetry — centre point
-            canvas.show_transform_handles(
-                {'point': (sb.dup_ps_px.value(), sb.dup_ps_py.value())})
-        elif t_idx == 6:  # Scale — pivot point
-            canvas.show_transform_handles(
-                {'point': (sb.dup_scale_px.value(), sb.dup_scale_py.value())})
-        elif t_idx == 5:  # Translate — drag the selection centre to a destination
+                'pivot': spec.axis_pivot, 'dir': spec.axis_dir}})
+        elif spec.kind == "point_symmetry":
+            canvas.show_transform_handles({'point': spec.sym_centre})
+        elif spec.kind == "scale":
+            canvas.show_transform_handles({'point': spec.scale_pivot})
+        elif spec.kind == "translate":
+            # Drag the selection centre to a destination.
             anchor = self._compute_dup_reference_point(session, "Center (selection)")
             if anchor is None:
                 canvas.clear_transform_handles()
@@ -206,77 +183,32 @@ class TransformControllerMixin:
             ax, ay = anchor
             canvas.show_transform_handles({'translate': {
                 'anchor': (ax, ay),
-                'dest': (ax + sb.dup_trans_dx.value(),
-                         ay + sb.dup_trans_dy.value())}})
+                'dest': (ax + spec.delta[0], ay + spec.delta[1])}})
         else:
             canvas.clear_transform_handles()
 
-    @staticmethod
-    def _spin_set_silent(spin, value):
-        with block_signals(spin):
-            spin.setValue(value)
-
-    def _force_base_mode_custom(self):
-        """A manual drag means the user wants a custom reference point: switch
-        Base Point to Custom (so the dragged value is kept and editable)."""
-        sb = self.main_window.sidebar_view
-        if sb.dup_base_mode_combo.currentText() != "Custom (Manual)":
-            with block_signals(sb.dup_base_mode_combo):
-                sb.dup_base_mode_combo.setCurrentText("Custom (Manual)")
-        for w in (sb.dup_rot_px, sb.dup_rot_py, sb.dup_mh_py, sb.dup_mv_px,
-                  sb.dup_ma_px, sb.dup_ma_py, sb.dup_ps_px, sb.dup_ps_py,
-                  sb.dup_scale_px, sb.dup_scale_py):
-            w.setEnabled(True)
-
     def _on_transform_handle_dragged(self, kind: str, x: float, y: float):
-        """Live-update the relevant spin box(es) and ghost preview as the user
+        """Live-update the transform form and the ghost preview as the user
         drags the base-point / axis handle on the canvas."""
         if self._is_populating:
             return
         sb = self.main_window.sidebar_view
-        t_idx = sb.dup_type_combo.currentIndex()
 
-        if kind == 'translate':
-            # Destination of the selection centre → derive the shift vector.
+        if kind == "translate":
+            # The gizmo reports the DESTINATION of the selection centre, so the
+            # shift vector is derived here — the form stores a delta, not a
+            # point, and only the controller knows where the selection is.
             anchor = self._compute_dup_reference_point(
                 self.active_session(), "Center (selection)")
             if anchor is not None:
-                self._spin_set_silent(sb.dup_trans_dx, x - anchor[0])
-                self._spin_set_silent(sb.dup_trans_dy, y - anchor[1])
-            self._show_duplicate_preview = True
-            self.update_duplicate_preview()
-            return
-
-        if kind == 'rotate_angle':
-            # The rotate gizmo reports the absolute clock-hand angle (deg) in x.
-            self._spin_set_silent(sb.dup_rot_angle, x)
-            self._show_duplicate_preview = True
-            self.update_duplicate_preview()
-            return
-
-        # All other handles act on a base point → imply a custom reference.
-        self._force_base_mode_custom()
-
-        if kind == 'point':
-            if t_idx == 0:
-                self._spin_set_silent(sb.dup_rot_px, x)
-                self._spin_set_silent(sb.dup_rot_py, y)
-            elif t_idx == 4:
-                self._spin_set_silent(sb.dup_ps_px, x)
-                self._spin_set_silent(sb.dup_ps_py, y)
-            elif t_idx == 6:
-                self._spin_set_silent(sb.dup_scale_px, x)
-                self._spin_set_silent(sb.dup_scale_py, y)
-        elif kind == 'hline':
-            self._spin_set_silent(sb.dup_mh_py, y)
-        elif kind == 'vline':
-            self._spin_set_silent(sb.dup_mv_px, x)
-        elif kind == 'axis_pivot':
-            self._spin_set_silent(sb.dup_ma_px, x)
-            self._spin_set_silent(sb.dup_ma_py, y)
-        elif kind == 'axis_dir':
-            self._spin_set_silent(sb.dup_ma_dx, x)
-            self._spin_set_silent(sb.dup_ma_dy, y)
+                sb.set_transform_handle("translate", x - anchor[0], y - anchor[1])
+        else:
+            # Every handle except the rotate gizmo's angle moves a base point,
+            # which implies the user wants a custom reference rather than the
+            # computed one.
+            if kind != "rotate_angle":
+                sb.use_custom_transform_reference()
+            sb.set_transform_handle(kind, x, y)
 
         self._show_duplicate_preview = True
         self.update_duplicate_preview()

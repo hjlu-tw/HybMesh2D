@@ -35,13 +35,12 @@ class TransformApplyControllerMixin:
 
         # A zero-length custom mirror axis is the only fully-degenerate case;
         # reject it once up front so a per-edge None can mean "no valid points".
-        if sb.dup_type_combo.currentIndex() == 3:
-            if math.hypot(sb.dup_ma_dx.value(), sb.dup_ma_dy.value()) < 1e-12:
-                self.log(
-                    "Mirror axis direction is zero — cannot mirror.")
-                return
+        spec = sb.transform_spec()
+        if spec.is_degenerate:
+            self.log("Mirror axis direction is zero — cannot mirror.")
+            return
 
-        delete_original = sb.dup_delete_orig_cb.isChecked()
+        delete_original = spec.delete_original
 
         new_segs = []
         seg_indices = []
@@ -103,7 +102,7 @@ class TransformApplyControllerMixin:
         ids_str = ", ".join(str(i) for i in new_ids)
         self.log(
             f"{action_name} {len(new_segs)} edge(s) as Edge {ids_str} "
-            f"({sb.dup_type_combo.currentText()}).")
+            f"({spec.label}).")
         for sid, src_type in baked:
             # Say WHICH edge lost its type and why. Everything analytic keeps
             # it; these two kinds have no closed-form image under a transform,
@@ -336,53 +335,7 @@ class TransformApplyControllerMixin:
 
     def _apply_transform(self, xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         """Apply the selected geometric transform to the points xs and ys."""
-        sb = self.main_window.sidebar_view
-        t_idx = sb.dup_type_combo.currentIndex()
-        xs = xs.copy()
-        ys = ys.copy()
-
-        if t_idx == 0:   # Rotate
-            theta = math.radians(sb.dup_rot_angle.value())
-            px, py = sb.dup_rot_px.value(), sb.dup_rot_py.value()
-            xr = xs - px;  yr = ys - py
-            xs_new = px + xr * math.cos(theta) - yr * math.sin(theta)
-            ys_new = py + xr * math.sin(theta) + yr * math.cos(theta)
-            xs, ys = xs_new, ys_new
-        elif t_idx == 1: # Mirror Horizontal (flip y around axis_y)
-            axis_y = sb.dup_mh_py.value()
-            ys = 2.0 * axis_y - ys
-        elif t_idx == 2: # Mirror Vertical (flip x around axis_x)
-            axis_x = sb.dup_mv_px.value()
-            xs = 2.0 * axis_x - xs
-        elif t_idx == 3: # Mirror Axis (arbitrary)
-            px, py = sb.dup_ma_px.value(), sb.dup_ma_py.value()
-            dx, dy = sb.dup_ma_dx.value(), sb.dup_ma_dy.value()
-            d_len = math.hypot(dx, dy)
-            if d_len < 1e-12:
-                return None
-            dx /= d_len;  dy /= d_len
-            xr = xs - px;  yr = ys - py
-            dot = xr * dx + yr * dy
-            xs = 2.0 * (px + dot * dx) - xs
-            ys = 2.0 * (py + dot * dy) - ys
-        elif t_idx == 4: # Point Symmetry
-            cx, cy = sb.dup_ps_px.value(), sb.dup_ps_py.value()
-            xs = 2.0 * cx - xs
-            ys = 2.0 * cy - ys
-        elif t_idx == 5: # Translate
-            dx = sb.dup_trans_dx.value()
-            dy = sb.dup_trans_dy.value()
-            xs = xs + dx
-            ys = ys + dy
-        elif t_idx == 6: # Scale (independent X / Y factors about the pivot)
-            sx = sb.dup_scale_sx.value()
-            sy = sb.dup_scale_sy.value()
-            px = sb.dup_scale_px.value()
-            py = sb.dup_scale_py.value()
-            xs = px + (xs - px) * sx
-            ys = py + (ys - py) * sy
-
-        return xs, ys
+        return self.main_window.sidebar_view.transform_spec().apply(xs, ys)
 
     def _nonuniform_scale_active(self) -> bool:
         """True when the active transform is a Scale with different X and Y
@@ -390,7 +343,4 @@ class TransformApplyControllerMixin:
         keep their type (vertices just move), but a circle becomes an ellipse the
         circle model can't hold — so its builder bakes it into a polygon instead
         of emitting a wrong-radius circle."""
-        sb = self.main_window.sidebar_view
-        if sb.dup_type_combo.currentIndex() != 6:
-            return False
-        return abs(sb.dup_scale_sx.value() - sb.dup_scale_sy.value()) > 1e-12
+        return self.main_window.sidebar_view.transform_spec().is_nonuniform_scale

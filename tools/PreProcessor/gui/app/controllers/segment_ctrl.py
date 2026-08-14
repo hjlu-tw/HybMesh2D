@@ -366,7 +366,7 @@ class SegmentControllerMixin:
                     self._populate_form_from_segment(seg)
 
                 # Show transform duplicate group for all segments
-                sb._transform_dup_group.setVisible(True)
+                sb.show_transform_panel(True)
 
                 with block_signals(sb.match_previous_cb):
                     sb.match_previous_cb.setChecked(seg.match_previous)

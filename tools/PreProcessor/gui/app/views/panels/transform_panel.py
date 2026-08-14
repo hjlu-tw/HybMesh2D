@@ -1,5 +1,7 @@
 from PyQt6.QtWidgets import QGroupBox, QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QWidget
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label, help_widget
+from app.utils import (make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
+                       block_signals, help_label, help_widget)
+from app.models.transform_spec import TransformSpec, kind_for_index
 from app.views.clean_double_spin_box import CleanDoubleSpinBox
 from app.views.adjusting_stacked_widget import AdjustingStackedWidget
 
@@ -191,3 +193,116 @@ class TransformPanel(QGroupBox):
         # Align form layouts in duplicate options
         for layout in [self.dup_base_form, fl_rot, fl_mh, fl_mv, fl_ma, fl_ps, fl_trans, fl_scale]:
             align_form_labels(layout)
+
+    # ── The Duplicate & Transform form's interface ───────────────────────
+    # Two controllers used to read and write these twenty widgets by name. They
+    # now exchange a TransformSpec, which is Qt-free and owns the geometry (see
+    # models/transform_spec).
+
+    #: Every pivot / axis-position field. Editable only in Custom base mode:
+    #: in any other mode they display the computed reference point, and a value
+    #: typed into a read-only-by-intent field would be overwritten without
+    #: warning on the next recompute.
+    _PIVOT_FIELDS = ("dup_rot_px", "dup_rot_py", "dup_mh_py", "dup_mv_px",
+                     "dup_ma_px", "dup_ma_py", "dup_ps_px", "dup_ps_py",
+                     "dup_scale_px", "dup_scale_py")
+    #: Fields that change the transform's result (the mode combos are separate,
+    #: since selecting a type is not the same event as editing its parameters).
+    _VALUE_FIELDS = _PIVOT_FIELDS + (
+        "dup_rot_angle", "dup_ma_dx", "dup_ma_dy",
+        "dup_trans_dx", "dup_trans_dy", "dup_scale_sx", "dup_scale_sy")
+    #: handle name -> the fields it drives, per transform kind. This table is
+    #: view knowledge: which spin box a canvas handle lands in is a property of
+    #: the form's layout, not of the drag.
+    _HANDLE_FIELDS = {
+        ("point", "rotate"): ("dup_rot_px", "dup_rot_py"),
+        ("point", "point_symmetry"): ("dup_ps_px", "dup_ps_py"),
+        ("point", "scale"): ("dup_scale_px", "dup_scale_py"),
+        ("hline", None): (None, "dup_mh_py"),
+        ("vline", None): ("dup_mv_px", None),
+        ("axis_pivot", None): ("dup_ma_px", "dup_ma_py"),
+        ("axis_dir", None): ("dup_ma_dx", "dup_ma_dy"),
+        ("translate", None): ("dup_trans_dx", "dup_trans_dy"),
+        ("rotate_angle", None): ("dup_rot_angle", None),
+    }
+
+    def _widgets(self, names):
+        return [getattr(self, n) for n in names if n]
+
+    def wire_transform_edits(self, on_edited, on_type_changed, on_base_mode_changed):
+        """Collapse seventeen value widgets into one 'the transform changed'."""
+        for w in self._widgets(self._VALUE_FIELDS):
+            w.valueChanged.connect(lambda *_: on_edited())
+        self.dup_delete_orig_cb.toggled.connect(lambda *_: on_edited())
+        self.dup_type_combo.currentIndexChanged.connect(lambda *_: on_type_changed())
+        self.dup_base_mode_combo.currentIndexChanged.connect(
+            lambda *_: on_base_mode_changed())
+
+    def transform_spec(self) -> TransformSpec:
+        """What the Duplicate & Transform form currently says."""
+        return TransformSpec(
+            kind=kind_for_index(self.dup_type_combo.currentIndex()),
+            label=self.dup_type_combo.currentText(),
+            base_mode=self.dup_base_mode_combo.currentText(),
+            delete_original=self.dup_delete_orig_cb.isChecked(),
+            angle_deg=self.dup_rot_angle.value(),
+            rot_pivot=(self.dup_rot_px.value(), self.dup_rot_py.value()),
+            axis_y=self.dup_mh_py.value(),
+            axis_x=self.dup_mv_px.value(),
+            axis_pivot=(self.dup_ma_px.value(), self.dup_ma_py.value()),
+            axis_dir=(self.dup_ma_dx.value(), self.dup_ma_dy.value()),
+            sym_centre=(self.dup_ps_px.value(), self.dup_ps_py.value()),
+            delta=(self.dup_trans_dx.value(), self.dup_trans_dy.value()),
+            factors=(self.dup_scale_sx.value(), self.dup_scale_sy.value()),
+            scale_pivot=(self.dup_scale_px.value(), self.dup_scale_py.value()),
+        )
+
+    def set_transform_reference(self, point):
+        """Show the reference point every transform will pivot about.
+
+        `point` is None when the user owns it (Custom base mode): the fields
+        become editable and keep whatever is in them. A point means the mode
+        computed it, so the fields display it and are read-only.
+        """
+        fields = self._widgets(self._PIVOT_FIELDS)
+        editable = point is None
+        for w in fields:
+            w.setEnabled(editable)
+        if editable:
+            return
+        px, py = point
+        with block_signals(*fields):
+            for name in self._PIVOT_FIELDS:
+                getattr(self, name).setValue(py if name.endswith("_py") else px)
+
+    def set_transform_reference_applicable(self, applicable: bool):
+        """Translate is defined by a shift, so it has no base point to choose."""
+        self.dup_base_mode_combo.setEnabled(applicable)
+        if not applicable:
+            self.dup_trans_dx.setEnabled(True)
+            self.dup_trans_dy.setEnabled(True)
+
+    def use_custom_transform_reference(self):
+        """A manual drag means the user wants a custom reference point."""
+        if self.dup_base_mode_combo.currentText() != "Custom (Manual)":
+            with block_signals(self.dup_base_mode_combo):
+                self.dup_base_mode_combo.setCurrentText("Custom (Manual)")
+        for w in self._widgets(self._PIVOT_FIELDS):
+            w.setEnabled(True)
+
+    def set_transform_handle(self, handle: str, x: float, y: float) -> bool:
+        """Place the canvas handle the user dragged; True if it landed anywhere.
+
+        Silent: a drag already IS the user's edit, so echoing it back through
+        valueChanged would re-enter the preview once per mouse move.
+        """
+        kind = kind_for_index(self.dup_type_combo.currentIndex())
+        names = self._HANDLE_FIELDS.get((handle, kind)) \
+            or self._HANDLE_FIELDS.get((handle, None))
+        if not names:
+            return False
+        for name, value in zip(names, (x, y)):
+            if name:
+                with block_signals(getattr(self, name)):
+                    getattr(self, name).setValue(value)
+        return True
