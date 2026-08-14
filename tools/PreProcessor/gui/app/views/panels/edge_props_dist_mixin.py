@@ -1,6 +1,8 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QFormLayout, QLabel, QComboBox, QSpinBox
-from app.utils import COMBO_STYLE, SPIN_STYLE, align_form_labels, help_label
+from app.utils import (COMBO_STYLE, SPIN_STYLE, align_form_labels, block_signals,
+                       help_label)
+from app.models.distribution_spec import DistributionSpec
 from app.views.clean_double_spin_box import CleanDoubleSpinBox, SciDoubleSpinBox
 
 
@@ -178,6 +180,97 @@ class EdgePropsDistMixin:
         # Align form layouts
         for layout in [ul, tl, cfl, kl, gl2]:
             align_form_labels(layout)
+
+    # ── The distribution form's interface ────────────────────────────────
+    # Controllers used to read and write these thirteen widgets by name. They
+    # now say what they mean and the form answers in DistributionSpec, which is
+    # Qt-free and carries the resampler contract (see models/distribution_spec).
+    #
+    # The mode combos already drive their own toggles at build time (see the
+    # currentTextChanged connections above), so only POPULATION has to apply a
+    # toggle by hand — with signals blocked, or filling the form would read back
+    # as a user edit and record an undo step per field.
+
+    _DIST_VALUE_WIDGETS = (
+        "uniform_n", "uniform_spacing", "tanh_n", "tanh_intensity",
+        "tanh_spacing_ends", "cosine_n", "curv_n", "curv_sens", "geo_n",
+        "geo_ratio", "geo_ratio_end", "geo_spacing_start", "geo_spacing_end",
+    )
+    _DIST_MODE_COMBOS = ("uniform_type_combo", "tanh_type_combo", "geo_type_combo")
+
+    def _wire_distribution_edits(self):
+        """Collapse every distribution widget into ONE `distribution_edited`.
+
+        The controller used to list ten spin boxes and a combo at the wiring
+        site, so a field added here silently did nothing until that list was
+        edited too. Introspecting our own widgets means the form cannot grow a
+        field the signal misses.
+        """
+        for name in self._DIST_VALUE_WIDGETS:
+            getattr(self, name).valueChanged.connect(
+                lambda *_: self.distribution_edited.emit())
+        for name in self._DIST_MODE_COMBOS:
+            getattr(self, name).currentTextChanged.connect(
+                lambda *_: self.distribution_edited.emit())
+
+    def distribution_spec(self, strategy: str) -> DistributionSpec:
+        """What the form currently says, for `strategy`."""
+        return DistributionSpec(
+            strategy=strategy,
+            n_points={
+                "uniform": self.uniform_n, "tanh": self.tanh_n,
+                "cosine": self.cosine_n, "curvature": self.curv_n,
+                "geometric": self.geo_n,
+            }.get(strategy, self.uniform_n).value(),
+            by_spacing=(
+                self.uniform_type_combo.currentText() == "By Spacing"
+                if strategy == "uniform" else
+                self.tanh_type_combo.currentText() == "By End Spacing"
+                if strategy == "tanh" else
+                self.geo_type_combo.currentText() == "By End Spacing"
+                if strategy == "geometric" else False),
+            spacing=self.uniform_spacing.value(),
+            intensity=self.tanh_intensity.value(),
+            spacing_ends=self.tanh_spacing_ends.value(),
+            sensitivity=self.curv_sens.value(),
+            ratio=self.geo_ratio.value(),
+            ratio_end=self.geo_ratio_end.value(),
+            spacing_start=self.geo_spacing_start.value(),
+            spacing_end=self.geo_spacing_end.value(),
+        )
+
+    def show_distribution_spec(self, spec: DistributionSpec):
+        """Put `spec` on the form without it reading back as a user edit."""
+        widgets = [getattr(self, n) for n in self._DIST_VALUE_WIDGETS]
+        combos = [getattr(self, n) for n in self._DIST_MODE_COMBOS]
+        with block_signals(*widgets, *combos):
+            if spec.strategy == "uniform":
+                self.uniform_type_combo.setCurrentText(
+                    "By Spacing" if spec.by_spacing else "By Node Count")
+                self.uniform_n.setValue(spec.n_points)
+                self.uniform_spacing.setValue(spec.spacing)
+                self._toggle_uniform_mode(spec.by_spacing)
+            elif spec.strategy == "tanh":
+                self.tanh_type_combo.setCurrentText(
+                    "By End Spacing" if spec.by_spacing else "By Intensity")
+                self.tanh_n.setValue(spec.n_points)
+                self.tanh_intensity.setValue(spec.intensity)
+                self.tanh_spacing_ends.setValue(spec.spacing_ends)
+                self._toggle_tanh_mode(spec.by_spacing)
+            elif spec.strategy == "cosine":
+                self.cosine_n.setValue(spec.n_points)
+            elif spec.strategy == "curvature":
+                self.curv_n.setValue(spec.n_points)
+                self.curv_sens.setValue(spec.sensitivity)
+            elif spec.strategy == "geometric":
+                self.geo_type_combo.setCurrentText(
+                    "By End Spacing" if spec.by_spacing else "By Growth Ratio")
+                self.geo_n.setValue(spec.n_points)
+                self.geo_ratio.setValue(spec.ratio)
+                self.geo_ratio_end.setValue(spec.ratio_end)
+                self.geo_spacing_start.setValue(spec.spacing_start)
+                self.geo_spacing_end.setValue(spec.spacing_end)
+                self._toggle_geo_mode(spec.by_spacing)
 
     def switch_param_form(self, strategy_name: str):
         m = {"uniform": 0, "tanh": 1, "cosine": 2, "curvature": 3, "geometric": 4}

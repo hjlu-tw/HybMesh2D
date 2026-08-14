@@ -343,10 +343,14 @@ class BackendControllerMixin:
         """Toggle the resample buttons + progress bar as one unit so a run can
         never leave a button stuck disabled (the old per-caller disable could
         strand the Save button if a Preview was already in flight)."""
-        sb = self.main_window.sidebar_view
-        for btn in (sb.preview_btn, sb.file_preview_btn, sb.save_btn):
+        # Two of the three live on the toolbar and one in the sidebar footer,
+        # so each is addressed at its own owner rather than through a sidebar
+        # property that fetched the window's widgets back out of the window.
+        for attr in ("cad_preview_btn", "cad_file_preview_btn"):
+            btn = getattr(self.main_window, attr, None)
             if btn is not None:
                 btn.setEnabled(not running)
+        self.main_window.sidebar_view.set_save_enabled(not running)
         cancel = getattr(self.main_window, "cad_cancel_btn", None)
         if cancel is not None:
             cancel.setEnabled(running)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout, QFormLayout,
     QLabel, QComboBox, QSpinBox,
@@ -17,6 +18,11 @@ from app.views.panels.edge_props_shape_build_mixin import EdgePropsShapeBuildMix
 
 class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixin,
                      EdgePropsDialogsMixin, EdgePropsShapeBuildMixin):
+    # The panel says WHAT happened, never which widget it happened on. Declared
+    # here rather than on EdgePropsDistMixin because PyQt only collects signals
+    # from a class built by the Qt metaclass, which a plain mixin is not.
+    distribution_edited = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__("Edge Properties", start_collapsed=True, parent=parent)
 
@@ -136,6 +142,7 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
 
         self.param_stack = AdjustingStackedWidget()
         self._setup_param_forms()
+        self._wire_distribution_edits()
 
         # ── Slim inspector: definition inline, tools in standalone windows ──
         # Header already names the edge & type, so the geometry definition is

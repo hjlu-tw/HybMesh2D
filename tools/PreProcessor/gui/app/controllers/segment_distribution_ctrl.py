@@ -7,24 +7,9 @@ _apply_geometry_update, and the _is_populating guard owned by AppController.__in
 from __future__ import annotations
 import numpy as np
 from app.models.segment import SegmentModel
+from app.models.distribution_spec import DistributionSpec
 from app.commands.segment_cmds import UpdateMultipleSegmentsStateCmd
 from app.services.geometry_service import GeometryService
-
-
-def _set_spacing(seg: SegmentModel, start_widget, end_widget) -> None:
-    """Write ``spacing_start`` / ``spacing_end`` for a By-End-Spacing edge.
-
-    A zero (shown as "unset") means *that end is not specified*, which is how the
-    resampler distinguishes a one-sided distribution from a two-sided blend — so a
-    zero must be OMITTED, not written as 0.0. Writing it would make
-    ``readPositiveSpacing`` see a present-but-invalid value on both ends.
-    """
-    for key, widget in (("spacing_start", start_widget), ("spacing_end", end_widget)):
-        value = float(widget.value())
-        if value > 0.0:
-            seg.parameters[key] = value
-        else:
-            seg.parameters.pop(key, None)
 
 
 class SegmentDistributionControllerMixin:
@@ -95,8 +80,8 @@ class SegmentDistributionControllerMixin:
         only one edge is selected this is just that edge.
 
         Non-file edges (polygon/curve) are excluded: _read_params_into_segment
-        does seg.parameters.clear() and only re-inserts n_points/spacing, which
-        would wipe a co-selected polygon's vertices_str (geometry data loss).
+        REPLACES seg.parameters with the distribution keys, which would wipe a
+        co-selected polygon's vertices_str (geometry data loss).
         Mirrors the type=='file' guard in _apply_distribution."""
         session = self.active_session()
         if not session:
@@ -158,8 +143,7 @@ class SegmentDistributionControllerMixin:
         session = self.active_session()
         if not session:
             return
-        sb = self.main_window.sidebar_view
-        if not sb._distribution_dialog.isVisible():
+        if not self.main_window.sidebar_view.distribution_tool_visible():
             return
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg or seg.type != "file":
@@ -192,59 +176,8 @@ class SegmentDistributionControllerMixin:
         # else: leave the last live preview visible (do not clear).
 
     def _populate_form_from_segment(self, seg: SegmentModel):
-        sb = self.main_window.sidebar_view
-
-        def block(b):
-            for w in [sb.uniform_n, sb.tanh_n, sb.tanh_intensity,
-                      sb.cosine_n, sb.curv_n, sb.curv_sens,
-                      sb.geo_n, sb.geo_ratio, sb.geo_ratio_end, sb.uniform_spacing,
-                      sb.tanh_spacing_ends,
-                      sb.geo_spacing_start, sb.geo_spacing_end]:
-                w.blockSignals(b)
-            for c in (sb.uniform_type_combo, sb.tanh_type_combo, sb.geo_type_combo):
-                c.blockSignals(b)
-
-        block(True)
-        p = seg.parameters
-        if seg.strategy == "uniform":
-            if "spacing" in p:
-                sb.uniform_type_combo.setCurrentText("By Spacing")
-                sb.uniform_spacing.setValue(p["spacing"])
-                sb._toggle_uniform_mode(True)
-            else:
-                sb.uniform_type_combo.setCurrentText("By Node Count")
-                sb.uniform_n.setValue(p.get("n_points", 50))
-                sb._toggle_uniform_mode(False)
-        elif seg.strategy == "tanh":
-            sb.tanh_n.setValue(p.get("n_points", 50))
-            # Presence of a spacing key IS the mode (same convention as uniform's
-            # "spacing"), so a config written by hand or by an older build round-
-            # trips without needing a separate mode flag.
-            by_spacing = "spacing_start" in p or "spacing_end" in p
-            sb.tanh_type_combo.setCurrentText(
-                "By End Spacing" if by_spacing else "By Intensity")
-            sb.tanh_intensity.setValue(p.get("intensity", 2.0))
-            # Either key restores the single symmetric field (an older config, or a
-            # hand-written one, may carry spacing_end instead of spacing_start).
-            sb.tanh_spacing_ends.setValue(
-                p.get("spacing_start") or p.get("spacing_end") or 0.0)
-            sb._toggle_tanh_mode(by_spacing)
-        elif seg.strategy == "cosine":
-            sb.cosine_n.setValue(p.get("n_points", 50))
-        elif seg.strategy == "curvature":
-            sb.curv_n.setValue(p.get("n_points", 50))
-            sb.curv_sens.setValue(p.get("sensitivity", 1.5))
-        elif seg.strategy == "geometric":
-            sb.geo_n.setValue(p.get("n_points", 50))
-            by_spacing = "spacing_start" in p or "spacing_end" in p
-            sb.geo_type_combo.setCurrentText(
-                "By End Spacing" if by_spacing else "By Growth Ratio")
-            sb.geo_ratio.setValue(p.get("ratio", 1.2))
-            sb.geo_ratio_end.setValue(p.get("ratio_end", 1.0))
-            sb.geo_spacing_start.setValue(p.get("spacing_start", 0.0))
-            sb.geo_spacing_end.setValue(p.get("spacing_end", 0.0))
-            sb._toggle_geo_mode(by_spacing)
-        block(False)
+        self.main_window.sidebar_view.show_distribution_spec(
+            DistributionSpec.from_parameters(seg.strategy, seg.parameters))
 
     def update_segment_params(self):
         session = self.active_session()
@@ -289,42 +222,14 @@ class SegmentDistributionControllerMixin:
         self._preview_distribution()
 
     def _read_params_into_segment(self, seg: SegmentModel):
-        sb = self.main_window.sidebar_view
-        seg.parameters.clear()
-        if seg.strategy == "uniform":
-            if sb.uniform_type_combo.currentText() == "By Spacing":
-                seg.parameters["spacing"] = sb.uniform_spacing.value()
-            else:
-                seg.parameters["n_points"] = sb.uniform_n.value()
-        elif seg.strategy == "tanh":
-            seg.parameters["n_points"] = sb.tanh_n.value()
-            if sb.tanh_type_combo.currentText() == "By End Spacing":
-                # The resampler solves the clustering from the spacing, so
-                # intensity must NOT also be written — two sources for one
-                # quantity is how they drift apart. Written as spacing_start
-                # because tanh is symmetric (see the UI comment).
-                ds = float(sb.tanh_spacing_ends.value())
-                seg.parameters.pop("spacing_end", None)
-                if ds > 0.0:
-                    seg.parameters["spacing_start"] = ds
-                else:
-                    seg.parameters.pop("spacing_start", None)
-                    seg.parameters["intensity"] = sb.tanh_intensity.value()
-            else:
-                seg.parameters["intensity"] = sb.tanh_intensity.value()
-        elif seg.strategy == "cosine":
-            seg.parameters["n_points"] = sb.cosine_n.value()
-        elif seg.strategy == "curvature":
-            seg.parameters["n_points"] = sb.curv_n.value()
-            seg.parameters["sensitivity"] = sb.curv_sens.value()
-        elif seg.strategy == "geometric":
-            seg.parameters["n_points"] = sb.geo_n.value()
-            if sb.geo_type_combo.currentText() == "By End Spacing":
-                _set_spacing(seg, sb.geo_spacing_start, sb.geo_spacing_end)
-            else:
-                seg.parameters["ratio"] = sb.geo_ratio.value()
-                end_ratio = sb.geo_ratio_end.value()
-                if end_ratio != 1.0:
-                    seg.parameters["ratio_end"] = end_ratio
-                else:
-                    seg.parameters.pop("ratio_end", None)
+        """Replace the segment's parameters with what the distribution form says.
+
+        Both halves of this used to live here: reading thirteen widgets by name,
+        AND the resampler contract that decides which keys the dict may carry.
+        The contract is now in DistributionSpec, where it is testable without a
+        QApplication; this method is the two-line join between the form and the
+        model. Assigning a fresh dict (rather than clearing and re-inserting) is
+        what stops a key from the previous strategy surviving a strategy change.
+        """
+        spec = self.main_window.sidebar_view.distribution_spec(seg.strategy)
+        seg.parameters = spec.to_parameters()

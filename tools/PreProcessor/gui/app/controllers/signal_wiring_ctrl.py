@@ -24,10 +24,15 @@ class SignalWiringMixin:
             self.handle_strategy_changed)
         sb.is_closed_combo.currentTextChanged.connect(
             self.handle_closed_mode_changed)
-        if sb.preview_btn:
-            sb.preview_btn.clicked.connect(self.preview_backend)
-        if sb.file_preview_btn:
-            sb.file_preview_btn.clicked.connect(self.preview_backend)
+        # Preview / Apply / Preview Edge are TOOLBAR buttons owned by the main
+        # window (see _build_canvas_toolbar). They used to be reached through
+        # SidebarView properties that read them back off self.window(); wiring
+        # them where they live is both shorter and one less thing the sidebar
+        # has to know about the window that contains it.
+        for attr in ("cad_preview_btn", "cad_file_preview_btn"):
+            btn = getattr(self.main_window, attr, None)
+            if btn is not None:
+                btn.clicked.connect(self.preview_backend)
         sb.save_btn.clicked.connect(self.save_output)
         if getattr(self.main_window, "cad_cancel_btn", None) is not None:
             self.main_window.cad_cancel_btn.clicked.connect(self.cancel_backend)
@@ -61,7 +66,9 @@ class SignalWiringMixin:
                             "point to weld them, or a free point to connect a line")
         weld_act.triggered.connect(lambda _checked=False: self.enter_endpoint_tool())
         sb.add_curve_seg_btn.setMenu(self._shape_tool_menu)
-        sb.curve_preview_btn.clicked.connect(self.preview_curve_formula)
+        _curve_preview = getattr(self.main_window, "cad_curve_preview_btn", None)
+        if _curve_preview is not None:
+            _curve_preview.clicked.connect(self.preview_curve_formula)
         
         # Wire live preview for curve editing
         for w in [sb.curve_t_min, sb.curve_t_max, sb.curve_n,
@@ -93,23 +100,20 @@ class SignalWiringMixin:
         self.main_window.show_nodes_cb.toggled.connect(self.handle_show_nodes_toggled)
         sb.dup_btn.clicked.connect(self.duplicate_with_transform)
 
-        # Parameter-change signals (all route to update_segment_params)
-        for widget in [sb.uniform_n, sb.tanh_n, sb.tanh_intensity,
-                       sb.cosine_n, sb.curv_n, sb.curv_sens,
-                       sb.geo_n, sb.geo_ratio, sb.geo_ratio_end, sb.uniform_spacing]:
-            widget.valueChanged.connect(self.update_segment_params)
-        sb.uniform_type_combo.currentTextChanged.connect(
-            self.update_segment_params)
+        # The distribution form reports ONE fact. The ten spin boxes and the
+        # combo this replaced were listed here by hand, so tanh_spacing_ends,
+        # geo_spacing_start and geo_spacing_end — added to the form later — were
+        # never wired and only took effect on Apply.
+        sb.distribution_edited.connect(self.update_segment_params)
         sb.match_previous_cb.toggled.connect(self.update_match_previous)
         # #1: patch/group name is assigned via a pop-up (applies to all selected).
         sb.group_btn.clicked.connect(self.open_cad_patch_dialog)
         sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
 
         # Distribution tool window: open it + drive a live resample preview.
-        sb.distribution_btn.clicked.connect(self._open_distribution)
-        sb.distribution_apply_btn.clicked.connect(self._apply_distribution)
-        sb._distribution_dialog.finished.connect(
-            lambda _r: self._restore_resampled_after_distribution())
+        sb.distribution_open_requested.connect(self._open_distribution)
+        sb.distribution_apply_requested.connect(self._apply_distribution)
+        sb.distribution_closed.connect(self._restore_resampled_after_distribution)
 
         # Duplicate & Transform tool window: opening it auto-shows the gizmo +
         # live preview; closing it clears them.

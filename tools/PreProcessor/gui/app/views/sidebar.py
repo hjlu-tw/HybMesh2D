@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
     QSplitter, QLabel, QComboBox, QPushButton
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from app.views.panels import (
     FilePanel, GeometryPanel, VertexPanel, GeomStatsPanel,
@@ -39,7 +39,22 @@ class SidebarView(QWidget):
 
     All sub-panels are kept as attributes (even when not placed directly in a
     layout) so SidebarView's __getattr__ delegation keeps resolving every widget
-    the controllers reference, and existing signal wiring stays intact."""
+    the controllers reference, and existing signal wiring stays intact.
+
+    That delegation is being retired: every controller that still names a widget
+    through it is listed in tests/test_sidebar_seam.py, which fails the build on
+    a new one. As each group migrates to the verbs and signals below, its entry
+    leaves that list; when the list is empty __getattr__ goes with it."""
+
+    # ── What happened, not which widget it happened on ───────────────────
+    # Re-emitted from the panel that owns the widgets, so callers connect to the
+    # sidebar and never learn the panel tree. `distribution_edited` replaces a
+    # controller-side list of ten spin boxes and a combo; a field added to the
+    # form now reaches the controller without that list being edited.
+    distribution_edited = pyqtSignal()
+    distribution_open_requested = pyqtSignal()
+    distribution_apply_requested = pyqtSignal()
+    distribution_closed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +64,15 @@ class SidebarView(QWidget):
         self.geometry_panel = GeometryPanel(self)
         self.edge_list_panel = EdgeListPanel(self)
         self.edge_props_panel = EdgePropsPanel(self)
+        # Signal-to-signal: the sidebar IS the seam, so its callers must not
+        # have to know which sub-panel raised the edit, which button was pressed,
+        # or that the distribution tool is a QDialog at all.
+        _ep = self.edge_props_panel
+        _ep.distribution_edited.connect(self.distribution_edited)
+        _ep.distribution_btn.clicked.connect(self.distribution_open_requested)
+        _ep.distribution_apply_btn.clicked.connect(self.distribution_apply_requested)
+        _ep._distribution_dialog.finished.connect(
+            lambda _r: self.distribution_closed.emit())
         self.vertex_panel = VertexPanel(self)
         self.geom_stats_panel = GeomStatsPanel(self)
         self.advanced_panel = AdvancedPanel(self)
@@ -238,23 +262,43 @@ class SidebarView(QWidget):
 
     # ── Public API used by the controllers (unchanged contract) ─────────────
 
-    @property
-    def preview_btn(self):
-        win = self.window()
-        return win.cad_preview_btn if (win and hasattr(win, "cad_preview_btn")) else None
-
-    @property
-    def curve_preview_btn(self):
-        win = self.window()
-        return win.cad_curve_preview_btn if (win and hasattr(win, "cad_curve_preview_btn")) else None
-
-    @property
-    def file_preview_btn(self):
-        win = self.window()
-        return win.cad_file_preview_btn if (win and hasattr(win, "cad_file_preview_btn")) else None
-
     def switch_param_form(self, strategy_name: str):
         self.edge_props_panel.switch_param_form(strategy_name)
+
+    # Both dialogs are opened by controllers, so both are part of the sidebar's
+    # interface and are declared here rather than left to __getattr__ — which is
+    # being removed, and which makes an undeclared verb indistinguishable from a
+    # widget reach-through to any reader (and to the seam gate).
+    def open_distribution_dialog(self):
+        return self.edge_props_panel.open_distribution_dialog()
+
+    def open_transform_dialog(self):
+        return self.edge_props_panel.open_transform_dialog()
+
+    def set_save_enabled(self, enabled: bool):
+        """Enable/disable the footer's Save button.
+
+        The sidebar used to also hand out the three CAD toolbar buttons via
+        properties that reached back into self.window() — a view asking the
+        window for widgets it does not own, which is the same leak as a
+        controller reaching in here, only pointing outward. Those buttons are
+        the main window's and are addressed there; this one is ours."""
+        self.actions_panel.save_btn.setEnabled(enabled)
+
+    # ── Point distribution ──────────────────────────────────────────────
+    def distribution_spec(self, strategy: str):
+        """What the distribution form currently says, as a DistributionSpec."""
+        return self.edge_props_panel.distribution_spec(strategy)
+
+    def show_distribution_spec(self, spec):
+        """Put a DistributionSpec on the form, without it reading back as an edit."""
+        self.edge_props_panel.show_distribution_spec(spec)
+
+    def distribution_tool_visible(self) -> bool:
+        """Whether the distribution tool window is open (its live preview runs
+        only while it is). The caller asks a question; that the tool is a QDialog
+        is ours."""
+        return self.edge_props_panel._distribution_dialog.isVisible()
 
     def show_file_segment(self, start: int, end: int):
         self.edge_props_panel.show_file_segment(start, end)
