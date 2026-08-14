@@ -71,20 +71,41 @@ public:
     std::vector<Edge> edges;
     std::vector<Element> elements;
 
-    // Per-boundary-edge BC, keyed by the sorted (v1,v2) node-id pair, recorded at
-    // construction where the boundary ORDER is known. A boundary edge is a per-EDGE
-    // BC: it belongs to exactly one surface segment — the segment of its starting
-    // point (the same convention addTaggedLoop uses for far-field / no-BL edges).
-    // BL-grown surfaces do not add their wall edges to `edges`, so this map carries
-    // their per-edge BC to the exporter, which lets it tag each wall edge directly
-    // (including the edge that ends at a segment junction, whose two endpoints
-    // carry different segment tags) instead of guessing from endpoint agreement.
-    std::map<std::pair<int, int>, std::string> boundaryEdgeBc;
+    // What one boundary edge was recorded as carrying: the BC name, and the source
+    // segment it came from. `bc` empty -> nothing was recorded for that edge.
+    struct EdgeBc {
+        std::string bc;
+        long long segKey = -1;
+        explicit operator bool() const { return !bc.empty(); }
+    };
 
-    // Parallel to boundaryEdgeBc: the source-segment key (encoded geomId+segId) of
-    // each recorded surface boundary edge, so the exporter can assign a distinct
-    // segm_no per source segment (see makeSegKey / exportStarCD grouping).
-    std::map<std::pair<int, int>, long long> boundaryEdgeSeg;
+    // Record what one boundary edge carries, keyed on the sorted (v1,v2) node pair.
+    //
+    // A boundary edge is a per-EDGE BC: it belongs to exactly one surface segment —
+    // the segment of its starting point (the same convention addTaggedLoop uses for
+    // far-field / no-BL edges), which is why the whole source `Node` is passed
+    // rather than a tag. BL-grown surfaces do not add their wall edges to `edges`,
+    // so this is what carries their per-edge BC to the exporter, letting it tag each
+    // wall edge directly (including the edge that ends at a segment junction, whose
+    // two endpoints carry different segment tags) instead of guessing from endpoint
+    // agreement.
+    //
+    // The BC and the segment key are written TOGETHER and can only be read together
+    // (see boundaryEdgeInfo). They used to be two public parallel maps that every
+    // caller keyed, wrote and looked up by hand, so "wrote the BC, forgot the segment
+    // key" was a defect the interface could not prevent — and a boundary edge that
+    // reaches the exporter with only half its identity is exported as the wall
+    // default, which reads as a converged solve of the wrong problem.
+    //
+    // `overwrite == false` refuses to replace an already-recorded non-empty BC,
+    // which is what a case-1 slide column needs: it re-discretizes a stretch of
+    // no-BL wall and must not restamp a real surface edge it happens to touch.
+    // Returns whether anything was recorded (false for an untagged source node, or
+    // for a refused overwrite).
+    bool recordBoundaryEdge(int v1, int v2, const Node& src, bool overwrite = true);
+
+    // What was recorded for one boundary edge; `bc` empty if nothing was.
+    EdgeBc boundaryEdgeInfo(int v1, int v2) const;
 
     // Encode a (geomId, segId) pair into a single comparable key that uniquely
     // identifies one source segment. -1 when either component is unknown (domain
@@ -122,6 +143,16 @@ public:
     void exportCGNS(const std::string& filename, const Config& config) const;
 
 private:
+    // The two halves of a recorded boundary edge. Private on purpose: they are a
+    // single fact stored in two containers, so only recordBoundaryEdge /
+    // boundaryEdgeInfo may touch them (see those for the full reasoning).
+    std::map<std::pair<int, int>, std::string> boundaryEdgeBc;
+    std::map<std::pair<int, int>, long long> boundaryEdgeSeg;
+
+    static std::pair<int, int> edgeKey(int v1, int v2) {
+        return {std::min(v1, v2), std::max(v1, v2)};
+    }
+
     // A tagged domain / far-field boundary segment (rectangle side or custom
     // polygon edge). Boundary cell-edges lying on it inherit its BC; this
     // generalizes the legacy axis-aligned (x≈xMin …) classification to any shape.

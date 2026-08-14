@@ -1347,13 +1347,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                 // either side of the corner, so never read the BC off it — every edge
                 // of this chain lies on the NO-BL wall, whose first node is run[1].
                 const Node& src = m_mesh.nodes[run[w == 0 ? 1 : w]];
-                if (src.bcTag.empty()) continue;
-                auto key = std::make_pair(std::min(a, b), std::max(a, b));
-                auto ex = m_mesh.boundaryEdgeBc.find(key);
-                if (ex != m_mesh.boundaryEdgeBc.end() && !ex->second.empty())
-                    continue;                                // never restamp a real surface edge
-                m_mesh.boundaryEdgeBc[key] = src.bcTag;
-                m_mesh.boundaryEdgeSeg[key] = Mesh::makeSegKey(src.geomId, src.segId);
+                // overwrite=false: never restamp a real surface edge.
+                m_mesh.recordBoundaryEdge(a, b, src, /*overwrite=*/false);
             }
         }
     }
@@ -1378,13 +1373,9 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             // are present in boundaryEdgeBc; BL outer-front and lateral-cap edges
             // have no entry and stay untagged (they are the BL/triangle interface or
             // a free cap, not a domain boundary). Mirrors addTaggedLoop's edge tag.
-            auto key = std::make_pair(std::min(a, b), std::max(a, b));
-            auto it = m_mesh.boundaryEdgeBc.find(key);
-            if (it != m_mesh.boundaryEdgeBc.end() && !it->second.empty()) {
-                m_mesh.edges.back().bcTag = it->second;
-                auto sit = m_mesh.boundaryEdgeSeg.find(key);
-                if (sit != m_mesh.boundaryEdgeSeg.end())
-                    m_mesh.edges.back().segKey = sit->second;
+            if (Mesh::EdgeBc rec = m_mesh.boundaryEdgeInfo(a, b)) {
+                m_mesh.edges.back().bcTag = rec.bc;
+                m_mesh.edges.back().segKey = rec.segKey;
             }
         }
     }

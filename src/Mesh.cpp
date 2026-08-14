@@ -60,6 +60,28 @@ bool pointOnSegment(const Point2D& p, const Point2D& a, const Point2D& b,
 }
 } // namespace
 
+bool Mesh::recordBoundaryEdge(int v1, int v2, const Node& src, bool overwrite) {
+    if (src.bcTag.empty()) return false;
+    auto key = edgeKey(v1, v2);
+    if (!overwrite) {
+        auto ex = boundaryEdgeBc.find(key);
+        if (ex != boundaryEdgeBc.end() && !ex->second.empty()) return false;
+    }
+    // Both halves, unconditionally together — that is the whole point of routing
+    // every write through here.
+    boundaryEdgeBc[key] = src.bcTag;
+    boundaryEdgeSeg[key] = makeSegKey(src.geomId, src.segId);
+    return true;
+}
+
+Mesh::EdgeBc Mesh::boundaryEdgeInfo(int v1, int v2) const {
+    auto key = edgeKey(v1, v2);
+    auto it = boundaryEdgeBc.find(key);
+    if (it == boundaryEdgeBc.end() || it->second.empty()) return {};
+    auto sit = boundaryEdgeSeg.find(key);
+    return {it->second, sit != boundaryEdgeSeg.end() ? sit->second : -1};
+}
+
 std::vector<Mesh::BcRefSeg> Mesh::collectBcRefSegs() const {
     std::vector<BcRefSeg> refs;
     // (a) Explicitly tagged domain / far-field edges (addTaggedLoop box & outline,
@@ -100,13 +122,9 @@ std::string Mesh::classifyBoundaryBc(int v1, int v2,
     //    `edges`, so the reference-segment step below cannot see them. This is a
     //    per-EDGE lookup, so an edge ending at a segment junction (its two endpoint
     //    nodes carry different tags) still gets the segment it actually belongs to.
-    {
-        auto it = boundaryEdgeBc.find({std::min(v1, v2), std::max(v1, v2)});
-        if (it != boundaryEdgeBc.end() && !it->second.empty()) {
-            auto sit = boundaryEdgeSeg.find({std::min(v1, v2), std::max(v1, v2)});
-            setKey(sit != boundaryEdgeSeg.end() ? sit->second : -1);
-            return it->second;
-        }
+    if (EdgeBc rec = boundaryEdgeInfo(v1, v2)) {
+        setKey(rec.segKey);
+        return rec.bc;
     }
 
     // 1. Reference segment (rectangle side / polygon edge / any surface segment):

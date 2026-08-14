@@ -795,17 +795,11 @@ int main(int argc, char* argv[]) {
                 int nb = static_cast<int>(boundaryIds.size());
                 for (int i = 0; i < nb; ++i) {
                     int a = boundaryIds[i], b = boundaryIds[(i + 1) % nb];
-                    const std::string& tag = mesh.nodes[a].bcTag;
-                    if (!tag.empty()) {
-                        auto key = std::make_pair(std::min(a, b), std::max(a, b));
-                        mesh.boundaryEdgeBc[key] = tag;
-                        // Record the source segment of this edge (its starting node)
-                        // so the exporter can assign a distinct segm_no per segment,
-                        // and so a no-BL run keeps its BC after the BL front drops
-                        // absorbed nodes (collectBcRefSegs reads this map).
-                        mesh.boundaryEdgeSeg[key] =
-                            Mesh::makeSegKey(mesh.nodes[a].geomId, mesh.nodes[a].segId);
-                    }
+                    // The starting node carries both halves: the BC tag, and the
+                    // source segment the exporter needs for a distinct segm_no
+                    // (which is also what lets a no-BL run keep its BC after the
+                    // BL front drops absorbed nodes — collectBcRefSegs reads it).
+                    mesh.recordBoundaryEdge(a, b, mesh.nodes[a]);
                 }
             }
             allBoundaryIds.push_back(boundaryIds);
