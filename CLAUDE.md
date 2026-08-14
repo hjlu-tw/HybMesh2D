@@ -634,3 +634,17 @@ A single unified JSON script drives the whole chain; the GUI and the headless CL
 - **Change canvas colors**: Update color constants near the top of `tools/PreProcessor/gui/app/views/canvas.py`
 - **Add a config parameter**: Add field to `include/Config.hpp` and parse it in the `loadConfig()` block
 - **Add a GUI undo-able action**: Create a new `Command` subclass in `tools/PreProcessor/gui/app/commands/` and dispatch it through `controller.py`
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `hjlu-tw/HybMesh2D`, driven by the `gh` CLI (`gh issue` is not a git operation, so the Git and Commit Policy above does not cover it). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles use their own names as label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` — the last already exists as a GitHub default and must be reused, not duplicated). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md` + `docs/adr/`, both created lazily by `/domain-modeling` rather than upfront. See `docs/agents/domain.md`.
