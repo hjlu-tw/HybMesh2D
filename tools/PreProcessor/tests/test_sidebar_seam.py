@@ -15,14 +15,16 @@ controllers that depend on it.
 This file is the RATCHET for closing that seam, and it is deliberately two
 gates, because neither is sufficient alone:
 
-  * The frozen BASELINE below fails the build on a NEW reach-through. It may
-    only shrink. Adding a name to it is not the fix for a failure here —
-    routing the call through a Sidebar verb is.
-  * ``Sidebar.__getattr__`` must eventually go. A static list can be worked
-    around by anyone who edits it; deleting the forwarder cannot. Check 4
-    reports it as the endgame marker and turns into a hard failure the moment
-    BASELINE reaches zero, so the last slice cannot be declared done while the
-    door is still open.
+  * BASELINE fails the build on a NEW reach-through. It held the migration's
+    remaining leaks and may only shrink; it is now empty. Adding a name to it is
+    not the fix for a failure here — routing the call through a Sidebar verb is.
+  * ``Sidebar.__getattr__`` is gone, and check 4 keeps it gone. A static list
+    can be worked around by anyone willing to edit it; a deleted forwarder
+    cannot, because the attribute simply does not resolve.
+
+Both were needed. The list alone would not have stopped the forwarder quietly
+serving new callers; deleting the forwarder alone would not stop a new caller
+reaching a widget through a panel it names directly.
 
 INTERFACE is the other half: the names that ARE the sidebar's interface. Verbs
 (``show_segment_props``, ``get_transform_dict``, …) and the two sub-modules that
@@ -75,6 +77,14 @@ INTERFACE_VERBS = {
     "set_length_suffix",
     # analytic edges
     "curve_spec",
+    # actions
+    "set_shape_tool_menu", "selection_mode",
+    # what the sidebar is told, and what it can be asked
+    "show_vertex_selection", "vertex_move_target", "vertex_insert_point",
+    "keep_vertex_on_remove", "set_remove_edge_enabled", "set_join_edges_enabled",
+    "set_bake_curve_enabled", "join_force_close", "show_edge_summary",
+    "set_match_previous", "auto_split_angle", "arc_radius_locked",
+    "show_geometry_name", "set_closure_mode", "set_global_spline",
 }
 INTERFACE_SIGNALS = {
     "distribution_edited", "distribution_open_requested",
@@ -83,6 +93,15 @@ INTERFACE_SIGNALS = {
     "duplicate_base_mode_changed", "duplicate_requested",
     "transform_open_requested", "transform_closed",
     "curve_edited", "curve_type_changed",
+    # actions: an intent per user gesture, bound by SidebarView._ACTIONS
+    "load_requested", "load_stl_requested", "load_json_requested",
+    "save_requested", "generate_requested", "extrude_stl_requested",
+    "new_tab_requested", "split_requested", "remove_split_requested",
+    "insert_point_requested", "move_vertex_requested", "remove_edge_requested",
+    "join_edges_requested", "bake_curve_requested", "patch_name_requested",
+    "auto_detect_requested", "auto_split_requested", "strategy_changed",
+    "closure_mode_changed", "selection_mode_changed", "match_previous_toggled",
+    "global_spline_toggled",
 }
 # Sub-modules that own their own interface. Q8: expose them by name, do not wrap
 # them — a wrapper over a deep module is a shallow module.
@@ -91,51 +110,11 @@ INTERFACE_SUBMODULES = {"geometry_tree", "geom_stats_panel"}
 INTERFACE = INTERFACE_VERBS | INTERFACE_SIGNALS | INTERFACE_SUBMODULES
 
 # ── The frozen leak baseline — may only shrink ────────────────────────────
-# Generated 2026-08-14 at 854f53e, trimmed as groups migrate:
-# 59 (file, widget) pairs over 10 files.
-# A pair NOT listed here is a new reach-through and fails check 2.
-BASELINE = {
-    "app/controllers/signal_wiring_ctrl.py": {
-        'add_curve_seg_btn', 'auto_detect_btn', 'auto_split_btn',
-        'curve_bake_btn', 'extrude_stl_btn', 'generate_btn', 'global_spline_cb',
-        'group_btn', 'insert_btn', 'is_closed_combo', 'join_edges_btn',
-        'load_btn', 'load_json_btn', 'load_stl_btn', 'match_previous_cb',
-        'move_btn', 'new_tab_btn', 'remove_seg_btn', 'remove_split_btn',
-        'save_btn', 'select_mode_combo', 'split_btn', 'strategy_combo'
-    },
-    "app/controllers/segment_ctrl.py": {
-        'curve_bake_btn', 'file_name_label', 'global_spline_cb',
-        'join_edges_btn', 'match_previous_cb', 'param_stack', 'remove_seg_btn',
-        'remove_split_btn', 'segment_type_label', 'selected_info', 'split_btn',
-        'strategy_combo'
-    },
-    "app/controllers/segment_vertex_ctrl.py": {
-        'insert_x', 'insert_y', 'keep_vertex_cb', 'move_btn', 'move_x',
-        'move_y', 'remove_split_btn', 'selected_info', 'split_btn'
-    },
-    "app/controllers/segment_canvas_ctrl.py": {
-        'curve_bake_btn', 'remove_split_btn', 'selected_info', 'split_btn'
-    },
-    "app/controllers/segment_props_ctrl.py": {
-        'closed_mode_status', 'global_spline_cb', 'is_closed_combo',
-        'match_previous_cb'
-    },
-    "app/controller.py": {
-        'remove_split_btn', 'selected_info', 'split_btn'
-    },
-    "app/controllers/curve_draw_ctrl.py": {
-        'arc_lock_radius'
-    },
-    "app/controllers/curve_edit_ctrl.py": {
-        'arc_lock_radius'
-    },
-    "app/controllers/curve_join_ctrl.py": {
-        'join_force_close_cb'
-    },
-    "app/controllers/segment_autodetect_ctrl.py": {
-        'auto_split_angle_sb'
-    },
-}
+# EMPTY, and it stays empty. It was frozen at 214 (file, widget) pairs over 15
+# files on 2026-08-14 and trimmed as each group migrated; the last entry left
+# when Sidebar.__getattr__ was deleted. A pair here would be a reach-through
+# that someone chose to record instead of route through a verb.
+BASELINE: dict[str, set[str]] = {}
 BASELINE_TOTAL = sum(len(v) for v in BASELINE.values())
 
 
@@ -219,9 +198,17 @@ def scan(path):
 
 
 # ── 1. the sidebar exposes the verbs the rule points callers at ───────────
-_sb_src = open(os.path.join(_GUI, "app/views/sidebar.py"), encoding="utf-8").read()
-_sb_tree = ast.parse(_sb_src)
-_sb_cls = [n for n in _sb_tree.body if isinstance(n, ast.ClassDef)]
+# SidebarView is composed from sidebar.py plus its own sidebar_*_mixin modules
+# (the interface outgrew one file). "Defined on Sidebar" means reachable on the
+# composed class, so all of them are scanned — otherwise moving a verb into a
+# mixin would read as deleting it.
+_SB_SOURCES = ["app/views/sidebar.py"] + sorted(
+    "app/views/" + f for f in os.listdir(os.path.join(_GUI, "app/views"))
+    if f.startswith("sidebar_") and f.endswith(".py"))
+_sb_cls = []
+for _rel in _SB_SOURCES:
+    _t = ast.parse(open(os.path.join(_GUI, _rel), encoding="utf-8").read())
+    _sb_cls += [n for n in _t.body if isinstance(n, ast.ClassDef)]
 _sb_methods = {m.name for cls in _sb_cls for m in cls.body
                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))}
 _sb_signals = {t.id for cls in _sb_cls for n in cls.body

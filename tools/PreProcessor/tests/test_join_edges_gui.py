@@ -89,7 +89,7 @@ check(_n(mw.canvas_view._open_endpoint_markers) > 0,
 # Enable/disable follows selection (like "Remove Edge").
 sb = mw.sidebar_view
 tree = sb.geometry_tree
-check(not sb.join_edges_btn.isEnabled(), "join btn disabled with nothing selected")
+check(not sb.edge_list_panel.join_edges_btn.isEnabled(), "join btn disabled with nothing selected")
 items = tree.edge_items(sess.session_id)
 
 
@@ -104,11 +104,11 @@ def _select(item_slice):
 
 
 _select(items[:2])
-check(sb.join_edges_btn.isEnabled(), "join btn enabled with 2 curve edges selected")
+check(sb.edge_list_panel.join_edges_btn.isEnabled(), "join btn enabled with 2 curve edges selected")
 _select(items[:1])
-check(not sb.join_edges_btn.isEnabled(), "join btn disabled with only 1 selected")
+check(not sb.edge_list_panel.join_edges_btn.isEnabled(), "join btn disabled with only 1 selected")
 _select([])
-check(not sb.join_edges_btn.isEnabled(), "join btn disabled after deselect")
+check(not sb.edge_list_panel.join_edges_btn.isEnabled(), "join btn disabled after deselect")
 
 # Join (nothing selected -> falls back to all open curve edges).
 c.join_selected_edges_to_polygon()
@@ -124,7 +124,7 @@ if polys:
     check(len(verts) == 4, f"polygon has 4 corner vertices (got {len(verts)})")
 check(_n(mw.canvas_view._open_endpoint_markers) == 0,
       "after join: open-endpoint markers cleared (boundary closed)")
-check(not sb.join_edges_btn.isEnabled(),
+check(not sb.edge_list_panel.join_edges_btn.isEnabled(),
       "join btn disabled after join (single polygon selected)")
 
 # Undo restores the four line edges.
@@ -160,7 +160,7 @@ p2.segments = [line(10001, 0, 0, 1, 0),
                line(10003, 1, 1, 0, 1)]      # open "U": ends (0,0)..(0,1)
 p2._next_curve_id = 10004
 c._refresh_segment_list()
-sb.join_force_close_cb.setChecked(False)
+sb.edge_list_panel.join_force_close_cb.setChecked(False)
 c.join_selected_edges_to_polygon()
 app.processEvents()
 polys2 = [x for x in p2.segments if getattr(x, "curve_type", "") == "polygon"]
@@ -171,15 +171,15 @@ check(_n(mw.canvas_view._open_endpoint_markers) > 0,
       "open polygon still flags its open endpoints")
 s2.command_history.undo()
 app.processEvents()
-sb.join_force_close_cb.setChecked(True)
+sb.edge_list_panel.join_force_close_cb.setChecked(True)
 c.join_selected_edges_to_polygon()
 app.processEvents()
 polys2 = [x for x in p2.segments if getattr(x, "curve_type", "") == "polygon"]
 check(bool(polys2) and polys2[0].closed is True, "checkbox ON → CLOSED polygon")
 check(_n(mw.canvas_view._open_endpoint_markers) == 0,
       "forced-closed polygon clears open markers")
-sb.join_force_close_cb.setChecked(False)
-check(sb.join_force_close_cb.isEnabled(), "force-close checkbox is always enabled")
+sb.edge_list_panel.join_force_close_cb.setChecked(False)
+check(sb.edge_list_panel.join_force_close_cb.isEnabled(), "force-close checkbox is always enabled")
 
 # ── Discrete arc + line: shape preserved, arc points consumed ─────────────
 c.new_blank_tab()

@@ -22,20 +22,18 @@ class SignalWiringMixin:
     def _wire_sidebar_signals(self):
         # ── Wire static signals (sidebar → controller) ──────────────────
         sb = self.main_window.sidebar_view
-        sb.load_btn.clicked.connect(self.load_geometry)
-        sb.load_stl_btn.clicked.connect(self.load_stl_geometry)
-        sb.load_json_btn.clicked.connect(self.load_json_config)
-        sb.split_btn.clicked.connect(self.add_split_point)
-        sb.remove_split_btn.clicked.connect(self.remove_split_point)
-        sb.insert_btn.clicked.connect(self.handle_insert_point)
-        sb.move_btn.clicked.connect(lambda: self.move_selected_vertex_to())
+        sb.load_requested.connect(self.load_geometry)
+        sb.load_stl_requested.connect(self.load_stl_geometry)
+        sb.load_json_requested.connect(self.load_json_config)
+        sb.split_requested.connect(self.add_split_point)
+        sb.remove_split_requested.connect(self.remove_split_point)
+        sb.insert_point_requested.connect(self.handle_insert_point)
+        sb.move_vertex_requested.connect(lambda: self.move_selected_vertex_to())
         # Geometry layers and their edges live in one model tree; an edge-row
         # selection drives the edge properties.
         sb.geometry_tree.itemSelectionChanged.connect(self.handle_segment_list_selected)
-        sb.strategy_combo.currentTextChanged.connect(
-            self.handle_strategy_changed)
-        sb.is_closed_combo.currentTextChanged.connect(
-            self.handle_closed_mode_changed)
+        sb.strategy_changed.connect(self.handle_strategy_changed)
+        sb.closure_mode_changed.connect(self.handle_closed_mode_changed)
         # Preview / Apply / Preview Edge are TOOLBAR buttons owned by the main
         # window (see _build_canvas_toolbar). They used to be reached through
         # SidebarView properties that read them back off self.window(); wiring
@@ -43,11 +41,11 @@ class SignalWiringMixin:
         # has to know about the window that contains it.
         for btn in self._cad_resample_buttons():
             btn.clicked.connect(self.preview_backend)
-        sb.save_btn.clicked.connect(self.save_output)
+        sb.save_requested.connect(self.save_output)
         if getattr(self.main_window, "cad_cancel_btn", None) is not None:
             self.main_window.cad_cancel_btn.clicked.connect(self.cancel_backend)
-        sb.generate_btn.clicked.connect(self.generate_json)
-        sb.extrude_stl_btn.clicked.connect(self.extrude_active_to_stl)
+        sb.generate_requested.connect(self.generate_json)
+        sb.extrude_stl_requested.connect(self.extrude_active_to_stl)
         # "Add Analytic Edge" is a shape-tool menu: pick a shape, draw it on the
         # canvas (Custom Formula adds a blank edge).
         self._shape_tool_menu = QMenu(self.main_window)
@@ -75,7 +73,7 @@ class SignalWiringMixin:
                             "or any vertex), then click a target — snap to another "
                             "point to weld them, or a free point to connect a line")
         weld_act.triggered.connect(lambda _checked=False: self.enter_endpoint_tool())
-        sb.add_curve_seg_btn.setMenu(self._shape_tool_menu)
+        sb.set_shape_tool_menu(self._shape_tool_menu)
         _curve_preview = getattr(self.main_window, "cad_curve_preview_btn", None)
         if _curve_preview is not None:
             _curve_preview.clicked.connect(self.preview_curve_formula)
@@ -90,9 +88,9 @@ class SignalWiringMixin:
         # Undo / Redo / Remove / Quality Check
         self.main_window.undo_btn.clicked.connect(self.undo)
         self.main_window.redo_btn.clicked.connect(self.redo)
-        sb.remove_seg_btn.clicked.connect(self.remove_selected_segment)
-        sb.curve_bake_btn.clicked.connect(self.bake_selected_curve)
-        sb.join_edges_btn.clicked.connect(self.join_selected_edges_to_polygon)
+        sb.remove_edge_requested.connect(self.remove_selected_segment)
+        sb.bake_curve_requested.connect(self.bake_selected_curve)
+        sb.join_edges_requested.connect(self.join_selected_edges_to_polygon)
         self.main_window.quality_check_cb.toggled.connect(self.handle_quality_check_toggled)
         self.main_window.quality_mode_combo.currentTextChanged.connect(self.handle_quality_mode_changed)
         self.main_window.show_vertices_cb.toggled.connect(self.handle_show_vertices_toggled)
@@ -104,10 +102,10 @@ class SignalWiringMixin:
         # geo_spacing_start and geo_spacing_end — added to the form later — were
         # never wired and only took effect on Apply.
         sb.distribution_edited.connect(self.update_segment_params)
-        sb.match_previous_cb.toggled.connect(self.update_match_previous)
+        sb.match_previous_toggled.connect(self.update_match_previous)
         # #1: patch/group name is assigned via a pop-up (applies to all selected).
-        sb.group_btn.clicked.connect(self.open_cad_patch_dialog)
-        sb.auto_split_btn.clicked.connect(self.auto_detect_segments_from_button)
+        sb.patch_name_requested.connect(self.open_cad_patch_dialog)
+        sb.auto_split_requested.connect(self.auto_detect_segments_from_button)
 
         # Distribution tool window: open it + drive a live resample preview.
         sb.distribution_open_requested.connect(self._open_distribution)
@@ -124,11 +122,11 @@ class SignalWiringMixin:
         sb.duplicate_edited.connect(self.on_duplicate_param_changed)
 
         # Advanced settings
-        sb.global_spline_cb.toggled.connect(self.handle_global_spline_changed)
+        sb.global_spline_toggled.connect(self.handle_global_spline_changed)
 
         # New tab button
-        sb.new_tab_btn.clicked.connect(self.new_blank_tab)
-        sb.auto_detect_btn.clicked.connect(self.auto_detect_segments)
+        sb.new_tab_requested.connect(self.new_blank_tab)
+        sb.auto_detect_requested.connect(self.auto_detect_segments)
 
         # Model tree: visibility (per-row checkbox), navigation, focus, context menu
         sb.geometry_tree.itemChanged.connect(self.handle_geom_visibility_changed)
@@ -198,11 +196,11 @@ class SignalWiringMixin:
             # Swap the Details pane to match the active edit mode.
             sb.show_details_for_mode(mode)
 
-        sb.select_mode_combo.currentIndexChanged.connect(_on_selection_mode_changed)
+        sb.selection_mode_changed.connect(_on_selection_mode_changed)
         # Default the CAD canvas to Edge mode. The combo is preset to "Edge"
         # before this signal was wired, so push the mode into the canvas once
         # to apply its overlay / box-select side effects.
-        _initial_mode = 'vertex' if sb.select_mode_combo.currentIndex() == 0 else 'edge'
+        _initial_mode = 'vertex' if sb.selection_mode() == 0 else 'edge'
         self.main_window.canvas_view.set_selection_mode(_initial_mode)
         sb.show_details_for_mode(_initial_mode)
 

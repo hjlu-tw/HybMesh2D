@@ -94,8 +94,7 @@ class CurveEditControllerMixin:
         # Apply the drag through the shared handle→param mapping, then push the
         # result back into the (silently-updated) sidebar widgets.
         params = shape_spec.read_widget_params(sb, ct)
-        lock = (ct == "arc" and getattr(sb, "arc_lock_radius", None) is not None
-                and sb.arc_lock_radius.isChecked())
+        lock = (ct == "arc" and sb.arc_radius_locked())
         shape_spec.apply_drag(ct, params, handle_id, x, y, lock_radius=lock)
         shape_spec.write_widget_params(sb, ct, params, silent=True)
         # ``theta_m`` (freed arc radius-handle angle) has no sidebar widget, so it

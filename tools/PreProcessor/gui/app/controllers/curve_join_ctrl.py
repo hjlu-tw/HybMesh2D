@@ -60,11 +60,7 @@ class CurveJoinControllerMixin:
                 "connected chain (endpoints must meet within tolerance).")
             return
 
-        try:
-            force_close = self.main_window.sidebar_view.join_force_close_cb.isChecked()
-        except AttributeError:
-            force_close = False
-        closed = bool(force_close or is_loop)
+        closed = bool(self.main_window.sidebar_view.join_force_close() or is_loop)
 
         # #1/#2 KEEP vs MERGE. KEEP keeps every selected edge as a SEPARATE,
         # individually selectable & vertex-editable segment (each keeps its own

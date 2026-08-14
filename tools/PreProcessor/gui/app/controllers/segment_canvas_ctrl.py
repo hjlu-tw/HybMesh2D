@@ -42,9 +42,7 @@ class SegmentCanvasControllerMixin:
         sb.geom_stats_panel.update_stats(
             None, closed=False, n_segments=len(session.project_model.segments),
             unit=self.length_unit_symbol())
-        sb.selected_info.setText("Selected Vertex: None")
-        sb.split_btn.setEnabled(False)
-        sb.remove_split_btn.setEnabled(False)
+        sb.show_vertex_selection(None)
         self.refresh_status_selection()
 
     @staticmethod
@@ -225,7 +223,7 @@ class SegmentCanvasControllerMixin:
                     session.current_segment_idx = best_seg_idx
 
         seg = session.project_model.get_segment(session.current_segment_idx)
-        sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
+        sb.set_bake_curve_enabled(bool(seg and seg.type == "curve"))
         self.handle_segment_selected(session.current_segment_idx)
         self.highlight_selected_segments()
 
@@ -275,10 +273,10 @@ class SegmentCanvasControllerMixin:
         if last_idx >= 0:
             session.current_segment_idx = last_idx
             seg = session.project_model.get_segment(last_idx)
-            sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
+            sb.set_bake_curve_enabled(bool(seg and seg.type == "curve"))
             self.handle_segment_selected(last_idx)
         elif not extend:
-            sb.curve_bake_btn.setEnabled(False)
+            sb.set_bake_curve_enabled(False)
             self.handle_segment_selected(-1)
         self.highlight_selected_segments()
 

@@ -46,7 +46,7 @@ class SegmentAutoDetectControllerMixin:
             seg = session.project_model.get_segment(seg_idx)
 
         sb = self.main_window.sidebar_view
-        angle_threshold = sb.auto_split_angle_sb.value()
+        angle_threshold = sb.auto_split_angle()
 
         if seg:
             if seg.type == "file" and session.original_points is None:

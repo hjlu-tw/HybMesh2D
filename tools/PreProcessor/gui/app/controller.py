@@ -414,9 +414,7 @@ class AppController(
 
             # Reset sidebar point info
             sb = self.main_window.sidebar_view
-            sb.selected_info.setText("Selected Vertex: None")
-            sb.split_btn.setEnabled(False)
-            sb.remove_split_btn.setEnabled(False)
+            sb.show_vertex_selection(None)
         else:
             session.selected_point_idx = None
 

@@ -66,17 +66,17 @@ app.processEvents()
 pm = c.active_session().project_model
 check(pm.closed_mode == "auto", f"fresh .dat load stays Auto (got {pm.closed_mode})")
 check(pm.is_closed is True, "square auto-detected as closed")
-check(sb.is_closed_combo.currentText() == "Auto", "combo shows 'Auto'")
-check("Closed" in sb.closed_mode_status.text(),
-      f"status hint shows resolved Closed (got '{sb.closed_mode_status.text()}')")
+check(sb.file_panel.is_closed_combo.currentText() == "Auto", "combo shows 'Auto'")
+check("Closed" in sb.file_panel.closed_mode_status.text(),
+      f"status hint shows resolved Closed (got '{sb.file_panel.closed_mode_status.text()}')")
 check(_n(cv._closing_edge) == 2, "dashed closing edge drawn for the real gap")
 
 # Force Open: closing edge clears, endpoints get red markers.
 c.handle_closed_mode_changed("Open")
 app.processEvents()
 check(pm.is_closed is False, "Open forces is_closed False")
-check(sb.is_closed_combo.currentText() == "Open", "combo shows 'Open'")
-check(sb.closed_mode_status.text() == "", "status hint blank when not Auto")
+check(sb.file_panel.is_closed_combo.currentText() == "Open", "combo shows 'Open'")
+check(sb.file_panel.closed_mode_status.text() == "", "status hint blank when not Auto")
 check(_n(cv._closing_edge) == 0, "closing edge cleared when Open")
 check(_n(cv._open_endpoint_markers) >= 2, "open endpoints marked red when Open")
 

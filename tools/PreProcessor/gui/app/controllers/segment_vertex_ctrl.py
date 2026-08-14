@@ -5,7 +5,6 @@ from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd
 from app.commands.vertex_cmds import InsertVertexCmd, ReplaceGeometryPointsCmd
 from app.services.geometry_service import (
     project_point_to_segment, proportional_edge_move)
-from app.utils import block_signals
 
 
 class SegmentVertexControllerMixin:
@@ -21,7 +20,6 @@ class SegmentVertexControllerMixin:
         self.main_window.canvas_view.update_selected_point(idx)
 
         sb = self.main_window.sidebar_view
-        sb.selected_info.setText(f"Selected Vertex: Index {idx}")
 
         n_pts = (len(session.original_points)
                  if session.original_points is not None else 0)
@@ -32,21 +30,20 @@ class SegmentVertexControllerMixin:
         is_endpoint = (idx == 0 or idx == n_pts - 1)
         is_split = idx in session.split_indices
 
-        sb.split_btn.setEnabled(not is_split)
-        sb.remove_split_btn.setEnabled(is_split and not is_endpoint)
-
         # #6: expose a draggable move-handle on the canvas and seed the numeric
-        # "Move to" fields with the vertex's current position.
+        # "Move to" fields with the vertex's current position. The sidebar is
+        # told the two facts (already a split? an endpoint?) and decides for
+        # itself which of its buttons those enable.
         canvas = self.main_window.canvas_view
+        position = None
         if (session.original_points is not None
                 and 0 <= idx < len(session.original_points)):
-            x, y = (float(session.original_points[idx][0]),
-                    float(session.original_points[idx][1]))
-            with block_signals(sb.move_x, sb.move_y):
-                sb.move_x.setValue(x)
-                sb.move_y.setValue(y)
-            sb.move_btn.setEnabled(True)
-            canvas.show_vertex_move_handle(idx, x, y)
+            position = (float(session.original_points[idx][0]),
+                        float(session.original_points[idx][1]))
+        sb.show_vertex_selection(idx, position, is_split=is_split,
+                                 is_endpoint=is_endpoint)
+        if position is not None:
+            canvas.show_vertex_move_handle(idx, *position)
 
     def handle_point_deselected(self):
         """Clear vertex selection when user clicks far from all vertices."""
@@ -59,10 +56,7 @@ class SegmentVertexControllerMixin:
         self.main_window.canvas_view.clear_vertex_move_handle()
 
         sb = self.main_window.sidebar_view
-        sb.selected_info.setText("Selected Vertex: None")
-        sb.split_btn.setEnabled(False)
-        sb.remove_split_btn.setEnabled(False)
-        sb.move_btn.setEnabled(False)
+        sb.show_vertex_selection(None)
 
     def move_selected_vertex_to(self, x: float = None, y: float = None):
         """Move the selected vertex / split point to (x, y) — from the numeric
@@ -75,11 +69,11 @@ class SegmentVertexControllerMixin:
         pts = session.original_points
         if not (0 <= idx < len(pts)):
             return
-        sb = self.main_window.sidebar_view
-        if x is None:
-            x = sb.move_x.value()
-        if y is None:
-            y = sb.move_y.value()
+        # Either coordinate may be supplied by the caller (a canvas drag); the
+        # rest comes from the Move-to fields.
+        field_x, field_y = self.main_window.sidebar_view.vertex_move_target()
+        x = field_x if x is None else x
+        y = field_y if y is None else y
         old = pts.copy()
         if np.allclose(old[idx], [x, y]):
             return
@@ -161,7 +155,7 @@ class SegmentVertexControllerMixin:
                 "Can't remove this breakpoint: it's a structural endpoint/seam "
                 "(the geometry needs at least one edge segment).")
             return
-        keep = self.main_window.sidebar_view.keep_vertex_cb.isChecked()
+        keep = self.main_window.sidebar_view.keep_vertex_on_remove()
         cmd = RemoveSplitCmd(
             session, idx, keep,
             sync_cb=lambda: self._on_split_changed(session),
@@ -185,8 +179,7 @@ class SegmentVertexControllerMixin:
             self.log("No geometry loaded.")
             return
         sb = self.main_window.sidebar_view
-        x = sb.insert_x.value()
-        y = sb.insert_y.value()
+        x, y = sb.vertex_insert_point()
         p = np.array([x, y])
 
         # Find nearest edge

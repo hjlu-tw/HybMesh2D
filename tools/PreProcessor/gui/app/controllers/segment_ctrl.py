@@ -54,13 +54,13 @@ class SegmentControllerMixin:
         sb = self.main_window.sidebar_view
         session = self.active_session()
         if not session:
-            sb.join_edges_btn.setEnabled(False)
+            sb.set_join_edges_enabled(False)
             return
         pm = session.project_model
         n_joinable = sum(1 for i in selected_indices
                          if pm.get_segment(i)
                          and pm.get_segment(i).type in ("curve", "file"))
-        sb.join_edges_btn.setEnabled(n_joinable >= 2)
+        sb.set_join_edges_enabled(n_joinable >= 2)
 
     def _refresh_segment_list(self, clear_resampled: bool = True):
         session = self.active_session()
@@ -119,7 +119,7 @@ class SegmentControllerMixin:
             if selected_indices:
                 if session.current_segment_idx not in selected_indices:
                     session.current_segment_idx = selected_indices[0]
-                sb.remove_seg_btn.setEnabled(True)
+                sb.set_remove_edge_enabled(True)
                 sb.show_segment_props(True)
                 active_seg = session.project_model.get_segment(session.current_segment_idx)
                 if active_seg:
@@ -134,7 +134,7 @@ class SegmentControllerMixin:
                         self.main_window.canvas_view.clear_curve_preview(session.session_id)
             else:
                 session.current_segment_idx = -1
-                sb.remove_seg_btn.setEnabled(False)
+                sb.set_remove_edge_enabled(False)
                 sb.show_segment_props(False)
                 self.main_window.canvas_view.update_active_segment(None, None)
                 self.main_window.canvas_view.clear_curve_preview(session.session_id)
@@ -161,28 +161,18 @@ class SegmentControllerMixin:
         pm = session.project_model
 
         # File label
-        if session.file_path:
-            sb.file_name_label.setText(
-                f"File: {os.path.basename(session.file_path)}")
-            sb.file_name_label.setStyleSheet(
-                "color: #dde6ff; font-weight: bold; margin-bottom: 5px;")
-        else:
-            sb.file_name_label.setText("No geometry imported")
-            sb.file_name_label.setStyleSheet(
-                "color: #6a7aaa; font-style: italic; margin-bottom: 5px;")
+        sb.show_geometry_name(os.path.basename(session.file_path)
+                              if session.file_path else None)
 
         # Closure mode (Auto/Closed/Open) + resolved-state hint.
         self._sync_closed_mode_ui(session)
 
         # Advanced
-        with block_signals(sb.global_spline_cb):
-            sb.global_spline_cb.setChecked(pm.global_spline)
+        sb.set_global_spline(pm.global_spline)
         sb.set_transform_from_dict(pm.transform)
 
         # Selection state
-        sb.selected_info.setText("Selected Vertex: None")
-        sb.split_btn.setEnabled(False)
-        sb.remove_split_btn.setEnabled(False)
+        sb.show_vertex_selection(None)
 
         self._refresh_segment_list(clear_resampled=False)
         self._sync_geometry_list()
@@ -199,13 +189,11 @@ class SegmentControllerMixin:
 
     def _clear_sidebar(self):
         sb = self.main_window.sidebar_view
-        sb.file_name_label.setText("No geometry imported")
+        sb.show_geometry_name(None)
         sb.geometry_tree.clear_all_edges()
-        sb.selected_info.setText("Selected Vertex: None")
-        sb.split_btn.setEnabled(False)
-        sb.remove_split_btn.setEnabled(False)
-        sb.remove_seg_btn.setEnabled(False)
-        sb.join_edges_btn.setEnabled(False)
+        sb.show_vertex_selection(None)
+        sb.set_remove_edge_enabled(False)
+        sb.set_join_edges_enabled(False)
         # No active geometry -> the metrics must read "—" rather than keep the
         # previous geometry's numbers, which would be actively misleading.
         sb.geom_stats_panel.clear()
@@ -231,8 +219,8 @@ class SegmentControllerMixin:
         tree = sb.geometry_tree
         with block_signals(tree):
             tree.clear_edge_selection()
-        sb.curve_bake_btn.setEnabled(False)
-        sb.join_edges_btn.setEnabled(False)
+        sb.set_bake_curve_enabled(False)
+        sb.set_join_edges_enabled(False)
 
         # Clear edge highlight + active segment state
         self.handle_segment_selected(-1)
@@ -254,7 +242,7 @@ class SegmentControllerMixin:
         tree = sb.geometry_tree
         sel_edges = tree.selected_edge_items()
         if not sel_edges:
-            sb.curve_bake_btn.setEnabled(False)
+            sb.set_bake_curve_enabled(False)
             self.handle_segment_selected(-1)
             self.main_window.canvas_view.update_active_segments([])
             return
@@ -265,7 +253,7 @@ class SegmentControllerMixin:
         idx = tree.edge_index(cur)
         session = self.active_session()
         seg = session.project_model.get_segment(idx) if session else None
-        sb.curve_bake_btn.setEnabled(bool(seg and seg.type == "curve"))
+        sb.set_bake_curve_enabled(bool(seg and seg.type == "curve"))
         self.handle_segment_selected(idx)
         self.highlight_selected_segments()
 
@@ -275,7 +263,7 @@ class SegmentControllerMixin:
         if index < 0:
             with block_signals(tree):
                 tree.clear_edge_selection()
-            sb.curve_bake_btn.setEnabled(False)
+            sb.set_bake_curve_enabled(False)
             self.handle_segment_selected(-1)
             return
 
@@ -292,7 +280,7 @@ class SegmentControllerMixin:
             if item is not None:
                 item.setSelected(True)
                 tree.setCurrentItem(item)
-        sb.curve_bake_btn.setEnabled(seg.type == "curve")
+        sb.set_bake_curve_enabled(seg.type == "curve")
 
         self.handle_segment_selected(index)
         # Highlight the selected edge (file or curve) and dim the rest.
@@ -313,7 +301,7 @@ class SegmentControllerMixin:
             self.main_window.canvas_view.clear_edge_handles()
             self._show_duplicate_preview = False
             session.current_segment_idx = -1
-            sb.remove_seg_btn.setEnabled(False)
+            sb.set_remove_edge_enabled(False)
             sb.show_segment_props(False)
             return
 
@@ -324,7 +312,7 @@ class SegmentControllerMixin:
             self.main_window.canvas_view.clear_curve_preview(session.session_id)
             self.main_window.canvas_view.clear_transform_handles()
             self._show_duplicate_preview = False
-            sb.remove_seg_btn.setEnabled(False)
+            sb.set_remove_edge_enabled(False)
             sb.show_segment_props(False)
             return
 
@@ -339,7 +327,7 @@ class SegmentControllerMixin:
             self.main_window.canvas_view.set_active_geometry_dimmed(session.session_id, False)
 
         # Enable remove segment button for both file and curve segments
-        sb.remove_seg_btn.setEnabled(True)
+        sb.set_remove_edge_enabled(True)
 
         # Populate sidebar
         # The canvas cleanup below stays in a finally: it must run even if
@@ -351,25 +339,22 @@ class SegmentControllerMixin:
                 if is_curve:
                     lbl_val = CURVE_TYPE_LABELS.get(seg.curve_type, seg.curve_type.capitalize())
                     shape = lbl_val(seg) if callable(lbl_val) else lbl_val
-                    sb.segment_type_label.setText(f"Edge {seg.id}  ·  Analytic ({shape})")
+                    # strategy=None: an analytic edge's points come from its
+                    # formula, so the distribution controls do not apply.
+                    sb.show_edge_summary(
+                        f"Edge {seg.id}  ·  Analytic ({shape})", None)
                     sb.show_curve_segment(seg)
-                    sb.strategy_combo.setVisible(False)
-                    sb.param_stack.setVisible(False)
                 else:
-                    sb.segment_type_label.setText(f"Edge {seg.id}  ·  Discrete")
+                    sb.show_edge_summary(f"Edge {seg.id}  ·  Discrete",
+                                         seg.strategy)
                     sb.show_file_segment(seg.start_index, seg.end_index)
-                    sb.strategy_combo.setVisible(True)
-                    sb.param_stack.setVisible(True)
-                    with block_signals(sb.strategy_combo):
-                        sb.strategy_combo.setCurrentText(seg.strategy)
                     sb.switch_param_form(seg.strategy)
                     self._populate_form_from_segment(seg)
 
                 # Show transform duplicate group for all segments
                 sb.show_transform_panel(True)
 
-                with block_signals(sb.match_previous_cb):
-                    sb.match_previous_cb.setChecked(seg.match_previous)
+                sb.set_match_previous(seg.match_previous)
 
                 # (#1) The per-edge patch/group name is now assigned via a pop-up
                 # (open_cad_patch_dialog), so there is no inline field to populate here.

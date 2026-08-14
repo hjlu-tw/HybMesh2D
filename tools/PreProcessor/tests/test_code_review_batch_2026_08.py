@@ -131,12 +131,12 @@ check(not mw.progress_bar.isVisible(), "the owner's release hides the bar")
 # ── 2. every _run_backend caller gets the UI restored ──────────────────────
 sb = mw.sidebar_view
 c._set_backend_running_ui(True)
-check(not sb.preview_btn.isEnabled() and mw.cad_cancel_btn.isEnabled(),
+check(not mw.cad_preview_btn.isEnabled() and mw.cad_cancel_btn.isEnabled(),
       "running state disables Preview and enables Cancel")
 # The pipeline's on_finish never restored this; _on_backend_finished_ui does.
 c._on_backend_finished_ui()
-check(sb.preview_btn.isEnabled() and sb.save_btn.isEnabled()
-      and sb.file_preview_btn.isEnabled(),
+check(mw.cad_preview_btn.isEnabled() and sb.actions_panel.save_btn.isEnabled()
+      and mw.cad_file_preview_btn.isEnabled(),
       "finishing restores Preview / Apply / Save for ANY caller")
 check(not mw.cad_cancel_btn.isEnabled(), "finishing disables Cancel")
 

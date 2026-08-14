@@ -11,6 +11,8 @@ from app.views.panels import (
 )
 from app.views.settings_dialog import SettingsDialog
 from app.styles import COMBO_STYLE
+from app.views.sidebar_actions_mixin import SidebarActionsMixin
+from app.views.sidebar_display_mixin import SidebarDisplayMixin
 
 _SCROLLBAR_QSS = """
     QScrollBar:vertical {
@@ -29,7 +31,7 @@ _SECTION_LABEL_QSS = (
 )
 
 
-class SidebarView(QWidget):
+class SidebarView(SidebarActionsMixin, SidebarDisplayMixin, QWidget):
     """Left control panel — industrial 'tree + details' layout.
 
     A vertical splitter holds the model tree (geometry layers + their edges,
@@ -38,13 +40,15 @@ class SidebarView(QWidget):
     carries Export / Save and opens the geometry-settings dialog.
 
     All sub-panels are kept as attributes (even when not placed directly in a
-    layout) so SidebarView's __getattr__ delegation keeps resolving every widget
-    the controllers reference, and existing signal wiring stays intact.
+    layout) because this class composes them; they are NOT a lookup path for
+    callers.
 
-    That delegation is being retired: every controller that still names a widget
-    through it is listed in tests/test_sidebar_seam.py, which fails the build on
-    a new one. As each group migrates to the verbs and signals below, its entry
-    leaves that list; when the list is empty __getattr__ goes with it."""
+    There is no __getattr__ here any more. It forwarded any unknown attribute to
+    whichever sub-panel owned it, which is how 214 widget names ended up being
+    read and written from ten controllers — none of them visible to a rename, a
+    deletion, or a reviewer. Callers now use the verbs and signals below, and
+    tests/test_sidebar_seam.py fails the build if a new reach-through appears OR
+    if the forwarder comes back."""
 
     # ── What happened, not which widget it happened on ───────────────────
     # Re-emitted from the panel that owns the widgets, so callers connect to the
@@ -70,6 +74,35 @@ class SidebarView(QWidget):
     # field is wired by the same edit that gives it a parameter.
     curve_edited = pyqtSignal()
     curve_type_changed = pyqtSignal()
+
+    # ── Actions: what the user asked for, never which button they pressed ──
+    # Declared here and bound by _ACTIONS below, so a controller connects to an
+    # intent. These replace 23 widget names in signal_wiring_ctrl; the line
+    # count barely moves, because the win is the seam, not brevity — a renamed
+    # or relocated button now breaks in ONE table instead of silently resolving
+    # through __getattr__ to nothing.
+    load_requested = pyqtSignal()
+    load_stl_requested = pyqtSignal()
+    load_json_requested = pyqtSignal()
+    save_requested = pyqtSignal()
+    generate_requested = pyqtSignal()
+    extrude_stl_requested = pyqtSignal()
+    new_tab_requested = pyqtSignal()
+    split_requested = pyqtSignal()
+    remove_split_requested = pyqtSignal()
+    insert_point_requested = pyqtSignal()
+    move_vertex_requested = pyqtSignal()
+    remove_edge_requested = pyqtSignal()
+    join_edges_requested = pyqtSignal()
+    bake_curve_requested = pyqtSignal()
+    patch_name_requested = pyqtSignal()
+    auto_detect_requested = pyqtSignal()
+    auto_split_requested = pyqtSignal()
+    strategy_changed = pyqtSignal(str)
+    closure_mode_changed = pyqtSignal(str)
+    selection_mode_changed = pyqtSignal(int)
+    match_previous_toggled = pyqtSignal(bool)
+    global_spline_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -151,6 +184,7 @@ class SidebarView(QWidget):
         # un-managed widget from floating over the sidebar.
         self.file_panel.setVisible(False)
 
+        self._wire_actions()
         self._update_details()
 
     # ── Pane builders ───────────────────────────────────────────────────────
@@ -248,9 +282,10 @@ class SidebarView(QWidget):
         fl = QHBoxLayout(footer)
         fl.setContentsMargins(6, 5, 6, 5)
         fl.setSpacing(6)
-        fl.addWidget(self.save_btn, stretch=1)
-        fl.addWidget(self.generate_btn, stretch=1)
-        fl.addWidget(self.extrude_stl_btn, stretch=1)
+        ap = self.actions_panel
+        fl.addWidget(ap.save_btn, stretch=1)
+        fl.addWidget(ap.generate_btn, stretch=1)
+        fl.addWidget(ap.extrude_stl_btn, stretch=1)
 
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setFixedWidth(34)
@@ -326,6 +361,15 @@ class SidebarView(QWidget):
         """
         self.edge_props_panel.set_length_suffix(symbol)
 
+    def selection_mode(self) -> int:
+        """The active edit mode as the combo's row (0 = vertex, 1 = edge)."""
+        return self.select_mode_combo.currentIndex()
+
+    def set_shape_tool_menu(self, menu):
+        """Attach the Add-Analytic-Edge shape menu. A menu is handed over, not
+        connected to, so it is a verb rather than one of the signals above."""
+        self.edge_list_panel.add_curve_seg_btn.setMenu(menu)
+
     def curve_spec(self):
         """What the analytic-edge form currently says."""
         return self.edge_props_panel.curve_spec()
@@ -386,44 +430,23 @@ class SidebarView(QWidget):
         self._update_details()
 
     def get_transform_dict(self) -> dict | None:
-        if not self.apply_transform_cb.isChecked():
+        if not self.advanced_panel.apply_transform_cb.isChecked():
             return None
+        ap = self.advanced_panel
         return {
-            "scale": self.transform_scale.value(),
-            "rotate": self.transform_rotate.value(),
-            "translate": [self.transform_tx.value(), self.transform_ty.value()],
+            "scale": ap.transform_scale.value(),
+            "rotate": ap.transform_rotate.value(),
+            "translate": [ap.transform_tx.value(), ap.transform_ty.value()],
         }
 
     def set_transform_from_dict(self, d: dict | None):
+        ap = self.advanced_panel
         if d:
-            self.apply_transform_cb.setChecked(True)
-            self.transform_scale.setValue(d.get("scale", 1.0))
-            self.transform_rotate.setValue(d.get("rotate", 0.0))
+            ap.apply_transform_cb.setChecked(True)
+            ap.transform_scale.setValue(d.get("scale", 1.0))
+            ap.transform_rotate.setValue(d.get("rotate", 0.0))
             tr = d.get("translate", [0.0, 0.0])
-            self.transform_tx.setValue(tr[0])
-            self.transform_ty.setValue(tr[1])
+            ap.transform_tx.setValue(tr[0])
+            ap.transform_ty.setValue(tr[1])
         else:
-            self.apply_transform_cb.setChecked(False)
-
-    def __getattr__(self, name):
-        # Delegate unknown attribute lookups to the sub-panels. Guard against
-        # recursion before the panels exist (e.g. during super().__init__).
-        if name.startswith("__") or "file_panel" not in self.__dict__:
-            raise AttributeError(name)
-        for panel in [
-            self.file_panel,
-            self.geometry_panel,
-            self.vertex_panel,
-            self.edge_list_panel,
-            self.edge_props_panel,
-            self.advanced_panel,
-            self.actions_panel,
-        ]:
-            if hasattr(panel, name):
-                return getattr(panel, name)
-            # Transform sub-widgets live inside EdgePropsPanel's TransformPanel.
-            if panel is self.edge_props_panel and hasattr(panel, "_transform_dup_group"):
-                dup = panel._transform_dup_group
-                if hasattr(dup, name):
-                    return getattr(dup, name)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            ap.apply_transform_cb.setChecked(False)

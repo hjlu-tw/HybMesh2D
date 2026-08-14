@@ -159,8 +159,7 @@ class CurveDrawControllerMixin:
                 x, y, self._snap_targets(session, exclude=seg))
         sb = self.main_window.sidebar_view
         lock = (seg.curve_type == "arc"
-                and getattr(sb, "arc_lock_radius", None) is not None
-                and sb.arc_lock_radius.isChecked())
+                and sb.arc_radius_locked())
         self._apply_handle_drag_to_params(seg, handle_id, x, y, lock_radius=lock)
         if self._pending_dialog is not None:
             self._pending_dialog.set_values(
