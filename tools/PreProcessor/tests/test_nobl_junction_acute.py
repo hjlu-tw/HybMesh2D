@@ -205,6 +205,59 @@ def write_wedge(path, theta_deg, nbr_len=2.0):
     return b
 
 
+def write_isolated_corner_duct(path):
+    """A duct with an ISOLATED BL corner: one BL node whose BOTH neighbours are no-BL.
+
+    Every other case in this file marks exactly ONE segment no-BL (`grow=[1,0,1,1]`),
+    so every junction node keeps a BL neighbour on one side. The generator has a
+    separate branch for the case where BOTH neighbours are no-BL — it must keep the
+    perpendicular cap direction chosen by the base detection instead of splitting
+    the corner with a bisector — and nothing exercised it.
+
+    Getting there needs BOTH halves, and the second one is not obvious. The TOP
+    segment emits only its starting corner, so in the ring that node is flanked by
+    the right wall's last point and the left wall's first point — but `main.cpp`'s
+    corner rescue (`if (prevBL || nextBL) cn.skipBL = false;`) then promotes the
+    top-LEFT corner back to BL because its neighbour grows one, and the isolated
+    node is left with a BL neighbour after all. The rescue is gated on `isCorner`,
+    so the top-left split is declared SMOOTH (`corner = 0`) — which is exactly what
+    the resampler emits for a segment boundary that is not a sharp vertex. Verified
+    with a probe in the branch itself: without this it never fires and the node is
+    classified case 1 (slide) instead.
+
+    The BOTTOM wall still grows a full BL, so this is a real mesh with an isolated
+    corner in it rather than a degenerate one-column model.
+
+    Segments: 1 bottom (BL), 2 right (no-BL), 3 top (BL, one point), 4 left (no-BL).
+    Returns (points, verts, isolated_corner).
+    """
+    verts = [(0.0, 0.0), (DUCT_W, 0.0), (DUCT_W, DUCT_H), (0.0, DUCT_H)]
+    grow = [1, 0, 1, 0]
+    pts, seg, corner = [], [], []
+    for j in range(4):
+        ax, ay = verts[j]
+        bx, by = verts[(j + 1) % 4]
+        # The top segment (j == 2) is the isolated one: its ONLY point is its start.
+        n = 1 if j == 2 else max(6, int(math.hypot(bx - ax, by - ay) * 12))
+        for m in range(n):
+            t = m / n
+            pts.append((ax + (bx - ax) * t, ay + (by - ay) * t))
+            seg.append(j + 1)
+            # j == 3 is the top-left split: smooth, so the corner rescue skips it.
+            corner.append(1 if (m == 0 and j != 3) else 0)
+    with open(path, "w") as f:
+        f.write("".join(f"{x:.10f} {y:.10f}\n" for x, y in pts))
+        f.write(f"{pts[0][0]:.10f} {pts[0][1]:.10f}\n")
+    with open(path + ".meta", "w") as f:
+        f.write(f"HYBMESH_META 3\nCOUNT {len(pts)}\nNPIECES 0\nNSEGMENTS 4\n")
+        for j in range(4):
+            f.write(f"{j + 1} wall polyline {grow[j]}\n")
+        f.write(f"POINTS {len(pts)}\n")
+        for i in range(len(pts)):
+            f.write(f"{seg[i]} {corner[i]}\n")
+    return pts, verts, verts[2]
+
+
 def run(tmp, dat, name, starcd=False, timeout=300):
     """Run HybMesh2D on the duct; returns (rc, stdout+stderr, output stem)."""
     out = os.path.join(tmp, name)
@@ -544,6 +597,36 @@ def main():
           "Very sharp BL/no-BL wedge" not in log)
     check("none of the healthy junctions above were warned about either",
           all("Very sharp" not in s for s in quiet_logs))
+
+    # ── isolated BL corner: BOTH neighbours no-BL ────────────────────────────
+    # The generator has a branch for a BL node whose BOTH neighbours are no-BL
+    # ("an isolated BL corner ... a rare/degenerate configuration we do not
+    # special-case further"). Nothing exercised it; this does — and what it
+    # documents is that reaching the branch means the run CANNOT produce a mesh.
+    #
+    # The isolated node grows a single full-height column but registers no lateral
+    # column, so the final front ring runs out along that column and back down the
+    # same one: a zero-width spike. Gmsh gets a hole boundary that doubles back and
+    # triangulates nothing. Measured: exit 6, "Gmsh produced an empty far-field
+    # mesh (0 triangles)".
+    #
+    # So this is pinned as a CLEAN FAILURE, not as a working case. What it protects
+    # is the failure MODE: a future change here must not turn a diagnosed exit into
+    # a hang, a crash, or — worst — a silently exported empty mesh. It deliberately
+    # does not assert the column's direction: with no mesh written there is nothing
+    # to measure, which is exactly why this branch cannot serve as a regression
+    # guard for the classifyJunctions extraction (see the note in that commit).
+    dat = os.path.join(tmp, "isolated.dat")
+    _, iso_verts, iso = write_isolated_corner_duct(dat)
+    rc, log, stem = run(tmp, dat, "isolated")
+    check("an isolated BL corner fails cleanly rather than hanging or crashing",
+          rc == 6)
+    check("...naming the empty far-field mesh as the reason",
+          "empty far-field mesh" in log)
+    check("...and exports nothing rather than an empty mesh",
+          not os.path.exists(stem + ".vtk"))
+    check("...having reached the junction stage at all (the tally is printed)",
+          "BL/no-BL junctions" in log)
 
     print()
     print("RESULT:", "ALL PASS" if not failures else f"{len(failures)} FAILED: {failures}")
