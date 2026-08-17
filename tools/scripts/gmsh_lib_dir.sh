@@ -25,24 +25,12 @@ hybmesh_gmsh_lib_dir() {
         printf '%s\n' "${HYBMESH_GMSH_LIB_DIR}"
         return 0
     fi
-    python3 - <<'PY' 2>/dev/null
-import glob, os
-try:
-    import gmsh
-except Exception:
-    raise SystemExit(1)
-here = os.path.dirname(os.path.abspath(gmsh.__file__))
-for cand in (os.path.join(here, "..", ".."), here,
-             os.path.join(here, "..", "..", "lib"),
-             os.path.join(here, "..", "lib"),
-             os.path.join(here, "..", "..", "..", "lib")):
-    cand = os.path.normpath(cand)
-    if glob.glob(os.path.join(cand, "libgmsh*")):
-        print(cand)
-        break
-else:
-    raise SystemExit(1)
-PY
+    # Delegate to the one resolver, which CMakeLists.txt also uses at configure
+    # time. This used to be a second, private copy of the same search; two
+    # copies is how the build and the loader start disagreeing about which
+    # libgmsh is the right one.
+    python3 "$(dirname "${BASH_SOURCE[0]}")/gmsh_sdk_dirs.py" 2>/dev/null \
+        | sed -n 's/^LIB=//p' | head -1 | grep . || return 1
 }
 
 hybmesh_export_gmsh_lib_path() {

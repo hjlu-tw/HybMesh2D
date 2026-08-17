@@ -75,15 +75,46 @@ message(STATUS "HybMesh version ${HYBMESH_VERSION} (git ${HYBMESH_GIT_SHA})")
 
 # --- Gmsh discovery --------------------------------------------------------
 # Gmsh ships its SDK (gmsh.h + libgmsh) via the pip `gmsh` wheel or a manual
-# SDK install. Discover it instead of hardcoding one machine's absolute paths.
-# Override with -DGMSH_ROOT=/path/to/gmsh (expects <root>/include and <root>/lib).
-# The HINTS include this developer's known pip location so the local build keeps
-# working with no extra flags, plus the usual system prefixes.
+# SDK install. Override with -DGMSH_ROOT=/path/to/gmsh (expects <root>/include
+# and <root>/lib).
+#
+# ASK THE WHEEL FIRST. The fixed HINTS below used to be the only discovery, and
+# they named one developer's macOS pip prefix plus /usr/local and /opt/homebrew.
+# A pip prefix is per-machine — a --user dir here, the hosted toolcache on a
+# GitHub runner — so CI installed gmsh and then failed at configure with "Gmsh
+# SDK not found"; and because the test job is `needs: build`, the entire
+# regression suite was SKIPPED rather than run. The workflow had never been
+# green. tools/scripts/gmsh_sdk_dirs.py is the single resolver (gmsh_lib_dir.sh
+# uses it too, for the run-time loader path).
 set(GMSH_ROOT "" CACHE PATH "Root of a Gmsh SDK install (contains include/ and lib/)")
+set(GMSH_PY_INCLUDE "")
+set(GMSH_PY_LIB "")
+find_program(HYBMESH_PYTHON3 NAMES python3 python)
+if(HYBMESH_PYTHON3)
+    execute_process(
+        COMMAND ${HYBMESH_PYTHON3}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/scripts/gmsh_sdk_dirs.py
+        OUTPUT_VARIABLE _gmsh_sdk_out
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _gmsh_sdk_rc)
+    if(_gmsh_sdk_rc EQUAL 0)
+        string(REGEX MATCH "INCLUDE=[^\n]*" _gmsh_inc_line "${_gmsh_sdk_out}")
+        if(_gmsh_inc_line)
+            string(REPLACE "INCLUDE=" "" GMSH_PY_INCLUDE "${_gmsh_inc_line}")
+        endif()
+        string(REGEX MATCH "LIB=[^\n]*" _gmsh_lib_line "${_gmsh_sdk_out}")
+        if(_gmsh_lib_line)
+            string(REPLACE "LIB=" "" GMSH_PY_LIB "${_gmsh_lib_line}")
+        endif()
+        message(STATUS "Gmsh SDK via the Python wheel: "
+                       "include='${GMSH_PY_INCLUDE}' lib='${GMSH_PY_LIB}'")
+    endif()
+endif()
 find_path(GMSH_INCLUDE_DIR gmsh.h
     HINTS
         ${GMSH_ROOT}/include
-        /Users/hjlu_nchc/Library/Python/3.9/include
+        ${GMSH_PY_INCLUDE}
         /usr/local/include
         /opt/homebrew/include)
 # Accept the version-tagged 4.15 dylib as well as the unversioned name; do not
@@ -91,7 +122,7 @@ find_path(GMSH_INCLUDE_DIR gmsh.h
 find_library(GMSH_LIBRARY NAMES gmsh gmsh.4.15
     HINTS
         ${GMSH_ROOT}/lib
-        /Users/hjlu_nchc/Library/Python/3.9/lib
+        ${GMSH_PY_LIB}
         /usr/local/lib
         /opt/homebrew/lib)
 if(NOT GMSH_INCLUDE_DIR OR NOT GMSH_LIBRARY)
@@ -101,8 +132,9 @@ if(NOT GMSH_INCLUDE_DIR OR NOT GMSH_LIBRARY)
         "    * pip3 install --user \"gmsh>=4.15,<4.16\"   (installs the SDK), or\n"
         "    * download the Gmsh SDK and pass -DGMSH_ROOT=/path/to/gmsh-sdk\n"
         "      (expects <root>/include/gmsh.h and <root>/lib/libgmsh.*).\n"
-        "  Searched: \${GMSH_ROOT}/{include,lib}, this machine's pip prefix,\n"
-        "  /usr/local, and /opt/homebrew.")
+        "  Searched: \${GMSH_ROOT}/{include,lib}, the installed gmsh wheel\n"
+        "  (include='${GMSH_PY_INCLUDE}' lib='${GMSH_PY_LIB}', resolved by\n"
+        "  tools/scripts/gmsh_sdk_dirs.py), /usr/local, and /opt/homebrew.")
 endif()
 # Derive the runtime library search path from wherever libgmsh was found.
 get_filename_component(GMSH_RPATH "${GMSH_LIBRARY}" DIRECTORY)
