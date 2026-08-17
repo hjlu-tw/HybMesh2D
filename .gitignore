@@ -30,9 +30,19 @@ solver/
 
 # Claude Code runtime state. NOT the same thing as `.agents/` + `skills-lock.json`,
 # which ARE tracked: those pin which skills this repo uses, the way a lockfile
-# does, and `docs/agents/` is referenced by CLAUDE.md. This directory only holds
-# per-machine runtime state (e.g. scheduled_tasks.lock).
-.claude/
+# does, and `docs/agents/` is referenced by CLAUDE.md. This directory otherwise
+# holds per-machine runtime state (scheduled_tasks.lock, skills/).
+#
+# `settings.json` is the exception and must be tracked: it carries the
+# SessionStart hook that measures the architecture backlog, which is a property
+# of THIS REPO rather than of one developer's machine — an ignored copy would
+# fire for whoever happened to create it and for nobody else. Note the pattern
+# has to exclude the directory's CONTENTS (`.claude/*`), not the directory:
+# git does not descend into an excluded directory, so `!` cannot re-include a
+# file underneath one. Per-machine overrides belong in `settings.local.json`,
+# which stays ignored.
+.claude/*
+!.claude/settings.json
 
 # Editor / tool backup copies. A `.bak` beside a tracked file is a local undo
 # buffer, never an input — config/pipeline/*.hws.bak is how they turn up here.

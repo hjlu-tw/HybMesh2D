@@ -741,6 +741,14 @@ candidate — DONE / OPEN / the number that decides it — by re-deriving each f
 the tree, and takes about a second. Reading `docs/architecture_review_2026-08-14.md`
 to find out what is left is the expensive mistake this exists to prevent.
 
+A **SessionStart hook** (`.claude/settings.json`) runs it with `--hook` and injects
+the result, so the status is usually already in context and running it again is
+waste. Run it by hand after landing work that changes an answer, or when no such
+block appeared — the hook degrades to **silence** if anything goes wrong
+(`|| true`, and `emit_hook` returns empty on any exception), because starting with
+no status is recoverable and starting with a stale one is the failure being
+designed out.
+
 Three artefacts, three jobs, and mixing them up is how the last round went wrong:
 
 - **`docs/architecture_review_2026-08-14.md` — the rationale, FROZEN.** Ten

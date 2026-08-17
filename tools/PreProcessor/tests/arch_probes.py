@@ -301,9 +301,10 @@ PROBES = [
 ]
 
 
-def main() -> int:
-    print("Architecture backlog — measured from the tree, not from a document.")
-    print("Rationale: docs/architecture_review_2026-08-14.md (frozen, 854f53e)\n")
+def run_probes() -> tuple[list[str], str, list[str]]:
+    """(report lines, one-line tally, broken-probe messages)."""
+    lines = ["Architecture backlog — measured from the tree, not from a document.",
+             "Rationale: docs/architecture_review_2026-08-14.md (frozen, 854f53e)", ""]
     broke = []
     counts = {DONE: 0, OPEN: 0, STALE: 0}
     for num, title, fn in PROBES:
@@ -314,18 +315,61 @@ def main() -> int:
             state, detail = "ERROR", str(exc)
         else:
             counts[state] = counts.get(state, 0) + 1
-        print(f"  [{state}] {num:>2} · {title}")
-        print(f"           {detail}")
-    print(f"\n{counts[DONE]} done · {counts[OPEN]} open · {counts[STALE]} stale "
-          f"premise · {len(PROBES)} candidates")
-    print("A candidate reported DONE is guarded by the gate named beside it; the "
-          "probe is only a pointer at that gate.")
+        lines.append(f"  [{state}] {num:>2} · {title}")
+        lines.append(f"           {detail}")
+    tally = (f"{counts[DONE]} done · {counts[OPEN]} open · {counts[STALE]} stale "
+             f"premise · {len(PROBES)} candidates")
+    lines += ["", tally,
+              "A candidate reported DONE is guarded by the gate named beside it; "
+              "the probe is only a pointer at that gate."]
     if broke:
-        print("\nPROBE FAILURES (the probe is broken, not the codebase):")
-        for b in broke:
-            print("  - " + b)
-        return 1
+        lines.append("")
+        lines.append("PROBE FAILURES (the probe is broken, not the codebase):")
+        lines += ["  - " + b for b in broke]
+    return lines, tally, broke
+
+
+def emit_hook() -> int:
+    """SessionStart hook envelope: the report goes to the model, the tally to the user.
+
+    The JSON is built HERE rather than by piping the human report through ``jq``
+    in the settings.json command string, for two reasons. The wrapper is then
+    version-controlled and testable on its own (``--hook | jq .``) instead of
+    living as an escaped one-liner inside JSON; and a hook that cannot run must
+    stay silent rather than emit half an envelope, which is easier to guarantee
+    in one place. If anything here raises, nothing is injected — the session
+    simply starts without the status, and CLAUDE.md still tells the reader to run
+    the probes by hand. Degrading to "no context" is correct; degrading to "stale
+    context" is the failure this whole arrangement exists to prevent.
+    """
+    import json
+    try:
+        lines, tally, _broke = run_probes()
+    except Exception:
+        return 0                                       # silence beats a broken envelope
+    report = "\n".join(lines)
+    print(json.dumps({
+        "systemMessage": f"Architecture backlog: {tally}",
+        "suppressOutput": True,
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": (
+                "Architecture backlog, measured at session start by "
+                "tools/PreProcessor/tests/arch_probes.py. This is the AUTHORITY on "
+                "what is left to do; docs/architecture_review_2026-08-14.md is "
+                "frozen rationale and does not know what has since been done. Do "
+                "not re-derive any of this by reading source.\n\n" + report),
+        },
+    }))
     return 0
+
+
+def main() -> int:
+    if "--hook" in sys.argv[1:]:
+        return emit_hook()
+    lines, _tally, broke = run_probes()
+    print("\n".join(lines))
+    return 1 if broke else 0
 
 
 if __name__ == "__main__":
