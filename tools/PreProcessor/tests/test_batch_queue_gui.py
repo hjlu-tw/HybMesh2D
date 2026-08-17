@@ -39,6 +39,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _GUI = os.path.abspath(os.path.join(_HERE, "..", "gui"))
+
+# Section 4 runs a real two-case batch, so it needs the compiled binaries. Without
+# them it used to FAIL rather than skip — the batch simply reported
+# "HybMesh2D binary not found" for both cases and the checks read that as a broken
+# GUI path. Every other binary-dependent test in this directory self-skips, and
+# the difference only shows up outside CI (which builds first), i.e. on a fresh
+# clone or after `rm -rf build`: exactly when a newcomer runs the suite and is
+# told something is broken when nothing is.
+_BINS = [os.path.join(_REPO, "build", n) for n in ("HybMesh2D", "surface_resampler")]
+_BINS_READY = all(os.path.exists(b) for b in _BINS)
 if _GUI not in sys.path:
     sys.path.insert(0, _GUI)
 
@@ -179,51 +189,56 @@ again = ctl.open_batch_dialog()
 check(again is dlg and again.table.rowCount() == 4,
       "1. re-opening returns the same dialog with the queue intact")
 
-# ── 4/6. a real run ───────────────────────────────────────────────────────
-dlg.clear_jobs()
-dlg.add_paths([ok_a, ok_b], log=logged.append)
-dlg.run_solver_cb.setChecked(False)
-dlg.run_ib_cb.setChecked(False)
-dlg.jobs[0].status = "failed"          # stale state from a previous run
-dlg.jobs[0].error = "old error"
+if _BINS_READY:
+    # ── 4/6. a real run ───────────────────────────────────────────────────────
+    dlg.clear_jobs()
+    dlg.add_paths([ok_a, ok_b], log=logged.append)
+    dlg.run_solver_cb.setChecked(False)
+    dlg.run_ib_cb.setChecked(False)
+    dlg.jobs[0].status = "failed"          # stale state from a previous run
+    dlg.jobs[0].error = "old error"
 
-ctl.run_batch_queue()
-check(ctl._batch_worker is not None, "4. the run starts a worker")
-check(not dlg.run_btn.isEnabled() and dlg.cancel_btn.isEnabled(),
-      "4. Run is disabled and Cancel enabled while running")
-check(not dlg.add_btn.isEnabled(),
-      "4. the queue cannot be edited mid-run")
+    ctl.run_batch_queue()
+    check(ctl._batch_worker is not None, "4. the run starts a worker")
+    check(not dlg.run_btn.isEnabled() and dlg.cancel_btn.isEnabled(),
+          "4. Run is disabled and Cancel enabled while running")
+    check(not dlg.add_btn.isEnabled(),
+          "4. the queue cannot be edited mid-run")
 
-summary = {}
-loop = QEventLoop()
-ctl._batch_worker.finished_signal.connect(lambda s: (summary.update(s), loop.quit()))
-QTimer.singleShot(540000, loop.quit)
-loop.exec()
+    summary = {}
+    loop = QEventLoop()
+    ctl._batch_worker.finished_signal.connect(lambda s: (summary.update(s), loop.quit()))
+    QTimer.singleShot(540000, loop.quit)
+    loop.exec()
 
-check(summary.get("ok") == ["batch_test_a", "batch_test_b"],
-      f"4. both cases ran through the GUI path with the real binaries "
-      f"({summary.get('ok')}, failed={summary.get('failed')})")
-row_status = [dlg.table.item(r, 2).text() for r in range(dlg.table.rowCount())]
-check(row_status == ["ok", "ok"],
-      f"4. each row reached ok as the batch progressed ({row_status})")
-check(all(dlg.table.item(r, 3).text().endswith("s")
-          for r in range(dlg.table.rowCount())),
-      "4. and carries its elapsed time")
-check(not dlg.jobs[0].error,
-      "4. a re-run clears the previous attempt's status instead of showing stale "
-      "failures next to fresh results")
-check(dlg.jobs[0].artifacts.get("vtk", "").endswith(".vtk")
-      and os.path.exists(dlg.jobs[0].artifacts["vtk"]),
-      f"4. the mesh really was produced ({dlg.jobs[0].artifacts.get('vtk')})")
+    check(summary.get("ok") == ["batch_test_a", "batch_test_b"],
+          f"4. both cases ran through the GUI path with the real binaries "
+          f"({summary.get('ok')}, failed={summary.get('failed')})")
+    row_status = [dlg.table.item(r, 2).text() for r in range(dlg.table.rowCount())]
+    check(row_status == ["ok", "ok"],
+          f"4. each row reached ok as the batch progressed ({row_status})")
+    check(all(dlg.table.item(r, 3).text().endswith("s")
+              for r in range(dlg.table.rowCount())),
+          "4. and carries its elapsed time")
+    check(not dlg.jobs[0].error,
+          "4. a re-run clears the previous attempt's status instead of showing stale "
+          "failures next to fresh results")
+    check(dlg.jobs[0].artifacts.get("vtk", "").endswith(".vtk")
+          and os.path.exists(dlg.jobs[0].artifacts["vtk"]),
+          f"4. the mesh really was produced ({dlg.jobs[0].artifacts.get('vtk')})")
 
-check("ok" in dlg.status_label.text() and "queued" not in dlg.status_label.text(),
-      f"6. the summary survives the row refresh — it used to be overwritten with the "
-      f"queue count at the exact moment the result mattered "
-      f"({dlg.status_label.text()!r})")
-check("done" in dlg.progress.format(),
-      f"6. the progress bar reports completion ({dlg.progress.format()!r})")
-check(dlg.run_btn.isEnabled() and not dlg.cancel_btn.isEnabled(),
-      "6. and the buttons are restored")
+    check("ok" in dlg.status_label.text() and "queued" not in dlg.status_label.text(),
+          f"6. the summary survives the row refresh — it used to be overwritten with the "
+          f"queue count at the exact moment the result mattered "
+          f"({dlg.status_label.text()!r})")
+    check("done" in dlg.progress.format(),
+          f"6. the progress bar reports completion ({dlg.progress.format()!r})")
+    check(dlg.run_btn.isEnabled() and not dlg.cancel_btn.isEnabled(),
+          "6. and the buttons are restored")
+else:
+    print("SKIP  sections 4 and 6 need the compiled binaries "
+          f"({[b for b in _BINS if not os.path.exists(b)]}) — run ./build.sh",
+          flush=True)
 
 _wd.cancel()
 if _FAILS:
