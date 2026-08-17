@@ -12,10 +12,14 @@ exactly, and a real change still shows up.
 
 It also compares the STAR-CD files, and both of them for a reason:
 
-  * `.bnd` — the face count per patch name AND each face's own coordinates. The
-    two most expensive junction bugs this repo has had produced a geometrically
-    perfect mesh with the boundary conditions on the wrong patches; a comparator
-    that only looked at node positions would have passed both.
+  * `.bnd` — the face count per patch name, each face's own coordinates, AND the
+    per-segment group PARTITION (not the group numbers, which are handed out in
+    encounter order). The two most expensive junction bugs this repo has had
+    produced a geometrically perfect mesh with the boundary conditions on the
+    wrong patches; a comparator that only looked at node positions would have
+    passed both. The partition is what carries a boundary edge's source segment
+    to the solver, so without it a defect confined to that key stayed invisible
+    while every name, count and coordinate matched.
   * `.cel` — the connectivity the SOLVER consumes, which is not the `.vtk`. The
     `.cel` writer owns a winding normalisation, a degenerate-cell skip and a
     duplicate-cell dedupe that exist nowhere else, so a change confined to any of
@@ -200,17 +204,27 @@ def _fmt(p: tuple[float, float]) -> str:
 
 
 def _patch_faces(stem: str, verts: dict, bad: dict
-                 ) -> tuple[dict[str, int], list[list[str]]]:
-    """(faces per patch name, one canonical entry per boundary face).
+                 ) -> tuple[dict[str, int], list[list[str]], list[list[str]]]:
+    """(faces per patch name, one entry per boundary face, the group partition).
 
     A face is keyed by the coordinates of its own vertices, formatted, so it
     survives the renumbering that makes byte comparison useless. The `.bnd`
-    layout is `id v1 v2 v3 v4 region segm_no name`, with 0 padding the unused
-    vertex slots of a 2D (two-node) face."""
+    layout the exporter writes is `bndId v1 v2 0 0 groupId 0 bcName`, the two
+    zeros padding the unused vertex slots of a 2D (two-node) face.
+
+    `groupId` is the third thing compared, and it is NOT compared as a number:
+    it is handed out in encounter order (`nextGroup++`), so the value itself
+    moves with the numbering that already varies run to run. What is stable, and
+    what the group exists to express, is the PARTITION — which faces share a
+    group. That is what carries `recordBoundaryEdge`'s source-segment key
+    through to the solver, so without it a defect confined to that key was
+    invisible here: every patch could keep its name, its face count and its
+    coordinates while the per-segment grouping silently collapsed."""
     counts: dict[str, int] = {}
     faces: list[list[str]] = []
+    groups: dict[tuple[str, str], list[str]] = {}
     if not os.path.exists(stem + ".bnd") or not verts:
-        return counts, faces
+        return counts, faces, []
     with open(stem + ".bnd") as f:
         for line in f:
             s = line.split()
@@ -222,14 +236,17 @@ def _patch_faces(stem: str, verts: dict, bad: dict
                 bad["bnd"] = bad.get("bnd", 0) + 1
                 _log.warning("unparsable .bnd row in %s: %r", stem, line.rstrip())
                 continue
-            name = s[-1]
+            name, gid = s[-1], s[5]
             pts = [verts[i] for i in ids if i in verts]
             if not pts:
                 continue
             counts[name] = counts.get(name, 0) + 1
-            faces.append([name] + sorted(_fmt(p) for p in pts))
+            key = ";".join(sorted(_fmt(p) for p in pts))
+            faces.append([name, key])
+            groups.setdefault((name, gid), []).append(key)
     faces.sort()
-    return counts, faces
+    partition = sorted([name] + sorted(keys) for (name, _g), keys in groups.items())
+    return counts, faces, partition
 
 
 def _cel_cells(stem: str, verts: dict, bad: dict) -> list[list[str]]:
@@ -297,7 +314,7 @@ def _canonical(rc: int, stem: str) -> dict:
             cells.append([kind] + _ring([int(rank[i]) for i in c]))
     cells.sort(key=lambda c: (c[0], len(c), c[1:]))
     verts = _read_vrt(stem + ".vrt", bad)
-    counts, faces = _patch_faces(stem, verts, bad)
+    counts, faces, groups = _patch_faces(stem, verts, bad)
     cel = _cel_cells(stem, verts, bad)
     return {
         "rc": rc,
@@ -311,6 +328,7 @@ def _canonical(rc: int, stem: str) -> dict:
         "cel_cells": cel,
         "patch_counts": counts,
         "patch_faces": faces,
+        "patch_groups": groups,
     }
 
 
@@ -359,7 +377,13 @@ def _diff(ref: dict, new: dict) -> tuple[list[str], float]:
                    f"solver reads, not the .vtk")
     if ref["patch_counts"] != new["patch_counts"]:
         out.append(f"patch face counts: {ref['patch_counts']} -> {new['patch_counts']}")
-    elif ref["patch_faces"] != new["patch_faces"]:
+    if ref.get("patch_groups") != new.get("patch_groups"):
+        out.append(f"per-segment boundary GROUPING differs "
+                   f"({len(ref.get('patch_groups', []))} groups -> "
+                   f"{len(new.get('patch_groups', []))}) — this is what carries a "
+                   f"boundary edge's source segment to the solver")
+    if ref["patch_counts"] == new["patch_counts"] and \
+            ref["patch_faces"] != new["patch_faces"]:
         rs = {tuple(f) for f in ref["patch_faces"]}
         ns = {tuple(f) for f in new["patch_faces"]}
         moved = sorted({f[0] for f in (rs - ns) | (ns - rs)})
