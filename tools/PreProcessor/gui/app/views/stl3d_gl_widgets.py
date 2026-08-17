@@ -10,9 +10,9 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import pyqtgraph.opengl as gl
-from OpenGL.GL import (GL_DEPTH_TEST, GL_BLEND, GL_ALPHA_TEST, GL_CULL_FACE,
-                       GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+from app.views.gl_backend import (gl, GL_DEPTH_TEST, GL_BLEND, GL_ALPHA_TEST,
+                                   GL_CULL_FACE, GL_SRC_ALPHA,
+                                   GL_ONE_MINUS_SRC_ALPHA)
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QPushButton,

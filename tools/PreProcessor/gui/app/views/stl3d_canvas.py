@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 import numpy as np
-import pyqtgraph.opengl as gl
+from app.views.gl_backend import gl
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QCheckBox, QLabel,
     QSpinBox,
