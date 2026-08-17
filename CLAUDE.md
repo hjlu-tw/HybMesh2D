@@ -732,3 +732,37 @@ The five canonical roles use their own names as label strings (`needs-triage`, `
 ### Domain docs
 
 Single-context: one root `CONTEXT.md` + `docs/adr/`, both created lazily by `/domain-modeling` rather than upfront. See `docs/agents/domain.md`.
+
+## Architecture backlog: measure the status, never read it
+
+**Do not re-derive the architecture backlog by reading source. Run
+`python3 tools/PreProcessor/tests/arch_probes.py`.** It prints one line per
+candidate — DONE / OPEN / the number that decides it — by re-deriving each from
+the tree, and takes about a second. Reading `docs/architecture_review_2026-08-14.md`
+to find out what is left is the expensive mistake this exists to prevent.
+
+Three artefacts, three jobs, and mixing them up is how the last round went wrong:
+
+- **`docs/architecture_review_2026-08-14.md` — the rationale, FROZEN.** Ten
+  candidates with their `file:line` evidence, deletion test and wins, plus a
+  "genuinely deep — leave these alone" list that is worth reading *before*
+  improving anything in it. It is a snapshot of one day and is **never updated**,
+  which is what keeps it honest. Its line numbers are from `854f53e`; re-measure
+  before quoting one.
+- **`arch_probes.py` — the status.** A candidate is DONE when its probe says so,
+  not when a document says so. When one lands, its probe is superseded by the
+  real gate test that the work leaves behind (`test_sidebar_seam.py`,
+  `test_cpp_linkable_seam.py`, …), and the probe is retired to point at it.
+- **A GitHub issue — the batch in flight.** One issue per batch, in the shape of
+  issue #1: Problem Statement / Solution / User Stories / Implementation
+  Decisions / Acceptance. `/code-review`'s Spec axis reads it, and closing it is
+  the status update.
+
+The reason for the split is measured, not theoretical. Reviewing the 2026-08-14
+document on 2026-08-17 recommended a batch of three, and **two of the three were
+already finished** — including the document's own top recommendation, which had
+landed in six commits (`68d3945`..`23bbe34`) the document could not know about.
+The wrong signal was read as noise: a hand-count of the leak the seam removed came
+back at 148 where the document said 389, and that gap was explained away as a
+narrow regex instead of read as evidence the work was done. A status written down
+decays silently; a status computed cannot.
