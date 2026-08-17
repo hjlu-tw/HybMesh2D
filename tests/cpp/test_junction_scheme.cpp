@@ -156,7 +156,32 @@ int main() {
         CHECK_NEAR(c.decisions[0].mult, 1.0, 1e-12, "...at full height");
         CHECK(c.decisions[0].thetaDeg < 0.0,
               "...reporting no angle, so the caller emits no trace line for it");
-        CHECK(c.warnings.empty(), "...and warns about nothing");
+        CHECK(c.warnings.empty(), "...and raises no SHARP-WEDGE warning");
+
+        // It is reported as an isolated corner, though (issue #2). The run still
+        // fails the same way; what changes is that the message can name this
+        // corner instead of blaming the domain outline.
+        CHECK(c.isolatedCorners.size() == 1, "...but IS reported as an isolated corner");
+        if (c.isolatedCorners.size() == 1) {
+            CHECK_NEAR(c.isolatedCorners[0].x, 0.0, 1e-12, "...at its own position (x)");
+            CHECK_NEAR(c.isolatedCorners[0].y, 0.0, 1e-12, "...(y)");
+        }
+    }
+
+    // --- 4b. a one-sided junction is NOT an isolated corner -------------------
+    // The distinguishing condition is BOTH neighbours skipping, and every other
+    // case in the suite has exactly one. Without this the advisory would fire on
+    // every ordinary junction, which is worse than not having it.
+    for (double th : {60.0, 85.0, 95.0, 120.0, 271.0, 316.0}) {
+        CHECK(classifyJunctions(ringAt(th), params()).isolatedCorners.empty(),
+              "a junction with one BL neighbour is not reported as isolated");
+    }
+    {
+        // Neither is a node that grows no layer itself, nor a plain interior one.
+        std::vector<JunctionNode> ring = ringAt(85.0);
+        ring[0].isJunction = false;
+        CHECK(classifyJunctions(ring, params()).isolatedCorners.empty(),
+              "...and a node that is not a junction at all is never reported");
     }
 
     // --- 5. the corner may belong to the neighbouring segment -----------------

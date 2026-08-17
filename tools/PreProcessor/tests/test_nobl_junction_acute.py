@@ -627,6 +627,15 @@ def main():
           not os.path.exists(stem + ".vtk"))
     check("...having reached the junction stage at all (the tally is printed)",
           "BL/no-BL junctions" in log)
+    # issue #2: the failure was honest but unactionable — "empty far-field mesh"
+    # names the symptom and points at the domain outline, not at the corner that
+    # caused it. The advisory now names the corner; the exit code is unchanged.
+    check("...and NAMING the corner responsible, not just the empty mesh",
+          "Isolated BL corner at" in log)
+    check(f"...with its actual coordinates ({iso[0]:.4g}, {iso[1]:.4g}), so the user "
+          f"can find it on the geometry",
+          any(f"{iso[0]:.6g}" in ln and f"{iso[1]:.6g}" in ln
+              for ln in log.splitlines() if "Isolated BL corner" in ln))
 
     print()
     print("RESULT:", "ALL PASS" if not failures else f"{len(failures)} FAILED: {failures}")

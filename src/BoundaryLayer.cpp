@@ -436,6 +436,27 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                               << ") theta=" << d.thetaDeg << " case=" << d.caseId
                               << " dir(" << d.dir.x << "," << d.dir.y << ")" << std::endl;
             }
+            // An isolated BL corner cannot be graded, and the run will end with
+            // "empty far-field mesh" — a message that names the symptom and not
+            // the corner. Name it here, while it is still identifiable. Advisory
+            // only: nothing is auto-corrected and the run proceeds to its usual
+            // failure (see issue #2 for why refusing earlier is deliberately not
+            // done).
+            for (const Point2D& p : plan.isolatedCorners) {
+                LOG_WARN("Isolated BL corner at (" << p.x << ", " << p.y
+                         << "): BOTH neighbouring segments have No-BL set, so this "
+                         "node grows a full-height column with nothing beside it. "
+                         "The layer front then runs out along that column and back "
+                         "down the same one, leaving Gmsh a zero-width spike to "
+                         "triangulate — this run will almost certainly end with "
+                         "'empty far-field mesh (0 triangles)', and THIS corner is "
+                         "the reason, not the domain outline. Fix it by letting one "
+                         "of the two neighbouring segments grow a BL, by marking "
+                         "this segment No-BL as well, or by splitting the geometry "
+                         "so the corner is a sharp feature (a sharp corner is "
+                         "rescued back to BL growth automatically).");
+            }
+
             // The wedge warning is returned as data so the threshold is testable;
             // the message is user-facing prose about config keys and belongs here.
             for (const hybmesh::JunctionWarning& w : plan.warnings) {

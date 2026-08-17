@@ -81,6 +81,23 @@ struct JunctionWarning {
 struct JunctionClassification {
     std::vector<JunctionDecision> decisions;  // parallel to the input ring
     std::vector<JunctionWarning>  warnings;   // in ring order; usually empty
+    // Positions of ISOLATED BL corners — nodes whose BOTH neighbours grow no
+    // layer. Such a node grows a full-height column but registers no lateral
+    // one, so the final front runs out along that column and back down the same
+    // one; Gmsh gets a hole boundary that doubles back and triangulates nothing,
+    // and the run ends at "empty far-field mesh ... the domain loop likely
+    // failed to close". That message names the symptom, at the wrong layer, and
+    // gives the user nothing to act on — so the corner is reported here and the
+    // caller names its coordinates.
+    //
+    // Position ONLY: the wedge warning's angle, squeezed length and blend reach
+    // are meaningless for this case, and borrowing that struct to carry three
+    // dead fields is how a record starts lying about what it knows.
+    //
+    // Advisory. The run still fails, with the same exit code as before — that
+    // failure is honest, and refusing earlier would only stand in the way of one
+    // day giving this node a lateral column so it meshes.
+    std::vector<Point2D> isolatedCorners;
 };
 
 // Bin every junction node of one front from the flow-facing included angle theta

@@ -29,6 +29,7 @@ JunctionClassification classifyJunctions(const std::vector<JunctionNode>& ring,
         // so thetaDeg stays negative and the caller emits no trace line for it.
         if (prevSkip && nextSkip) {
             out.decisions[i] = JunctionDecision{2, ring[i].baseN, 1.0, -1.0};
+            out.isolatedCorners.push_back(ring[i].pos);
             continue;
         }
 
