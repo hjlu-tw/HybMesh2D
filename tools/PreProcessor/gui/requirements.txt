@@ -10,6 +10,16 @@
 # --- GUI toolkit ---
 PyQt6>=6.5.0,<7.0.0
 pyqtgraph>=0.13.0,<0.14.0
+# PyOpenGL: pyqtgraph.opengl imports it, and views/stl3d_canvas.py +
+# stl3d_gl_widgets.py import THAT at module load — which app/views/main_window.py
+# pulls in unconditionally. So without this package `from app.controller import
+# AppController` raises ModuleNotFoundError and every test that constructs the
+# app dies, whether or not it goes near the 3D view. It went undeclared because
+# the developer machine happened to have it; the first CI run that ever executed
+# the suite failed 33 of 69 tests on it, all with the identical traceback.
+# (`OpenGL.GL` resolves libGL through ctypes at import, so the runner also needs
+# the system libgl1 — the test job installs it.)
+PyOpenGL>=3.1.0,<4.0.0
 
 # --- Numerics ---
 numpy>=1.20.0,<2.0.0
