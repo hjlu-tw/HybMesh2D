@@ -13,6 +13,11 @@ name: CI
 #            the tests that need the compiled binaries actually execute instead of
 #            self-skipping. Without that, a GUI<->C++ interface change could break
 #            the pipeline while CI stayed green.
+#
+# Every job carries a timeout-minutes. GitHub's default is 360, so one hung test
+# would burn six hours of runner time in silence; the suite's own longest wait is
+# a 540 s watchdog, and its first successful Linux run took 13 min end to end, so
+# 30 leaves room without leaving a hang unbounded.
 
 on:
   push:
@@ -41,6 +46,7 @@ jobs:
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,6 +71,7 @@ jobs:
   build:
     name: Build C++ (-Werror)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -113,6 +120,7 @@ jobs:
   test:
     name: Headless regression suite
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build
     steps:
       - uses: actions/checkout@v4
