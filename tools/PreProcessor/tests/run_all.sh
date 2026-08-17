@@ -39,11 +39,17 @@ done
 # ctest rather than by running the executable directly: going around the
 # registration would let a test that CMake never registered pass silently, which
 # is exactly what test_cpp_linkable_seam.py check 6 exists to prevent.
+#
+# ctest is invoked by cd-ing into the build tree rather than with `--test-dir`,
+# which needs CMake >= 3.20 while this project declares 3.10. With the flag, an
+# older ctest rejects the argument, the `-N` listing comes back empty, and the
+# loop below contributes ZERO tests while the guard above still passes — a
+# silent hole rather than a skip.
 BUILD_DIR="$(cd ../../.. && pwd)/build"
 if [ -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
     while read -r t; do
         [ -n "$t" ] || continue
-        if ctest --test-dir "$BUILD_DIR" -R "^${t}\$" --output-on-failure \
+        if (cd "$BUILD_DIR" && ctest -R "^${t}\$" --output-on-failure) \
                 >/tmp/hybmesh_test.$$.log 2>&1; then
             echo "PASS  $t (C++)"
             pass=$((pass + 1))
@@ -53,7 +59,7 @@ if [ -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
             fail=$((fail + 1))
             failed+=("$t (C++)")
         fi
-    done < <(ctest --test-dir "$BUILD_DIR" -N 2>/dev/null |
+    done < <(cd "$BUILD_DIR" && ctest -N 2>/dev/null |
              sed -n 's/^ *Test *#[0-9]*: *//p')
 else
     echo "SKIP  C++ unit tests (no build tree at $BUILD_DIR — run ./build.sh)"

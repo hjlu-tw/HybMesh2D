@@ -124,7 +124,7 @@ target_include_directories(HybMeshUtils INTERFACE include)
 # 用到 Mesh 或 gmsh，那支測試會在連結期就失敗。grep 抓得到 include，連結器抓得到
 # use，兩者互補，缺一不可。
 # 新增的 src/*.cpp 預設就該落在這裡；要成為重型檔必須具名進
-# tools/PreProcessor/tests/test_cpp_linkable_seam.py 的 HEAVY_SOURCES 並附理由。
+# tools/PreProcessor/tests/test_cpp_pure_layer.py 的 HEAVY_SOURCES 並附理由。
 add_library(hybmesh_pure STATIC
     src/JunctionScheme.cpp
 )

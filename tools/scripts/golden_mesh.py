@@ -10,11 +10,19 @@ order (rotated to a fixed starting point and direction, so winding does not
 matter), and the cell list sorted. Two runs of the same source then agree
 exactly, and a real change still shows up.
 
-It also compares the STAR-CD `.bnd` patches — the face count per patch name AND
-each face's own coordinates — which the mesh geometry alone cannot see. The two
-most expensive junction bugs this repo has had produced a geometrically perfect
-mesh with the boundary conditions on the wrong patches; a comparator that only
-looked at node positions would have passed both.
+It also compares the STAR-CD files, and both of them for a reason:
+
+  * `.bnd` — the face count per patch name AND each face's own coordinates. The
+    two most expensive junction bugs this repo has had produced a geometrically
+    perfect mesh with the boundary conditions on the wrong patches; a comparator
+    that only looked at node positions would have passed both.
+  * `.cel` — the connectivity the SOLVER consumes, which is not the `.vtk`. The
+    `.cel` writer owns a winding normalisation, a degenerate-cell skip and a
+    duplicate-cell dedupe that exist nowhere else, so a change confined to any of
+    them was invisible here until a review of this tool pointed it out. A
+    triangle is written as `v1 v2 v3 v3` and which vertex repeats follows the
+    element's node order, so the duplicate is collapsed before comparing —
+    but the winding is NOT, since normalising it away would hide the flip.
 
 Boundary faces are keyed by their coordinates rather than by vertex id, because
 `.bnd` ids index the `.vrt` numbering while cells index the `.vtk` numbering,
@@ -50,7 +58,13 @@ import tempfile
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
-_BIN = os.path.join(_REPO, "build", "HybMesh2D")
+# HYBMESH_GOLDEN_BIN points the capture at a DIFFERENT build of the mesher. That
+# is what makes a behaviour-preserving claim checkable across a refactor: extract
+# the starting commit (`git archive`, which touches no git state), build it
+# elsewhere, capture the baseline from THAT binary, then compare with this tree's.
+# Without it a baseline can only ever be captured from the working tree, i.e.
+# after the change it is supposed to be evidence about.
+_BIN = os.environ.get("HYBMESH_GOLDEN_BIN") or os.path.join(_REPO, "build", "HybMesh2D")
 _LIB = os.path.join(_REPO, "build")
 _GEOM = os.path.join(_REPO, "examples", "geometries")
 _CONF = os.path.join(_REPO, "config", "Background_para.dat")
@@ -61,6 +75,14 @@ sys.path.insert(0, os.path.join(_REPO, "tools", "PreProcessor", "gui"))
 import numpy as np                                    # noqa: E402
 import test_nobl_junction_acute as junc               # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
+from app.services.logging_setup import get_logger     # noqa: E402
+
+_log = get_logger(__name__)
+
+# The junction cases run through the test module's own launcher, so it has to
+# resolve the same binary this tool does — otherwise HYBMESH_GOLDEN_BIN would
+# silently apply to two of the nine cases.
+junc._BIN = _BIN
 
 # Relative tolerance on a node coordinate.
 #
@@ -149,7 +171,14 @@ def _ring(idx: list[int]) -> list[int]:
     return best
 
 
-def _read_vrt(path: str) -> dict[int, tuple[float, float]]:
+def _read_vrt(path: str, bad: dict) -> dict[int, tuple[float, float]]:
+    """id -> (x, y) from a STAR-CD vertex file.
+
+    A row this cannot parse is COUNTED, not silently dropped: every downstream
+    comparison resolves through this table, so a swallowed row would quietly
+    shrink what gets compared and the case would still print SAME. The count
+    travels into the canonical form, which makes a change in it a diff in its own
+    right."""
     verts: dict[int, tuple[float, float]] = {}
     if not os.path.exists(path):
         return verts
@@ -161,18 +190,23 @@ def _read_vrt(path: str) -> dict[int, tuple[float, float]]:
             try:
                 verts[int(s[0])] = (float(s[1]), float(s[2]))
             except ValueError:
-                continue
+                bad["vrt"] = bad.get("vrt", 0) + 1
+                _log.warning("unparsable .vrt row in %s: %r", path, line.rstrip())
     return verts
 
 
-def _patch_faces(stem: str) -> tuple[dict[str, int], list[list[str]]]:
+def _fmt(p: tuple[float, float]) -> str:
+    return f"{p[0]:.9e},{p[1]:.9e}"
+
+
+def _patch_faces(stem: str, verts: dict, bad: dict
+                 ) -> tuple[dict[str, int], list[list[str]]]:
     """(faces per patch name, one canonical entry per boundary face).
 
     A face is keyed by the coordinates of its own vertices, formatted, so it
     survives the renumbering that makes byte comparison useless. The `.bnd`
     layout is `id v1 v2 v3 v4 region segm_no name`, with 0 padding the unused
     vertex slots of a 2D (two-node) face."""
-    verts = _read_vrt(stem + ".vrt")
     counts: dict[str, int] = {}
     faces: list[list[str]] = []
     if not os.path.exists(stem + ".bnd") or not verts:
@@ -185,36 +219,96 @@ def _patch_faces(stem: str) -> tuple[dict[str, int], list[list[str]]]:
             try:
                 ids = [int(v) for v in s[1:5]]
             except ValueError:
+                bad["bnd"] = bad.get("bnd", 0) + 1
+                _log.warning("unparsable .bnd row in %s: %r", stem, line.rstrip())
                 continue
             name = s[-1]
             pts = [verts[i] for i in ids if i in verts]
             if not pts:
                 continue
             counts[name] = counts.get(name, 0) + 1
-            faces.append([name] + sorted(f"{x:.9e},{y:.9e}" for x, y in pts))
+            faces.append([name] + sorted(_fmt(p) for p in pts))
     faces.sort()
     return counts, faces
 
 
+def _cel_cells(stem: str, verts: dict, bad: dict) -> list[list[str]]:
+    """The STAR-CD connectivity, canonicalised by coordinate.
+
+    This is the file the SOLVER consumes, and it is not the `.vtk`: `.cel` owns a
+    winding normalisation, a degenerate-cell skip and a duplicate-cell dedupe that
+    exist nowhere else (see the exporter). A comparator that only read the `.vtk`
+    could report SAME while the grid actually handed to the solver had changed —
+    which is what a review of this tool found.
+
+    Layout: `cellId v1 v2 v3 v4 1 1`, with a TRIANGLE written as `v1 v2 v3 v3`.
+    Which vertex is repeated depends on the element's node ORDER, which is free to
+    vary between runs, so consecutive duplicates are collapsed (with wrap) to
+    recover the polygon before comparing. The ring is then rotated to a fixed
+    start but its DIRECTION is kept, unlike the `.vtk` cells: winding here is
+    normalised by the exporter, so a flip is a real change and must not be
+    canonicalised away."""
+    cells: list[list[str]] = []
+    if not os.path.exists(stem + ".cel") or not verts:
+        return cells
+    with open(stem + ".cel") as f:
+        for line in f:
+            s = line.split()
+            if len(s) < 5:
+                continue
+            try:
+                ids = [int(v) for v in s[1:5]]
+            except ValueError:
+                bad["cel"] = bad.get("cel", 0) + 1
+                _log.warning("unparsable .cel row in %s: %r", stem, line.rstrip())
+                continue
+            pts = [_fmt(verts[i]) for i in ids if i in verts]
+            ring = [p for k, p in enumerate(pts) if p != pts[k - 1]] if pts else []
+            if len(ring) < 3:
+                continue
+            k = ring.index(min(ring))
+            cells.append(ring[k:] + ring[:k])
+    cells.sort()
+    return cells
+
+
 def _canonical(rc: int, stem: str) -> dict:
+    bad: dict = {}
     mesh = VTKMesh.from_file(stem + ".vtk")
     pts = np.asarray(mesh.points, dtype=float).reshape(-1, 2)
     order = np.lexsort((pts[:, 1], pts[:, 0]))
     rank = np.empty(len(order), dtype=np.int64)
     rank[order] = np.arange(len(order))
+    # Coincident nodes make the ranking itself numbering-dependent: lexsort is
+    # stable, so two nodes at the same coordinate keep their ORIGINAL relative
+    # order — and the original numbering is exactly what varies between runs. The
+    # cells would then differ with every coordinate still identical. Count them
+    # and carry the count, so that failure mode announces itself instead of
+    # looking like a real connectivity change.
+    srt = pts[order]
+    coincident = int(np.sum(np.all(srt[1:] == srt[:-1], axis=1))) if len(srt) > 1 else 0
+    if coincident:
+        _log.warning("%s: %d coincident node(s); cell canonicalisation is "
+                     "numbering-dependent there", stem, coincident)
     cells = []
     for kind, group in (("tri", mesh.triangles), ("quad", mesh.quads),
                         ("poly", mesh.polygons)):
         for c in group:
             cells.append([kind] + _ring([int(rank[i]) for i in c]))
     cells.sort(key=lambda c: (c[0], len(c), c[1:]))
-    counts, faces = _patch_faces(stem)
+    verts = _read_vrt(stem + ".vrt", bad)
+    counts, faces = _patch_faces(stem, verts, bad)
+    cel = _cel_cells(stem, verts, bad)
     return {
         "rc": rc,
         "n_nodes": int(len(pts)),
         "n_cells": len(cells),
+        "n_cel_cells": len(cel),
+        "coincident_nodes": coincident,
+        "malformed_rows": bad,
         "nodes": [[float(x), float(y)] for x, y in pts[order]],
         "cells": cells,
+        "cel_cells": cel,
         "patch_counts": counts,
         "patch_faces": faces,
     }
@@ -239,9 +333,10 @@ def _diff(ref: dict, new: dict) -> tuple[list[str], float]:
             out.append(f"run outcome changed: ref={ref.get('error', ref.get('rc'))} "
                        f"new={new.get('error', new.get('rc'))}")
         return out, worst
-    for key in ("rc", "n_nodes", "n_cells"):
-        if ref[key] != new[key]:
-            out.append(f"{key}: {ref[key]} -> {new[key]}")
+    for key in ("rc", "n_nodes", "n_cells", "n_cel_cells", "coincident_nodes",
+                "malformed_rows"):
+        if ref.get(key) != new.get(key):
+            out.append(f"{key}: {ref.get(key)} -> {new.get(key)}")
     if ref["n_nodes"] == new["n_nodes"]:
         a = np.asarray(ref["nodes"], dtype=float)
         b = np.asarray(new["nodes"], dtype=float)
@@ -256,6 +351,12 @@ def _diff(ref: dict, new: dict) -> tuple[list[str], float]:
         rs, ns = {tuple(c) for c in ref["cells"]}, {tuple(c) for c in new["cells"]}
         out.append(f"connectivity differs ({len(rs - ns)} cells only in ref, "
                    f"{len(ns - rs)} only in new)")
+    if ref.get("cel_cells") != new.get("cel_cells"):
+        rs = {tuple(c) for c in ref.get("cel_cells", [])}
+        ns = {tuple(c) for c in new.get("cel_cells", [])}
+        out.append(f"STAR-CD connectivity differs ({len(rs - ns)} cells only in "
+                   f"ref, {len(ns - rs)} only in new) — this is the grid the "
+                   f"solver reads, not the .vtk")
     if ref["patch_counts"] != new["patch_counts"]:
         out.append(f"patch face counts: {ref['patch_counts']} -> {new['patch_counts']}")
     elif ref["patch_faces"] != new["patch_faces"]:

@@ -3,8 +3,12 @@ name: CI
 # Three gates:
 #   lint   — ruff over the GUI, using tools/PreProcessor/gui/ruff.toml (the same
 #            command a developer runs locally).
-#   build  — the C++ (HybMesh2D + surface_resampler) compiled with -Werror. The
-#            CMakeLists deliberately leaves -Werror to CI; this is where it lives.
+#   build  — the C++ (HybMesh2D + surface_resampler) compiled with -Werror, then
+#            the C++ unit tests via ctest. The CMakeLists deliberately leaves
+#            -Werror to CI; this is where it lives. ctest runs HERE and not in the
+#            test job because the test job downloads two binaries and has no build
+#            tree, so there is no CTestTestfile.cmake for ctest to read — and a
+#            failing unit test is a build-gate concern anyway.
 #   test   — the headless GUI/model regression suite, run AFTER the C++ build so
 #            the tests that need the compiled binaries actually execute instead of
 #            self-skipping. Without that, a GUI<->C++ interface change could break
@@ -16,6 +20,7 @@ on:
       - "tools/PreProcessor/**"
       - "src/**"
       - "include/**"
+      - "tests/**"
       - "CMakeLists.txt"
       - "build.sh"
       - "config/pipeline/**"
@@ -25,6 +30,7 @@ on:
       - "tools/PreProcessor/**"
       - "src/**"
       - "include/**"
+      - "tests/**"
       - "CMakeLists.txt"
       - "build.sh"
       - "config/pipeline/**"
@@ -72,6 +78,20 @@ jobs:
           pip install "gmsh>=4.15,<4.16"
       - name: Configure + build with warnings as errors
         run: ./build.sh Release -DCMAKE_CXX_FLAGS=-Werror
+
+      # The C++ unit tests. Built by default (HYBMESH_BUILD_TESTS=ON), so the
+      # build step above already produced them and -Werror covered the test TUs
+      # too. The loader path comes from the repo's own helper rather than a
+      # hardcoded pip prefix: hybmesh_core's tests link libgmsh, and the baked
+      # rpath is only reliably right on the machine that did the build (see the
+      # note in tools/scripts/gmsh_lib_dir.sh). The decision-layer tests link no
+      # dylib at all and would pass without this.
+      - name: Run the C++ unit tests
+        run: |
+          . tools/scripts/gmsh_lib_dir.sh
+          hybmesh_export_gmsh_lib_path
+          cd build && ctest --output-on-failure
+
       - name: Upload the binaries for the test job
         uses: actions/upload-artifact@v4
         with:

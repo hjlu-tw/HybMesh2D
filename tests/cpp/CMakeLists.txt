@@ -6,7 +6,7 @@
 # sources. Compiling src/*.cpp into the test executable would "work" and would
 # quietly reintroduce exactly what this stage removed — a second build of the
 # implementation, testable but not the one the binary runs.
-# tests/../test_cpp_linkable_seam.py enforces it.
+# tools/PreProcessor/tests/test_cpp_linkable_seam.py enforces it (checks 5 and 7).
 
 # check.hpp only needs to be found; nothing to compile.
 add_library(hybmesh_test_check INTERFACE)

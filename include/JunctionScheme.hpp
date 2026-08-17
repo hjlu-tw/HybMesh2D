@@ -52,10 +52,15 @@ struct JunctionNode {
 // The three config scalars the binning actually uses, plus the layer's total
 // height. Deliberately NOT `BLParams`: naming them is what makes the narrowness
 // visible, and it keeps `Config.hpp`'s .dat parser out of the decision layer.
+//
+// The members are zeroed rather than pre-filled with the real defaults. Those
+// live in Config.hpp and every caller supplies all four, so a copy here would be
+// a THIRD place the numbers are written — free to drift from the config parser
+// with nothing to notice.
 struct JunctionParams {
-    double angleC2 = 270.0;          // BL_JUNCTION_ANGLE_C2: case 2 / case 3 boundary
-    double angleC3 = 315.0;          // BL_JUNCTION_ANGLE_C3: case 3 / case 4 boundary
-    double concaveInfluence = 2.5;   // BL_CONCAVE_INFLUENCE_MULTIPLIER
+    double angleC2 = 0.0;            // BL_JUNCTION_ANGLE_C2: case 2 / case 3 boundary
+    double angleC3 = 0.0;            // BL_JUNCTION_ANGLE_C3: case 3 / case 4 boundary
+    double concaveInfluence = 0.0;   // BL_CONCAVE_INFLUENCE_MULTIPLIER
     double dTotal = 0.0;             // the BL's total perpendicular height
 };
 

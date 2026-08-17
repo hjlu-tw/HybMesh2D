@@ -62,8 +62,14 @@ int main() {
     CHECK(rec.bc == "inlet", "the BC name survives the round trip");
     CHECK(rec.segKey == Mesh::makeSegKey(2, 7),
           "the source segment key survives WITH it");
-    CHECK(rec.segKey == 2000007,
-          "makeSegKey encodes (geomId, segId) as geomId*1e6 + segId");
+    // Deliberately NOT asserting the literal encoding (it was `== 2000007`
+    // here): how makeSegKey packs the pair is internal, and pinning it is the
+    // "assert how it arrived there" the spec for this interface rules out. What
+    // callers depend on is that distinct segments stay distinguishable.
+    CHECK(Mesh::makeSegKey(2, 7) != Mesh::makeSegKey(7, 2),
+          "the key distinguishes (geom 2, seg 7) from (geom 7, seg 2)");
+    CHECK(Mesh::makeSegKey(2, 7) != Mesh::makeSegKey(2, 8),
+          "...and two segments of one geometry from each other");
 
     // --- 3. the key is the unordered node pair --------------------------------
     // Callers reach the same edge from either owning cell, so (v1,v2) and

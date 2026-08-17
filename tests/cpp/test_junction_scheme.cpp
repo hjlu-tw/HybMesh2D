@@ -138,9 +138,14 @@ int main() {
 
     // --- 4. an isolated BL corner keeps its perpendicular ---------------------
     // Both neighbours no-BL: no angle can be measured across the corner, so the
-    // node must keep the perpendicular the base detection already chose. This is
-    // also the branch the mesh-level test cannot check, because that case
-    // produces no mesh at all (it exits before writing one).
+    // node must keep the perpendicular the base detection already chose.
+    //
+    // The mesh-level suite is NOT blind here, and measurement said so: breaking
+    // this branch is caught by test_nobl_junction_acute.py and by the golden set
+    // too, because the case's sanctioned outcome is a clean rc=6 with no mesh and
+    // the break turns it into a successful run. What only this test can check is
+    // the DIRECTION and the multiplier — with no mesh written there is nothing
+    // downstream to measure them on.
     {
         std::vector<JunctionNode> ring = ringAt(85.0);
         ring[3].skipBL = true;                       // now BOTH neighbours are no-BL
