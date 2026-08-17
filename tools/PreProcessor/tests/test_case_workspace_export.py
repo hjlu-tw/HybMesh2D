@@ -356,9 +356,18 @@ check(os.path.isfile(back.input_bnd_file),
 shutil.rmtree(tmp, ignore_errors=True)
 
 _wd.cancel()
+# os._exit, like the other 41 scripts here: this test builds the main window,
+# and Qt's teardown under the offscreen platform crashes on a machine with no GPU
+# ("QOpenGLWidget is not supported on this platform"). Every check passed and the
+# script's own result was 0, yet the process exited non-zero and CI read it as a
+# failing test. Skipping interpreter finalization is what the rest of the suite
+# already does for exactly this.
 if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED")
     for m in _FAILS:
         print("  - " + m)
-    sys.exit(1)
+    sys.stdout.flush()
+    os._exit(1)
 print("\nRESULT: ALL PASS")
+sys.stdout.flush()
+os._exit(0)

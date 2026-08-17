@@ -98,4 +98,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # os._exit, like the other 41 scripts here: Qt's teardown under the offscreen
+    # platform crashes without a GPU, so a run whose checks all passed still
+    # exited non-zero and CI read it as a failure.
+    _rc = main()
+    sys.stdout.flush()
+    os._exit(_rc)

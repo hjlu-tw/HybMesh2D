@@ -26,7 +26,13 @@ for t in "${scripts[@]}"; do
         echo "PASS  $t"
         pass=$((pass + 1))
     else
-        echo "FAIL  $t"
+        # Report the exit code, not just "FAIL". A test whose own checks all pass
+        # can still exit non-zero — Qt's teardown under the offscreen platform
+        # crashes on a machine with no GPU, which is why 41 of these scripts end
+        # in os._exit(). Without the code, that case reads as a failing assertion
+        # and sends you looking in the wrong place; 139 says "signal 11 at exit"
+        # at a glance.
+        echo "FAIL  $t (exit $?)"
         sed 's/^/    | /' /tmp/hybmesh_test.$$.log | tail -20
         fail=$((fail + 1))
         failed+=("$t")
