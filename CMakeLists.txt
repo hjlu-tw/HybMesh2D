@@ -89,6 +89,7 @@ message(STATUS "HybMesh version ${HYBMESH_VERSION} (git ${HYBMESH_GIT_SHA})")
 set(GMSH_ROOT "" CACHE PATH "Root of a Gmsh SDK install (contains include/ and lib/)")
 set(GMSH_PY_INCLUDE "")
 set(GMSH_PY_LIB "")
+set(GMSH_PY_LIBFILE "")
 find_program(HYBMESH_PYTHON3 NAMES python3 python)
 if(HYBMESH_PYTHON3)
     execute_process(
@@ -103,9 +104,13 @@ if(HYBMESH_PYTHON3)
         if(_gmsh_inc_line)
             string(REPLACE "INCLUDE=" "" GMSH_PY_INCLUDE "${_gmsh_inc_line}")
         endif()
-        string(REGEX MATCH "LIB=[^\n]*" _gmsh_lib_line "${_gmsh_sdk_out}")
+        string(REGEX MATCH "\nLIB=[^\n]*" _gmsh_lib_line "\n${_gmsh_sdk_out}")
         if(_gmsh_lib_line)
-            string(REPLACE "LIB=" "" GMSH_PY_LIB "${_gmsh_lib_line}")
+            string(REPLACE "\nLIB=" "" GMSH_PY_LIB "${_gmsh_lib_line}")
+        endif()
+        string(REGEX MATCH "LIBFILE=[^\n]*" _gmsh_libfile_line "${_gmsh_sdk_out}")
+        if(_gmsh_libfile_line)
+            string(REPLACE "LIBFILE=" "" GMSH_PY_LIBFILE "${_gmsh_libfile_line}")
         endif()
         message(STATUS "Gmsh SDK via the Python wheel: "
                        "include='${GMSH_PY_INCLUDE}' lib='${GMSH_PY_LIB}'")
@@ -125,9 +130,29 @@ find_library(GMSH_LIBRARY NAMES gmsh gmsh.4.15
         ${GMSH_PY_LIB}
         /usr/local/lib
         /opt/homebrew/lib)
+# On Linux the wheel ships `lib/libgmsh.so.4.15` and NO unversioned
+# `libgmsh.so` symlink, so find_library's NAMES (which become `libgmsh.so` and
+# `libgmsh.4.15.so`) match nothing. macOS ships `libgmsh.4.15.dylib`, which
+# `gmsh.4.15` does match — which is why the build worked on the developer's
+# machine and nowhere else, with CI red from the day the workflow was added.
+# The resolver already globbed the real file, so use it rather than teaching
+# NAMES another platform's spelling and baking the version in a second place.
+if(NOT GMSH_LIBRARY AND GMSH_PY_LIBFILE AND EXISTS "${GMSH_PY_LIBFILE}")
+    set(GMSH_LIBRARY "${GMSH_PY_LIBFILE}" CACHE FILEPATH "Gmsh library" FORCE)
+    message(STATUS "Gmsh library taken from the wheel: ${GMSH_LIBRARY}")
+endif()
 if(NOT GMSH_INCLUDE_DIR OR NOT GMSH_LIBRARY)
+    # Name WHICH half is missing. The combined message cost a full CI round trip
+    # to diagnose: the headers were found and only the library was not.
+    if(GMSH_INCLUDE_DIR)
+        set(_gmsh_missing "the LIBRARY (headers found at ${GMSH_INCLUDE_DIR})")
+    elseif(GMSH_LIBRARY)
+        set(_gmsh_missing "the HEADERS (library found at ${GMSH_LIBRARY})")
+    else()
+        set(_gmsh_missing "BOTH the headers and the library")
+    endif()
     message(FATAL_ERROR
-        "Gmsh SDK not found (need gmsh.h and libgmsh).\n"
+        "Gmsh SDK not found: missing ${_gmsh_missing}.\n"
         "  Fix options:\n"
         "    * pip3 install --user \"gmsh>=4.15,<4.16\"   (installs the SDK), or\n"
         "    * download the Gmsh SDK and pass -DGMSH_ROOT=/path/to/gmsh-sdk\n"

@@ -5,6 +5,15 @@ Prints up to two lines and exits 0 if it found anything, 1 if not:
 
     INCLUDE=/path/holding/gmsh.h
     LIB=/path/holding/libgmsh.*
+    LIBFILE=/path/holding/libgmsh.so.4.15      (the library FILE itself)
+
+`LIBFILE` exists because the directory is not enough on Linux. The wheel ships
+`lib/libgmsh.so.4.15` with **no unversioned `libgmsh.so` symlink**, and CMake's
+`find_library(NAMES gmsh gmsh.4.15)` looks for `libgmsh.so` / `libgmsh.4.15.so` —
+neither of which is there. macOS ships `libgmsh.4.15.dylib`, which that same
+NAMES list does match, so the build worked on the developer's machine and only
+there. Reporting the resolved file lets the caller skip the guesswork, and it
+does not bake a version number into a second place.
 
 Why this exists as its own file: the pip wheel is how this project's own
 instructions AND its CI install Gmsh, and its prefix is different on every
@@ -57,23 +66,27 @@ def _roots():
 
 
 def _find(patterns):
+    """(directory, first matching file) for the first hit, or ("", "")."""
     for root in _roots():
         for sub in ("", "include", "lib", os.path.join("..", "include"),
                     os.path.join("..", "lib")):
             d = os.path.normpath(os.path.join(root, sub))
             for pat in patterns:
-                if glob.glob(os.path.join(d, pat)):
-                    return d
-    return ""
+                hits = sorted(glob.glob(os.path.join(d, pat)))
+                if hits:
+                    return d, hits[0]
+    return "", ""
 
 
 def main():
-    inc = _find(["gmsh.h"])
-    lib = _find(["libgmsh.*", "libgmsh*.dylib", "libgmsh*.so*", "gmsh.lib"])
+    inc, _ = _find(["gmsh.h"])
+    lib, libfile = _find(["libgmsh.*", "libgmsh*.dylib", "libgmsh*.so*", "gmsh.lib"])
     if inc:
         print("INCLUDE=" + inc)
     if lib:
         print("LIB=" + lib)
+    if libfile:
+        print("LIBFILE=" + libfile)
     return 0 if (inc or lib) else 1
 
 
