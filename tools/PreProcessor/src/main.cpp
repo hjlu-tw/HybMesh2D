@@ -75,11 +75,20 @@ private:
         if (isAl(expression[pos])) {
             size_t s = pos; while (pos < expression.length() && isAlnum(expression[pos])) pos++;
             std::string n = expression.substr(s, pos - s);
-            if (n == "x") return xV; if (n == "t") return tV; if (n == "pi") return M_PI;
+            // One statement per line: GCC's -Wmisleading-indentation reads a
+            // second `if` sharing a line with the first as being guarded by it,
+            // and CI builds with -Werror. Behaviour is unchanged.
+            if (n == "x") return xV;
+            if (n == "t") return tV;
+            if (n == "pi") return M_PI;
             skip(); if (pos < expression.length() && expression[pos] == '(') {
                 pos++; double a = parseExpression(); if (pos < expression.length() && expression[pos] == ')') pos++;
-                if (n == "sin") return std::sin(a); if (n == "cos") return std::cos(a); if (n == "tan") return std::tan(a);
-                if (n == "exp") return std::exp(a); if (n == "log") return std::log(a); if (n == "sqrt") return std::sqrt(a);
+                if (n == "sin") return std::sin(a);
+                if (n == "cos") return std::cos(a);
+                if (n == "tan") return std::tan(a);
+                if (n == "exp") return std::exp(a);
+                if (n == "log") return std::log(a);
+                if (n == "sqrt") return std::sqrt(a);
                 if (n == "abs") return std::abs(a);
             }
         }
