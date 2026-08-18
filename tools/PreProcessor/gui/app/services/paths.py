@@ -20,6 +20,18 @@ from __future__ import annotations
 import os
 import shutil
 
+# The module's own list of what moved here off the Qt side. `test_qt_free_seam`
+# derives its check from this rather than repeating the six names, so the gate
+# cannot describe a different set than the module exports.
+__all__ = [
+    "repo_root",
+    "find_binary_executable",
+    "find_solver_executables",
+    "find_stl3d_binary",
+    "find_mpi_launcher",
+    "is_mpi_binary",
+]
+
 
 def repo_root() -> str:
     """Absolute path to the repository root (the HybMesh project directory).

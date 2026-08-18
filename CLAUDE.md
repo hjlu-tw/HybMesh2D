@@ -666,13 +666,34 @@ name inherits nothing, which is the reverted failure mode staying dead. The fact
 moved **up**, not back down: the model knows which geometry it describes and the
 resampler does not.
 
-Two consequences worth knowing. **The `.meta` is now a PROJECTION of the model, not
-a second home** — `mesh_layers_ctrl._write_sidecar_from_model` rewrites both columns
-after every edit, and it is the command's `refresh_cb`, so an **undo rewrites the
-file too**; reverting the model while the file kept the old column would leave the
+Three consequences worth knowing. **The `.meta` is now a PROJECTION of the model,
+not a second home** — `mesh_layers_ctrl._write_sidecar_from_model` rewrites both
+columns after every edit, and it is the command's `refresh_cb`, so an **undo rewrites
+the file too**; reverting the model while the file kept the old column would leave the
 mesher reading the un-undone value. Every existing reader (the BL dialog's seeding,
 the mesher) therefore needs no change — the file still says what it always said, it
-just no longer decides it. And **the id-set-changed refusal disappeared as a
+just no longer decides it.
+
+**But a projection must be SEEDED first, and forgetting that broke the very thing
+this work exists to fix.** The projection is total (every segment the model holds),
+nothing ever seeded `SegmentModel.bc`/`grow_bl` from an existing `.meta`, and the BC
+dialog reports only NEWLY MINTED labels — so on any geometry whose setup lived only in
+its sidecar (i.e. every case predating the model field) one Mesh-stage BC edit reset
+every *other* segment's label to `-` **and** re-enabled a No-BL wall it had never read.
+Measured: four labels and one flag became one label and none — the same all-`wall`
+export the model field exists to prevent. `_adopt_sidecar_facts` now takes the
+sidecar's values into the model first, **fill-in only** (a fact the model holds wins; a
+fact only the file holds is adopted — the same rule `ib_handoff` applies to a scripted
+phi path), and it runs **BEFORE the undo snapshot**: adopting after it still fixes the
+wipe but makes undo restore the *empty* value, re-wiping the sidecar it just protected.
+Both the presence and the ordering are pinned separately in the gate, each verified by
+injection. Adoption is a migration of the user's existing setup rather than an edit of
+theirs, so it is not undoable and is **named in the log** instead — it also means
+legacy labels start travelling in the workspace and the pipeline script, which is the
+point of the candidate. A caveat that follows: the fill-in rule cannot distinguish
+"the model holds `grow_bl = True`" from "the model is at its default", so a sidecar
+`grow=0` is always adopted; that is right for the migration and would be wrong if the
+file were ever allowed to lag the model, which the projection is what prevents. And **the id-set-changed refusal disappeared as a
 concept**: the old restore had to drop everything when the segment id set moved,
 because it re-applied by id after a subprocess had rewritten the file, and a label
 bound to a segment object cannot be shifted onto its neighbour by inserting an edge.
@@ -682,7 +703,15 @@ that file is how the fact came to live only there. A geometry with **no CAD sess
 behind it** (an external `.dat` browsed in, or one left by a closed tab) has no model
 to hold the fact, so the handler falls back to writing the sidecar directly; that is
 correct for a geometry this app does not resample, and
-`_session_for_geom_path` returning None is a normal outcome rather than an error.
+`_session_for_geom_path` returning None is a normal outcome rather than an error. The
+label→BC-**type** map (`GROUP_BC`) deliberately did **not** move: it is keyed by label
+rather than by segment (one label covers many segments), so there is no segment field
+for it to be a field of, and the resampler carries the trailer through verbatim, so it
+never needed the rescue the label column did. Two knock-on effects of reusing
+`UpdateMultipleSegmentsStateCmd`: a Mesh-stage No-BL toggle now sets
+`is_geometry_modified`, so the CAD tab shows `*` and prompts on close — defensible,
+since the flag is genuinely model state that must be saved to persist, and reverting it
+would stop undo restoring the dirty flag.
 Gated by `tests/test_seg_edit_carryover.py`, which drives the real
 `surface_resampler` (so the wipe cannot quietly stop happening) and the real
 controller handler (so undo, redo and the projection are proven, not asserted).

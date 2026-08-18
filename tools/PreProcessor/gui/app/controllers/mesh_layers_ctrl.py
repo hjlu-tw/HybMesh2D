@@ -5,6 +5,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QListWidgetItem
 from app.utils import block_signals, report_info
 from app.commands.segment_cmds_core import UpdateMultipleSegmentsStateCmd
+from app.services import meta_io
 
 class MeshLayersControllerMixin:
     """Mixin managing the Geometry Layers list of the mesh generator — syncing
@@ -255,6 +256,48 @@ class MeshLayersControllerMixin:
                 return session
         return None
 
+    def _adopt_sidecar_facts(self, session, path: str) -> list[str]:
+        """Take into the model any per-segment fact only the sidecar knows.
+
+        THE MODEL CAN ONLY BE THE TRUTH ABOUT A FACT IT WAS TOLD, and nothing
+        ever seeded these two from a ``.meta``. Without this, the projection
+        below overwrote labels and flags it had never read: on any geometry whose
+        labels live only in its sidecar — i.e. every case predating the model
+        field — one Mesh-stage BC edit reset every OTHER segment's label to
+        ``-`` and re-enabled a No-BL wall, because the BC dialog only reports
+        NEWLY MINTED names while the projection writes every segment. Measured
+        before the fix: four labels and one No-BL flag became one label and none.
+        That is the same all-``wall`` export the model field exists to prevent.
+
+        Fill-in only, never overwrite — the same rule ``ib_handoff`` applies to a
+        scripted phi path: a fact the model holds wins, a fact only the file
+        holds is adopted. For ``grow_bl`` that means a sidecar ``0`` is taken
+        when the model is still at its ``True`` default; the reverse (model off,
+        file on) is left alone, since the file is a projection and can only be
+        ahead of the model when the resampler has just rewritten it.
+
+        Runs BEFORE the undo snapshot on purpose, so undo returns to the adopted
+        state rather than to the empty one — otherwise undoing the first edit
+        would re-wipe the sidecar it was meant to protect. Adoption is a
+        migration of the user's existing setup, not an edit of theirs, so it is
+        deliberately not undoable; it is reported instead, because a silent
+        migration of somebody's boundary conditions is worse than a loud one.
+        """
+        adopted = []
+        if not os.path.exists(meta_io.meta_path_for(path)):
+            return adopted
+        file_bc = {sid: (bc or "").strip()
+                   for sid, bc, _kind in meta_io.read_meta_segments(path)}
+        file_grow = meta_io.read_meta_seg_growbl(path)
+        for seg in session.project_model.segments:
+            if not seg.bc and file_bc.get(seg.id):
+                seg.bc = file_bc[seg.id]
+                adopted.append(f"{seg.id}->{seg.bc}")
+            if seg.grow_bl and file_grow.get(seg.id) is False:
+                seg.grow_bl = False
+                adopted.append(f"{seg.id}->No BL")
+        return adopted
+
     def _write_sidecar_from_model(self, session, path: str) -> None:
         """Project the segment models' per-segment facts onto the ``.meta``.
 
@@ -265,15 +308,24 @@ class MeshLayersControllerMixin:
         why the readers (the BL dialog's seeding, the mesher itself) need no
         change: the file still says what it always said, it just no longer
         decides it.
-        """
-        from app.services.meta_io import write_meta_seg_growbl, write_meta_segbc
-        segs = session.project_model.segments
-        write_meta_seg_growbl(path, {seg.id: seg.grow_bl for seg in segs})
-        write_meta_segbc(path, {seg.id: seg.bc for seg in segs})
 
-    def _apply_mesh_stage_seg_edit(self, path: str, values: dict, field: str,
+        Total by design: every segment the model holds is written. That is only
+        safe because :meth:`_adopt_sidecar_facts` ran first — see the measured
+        failure in its docstring. Segment ids the model does NOT hold keep their
+        existing column (both writers in ``meta_io`` leave an id they were not
+        given alone), so an extra row in the sidecar is never clobbered.
+        """
+        segs = session.project_model.segments
+        meta_io.write_meta_seg_growbl(path, {seg.id: seg.grow_bl for seg in segs})
+        meta_io.write_meta_segbc(path, {seg.id: seg.bc for seg in segs})
+
+    def _apply_mesh_stage_seg_edit(self, path: str, values: dict, apply,
                                    describe) -> bool:
         """Put a {seg_id: value} edit on the segment models, undoably.
+
+        ``apply(seg, value)`` performs the field write and ``describe(segs)``
+        names the result for the log — callables rather than a field-name string,
+        so neither the attribute nor the log wording is stringly typed.
 
         Returns True when a live model took the edit. False means no session is
         behind this geometry, and the caller writes the sidecar directly — the
@@ -284,12 +336,16 @@ class MeshLayersControllerMixin:
         if session is None:
             return False
         pm = session.project_model
+        adopted = self._adopt_sidecar_facts(session, path)
+        if adopted:
+            self.log("Adopted per-segment settings already in the geometry's "
+                     ".meta into the model: " + ", ".join(adopted))
         old_states, states = {}, {}
         for idx, seg in enumerate(pm.segments):
             if seg.id not in values:
                 continue
             old_states[idx] = seg.to_dict()
-            setattr(seg, field, values[seg.id])
+            apply(seg, values[seg.id])
         for idx in old_states:
             states[idx] = (old_states[idx], pm.segments[idx].to_dict())
         changed = [i for i, (o, n) in states.items() if o != n]
@@ -297,10 +353,11 @@ class MeshLayersControllerMixin:
             session.command_history.execute(UpdateMultipleSegmentsStateCmd(
                 session, states,
                 refresh_cb=lambda: self._write_sidecar_from_model(session, path)))
-            self.log(describe(session, [pm.segments[i] for i in changed]))
+            self.log(describe([pm.segments[i] for i in changed]))
         else:
             # Nothing moved, but the file may still predate the model (e.g. the
-            # geometry was just re-resampled). Keep the projection honest.
+            # geometry was just re-resampled, or adoption just ran). Keep the
+            # projection honest.
             self._write_sidecar_from_model(session, path)
         return True
 
@@ -308,24 +365,24 @@ class MeshLayersControllerMixin:
         """A Mesh-stage 'grow BL?' toggle."""
         values = {int(k): bool(v) for k, v in (seg_grow or {}).items()}
         if self._apply_mesh_stage_seg_edit(
-                path, values, "grow_bl",
-                lambda _s, segs: "No-BL: boundary layer now " + ", ".join(
+                path, values,
+                lambda seg, v: setattr(seg, "grow_bl", v),
+                lambda segs: "No-BL: boundary layer now " + ", ".join(
                     f"{'off' if not x.grow_bl else 'on'} on segment {x.id}"
                     for x in segs)):
             return
-        from app.services.meta_io import write_meta_seg_growbl
-        write_meta_seg_growbl(path, values)
+        meta_io.write_meta_seg_growbl(path, values)
 
     def handle_seg_bc_labels_changed(self, path: str, seg_bc: dict):
         """A Mesh-stage per-segment BC label edit. Same rule, same reason."""
         values = {int(k): (v or "").strip() for k, v in (seg_bc or {}).items()}
         if self._apply_mesh_stage_seg_edit(
-                path, values, "bc",
-                lambda _s, segs: "Segment BC: " + ", ".join(
+                path, values,
+                lambda seg, v: setattr(seg, "bc", v),
+                lambda segs: "Segment BC: " + ", ".join(
                     f"{x.id}->{x.bc or '(inherit)'}" for x in segs)):
             return
-        from app.services.meta_io import write_meta_segbc
-        write_meta_segbc(path, values)
+        meta_io.write_meta_segbc(path, values)
 
     def add_all_sessions_to_mesh(self):
         """Add all sessions that have valid exported output files to the global mesh config."""

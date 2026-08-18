@@ -277,6 +277,52 @@ bc_after, _ = columns(out)
 check(bc_after.get(2) == "inlet",
       f"4. and reaches the sidecar ({bc_after})")
 
+# ── 4b. an UNSEEDED model must not wipe what only the sidecar knows ───────────
+# The gate's first version pre-seeded every model field before driving the
+# handler, which is exactly the condition that does NOT hold in reality: nothing
+# seeds SegmentModel.bc / grow_bl from a .meta, so on any geometry predating the
+# model field the model is empty while the sidecar holds the user's setup. The
+# projection is TOTAL (every segment the model holds), and the BC dialog reports
+# only NEWLY MINTED names — so one BC edit used to reset every other label to `-`
+# and re-enable a No-BL wall. Measured then: 4 labels + 1 flag -> 1 label + none.
+resample(src, out, npts=npts)                       # a sidecar with nothing set
+meta_io.write_meta_segbc(out, LABELS)               # ...then the user's own setup,
+meta_io.write_meta_seg_growbl(out, {3: False})      # living ONLY in that file
+meta_io.write_meta_group_bc(out, GROUP_BC)
+
+bare = GeometrySession()
+bare.project_model.output_file = out
+bare.project_model.segments = [SegmentModel(i, 0, 1) for i in (1, 2, 3, 4)]
+bare_host = _Host(bare)
+check(all(not sg.bc and sg.grow_bl for sg in bare.project_model.segments),
+      "4b. (precondition) the model starts knowing nothing, as a real one does")
+
+bare_host.handle_seg_bc_labels_changed(out, {2: "inlet"})
+bc_after, grow_after = columns(out)
+check(bc_after == {1: "sq_s1", 2: "inlet", 3: "sq_s3", 4: "sq_s4"},
+      f"4b. one BC edit leaves the OTHER segments' labels alone ({bc_after})")
+check(grow_after.get(3) is False,
+      f"4b. and does not re-enable a No-BL wall it never read ({grow_after})")
+check(meta_io.read_meta_group_bc(out) == GROUP_BC,
+      "4b. and leaves the GROUP_BC trailer alone")
+
+# Adoption is a migration, so the facts must now be IN the model — otherwise they
+# still would not reach the workspace or the pipeline script.
+adopted = {sg.id: (sg.bc, sg.grow_bl) for sg in bare.project_model.segments}
+check(adopted == {1: ("sq_s1", True), 2: ("inlet", True),
+                  3: ("sq_s3", False), 4: ("sq_s4", True)},
+      f"4b. the sidecar's facts were adopted into the model ({adopted})")
+check(any("Adopted per-segment settings" in ln for ln in bare_host.lines),
+      f"4b. and the migration is named in the log, not silent ({bare_host.lines})")
+
+# Adoption runs BEFORE the undo snapshot, so undo returns to the adopted state
+# rather than the empty one — otherwise undoing the first edit would re-wipe the
+# very sidecar the adoption protected.
+bare.command_history.undo()
+bc_after, grow_after = columns(out)
+check(bc_after == LABELS and grow_after.get(3) is False,
+      f"4b. undo returns the sidecar to the user's original setup ({bc_after})")
+
 # ── 5. the id-set-changed refusal is gone as a concept ────────────────────────
 # The old restore had to drop everything when the id set moved. A field rides the
 # object, so inserting an edge cannot shift a label onto its neighbour.
@@ -330,10 +376,17 @@ _writers = {
     "app/models/pipeline_config.py": "the pipeline script",
 }
 for rel, what in _writers.items():
-    txt = open(os.path.join(_GUI, rel), encoding="utf-8").read()
-    check("to_dict() for s" in txt or "seg.to_dict() for seg" in txt
-          or "s.to_dict() for s" in txt,
-          f"6. {what} serialises segments through to_dict() ({rel})")
+    tree = ast.parse(open(os.path.join(_GUI, rel), encoding="utf-8").read())
+    # By AST like everything else here: a comprehension whose element is a
+    # `<x>.to_dict()` call. The substring version this replaced tested three
+    # spellings of which the first subsumed the other two.
+    found = any(
+        isinstance(n, (ast.ListComp, ast.GeneratorExp))
+        and isinstance(n.elt, ast.Call)
+        and isinstance(n.elt.func, ast.Attribute)
+        and n.elt.func.attr == "to_dict"
+        for n in ast.walk(tree))
+    check(found, f"6. {what} serialises segments through to_dict() ({rel})")
 
 # ── 7. the removed compensation is really gone ────────────────────────────────
 _GONE = ("snapshot_seg_edits", "restore_seg_edits", "describe_seg_edit_restore")

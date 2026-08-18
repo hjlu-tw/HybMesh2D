@@ -217,15 +217,22 @@ class MeshConfigBLMixin:
             seg_names = dlg.result_seg_names()
             from app.services.meta_io import write_meta_group_bc
             if seg_names:
-                # The controller owns this: it puts the label on the SegmentModel
-                # (undoable, and carried into the workspace / pipeline script /
-                # resample config) and writes the sidecar from there. A view that
-                # wrote the file itself is how the label came to live only in a
-                # file the resampler rewrites.
+                # The controller owns the per-segment LABEL: it puts it on the
+                # SegmentModel (undoable, and carried into the workspace /
+                # pipeline script / resample config) and writes the sidecar from
+                # there. A view that wrote the file itself is how the label came
+                # to live only in a file the resampler rewrites.
                 self.seg_bc_labels_changed.emit(path, seg_names)
-            # Persist THIS geometry's label->BC-type map into its .meta so the
-            # mapping survives a session reset / config reload (else the labels
-            # resolve to nothing and every boundary defaults to wall at mesh time).
+            # The label->BC-TYPE map is a different fact and is still written
+            # from here on purpose. It is not per-segment (it is keyed by label,
+            # and one label covers many segments), so there is no SegmentModel
+            # field for it to be a field of; it lives in the panel because the
+            # Mesh stage is where a label is resolved to a physical BC. It is
+            # also not what the resampler resets — saveMetadata carries the
+            # trailer through verbatim — so it never needed the rescue the label
+            # column did. Persisted here so the mapping survives a session reset
+            # / config reload (else the labels resolve to nothing and every
+            # boundary defaults to wall at mesh time).
             labels = {b for _sid, b, _k in segs if b} | set(seg_names.values())
             write_meta_group_bc(path, {lbl: self._group_bc[lbl]
                                        for lbl in labels if self._group_bc.get(lbl)})

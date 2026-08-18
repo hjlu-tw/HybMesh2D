@@ -250,8 +250,11 @@ else:
 # ---------------------------------------------------------------------------
 # 5. The re-export must stay a re-export, not a second body.
 # ---------------------------------------------------------------------------
-MOVED = ("repo_root", "find_binary_executable", "find_solver_executables",
-         "find_stl3d_binary", "find_mpi_launcher", "is_mpi_binary")
+# Derived from the module's own __all__, not repeated here: a hand-copied list
+# would let the gate check a different set than paths.py actually exports.
+MOVED = tuple(_paths.__all__)
+check(f"5. paths.py declares the moved names it owns ({len(MOVED)})",
+      len(MOVED) == 6)
 divergent = [n for n in MOVED
              if getattr(_utils, n, None) is not getattr(_paths, n, object())]
 check("5a. app.utils re-exports the moved names as the SAME objects"
@@ -273,39 +276,44 @@ check("5c. is_headless stayed with the Qt helpers",
 # ---------------------------------------------------------------------------
 import ast                                       # noqa: E402
 
+def moved_names_from_utils(full):
+    """Line numbers where *full* imports a MOVED name from app.utils, any depth.
+
+    One walk, used for both the package sweep and the entry scripts — the first
+    version wrote it twice, which is how the two copies would come to disagree
+    about what counts.
+    """
+    try:
+        tree = ast.parse(open(full, encoding="utf-8").read())
+    except SyntaxError as exc:
+        return [f"unparseable ({exc})"]
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.module != "app.utils":
+            continue
+        # Other names are app.utils' own business; these six are not in it.
+        names = sorted({a.name for a in node.names} & set(MOVED))
+        if names:
+            hits.append(f"{node.lineno} imports {names}")
+    return hits
+
+
 offenders = []
 scanned = []
+_targets = []
 for sub in ("app/services", "app/models", "app/workers"):
-    base = os.path.join(_GUI, sub)
-    for dirpath, _dirs, files in os.walk(base):
-        for fn in sorted(f for f in files if f.endswith(".py")):
-            full = os.path.join(dirpath, fn)
-            rel = os.path.relpath(full, _GUI)
-            scanned.append(rel)
-            try:
-                tree = ast.parse(open(full, encoding="utf-8").read())
-            except SyntaxError as exc:
-                offenders.append(f"{rel}: unparseable ({exc})")
-                continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ImportFrom) or node.module != "app.utils":
-                    continue
-                # Other names are app.utils' own business; these six are not in it.
-                hit = sorted({a.name for a in node.names} & set(MOVED))
-                if hit:
-                    offenders.append(f"{rel}:{node.lineno} imports {hit}")
-
+    for dirpath, _dirs, files in os.walk(os.path.join(_GUI, sub)):
+        _targets += [os.path.join(dirpath, f)
+                     for f in sorted(files) if f.endswith(".py")]
 # The headless entry scripts too — they are what the shell wrappers run.
-for script in ("run_pipeline.py", "run_batch.py"):
-    full = os.path.join(_PRE, script)
-    if not os.path.exists(full):
-        continue
-    scanned.append(script)
-    for node in ast.walk(ast.parse(open(full, encoding="utf-8").read())):
-        if isinstance(node, ast.ImportFrom) and node.module == "app.utils":
-            hit = sorted({a.name for a in node.names} & set(MOVED))
-            if hit:
-                offenders.append(f"{script}:{node.lineno} imports {hit}")
+_targets += [os.path.join(_PRE, sc) for sc in ("run_pipeline.py", "run_batch.py")
+             if os.path.exists(os.path.join(_PRE, sc))]
+
+for full in _targets:
+    rel = (os.path.relpath(full, _GUI) if full.startswith(_GUI + os.sep)
+           else os.path.basename(full))
+    scanned.append(rel)
+    offenders += [f"{rel}:{h}" for h in moved_names_from_utils(full)]
 
 check(f"6a. no Qt-free module reaches a moved name through app.utils, at any "
       f"nesting depth ({len(scanned)} files scanned)"
