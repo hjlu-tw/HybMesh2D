@@ -1,0 +1,67 @@
+{
+  "pipeline_version": 2,
+  "name": "ib_demo",
+  "cads": [
+    {
+      "input_file": "examples/geometries/naca0012.dat",
+      "is_closed": true,
+      "skip": true
+    }
+  ],
+  "mesh": {
+    "domain_x_min": -1.5,
+    "domain_x_max": 4.5,
+    "domain_y_min": -1.5,
+    "domain_y_max": 1.5,
+    "surface_mesh_size": 0.02,
+    "auto_surface_size": true,
+    "farfield_mesh_size": 0.4,
+    "farfield_growth_rate": 0.2,
+    "bl_initial_thickness": 0.001,
+    "bl_growth_rate": 1.2,
+    "bl_layers": 8,
+    "gmsh_algorithm": 6,
+    "gmsh_optimize": 1,
+    "bc_geom": "wall",
+    "bc_xmin": "inlet",
+    "bc_xmax": "outlet",
+    "bc_ymin": "outlet",
+    "bc_ymax": "outlet"
+  },
+  "stl3d": {
+    "stl_path": "examples/geometries/I_coarse_2d.stl",
+    "ascii": false,
+    "case_name": "ib_demo",
+    "xmin": 2.6,
+    "xmax": 3.4,
+    "ymin": 0.0,
+    "ymax": 1.0,
+    "zmin": 0.0,
+    "zmax": 0.0,
+    "nx": 161,
+    "ny": 201,
+    "nz": 2,
+    "all_search": true
+  },
+  "solver": {
+    "case_name": "ib_demo",
+    "preset": "Euler (inviscid)",
+    "fs_mach": 0.5,
+    "fs_flow_angle": 0.0,
+    "cfl": 0.5,
+    "num_half_iter": 200,
+    "print_convg_per_niter": 20,
+    "print_sol_per_niter": 200,
+    "dump_zone_per_niter": 200,
+    "immersed_solid": true,
+    "stationary_solid": true,
+    "ibm_phi_file": "",
+    "init_cond_dll": ""
+  },
+  "results": {
+    "variable": "M",
+    "cmap": "jet",
+    "save_png": "results/pipeline/ib_demo_M.png",
+    "mesh_overlay": false
+  }
+}

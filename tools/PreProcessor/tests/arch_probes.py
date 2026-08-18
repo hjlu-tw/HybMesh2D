@@ -199,26 +199,72 @@ def probe_5_field_spec_tables():
                    "of AST proving the lists agree")
 
 
-def probe_6_pipeline_stage_seam():
-    """Two questions: does the IB artefact reach the solve, and is there one stage list?
+def probe_6a_ib_handoff():
+    """DONE when the IB artefact reaches the solve in BOTH hosts and a gate keeps it.
 
-    The hand-off is the defect half and is fixable alone; the unification of the
-    blocking and threaded runners is the architectural half. They are reported
-    together because fixing only the first must not read as closing the candidate.
+    The number that decided this one was a signature: ``_run_solver`` took no phi
+    at all, so the stage that produced one could only hand it over by
+    coincidence — and did not. Retired to a pointer at the gate, which is
+    strictly stronger than anything measurable from here: it drives the real
+    conversion, pins the Tecplot header count against the reader that shares the
+    format, compiles the DLL it generates, and proves the chain by AST instead of
+    by a parameter name existing.
     """
     runner = read(APP, "services", "pipeline_runner.py")
+    gui = read(APP, "controllers", "pipeline_ctrl.py")
+    gate = read(TESTS, "test_pipeline_ib_handoff.py")
+    shared = read(APP, "services", "ib_handoff.py")
     sig = re.search(r"def _run_solver\((.*?)\)\s*->", runner, re.S)
     phi_passed = bool(sig and "phi" in sig.group(1))
-    gui = read(APP, "controllers", "pipeline_ctrl.py")
     gui_ib = "_pipe_stl3d" in gui
-    if phi_passed and gui_ib:
-        return DONE, "phi reaches _run_solver; both hosts run the IB stage"
+    if phi_passed and gui_ib and shared and gate:
+        return DONE, ("gated by test_pipeline_ib_handoff.py; phi reaches the "
+                      "solve in both hosts through services/ib_handoff")
     bits = []
     if not phi_passed:
         bits.append("out['phi'] never reaches _run_solver (defect)")
     if not gui_ib:
         bits.append("GUI Run All has no IB stage (recorded asymmetry)")
+    if not shared:
+        bits.append("the phi -> solver conversion lives only in a Qt controller")
+    if phi_passed and gui_ib and shared and not gate:
+        bits.append("wired but ungated — a re-broken hand-off would not be caught")
     return OPEN, "; ".join(bits)
+
+
+def probe_6b_one_stage_declaration():
+    """OPEN until the stage sequence is declared ONCE instead of once per host.
+
+    Candidate 6 was one row and is two invariants with disjoint machinery — the
+    same discovery that split ``test_cpp_linkable_seam.py`` from
+    ``test_cpp_pure_layer.py``. Keeping them in one row meant a DONE earned by
+    the hand-off read as a DONE for the review's actual Solution: *"Declare the
+    stages and what each consumes and produces once. The two runners become
+    adapters differing only in how they wait."* That is not built, and the gate
+    the hand-off left behind cannot speak for it — it gates an artefact crossing
+    one seam, not where the stage list lives.
+
+    The number that decides it is how many places enumerate the sequence. Watch
+    it for the interesting case rather than the verdict: the two lists now AGREE
+    (4 stages each, same order, same names) where the GUI used to be missing one,
+    so the divergence this candidate was named for is gone while its cause — two
+    lists — is not.
+    """
+    runner = read(APP, "services", "pipeline_runner.py")
+    gui = read(APP, "controllers", "pipeline_ctrl.py")
+    decl = read(APP, "services", "pipeline_stages.py")
+    head = sorted(set(re.findall(r"^def (_run_\w+)\(", runner, re.M)))
+    # A GUI stage is a _pipe_* entry; the _pipe_after_* continuations and the
+    # _pipe_chain/_pipe_resample_next plumbing are not stages.
+    hosted = sorted(set(re.findall(
+        r"^    def (_pipe_(?!after_|chain|resample_next)\w+)\(", gui, re.M)))
+    if decl and "pipeline_stages" in runner and "pipeline_stages" in gui:
+        return DONE, "both hosts read the stage list from services/pipeline_stages"
+    agree = [h[len("_run_"):] for h in head] == [g[len("_pipe_"):] for g in hosted]
+    named = ", ".join(sorted(h[len("_run_"):] for h in head))      # not run order
+    return OPEN, (f"the same {len(head)} stages ({named}) are enumerated once "
+                  "per host, no shared declaration"
+                  + ("; the two lists agree" if agree else "; THE LISTS DIVERGE"))
 
 
 def probe_7_pending_edit_owner():
@@ -293,7 +339,9 @@ PROBES = [
     ("3", "Declare a mesh parameter once", probe_3_param_schema),
     ("4", "Retire the signal-wiring table", probe_4_signal_wiring),
     ("5", "One field-spec table per config panel", probe_5_field_spec_tables),
-    ("6", "A pipeline stage seam", probe_6_pipeline_stage_seam),
+    ("6a", "A pipeline stage seam: the IB hand-off", probe_6a_ib_handoff),
+    ("6b", "A pipeline stage seam: one stage declaration",
+     probe_6b_one_stage_declaration),
     ("7", "An owner for the edge being edited", probe_7_pending_edit_owner),
     ("8", "A model for the per-segment No-BL flag", probe_8_nobl_flag_model),
     ("9", "Split app/utils.py at the Qt line", probe_9_utils_qt_line),
@@ -317,8 +365,11 @@ def run_probes() -> tuple[list[str], str, list[str]]:
             counts[state] = counts.get(state, 0) + 1
         lines.append(f"  [{state}] {num:>2} · {title}")
         lines.append(f"           {detail}")
+    # Candidates are numbered by the frozen review; a candidate that turns out to
+    # be two invariants gets two probes (6a/6b), so rows and candidates differ.
+    cands = len({re.match(r"\d+", num).group() for num, _t, _fn in PROBES})
     tally = (f"{counts[DONE]} done · {counts[OPEN]} open · {counts[STALE]} stale "
-             f"premise · {len(PROBES)} candidates")
+             f"premise · {len(PROBES)} probes over {cands} candidates")
     lines += ["", tally,
               "A candidate reported DONE is guarded by the gate named beside it; "
               "the probe is only a pointer at that gate."]

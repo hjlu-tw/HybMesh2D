@@ -17,7 +17,9 @@ import threading
 
 from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
-from app.services import case_sources, meta_io, solver_case, stl3d_case
+from app.services import (
+    case_sources, ib_handoff, meta_io, solver_case, stl3d_case,
+)
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.utils import (
@@ -237,7 +239,7 @@ def _run_stl3d(pcfg: PipelineConfig, repo: str, log, on_process=None) -> str:
     described by a pipeline script lands in the same ``results/stl3d/<case>``
     directory with the same para.in the interactive run would produce.
     """
-    cfg = pcfg.build_stl3d_config()
+    cfg = pcfg.build_stl3d_config(repo)
     case = stl3d_case.prepare_case_dir(cfg, root=repo)      # raises Stl3dError
     log(f"[IB] {stl3d_case.describe(cfg)} -> {case['work_dir']}")
 
@@ -294,7 +296,7 @@ def _case_sources(pcfg: PipelineConfig, repo: str, geoms, vtk: str):
 
 
 def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
-                on_process=None, geoms=None) -> str:
+                on_process=None, geoms=None, phi: str = "") -> str:
     sc = pcfg.build_solver_config(repo)
 
     # Auto-link the STAR-CD output of the mesh, filling each input independently
@@ -309,6 +311,25 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
             raise PipelineError(
                 f"solver input {label} missing: {f} "
                 "(enable STAR-CD export in the mesh stage)")
+
+    # Auto-link the immersed-solid stage's own output by the same rule: the phi
+    # field this run just traced is what the solve reads unless the script named
+    # one itself. Nothing carried it before, so the stage's result went nowhere
+    # and the solve fell back to whatever work/phi.dat the reused case directory
+    # still held — the previous geometry's solid (services/ib_handoff explains
+    # why handing over a Tecplot path alone would not have been enough either).
+    if phi and sc.immersed_solid:
+        try:
+            ib_handoff.link_phi_to_solver(sc, phi,
+                                          pcfg.build_stl3d_config(repo),
+                                          repo, log=log, replace=False)
+        except ib_handoff.IbHandoffError as e:
+            raise PipelineError(f"immersed-solid hand-off: {e}") from e
+    elif phi:
+        # The stage ran because the script has an stl3d section; whether the
+        # SOLVE is immersed is the solver section's declaration to make.
+        log("[IB] [WARNING] phi was traced but the solver section has "
+            f"immersed_solid off, so the solve does not read it: {phi}")
 
     bins = find_solver_executables()
     if not bins.get("getpgrid"):
@@ -363,9 +384,10 @@ def _rm(path: str):
 # --------------------------------------------------------------------------- #
 def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
                  run_ib: bool = True, on_process=None) -> dict:
-    """Run CAD -> mesh -> (solver). Returns a dict of produced artifact paths:
-    {"cad_out", "vtk", "result"}. Raises :class:`PipelineError` on any stage
-    failure (message already logged)."""
+    """Run CAD -> (immersed solid) -> mesh -> (solver). Returns a dict of the
+    produced artifact paths: {"cad_out", "cad_outs", "phi", "vtk", "result"}.
+    Raises :class:`PipelineError` on any stage failure (message already
+    logged)."""
     repo = repo_root()
     out = {"cad_out": "", "cad_outs": [], "phi": "", "vtk": "", "result": ""}
 
@@ -427,7 +449,8 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     if need_solver:
         log("=== Stage 3/3: solver ===")
         out["result"] = _run_solver(pcfg, repo, out["vtk"], log,
-                                    on_process=on_process, geoms=geoms)
+                                    on_process=on_process, geoms=geoms,
+                                    phi=out["phi"])
     else:
         log("=== solver stage skipped ===")
     return out

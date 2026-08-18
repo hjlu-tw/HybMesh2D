@@ -75,7 +75,14 @@ In the GUI you can also use **Pipeline ▸ Load Pipeline Script**, then click **
 - **Singular `cad`** (one object instead of `cads`) is still accepted, so pre-v2 scripts and hand-written single-geometry scripts keep working. Saving rewrites it as `cads`.
 
 ### Immersed solid — `stl3d` (optional)
-A subset of the Immersed Solid panel's fields (STL path, domain box, resolution, case name). Loading a script applies it to that panel. The headless runner does **not** execute this stage — it says so and continues — so generate the phi field from the GUI's **Immersed Solid** stage, or beforehand.
+A subset of the Immersed Solid panel's fields (STL path, domain box, resolution, case name). Loading a script applies it to that panel. **Both hosts run this stage, before meshing** — the headless runner and the GUI's Run All (`--no-ib`, or `"skip": true`, opts out). Worked example: **`ib_demo.json`** (a NACA0012 with a small immersed body downstream).
+
+`stl_path` may be repo-relative, like a CAD input.
+
+Two rules decide whether the field you trace reaches the solve:
+
+- **`solver.immersed_solid` must say so.** The stage traces the field either way, but it will not turn the solid on for you — a script that says `false` is obeyed, and the log says the field was traced and is unused. (In the GUI: the Solver stage's *Immersed Solid* box.)
+- **Leave `solver.ibm_phi_file` and `solver.init_cond_dll` blank and the stage fills both.** They are one fact, not two: the generated init DLL has this field's origin/spacing/cell counts compiled in, so it can only read this field. Name either one yourself and the stage keeps **both** of yours untouched (and warns if only one is named, since a phi field with no DLL is never read). The log always names the phi the solve will read.
 
 ### Running a saved workspace instead of a script
 `run_pipeline.sh` also accepts a `.hws` workspace saved by the GUI (recognised by its contents, not its extension):

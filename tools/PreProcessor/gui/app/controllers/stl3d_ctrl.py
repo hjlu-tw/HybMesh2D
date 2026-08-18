@@ -8,16 +8,9 @@ from app.models.stl3d_config import (
 )
 from app.services.stl_loader import load_stl_triangles
 from app.workers.exit_codes import RC_CANCELLED
-from app.services.dll_templates import render_phi_field_init
-from app.services import stl3d_case
+from app.services import ib_handoff, stl3d_case
 from app.workers.stl3d_run import Stl3dWorker
-from app.services.solver_case import sanitize_case_name
 from app.utils import repo_root, report_warning
-
-
-def _sanitize(name: str) -> str:
-    # Shared sanitizer; STL3d uses "phi" as the empty-name fallback.
-    return sanitize_case_name(name, default="phi")
 
 
 class Stl3dControllerMixin:
@@ -277,7 +270,13 @@ class Stl3dControllerMixin:
     # ------------------------------------------------------------------ #
     def send_stl3d_to_solver(self):
         """Stage the phi field, generate the immersed-solid init DLL (grid spec
-        baked in), enable IBM in the solver config, and switch to the Solver tab."""
+        baked in), enable IBM in the solver config, and switch to the Solver tab.
+
+        The conversion and the wiring are :mod:`app.services.ib_handoff`, shared
+        with Run All and the headless pipeline so all three hand off identically.
+        What stays here is this button's own opinion — an STL3d field is a
+        STATIONARY solid — and the jump to the Solver tab.
+        """
         log = self.log
         cfg = self.global_stl3d_config          # the config the phi result was run with
         phi_tec = getattr(self, "_stl3d_phi_path", "")
@@ -285,51 +284,28 @@ class Stl3dControllerMixin:
             log("[STL3d] Run STL3d successfully before sending to the solver.")
             return
 
-        case = _sanitize(cfg.case_name)
-        work_dir = os.path.dirname(phi_tec)
-
-        # 1. Headerless phi.dat (x y z phi) — what the generated DLL reads.
-        phi_dat = os.path.join(work_dir, f"{case}_phi.dat")
-        try:
-            with open(phi_tec) as fin, open(phi_dat, "w") as fout:
-                for n, line in enumerate(fin):
-                    if n >= 3:                  # strip the 3 Tecplot header lines
-                        fout.write(line)
-        except OSError as e:
-            log(f"[STL3d] Failed to write phi data: {e}")
-            return
-
-        # 2. Init-condition DLL with the STL3d grid spec baked in.
-        dx, dy, dz = cfg.spacings()
-        src = render_phi_field_init(
-            xmin=cfg.xmin, ymin=cfg.ymin, zmin=cfg.zmin,
-            dx=dx, dy=dy, dz=dz, nx=cfg.nx, ny=cfg.ny, nz=cfg.nz)
-        dll_dir = os.path.join(repo_root(), "results", "solver", "dll_src")
-        try:
-            os.makedirs(dll_dir, exist_ok=True)
-            dll_cc = os.path.join(dll_dir, f"ibm_init_{case}.cc")
-            with open(dll_cc, "w") as f:
-                f.write(src)
-        except OSError as e:
-            log(f"[STL3d] Failed to write init DLL source: {e}")
-            return
-
-        # 3. Wire the solver config + panel, then jump to the Solver tab.
         sc = self.global_solver_config
+        try:
+            out = ib_handoff.link_phi_to_solver(sc, phi_tec, cfg, repo_root(),
+                                                log=log)
+        except ib_handoff.IbHandoffError as e:
+            log(f"[STL3d] {e}")
+            return
+
+        # This button's preset — and the declaration the hand-off deliberately
+        # leaves to its caller: pressing "Send to Solver" IS the user saying this
+        # solve has an immersed solid, and that it is a solid which does not move.
         sc.immersed_solid = True
         sc.stationary_solid = True
         sc.rigid_moving_body = False
         sc.motion_dll = ""
-        sc.init_cond_dll = dll_cc
-        sc.ibm_phi_file = phi_dat
-        panel = self.main_window.solver_config_panel
-        panel.set_config(sc)
-        if hasattr(panel, "_update_ibm_visibility"):
-            panel._update_ibm_visibility()
+        # Programmatic push, so it must not be recorded as a user edit; the
+        # panel's own _set_config_body refreshes the IBM rows.
+        self.push_panel_config(self.main_window.solver_config_panel, sc)
         self.main_window.mode_combo.setCurrentIndex(3)   # Solver
 
         log("--- Sent STL3d phi field to the Solver ---")
-        log(f"  phi data : {phi_dat}")
-        log(f"  init DLL : {dll_cc}")
+        log(f"  phi data : {out['phi_dat']}")
+        log(f"  init DLL : {out['init_dll']}")
         log("  Solver: immersed_solid ON; the init DLL reads phi.dat (staged into "
             "the work dir at run time). Set the mesh (.vrt/.cel/.bnd) and Run Solver.")

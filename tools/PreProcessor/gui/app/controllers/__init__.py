@@ -36,6 +36,7 @@ from app.controllers.session_load_ctrl import SessionLoadControllerMixin
 from app.controllers.session_tabs_ctrl import SessionTabsControllerMixin
 from app.controllers.extrude_ctrl import ExtrudeControllerMixin
 from app.controllers.pipeline_ctrl import PipelineControllerMixin
+from app.controllers.pipeline_io_ctrl import PipelineIoControllerMixin
 from app.controllers.signal_wiring_ctrl import SignalWiringMixin
 from app.controllers.lifecycle_ctrl import LifecycleControllerMixin
 
@@ -63,6 +64,6 @@ __all__ = [
     "Stl3dControllerMixin", "Stl3dFitControllerMixin",
     "SessionLoadControllerMixin", "SessionTabsControllerMixin",
     "ExtrudeControllerMixin",
-    "PipelineControllerMixin",
+    "PipelineControllerMixin", "PipelineIoControllerMixin",
     "SignalWiringMixin", "LifecycleControllerMixin",
 ]

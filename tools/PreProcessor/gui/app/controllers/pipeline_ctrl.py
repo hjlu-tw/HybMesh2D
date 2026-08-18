@@ -1,22 +1,19 @@
 """Full-pipeline orchestration for the GUI: one action runs CAD resample ->
-mesh generation -> solver -> results contour, by chaining the existing
-per-stage workers on their finished signals.
+immersed solid -> mesh generation -> solver -> results contour, by chaining the
+existing per-stage workers on their finished signals.
 
 Each stage already runs in its own QThread with a ``finished_signal``; this
 mixin sequences them without blocking the UI and suppresses the per-stage
 dialogs (output path, unclosed prompt) so a single click runs to the contour.
 
-Also owns save/load of the unified pipeline JSON (a shareable, human-editable
-script consumed identically by ``tools/PreProcessor/run_pipeline.py``).
+Save/load of the unified pipeline JSON lives in ``pipeline_io_ctrl.py``.
 """
 from __future__ import annotations
 import os
 
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog
 
-from app.models.pipeline_config import PipelineConfig, PIPELINE_FORMAT_VERSION
-from app.services import meta_io
+from app.services import ib_handoff, meta_io
 from app.utils import repo_root
 
 from app.services.logging_setup import get_logger
@@ -61,7 +58,7 @@ class PipelineControllerMixin:
         # The result variable to show at the end is set by a loaded pipeline
         # script (_apply_pipeline_config); it stays "" otherwise, and
         # _pipe_after_solver leaves the canvas on its default variable.
-        log("=== Run Full Pipeline: CAD -> Mesh -> Solver -> Results ===")
+        log("=== Run Full Pipeline: CAD -> [immersed solid] -> Mesh -> Solver -> Results ===")
         # Resample EVERY session that has geometry, in tab order, then mesh them
         # together. Running only the active tab meant the other geometries of a
         # multi-body case were meshed from whatever stale .dat happened to be on
@@ -77,13 +74,13 @@ class PipelineControllerMixin:
         else:
             log("[Pipeline] Stage 1/3: CAD resample skipped "
                 "(no source geometry; meshing existing geometry files).")
-            self._pipe_mesh()
+            self._pipe_stl3d()
 
     def _pipe_resample_next(self):
         """Resample the next queued session, or move on to meshing when done."""
         queue = getattr(self, "_pipe_cad_queue", None) or []
         if not queue:
-            self._pipe_mesh()
+            self._pipe_stl3d()
             return
         self._pipe_resample(queue.pop(0))
 
@@ -178,6 +175,89 @@ class PipelineControllerMixin:
         # Continue down the CAD queue; _pipe_resample_next() meshes once empty.
         self._pipe_resample_next()
 
+    def _pipe_chain(self, worker_attr: str, slot, not_started: str) -> bool:
+        """Continue the pipeline when the named worker finishes. False = stop.
+
+        Every stage needs the same three things and each wrote them out itself:
+        refuse to go on if the worker never started (the stage has already logged
+        why), drop a connection a PREVIOUS pipeline run left on a reused worker
+        object — otherwise the continuation fires twice — and only then connect.
+        """
+        w = getattr(self, worker_attr, None)
+        if w is None or not w.isRunning():
+            self._pipeline_abort(not_started)
+            return False
+        try:
+            w.finished_signal.disconnect(slot)
+        except TypeError:
+            pass  # not previously connected
+        w.finished_signal.connect(slot)
+        return True
+
+    # ---- Immersed solid (optional): STL -> phi ------------------------- #
+    def _pipe_stl3d(self):
+        """Trace the phi field before meshing, then wire it into the solver.
+
+        Run All had no IB stage at all, so a case with an immersed solid was
+        meshed and solved against whatever ``work/phi.dat`` the case directory
+        still held — the previous geometry's solid (see services/ib_handoff).
+        Ordered where the headless runner orders it, IB before mesh, so a script
+        and this button build the same case.
+
+        Optional, and only ever skipped out loud: a case with no STL says so and
+        moves straight on to meshing.
+        """
+        w0 = getattr(self, "_stl3d_worker", None)
+        if w0 is not None and w0.isRunning():
+            self._pipeline_abort("STL3d is already running; wait for it to finish.")
+            return
+        cfg = getattr(self, "global_stl3d_config", None)
+        if cfg is None or not getattr(cfg, "stl_path", ""):
+            self.log("[Pipeline] Immersed solid: skipped (no STL configured).")
+            self._pipe_mesh()
+            return
+
+        self.log("[Pipeline] Immersed solid: tracing the phi field...")
+        # run_stl3d() validates + stages through services/stl3d_case and logs its
+        # own reason if it refuses, so a failure to start is reported twice: once
+        # in the stage's vocabulary, once as the pipeline aborting.
+        self.run_stl3d()
+        if not self._pipe_chain("_stl3d_worker", self._pipe_after_stl3d,
+                                "STL3d did not start (check the STL / binary)."):
+            return
+
+    def _pipe_after_stl3d(self, rc):
+        if rc != 0:
+            # _on_stl3d_finished has already said whether this was a cancel or a
+            # failure; this line is the pipeline's own half.
+            self._pipeline_abort(f"STL3d stage ended (code {rc}).")
+            return
+        sc = self.global_solver_config
+        if not sc.immersed_solid:
+            # The stage ran because an STL is configured. Whether the SOLVE has
+            # an immersed body is the Solver stage's own declaration, and a
+            # pipeline stage may not overrule it — so say what was traced, what
+            # will ignore it, and which box turns it on.
+            self.log(
+                "[Pipeline] [WARNING] phi was traced but the Solver stage has "
+                "Immersed Solid OFF, so the solve will not read it (tick "
+                "Immersed Solid in the Solver stage to include it).")
+            self._pipe_mesh()
+            return
+        try:
+            ib_handoff.link_phi_to_solver(
+                sc, getattr(self, "_stl3d_phi_path", ""),
+                self.global_stl3d_config, repo_root(), log=self.log)
+        except ib_handoff.IbHandoffError as e:
+            self._pipeline_abort(f"immersed-solid hand-off: {e}")
+            return
+        # The panel is a view of the config the hand-off just changed, and this
+        # is a programmatic push, not a user edit.
+        # set_config -> _set_config_body already refreshes the IBM rows, so a
+        # controller reaching for the panel's private helper adds nothing.
+        self.push_panel_config(self.main_window.solver_config_panel, sc)
+        self._pipe_mesh()
+
     # ---- Stage 2: mesh generation ------------------------------------- #
     def _pipe_mesh(self):
         self.main_window.mode_combo.setCurrentIndex(1)  # Mesh Generator view
@@ -185,18 +265,9 @@ class PipelineControllerMixin:
         # run_mesh_generator already forces STAR-CD export on the temp mesh, so
         # the solver's auto-link finds the .vrt/.cel/.bnd next to the temp VTK.
         self.run_mesh_generator()
-        w = getattr(self, "_mesh_worker", None)
-        if w is None or not w.isRunning():
-            self._pipeline_abort("mesh generation did not start "
-                                 "(check geometry / domain / binary).")
+        if not self._pipe_chain("_mesh_worker", self._pipe_after_mesh,
+                                "mesh generation did not start (check geometry / domain / binary)."):
             return
-        # A reused worker object keeps its old connections; disconnect our slot
-        # first so a second pipeline run doesn't fire _pipe_after_mesh twice.
-        try:
-            w.finished_signal.disconnect(self._pipe_after_mesh)
-        except TypeError:
-            pass  # not previously connected
-        w.finished_signal.connect(self._pipe_after_mesh)
 
     def _pipe_after_mesh(self, rc):
         if rc != 0 or not (self.global_vtk_path and os.path.exists(self.global_vtk_path)):
@@ -210,17 +281,9 @@ class PipelineControllerMixin:
         # Ensure the solver pulls the mesh we just generated.
         self.main_window.solver_config_panel.auto_link_mesh.setChecked(True)
         self.run_solver_pipeline()
-        w = getattr(self, "_solver_worker", None)
-        if w is None or not w.isRunning():
-            self._pipeline_abort("solver did not start (check config / binaries).")
+        if not self._pipe_chain("_solver_worker", self._pipe_after_solver,
+                                "solver did not start (check config / binaries)."):
             return
-        # A reused worker object keeps its old connections; disconnect our slot
-        # first so a second pipeline run doesn't fire _pipe_after_solver twice.
-        try:
-            w.finished_signal.disconnect(self._pipe_after_solver)
-        except TypeError:
-            pass  # not previously connected
-        w.finished_signal.connect(self._pipe_after_solver)
 
     def _pipe_after_solver(self, rc):
         self._pipeline_running = False
@@ -241,203 +304,3 @@ class PipelineControllerMixin:
                     "variable", exc_info=True)
         self.log(
             "=== Pipeline complete — result contour shown in the Results tab. ===")
-
-    # ------------------------------------------------------------------ #
-    # Save / load the unified pipeline JSON
-    # ------------------------------------------------------------------ #
-    def save_pipeline_file(self):
-        session = self.active_session()
-        if session is None:
-            self.log("[Pipeline] No active geometry to save.")
-            return
-        # Freshen the active analytic edge and transform from the sidebar so the
-        # saved CAD section matches what is on screen.
-        try:
-            self._sync_active_curve_segment_from_ui()
-            session.project_model.transform = \
-                self.main_window.sidebar_view.get_transform_dict()
-        except Exception as e:
-            # Tell the user, not just the log file: the script they are about to
-            # save may not match what is on their screen, and a silently-stale
-            # script is exactly the kind of thing that wastes a whole re-run.
-            _log.warning(
-                "could not sync the on-screen CAD state into the pipeline "
-                "script; the saved script may not match the canvas", exc_info=True)
-            self.log(
-                "[Pipeline] [WARNING] could not read the latest on-screen CAD "
-                f"edits ({e}); the saved script may not match the canvas.")
-
-        mesh_cfg = self.main_window.mesh_config_panel.get_config()
-        solver_cfg = self.main_window.solver_config_panel.get_config()
-        results = {}
-        try:
-            var = self.main_window.result_canvas_view.var_combo.currentText()
-            if var:
-                results["variable"] = var
-        except Exception:
-            _log.warning(
-                "could not read the current contour variable for the "
-                "script", exc_info=True)
-
-        name = os.path.splitext(session.display_name.lstrip("*"))[0] or "pipeline"
-        # EVERY open session, in TAB order: a script built from only the active tab
-        # silently dropped the rest of a multi-geometry case (airfoil + ground
-        # plane, multi-element wing), and the dropped geometries were unrecoverable
-        # from the script alone. Tab order (not active-first) because the mesher
-        # keys per-geometry roles and BL overrides by path and names the mesh after
-        # the first boundary — a stable order is what makes a re-run reproducible.
-        ordered = list(self.sessions) or [session]
-        pcfg = PipelineConfig.from_configs(
-            name, [s.project_model for s in ordered], mesh_cfg, solver_cfg,
-            results, stl3d_config=getattr(self, "global_stl3d_config", None))
-        if len(ordered) > 1:
-            self.log(
-                f"[Pipeline] script describes {len(ordered)} CAD geometries "
-                f"(tab order: {', '.join(s.display_name.lstrip('*') for s in ordered)}).")
-
-        # A drawn/in-memory geometry has no source file on disk, so its per-edge
-        # segments can't be re-resampled from a reload. Flag it per entry: the
-        # script still meshes the already-exported geometry files, but that CAD
-        # entry is inert.
-        for sess, cad in zip(ordered, pcfg.cads):
-            if cad.get("segments") and not cad.get("input_file"):
-                self.log(
-                    f"[Pipeline] [WARNING] '{sess.display_name.lstrip('*')}' has no "
-                    "source .dat file; the saved script cannot re-run its CAD "
-                    "resample. Meshing will use the exported geometry files. Run "
-                    "'Save & Export' to persist a source.")
-
-        default = os.path.join(repo_root(), "config", "pipeline", f"{name}.json")
-        path, _ = QFileDialog.getSaveFileName(
-            self.main_window, "Save Pipeline Script", default,
-            "Pipeline JSON (*.json);;All Files (*)")
-        if not path:
-            return
-        try:
-            pcfg.save_to_file(path)
-            self.log(f"[Pipeline] Saved script to {path}")
-        except Exception as e:
-            self.log(f"[Pipeline] [ERROR] Failed to save script: {e}")
-            from app.utils import report_error
-            report_error(self.main_window, "Save Pipeline Script Failed",
-                         "The pipeline script could not be saved to disk.",
-                         detail=str(e))
-
-    def load_pipeline_file(self):
-        start = os.path.join(repo_root(), "config", "pipeline")
-        if not os.path.isdir(start):
-            start = repo_root()
-        path, _ = QFileDialog.getOpenFileName(
-            self.main_window, "Load Pipeline Script", start,
-            "Pipeline script or workspace (*.json *.hws);;All Files (*)")
-        if not path:
-            return
-        self.open_pipeline_path(path)
-
-    def open_pipeline_path(self, path: str) -> bool:
-        """Load a pipeline script — or a ``.hws`` workspace — from a known path.
-
-        A workspace is routed to the WORKSPACE loader rather than through
-        ``PipelineConfig.from_workspace_dict``: that conversion exists so the
-        headless runner can *run* a ``.hws``, and it deliberately drops working
-        state (cached resampled points, the generated mesh/result paths, the
-        active tab). Inside the GUI the full loader is available and strictly
-        better, so opening a workspace here must not silently downgrade it.
-        """
-        if PipelineConfig.classify_file(path) == "workspace":
-            self.log(
-                f"[Pipeline] '{os.path.basename(path)}' is a HybMesh workspace — "
-                "loading it as a workspace (full state), not as a script.")
-            return self.open_workspace_path(path)
-        try:
-            # Missing version = legacy v0 (explicit). Older scripts are migrated
-            # by PipelineConfig.from_dict; a NEWER one is read-only best-effort.
-            ver = PipelineConfig.file_version(path)
-            if ver > PIPELINE_FORMAT_VERSION:
-                self.log(
-                    f"[Pipeline] [WARNING] script version {ver} is newer than "
-                    f"supported ({PIPELINE_FORMAT_VERSION}); loading read-only, "
-                    "best-effort — some settings may be ignored.")
-            elif ver < PIPELINE_FORMAT_VERSION:
-                self.log(
-                    f"[Pipeline] [INFO] migrating script from v{ver} to "
-                    f"v{PIPELINE_FORMAT_VERSION}.")
-            pcfg = PipelineConfig.load_from_file(path)
-        except Exception as e:
-            self.log(f"[Pipeline] [ERROR] Failed to load script: {e}")
-            from app.utils import report_warning
-            report_warning(self.main_window, "Load Pipeline Script Failed",
-                           "The pipeline script could not be loaded.",
-                           detail=str(e))
-            return False
-        self._apply_pipeline_config(pcfg, path)
-        return True
-
-    def _apply_pipeline_config(self, pcfg: PipelineConfig, path: str):
-        # A pipeline script fully defines the CAD/mesh/solver state, so start
-        # from a clean slate: clear all open sessions, the mesh + solver config,
-        # any generated mesh and loaded results. Otherwise a partial script would
-        # silently inherit leftover settings from whatever was already open.
-        self.reset_all_state()
-
-        # CAD: each cads entry is a PreProcessor config — reuse the JSON loader,
-        # which opens one session (tab) per entry.
-        loaded = 0
-        for i, cad in enumerate(pcfg.cads):
-            if cad.get("input_file"):
-                self._apply_json_config(dict(cad), path)
-                loaded += 1
-            elif cad.get("segments"):
-                # Segments reference a source geometry by index, but none was
-                # saved (the entry came from a drawn/in-memory geometry). Warn so
-                # the missing tab isn't a surprise; Run All skips its resample and
-                # meshes the configured geometry files directly.
-                self.log(
-                    f"[Pipeline] [WARNING] CAD entry {i + 1} has no source "
-                    "geometry file; its resample stage will be skipped and the "
-                    "mesh will use its configured geometry files.")
-        if loaded > 1:
-            self.log(
-                f"[Pipeline] opened {loaded} CAD geometries from the script.")
-
-        # Mesh: apply onto the shared mesh config + panel, wiring the CAD output
-        # as the boundary if the section did not name its own geometry.
-        if pcfg.mesh:
-            self.global_mesh_config.load_from_dict(dict(pcfg.mesh))
-            session = self.active_session()
-            if not self.global_mesh_config.geom_files and session is not None:
-                out = session.project_model.output_file
-                if out:
-                    self.global_mesh_config.geom_files = [os.path.abspath(out)]
-            self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
-            self.sync_mesh_layers_panel()
-
-        # Solver: apply preset first, then the explicit fields.
-        if pcfg.solver:
-            preset = pcfg.solver.get("preset")
-            if preset:
-                self.global_solver_config.apply_preset(preset)
-            payload = {k: v for k, v in pcfg.solver.items()
-                       if k not in ("preset", "skip")}
-            self.global_solver_config.load_from_dict(payload)
-            self.global_solver_config.ensure_default_binaries()
-            self.push_panel_config(self.main_window.solver_config_panel, self.global_solver_config)
-
-        # Immersed solid (IB): apply the section to the panel so an IB case
-        # described by a script is ready to run from the GUI.
-        if pcfg.stl3d:
-            self.global_stl3d_config = pcfg.build_stl3d_config()
-            self.push_panel_config(self.main_window.stl3d_config_panel, self.global_stl3d_config)
-            self.log(
-                "[Pipeline] applied the immersed-solid (IB) section; run the "
-                "Immersed Solid stage to generate phi.")
-
-        # Results: remember the preferred contour variable for after the solve.
-        self._pipeline_result_var = pcfg.results.get("variable", "")
-        # The freshly-loaded script IS the current state, so re-baseline: without
-        # this, loading a script would leave the project looking unsaved and the
-        # exit prompt would ask about changes the user never made.
-        self._reset_project_baseline()
-        self.log(
-            f"[Pipeline] Loaded script '{os.path.basename(path)}'. "
-            "Click Run All to execute.")

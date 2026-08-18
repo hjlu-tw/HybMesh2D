@@ -424,14 +424,27 @@ class PipelineConfig:
             mc.geom_files = ordered
         return mc
 
-    def build_stl3d_config(self):
+    def build_stl3d_config(self, repo_root: str = ""):
         """Immersed-solid section -> Stl3dConfig (defaults when the section is
         absent). Imported lazily so this module stays importable without the IB
-        model on a trimmed install."""
+        model on a trimmed install.
+
+        ``repo_root`` resolves a RELATIVE ``stl_path`` the same way
+        :meth:`resolve_input_file` resolves a relative CAD input. Without it a
+        script could only name its STL absolutely: every other section in this
+        schema takes a repo-relative path, but the IB stage validated
+        ``stl_path`` against the process cwd, so a portable script failed with
+        "STL file not found" naming the path it had been given. Callers that have
+        no repo (a round-trip test, a config already holding absolute paths) may
+        omit it and nothing is rewritten.
+        """
         from app.models.stl3d_config import Stl3dConfig
         if not self.stl3d:
             return Stl3dConfig()
-        return Stl3dConfig.from_dict(dict(self.stl3d))
+        cfg = Stl3dConfig.from_dict(dict(self.stl3d))
+        if repo_root and cfg.stl_path and not os.path.isabs(cfg.stl_path):
+            cfg.stl_path = os.path.join(repo_root, cfg.stl_path)
+        return cfg
 
     def build_solver_config(self, repo_root: str) -> SolverConfig:
         """Solver section -> SolverConfig with prebuilt-binary defaults filled and
