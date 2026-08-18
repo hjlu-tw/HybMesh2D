@@ -32,6 +32,18 @@ class SegmentModel:
         # sidecar (the C++ backend reads sj["bc"]).
         self.bc: str = ""
 
+        # Whether this segment grows a boundary layer. The other half of the
+        # per-segment fact whose first half is ``bc`` above, and a MESH-stage
+        # edit rather than a CAD one — a freshly drawn edge grows a layer, and
+        # the user turns it off for a wall that should not. It lives here, on
+        # the segment, for the same reason ``bc`` does: the resampler REWRITES
+        # the ``.meta`` sidecar from this config on every save, so a fact whose
+        # only home was that file came back as the default and three call sites
+        # grew snapshot/restore wrappers around the subprocess to compensate.
+        # Carried to the mesher via the sidecar's v3 grow column, which the
+        # backend fills from ``sj["grow_bl"]`` (tools/PreProcessor/src/main.cpp).
+        self.grow_bl: bool = True
+
         # Whether a polygon / polyline-style edge closes back to its first
         # vertex. Inherently-closed shapes (triangle/quad/circle) ignore this;
         # it matters for `polygon` (incl. file edges baked into a polygon).
@@ -98,6 +110,10 @@ class SegmentModel:
             seg.match_previous = d.get("match_previous", False)
             seg.closed = d.get("closed", True)
         seg.bc = d.get("bc", "")
+        # The legacy spelling is accepted because the C++ backend has always
+        # read either (`sj.value("grow_bl", !sj.value("no_bl", false))`), so a
+        # hand-written CLI config using "no_bl" must mean the same thing here.
+        seg.grow_bl = bool(d.get("grow_bl", not d.get("no_bl", False)))
         return seg
 
     def to_dict(self) -> dict:
@@ -138,4 +154,6 @@ class SegmentModel:
                 d["closed"] = False
         if self.bc:
             d["bc"] = self.bc
+        if not self.grow_bl:
+            d["grow_bl"] = False
         return d

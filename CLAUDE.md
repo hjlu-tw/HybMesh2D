@@ -275,7 +275,7 @@ Layered PyQt6 application:
 
 - **`controller.py`**: Top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
 - **`controllers/`**: Business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
-- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields; serialized via `to_dict()`/`from_dict()`), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py` — see "The Output field's `.*`"), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py` (see "Transient results" below). Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/cli.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
+- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`, see "A re-save of the geometry" below; serialized via `to_dict()`/`from_dict()`, which is the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py` — see "The Output field's `.*`"), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py` (see "Transient results" below). Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/cli.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
 - **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py` (mesh visualization), `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
 - **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd` — snapshot of the Mesh/Solver/IB configuration)
 
@@ -563,8 +563,9 @@ time, several clicks before the grid is exported, sent and run, so
 `solver_ctrl._confirm_mesh_bc_state`, which *asks* rather than deciding —
 `headless_default=True` so batch/CI, which regenerate in the same pass, are not
 blocked). Two independent signals: an assigned BC **type** with no patch of that
-name in the `.bnd`, and a geometry `.meta` **newer** than the mesh (per-segment
-BC and No-BL flags live there, and changing one segment from inlet to outlet
+name in the `.bnd`, and a geometry `.meta` **newer** than the mesh (the per-segment
+BC and No-BL flags are projected there from the model on every edit, so its mtime
+still moves when one changes — and changing one segment from inlet to outlet
 leaves both names in the file, so content alone cannot see it). Note the two
 namespaces this replaced a bug in: a `group_bc` key is a segment **label**, a
 `.bnd` patch name is the **BC type** the mesher resolved it to — comparing them
@@ -633,29 +634,58 @@ resolver, or the BC table describes one grid while the run reads another. Whethe
 grid is STALE stays the mesh-BC audit's job (`_confirm_mesh_bc_state`), not a refusal
 to run. Both blocks gated by `tests/test_open_project_by_path.py`.
 
-**A re-save of the geometry must not throw the Mesh-stage edits away**
-(`meta_io.snapshot_seg_edits` / `restore_seg_edits`): both halves of a per-segment
-BC live in the `.meta` — the **label** in the NSEGMENTS bc column, the label→type
-map in the trailer — and the resampler REWRITES that sidecar from the CAD config
-on every save. It carries the trailer through verbatim but the bc column comes
-back `-` and the v3 grow column comes back 1, so a CAD tweak + Save leaves the map
+**A re-save of the geometry must not throw the Mesh-stage edits away, and the fix
+is a MODEL FIELD rather than a wrapper around the subprocess.** Both halves of a
+per-segment BC live in the `.meta` — the **label** in the NSEGMENTS bc column, the
+label→type map in the trailer — and the resampler REWRITES that sidecar from the CAD
+config on every save. It carries the trailer through verbatim but the bc column comes
+back `-` and the v3 grow column comes back 1, so a CAD tweak + Save left the map
 pointing at labels nothing carries: the mesher warns
 (`NO boundary segment carries any of the … GROUP_BC label(s)`), every patch
 exports as `wall`, and the GUI still shows the BCs it holds in memory. USER-REPORTED
 (2026-08-12) as "I set the BCs in Edit Seg BC, why `no boundary patch named inlet,
-outlet`?". The fix is in the CALLER, not the resampler — which stopped preserving
-the prior sidecar itself on purpose, because a NEW geometry written over an existing
-output name then inherited the old geometry's flags (`src/cli.cpp`). Only the
-caller knows the file it is overwriting is the same geometry: `save_output`
-snapshots **only when `project_model.output_file` already is that path**,
-`_pipe_resample` / `_run_resample` because the path is the session's / script's own.
-Two rules keep the restore honest: it is **refused when the segment id set changed**
-(a label is bound to a segment by id, so after an edge is added or removed
-re-applying by id would move the inlet onto another piece of wall) and reported as
-dropped instead; and every restore is **named in the log** by BC type, since a
-silent restore of the wrong thing beats nothing at all. Gated by
-`tests/test_seg_edit_carryover.py`, which drives the real `surface_resampler` so
-the wipe it compensates for cannot quietly stop happening.
+outlet`?".
+
+The fix is **not** in the resampler, which stopped preserving the prior sidecar
+itself on purpose, because a NEW geometry written over an existing output name then
+inherited the old geometry's flags (`tools/PreProcessor/src/main.cpp` says so in a
+comment). It is also **no longer a caller-side snapshot/restore around the
+subprocess** — that shipped first (`meta_io.snapshot_seg_edits` /
+`restore_seg_edits`, three call sites) and is now **gone**, along with its
+`describe_seg_edit_restore`. Both facts are `SegmentModel` **fields** instead: `bc`
+already was one, and **`grow_bl` is new** (default True; `to_dict()` emits it only
+when False, so every pre-existing config, workspace and script stays
+byte-identical). The resampler has always read `sj["bc"]` and `sj["grow_bl"]` from
+its own config, so `to_dict()` — the single serialiser behind the resample config
+(`models/project.py`), the `.hws` workspace (`session_io_ctrl`) and the pipeline
+script (`pipeline_config.cad_section`) — makes the sidecar come back **correct the
+first time**. Measured against the real binary: `grow_bl: False` + `bc: "inlet"` in
+the config survive a resample; the same config without them still comes back wiped
+(so the mechanism is not redundant); and a *different* geometry over the same output
+name inherits nothing, which is the reverted failure mode staying dead. The fact
+moved **up**, not back down: the model knows which geometry it describes and the
+resampler does not.
+
+Two consequences worth knowing. **The `.meta` is now a PROJECTION of the model, not
+a second home** — `mesh_layers_ctrl._write_sidecar_from_model` rewrites both columns
+after every edit, and it is the command's `refresh_cb`, so an **undo rewrites the
+file too**; reverting the model while the file kept the old column would leave the
+mesher reading the un-undone value. Every existing reader (the BL dialog's seeding,
+the mesher) therefore needs no change — the file still says what it always said, it
+just no longer decides it. And **the id-set-changed refusal disappeared as a
+concept**: the old restore had to drop everything when the segment id set moved,
+because it re-applied by id after a subprocess had rewritten the file, and a label
+bound to a segment object cannot be shifted onto its neighbour by inserting an edge.
+The Mesh-stage dialogs consequently **emit** (`seg_grow_bl_changed` /
+`seg_bc_labels_changed`) instead of writing the sidecar themselves — a view writing
+that file is how the fact came to live only there. A geometry with **no CAD session
+behind it** (an external `.dat` browsed in, or one left by a closed tab) has no model
+to hold the fact, so the handler falls back to writing the sidecar directly; that is
+correct for a geometry this app does not resample, and
+`_session_for_geom_path` returning None is a normal outcome rather than an error.
+Gated by `tests/test_seg_edit_carryover.py`, which drives the real
+`surface_resampler` (so the wipe cannot quietly stop happening) and the real
+controller handler (so undo, redo and the projection are proven, not asserted).
 
 **Portable case export** (`services/case_export.py` + `case_export_docs.py`, both
 Qt-free; Solver toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into

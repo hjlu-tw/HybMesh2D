@@ -13,7 +13,7 @@ import os
 
 import numpy as np
 
-from app.services import ib_handoff, meta_io
+from app.services import ib_handoff
 from app.utils import repo_root
 
 from app.services.logging_setup import get_logger
@@ -126,21 +126,18 @@ class PipelineControllerMixin:
                            f"{stem}_resampled.dat")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         session.project_model.output_file = out
-        # Same as the interactive Save: the resampler rewrites <out>.meta from the
-        # CAD config, so the Mesh-stage per-segment edits (BC label, No BL) have to
-        # be carried across or Run All meshes with every patch on the wall default.
-        # `out` is derived from THIS session, so the snapshot is its own geometry.
-        snap = meta_io.snapshot_seg_edits(out) if os.path.exists(out) else None
-
         self.main_window.mode_combo.setCurrentIndex(0)  # show CAD while resampling
         cfg_path, created = self._write_temp_config(session, out)
         self.log("[Pipeline] Stage 1/3: resampling geometry...")
         self._run_backend(
             self._find_executable(), cfg_path, session,
             on_finish=lambda rc: self._pipe_after_resample(rc, out, created,
-                                                           session, snap))
+                                                           session))
 
-    def _pipe_after_resample(self, rc, out, created, session, seg_edits=None):
+    def _pipe_after_resample(self, rc, out, created, session):
+        # No per-segment snapshot/restore around the resampler: the BC label and
+        # the No-BL flag are SegmentModel fields, so _write_temp_config carried
+        # them into the resampler's config and the sidecar came back correct.
         for p in created:
             try:
                 if os.path.exists(p):
@@ -150,10 +147,6 @@ class PipelineControllerMixin:
         if rc != 0 or not os.path.exists(out):
             self._pipeline_abort(f"resample failed (code {rc}).")
             return
-        for line in meta_io.describe_seg_edit_restore(
-                meta_io.restore_seg_edits(out, seg_edits),
-                (seg_edits or {}).get("group_bc")):
-            self.log(f"[Pipeline] {line}")
         try:
             if session in self.sessions:
                 from app.services.geometry_service import load_points_dat

@@ -4,6 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QListWidgetItem
 from app.utils import block_signals, report_info
+from app.commands.segment_cmds_core import UpdateMultipleSegmentsStateCmd
 
 class MeshLayersControllerMixin:
     """Mixin managing the Geometry Layers list of the mesh generator — syncing
@@ -217,6 +218,114 @@ class MeshLayersControllerMixin:
 
         self._sync_global_scalars_from_panel()
         self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
+
+    # ── Mesh-stage per-segment edits (No-BL toggle, BC label) ──────────────
+    #
+    # These two facts are per-SEGMENT but edited at the MESH stage, and their
+    # only home used to be the ``.meta`` sidecar next to the resampled ``.dat``.
+    # The resampler rewrites that sidecar from the CAD config on every save, so
+    # each fact came back as its default (bc ``-``, grow ``1``) and three call
+    # sites wrapped the subprocess in snapshot/restore to put them back — a
+    # compensation that had to refuse itself whenever the segment id set changed,
+    # since it re-applied by id after a subprocess had rewritten the file.
+    #
+    # Routing the edit through the SegmentModel removes the need for any of that:
+    # ``to_dict()`` feeds the resampler's own config (which has always read
+    # ``sj["bc"]`` and ``sj["grow_bl"]``), so the sidecar is written correctly the
+    # FIRST time, and the fact reaches undo, the workspace and the pipeline
+    # script for free. It also cannot resurrect the failure mode that got sidecar
+    # preservation reverted from the resampler — a new geometry written over an
+    # existing output name inheriting the old geometry's flags — because the model
+    # knows which geometry it describes and the resampler does not.
+    def _session_for_geom_path(self, path: str):
+        """The CAD session whose export IS this mesh-stage geometry file, if any.
+
+        Matched on the session's own ``output_file``, which is exactly what
+        ``sync_mesh_layers_panel`` lists. A geometry with no session behind it is
+        legitimate and common (an external ``.dat`` browsed in, or one left by a
+        closed tab), which is why the caller must handle None rather than treat
+        it as an error.
+        """
+        target = os.path.abspath(path or "")
+        if not target:
+            return None
+        for session in self.sessions:
+            out = (session.project_model.output_file or "").strip()
+            if out and os.path.abspath(out) == target:
+                return session
+        return None
+
+    def _write_sidecar_from_model(self, session, path: str) -> None:
+        """Project the segment models' per-segment facts onto the ``.meta``.
+
+        The sidecar is a PROJECTION here, never a second home: it is rewritten
+        from the model after every edit, undo and redo. That is what makes undo
+        actually effective — reverting the model while the file kept the old
+        column would leave the mesher reading the un-undone value — and it is
+        why the readers (the BL dialog's seeding, the mesher itself) need no
+        change: the file still says what it always said, it just no longer
+        decides it.
+        """
+        from app.services.meta_io import write_meta_seg_growbl, write_meta_segbc
+        segs = session.project_model.segments
+        write_meta_seg_growbl(path, {seg.id: seg.grow_bl for seg in segs})
+        write_meta_segbc(path, {seg.id: seg.bc for seg in segs})
+
+    def _apply_mesh_stage_seg_edit(self, path: str, values: dict, field: str,
+                                   describe) -> bool:
+        """Put a {seg_id: value} edit on the segment models, undoably.
+
+        Returns True when a live model took the edit. False means no session is
+        behind this geometry, and the caller writes the sidecar directly — the
+        fact then lives only in that file, which is correct for a geometry this
+        app does not resample.
+        """
+        session = self._session_for_geom_path(path)
+        if session is None:
+            return False
+        pm = session.project_model
+        old_states, states = {}, {}
+        for idx, seg in enumerate(pm.segments):
+            if seg.id not in values:
+                continue
+            old_states[idx] = seg.to_dict()
+            setattr(seg, field, values[seg.id])
+        for idx in old_states:
+            states[idx] = (old_states[idx], pm.segments[idx].to_dict())
+        changed = [i for i, (o, n) in states.items() if o != n]
+        if changed:
+            session.command_history.execute(UpdateMultipleSegmentsStateCmd(
+                session, states,
+                refresh_cb=lambda: self._write_sidecar_from_model(session, path)))
+            self.log(describe(session, [pm.segments[i] for i in changed]))
+        else:
+            # Nothing moved, but the file may still predate the model (e.g. the
+            # geometry was just re-resampled). Keep the projection honest.
+            self._write_sidecar_from_model(session, path)
+        return True
+
+    def handle_seg_grow_bl_changed(self, path: str, seg_grow: dict):
+        """A Mesh-stage 'grow BL?' toggle."""
+        values = {int(k): bool(v) for k, v in (seg_grow or {}).items()}
+        if self._apply_mesh_stage_seg_edit(
+                path, values, "grow_bl",
+                lambda _s, segs: "No-BL: boundary layer now " + ", ".join(
+                    f"{'off' if not x.grow_bl else 'on'} on segment {x.id}"
+                    for x in segs)):
+            return
+        from app.services.meta_io import write_meta_seg_growbl
+        write_meta_seg_growbl(path, values)
+
+    def handle_seg_bc_labels_changed(self, path: str, seg_bc: dict):
+        """A Mesh-stage per-segment BC label edit. Same rule, same reason."""
+        values = {int(k): (v or "").strip() for k, v in (seg_bc or {}).items()}
+        if self._apply_mesh_stage_seg_edit(
+                path, values, "bc",
+                lambda _s, segs: "Segment BC: " + ", ".join(
+                    f"{x.id}->{x.bc or '(inherit)'}" for x in segs)):
+            return
+        from app.services.meta_io import write_meta_segbc
+        write_meta_segbc(path, values)
 
     def add_all_sessions_to_mesh(self):
         """Add all sessions that have valid exported output files to the global mesh config."""

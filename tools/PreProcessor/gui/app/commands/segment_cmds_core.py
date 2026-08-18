@@ -54,6 +54,9 @@ def _apply_segment_state(seg, state: dict):
     # Per-segment boundary condition. to_dict() only emits "bc" when non-empty,
     # so the "" default correctly restores a segment back to inheriting BC_GEOM.
     seg.bc = state.get("bc", "")
+    # Same asymmetry as `bc`: to_dict() only emits "grow_bl" when it is False,
+    # so the True default correctly restores a segment back to growing a layer.
+    seg.grow_bl = bool(state.get("grow_bl", True))
 
     # Curve specific
     seg.curve_type = state.get("curve_type", "custom")

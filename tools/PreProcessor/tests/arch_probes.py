@@ -279,22 +279,43 @@ def probe_7_pending_edit_owner():
 
 
 def probe_8_nobl_flag_model():
-    """The snapshot/restore pairs are the tell: they compensate for the wipe.
+    """DONE when the flag is a model field AND a gate keeps the compensation gone.
 
-    They must disappear WITH the wipe, not before it — removing them first loses
-    the user's flag outright.
+    The snapshot/restore pairs were the tell: they compensated for the resampler
+    rewriting the sidecar from the CAD config, and they had to disappear WITH
+    that wipe rather than before it — removing them first would have lost the
+    user's flag outright. Their absence alone is therefore not the property; a
+    field on the segment that reaches the resampler's own config is, which is
+    what the gate drives against the real binary.
+
+    Counting the files mentioning ``grow_bl`` is deliberately NOT the signal any
+    more. Before the work it was 1 (the sidecar reader) and that low number WAS
+    the defect — the fact had no model home; afterwards it is ~8 and that reads
+    like sprawl while being the fix. A number whose good and bad directions are
+    the same number is worse than no number.
     """
+    # Require a CALL or a DEF, not a mention: meta_io.py carries a comment naming
+    # the removed helpers and why they went, and prose is not a call site. The
+    # gate does this properly, by AST — this is only a pointer at it.
     sites = []
     for path in walk_py(APP):
-        if os.path.basename(path) == "meta_io.py":
-            continue
-        if re.search(r"(snapshot|restore)_seg_edits", read(path)):
+        if re.search(r"(?:def |\.)(?:snapshot|restore)_seg_edits\s*\(", read(path)):
             sites.append(os.path.relpath(path, APP))
-    homes = [os.path.relpath(p, APP) for p in walk_py(APP)
-             if "grow_bl" in read(p)]
-    state = DONE if not sites else OPEN
-    return state, (f"{len(sites)} snapshot/restore call sites; "
-                   f"grow_bl lives in {len(homes)} file(s): {', '.join(homes)}")
+    gate = read(TESTS, "test_seg_edit_carryover.py")
+    field = re.search(r"^\s+self\.grow_bl\b", read(APP, "models", "segment.py"), re.M)
+    emitted = 'd["grow_bl"]' in read(APP, "models", "segment.py")
+    if not sites and gate and field and emitted:
+        return DONE, ("SegmentModel.grow_bl reaches the resampler's own config; "
+                      "gated by test_seg_edit_carryover.py against the real binary")
+    if sites:
+        return OPEN, (f"{len(sites)} snapshot/restore call site(s) still compensate "
+                      f"for the wipe: {', '.join(sites)}")
+    if not field:
+        return OPEN, "no SegmentModel.grow_bl field — the flag has no model home"
+    if not emitted:
+        return OPEN, "SegmentModel.grow_bl exists but to_dict() does not emit it, "\
+                     "so it never reaches the resampler"
+    return OPEN, "compensation gone but no gate — the wipe would return unnoticed"
 
 
 def probe_9_utils_qt_line():

@@ -18,7 +18,7 @@ import threading
 from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import (
-    case_sources, ib_handoff, meta_io, solver_case, stl3d_case,
+    case_sources, ib_handoff, solver_case, stl3d_case,
 )
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
@@ -131,12 +131,13 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
     if not pm.input_file or not os.path.exists(pm.input_file):
         raise PipelineError(f"CAD input geometry not found: {pm.input_file!r}")
 
-    # The resampler rewrites <out>.meta from the CAD config, which resets the
-    # MESH-stage per-segment edits (BC label, No BL) — so a script re-run would
-    # mesh with every patch on the wall default. Carry them across exactly as the
-    # GUI's Save does; the output path is the script's own, so the .meta being
-    # snapshotted describes this same geometry (meta_io.restore_seg_edits).
-    snap = meta_io.snapshot_seg_edits(cad_out) if os.path.exists(cad_out) else None
+    # No snapshot/restore of the MESH-stage per-segment edits around this
+    # subprocess any more. The BC label and the No-BL flag are SegmentModel
+    # fields, so pm.export_config() below carries them into the resampler's own
+    # config (which has always read sj["bc"] / sj["grow_bl"]) and the sidecar is
+    # written correctly the first time. The old wrapper had to refuse itself
+    # whenever the segment id set changed, because it re-applied by id after a
+    # subprocess had rewritten the file; a field on the segment has no such gap.
 
     # Create the temp config inside the try so its removal is guaranteed even if
     # creation or export raises before we'd otherwise reach a guard.
@@ -155,9 +156,6 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
     if not os.path.exists(cad_out):
         raise PipelineError(f"resampler produced no output at {cad_out}")
     log(f"[CAD] resampled -> {cad_out}")
-    for line in meta_io.describe_seg_edit_restore(
-            meta_io.restore_seg_edits(cad_out, snap), (snap or {}).get("group_bc")):
-        log(f"[CAD] {line}")
     return cad_out
 
 

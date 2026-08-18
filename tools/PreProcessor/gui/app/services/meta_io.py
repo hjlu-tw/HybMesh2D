@@ -255,99 +255,17 @@ def write_meta_group_bc(dat_path: str, group_bc: dict[str, str]) -> bool:
     return True
 
 
-def snapshot_seg_edits(dat_path: str) -> dict:
-    """The MESH-stage per-segment edits a geometry's ``.meta`` currently records.
-
-    Returns ``{"seg_ids": [...], "labels": {sid: label}, "nobl": [sid, ...],
-    "group_bc": {label: bc_type}}`` — empty-ish when there is no sidecar.
-
-    Both edits live only in the ``.meta``, and the resampler REWRITES that file
-    from the CAD config every time the geometry is saved: the bc column comes back
-    ``-`` and the grow column comes back 1, deliberately (a fresh geometry starts
-    with a BL everywhere and no BCs). So a CAD tweak followed by Save silently
-    throws away the per-segment BCs and No-BL flags set in the Mesh stage, and the
-    only symptom is a mesh whose every patch exports as ``wall`` — see
-    :func:`restore_seg_edits`, which puts them back.
-    """
-    segs = read_meta_segments(dat_path)
-    return {"seg_ids": [sid for sid, _bc, _k in segs],
-            "labels": {sid: bc for sid, bc, _k in segs if bc},
-            "nobl": [sid for sid, grow in read_meta_seg_growbl(dat_path).items()
-                     if not grow],
-            "group_bc": read_meta_group_bc(dat_path)}
-
-
-def restore_seg_edits(dat_path: str, snap: dict | None) -> dict:
-    """Re-apply a :func:`snapshot_seg_edits` result onto a freshly written ``.meta``.
-
-    Returns ``{"labels": {sid: label}, "nobl": [sid], "dropped": {sid: label}}``:
-    what was carried over, and what could not be. The caller reports both — a
-    silent restore of the wrong thing would be worse than the loss it fixes.
-
-    **Only applied when the segment id set is unchanged.** A label is bound to a
-    segment by id alone, so after the user adds or removes an edge the ids shift
-    and re-applying by id would move the inlet onto a different piece of wall.
-    Then nothing is written and the assignments are reported as dropped, which
-    turns a silent loss into a named one.
-
-    Restoring is the caller's decision, not this function's: it must only be done
-    when the file being overwritten is the SAME geometry (see
-    ``backend_ctrl.save_output``). A new geometry written over an existing output
-    name must inherit nothing — that bug is why the resampler stopped preserving
-    the grow column itself (tools/PreProcessor/src/main.cpp).
-    """
-    out = {"labels": {}, "nobl": [], "dropped": {}}
-    if not snap:
-        return out
-    labels = dict(snap.get("labels") or {})
-    nobl = list(snap.get("nobl") or [])
-    if not labels and not nobl:
-        return out
-    now = [sid for sid, _bc, _k in read_meta_segments(dat_path)]
-    if set(now) != set(snap.get("seg_ids") or []):
-        out["dropped"] = labels
-        return out
-    if labels:
-        write_meta_segbc(dat_path, labels)
-        out["labels"] = labels
-    if nobl:
-        write_meta_seg_growbl(dat_path, {sid: False for sid in nobl})
-        out["nobl"] = sorted(nobl)
-    # The resampler carries the GROUP_BC trailer through verbatim; re-write it only
-    # if it somehow did not survive, so the labels above still resolve to a type.
-    if labels and not read_meta_group_bc(dat_path) and snap.get("group_bc"):
-        write_meta_group_bc(dat_path, snap["group_bc"])
-    return out
-
-
-def describe_seg_edit_restore(result: dict, group_bc: dict | None = None) -> list[str]:
-    """Log lines for a :func:`restore_seg_edits` result (empty when it did nothing).
-
-    Written to be read in the run log at the moment of the save, because that is
-    the moment the user's Mesh-stage work would otherwise have vanished.
-    """
-    lines: list[str] = []
-    labels = result.get("labels") or {}
-    nobl = result.get("nobl") or []
-    dropped = result.get("dropped") or {}
-    if labels or nobl:
-        parts = []
-        if labels:
-            gb = group_bc or {}
-            parts.append("per-segment BC on " + ", ".join(
-                f"segment {sid} ({gb.get(lbl) or lbl})"
-                for sid, lbl in sorted(labels.items())))
-        if nobl:
-            parts.append("No BL on segment " + ", ".join(str(s) for s in nobl))
-        lines.append("Carried the Mesh-stage settings over the re-resample: "
-                     + "; ".join(parts) + ".")
-    if dropped:
-        lines.append(
-            "WARNING: the segments changed, so the per-segment BC(s) on segment "
-            + ", ".join(str(s) for s in sorted(dropped))
-            + " could NOT be carried over — re-apply them (Mesh ▸ per-segment BC "
-              "dialog, then OK) before generating, or every patch exports as wall.")
-    return lines
+# snapshot_seg_edits / restore_seg_edits / describe_seg_edit_restore used to sit
+# here: a snapshot of the MESH-stage per-segment edits (BC label, No-BL flag)
+# taken before the resampler rewrote this sidecar and re-applied after. They are
+# gone because the facts they carried are SegmentModel fields now, so the
+# resampler receives them in its own config (sj["bc"] / sj["grow_bl"]) and writes
+# the sidecar correctly the first time. The restore also had to refuse itself
+# whenever the segment id set had changed — it re-applied by id after a
+# subprocess had rewritten the file, so an added or removed edge would have moved
+# the inlet onto another piece of wall. A field bound to the segment object has
+# no such gap, which is why the refusal disappeared as a concept rather than
+# being reimplemented here.
 
 
 def write_meta_segbc(dat_path: str, seg_bc: dict[int, str]) -> bool:

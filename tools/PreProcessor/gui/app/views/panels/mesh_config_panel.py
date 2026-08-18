@@ -31,6 +31,15 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
     geom_selection_changed = pyqtSignal(str)
     # Emitted with an Nx2 coords array (or None) to highlight one segment on the
     # canvas while the per-segment BC dialog is open.
+    # A Mesh-stage per-segment edit: the No-BL toggle and the BC label. Emitted
+    # rather than written straight to the .meta sidecar, because that file is not
+    # where either fact should live — the resampler rewrites it from the CAD
+    # config on every save. The controller puts them on the SegmentModel (where
+    # undo, the workspace and the pipeline script can see them) and writes the
+    # sidecar from there.
+    seg_grow_bl_changed = pyqtSignal(str, dict)
+    seg_bc_labels_changed = pyqtSignal(str, dict)
+
     segment_highlight_requested = pyqtSignal(object)
     # #5: emitted by the Output "Export mesh…" button to save the generated mesh.
     export_mesh_requested = pyqtSignal()

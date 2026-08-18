@@ -215,9 +215,14 @@ class MeshConfigBLMixin:
             # #4: persist auto-created patch names for ungrouped segments that
             # got a BC, so they group in the .meta and reach the mesher/solver.
             seg_names = dlg.result_seg_names()
-            from app.services.meta_io import write_meta_segbc, write_meta_group_bc
+            from app.services.meta_io import write_meta_group_bc
             if seg_names:
-                write_meta_segbc(path, seg_names)
+                # The controller owns this: it puts the label on the SegmentModel
+                # (undoable, and carried into the workspace / pipeline script /
+                # resample config) and writes the sidecar from there. A view that
+                # wrote the file itself is how the label came to live only in a
+                # file the resampler rewrites.
+                self.seg_bc_labels_changed.emit(path, seg_names)
             # Persist THIS geometry's label->BC-type map into its .meta so the
             # mapping survives a session reset / config reload (else the labels
             # resolve to nothing and every boundary defaults to wall at mesh time).
@@ -334,8 +339,9 @@ class MeshConfigBLMixin:
             # Persist per-segment grow-BL flags (independent of the parameter
             # override — kept even when the user chose 'Use Global').
             if segs and path:
-                from app.services.meta_io import write_meta_seg_growbl
-                write_meta_seg_growbl(path, dlg.result_seg_grow())
+                # Same rule as the BC label above — the controller owns both the
+                # model write and the sidecar write.
+                self.seg_grow_bl_changed.emit(path, dlg.result_seg_grow())
             self._sync_bl_scope()
             self.mesh_config_changed.emit(self.get_config())
 

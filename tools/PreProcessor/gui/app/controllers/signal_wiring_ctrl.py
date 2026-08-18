@@ -226,6 +226,10 @@ class SignalWiringMixin:
             mw.mesh_canvas_view.set_domain_is_custom)
         mw.mesh_config_panel.geom_selection_changed.connect(
             mw.mesh_canvas_view.highlight_geometry_file)
+        mw.mesh_config_panel.seg_grow_bl_changed.connect(
+            self.handle_seg_grow_bl_changed)
+        mw.mesh_config_panel.seg_bc_labels_changed.connect(
+            self.handle_seg_bc_labels_changed)
         mw.mesh_config_panel.segment_highlight_requested.connect(
             mw.mesh_canvas_view.highlight_segment)
 
