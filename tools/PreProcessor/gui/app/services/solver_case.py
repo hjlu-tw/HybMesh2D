@@ -14,7 +14,7 @@ import subprocess
 
 from app.models.solver_config import SolverConfig
 from app.services.case_sources import stage_case_sources
-from app.utils import repo_root
+from app.services.paths import repo_root
 
 
 def _noop(_msg: str) -> None:

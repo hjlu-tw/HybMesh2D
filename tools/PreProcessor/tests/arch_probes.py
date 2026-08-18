@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -299,27 +298,31 @@ def probe_8_nobl_flag_model():
 
 
 def probe_9_utils_qt_line():
-    """The only probe that runs code: the question is what an IMPORT pulls in.
+    """DONE when the pure helpers live off the Qt side AND a gate keeps them there.
 
-    A subprocess is required. In-process the answer is always "yes, PyQt6 is
-    loaded" once anything else has imported it, so the check would pass for the
-    wrong reason exactly when it matters.
+    The only probe that ran code, because the question is what an IMPORT pulls
+    in, and it kept that check in a subprocess: in-process the answer is always
+    "yes, PyQt6 is loaded" once anything else has imported it, so the check would
+    pass for the wrong reason exactly when it matters. That reasoning now lives
+    in the gate, along with the half this probe could never have seen — a
+    DEFERRED ``from app.utils import repo_root`` inside a function body loads no
+    Qt at import time, so the subprocess sweep called three such modules clean
+    while ``run_pipeline.sh`` still died on a machine without the toolkit.
     """
-    code = ("import sys; import app.services.pipeline_runner as m; "
-            "print(','.join(sorted(n for n in sys.modules if n.split('.')[0]=='PyQt6')))")
-    try:
-        r = subprocess.run([sys.executable, "-c", code], cwd=GUI, timeout=90,
-                           capture_output=True, text=True)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return OPEN, f"probe could not run: {exc}"
-    if r.returncode != 0:
-        return OPEN, "importing pipeline_runner failed: " + (
-            r.stderr.strip().splitlines() or ["?"])[-1]
-    loaded = [m for m in r.stdout.strip().split(",") if m]
-    if not loaded:
-        return DONE, "importing the headless runner loads no PyQt6 module"
-    return OPEN, (f"importing services.pipeline_runner loads {len(loaded)} PyQt6 "
-                  f"modules ({', '.join(loaded[:3])}…)")
+    gate = read(TESTS, "test_qt_free_seam.py")
+    pure = read(APP, "services", "paths.py")
+    moved = ("repo_root", "find_binary_executable", "find_solver_executables",
+             "find_stl3d_binary", "find_mpi_launcher", "is_mpi_binary")
+    homed = [n for n in moved if re.search(rf"^def {n}\(", pure, re.M)]
+    if gate and len(homed) == len(moved):
+        return DONE, ("gated by test_qt_free_seam.py; the 6 path/binary helpers "
+                      "live in Qt-free services/paths.py")
+    if not homed:
+        return OPEN, "the path/binary helpers still live in the Qt-side app/utils.py"
+    if len(homed) < len(moved):
+        return OPEN, (f"only {len(homed)}/{len(moved)} helpers moved: missing "
+                      + ", ".join(n for n in moved if n not in homed))
+    return OPEN, "helpers moved but no gate — a new import would not be caught"
 
 
 def probe_10_refresh_contract():

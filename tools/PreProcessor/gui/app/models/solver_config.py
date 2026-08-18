@@ -7,9 +7,15 @@ from app.models.solver_config_units import SolverConfigUnitsMixin
 
 
 def _repo_root() -> str:
-    """Absolute path to the repository root. Delegates to the shared helper;
-    imported lazily so this model module stays free of GUI dependencies."""
-    from app.utils import repo_root
+    """Absolute path to the repository root. Delegates to the shared helper.
+
+    The import is lazy for import-cycle reasons only. It used to also be what
+    kept this model free of GUI dependencies — the helper lived in the Qt-side
+    ``app/utils.py`` — and that no longer holds: ``services/paths.py`` is
+    Qt-free, and deferring the import would not have helped anyway, since the
+    toolkit was still needed the moment this function ran.
+    """
+    from app.services.paths import repo_root
     return repo_root()
 
 

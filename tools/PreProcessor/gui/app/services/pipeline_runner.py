@@ -22,7 +22,7 @@ from app.services import (
 )
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
-from app.utils import (
+from app.services.paths import (
     find_binary_executable, find_solver_executables, repo_root,
 )
 # Qt-free process helpers (no PyQt import), so this module stays headless-safe.

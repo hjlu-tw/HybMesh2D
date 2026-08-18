@@ -304,6 +304,46 @@ Layered PyQt6 application:
 
 **Subprocess environment**: `services/env_setup.py::mesher_env()` resolves the libgmsh directory (override: `HYBMESH_GMSH_LIB_DIR`) and must be passed as `env=` when launching `HybMesh2D`/`surface_resampler`. Inheriting it from a shell wrapper does **not** work — macOS SIP strips every `DYLD_*` variable when a protected `python3` starts, so `run.sh`'s export never reaches a Python-launched child. `tools/scripts/gmsh_lib_dir.sh` is the shell-side equivalent, sourced by `run.sh`/`run_pipeline.sh`. **Where Gmsh actually is has ONE answer: `tools/scripts/gmsh_sdk_dirs.py`** — the shell helper and `CMakeLists.txt` (which also needs `gmsh.h` at configure time) both resolve through it by asking the installed wheel. The CMake side used to carry a fixed HINTS list naming one developer's macOS pip prefix, and a pip prefix is per-machine: **CI installed gmsh and then failed at configure with "Gmsh SDK not found", and because the test job is `needs: build` the entire regression suite was SKIPPED rather than run — the workflow had never once been green.** A hardcoded absolute path in a discovery hint is worth treating as a defect on sight. The second half of the same bug was the LIBRARY name: the Linux wheel ships `lib/libgmsh.so.4.15` with no unversioned `libgmsh.so` symlink, so `find_library`'s `NAMES gmsh gmsh.4.15` (which become `libgmsh.so` / `libgmsh.4.15.so`) match nothing, while macOS's `libgmsh.4.15.dylib` matches — the build worked on the developer's machine and nowhere else. The resolver therefore reports `LIBFILE=` (the file it globbed) and CMake falls back to it, rather than teaching NAMES another platform's spelling and baking the version into a second place. The workflow first went green on 2026-08-17 (`4254c5d`), and what that covers is worth knowing: **69 Python tests + `ctest` 2/2 in the build job + the end-to-end `run_pipeline.sh`, none of which had ever executed in CI before**. Getting there took four unrelated environment defects and one flaky runner, and not one of them was a defect in the code under test — the lesson is that a workflow's *history* is the only evidence it gates anything.
 
+**`app/utils.py` is the Qt side of a seam, and the pure helpers now live on the
+other side** (`services/paths.py`, Qt-free — `repo_root`, `find_binary_executable`,
+`find_solver_executables`, `find_stl3d_binary`, `find_mpi_launcher`, `is_mpi_binary`).
+`app/utils.py` was a namespace rather than a module: message boxes, signal guards,
+pop-up stacking and form builders, then a third of pure `os`/`shutil` path resolution,
+one name, and that name sits on the Qt side. So **every headless module that needed a
+path imported the whole GUI toolkit** — `import app.services.pipeline_runner` loaded five
+`PyQt6` modules four lines below its own comment reading "no PyQt import, so this module
+stays headless-safe", and `run_pipeline.sh` / `run_batch.sh` required PyQt6 on a compute
+node that will never draw a window. `app/utils.py` **re-exports** the moved names, so the
+~16 Qt-side call sites are untouched; only the Qt-free layers were migrated.
+`is_headless` deliberately **stayed** with the Qt helpers — it asks which Qt platform
+plugin is running, so it belongs there even though its own `QApplication` import is
+deferred into the function body. Two things the gate
+(`tests/test_qt_free_seam.py`) had to learn the hard way:
+- **The check must be a subprocess.** In-process the answer is always "yes, PyQt6 is
+  loaded" once any other test has imported it, so the assertion would pass for the wrong
+  reason exactly when it matters.
+- **A deferred import is still a dependency, and an import-time sweep cannot see it.**
+  With the sweep green, `run_pipeline.sh` on a PyQt6-less machine still died in stage 2:
+  `mesh_config_io.config_to_text` did `from app.utils import repo_root` *inside a function
+  body*, loading no Qt at import time and needing the toolkit the moment a mesh config was
+  written. Three such sites existed (`models/mesh_config_io.py` ×2,
+  `models/solver_config.py`, `workers/solver_run.py`). The gate therefore reads the AST for
+  a moved name imported from `app.utils` at **any** nesting depth, and separately refuses
+  PyQt6 outright in a subprocess and drives the writers that failed.
+The `services/` sweep is a **deny**-list (`QT_SERVICES`, each entry carrying its reason —
+`i18n` wraps QTranslator, `ui_state` wraps QSettings): a new service is assumed Qt-free and
+making one Qt-dependent costs an entry, since an allow-list would silently exempt whatever
+nobody remembered to enrol. Stale entries fail too. One incidental correction: the moved
+block held a **second, disagreeing depth count** — `find_binary_executable` walked five
+levels from `gui/app` and so resolved to `<repo>/../build`, outside the repo, which is the
+off-by-one `repo_root`'s own docstring warns about; it now goes through `repo_root()`, and
+the gate pins the **resolved path** rather than the number of `..` segments. A separate
+pre-existing defect the sweep surfaced and did *not* fix is recorded in the gate's
+`CANNOT_IMPORT_STANDALONE`: `services/index_helpers.py` cannot be imported first
+(`index_helpers` → `models/__init__` → `models.session` → `commands/__init__` →
+`commands.segment_structure_cmds` → back), enabled by the eager re-exports in those two
+`__init__.py` files.
+
 Scroll-wheel on QSpinBox/QDoubleSpinBox is intentionally disabled (overridden in `main.py`).
 
 **Numeric fields**: any field holding a *physical length* (BL initial thickness, mesh sizes, domain coordinates, resampling spacing, seed size/radius) must use `views/clean_double_spin_box.py::SciDoubleSpinBox`, not `CleanDoubleSpinBox`. It accepts/displays scientific notation, steps by decade, and has no hardcoded floor — a fixed-notation box silently clamps the 1e-7..1e-8 first-cell heights real CFD needs. Range lower bounds stay at 0 and invalid values are rejected by `MeshConfig.validate()` with a message, never by UI clamping.

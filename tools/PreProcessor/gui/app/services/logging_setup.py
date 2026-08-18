@@ -43,7 +43,7 @@ def get_logger(name: str | None = None) -> logging.Logger:
 
 def _log_dir() -> str:
     try:
-        from app.utils import repo_root
+        from app.services.paths import repo_root
         base = repo_root()
     except Exception:
         base = os.getcwd()

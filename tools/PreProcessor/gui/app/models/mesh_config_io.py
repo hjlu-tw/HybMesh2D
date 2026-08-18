@@ -31,7 +31,7 @@ def load_config_from_file(cfg, path: str):
             return os.path.abspath(val_str)
         candidates = [os.path.abspath(os.path.join(cfg_dir, val_str)),
                       os.path.abspath(os.path.join(os.path.dirname(cfg_dir), val_str))]
-        from app.utils import repo_root
+        from app.services.paths import repo_root
         project_root = repo_root()
         candidates.append(os.path.abspath(os.path.join(project_root, val_str)))
         candidates.append(os.path.abspath(os.path.join(project_root, "examples", val_str)))
@@ -278,7 +278,7 @@ def config_to_text(cfg, path: str = "") -> str:
     if cfg.output_filename:
         lines.append(f"OUTPUT_FILENAME {cfg.output_filename}")
 
-    from app.utils import repo_root
+    from app.services.paths import repo_root
     project_root = repo_root()
     cfg_dir = os.path.dirname(os.path.abspath(path)) if path else project_root
     domain_emitted = False   # at most one DOMAIN_FILE (the backend keeps one)

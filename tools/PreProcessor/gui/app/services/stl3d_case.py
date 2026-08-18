@@ -19,7 +19,7 @@ import shutil
 
 from app.models.stl3d_config import Stl3dConfig
 from app.services.solver_case import sanitize_case_name
-from app.utils import find_stl3d_binary, repo_root
+from app.services.paths import find_stl3d_binary, repo_root
 
 
 class Stl3dError(RuntimeError):

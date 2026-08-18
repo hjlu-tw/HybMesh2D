@@ -7,7 +7,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from app.models.solver_config import SolverConfig
 from app.services import solver_case
-from app.utils import find_mpi_launcher
+from app.services.paths import find_mpi_launcher
 from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
 from app.workers.proc_util import popen_kwargs, stop_process_async, kill_process
 

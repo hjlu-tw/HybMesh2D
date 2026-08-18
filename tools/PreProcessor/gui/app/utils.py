@@ -1,6 +1,4 @@
 from __future__ import annotations
-import os
-import shutil
 from contextlib import contextmanager
 
 from PyQt6.QtCore import QObject, Qt, QPoint, QTimer
@@ -21,6 +19,20 @@ from app.styles import (
     COMBO_STYLE as COMBO_STYLE,
     SPIN_STYLE as SPIN_STYLE,
     LINEEDIT_STYLE as LINEEDIT_STYLE,
+)
+
+# The path/binary helpers moved to app.services.paths, which is Qt-free — a
+# headless module must be able to ask "where is the repo root?" without loading
+# the GUI toolkit (see that module's docstring). Re-exported here so the Qt-side
+# call sites that already say `from app.utils import repo_root` keep working;
+# the `X as X` form marks them as intentional re-exports for the linter.
+from app.services.paths import (
+    repo_root as repo_root,
+    find_binary_executable as find_binary_executable,
+    find_solver_executables as find_solver_executables,
+    find_stl3d_binary as find_stl3d_binary,
+    find_mpi_launcher as find_mpi_launcher,
+    is_mpi_binary as is_mpi_binary,
 )
 
 # Boundary Condition Colors mapping
@@ -334,18 +346,6 @@ def help_row(label_text: str, widget, tooltip: str) -> QWidget:
     return help_label(label_text, tooltip)
 
 
-def repo_root() -> str:
-    """Absolute path to the repository root (the HybMesh project directory).
-
-    Single source of truth for the project root. Callers in ``app/`` previously
-    derived it ad-hoc as ``os.path.join(dirname(__file__), "../...")`` with the
-    number of ``..`` segments depending on the file's depth — an easy off-by-one
-    to get wrong. ``utils.py`` lives at ``gui/app/utils.py``, four levels below
-    the repo root."""
-    return os.path.abspath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../.."))
-
-
 def is_headless() -> bool:
     """True on a Qt platform with no screen (offscreen / minimal).
 
@@ -356,87 +356,6 @@ def is_headless() -> bool:
     from PyQt6.QtWidgets import QApplication
     app = QApplication.instance()
     return app is not None and app.platformName() in ("offscreen", "minimal")
-
-
-def find_binary_executable(bin_name: str) -> str | None:
-    """Locate binary executable in PATH environment or local build candidates."""
-    path_run = shutil.which(bin_name)
-    if path_run:
-        return path_run
-
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.abspath(os.path.join(base_dir, "../../../../../build")),
-        os.path.abspath("../../../build"),
-        os.path.abspath("./build"),
-        os.path.abspath("."),
-    ]
-    for folder in candidates:
-        full_path = os.path.join(folder, bin_name)
-        if os.path.exists(full_path) and os.access(full_path, os.X_OK) and not os.path.isdir(full_path):
-            return full_path
-    return None
-
-
-# Prebuilt solver-pipeline binaries shipped under solver/ (decision D5: use the
-# existing binaries, no compilation step). Paths are relative to the repo root.
-_SOLVER_BIN_REL = {
-    "getpgrid": "solver/preprocess/getPGrid/work/getPGrid",
-    "bdecompose": "solver/preprocess/bDecompose/work/bDecompose",
-    "solver": "solver/execute/unicones.eqn6.mac",
-}
-
-
-def find_solver_executables() -> dict:
-    """Locate the prebuilt getPGrid / bDecompose / unicones binaries.
-
-    Returns a dict {name: abs_path | None}. Existence (not executability) is
-    reported, since bDecompose ships without the +x bit and the solver worker
-    chmods it on demand when domain decomposition is enabled.
-    """
-    repo = repo_root()
-    found: dict[str, str | None] = {}
-    for name, rel in _SOLVER_BIN_REL.items():
-        full = os.path.join(repo, rel)
-        found[name] = full if os.path.exists(full) else None
-    return found
-
-
-def find_stl3d_binary() -> str | None:
-    """Locate the prebuilt STL3d immersed-solid preprocessor binary.
-
-    Mirrors find_solver_executables (decision D5: use the existing binaries). The
-    binary ships in both the work and src dirs; prefer the work-dir copy.
-    """
-    repo = repo_root()
-    for rel in ("solver/preprocess/STL3d/work/stl3d",
-                "solver/preprocess/STL3d/src/stl3d"):
-        full = os.path.join(repo, rel)
-        if os.path.exists(full):
-            return full
-    return None
-
-
-def find_mpi_launcher() -> str | None:
-    """Return the path to mpirun/mpiexec on PATH, or None if neither is present."""
-    return shutil.which("mpirun") or shutil.which("mpiexec")
-
-
-def is_mpi_binary(path: str) -> bool:
-    """Heuristic: does this executable actually link MPI?
-
-    Scans the binary for the `MPI_Init` symbol name. A pthread/serial build (like
-    the bundled unicones) has no MPI symbols, so domain decomposition + mpirun
-    would be meaningless against it.
-    """
-    if not path or not os.path.exists(path):
-        return False
-    try:
-        with open(path, "rb") as f:
-            blob = f.read()
-    except OSError:
-        return False
-    return b"MPI_Init" in blob
 
 
 def apply_smart_spin_steps(root) -> int:
