@@ -5,7 +5,11 @@ The GUI writes a ``Background_para.dat`` and HybMesh2D parses it key by key. Tho
 two lists are maintained in different languages, in different files, by hand:
 
   * writer — ``tools/PreProcessor/gui/app/models/mesh_config_io.py``
-  * reader — ``include/Config.hpp`` (``key == "..."`` branches)
+  * reader — ``include/Config.hpp`` (``key == "..."`` branches) plus
+    ``include/BLParams.hpp`` (the ``X("KEY", type, field, default)`` declaration
+    the boundary-layer parsers are generated from — those 22 keys have no
+    ``key ==`` branch of their own any more, and reading only the branches would
+    have reported all 22 as silently ignored)
 
 Nothing enforced that they agree. A key the GUI writes but the C++ does not parse
 is the worst kind of bug in a pre-processor: the user sets a value, the GUI saves
@@ -39,6 +43,7 @@ if _GUI not in sys.path:
 
 WRITER = os.path.join(_GUI, "app", "models", "mesh_config_io.py")
 READER = os.path.join(_REPO, "include", "Config.hpp")
+BL_DECL = os.path.join(_REPO, "include", "BLParams.hpp")
 
 _FAILS = []
 
@@ -62,9 +67,23 @@ def gui_written_keys() -> set:
 
 
 def cpp_parsed_keys() -> set:
-    """Keys Config.hpp compares against while reading the .dat."""
+    """Every .dat key the mesher parses, from BOTH places it can be declared.
+
+    A hand-written ``key == "..."`` branch in Config.hpp, or a row of the
+    boundary-layer declaration in BLParams.hpp — whose 22 keys are parsed by a
+    branch GENERATED from that row, so there is no literal to grep for. Missing
+    the second source would report all 22 as silently ignored, which is the
+    opposite of the truth: they are the keys that can no longer BE missed.
+    """
     src = open(READER, encoding="utf-8").read()
-    return set(re.findall(r'key == "([A-Z][A-Z0-9_]{2,})"', src))
+    keys = set(re.findall(r'key == "([A-Z][A-Z0-9_]{2,})"', src))
+    decl = open(BL_DECL, encoding="utf-8").read()
+    declared = set(re.findall(r'X\("([A-Z][A-Z0-9_]{2,})"', decl))
+    assert len(declared) >= 20, (
+        f"only {len(declared)} rows found in {BL_DECL} — this regex no longer "
+        "matches the declaration, which would make check 1 pass for the wrong "
+        "reason")
+    return keys | declared
 
 
 # Keys the C++ accepts that the GUI intentionally does not write as standalone

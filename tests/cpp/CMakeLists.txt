@@ -38,6 +38,10 @@ endforeach()
 # No rpath either, deliberately: needing one would mean a dylib crept in.
 set(HYBMESH_PURE_TESTS
     test_junction_scheme
+    # Config.hpp is a header-only .dat parser with no Mesh and no gmsh in it,
+    # so the BL declaration is testable here; this executable failing to link
+    # is the signal that stopped being true.
+    test_bl_params_decl
 )
 
 foreach(t IN LISTS HYBMESH_PURE_TESTS)
