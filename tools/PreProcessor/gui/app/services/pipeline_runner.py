@@ -18,7 +18,7 @@ import threading
 from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import (
-    case_sources, ib_handoff, solver_case, stl3d_case,
+    case_sources, ib_handoff, pipeline_stages, solver_case, stl3d_case,
 )
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
@@ -118,7 +118,7 @@ def _mesh_env():
 
 
 # --------------------------------------------------------------------------- #
-# Stage 1: CAD resample
+# CAD resample
 # --------------------------------------------------------------------------- #
 def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
                   on_process=None) -> str:
@@ -160,7 +160,7 @@ def _run_resample(pcfg: PipelineConfig, repo: str, log, index: int = 0,
 
 
 # --------------------------------------------------------------------------- #
-# Stage 2: mesh generation (HybMesh2D)
+# Mesh generation (HybMesh2D)
 # --------------------------------------------------------------------------- #
 def _mesh_output_path(mc: MeshConfig, script_name: str, repo: str) -> str:
     """The absolute ``.vtk`` path this stage will make the mesher write.
@@ -228,7 +228,7 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
 
 
 # --------------------------------------------------------------------------- #
-# Stage 3: solver (getPGrid -> unicones)
+# Immersed solid (STL3d): STL -> phi
 # --------------------------------------------------------------------------- #
 def _run_stl3d(pcfg: PipelineConfig, repo: str, log, on_process=None) -> str:
     """Immersed-solid stage: STL -> phi field. Returns the phi Tecplot path.
@@ -257,6 +257,9 @@ def _run_stl3d(pcfg: PipelineConfig, repo: str, log, on_process=None) -> str:
     return case["phi_path"]
 
 
+# --------------------------------------------------------------------------- #
+# Solver (getPGrid -> unicones)
+# --------------------------------------------------------------------------- #
 def _case_sources(pcfg: PipelineConfig, repo: str, geoms, vtk: str):
     """``(sources, generated)`` for staging a scripted case's grid/cad/.
 
@@ -389,14 +392,29 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     repo = repo_root()
     out = {"cad_out": "", "cad_outs": [], "phi": "", "vtk": "", "result": ""}
 
-    # Stage 1 — CAD, once per `cads` entry. A case routinely has several
-    # geometries (airfoil + ground plane, multi-element wing, custom domain), and
-    # every resampled output becomes a boundary for the mesh stage.
+    # Decide the whole plan BEFORE running anything, so the "Stage i/N" labels
+    # below count the stages that will actually execute. The denominator used to
+    # be the literal 3 at three sites here (and five more in the GUI) while four
+    # stages existed — the immersed solid was logged outside the numbering — so a
+    # four-stage run reported itself as three. The count is now derived from
+    # services/pipeline_stages, which is the one place the set is declared.
     indices = pcfg.cad_indices()
+    need_cad = bool(indices) and not pcfg.cads_all_skipped()
+    need_ib = bool(pcfg.stl3d) and run_ib and not pcfg.stl3d_skip()
+    need_solver = run_solver and not pcfg.solver_skip()
+    steps = pipeline_stages.plan({"resample": need_cad, "stl3d": need_ib,
+                                  "solver": need_solver})
+
+    def _label(key: str) -> str:
+        return pipeline_stages.label_for(key, steps)
+
+    # CAD, once per `cads` entry. A case routinely has several geometries
+    # (airfoil + ground plane, multi-element wing, custom domain), and every
+    # resampled output becomes a boundary for the mesh stage.
     if not indices:
         log("[CAD] no CAD section; meshing configured geometry files.")
         geoms = []
-    elif pcfg.cads_all_skipped():
+    elif not need_cad:
         geoms = [g for g in (pcfg.resolve_input_file(repo, i) for i in indices) if g]
         if geoms:
             log(f"[CAD] resample skipped; using {', '.join(geoms)}")
@@ -404,7 +422,7 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
             log("[CAD] resample skipped (no source geometry); "
                 "meshing configured geometry files.")
     else:
-        log(f"=== Stage 1/3: CAD resample ({len(indices)} geometr"
+        log(f"=== {_label('resample')} ({len(indices)} geometr"
             f"{'y' if len(indices) == 1 else 'ies'}) ===")
         geoms = []
         for i in indices:
@@ -424,9 +442,11 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     out["cad_out"] = geoms[0] if geoms else ""
 
     # Immersed solid (optional): STL -> phi, before meshing, because the solver
-    # stage links the phi field it produces.
-    if pcfg.stl3d and run_ib and not pcfg.stl3d.get("skip"):
-        log("=== Immersed solid: STL -> phi ===")
+    # stage links the phi field it produces (services/pipeline_stages declares
+    # that dependency as data; it used to be this comment alone, and the comment
+    # was false until candidate 6a).
+    if need_ib:
+        log(f"=== {_label('stl3d')} (STL -> phi) ===")
         try:
             out["phi"] = _run_stl3d(pcfg, repo, log, on_process=on_process)
         except stl3d_case.Stl3dError as e:
@@ -435,20 +455,19 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
             raise PipelineError(f"immersed-solid stage: {e}") from e
     elif pcfg.stl3d:
         why = "--no-ib" if not run_ib else '"skip": true'
-        log(f"[IB] immersed-solid stage skipped ({why}).")
+        log(f"[IB] {_label('stl3d')} stage skipped ({why}).")
 
-    # Stage 2 — mesh.
-    log("=== Stage 2/3: mesh generation ===")
-    need_solver = run_solver and not pcfg.solver_skip()
+    # Mesh.
+    log(f"=== {_label('mesh')} ===")
     out["vtk"] = _run_mesh(pcfg, repo, geoms, need_starcd=need_solver, log=log,
                            on_process=on_process)
 
-    # Stage 3 — solver.
+    # Solver.
     if need_solver:
-        log("=== Stage 3/3: solver ===")
+        log(f"=== {_label('solver')} ===")
         out["result"] = _run_solver(pcfg, repo, out["vtk"], log,
                                     on_process=on_process, geoms=geoms,
                                     phi=out["phi"])
     else:
-        log("=== solver stage skipped ===")
+        log(f"=== {_label('solver')} stage skipped ===")
     return out

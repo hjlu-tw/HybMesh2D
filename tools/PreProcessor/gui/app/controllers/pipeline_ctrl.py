@@ -6,6 +6,11 @@ Each stage already runs in its own QThread with a ``finished_signal``; this
 mixin sequences them without blocking the UI and suppresses the per-stage
 dialogs (output path, unclosed prompt) so a single click runs to the contour.
 
+The stage SET is not defined here: it is declared once in
+``services/pipeline_stages.py`` and shared with the headless runner, so a stage
+cannot exist in one host only and the ``Stage i/N`` labels count what will
+actually run. This mixin owns only how the GUI waits — QThread signals.
+
 Save/load of the unified pipeline JSON lives in ``pipeline_io_ctrl.py``.
 """
 from __future__ import annotations
@@ -13,7 +18,7 @@ import os
 
 import numpy as np
 
-from app.services import ib_handoff
+from app.services import ib_handoff, pipeline_stages
 from app.utils import repo_root
 
 from app.services.logging_setup import get_logger
@@ -66,15 +71,40 @@ class PipelineControllerMixin:
         self._pipe_cad_queue = [
             s for s in self.sessions
             if s.original_points is not None or s.project_model.segments]
+
+        # Fix the plan BEFORE the first stage starts, so every label below counts
+        # the stages this run will actually execute. Run All always solves; the
+        # other two are optional, and the immersed solid used to be logged
+        # outside the numbering entirely, which is why a four-stage run reported
+        # itself as three at five sites in this file alone.
+        ib_cfg = getattr(self, "global_stl3d_config", None)
+        self._pipe_plan = pipeline_stages.plan({
+            "resample": bool(self._pipe_cad_queue),
+            "stl3d": bool(ib_cfg is not None and getattr(ib_cfg, "stl_path", "")),
+            "solver": True,
+        })
+
         if self._pipe_cad_queue:
             n = len(self._pipe_cad_queue)
             if n > 1:
-                log(f"[Pipeline] Stage 1/3: resampling {n} geometries in tab order.")
+                log(f"[Pipeline] {self._pipe_label('resample')} — {n} geometries, "
+                    "in tab order.")
             self._pipe_resample_next()
         else:
-            log("[Pipeline] Stage 1/3: CAD resample skipped "
+            log(f"[Pipeline] {self._pipe_label('resample')} skipped "
                 "(no source geometry; meshing existing geometry files).")
             self._pipe_stl3d()
+
+    def _pipe_label(self, key: str) -> str:
+        """``Stage i/N: mesh generation``, numbered against THIS run's plan.
+
+        Falls back to the full declared set if a stage is somehow reached without
+        a plan: a label off by one is a worse outcome than a crash only in
+        theory, and the fallback keeps a stray continuation from taking the run
+        down. ``run_full_pipeline`` sets the plan before any stage starts.
+        """
+        steps = getattr(self, "_pipe_plan", ()) or pipeline_stages.STAGES
+        return pipeline_stages.label_for(key, steps)
 
     def _pipe_resample_next(self):
         """Resample the next queued session, or move on to meshing when done."""
@@ -97,7 +127,7 @@ class PipelineControllerMixin:
         self._pipe_cad_queue = []
         self._set_run_all_enabled(True)
 
-    # ---- Stage 1: CAD resample (batch: no output dialog) --------------- #
+    # ---- CAD resample (batch: no output dialog) ------------------------ #
     def _pipe_resample(self, session):
         # A freshly-loaded (or pipeline-loaded) raw geometry may carry no edge
         # segments yet; auto-detect features so the resampler has something to
@@ -128,7 +158,8 @@ class PipelineControllerMixin:
         session.project_model.output_file = out
         self.main_window.mode_combo.setCurrentIndex(0)  # show CAD while resampling
         cfg_path, created = self._write_temp_config(session, out)
-        self.log("[Pipeline] Stage 1/3: resampling geometry...")
+        self.log(f"[Pipeline] {self._pipe_label('resample')} — "
+                 "resampling geometry...")
         self._run_backend(
             self._find_executable(), cfg_path, session,
             on_finish=lambda rc: self._pipe_after_resample(rc, out, created,
@@ -199,18 +230,26 @@ class PipelineControllerMixin:
 
         Optional, and only ever skipped out loud: a case with no STL says so and
         moves straight on to meshing.
+
+        Whether it runs is READ FROM THE PLAN, not re-derived here. This used to
+        re-test ``global_stl3d_config.stl_path`` itself, which made the fact two
+        facts: refine the plan's copy alone (say, to require the STL to exist on
+        disk) and the denominator counts a stage that never executes — a mesh
+        announced as 3/4 in a three-stage run, which is this candidate's own
+        defect coming back by a new route.
         """
         w0 = getattr(self, "_stl3d_worker", None)
         if w0 is not None and w0.isRunning():
             self._pipeline_abort("STL3d is already running; wait for it to finish.")
             return
-        cfg = getattr(self, "global_stl3d_config", None)
-        if cfg is None or not getattr(cfg, "stl_path", ""):
-            self.log("[Pipeline] Immersed solid: skipped (no STL configured).")
+        if pipeline_stages.by_key("stl3d") not in getattr(self, "_pipe_plan", ()):
+            self.log(f"[Pipeline] {self._pipe_label('stl3d')} skipped "
+                     "(no STL configured).")
             self._pipe_mesh()
             return
 
-        self.log("[Pipeline] Immersed solid: tracing the phi field...")
+        self.log(f"[Pipeline] {self._pipe_label('stl3d')} — "
+                 "tracing the phi field...")
         # run_stl3d() validates + stages through services/stl3d_case and logs its
         # own reason if it refuses, so a failure to start is reported twice: once
         # in the stage's vocabulary, once as the pipeline aborting.
@@ -251,10 +290,10 @@ class PipelineControllerMixin:
         self.push_panel_config(self.main_window.solver_config_panel, sc)
         self._pipe_mesh()
 
-    # ---- Stage 2: mesh generation ------------------------------------- #
+    # ---- Mesh generation ----------------------------------------------- #
     def _pipe_mesh(self):
         self.main_window.mode_combo.setCurrentIndex(1)  # Mesh Generator view
-        self.log("[Pipeline] Stage 2/3: generating mesh...")
+        self.log(f"[Pipeline] {self._pipe_label('mesh')} — generating mesh...")
         # run_mesh_generator already forces STAR-CD export on the temp mesh, so
         # the solver's auto-link finds the .vrt/.cel/.bnd next to the temp VTK.
         self.run_mesh_generator()
@@ -268,9 +307,9 @@ class PipelineControllerMixin:
             return
         self._pipe_solver()
 
-    # ---- Stage 3: solver ---------------------------------------------- #
+    # ---- Solver -------------------------------------------------------- #
     def _pipe_solver(self):
-        self.log("[Pipeline] Stage 3/3: running solver...")
+        self.log(f"[Pipeline] {self._pipe_label('solver')} — running solver...")
         # Ensure the solver pulls the mesh we just generated.
         self.main_window.solver_config_panel.auto_link_mesh.setChecked(True)
         self.run_solver_pipeline()

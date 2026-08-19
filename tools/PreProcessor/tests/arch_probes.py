@@ -232,35 +232,49 @@ def probe_6a_ib_handoff():
 
 
 def probe_6b_one_stage_declaration():
-    """OPEN until the stage sequence is declared ONCE instead of once per host.
+    """DONE when the stage set is declared once AND a gate keeps it that way.
 
     Candidate 6 was one row and is two invariants with disjoint machinery — the
     same discovery that split ``test_cpp_linkable_seam.py`` from
     ``test_cpp_pure_layer.py``. Keeping them in one row meant a DONE earned by
     the hand-off read as a DONE for the review's actual Solution: *"Declare the
     stages and what each consumes and produces once. The two runners become
-    adapters differing only in how they wait."* That is not built, and the gate
-    the hand-off left behind cannot speak for it — it gates an artefact crossing
-    one seam, not where the stage list lives.
+    adapters differing only in how they wait."*
 
-    The number that decides it is how many places enumerate the sequence. Watch
-    it for the interesting case rather than the verdict: the two lists now AGREE
-    (4 stages each, same order, same names) where the GUI used to be missing one,
-    so the divergence this candidate was named for is gone while its cause — two
-    lists — is not.
+    Retired to a pointer at ``test_pipeline_stages.py``, which is strictly
+    stronger than anything measurable from here. The number this probe used to
+    report — how many places enumerate the sequence — could not distinguish a
+    declaration both hosts READ from one they merely import, and said nothing at
+    all about order or about artefacts. The gate matches the declared set against
+    both hosts IN BOTH DIRECTIONS by AST, recovers the GUI's signal chain as a
+    reachability graph to check the order, asserts the produced/consumed graph
+    closes, and verifies each of those by injection.
+
+    Worth recording, because it is the case this probe was watching for: when the
+    work landed the two host lists AGREED (4 stages each, same order, same
+    names). The divergence the candidate was named for had already been repaired
+    by hand in 6a; its cause — two lists — had not. A probe that had only watched
+    for divergence would have read that as nothing to do.
     """
     runner = read(APP, "services", "pipeline_runner.py")
     gui = read(APP, "controllers", "pipeline_ctrl.py")
     decl = read(APP, "services", "pipeline_stages.py")
+    gate = read(TESTS, "test_pipeline_stages.py")
+    read_by_both = "pipeline_stages" in runner and "pipeline_stages" in gui
+    if decl and read_by_both and gate:
+        return DONE, ("gated by test_pipeline_stages.py; both hosts read the "
+                      "stage set from services/pipeline_stages")
+
     head = sorted(set(re.findall(r"^def (_run_\w+)\(", runner, re.M)))
     # A GUI stage is a _pipe_* entry; the _pipe_after_* continuations and the
-    # _pipe_chain/_pipe_resample_next plumbing are not stages.
+    # _pipe_chain/_pipe_resample_next/_pipe_label plumbing are not stages.
     hosted = sorted(set(re.findall(
-        r"^    def (_pipe_(?!after_|chain|resample_next)\w+)\(", gui, re.M)))
-    if decl and "pipeline_stages" in runner and "pipeline_stages" in gui:
-        return DONE, "both hosts read the stage list from services/pipeline_stages"
+        r"^    def (_pipe_(?!after_|chain|resample_next|label)\w+)\(", gui, re.M)))
     agree = [h[len("_run_"):] for h in head] == [g[len("_pipe_"):] for g in hosted]
     named = ", ".join(sorted(h[len("_run_"):] for h in head))      # not run order
+    if decl and read_by_both and not gate:
+        return OPEN, ("declared and read by both hosts, but ungated — a stage "
+                      "added to one host only would not be caught")
     return OPEN, (f"the same {len(head)} stages ({named}) are enumerated once "
                   "per host, no shared declaration"
                   + ("; the two lists agree" if agree else "; THE LISTS DIVERGE"))

@@ -78,9 +78,9 @@ class PipelineConfig:
     solver: dict = field(default_factory=dict)
 
     # Immersed-solid (IB) stage: a subset of Stl3dConfig fields (STL path, domain
-    # box, resolution, case name). Carried so a script can describe an
-    # immersed-solid case; the GUI applies it to the IB panel. The headless runner
-    # does not execute this stage yet and says so rather than skipping quietly.
+    # box, resolution, case name). Both hosts execute it, before the mesh, and the
+    # phi field it traces reaches the solve through services/ib_handoff.
+    # "skip": true runs the rest of the pipeline without it.
     stl3d: dict = field(default_factory=dict)
 
     # Results stage: contour options. {variable, cmap, save_png, mesh_overlay}
@@ -347,6 +347,19 @@ class PipelineConfig:
 
     def solver_skip(self) -> bool:
         return bool(self.solver.get("skip"))
+
+    def stl3d_skip(self) -> bool:
+        """Whether the immersed-solid stage is skipped by request.
+
+        The skip FLAG only, matching solver_skip(): whether the stage runs at all
+        also depends on there being an ``stl3d`` section, which the caller checks.
+        The two defaults differ and that asymmetry is real — an absent solver
+        section still solves, an absent stl3d section has no solid to trace.
+        Existing as a method at all is what lets a caller ask the same question of
+        every stage, which is what makes the run plan computable instead of
+        hand-traced.
+        """
+        return bool(self.stl3d.get("skip"))
 
     def resolve_input_file(self, repo_root: str, index: int = 0) -> str:
         """Absolute path to a CAD geometry, resolved against several roots so a
