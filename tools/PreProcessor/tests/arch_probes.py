@@ -154,24 +154,52 @@ def probe_3_param_schema():
 
 
 def probe_4_signal_wiring():
-    """The review's premise here was the hand-listed 35 spin boxes at :67-77.
+    """RETIRED by decision on 2026-08-19, not merely observed to be stale.
 
-    That region is now the shape-tool menu and the shape fields are wired from
-    ``shape_spec``'s own parameter table, so the candidate as WRITTEN no longer
-    describes the file. What is left is reported instead of being scored against
-    a premise that has gone.
+    The review's premise was the hand-listed 35 spin boxes at :67-77, wired to one
+    handler by name. That region is now the shape-tool menu and the shape fields
+    are wired from ``shape_spec``'s own parameter table, so the candidate as
+    WRITTEN stopped describing the file some time ago. This probe reported that
+    and then reported the residue every session, which reads like unfinished
+    business and is what a decision is for.
+
+    THE NUMBER THAT DECIDED IT: 127 ``connect()`` calls reach 118 DISTINCT
+    handlers, 109 of them used exactly once (measured 2026-08-19). The nine
+    repeats are sidebar controls and their toolbar twins. So the wiring is
+    irreducibly HETEROGENEOUS, and that is the whole argument: the review's
+    Solution — ``undo_ctrl.py``-style ``findChildren`` introspection — works there
+    because every editable widget gets the SAME treatment, and here there is no
+    same treatment to introspect toward. A spec table would be 127 rows of
+    (widget, signal, handler): the identical information, one indirection further
+    away, no complexity removed. The convertible part of this file was the
+    homogeneous part, and it has already been converted.
+
+    The candidate's biggest listed win — "removes 116 of the 389 sidebar
+    reach-throughs" — was banked by candidate 1 instead and is gated by
+    test_sidebar_seam.py, so retiring this one forfeits nothing.
+
+    What remains (347 lines, 0 public methods, one call site for the six wiring
+    verbs, ~186 assumed names) is the mixin shape used throughout this repo, and
+    the documented ~500-line file rule actively produces it. Re-scoping the
+    candidate around that would be a fight with a policy, not a deepening.
+
+    RETIRED IS NOT BLIND. The probe still watches the one thing that would revive
+    it: a hand-listed widget-name table reappearing. If one does, this goes back
+    to OPEN with the premise the review actually wrote.
     """
     src = read(APP, "controllers", "signal_wiring_ctrl.py")
     if not src:
         return DONE, "signal_wiring_ctrl.py no longer exists"
-    lines = len(src.splitlines())
-    sb = len(set(re.findall(r"\bsb\.([A-Za-z_]\w*)", src)))
-    mw = len(set(re.findall(r"\b(?:mw|self\.main_window)\.([A-Za-z_]\w*)", src)))
     handlisted = bool(re.search(r"for\s+\w+\s+in\s*\(\s*[\"']\w+_spin", src))
-    if not handlisted:
-        return STALE, (f"premise gone (no hand-listed spin boxes); {lines} lines, "
-                       f"{sb} sidebar verbs, {mw} main_window names remain")
-    return OPEN, f"{lines} lines, hand-listed widget names still present"
+    if handlisted:
+        return OPEN, ("a hand-listed widget-name table is back — the retired "
+                      "premise has returned, re-open the candidate")
+    pairs = re.findall(r"\.connect\(\s*([^)]*?)\s*\)", src, re.S)
+    distinct = len({re.sub(r"\s+", " ", h) for h in pairs})
+    return STALE, (f"RETIRED 2026-08-19: {len(pairs)} connects reach {distinct} "
+                   "distinct handlers, so the wiring is heterogeneous and a table "
+                   "would not remove complexity; premise (hand-listed spin boxes) "
+                   "gone, and candidate 1 banked the reach-through win")
 
 
 def probe_5_field_spec_tables():
