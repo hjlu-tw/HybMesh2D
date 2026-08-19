@@ -225,7 +225,11 @@ def config_to_text(cfg, path: str = "") -> str:
         "# ==============================================================================",
         f"BL_CONVEX_METHOD {cfg.bl_convex_method}",
         f"BL_FAN_NODES {cfg.bl_fan_nodes}",
-        f"BL_AUTO_FAN_NODES {1 if cfg.bl_auto_fan_nodes else 0}",
+        # int() rather than the bare field, unlike its ~20 integer siblings: this
+        # was a bool field until 2026-08-19 and a workspace written before then
+        # can still put True here if it reaches the model without going through
+        # load_from_dict, which would write "True" into the .dat.
+        f"BL_AUTO_FAN_NODES {int(cfg.bl_auto_fan_nodes)}",
         f"BL_FAN_ANGLE_THRESHOLD {cfg.bl_fan_angle_threshold:.6g}",
         f"BL_CONVEX_ANGLE_THRESHOLD {cfg.bl_convex_angle_threshold:.6g}",
         f"BL_PARA_FALLBACK_ANGLE {cfg.bl_para_fallback_angle:.6g}",

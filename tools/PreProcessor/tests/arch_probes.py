@@ -131,26 +131,72 @@ def probe_2_mesher_seam():
 
 
 def probe_3_param_schema():
-    """How many places must agree to add one mesh parameter.
+    """RETIRED to a pointer at ``test_gui_cpp_config_parity.py`` (issue #9, 2026-08-19).
 
-    Counted by tracing a real parameter rather than by counting declaration
-    sites in the abstract — a schema is only reached when the count falls to one
-    or two, and a partial cleanup shows up here as a falling number.
+    This probe counted how many FILES mention one parameter — ``BL_JUNCTION_ANGLE_C2``
+    — and called the candidate done when the count fell to two. That measure had the
+    same defect as candidate 5's first probe: an authoritative-looking number measuring
+    almost nothing. It could not distinguish a file that DECLARES the parameter from
+    one that merely reads a declaration, so collapsing five C++ traversals onto one
+    list moved it from 6 files to 5 (the declaration became its own file) while the
+    property that matters — that adding a parameter is one edit and a mismatch fails
+    the build — changed completely.
+
+    What replaced it, and where each half now lives:
+
+      * ``include/BLParams.hpp`` — one row per BL parameter carrying KEY, type, field
+        and default. The struct, the .dat reader, the per-geometry override parser and
+        ``isBLParam`` are GENERATED from it, so a missing parse branch is not a thing
+        that can exist. Gated by ``tests/cpp/test_bl_params_decl.cpp``.
+      * ``models/mesh_config_keys.py`` — the GUI's KEY map, DERIVED from the field-spec
+        tables plus ``MeshConfig``'s own field types. Gated by
+        ``tests/test_field_spec_tables.py`` checks 13a-13f.
+      * ``tests/test_gui_cpp_config_parity.py`` — the two declarations compared on key,
+        TYPE and DEFAULT, in both directions, with its failure modes verified by
+        injection INSIDE the test (check 7), not by hand at review time. This is the gate that makes the candidate's actual claim checkable,
+        and it is what found the one real defect left: ``BL_AUTO_FAN_NODES`` was an int
+        in C++ (with a live ``== 2`` branch) and a bool in the GUI, so the GUI's own
+        three-item combo could not express the LOCAL it offered.
+
+    Kept as a pointer rather than deleted, because a reader who remembers candidate 3
+    needs to be told where its answer moved, and because the alternative — deleting the
+    entry — would make the backlog silently shorter rather than visibly finished.
+
+    WHAT THIS PROBE CANNOT SEE, stated because a probe that overstates itself is the
+    failure mode this file exists to avoid: it checks that each gate is PRESENT and
+    REGISTERED, by looking for identifiers and for the runner picking the file up. It
+    does not re-derive what the gates prove. A gate whose checks were gutted while its
+    identifiers stayed would still read DONE here — the same substring weakness CLAUDE.md
+    records for the first version of `test_pipeline_stages.py`. That is accepted rather
+    than papered over: the authority is the gate, and the gate is what fails. The
+    registration check is the part worth having, because a test nobody runs passes by
+    never running.
     """
-    probe_key = "BL_JUNCTION_ANGLE_C2"
-    hits = []
-    for root, skip in ((os.path.join(REPO, "include"), ()),
-                       (os.path.join(REPO, "src"), ()),
-                       (APP, ("tests",))):
-        for dirpath, _d, files in os.walk(root):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")) and probe_key in read(
-                        dirpath, f):
-                    hits.append(os.path.relpath(os.path.join(dirpath, f), REPO))
-    branches = read(REPO, "include", "Config.hpp").count('key == "')
-    state = DONE if len(hits) <= 2 else OPEN
-    return state, (f"{probe_key} declared in {len(hits)} files; "
-                   f"{branches} `key ==` branches in Config.hpp")
+    #: The gates candidate 3 retired into: (file, the identifier that must survive).
+    gates = (
+        (os.path.join(TESTS, "test_gui_cpp_config_parity.py"),
+         "PINNED_DEFAULT_DIVERGENCE"),
+        (os.path.join(TESTS, "test_gui_cpp_config_parity.py"), "cpp_declarations"),
+        (os.path.join(TESTS, "test_field_spec_tables.py"), "build_key_map"),
+        (os.path.join(REPO, "include", "BLParams.hpp"), "HYBMESH_BL_PARAMS"),
+        (os.path.join(APP, "models", "mesh_config_keys.py"), "build_key_map"),
+    )
+    missing = [f"{os.path.basename(f)}:{ident}"
+               for f, ident in gates if ident not in read(f)]
+    # A gate the runner never picks up passes by never running.
+    runner = read(TESTS, "run_all.sh")
+    unrun = [n for n in ("test_gui_cpp_config_parity", "test_field_spec_tables")
+             if n not in runner and "test_*.py" not in runner and "*.py" not in runner]
+    if not missing and not unrun:
+        return DONE, ("superseded by test_gui_cpp_config_parity.py (key + type + "
+                      "default, both directions, 13 injections in-test), "
+                      "test_bl_params_decl.cpp and test_field_spec_tables.py 13a-13f")
+    bits = []
+    if missing:
+        bits.append("gates gone: " + ", ".join(missing))
+    if unrun:
+        bits.append("not run by run_all.sh: " + ", ".join(unrun))
+    return OPEN, "; ".join(bits)
 
 
 def probe_4_signal_wiring():

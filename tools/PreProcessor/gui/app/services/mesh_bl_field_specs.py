@@ -16,10 +16,13 @@ below it is DERIVED and keeps its old name, so the dialog, the panel, the layout
 
 * ``_BL_OVERRIDE_KEYS`` — (KEY, attr) pairs.
 * ``_BL_INT_ATTRS`` / ``_BL_BOOL_ATTRS`` — read off ``MeshConfig``'s own declared field
-  types rather than off the widget kind. That is the right source and it matters:
-  ``bl_auto_fan_nodes`` is edited by a THREE-value combo (OFF/GLOBAL/LOCAL) while the
-  model field is a bool, so deriving the coercion from the widget would put an int in a
-  bool field and make the model disagree with its own dataclass default.
+  types rather than off the widget kind. That is the right source, and the field which
+  used to prove it is now the field which proves the cost of getting it wrong:
+  ``bl_auto_fan_nodes`` is edited by a THREE-value combo (OFF/GLOBAL/LOCAL) and its model
+  field was a ``bool`` until 2026-08-19, so the coercion was faithfully bool — and the
+  combo's LOCAL item was therefore squashed to 1 on the way into the ``.dat``. Deriving
+  from the model was still right; the model was wrong, and the GUI↔C++ parity gate is
+  what found it. The field is now an ``int``, matching ``Config.hpp``.
 * ``_BL_FIELD_SPECS`` — the legacy ``(KEY, label, kind, opts)`` tuples, kept for
   ``tests/test_sci_spinbox.py`` and ``tests/test_bl_dialog_sections.py``, which read
   ``kind == "float"`` plus ``opts["sci"]`` for the physical-length rule.

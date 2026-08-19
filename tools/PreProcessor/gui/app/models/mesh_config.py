@@ -65,7 +65,12 @@ class MeshConfig:
     # Section 4: Corner Handling (Convex & Fan)
     bl_convex_method: int = 2  # 0: Fan, 2: Parallelogram
     bl_fan_nodes: int = 5
-    bl_auto_fan_nodes: bool = False
+    # 0 OFF / 1 Global Avg / 2 Local Avg — an int, matching Config.hpp and the
+    # three-item combo that has always edited it. It was a `bool` until
+    # 2026-08-19, so the combo's LOCAL item collapsed to 1 on the way out and
+    # Local Avg was reachable only from a hand-written .dat, even though
+    # BoundaryLayer.cpp has always branched on 2.
+    bl_auto_fan_nodes: int = 0
     bl_fan_angle_threshold: float = 60.0
     bl_convex_angle_threshold: float = 260.0
     bl_para_fallback_angle: float = 300.0

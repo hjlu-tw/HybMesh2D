@@ -613,11 +613,21 @@ _float_attrs = {s.attr for s in _BL_TABLE} - _BL_INT_ATTRS - _BL_BOOL_ATTRS
 check(_BL_INT_ATTRS | _BL_BOOL_ATTRS | _float_attrs == {s.attr for s in _BL_TABLE}
       and not (_BL_INT_ATTRS & _BL_BOOL_ATTRS),
       "11. ...and int / bool / float partition the 21 parameters exactly")
-# The tri-state field is the one this must get right: a three-value combo behind a bool.
-check("bl_auto_fan_nodes" in _BL_BOOL_ATTRS,
-      "11. bl_auto_fan_nodes coerces as BOOL (its model field is one) even though a "
-      "three-value combo edits it — deriving from the WIDGET would put an int in a bool "
-      "field and make the model disagree with its own dataclass default")
+# The tri-state field is still the one this must get right, but the answer FLIPPED on
+# 2026-08-19 and the reason is worth keeping. This check used to read
+# `"bl_auto_fan_nodes" in _BL_BOOL_ATTRS`, because the model field was a bool while a
+# three-value combo (OFF/GLOBAL/LOCAL) edited it. Deriving from the model was correct
+# then and is correct now — what was wrong was the MODEL, and the GUI↔C++ parity gate
+# is what found it: Config.hpp declares the parameter an int and BoundaryLayer.cpp
+# branches on 2, so the GUI could not express the LOCAL its own combo offered. Widening
+# the field is what made the two sides agree, so this check now pins the int.
+check("bl_auto_fan_nodes" in _BL_INT_ATTRS,
+      "11. bl_auto_fan_nodes coerces as INT — its model field is one, matching "
+      "Config.hpp and the three values its combo offers; deriving from the WIDGET "
+      "would be right by accident here, and wrong for every other field")
+check("bl_auto_fan_nodes" not in _BL_BOOL_ATTRS,
+      "11. ...and NOT as a bool, which would squash the combo's LOCAL item back to 1 "
+      "on the way into the .dat")
 
 _stringly = bl_coercion_gaps(_BL_TABLE, {k: "bool | None" if v == "bool" else v
                                          for k, v in _MESH_TYPES.items()})
@@ -648,6 +658,7 @@ check(len(_prose) == len(_keys),
 # `KEY -> (attr, converter)` entries and 45 of them restated something already
 # declared: the spec's own `key` and `model`, and the CONVERTER, which is decided by
 # the model field's declared type. Neither file could see the other.
+from dat_key_facts import STRUCTURAL_KEYS  # noqa: E402
 from app.models import mesh_config_io as _io  # noqa: E402
 from app.models.mesh_config_keys import (  # noqa: E402
     _CONVERTERS, _KEY_MAP, _RESIDUE, KEYED_SPECS, build_key_map,
@@ -771,18 +782,7 @@ check(len(_written) >= 50,
       f"13f. the writer was parsed ({len(_written)} keys) — a big drop means this "
       f"regex no longer matches it, which would make the comparison below vacuous")
 
-#: Keys the writer emits as STRUCTURAL lines, which carry several tokens and have
-#: their own parser rather than a scalar KEY -> field mapping.
-_STRUCTURAL = {
-    "GEOM_FILE": "`GEOM_FILE <path> [bl|nobl] [KEY=VALUE ...]` — a list entry with a "
-                 "role and per-geometry BL overrides, not one value",
-    "DOMAIN_FILE": "the same shape for the custom domain outline",
-    "SEED_FILE": "`SEED_FILE <path> [size|auto] [radius] <mode>` — positional tokens "
-                 "parsed into one SeedSpec each",
-    "GROUP_BC": "`GROUP_BC <label> <bc-type>` — one line per label, so it is a MAP "
-                "rather than a field",
-}
-_unreadable = sorted(_written - set(_KEY_MAP) - set(_STRUCTURAL))
+_unreadable = sorted(_written - set(_KEY_MAP) - set(STRUCTURAL_KEYS))
 check(not _unreadable,
       f"13f. every scalar key the .dat writer emits can be read back — one it cannot "
       f"is a setting that saves and then silently does nothing ({_unreadable})")
@@ -790,10 +790,33 @@ _unwritten = sorted(set(_KEY_MAP) - _written)
 check(not _unwritten,
       f"13f. ...and every mapped key is actually written, so none is readable-only "
       f"({_unwritten})")
-_stale_structural = sorted(set(_STRUCTURAL) - _written)
+_stale_structural = sorted(set(STRUCTURAL_KEYS) - _written)
 check(not _stale_structural,
       f"13f. ...and no structural exemption is stale ({_stale_structural})")
 
+
+# ── 13g. the tri-state fan-nodes setting reaches the .dat as the value picked ──
+# The regression this exists for: bl_auto_fan_nodes was a `bool` while a three-item
+# combo (OFF/GLOBAL/LOCAL) edited it, so LOCAL was written as 1 and ran GLOBAL — for
+# as long as the field existed, and invisibly, because 1 is a perfectly valid setting.
+# Config.hpp declares it an int and BoundaryLayer.cpp branches on 2; the GUI↔C++ parity
+# gate's type comparison is what found the disagreement. Pinned here rather than there
+# because this is a fact about the WRITER.
+_afn = MeshConfig()
+for _picked, _want in ((0, "BL_AUTO_FAN_NODES 0"), (1, "BL_AUTO_FAN_NODES 1"),
+                       (2, "BL_AUTO_FAN_NODES 2")):
+    _afn.bl_auto_fan_nodes = _picked
+    _lines = _io.config_to_text(_afn, os.path.join(tempfile.mkdtemp(), "afn.dat"))
+    check(any(ln.strip() == _want for ln in _lines.splitlines()),
+          f"13g. picking fan-nodes mode {_picked} writes {_want!r} — LOCAL (2) must not "
+          f"collapse to GLOBAL (1) on the way out")
+# ...and a legacy workspace, which stored it as a JSON bool, still loads.
+for _legacy, _expect in ((False, 0), (True, 1)):
+    _mig = MeshConfig()
+    _mig.load_from_dict({"bl_auto_fan_nodes": _legacy})
+    check(_mig.bl_auto_fan_nodes == _expect,
+          f"13g. a pre-widening workspace value {_legacy!r} migrates to {_expect} "
+          f"rather than raising or landing as a bool")
 
 _wd.cancel()
 if _FAILS:

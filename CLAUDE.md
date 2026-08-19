@@ -133,7 +133,30 @@ cd tools/PreProcessor/gui && ruff check --config ruff.toml ../tests
 ```
 `ruff.toml` enforces only real-defect rules (`E9`, `F`); style rules are off with the reason stated in the file. Fix violations before adding a rule to `select` — a permanently-red gate is worse than none. CI (`.github/workflows/gui-tests.yml`) has three jobs: **lint**, **build C++ with `-Werror`** (which then runs `ctest` — the **test** job downloads two binaries and has no build tree, so there is no `CTestTestfile.cmake` for ctest to read there, and a failing unit test is a build-gate concern anyway; the loader path comes from `tools/scripts/gmsh_lib_dir.sh` rather than a hardcoded pip prefix, because the baked rpath is only reliably right on the machine that built the binary), and **test** (which `needs: build`, so the binary-dependent tests actually run instead of self-skipping, plus an end-to-end `run_pipeline.sh`).
 
-**GUI↔C++ config parity** is gated by `tests/test_gui_cpp_config_parity.py`: it statically compares the keys `models/mesh_config_io.py` writes against the `key == "..."` branches in `include/Config.hpp`. A key the GUI writes but the C++ ignores means the user's setting silently does nothing. New C++-only keys must be justified in that test's `KNOWN_CPP_ONLY`.
+**GUI↔C++ config parity** is gated by `tests/test_gui_cpp_config_parity.py`, and it
+compares **key, TYPE and DEFAULT, in both directions** — not just key presence, which
+is blind to the two divergences that produce a wrong mesh instead of an error. Both
+sides are read as declarations: the C++ from `include/BLParams.hpp`'s rows plus
+`Config.hpp`'s `key == "..."` branch → member → struct initialiser (a key that stops
+resolving fails check 0, so a blind extractor cannot turn the comparison into a no-op),
+the GUI from the derived key map + `field_spec.model_types` + `MeshConfig()`. New
+C++-only keys must be justified in `KNOWN_CPP_ONLY`; structural multi-token lines in
+`_STRUCTURAL`. Two things about the divergence lists are load bearing:
+- **`PINNED_TYPE_DIVERGENCE` is empty and must stay empty.** A type mismatch means one
+  side cannot represent what the other stores, so there is no intended version of it.
+  The gate found one — `BL_AUTO_FAN_NODES` — and it was FIXED, not pinned.
+- **`PINNED_DEFAULT_DIVERGENCE` pins BOTH values and a reason**, because the two
+  defaults answer *different questions*: the C++ one is what an unspecified key in a
+  hand-written `.dat` means (neutral and safe), the GUI one is what a fresh editing
+  session suggests before the user changes it. Forcing them equal would be wrong in
+  both directions — it would make a new GUI case default to an all-`wall` box with no
+  inlet, or make the mesher stop writing a VTK for a CLI user who asked for nothing.
+  Measured: 8 of the 49 shared keys diverge, and all 8 are correct. Pinning both values
+  means a *change* to either side fails the gate again, so an entry cannot absorb a new
+  drift. And check 6 makes the pinning honest by machine-checking its precondition —
+  the GUI must write that key **unconditionally**, so the mesher's differing default is
+  never the one in force for a GUI run. That is not a formality: 7 of the writer's keys
+  really are conditional.
 
 **Example backend test configs:**
 - `tools/PreProcessor/config/test_triangle_backend.json` — vertex snap verification
@@ -202,9 +225,12 @@ measured on the old and new trees:
   to collapse it with `(val != 0)`, so a global `BL_AUTO_FAN_NODES 2` ran as 1 while
   the same token on a `GEOM_FILE` line reached 2. It now means Local Avg everywhere.
   No config in this repo sets 2, so no existing mesh moved (golden 9/9 SAME).
-  **The GUI still cannot express it** — `MeshConfig.bl_auto_fan_nodes` is a `bool` and
-  the writer emits `1`/`0`, so its combo's LOCAL item has always run GLOBAL and still
-  does. That asymmetry is pre-existing, not new, and belongs to issue #13.
+  **The GUI could not express it until 2026-08-19**: `MeshConfig.bl_auto_fan_nodes` was
+  a `bool` while a three-item combo (OFF/GLOBAL/LOCAL) edited it, so its LOCAL item was
+  squashed to `1` on the way into the `.dat` and had *always* run GLOBAL. The parity
+  gate's type check is what found it; the field is now an `int`, matching `Config.hpp`,
+  and picking LOCAL really runs Local Avg. **That is a behaviour change golden meshes
+  cannot cover** — none of the 9 cases picks LOCAL — so it is recorded here instead.
 - **A `bool` key is read through a double**, so `BL_USE_ANALYTIC_GEOM 0.5` is now true
   where it used to read 0 and be false. Integral values — everything the GUI or any
   config here writes — are unaffected. Kept, because reinstating a per-row parse rule
