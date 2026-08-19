@@ -68,9 +68,11 @@ _RESIDUE: dict[str, str] = {
     "LENGTH_UNIT": "length_unit",
     "LENGTH_UNIT_METRES": "length_unit_metres",
     "LENGTH_UNIT_NAME": "length_unit_name",
-    # The geometry wall patch: owned by the per-geometry / per-segment BC dialogs and
-    # by GROUP_BC resolution, not by a panel field (see NO_WIDGET in
-    # tests/test_field_spec_tables.py).
+    # The geometry wall patch. Its reason for having no widget is NOT restated here:
+    # it is `NO_WIDGET["mesh_config_panel"]["bc_geom"]` in
+    # tests/test_field_spec_tables.py, which is where a field-with-no-widget must be
+    # justified, and two copies of one reason would be free to drift apart while
+    # check 13b (which compares the SETS) went on passing.
     "BC_GEOM": "bc_geom",
 }
 

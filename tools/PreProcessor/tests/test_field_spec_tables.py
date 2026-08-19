@@ -718,7 +718,6 @@ _SPARSE = {"bl_convex_method": 0, "bl_concave_method": 5, "bl_junction_method": 
 # definition and a stale number in the file could contradict the code beside it. So
 # the probe declares a custom unit rather than skipping those three keys, which is
 # also the case where getting them wrong costs a wrong Reynolds number.
-_skip: set = set()
 for _i, (_k, (_attr, _)) in enumerate(sorted(_KEY_MAP.items())):
     _cur = getattr(_probe, _attr)
     if _attr in _SPARSE:
@@ -740,13 +739,13 @@ _back = MeshConfig()
 _io.load_config_from_file(_back, _tmp)
 _lost = {a: (getattr(_probe, a), getattr(_back, a))
          for _, (a, _c) in _KEY_MAP.items()
-         if a not in _skip and getattr(_probe, a) != getattr(_back, a)}
+         if getattr(_probe, a) != getattr(_back, a)}
 check(not _lost,
       f"13e. every mapped parameter survives MeshConfig -> .dat -> MeshConfig "
       f"({_lost})")
 # Not vacuous: the probe must actually differ from a fresh config.
 _moved = sum(1 for _, (a, _c) in _KEY_MAP.items()
-             if a not in _skip and getattr(_probe, a) != getattr(MeshConfig(), a))
+             if getattr(_probe, a) != getattr(MeshConfig(), a))
 check(_moved == len(_KEY_MAP),
       f"13e. ...and the probe moved EVERY parameter off its default, or the "
       f"round-trip proves nothing for the ones it did not "

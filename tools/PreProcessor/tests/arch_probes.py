@@ -230,10 +230,18 @@ def probe_5_field_spec_tables():
     ``LENGTH_FIELDS`` derived rather than listed, every field with no widget named
     with its reason, and the three escape hatches used only where justified.
     """
+    # Where a table lives is not fixed, and this probe must not accept a STAND-IN for
+    # one. The mesh tables moved to ``services/`` so the .dat key map could derive from
+    # them without pulling PyQt6 onto the headless pipeline's path, leaving 17- and
+    # 25-line re-export shims behind on the old paths. Checking the old paths for
+    # existence therefore counted a shim as a table and reported DONE with the message
+    # "3 panels declare their fields in 4 tables" — true of neither location. So each
+    # table is looked for in either home and must actually CONTAIN specs.
     panels = os.path.join(APP, "views", "panels")
+    services = os.path.join(APP, "services")
     tables = [f for f in ("mesh_field_specs.py", "solver_field_specs.py",
                           "stl3d_field_specs.py", "mesh_bl_field_specs.py")
-              if read(panels, f)]
+              if "FieldSpec(" in (read(services, f) or read(panels, f) or "")]
     spec = read(APP, "services", "field_spec.py")
     gate = read(TESTS, "test_field_spec_tables.py")
     sync = read(APP, "controllers", "panel_sync_ctrl.py")
@@ -245,7 +253,9 @@ def probe_5_field_spec_tables():
         assigned += len(re.findall(r"^\s+self\.\w+\s*=", read(panels, f), re.M))
     if len(tables) == 4 and spec and gate and derived:
         return DONE, ("gated by test_field_spec_tables.py; 3 panels declare their "
-                      "fields in 4 tables, PRESERVED_FIELDS derived")
+                      "fields in 4 tables (the 2 mesh tables in services/, so the "
+                      ".dat key map derives from them headlessly), "
+                      "PRESERVED_FIELDS derived")
     bits = []
     if len(tables) < 4:
         bits.append(f"only {len(tables)}/4 spec tables exist")

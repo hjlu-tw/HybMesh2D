@@ -11,12 +11,12 @@
 //   X(KEY, type, field, default)
 //
 // Everything that walks the parameters is GENERATED from this list — the struct
-// below, the .dat reader (readBLKey), the per-geometry override parser
-// (applyBLKey, via Config) and the enumeration the tests and the printer use
+// below, the .dat reader (readBLParam), the per-geometry override parser
+// (applyBLParam) and the enumeration the tests and the printer use
 // (forEachBLParam). Before this, `include/Config.hpp` traversed the same 22
 // names five times: BLParams' fields, Config's own second copy of them WITH A
-// SECOND SET OF DEFAULTS, loadConfig's `key == "BL_…"` chain, applyBLKey's
-// chain, and a 22-line field-by-field bridge between the two structs. Adding a
+// SECOND SET OF DEFAULTS, loadConfig's `key == "BL_…"` chain, the override
+// parser's chain, and a 22-line field-by-field bridge between the two structs. Adding a
 // parameter meant remembering all of them, and forgetting the parse branch gave
 // a parameter that silently kept its default — an outcome with no symptom
 // except a mesh nobody asked for.
@@ -146,11 +146,29 @@ inline bool applyBLParam(BLParams& p, const std::string& key, double v) {
     return false;
 }
 
+// True when `key` names a declared BL parameter. Generated from the list, so it
+// cannot fall behind it — which matters because the caller uses it to REFUSE a
+// per-geometry `KEY=VALUE` token it does not recognise, and a stale answer there
+// would reject a real parameter.
+inline bool isBLParam(const std::string& key) {
+#define HYBMESH_BL_HAS(k, type, field, def) if (key == k) return true;
+    HYBMESH_BL_PARAMS(HYBMESH_BL_HAS)
+#undef HYBMESH_BL_HAS
+    return false;
+}
+
 // Read the value for `key` off a .dat line's remaining stream. Returns false when
 // the key is not one of ours. Same narrowing rule as applyBLParam, so the two
 // parsers cannot disagree about a parameter's type — which they used to. A value
 // that will not parse leaves 0 in the field, which is what the branches this
 // replaces already did (`operator>>` zeroes its target on failure).
+//
+// One further behaviour change the single rule causes, small but real: a bool row is
+// now read through a double, so `BL_USE_ANALYTIC_GEOM 0.5` is TRUE where the branch
+// this replaces (`int val; ss >> val`) read 0 and got false. Measured on both trees.
+// Integral values — every value any config in this repo or the GUI writes — are
+// unaffected. Recorded rather than special-cased: reinstating a per-row parse rule to
+// preserve it would put back the very thing that let the two parsers disagree.
 inline bool readBLParam(BLParams& p, const std::string& key, std::istream& ss) {
 #define HYBMESH_BL_READ(k, type, field, def)                          \
     if (key == k) { double v = 0.0; ss >> v; p.field = static_cast<type>(v); return true; }

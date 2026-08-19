@@ -365,13 +365,26 @@ struct Config {
         return ok;
     }
 
-    // Parse a "KEY=VALUE" token into a per-geometry override map (ignored if it
-    // isn't of that form or the value isn't numeric).
+    // Parse a "KEY=VALUE" per-geometry override token (ignored if it isn't of that
+    // form or the value isn't numeric).
+    //
+    // An unrecognised KEY is NAMED rather than dropped. It used to be dropped twice
+    // over — stored here, then silently skipped by the applier, which is the
+    // "the user sets a value and it does nothing" failure this whole area exists to
+    // remove. The declaration answers whether a key is real (isBLParam), so this
+    // check cannot fall behind the parameter list. Warned at LOAD time, once per
+    // token, rather than in blParamsFor, which runs per geometry per BL loop.
     static void parseBLOverrideToken(const std::string& tok,
                                      std::map<std::string, double>& out) {
         auto eq = tok.find('=');
         if (eq == std::string::npos || eq == 0) return;
-        try { out[tok.substr(0, eq)] = std::stod(tok.substr(eq + 1)); }
+        const std::string key = tok.substr(0, eq);
+        if (!isBLParam(key)) {
+            LOG_WARN("Unknown per-geometry BL override '" << key << "' ignored; it is "
+                     "not a boundary-layer parameter (see include/BLParams.hpp).");
+            return;
+        }
+        try { out[key] = std::stod(tok.substr(eq + 1)); }
         catch (...) { /* ignore malformed values */ }
     }
 
@@ -379,21 +392,13 @@ struct Config {
     // is an accessor rather than the 22-line field-by-field bridge it used to be.
     BLParams globalBLParams() const { return bl; }
 
-    // Apply one KEY=VALUE per-geometry override token. Thin on purpose: the
-    // branch per parameter is generated from the declaration, so this parser and
-    // the .dat reader above narrow every value by the same rule. They used not to:
-    // BL_AUTO_FAN_NODES was an int here and a bool there.
-    static void applyBLKey(BLParams& p, const std::string& key, double v) {
-        applyBLParam(p, key, v);
-    }
-
     // Effective BL parameters for a geometry: global defaults with any overrides
     // declared on its GEOM_FILE / DOMAIN_FILE line applied on top.
     BLParams blParamsFor(const std::string& file) const {
         BLParams p = globalBLParams();
         auto it = blOverrides.find(file);
         if (it != blOverrides.end())
-            for (const auto& kv : it->second) applyBLKey(p, kv.first, kv.second);
+            for (const auto& kv : it->second) applyBLParam(p, kv.first, kv.second);
         return p;
     }
 

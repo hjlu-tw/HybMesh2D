@@ -1,6 +1,6 @@
 """The mesh panel's field TABLE — every ``MeshConfig`` field its own widgets author.
 
-Together with :data:`~app.views.panels.mesh_bl_field_specs.PANEL_BL_SPECS` (the 21
+Together with :data:`~app.services.mesh_bl_field_specs.PANEL_BL_SPECS` (the 21
 boundary-layer parameters, shared with the Edit-BL dialog) this is the whole of what
 ``MeshConfigPanel`` declares. ``group`` says which ``_build_*`` section lays a row out,
 and the gate refuses a group no builder walks — a field that is written back to the

@@ -18,7 +18,21 @@
 //      on purpose (it is a grouped report, reused verbatim as the provenance
 //      sidecar, not a dump), so this is the check that stops a new parameter from
 //      going unrecorded — writing it found that BL_FRONT_SMOOTHING_ITERS was
-//      never printed at all.
+//      never printed at all. Two parts: the value must be REACHED (perturbing the
+//      parameter changes the banner) and, for a parameter the banner renders as a
+//      number, that value must literally APPEAR in it.
+//
+// KNOWN BLIND SPOT, stated rather than left to be discovered. Check 6 cannot see a
+// SWAPPED PAIR: if print() emitted blJunctionAngleC2 where C3 belongs and vice
+// versa, both values still appear and perturbing either still changes the banner. No
+// prose-free check can catch it, because the pairing of a value to its meaning IS the
+// label text — and coupling this test to the banner's wording would make every
+// reformatting of the report a test failure. What check 6 does catch is the
+// neighbouring and far likelier copy-paste: one parameter printed TWICE and its
+// neighbour never, since the missing one's distinct value is then absent. A second
+// blind spot is narrower: for the six parameters the banner renders as WORDS
+// (the method / auto enums, listed in ENUM_RENDERED below) only the perturbation
+// half applies, so a wrong-but-still-enumerated value would pass.
 //
 // It links hybmesh_pure and NOTHING else: Config.hpp is a header-only .dat parser
 // with no mesh and no gmsh in it, and this executable failing to link would be the
@@ -26,6 +40,8 @@
 #include "Config.hpp"
 #include "check.hpp"
 
+#include <algorithm>
+#include <vector>
 #include <cstdio>
 #include <fstream>
 #include <set>
@@ -109,10 +125,8 @@ int main() {
         const std::string path = "test_bl_params_decl.tmp.dat";
         {
             std::ofstream ofs(path);
-            std::size_t i = 0;
             forEachBLParam(want, [&](const char* key, const auto& f) {
                 ofs << key << " " << static_cast<double>(f) << "\n";
-                ++i;
             });
         }
 
@@ -172,6 +186,21 @@ int main() {
               "readBLParam must not claim an undeclared key");
         CHECK(snapshot(p) == snapshot(BLParams{}),
               "an undeclared key must leave every field alone");
+        // isBLParam is what Config::parseBLOverrideToken uses to REFUSE an unknown
+        // per-geometry KEY=VALUE token out loud instead of storing it and having the
+        // applier drop it. An always-true answer would restore exactly that silence,
+        // so both directions are pinned.
+        CHECK(!isBLParam("BL_NOT_A_PARAMETER"),
+              "isBLParam must refuse an undeclared key, or an unknown per-geometry "
+              "override is accepted and silently does nothing again");
+        CHECK(!isBLParam("BL_SMOOTHING_ITERS"),
+              "isBLParam must refuse a GLOBAL-only BL key: BL_SMOOTHING_ITERS is real "
+              "but is not per-geometry overridable, so a token naming it should say so");
+        std::size_t claimed = 0;
+        for (const std::string& k : K) if (isBLParam(k)) ++claimed;
+        CHECK(claimed == K.size(),
+              "isBLParam must accept every declared key, or a real parameter is "
+              "rejected as a typo");
     }
 
     // --- 5b. regression: BL_AUTO_FAN_NODES is an int on BOTH paths -----------
@@ -187,7 +216,7 @@ int main() {
         CHECK(c.bl.blAutoFanNodes == 2,
               "BL_AUTO_FAN_NODES 2 must mean Local Avg, not 1");
         BLParams viaToken;
-        Config::applyBLKey(viaToken, "BL_AUTO_FAN_NODES", 2.0);
+        applyBLParam(viaToken, "BL_AUTO_FAN_NODES", 2.0);
         CHECK(viaToken.blAutoFanNodes == 2,
               "the override token path must agree with the .dat path");
     }
@@ -226,6 +255,59 @@ int main() {
                            ", so a mesh's banner and provenance sidecar cannot "
                            "account for it");
         }
+
+        // ...and for a parameter the banner prints as a NUMBER, that number must be
+        // in the text. Strictly stronger than "the output changed": a parameter whose
+        // value is merely consumed by a conditional (or printed in place of its
+        // neighbour, leaving its own value nowhere) passes the differential and fails
+        // here. The enum-rendered six are exempt BY NAME, not by a wildcard.
+        const std::set<std::string> ENUM_RENDERED = {
+            "BL_CONVEX_METHOD", "BL_CONCAVE_METHOD", "BL_JUNCTION_METHOD",
+            "BL_AUTO_FAN_NODES", "BL_AUTO_TRANSITION_LAYERS", "BL_USE_ANALYTIC_GEOM",
+        };
+        for (const std::string& k : ENUM_RENDERED)
+            CHECK(std::find(K.begin(), K.end(), k) != K.end(),
+                  "the exemption list names " + k + ", which is not a declared "
+                  "parameter — a stale exemption silently drops a real check");
+
+        // Two banners, because the conditional lines are mutually exclusive: the fan
+        // block prints under convex method 0 and the fallback angle under method 2, so
+        // no single banner can show both. Measured — the one-banner version of this
+        // check failed on BL_PARA_FALLBACK_ANGLE the moment it was written.
+        std::vector<std::string> banners;
+        std::vector<BLParams> probes;
+        for (int convex : {0, 2}) {
+            Config c;
+            c.bl.blConvexMethod = convex;
+            c.bl.blConcaveMethod = 5;     // so the influence multiplier prints
+            std::size_t j = 0;
+            forEachBLParam(c.bl, [&](const char* key, auto& f) {
+                using T = std::decay_t<decltype(f)>;
+                if (!ENUM_RENDERED.count(key) && !std::is_same_v<T, bool>)
+                    f = static_cast<T>(9001 + j);
+                ++j;
+            });
+            banners.push_back(printed(c));
+            probes.push_back(c.bl);
+        }
+        forEachBLParam(probes[0], [&](const char* key, const auto&) {
+            const std::string k = key;
+            if (ENUM_RENDERED.count(k)) return;
+            bool shown = false;
+            std::string want;
+            for (std::size_t b = 0; b < probes.size() && !shown; ++b) {
+                forEachBLParam(probes[b], [&](const char* k2, const auto& f2) {
+                    if (std::string(k2) != k) return;
+                    std::ostringstream v;
+                    v << f2;          // the same default formatting print() uses
+                    want = v.str();
+                    if (banners[b].find(want) != std::string::npos) shown = true;
+                });
+            }
+            CHECK(shown, "Config::print() does not show " + k + "'s own value (" +
+                         want + ") under either convex method, so the banner cannot "
+                         "be read back as this parameter's setting");
+        });
     }
 
     return report("test_bl_params_decl");

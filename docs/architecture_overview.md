@@ -479,7 +479,7 @@ segment 迴圈內是**互斥的三條分支**，不是單一鏈：
 | 5 Immersed Boundary | `Stl3dConfigPanel`（`panels/stl3d_panel.py:61`） | 無 mixin，單一類別 427 行 |
 | Solver 模式的中央畫布 | `SolverMonitorPanel`（`panels/solver_monitor_panel.py`，201 行） | — |
 
-Mesh 的彈出對話框獨立成檔：`panels/mesh_dialogs_bc.py`（`SegmentBCDialog`/`AssignPatchDialog`）、`panels/mesh_dialogs_bl.py`（`SegmentBLSection`/`PerGeomBLDialog`），欄位表在 `panels/mesh_bl_field_specs.py`，手風琴版面在 `panels/mesh_bl_dialog_layout.py::BLDialogLayoutMixin`。
+Mesh 的彈出對話框獨立成檔：`panels/mesh_dialogs_bc.py`（`SegmentBCDialog`/`AssignPatchDialog`）、`panels/mesh_dialogs_bl.py`（`SegmentBLSection`/`PerGeomBLDialog`），欄位表在 `services/mesh_bl_field_specs.py`（`panels/mesh_bl_field_specs.py` 現為 re-export shim；表搬到 `services/` 是為了讓 `models/mesh_config_keys.py` 能在無 PyQt6 的機器上由它推導 `.dat` key map），手風琴版面在 `panels/mesh_bl_dialog_layout.py::BLDialogLayoutMixin`。
 
 **`app/utils.py` / `app/popup_stack.py`**：`utils.py` 提供分級訊息 `report_error`:39／`report_warning`:50／`report_info`:57／`confirm`:65，`block_signals` context manager:111，`make_button`:137，`repo_root`:337，`is_headless`:349，`find_binary_executable`:361，`apply_smart_spin_steps`:442，以及 `BC_COLORS`:27；並在 `:172` re-export `popup_stack` 的 API。`popup_stack.py` 的 `keep_on_top(widget)`:179 是唯一入口，內部裝三個過濾器：`_PopupRaiser`:88（主視窗 activation）、`_ClickRaiser`:102（QApplication 層的 mouse release）、`_ShowRaiser`:137（pop-up 自身 show），所有抬升都經 `raise_later`:32 延後執行。
 

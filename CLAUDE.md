@@ -183,6 +183,38 @@ Key-value text file, command-line args override file values. Parameters grouped 
 | Output | `EXPORT_VTK`, `EXPORT_STARCD`, `BC_XMIN/XMAX/YMIN/YMAX/GEOM` |
 | Units | `LENGTH_UNIT` (m/cm/mm/um/in/ft/custom), `LENGTH_UNIT_METRES`, `LENGTH_UNIT_NAME` |
 
+**The 22 boundary-layer parameters are declared ONCE, in `include/BLParams.hpp`**
+(`X(KEY, type, field, default)` per row). The struct, the `.dat` reader, the
+per-geometry override parser and `isBLParam` are all GENERATED from that list, so
+there is no parse branch left to forget; `Config` holds one `BLParams` rather than a
+second copy with a second set of defaults. `Config::print()` is deliberately NOT
+generated — the banner is a grouped report reused verbatim as the provenance sidecar —
+so `tests/cpp/test_bl_params_decl.cpp` check 6 gates it instead: every parameter must
+be reachable from the banner AND (where the banner renders it as a number) its own
+value must appear there. That check's blind spot is named in its own docstring: it
+cannot see a SWAPPED PAIR, because the pairing of a value to its meaning IS the label
+prose.
+
+**Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
+measured on the old and new trees:
+- **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /
+  2 Local Avg and `BoundaryLayer.cpp` really branches on 2, but the `.dat` reader used
+  to collapse it with `(val != 0)`, so a global `BL_AUTO_FAN_NODES 2` ran as 1 while
+  the same token on a `GEOM_FILE` line reached 2. It now means Local Avg everywhere.
+  No config in this repo sets 2, so no existing mesh moved (golden 9/9 SAME).
+  **The GUI still cannot express it** — `MeshConfig.bl_auto_fan_nodes` is a `bool` and
+  the writer emits `1`/`0`, so its combo's LOCAL item has always run GLOBAL and still
+  does. That asymmetry is pre-existing, not new, and belongs to issue #13.
+- **A `bool` key is read through a double**, so `BL_USE_ANALYTIC_GEOM 0.5` is now true
+  where it used to read 0 and be false. Integral values — everything the GUI or any
+  config here writes — are unaffected. Kept, because reinstating a per-row parse rule
+  to preserve it would put back exactly what let the two parsers disagree.
+
+**An unrecognised per-geometry `KEY=VALUE` override is now NAMED, not dropped.**
+`parseBLOverrideToken` asks `isBLParam` and warns; it used to store the token and let
+the applier silently skip it, which is the same "the setting does nothing" failure
+class as the above.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 
@@ -302,8 +334,12 @@ Layered PyQt6 application:
 **A config field is declared ONCE, in its panel's field-spec table**
 (`app/services/field_spec.py` is the Qt-free record + the pure questions asked of a
 table; `views/panels/field_widgets.py` is the one kind→widget mapping and the three
-traversals; the tables are `mesh_field_specs.py` + `mesh_bl_field_specs.py`,
-`solver_field_specs.py`, `stl3d_field_specs.py`). Each panel used to be cut in half —
+traversals; the tables are `services/mesh_field_specs.py` +
+`services/mesh_bl_field_specs.py` and `views/panels/solver_field_specs.py`,
+`views/panels/stl3d_field_specs.py` — the two MESH tables live in `services/` because
+the `.dat` key map derives from them, see "The GUI's `.dat` key map is derived" below;
+their old `views/panels/` paths survive as re-export shims so the ~11 Qt-side call
+sites are unchanged). Each panel used to be cut in half —
 one half BUILT widgets, the other read and wrote them against a model — with the whole
 widget set as the implicit interface: **176 attributes across five build mixins, named
 back by hand in 246 read/write lines**, agreeing only because both halves spelled the
@@ -345,11 +381,12 @@ to build (`add_spec_rows`), once to write (`write_specs`) and once to read
   the ONLY help 20 of the 21 fields had, and giving every spec a tip silently killed the
   `spec.tip or key` fallback (found in review, now gate check 12).
 - **`services/field_spec.py` is Qt-free and gated; `config_ownership` is Qt-free at
-  IMPORT only.** The tables live under `views/panels/` (they carry UI text), so the
-  first *call* to `preserved_fields()` loads five PyQt6 modules — measured to be
-  unchanged from the deferred `mesh_dialogs` import it replaced, and every caller is
-  Qt-side anyway (one controller, two gate tests). Do not read the deferral as
-  "answerable headlessly"; it keeps the `services/` sweep honest, nothing more.
+  IMPORT only.** The MESH tables are now genuinely reachable headlessly (they had to
+  be — see below), but the SOLVER and IB tables still live under `views/panels/`,
+  whose package `__init__` eagerly imports eight Qt panels, so a `preserved_fields()`
+  call naming those two still loads PyQt6. Do not read the deferral as "answerable
+  headlessly" for every panel; it keeps the `services/` sweep honest, and for the
+  mesh panel it is now more than that.
 Gated by `tests/test_field_spec_tables.py` (twelve properties, every static one verified
 by injection, each injection asserting the mutated source still PARSES and really
 changed).
@@ -359,6 +396,38 @@ rows are inside the four `setVisible(False)` BL backing sections, and every pane
 `set_config` → `get_config` round-trip is byte-identical. `test_panel_model_sync.py`
 stayed green throughout and lost only its check 1, which became a tautology once both
 sides of that equality were the same declaration.
+
+**The GUI's `.dat` key map is DERIVED from the field-spec tables**
+(`models/mesh_config_keys.py`): 45 of its 49 `KEY -> (attribute, converter)` entries
+come from the tables (`spec.key` + `spec.model`), the converter comes from the model
+field's own dataclass type via `field_spec.model_types()`, and the 4-entry residue is
+declared with a reason each. It used to be 49 hand-written entries restating both
+facts, in a file with no way of knowing when a table changed.
+- **The two mesh tables MOVED to `services/` for this, and the reason is the seam.**
+  They are intrinsically Qt-free (they import only `dataclasses`, `MeshConfig` and
+  `field_spec`), but any module under `views/panels/` drags in that package's
+  `__init__` and its eight Qt panels — measured: importing either table with PyQt6
+  blocked raised ImportError — while `mesh_config_keys` is on the HEADLESS path
+  (`mesh_config_io.config_to_text` ← `run_pipeline.sh` / `run_batch.sh`). A spec
+  import without the move would have made PyQt6 a requirement of a compute node that
+  never draws a window.
+- **The cost is recorded rather than hidden**: ~250 lines of UI text (labels,
+  tooltips, one `_HINT_STYLE` CSS string) now sit in `services/`, which weakens the
+  "the tables carry UI text so they live under `views/`" reasoning this file used to
+  give for their location. The Qt-free RULE is unaffected and still gated; what
+  changed is the rationale, and the trade was taken deliberately — deriving the map
+  is worth more than the tidiness of where UI copy lives. The solver and IB tables
+  did NOT move: nothing headless derives from them.
+- **`_KEY_MAP` is anchored to the WRITER, not just to the tables** (gate check 13f,
+  both directions, with the four structural keys — `GEOM_FILE` / `DOMAIN_FILE` /
+  `SEED_FILE` / `GROUP_BC` — declared). Checking only "map agrees with tables" was
+  measured BLIND: removing a spec's `key=` left both sides agreeing with the
+  parameter gone from each, while the writer kept emitting the line and the reader
+  could no longer read it back. `test_gui_cpp_config_parity.py` cannot see that
+  either, since the writer's f-strings are independent of the map.
+- Deriving the map made `mesh_config_keys` depend on `MeshConfig`, i.e. the cycle the
+  module was split out to avoid, pointing the other way. `mesh_config.py` therefore
+  imports the map inside the two methods that use it.
 
 **Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`). Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab drops exactly its own commands; ordering across them is by the monotonic `seq` that `CommandHistory._push` stamps — undo takes the highest, redo the lowest waiting on a redo stack. Undo raises the tab owning the command before applying it. Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one step. **Any code pushing config into those panels must go through `controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is recorded as a user edit.
 - **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process group — every worker `cancel()` must route through these, never a bare `terminate()`)
