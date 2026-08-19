@@ -1079,8 +1079,8 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     const bool haveSurfaceGrowth = !growthSrc.empty();
     // 建立緩衝區：在 dBuffer 距離內維持基準尺寸，避免 1 個大網格接多個小網格。
     // 兩個緩衝區都提升到外層，供本函式最後的尺寸場天花板回報 (3.4) 重算場值用。
-    const double dBuffer = hBase * config.blTransitionBuffer;
-    const double dBufferOuter = hEnd * config.blTransitionBuffer;
+    const double dBuffer = hBase * config.bl.blTransitionBuffer;
+    const double dBufferOuter = hEnd * config.bl.blTransitionBuffer;
     // 成長場來源的線段端點：與 growthSrc 取自同一趟收集 (見上方 frontSegs /
     // surfaceSegs)，選哪一份就跟著 growthSrc 選哪一份，因此判準只有一處。
     const std::vector<std::array<double, 4>>& growthSrcSegs =

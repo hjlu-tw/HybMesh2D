@@ -17,13 +17,16 @@ struct BLParams {
     double blInitialThickness = 0.01;
     double blGrowthRate = 1.2;
     int blLayers = 5;
+    // 邊界層扇形網格控制 (Fan Elements)
     int blFanNodes = 5;
-    int blAutoFanNodes = 0;
-    double blFanAngleThreshold = 60.0;
-    int blConvexMethod = 0;
-    double blParaFallbackAngle = 300.0;
+    int blAutoFanNodes = 0;            // 0: OFF, 1: Global Avg, 2: Local Avg
+    double blFanAngleThreshold = 60.0; // 度數
+    // 凸角處理 (Convex Handling)
+    int blConvexMethod = 0;             // 0: Fan (Default), 2: Parallelogram
+    double blParaFallbackAngle = 300.0; // 角度大於此值時，由單一平行四邊形改為雙平行四邊形策略
     double blConvexAngleThreshold = 260.0;
-    int blConcaveMethod = 0;
+    // 凹角處理 (Concave Handling)
+    int blConcaveMethod = 0;            // 0: Default (Merge), 5: Thickness-based Blending
     double blConcaveInfluenceMultiplier = 2.5;  // arc-length reach of the concave/blend correction, in BL total heights. 10 over-blended: it tilted every column along an edge toward the corner apex, so a segment's BL→far-field edge came out curved instead of a straight uniform-height band. 2.5 keeps the outer edge straight with a short transition only at the corner (still enough to avoid front self-intersection at typical concave corners).
     double blConcaveAngleThreshold = 100.0;
     // BL / non-BL junction handling (see BoundaryLayer.cpp). Method 0 = taper-to-zero
@@ -40,10 +43,13 @@ struct BLParams {
     double blJunctionAngleC1 = 135.0;
     double blJunctionAngleC2 = 270.0;
     double blJunctionAngleC3 = 315.0;
+    // 過渡層設定 (Phase 4)
     int blTransitionLayers = 3;
-    int blAutoTransitionLayers = 0;
+    int blAutoTransitionLayers = 0;     // 0: OFF, 1: Global Avg, 2: Per-Geometry Avg
     double blTransitionGrowthRate = 1.2;
     double blTransitionBuffer = 2.0;
+    // Phase 3: 在平滑表面點以解析曲線(line/circle/spline)的法向取代有限差分。
+    // 預設關閉，行為與舊版逐位元相同；開啟後角點仍維持既有 fan/merge 處理。
     bool blUseAnalyticGeom = false;
     // Per-layer tangential smoothing of the advancing front. Redistributes PLAIN
     // (non-corner/fan/junction/frozen) front nodes ALONG the front — the growth-
@@ -123,40 +129,27 @@ struct Config {
     double surfaceSize = 0.1, farFieldSize = 1.0;
     bool autoSurfaceSize = true;
     bool autoFarFieldSize = false;   // derive farFieldSize from the domain extent
-    double blInitialThickness = 0.01, blGrowthRate = 1.2;
-    int blLayers = 5;
+    // The GLOBAL boundary-layer settings, and the only copy of them. A geometry
+    // that grows a BL reads either this struct (globalBLParams(), which now hands it
+    // over as-is) or a copy with its own KEY=VALUE tokens applied (blParamsFor()).
+    //
+    // This used to be a second, hand-aligned declaration of BLParams' 22 fields
+    // sitting right here, with its own set of defaults, bridged by a 22-line
+    // field-by-field copy in globalBLParams(). The two default lists agreed only
+    // because someone kept them agreeing: a new parameter given 0.01 on one and
+    // 0.001 on the other would have run a plain mesh at one value and an
+    // override-carrying mesh at the other, with nothing to report it.
+    BLParams bl;
 
-    // 邊界層扇形網格控制 (Fan Elements)
-    int blFanNodes = 5;
-    int blAutoFanNodes = 0; // 0: OFF, 1: Global Avg, 2: Local Avg
-    double blFanAngleThreshold = 60.0; // 度數
-    
-    // 凸角處理 (Convex Handling)
-    int blConvexMethod = 0; // 0: Fan (Default), 2: Parallelogram
-    double blParaFallbackAngle = 300.0; // 角度大於此值時，由單一平行四邊形改為雙平行四邊形策略
-    
-    // 凹角處理 (Concave Handling)
+    // Global-only BL settings, deliberately NOT part of BLParams: neither is
+    // per-geometry overridable, so neither is a duplicate of anything.
+    // blSmoothingIters smooths the FINISHED mesh (src/cli.cpp), i.e. it is not a
+    // property of one geometry's front; blMergeConcave is read by print() alone and
+    // survives only to round-trip through the GUI.
     int blSmoothingIters = 0;
-    int blFrontSmoothingIters = 0; // per-layer tangential front smoothing, opt-in (see BLParams)
     bool blMergeConcave = false;
-    int blConcaveMethod = 0; // 0: Default (Merge), 5: Thickness-based Blending
-    double blConcaveInfluenceMultiplier = 2.5;  // see the primary struct above: 10 curved each edge's BL outer band; 2.5 keeps it straight with a short corner transition.
-    double blConvexAngleThreshold = 260.0;
-    double blConcaveAngleThreshold = 100.0;
 
-    // BL / non-BL 交界處理: 0 = taper-to-zero (collapsing prisms, 舊版), 1 = 4-case
-    // 角度驅動 (預設)。C1/C2/C3 為面向流場夾角 theta (度) 的分類門檻。
-    int blJunctionMethod = 1;
-    double blJunctionAngleC1 = 135.0;
-    double blJunctionAngleC2 = 270.0;
-    double blJunctionAngleC3 = 315.0;
-
-    // 過渡層設定 (Phase 4)
-    int blTransitionLayers = 3;
-    int blAutoTransitionLayers = 0; // 0: OFF, 1: Global Avg, 2: Per-Geometry Avg
-    double blTransitionGrowthRate = 1.2;
-    double blTransitionBuffer = 2.0;
-    double globalAvgSegmentLength = -1.0; // 用於模式 1
+    double globalAvgSegmentLength = -1.0; // 用於模式 1 (see bl.blAutoTransitionLayers)
     
     // 進階遠場過渡控制
     double farFieldGrowthRate = 0.1;
@@ -168,10 +161,6 @@ struct Config {
     int gmshOptimize = 1;  // 1: Enable mesh optimization
     // Gmsh thread count for far-field meshing. 0 = auto (hardware_concurrency).
     int gmshNumThreads = 0;
-
-    // Phase 3: 在平滑表面點以解析曲線(line/circle/spline)的法向取代有限差分。
-    // 預設關閉，行為與舊版逐位元相同；開啟後角點仍維持既有 fan/merge 處理。
-    bool blUseAnalyticGeom = false;
 
     // Units. The unit every length in this config (and in the geometry files) is
     // expressed in. The mesher deliberately does NOT convert anything: it only ever
@@ -314,51 +303,59 @@ struct Config {
             else if (key == "AUTO_FARFIELD_SIZE") {
                 int val; ss >> val; autoFarFieldSize = (val != 0);
             }
-            else if (key == "BL_INITIAL_THICKNESS") ss >> blInitialThickness;
-            else if (key == "BL_GROWTH_RATE") ss >> blGrowthRate;
+            else if (key == "BL_INITIAL_THICKNESS") ss >> bl.blInitialThickness;
+            else if (key == "BL_GROWTH_RATE") ss >> bl.blGrowthRate;
             else if (key == "BL_LAYERS") {
-                double val; ss >> val; blLayers = static_cast<int>(val);
+                double val; ss >> val; bl.blLayers = static_cast<int>(val);
             }
             else if (key == "BL_FAN_NODES") {
-                double val; ss >> val; blFanNodes = static_cast<int>(val);
+                double val; ss >> val; bl.blFanNodes = static_cast<int>(val);
             }
             else if (key == "BL_AUTO_FAN_NODES") {
-                int val; ss >> val; blAutoFanNodes = (val != 0);
+                // KNOWN DEFECT, preserved deliberately (see issue #11): the field is an
+                // int (0 OFF / 1 GLOBAL / 2 LOCAL, read as 2 by BoundaryLayer.cpp) and
+                // this branch collapses it to a bool, so a global `BL_AUTO_FAN_NODES 2`
+                // silently runs as 1 — measured. applyBLKey() casts it correctly, so the
+                // per-geometry override token is the ONLY way to reach LOCAL. That is the
+                // two-parsers-disagree failure #11 removes by having them read one
+                // declaration; fixing it here would change meshes, which this
+                // behaviour-preserving prefactor (#10) may not do.
+                int val; ss >> val; bl.blAutoFanNodes = (val != 0);
             }
-            else if (key == "BL_FAN_ANGLE_THRESHOLD") ss >> blFanAngleThreshold;
+            else if (key == "BL_FAN_ANGLE_THRESHOLD") ss >> bl.blFanAngleThreshold;
             else if (key == "BL_CONVEX_METHOD") {
-                double val; ss >> val; blConvexMethod = static_cast<int>(val);
+                double val; ss >> val; bl.blConvexMethod = static_cast<int>(val);
             }
-            else if (key == "BL_PARA_FALLBACK_ANGLE") ss >> blParaFallbackAngle;
+            else if (key == "BL_PARA_FALLBACK_ANGLE") ss >> bl.blParaFallbackAngle;
             else if (key == "BL_SMOOTHING_ITERS") {
                 double val; ss >> val; blSmoothingIters = static_cast<int>(val);
             }
             else if (key == "BL_FRONT_SMOOTHING_ITERS") {
-                double val; ss >> val; blFrontSmoothingIters = static_cast<int>(val);
+                double val; ss >> val; bl.blFrontSmoothingIters = static_cast<int>(val);
             }
             else if (key == "BL_MERGE_CONCAVE") {
                 int val; ss >> val; blMergeConcave = (val != 0);
             }
             else if (key == "BL_CONCAVE_METHOD") {
-                double val; ss >> val; blConcaveMethod = static_cast<int>(val);
+                double val; ss >> val; bl.blConcaveMethod = static_cast<int>(val);
             }
-            else if (key == "BL_CONCAVE_INFLUENCE_MULTIPLIER") ss >> blConcaveInfluenceMultiplier;
-            else if (key == "BL_CONVEX_ANGLE_THRESHOLD") ss >> blConvexAngleThreshold;
-            else if (key == "BL_CONCAVE_ANGLE_THRESHOLD") ss >> blConcaveAngleThreshold;
+            else if (key == "BL_CONCAVE_INFLUENCE_MULTIPLIER") ss >> bl.blConcaveInfluenceMultiplier;
+            else if (key == "BL_CONVEX_ANGLE_THRESHOLD") ss >> bl.blConvexAngleThreshold;
+            else if (key == "BL_CONCAVE_ANGLE_THRESHOLD") ss >> bl.blConcaveAngleThreshold;
             else if (key == "BL_JUNCTION_METHOD") {
-                double val; ss >> val; blJunctionMethod = static_cast<int>(val);
+                double val; ss >> val; bl.blJunctionMethod = static_cast<int>(val);
             }
-            else if (key == "BL_JUNCTION_ANGLE_C1") ss >> blJunctionAngleC1;
-            else if (key == "BL_JUNCTION_ANGLE_C2") ss >> blJunctionAngleC2;
-            else if (key == "BL_JUNCTION_ANGLE_C3") ss >> blJunctionAngleC3;
+            else if (key == "BL_JUNCTION_ANGLE_C1") ss >> bl.blJunctionAngleC1;
+            else if (key == "BL_JUNCTION_ANGLE_C2") ss >> bl.blJunctionAngleC2;
+            else if (key == "BL_JUNCTION_ANGLE_C3") ss >> bl.blJunctionAngleC3;
             else if (key == "BL_TRANSITION_LAYERS") {
-                double val; ss >> val; blTransitionLayers = static_cast<int>(val);
+                double val; ss >> val; bl.blTransitionLayers = static_cast<int>(val);
             }
             else if (key == "BL_AUTO_TRANSITION_LAYERS") {
-                double val; ss >> val; blAutoTransitionLayers = static_cast<int>(val);
+                double val; ss >> val; bl.blAutoTransitionLayers = static_cast<int>(val);
             }
-            else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> blTransitionGrowthRate;
-            else if (key == "BL_TRANSITION_BUFFER") ss >> blTransitionBuffer;
+            else if (key == "BL_TRANSITION_GROWTH_RATE") ss >> bl.blTransitionGrowthRate;
+            else if (key == "BL_TRANSITION_BUFFER") ss >> bl.blTransitionBuffer;
             else if (key == "FARFIELD_GROWTH_RATE") ss >> farFieldGrowthRate;
             else if (key == "FARFIELD_GROWTH_RATE_OUTER") ss >> farFieldGrowthRateOuter;
             else if (key == "FARFIELD_BIDIRECTIONAL") {
@@ -374,7 +371,7 @@ struct Config {
                 double val; ss >> val; gmshNumThreads = static_cast<int>(val);
             }
             else if (key == "BL_USE_ANALYTIC_GEOM") {
-                int val; ss >> val; blUseAnalyticGeom = (val != 0);
+                int val; ss >> val; bl.blUseAnalyticGeom = (val != 0);
             }
             else if (key == "BC_XMIN") ss >> bcXMin;
             else if (key == "BC_XMAX") ss >> bcXMax;
@@ -417,24 +414,24 @@ struct Config {
     // clamped meaningfully (an empty x or y domain span).
     bool validate() {
         bool ok = true;
-        if (blLayers < 0) {
-            LOG_WARN("BL_LAYERS < 0 (" << blLayers << "); clamping to 0.");
-            blLayers = 0;
+        if (bl.blLayers < 0) {
+            LOG_WARN("BL_LAYERS < 0 (" << bl.blLayers << "); clamping to 0.");
+            bl.blLayers = 0;
         }
-        if (blInitialThickness <= 0.0) {
-            LOG_WARN("BL_INITIAL_THICKNESS <= 0 (" << blInitialThickness
+        if (bl.blInitialThickness <= 0.0) {
+            LOG_WARN("BL_INITIAL_THICKNESS <= 0 (" << bl.blInitialThickness
                      << "); clamping to 0.01.");
-            blInitialThickness = 0.01;
+            bl.blInitialThickness = 0.01;
         }
-        if (blLayers > 0 && blGrowthRate <= 1.0) {
-            LOG_WARN("BL_GROWTH_RATE <= 1.0 (" << blGrowthRate
+        if (bl.blLayers > 0 && bl.blGrowthRate <= 1.0) {
+            LOG_WARN("BL_GROWTH_RATE <= 1.0 (" << bl.blGrowthRate
                      << "); a boundary layer must expand. Clamping to 1.2.");
-            blGrowthRate = 1.2;
+            bl.blGrowthRate = 1.2;
         }
-        if (blTransitionLayers > 0 && blTransitionGrowthRate <= 1.0) {
-            LOG_WARN("BL_TRANSITION_GROWTH_RATE <= 1.0 (" << blTransitionGrowthRate
+        if (bl.blTransitionLayers > 0 && bl.blTransitionGrowthRate <= 1.0) {
+            LOG_WARN("BL_TRANSITION_GROWTH_RATE <= 1.0 (" << bl.blTransitionGrowthRate
                      << "); transition layers must expand. Clamping to 1.2.");
-            blTransitionGrowthRate = 1.2;
+            bl.blTransitionGrowthRate = 1.2;
         }
         if (surfaceSize <= 0.0) {
             LOG_WARN("SURFACE_MESH_SIZE <= 0 (" << surfaceSize << "); clamping to 0.1.");
@@ -471,33 +468,9 @@ struct Config {
         catch (...) { /* ignore malformed values */ }
     }
 
-    // Copy the global BL settings into a BLParams bundle.
-    BLParams globalBLParams() const {
-        BLParams p;
-        p.blInitialThickness = blInitialThickness;
-        p.blGrowthRate = blGrowthRate;
-        p.blLayers = blLayers;
-        p.blFanNodes = blFanNodes;
-        p.blAutoFanNodes = blAutoFanNodes;
-        p.blFanAngleThreshold = blFanAngleThreshold;
-        p.blConvexMethod = blConvexMethod;
-        p.blParaFallbackAngle = blParaFallbackAngle;
-        p.blConvexAngleThreshold = blConvexAngleThreshold;
-        p.blConcaveMethod = blConcaveMethod;
-        p.blConcaveInfluenceMultiplier = blConcaveInfluenceMultiplier;
-        p.blConcaveAngleThreshold = blConcaveAngleThreshold;
-        p.blJunctionMethod = blJunctionMethod;
-        p.blJunctionAngleC1 = blJunctionAngleC1;
-        p.blJunctionAngleC2 = blJunctionAngleC2;
-        p.blJunctionAngleC3 = blJunctionAngleC3;
-        p.blTransitionLayers = blTransitionLayers;
-        p.blAutoTransitionLayers = blAutoTransitionLayers;
-        p.blTransitionGrowthRate = blTransitionGrowthRate;
-        p.blTransitionBuffer = blTransitionBuffer;
-        p.blUseAnalyticGeom = blUseAnalyticGeom;
-        p.blFrontSmoothingIters = blFrontSmoothingIters;
-        return p;
-    }
+    // The global BL settings. Nothing to copy: Config HOLDS a BLParams, so this
+    // is an accessor rather than the 22-line field-by-field bridge it used to be.
+    BLParams globalBLParams() const { return bl; }
 
     static void applyBLKey(BLParams& p, const std::string& key, double v) {
         if (key == "BL_INITIAL_THICKNESS") p.blInitialThickness = v;
@@ -596,31 +569,31 @@ struct Config {
         os << "  - Far-field Mesh Size  : " << farFieldSize << (autoFarFieldSize ? " (Manual fallback)" : "") << "\n\n";
 
         os << "[ Mesh Generation (BL, Transition, Far-field) ]\n";
-        os << "  - Base Layers          : " << blLayers << " (Initial: " << blInitialThickness << ", Growth Rate: " << blGrowthRate << ")\n";
-        os << "  - Transition Layers    : " << blTransitionLayers << " (Auto: "
-                  << (blAutoTransitionLayers == 0 ? "OFF" : (blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL"))
-                  << ") | Growth Rate: " << blTransitionGrowthRate << " | Buffer: " << blTransitionBuffer << "\n";
+        os << "  - Base Layers          : " << bl.blLayers << " (Initial: " << bl.blInitialThickness << ", Growth Rate: " << bl.blGrowthRate << ")\n";
+        os << "  - Transition Layers    : " << bl.blTransitionLayers << " (Auto: "
+                  << (bl.blAutoTransitionLayers == 0 ? "OFF" : (bl.blAutoTransitionLayers == 1 ? "GLOBAL" : "LOCAL"))
+                  << ") | Growth Rate: " << bl.blTransitionGrowthRate << " | Buffer: " << bl.blTransitionBuffer << "\n";
         os << "  - Farfield Growth Rate : " << farFieldGrowthRate << "\n";
         os << "  - Gmsh Generator       : Algorithm " << gmshAlgorithm << " | Optimize: " << (gmshOptimize ? "[ON]" : "[OFF]") << "\n";
-        os << "  - Analytic BL Normals  : " << (blUseAnalyticGeom ? "[ON]" : "[OFF]") << "\n\n";
+        os << "  - Analytic BL Normals  : " << (bl.blUseAnalyticGeom ? "[ON]" : "[OFF]") << "\n\n";
 
         os << "[ Corner Handling (Convex & Concave) ]\n";
-        os << "  - Corner Thresholds    : Convex > " << blConvexAngleThreshold << " deg, Concave < " << blConcaveAngleThreshold << " deg\n";
-        os << "  - BL/no-BL Junction    : " << (blJunctionMethod == 0 ? "Taper-to-zero" : "4-case angle-driven")
-                  << " (theta bins " << blJunctionAngleC1 << " / " << blJunctionAngleC2 << " / " << blJunctionAngleC3 << " deg)\n";
-        os << "  - Convex Handling      : " << (blConvexMethod == 0 ? "Fan" : (blConvexMethod == 2 ? "Parallelogram" : "Unknown")) << "\n";
-        if (blConvexMethod == 0) {
-            os << "      * Fan Elements         : " << blFanNodes << " nodes (Auto: "
-                      << (blAutoFanNodes == 0 ? "OFF" : (blAutoFanNodes == 1 ? "GLOBAL" : "LOCAL"))
-                      << ") | Trigger Angle > " << blFanAngleThreshold << " deg\n";
-        } else if (blConvexMethod == 2) {
-            os << "      * Fallback Angle       : > " << blParaFallbackAngle << " deg\n";
+        os << "  - Corner Thresholds    : Convex > " << bl.blConvexAngleThreshold << " deg, Concave < " << bl.blConcaveAngleThreshold << " deg\n";
+        os << "  - BL/no-BL Junction    : " << (bl.blJunctionMethod == 0 ? "Taper-to-zero" : "4-case angle-driven")
+                  << " (theta bins " << bl.blJunctionAngleC1 << " / " << bl.blJunctionAngleC2 << " / " << bl.blJunctionAngleC3 << " deg)\n";
+        os << "  - Convex Handling      : " << (bl.blConvexMethod == 0 ? "Fan" : (bl.blConvexMethod == 2 ? "Parallelogram" : "Unknown")) << "\n";
+        if (bl.blConvexMethod == 0) {
+            os << "      * Fan Elements         : " << bl.blFanNodes << " nodes (Auto: "
+                      << (bl.blAutoFanNodes == 0 ? "OFF" : (bl.blAutoFanNodes == 1 ? "GLOBAL" : "LOCAL"))
+                      << ") | Trigger Angle > " << bl.blFanAngleThreshold << " deg\n";
+        } else if (bl.blConvexMethod == 2) {
+            os << "      * Fallback Angle       : > " << bl.blParaFallbackAngle << " deg\n";
         }
-        os << "  - Concave Handling     : " << (blConcaveMethod == 0 ? "Vector Merge" : (blConcaveMethod == 5 ? "Thickness Blending" : "Unknown"))
+        os << "  - Concave Handling     : " << (bl.blConcaveMethod == 0 ? "Vector Merge" : (bl.blConcaveMethod == 5 ? "Thickness Blending" : "Unknown"))
                   << " | Merge: " << (blMergeConcave ? "[ON]" : "[OFF]")
                   << " | Smoothing: " << blSmoothingIters << " iters\n";
-        if (blConcaveMethod == 5) {
-            os << "      * Influence Multiplier : " << blConcaveInfluenceMultiplier << "\n";
+        if (bl.blConcaveMethod == 5) {
+            os << "      * Influence Multiplier : " << bl.blConcaveInfluenceMultiplier << "\n";
         }
         os << "\n";
 

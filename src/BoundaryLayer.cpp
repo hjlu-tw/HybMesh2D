@@ -720,14 +720,14 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     }
     if (nJuncCap > 0)
         std::cout << "  - BL/no-BL junctions   : " << nJuncCap
-                  << (m_config.blJunctionMethod == 0 ? " tapered to zero (collapsing prisms)\n"
+                  << (m_config.bl.blJunctionMethod == 0 ? " tapered to zero (collapsing prisms)\n"
                                                      : " handled (4-case angle-driven)\n");
 
     // Each front carries its own thickness schedule (fs.currentH advanced with
     // its own growth rate), so the loop runs for the deepest front's layer count
     // and the returned outer thickness is the largest last-layer height across
     // fronts (it drives the far-field starting size).
-    double lastH = m_config.blInitialThickness;
+    double lastH = m_config.bl.blInitialThickness;
     int totalLayers = 0;
     for (const auto& fs : fronts)
         totalLayers = std::max(totalLayers, fs.bl.blLayers + fs.nTrans);

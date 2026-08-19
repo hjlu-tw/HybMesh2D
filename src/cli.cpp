@@ -617,7 +617,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
         }
 
         BoundaryLayerGenerator blGen(mesh, config);
-        double lastH = config.blInitialThickness;
+        double lastH = config.bl.blInitialThickness;
 
         // ---- Gather input geometries with their per-geometry role -----------
         struct GeomInput {
@@ -711,7 +711,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
         }
         if (hasIntersection) return reportError(EXIT_ERR_INTERSECTION);
 
-        if (config.blAutoTransitionLayers == 1) {
+        if (config.bl.blAutoTransitionLayers == 1) {
             double totalLen = 0.0; int totalSegments = 0;
             for (const auto& g : inputs) {
                 int np = (int)g.points.size();
