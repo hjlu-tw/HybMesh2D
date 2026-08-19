@@ -397,7 +397,10 @@ _KIND_CLASS = {
 check(set(_KIND_CLASS) == set(fs.KINDS),
       f"6. every declared kind is covered here "
       f"(missing: {sorted(set(fs.KINDS) - set(_KIND_CLASS))})")
-_probe_opts = dict(lo=0.0, hi=10.0, dec=2, choices=[(1, "one"), (2, "two")])
+# lo/hi are INTS: they have to serve the int kind too, whose QSpinBox.setRange
+# refuses a float on a current sip (and took a DeprecationWarning before that).
+# The double spin boxes accept an int bound unchanged.
+_probe_opts = dict(lo=0, hi=10, dec=2, choices=[(1, "one"), (2, "two")])
 for kind, cls_name in _KIND_CLASS.items():
     w = fw.make_widget(fs.FieldSpec("probe", kind, "Probe", "tip", model=None,
                                     opts=dict(_probe_opts)))
@@ -412,6 +415,16 @@ except ValueError:
 check(_refused,
       "6. (injection) a typo'd kind is refused at construction — it would otherwise "
       "build no widget and be found as a missing control")
+
+try:
+    fs.FieldSpec("probe", "int", "Probe", "tip", opts=dict(lo=0, hi=1e6))
+    _refused = False
+except ValueError:
+    _refused = True
+check(_refused,
+      "6. (injection) a float bound on an int field is refused at construction — "
+      "QSpinBox.setRange takes ints, so `hi=1e6` builds the panel on one sip and "
+      "raises TypeError on another")
 
 # ── 7. every kind's read/write pair round-trips on the LIVE panels ────────
 from app.views.panels.mesh_config_panel import MeshConfigPanel  # noqa: E402

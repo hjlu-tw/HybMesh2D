@@ -120,6 +120,19 @@ class FieldSpec:
                 f"that is still written back to the model.")
         if not self.attr:
             raise ValueError("FieldSpec needs an attr (the panel attribute name)")
+        if self.kind == "int":
+            # An int field is a QSpinBox, whose setRange takes C++ ints. sip used to
+            # accept a float there with a DeprecationWarning and now refuses it
+            # outright, so `hi=1e6` — the natural way to write a large bound — builds
+            # a panel on one machine and raises TypeError on another. Refuse it here,
+            # where the kind itself is checked, rather than at widget-build time.
+            for name in ("lo", "hi"):
+                v = self.opts.get(name)
+                if v is not None and not isinstance(v, int):
+                    raise ValueError(
+                        f"FieldSpec({self.attr!r}): kind 'int' needs an int {name}, "
+                        f"got {v!r}. QSpinBox.setRange takes ints; a float bound "
+                        f"raises TypeError on a newer sip.")
 
     @property
     def model_name(self) -> str | None:
