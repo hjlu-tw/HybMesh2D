@@ -51,16 +51,20 @@ PANEL_SOURCES = {
 
 #: Each panel's field-spec tables, as ``(module, attribute)`` pairs imported on demand.
 #: Deferred so this module's IMPORT stays Qt-free, which is what
-#: tests/test_qt_free_seam.py's services/ sweep checks. Deferral is not Qt-freedom, and
-#: the distinction is one CLAUDE.md already records: the tables live under
-#: ``views/panels/``, whose package ``__init__`` pulls in Qt, so the first CALL loads
-#: five PyQt6 modules. Measured to be unchanged from the deferred
-#: ``mesh_dialogs`` import this replaced, and every caller is Qt-side anyway (one
-#: controller, two gate tests) — but do not read the deferral as "answerable headlessly".
+#: tests/test_qt_free_seam.py's services/ sweep checks.
+#:
+#: The MESH tables now live in ``app/services/`` and are genuinely reachable
+#: headlessly — they had to be, because ``models/mesh_config_keys`` derives the .dat
+#: key map from them and is called by ``run_pipeline.sh`` on machines with no PyQt6.
+#: The SOLVER and IB tables are still under ``views/panels/``, whose package
+#: ``__init__`` eagerly imports eight Qt panels, so a CALL naming those two still
+#: loads PyQt6. Deferral is not Qt-freedom: it keeps this module's import clean,
+#: which is what the sweep checks and what every caller needs (one Qt-side
+#: controller and two gate tests).
 PANEL_SPEC_TABLES = {
     "mesh_config_panel": (
-        ("app.views.panels.mesh_field_specs", "MESH_SPECS"),
-        ("app.views.panels.mesh_bl_field_specs", "PANEL_BL_SPECS"),
+        ("app.services.mesh_field_specs", "MESH_SPECS"),
+        ("app.services.mesh_bl_field_specs", "PANEL_BL_SPECS"),
     ),
     "solver_config_panel": (
         ("app.views.panels.solver_field_specs", "SOLVER_SPECS"),

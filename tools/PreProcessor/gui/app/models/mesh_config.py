@@ -2,11 +2,26 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-# Re-exported so existing `from app.models.mesh_config import _KEY_MAP` imports
-# and the to_dict/load_from_dict references below keep working; the canonical
-# definition lives in mesh_config_keys.py (shared with mesh_config_io.py).
-from app.models.mesh_config_keys import _KEY_MAP
 from app.models import mesh_output_names
+
+
+def _key_map() -> dict:
+    """The .dat KEY map, imported at CALL time rather than at module scope.
+
+    It is now DERIVED from the field-spec tables plus this dataclass's own field
+    types (see mesh_config_keys), so it depends on MeshConfig — and MeshConfig is
+    here. A module-level import would therefore be a cycle, which is the same
+    hazard the separate mesh_config_keys module was split out to avoid in the first
+    place; the dependency simply runs the other way now. Deferring it is safe rather
+    than a smell: both use sites are methods, so by the time either runs this module
+    is fully initialised, and nothing in the chain touches Qt (the tables live in
+    app/services/ precisely so that stays true).
+
+    The stale `from app.models.mesh_config import _KEY_MAP` re-export this replaced
+    had no importers left — checked across app/ and tests/.
+    """
+    from app.models.mesh_config_keys import _KEY_MAP
+    return _KEY_MAP
 
 @dataclass
 class MeshConfig:
@@ -137,7 +152,7 @@ class MeshConfig:
     def to_dict(self) -> dict:
         """Serialize configuration parameters to a dictionary."""
         d = {}
-        for attr, _ in _KEY_MAP.values():
+        for attr, _ in _key_map().values():
             d[attr] = getattr(self, attr)
         d["geom_files"] = self.geom_files
         d["geom_roles"] = self.geom_roles
@@ -153,7 +168,7 @@ class MeshConfig:
         (e.g. ``"bl_layers": "8"``) still lands as the right type instead of a
         str that later crashes save_to_file's numeric formatting. A value that
         can't be converted is kept as-is (no worse than a raw assignment)."""
-        for attr, converter in _KEY_MAP.values():
+        for attr, converter in _key_map().values():
             if attr in d:
                 v = d[attr]
                 try:

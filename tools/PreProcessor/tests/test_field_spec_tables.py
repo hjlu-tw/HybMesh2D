@@ -59,7 +59,9 @@ import ast
 import dataclasses
 import glob
 import os
+import re
 import sys
+import tempfile
 import threading
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -587,7 +589,7 @@ from app.views.panels.mesh_bl_field_specs import (  # noqa: E402
 )
 
 _BL_TABLE = spec_tables("mesh_config_panel")[1]        # PANEL_BL_SPECS
-_MESH_TYPES = {f.name: f.type for f in dataclasses.fields(MeshConfig)}
+_MESH_TYPES = fs.model_types(MeshConfig)   # the one derivation
 
 
 def bl_coercion_gaps(table, types: dict) -> dict:
@@ -639,6 +641,160 @@ _prose = [t for t in _help if "\n\n(BL_" in t]
 check(len(_prose) == len(_keys),
       f"12. ...alongside the parameter's own explanation, which 20 of the 21 fields "
       f"did not have at all before ({len(_prose)}/{len(_keys)})")
+
+
+# ── 13. the .dat KEY map is DERIVED from the tables, not listed beside them ──
+# Before this, models/mesh_config_keys.py held 49 hand-written
+# `KEY -> (attr, converter)` entries and 45 of them restated something already
+# declared: the spec's own `key` and `model`, and the CONVERTER, which is decided by
+# the model field's declared type. Neither file could see the other.
+from app.models import mesh_config_io as _io  # noqa: E402
+from app.models.mesh_config_keys import (  # noqa: E402
+    _CONVERTERS, _KEY_MAP, _RESIDUE, KEYED_SPECS, build_key_map,
+)
+
+_from_tables = {sp.key: sp.model_name for sp in KEYED_SPECS}
+check(_from_tables and set(_KEY_MAP) == set(_from_tables) | set(_RESIDUE),
+      f"13a. every _KEY_MAP entry comes from a spec's own key or from the declared "
+      f"residue ({len(_from_tables)} + {len(_RESIDUE)} = {len(_KEY_MAP)})")
+_wrong = {k: (_KEY_MAP[k][0], a) for k, a in _from_tables.items()
+          if _KEY_MAP[k][0] != a}
+check(not _wrong,
+      f"13a. ...and each maps to that spec's OWN model field ({_wrong})")
+
+# The residue is a subtraction, in the same shape as PRESERVED_FIELDS: a key that got
+# FORGOTTEN by a spec would otherwise land here silently and look justified.
+_covered = set(_from_tables)
+_overlap = sorted(set(_RESIDUE) & _covered)
+check(not _overlap,
+      f"13b. no residue entry duplicates a key the tables already declare — a stale "
+      f"one is how the hand-written list would grow back ({_overlap})")
+_spec_models = {sp.model_name for tbl in spec_tables("mesh_config_panel") for sp in tbl
+                if sp.model_name}
+_has_widget = sorted(a for a in _RESIDUE.values() if a in _spec_models)
+check(not _has_widget,
+      f"13b. ...and every residue entry names a field with no spec at all, so the "
+      f"reason given is the real one ({_has_widget})")
+
+# 13c. ONE spec row is the whole edit. Injected rather than argued: a spec for a field
+# currently in the residue must appear in the map, with that field's own converter.
+_injected = build_key_map(
+    KEYED_SPECS + (fs.FieldSpec("bc_geom", "bcname", "BC", "", key="BC_GEOM"),), {})
+check(_injected.get("BC_GEOM", (None,))[0] == "bc_geom"
+      and len(_injected) == len(KEYED_SPECS) + 1,
+      "13c. (injection) a KEY declared on a new spec reaches the .dat map with no "
+      "second edit")
+
+# 13d. An unrecognised model type is refused, not read as text. Silently falling back
+# to str would store a float's digits and the mesher would read its default.
+try:
+    build_key_map(KEYED_SPECS, {},
+                  {**_MESH_TYPES, "bl_layers": "int | None"})
+    _refused = False
+except TypeError:
+    _refused = True
+check(_refused,
+      "13d. (injection) a model type with no converter raises instead of defaulting "
+      "to str")
+check(set(_CONVERTERS) == {"bool", "int", "float", "str"},
+      f"13d. ...and the converter table covers exactly the four types a .dat can "
+      f"hold ({sorted(_CONVERTERS)})")
+
+# 13e. The round trip the map exists for: every mapped parameter survives
+# MeshConfig -> .dat -> MeshConfig. Choice fields are set to their real alternative
+# values (convex 2 / concave 5 / junction 0 / Gmsh 8) and the bool-behind-an-int
+# (gmsh_optimize) is included, because those are the entries a converter gets wrong.
+_probe = MeshConfig()
+# Real alternative values for the sparse-choice fields, each chosen to differ from
+# MeshConfig's OWN default — 2 for bl_convex_method and 2 for
+# bl_auto_transition_layers are the defaults here (and disagree with Config.hpp's 0
+# on both counts, which is #13's business), so using them would have made those two
+# rows of the round-trip vacuous. Measured, then corrected.
+_SPARSE = {"bl_convex_method": 0, "bl_concave_method": 5, "bl_junction_method": 0,
+           "gmsh_algorithm": 8, "bl_auto_transition_layers": 1, "gmsh_optimize": 0}
+# No exemptions: every mapped parameter is probed. The unit trio needs the CUSTOM
+# unit to be exercised at all — mesh_config_io writes LENGTH_UNIT_METRES /
+# LENGTH_UNIT_NAME only then, deliberately, since for m/mm/in the factor is a
+# definition and a stale number in the file could contradict the code beside it. So
+# the probe declares a custom unit rather than skipping those three keys, which is
+# also the case where getting them wrong costs a wrong Reynolds number.
+_skip: set = set()
+for _i, (_k, (_attr, _)) in enumerate(sorted(_KEY_MAP.items())):
+    _cur = getattr(_probe, _attr)
+    if _attr in _SPARSE:
+        setattr(_probe, _attr, _SPARSE[_attr])
+    elif isinstance(_cur, bool):
+        setattr(_probe, _attr, not _cur)
+    elif isinstance(_cur, int):
+        setattr(_probe, _attr, 3 + _i)
+    elif isinstance(_cur, float):
+        setattr(_probe, _attr, 1.5 + _i)
+    elif isinstance(_cur, str):
+        setattr(_probe, _attr, f"probe{_i}")
+_probe.length_unit = "custom"
+_probe.length_unit_name = "probeunit"     # no space, or the writer omits the line
+_probe.length_unit_metres = 0.0254
+_tmp = os.path.join(tempfile.mkdtemp(), "roundtrip.dat")
+_io.save_config_to_file(_probe, _tmp)
+_back = MeshConfig()
+_io.load_config_from_file(_back, _tmp)
+_lost = {a: (getattr(_probe, a), getattr(_back, a))
+         for _, (a, _c) in _KEY_MAP.items()
+         if a not in _skip and getattr(_probe, a) != getattr(_back, a)}
+check(not _lost,
+      f"13e. every mapped parameter survives MeshConfig -> .dat -> MeshConfig "
+      f"({_lost})")
+# Not vacuous: the probe must actually differ from a fresh config.
+_moved = sum(1 for _, (a, _c) in _KEY_MAP.items()
+             if a not in _skip and getattr(_probe, a) != getattr(MeshConfig(), a))
+check(_moved == len(_KEY_MAP),
+      f"13e. ...and the probe moved EVERY parameter off its default, or the "
+      f"round-trip proves nothing for the ones it did not "
+      f"({_moved} of {len(_KEY_MAP)} changed)")
+
+
+
+# 13f. THE ANCHOR. 13a/13b only prove the map and the tables agree — and after a
+# spec loses its `key=` they still agree, with the parameter simply gone from both.
+# Measured: removing `key="SURFACE_MESH_SIZE"` from its spec passed every other check
+# in this file, while the .dat writer went on emitting the line and the reader could
+# no longer read it back. That is the "the user sets a value and it silently does
+# nothing" failure this whole candidate exists to prevent, so the map is pinned to
+# what the WRITER actually emits, in both directions.
+#
+# (test_gui_cpp_config_parity.py does not cover this either: it checks
+# GUI-written ⊆ C++-parsed, and the writer's f-strings are independent of the map.)
+with open(os.path.join(_GUI, "app", "models", "mesh_config_io.py"),
+          encoding="utf-8") as _f:
+    _writer_src = _f.read()
+_written = set(re.findall(r'f?"([A-Z][A-Z0-9_]{2,}) ', _writer_src))
+check(len(_written) >= 50,
+      f"13f. the writer was parsed ({len(_written)} keys) — a big drop means this "
+      f"regex no longer matches it, which would make the comparison below vacuous")
+
+#: Keys the writer emits as STRUCTURAL lines, which carry several tokens and have
+#: their own parser rather than a scalar KEY -> field mapping.
+_STRUCTURAL = {
+    "GEOM_FILE": "`GEOM_FILE <path> [bl|nobl] [KEY=VALUE ...]` — a list entry with a "
+                 "role and per-geometry BL overrides, not one value",
+    "DOMAIN_FILE": "the same shape for the custom domain outline",
+    "SEED_FILE": "`SEED_FILE <path> [size|auto] [radius] <mode>` — positional tokens "
+                 "parsed into one SeedSpec each",
+    "GROUP_BC": "`GROUP_BC <label> <bc-type>` — one line per label, so it is a MAP "
+                "rather than a field",
+}
+_unreadable = sorted(_written - set(_KEY_MAP) - set(_STRUCTURAL))
+check(not _unreadable,
+      f"13f. every scalar key the .dat writer emits can be read back — one it cannot "
+      f"is a setting that saves and then silently does nothing ({_unreadable})")
+_unwritten = sorted(set(_KEY_MAP) - _written)
+check(not _unwritten,
+      f"13f. ...and every mapped key is actually written, so none is readable-only "
+      f"({_unwritten})")
+_stale_structural = sorted(set(_STRUCTURAL) - _written)
+check(not _stale_structural,
+      f"13f. ...and no structural exemption is stale ({_stale_structural})")
+
 
 _wd.cancel()
 if _FAILS:

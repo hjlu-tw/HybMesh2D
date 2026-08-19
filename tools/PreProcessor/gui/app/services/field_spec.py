@@ -244,6 +244,27 @@ def panel_table(table: Iterable[FieldSpec]) -> tuple[FieldSpec, ...]:
     return tuple(panel_variant(s) for s in table)
 
 
+def model_types(model_cls) -> dict[str, str]:
+    """Each model field's DECLARED type, by name, as a plain string.
+
+    Two callers ask this and they mean the same question: the ``.dat`` converter
+    table (``models/mesh_config_keys``) and the BL dialog's coercion sets
+    (``_BL_INT_ATTRS`` / ``_BL_BOOL_ATTRS``). It was written out twice, which is the
+    duplication this module exists to remove — and the two copies were not even
+    identical, since only one normalised a non-string annotation.
+
+    ``from __future__ import annotations`` makes every annotation a string, so the
+    normalisation is for a model module that does NOT use it, where a real class
+    object arrives instead. Returning the name rather than the class keeps callers
+    comparing against ``"int"`` / ``"bool"``, which is what both already did.
+    """
+    out: dict[str, str] = {}
+    for f in dataclasses.fields(model_cls):
+        t = f.type
+        out[f.name] = t if isinstance(t, str) else getattr(t, "__name__", str(t))
+    return out
+
+
 def preserved(model_cls, tables: Sequence[Iterable[FieldSpec]],
               extra_authored: Iterable[str] = ()) -> frozenset[str]:
     """Model fields the panel does NOT author — the set a panel→model sync must keep.
