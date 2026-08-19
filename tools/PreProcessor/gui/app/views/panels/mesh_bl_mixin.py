@@ -7,6 +7,8 @@ and the panel signals (segment_highlight_requested, mesh_config_changed)."""
 from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog
+from app.views.panels.field_widgets import read_widget, wire_specs, write_widget
+from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_dialogs import (
     PerGeomBLDialog, SegmentBCDialog,
     _BL_OVERRIDE_KEYS, _BL_INT_ATTRS, _BL_BOOL_ATTRS,
@@ -17,56 +19,29 @@ from app.models.mesh_config import MeshConfig
 class MeshConfigBLMixin:
     """BL widget bridge + per-geometry/segment BL & BC dialog launchers."""
 
+    #: The three junction thresholds, in the order the C++ binning needs them.
+    _JUNCTION_ANGLE_KEYS = ("BL_JUNCTION_ANGLE_C1", "BL_JUNCTION_ANGLE_C2",
+                            "BL_JUNCTION_ANGLE_C3")
+
     def _wire_bl_widgets(self):
-        """Connect every BL-section widget's change signal to _on_bl_widget_changed."""
-        for w in (self.bl_initial_thickness, self.bl_growth_rate, self.bl_layers,
-                  self.bl_fan_nodes, self.bl_fan_angle_threshold,
-                  self.bl_convex_angle_threshold, self.bl_para_fallback_angle,
-                  self.bl_concave_angle_threshold, self.bl_concave_influence_multiplier,
-                  self.bl_junction_angle_c1, self.bl_junction_angle_c2,
-                  self.bl_junction_angle_c3,
-                  self.bl_transition_layers, self.bl_transition_growth_rate,
-                  self.bl_transition_buffer):
-            w.valueChanged.connect(self._on_bl_widget_changed)
-        for w in (self.bl_convex_method, self.bl_concave_method,
-                  self.bl_junction_method,
-                  self.bl_auto_transition_layers):
-            w.currentIndexChanged.connect(self._on_bl_widget_changed)
-        for w in (self.bl_auto_fan_nodes, self.bl_use_analytic_geom):
-            w.toggled.connect(self._on_bl_widget_changed)
+        """Route every BL widget's change signal to _on_bl_widget_changed.
+
+        One traversal of PANEL_BL_SPECS, not three hand-written lists split by which
+        signal a widget happens to have — that split is what made a new parameter
+        silently unwired until someone noticed the global BL store not updating."""
+        wire_specs(self, PANEL_BL_SPECS, self._on_bl_widget_changed)
 
     def _read_bl_widgets(self) -> dict:
         """Current BL-section widget values as a {KEY: value} dict (KEYs match
         _BL_OVERRIDE_KEYS / the .dat parameter names)."""
+        out = {s.key: read_widget(getattr(self, s.attr), s) for s in PANEL_BL_SPECS}
         # The C++ 4-case junction binning assumes C1 <= C2 <= C3, but the three
         # spinboxes range 0-360 independently. Sort them so an out-of-order entry
         # (e.g. C1=300, C2=100) can't silently misclassify the flow-facing angle.
-        jc1, jc2, jc3 = sorted((self.bl_junction_angle_c1.value(),
-                                self.bl_junction_angle_c2.value(),
-                                self.bl_junction_angle_c3.value()))
-        return {
-            "BL_INITIAL_THICKNESS": self.bl_initial_thickness.value(),
-            "BL_GROWTH_RATE": self.bl_growth_rate.value(),
-            "BL_LAYERS": self.bl_layers.value(),
-            "BL_CONVEX_METHOD": [0, 2][self.bl_convex_method.currentIndex()],
-            "BL_FAN_NODES": self.bl_fan_nodes.value(),
-            "BL_AUTO_FAN_NODES": 1 if self.bl_auto_fan_nodes.isChecked() else 0,
-            "BL_FAN_ANGLE_THRESHOLD": self.bl_fan_angle_threshold.value(),
-            "BL_CONVEX_ANGLE_THRESHOLD": self.bl_convex_angle_threshold.value(),
-            "BL_PARA_FALLBACK_ANGLE": self.bl_para_fallback_angle.value(),
-            "BL_CONCAVE_METHOD": [5][self.bl_concave_method.currentIndex()],
-            "BL_CONCAVE_ANGLE_THRESHOLD": self.bl_concave_angle_threshold.value(),
-            "BL_CONCAVE_INFLUENCE_MULTIPLIER": self.bl_concave_influence_multiplier.value(),
-            "BL_JUNCTION_METHOD": [0, 1][self.bl_junction_method.currentIndex()],
-            "BL_JUNCTION_ANGLE_C1": jc1,
-            "BL_JUNCTION_ANGLE_C2": jc2,
-            "BL_JUNCTION_ANGLE_C3": jc3,
-            "BL_TRANSITION_LAYERS": self.bl_transition_layers.value(),
-            "BL_AUTO_TRANSITION_LAYERS": self.bl_auto_transition_layers.currentIndex(),
-            "BL_TRANSITION_GROWTH_RATE": self.bl_transition_growth_rate.value(),
-            "BL_TRANSITION_BUFFER": self.bl_transition_buffer.value(),
-            "BL_USE_ANALYTIC_GEOM": 1 if self.bl_use_analytic_geom.isChecked() else 0,
-        }
+        # A cross-field invariant, so it stays here rather than on any one spec.
+        ordered = sorted(out[k] for k in self._JUNCTION_ANGLE_KEYS)
+        out.update(dict(zip(self._JUNCTION_ANGLE_KEYS, ordered)))
+        return out
 
     def _write_bl_widgets(self, d: dict):
         """Set the BL-section widgets from a {KEY: value} dict (missing keys keep
@@ -75,30 +50,8 @@ class MeshConfigBLMixin:
         try:
             g = dict(self._read_bl_widgets())
             g.update({k: v for k, v in (d or {}).items() if v is not None})
-            self.bl_initial_thickness.setValue(float(g["BL_INITIAL_THICKNESS"]))
-            self.bl_growth_rate.setValue(float(g["BL_GROWTH_RATE"]))
-            self.bl_layers.setValue(int(round(float(g["BL_LAYERS"]))))
-            cm = int(round(float(g["BL_CONVEX_METHOD"])))
-            self.bl_convex_method.setCurrentIndex([0, 2].index(cm) if cm in (0, 2) else 1)
-            self.bl_fan_nodes.setValue(int(round(float(g["BL_FAN_NODES"]))))
-            self.bl_auto_fan_nodes.setChecked(bool(float(g["BL_AUTO_FAN_NODES"])))
-            self.bl_fan_angle_threshold.setValue(float(g["BL_FAN_ANGLE_THRESHOLD"]))
-            self.bl_convex_angle_threshold.setValue(float(g["BL_CONVEX_ANGLE_THRESHOLD"]))
-            self.bl_para_fallback_angle.setValue(float(g["BL_PARA_FALLBACK_ANGLE"]))
-            self.bl_concave_method.setCurrentIndex(0)  # combo only offers method 5
-            self.bl_concave_angle_threshold.setValue(float(g["BL_CONCAVE_ANGLE_THRESHOLD"]))
-            self.bl_concave_influence_multiplier.setValue(float(g["BL_CONCAVE_INFLUENCE_MULTIPLIER"]))
-            jm = int(round(float(g["BL_JUNCTION_METHOD"])))
-            self.bl_junction_method.setCurrentIndex(jm if jm in (0, 1) else 1)
-            self.bl_junction_angle_c1.setValue(float(g["BL_JUNCTION_ANGLE_C1"]))
-            self.bl_junction_angle_c2.setValue(float(g["BL_JUNCTION_ANGLE_C2"]))
-            self.bl_junction_angle_c3.setValue(float(g["BL_JUNCTION_ANGLE_C3"]))
-            self.bl_transition_layers.setValue(int(round(float(g["BL_TRANSITION_LAYERS"]))))
-            ati = int(round(float(g["BL_AUTO_TRANSITION_LAYERS"])))
-            self.bl_auto_transition_layers.setCurrentIndex(ati if 0 <= ati <= 2 else 0)
-            self.bl_transition_growth_rate.setValue(float(g["BL_TRANSITION_GROWTH_RATE"]))
-            self.bl_transition_buffer.setValue(float(g["BL_TRANSITION_BUFFER"]))
-            self.bl_use_analytic_geom.setChecked(bool(float(g["BL_USE_ANALYTIC_GEOM"])))
+            for spec in PANEL_BL_SPECS:
+                write_widget(getattr(self, spec.attr), spec, g.get(spec.key))
         finally:
             self._bl_updating = False
 

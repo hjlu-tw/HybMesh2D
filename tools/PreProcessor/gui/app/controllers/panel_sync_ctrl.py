@@ -22,14 +22,25 @@ The reverse direction already had its single funnel in ``push_panel_config``
 solver panel has no widgets for the length unit, and the mesh panel none for ``bc_geom``.
 Copying a freshly-read config wholesale would reset those to dataclass defaults — for the
 length unit that means silently destroying ``Linf`` and with it the Reynolds number. So
-the sync copies only what the panel authors, and the sets below say exactly what that is.
-They are constants here (this runs on every edit; parsing sources at runtime would be
-absurd) and ``tests/test_panel_model_sync.py`` proves each one equals what the panel's
-``get_config`` actually assigns, by AST. A model field added later without a widget fails
-that gate instead of silently going stale or silently being wiped.
+the sync copies only what the panel authors.
+
+:data:`PRESERVED_FIELDS` is a **subtraction, not a list**: the model's own fields, minus
+what the panel's field-spec table authors, minus the residue each panel declares beside
+its table (facts one widget holds for many things — the geometry list, the BC-definition
+table). It used to be three hand-written sets here, kept equal to the panel sources by
+405 lines of AST in ``tests/test_panel_model_sync.py``; the sets and the panels are now
+the same declaration, and what remains to prove is that each panel's declared residue
+matches the code it still writes by hand (``tests/test_field_spec_tables.py``).
+
+Nothing is parsed at import: ``config_ownership.preserved_fields`` reads the tables, so
+this stays a dict lookup on every edit.
 """
 from __future__ import annotations
 
+from app.models.mesh_config import MeshConfig
+from app.models.solver_config import SolverConfig
+from app.models.stl3d_config import Stl3dConfig
+from app.services.config_ownership import preserved_fields
 from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
@@ -41,28 +52,24 @@ PANEL_MODELS = (
     ("stl3d_config_panel", "global_stl3d_config"),
 )
 
-#: Model fields each panel does NOT author, and so must never overwrite.
-#: Verified against the panels' own sources by tests/test_panel_model_sync.py.
+#: ``panel attribute`` -> the model CLASS whose fields it edits. Only used to derive
+#: PRESERVED_FIELDS below; the live model instances come from PANEL_MODELS.
+PANEL_MODEL_CLASSES = {
+    "mesh_config_panel": MeshConfig,
+    "solver_config_panel": SolverConfig,
+    "stl3d_config_panel": Stl3dConfig,
+}
+
+#: Model fields each panel does NOT author, and so must never overwrite — DERIVED from
+#: each panel's field-spec table plus the residue it declares beside that table. This
+#: replaced three hand-written sets; their per-field REASONS were the valuable half and
+#: now live in ``tests/test_field_spec_tables.py``'s ``NO_WIDGET``, where a field added
+#: without a widget fails the build until someone writes down why it has none. They are
+#: deliberately not re-listed here: a second copy nobody gates decays exactly the way
+#: the sets it would document used to.
 PRESERVED_FIELDS = {
-    # bc_geom: the geometry wall patch, owned by the per-geometry/segment BC dialogs
-    #   and group_bc resolution, not by a panel field.
-    # missing_geom_files: populated by load_from_file as a load diagnostic.
-    "mesh_config_panel": frozenset({"bc_geom", "missing_geom_files"}),
-
-    # length_unit / length_unit_metres: declared on the MESH panel; the solver panel
-    #   only shows the derived Linf. Wiping these would take Linf with them.
-    # grid_type / grid_data_format / bc_file_use_table / reorient_mesh /
-    #   slice_to_simplex / solve_gcl: fixed for this workflow, no widget exists.
-    # work_dir: staged per run by solver_case, not authored by the user.
-    "solver_config_panel": frozenset({
-        "length_unit", "length_unit_metres",
-        "grid_type", "grid_data_format", "bc_file_use_table",
-        "reorient_mesh", "slice_to_simplex", "solve_gcl",
-        "work_dir",
-    }),
-
-    # The IB panel authors every field of its model.
-    "stl3d_config_panel": frozenset(),
+    panel: preserved_fields(panel, cls)
+    for panel, cls in PANEL_MODEL_CLASSES.items()
 }
 
 

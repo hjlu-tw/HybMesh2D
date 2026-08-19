@@ -13,6 +13,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidgetItem, QFileDialog
 from app.models.mesh_config import MeshConfig
 from app.utils import block_signals
+from app.views.panels.field_widgets import read_specs, write_specs
+from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
+from app.views.panels.mesh_field_specs import MESH_SPECS
 
 
 class MeshConfigConfigMixin:
@@ -185,11 +188,14 @@ class MeshConfigConfigMixin:
         # 0. Units — applied before the length fields so their suffixes are already
         # right when the values land, rather than flickering from the old unit.
         self._units_from_config(cfg)
-        # 1. Domain
-        self.domain_x_min.setValue(cfg.domain_x_min)
-        self.domain_x_max.setValue(cfg.domain_x_max)
-        self.domain_y_min.setValue(cfg.domain_y_min)
-        self.domain_y_max.setValue(cfg.domain_y_max)
+
+        # 1. Every declared field, in one traversal: the domain box, mesh sizing, all
+        # 21 BL parameters, the meshing algorithm, the four domain patch names and the
+        # write formats. Output File is skipped here (host_writes) — its population is
+        # the heuristic below, which reads the widget's own current text.
+        write_specs(self, MESH_SPECS, cfg)
+        write_specs(self, PANEL_BL_SPECS, cfg)
+
         # Domain source: a geometry acting as the outer domain → Custom; an
         # external-flow config with geometries but no domain outline → Rectangle
         # box; a fresh/empty config → default to Custom geometry (#1: entering the
@@ -203,6 +209,7 @@ class MeshConfigConfigMixin:
         with block_signals(self.domain_source_combo):
             self.domain_source_combo.setCurrentIndex(dsrc)
         self._update_domain_source_visibility()
+        self._update_bidirectional_visibility()   # #7: outer growth rate follows it
 
         # Geometries (with per-file role carried as item data). Block selection
         # signals during the rebuild, then resync the role editor once.
@@ -228,70 +235,8 @@ class MeshConfigConfigMixin:
             for label, bc in read_meta_group_bc(gf).items():
                 self._group_bc.setdefault(label, bc)
 
-        # 2. Sizing
-        self.surface_mesh_size.setValue(cfg.surface_mesh_size)
-        self.auto_surface_size.setChecked(cfg.auto_surface_size)
-        self.farfield_mesh_size.setValue(cfg.farfield_mesh_size)
-        self.auto_farfield_size.setChecked(cfg.auto_farfield_size)
-        self.farfield_growth_rate.setValue(cfg.farfield_growth_rate)
-        # #7: bidirectional far-field grading
-        self.farfield_bidirectional.setChecked(cfg.farfield_bidirectional)
-        self.farfield_growth_rate_outer.setValue(cfg.farfield_growth_rate_outer)
-        self._update_bidirectional_visibility()
-
-        # 3. BL Core
-        self.bl_initial_thickness.setValue(cfg.bl_initial_thickness)
-        self.bl_growth_rate.setValue(cfg.bl_growth_rate)
-        self.bl_layers.setValue(cfg.bl_layers)
-
-        # 4. Convex
-        convex_methods = [0, 2]
-        if cfg.bl_convex_method in convex_methods:
-            self.bl_convex_method.setCurrentIndex(convex_methods.index(cfg.bl_convex_method))
-        else:
-            self.bl_convex_method.setCurrentIndex(1)
-        self.bl_fan_nodes.setValue(cfg.bl_fan_nodes)
-        self.bl_auto_fan_nodes.setChecked(cfg.bl_auto_fan_nodes)
-        self.bl_fan_angle_threshold.setValue(cfg.bl_fan_angle_threshold)
-        self.bl_convex_angle_threshold.setValue(cfg.bl_convex_angle_threshold)
-        self.bl_para_fallback_angle.setValue(cfg.bl_para_fallback_angle)
-
-        # 5. Concave
-        concave_methods = [5]
-        if cfg.bl_concave_method in concave_methods:
-            self.bl_concave_method.setCurrentIndex(concave_methods.index(cfg.bl_concave_method))
-        else:
-            self.bl_concave_method.setCurrentIndex(0)
-        self.bl_concave_angle_threshold.setValue(cfg.bl_concave_angle_threshold)
-        self.bl_concave_influence_multiplier.setValue(cfg.bl_concave_influence_multiplier)
-        self.bl_merge_concave.setChecked(cfg.bl_merge_concave)
-        self.bl_smoothing_iters.setValue(cfg.bl_smoothing_iters)
-        self.bl_junction_method.setCurrentIndex(cfg.bl_junction_method if cfg.bl_junction_method in (0, 1) else 1)
-        self.bl_junction_angle_c1.setValue(cfg.bl_junction_angle_c1)
-        self.bl_junction_angle_c2.setValue(cfg.bl_junction_angle_c2)
-        self.bl_junction_angle_c3.setValue(cfg.bl_junction_angle_c3)
-
-        # 6. Transition
-        self.bl_transition_layers.setValue(cfg.bl_transition_layers)
-        self.bl_auto_transition_layers.setCurrentIndex(cfg.bl_auto_transition_layers)
-        self.bl_transition_growth_rate.setValue(cfg.bl_transition_growth_rate)
-        self.bl_transition_buffer.setValue(cfg.bl_transition_buffer)
-
-        gmsh_algos = [1, 2, 5, 6, 7, 8]
-        if cfg.gmsh_algorithm in gmsh_algos:
-            self.gmsh_algorithm.setCurrentIndex(gmsh_algos.index(cfg.gmsh_algorithm))
-        else:
-            self.gmsh_algorithm.setCurrentIndex(3)  # default: 6
-        self.gmsh_optimize.setChecked(cfg.gmsh_optimize != 0)
-        self.bl_use_analytic_geom.setChecked(bool(cfg.bl_use_analytic_geom))
-
-        # 7. Domain boundary patches (rectangle-box edges) + output
-        self.bc_xmin.setText(cfg.bc_xmin)
-        self.bc_xmax.setText(cfg.bc_xmax)
-        self.bc_ymin.setText(cfg.bc_ymin)
-        self.bc_ymax.setText(cfg.bc_ymax)
-        # #3: adopt the config's configured-state (the setText above is guarded
-        # by _bl_updating so it did not mark it as a user edit).
+        # #3: adopt the config's configured-state (the patch names above are written
+        # under _bl_updating, so _mark_bc_configured did not see them as user edits).
         self._bc_configured = getattr(cfg, "bc_configured", True)
         # bc_geom is no longer a panel field; the model default (a geometry's wall
         # patch) is set per-geometry (Wall BC) / per-segment instead.
@@ -310,26 +255,19 @@ class MeshConfigConfigMixin:
         # An auto-generated name is refreshed to match the current geometry so
         # switching geometries changes the export name; a name the user typed
         # is kept.
-        def _is_auto(name: str) -> bool:
-            return MeshConfig.is_auto_output_name(name)
-
         incoming = (cfg.output_filename or "").strip()
         widget_text = self.output_filename.text().strip()
-        if incoming and not _is_auto(incoming):
+        if incoming and not MeshConfig.is_auto_output_name(incoming):
             # Explicit custom name carried in the config (e.g. a loaded file).
             self.output_filename.setText(incoming)
             self._output_name_user_set = True
-        elif self._output_name_user_set and widget_text and not _is_auto(widget_text):
+        elif (self._output_name_user_set and widget_text
+                and not MeshConfig.is_auto_output_name(widget_text)):
             # Keep the custom name the user already typed into the field.
             pass
         else:
             self.output_filename.setText(default_name)
             self._output_name_user_set = False
-
-        self.export_vtk.setChecked(cfg.export_vtk)
-        self.export_starcd.setChecked(cfg.export_starcd)
-        self.export_cgns.setChecked(cfg.export_cgns)
-        self.enable_collision_detection.setChecked(cfg.enable_collision_detection)
 
         # The BL widgets now hold cfg's global defaults — snapshot them as the
         # authoritative global BL, then release the population guard.
@@ -355,13 +293,16 @@ class MeshConfigConfigMixin:
         # magnitude has the unit available on cfg.
         self._units_to_config(cfg)
 
-        # 1. Domain
-        cfg.domain_x_min = self.domain_x_min.value()
-        cfg.domain_x_max = self.domain_x_max.value()
-        cfg.domain_y_min = self.domain_y_min.value()
-        cfg.domain_y_max = self.domain_y_max.value()
+        # 1. Every declared field the panel's own widgets author, in one traversal.
+        read_specs(self, MESH_SPECS, cfg)
 
-        # Geometries (+ per-file role read back from item data)
+        # 2. The 21 BL fields come from the authoritative global-BL store, NOT from
+        # the widgets — so a per-geometry override that happened to be shown cannot
+        # be mistaken for the global value. That is why PANEL_BL_SPECS is written to
+        # the widgets above but read from _global_bl here.
+        self._apply_global_bl_to_cfg(cfg)
+
+        # 3. Facts one widget holds for many things (see MESH_EXTRA_AUTHORED).
         cfg.geom_files = []
         cfg.geom_roles = {}
         for row in range(self.geom_list_widget.count()):
@@ -374,43 +315,9 @@ class MeshConfigConfigMixin:
 
         # #4: per-group BC-type assignments (kept separate from the group names).
         cfg.group_bc = dict(self._group_bc)
-
-        # 2. Sizing
-        cfg.surface_mesh_size = self.surface_mesh_size.value()
-        cfg.auto_surface_size = self.auto_surface_size.isChecked()
-        cfg.farfield_mesh_size = self.farfield_mesh_size.value()
-        cfg.auto_farfield_size = self.auto_farfield_size.isChecked()
-        cfg.farfield_growth_rate = self.farfield_growth_rate.value()
-        # #7: bidirectional far-field grading
-        cfg.farfield_bidirectional = self.farfield_bidirectional.isChecked()
-        cfg.farfield_growth_rate_outer = self.farfield_growth_rate_outer.value()
-
-        # 3-6. Boundary layer: the override-able fields come from the
-        # authoritative global-BL store (so a per-geometry override currently
-        # shown in the widgets is not mistaken for the global value).
-        self._apply_global_bl_to_cfg(cfg)
-
-        # Non-override BL / meshing fields are always global — read from widgets.
-        cfg.bl_merge_concave = self.bl_merge_concave.isChecked()
-        cfg.bl_smoothing_iters = self.bl_smoothing_iters.value()
-        gmsh_algos = [1, 2, 5, 6, 7, 8]
-        cfg.gmsh_algorithm = gmsh_algos[self.gmsh_algorithm.currentIndex()]
-        cfg.gmsh_optimize = 1 if self.gmsh_optimize.isChecked() else 0
-
-        # 7. Domain boundary patches (rectangle-box edges) + output.
-        # cfg.bc_geom keeps its model default (geometry wall patch) — it is no
-        # longer a panel field; per-geometry / per-segment names override it.
-        cfg.bc_xmin = self.bc_xmin.text().strip()
-        cfg.bc_xmax = self.bc_xmax.text().strip()
-        cfg.bc_ymin = self.bc_ymin.text().strip()
-        cfg.bc_ymax = self.bc_ymax.text().strip()
         cfg.bc_configured = getattr(self, "_bc_configured", False)  # #3
-        cfg.output_filename = self.output_filename.text().strip()
-
-        cfg.export_vtk = self.export_vtk.isChecked()
-        cfg.export_starcd = self.export_starcd.isChecked()
-        cfg.export_cgns = self.export_cgns.isChecked()
-        cfg.enable_collision_detection = self.enable_collision_detection.isChecked()
+        # cfg.bc_geom keeps its model default (geometry wall patch) — it is not a
+        # panel field; per-geometry / per-segment names override it.
 
         return cfg
 

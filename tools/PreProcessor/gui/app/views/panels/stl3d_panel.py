@@ -3,17 +3,18 @@ import os
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QFormLayout, QComboBox, QSpinBox, QLabel, QLineEdit, QCheckBox,
-    QPushButton,
+    QFormLayout, QLabel, QPushButton,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from app.views.collapsible import CollapsibleSection
-from app.views.clean_double_spin_box import NarrowDoubleSpinBox
 from app.utils import (
-    make_button, COMBO_STYLE, SPIN_STYLE, LINEEDIT_STYLE,
-    align_form_labels, help_label, make_help_label, block_signals,
+    make_button, align_form_labels, help_label, make_help_label, block_signals,
 )
+from app.views.panels.field_widgets import (
+    SpecRowsMixin, read_specs, spec_widgets, write_specs,
+)
+from app.views.panels.stl3d_field_specs import STL3D_SPECS
 from app.models.stl3d_config import Stl3dConfig
 
 
@@ -25,40 +26,7 @@ _SCROLLBAR_QSS = """
 """
 
 
-def _cap_width(spin, width: int | None) -> None:
-    """Re-cap a spin box's width via Qt rather than string-patching SPIN_STYLE,
-    so several spins fit one row in the narrow sidebar (the stylesheet's default
-    110px cap overflows a 3-spin row)."""
-    if width is not None:
-        spin.setMaximumWidth(width)
-
-
-def _dspin(lo: float, hi: float, decimals: int, tip: str,
-           width: int | None = None) -> NarrowDoubleSpinBox:
-    s = NarrowDoubleSpinBox()
-    s.setRange(lo, hi)
-    s.setDecimals(decimals)
-    s.setStyleSheet(SPIN_STYLE)
-    _cap_width(s, width)
-    if width is not None:
-        # A ±1e9 / 6-decimal box otherwise reports a ~140px minimumSizeHint that
-        # makes the two-per-row domain fields overflow the narrow sidebar; cap the
-        # hint so the requested width actually takes effect.
-        s.setWidthCap(width)
-    s.setToolTip(tip)
-    return s
-
-
-def _ispin(lo: int, hi: int, tip: str, width: int | None = None) -> QSpinBox:
-    s = QSpinBox()
-    s.setRange(lo, hi)
-    s.setStyleSheet(SPIN_STYLE)
-    _cap_width(s, width)
-    s.setToolTip(tip)
-    return s
-
-
-class Stl3dConfigPanel(QScrollArea):
+class Stl3dConfigPanel(SpecRowsMixin, QScrollArea):
     """Sidebar panel for the STL3d immersed-solid (STL -> phi) preprocessor.
 
     The controller connects run_btn / cancel_btn / browse_btn / fit_domain_btn,
@@ -67,6 +35,9 @@ class Stl3dConfigPanel(QScrollArea):
     """
 
     config_changed = pyqtSignal()          # domain / resolution / STL edited
+
+    _SPEC_TABLE = STL3D_SPECS
+    _SPEC_MODEL = Stl3dConfig
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -171,34 +142,24 @@ class Stl3dConfigPanel(QScrollArea):
         self._layout.addWidget(sec)
         form = QFormLayout()
 
-        self.stl_path = QLineEdit()
-        self.stl_path.setStyleSheet(LINEEDIT_STYLE)
-        self.stl_path.setReadOnly(True)
-        self.stl_path.setToolTip("STL surface file to mark against the Cartesian grid")
+        # The controller owns this dialog (it validates the STL and stages it), so the
+        # button is created here and only wrapped around the path field's row.
         self.browse_btn = QPushButton("…")
         self.browse_btn.setFixedWidth(32)
         self.browse_btn.setStyleSheet(
             "QPushButton{background:#1d2a3a;color:#dde2ff;border:1px solid #2d3356;"
             "border-radius:4px;padding:2px;} QPushButton:hover{border-color:#5a9ad4;}")
-        path_row = QHBoxLayout()
-        path_row.setSpacing(4)
-        path_row.addWidget(self.stl_path, 1)
-        path_row.addWidget(self.browse_btn)
-        path_w = QWidget()
-        path_w.setLayout(path_row)
 
-        self.ascii_combo = QComboBox()
-        self.ascii_combo.addItems(["Auto-detect", "ASCII", "Binary"])
-        self.ascii_combo.setStyleSheet(COMBO_STYLE)
-        self.ascii_combo.setToolTip("STL encoding. Auto-detect reads the file header.")
+        def _path_row(host, edit):
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            row.addWidget(edit, 1)
+            row.addWidget(host.browse_btn)
+            w = QWidget()
+            w.setLayout(row)
+            return w
 
-        self.case_name = QLineEdit("phi")
-        self.case_name.setStyleSheet(LINEEDIT_STYLE)
-        self.case_name.setToolTip("Output case name -> <case>_phi_tec.dat / <case>_stl_tec.dat")
-
-        form.addRow(help_label("STL File:", "STL surface file"), path_w)
-        form.addRow(help_label("Encoding:", "STL encoding (ASCII / binary)"), self.ascii_combo)
-        form.addRow(help_label("Case Name:", "Output case name"), self.case_name)
+        self._spec_rows(form, "input", wrap={"stl_path": _path_row})
         align_form_labels(form, 78)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
@@ -210,25 +171,22 @@ class Stl3dConfigPanel(QScrollArea):
         self.fit_domain_btn = make_button("Auto Domain", "#1d2a3a")
         self.fit_domain_btn.setToolTip(
             "Set the domain bounds to the STL bounding box, padded by margin %")
+        self._spec_widgets("margin")
+        self.margin_spin.setValue(10.0)          # a padding default, not a model field
+        self.margin_spin.setFixedWidth(70)
         margin_row = QHBoxLayout()
         margin_row.setSpacing(4)
         margin_row.addWidget(self.fit_domain_btn, 1)
         mlbl = QLabel("margin %")
         mlbl.setStyleSheet("color:#7a82a0;")
-        self.margin_spin = _dspin(0.0, 100.0, 1, "Padding around the STL bounding box, in % of extent")
-        self.margin_spin.setValue(10.0)
-        self.margin_spin.setFixedWidth(70)
         margin_row.addWidget(mlbl)
         margin_row.addWidget(self.margin_spin)
         sec.add_layout(margin_row)
 
+        # Two per row (min, max): the six bounds share three rows, which is why they
+        # are built without form rows of their own.
         form = QFormLayout()
-        self.xmin = _dspin(-1e9, 1e9, 6, "Domain x min", width=90)
-        self.xmax = _dspin(-1e9, 1e9, 6, "Domain x max", width=90)
-        self.ymin = _dspin(-1e9, 1e9, 6, "Domain y min", width=90)
-        self.ymax = _dspin(-1e9, 1e9, 6, "Domain y max", width=90)
-        self.zmin = _dspin(-1e9, 1e9, 6, "Domain z min", width=90)
-        self.zmax = _dspin(-1e9, 1e9, 6, "Domain z max", width=90)
+        self._spec_widgets("bounds")
         for lo, hi, lbl in [(self.xmin, self.xmax, "X range:"),
                             (self.ymin, self.ymax, "Y range:"),
                             (self.zmin, self.zmax, "Z range:")]:
@@ -263,40 +221,20 @@ class Stl3dConfigPanel(QScrollArea):
         hdr.addStretch()
         sec.add_layout(hdr)
 
-        self.nx = _ispin(2, 4096, "Number of grid points in x")
-        self.ny = _ispin(2, 4096, "Number of grid points in y")
-        self.nz = _ispin(1, 4096, "Number of grid points in z (use 2 for a quasi-2D / planar case)")
-        self.nx.setValue(128); self.ny.setValue(128); self.nz.setValue(2)
         n_row = QHBoxLayout()
         n_row.setSpacing(6)
-        for w in (self.nx, self.ny, self.nz):
+        for w in self._spec_widgets("res"):
             n_row.addWidget(w, 1)          # share the full width equally
         sec.add_layout(n_row)
 
-        self.derived_lbl = QLabel("")
-        self.derived_lbl.setWordWrap(True)
-        self.derived_lbl.setStyleSheet("color:#8892b0; font-size:11px;")
-        sec.add_widget(self.derived_lbl)
-        self.warn_lbl = QLabel("")
-        self.warn_lbl.setWordWrap(True)
-        self.warn_lbl.setStyleSheet("color:#eab308; font-size:11px;")
-        self.warn_lbl.setVisible(False)
-        sec.add_widget(self.warn_lbl)
+        for w in self._spec_widgets("res_readout"):
+            sec.add_widget(w)
 
     def _build_search_section(self):
         sec = CollapsibleSection("Search Method", start_collapsed=True)
         self._layout.addWidget(sec)
         form = QFormLayout()
-        self.search_combo = QComboBox()
-        self.search_combo.addItems([
-            "All elements (robust, slower)",
-            "Close x-range (faster, may miss large elements)",
-        ])
-        self.search_combo.setStyleSheet(COMBO_STYLE)
-        self.search_combo.setToolTip(
-            "Ray-tracing element search. All-elements never misses a triangle but "
-            "scales with surface size; close x-range is faster on uniform meshes.")
-        form.addRow(help_label("Method:", "Ray-tracing element search strategy"), self.search_combo)
+        self._spec_rows(form, "search")
         align_form_labels(form, 78)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         sec.add_layout(form)
@@ -305,11 +243,7 @@ class Stl3dConfigPanel(QScrollArea):
         sec = CollapsibleSection("Parallel (OpenMP)", start_collapsed=True)
         self._layout.addWidget(sec)
 
-        self.omp_cb = QCheckBox("Enable OpenMP")
-        self.omp_cb.setStyleSheet("color:#a0a8c0;")
-        self.omp_cb.setToolTip(
-            "Off = single-threaded (default). On = parallel ray tracing across the "
-            "chosen number of threads. Biggest gains on heavy STLs / all-element search.")
+        self._spec_widgets("omp_enable")
         sec.add_widget(self.omp_cb)
 
         row = QHBoxLayout()
@@ -317,13 +251,8 @@ class Stl3dConfigPanel(QScrollArea):
         tlbl = QLabel("Threads:")
         tlbl.setStyleSheet("color:#7a82a0;")
         tlbl.setFixedWidth(78)
-        self.threads_spin = QSpinBox()
-        self.threads_spin.setRange(1, 256)
-        self.threads_spin.setValue(max(1, os.cpu_count() or 1))   # default = all cores
-        self.threads_spin.setStyleSheet(SPIN_STYLE)
-        self.threads_spin.setMaximumWidth(70)
-        self.threads_spin.setEnabled(False)
-        self.threads_spin.setToolTip("OMP_NUM_THREADS used when OpenMP is enabled")
+        self._spec_widgets("omp")
+        self.threads_spin.setEnabled(False)     # follows omp_cb (wired below)
         row.addWidget(tlbl)
         row.addWidget(self.threads_spin)
         row.addStretch()
@@ -378,19 +307,7 @@ class Stl3dConfigPanel(QScrollArea):
     # ------------------------------------------------------------------ #
     def get_config(self, cfg: Stl3dConfig | None = None) -> Stl3dConfig:
         cfg = cfg or Stl3dConfig()
-        cfg.stl_path = self.stl_path.text().strip()
-        cfg.case_name = self.case_name.text().strip() or "phi"
-        # Encoding: ASCII/Binary override; Auto-detect resolves to ASCII here and
-        # is set concretely by the controller when an STL is loaded.
-        enc = self.ascii_combo.currentText()
-        cfg.ascii = (enc != "Binary")
-        cfg.xmin, cfg.xmax = self.xmin.value(), self.xmax.value()
-        cfg.ymin, cfg.ymax = self.ymin.value(), self.ymax.value()
-        cfg.zmin, cfg.zmax = self.zmin.value(), self.zmax.value()
-        cfg.nx, cfg.ny, cfg.nz = self.nx.value(), self.ny.value(), self.nz.value()
-        cfg.all_search = self.search_combo.currentIndex() == 0
-        cfg.omp_enabled = self.omp_cb.isChecked()
-        cfg.omp_threads = self.threads_spin.value()
+        read_specs(self, STL3D_SPECS, cfg)
         return cfg
 
     def set_config(self, cfg: Stl3dConfig):
@@ -405,23 +322,11 @@ class Stl3dConfigPanel(QScrollArea):
             self._loading = False
 
     def _set_config_body(self, cfg: Stl3dConfig):
-        widgets = [self.xmin, self.xmax, self.ymin, self.ymax, self.zmin, self.zmax,
-                   self.nx, self.ny, self.nz, self.case_name, self.ascii_combo,
-                   self.search_combo, self.stl_path]
-        with block_signals(*widgets):
-            self.stl_path.setText(cfg.stl_path)
-            self.case_name.setText(cfg.case_name)
-            self.ascii_combo.setCurrentText("ASCII" if cfg.ascii else "Binary")
-            self.xmin.setValue(cfg.xmin); self.xmax.setValue(cfg.xmax)
-            self.ymin.setValue(cfg.ymin); self.ymax.setValue(cfg.ymax)
-            self.zmin.setValue(cfg.zmin); self.zmax.setValue(cfg.zmax)
-            self.nx.setValue(cfg.nx); self.ny.setValue(cfg.ny); self.nz.setValue(cfg.nz)
-            self.search_combo.setCurrentIndex(0 if cfg.all_search else 1)
+        # The blocked set is the TABLE's widgets, so a field added later is covered
+        # rather than becoming the one widget whose signals escape.
+        with block_signals(*spec_widgets(self, STL3D_SPECS)):
+            write_specs(self, STL3D_SPECS, cfg)
         # Enable flag and thread count are independent, so "enabled with 1 thread"
         # round-trips as enabled rather than being read back as disabled.
-        with block_signals(self.omp_cb, self.threads_spin):
-            enabled = bool(getattr(cfg, "omp_enabled", False))
-            self.omp_cb.setChecked(enabled)
-            self.threads_spin.setValue(max(1, int(getattr(cfg, "omp_threads", 1) or 1)))
-            self.threads_spin.setEnabled(enabled)
+        self.threads_spin.setEnabled(bool(getattr(cfg, "omp_enabled", False)))
         self.refresh_derived()

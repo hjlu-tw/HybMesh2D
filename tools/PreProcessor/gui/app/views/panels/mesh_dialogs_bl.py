@@ -5,20 +5,20 @@ mesh_bl_field_specs.py and are re-exported here, so the existing
 ``from .mesh_dialogs_bl import _BL_FIELD_SPECS`` import paths keep working."""
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QComboBox, QSpinBox, QLabel, QCheckBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QLabel,
     QListWidget, QListWidgetItem, QDialog, QDialogButtonBox, QSizePolicy,
 )
 from PyQt6.QtCore import Qt
-from app.utils import make_button, COMBO_STYLE, SPIN_STYLE
-from app.views.clean_double_spin_box import CleanDoubleSpinBox, SciDoubleSpinBox
+from app.utils import make_button
+from app.views.panels.field_widgets import make_widget, read_widget, write_widget
 from app.views.panels.mesh_bl_dialog_layout import BLDialogLayoutMixin
 from app.views.panels.mesh_bl_field_specs import (
-    _BL_OVERRIDE_KEYS, _BL_INT_ATTRS, _BL_BOOL_ATTRS, _BL_FIELD_SPECS,
+    BL_SPECS, _BL_OVERRIDE_KEYS, _BL_INT_ATTRS, _BL_BOOL_ATTRS, _BL_FIELD_SPECS,
     _BL_FIELD_GROUPS, _value_differs,
 )
 
 __all__ = [
+    "BL_SPECS",
     "_BL_OVERRIDE_KEYS", "_BL_INT_ATTRS", "_BL_BOOL_ATTRS", "_BL_FIELD_SPECS",
     "_BL_FIELD_GROUPS", "_value_differs",
     "SegmentBLSection", "PerGeomBLDialog",
@@ -282,61 +282,31 @@ class PerGeomBLDialog(BLDialogLayoutMixin, QDialog):
         self._cleared = True
         self.accept()
 
-    def _make_widget(self, kind, opt):
-        if kind == "float":
-            if opt.get("sci"):
-                # Scientific field: it pins its own decimals and steps by decade,
-                # so "dec"/"step" do not apply.
-                w = SciDoubleSpinBox()
-                w.setRange(opt["lo"], opt["hi"])
-                # sci=True marks a physical length, so it is exactly the set that
-                # carries the model unit.
-                if getattr(self, "_length_unit", ""):
-                    from app.services import units
-                    w.setSuffix(" " + units.symbol(self._length_unit,
-                                                   self._length_unit_name))
-            else:
-                w = CleanDoubleSpinBox(); w.setRange(opt["lo"], opt["hi"])
-                w.setDecimals(opt["dec"]); w.setSingleStep(opt.get("step", 0.1))
-            w.setStyleSheet(SPIN_STYLE)
-        elif kind == "int":
-            w = QSpinBox(); w.setRange(opt["lo"], opt["hi"]); w.setStyleSheet(SPIN_STYLE)
-        elif kind == "choice":
-            w = QComboBox()
-            for val, lbl in opt["choices"]:
-                w.addItem(lbl, val)
-            w.setStyleSheet(COMBO_STYLE)
-        else:
-            w = QCheckBox(); w.setStyleSheet("color:#a0a8c0;")
+    # The kind -> widget mapping is shared with every config panel
+    # (views/panels/field_widgets.py). This dialog used to keep its own copy, so the
+    # 21 parameters had two descriptions of the same widget that were free to drift.
+    def _make_widget(self, spec):
+        w = make_widget(spec)
+        # The one thing this host adds: a physical length carries the MODEL unit, and
+        # the dialog is handed it rather than reading a global — this is the first-cell
+        # height, the one number where a 1000x unit error still produces a plausible
+        # mesh.
+        if spec.is_length and getattr(self, "_length_unit", ""):
+            from app.services import units
+            w.setSuffix(" " + units.symbol(self._length_unit, self._length_unit_name))
         return w
 
-    def _set_widget_value(self, w, kind, value):
-        if value is None:
-            return
-        if kind == "float":
-            w.setValue(float(value))
-        elif kind == "int":
-            w.setValue(int(round(float(value))))
-        elif kind == "choice":
-            i = w.findData(int(round(float(value))))
-            w.setCurrentIndex(i if i >= 0 else 0)
-        else:
-            w.setChecked(bool(float(value)))
+    def _set_widget_value(self, w, spec, value):
+        write_widget(w, spec, value)
 
-    def _widget_value(self, w, kind):
-        if kind == "float":
-            return float(w.value())
-        if kind == "int":
-            return int(w.value())
-        if kind == "choice":
-            return int(w.currentData())
-        return 1 if w.isChecked() else 0
+    def _widget_value(self, w, spec):
+        return read_widget(w, spec)
 
     def result_params(self) -> dict | None:
         """Full override dict, or None if the user chose 'Use Global'."""
         if self._cleared:
             return None
-        return {k: self._widget_value(w, kind) for k, (w, kind) in self._widgets.items()}
+        return {k: self._widget_value(w, spec) for k, (w, spec) in self._widgets.items()}
 
     def result_seg_grow(self) -> dict[int, bool]:
         """Per-segment grow-BL flags, or {} when the geometry has no segments.

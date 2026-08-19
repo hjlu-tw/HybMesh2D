@@ -203,27 +203,61 @@ def probe_4_signal_wiring():
 
 
 def probe_5_field_spec_tables():
-    """Attributes the build halves assign vs the AST test that reconciles them.
+    """DONE when each config panel declares its fields once AND a gate keeps it.
 
-    Counted as every ``self.x =`` in a build mixin, NOT as assignments whose
-    right-hand side names a widget class. The first version of this probe did the
-    latter and reported 34 where the true figure is 138: the solver mixins build
-    their widgets through local factory helpers (``_edit()``, ``_check()``), so a
-    class-name pattern matched 1 assignment out of 49 in one file and 29 out of 53
-    in another — an authoritative-looking number measuring almost nothing. A build
-    mixin assigns essentially nothing but widgets, so the crude count is the
-    faithful one here.
+    Retired to a pointer at ``test_field_spec_tables.py``, which is strictly
+    stronger than anything measurable from here. This probe used to count
+    ``self.x =`` lines in the three build mixins (138 at the last reading) against
+    the size of the AST test reconciling them, and neither number could see the
+    property that matters: whether the build half, the read half and the write
+    half are the SAME declaration. A build mixin that walks a table still assigns
+    nothing, so the count goes to zero the moment the tables exist — including if
+    someone had merely moved the widgets somewhere else.
+
+    Worth recording: the first version of this probe matched assignments whose
+    right-hand side named a widget CLASS and reported 34 where the true figure was
+    138, because the solver mixins build through local ``_edit()`` / ``_check()``
+    factories. An authoritative-looking number measuring almost nothing is the
+    failure mode a probe is most prone to, which is why a landed candidate hands
+    over to its gate instead of keeping one.
+
+    The gate checks ten properties and verifies each static one by injection: no
+    field declared twice, each panel's declared residue equal to what its
+    hand-written ``get_config`` still assigns, no table field ALSO hand-built or
+    hand-read/written, every declared group walked by a builder and vice versa,
+    every kind buildable (and a typo'd kind refused at construction), every kind's
+    read/write pair round-tripping on the live panels, ``PRESERVED_FIELDS`` and
+    ``LENGTH_FIELDS`` derived rather than listed, every field with no widget named
+    with its reason, and the three escape hatches used only where justified.
     """
     panels = os.path.join(APP, "views", "panels")
+    tables = [f for f in ("mesh_field_specs.py", "solver_field_specs.py",
+                          "stl3d_field_specs.py", "mesh_bl_field_specs.py")
+              if read(panels, f)]
+    spec = read(APP, "services", "field_spec.py")
+    gate = read(TESTS, "test_field_spec_tables.py")
+    sync = read(APP, "controllers", "panel_sync_ctrl.py")
+    derived = "preserved_fields(" in sync and 'frozenset({"' not in sync
+    # A build mixin that walks its table assigns no widgets of its own.
     assigned = 0
     for f in ("solver_config_build_mixin.py", "solver_config_build_mixin_b.py",
               "mesh_config_build_mixin.py"):
         assigned += len(re.findall(r"^\s+self\.\w+\s*=", read(panels, f), re.M))
-    ast_gate = len(read(TESTS, "test_panel_model_sync.py").splitlines())
-    state = DONE if ast_gate == 0 else OPEN
-    return state, (f"{assigned} attrs assigned across 3 build mixins, read back by "
-                   f"the sync halves; test_panel_model_sync.py is {ast_gate} lines "
-                   "of AST proving the lists agree")
+    if len(tables) == 4 and spec and gate and derived:
+        return DONE, ("gated by test_field_spec_tables.py; 3 panels declare their "
+                      "fields in 4 tables, PRESERVED_FIELDS derived")
+    bits = []
+    if len(tables) < 4:
+        bits.append(f"only {len(tables)}/4 spec tables exist")
+    if not spec:
+        bits.append("no services/field_spec.py")
+    if not derived:
+        bits.append("PRESERVED_FIELDS is still hand-listed")
+    if assigned:
+        bits.append(f"{assigned} attrs still assigned across the 3 build mixins")
+    if not gate:
+        bits.append("ungated — a field declared twice would not be caught")
+    return OPEN, "; ".join(bits)
 
 
 def probe_6a_ib_handoff():

@@ -24,8 +24,9 @@ from PyQt6.QtWidgets import QFormLayout, QLabel
 
 from app.utils import align_form_labels, help_label
 from app.views.collapsible import CollapsibleSection
+from app.services.field_spec import by_key
 from app.views.panels.mesh_bl_field_specs import (
-    _BL_FIELD_GROUPS, _BL_FIELD_SPECS, _value_differs,
+    BL_SPECS, _BL_FIELD_GROUPS, _value_differs,
 )
 
 __all__ = ["BLDialogLayoutMixin"]
@@ -43,10 +44,10 @@ class BLDialogLayoutMixin:
         geometry actually overrides) is expanded, and any spec key missing from the
         table lands in a trailing 'Other' group, which opens so an unreachable
         parameter cannot also be an invisible one."""
-        specs = {k: (label, kind, opt) for k, label, kind, opt in _BL_FIELD_SPECS}
+        specs = by_key(BL_SPECS)
         listed = {k for _t, _e, _h, keys in _BL_FIELD_GROUPS for k in keys}
         groups = list(_BL_FIELD_GROUPS)
-        stray = [k for k, _lbl, _kind, _opt in _BL_FIELD_SPECS if k not in listed]
+        stray = [s.key for s in BL_SPECS if s.key not in listed]
         if stray:
             groups.append(("Other", True, "Ungrouped parameters.", stray))
 
@@ -63,17 +64,23 @@ class BLDialogLayoutMixin:
             form = QFormLayout()
             form.setContentsMargins(0, 0, 0, 0)
             for key in keys:
-                label, kind, opt = specs[key]
-                w = self._make_widget(kind, opt)
-                self._set_widget_value(w, kind, seed.get(key))
-                self._widgets[key] = (w, kind)
-                # The '?' shows the spec's own explanation when it has one, else the
-                # .dat KEY. A field the default scheme ignores has to say so HERE: the
-                # wording existed, but on the hidden backing widgets in the mesh panel,
-                # which is not where the user edits it.
-                lbl = help_label(label + ":", opt.get("tip") or key)
-                if opt.get("tip"):
-                    w.setToolTip(opt["tip"])
+                spec = specs[key]
+                w = self._make_widget(spec)
+                self._set_widget_value(w, spec, seed.get(key))
+                # The SPEC travels with the widget, not just its kind: reading a
+                # sparse choice back needs the (value, label) pairs, and a caller
+                # that only kept the kind would have to look them up again.
+                self._widgets[key] = (w, spec)
+                # The '?' shows the spec's explanation AND the .dat/Config.hpp KEY.
+                # Both, deliberately: the KEY is how someone reading a config file
+                # finds this field (the group titles follow the .dat parameter groups
+                # for the same reason), and it used to be the ONLY help 20 of the 21
+                # fields had — giving every spec a tip would otherwise have replaced
+                # it rather than added to it. A field the default scheme ignores has
+                # to say so HERE: the wording existed, but on the hidden backing
+                # widgets in the mesh panel, which is not where the user edits it.
+                lbl = help_label(spec.label + ":",
+                                 f"{spec.tip}\n\n({key})" if spec.tip else key)
                 labels.append(lbl)
                 form.addRow(lbl, w)
             forms.append(form)

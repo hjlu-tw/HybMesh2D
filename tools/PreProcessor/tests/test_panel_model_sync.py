@@ -7,10 +7,18 @@ every workaround for the lag was a different partial copy: one call site copied 
 hand-kept exclusion set, another copied a different three fields, the solver model was
 never refreshed at all. One quantity, several sources of truth.
 
-What this pins down:
- 1. PRESERVED_FIELDS equals what the panel's own get_config does NOT assign — proved by
-    parsing the panel sources with ast, so a model field added later without a widget
-    fails the build instead of silently going stale or silently being wiped.
+Check 1 used to open this file: PRESERVED_FIELDS equals what each panel's own
+get_config does NOT assign, proved by parsing the panel sources with ast. That claim had
+content while the two sides were two hand-written lists. Architecture candidate 5 gave
+each config panel one field-spec table and made PRESERVED_FIELDS a subtraction over it,
+so the two sides are now the same declaration and the comparison is a tautology; what
+remained of it — each panel's declared residue matching the code it still writes by
+hand, and the derivation actually being a derivation — moved to
+``tests/test_field_spec_tables.py``. The numbering below keeps its original labels, so
+1 is simply absent rather than everything shifting.
+
+What this pins down (all of it behavioural, which is what this test is uniquely
+good at):
  2. A user edit reaches the model immediately (the staleness class is closed), including
     the exact case that motivated this: typing Unit Re on the Solver panel.
  3. Preserved fields SURVIVE a sync — notably the solver's length_unit, which has no
@@ -26,7 +34,6 @@ What this pins down:
 
 Run:  python3 tools/PreProcessor/tests/test_panel_model_sync.py
 """
-import dataclasses
 import os
 import sys
 import threading
@@ -66,34 +73,6 @@ from app.controllers.panel_sync_ctrl import (  # noqa: E402
 from app.models.mesh_config import MeshConfig  # noqa: E402
 from app.models.solver_config import SolverConfig  # noqa: E402
 from app.models.stl3d_config import Stl3dConfig  # noqa: E402
-from app.services.config_ownership import unauthored_fields  # noqa: E402
-
-_MODELS = {
-    "mesh_config_panel": MeshConfig,
-    "solver_config_panel": SolverConfig,
-    "stl3d_config_panel": Stl3dConfig,
-}
-
-# ── 1. the declared ownership matches the code ────────────────────────────
-for panel_attr, model_cls in _MODELS.items():
-    derived = unauthored_fields(panel_attr, model_cls)
-    declared = set(PRESERVED_FIELDS.get(panel_attr, frozenset()))
-    check(derived == declared,
-          f"1. {panel_attr}: PRESERVED_FIELDS equals what get_config does not assign "
-          f"(would be wiped: {sorted(derived - declared)}; "
-          f"needlessly preserved: {sorted(declared - derived)})")
-
-# A sanity check on the extractor itself: if it found nothing, every field would look
-# unauthored and the gate above would pass while proving nothing. That failure mode
-# already happened once (a wrong source root made every glob match zero files).
-from app.services.config_ownership import authored_fields  # noqa: E402
-
-for panel_attr, model_cls in _MODELS.items():
-    n = len(authored_fields(panel_attr)
-            & {f.name for f in dataclasses.fields(model_cls)})
-    check(n > 8,
-          f"1. the ast extractor actually finds {panel_attr}'s assignments ({n}) — a "
-          f"silent zero would make the gate above vacuous")
 
 # ── 2/3. edits reach the model; preserved fields survive ──────────────────
 from app.controller import AppController  # noqa: E402

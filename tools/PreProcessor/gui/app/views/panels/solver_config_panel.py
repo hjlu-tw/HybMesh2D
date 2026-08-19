@@ -5,9 +5,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, find_solver_executables
+from app.utils import make_button, COMBO_STYLE, align_form_labels, find_solver_executables
 from app.models.solver_config import PRESETS
-from app.views.panels.solver_config_widgets import _edit
 from app.views.collapsible import CollapsibleSection
 from app.views.panels.solver_config_build_mixin import SolverConfigBuildMixin
 from app.views.panels.solver_config_build_mixin_b import SolverConfigBuildMixinB
@@ -92,15 +91,9 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMi
         self.sec_case.add_layout(preset_row)
         self.apply_preset_btn.clicked.connect(self._apply_preset)
 
-        # Domain type selector (e2d / e3d) at top
+        # Domain type (e2d / e3d) + case name, from the panel's field-spec table.
         top_form = QFormLayout()
-        self.domain_type = QComboBox()
-        self.domain_type.addItems(["e2d", "e3d"])
-        self.domain_type.setStyleSheet(COMBO_STYLE)
-        self.domain_type.setToolTip("Solver domain dimensionality (e2d = 2D, e3d = 3D)")
-        self.case_name = _edit("Case name; solver_ctrl builds case/<name>/{work,grid,dll}")
-        top_form.addRow(help_label("Domain Type:", "Solver domain dimensionality"), self.domain_type)
-        top_form.addRow(help_label("Case Name:", "Case name for the solver working directory"), self.case_name)
+        self._spec_rows(top_form, "case")
         align_form_labels(top_form, 130)
         self.sec_case.add_layout(top_form)
 

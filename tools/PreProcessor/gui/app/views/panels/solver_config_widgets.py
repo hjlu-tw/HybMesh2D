@@ -1,45 +1,18 @@
-"""Widget-factory helpers shared by SolverConfigPanel and its mixins (behaviour
-unchanged). These are the module-level `_spin` / `_ispin` / `_edit` / `_check`
-/ `_combo` constructors and `_parse_float`, extracted verbatim so both the panel
-and solver_config_build_mixin can import them without a circular dependency."""
+"""Checkbox factory shared by SolverConfigPanel and its mixins.
+
+This module used to hold a full set of widget constructors — ``_spin`` / ``_ispin`` /
+``_edit`` / ``_combo`` / ``_parse_float`` — which was a SECOND kind->widget mapping
+beside the one in ``field_widgets.py`` and the one the Edit-BL dialog kept. Now that
+every solver field is built from ``solver_field_specs.SOLVER_SPECS`` they have no
+callers, and a dead mapping is exactly how the halves diverged in the first place, so
+they are deleted rather than left available.
+
+``_check`` survives because one solver control is NOT a config field: the Grid section's
+"Auto-link from Mesh Generator output" toggle chooses where the .vrt/.cel/.bnd come
+from rather than editing a value, so it has no spec.
+"""
 from __future__ import annotations
-from PyQt6.QtWidgets import QComboBox, QSpinBox, QLineEdit, QCheckBox
-from PyQt6.QtGui import QPalette, QColor
-
-from app.utils import COMBO_STYLE, SPIN_STYLE, LINEEDIT_STYLE
-from app.views.clean_double_spin_box import CleanDoubleSpinBox
-
-
-def _spin(decimals: int, lo: float, hi: float, tip: str) -> CleanDoubleSpinBox:
-    s = CleanDoubleSpinBox()
-    s.setRange(lo, hi)
-    s.setDecimals(decimals)
-    s.setStyleSheet(SPIN_STYLE)
-    s.setToolTip(tip)
-    return s
-
-
-def _ispin(lo: int, hi: int, tip: str) -> QSpinBox:
-    s = QSpinBox()
-    s.setRange(lo, hi)
-    s.setStyleSheet(SPIN_STYLE)
-    s.setToolTip(tip)
-    return s
-
-
-def _edit(tip: str, placeholder: str = "") -> QLineEdit:
-    e = QLineEdit()
-    e.setStyleSheet(LINEEDIT_STYLE)
-    e.setToolTip(tip)
-    if placeholder:
-        e.setPlaceholderText(placeholder)
-        # LINEEDIT_STYLE pins an explicit text colour, so the placeholder would
-        # otherwise render like a real value. Force a dim tone via the palette so
-        # it reads as a format hint (#6).
-        pal = e.palette()
-        pal.setColor(QPalette.ColorRole.PlaceholderText, QColor("#5a6480"))
-        e.setPalette(pal)
-    return e
+from PyQt6.QtWidgets import QCheckBox
 
 
 def _check(text: str, tip: str) -> QCheckBox:
@@ -47,18 +20,3 @@ def _check(text: str, tip: str) -> QCheckBox:
     c.setStyleSheet("color:#a0a8c0;")
     c.setToolTip(tip)
     return c
-
-
-def _combo(items: list[str], tip: str) -> QComboBox:
-    c = QComboBox()
-    c.addItems(items)
-    c.setStyleSheet(COMBO_STYLE)
-    c.setToolTip(tip)
-    return c
-
-
-def _parse_float(text: str, fallback: float) -> float:
-    try:
-        return float(text.strip())
-    except (ValueError, AttributeError):
-        return fallback

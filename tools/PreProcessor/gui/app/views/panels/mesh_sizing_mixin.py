@@ -9,7 +9,10 @@ factory relocated from the panel body."""
 from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox, QLabel
+from app.services.field_spec import by_attr
 from app.utils import keep_on_top, BC_COLORS, DEFAULT_BC_COLOR
+from app.views.panels.field_widgets import read_widget
+from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 
 
 class MeshConfigSizingMixin:
@@ -217,17 +220,26 @@ class MeshConfigSizingMixin:
         lbl.setStyleSheet("color:#6b7390; font-size:10px; font-weight:bold;")
         return lbl
 
+    def _bl_value(self, attr):
+        """A BL backing widget's current VALUE, read through its spec.
+
+        Read by value rather than by combo index or item text: the item text is a
+        label the table owns and an index is only the value while the choice list
+        happens to be dense. `"0: Fan" in currentText()` was both at once.
+        """
+        specs = by_attr(PANEL_BL_SPECS)
+        return read_widget(getattr(self, attr), specs[attr])
+
     def _update_transition_visibility(self):
         """Hide the manual Transition Layers count when Auto Transition computes it."""
-        manual = self.bl_auto_transition_layers.currentIndex() == 0  # 0: OFF
+        manual = self._bl_value("bl_auto_transition_layers") == 0  # 0: OFF
         self.bl_transition_layers.setVisible(manual)
         lbl = self._trans_form.labelForField(self.bl_transition_layers)
         if lbl:
             lbl.setVisible(manual)
 
     def _update_convex_widgets_visibility(self):
-        method_str = self.bl_convex_method.currentText()
-        is_fan = "0: Fan" in method_str
+        is_fan = self._bl_value("bl_convex_method") == 0        # 0: Fan
 
         self.bl_fan_nodes.setVisible(is_fan)
         self.bl_auto_fan_nodes.setVisible(is_fan)

@@ -15,10 +15,9 @@ from PyQt6.QtWidgets import (
 )
 from app.views.collapsible import CollapsibleSection
 from app.utils import (
-    make_button, COMBO_STYLE, SPIN_STYLE, align_form_labels,
+    make_button, COMBO_STYLE, align_form_labels,
     help_label, help_widget,
 )
-from app.views.clean_double_spin_box import SciDoubleSpinBox
 
 
 class MeshConfigDomainMixin:
@@ -51,43 +50,14 @@ class MeshConfigDomainMixin:
         self.sec_domain.add_layout(dsrc_form)
 
         # Bounding box (shown only for the "Rectangle box" source). Seeded from
-        # the model's own defaults below: a spin box left at Qt's 0 makes an
-        # untouched panel report a degenerate 0..0 domain, which then fails
+        # the model's own defaults by the spec builder: a spin box left at Qt's 0
+        # makes an untouched panel report a degenerate 0..0 domain, which then fails
         # validation on numbers the user never set and — with the fields hidden
         # under a custom domain — cannot even see.
-        from app.models.mesh_config import MeshConfig
-        _dflt = MeshConfig()
         self._domain_box_widget = QWidget()
         dom_form = QFormLayout(self._domain_box_widget)
         dom_form.setContentsMargins(0, 0, 0, 0)
-        self.domain_x_min = SciDoubleSpinBox()
-        self.domain_x_min.setRange(-1e9, 1e9)
-        self.domain_x_min.setValue(_dflt.domain_x_min)
-        self.domain_x_min.setStyleSheet(SPIN_STYLE)
-        self.domain_x_min.setToolTip("Left boundary of the rectangular computational domain")
-
-        self.domain_x_max = SciDoubleSpinBox()
-        self.domain_x_max.setRange(-1e9, 1e9)
-        self.domain_x_max.setValue(_dflt.domain_x_max)
-        self.domain_x_max.setStyleSheet(SPIN_STYLE)
-        self.domain_x_max.setToolTip("Right boundary of the rectangular computational domain")
-
-        self.domain_y_min = SciDoubleSpinBox()
-        self.domain_y_min.setRange(-1e9, 1e9)
-        self.domain_y_min.setValue(_dflt.domain_y_min)
-        self.domain_y_min.setStyleSheet(SPIN_STYLE)
-        self.domain_y_min.setToolTip("Bottom boundary of the rectangular computational domain")
-
-        self.domain_y_max = SciDoubleSpinBox()
-        self.domain_y_max.setRange(-1e9, 1e9)
-        self.domain_y_max.setValue(_dflt.domain_y_max)
-        self.domain_y_max.setStyleSheet(SPIN_STYLE)
-        self.domain_y_max.setToolTip("Top boundary of the rectangular computational domain")
-
-        dom_form.addRow(help_label("Domain X Min:", "Left boundary of the rectangular computational domain"), self.domain_x_min)
-        dom_form.addRow(help_label("Domain X Max:", "Right boundary of the rectangular computational domain"), self.domain_x_max)
-        dom_form.addRow(help_label("Domain Y Min:", "Bottom boundary of the rectangular computational domain"), self.domain_y_min)
-        dom_form.addRow(help_label("Domain Y Max:", "Top boundary of the rectangular computational domain"), self.domain_y_max)
+        self._spec_rows(dom_form, "domain")
         align_form_labels(dom_form, 130)
         self.sec_domain.add_widget(self._domain_box_widget)
 
@@ -167,22 +137,6 @@ class MeshConfigDomainMixin:
             "The rectangular box (Domain X/Y Min/Max) is used unless one geometry has a "
             "Domain role. At most one Domain geometry.")
 
-        self.seed_size = SciDoubleSpinBox()
-        self.seed_size.setRange(0.0, 1e4)
-        self.seed_size.setSpecialValueText("auto")   # value 0 displays as "auto"
-        self.seed_size.setStyleSheet(SPIN_STYLE)
-        self.seed_size.setToolTip(
-            "Target minimum element size at the seed "
-            "(0 = auto: follows the seed's own resampled point spacing).")
-
-        self.seed_radius = SciDoubleSpinBox()
-        self.seed_radius.setRange(0.0, 1e6)
-        self.seed_radius.setSpecialValueText("auto")
-        self.seed_radius.setStyleSheet(SPIN_STYLE)
-        self.seed_radius.setToolTip(
-            "Influence radius: beyond it the size returns to far-field "
-            "(0 = auto: 100x the seed size). Can be set independently of size.")
-
         self.seed_mode = QComboBox()
         self.seed_mode.addItems(["source (sizing only)", "embed (conform)"])
         self.seed_mode.setStyleSheet(COMBO_STYLE)
@@ -204,8 +158,10 @@ class MeshConfigDomainMixin:
         self.geom_bc_combo.setVisible(False)
 
         role_form.addRow(help_label("Role:", "Body-fitted boundary or refinement seed"), self.geom_role_combo)
-        role_form.addRow(help_label("Seed Size:", "Target min element size at the seed (0 = auto: follows the seed's own point spacing)"), self.seed_size)
-        role_form.addRow(help_label("Seed Radius:", "Influence radius (0 = auto ≈ 100x size); independent of seed size"), self.seed_radius)
+        # Seed Size / Seed Radius: physical lengths, so they are declared in the
+        # panel's table (that is what puts a unit suffix on them) even though they
+        # write per-geometry ROLE data rather than a MeshConfig field.
+        self._spec_rows(role_form, "seed")
         role_form.addRow(help_label("Seed Mode:", "source (sizing only) or embed (conform)"), self.seed_mode)
 
         # Per-geometry boundary layer is edited in a pop-up dialog; the panel's

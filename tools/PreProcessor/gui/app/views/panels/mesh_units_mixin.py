@@ -10,23 +10,22 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QFormLayout, QWidget
 
 from app.services import units
+from app.services.field_spec import length_attrs
 from app.utils import align_form_labels, help_label
+from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
+from app.views.panels.mesh_field_specs import MESH_SPECS
 from app.views.units_ui import UnitSelector, apply_unit_suffix
 
 #: Panel attributes holding a *physical length*, and therefore the exact set that
 #: carries a unit suffix. Everything else on the panel is dimensionless — growth
 #: rates, angles, layer counts — and must not be labelled with one.
 #:
-#: This list is checkable rather than aspirational: every physical-length field in the
-#: GUI is a SciDoubleSpinBox (the N4 rule), so the panel's SciDoubleSpinBox set and
-#: this list must agree exactly. tests/test_units.py asserts that, which is what stops
-#: a field added later from quietly losing its unit.
-LENGTH_FIELDS = (
-    "domain_x_min", "domain_x_max", "domain_y_min", "domain_y_max",
-    "surface_mesh_size", "farfield_mesh_size",
-    "bl_initial_thickness",
-    "seed_size", "seed_radius",
-)
+#: DERIVED from the field-spec tables rather than listed: the ``sci`` kind IS the
+#: physical-length rule (a SciDoubleSpinBox, no floor, decade steps), so the list and
+#: the widgets cannot disagree. tests/test_units.py asserts this equals the panel's
+#: SciDoubleSpinBox set, which is now a statement about the derivation — and that is
+#: what stops a field added later from quietly losing its unit.
+LENGTH_FIELDS = length_attrs(MESH_SPECS, PANEL_BL_SPECS)
 
 
 class MeshConfigUnitsMixin:

@@ -299,6 +299,67 @@ Layered PyQt6 application:
   `push_panel_config` must cost at most a spurious undo step, never a corrupted model.
   New panels must follow the same `set_config` / `_set_config_body` split.
 
+**A config field is declared ONCE, in its panel's field-spec table**
+(`app/services/field_spec.py` is the Qt-free record + the pure questions asked of a
+table; `views/panels/field_widgets.py` is the one kind→widget mapping and the three
+traversals; the tables are `mesh_field_specs.py` + `mesh_bl_field_specs.py`,
+`solver_field_specs.py`, `stl3d_field_specs.py`). Each panel used to be cut in half —
+one half BUILT widgets, the other read and wrote them against a model — with the whole
+widget set as the implicit interface: **176 attributes across five build mixins, named
+back by hand in 246 read/write lines**, agreeing only because both halves spelled the
+same name. One BL knob (`BL_TRANSITION_BUFFER`) was named 16 times across 7 GUI files,
+four of which were parallel lists over the same 21 fields. A spec carries `attr` ·
+`kind` · `label` · `tip` · `model` · `key` · `group` · `opts`; the table is walked once
+to build (`add_spec_rows`), once to write (`write_specs`) and once to read
+(`read_specs`). Rules that are load bearing:
+- **`get_config` / `set_config` / `_set_config_body` were NOT touched as verbs**, nor
+  was `panel_sync_ctrl` — the frozen review lists both under *"Genuinely deep — leave
+  these alone"*. The table sits BEHIND those three, and the panel-owned `_loading` flag
+  and its `try/finally` are unchanged.
+- **`PRESERVED_FIELDS` is a subtraction, not a list**: model fields − table − the
+  residue each panel declares beside its table (`*_EXTRA_AUTHORED`, for facts one
+  widget holds for many things — the geometry list, the BC-definition table). What is
+  left to prove is that the declared residue equals the code still written by hand.
+- **`LENGTH_FIELDS` is derived from `kind == "sci"`**, which IS the physical-length rule
+  (`SciDoubleSpinBox`, no floor, decade steps), so the list and the widgets cannot
+  disagree.
+- **Widgets are seeded from the model's defaults**, not from literals repeated in build
+  code. Measured: a fresh panel used to report BL layers 0, growth 1.001, Gmsh
+  MeshAdapt, CFL 0, all-`inlet` outer BCs and a 0..0 STL3d domain; it now reports the
+  dataclass values. That is the `_STARTUP_OK` bug class closed at its source.
+- **A choice is matched by VALUE in Python, never `findData`** (QVariant comparison
+  makes a bool `False` against an int `0` datum a coin toss), and a value the combo does
+  not offer falls back to a *declared* one instead of landing on index 0.
+- **Numeric and combo rows go into the form DIRECTLY, never wrapped**:
+  `QFormLayout.labelForField` only finds a label for the widget that IS the field cell,
+  and four visibility helpers use it to hide a row's label with its field.
+- Three escape hatches exist and each is used by exactly one field, named with its
+  reason in the gate: `read`/`write` on a spec (`ascii_combo` — three items behind a
+  bool), `panel_choices` (`bl_concave_method` — the panel's backing combo offers only
+  method 5 because method 0 is CLI-side), `host_writes` (`output_filename` — population
+  is a heuristic that reads the widget's own text).
+- **One spec means one tooltip**, so a form label's '?' now shows the field's full
+  explanation rather than a shorter summary (~40 rows). The alternative — a second
+  `label_tip` on every spec — is the duplication the candidate removes. The Edit-BL
+  dialog's '?' shows that prose **plus the `.dat`/`Config.hpp` KEY**: the KEY used to be
+  the ONLY help 20 of the 21 fields had, and giving every spec a tip silently killed the
+  `spec.tip or key` fallback (found in review, now gate check 12).
+- **`services/field_spec.py` is Qt-free and gated; `config_ownership` is Qt-free at
+  IMPORT only.** The tables live under `views/panels/` (they carry UI text), so the
+  first *call* to `preserved_fields()` loads five PyQt6 modules — measured to be
+  unchanged from the deferred `mesh_dialogs` import it replaced, and every caller is
+  Qt-side anyway (one controller, two gate tests). Do not read the deferral as
+  "answerable headlessly"; it keeps the `services/` sweep honest, nothing more.
+Gated by `tests/test_field_spec_tables.py` (twelve properties, every static one verified
+by injection, each injection asserting the mutated source still PARSES and really
+changed).
+Behaviour preservation was measured against `f97213a` via `git archive`: the solver and
+IB panels' form structure is row-for-row identical (70/70 and 7/7), all 25 differing mesh
+rows are inside the four `setVisible(False)` BL backing sections, and every panel's
+`set_config` → `get_config` round-trip is byte-identical. `test_panel_model_sync.py`
+stayed green throughout and lost only its check 1, which became a tautology once both
+sides of that equality were the same declaration.
+
 **Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`). Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab drops exactly its own commands; ordering across them is by the monotonic `seq` that `CommandHistory._push` stamps — undo takes the highest, redo the lowest waiting on a redo stack. Undo raises the tab owning the command before applying it. Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one step. **Any code pushing config into those panels must go through `controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is recorded as a user edit.
 - **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process group — every worker `cancel()` must route through these, never a bare `terminate()`)
 
