@@ -34,8 +34,7 @@ class MeshLayersControllerMixin:
             return
 
         cfg = self.config_from_panel("mesh_config_panel")
-        if abs_path not in cfg.geom_files:
-            cfg.geom_files.append(abs_path)
+        if cfg.add_geom_file(abs_path):
             self.push_panel_config(self.main_window.mesh_config_panel, cfg)
             self.log(f"Added resampled geometry to configuration: {abs_path}")
             self.sync_mesh_layers_panel()
@@ -210,8 +209,7 @@ class MeshLayersControllerMixin:
                     item.setCheckState(Qt.CheckState.Unchecked)
                 return
 
-            if abs_out_file not in self.global_mesh_config.geom_files:
-                self.global_mesh_config.geom_files.append(abs_out_file)
+            self.global_mesh_config.add_geom_file(abs_out_file)
         else:
             if abs_out_file in self.global_mesh_config.geom_files:
                 self.global_mesh_config.geom_files.remove(abs_out_file)
@@ -393,8 +391,7 @@ class MeshLayersControllerMixin:
             if out_file:
                 abs_out = os.path.abspath(out_file)
                 if os.path.exists(abs_out):
-                    if abs_out not in self.global_mesh_config.geom_files:
-                        self.global_mesh_config.geom_files.append(abs_out)
+                    if self.global_mesh_config.add_geom_file(abs_out):
                         added_any = True
                 else:
                     missing_exports.append(session.display_name)

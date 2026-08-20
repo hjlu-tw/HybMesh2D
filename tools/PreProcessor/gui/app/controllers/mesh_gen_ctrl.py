@@ -179,7 +179,23 @@ class MeshGenControllerMixin:
         # non-positive sizes, shrinking BL) BEFORE launching the backend, and
         # log advisory warnings. This turns a cryptic C++ crash into an
         # actionable message pointing at the offending parameter.
+        # A geometry file that is not on disk is checked HERE rather than in
+        # cfg.validate(), which is a pure function of the config: this one asks
+        # the filesystem. It used to be a [WARNING] in the diagnostic scan above
+        # and the entry was written into the mesher config regardless, so the run
+        # died as HYBMESH_ERROR 3 GEOMETRY_LOAD -- naming the wrong layer.
+        # Refusing rather than dropping it is deliberate: a mesh quietly missing
+        # a body looks like a converged answer for the wrong geometry.
+        missing = cfg.missing_geometry_files()
+
         errors, warnings = cfg.validate(geom_bbox=geom_bbox, domain_bbox=domain_bbox)
+        if missing:
+            msg = cfg.missing_geometry_message(missing)
+            for line in msg.splitlines():
+                self.log(f"[ERROR] {line}" if line.strip() else "")
+            from app.utils import report_error
+            report_error(self.main_window, "Geometry File Not Found", msg)
+            return
         for w in warnings:
             self.log(f"[WARNING] {w}")
         if errors:
@@ -252,7 +268,11 @@ class MeshGenControllerMixin:
         have = have_dom = False
         for gf in cfg.geom_files:
             if not os.path.exists(gf):
-                self.log(f"[WARNING] Geometry file missing: {gf}")
+                # Not logged here: MeshConfig.validate() reports this as an
+                # ERROR moments later, naming the file and what to do about it.
+                # This loop only skips it for the bbox scan -- a WARNING beside
+                # a fatal error reads as "the run went ahead anyway", which is
+                # exactly what it used to do.
                 continue
             try:
                 pts = np.loadtxt(gf, ndmin=2)

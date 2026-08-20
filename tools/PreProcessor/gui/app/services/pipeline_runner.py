@@ -203,6 +203,12 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
 
     if not mc.geom_files:
         raise PipelineError("mesh stage has no geometry input (geom_files empty)")
+    # Same refusal as the GUI pre-flight, same wording (mesh_config owns it):
+    # a geom_files entry naming no file otherwise reaches the mesher and comes
+    # back as HYBMESH_ERROR 3 GEOMETRY_LOAD.
+    missing = mc.missing_geometry_files()
+    if missing:
+        raise PipelineError(mc.missing_geometry_message(missing))
 
     # Create the temp config inside the try so its removal is guaranteed even if
     # creation or save raises before we'd otherwise reach a guard.

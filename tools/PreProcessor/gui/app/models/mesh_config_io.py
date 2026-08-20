@@ -286,8 +286,14 @@ def config_to_text(cfg, path: str = "") -> str:
     project_root = repo_root()
     cfg_dir = os.path.dirname(os.path.abspath(path)) if path else project_root
     domain_emitted = False   # at most one DOMAIN_FILE (the backend keeps one)
-    for gf in cfg.geom_files:
-        abs_gf = os.path.abspath(gf)
+    # By IDENTITY: two spellings of one file used to emit two GEOM_FILE lines,
+    # i.e. hand the mesher a doubled boundary. And the resolution base is the
+    # repo, never the process cwd -- os.path.abspath made the same entry name a
+    # different file depending on where the GUI was launched from.
+    from app.services.geom_path_identity import (canonical_geom_path,
+                                                 dedupe_geom_paths)
+    for gf in dedupe_geom_paths(cfg.geom_files):
+        abs_gf = canonical_geom_path(gf)
 
         # Real containment test (avoids matching siblings like HybMesh_old)
         if abs_gf == project_root or abs_gf.startswith(project_root + os.sep):

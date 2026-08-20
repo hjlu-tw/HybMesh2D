@@ -198,8 +198,71 @@ class MeshConfig:
     def role_of(self, path: str) -> dict | None:
         r = self.geom_roles.get(path)
         if r is None:
-            r = self.geom_roles.get(os.path.abspath(path))
+            # By IDENTITY, not by os.path.abspath: that is cwd-relative, so the
+            # same stored key answered differently depending on where the GUI
+            # was launched from. See services/geom_path_identity.
+            from app.services.geom_path_identity import canonical_geom_path
+            want = canonical_geom_path(path)
+            if want:
+                r = self.geom_roles.get(want)
+                if r is None:
+                    for k, v in self.geom_roles.items():
+                        if canonical_geom_path(k) == want:
+                            return v
         return r
+
+    def add_geom_file(self, path: str) -> bool:
+        """Add `path` to geom_files unless that FILE is already there.
+
+        The one way in. Every caller used to hand-roll `if p not in
+        cfg.geom_files: cfg.geom_files.append(p)`, which compares STRINGS, so a
+        relative and an absolute spelling of one file both went in -- the
+        geometry was listed twice and meshed twice. Returns True if it was added.
+        """
+        from app.services.geom_path_identity import canonical_geom_path
+        if not path:
+            return False
+        want = canonical_geom_path(path)
+        for g in self.geom_files:
+            if canonical_geom_path(g) == want:
+                return False
+        self.geom_files.append(path)
+        return True
+
+    def remove_geom_file(self, path: str) -> bool:
+        """Drop whichever entry names the same FILE as `path`."""
+        from app.services.geom_path_identity import canonical_geom_path
+        want = canonical_geom_path(path)
+        keep = [g for g in self.geom_files if canonical_geom_path(g) != want]
+        removed = len(keep) != len(self.geom_files)
+        self.geom_files = keep
+        return removed
+
+    @staticmethod
+    def missing_geometry_message(paths: list[str]) -> str:
+        """What to tell the user about geometry files that are not on disk.
+
+        One wording for both hosts (GUI pre-flight and the headless runner), so
+        the same condition cannot be reported two different ways.
+        """
+        names = "\n".join(f"  • {p}" for p in paths)
+        return (
+            "Geometry file(s) not found:\n" + names + "\n"
+            "Remove them from Geometry Files, or re-export the geometry they "
+            "name. An exported case package carries no CAD source, so a "
+            "reopened case leaves these entries pointing at nothing.")
+
+    def missing_geometry_files(self) -> list[str]:
+        """geom_files entries naming a file that is not on disk.
+
+        A reopened exported case package is the case that matters: it carries no
+        CAD by design, so the entry its workspace restored is dead. It used to be
+        WARNED about in the diagnostic scan and then written into the mesher
+        config regardless, and the mesher exited 3 on it.
+        """
+        from app.services.geom_path_identity import canonical_geom_path
+        return [g for g in self.geom_files
+                if g and not os.path.exists(canonical_geom_path(g))]
 
     def _role_name(self, path: str) -> str | None:
         r = self.role_of(path)
@@ -281,8 +344,10 @@ class MeshConfig:
     def prune_roles(self):
         """Drop geom_roles entries whose path is no longer in geom_files, so a
         stale seed role can't silently re-attach when a path is added again."""
-        present = set(self.geom_files) | {os.path.abspath(g) for g in self.geom_files}
-        self.geom_roles = {k: v for k, v in self.geom_roles.items() if k in present}
+        from app.services.geom_path_identity import canonical_geom_path
+        present = {canonical_geom_path(g) for g in self.geom_files}
+        self.geom_roles = {k: v for k, v in self.geom_roles.items()
+                           if canonical_geom_path(k) in present}
 
     def validate(self, geom_bbox: tuple | None = None,
                  domain_bbox: tuple | None = None) -> tuple[list[str], list[str]]:
