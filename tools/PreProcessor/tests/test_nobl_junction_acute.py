@@ -222,10 +222,20 @@ def write_isolated_corner_duct(path):
     corner rescue (`if (prevBL || nextBL) cn.skipBL = false;`) then promotes the
     top-LEFT corner back to BL because its neighbour grows one, and the isolated
     node is left with a BL neighbour after all. The rescue is gated on `isCorner`,
-    so the top-left split is declared SMOOTH (`corner = 0`) — which is exactly what
-    the resampler emits for a segment boundary that is not a sharp vertex. Verified
-    with a probe in the branch itself: without this it never fires and the node is
-    classified case 1 (slide) instead.
+    so the top-left split is declared SMOOTH (`corner = 0`). Verified with a probe
+    in the branch itself: without this it never fires and the node is classified
+    case 1 (slide) instead.
+
+    **That second half is why this is a HAND-WRITTEN input and not a shape the
+    toolchain emits** (issue #4, closed wontfix). The resampler does not decide the
+    flag by sharpness: `tools/PreProcessor/src/main.cpp` writes
+    `resCorner.push_back(isBoundaryPt ? 1 : 0)` where `isBoundaryPt` is "the first
+    or last sample of a task", so EVERY segment boundary comes out `corner = 1` and
+    the rescue always fires. The GUI cannot undo it either — `services/meta_io.py`
+    only ever rewrites the NSEGMENTS bc / grow-BL columns and copies the POINTS
+    block through verbatim. A hand-written sidecar is still a supported input,
+    which is why this case is pinned; it is just not reachable from the GUI, and
+    the advisory the mesher prints says so.
 
     The BOTTOM wall still grows a full BL, so this is a real mesh with an isolated
     corner in it rather than a degenerate one-column model.
@@ -636,6 +646,15 @@ def main():
     check(f"...with its actual coordinates ({iso[0]:.4g}, {iso[1]:.4g}), so the user "
           f"can find it on the geometry",
           any(f"{iso[0]:.6g}" in ln and f"{iso[1]:.6g}" in ln
+              for ln in log.splitlines() if "Isolated BL corner" in ln))
+    # issue #4 (closed wontfix 2026-08-20): building the two lateral columns this
+    # corner would need was declined, so the advisory IS the permanent behaviour —
+    # and what makes it actionable is WHERE it points. See this fixture's docstring:
+    # no GUI or surface_resampler output can reach this branch, so a user reading
+    # the warning has a hand-written or foreign .meta, not a geometry to redraw.
+    # Pinned so a later edit cannot quietly go back to offering geometry workarounds.
+    check("...and pointing at the .meta sidecar, the only thing that can produce it",
+          any(".meta" in ln and "NSEGMENTS" in ln
               for ln in log.splitlines() if "Isolated BL corner" in ln))
 
     print()
