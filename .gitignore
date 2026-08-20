@@ -74,5 +74,18 @@ solver/
 # property tests/test_save_dialog_defaults.py asks git about rather than reading
 # from a hand-written list of folder names.
 config/local/
-config/mesh/Background_para_I_coarse.dat
+#
+# `config/mesh/` is ignored as a DIRECTORY rather than one file at a time: every
+# file in it is a mesh parameter file the GUI wrote (`Background_para_<stem>.dat`),
+# nothing curated has ever lived there, and the per-file line this replaces is
+# what let two of them be committed by accident — the whack-a-mole this block was
+# already losing. A reference grid parameter file worth keeping still goes in with
+# `git add -f`, the same escape the curated pipeline scripts use.
+config/mesh/
+#
+# Two named files under config/pipeline/, which cannot be ignored wholesale: it
+# holds the curated scripts (README.md, template.json and three demos that four
+# tests read). Both of these are the accident this policy exists to prevent — a
+# GUI session's default name, accepted once and committed.
 config/pipeline/cyl0d5_Rot1d0.hws
+config/pipeline/Untitled 1.json
