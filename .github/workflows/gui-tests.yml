@@ -48,8 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install ruff
@@ -73,8 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       # The Gmsh SDK (gmsh.h + libgmsh) comes from the pip wheel; CMakeLists finds
@@ -108,8 +108,13 @@ jobs:
           hybmesh_export_gmsh_lib_path
           cd build && ctest --output-on-failure
 
+      # upload-artifact and download-artifact are a PAIR and are bumped
+      # together: v7 uploads gained `archive: false` (a single file, unzipped)
+      # and v8 downloads stopped unconditionally unzipping to match. We upload a
+      # two-file artifact, so it is zipped by default and v8 unzips it — but
+      # bumping only one side is how that agreement breaks silently.
       - name: Upload the binaries for the test job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hybmesh-binaries
           path: |
@@ -123,8 +128,8 @@ jobs:
     timeout-minutes: 30
     needs: build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -143,8 +148,11 @@ jobs:
           pip install -r tools/PreProcessor/gui/requirements.txt
 
       # Reuse the -Werror build so the binary-dependent tests run for real.
+      # v8 makes a digest mismatch a hard ERROR rather than a warning; that
+      # default is kept deliberately — a binary that arrived corrupted must not
+      # go on to be tested, and the tests it runs are the whole point of the job.
       - name: Download the built binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: hybmesh-binaries
           path: build
@@ -166,7 +174,7 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gui-logs
           path: results/logs/
