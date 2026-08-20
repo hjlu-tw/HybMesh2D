@@ -83,6 +83,13 @@ class SolverPipelineWorker(QThread):
         # count" header when present, otherwise a synthetic counter.
         self._explicit_iter: int | None = None
         self._synthetic_iter: int = 0
+        # Where THIS run's iteration count starts. The solver's "Global
+        # Iteration count" is absolute and continues from the dump a restart
+        # resumed, so it cannot be divided by num_half_iter directly -- see
+        # _emit_progress. Anchored on the first convergence print, because the
+        # GUI has no way to know the dump's step (SolverConfig carries restart
+        # plus two filenames and no number).
+        self._iter_base: int | None = None
         self._cfl: float | None = None
         self._ptime: float | None = None
         self._int_rows: list[list[float]] = []
@@ -317,5 +324,24 @@ class SolverPipelineWorker(QThread):
         self._bound_row = None
 
     def _emit_progress(self, it: int):
+        """Report how far through ITS OWN iterations this run is.
+
+        USER-REPORTED (2026-08-20): a restart run showed 100% immediately. `it`
+        is the solver's absolute "Global Iteration count", which on a restart
+        picks up from the dump (20000, say) while num_half_iter is what this run
+        was asked to do (5000) -- so min(it/total, 1.0) was 1.0 at the first
+        convergence print and stayed there.
+
+        The anchor is this run's first print rather than a configured resume
+        step: SolverConfig has no such field (restart plus two filenames), and
+        the dump's iteration is knowable only from the dump. A fresh run's first
+        print lands at print_convg_per_niter, so that step is subtracted and the
+        fresh-run numbers are unchanged (measured: 40, 55, 70, 85, 100 before
+        and after).
+        """
+        if self._iter_base is None:
+            step = max(1, self._config.print_convg_per_niter)
+            self._iter_base = max(0, it - step)
+        done = max(0, it - self._iter_base)
         total = max(1, self._config.num_half_iter)
-        self.progress_signal.emit(25 + int(75 * min(it / total, 1.0)))
+        self.progress_signal.emit(25 + int(75 * min(done / total, 1.0)))
