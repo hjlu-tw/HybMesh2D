@@ -504,6 +504,26 @@ live, so `_edit_in_progress()` is now one question with one answer instead of an
   `commit`/`cancel` with nothing live is a silent no-op (a dialog signal arriving
   after the state was cleared is a timing artefact, not something the user did):
   `get_logger(__name__).debug`, never a pop-up or a user-log line.
+- **An ending the DIALOG did not initiate must close the dialog.** It tears itself
+  down through `finished → deleteLater`, which fires only when it closes *itself*;
+  a cancel driven by a tab switch, a tab close or a second edit beginning used to
+  leave the window on screen with its Apply and Cancel pointing at an owner that had
+  forgotten the edit. The dialog therefore travels back on the outcome (the owner
+  holds it opaquely and may not call a method on it) and the caller closes it. That
+  `close()` **re-emits `rejected`**, so the cancel handler runs again against an idle
+  owner — which is exactly the silent-no-op case above, and is why the two rules have
+  to land together. And **the canvas clear takes the EDIT's session**: the live
+  preview is a canvas item keyed by `session_id`, so aiming it at the front tab
+  leaves the preview drawn on the tab the edit belonged to.
+- **Not every route out of a session is a prompt.** Switching and closing a tab ask,
+  because both are cleanly abortable. Opening a new tab, `reset_all_state` and
+  loading a workspace **end the edit unconditionally and say so in the log**: the
+  first moves focus as an unavoidable consequence of an action already taken (making
+  it abortable would mean `_new_session` — which four call sites dereference straight
+  away — growing a failure mode), and the last two have already asked their own
+  whole-session question. What the requirement actually demands is that no live edit
+  survives pointing at a background or discarded session, which is what these
+  guarantee.
 - **The committed-edge DRAG is a transition, not a nullable field.** Dragging a
   handle of an already-committed edge (no dialog open — a third modality the other
   two deliberately route drags away from) must collapse one gesture into one undo

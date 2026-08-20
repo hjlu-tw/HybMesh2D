@@ -155,6 +155,16 @@ def _set_confirm(fn):
             mod.confirm = fn
 
 
+def _preview_len(session):
+    """How many points the live curve-preview item holds for a session. The
+    preview is a canvas item keyed by session_id, so clearing the FRONT tab's
+    key leaves the preview drawn on the tab the edit actually belonged to."""
+    item = c.main_window.canvas_view._curve_preview_items.get(
+        session.session_id)
+    xs = item.getData()[0] if item is not None else None
+    return 0 if xs is None else len(xs)
+
+
 # ══ 1: the cross-tab commit ═════════════════════════════════════════════════
 c.switch_tab(0)
 app.processEvents()
@@ -164,7 +174,14 @@ depth_b = len(sess_b.command_history._undo_stack)
 c._begin_pending_edit(edge_a, is_new=False)
 check(c.edge_edit.is_active() and c.edge_edit.owning_session is sess_a,
       "1a the edit began in tab A and says so")
-c.edge_edit.update({"cx": 5.0}, 50)
+# Through the dialog handler, not the owner directly, so the live PREVIEW is
+# really drawn on tab A's canvas item — check 1k needs something to be left
+# behind before it can catch a clear aimed at the wrong session.
+c._on_pending_dialog_changed({"cx": 5.0}, 50)
+app.processEvents()
+check(_preview_len(sess_a) > 0,
+      f"1a' the live preview really is drawn on tab A "
+      f"({_preview_len(sess_a)} points)")
 
 # Put tab B in front WITHOUT going through switch_tab: this is the state the
 # binding has to survive on its own.
@@ -193,6 +210,11 @@ check(not c.main_window.windowTitle().startswith("*"),
       f"({c.main_window.windowTitle()!r})")
 check(sess_a.is_geometry_modified,
       "1j …while the session that was actually edited IS marked modified")
+
+
+check(_preview_len(sess_a) == 0,
+      f"1k the live preview is cleared on the EDIT's session, not the front "
+      f"tab's ({_preview_len(sess_a)} points left on tab A)")
 
 # A NEW edge must not appear in the wrong tab either.
 c.active_idx = 0
@@ -338,6 +360,34 @@ check(_asked == [], f"7f …still with no prompt ({_asked})")
 _set_confirm(_stub_confirm(True))
 c._cancel_pending_edit()
 
+# ══ 10: an unusable geometry is refused BEFORE a live edit is put at risk ══
+# _begin_file_edit is normally guarded by _edit_in_progress(), so this drives it
+# directly. The order matters: the user must not be prompted to throw away a
+# live edit for a double-click that then turns out to do nothing.
+c.switch_tab(0)
+app.processEvents()
+c._begin_pending_edit(edge_a, is_new=False)
+live_seg = c.edge_edit.segment
+_asked.clear()
+_set_confirm(_stub_confirm(True))     # would cancel the live edit if reached
+
+
+class _BareFileSeg:
+    type = "file"
+    id = 99
+    start_index = 0
+    end_index = 1
+
+
+c._begin_file_edit(_BareFileSeg())
+app.processEvents()
+check(_asked == [],
+      f"10a a geometry with no usable edge never reaches the prompt ({_asked})")
+check(c.edge_edit.segment is live_seg,
+      "10b …so the live edit survives a double-click that does nothing")
+_set_confirm(_stub_confirm(True))
+c._cancel_pending_edit()
+
 # ══ 3 + 4: closing the owning tab ═══════════════════════════════════════════
 c.switch_tab(0)
 app.processEvents()
@@ -362,10 +412,134 @@ check(_asked == ["Edit in progress", "Unsaved Changes"],
 check(len(c.sessions) == n_sessions - 1, "3e …and the tab closed")
 check(not c.edge_edit.is_active(),
       "3f a completed close leaves no live edit")
-for s in c.sessions:
-    check(len(s.command_history._undo_stack) == 0
-          or s is not sess_a,
-          "3g no undo entry was recorded on a surviving session by the close")
+# Vacuous as first written: it read `... or s is not sess_a`, and sess_a is the
+# tab that was just CLOSED, so the disjunct was true for every surviving session
+# and the check could not fail. Assert the real thing — the close recorded
+# nothing anywhere that is still open.
+_surviving = [(s.display_name, len(s.command_history._undo_stack))
+              for s in c.sessions]
+check(all(n == 0 for _name, n in _surviving),
+      f"3g the close recorded no undo entry on any surviving session "
+      f"({_surviving})")
+check(sess_a not in c.sessions, "3h …and the closed session really is gone")
+
+def _gone(dlg):
+    """True when a dialog is off screen — including when Qt has already
+    destroyed its C++ side, which ``isVisible()`` raises on rather than
+    answering."""
+    try:
+        return not dlg.isVisible()
+    except RuntimeError:
+        return True
+
+
+# ══ 8: no ORPHANED DIALOG on an ending the dialog did not initiate ═════════
+# Rebuild a two-tab state: the close block above consumed one.
+while len(c.sessions) < 2:
+    c.new_blank_tab()
+sess_a = c.sessions[0]
+edge_a = _add_circle(sess_a, 0.0, 0.0, 1.0)
+a_before = dict(edge_a.parameters)
+
+# The dialog tears itself down through finished -> deleteLater, which fires only
+# when it closes ITSELF. Every other ending — a tab switch, a tab close, a second
+# edit beginning — used to leave the window on screen with its Apply and Cancel
+# pointing at an owner that had forgotten the edit.
+c.switch_tab(0)
+app.processEvents()
+c._begin_pending_edit(edge_a, is_new=False)
+dlg = c.edge_edit.dialog
+check(dlg is not None and not _gone(dlg),
+      "8a the modeless dialog is up while the edit is live")
+_set_confirm(_stub_confirm(True))
+c.switch_tab(1)
+app.processEvents()
+check(_gone(dlg),
+      "8b a tab switch that cancels the edit closes its dialog")
+
+c.switch_tab(0)
+app.processEvents()
+c._begin_pending_edit(edge_a, is_new=False)
+dlg = c.edge_edit.dialog
+sess_a.is_geometry_modified = True
+_set_confirm(_stub_confirm(True))
+n_before = len(c.sessions)
+c.close_tab(0)
+app.processEvents()
+check(len(c.sessions) == n_before - 1 and _gone(dlg),
+      "8c closing the owning tab closes its dialog too")
+
+# …and a second edit beginning must not leave the first one's window behind.
+c.switch_tab(0)
+app.processEvents()
+tab = c.sessions[0]
+e1 = _add_circle(tab, 0.0, 0.0, 1.0)
+e2 = _add_circle(tab, 5.0, 0.0, 1.0)
+c._begin_pending_edit(e1, is_new=False)
+first = c.edge_edit.dialog
+_set_confirm(_stub_confirm(True))
+c._begin_pending_edit(e2, is_new=False)
+app.processEvents()
+second = c.edge_edit.dialog
+check(_gone(first),
+      "8d beginning a second edit closes the first one's dialog")
+check(second is not None and second is not first and not _gone(second)
+      and c.edge_edit.segment is e2,
+      "8e …and the new edit has its own, live")
+# The re-emitted `rejected` from that close lands on an idle owner. That is the
+# silent no-op by construction — it must not take the NEW edit down with it.
+check(c.edge_edit.is_active(),
+      "8f …and the closing dialog's re-emitted reject did not cancel it")
+_set_confirm(_stub_confirm(True))
+c._cancel_pending_edit()
+app.processEvents()
+
+# ══ 9: the routes that DISCARD a session end the edit unconditionally ═══════
+# Not the prompt: opening a tab or replacing the workspace is not abortable in
+# the way a switch or a close is. What must hold is that no live edit survives
+# pointing at a background or discarded session.
+c.switch_tab(0)
+app.processEvents()
+c._begin_pending_edit(c.sessions[0].project_model.segments[0], is_new=False)
+check(c.edge_edit.is_active(), "9a an edit is live before opening a new tab")
+c.new_blank_tab()
+app.processEvents()
+check(not c.edge_edit.is_active(),
+      "9b opening a new tab ends it rather than leaving it on a background tab")
+
+c.switch_tab(0)
+app.processEvents()
+c._begin_pending_edit(c.sessions[0].project_model.segments[0], is_new=False)
+live_dialog = c.edge_edit.dialog
+c.reset_all_state(new_blank=True)
+app.processEvents()
+check(not c.edge_edit.is_active() and _gone(live_dialog),
+      "9c a full state reset ends it, dialog and all")
+
+# ══ 9d: loading a workspace ends an edit whose session it discards ═════════
+import json  # noqa: E402
+import tempfile  # noqa: E402
+
+c.switch_tab(0)
+app.processEvents()
+_ws_seg = _add_circle(c.sessions[0], 2.0, 2.0, 1.0)
+_ws = json.dumps(c.workspace_dict())
+with tempfile.NamedTemporaryFile("w", suffix=".hws", delete=False) as fh:
+    fh.write(_ws)
+    _ws_path = fh.name
+c._begin_pending_edit(_ws_seg, is_new=False)
+_ws_dialog = c.edge_edit.dialog
+check(c.edge_edit.is_active(), "9d an edit is live before the workspace load")
+_set_confirm(_stub_confirm(True))
+c._read_workspace_file(_ws_path)
+app.processEvents()
+check(not c.edge_edit.is_active() and _gone(_ws_dialog),
+      "9e loading a workspace ends it — its session is discarded")
+os.unlink(_ws_path)
+while len(c.sessions) < 2:
+    c.new_blank_tab()
+sess_a = c.sessions[0]
+edge_a = _add_circle(sess_a, 0.0, 0.0, 1.0)
 
 # Headless defaults: with the real confirm restored, nothing blocks.
 _set_confirm(_real_confirm)

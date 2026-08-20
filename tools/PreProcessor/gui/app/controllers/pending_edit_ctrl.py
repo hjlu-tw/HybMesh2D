@@ -38,12 +38,62 @@ class PendingEditControllerMixin:
         self._cancel_live_edit()
         return True
 
+    @staticmethod
+    def _close_orphan_dialog(dlg):
+        """Close a modeless edit dialog the ending did not come from.
+
+        The dialog tears itself down through ``finished -> deleteLater`` only
+        when it closes ITSELF. An ending driven from elsewhere — a tab switch, a
+        tab close, a second edit beginning — left the window on screen with its
+        Apply and Cancel now pointing at an owner that has forgotten the edit.
+
+        ``close()`` re-emits ``rejected``, so the cancel handler runs a second
+        time against an idle owner. That is a no-op by construction, and
+        deliberately so: it is exactly the "a dialog signal arriving after the
+        state was cleared" case the silent-no-op rule exists for.
+
+        The ``RuntimeError`` guard is for a dialog whose C++ side is already
+        gone. On the ordinary path the dialog closed ITSELF, so its
+        ``finished -> deleteLater`` is queued but not yet run while this
+        outcome is being handled — alive, today. That is a timing property of
+        Qt's event loop rather than something this code controls, and losing
+        the race must not take a commit down half-way through.
+        """
+        if dlg is None:
+            return
+        try:
+            dlg.close()
+        except RuntimeError:
+            logger.debug("edit dialog was already destroyed", exc_info=True)
+
     def _cancel_live_edit(self):
         """Cancel whichever edit kind is live, through its own Cancel path."""
         if self.edge_edit.is_shape_active():
             self._cancel_file_edit()
         elif self.edge_edit.is_active():
             self._cancel_pending_edit()
+
+    def _discard_edits_for_teardown(self, reason: str):
+        """End a live edit whose session is about to be replaced or destroyed.
+
+        Unconditional, and deliberately NOT the prompt above. That prompt is for
+        SWITCHING or CLOSING a tab — both cleanly abortable, which is what makes
+        a Yes/No question meaningful. These routes are neither: opening a new
+        tab or a geometry file moves focus as an unavoidable consequence of an
+        action already taken, and loading a workspace has already asked its own
+        "this will close all current tabs" question. Making them abortable would
+        mean ``_new_session`` — a helper four call sites dereference straight
+        away — growing a failure mode, i.e. inventing "opening a file can be
+        refused" semantics nothing asked for.
+
+        What the requirement actually says is that we must never come out the
+        other side with a live edit pointing at a background or discarded tab,
+        and that is what this guarantees. It is narrated rather than silent.
+        """
+        if not self.edge_edit.is_active():
+            return
+        self.log(f"Cancelled the edge edit in progress ({reason}).")
+        self._cancel_live_edit()
 
     def _release_edits_for_session(self, session, what: str) -> bool:
         """A CAD session is being left (switched away from, or closed).
@@ -122,12 +172,13 @@ class PendingEditControllerMixin:
             # something the user did, so no pop-up and no user-log line.
             logger.debug("commit with no edit live — ignored")
             return
-        self._clear_pending_canvas()
         # The session the edit BEGAN in, never active_session(): resolving the
         # target through whichever tab is in front now is how an edit came to
         # land on another tab's edge (segment ids are per-session, so the id
         # fallback matched).
         session = done.session or self.active_session()
+        self._clear_pending_canvas(session)
+        self._close_orphan_dialog(done.dialog)
         if not session:
             return
         seg, is_new, orig_state = done.seg, done.is_new, done.orig_state
@@ -166,17 +217,25 @@ class PendingEditControllerMixin:
         if done is None:
             logger.debug("cancel with no edit live — ignored")
             return
-        self._clear_pending_canvas()
+        self._clear_pending_canvas(done.session)
+        self._close_orphan_dialog(done.dialog)
         if done.reverted:
             self._refresh_segment_list()
             self.log("Edit cancelled (reverted).")
         else:
             self.log("Add edge cancelled.")
 
-    def _clear_pending_canvas(self):
+    def _clear_pending_canvas(self, session=None):
         """Drop the edit session's canvas decoration. The state itself is the
-        owner's and is already gone by the time this runs."""
-        session = self.active_session()
+        owner's and is already gone by the time this runs.
+
+        ``session`` is the EDIT's session, not the front tab: the live preview is
+        a canvas item keyed by ``session_id``, so clearing the active tab's key
+        leaves the preview drawn on the tab the edit actually belonged to and
+        wipes a preview the front tab never had. Falls back to the active
+        session for a caller with nothing to hand over."""
+        if session is None:
+            session = self.active_session()
         canvas = self.main_window.canvas_view
         canvas.clear_edge_handles()
         if session is not None:

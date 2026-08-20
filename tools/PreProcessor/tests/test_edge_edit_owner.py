@@ -147,9 +147,16 @@ class _Dialog:
 
     def __init__(self, closed=True):
         self._closed = closed
+        self.closes = 0
 
     def is_closed(self):
         return self._closed
+
+    def close(self):
+        # The one thing the CALLER does to it. An ending the dialog did not
+        # initiate has to take the window down, or it sits there with its Apply
+        # and Cancel pointing at an owner that has forgotten the edit.
+        self.closes += 1
 
 
 class _Canvas:
@@ -185,6 +192,7 @@ class _Host(PendingEditControllerMixin):
         self.main_window = _Window()
         self.logs = []
         self.canvas_cleared = 0
+        self.canvas_cleared_for = []
         self.refreshes = 0
         self.selected = []
         self.handles_shown = 0
@@ -196,8 +204,12 @@ class _Host(PendingEditControllerMixin):
     def log(self, msg):
         self.logs.append(msg)
 
-    def _clear_pending_canvas(self):
+    def _clear_pending_canvas(self, session=None):
+        # Records WHICH session the canvas clear was aimed at: the preview is a
+        # canvas item keyed by session id, so aiming it at the front tab leaves
+        # the preview drawn on the tab the edit belonged to.
         self.canvas_cleared += 1
+        self.canvas_cleared_for.append(session)
 
     def _refresh_segment_list(self):
         self.refreshes += 1
@@ -233,8 +245,9 @@ sess = GeometrySession()
 seg = _polygon(verts=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], closed=True)
 sess.project_model.segments.append(seg)
 host = _Host(sess)
-host.edge_edit.begin(seg, is_new=False)
-host.edge_edit.attach_dialog(_Dialog(closed=False))
+host.edge_edit.begin(seg, is_new=False, session=sess)
+dlg = _Dialog(closed=False)
+host.edge_edit.attach_dialog(dlg)
 host._on_pending_dialog_changed({"vertices_str": "0,0; 9,9; 1,1"}, 80)
 # An in-place edit of a nested value — what the deep copy in ``begin`` is for.
 seg.parameters["vertices"][1][0] = 9.0
@@ -262,6 +275,10 @@ check("7a cancel ends the session",
       and host.edge_edit.segment is None
       and host.edge_edit.dialog is None)
 check("7b cancel dropped the canvas decoration", host.canvas_cleared == 1)
+check("7b' …aimed at the EDIT's session, not whatever is in front",
+      host.canvas_cleared_for == [sess])
+check("7b'' …and closed the dialog, which this ending did not come from",
+      dlg.closes == 1)
 check("2d cancelling an edit records nothing on the undo stack",
       len(sess.command_history._undo_stack) == 0)
 
@@ -378,9 +395,13 @@ class _EndpointDialog:
 
     def __init__(self):
         self.points = []
+        self.closes = 0
 
     def set_points(self, p0, p1):
         self.points.append((tuple(p0), tuple(p1)))
+
+    def close(self):
+        self.closes += 1
 
 
 class _FileSeg:
@@ -391,8 +412,14 @@ class _FileSeg:
         self.end_index = end_index
 
 
-class _ShapeHost(FileEditControllerMixin):
-    """The mixin's collaborators, stubbed to what it actually calls."""
+class _ShapeHost(FileEditControllerMixin, PendingEditControllerMixin):
+    """The mixin's collaborators, stubbed to what it actually calls.
+
+    BOTH mixins, matching the real ``AppController``: the shape edit reaches the
+    cross-kind policy that lives on ``PendingEditControllerMixin``
+    (``_make_way_for_edit``, ``_close_orphan_dialog``). That coupling is real and
+    is named in the review as a Divergent Change on that module's name; stubbing
+    around it here would hide it instead."""
 
     def __init__(self, session):
         self.edge_edit = EdgeEditSession()
@@ -475,7 +502,8 @@ sess = _outline_session()
 pristine = sess.original_points.copy()
 host = _ShapeHost(sess)
 host.edge_edit.begin_shape(sess.project_model.segments[1],
-                           sess.original_points, sess.project_model.segments)
+                           sess.original_points, sess.project_model.segments,
+                           session=sess)
 host.edge_edit.attach_shape_dialog(_EndpointDialog())
 host._on_file_handle_dragged("c2", 1.0, 1.0, False)
 check("10a a corner drag re-fits and rebinds the session's points",
@@ -499,7 +527,10 @@ sess = _outline_session()
 pristine = sess.original_points.copy()
 host = _ShapeHost(sess)
 host.edge_edit.begin_shape(sess.project_model.segments[1],
-                           sess.original_points, sess.project_model.segments)
+                           sess.original_points, sess.project_model.segments,
+                           session=sess)
+shape_dlg = _EndpointDialog()
+host.edge_edit.attach_shape_dialog(shape_dlg)
 host._on_file_handle_dragged("c2", 4.0, 7.0, True)
 host._cancel_file_edit()
 check("10f cancel restores the points byte-for-byte",
@@ -509,6 +540,8 @@ check("10g …ends the session and says so",
       and any("cancelled" in m for m in host.logs))
 check("10h cancel records nothing on the undo stack",
       len(sess.command_history._undo_stack) == 0)
+check("10i …and closes the shape dialog this ending did not come from",
+      shape_dlg.closes == 1)
 
 # ── 11: commit is one undoable geometry replacement ─────────────────────────
 sess = _outline_session()

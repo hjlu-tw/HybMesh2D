@@ -115,6 +115,12 @@ class SessionTabsControllerMixin:
         # reflects whichever session is active at the time).
         session.command_history.on_change = self._update_undo_redo_buttons
 
+        # A new tab takes the focus, so an edit live on the old one would be
+        # left pointing at a background tab — the state #18 exists to prevent.
+        # Ended here rather than at the four call sites, because this is the one
+        # place they all pass through.
+        self._discard_edits_for_teardown("a new tab was opened")
+
         # Append BEFORE addTab so switch_tab (triggered by currentChanged)
         # can already find the session in self.sessions
         self.sessions.append(session)

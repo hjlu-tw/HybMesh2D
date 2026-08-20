@@ -261,6 +261,12 @@ class SessionIOControllerMixin:
                 "Do you want to proceed?"):
             return
 
+        # Every session is about to be discarded, so a live edit would end up
+        # pointing at one that no longer exists. The user has already answered
+        # the "this will close all current tabs" question above, so this is not
+        # a second prompt.
+        self._discard_edits_for_teardown("the workspace was replaced")
+
         with block_signals(self.main_window.tab_widget):
             while self.sessions:
                 session = self.sessions.pop(0)

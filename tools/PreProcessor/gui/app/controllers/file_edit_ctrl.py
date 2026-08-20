@@ -2,6 +2,7 @@ from __future__ import annotations
 import numpy as np
 from app.commands.vertex_cmds import ReplaceGeometryPointsCmd
 from app.services.logging_setup import get_logger
+from app.services.shape_refit import build_edge_specs
 
 logger = get_logger(__name__)
 
@@ -20,15 +21,23 @@ class FileEditControllerMixin:
         like editing a shape in industrial CAD."""
         session = self.active_session()
         gp = session.original_points if session else None
+        # Whether this geometry CAN be edited is asked first, and cheaply: the
+        # user must not be prompted to throw away a live edit for a double-click
+        # that then turns out to do nothing.
+        if not build_edge_specs(
+                session.project_model.segments if session else [],
+                len(gp) if gp is not None else 0)[0]:
+            if gp is not None and len(gp):
+                self.log("This geometry can't be edited directly.")
+            return
         # The owner builds the edge specs and takes the pristine snapshot; it
-        # refuses a geometry whose file segments describe no usable edge.
+        # refuses while another edit is live, so ask before that.
         if not self._make_way_for_edit():
             return
         if not self.edge_edit.begin_shape(
                 seg, gp, session.project_model.segments if session else [],
                 session=session):
-            if gp is not None and len(gp):
-                self.log("This geometry can't be edited directly.")
+            logger.debug("begin_shape refused after the way was cleared")
             return
         ci0, ci1 = self.edge_edit.edge_corners
 
@@ -103,6 +112,7 @@ class FileEditControllerMixin:
             return
         orig = done.orig
         self._clear_file_edit_canvas()
+        self._close_orphan_dialog(done.dialog)
         # The session the edit began in, never active_session().
         session = done.session or self.active_session()
         if session is None:
@@ -139,6 +149,7 @@ class FileEditControllerMixin:
         if session is not None and done.orig is not None:
             session.original_points = done.orig
         self._clear_file_edit_canvas()
+        self._close_orphan_dialog(done.dialog)
         if session is not None and session is self.active_session():
             self._apply_geometry_update(session)
         self.log("Shape edit cancelled (reverted).")

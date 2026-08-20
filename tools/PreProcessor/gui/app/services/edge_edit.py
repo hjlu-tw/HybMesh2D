@@ -106,6 +106,12 @@ class EditOutcome:
     ``session`` is the CAD session the edit BEGAN in, and is the one the caller
     must act on — never whichever tab happens to be in front when the dialog's
     signal arrives.
+
+    ``dialog`` is the modeless dialog the session was holding, handed back so
+    the caller can close it. Only the caller can: this module holds it opaquely
+    and never calls a method on it. It matters for the endings the dialog did
+    NOT initiate — a cancel driven by a tab switch, a close, or a second edit
+    beginning — where nothing else would ever take the window down.
     """
 
     seg: Any
@@ -113,6 +119,7 @@ class EditOutcome:
     orig_state: Optional[dict] = None
     reverted: bool = False
     session: Any = None
+    dialog: Any = None
 
 
 @dataclass(frozen=True)
@@ -121,14 +128,14 @@ class ShapeOutcome:
 
     ``orig`` is the pristine point array the session snapshotted, which the
     caller needs for BOTH endings: to restore on cancel, and — on commit — as
-    the "before" half of the undoable geometry replacement. ``session`` is the
-    CAD session the edit began in, for the same reason as on
-    :class:`EditOutcome`.
+    the "before" half of the undoable geometry replacement. ``session`` and
+    ``dialog`` are the same as on :class:`EditOutcome`, for the same reasons.
     """
 
     seg: Any
     orig: Any
     session: Any = None
+    dialog: Any = None
 
 
 class EdgeEditSession:
@@ -265,7 +272,7 @@ class EdgeEditSession:
             self._reset()
             return None
         outcome = EditOutcome(self._seg, self._is_new, self._orig_state,
-                              session=self._session)
+                              session=self._session, dialog=self._dialog)
         self._reset()
         return outcome
 
@@ -278,7 +285,7 @@ class EdgeEditSession:
         """
         seg, is_new = self._seg, self._is_new
         orig_params, orig_state = self._orig_params, self._orig_state
-        session = self._session
+        session, dialog = self._session, self._dialog
         self._reset()
         if seg is None:
             return None
@@ -289,7 +296,7 @@ class EdgeEditSession:
                 seg.closed = bool(orig_state.get("closed", True))
             reverted = True
         return EditOutcome(seg, is_new, orig_state, reverted=reverted,
-                           session=session)
+                           session=session, dialog=dialog)
 
     def _reset(self):
         self._seg = None
@@ -452,7 +459,8 @@ class EdgeEditSession:
             self._reset_shape()
             return None
         outcome = ShapeOutcome(self._shape_seg, self._shape_orig,
-                               session=self._shape_session)
+                               session=self._shape_session,
+                               dialog=self._shape_dialog)
         self._reset_shape()
         return outcome
 
