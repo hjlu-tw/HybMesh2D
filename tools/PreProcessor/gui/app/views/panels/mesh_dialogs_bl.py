@@ -175,6 +175,9 @@ class PerGeomBLDialog(BLDialogLayoutMixin, QDialog):
         self.setMinimumWidth(380)
         self.resize(460, 700 if segments else 460)   # first guess; refit on show
         self._widgets = {}
+        # Per-row note labels the layout mixin builds for a field the selected
+        # junction scheme cannot read; _wire_method_dependent_fields owns their text.
+        self._notes = {}
         self._cleared = False
         self._seg_section = None
         self._sections = []

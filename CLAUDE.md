@@ -758,7 +758,26 @@ left it in (`ui_state.save/restore_section_states`), and an override (below).
 that is still written back on OK — gated by `tests/test_bl_dialog_sections.py`, with
 stray keys falling into a trailing "Other" group as a backstop. A group holding a value
 that differs from the global default expands itself, so a per-geometry override never
-hides behind a collapsed header. The window follows the open groups
+hides behind a collapsed header.
+**A field the selected scheme cannot read is greyed out AND says why, in the visible
+row.** `BL_JUNCTION_ANGLE_C1` is dead under the default junction method (whose 95°
+slide bound is geometric, not a knob) and disabling it is correct — but the silence
+was USER-REPORTED as a bug (#23), because on screen a greyed box with no reason is
+indistinguishable from one greyed for another reason, or from a defect. The same
+`_sync` that calls `setEnabled` sets or clears the row's short marker, so the lock and
+its explanation cannot disagree; the long prose stays the spec's own `_C1_TIP` and is
+not copied. Three things about the placement are MEASURED, not stylistic: the marker
+rides beside the FIELD because the label column is sized from the labels actually
+built (171 px today, bounded 120..240) and a suffixed C1 label measures **240**, i.e.
+it would shove every label right and sit on the ceiling; the note cell is the ONE
+composite field cell in the GUI, allowed only because nothing in the dialog's mixins
+calls `labelForField` (gated by AST over its own MRO, so a third mixin cannot evade
+it); and a hint on the disabled widget is impossible — hovering an enabled spin box
+delivers `Enter`, hovering the disabled one delivers nothing to it **or its parent**,
+since Qt picks the mouse receiver by walking past disabled widgets. Gated by
+`tests/test_bl_dialog_sections.py` check 14, which binds "disabled ⇔ a non-empty
+reason showing" in both directions and proves it non-vacuous by re-running the real
+pre-fix wiring. The window follows the open groups
 (`_relayout` → `_autofit_height`), bounded by the screen and never below a height the
 user set by dragging. Two Qt facts that fit depends on, both learned the hard way:
 `QScrollArea::sizeHint()` is **clamped to 24 font heights**, so the dialog's own
