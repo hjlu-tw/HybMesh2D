@@ -54,18 +54,6 @@ class SegmentPropsControllerMixin:
             cmd = UpdateMultipleSegmentsStateCmd(session, states_dict, refresh_cb=refresh)
             session.command_history.execute(cmd)
 
-    def update_segment_bc(self, text: str):
-        """Set the per-segment boundary condition on the selected edge(s). The
-        tag is metadata only (no geometry change) and flows to the mesher via
-        the .meta sidecar; blank inherits the global BC_GEOM."""
-        session = self.active_session()
-        if not session:
-            return
-        indices = self.get_selected_segment_indices()
-        if not indices:
-            return
-        self._apply_bc_to_indices(session, indices, text)
-
     def _apply_bc_to_indices(self, session, indices, text: str):
         """Apply a patch/group tag to specific segment indices (undoable). Shared
         by the sidebar path (current selection) and the assign-patch dialog (#8)."""

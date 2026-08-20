@@ -6,15 +6,39 @@ from app.services.geometry_service import (
 class TransformControllerMixin:
     """Mixin containing geometric transform, duplication, and mirroring logic."""
 
+    def _refresh_duplicate_gizmo(self, *, rebase: bool = True):
+        """Repaint the Duplicate & Transform gizmo: base point, then the live
+        result preview, then the draggable handles — in that order, because the
+        preview is computed from the base point and the handles are placed on
+        the preview.
+
+        ``rebase=False`` preserves the call sites as they were: a parameter edit
+        moves the copy, not the reference point, and ``update_duplicate_base_point``
+        WRITES the reference spin boxes (it only returns early in Custom mode), so
+        re-deriving it on every keystroke would push widget values the user is not
+        editing.
+
+        Deliberately NOT used by ``on_transform_handle_dragged``, which refreshes
+        the preview alone: ``show_transform_handles`` opens with
+        ``clear_transform_handles()`` and builds fresh ``TargetItem``s, so a
+        mid-gesture refresh destroys the very handle the pointer is holding — the
+        same reason ``_redraw_file_geometry`` exists beside ``redraw_canvas``.
+
+        ``_show_duplicate_preview`` stays at the call sites: it is the caller's
+        intent, and ``update_duplicate_preview`` already reads it to decide
+        between drawing and clearing.
+        """
+        if rebase:
+            self.update_duplicate_base_point()
+        self.update_duplicate_preview()
+        self._refresh_transform_handles()
 
     def _open_transform(self):
         """Open the Duplicate & Transform window and immediately show the base
         point / mirror-axis gizmo and the live result preview on the canvas."""
         self.main_window.sidebar_view.open_transform_dialog()
         self._show_duplicate_preview = True
-        self.update_duplicate_base_point()
-        self.update_duplicate_preview()
-        self._refresh_transform_handles()
+        self._refresh_duplicate_gizmo()
 
     def _close_transform(self):
         """The Duplicate & Transform window was closed → clear its gizmo/preview."""
@@ -31,33 +55,25 @@ class TransformControllerMixin:
         if self._is_populating:
             return
         self._show_duplicate_preview = checked
-        if checked:
-            self.update_duplicate_base_point()
-        self.update_duplicate_preview()
-        self._refresh_transform_handles()
+        self._refresh_duplicate_gizmo(rebase=checked)
 
     def handle_dup_type_changed(self):
         if self._is_populating:
             return
         self._show_duplicate_preview = True
-        self.update_duplicate_base_point()
-        self.update_duplicate_preview()
-        self._refresh_transform_handles()
+        self._refresh_duplicate_gizmo()
 
     def handle_dup_base_mode_changed(self):
         if self._is_populating:
             return
         self._show_duplicate_preview = True
-        self.update_duplicate_base_point()
-        self.update_duplicate_preview()
-        self._refresh_transform_handles()
+        self._refresh_duplicate_gizmo()
 
     def on_duplicate_param_changed(self):
         if self._is_populating:
             return
         self._show_duplicate_preview = True
-        self.update_duplicate_preview()
-        self._refresh_transform_handles()
+        self._refresh_duplicate_gizmo(rebase=False)
 
     def update_duplicate_base_point(self):
         session = self.active_session()

@@ -657,15 +657,39 @@ def probe_10_refresh_contract():
     is what the drag path proves cannot exist: an unconditional fan-out clears the
     drag's own handles.
 
-    WHAT IS REAL, AND IS NOT THIS CANDIDATE: four ordered sequences are repeated
-    at 11 sites, the worst being ``update_duplicate_base_point ->
+    THE RESIDUE, AND WHAT LANDED (2026-08-20, same day): four ordered sequences
+    were repeated at 11 sites, the worst being ``update_duplicate_base_point ->
     update_duplicate_preview -> _refresh_transform_handles`` four times over in
-    ``transform_ctrl.py`` (:10, :27, :39, :47). That is one extract-method inside
-    one controller, not a repaint contract for the app — and it is named here so a
-    follow-up ticket has something concrete. Measured by-product, also named
-    rather than fixed here (this ticket decides, it does not change behaviour):
-    ``update_colormap`` and ``update_segment_bc`` have no reference in the tree
-    besides their own ``def`` — 2 of the 33 are dead.
+    ``transform_ctrl.py`` (:10, :27, :39, :47). That was one extract-method inside
+    one controller, not a repaint contract for the app, and it is now
+    ``_refresh_duplicate_gizmo(rebase=)`` — done directly, because a ticket to
+    carry it would have been longer than the change.
+
+    NOTICE WHICH WAY THE NUMBERS MOVED. Naming that sequence ADDED a verb
+    (33 -> 34) and removed four hand-derived orders (4 sequences -> 3). If the
+    verb count were the problem, this fix would have made things worse; it did
+    not, which is the same conclusion the interchangeability measurement above
+    reaches from the other side. The worst sequence left is
+    ``_refresh_session_colors -> _sync_geometry_list`` at 3 sites — half the
+    revive line.
+
+    THE DEAD-VERB BY-PRODUCT WAS MEASURED WRONG: it was one verb, not two.
+    ``update_segment_bc`` was genuinely a leftover — the CAD sidebar's
+    "Boundary:" combo that called it is gone and the live path is
+    ``open_cad_patch_dialog -> _apply_bc_to_indices`` — and it is now DELETED.
+    ``update_colormap`` is NOT
+    dead — it is one of five methods under ``postprocess_ctrl.py``'s own
+    "Programmatic delegates" heading, four of which have no caller BY DESIGN
+    (``change_variable``, ``toggle_mesh_overlay``, ``toggle_streamlines`` are the
+    others), listed as a planned scripting API in
+    ``docs/solver_integration_plan.md:135``. The probe singled it out only because
+    its regex catches ``update_*`` and not ``toggle_*`` / ``change_*``, so the
+    lesson is about the instrument: a verb with no caller is dead only if nothing
+    DECLARED it an entry point. So the count reads 33 again, and for the second
+    time in one candidate the number moved for a reason unrelated to the thing it
+    was supposed to measure: +1 for naming a sequence, -1 for deleting a verb
+    whose caller went away when the per-edge patch/group name moved out of the
+    sidebar into a pop-up (``segment_ctrl.py``'s own ``(#1)`` comment records it).
 
     RETIRED IS NOT BLIND. Two lines revive it, and both are the premise actually
     returning rather than the count moving: a SECOND non-containment pair writing
@@ -688,8 +712,9 @@ def probe_10_refresh_contract():
     return STALE, (f"RETIRED 2026-08-20: {len(verbs)} verbs (not "
                    f"{len(verbs) + len(closures)} — {len(closures)} were nested "
                    f"refresh_cb closures), {len(overlap)} pair sharing a UI write "
-                   "and 0 interchangeable, so they are distinct jobs not 33 ways "
-                   f"to do one; residue is {len(seqs)} repeated sequences "
+                   f"and 0 interchangeable, so they are distinct jobs not "
+                   f"{len(verbs)} ways to do one; residue is {len(seqs)} "
+                   "repeated sequences "
                    f"(worst x{worst}, named in the docstring)")
 
 
