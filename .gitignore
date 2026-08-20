@@ -7,7 +7,14 @@ cmake_install.cmake
 Makefile
 .DS_Store
 
-# Output / result directories
+# Output / result directories.
+# BOTH cases, deliberately: the directory this repo actually writes is
+# lowercase `results/`, and for a long time only `Results/` was listed. That
+# matched anyway on macOS, whose filesystem is case-insensitive, and matched
+# NOTHING on Linux — so `results/` and `tools/results/` were untracked noise on
+# every case-sensitive checkout, including CI, while looking perfectly ignored
+# to whoever wrote the rule. No leading slash, so both match at any depth.
+results/
 Results/
 
 # Mesh exports. Every mesh run writes these, and it writes them next to whatever

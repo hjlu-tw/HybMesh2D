@@ -208,9 +208,19 @@ class ExtrudeControllerMixin:
         # 2D project: export a flat sheet at z=0 (no z-extrusion / thickness).
         z0 = z1 = 0.0
 
+        # Into results/, never examples/. `examples/geometries/` is INPUT and is
+        # tracked (60 files); the default name is derived from the session stem,
+        # so a session opened from `examples/geometries/I_coarse.dat` proposed
+        # `I_coarse_2d.stl` — right on top of a committed sibling, and accepting
+        # the default overwrote it in place (measured once: a binary STL replaced
+        # by a 4.6x larger ascii re-export of the same body). results/stl3d/ is
+        # where this file is headed anyway — the export hands off to the Immersed
+        # Solid page — and results/ is gitignored, so nothing it writes can dirty
+        # the tree.
+        out_dir = os.path.join(repo_root(), "results", "stl3d")
+        os.makedirs(out_dir, exist_ok=True)
         default_path = os.path.join(
-            repo_root(), "examples", "geometries",
-            f"{self._extrude_profile_stem(session_ids)}_2d.stl")
+            out_dir, f"{self._extrude_profile_stem(session_ids)}_2d.stl")
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Save 2D Profile STL", default_path,
             "STL Files (*.stl);;All Files (*)")
