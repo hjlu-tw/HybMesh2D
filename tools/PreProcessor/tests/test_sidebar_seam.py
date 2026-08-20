@@ -37,6 +37,20 @@ its anti-vacuity assertion: a walk that silently stops covering a file still
 passes, so the files a reach-through would hide in are asserted to have been
 reached.
 
+CHECK 6 IS A BLIND SPOT THIS GATE HAD, FOUND THE HARD WAY. Every check above
+scans for an ATTRIBUTE ACCESS on a sidebar. A dependency that names widgets by
+STRING is invisible to all of them: ``shape_spec.read_widget_params(owner, ct)``
+does ``getattr(owner, "circle_cx")`` from a table, so passing it a sidebar is a
+reach-through that no walk over attribute names can see. That is exactly what
+happened — three controller call sites kept handing it ``sb`` after
+``__getattr__`` was deleted, and from 9e5d2b1 (2026-08-14) until 2026-08-20
+**every drag of a committed analytic edge's handle raised AttributeError**, for
+all eight shape types. This gate passed throughout, and so did the whole suite.
+The sidebar's own ``set_length_suffix`` docstring names this failure mode ("a
+string is not an attribute access") for a different instance of it; check 6
+makes the general case fail the build, by RESOLVING the names rather than
+scanning for them.
+
 Run:  python3 tools/PreProcessor/tests/test_sidebar_seam.py
 """
 import ast
@@ -63,6 +77,8 @@ INTERFACE_VERBS = {
     "show_segment_props", "show_curve_segment", "show_file_segment",
     "show_details_for_mode", "get_transform_dict", "set_transform_from_dict",
     "switch_param_form", "open_distribution_dialog", "open_transform_dialog",
+    # the analytic-edge shape form's parameters (see check 6)
+    "shape_params", "set_shape_params",
     # point distribution
     "distribution_spec", "show_distribution_spec", "distribution_tool_visible",
     # the footer button the sidebar really owns (the three CAD toolbar
@@ -303,6 +319,43 @@ if live_total:
 else:
     check("4. Sidebar.__getattr__ is gone now that nothing reaches through it",
           not _has_getattr)
+
+# ── 6. a widget owner passed as an OBJECT is still a reach-through ────────
+# Resolve, do not scan: build a real sidebar and ask ``shape_spec`` for every
+# shape type's parameters through the sidebar's verbs. If a caller has to pass
+# the sidebar itself to a name-keyed helper again, this is what fails.
+_shape_ok, _shape_err = True, ""
+try:
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if os.path.abspath(_GUI) not in sys.path:
+        sys.path.insert(0, os.path.abspath(_GUI))
+    from PyQt6.QtWidgets import QApplication
+
+    _app = QApplication.instance() or QApplication([])
+    from app.models import shape_spec as _ss
+    from app.views.sidebar import SidebarView
+
+    _sbv = SidebarView()
+    for _ct in sorted(set(_ss.SIDEBAR_ATTRS) | {"polygon"}):
+        _p = _sbv.shape_params(_ct)
+        if not _p:
+            _shape_ok, _shape_err = False, f"{_ct} read back nothing"
+            break
+        _sbv.set_shape_params(_ct, _p, silent=True)
+except Exception as exc:  # pragma: no cover - reported, never swallowed
+    _shape_ok, _shape_err = False, f"{type(exc).__name__}: {exc}"
+check("6. every shape type's parameters round-trip through the sidebar's verbs "
+      + (f"({_shape_err})" if _shape_err else "(8 types)"), _shape_ok)
+
+# The verbs must be the sidebar's own, not a widget reached through a panel: a
+# controller doing ``sb.edge_props_panel.shape_params(...)`` would pass check 6
+# while putting the panel tree back into the controllers.
+_ctrl_src = open(os.path.join(_GUI, "app", "controllers",
+                              "curve_edit_ctrl.py")).read()
+check("6b. no controller passes a sidebar to a name-keyed widget helper",
+      "read_widget_params(sb" not in _ctrl_src
+      and "write_widget_params(\n            sb" not in _ctrl_src
+      and "write_widget_params(sb" not in _ctrl_src)
 
 # ── 5. the scan actually reached the files a reach-through hides in ───────
 # Copied from the log-seam gate for the same reason: a walk that quietly stops

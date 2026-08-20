@@ -93,10 +93,10 @@ class CurveEditControllerMixin:
             self._drag_orig_state = seg.to_dict()
         # Apply the drag through the shared handle→param mapping, then push the
         # result back into the (silently-updated) sidebar widgets.
-        params = shape_spec.read_widget_params(sb, ct)
+        params = sb.shape_params(ct)
         lock = (ct == "arc" and sb.arc_radius_locked())
         shape_spec.apply_drag(ct, params, handle_id, x, y, lock_radius=lock)
-        shape_spec.write_widget_params(sb, ct, params, silent=True)
+        sb.set_shape_params(ct, params, silent=True)
         # ``theta_m`` (freed arc radius-handle angle) has no sidebar widget, so it
         # is not carried by read/write_widget_params. Persist it straight onto the
         # segment; the UI→segment sync merges with .update() and preserves it.
@@ -157,7 +157,7 @@ class CurveEditControllerMixin:
         if not seg or seg.type != "curve" or seg.curve_type != "polygon":
             return
         sb = self.main_window.sidebar_view
-        params = shape_spec.read_widget_params(sb, "polygon")
+        params = sb.shape_params("polygon")
         verts = [(float(vx), float(vy))
                  for _, (vx, vy) in shape_spec.control_points("polygon", params)]
         if len(verts) < 3:
@@ -205,8 +205,8 @@ class CurveEditControllerMixin:
         into the segment + re-preview, re-show the on-canvas handles, and record
         the change as one undo step."""
         old_state = seg.to_dict()
-        shape_spec.write_widget_params(
-            sb, "polygon", {"vertices_str": format_vertices_str(new_verts)},
+        sb.set_shape_params(
+            "polygon", {"vertices_str": format_vertices_str(new_verts)},
             silent=True)
         # preview_curve_formula() reads the sidebar back into seg.parameters and
         # redraws; recording afterwards captures the applied change as undoable.

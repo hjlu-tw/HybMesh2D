@@ -370,6 +370,23 @@ class EdgePropsShapeBuildMixin:
         self.curve_type_combo.currentIndexChanged.connect(
             lambda *_: on_type_changed())
 
+    def shape_params(self, curve_type: str) -> dict:
+        """The shape form's defining parameters for ``curve_type``.
+
+        The widgets are named by STRING inside ``shape_spec``, so passing the
+        wrong owner object cannot be seen by any scan over attribute accesses —
+        which is how three controller call sites went on handing it the SIDEBAR
+        after the sidebar's forwarder was deleted, and every committed-edge drag
+        started raising AttributeError. The owner is this panel; saying so once,
+        here, is what stops a caller from having to know that."""
+        return shape_spec.read_widget_params(self, curve_type)
+
+    def set_shape_params(self, curve_type: str, params: dict,
+                         silent: bool = False):
+        """Push ``params`` into the shape form. ``silent`` blocks the widgets'
+        signals so the write does not re-trigger the live preview."""
+        shape_spec.write_widget_params(self, curve_type, params, silent=silent)
+
     def curve_spec(self) -> CurveEditSpec:
         """What the analytic-edge form currently says."""
         curve_type = curve_type_for_index(self.curve_type_combo.currentIndex())

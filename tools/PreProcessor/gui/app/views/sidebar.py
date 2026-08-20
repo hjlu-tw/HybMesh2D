@@ -371,6 +371,19 @@ class SidebarView(SidebarActionsMixin, SidebarDisplayMixin, QWidget):
         """What the analytic-edge form currently says."""
         return self.edge_props_panel.curve_spec()
 
+    # The shape form's parameters. Verbs rather than the widgets, for the same
+    # reason as everything else here — but note this pair was NOT a reach-through
+    # the seam gate could see: the caller passed `self` (a sidebar) to
+    # ``shape_spec.read_widget_params``, which looks widgets up by NAME, so the
+    # dependency was a string and survived __getattr__'s deletion as a runtime
+    # AttributeError on every committed-edge drag rather than a failing scan.
+    def shape_params(self, curve_type: str) -> dict:
+        return self.edge_props_panel.shape_params(curve_type)
+
+    def set_shape_params(self, curve_type: str, params: dict,
+                         silent: bool = False):
+        self.edge_props_panel.set_shape_params(curve_type, params, silent=silent)
+
     # ── Point distribution ──────────────────────────────────────────────
     def distribution_spec(self, strategy: str):
         """What the distribution form currently says, as a DistributionSpec."""
