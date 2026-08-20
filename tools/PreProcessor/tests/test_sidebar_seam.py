@@ -336,12 +336,23 @@ try:
     from app.views.sidebar import SidebarView
 
     _sbv = SidebarView()
-    for _ct in sorted(set(_ss.SIDEBAR_ATTRS) | {"polygon"}):
-        _p = _sbv.shape_params(_ct)
-        if not _p:
-            _shape_ok, _shape_err = False, f"{_ct} read back nothing"
-            break
-        _sbv.set_shape_params(_ct, _p, silent=True)
+    try:
+        for _ct in sorted(set(_ss.SIDEBAR_ATTRS) | {"polygon"}):
+            _p = _sbv.shape_params(_ct)
+            if not _p:
+                _shape_ok, _shape_err = False, f"{_ct} read back nothing"
+                break
+            _sbv.set_shape_params(_ct, _p, silent=True)
+    finally:
+        # Destroy it HERE, while the QApplication is still alive. Left to the
+        # interpreter's own shutdown, an unparented widget held by a module
+        # global is torn down after Qt has gone: this file passed every check,
+        # printed its summary, and THEN died with SIGSEGV on the Linux CI
+        # runner (exit 139), which reads as "the gate failed" when nothing it
+        # gates is wrong. macOS never showed it.
+        _sbv.deleteLater()
+        _sbv = None
+        _app.processEvents()
 except Exception as exc:  # pragma: no cover - reported, never swallowed
     _shape_ok, _shape_err = False, f"{type(exc).__name__}: {exc}"
 check("6. every shape type's parameters round-trip through the sidebar's verbs "
@@ -370,5 +381,13 @@ if failures:
     print(f"{len(failures)} FAILURE(S)")
     for f in failures:
         print("  - " + f)
-    sys.exit(1)
-print(f"All sidebar seam checks passed ({live_total} leaks remaining).")
+# ``os._exit`` rather than falling off the end or ``sys.exit``: this file now
+# builds Qt widgets, and a Qt teardown during interpreter shutdown is what
+# turned a fully passing run into exit 139 on Linux. It skips stdout flushing,
+# so flush first. The same substitution was one of the five environment fixes
+# that first got this workflow green (see CLAUDE.md, "CI had never been green").
+print(f"All sidebar seam checks passed ({live_total} leaks remaining)."
+      if not failures else "")
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(1 if failures else 0)
