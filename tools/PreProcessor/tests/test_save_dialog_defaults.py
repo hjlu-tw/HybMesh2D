@@ -25,6 +25,15 @@ Two properties, and they are different questions:
    wrote it. Directing output at `results/` is only safe BECAUSE it is ignored,
    so the two checks are one fix and are pinned together.
 
+   The question has to be asked in a form that does not depend on the DISK.
+   ``results/`` matches directories only, and for a path's last component git
+   decides directory-ness by stat-ing it — so ``check-ignore tools/results``
+   answered "ignored" on a developer machine that had run the tool and "not
+   ignored" in a fresh checkout, where the ignored directory has never existed.
+   That is what turned CI red on 2026-08-20 while every local run was green.
+   Every row now carries a trailing slash and check 2a pins the property, so
+   losing it fails on the machine that writes it rather than one push later.
+
 Blind spots, named:
   - Check 1 reads the literal path segments in each default expression. A
     default assembled at run time from a variable (`os.path.join(base, name)`
@@ -136,16 +145,42 @@ check("1c. the extrude export — the one that overwrote a committed STL — is 
 
 # ── 2. results/ is really ignored, case and all ─────────────────────────────
 def _ignored(rel: str) -> bool:
-    """Ask git, with case-folding OFF so the answer is the Linux answer."""
+    """Ask git, with case-folding OFF so the answer is the Linux answer.
+
+    A directory MUST be asked about with a trailing slash, and that is not
+    cosmetic. The rule is ``results/``, which git matches against directories
+    only — and for the LAST component of the path it is given, git decides
+    directory-ness by looking at the DISK. So ``check-ignore tools/results``
+    answers "ignored" on a machine that has run the tool once and "not ignored"
+    in a fresh checkout, because the directory is gitignored and therefore was
+    never committed. Measured 2026-08-20 by cloning this repo: ``tools/results``
+    NOT ignored, ``tools/results/`` ignored, same commit and same .gitignore.
+    That is exactly how this test passed for everyone locally and turned CI red
+    — the answer depended on state the test does not control. The slash tells
+    git the thing it would otherwise guess.
+
+    ``results/stl3d`` never had the problem: there ``results`` is a LEADING
+    component, so git knows it is a directory without asking the disk. Relying
+    on that would leave the question fragile per-row, so every row carries it.
+    """
     p = subprocess.run(
         ["git", "-c", "core.ignorecase=false", "check-ignore", "-q", rel],
         cwd=_REPO, capture_output=True)
     return p.returncode == 0
 
 
-for rel in ("results/stl3d", "results/meshes", "tools/results"):
+for rel in ("results/stl3d/", "results/meshes/", "tools/results/"):
     check(f"2. '{rel}' is ignored on a CASE-SENSITIVE filesystem (Linux/CI)",
           _ignored(rel))
+
+# The guard that makes the row above honest on the machine that writes it. A
+# path matching the rule but ABSENT from disk is ignored only if the question was
+# asked in the disk-independent form, so dropping the trailing slash fails HERE,
+# locally, instead of passing and failing in CI a push later.
+_absent = "src/results/"
+check(f"2a. …and the question does not depend on the disk: '{_absent}' is "
+      "ignored though nothing of that name exists",
+      not os.path.exists(os.path.join(_REPO, _absent)) and _ignored(_absent))
 
 check("2b. …and nothing under results/ is tracked",
       subprocess.run(["git", "ls-files", "results/"], cwd=_REPO,
