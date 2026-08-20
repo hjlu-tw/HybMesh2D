@@ -455,6 +455,38 @@ facts, in a file with no way of knowing when a table changed.
   module was split out to avoid, pointing the other way. `mesh_config.py` therefore
   imports the map inside the two methods that use it.
 
+**The edge being edited has an OWNER** (`services/edge_edit.py`, Qt-free —
+`EdgeEditSession` + `EditOutcome`). Drawing a new analytic edge, or double-clicking
+an existing one, opens a *modeless* session: a numeric dialog and draggable canvas
+handles both bound live to one segment, committed by **Create Edge** / **Apply** and
+reverted by **Cancel**. That session used to be five attributes on `AppController`
+(the segment, the dialog, the create/edit flag, a params snapshot and a `to_dict()`
+snapshot) — **declared in `controller.py`, begun in `curve_draw_ctrl`, committed or
+cancelled in `pending_edit_ctrl`**, with "an edit is live" enforced only by every
+reader remembering to test the segment for `None`, and the whole lifecycle
+unreachable without a canvas, a dialog and a QApplication. Three rules:
+- **The dialog is held OPAQUELY.** The owner stores it and hands it back; it never
+  calls a method on it. What has to be *asked* of the dialog — a polygon's
+  open/closed toggle, which is not part of the form's `params` — is read by the
+  caller and passed into `update()` as a value. That is what keeps the module free
+  of Qt without a wrapper interface.
+- **`commit()` / `cancel()` end the session and return an `EditOutcome`; they do not
+  decide what it becomes.** Whether that is an `AddCurveSegmentCmd` or a recorded
+  `UpdateSegmentStateCmd` stays with the controller, which owns the undo stack. The
+  *revert* does live in the owner, because it is the other half of the snapshot it
+  took.
+- **`_edit_in_progress()` asks `edge_edit.is_active()` OR the still-loose discrete
+  state.** The imported-edge (corner-vertex) edit is seven more attributes and moves
+  into the same owner next, leaving one thing to ask.
+Gated by `tests/test_edge_edit_owner.py`, which refuses PyQt6 through a meta-path
+hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
+`PendingEditControllerMixin` — re-implementing the commit branch in the test would
+prove only that a test can add a segment. Every check is verified by injection. One
+claim is deliberately narrowed rather than overstated: the params snapshot is a deep
+copy, but **no shipped caller mutates a nested parameter in place** (a polygon carries
+`vertices_str`, a *string*), so a shallow copy would pass every live path — the test
+mutates one directly and says so, pinning the contract rather than a reproducible bug.
+
 **Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`). Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab drops exactly its own commands; ordering across them is by the monotonic `seq` that `CommandHistory._push` stamps — undo takes the highest, redo the lowest waiting on a redo stack. Undo raises the tab owning the command before applying it. Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one step. **Any code pushing config into those panels must go through `controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is recorded as a user edit.
 - **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process group — every worker `cancel()` must route through these, never a bare `terminate()`)
 

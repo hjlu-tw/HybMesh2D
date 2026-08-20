@@ -6,23 +6,16 @@ from app.commands.segment_cmds import (
 class PendingEditControllerMixin:
     def _on_pending_dialog_changed(self, params, n_points):
         """The numeric dialog changed → update the pending edge, reposition the
-        canvas control points, and refresh the preview (live, req 1)."""
-        seg = self._pending_seg
-        if seg is None:
+        canvas control points, and refresh the preview (live, req 1).
+
+        The open/closed toggle lives outside ``params`` and is the one thing the
+        owner has to be TOLD rather than read from the dialog itself — it holds
+        the dialog opaquely, so asking it is this layer's job."""
+        dlg = self.edge_edit.dialog
+        closed = dlg.is_closed() if (dlg is not None
+                                     and hasattr(dlg, "is_closed")) else None
+        if not self.edge_edit.update(params, n_points, closed=closed):
             return
-        seg.parameters.update(params)
-        seg.parameters["n_points"] = n_points
-        # #1: a polygon switched back to By Node Count no longer sends 'spacing';
-        # clear any stale key so the backend uses the node count (mirrors the
-        # sidebar's _sync_active_curve_segment_from_ui).
-        if getattr(seg, "curve_type", "") == "polygon" and "spacing" not in params:
-            seg.parameters.pop("spacing", None)
-        # The polygon dialog's open/closed toggle lives outside `params`; mirror
-        # it onto the segment so the live preview honours it immediately.
-        dlg = self._pending_dialog
-        if dlg is not None and hasattr(dlg, "is_closed") \
-                and getattr(seg, "curve_type", "") == "polygon":
-            seg.closed = dlg.is_closed()
         self._show_pending_handles()
         self._preview_pending()
 
@@ -59,13 +52,12 @@ class PendingEditControllerMixin:
         return True
 
     def _commit_pending_edge(self):
-        seg = self._pending_seg
-        is_new = self._pending_is_new
-        orig_state = self._pending_orig_state
         session = self.active_session()
-        self._clear_pending_state()
-        if seg is None or not session:
+        done = self.edge_edit.commit()
+        self._clear_pending_canvas()
+        if done is None or not session:
             return
+        seg, is_new, orig_state = done.seg, done.is_new, done.orig_state
         if is_new:
             cmd = AddCurveSegmentCmd(
                 session,
@@ -90,30 +82,21 @@ class PendingEditControllerMixin:
         self.main_window.update_title(session.display_name, True)
 
     def _cancel_pending_edit(self):
-        seg = self._pending_seg
-        is_new = self._pending_is_new
-        orig = self._pending_orig
-        orig_state = self._pending_orig_state
-        self._clear_pending_state()
-        if (not is_new) and seg is not None and orig is not None:
-            # Restore the edited edge's original shape (incl. the open/closed
-            # flag the polygon dialog may have toggled).
-            seg.parameters = orig
-            if orig_state is not None and hasattr(seg, "closed"):
-                seg.closed = bool(orig_state.get("closed", True))
+        # The owner restores the shape (params + the polygon open/closed flag);
+        # what is left here is the canvas and what the user is told.
+        done = self.edge_edit.cancel()
+        self._clear_pending_canvas()
+        if done is not None and done.reverted:
             self._refresh_segment_list()
             self.log("Edit cancelled (reverted).")
         else:
             self.log("Add edge cancelled.")
 
-    def _clear_pending_state(self):
+    def _clear_pending_canvas(self):
+        """Drop the edit session's canvas decoration. The state itself is the
+        owner's and is already gone by the time this runs."""
         session = self.active_session()
         canvas = self.main_window.canvas_view
-        self._pending_seg = None
-        self._pending_dialog = None
-        self._pending_is_new = True
-        self._pending_orig = None
-        self._pending_orig_state = None
         canvas.clear_edge_handles()
         if session is not None:
             canvas.clear_curve_preview(session.session_id)

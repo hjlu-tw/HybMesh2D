@@ -71,7 +71,7 @@ class CurveEditControllerMixin:
         if self._pending_file is not None:
             self._on_file_handle_dragged(handle_id, x, y, finished)
             return
-        if self._pending_seg is not None:
+        if self.edge_edit.is_active():
             self._on_pending_handle_dragged(handle_id, x, y, finished)
             return
         if self._is_populating:

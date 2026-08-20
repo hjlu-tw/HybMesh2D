@@ -12,6 +12,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
 from app.services import user_log
+from app.services.edge_edit import EdgeEditSession
 from app.views.main_window import MainWindow
 from app.views.canvas import CanvasView
 from app.commands.base import CommandHistory
@@ -160,11 +161,10 @@ class AppController(
         # ``_is_populating`` property; set it only via ``populating()``.
         self._populating_depth = 0
         self._show_duplicate_preview = False  # flag to show duplicate preview line
-        self._pending_seg = None          # analytic edge being created/edited (modeless dialog open)
-        self._pending_dialog = None
-        self._pending_is_new = True       # True = creating, False = editing an existing edge
-        self._pending_orig = None         # original params snapshot (to restore on cancel of an edit)
-        self._pending_orig_state = None   # full state snapshot (to make committing an edit undoable)
+        # The analytic edge being created/edited (modeless dialog open) and its
+        # two snapshots live in ONE owner, not five attributes shared by three
+        # files. Ask it (``is_active()``, ``.segment``); never reach past it.
+        self.edge_edit = EdgeEditSession()
         # Pre-drag snapshot so an on-canvas vertex drag is one undo step.
         self._drag_orig_state = None
         self._custom_preview_fitted = False

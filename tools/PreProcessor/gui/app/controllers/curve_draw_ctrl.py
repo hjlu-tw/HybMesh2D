@@ -1,5 +1,4 @@
 from __future__ import annotations
-import copy
 import math
 import numpy as np
 from app.models.segment import SegmentModel
@@ -79,13 +78,9 @@ class CurveDrawControllerMixin:
     # ── Modeless create-edit session (control points + live numeric dialog) ──
 
     def _begin_pending_edit(self, seg, is_new=True):
-        self._pending_seg = seg
-        self._pending_is_new = is_new
-        # Snapshot params so cancelling an *edit* restores the original shape.
-        # Deep copy so nested params (e.g. polygon vertex lists) revert fully.
-        self._pending_orig = None if is_new else copy.deepcopy(seg.parameters)
-        # Full state snapshot so committing an *edit* is undoable.
-        self._pending_orig_state = None if is_new else seg.to_dict()
+        # The owner takes the params + state snapshots that cancelling and
+        # committing an *edit* need; this method only builds the Qt side.
+        self.edge_edit.begin(seg, is_new=is_new)
         # Clear the static selection highlight / transform gizmo so only the
         # live preview + control points are shown during the edit.
         canvas = self.main_window.canvas_view
@@ -106,7 +101,7 @@ class CurveDrawControllerMixin:
         dlg.accepted.connect(self._commit_pending_edge)
         dlg.rejected.connect(self._cancel_pending_edit)
         dlg.finished.connect(lambda _r, d=dlg: d.deleteLater())
-        self._pending_dialog = dlg
+        self.edge_edit.attach_dialog(dlg)
         offset_popup(dlg, self.main_window)
         dlg.show()
         dlg.raise_()
@@ -114,22 +109,23 @@ class CurveDrawControllerMixin:
 
     def _show_pending_handles(self):
         canvas = self.main_window.canvas_view
-        if self._pending_seg is None:
+        seg = self.edge_edit.segment
+        if seg is None:
             canvas.clear_edge_handles()
             canvas.clear_endpoint_markers()
             return
-        cps = self._edge_control_points(self._pending_seg)
+        cps = self._edge_control_points(seg)
         canvas.show_edge_handles([{"id": hid, "pos": pos} for hid, pos in cps])
         # Clearly mark other edges' endpoints (the snap targets) — excluding the
         # edge currently being edited so it does not target its own points.
         session = self.active_session()
         if session is not None:
             canvas.show_endpoint_markers(
-                self._snap_targets(session, exclude=self._pending_seg))
+                self._snap_targets(session, exclude=seg))
 
     def _preview_pending(self):
         session = self.active_session()
-        seg = self._pending_seg
+        seg = self.edge_edit.segment
         if not session or seg is None:
             return
         canvas = self.main_window.canvas_view
@@ -149,7 +145,7 @@ class CurveDrawControllerMixin:
 
         The dragged endpoint auto-snaps to a nearby endpoint of another edge so
         edges connect exactly; the handle locks onto the snap target on release."""
-        seg = self._pending_seg
+        seg = self.edge_edit.segment
         if seg is None:
             return
         session = self.active_session()
@@ -161,9 +157,9 @@ class CurveDrawControllerMixin:
         lock = (seg.curve_type == "arc"
                 and sb.arc_radius_locked())
         self._apply_handle_drag_to_params(seg, handle_id, x, y, lock_radius=lock)
-        if self._pending_dialog is not None:
-            self._pending_dialog.set_values(
-                seg.parameters, seg.parameters.get("n_points", 50))
+        dlg = self.edge_edit.dialog
+        if dlg is not None:
+            dlg.set_values(seg.parameters, seg.parameters.get("n_points", 50))
         self._preview_pending()
         if finished:
             # Reposition dependent handles (and lock the dragged one onto the
@@ -231,7 +227,7 @@ class CurveDrawControllerMixin:
             gx, gy, _ = compose_snap(x, y, grid_step=step)
             return gx, gy
         # Exclude the edge currently being edited (if any) from the targets.
-        exclude = self._pending_seg or self._pending_file_seg
+        exclude = self.edge_edit.segment or self._pending_file_seg
         targets = self._snap_targets(session, exclude=exclude)
 
         def endpoint_snap(px, py):
@@ -243,7 +239,9 @@ class CurveDrawControllerMixin:
         return gx, gy
 
     def _edit_in_progress(self) -> bool:
-        return self._pending_seg is not None or self._pending_file is not None
+        # Two edit kinds, two owners — for now. Ticket 2 of candidate 7 moves the
+        # discrete-shape edit into ``edge_edit`` too, leaving one thing to ask.
+        return self.edge_edit.is_active() or self._pending_file is not None
 
     @staticmethod
     def _apply_handle_drag_to_params(seg, handle_id, x, y, lock_radius=False):
