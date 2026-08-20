@@ -20,9 +20,11 @@ Two properties, and they are different questions:
    `FORBIDDEN = ("examples", "docs", "src", "include", ".github")` — and omitted
    `config`, while this very docstring named `config/pipeline/` as source. Under
    that list `pipeline_io_ctrl.py` defaulted to `config/pipeline/{session}.json`
-   with the blank session named "Untitled 1", and `config/pipeline/Untitled 1.json`
-   is TRACKED (c2a90c5) — the same defect as issue #5, in a folder the list
-   forgot, found by a review rather than by the gate written to prevent it. A
+   with the blank session named "Untitled 1" — and `config/pipeline/Untitled 1.json`
+   was TRACKED (committed in c2a90c5, untracked again once the default moved), so
+   the folder held the proof that the default had already been accepted once. The
+   same defect as issue #5, in a folder the list forgot, found by a review rather
+   than by the gate written to prevent it. A
    hand-maintained list of what is source cannot help going stale; `git ls-files`
    cannot. `examples/`, `docs/`, `src/`, `include/`, `.github/` and
    `config/pipeline/` are all covered now without being named, and a folder that
@@ -262,7 +264,7 @@ _missed = ('default = os.path.join(repo_root(), "config", "pipeline", f"{n}.json
            'QFileDialog.getSaveFileName(w, "t", default, "")\n')
 ast.parse(_missed)
 check("3d. …and the one the hand-written FORBIDDEN list walked past is caught: "
-      "config/pipeline/, where 'Untitled 1.json' is tracked",
+      "config/pipeline/, which holds the curated scripts four tests read",
       bool(bad_defaults(_missed)))
 _local = ('default = os.path.join(repo_root(), "config", "local", f"{n}.json")\n'
           'QFileDialog.getSaveFileName(w, "t", default, "")\n')
