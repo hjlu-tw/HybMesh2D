@@ -100,7 +100,7 @@ def main():
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     for sub in [
         "config/preprocessor",
-        "config/mesh",
+        "config/local",
         "results/resampled",
         "results/meshes"
     ]:

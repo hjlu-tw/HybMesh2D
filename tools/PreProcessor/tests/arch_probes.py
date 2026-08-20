@@ -691,6 +691,13 @@ def probe_10_refresh_contract():
     whose caller went away when the per-edge patch/group name moved out of the
     sidebar into a pop-up (``segment_ctrl.py``'s own ``(#1)`` comment records it).
 
+    THE ZERO IS NOT MACHINE-MEASURED, AND THE ROW SAYS SO. Substitutability is a
+    question about what a caller INTENDED — the drag path above is settled by
+    knowing that clearing the handles mid-gesture is wrong, which no regex can
+    read. What this probe computes is the two machine-checkable proxies below; a
+    hand count dressed up as a measurement is exactly the staleness this
+    candidate is about, so the row attributes it.
+
     RETIRED IS NOT BLIND. Two lines revive it, and both are the premise actually
     returning rather than the count moving: a SECOND non-containment pair writing
     the same UI element (two verbs really repainting one widget), or any one
@@ -711,11 +718,12 @@ def probe_10_refresh_contract():
                       "missing verb the review asked for; re-open the candidate")
     return STALE, (f"RETIRED 2026-08-20: {len(verbs)} verbs (not "
                    f"{len(verbs) + len(closures)} — {len(closures)} were nested "
-                   f"refresh_cb closures), {len(overlap)} pair sharing a UI write "
-                   f"and 0 interchangeable, so they are distinct jobs not "
-                   f"{len(verbs)} ways to do one; residue is {len(seqs)} "
-                   "repeated sequences "
-                   f"(worst x{worst}, named in the docstring)")
+                   f"refresh_cb closures), {len(overlap)} pair sharing a UI write, "
+                   f"0 of {len(verbs)} interchangeable BY HAND (this probe measures "
+                   f"write-overlap and repeated sequences, not substitutability); "
+                   f"distinct jobs, not {len(verbs)} ways to do one. Residue: "
+                   f"{len(seqs)} repeated sequences (worst x{worst}, named in the "
+                   "docstring)")
 
 
 PROBES = [

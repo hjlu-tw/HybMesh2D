@@ -58,5 +58,21 @@ solver/
 # Local working configs. The mesh parameter file and pipeline/workspace scripts
 # are written per-experiment next to the case being tuned; the ones worth keeping
 # live in config/pipeline/ under their own names and go in with `git add -f`.
+#
+# THAT LAST SENTENCE IS WHY THE GUI'S SAVE DIALOGS DEFAULT INTO `config/local/`
+# AND NOT INTO `config/pipeline/`. A folder whose declared purpose is to hold
+# force-added keepers can never be a safe save default: `config/pipeline/` carries
+# README.md, template.json and three demo scripts that four tests read, so a
+# session whose name collides with one is a single Enter away from overwriting a
+# committed script in place — issue #5's defect with a different folder. It has
+# already happened once: the blank session is named "Untitled 1", which is how
+# `config/pipeline/Untitled 1.json` came to be tracked (c2a90c5), and
+# `config/mesh/` holds two of the same accident.
+#
+# `config/local/` exists so the rule needs no per-file whack-a-mole: the whole
+# directory is ignored, so it holds nothing tracked BY CONSTRUCTION, which is the
+# property tests/test_save_dialog_defaults.py asks git about rather than reading
+# from a hand-written list of folder names.
+config/local/
 config/mesh/Background_para_I_coarse.dat
 config/pipeline/cyl0d5_Rot1d0.hws

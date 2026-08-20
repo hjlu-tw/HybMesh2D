@@ -89,7 +89,13 @@ class PipelineIoControllerMixin:
                     "resample. Meshing will use the exported geometry files. Run "
                     "'Save & Export' to persist a source.")
 
-        default = os.path.join(repo_root(), "config", "pipeline", f"{name}.json")
+        # config/local/, NOT config/pipeline/ — see the "Local working configs"
+        # block in .gitignore for why the curated folder can never be a save
+        # default. Created here so the dialog really opens there instead of
+        # falling back to the last-used folder.
+        out_dir = os.path.join(repo_root(), "config", "local")
+        os.makedirs(out_dir, exist_ok=True)
+        default = os.path.join(out_dir, f"{name}.json")
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Save Pipeline Script", default,
             "Pipeline JSON (*.json);;All Files (*)")

@@ -126,7 +126,12 @@ class SolverControllerMixin:
         # reloading it re-derives Linf from "m" and silently multiplies the case's
         # Reynolds number by 1000.
         cfg = self.config_from_panel("solver_config_panel")
-        default = os.path.join(root, "config", f"{_sanitize(cfg.case_name)}_solver.json")
+        # config/local/, not config/ itself: the top level holds Background_para.dat
+        # and two siblings, all tracked. Same rule as the mesh and pipeline saves —
+        # see .gitignore's "Local working configs" block.
+        out_dir = os.path.join(root, "config", "local")
+        os.makedirs(out_dir, exist_ok=True)
+        default = os.path.join(out_dir, f"{_sanitize(cfg.case_name)}_solver.json")
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, "Save Solver Config", default, "JSON (*.json);;All Files (*)")
         if not path:

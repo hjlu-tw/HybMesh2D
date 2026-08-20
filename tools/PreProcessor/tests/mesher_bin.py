@@ -1,4 +1,9 @@
-"""Where the mesher is, and the environment that lets it actually start.
+"""The environment that lets the mesher actually start.
+
+Nothing here answers "where is the binary": each caller already builds its own
+path beside the other paths it needs, and exporting a second answer would be a
+second place for one to go stale. What the callers could NOT get right on their
+own is the loader path, and that is the whole module.
 
 Five test files each carried ``_LIB = os.path.join(_REPO, "build")`` and passed
 it as ``LD_LIBRARY_PATH`` / ``DYLD_LIBRARY_PATH`` when launching HybMesh2D. That
@@ -32,13 +37,10 @@ import os
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
-GUI = os.path.join(REPO, "tools", "PreProcessor", "gui")
-if GUI not in sys.path:
-    sys.path.insert(0, GUI)
-
-BIN = os.path.join(REPO, "build", "HybMesh2D")
-RESAMPLER = os.path.join(REPO, "build", "surface_resampler")
+_REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+_GUI = os.path.join(_REPO, "tools", "PreProcessor", "gui")
+if _GUI not in sys.path:
+    sys.path.insert(0, _GUI)
 
 
 def mesher_env(base: dict | None = None) -> dict:
@@ -51,7 +53,7 @@ def mesher_env(base: dict | None = None) -> dict:
 
     env = _resolve(dict(os.environ if base is None else base))
     if not any(env.get(k) for k in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH")):
-        fallback = os.path.join(REPO, "build")
+        fallback = os.path.join(_REPO, "build")
         env["LD_LIBRARY_PATH"] = fallback
         env["DYLD_LIBRARY_PATH"] = fallback
     return env

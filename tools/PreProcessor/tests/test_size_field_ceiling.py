@@ -37,10 +37,9 @@ import tempfile
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
-# The gmsh loader path comes from the ONE resolver, not from
-# <repo>/build — which holds the binary and has never held
-# libgmsh, so the old value was inert and the run depended on
-# the binary's baked rpath. See tests/mesher_bin.py.
+# The gmsh loader path comes from the ONE resolver, never from
+# <repo>/build, which has never held libgmsh. Why that matters,
+# and what it cost in CI, is in tests/mesher_bin.py.
 from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
 DUCT_W, DUCT_H = 4.0, 3.0

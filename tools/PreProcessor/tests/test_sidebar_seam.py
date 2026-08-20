@@ -350,6 +350,14 @@ try:
         # printed its summary, and THEN died with SIGSEGV on the Linux CI
         # runner (exit 139), which reads as "the gate failed" when nothing it
         # gates is wrong. macOS never showed it.
+        #
+        # `_sbv = None` is the line that actually does it: the widget is
+        # unparented, so PYTHON owns it and dropping the last reference deletes
+        # the C++ object right there. `deleteLater()` on its own would not be
+        # enough — a deferred delete is dispatched by the event loop that posted
+        # it, and `processEvents()` does not process DeferredDelete at all. Both
+        # are kept anyway: the first states the intent, the second drains what
+        # the round-trip posted.
         _sbv.deleteLater()
         _sbv = None
         _app.processEvents()
@@ -386,8 +394,8 @@ if failures:
 # turned a fully passing run into exit 139 on Linux. It skips stdout flushing,
 # so flush first. The same substitution was one of the five environment fixes
 # that first got this workflow green (see CLAUDE.md, "CI had never been green").
-print(f"All sidebar seam checks passed ({live_total} leaks remaining)."
-      if not failures else "")
+if not failures:
+    print(f"All sidebar seam checks passed ({live_total} leaks remaining).")
 sys.stdout.flush()
 sys.stderr.flush()
 os._exit(1 if failures else 0)

@@ -217,6 +217,13 @@ class ExtrudeControllerMixin:
         # where this file is headed anyway — the export hands off to the Immersed
         # Solid page — and results/ is gitignored, so nothing it writes can dirty
         # the tree.
+        #
+        # The directory is created BEFORE the dialog, and that is deliberate: given
+        # a path whose folder does not exist, the save dialog falls back to the
+        # last-used one, which loses the very default this fix is about. So
+        # cancelling the export still leaves an empty `results/stl3d/` behind —
+        # harmless, because it is gitignored, and the same trade the mesh, solver
+        # and pipeline save dialogs make with `config/local/`.
         out_dir = os.path.join(repo_root(), "results", "stl3d")
         os.makedirs(out_dir, exist_ok=True)
         default_path = os.path.join(

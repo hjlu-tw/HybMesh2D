@@ -78,7 +78,12 @@ class MeshGenControllerMixin:
         if session and session.file_path:
             stem = os.path.splitext(os.path.basename(session.file_path))[0]
             default_name = f"Background_para_{stem}.dat"
-        default_path = os.path.join(root_dir, "config", "mesh", default_name)
+        # config/local/, for the reason given in .gitignore's "Local working
+        # configs" block: config/mesh/ already carries two of these files as
+        # tracked accidents, so a default proposing that folder can overwrite one.
+        out_dir = os.path.join(root_dir, "config", "local")
+        os.makedirs(out_dir, exist_ok=True)
+        default_path = os.path.join(out_dir, default_name)
 
         path, _ = QFileDialog.getSaveFileName(
             self.main_window, 

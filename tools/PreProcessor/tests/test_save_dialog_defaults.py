@@ -11,11 +11,26 @@ else.
 
 Two properties, and they are different questions:
 
-1. **NO SAVE DIALOG DEFAULTS INTO A TRACKED SOURCE FOLDER.** `examples/` is
-   INPUT — 60 tracked files — and `docs/`, `src/`, `include/`, `config/pipeline/`
-   are source. Generated artifacts belong under `results/`, which is gitignored
-   and holds nothing tracked. This is the user-facing half: a test that never
-   accepts a default would fix CI and leave the trap armed for everyone else.
+1. **NO SAVE DIALOG DEFAULTS INTO A DIRECTORY THAT HOLDS TRACKED FILES.** This
+   is the user-facing half: a test that never accepts a default would fix CI and
+   leave the trap armed for everyone else.
+
+   The question is put to GIT, not to a list of folder names, and that is the
+   whole design. The first version of this gate carried
+   `FORBIDDEN = ("examples", "docs", "src", "include", ".github")` — and omitted
+   `config`, while this very docstring named `config/pipeline/` as source. Under
+   that list `pipeline_io_ctrl.py` defaulted to `config/pipeline/{session}.json`
+   with the blank session named "Untitled 1", and `config/pipeline/Untitled 1.json`
+   is TRACKED (c2a90c5) — the same defect as issue #5, in a folder the list
+   forgot, found by a review rather than by the gate written to prevent it. A
+   hand-maintained list of what is source cannot help going stale; `git ls-files`
+   cannot. `examples/`, `docs/`, `src/`, `include/`, `.github/` and
+   `config/pipeline/` are all covered now without being named, and a folder that
+   BECOMES source later is covered the moment something in it is committed.
+
+   Generated artifacts belong under `results/` (gitignored, nothing tracked), and
+   GUI-written working configs under `config/local/`, which is ignored as a whole
+   directory so it holds nothing tracked by construction.
 
 2. **`results/` IS ACTUALLY IGNORED, ON A CASE-SENSITIVE FILESYSTEM.** The
    ignore rule read `Results/` while the directory the repo writes is
@@ -37,7 +52,19 @@ Two properties, and they are different questions:
 Blind spots, named:
   - Check 1 reads the literal path segments in each default expression. A
     default assembled at run time from a variable (`os.path.join(base, name)`
-    where `base` came from a config) is invisible to it.
+    where `base` came from a config) is invisible to it — including
+    `os.path.join(out_dir, f"{stem}.stl")`, where the folder was resolved a line
+    earlier. The two live save defaults keep their folder as literal segments in
+    the same join FOR THIS REASON, and moving one into a helper would hide it.
+  - The count is over the whole SUBTREE, so a folder is refused when something
+    below it is tracked even though a file written directly into it could not
+    collide with that. Deliberately the strict direction: a directory whose
+    subtree holds committed files is not a scratch folder.
+  - "Tracked" is a property of the index, so `git add -f` on one file inside an
+    output directory turns that whole directory into an offender. That is the
+    right answer — a default that can overwrite a committed file is the defect,
+    whatever the folder is called — but it means this gate can go red for a
+    reason that is nothing to do with the code under it.
   - It scans `getSaveFileName` call sites. A dialog opened some other way, or a
     file written with no dialog at all, is not covered.
   - Check 2 asks git, so it verifies the RULE. It does not prove any particular
@@ -63,18 +90,34 @@ def check(msg, cond):
         failures.append(msg)
 
 
-#: Folders a save dialog must never propose writing into. Each is either
-#: tracked source or committed input; a generated file has no business there.
-FORBIDDEN = ("examples", "docs", "src", "include", ".github")
+_tracked_count: dict[str, int] = {}
+
+
+def holds_tracked(rel_dir: str) -> int:
+    """How many files git tracks under ``rel_dir``. 0 makes it a safe target.
+
+    Asked of the index rather than the disk, so the answer does not depend on
+    whether a gitignored output directory happens to exist on this machine —
+    the state-dependence that turned CI red on 2026-08-20 for check 2.
+    """
+    if rel_dir not in _tracked_count:
+        p = subprocess.run(["git", "ls-files", "--", rel_dir],
+                           cwd=_REPO, capture_output=True, text=True)
+        _tracked_count[rel_dir] = len([ln for ln in p.stdout.splitlines() if ln])
+    return _tracked_count[rel_dir]
 
 
 def bad_defaults(src: str) -> list[str]:
-    """Path-building expressions in this module that name a forbidden folder.
+    """Path-building expressions in this module that write into tracked territory.
 
-    Deliberately looks at every ``os.path.join`` whose literal parts include a
-    forbidden segment, not only the one handed to ``getSaveFileName``: the
-    default is routinely built a few lines above the call and assigned to a
-    local, which is exactly how the original was written.
+    Deliberately looks at every ``os.path.join`` that ends in a filename, not
+    only the one handed to ``getSaveFileName``: the default is routinely built a
+    few lines above the call and assigned to a local, which is exactly how the
+    original was written.
+
+    The literal segments minus the filename are the folder, and the folder is
+    then looked up in git. A join with no literal segment at all (the folder came
+    from a variable) is skipped rather than guessed about — see the blind spots.
     """
     tree = ast.parse(src)
     hits = []
@@ -83,13 +126,20 @@ def bad_defaults(src: str) -> list[str]:
                 and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "join"):
             continue
-        parts = [a.value for a in node.args
-                 if isinstance(a, ast.Constant) and isinstance(a.value, str)]
-        if not any(p in FORBIDDEN for p in parts):
+        last = node.args[-1] if node.args else None
+        if not _ends_in_a_filename(last):
             continue
-        if _ends_in_a_filename(node.args[-1] if node.args else None):
-            shown = "/".join(parts) + "/" + _describe(node.args[-1])
-            hits.append(f"line {node.lineno}: {shown}")
+        lits = [a.value for a in node.args
+                if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        if lits and isinstance(last, ast.Constant) and isinstance(last.value, str):
+            lits = lits[:-1]          # the trailing filename is not the folder
+        if not lits:
+            continue
+        rel = "/".join(lits)
+        n = holds_tracked(rel)
+        if n:
+            hits.append(f"line {node.lineno}: {rel}/{_describe(last)} "
+                        f"({n} tracked file(s) under {rel}/)")
     return hits
 
 
@@ -136,9 +186,13 @@ for root, _dirs, files in os.walk(_APP):
         scanned.append(os.path.basename(path))
         offenders += [f"{rel} {h}" for h in bad_defaults(src)]
 
+# 15 modules open a save dialog today. The floor sits just under that rather
+# than at half of it: its job is to catch the WALK breaking (a bad root, an
+# extension filter that stops matching), and a floor of 8 would have let more
+# than half the app fall out of scope while still reporting a pass.
 check(f"1. {len(scanned)} save-dialog modules scanned (anti-vacuity)",
-      len(scanned) >= 8)
-check("1b. no save dialog defaults into a tracked source folder: "
+      len(scanned) >= 13)
+check("1b. no save dialog defaults into a folder holding tracked files: "
       + ("; ".join(offenders) if offenders else "none"), not offenders)
 check("1c. the extrude export — the one that overwrote a committed STL — is "
       "among the modules scanned", "extrude_ctrl.py" in scanned)
@@ -204,6 +258,18 @@ _read = 'p = os.path.join(repo_root(), "examples", "geometries")\n'
 ast.parse(_read)
 check("3c. …nor is a bare directory, which is how demo geometry is LOADED",
       not bad_defaults(_read))
+_missed = ('default = os.path.join(repo_root(), "config", "pipeline", f"{n}.json")\n'
+           'QFileDialog.getSaveFileName(w, "t", default, "")\n')
+ast.parse(_missed)
+check("3d. …and the one the hand-written FORBIDDEN list walked past is caught: "
+      "config/pipeline/, where 'Untitled 1.json' is tracked",
+      bool(bad_defaults(_missed)))
+_local = ('default = os.path.join(repo_root(), "config", "local", f"{n}.json")\n'
+          'QFileDialog.getSaveFileName(w, "t", default, "")\n')
+ast.parse(_local)
+check("3e. …while its SIBLING config/local/ is allowed — same parent, opposite "
+      "answer, which is the rule resolving rather than matching folder names",
+      not bad_defaults(_local))
 
 print()
 if failures:
