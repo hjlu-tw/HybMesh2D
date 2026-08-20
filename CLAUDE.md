@@ -527,7 +527,21 @@ live, so `_edit_in_progress()` is now one question with one answer instead of an
   Its one departure from symmetry is deliberate: the shape side has **`end_shape()`,
   not a commit/cancel pair**, because both endings need the same thing from the owner
   (the snapshot) and differ only in what the caller does with it.
-Gated by `tests/test_edge_edit_owner.py` (the owner's verbs, Qt-free),
+The SHAPE of all this is gated by `tests/test_edge_edit_owner_seam.py` — five
+properties, each a function over source so the nine in-test injections run the real
+check against mutated text, and each injection asserting the mutation still PARSES
+and really differed (a mutation that breaks the parse looks exactly like the check
+working). It watches: no modal-edit attribute back on `AppController`; nobody
+reaching past the verbs (resolving `self.edge_edit` **and** one-line aliases of it);
+the owner Qt-free, proved by DRIVING the whole lifecycle in a **subprocess** with
+PyQt6 blocked — in-process the answer is always "Qt is loaded" once another test
+imported it — plus an AST read for a *deferred* import at any nesting depth; one
+predicate; and both commit paths resolving their session from the outcome. Its blind
+spots are named in its own docstring, the sharpest being that check 1 matches
+attribute NAMES, so state smuggled back as `self._live` is invisible: it defends
+against the cheap regression, not a determined one.
+
+The BEHAVIOUR is gated by `tests/test_edge_edit_owner.py` (the owner's verbs, Qt-free),
 `tests/test_committed_drag_undo.py` (the drag wiring) and
 `tests/test_edit_session_binding.py` (the cross-tab defect and both prompts) — the
 last two on the offscreen Qt platform with the real `AppController`, which is where

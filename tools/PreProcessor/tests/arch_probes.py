@@ -399,15 +399,26 @@ def probe_6b_one_stage_declaration():
 
 
 def probe_7_pending_edit_owner():
-    """Modal edit state still declared on the god object."""
-    ctrl = read(APP, "controller.py")
-    attrs = sorted(set(re.findall(r"self\.(_pending\w*|_edit_in_progress)\s*=",
-                                  ctrl)))
-    owner = read(APP, "controllers", "pending_edit_ctrl.py")
-    verbs = len(re.findall(r"^    def [a-z]\w*\(", owner, re.M))
-    state = DONE if len(attrs) <= 1 else OPEN
-    return state, (f"{len(attrs)} pending-edit attrs on AppController; "
-                   f"pending_edit_ctrl exposes {verbs} public methods")
+    """RETIRED. The owner landed; a gate now keeps it, so this only points there.
+
+    Counting ``_pending_*`` attributes was the right measure while the state was
+    being moved and the wrong one afterwards: it reached zero at ticket 2 of
+    five, with three tickets and the whole invariant still to do. What the
+    candidate is actually about — nobody reaching past the verbs, the owner
+    staying Qt-free, one predicate, a commit resolving its own session — is not
+    a count of anything, and is what ``test_edge_edit_owner_seam.py`` fails the
+    build on. So this probe asks whether that gate exists, not whether the tree
+    still looks tidy.
+    """
+    gate = read(TESTS, "test_edge_edit_owner_seam.py")
+    owner = read(APP, "services", "edge_edit.py")
+    if gate and owner:
+        return DONE, ("gated by test_edge_edit_owner_seam.py (5 properties, "
+                      "9 injections); both edit kinds + the drag live in "
+                      "services/edge_edit, bound to their session")
+    if owner:
+        return OPEN, "the owner exists but no gate keeps the state off AppController"
+    return OPEN, "modal edit state still declared on the god object"
 
 
 def probe_8_nobl_flag_model():
