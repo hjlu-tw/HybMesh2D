@@ -12,6 +12,10 @@ alternatives: at most one may be live, and something has to be able to say so.
   between its own two corners, so a corner two edges share redistributes both.
   Its arithmetic is :mod:`app.services.shape_refit`, kept separate because it is
   geometry rather than lifecycle, and pure.
+* **Drag** — a control-point handle of an already-COMMITTED edge dragged on the
+  canvas, with no dialog open. It is a third modality rather than a mode of the
+  first two, which deliberately route handle drags away from it. Its whole job
+  is to make one gesture — many move events — one undo step.
 
 That session used to be five attributes on ``AppController`` — the segment, the
 dialog, the create/edit flag and two snapshots — declared in one file, begun in a
@@ -42,6 +46,17 @@ The shape session also holds the CORNER POSITIONS rather than a live point
 array: every re-fit recomputes from the pristine snapshot, so dragging never
 accumulates transform onto transform and Cancel is exact rather than
 approximate.
+
+And the drag snapshot is a TRANSITION, not a nullable field cleared by
+convention. It used to be ``AppController._drag_orig_state``: filled by the drag
+handler on the first move event, and retired by the *selection/refresh
+chokepoint* as a side effect, because a snapshot left over from a drag that
+ended abnormally — its finished-event guard tripped, or the selection changed
+mid-gesture — would otherwise be recorded against whichever segment happened to
+be selected next, and undoing that would put the WRONG shape onto that edge. The
+rule is now a property of the owner instead of a clearing call in an unrelated
+method: a drag belongs to the segment it began on, and cannot be finished
+against another.
 """
 from __future__ import annotations
 
@@ -105,11 +120,23 @@ class EdgeEditSession:
         self._shape_corners = None    # sorted corner indices = handle order
         self._shape_pos = None        # {corner index: [x, y]} live positions
         self._shape_edge = None       # the double-clicked edge's two corners
+        # Drag of a committed edge's handle: the segment it began on, and that
+        # segment's state before the gesture started.
+        self._drag_seg = None
+        self._drag_state = None
 
     # ── Questions ────────────────────────────────────────────────────────
     def is_active(self) -> bool:
-        """True while ANY edit session is live — the one question
-        ``_edit_in_progress()`` asks, for either kind."""
+        """True while a modeless edit SESSION is live — the one question
+        ``_edit_in_progress()`` asks, for either kind.
+
+        A committed-edge drag is deliberately NOT one of them. It opens no
+        dialog and holds nothing the user must confirm or cancel, and the
+        callers that guard on this predicate — double-click to open an editor,
+        canvas selection, the handle-drag router — must keep working *during* a
+        drag. Folding the drag in here would make an ordinary reshape look like
+        an open dialog and lock those out.
+        """
         return self._seg is not None or self._shape_seg is not None
 
     @property
@@ -212,6 +239,45 @@ class EdgeEditSession:
         self._is_new = True
         self._orig_params = None
         self._orig_state = None
+
+    # ══ The committed-edge drag ══════════════════════════════════════════
+    def is_dragging(self) -> bool:
+        return self._drag_seg is not None
+
+    @property
+    def drag_segment(self):
+        """The segment the drag in progress began on, or None."""
+        return self._drag_seg
+
+    def begin_drag(self, seg) -> bool:
+        """Start a drag on ``seg``, or continue the one already on it.
+
+        Called on EVERY move event, and snapshots only the first time — that is
+        what collapses a gesture into one undo step. A call naming a *different*
+        segment starts a new drag and discards the old snapshot, which is the
+        stale-snapshot rule from the other side: a leftover from a gesture that
+        never finished cannot be adopted by the next one. Returns True when this
+        call actually took a snapshot.
+        """
+        if seg is None or self._drag_seg is seg:
+            return False
+        self._drag_seg = seg
+        self._drag_state = seg.to_dict()
+        return True
+
+    def finish_drag(self, seg):
+        """End the drag and return the pre-gesture snapshot — but ONLY if the
+        drag began on ``seg``. None otherwise, and in that case nothing should
+        be recorded: the gesture that took the snapshot is not the one ending.
+
+        The drag ends either way. Returning the snapshot for a segment it does
+        not describe is the failure this replaces — undo would then write one
+        edge's shape onto another.
+        """
+        began_on, state = self._drag_seg, self._drag_state
+        self._drag_seg = None
+        self._drag_state = None
+        return state if (began_on is not None and began_on is seg) else None
 
     # ══ The shape (imported outline) edit ════════════════════════════════
     def is_shape_active(self) -> bool:

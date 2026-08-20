@@ -578,6 +578,48 @@ check("12e ending the analytic edit leaves the shape edit alone",
 owner.end_shape()
 check("12f …and vice versa", owner.is_active() is False)
 
+# ══ 14: the committed-edge DRAG is a transition, not a nullable field ═══════
+owner = EdgeEditSession()
+a = _polygon(seg_id=20, verts=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])
+b = _polygon(seg_id=21, verts=[[5.0, 5.0], [6.0, 5.0], [6.0, 6.0]])
+check("14a a fresh owner is not dragging",
+      owner.is_dragging() is False and owner.drag_segment is None)
+check("14b the first move event starts the drag", owner.begin_drag(a) is True)
+check("14c …and it is on that segment",
+      owner.is_dragging() is True and owner.drag_segment is a)
+a.parameters["vertices_str"] = "moved"
+check("14d later move events do NOT re-snapshot (one gesture, one step)",
+      owner.begin_drag(a) is False and owner.begin_drag(a) is False)
+snap = owner.finish_drag(a)
+check("14e finishing on the segment it began on returns the PRE-gesture state",
+      snap is not None and snap.get("parameters", {}).get("vertices_str")
+      != "moved")
+check("14f …and the drag is over", owner.is_dragging() is False)
+
+# The rule the old clearing call enforced, now a property.
+owner.begin_drag(a)
+check("14g finishing against a DIFFERENT segment returns nothing",
+      owner.finish_drag(b) is None)
+check("14h …and still ends the drag, so nothing is left to leak",
+      owner.is_dragging() is False)
+check("14i finishing with no drag in progress returns nothing",
+      owner.finish_drag(a) is None)
+check("14j begin_drag(None) starts nothing",
+      owner.begin_drag(None) is False and owner.is_dragging() is False)
+
+# A gesture that never finished cannot be adopted by the next one.
+owner.begin_drag(a)
+check("14k a drag on another segment re-snapshots rather than continuing",
+      owner.begin_drag(b) is True and owner.drag_segment is b)
+owner.finish_drag(b)
+
+# The drag must NOT count as a modal edit session: the callers that guard on
+# is_active() (double-click editors, canvas selection) run during a drag.
+owner.begin_drag(a)
+check("14l a drag is not an 'edit in progress' — is_active() stays False",
+      owner.is_active() is False)
+owner.finish_drag(a)
+
 # ══ 1c: the owner imports no Qt, and the run never loaded any ═══════════════
 check("1c no PyQt6 module was loaded anywhere in this run",
       not any(m == "PyQt6" or m.startswith("PyQt6.") for m in sys.modules))
@@ -614,12 +656,13 @@ check("13 _edit_in_progress() asks exactly one thing, with no 'or': "
 
 # ══ 8: the five attributes are gone from AppController.__init__ ═════════════
 ctrl_src = open(os.path.join(_HERE, "..", "gui", "app", "controller.py")).read()
-gone = ["_pending_seg", "_pending_dialog", "_pending_is_new",
+gone = ["_drag_orig_state",
+        "_pending_seg", "_pending_dialog", "_pending_is_new",
         "_pending_orig", "_pending_orig_state",
         "_pending_file", "_pending_file_seg", "_pending_file_dialog",
         "_pending_geom_orig", "_pending_geom_specs", "_pending_geom_cur",
         "_pending_geom_corners"]
-check("8a all twelve edit attributes are gone from AppController",
+check("8a all thirteen edit attributes are gone from AppController",
       not any(f"self.{a} =" in ctrl_src for a in gone))
 check("8b …and the owner is declared there instead",
       "EdgeEditSession()" in ctrl_src)

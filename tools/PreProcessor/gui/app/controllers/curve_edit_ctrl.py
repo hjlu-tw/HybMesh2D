@@ -36,12 +36,11 @@ class CurveEditControllerMixin:
 
         Exception: while a create-edit session is active, its control points
         must be left untouched."""
-        # This is the selection/refresh chokepoint, so it is also where a
-        # committed-edge drag's pre-drag snapshot is retired: clearing it here
-        # guarantees a stale snapshot from a drag that ended abnormally (its
-        # finished-event guard tripped, or selection changed mid-drag) can never
-        # leak into the NEXT drag and record an undo against the wrong segment.
-        self._drag_orig_state = None
+        # The pre-drag snapshot used to be retired HERE, as a side effect of the
+        # selection/refresh chokepoint, because a leftover from a drag that ended
+        # abnormally would otherwise be recorded against whichever segment was
+        # selected next. That is now a property of the owner — a drag belongs to
+        # the segment it began on — so this method has nothing to clear.
         if self._edit_in_progress():
             return
         canvas = self.main_window.canvas_view
@@ -89,8 +88,15 @@ class CurveEditControllerMixin:
         # Snapshot the pre-drag state once so the whole drag (many move events)
         # collapses into a single undo step; this branch fires only for an
         # already-committed edge (a create-edit session is routed off above).
-        if self._drag_orig_state is None:
-            self._drag_orig_state = seg.to_dict()
+        # NOT on the finished event: a gesture cannot begin and end in the same
+        # event, and letting it would mean a stray finish — one whose moves went
+        # to a different segment — snapshots that segment and records a
+        # one-event edit on it. pyqtgraph's TargetItem always emits at least one
+        # sigPositionChanged before sigPositionChangeFinished, so a real drag
+        # never arrives finish-first; one that somehow did moved nothing, and an
+        # unchanged state records nothing anyway.
+        if not finished:
+            self.edge_edit.begin_drag(seg)
         # Apply the drag through the shared handle→param mapping, then push the
         # result back into the (silently-updated) sidebar widgets.
         params = sb.shape_params(ct)
@@ -106,8 +112,10 @@ class CurveEditControllerMixin:
         # Sync the (silently-updated) widgets into the segment and re-preview.
         self.preview_curve_formula()
         if finished:
-            old_state = self._drag_orig_state
-            self._drag_orig_state = None
+            # None when this is not the segment the gesture began on — the drag
+            # ends, and nothing is recorded, because the snapshot describes a
+            # different edge.
+            old_state = self.edge_edit.finish_drag(seg)
             # Record the completed move as one undoable edit + re-snap the handles
             # (e.g. circle rim onto the new radius ring); no-op if unchanged.
             self._finalize_edge_edit(session, seg, old_state)

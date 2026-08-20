@@ -167,8 +167,6 @@ class AppController(
         # alternatives, so ``is_active()`` is one question with one answer. Ask
         # the owner; never reach past it.
         self.edge_edit = EdgeEditSession()
-        # Pre-drag snapshot so an on-canvas vertex drag is one undo step.
-        self._drag_orig_state = None
         self._custom_preview_fitted = False
 
         # Create a dedicated temp directory for the application lifecycle

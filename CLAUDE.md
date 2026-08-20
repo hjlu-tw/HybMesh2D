@@ -479,6 +479,21 @@ live, so `_edit_in_progress()` is now one question with one answer instead of an
   `UpdateSegmentStateCmd` stays with the controller, which owns the undo stack. The
   *revert* does live in the owner, because it is the other half of the snapshot it
   took.
+- **The committed-edge DRAG is a transition, not a nullable field.** Dragging a
+  handle of an already-committed edge (no dialog open — a third modality the other
+  two deliberately route drags away from) must collapse one gesture into one undo
+  step. That used to be `AppController._drag_orig_state`, filled by the drag handler
+  and retired by the *selection/refresh chokepoint* as a side effect, because a
+  snapshot left over from a gesture that ended abnormally would otherwise be recorded
+  against whichever segment was selected next — and undoing THAT writes one edge's
+  shape onto another. It is now `begin_drag` / `finish_drag`, and the rule is a
+  property: **a drag belongs to the segment it began on and cannot be finished
+  against another**. Two consequences worth knowing: the handler must not
+  `begin_drag` on the `finished` event (a gesture cannot begin and end in one event;
+  letting it would make a stray finish snapshot the *new* segment and record a
+  one-event edit on it — the old code did exactly that), and **a drag is NOT
+  `is_active()`**, because the callers that guard on that predicate must keep working
+  during one.
 - **A corner drag is a value in, an outline out.** The shape session holds the
   pristine points plus the corner POSITIONS, and `move_corner` returns a freshly
   re-fitted array instead of mutating the live one — so every re-fit recomputes from
@@ -487,8 +502,10 @@ live, so `_edit_in_progress()` is now one question with one answer instead of an
   Its one departure from symmetry is deliberate: the shape side has **`end_shape()`,
   not a commit/cancel pair**, because both endings need the same thing from the owner
   (the snapshot) and differ only in what the caller does with it.
-Gated by `tests/test_edge_edit_owner.py`, which refuses PyQt6 through a meta-path
-hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
+Gated by `tests/test_edge_edit_owner.py` (the owner's verbs, Qt-free) and
+`tests/test_committed_drag_undo.py` (the wiring, on the offscreen Qt platform with
+the real `AppController` — which is where the old bug lived). The first refuses PyQt6
+through a meta-path hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
 `PendingEditControllerMixin` / `FileEditControllerMixin` — re-implementing the commit
 branch in the test would prove only that a test can add a segment. (It loads both by
 file path: `app/controllers/__init__.py` eagerly re-exports eight Qt mixins, the same
