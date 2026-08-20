@@ -161,22 +161,15 @@ class AppController(
         # ``_is_populating`` property; set it only via ``populating()``.
         self._populating_depth = 0
         self._show_duplicate_preview = False  # flag to show duplicate preview line
-        # The analytic edge being created/edited (modeless dialog open) and its
-        # two snapshots live in ONE owner, not five attributes shared by three
-        # files. Ask it (``is_active()``, ``.segment``); never reach past it.
+        # BOTH edit kinds — the analytic edge being created/edited (modeless
+        # dialog open) and the imported outline being reshaped by its corners —
+        # live in ONE owner, not twelve attributes shared by four files. They are
+        # alternatives, so ``is_active()`` is one question with one answer. Ask
+        # the owner; never reach past it.
         self.edge_edit = EdgeEditSession()
         # Pre-drag snapshot so an on-canvas vertex drag is one undo step.
         self._drag_orig_state = None
         self._custom_preview_fitted = False
-        # Discrete-geometry editing (imported file edges): the connected shape is
-        # edited by its corner vertices; each edge re-fits between its corners.
-        self._pending_file = None         # (i0, i1) corners of the double-clicked edge
-        self._pending_file_seg = None
-        self._pending_file_dialog = None
-        self._pending_geom_orig = None    # pristine original_points snapshot (revert)
-        self._pending_geom_specs = None   # [{i0, i1, interior:[idx,...]}] per edge
-        self._pending_geom_cur = None     # {corner_index: [x, y]} current corner positions
-        self._pending_geom_corners = None # sorted corner indices (handle order)
 
         # Create a dedicated temp directory for the application lifecycle
         self.temp_dir = tempfile.mkdtemp(prefix="hybmesh_preprocessor_")

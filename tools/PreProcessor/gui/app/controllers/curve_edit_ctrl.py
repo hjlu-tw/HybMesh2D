@@ -68,7 +68,7 @@ class CurveEditControllerMixin:
                                 finished: bool):
         """Live-update the shape from a dragged control point on the canvas."""
         # Route to whichever edit session owns the handles.
-        if self._pending_file is not None:
+        if self.edge_edit.is_shape_active():
             self._on_file_handle_dragged(handle_id, x, y, finished)
             return
         if self.edge_edit.is_active():

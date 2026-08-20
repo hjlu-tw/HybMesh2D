@@ -227,7 +227,7 @@ class CurveDrawControllerMixin:
             gx, gy, _ = compose_snap(x, y, grid_step=step)
             return gx, gy
         # Exclude the edge currently being edited (if any) from the targets.
-        exclude = self.edge_edit.segment or self._pending_file_seg
+        exclude = self.edge_edit.active_segment
         targets = self._snap_targets(session, exclude=exclude)
 
         def endpoint_snap(px, py):
@@ -239,9 +239,9 @@ class CurveDrawControllerMixin:
         return gx, gy
 
     def _edit_in_progress(self) -> bool:
-        # Two edit kinds, two owners — for now. Ticket 2 of candidate 7 moves the
-        # discrete-shape edit into ``edge_edit`` too, leaving one thing to ask.
-        return self.edge_edit.is_active() or self._pending_file is not None
+        # Two edit kinds, ONE owner — so one thing to ask, and one place where
+        # "at most one edit is live" could be enforced.
+        return self.edge_edit.is_active()
 
     @staticmethod
     def _apply_handle_drag_to_params(seg, handle_id, x, y, lock_radius=False):

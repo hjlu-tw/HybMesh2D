@@ -455,16 +455,20 @@ facts, in a file with no way of knowing when a table changed.
   module was split out to avoid, pointing the other way. `mesh_config.py` therefore
   imports the map inside the two methods that use it.
 
-**The edge being edited has an OWNER** (`services/edge_edit.py`, Qt-free —
-`EdgeEditSession` + `EditOutcome`). Drawing a new analytic edge, or double-clicking
-an existing one, opens a *modeless* session: a numeric dialog and draggable canvas
-handles both bound live to one segment, committed by **Create Edge** / **Apply** and
-reverted by **Cancel**. That session used to be five attributes on `AppController`
-(the segment, the dialog, the create/edit flag, a params snapshot and a `to_dict()`
-snapshot) — **declared in `controller.py`, begun in `curve_draw_ctrl`, committed or
-cancelled in `pending_edit_ctrl`**, with "an edit is live" enforced only by every
-reader remembering to test the segment for `None`, and the whole lifecycle
-unreachable without a canvas, a dialog and a QApplication. Three rules:
+**The edge being edited has an OWNER, and there are TWO edit kinds in it**
+(`services/edge_edit.py`, Qt-free — `EdgeEditSession` + `EditOutcome` +
+`ShapeOutcome`). Drawing a new **analytic** edge or double-clicking an existing one,
+and double-clicking an **imported (discrete)** edge to reshape its whole outline by
+the corner vertices, both open a *modeless* session: a numeric dialog and draggable
+canvas handles bound live to one segment, committed by **Create Edge** / **Apply**
+and reverted by **Cancel**. Between them that was **twelve attributes on
+`AppController`** — declared in `controller.py`, begun in `curve_draw_ctrl` /
+`file_edit_ctrl`, committed or cancelled in `pending_edit_ctrl` / `file_edit_ctrl` —
+with "an edit is live" enforced only by every reader remembering to test for `None`,
+and the whole lifecycle unreachable without a canvas, a dialog and a QApplication.
+**Both kinds live in one owner because they are alternatives**: at most one may be
+live, so `_edit_in_progress()` is now one question with one answer instead of an
+`or` repeated at every call site. Three rules:
 - **The dialog is held OPAQUELY.** The owner stores it and hands it back; it never
   calls a method on it. What has to be *asked* of the dialog — a polygon's
   open/closed toggle, which is not part of the form's `params` — is read by the
@@ -475,17 +479,45 @@ unreachable without a canvas, a dialog and a QApplication. Three rules:
   `UpdateSegmentStateCmd` stays with the controller, which owns the undo stack. The
   *revert* does live in the owner, because it is the other half of the snapshot it
   took.
-- **`_edit_in_progress()` asks `edge_edit.is_active()` OR the still-loose discrete
-  state.** The imported-edge (corner-vertex) edit is seven more attributes and moves
-  into the same owner next, leaving one thing to ask.
+- **A corner drag is a value in, an outline out.** The shape session holds the
+  pristine points plus the corner POSITIONS, and `move_corner` returns a freshly
+  re-fitted array instead of mutating the live one — so every re-fit recomputes from
+  the same basis, dragging never accumulates transform onto transform, and Cancel
+  restores the points *byte-for-byte* rather than to within a tolerance.
+  Its one departure from symmetry is deliberate: the shape side has **`end_shape()`,
+  not a commit/cancel pair**, because both endings need the same thing from the owner
+  (the snapshot) and differ only in what the caller does with it.
 Gated by `tests/test_edge_edit_owner.py`, which refuses PyQt6 through a meta-path
 hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
-`PendingEditControllerMixin` — re-implementing the commit branch in the test would
-prove only that a test can add a segment. Every check is verified by injection. One
-claim is deliberately narrowed rather than overstated: the params snapshot is a deep
-copy, but **no shipped caller mutates a nested parameter in place** (a polygon carries
-`vertices_str`, a *string*), so a shallow copy would pass every live path — the test
-mutates one directly and says so, pinning the contract rather than a reproducible bug.
+`PendingEditControllerMixin` / `FileEditControllerMixin` — re-implementing the commit
+branch in the test would prove only that a test can add a segment. (It loads both by
+file path: `app/controllers/__init__.py` eagerly re-exports eight Qt mixins, the same
+hazard `test_qt_free_seam.py` records for `models/` and `views/panels/`, and that is a
+property of the package rather than of the module under test.) Every check is verified
+by injection. One claim is deliberately narrowed rather than overstated: the params
+snapshot is a deep copy, but **no shipped caller mutates a nested parameter in place**
+(a polygon carries `vertices_str`, a *string*), so a shallow copy would pass every
+live path — the test mutates one directly and says so, pinning the contract rather
+than a reproducible bug.
+
+**The outline re-fit is pure arithmetic and has its own module**
+(`services/shape_refit.py`, Qt-free — `build_edge_specs` + `refit_shape`). Each edge
+of an imported outline re-fits between its own two corners by the similarity transform
+carrying its ORIGINAL corner pair onto the current one, so dragging a corner two edges
+share redistributes both. It lived inside `FileEditControllerMixin._refit_geom`, read
+three `self.` attributes and **had no test at all**; extracting it first is what made
+moving the state around it small. Two behaviours it is careful about and which are now
+pinned: a **zero-length edge** falls back to a pure translation (the transform's
+divisor is the squared length, so without it the interior points divide by ~zero and
+leave the canvas), and the **closing edge wraps to index 0** rather than being read as
+out-of-range and skipped — a gap that only opens on a *closed* outline, which is most
+of them. The extraction was measured, not asserted: 2000 randomised outlines through
+both the new function and the pre-change in-place body recovered from git came out
+**byte-identical, worst |Δ| = 0**. Gated by `tests/test_shape_refit.py`, whose sort-
+order check needed searching for: a CPython set of small corner indices iterates
+sorted anyway, *and* the order depends on insertion history rather than the values, so
+neither a small outline nor a set literal is a usable oracle — the check uses a layout
+found by search over 200k random cuts where the builder's own set really is unsorted.
 
 **Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`). Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab drops exactly its own commands; ordering across them is by the monotonic `seq` that `CommandHistory._push` stamps — undo takes the highest, redo the lowest waiting on a redo stack. Undo raises the tab owning the command before applying it. Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one step. **Any code pushing config into those panels must go through `controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is recorded as a user edit.
 - **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process group — every worker `cancel()` must route through these, never a bare `terminate()`)

@@ -17,43 +17,14 @@ class FileEditControllerMixin:
         like editing a shape in industrial CAD."""
         session = self.active_session()
         gp = session.original_points if session else None
-        if gp is None or len(gp) == 0:
+        # The owner builds the edge specs and takes the pristine snapshot; it
+        # refuses a geometry whose file segments describe no usable edge.
+        if not self.edge_edit.begin_shape(
+                seg, gp, session.project_model.segments if session else []):
+            if gp is not None and len(gp):
+                self.log("This geometry can't be edited directly.")
             return
-        n = len(gp)
-
-        # Build per-edge specs (corner indices + interior indices) for every
-        # discrete edge, and the set of corner vertices.
-        specs = []
-        corners = set()
-        for s in session.project_model.segments:
-            if s.type != "file":
-                continue
-            si = s.start_index
-            if s.end_index < n:
-                ei = s.end_index
-                interior = list(range(si + 1, ei))
-            else:  # closing edge wraps back to the first point
-                ei = 0
-                interior = list(range(si + 1, n))
-            if not (0 <= si < n and 0 <= ei < n) or si == ei:
-                continue
-            specs.append({"i0": si, "i1": ei, "interior": interior})
-            corners.add(si)
-            corners.add(ei)
-        if not specs or not corners:
-            self.log("This geometry can't be edited directly.")
-            return
-
-        # Corners of the double-clicked edge (shown in the numeric dialog).
-        ci0 = seg.start_index
-        ci1 = seg.end_index if seg.end_index < n else 0
-
-        self._pending_file = (ci0, ci1)
-        self._pending_file_seg = seg
-        self._pending_geom_orig = gp.copy()
-        self._pending_geom_specs = specs
-        self._pending_geom_corners = sorted(corners)
-        self._pending_geom_cur = {k: list(gp[k]) for k in corners}
+        ci0, ci1 = self.edge_edit.edge_corners
 
         canvas = self.main_window.canvas_view
         canvas.update_active_segments_pts([])
@@ -72,7 +43,7 @@ class FileEditControllerMixin:
         dlg.accepted.connect(self._commit_file_edit)
         dlg.rejected.connect(self._cancel_file_edit)
         dlg.finished.connect(lambda _r, d=dlg: d.deleteLater())
-        self._pending_file_dialog = dlg
+        self.edge_edit.attach_shape_dialog(dlg)
         offset_popup(dlg, self.main_window)
         dlg.show()
         dlg.raise_()
@@ -80,71 +51,32 @@ class FileEditControllerMixin:
 
     def _show_file_handles(self):
         """One draggable handle per corner vertex of the whole shape."""
-        session = self.active_session()
         canvas = self.main_window.canvas_view
-        if self._pending_file is None or session is None:
-            return
-        cur = self._pending_geom_cur
         canvas.show_edge_handles([
-            {"id": f"c{k}", "pos": tuple(cur[k])}
-            for k in self._pending_geom_corners])
-
-    def _refit_geom(self, session):
-        """Re-fit every edge between its current corners via the similarity
-        transform from its ORIGINAL layout — interior points redistribute,
-        straight edges stay straight between their corners."""
-        gp = session.original_points
-        orig = self._pending_geom_orig
-        cur = self._pending_geom_cur
-        for spec in self._pending_geom_specs:
-            i0, i1 = spec["i0"], spec["i1"]
-            op0, op1 = orig[i0], orig[i1]
-            cp0, cp1 = cur[i0], cur[i1]
-            dxP, dyP = float(op1[0] - op0[0]), float(op1[1] - op0[1])
-            LP2 = dxP * dxP + dyP * dyP
-            dxQ, dyQ = float(cp1[0] - cp0[0]), float(cp1[1] - cp0[1])
-            if LP2 > 1e-12:
-                A = (dxQ * dxP + dyQ * dyP) / LP2
-                B = (dyQ * dxP - dxQ * dyP) / LP2
-                for i in spec["interior"]:
-                    xr = float(orig[i][0]) - op0[0]
-                    yr = float(orig[i][1]) - op0[1]
-                    gp[i] = [A * xr - B * yr + cp0[0], B * xr + A * yr + cp0[1]]
-            else:
-                for i in spec["interior"]:
-                    gp[i] = [float(orig[i][0]) - op0[0] + cp0[0],
-                             float(orig[i][1]) - op0[1] + cp0[1]]
-            gp[i0] = list(cp0)
-            gp[i1] = list(cp1)
+            {"id": hid, "pos": pos}
+            for hid, pos in self.edge_edit.handle_points()])
 
     def _on_file_handle_dragged(self, handle_id, x, y, finished):
         session = self.active_session()
-        if session is None or self._pending_file is None:
+        pts = self.edge_edit.move_corner(handle_id, x, y)
+        if session is None or pts is None:
             return
-        try:
-            k = int(handle_id[1:])  # "c<idx>"
-        except (ValueError, IndexError):
-            return
-        self._pending_geom_cur[k] = [x, y]
-        self._refit_geom(session)
+        session.original_points = pts
         self._redraw_file_geometry(session)
         # Mirror into the numeric dialog if this corner is one of its two.
-        if self._pending_file_dialog is not None:
-            ci0, ci1 = self._pending_file
-            if k in (ci0, ci1):
-                cur = self._pending_geom_cur
-                self._pending_file_dialog.set_points(tuple(cur[ci0]), tuple(cur[ci1]))
+        dlg = self.edge_edit.shape_dialog
+        key = self.edge_edit.corner_key(handle_id)
+        if dlg is not None and key in self.edge_edit.edge_corners:
+            dlg.set_points(*self.edge_edit.edge_corner_points())
         if finished:
             self._show_file_handles()
 
     def _on_file_dialog_changed(self, p0, p1):
         session = self.active_session()
-        if session is None or self._pending_file is None:
+        pts = self.edge_edit.set_edge_corners(p0, p1)
+        if session is None or pts is None:
             return
-        ci0, ci1 = self._pending_file
-        self._pending_geom_cur[ci0] = list(p0)
-        self._pending_geom_cur[ci1] = list(p1)
-        self._refit_geom(session)
+        session.original_points = pts
         self._redraw_file_geometry(session)
         self._show_file_handles()
 
@@ -160,8 +92,9 @@ class FileEditControllerMixin:
 
     def _commit_file_edit(self):
         session = self.active_session()
-        orig = self._pending_geom_orig
-        self._clear_file_edit_state()
+        done = self.edge_edit.end_shape()
+        orig = done.orig if done is not None else None
+        self._clear_file_edit_canvas()
         if session is None:
             return
         new_points = session.original_points
@@ -188,21 +121,16 @@ class FileEditControllerMixin:
 
     def _cancel_file_edit(self):
         session = self.active_session()
-        orig = self._pending_geom_orig
-        if session is not None and orig is not None:
-            session.original_points = orig
-        self._clear_file_edit_state()
+        done = self.edge_edit.end_shape()
+        if session is not None and done is not None and done.orig is not None:
+            session.original_points = done.orig
+        self._clear_file_edit_canvas()
         if session is not None:
             self._apply_geometry_update(session)
         self.log("Shape edit cancelled (reverted).")
 
-    def _clear_file_edit_state(self):
-        self._pending_file = None
-        self._pending_file_seg = None
-        self._pending_file_dialog = None
-        self._pending_geom_orig = None
-        self._pending_geom_specs = None
-        self._pending_geom_cur = None
-        self._pending_geom_corners = None
+    def _clear_file_edit_canvas(self):
+        """Drop the shape session's canvas decoration. The state itself is the
+        owner's and is already gone by the time this runs."""
         self.main_window.canvas_view.clear_edge_handles()
         self._refresh_endpoint_markers()

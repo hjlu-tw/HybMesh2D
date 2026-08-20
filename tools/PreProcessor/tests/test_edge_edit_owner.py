@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The modeless edge-edit lifecycle, driven with no Qt at all.
+"""The modeless edge-edit lifecycle — BOTH kinds — driven with no Qt at all.
 
 Architecture backlog candidate 7, ticket 1 (issue #15). Creating or re-opening an
 analytic edge used to be five attributes on ``AppController`` — the segment, the
@@ -54,6 +54,28 @@ without a canvas, a dialog and a QApplication.
    held reference would keep a deleted dialog alive and make the next
    ``_edit_in_progress()`` answer for the previous edit.
 
+Ticket 2 (issue #16) moved the SECOND edit kind — the imported outline reshaped
+by its corner vertices, seven more attributes — into the same owner, so
+``_edit_in_progress()`` has exactly one thing to ask. Checks 9-12 cover it:
+
+9.  ``is_active()`` ANSWERS FOR EITHER KIND, and ``active_segment`` returns
+    whichever edge is live. That is the single question; two owners would put
+    an ``or`` back at every call site, which is where this started.
+
+10. A CORNER DRAG IS A VALUE IN, AN OUTLINE OUT. ``move_corner`` returns the
+    re-fitted points instead of mutating a live array, so a re-fit cannot
+    accumulate onto the previous frame and the pristine snapshot stays a valid
+    basis for the whole session. Cancel therefore restores the points
+    BYTE-FOR-BYTE, not to within a tolerance.
+
+11. COMMIT IS ONE ``ReplaceGeometryPointsCmd``, and undo puts the original
+    layout back. An unchanged shape records nothing.
+
+12. THE HANDLE-ID FORMAT LIVES IN ONE PLACE. ``handle_points`` emits the ids and
+    ``move_corner`` parses them, so the canvas cannot be handed a spelling the
+    owner will not accept; a stray or unknown id is refused rather than raising,
+    because ids arrive from the canvas.
+
 Run:  python3 tools/PreProcessor/tests/test_edge_edit_owner.py
 """
 import os
@@ -105,6 +127,9 @@ def _load_by_path(name, *parts):
 PendingEditControllerMixin = _load_by_path(
     "_pending_edit_ctrl_standalone",
     "app", "controllers", "pending_edit_ctrl.py").PendingEditControllerMixin
+FileEditControllerMixin = _load_by_path(
+    "_file_edit_ctrl_standalone",
+    "app", "controllers", "file_edit_ctrl.py").FileEditControllerMixin
 
 failures = []
 
@@ -127,9 +152,25 @@ class _Dialog:
         return self._closed
 
 
+class _Canvas:
+    """Only what the edit mixins call on it — the handles they draw."""
+
+    def __init__(self):
+        self.handles = None
+        self.cleared = 0
+
+    def show_edge_handles(self, items):
+        self.handles = list(items)
+
+    def clear_edge_handles(self):
+        self.cleared += 1
+        self.handles = None
+
+
 class _Window:
     def __init__(self):
         self.titles = []
+        self.canvas_view = _Canvas()
 
     def update_title(self, name, dirty):
         self.titles.append((name, dirty))
@@ -328,6 +369,215 @@ check("7d an idle owner is not active and answers None",
       and idle.cancel() is None
       and idle.update({"a": 1}, 10) is False)
 
+# ══ 9-12: the SHAPE (imported outline) edit, in the same owner ══════════════
+import numpy as np  # noqa: E402
+
+
+class _EndpointDialog:
+    """The endpoint dialog, opaque to the owner: only the caller talks to it."""
+
+    def __init__(self):
+        self.points = []
+
+    def set_points(self, p0, p1):
+        self.points.append((tuple(p0), tuple(p1)))
+
+
+class _FileSeg:
+    def __init__(self, start_index, end_index, seg_id=1):
+        self.type = "file"
+        self.id = seg_id
+        self.start_index = start_index
+        self.end_index = end_index
+
+
+class _ShapeHost(FileEditControllerMixin):
+    """The mixin's collaborators, stubbed to what it actually calls."""
+
+    def __init__(self, session):
+        self.edge_edit = EdgeEditSession()
+        self._session = session
+        self.main_window = _Window()
+        self.logs = []
+        self.redraws = 0
+        self.geometry_updates = 0
+
+    def active_session(self):
+        return self._session
+
+    def log(self, msg):
+        self.logs.append(msg)
+
+    def _redraw_file_geometry(self, session):
+        self.redraws += 1
+
+    def _apply_geometry_update(self, session):
+        self.geometry_updates += 1
+
+    def _clear_file_edit_canvas(self):
+        pass
+
+
+def _outline_session():
+    """A closed 6-point outline cut into three file edges (the last wrapping)."""
+    sess = GeometrySession()
+    sess.original_points = np.array([[0.0, 0.0], [0.5, 0.5],
+                                     [1.0, 0.0], [1.5, -0.5],
+                                     [2.0, 0.0], [1.0, -1.0]])
+    sess.project_model.segments.extend(
+        [_FileSeg(0, 2, 1), _FileSeg(2, 4, 2), _FileSeg(4, 6, 3)])
+    return sess
+
+
+# ── 9: one question, either kind ────────────────────────────────────────────
+owner = EdgeEditSession()
+sess = _outline_session()
+edge = sess.project_model.segments[1]
+check("9a a fresh owner is idle for both kinds",
+      owner.is_active() is False and owner.is_shape_active() is False
+      and owner.active_segment is None)
+check("9b begin_shape opens the outline",
+      owner.begin_shape(edge, sess.original_points,
+                        sess.project_model.segments) is True)
+check("9c is_active() answers for the SHAPE kind too — the one question",
+      owner.is_active() is True and owner.is_shape_active() is True)
+check("9d active_segment returns the shape's edge",
+      owner.active_segment is edge)
+check("9e the dialog's two corners are the double-clicked edge's",
+      owner.edge_corners == (2, 4))
+check("9f one handle per corner, in stable sorted order",
+      [h for h, _p in owner.handle_points()] == ["c0", "c2", "c4"])
+owner.end_shape()
+check("9g end_shape puts it back to idle",
+      owner.is_active() is False and owner.edge_corners is None
+      and owner.handle_points() == [])
+
+# A geometry with no usable file edge is refused rather than opened empty.
+empty = GeometrySession()
+empty.original_points = np.array([[0.0, 0.0], [1.0, 0.0]])
+check("9h a geometry with no file edge is refused",
+      EdgeEditSession().begin_shape(_FileSeg(0, 1), empty.original_points,
+                                    []) is False)
+check("9i …and so is an empty point array",
+      EdgeEditSession().begin_shape(_FileSeg(0, 1), np.empty((0, 2)),
+                                    [_FileSeg(0, 1)]) is False)
+
+# The closing edge is the one whose end_index is past the end.
+owner = EdgeEditSession()
+closing = _FileSeg(4, 6, 3)
+owner.begin_shape(closing, sess.original_points, sess.project_model.segments)
+check("9j the closing edge's second corner wraps to index 0",
+      owner.edge_corners == (4, 0))
+owner.end_shape()
+
+# ── 10: a drag is a value in, an outline out; cancel is byte-for-byte ────────
+sess = _outline_session()
+pristine = sess.original_points.copy()
+host = _ShapeHost(sess)
+host.edge_edit.begin_shape(sess.project_model.segments[1],
+                           sess.original_points, sess.project_model.segments)
+host.edge_edit.attach_shape_dialog(_EndpointDialog())
+host._on_file_handle_dragged("c2", 1.0, 1.0, False)
+check("10a a corner drag re-fits and rebinds the session's points",
+      not np.array_equal(sess.original_points, pristine)
+      and sess.original_points is not pristine)
+check("10b …and the neighbouring edges both moved (the shared corner)",
+      not np.allclose(sess.original_points[1], pristine[1])
+      and not np.allclose(sess.original_points[3], pristine[3]))
+check("10c the dragged corner is mirrored into the dialog",
+      host.edge_edit.shape_dialog.points[-1][0] == (1.0, 1.0))
+host._on_file_handle_dragged("c0", 9.0, -9.0, False)
+check("10d dragging a corner the dialog does NOT show leaves it alone",
+      len(host.edge_edit.shape_dialog.points) == 1)
+host._on_file_handle_dragged("c2", 1.0, 0.0, True)
+host._on_file_handle_dragged("c0", 0.0, 0.0, True)
+check("10e re-fits do not accumulate: back at the original corners the "
+      "outline is EXACTLY the original",
+      np.array_equal(sess.original_points, pristine))
+
+sess = _outline_session()
+pristine = sess.original_points.copy()
+host = _ShapeHost(sess)
+host.edge_edit.begin_shape(sess.project_model.segments[1],
+                           sess.original_points, sess.project_model.segments)
+host._on_file_handle_dragged("c2", 4.0, 7.0, True)
+host._cancel_file_edit()
+check("10f cancel restores the points byte-for-byte",
+      np.array_equal(sess.original_points, pristine))
+check("10g …ends the session and says so",
+      host.edge_edit.is_active() is False
+      and any("cancelled" in m for m in host.logs))
+check("10h cancel records nothing on the undo stack",
+      len(sess.command_history._undo_stack) == 0)
+
+# ── 11: commit is one undoable geometry replacement ─────────────────────────
+sess = _outline_session()
+pristine = sess.original_points.copy()
+host = _ShapeHost(sess)
+host.edge_edit.begin_shape(sess.project_model.segments[1],
+                           sess.original_points, sess.project_model.segments)
+host._on_file_handle_dragged("c2", 1.0, 1.0, True)
+moved = sess.original_points.copy()
+host._commit_file_edit()
+hist = sess.command_history
+check("11a commit records exactly one command",
+      len(hist._undo_stack) == 1)
+check("11b …a ReplaceGeometryPointsCmd",
+      type(hist._undo_stack[-1]).__name__ == "ReplaceGeometryPointsCmd")
+check("11c the committed layout is the edited one",
+      np.array_equal(sess.original_points, moved))
+check("11d commit marks the session dirty and retitles",
+      sess.is_geometry_modified is True
+      and host.main_window.titles == [(sess.display_name, True)])
+hist.undo()
+check("11e undo restores the original layout",
+      np.array_equal(sess.original_points, pristine))
+hist.redo()
+check("11f redo re-applies the edit",
+      np.array_equal(sess.original_points, moved))
+check("11g commit ends the session", host.edge_edit.is_active() is False)
+
+sess = _outline_session()
+host = _ShapeHost(sess)
+host.edge_edit.begin_shape(sess.project_model.segments[1],
+                           sess.original_points, sess.project_model.segments)
+host._commit_file_edit()
+check("11h an unchanged shape records nothing",
+      len(sess.command_history._undo_stack) == 0)
+
+# ── 12: the handle-id format has one owner ──────────────────────────────────
+sess = _outline_session()
+owner = EdgeEditSession()
+owner.begin_shape(sess.project_model.segments[1], sess.original_points,
+                  sess.project_model.segments)
+ids = [h for h, _p in owner.handle_points()]
+check("12a every id the owner EMITS is one it accepts back",
+      all(owner.move_corner(h, 0.0, 0.0) is not None for h in ids))
+check("12b an unparseable or unknown id is refused, not raised",
+      owner.move_corner("x9", 1.0, 1.0) is None
+      and owner.move_corner("c", 1.0, 1.0) is None
+      and owner.move_corner("c999", 1.0, 1.0) is None
+      and owner.move_corner(None, 1.0, 1.0) is None)
+check("12c corner_key round-trips the ids it emits",
+      [owner.corner_key(h) for h in ids] == [0, 2, 4])
+owner.end_shape()
+check("12d an idle owner refuses every shape verb",
+      owner.move_corner("c0", 1.0, 1.0) is None
+      and owner.set_edge_corners((0, 0), (1, 1)) is None
+      and owner.end_shape() is None
+      and owner.edge_corner_points() is None)
+
+# The two kinds do not clobber each other's reset.
+owner = EdgeEditSession()
+owner.begin(_polygon(seg_id=11), is_new=True)
+owner.begin_shape(sess.project_model.segments[1], sess.original_points,
+                  sess.project_model.segments)
+owner.commit()
+check("12e ending the analytic edit leaves the shape edit alone",
+      owner.is_shape_active() is True and owner.is_active() is True)
+owner.end_shape()
+check("12f …and vice versa", owner.is_active() is False)
+
 # ══ 1c: the owner imports no Qt, and the run never loaded any ═══════════════
 check("1c no PyQt6 module was loaded anywhere in this run",
       not any(m == "PyQt6" or m.startswith("PyQt6.") for m in sys.modules))
@@ -349,11 +599,27 @@ check("1d services/edge_edit.py imports nothing Qt, at any nesting depth: "
 check("1e …and nothing from the app's Qt layers either",
       not any(m.startswith(("app.views", "app.utils")) for m in _imports))
 
+# ══ 13: _edit_in_progress() asks EXACTLY ONE thing ══════════════════════════
+_draw_src = open(os.path.join(_HERE, "..", "gui", "app", "controllers",
+                              "curve_draw_ctrl.py")).read()
+_pred = ast.parse(_draw_src)
+_body = next(n for n in ast.walk(_pred)
+             if isinstance(n, ast.FunctionDef) and n.name == "_edit_in_progress")
+_calls = [n for n in ast.walk(_body) if isinstance(n, ast.Call)]
+_bools = [n for n in ast.walk(_body) if isinstance(n, ast.BoolOp)]
+check("13 _edit_in_progress() asks exactly one thing, with no 'or': "
+      + ast.unparse(_body.body[-1]),
+      len(_calls) == 1 and not _bools
+      and "edge_edit.is_active" in ast.unparse(_body))
+
 # ══ 8: the five attributes are gone from AppController.__init__ ═════════════
 ctrl_src = open(os.path.join(_HERE, "..", "gui", "app", "controller.py")).read()
 gone = ["_pending_seg", "_pending_dialog", "_pending_is_new",
-        "_pending_orig", "_pending_orig_state"]
-check("8a the five analytic-edit attributes are gone from AppController",
+        "_pending_orig", "_pending_orig_state",
+        "_pending_file", "_pending_file_seg", "_pending_file_dialog",
+        "_pending_geom_orig", "_pending_geom_specs", "_pending_geom_cur",
+        "_pending_geom_corners"]
+check("8a all twelve edit attributes are gone from AppController",
       not any(f"self.{a} =" in ctrl_src for a in gone))
 check("8b …and the owner is declared there instead",
       "EdgeEditSession()" in ctrl_src)
@@ -371,7 +637,7 @@ for root, _dirs, files in os.walk(os.path.join(gui, "app")):
             for line in text.splitlines():
                 if f"self.{attr}" in line:
                     leaks.append(f"{os.path.relpath(path, gui)}: {line.strip()}")
-check("8c no caller reads a _pending_* analytic attribute directly: "
+check("8c no caller reads a _pending_* edit attribute directly: "
       + ("; ".join(leaks) if leaks else "none"), not leaks)
 
 print()

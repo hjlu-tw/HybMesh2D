@@ -1,9 +1,17 @@
 """Owner of the edge currently being edited — the state a modeless edit holds.
 
-Drawing a new analytic edge, or double-clicking an existing one, opens a
-*modeless* session: a numeric dialog and a set of draggable canvas handles both
-bound live to one segment, which is only committed when the user presses
-**Create Edge** / **Apply** and reverted when they press **Cancel**.
+There are TWO edit kinds and this module owns both, because they are
+alternatives: at most one may be live, and something has to be able to say so.
+
+* **Analytic** — drawing a new arc/line/circle/polygon, or double-clicking an
+  existing one. A numeric dialog and draggable canvas handles are both bound
+  live to one segment, committed by **Create Edge** / **Apply** and reverted by
+  **Cancel**.
+* **Shape** — double-clicking an *imported* (discrete) edge opens the whole
+  connected outline for editing by its corner vertices; every edge re-fits
+  between its own two corners, so a corner two edges share redistributes both.
+  Its arithmetic is :mod:`app.services.shape_refit`, kept separate because it is
+  geometry rather than lifecycle, and pure.
 
 That session used to be five attributes on ``AppController`` — the segment, the
 dialog, the create/edit flag and two snapshots — declared in one file, begun in a
@@ -19,21 +27,35 @@ Two rules make that possible and are the reason this file sits under
   and hands it back, and never calls a method on it. Whatever has to be *asked*
   of the dialog (a polygon's open/closed toggle) is read by the caller and passed
   in as a value, so nothing here depends on the widget's interface.
-* **No canvas, no command history, no logging.** ``commit()`` and ``cancel()``
-  end the session and return an :class:`EditOutcome` describing what the caller
-  must now do; deciding whether that becomes an ``AddCurveSegmentCmd`` or an
-  ``UpdateSegmentStateCmd`` stays with the controller, which is the layer that
-  owns the undo stack.
+* **No canvas, no command history, no logging.** The ``commit``/``cancel`` verbs
+  end the session and return an outcome describing what the caller must now do;
+  deciding whether that becomes an ``AddCurveSegmentCmd``, a recorded
+  ``UpdateSegmentStateCmd`` or a ``ReplaceGeometryPointsCmd`` stays with the
+  controller, which is the layer that owns the undo stack.
 
 The revert itself DOES live here, because it is the other half of the snapshot
-this module took: a cancelled edit restores the parameters and — for a polygon —
-the ``closed`` flag the dialog may have toggled.
+this module took: a cancelled analytic edit restores the parameters and — for a
+polygon — the ``closed`` flag the dialog may have toggled, and a cancelled shape
+edit hands back the pristine points.
+
+The shape session also holds the CORNER POSITIONS rather than a live point
+array: every re-fit recomputes from the pristine snapshot, so dragging never
+accumulates transform onto transform and Cancel is exact rather than
+approximate.
 """
 from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
 from typing import Any, Optional
+
+import numpy as np
+
+from app.services.shape_refit import build_edge_specs, refit_shape
+
+#: Prefix of a corner handle's id on the canvas. Emitted by ``handle_points``
+#: and parsed by ``move_corner``, so the format lives in exactly one place.
+_CORNER_PREFIX = "c"
 
 
 @dataclass(frozen=True)
@@ -53,8 +75,21 @@ class EditOutcome:
     reverted: bool = False
 
 
+@dataclass(frozen=True)
+class ShapeOutcome:
+    """What a finished shape (imported-outline) edit leaves for the caller.
+
+    ``orig`` is the pristine point array the session snapshotted, which the
+    caller needs for BOTH endings: to restore on cancel, and — on commit — as
+    the "before" half of the undoable geometry replacement.
+    """
+
+    seg: Any
+    orig: Any
+
+
 class EdgeEditSession:
-    """The analytic edge being created or edited, and its two snapshots."""
+    """The edge being edited: an analytic one, or an imported outline."""
 
     def __init__(self):
         self._seg = None
@@ -62,11 +97,26 @@ class EdgeEditSession:
         self._is_new = True
         self._orig_params = None
         self._orig_state = None
+        # Shape (imported-outline) edit.
+        self._shape_seg = None
+        self._shape_dialog = None
+        self._shape_orig = None       # pristine points (revert + refit basis)
+        self._shape_specs = None      # per-edge corner + interior index spans
+        self._shape_corners = None    # sorted corner indices = handle order
+        self._shape_pos = None        # {corner index: [x, y]} live positions
+        self._shape_edge = None       # the double-clicked edge's two corners
 
     # ── Questions ────────────────────────────────────────────────────────
     def is_active(self) -> bool:
-        """True while an edit session is live (a segment is being edited)."""
-        return self._seg is not None
+        """True while ANY edit session is live — the one question
+        ``_edit_in_progress()`` asks, for either kind."""
+        return self._seg is not None or self._shape_seg is not None
+
+    @property
+    def active_segment(self):
+        """The edge being edited, of whichever kind. Callers exclude it from the
+        snap targets so a dragged control point cannot target its own points."""
+        return self._seg if self._seg is not None else self._shape_seg
 
     @property
     def segment(self):
@@ -162,3 +212,126 @@ class EdgeEditSession:
         self._is_new = True
         self._orig_params = None
         self._orig_state = None
+
+    # ══ The shape (imported outline) edit ════════════════════════════════
+    def is_shape_active(self) -> bool:
+        return self._shape_seg is not None
+
+    @property
+    def shape_dialog(self):
+        """The modeless endpoint dialog, held opaquely; None if not attached."""
+        return self._shape_dialog
+
+    @property
+    def edge_corners(self):
+        """``(i0, i1)`` — the double-clicked edge's corners, the two the numeric
+        dialog shows. None when no shape edit is live."""
+        return self._shape_edge
+
+    def begin_shape(self, seg, points, segments) -> bool:
+        """Open ``seg``'s whole outline for corner editing. False if it has none.
+
+        A geometry whose file segments describe no usable edge cannot be edited
+        this way — the caller says so; refusing here rather than opening an empty
+        handle set is what keeps "a session is live" meaningful.
+        """
+        pts = np.asarray(points, dtype=float) if points is not None else None
+        if pts is None or len(pts) == 0:
+            return False
+        n = len(pts)
+        specs, corners = build_edge_specs(segments, n)
+        if not specs or not corners:
+            return False
+        self._shape_seg = seg
+        self._shape_dialog = None
+        self._shape_orig = pts.copy()
+        self._shape_specs = specs
+        self._shape_corners = corners
+        self._shape_pos = {k: list(pts[k]) for k in corners}
+        # end_index may be one past the end (the closing edge wrapping to 0).
+        self._shape_edge = (seg.start_index,
+                            seg.end_index if seg.end_index < n else 0)
+        return True
+
+    def attach_shape_dialog(self, dlg):
+        self._shape_dialog = dlg
+
+    def handle_points(self):
+        """``[(handle id, (x, y)), …]`` — one draggable handle per corner, in
+        the stable sorted order ``build_edge_specs`` returns."""
+        if self._shape_seg is None:
+            return []
+        return [(f"{_CORNER_PREFIX}{k}", tuple(self._shape_pos[k]))
+                for k in self._shape_corners]
+
+    def edge_corner_points(self):
+        """The current positions of the two corners the dialog shows, or None."""
+        if self._shape_edge is None:
+            return None
+        i0, i1 = self._shape_edge
+        return tuple(self._shape_pos[i0]), tuple(self._shape_pos[i1])
+
+    def move_corner(self, handle_id, x, y):
+        """Move one corner and return the re-fitted outline; None if unusable.
+
+        Returns None — rather than raising — for an unparseable or unknown
+        handle id, because handle ids arrive from the canvas and a stray one
+        must not take the edit down with it.
+        """
+        if self._shape_seg is None:
+            return None
+        key = self.corner_key(handle_id)
+        if key is None or key not in self._shape_pos:
+            return None
+        self._shape_pos[key] = [x, y]
+        return self._refit()
+
+    def set_edge_corners(self, p0, p1):
+        """Set both of the dialog's corners at once; returns the re-fitted
+        outline, or None if no shape edit is live."""
+        if self._shape_seg is None or self._shape_edge is None:
+            return None
+        i0, i1 = self._shape_edge
+        self._shape_pos[i0] = list(p0)
+        self._shape_pos[i1] = list(p1)
+        return self._refit()
+
+    @staticmethod
+    def corner_key(handle_id):
+        """Parse a corner handle id back to its point index, else None."""
+        try:
+            text = str(handle_id)
+            if not text.startswith(_CORNER_PREFIX):
+                return None
+            return int(text[len(_CORNER_PREFIX):])
+        except (TypeError, ValueError):
+            return None
+
+    def end_shape(self) -> Optional[ShapeOutcome]:
+        """End the shape session, returning the pristine points. None if none
+        was live.
+
+        ONE verb, not a commit/cancel pair, because both endings need the same
+        thing from this module — the snapshot — and differ only in what the
+        caller does with it: Cancel puts it back, Commit makes it the "before"
+        half of an undoable replacement. Two identical verbs would only pretend
+        the owner had an opinion about which ending it was.
+        """
+        if self._shape_seg is None:
+            self._reset_shape()
+            return None
+        outcome = ShapeOutcome(self._shape_seg, self._shape_orig)
+        self._reset_shape()
+        return outcome
+
+    def _refit(self):
+        return refit_shape(self._shape_orig, self._shape_specs, self._shape_pos)
+
+    def _reset_shape(self):
+        self._shape_seg = None
+        self._shape_dialog = None
+        self._shape_orig = None
+        self._shape_specs = None
+        self._shape_corners = None
+        self._shape_pos = None
+        self._shape_edge = None
