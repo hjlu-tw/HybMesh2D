@@ -42,6 +42,8 @@ already recorded as worse than no gate at all. Exit 1 means a PROBE broke.
 """
 from __future__ import annotations
 
+import ast
+import itertools
 import os
 import re
 import sys
@@ -489,15 +491,206 @@ def probe_9_utils_qt_line():
     return OPEN, "helpers moved but no gate — a new import would not be caught"
 
 
+# ── Probe 10's measurement, shared by its three questions ───────────────────
+# Kept here rather than inside the probe because all three read the same parse
+# of the same files, and because the definitions are the argument: what counts
+# as a "verb", a "UI write" and a "re-derived sequence" is what the retirement
+# rests on, so each is stated once where it can be read.
+
+_VERB_NAME = re.compile(r"^_?(refresh|sync|update|redraw)\w*$")
+
+# A receiver that is a STABLE piece of UI. Deliberately NOT `item` or `dlg`:
+# those name a widget CONSTRUCTED in the body (a QTreeWidgetItem in one verb, a
+# QListWidgetItem in another), so two verbs sharing that local name share
+# nothing — counting them reported three overlapping pairs where there is one.
+_UI_RECV = re.compile(r"^(canvas|cv|mesh_canvas|result_canvas|sidebar|sb|tree|"
+                      r"panel|\w+_panel|\w+_btn|\w+_list_widget|tab_widget)$")
+# A MUTATOR. A shared read is not a shared refresh — `sb.transform_spec()` is a
+# getter two verbs both consult, and counting it was the second false pair.
+_UI_WRITE = re.compile(r"^(set|show|clear|update|add|insert|remove|take|hide)")
+
+
+def _controller_py():
+    return [os.path.join(APP, "controller.py")] + sorted(
+        walk_py(os.path.join(APP, "controllers")))
+
+
+def _receiver_method(func):
+    """('receiver', 'method') for a Call's func, or None. `_view` is stripped so
+    `self.main_window.canvas_view.x` and a local `canvas.x` are one receiver."""
+    if not isinstance(func, ast.Attribute):
+        return None
+    val = func.value
+    if isinstance(val, ast.Attribute):
+        recv = val.attr
+    elif isinstance(val, ast.Name):
+        recv = val.id
+    else:
+        return None
+    return re.sub(r"_view$", "", recv), func.attr
+
+
+def _refresh_verbs():
+    """({verb: (path, ast node)}, {closure name: count}).
+
+    A verb is a refresh/sync/update/redraw method in a CLASS BODY under
+    controllers/. A same-named function nested inside one is a callback, not an
+    interface — separating them is what turned 37 into 33.
+    """
+    methods, closures = {}, {}
+    for path in _controller_py():
+        # A SyntaxError is deliberately NOT swallowed. Dropping an unparsable
+        # file would silently drop its verbs, so the count would fall and the
+        # verdict would still read STALE for the wrong reason — measured while
+        # verifying this probe by injection, where a mis-indented mutation took
+        # three verbs with it and looked like a passing check.
+        tree = ast.parse(read(path), filename=path)
+        for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
+            for m in cls.body:
+                if not isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if _VERB_NAME.match(m.name):
+                    methods[m.name] = (path, m)
+                for sub in ast.walk(m):
+                    if sub is m or not isinstance(
+                            sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        continue
+                    if _VERB_NAME.match(sub.name):
+                        closures[sub.name] = closures.get(sub.name, 0) + 1
+    return methods, {k: v for k, v in closures.items() if k not in methods}
+
+
+def _refresh_ui_write_overlap(verbs):
+    """[(verb_a, verb_b, shared writes)] for pairs where NEITHER already calls the
+    other. Containment is a fan-out tree and is the design; overlap between two
+    verbs that are not in one another's closure is the near-duplicate signal."""
+    writes, calls = {}, {}
+    for name, (_path, node) in verbs.items():
+        w, c = set(), set()
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            got = _receiver_method(sub.func)
+            if not got:
+                continue
+            recv, meth = got
+            if meth in verbs and meth != name:
+                c.add(meth)
+            elif _UI_RECV.match(recv) and _UI_WRITE.match(meth):
+                w.add(f"{recv}.{meth}")
+        writes[name], calls[name] = w, c
+
+    def reaches(name, seen=None):
+        seen = set() if seen is None else seen
+        for callee in calls[name]:
+            if callee not in seen:
+                seen.add(callee)
+                reaches(callee, seen)
+        return seen
+
+    closure = {n: reaches(n) for n in verbs}
+    out = []
+    for a, b in itertools.combinations(sorted(verbs), 2):
+        if b in closure[a] or a in closure[b]:
+            continue
+        shared = writes[a] & writes[b]
+        if shared:
+            out.append((a, b, ", ".join(sorted(shared))))
+    return out
+
+
+def _refresh_repeated_sequences(verbs):
+    """[(sequence, number of functions repeating it)] for verb sequences of length
+    >= 2 that appear in two or more functions anywhere in the GUI. This is the
+    review's real complaint — a fan-out order re-derived by each caller."""
+    seen = {}
+    for path in walk_py(GUI, skip=("tests",)):
+        tree = ast.parse(read(path), filename=path)   # see _refresh_verbs
+        for fn in [n for n in ast.walk(tree)
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            hits = sorted((c.lineno, c.func.attr) for c in ast.walk(fn)
+                          if isinstance(c, ast.Call)
+                          and isinstance(c.func, ast.Attribute)
+                          and c.func.attr in verbs and c.func.attr != fn.name)
+            seq = []
+            for _line, verb in hits:            # collapse consecutive repeats
+                if not seq or seq[-1] != verb:
+                    seq.append(verb)
+            if len(seq) >= 2:
+                seen[tuple(seq)] = seen.get(tuple(seq), 0) + 1
+    return [(s, n) for s, n in sorted(seen.items()) if n >= 2]
+
+
 def probe_10_refresh_contract():
-    """How many repaint verbs a caller must choose between after a geometry edit."""
-    ctl = os.path.join(APP, "controllers")
-    verbs = set()
-    for path in list(walk_py(ctl)) + [os.path.join(APP, "controller.py")]:
-        verbs |= set(re.findall(
-            r"^\s+def (_?(?:refresh|sync|update|redraw)\w*)\(", read(path), re.M))
-    state = DONE if len(verbs) <= 5 else OPEN
-    return state, f"{len(verbs)} refresh/sync/update/redraw verbs across controllers/"
+    """RETIRED by decision on 2026-08-20 (issue #14), the premise measured first.
+
+    The review counted 35 refresh/sync/update/redraw verbs and read the COUNT as
+    the problem: "after changing geometry a caller must know which of 35 refresh
+    verbs to invoke and in what order". Measuring what the verbs actually touch
+    says the count was never the problem, in the same shape as candidate 4.
+
+    THE NUMBER THAT DECIDED IT: of the 33 verbs (the old reading of 37 counted
+    four NESTED CLOSURE names — ``refresh``, ``_refresh``, ``sync_fn``,
+    ``sync_color_mode``, 10 definitions between them — which are the ``refresh_cb``
+    the command pattern hands to a Command so undo repaints too; no caller can
+    pick one, so they are not part of any interface), exactly ONE pair writes the
+    same UI element without one already calling the other, and it is a shared
+    CONCLUDING STEP rather than a duplicate job: ``_refresh_segment_list`` and
+    ``_sync_geometry_list`` both end with ``tree.setCurrentItem`` to restore the
+    selection, over DISJOINT rows (the active session's edge rows vs the top-level
+    session rows). They are co-called at four sites, never chosen between.
+
+    So the number of verbs a caller could have swapped for another is ZERO, and
+    the one pair the ticket suspected is the sharpest evidence. ``redraw_canvas``
+    is the canonical full rebuild; ``_redraw_file_geometry`` is a seven-line fast
+    path called from ``_on_file_handle_dragged`` on every mouse-move of a corner
+    drag. Substituting the general verb is not a harmless over-refresh — it calls
+    ``clear_edge_handles()`` and would delete the handle the gesture is holding.
+    The two verbs look like near-duplicates by NAME and are not interchangeable in
+    either direction, which is the whole argument: these are 33 honestly-named
+    different jobs, and a caller reads the name to learn which job it is.
+
+    The review's other half — "124 call sites learn one verb instead of a
+    sequence" — does not survive either: 47 of the 74 call-site functions call
+    exactly ONE verb, so most callers already have one verb to learn. And the
+    proposed Solution, a single ``geometry_changed()`` fanning out to all of them,
+    is what the drag path proves cannot exist: an unconditional fan-out clears the
+    drag's own handles.
+
+    WHAT IS REAL, AND IS NOT THIS CANDIDATE: four ordered sequences are repeated
+    at 11 sites, the worst being ``update_duplicate_base_point ->
+    update_duplicate_preview -> _refresh_transform_handles`` four times over in
+    ``transform_ctrl.py`` (:10, :27, :39, :47). That is one extract-method inside
+    one controller, not a repaint contract for the app — and it is named here so a
+    follow-up ticket has something concrete. Measured by-product, also named
+    rather than fixed here (this ticket decides, it does not change behaviour):
+    ``update_colormap`` and ``update_segment_bc`` have no reference in the tree
+    besides their own ``def`` — 2 of the 33 are dead.
+
+    RETIRED IS NOT BLIND. Two lines revive it, and both are the premise actually
+    returning rather than the count moving: a SECOND non-containment pair writing
+    the same UI element (two verbs really repainting one widget), or any one
+    sequence re-derived at six or more sites (a fan-out with no owner, which is
+    the verb the review wanted).
+    """
+    verbs, closures = _refresh_verbs()
+    if not verbs:
+        return OPEN, "no refresh verbs found — the probe can no longer see them"
+    overlap = _refresh_ui_write_overlap(verbs)
+    seqs = _refresh_repeated_sequences(set(verbs))
+    worst = max((n for _s, n in seqs), default=0)
+    if len(overlap) > 1:
+        return OPEN, ("two verbs now repaint the same widget outside containment: "
+                      + "; ".join(f"{a} ∩ {b} on {c}" for a, b, c in overlap))
+    if worst >= 6:
+        return OPEN, (f"one refresh sequence is re-derived at {worst} sites — the "
+                      "missing verb the review asked for; re-open the candidate")
+    return STALE, (f"RETIRED 2026-08-20: {len(verbs)} verbs (not "
+                   f"{len(verbs) + len(closures)} — {len(closures)} were nested "
+                   f"refresh_cb closures), {len(overlap)} pair sharing a UI write "
+                   "and 0 interchangeable, so they are distinct jobs not 33 ways "
+                   f"to do one; residue is {len(seqs)} repeated sequences "
+                   f"(worst x{worst}, named in the docstring)")
 
 
 PROBES = [
