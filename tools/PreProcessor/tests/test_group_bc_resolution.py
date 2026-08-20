@@ -29,7 +29,11 @@ import tempfile
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
-_LIB = os.path.join(_REPO, "build")
+# The gmsh loader path comes from the ONE resolver, not from
+# <repo>/build — which holds the binary and has never held
+# libgmsh, so the old value was inert and the run depended on
+# the binary's baked rpath. See tests/mesher_bin.py.
+from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
 failures = []
 
@@ -75,9 +79,18 @@ def _run(tmp, group_bc_lines):
             "BL_LAYERS 2\nEXPORT_VTK 0\nEXPORT_STARCD 1\nBC_GEOM wall\n"
             f"OUTPUT_FILENAME {out}\n" + group_bc_lines + f"DOMAIN_FILE {dat} bl\n"
         )
-    env = dict(os.environ, DYLD_LIBRARY_PATH=_LIB, LD_LIBRARY_PATH=_LIB)
-    subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=env,
-                   capture_output=True, text=True, timeout=120)
+    env = _mesher_env()
+    p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=env,
+                       capture_output=True, text=True, timeout=120)
+    # The mesher's own words when it did not produce a mesh. Without this the
+    # only symptom is "patch names: []", which is what a wrong BC resolution
+    # and a mesher that never started look like from here — and they are not
+    # remotely the same problem. Measured: a whole CI round-trip was spent
+    # discovering that [] meant `error while loading shared libraries:
+    # libgmsh.so.4.15` and exit 127.
+    if p.returncode != 0:
+        tail = (p.stdout + p.stderr).strip().splitlines()[-4:]
+        print(f"  mesher exited {p.returncode}: " + " | ".join(tail))
     bnd = out + ".bnd"
     names = set()
     if os.path.exists(bnd):

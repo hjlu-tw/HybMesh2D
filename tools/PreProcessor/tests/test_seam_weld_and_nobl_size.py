@@ -42,7 +42,11 @@ import tempfile
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
-_LIB = os.path.join(_REPO, "build")
+# The gmsh loader path comes from the ONE resolver, not from
+# <repo>/build — which holds the binary and has never held
+# libgmsh, so the old value was inert and the run depended on
+# the binary's baked rpath. See tests/mesher_bin.py.
+from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
 # Point spacing of the synthetic outline below, and the seam gap left open.
 SPACING = 0.5
@@ -106,7 +110,7 @@ def _run(tmp, geom_line, out_name="out", extra="", timeout=180):
             "BL_TRANSITION_LAYERS 2\nEXPORT_VTK 1\nEXPORT_STARCD 0\n"
             f"{extra}OUTPUT_FILENAME {out}\n{geom_line}\n"
         )
-    env = dict(os.environ, DYLD_LIBRARY_PATH=_LIB, LD_LIBRARY_PATH=_LIB)
+    env = _mesher_env()
     try:
         p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=env,
                            capture_output=True, text=True, timeout=timeout)

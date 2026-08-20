@@ -37,7 +37,11 @@ import tempfile
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
-_LIB = os.path.join(_REPO, "build")
+# The gmsh loader path comes from the ONE resolver, not from
+# <repo>/build — which holds the binary and has never held
+# libgmsh, so the old value was inert and the run depended on
+# the binary's baked rpath. See tests/mesher_bin.py.
+from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
 DUCT_W, DUCT_H = 4.0, 3.0
 SPACING = 0.1
@@ -99,7 +103,7 @@ def run(tmp, dat, name, far_size, role="nobl", timeout=300):
             "BL_CONVEX_METHOD 2\nBL_CONCAVE_METHOD 5\nBL_JUNCTION_METHOD 1\n"
             f"EXPORT_VTK 1\nEXPORT_STARCD 0\nOUTPUT_FILENAME {out}.vtk\n"
         )
-    env = dict(os.environ, DYLD_LIBRARY_PATH=_LIB, LD_LIBRARY_PATH=_LIB)
+    env = _mesher_env()
     try:
         p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=env,
                            capture_output=True, text=True, timeout=timeout)

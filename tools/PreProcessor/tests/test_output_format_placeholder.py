@@ -43,7 +43,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _GUI = os.path.abspath(os.path.join(_HERE, "..", "gui"))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
-_LIB = os.path.join(_REPO, "build")
+# The gmsh loader path comes from the ONE resolver, not from
+# <repo>/build — which holds the binary and has never held
+# libgmsh, so the old value was inert and the run depended on
+# the binary's baked rpath. See tests/mesher_bin.py.
+from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 if _GUI not in sys.path:
     sys.path.insert(0, _GUI)
 
@@ -140,7 +144,7 @@ else:
                     "GMSH_ALGORITHM 6\nGMSH_OPTIMIZE 1\n"
                     "EXPORT_VTK 1\nEXPORT_STARCD 1\n"
                 )
-            env = dict(os.environ, DYLD_LIBRARY_PATH=_LIB, LD_LIBRARY_PATH=_LIB)
+            env = _mesher_env()
             # -out_name, so the CLI override is covered as well as the config key.
             star = os.path.join(td, "probe.*")
             try:

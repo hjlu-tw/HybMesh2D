@@ -53,7 +53,9 @@ import tempfile
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
-_LIB = os.path.join(_REPO, "build")
+# See tests/mesher_bin.py: <repo>/build never held libgmsh, so the
+# old loader path was inert and the run leaned on the baked rpath.
+from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
 # The duct is 4 x 3 with a BL total height of ~0.21, so the layer is thin
 # relative to every feature: any failure here is the junction, not the BL size.
@@ -274,8 +276,7 @@ def run(tmp, dat, name, starcd=False, timeout=300):
             f"EXPORT_VTK 1\nEXPORT_STARCD {1 if starcd else 0}\n"
             f"OUTPUT_FILENAME {out}.vtk\n"
         )
-    env = dict(os.environ, DYLD_LIBRARY_PATH=_LIB, LD_LIBRARY_PATH=_LIB,
-               HYBMESH_JUNC_DEBUG="1")
+    env = dict(_mesher_env(), HYBMESH_JUNC_DEBUG="1")
     try:
         p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=env,
                            capture_output=True, text=True, timeout=timeout)
