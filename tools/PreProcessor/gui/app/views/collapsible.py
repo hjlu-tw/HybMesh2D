@@ -15,6 +15,11 @@ class CollapsibleSection(QWidget):
     def __init__(self, title: str, parent=None, start_collapsed: bool = True):
         super().__init__(parent)
 
+        # Kept as a plain attribute (the button text carries padding) so the
+        # expanded/collapsed state can be persisted under a stable key — see
+        # app/services/ui_state.py.
+        self.title = title
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 2, 0, 2)
         main_layout.setSpacing(0)
@@ -93,5 +98,14 @@ class CollapsibleSection(QWidget):
 
     def _on_toggle(self, checked: bool):
         self.content_frame.setVisible(checked)
+        # Hiding/showing a child only POSTS the layout request, so until that event
+        # is delivered this widget keeps reporting the sizeHint of the state it
+        # just left. Anything that sizes itself from a section — a dialog fitting
+        # its window to whichever groups are open — would then act on the previous
+        # state. Invalidate now so sizeHint() answers for the state on screen.
+        lay = self.layout()
+        if lay is not None:
+            lay.invalidate()
+        self.updateGeometry()
         self.toggle_btn.setArrowType(
             Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)

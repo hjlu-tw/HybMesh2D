@@ -9,8 +9,11 @@
 #include <sstream>
 #include <filesystem>
 #include <cctype>
+#include <map>
+#include <set>
 
 #include "json.hpp"
+#include "PointTolerance.hpp"
 #include "GeomUtils.hpp"
 #include "Spline.hpp"
 #include "Spacing.hpp"
@@ -72,11 +75,20 @@ private:
         if (isAl(expression[pos])) {
             size_t s = pos; while (pos < expression.length() && isAlnum(expression[pos])) pos++;
             std::string n = expression.substr(s, pos - s);
-            if (n == "x") return xV; if (n == "t") return tV; if (n == "pi") return M_PI;
+            // One statement per line: GCC's -Wmisleading-indentation reads a
+            // second `if` sharing a line with the first as being guarded by it,
+            // and CI builds with -Werror. Behaviour is unchanged.
+            if (n == "x") return xV;
+            if (n == "t") return tV;
+            if (n == "pi") return M_PI;
             skip(); if (pos < expression.length() && expression[pos] == '(') {
                 pos++; double a = parseExpression(); if (pos < expression.length() && expression[pos] == ')') pos++;
-                if (n == "sin") return std::sin(a); if (n == "cos") return std::cos(a); if (n == "tan") return std::tan(a);
-                if (n == "exp") return std::exp(a); if (n == "log") return std::log(a); if (n == "sqrt") return std::sqrt(a);
+                if (n == "sin") return std::sin(a);
+                if (n == "cos") return std::cos(a);
+                if (n == "tan") return std::tan(a);
+                if (n == "exp") return std::exp(a);
+                if (n == "log") return std::log(a);
+                if (n == "sqrt") return std::sqrt(a);
                 if (n == "abs") return std::abs(a);
             }
         }
@@ -93,7 +105,8 @@ std::vector<Point2D> loadGeometry(const std::string& filename) {
     return points;
 }
 
-bool saveGeometry(const std::string& filename, const std::vector<Point2D>& points) {
+bool saveGeometry(const std::string& filename, const std::vector<Point2D>& points,
+                  const std::vector<size_t>& pieceBreaks = {}) {
     // Ensure the output directory exists (e.g. Results/ on a fresh clone or
     // case-sensitive FS) so the write does not silently vanish.
     fs::path parent = fs::path(filename).parent_path();
@@ -112,7 +125,122 @@ bool saveGeometry(const std::string& filename, const std::vector<Point2D>& point
         return false;
     }
     ofs << std::fixed << std::setprecision(10);
-    for (const auto& p : points) ofs << p.x << " " << p.y << "\n";
+    // pieceBreaks holds (ascending) indices that start a new disconnected piece.
+    // When provided (preview only) we emit a 'nan nan' separator row before each
+    // such point so the GUI can break the polyline exactly there. pieceBreaks is
+    // empty for real exports, keeping the .dat clean for the downstream mesher.
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i != 0 && std::binary_search(pieceBreaks.begin(), pieceBreaks.end(), i))
+            ofs << "nan nan\n";
+        ofs << points[i].x << " " << points[i].y << "\n";
+    }
+    return true;
+}
+
+// Phase 1: lossless metadata sidecar for the downstream mesher.
+//
+// A flat "x y" .dat cannot say which segment a point came from, whether it is
+// a structural corner, or which boundary condition the segment carries. We
+// write that out-of-band as "<output>.meta" so the .dat itself stays
+// byte-identical (and any tool that ignores the sidecar keeps working).
+//
+// Format (token-stream, parseable with `ifstream >>`, no JSON dependency so
+// the mesher need not pull in json.hpp):
+//   HYBMESH_META 3
+//   COUNT <N>
+//   NPIECES <P> <break0> <break1> ...        # indices into the point list
+//   NSEGMENTS <S>
+//   <seg_id> <bc> <curve_kind> <grow_bl>     # S lines; bc '-' = unset
+//   POINTS <N>
+//   <seg_id> <is_corner>                     # N lines, parallel to the .dat
+//
+// curve_kind (v2): line|circle|smooth|polyline — tells the mesher which local
+// model to rebuild from the surface points (Phase 2). v1 omitted this field.
+// grow_bl (v3): 1 = grow a boundary layer on this segment (default), 0 = don't.
+// The mesher (src/main.cpp) reads the 4th column only when version >= 3 and
+// treats a missing column (v2 sidecars) as grow=1, so old files stay valid.
+//
+// The per-point arrays are parallel to the points written by saveGeometry with
+// an EMPTY pieceBreaks (i.e. no 'nan' rows). We therefore only emit the sidecar
+// for real exports, never for the GUI's preview output.
+static const int kMetaFormatVersion = 3;   // schema version emitted by this writer
+
+bool saveMetadata(const std::string& datPath,
+                  const std::vector<int>& segId,
+                  const std::vector<char>& isCorner,
+                  const std::vector<size_t>& pieceBreaks,
+                  const std::map<int, std::string>& segBc,
+                  const std::map<int, std::string>& segKind,
+                  const std::map<int, int>& segGrowBL = {}) {
+    const std::string metaPath = datPath + ".meta";
+    // Preserve any GUI-only trailer (lines after the POINTS block, e.g. a
+    // "GROUP_BC <label> <bc_type>" map). The GUI persists the per-group BC
+    // resolution there and self-heals from it; the C++ mesher stops reading at
+    // the end of the POINTS block, so the trailer is invisible to it. Without
+    // this, re-resampling an already-BC-assigned geometry wiped the map and every
+    // boundary fell back to wall (all bc_flag=2) — most visibly when NO segment
+    // grows a BL, so every patch relies on this label→type resolution.
+    std::vector<std::string> trailer;
+    {
+        std::ifstream prev(metaPath);
+        if (prev) {
+            std::string line;
+            bool afterPoints = false;
+            long pointsRemaining = -1;
+            while (std::getline(prev, line)) {
+                std::istringstream iss(line);
+                std::string tok;
+                iss >> tok;
+                if (!afterPoints) {
+                    if (tok == "POINTS") {
+                        long np = 0; iss >> np;
+                        pointsRemaining = np;
+                        afterPoints = true;
+                    }
+                    continue;
+                }
+                if (pointsRemaining > 0) { --pointsRemaining; continue; }
+                if (!line.empty()) trailer.push_back(line);
+            }
+        }
+    }
+    std::ofstream ofs(metaPath);
+    if (!ofs) {
+        std::cerr << "Warning: cannot write metadata sidecar '" << metaPath << "'." << std::endl;
+        return false;
+    }
+    ofs << "HYBMESH_META " << kMetaFormatVersion << "\n";
+    ofs << "COUNT " << segId.size() << "\n";
+    ofs << "NPIECES " << pieceBreaks.size();
+    for (size_t b : pieceBreaks) ofs << " " << b;
+    ofs << "\n";
+    // Only list segments that actually produced output points. A config segment
+    // that resampled to nothing (a degenerate / collapsed edge) would otherwise be
+    // written as an empty NSEGMENTS row whose id never appears in the POINTS block;
+    // the mesh stage then shows a phantom per-segment BL/BC row (off by one vs the
+    // visible edges), so toggling "No BL" on it is a no-op and the real edge still
+    // grows a layer, and case.bc.def gains a bogus patch.
+    std::set<int> presentSegs(segId.begin(), segId.end());
+    size_t nSegOut = 0;
+    for (const auto& kv : segBc) if (presentSegs.count(kv.first)) ++nSegOut;
+    ofs << "NSEGMENTS " << nSegOut << "\n";
+    for (const auto& kv : segBc) {
+        if (!presentSegs.count(kv.first)) continue;
+        auto kit = segKind.find(kv.first);
+        const std::string kind = (kit != segKind.end() && !kit->second.empty()) ? kit->second : "polyline";
+        // v3: always emit the grow-BL column (default 1 = grow) so the mesher's
+        // version-gated reader always finds it.
+        auto git = segGrowBL.find(kv.first);
+        const int growBL = (git != segGrowBL.end()) ? (git->second != 0 ? 1 : 0) : 1;
+        ofs << kv.first << " " << (kv.second.empty() ? "-" : kv.second) << " "
+            << kind << " " << growBL << "\n";
+    }
+    ofs << "POINTS " << segId.size() << "\n";
+    for (size_t i = 0; i < segId.size(); ++i)
+        ofs << segId[i] << " " << (int)isCorner[i] << "\n";
+    // Re-emit the preserved GUI-only trailer (GROUP_BC map, etc.) verbatim.
+    for (const std::string& t : trailer)
+        ofs << t << "\n";
     return true;
 }
 
@@ -236,6 +364,19 @@ std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Poin
             double t = 2.0 * M_PI * i / (n - 1);
             pts.push_back({cx + r_val * std::cos(t), cy + r_val * std::sin(t)});
         }
+    } else if (curve_type == "arc") {
+        // Circular arc swept from theta0 to theta1 (radians). Without this the
+        // arc fell through to the cos/sin formula fallback and resampled as a
+        // full circle, so the GUI arc only ever previewed correctly.
+        double cx = p.value("cx", 0.0);
+        double cy = p.value("cy", 0.0);
+        double r_val = p.value("r", 1.0);
+        double th0 = p.value("theta0", 0.0);
+        double th1 = p.value("theta1", M_PI / 2.0);
+        for (int i = 0; i < n; ++i) {
+            double t = th0 + (th1 - th0) * i / (n - 1);
+            pts.push_back({cx + r_val * std::cos(t), cy + r_val * std::sin(t)});
+        }
     } else if (curve_type == "triangle" || curve_type == "quadrilateral" || curve_type == "polygon") {
         std::vector<Point2D> vertices;
         if (curve_type == "triangle") {
@@ -271,8 +412,9 @@ std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Poin
             }
         }
         
-        // Ensure polygon/triangle/quadrilateral is closed
-        if (!vertices.empty()) {
+        // Ensure polygon/triangle/quadrilateral is closed (unless the segment is
+        // explicitly marked open, in which case the endpoints stay distinct).
+        if (seg.value("closed", true) && !vertices.empty()) {
             double dx = vertices.front().x - vertices.back().x;
             double dy = vertices.front().y - vertices.back().y;
             if (std::sqrt(dx*dx + dy*dy) > 1e-9) {
@@ -508,9 +650,56 @@ bool processElement(const json& config) {
     }
 
     std::vector<Point2D> resPts;
+    std::vector<size_t> pieceBreaks; // indices in resPts that start a new piece
     double last_ds = -1.0; // Task 4: Spacing matching state
 
+    // Phase 1: per-point provenance, parallel to resPts, plus a seg_id -> BC map.
+    // Written out-of-band by saveMetadata so the .dat stays a plain coordinate list.
+    std::vector<int> resSegId;       // which segment each output point came from
+    std::vector<char> resCorner;     // 1 if the point is a pinned structural vertex
+    std::map<int, std::string> segBc; // per-segment boundary-condition tag
+    std::map<int, std::string> segKind; // per-segment curve kind (Phase 2)
+    std::map<int, int> segGrowBL;     // per-segment grow-BL flag (v3; default 1)
+    int segIndex = -1;
+
+    // Phase 2: classify a segment's local smoothness model so the mesher can
+    // rebuild an analytic curve (line/circle) or a smooth spline from the
+    // surface points and query exact normals/curvature during BL growth.
+    auto deriveCurveKind = [](const json& sj) -> std::string {
+        if (sj.value("type", std::string("file")) == "curve") {
+            std::string ct = sj.value("curve_type", std::string("custom"));
+            if (ct == "line" || ct == "horizontal_line" || ct == "vertical_line") return "line";
+            if (ct == "circle") return "circle";
+            if (ct == "triangle" || ct == "quadrilateral" || ct == "polygon") return "polyline";
+            return "smooth"; // custom formula
+        }
+        return "smooth"; // file polyline: spline between flagged corners
+    };
+
     for (const auto& sj : config["segments"]) {
+        ++segIndex;
+        // A segment's id is its GUI-assigned id when present, else its position.
+        const int segId = sj.value("id", segIndex);
+        segBc[segId] = sj.value("bc", std::string());
+        segKind[segId] = deriveCurveKind(sj);
+        // Optional per-segment grow-BL flag (v3 .meta column). The GUI may emit
+        // "grow_bl" (bool) or the legacy "no_bl"; default is grow (1). A freshly
+        // resampled geometry therefore always starts with BL on every segment —
+        // the "grow BL?" choice is a mesh-stage edit made afterwards. (No prior-
+        // .meta preservation here: it made a NEW geometry reusing an output name
+        // silently inherit the old geometry's flags.)
+        {
+            bool grow = sj.value("grow_bl", !sj.value("no_bl", false));
+            segGrowBL[segId] = grow ? 1 : 0;
+        }
+        // A segment starts a new disconnected piece if the GUI declares one
+        // ("new_piece"), OR its first point does not coincide with the previous
+        // segment's last point (a moved/duplicated edge, or a separately-drawn
+        // body). Decided once, on the segment's first sample point. The explicit
+        // flag makes multi-body / annular sessions robust even when two pieces
+        // happen to sit geometrically close.
+        bool segStarted = false;
+        bool declaredNewPiece = sj.value("new_piece", false);
         std::string type = sj.value("type", "file");
         bool autoSplit = sj.value("auto_split", false);
         double splitThreshold = sj.value("split_threshold", 20.0);
@@ -558,7 +747,9 @@ bool processElement(const json& config) {
                     }
                 }
 
-                if (!vertices.empty()) {
+                // Close the loop only when the segment is marked closed (default).
+                // An open polyline keeps its endpoints distinct.
+                if (sj.value("closed", true) && !vertices.empty()) {
                     double dx = vertices.front().x - vertices.back().x;
                     double dy = vertices.front().y - vertices.back().y;
                     if (std::sqrt(dx*dx + dy*dy) > 1e-9) {
@@ -726,6 +917,37 @@ bool processElement(const json& config) {
             bool useLocalSpline = (task.type == "file" && sp.size() >= 3 && !useGlobalSpline);
             if (useLocalSpline) localSpline.build(sp, s);
 
+            // #3: corner-aware resampling. A single smoothing spline over a file
+            // task rounds off any sharp corner the user did NOT split at, so the
+            // resampled nodes drift off the original edge. Detect internal corners
+            // and, when present, build ONE spline per smooth sub-piece (split at
+            // the corners): each smooth run stays G1 while every corner is kept
+            // exactly (C0) — the distribution hugs the original polyline. With no
+            // internal corner this stays inactive and the single spline is used.
+            std::vector<Spline2D> pieceSplines;   // one per smooth sub-piece
+            std::vector<double> pieceS0;          // local arc-length at piece start
+            std::vector<double> pieceS1;          // local arc-length at piece end
+            bool piecewise = false;
+            if (task.type == "file" && sp.size() >= 3) {
+                double cornerThr = task.segment_json.value(
+                    "corner_angle", task.segment_json.value("split_threshold", 30.0));
+                std::vector<int> corners = detectFeaturePoints(sp, cornerThr);
+                if (corners.size() > 2) {   // at least one INTERNAL corner
+                    piecewise = true;
+                    for (size_t k = 0; k + 1 < corners.size(); ++k) {
+                        int i0 = corners[k], i1 = corners[k + 1];
+                        std::vector<Point2D> pp(sp.begin() + i0, sp.begin() + i1 + 1);
+                        std::vector<double> ps;
+                        for (int j = i0; j <= i1; ++j) ps.push_back(s[j] - s[i0]);
+                        Spline2D spl;
+                        if ((int)pp.size() >= 3) spl.build(pp, ps);
+                        pieceSplines.push_back(spl);
+                        pieceS0.push_back(s[i0]);
+                        pieceS1.push_back(s[i1]);
+                    }
+                }
+            }
+
             std::string strat = task.segment_json.value("strategy", "uniform");
             json params = task.segment_json.value("parameters", json::object());
 
@@ -800,10 +1022,19 @@ bool processElement(const json& config) {
                 double dlt = params.value("intensity", 2.0);
                 double s0 = readPositiveSpacing(params, "spacing_start");
                 double s1 = readPositiveSpacing(params, "spacing_end");
-                if (s0 > 0 && s1 > 0) {
-                    // When the requested spacing equals L, log(1)=0 -> dlt=0; keep a
-                    // small positive floor so generateTanh stays well-defined.
-                    dlt = std::max(1e-3, std::log(L / std::min(s0, s1)) * 0.5);
+                // tanh clustering is SYMMETRIC, so it has one end spacing, not
+                // two: whichever end the user specified (or the finer of the two)
+                // is solved for. Solved by bisection rather than the old
+                // log(L/min(s0,s1))*0.5 heuristic, which did not reproduce the
+                // requested spacing and needed BOTH ends set to do anything at all
+                // -- a one-sided request silently fell back to `intensity`.
+                double ds_end = (s0 > 0 && s1 > 0) ? std::min(s0, s1)
+                                                   : (s0 > 0 ? s0 : s1);
+                if (ds_end > 0) {
+                    double solved = Spacing::solveTanhDelta(L, nT, ds_end);
+                    // 0 means "coarser than uniform" -> uniform is the honest
+                    // answer; generateTanh degenerates to it at dlt ~ 0.
+                    dlt = solved;
                 }
                 tS = Spacing::generateTanh(L, nT, dlt);
             } else if (strat == "curvature") {
@@ -814,14 +1045,71 @@ bool processElement(const json& config) {
                 for (int i = 0; i < nT; ++i) tS.push_back(L * i / (nT - 1));
             }
 
+            // #2: guarantee a mesh NODE exactly at every internal corner even
+            // when the user did NOT split there. The piecewise resampler already
+            // routes the curve THROUGH each corner, but a sample only lands on it
+            // by luck; here we pin the corner arc-lengths into the sample set so
+            // each vertex is preserved as an actual node (flagged as a corner in
+            // the loop below). A sample already near a corner is snapped onto it
+            // (keeps the node count); otherwise a node is inserted.
+            std::vector<double> cornerS;
+            if (piecewise) {
+                for (size_t k = 1; k < pieceS0.size(); ++k) cornerS.push_back(pieceS0[k]);
+                double nominal = (nT > 1) ? (L / (nT - 1)) : L;
+                double minGap = nominal * 0.5;
+                for (double c : cornerS) {
+                    size_t best = 0; double bestd = 1e300;
+                    for (size_t i = 0; i < tS.size(); ++i) {
+                        double d = std::abs(tS[i] - c);
+                        if (d < bestd) { bestd = d; best = i; }
+                    }
+                    if (bestd < 1e-9) continue;                 // node already here
+                    bool endpoint = (best == 0 || best == tS.size() - 1);
+                    // A corner a hair from an ENDPOINT sample cannot be snapped (the
+                    // endpoint is pinned to the segment's own vertex), so it used to
+                    // be inserted unconditionally — emitting two nodes a hair apart
+                    // and a sliver edge orders of magnitude shorter than its
+                    // neighbours. On a closed loop that sliver sits at the seam and
+                    // makes the outline self-intersect there. Below 5% of the nominal
+                    // spacing the corner IS the endpoint; drop it.
+                    if (endpoint &&
+                        bestd < hybmesh::POINT_COINCIDENCE_FRACTION * nominal) continue;
+                    if (!endpoint && bestd < minGap) tS[best] = c;  // snap nearest
+                    else tS.push_back(c);                       // otherwise insert
+                }
+                std::sort(tS.begin(), tS.end());
+                tS.erase(std::unique(tS.begin(), tS.end(),
+                         [](double a, double b){ return std::abs(a - b) < 1e-9; }),
+                         tS.end());
+            }
+
             std::vector<Point2D> segmentPts;
             for (size_t idx_ts = 0; idx_ts < tS.size(); ++idx_ts) {
                 double ts = tS[idx_ts];
+                // The first/last sample of every task is a pinned vertex: a shape
+                // vertex, a feature (auto-split) point, or a segment endpoint.
+                // These are the structural corners the resampler guarantees to keep.
+                bool isBoundaryPt = (idx_ts == 0 || idx_ts == tS.size() - 1);
+                // A pinned internal corner (#2) is also a structural node.
+                if (!isBoundaryPt && !cornerS.empty()) {
+                    for (double c : cornerS)
+                        if (std::abs(ts - c) < 1e-9) { isBoundaryPt = true; break; }
+                }
                 Point2D p;
                 if (idx_ts == 0) {
                     p = sp.front();
                 } else if (idx_ts == tS.size() - 1) {
                     p = sp.back();
+                } else if (piecewise) {
+                    // #3: pick the smooth sub-piece this arc-length falls in and
+                    // evaluate its own spline (keeps corners exact). A sub-piece
+                    // too short for a spline hugs the polyline via linear interp.
+                    int k = 0;
+                    while (k + 1 < (int)pieceS0.size() && ts >= pieceS0[k + 1]) ++k;
+                    if (pieceSplines[k].valid())
+                        p = pieceSplines[k].eval(ts - pieceS0[k]);
+                    else
+                        p = interpolateLinear(sp, s, ts);
                 } else {
                     if (useGlobalSpline && globalSpline.valid() && task.type == "file" && task.start_gp_idx != -1) {
                         // Map local s to global s
@@ -834,10 +1122,30 @@ bool processElement(const json& config) {
                     }
                 }
                 
+                // On the segment's first sample point, record a piece break if the
+                // GUI declared one, or it is geometrically detached from the running
+                // output's tail.
+                if (!segStarted) {
+                    segStarted = true;
+                    if (!resPts.empty() &&
+                        (declaredNewPiece || (p - resPts.back()).length() > 1e-7))
+                        pieceBreaks.push_back(resPts.size());
+                }
+
                 // Avoid duplicate points at segment boundaries
                 if (resPts.empty() || (p - resPts.back()).length() > 1e-10) {
                     resPts.push_back(p);
+                    resSegId.push_back(segId);
+                    resCorner.push_back(isBoundaryPt ? 1 : 0);
                     segmentPts.push_back(p);
+                } else if (isBoundaryPt && !resCorner.empty()) {
+                    // Shared vertex between adjacent tasks: keep the corner flag and
+                    // re-assign the point to the LATER segment (the one that starts
+                    // here). Without this the shared corner kept the previous
+                    // segment's id, so per-segment runs (BC preview / node segIds)
+                    // spilled one point past the corner ("overshoot by one").
+                    resCorner.back() = 1;
+                    resSegId.back() = segId;
                 }
             }
             
@@ -845,6 +1153,28 @@ bool processElement(const json& config) {
             if (segmentPts.size() >= 2) {
                 last_ds = (segmentPts.back() - segmentPts[segmentPts.size() - 2]).length();
             }
+        }
+    }
+
+    // Weld the seam of a closed element. Every INTERNAL segment boundary is already
+    // deduped as the tasks are walked, but the wrap-around (last segment's end back
+    // onto the first segment's start) is not: the two come from independently
+    // resampled/aligned tasks, so they can land a hair apart. That hair becomes a
+    // sliver edge orders of magnitude shorter than its neighbours, which makes the
+    // exported outline self-intersect at the seam — the boundary layer then collides
+    // with itself there, and Gmsh can spin indefinitely triangulating around it.
+    // Snapping (rather than dropping) keeps resSegId/resCorner aligned with resPts;
+    // the mesher drops the exact duplicate when it loads the loop.
+    if (config.value("is_closed", false) && pieceBreaks.empty() && resPts.size() > 2) {
+        double gap = (resPts.back() - resPts.front()).length();
+        double span = std::min((resPts[1] - resPts[0]).length(),
+                               (resPts[resPts.size() - 1] - resPts[resPts.size() - 2]).length());
+        if (gap > 0.0 && span > 0.0 &&
+            gap <= hybmesh::POINT_COINCIDENCE_FRACTION * span) {
+            std::cerr << "Warning: closed geometry seam was " << gap
+                      << " open (local point spacing " << span
+                      << "); welding the last point onto the first." << std::endl;
+            resPts.back() = resPts.front();
         }
     }
 
@@ -872,11 +1202,21 @@ bool processElement(const json& config) {
     }
 
     std::string outPath = config.value("output_file", "Results/output.dat");
-    if (!saveGeometry(outPath, resPts)) {
+    // Piece separators are written only when the GUI requests a preview; real
+    // exports stay free of 'nan' rows for the downstream mesher / visualiser.
+    bool previewMarkers = config.value("preview_markers", false);
+    if (!saveGeometry(outPath, resPts,
+                      previewMarkers ? pieceBreaks : std::vector<size_t>{})) {
         std::cerr << "Failed to write element output to " << outPath << std::endl;
         return false;
     }
     std::cout << "Successfully processed element to " << outPath << " (" << resPts.size() << " points)" << std::endl;
+
+    // Phase 1: emit the metadata sidecar for real exports only. The preview
+    // path uses 'nan' separators and is consumed solely by the GUI, where the
+    // per-point arrays would no longer line up with the .dat rows.
+    if (!previewMarkers)
+        saveMetadata(outPath, resSegId, resCorner, pieceBreaks, segBc, segKind, segGrowBL);
 
     // Task 5: Quality Report
     Quality::analyze(resPts).print();

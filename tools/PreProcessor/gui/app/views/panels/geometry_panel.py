@@ -1,30 +1,28 @@
 from __future__ import annotations
-from PyQt6.QtWidgets import QListWidget
-from PyQt6.QtCore import pyqtSignal, Qt
 from app.views.collapsible import CollapsibleSection
-from app.utils import make_button, help_widget, LIST_INDICATOR_STYLE
+from app.utils import help_widget
+from app.views.panels.geometry_tree import GeometryTreeView
+
 
 class GeometryPanel(CollapsibleSection):
-    context_menu_requested = pyqtSignal(object, object)  # (global_pos, item)
+    """Model tree: geometry layers (with a visibility 'eye') and their edges.
+
+    Replaces the former geometry-layer list + flat edge list with a single tree.
+    Layer visibility is the per-row checkbox; add/remove/convert and other
+    commands are reached through the tree's right-click context menu (built by
+    the controller). The ``context_menu_requested`` signal lives on the tree."""
 
     def __init__(self, parent=None):
-        super().__init__("Geometry Entities", start_collapsed=True, parent=parent)
+        super().__init__("Model Tree", start_collapsed=True, parent=parent)
 
-        self.geom_list = QListWidget()
-        self.geom_list.setMaximumHeight(120)
-        self.geom_list.setStyleSheet(LIST_INDICATOR_STYLE)
-        self.geom_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.geom_list.customContextMenuRequested.connect(self._on_context_menu)
+        self.geometry_tree = GeometryTreeView()
+        self.add_widget(help_widget(
+            self.geometry_tree,
+            "Geometry layers and their edges. Toggle the checkbox to show/hide a "
+            "layer; double-click to fit it in view; right-click for actions."))
 
-        self.toggle_visibility_btn = make_button("Toggle Visibility", '#1a2035')
-        self.toggle_visibility_btn.setToolTip(
-            "Show or hide the selected geometry layer on the canvas")
-
-        self.add_widget(help_widget(self.geom_list, "List of loaded geometry layers/entities"))
-        self.add_widget(help_widget(self.toggle_visibility_btn, "Show or hide the selected geometry layer on the canvas"))
-
-    def _on_context_menu(self, pos):
-        item = self.geom_list.itemAt(pos)
-        if item:
-            global_pos = self.geom_list.mapToGlobal(pos)
-            self.context_menu_requested.emit(global_pos, item)
+    @property
+    def context_menu_requested(self):
+        # Back-compat: expose the tree's signal under the panel name the
+        # controller historically connected to.
+        return self.geometry_tree.context_menu_requested

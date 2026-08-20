@@ -1,0 +1,46 @@
+{
+  "pipeline_version": 1,
+  "name": "naca_demo",
+  "cad": {
+    "input_file": "examples/geometries/naca0012.dat",
+    "is_closed": true,
+    "skip": true
+  },
+  "mesh": {
+    "domain_x_min": -1.5,
+    "domain_x_max": 2.5,
+    "domain_y_min": -1.5,
+    "domain_y_max": 1.5,
+    "surface_mesh_size": 0.02,
+    "auto_surface_size": true,
+    "farfield_mesh_size": 0.4,
+    "farfield_growth_rate": 0.2,
+    "bl_initial_thickness": 0.001,
+    "bl_growth_rate": 1.2,
+    "bl_layers": 8,
+    "gmsh_algorithm": 6,
+    "gmsh_optimize": 1,
+    "bc_geom": "wall",
+    "bc_xmin": "inlet",
+    "bc_xmax": "outlet",
+    "bc_ymin": "outlet",
+    "bc_ymax": "outlet"
+  },
+  "solver": {
+    "case_name": "naca_demo",
+    "preset": "Euler (inviscid)",
+    "fs_mach": 0.5,
+    "fs_flow_angle": 2.0,
+    "cfl": 0.5,
+    "num_half_iter": 200,
+    "print_convg_per_niter": 20,
+    "print_sol_per_niter": 200,
+    "dump_zone_per_niter": 200
+  },
+  "results": {
+    "variable": "M",
+    "cmap": "jet",
+    "save_png": "results/pipeline/naca_demo_M.png",
+    "mesh_overlay": false
+  }
+}

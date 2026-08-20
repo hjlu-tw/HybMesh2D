@@ -1,3 +1,18 @@
+# ==============================================================================
+# 0. Units
+# ==============================================================================
+# The unit every length below (and every geometry coordinate) is expressed in:
+# m / cm / mm / um / in / ft, or "custom" with LENGTH_UNIT_METRES.
+#
+# The mesher does not CONVERT anything -- it only ever compares lengths with each
+# other -- but it records the unit, because the solver IS dimensional: unicones
+# takes fs_UnitRe per METRE and Linf as metres-per-grid-unit, so Re = fs_UnitRe x
+# Linf. A millimetre mesh run with Linf = 1 gives a Reynolds number 1000x wrong
+# while every mesh picture looks perfect.
+LENGTH_UNIT m
+# LENGTH_UNIT_METRES 0.0254   # only for LENGTH_UNIT custom (e.g. a unit-chord grid)
+# LENGTH_UNIT_NAME chord
+
 # HybMesh2D 背景參數設定檔 (Background_para.dat)
 # 注意：本檔案包含所有程式支援的可調參數
 

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSST2026 Revised Draft v2 — AI-Assisted CFD Platform</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+  :root {
+    --text: #1a1a1a; --accent: #1a3a6a; --light-bg: #f7f8fa;
+    --border: #d0d4dc; --caption: #555;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'STIX Two Text', 'Times New Roman', Georgia, serif;
+    font-size: 10.5pt; line-height: 1.45; color: var(--text);
+    background: #e8eaee; padding: 0;
+  }
+  .paper {
+    max-width: 210mm; margin: 20px auto; background: #fff;
+    padding: 18mm 18mm 22mm 18mm; box-shadow: 0 2px 20px rgba(0,0,0,0.12);
+  }
+  .title-block { text-align: center; margin-bottom: 18pt; }
+  .title-block h1 { font-size: 15pt; font-weight: 700; line-height: 1.25; margin-bottom: 10pt; }
+  .authors { font-size: 10.5pt; margin-bottom: 4pt; }
+  .affiliation { font-size: 9pt; color: #555; font-style: italic; margin-bottom: 6pt; }
+  .email { font-size: 8.5pt; color: #666; font-family: monospace; }
+  .abstract {
+    margin: 14pt 24pt; padding: 8pt 0;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  }
+  .abstract h2 { font-size: 10pt; font-weight: 700; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5px; }
+  .abstract p { font-size: 9.5pt; text-align: justify; line-height: 1.4; }
+  .keywords { font-size: 9pt; margin-top: 4pt; color: #444; }
+  .two-col { column-count: 1; text-align: justify; hyphens: auto; }
+  h2.section-title {
+    font-size: 11pt; font-weight: 700; margin-top: 12pt; margin-bottom: 5pt;
+    color: var(--accent); break-after: avoid;
+  }
+  h3.subsection-title {
+    font-size: 10pt; font-weight: 600; margin-top: 8pt; margin-bottom: 3pt;
+    color: var(--text); break-after: avoid;
+  }
+  p { margin-bottom: 5pt; }
+  .figure {
+    break-inside: avoid; margin: 10pt 0; text-align: center;
+    background: var(--light-bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 8pt 6pt 6pt 6pt;
+  }
+  .figure.full-width { margin: 12pt 0; }
+  .figure-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 120px; background: linear-gradient(135deg, #eef1f7 0%, #dce1eb 100%);
+    border: 1px dashed #b0b8ca; border-radius: 3px;
+    color: #777; font-size: 9pt; font-style: italic; padding: 10px;
+  }
+  .figure-placeholder.tall { min-height: 180px; }
+  .figure-caption { font-size: 9pt; margin-top: 5pt; color: var(--caption); text-align: center; line-height: 1.35; }
+  .table-wrap { break-inside: avoid; margin: 8pt 0; }
+  .table-caption { font-size: 9pt; margin-bottom: 4pt; text-align: center; color: var(--caption); }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  th, td { border: 1px solid var(--border); padding: 3pt 5pt; text-align: left; }
+  th { background: var(--light-bg); font-weight: 600; color: var(--accent); font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.3px; }
+  td { vertical-align: top; }
+  .references { margin-top: 12pt; border-top: 1px solid var(--border); padding-top: 8pt; }
+  .references h2 { font-size: 10.5pt; font-weight: 700; margin-bottom: 5pt; color: var(--accent); }
+  .ref-list { font-size: 8.5pt; line-height: 1.4; }
+  .ref-list p { margin-bottom: 3pt; text-indent: -14pt; padding-left: 14pt; }
+  .note { font-size: 8.5pt; color: #666; font-style: italic; margin: 6pt 0; padding: 4pt 8pt; background: #fafbfd; border-left: 3px solid #c0c8d8; }
+  .todo { background: #fffbe6; border-left: 3px solid #f0c040; padding: 3pt 8pt; font-size: 8.5pt; color: #7a6000; margin: 4pt 0; }
+  .small { font-size: 9pt; }
+</style>
+</head>
+<body>
+<div class="paper">
+
+<!-- TITLE -->
+<div class="title-block">
+  <h1>AI-Assisted Development of an Integrated Pre/Post-Processing<br>
+      Platform for CFD Solvers: A Vibe Coding Approach</h1>
+  <p class="authors">○ Author A<sup>1</sup>, Author B<sup>1</sup>, Author C<sup>1</sup>
+    <!-- TODO: Replace with actual author names -->
+  </p>
+  <p class="affiliation">
+    <sup>1</sup>National Center for High-performance Computing (NCHC), National Applied Research Laboratories, Taiwan
+  </p>
+  <p class="email">corresponding-email@nchc.org.tw</p>
+</div>
+
+<!-- ABSTRACT -->
+<div class="abstract">
+  <h2>Abstract</h2>
+  <p>
+    This paper presents an integrated pre- and post-processing platform for CFD solvers,
+    developed using an AI-assisted paradigm known as <em>responsible vibe coding</em>.
+    Motivated by the accessibility gap between mature in-house CFD solvers and their
+    practical adoption in academic settings, we built a unified graphical application
+    spanning geometry preparation, hybrid mesh generation — combining structured
+    boundary-layer quadrilaterals with unstructured far-field triangles — solver
+    execution with real-time convergence monitoring, and flow-field visualization.
+    The platform was demonstrated with the UNICONES compressible flow solver [1] and
+    constructed using Claude Code and the Antigravity CLI in agentic mode, in which
+    the domain expert retains full responsibility for architectural decisions and
+    physical validation while the AI accelerates implementation. This collaboration
+    produced over 21,000 lines of code in approximately 4–6 weeks of part-time effort.
+    The methodology suggests a generalizable pattern for research groups seeking to
+    lower the adoption barrier of in-house solvers without dedicated software
+    engineering resources.
+  </p>
+  <p class="keywords">
+    <strong>Keywords:</strong> CFD pre/post-processing; CESE method; hybrid mesh generation;
+    vibe coding; AI-assisted software development; solver front-end
+  </p>
+</div>
+
+<!-- BODY -->
+<div class="two-col">
+
+<!-- 1. INTRODUCTION -->
+<h2 class="section-title">1. Introduction</h2>
+
+<p>
+  Computational Fluid Dynamics (CFD) has become an indispensable tool in aerospace,
+  mechanical, and environmental engineering. However, the practical use of a CFD solver
+  is seldom limited to the solver itself — a complete simulation workflow typically
+  involves (1) geometry preparation and surface discretization, (2) volume mesh
+  generation with boundary-layer resolution, (3) solver configuration and execution,
+  and (4) post-processing and visualization of results. Each of these steps often
+  requires separate software tools, manual file conversions, and substantial expertise
+  in both numerical methods and software operation.
+</p>
+
+<p>
+  This challenge is particularly acute for research groups that develop and maintain
+  in-house solvers. UNICONES [1], a compressible Euler/Navier–Stokes solver based on
+  the Conservation Element and Solution Element (CESE) method, developed at the
+  National Center for High-performance Computing (NCHC), Taiwan, is one such example.
+  The solver is intended for broader academic use and is available to interested
+  researchers upon inquiry. In practice, however, the full simulation workflow requires
+  coordinating multiple preprocessing utilities, manual file format conversions, and
+  solver configuration steps that are not yet documented in a user-facing interface.
+  As a result, familiarization typically demands several weeks of guided effort, and
+  hands-on experience has so far remained limited to a small number of interns and
+  collaborators. This gap — between a mature, validated solver with open-access intent
+  and the operational complexity that impedes its adoption — is representative of a
+  broader problem faced by the computational science community.
+</p>
+
+<p>
+  To address this, we developed an integrated graphical platform that unifies the
+  complete CFD simulation pipeline — geometry preparation, hybrid mesh generation,
+  solver execution, and flow-field visualization — into a single application, eliminating
+  the manual file conversions and configuration steps that impede adoption. The platform
+  is demonstrated with UNICONES, but its modular architecture is designed with
+  extensibility to other solvers in mind. A distinctive feature of this work is the
+  development methodology: the platform was built through <em>responsible vibe coding</em> [2],
+  an AI-assisted programming paradigm in which a domain expert describes requirements
+  in natural language and collaborates with a large language model (LLM) to produce
+  working software. This approach enabled a team without dedicated software engineering
+  resources to deliver a production-quality platform of over 21,000 lines of code in
+  a fraction of conventional development time — demonstrating that solver-specific
+  front-ends need not require a separate software engineering team to realize.
+</p>
+
+<p>
+  This paper makes the following contributions: (i) the design and implementation of
+  an integrated pre/post-processing platform that lowers the barrier to adoption of
+  in-house CFD solvers for academic users; (ii) a documented case study of vibe coding
+  applied to scientific software development, with quantitative observations on
+  development efficiency and human–AI role division; and (iii) a generalizable pattern
+  for constructing solver-specific GUI front-ends via AI-assisted development, applicable
+  to research groups maintaining in-house solvers across the computational science community.
+</p>
+
+
+<!-- 2. SYSTEM ARCHITECTURE -->
+<h2 class="section-title">2. System Architecture</h2>
+
+<p>
+  The integrated CFD platform comprises four functional modules within a unified PyQt6
+  graphical interface, covering the complete simulation pipeline from geometry preparation
+  to flow-field visualization. The overall data flow is shown in Fig. 1. Users navigate
+  between five workflow modes — <em>PreProcessor</em>, <em>Mesh Generator</em>,
+  <em>Mesh Statistics</em>, <em>Solver</em>, and <em>Results</em> — through a mode
+  selector, each presenting its own sidebar panel and canvas view.
+</p>
+
+<div class="figure full-width">
+  <div class="figure-placeholder tall">
+    [TODO: Insert system architecture block diagram]
+  </div>
+  <p class="figure-caption"><strong>Fig. 1.</strong> Overall data flow of the integrated CFD platform.
+    The entire workflow from geometry import to flow-field visualization is integrated within a
+    single GUI application. Dashed box indicates the optional domain decomposition step for
+    MPI parallelism.</p>
+</div>
+
+<h3 class="subsection-title">2.1 PreProcessor Module</h3>
+<p>
+  The PreProcessor provides an interactive geometry canvas for loading, viewing, and
+  resampling surface discretizations. It supports multiple point-spacing strategies
+  including uniform, cosine, geometric, and hyperbolic tangent distributions, enabling
+  independent control over leading- and trailing-edge clustering. Automatic sharp-corner
+  detection identifies feature points where the turning angle exceeds a configurable
+  threshold, allowing the geometry to be split into segments with separate resampling
+  parameters. The resampling backend is implemented as a standalone C++ executable,
+  communicating with the GUI via a QThread worker to maintain interface responsiveness.
+</p>
+
+<h3 class="subsection-title">2.2 Hybrid Mesh Generator</h3>
+<p>
+  The mesh generation core (C++, ~1,500 lines) produces 2D hybrid meshes comprising
+  structured quadrilateral boundary layers and unstructured triangular far-field elements.
+  Boundary layers are grown outward from the surface using a node-marching algorithm,
+  with dedicated handling for convex and concave corners. A configurable transition
+  region bridges the boundary-layer zone to the far-field, where the Gmsh library [3]
+  generates unstructured triangles via the Frontal-Delaunay algorithm. The module
+  exports both VTK format for standalone visualization and STAR-CD format
+  (.vrt/.cel/.bnd) for solver input.
+</p>
+
+<h3 class="subsection-title">2.3 Solver Integration</h3>
+<p>
+  The solver integration module orchestrates the full execution chain from within the
+  GUI: mesh format conversion, optional domain decomposition for MPI parallelism, and
+  solver execution in pthread parallel mode. The module automatically constructs the
+  required case directory structure and generates the solver input configuration.
+  During execution, a background worker parses solver output in real time, extracting
+  iteration counts, CFL numbers, and L2 residuals for five conservation variables,
+  displayed on a live convergence monitor. Although the current implementation targets
+  UNICONES, the solver integration layer is designed as a modular component; adaptation
+  to alternative solvers requires only replacement of the format conversion and
+  stdout-parsing routines.
+</p>
+
+<h3 class="subsection-title">2.4 Results Visualization</h3>
+<p>
+  The results module parses Tecplot-format output files and renders cell-centered scalar
+  fields using an embedded matplotlib canvas. It supports smooth contour rendering,
+  velocity streamlines, and vector glyphs. Users can interactively select field
+  variables, adjust colormaps and color scale limits, and toggle mesh wireframe
+  overlays — all without leaving the application.
+</p>
+
+
+<!-- 3. AI-ASSISTED DEVELOPMENT METHODOLOGY -->
+<h2 class="section-title">3. AI-Assisted Development Methodology</h2>
+
+<p>
+  The platform was developed using an approach we characterize as <em>responsible
+  vibe coding</em> — a mode of AI-assisted programming where a domain expert maintains
+  full architectural control and validation responsibility, while delegating
+  implementation to an LLM-based coding assistant. This section describes the
+  workflow, provides concrete examples, and evaluates the development efficiency.
+</p>
+
+<h3 class="subsection-title">3.1 The Human–AI Collaboration Model</h3>
+<p>
+  Vibe coding, as originally described by Karpathy [2], refers to a programming paradigm
+  in which the developer describes intent in natural language and an AI generates the
+  corresponding code. In our context, we adopt a more disciplined variant —
+  <em>responsible vibe coding</em> — in which the domain expert maintains full
+  architectural control and validation responsibility. The primary tools used were
+  Claude Code and the Antigravity CLI, both operating in an agentic mode: rather than
+  simple chat-based code generation, the AI could directly read and write project files,
+  execute the codebase, and inspect runtime outputs. This capability proved critical for
+  diagnosing issues that could not be resolved through textual description alone
+  (see Section 3.2, Case A).
+</p>
+<p>
+  The domain expert was responsible for defining the simulation pipeline architecture
+  and data flow, specifying numerical algorithms, designing the format compatibility
+  chain between pipeline components, and validating all outputs against known physical
+  solutions. The AI was responsible for generating GUI boilerplate, implementing file
+  parsers, producing C++ routines from algorithmic descriptions, and wiring the
+  controller–worker–view architecture. Development proceeded iteratively — describe,
+  generate, execute, validate, correct — typically converging within 2–5 rounds per feature.
+</p>
+
+<h3 class="subsection-title">3.2 Representative Development Cases</h3>
+<p>
+  <strong>Case A: Boundary-layer generation.</strong>
+  The expert described the outward-marching algorithm — including normal vector
+  computation, fan-element geometry at convex corners, and the concave-node blending
+  strategy — in natural language, and the AI produced an initial 610-line C++
+  implementation. This case illustrated three distinct challenges in human–AI
+  collaboration. First, the quality of the AI's output was strongly dependent on the
+  precision of the human's problem description: more carefully worded prompts
+  consistently reduced the number of correction rounds. Second, textual description
+  alone was often insufficient; the AI required access to actual run results to correctly
+  diagnose geometric edge cases, such as self-intersection at sharp trailing edges and
+  incorrect fan-node counts for acute angles. Third, even after the AI confirmed that a
+  fix was correct, discrepancies emerged during real use — highlighting that AI
+  self-verification carries blind spots that only domain-expert validation can catch.
+  These three layers of human oversight — precise description, execution-based diagnosis,
+  and physical validation — proved essential throughout the development process.
+</p>
+<p>
+  <strong>Case B: Complete GUI framework.</strong>
+  The PyQt6 application comprises 69 Python source files totaling over 18,000 lines,
+  organized in an MVC architecture with 9 controller mixins, 8 data models, 16 view
+  components, and 15 panel widgets. The AI was highly effective at generating GUI
+  scaffolding — widget layouts, stylesheet definitions, signal/slot wiring — which
+  constitutes the majority of GUI code by volume. Human judgment remained essential,
+  however, for decisions that required understanding of the overall user workflow:
+  specifying mode-switching behavior, ensuring interaction consistency across panels,
+  and maintaining a coherent dark-theme aesthetic throughout the application. These
+  are concerns that the AI could implement once specified, but could not independently define.
+</p>
+<p>
+  <strong>Case C: Solver pipeline integration.</strong>
+  This was the most complex integration task, requiring the worker to manage case
+  directory structures with file renaming and path rewriting, parse real-time solver
+  stdout for convergence monitoring, and handle both IBM (Immersed Boundary Method)
+  and non-IBM solver output formats — which were discovered during live testing to have
+  different stdout structures. The initial implementation plan was written collaboratively
+  with the AI, documenting 8 key design decisions and 9 risk items, then executed
+  phase-by-phase.
+</p>
+
+<h3 class="subsection-title">3.3 Quantitative Assessment</h3>
+
+<div class="table-wrap">
+  <p class="table-caption"><strong>Table 1.</strong> Codebase statistics of the integrated CFD platform.</p>
+  <table>
+    <tr><th>Component</th><th>Language</th><th>Files</th><th>Lines</th></tr>
+    <tr><td>Mesh Generator Core</td><td>C++</td><td>7</td><td>~1,860</td></tr>
+    <tr><td>PreProcessor Backend</td><td>C++</td><td>4</td><td>~1,180</td></tr>
+    <tr><td>GUI Application</td><td>Python</td><td>69</td><td>~18,200</td></tr>
+    <tr><td style="font-weight:600">Total (platform)</td><td>—</td><td style="font-weight:600">80</td><td style="font-weight:600">~21,240</td></tr>
+    <tr><td>UNICONES <span class="small">(existing, unmodified)</span></td><td>C/Fortran</td><td>—</td><td><em>not modified</em></td></tr>
+  </table>
+</div>
+
+<p>
+  The solver integration module alone was estimated at approximately 20–25 person-hours
+  across 10 implementation phases. Across the full platform, the AI-assisted approach
+  compressed what would typically require 3–6 months of conventional development to
+  approximately 4–6 weeks of part-time effort. The AI was most effective for GUI
+  boilerplate, file I/O routines, and standard software patterns; it required the most
+  correction for domain-specific numerical edge cases, third-party SDK integration,
+  and cross-component format agreements.
+</p>
+
+
+<!-- 4. DISCUSSION -->
+<h2 class="section-title">4. Discussion</h2>
+
+<p>
+  The vibe coding approach proved most effective for developing the <em>peripheral
+  tooling</em> around an existing solver — GUI interfaces, data pipelines, and
+  visualization — while the solver core (UNICONES) remained untouched. This division
+  aligns naturally with the capabilities of current LLMs: they excel at well-established
+  software patterns such as GUI frameworks, file I/O, and standard algorithms, but
+  require substantial human guidance for domain-specific numerical logic. Critically,
+  as demonstrated in Section 3.2, effective collaboration depends not only on the AI's
+  code generation ability, but on three layers of human oversight: the precision of
+  problem description, execution-based diagnosis of edge cases, and physical validation
+  of results. Without domain expertise at each of these layers, vibe coding for
+  scientific software carries significant risk of producing plausible but incorrect
+  implementations.
+</p>
+
+<p>
+  The modular design of the solver integration layer (Section 2.3) is a deliberate
+  architectural choice with extensibility in mind. Adapting the platform to a different
+  solver requires replacing two components: the mesh format conversion routine and the
+  stdout parser for convergence monitoring. The remaining modules — geometry
+  preprocessing, mesh generation, and visualization — operate independently of the
+  solver and require no modification. This separation of concerns suggests that the
+  platform architecture could serve as a reusable template for other research groups
+  seeking to build front-ends for their own in-house solvers, with relatively limited
+  additional effort.
+</p>
+
+<p>
+  Unlike commercial pre/post-processing tools such as Pointwise or ANSYS ICEM, the
+  present platform is intentionally lightweight and tightly coupled to a specific
+  simulation context. This focused scope is precisely what makes the vibe coding
+  approach viable: the development target is well-defined, the acceptance criteria are
+  clear, and the user base has known needs. We suggest that this pattern — AI-assisted
+  construction of solver-specific front-ends by domain experts without dedicated
+  software engineering resources — is broadly reproducible across the computational
+  science community. The platform is available to interested researchers upon inquiry.
+</p>
+
+
+<!-- 5. CONCLUSION -->
+<h2 class="section-title">5. Conclusion</h2>
+
+<p>
+  We presented an integrated pre/post-processing platform for CFD solvers, developed
+  using an AI-assisted responsible vibe coding approach and demonstrated with the
+  UNICONES compressible flow solver. The platform unifies geometry preparation, hybrid
+  mesh generation, solver execution with real-time monitoring, and flow-field
+  visualization into a single graphical application. The AI-assisted methodology enabled
+  domain experts — without dedicated software engineering resources — to produce a
+  platform of over 21,000 lines of code in approximately 4–6 weeks of part-time effort,
+  a fraction of conventional development time.
+</p>
+
+<p>
+  The modular solver integration architecture suggests a path toward a more general
+  CFD front-end framework, where the geometry, mesh, and visualization components are
+  reused across different solvers. Promising directions for future work include
+  extending the platform to 3D mesh generation, incorporating automated parameter
+  optimization for mesh quality, and exploring web-based deployment to further lower
+  the barrier to entry for CFD education and research.
+</p>
+
+<p style="margin-top: 8pt; font-size: 9pt; color: #555;">
+  <strong>Acknowledgments.</strong> [TODO: Add acknowledgments.]
+</p>
+
+
+<!-- REFERENCES -->
+<div class="references">
+  <h2>References</h2>
+  <div class="ref-list">
+    <p>[1] Lo, S.-T., et al., "UNICONES: An unstructured CESE solver for compressible
+      flow simulations," [TODO: Add actual UNICONES publication reference].
+    </p>
+    <p>[2] Karpathy, A., "Vibe coding," X (formerly Twitter) post and subsequent
+      interviews, February 2025.
+      [TODO: Replace with more citable source]
+    </p>
+    <p>[3] Geuzaine, C. and Remacle, J.-F., "Gmsh: A 3-D finite element mesh generator
+      with built-in pre- and post-processing facilities,"
+      <em>International Journal for Numerical Methods in Engineering</em>,
+      Vol. 79, No. 11, pp. 1309–1331, 2009.
+    </p>
+    <p>[4] Gupta, M. et al., "Vibe coding: A systematic mapping study of AI-assisted
+      software development," <em>arXiv preprint</em>, 2025.
+      [TODO: Update with actual arXiv ID]
+    </p>
+    <p>[5] Chang, S.-C., "The method of space-time conservation element and solution
+      element," <em>Journal of Computational Physics</em>, Vol. 119, No. 2,
+      pp. 295–324, 1995.
+    </p>
+    <p>[6] Thompson, J.F., Soni, B.K., and Weatherill, N.P., <em>Handbook of
+      Grid Generation</em>, CRC Press, 1999.
+    </p>
+  </div>
+</div>
+
+</div><!-- end two-col -->
+
+<!-- TODO LIST -->
+<div class="note" style="margin-top: 18pt;">
+  <strong>Remaining TODOs before submission:</strong><br>
+  1. Replace author names, affiliations, and email.<br>
+  2. Insert Fig. 1 (system architecture block diagram).<br>
+  3. Complete [1] UNICONES reference (most critical).<br>
+  4. Update [2] Karpathy reference to a more citable source.<br>
+  5. Add acknowledgments.<br>
+  6. Decide on platform name (currently referred to as "the integrated CFD platform").<br>
+  7. Reformat into official JSST2026 template before final submission.
+</div>
+
+</div><!-- end paper -->
+</body>
+</html>

@@ -1,6 +1,5 @@
 build/
 bin/
-*.vtk
 HybMesh2D
 CMakeFiles/
 CMakeCache.txt
@@ -8,8 +7,72 @@ cmake_install.cmake
 Makefile
 .DS_Store
 
-# Output / result directories
+# Output / result directories.
+# BOTH cases, deliberately: the directory this repo actually writes is
+# lowercase `results/`, and for a long time only `Results/` was listed. That
+# matched anyway on macOS, whose filesystem is case-insensitive, and matched
+# NOTHING on Linux — so `results/` and `tools/results/` were untracked noise on
+# every case-sensitive checkout, including CI, while looking perfectly ignored
+# to whoever wrote the rule. No leading slash, so both match at any depth.
+results/
 Results/
+
+# Mesh exports. Every mesh run writes these, and it writes them next to whatever
+# geometry or config it was launched from — not just under results/ — so they
+# turn up in examples/geometries/, config/mesh/ and the repo root. Matched by
+# extension because none of the four has ever been tracked (`git ls-files`), and
+# a reference grid worth keeping can still go in with `git add -f`.
+*.vtk
+*.vrt
+*.cel
+*.bnd
+
+# Solver pipeline binaries + case data (large prebuilt binaries, kept out of VCS)
+solver/
 
 # Editor / tooling artifacts
 .antigravitycli/
+# Browser "save page as" sidecar folders (docs/**/ *.html.download/)
+*.html.download/
+
+# Claude Code runtime state. NOT the same thing as `.agents/` + `skills-lock.json`,
+# which ARE tracked: those pin which skills this repo uses, the way a lockfile
+# does, and `docs/agents/` is referenced by CLAUDE.md. This directory otherwise
+# holds per-machine runtime state (scheduled_tasks.lock, skills/).
+#
+# `settings.json` is the exception and must be tracked: it carries the
+# SessionStart hook that measures the architecture backlog, which is a property
+# of THIS REPO rather than of one developer's machine — an ignored copy would
+# fire for whoever happened to create it and for nobody else. Note the pattern
+# has to exclude the directory's CONTENTS (`.claude/*`), not the directory:
+# git does not descend into an excluded directory, so `!` cannot re-include a
+# file underneath one. Per-machine overrides belong in `settings.local.json`,
+# which stays ignored.
+.claude/*
+!.claude/settings.json
+
+# Editor / tool backup copies. A `.bak` beside a tracked file is a local undo
+# buffer, never an input — config/pipeline/*.hws.bak is how they turn up here.
+*.bak
+
+# Local working configs. The mesh parameter file and pipeline/workspace scripts
+# are written per-experiment next to the case being tuned; the ones worth keeping
+# live in config/pipeline/ under their own names and go in with `git add -f`.
+#
+# THAT LAST SENTENCE IS WHY THE GUI'S SAVE DIALOGS DEFAULT INTO `config/local/`
+# AND NOT INTO `config/pipeline/`. A folder whose declared purpose is to hold
+# force-added keepers can never be a safe save default: `config/pipeline/` carries
+# README.md, template.json and three demo scripts that four tests read, so a
+# session whose name collides with one is a single Enter away from overwriting a
+# committed script in place — issue #5's defect with a different folder. It has
+# already happened once: the blank session is named "Untitled 1", which is how
+# `config/pipeline/Untitled 1.json` came to be tracked (c2a90c5), and
+# `config/mesh/` holds two of the same accident.
+#
+# `config/local/` exists so the rule needs no per-file whack-a-mole: the whole
+# directory is ignored, so it holds nothing tracked BY CONSTRUCTION, which is the
+# property tests/test_save_dialog_defaults.py asks git about rather than reading
+# from a hand-written list of folder names.
+config/local/
+config/mesh/Background_para_I_coarse.dat
+config/pipeline/cyl0d5_Rot1d0.hws

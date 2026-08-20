@@ -1,6 +1,10 @@
 import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from app.services.env_setup import mesher_env
+from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
+from app.workers.proc_util import popen_kwargs, stop_process_async, kill_process
+
 
 class BackendWorker(QThread):
     """Runs the C++ surface_resampler binary in a background thread."""
@@ -16,9 +20,10 @@ class BackendWorker(QThread):
         self._cancelled = False
 
     def cancel(self):
+        # Non-blocking SIGTERM of the whole process tree, escalating off-thread
+        # (see app/workers/proc_util.py).
         self._cancelled = True
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
+        stop_process_async(self._process)
 
     def run(self):
         try:
@@ -27,40 +32,36 @@ class BackendWorker(QThread):
                 f"Running: {self.executable_path} {self.config_path}")
             self._cancelled = False
             cwd = os.path.dirname(os.path.dirname(os.path.abspath(self.executable_path)))
+            # Same loader-path handover as the mesher: surface_resampler is built
+            # from the same tree and must not depend on a shell wrapper's export.
             self._process = subprocess.Popen(
                 [self.executable_path, self.config_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,          # line-buffered
-                cwd=cwd,
+                env=mesher_env(),
+                **popen_kwargs(cwd=cwd),
             )
 
             for line in self._process.stdout:
                 if self._cancelled:
-                    self._process.terminate()
+                    stop_process_async(self._process)
                     self.log_signal.emit("Backend cancelled by user.")
-                    self.finished_signal.emit(-2)
+                    self.finished_signal.emit(RC_CANCELLED)
                     return
                 stripped = line.rstrip()
                 if stripped:
                     self.log_signal.emit(stripped)
-            
+
             if self._cancelled:
-                self._process.terminate()
+                stop_process_async(self._process)
                 self.log_signal.emit("Backend cancelled by user.")
-                self.finished_signal.emit(-2)
+                self.finished_signal.emit(RC_CANCELLED)
                 return
 
             self._process.wait(timeout=600)  # 10 min timeout
             self.finished_signal.emit(self._process.returncode)
         except subprocess.TimeoutExpired:
-            if self._process:
-                self._process.kill()
+            kill_process(self._process)
             self.log_signal.emit("Backend timed out (10 min).")
-            self.finished_signal.emit(-3)
+            self.finished_signal.emit(RC_TIMEOUT)
         except Exception as e:
             self.log_signal.emit(f"Failed to start backend: {e}")
-            self.finished_signal.emit(-1)
+            self.finished_signal.emit(RC_EXCEPTION)

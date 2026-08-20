@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QWidget, QFormLayout, QComboBox, QLabel, QCheckBox, QPushButton, QHBoxLayout, QVBoxLayout
+from PyQt6.QtWidgets import QFormLayout, QComboBox, QLabel, QCheckBox, QHBoxLayout, QVBoxLayout, QApplication
 from PyQt6.QtCore import pyqtSignal
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, help_widget
@@ -8,6 +8,11 @@ from app.models.vtk_mesh import VTKMesh
 
 class MeshStatsPanel(CollapsibleSection):
     """Panel displaying mesh statistics and rendering controls."""
+
+    # At/below this cell count the quality metrics (aspect ratio, skewness) are
+    # computed inline — vectorised, this is sub-frame and avoids a "computing…"
+    # flash. Larger meshes compute them on a background thread instead.
+    STATS_ASYNC_CELL_LIMIT = 50_000
 
     color_mode_changed = pyqtSignal(str)         # Emitted when the color mode is changed
     fit_view_requested = pyqtSignal()            # Emitted when the "Fit View" button is clicked
@@ -19,6 +24,17 @@ class MeshStatsPanel(CollapsibleSection):
 
     def __init__(self, parent=None):
         super().__init__("Mesh Statistics", start_collapsed=True, parent=parent)
+
+        # Background quality-metric computation (large meshes). A generation
+        # token discards results from a superseded mesh; the worker list keeps
+        # running threads referenced so they aren't GC'd mid-run.
+        self._stats_gen = 0
+        self._stats_workers: list = []
+        # Wait for any running stats worker at shutdown so its QThread isn't
+        # destroyed mid-run (which Qt aborts on).
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._wait_stats_workers)
 
         # ── Rendering Controls ────────────────────────────────────────────
         self.color_mode_combo = QComboBox()
@@ -165,7 +181,9 @@ class MeshStatsPanel(CollapsibleSection):
         self.add_layout(exp_layout)
 
     def update_stats(self, mesh: VTKMesh | None, file_path: str = ""):
-        """Update statistics display based on the loaded mesh."""
+        """Update the statistics display. Cheap counts (vertices, cells, bounds)
+        are shown immediately; the O(cells) quality metrics are computed on a
+        background thread for large meshes so the UI never blocks."""
         if file_path:
             self.file_path_label.setText(f"File: {os.path.basename(file_path)}")
             self.file_path_label.setToolTip(file_path)
@@ -173,50 +191,82 @@ class MeshStatsPanel(CollapsibleSection):
             self.file_path_label.setText("File: No mesh loaded")
             self.file_path_label.setToolTip("")
 
+        # Bump the generation so any in-flight worker's result is discarded once
+        # a new mesh (or a clear) supersedes it.
+        self._stats_gen += 1
+
         if not mesh or len(mesh.points) == 0:
-            self.vrt_label.setText("—")
-            self.cel_label.setText("—")
-            self.tri_label.setText("—")
-            self.quad_label.setText("—")
-            self.poly_label.setText("—")
-            self.bounds_label.setText("—")
-            self.ar_min_label.setText("—")
-            self.ar_max_label.setText("—")
-            self.ar_mean_label.setText("—")
-            self.sk_min_label.setText("—")
-            self.sk_max_label.setText("—")
-            self.sk_mean_label.setText("—")
+            for lbl in (self.vrt_label, self.cel_label, self.tri_label,
+                        self.quad_label, self.poly_label, self.bounds_label,
+                        self.ar_min_label, self.ar_max_label, self.ar_mean_label,
+                        self.sk_min_label, self.sk_max_label, self.sk_mean_label):
+                lbl.setText("—")
             return
 
+        # Cheap, immediate stats.
         self.vrt_label.setText(str(len(mesh.points)))
         total_cells = len(mesh.triangles) + len(mesh.quads) + len(mesh.polygons)
         self.cel_label.setText(str(total_cells))
         self.tri_label.setText(str(len(mesh.triangles)))
         self.quad_label.setText(str(len(mesh.quads)))
         self.poly_label.setText(str(len(mesh.polygons)))
-
         xmin, xmax, ymin, ymax = mesh.bounds
         self.bounds_label.setText(f"X: [{xmin:.4f}, {xmax:.4f}]\nY: [{ymin:.4f}, {ymax:.4f}]")
 
-        ratios = mesh.get_element_aspect_ratios()
-        if len(ratios) > 0:
-            self.ar_min_label.setText(f"{ratios.min():.3f}")
-            self.ar_max_label.setText(f"{ratios.max():.3f}")
-            self.ar_mean_label.setText(f"{ratios.mean():.3f}")
+        # Quality metrics: inline for small meshes (imperceptible, no flash),
+        # threaded for large ones.
+        if total_cells <= self.STATS_ASYNC_CELL_LIMIT:
+            self._apply_quality_stats({
+                "ar": self._reduce(mesh.get_element_aspect_ratios()),
+                "sk": self._reduce(mesh.get_element_skewness()),
+            })
         else:
-            self.ar_min_label.setText("—")
-            self.ar_max_label.setText("—")
-            self.ar_mean_label.setText("—")
+            for lbl in (self.ar_min_label, self.ar_max_label, self.ar_mean_label,
+                        self.sk_min_label, self.sk_max_label, self.sk_mean_label):
+                lbl.setText("computing…")
+            self._start_stats_worker(mesh, self._stats_gen)
 
-        skew_vals = mesh.get_element_skewness()
-        if len(skew_vals) > 0:
-            self.sk_min_label.setText(f"{skew_vals.min():.3f}")
-            self.sk_max_label.setText(f"{skew_vals.max():.3f}")
-            self.sk_mean_label.setText(f"{skew_vals.mean():.3f}")
-        else:
-            self.sk_min_label.setText("—")
-            self.sk_max_label.setText("—")
-            self.sk_mean_label.setText("—")
+    @staticmethod
+    def _reduce(arr):
+        """(min, max, mean) of a metric array, or None if empty."""
+        return (float(arr.min()), float(arr.max()), float(arr.mean())) if len(arr) else None
+
+    def _start_stats_worker(self, mesh, gen: int):
+        from app.workers.mesh_stats_run import MeshStatsWorker
+        # Drop already-finished workers so the list doesn't grow unbounded.
+        self._stats_workers = [w for w in self._stats_workers if w.isRunning()]
+        worker = MeshStatsWorker(mesh, gen)
+        worker.done.connect(self._on_stats_done)
+        worker.finished.connect(lambda w=worker: self._drop_stats_worker(w))
+        self._stats_workers.append(worker)
+        worker.start()
+
+    def _drop_stats_worker(self, worker):
+        if worker in self._stats_workers:
+            self._stats_workers.remove(worker)
+
+    def _wait_stats_workers(self):
+        for worker in list(self._stats_workers):
+            if worker.isRunning():
+                worker.wait(2000)
+
+    def _on_stats_done(self, gen: int, stats: dict):
+        # Ignore results from a mesh that has since been superseded / cleared.
+        if gen != self._stats_gen:
+            return
+        self._apply_quality_stats(stats)
+
+    def _apply_quality_stats(self, stats: dict):
+        """Fill the aspect-ratio / skewness labels from a {'ar':..,'sk':..} dict
+        (each a (min,max,mean) tuple or None)."""
+        ar = stats.get("ar")
+        self.ar_min_label.setText(f"{ar[0]:.3f}" if ar else "—")
+        self.ar_max_label.setText(f"{ar[1]:.3f}" if ar else "—")
+        self.ar_mean_label.setText(f"{ar[2]:.3f}" if ar else "—")
+        sk = stats.get("sk")
+        self.sk_min_label.setText(f"{sk[0]:.3f}" if sk else "—")
+        self.sk_max_label.setText(f"{sk[1]:.3f}" if sk else "—")
+        self.sk_mean_label.setText(f"{sk[2]:.3f}" if sk else "—")
 
     def _on_color_mode_changed(self, text: str):
         """Translate combobox selections to mode IDs."""

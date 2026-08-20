@@ -52,6 +52,10 @@ class RemoveSplitCmd(BaseCommand):
         if self.keep_vertex:
             if self.idx in self.session.split_indices:
                 self.session.split_indices.remove(self.idx)
+            # Removing a breakpoint is a real config change (it alters the
+            # exported segmentation), so mark the session dirty just like
+            # AddSplitCmd — otherwise the edit is silently dropped on close.
+            self.session.is_geometry_modified = True
             self.sync_cb()
         else:
             if self.idx in self.session.split_indices:
@@ -72,7 +76,7 @@ class RemoveSplitCmd(BaseCommand):
             self.session.original_points = self._old_pts.copy()
         self.session.is_geometry_modified = self._old_modified
         self.session.project_model.update_file_segments_from_indices(
-            self.session.split_indices)
+            self.session.split_indices, points=self.session.original_points)
         self.refresh_cb()
 
 

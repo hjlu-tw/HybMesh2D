@@ -1,11 +1,25 @@
 from __future__ import annotations
-import math
 import numpy as np
-from PyQt6.QtCore import Qt
 from app.models.segment import SegmentModel
-from app.models.session import GeometrySession
-from app.commands.segment_cmds import AddCurveSegmentCmd, BakeCurveToGeometryCmd
-from app.services.geometry_service import GeometryService
+from app.commands.segment_cmds import (
+    AddCurveSegmentCmd, BakeCurveToGeometryCmd, BakeCurvesToGeometryCmd)
+from app.services.geometry_service import (
+    GeometryService)
+from app.models import shape_spec
+from app.models.curve_edit_spec import polygon_perimeter
+
+def _apply_default_polygon_spacing(params: dict):
+    """#1: newly-created polygons distribute *By Spacing* by default so density
+    follows the perimeter length instead of a fixed node count. The default
+    spacing targets ~100 nodes at the shape's own scale (perimeter / 100), so it
+    stays sensible whatever the geometry's units; it falls back to 0.1 when the
+    perimeter is unknown. Mutates ``params`` in place."""
+    per = polygon_perimeter(shape_spec.polygon_vertices(params))
+    spacing = round(per / 100.0, 6) if per > 0 else 0.1
+    params["spacing"] = spacing
+    if per > 0:
+        params["n_points"] = max(2, int(round(per / spacing)))
+
 
 class CurveControllerMixin:
     """Mixin containing analytic curve management, previewing, and baking logic."""
@@ -13,7 +27,7 @@ class CurveControllerMixin:
     def add_curve_segment(self):
         session = self.active_session()
         if not session:
-            self.main_window.log_panel.log("No geometry session active.")
+            self.log("No geometry session active.")
             return
         cmd = AddCurveSegmentCmd(
             session,
@@ -21,29 +35,107 @@ class CurveControllerMixin:
             select_cb=self._select_segment_by_index
         )
         session.command_history.execute(cmd)
-        self.main_window.log_panel.log(
+        self.log(
             f"Added Analytic Edge {cmd.added_seg.id}.")
 
     def bake_selected_curve(self):
+        """Convert the selected analytic edge(s) to discrete points.
+
+        With SEVERAL edges selected the conversion order is worked out from the
+        geometry, not from the click order (USER-REQUESTED): the edges are
+        chained by endpoint coincidence and baked head-to-tail, so the four
+        sides of a quadrilateral end up as one continuous boundary whichever
+        order they were picked in. Baking welds each piece onto whichever END of
+        the polyline it touches, so out-of-order edges land as disjoint pieces
+        and the single base polyline draws a straight line across the gap — the
+        phantom "diagonal" that prompted this. Edges that do NOT form one chain
+        are baked in selection order and the log says why.
+        """
         session = self.active_session()
-        if not session or session.current_segment_idx < 0:
+        if not session:
             return
-        seg = session.project_model.get_segment(session.current_segment_idx)
-        if not seg or seg.type != "curve":
-            return
-        
-        n = seg.parameters.get("n_points", 100)
-        xs, ys = GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
-        if xs is None or len(xs) < 2:
-            self.main_window.log_panel.log("Cannot convert curve: invalid preview points.")
+        pm = session.project_model
+
+        def is_curve(i):
+            seg = pm.get_segment(i)
+            return bool(seg and seg.type == "curve")
+
+        indices = [i for i in self.get_selected_segment_indices() if is_curve(i)]
+        if not indices:
+            # The tree selection may hold no analytic edge at all — it still
+            # lists the discrete edges a previous conversion produced, and a
+            # context-menu / programmatic caller sets only current_segment_idx.
+            # That single edge stays the target, exactly as it was before
+            # multi-selection was understood here.
+            cur = getattr(session, "current_segment_idx", -1)
+            if not is_curve(cur):
+                return
+            indices = [cur]
+        if not self._bakeable(session, [pm.get_segment(i) for i in indices]):
             return
 
-        cmd = BakeCurveToGeometryCmd(session, session.current_segment_idx, self._refresh_segment_list)
-        session.command_history.execute(cmd)
-        self.main_window.log_panel.log(f"Converted Edge {cmd.seg_id} to Discrete.")
+        if len(indices) > 1:
+            indices = self._bake_order(session, indices)
+            cmd = BakeCurvesToGeometryCmd(session, indices,
+                                          self._refresh_segment_list)
+            session.command_history.execute(cmd)
+            self.log(
+                "Converted Edge " + ", ".join(str(i) for i in cmd.seg_ids)
+                + " to Discrete (one connected boundary).")
+        else:
+            cmd = BakeCurveToGeometryCmd(session, indices[0],
+                                         self._refresh_segment_list)
+            session.command_history.execute(cmd)
+            self.log(f"Converted Edge {cmd.seg_id} to Discrete.")
         self.main_window.canvas_view.clear_curve_preview(session.session_id)
         self._apply_geometry_update(session)
         self._update_canvas_curve_segments()
+
+    def _bakeable(self, session, segs) -> bool:
+        """Every selected edge must evaluate to a usable polyline before ANY of
+        them is baked — a half-converted selection is the worst outcome."""
+        for seg in segs:
+            n = seg.parameters.get("n_points", 100)
+            try:
+                xs, _ys = GeometryService.compute_curve_preview_pts(
+                    seg, n, session.original_points)
+            except Exception as e:
+                self.log(
+                    f"Cannot convert Edge {seg.id}: {e}")
+                return False
+            if xs is None or len(xs) < 2:
+                self.log(
+                    f"Cannot convert Edge {seg.id}: invalid preview points.")
+                return False
+        return True
+
+    def _bake_order(self, session, indices):
+        """Order selected edge indices head-to-tail along the boundary they form.
+
+        Falls back to the given (selection) order when they are not one chain —
+        several separate shapes are a legitimate thing to convert at once, and
+        each still welds correctly within itself.
+        """
+        pm = session.project_model
+        edges = []
+        for i in indices:
+            seg = pm.get_segment(i)
+            res = GeometryService.get_segment_points(session, seg)
+            if res is None or len(res[0]) < 2:
+                return indices
+            pts = np.column_stack(res).astype(float)
+            edges.append({"idx": i, "id": seg.id, "pts": pts,
+                          "p0": pts[0].copy(), "p1": pts[-1].copy()})
+        ordered, _is_loop = self._chain_edges(edges, self._endpoint_tolerance(session))
+        if ordered is None:
+            self.log(
+                "The selected edges do not form one connected chain — converting "
+                "them in selection order; disjoint pieces stay separate.")
+            return indices
+        return [e["src"]["idx"] for e in ordered]
+
+    # ── Join / Close edges → one closed polygon ────────────────────────────
+
 
     def _sync_active_curve_segment_from_ui(self):
         session = self.active_session()
@@ -52,61 +144,11 @@ class CurveControllerMixin:
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg or seg.type != "curve":
             return
-        
-        sb = self.main_window.sidebar_view
-        CURVE_TYPES = ["custom", "horizontal_line", "vertical_line", "line", "circle", "triangle", "quadrilateral", "polygon"]
-        idx = sb.curve_type_combo.currentIndex()
-        if 0 <= idx < len(CURVE_TYPES):
-            seg.curve_type = CURVE_TYPES[idx]
-        else:
-            seg.curve_type = "custom"
-
-        seg.curve_mode = "parametric" if sb.curve_mode_param.isChecked() else "explicit"
-        seg.x_formula = sb.curve_x_formula.text()
-        seg.y_formula = sb.curve_y_formula.text()
-        seg.formula = sb.curve_formula.text()
-        seg.t_min = sb.curve_t_min.value()
-        seg.t_max = sb.curve_t_max.value()
-        seg.parameters["n_points"] = sb.curve_n.value()
-        seg.start_index = sb.curve_start_node.value()
-        seg.end_index = sb.curve_end_node.value()
-
-        # Sync parameters based on curve type
-        if seg.curve_type == "horizontal_line":
-            seg.parameters["y"] = sb.h_line_y.value()
-            seg.parameters["x0"] = sb.h_line_x_start.value()
-            seg.parameters["x1"] = sb.h_line_x_end.value()
-        elif seg.curve_type == "vertical_line":
-            seg.parameters["x"] = sb.v_line_x.value()
-            seg.parameters["y0"] = sb.v_line_y_start.value()
-            seg.parameters["y1"] = sb.v_line_y_end.value()
-        elif seg.curve_type == "line":
-            seg.parameters["x0"] = sb.line_x0.value()
-            seg.parameters["y0"] = sb.line_y0.value()
-            seg.parameters["x1"] = sb.line_x1.value()
-            seg.parameters["y1"] = sb.line_y1.value()
-        elif seg.curve_type == "circle":
-            seg.parameters["cx"] = sb.circle_cx.value()
-            seg.parameters["cy"] = sb.circle_cy.value()
-            seg.parameters["r"] = sb.circle_r.value()
-        elif seg.curve_type == "triangle":
-            seg.parameters["x0"] = sb.tri_x0.value()
-            seg.parameters["y0"] = sb.tri_y0.value()
-            seg.parameters["x1"] = sb.tri_x1.value()
-            seg.parameters["y1"] = sb.tri_y1.value()
-            seg.parameters["x2"] = sb.tri_x2.value()
-            seg.parameters["y2"] = sb.tri_y2.value()
-        elif seg.curve_type == "quadrilateral":
-            seg.parameters["x0"] = sb.quad_x0.value()
-            seg.parameters["y0"] = sb.quad_y0.value()
-            seg.parameters["x1"] = sb.quad_x1.value()
-            seg.parameters["y1"] = sb.quad_y1.value()
-            seg.parameters["x2"] = sb.quad_x2.value()
-            seg.parameters["y2"] = sb.quad_y2.value()
-            seg.parameters["x3"] = sb.quad_x3.value()
-            seg.parameters["y3"] = sb.quad_y3.value()
-        elif seg.curve_type == "polygon":
-            seg.parameters["vertices_str"] = sb.poly_vertices.text()
+        # Twelve widget reads and the polygon node-count rule used to sit here.
+        # The form answers with a spec that writes only the fields it authors,
+        # and the rule (measure the perimeter AFTER the shape params land) went
+        # with it, where it can be checked without a QApplication.
+        self.main_window.sidebar_view.curve_spec().apply_to(seg)
 
     def handle_curve_type_changed(self):
         session = self.active_session()
@@ -115,23 +157,43 @@ class CurveControllerMixin:
         seg = session.project_model.get_segment(session.current_segment_idx)
         if not seg or seg.type != "curve":
             return
+
+        # If the user actually switched the shape type, reset that type's
+        # parameters to clean defaults so the shared shape widgets do not carry
+        # over stale values (e.g. a vertices_str left from a transformed polygon
+        # — the cause of the "polygon default = last transform residual" bug).
+        sb = self.main_window.sidebar_view
+        new_type = sb.curve_spec().curve_type
+        if new_type != seg.curve_type and not self._is_populating:
+            seg.curve_type = new_type
+            if new_type in shape_spec.DEFAULTS:
+                for k in shape_spec.ALL_SHAPE_KEYS:
+                    seg.parameters.pop(k, None)
+                seg.parameters.update(shape_spec.DEFAULTS[new_type])
+            # #1: switching to a polygon defaults it to By-Spacing distribution
+            # (density follows the perimeter). Non-polygon types drop any leftover
+            # 'spacing' so they stay node-count.
+            if new_type == "polygon":
+                _apply_default_polygon_spacing(seg.parameters)
+            else:
+                seg.parameters.pop("spacing", None)
+            # Push the fresh defaults into the shape widgets before syncing back.
+            with self.populating():
+                sb.show_curve_segment(seg)
+
         self._sync_active_curve_segment_from_ui()
-        # Update list item text
+        # Update the edge row's label in the model tree
         sb = self.main_window.sidebar_view
         seg_idx = session.current_segment_idx
-        item = None
-        for row in range(sb.curve_segment_list.count()):
-            curr_item = sb.curve_segment_list.item(row)
-            if curr_item.data(Qt.ItemDataRole.UserRole) == seg_idx:
-                item = curr_item
-                break
+        item = sb.geometry_tree.edge_item_by_index(session.session_id, seg_idx)
         if item is not None:
             c_type = seg.curve_type
             from app.utils import CURVE_TYPE_LABELS
             lbl_val = CURVE_TYPE_LABELS.get(c_type, c_type.capitalize())
             c_label = lbl_val(seg) if callable(lbl_val) else lbl_val
-            item.setText(f"Edge {seg.id}: {c_label}")
+            item.setText(0, f"Edge {seg.id}: {c_label}")
         self.preview_curve_formula()
+        self._refresh_edge_handles()
 
     def preview_curve_formula(self):
         session = self.active_session()
@@ -165,6 +227,103 @@ class CurveControllerMixin:
                     xs, ys = GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
                     if xs is not None and ys is not None and len(xs) > 0:
                         segments_pts.append(np.column_stack([xs, ys]))
-                except Exception:
-                    pass
+                except Exception as e:
+                    # A broken curve formula shouldn't silently drop the edge's
+                    # preview — log it so the user can see which edge is bad.
+                    self.log(
+                        f"[Curve] [WARNING] Edge {seg.id} preview failed: {e}")
         self.main_window.canvas_view.update_curve_segments(session.session_id, segments_pts)
+        # Keep the always-on endpoint markers in sync with the current edges.
+        self._refresh_endpoint_markers()
+
+    def _refresh_endpoint_markers(self):
+        """Always show a clear marker at every edge's endpoints for the active
+        session (so endpoints are visible at all times, not just while editing).
+        During a create-edit session the pending flow manages the markers."""
+        if self._edit_in_progress():
+            return
+        session = self.active_session()
+        canvas = self.main_window.canvas_view
+        if not session:
+            canvas.clear_endpoint_markers()
+            return
+        canvas.show_endpoint_markers(self._snap_targets(session))
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Interactive shape creation (tool → draw on canvas → add edge)
+    # ══════════════════════════════════════════════════════════════════════
+
+
+    # ── Modeless create-edit session (control points + live numeric dialog) ──
+
+
+    def open_custom_formula_dialog(self):
+        """Open the custom-formula dialog with a LIVE canvas preview (and fit the
+        view to it on first show), then add the resulting analytic edge."""
+        session = self.active_session()
+        if not session:
+            return
+        canvas = self.main_window.canvas_view
+        self._custom_preview_fitted = False
+        from app.views.shape_dialog import CustomFormulaDialog
+        dlg = CustomFormulaDialog(self.main_window,
+                                  preview_cb=self._preview_custom_formula)
+        from app.utils import offset_popup
+        offset_popup(dlg, self.main_window)
+        accepted = dlg.exec()
+        canvas.clear_curve_preview(session.session_id)
+        if not accepted:
+            return
+        cfg = dlg.result_config()
+
+        new_id = session.project_model._next_curve_id
+        seg = SegmentModel(new_id, -1, -1)
+        seg.type = "curve"
+        seg.curve_type = "custom"
+        seg.curve_mode = cfg["mode"]
+        seg.x_formula = cfg["x_formula"]
+        seg.y_formula = cfg["y_formula"]
+        seg.formula = cfg["formula"]
+        seg.t_min = cfg["t_min"]
+        seg.t_max = cfg["t_max"]
+        seg.parameters = {"n_points": cfg["n_points"]}
+
+        cmd = AddCurveSegmentCmd(
+            session,
+            refresh_cb=self._refresh_segment_list,
+            select_cb=self._select_segment_by_index,
+            preconfigured_seg=seg,
+        )
+        session.command_history.execute(cmd)
+        session.is_geometry_modified = True
+        self.main_window.update_title(session.display_name, True)
+        self.log(f"Added Custom Formula Edge {seg.id}.")
+
+    def _preview_custom_formula(self, cfg: dict):
+        """Live-render a custom-formula config to the canvas while its dialog is
+        open; fit the view to it on the first valid preview (req 2)."""
+        session = self.active_session()
+        if not session:
+            return
+        seg = SegmentModel(0, -1, -1)
+        seg.type = "curve"
+        seg.curve_type = "custom"
+        seg.curve_mode = cfg["mode"]
+        seg.x_formula = cfg["x_formula"]
+        seg.y_formula = cfg["y_formula"]
+        seg.formula = cfg["formula"]
+        seg.t_min = cfg["t_min"]
+        seg.t_max = cfg["t_max"]
+        canvas = self.main_window.canvas_view
+        try:
+            xs, ys = GeometryService.compute_curve_preview_pts(
+                seg, int(cfg["n_points"]), session.original_points)
+        except Exception:
+            xs, ys = None, None
+        if xs is not None and ys is not None and len(xs) > 0:
+            pts = np.column_stack([xs, ys])
+            canvas.update_curve_preview(session.session_id, pts)
+            # Fit the view on every change while the formula dialog is open (req 2).
+            canvas.fit_to_points(pts)
+        else:
+            canvas.clear_curve_preview(session.session_id)

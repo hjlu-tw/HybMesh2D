@@ -40,3 +40,45 @@ class InsertVertexCmd(BaseCommand):
         self.session.split_indices = list(self.old_split)
         self.session.is_geometry_modified = self._old_modified
         self.refresh_cb()
+
+
+class ReplacePointsCmd(BaseCommand):
+    """Undoably swap the session's ``original_points`` between two point arrays.
+
+    Base for any edit that has already computed the full new point layout and
+    just needs it made undoable (CAD corner-drag edits, endpoint stitching).
+    Subclasses only differ by their ``description()`` label.
+    """
+
+    def __init__(self, session, old_points: np.ndarray, new_points: np.ndarray,
+                 refresh_cb=None, label: str = "Edit geometry"):
+        self.session = session
+        self.old_points = np.array(old_points, copy=True)
+        self.new_points = np.array(new_points, copy=True)
+        self.refresh_cb = refresh_cb
+        self._label = label
+        self._old_modified = session.is_geometry_modified
+
+    def description(self) -> str:
+        return self._label
+
+    def execute(self):
+        self.session.original_points = np.array(self.new_points, copy=True)
+        self.session.is_geometry_modified = True
+        if self.refresh_cb:
+            self.refresh_cb()
+
+    def undo(self):
+        self.session.original_points = np.array(self.old_points, copy=True)
+        self.session.is_geometry_modified = self._old_modified
+        if self.refresh_cb:
+            self.refresh_cb()
+
+
+class ReplaceGeometryPointsCmd(ReplacePointsCmd):
+    """Replace ``original_points`` wholesale for an in-place CAD-style edit
+    (dragging a discrete edge's corner vertices)."""
+
+    def __init__(self, session, old_points: np.ndarray, new_points: np.ndarray,
+                 refresh_cb=None, label: str = "Edit geometry shape"):
+        super().__init__(session, old_points, new_points, refresh_cb, label)

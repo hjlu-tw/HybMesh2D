@@ -1,0 +1,291 @@
+from __future__ import annotations
+import numpy as np
+
+from app.services.geometry_service import GeometryService
+
+
+class OpenEndpointControllerMixin:
+    """Detect and warn about open / unstitched boundary endpoints.
+
+    Mirrors the industrial CAD/mesh convention (ICEM, Pointwise): free endpoints
+    are highlighted in red and reported in the log, but never silently merged or
+    auto-closed — the user fixes them deliberately by editing the geometry.
+    """
+
+    # ── Tolerance ─────────────────────────────────────────────────────────
+    def _endpoint_tolerance(self, session) -> float:
+        """A fraction of the geometry's bounding-box diagonal (model-relative,
+        like a CAD merge tolerance), with a small absolute floor."""
+        pts = session.original_points
+        bbox_pts = []
+        if pts is not None and len(pts) > 0:
+            bbox_pts.append(np.asarray(pts, dtype=float))
+        for seg in session.project_model.segments:
+            if seg.type == "curve":
+                pr = GeometryService.get_segment_points(session, seg)
+                if pr is not None:
+                    bbox_pts.append(np.column_stack(pr))
+        if not bbox_pts:
+            return 1e-6
+        allp = np.vstack(bbox_pts)
+        diag = float(np.hypot(np.ptp(allp[:, 0]), np.ptp(allp[:, 1])))
+        return max(0.01 * diag, 1e-9)
+
+    # ── Endpoint collection ───────────────────────────────────────────────
+    def _collect_open_endpoints(self, session) -> list[dict]:
+        """Free endpoints of every OPEN piece. Each entry:
+        {pt: np.array([x,y]), ref: (kind, seg_idx_or_None, which)} where
+        kind ∈ {'file','polygon','other'} and which ∈ {'start','end'}."""
+        pm = session.project_model
+        eps: list[dict] = []
+
+        gp = session.original_points
+        if gp is not None and len(gp) >= 2 and not pm.is_closed:
+            gp = np.asarray(gp, dtype=float)
+            eps.append({"pt": gp[0].copy(), "ref": ("file", None, "start")})
+            eps.append({"pt": gp[-1].copy(), "ref": ("file", None, "end")})
+
+        # When the user has explicitly closed the boundary (e.g. via KEEP-mode
+        # Join / Close, which keeps the edges SEPARATE but welds them into a loop),
+        # the individual open curve edges are no longer dangling — don't flag their
+        # (now shared) endpoints. "auto"/"open" still flag them so freshly drawn,
+        # not-yet-joined pieces prompt the user to close.
+        curve_closed = (pm.closed_mode == "closed")
+        for idx, seg in enumerate(pm.segments):
+            if seg.type != "curve":
+                continue
+            if curve_closed:
+                continue
+            ct = getattr(seg, "curve_type", "custom")
+            if ct in ("triangle", "quadrilateral", "circle"):
+                continue  # inherently closed
+            if ct == "polygon" and getattr(seg, "closed", True):
+                continue  # already a closed loop
+            pr = GeometryService.get_segment_points(session, seg)
+            if pr is None:
+                continue
+            xs, ys = pr
+            if len(xs) < 2:
+                continue
+            kind = "polygon" if ct == "polygon" else "other"
+            eps.append({"pt": np.array([xs[0], ys[0]]), "ref": (kind, idx, "start")})
+            eps.append({"pt": np.array([xs[-1], ys[-1]]), "ref": (kind, idx, "end")})
+        return eps
+
+    @staticmethod
+    def _cluster_endpoints(eps: list[dict], tol: float) -> list[list[int]]:
+        """Group endpoint indices that lie within ``tol`` of each other."""
+        n = len(eps)
+        parent = list(range(n))
+
+        def find(a):
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                if np.hypot(*(eps[i]["pt"] - eps[j]["pt"])) <= tol:
+                    parent[find(i)] = find(j)
+        groups: dict[int, list[int]] = {}
+        for i in range(n):
+            groups.setdefault(find(i), []).append(i)
+        return list(groups.values())
+
+    # ── Internal gaps (a moved edge leaves a jump mid-polyline) ───────────
+    def find_geometry_gaps(self, session) -> list[dict]:
+        """Find anomalously large jumps between consecutive points of the active
+        file polyline (and the closing seam when ``is_closed``). A moved-away
+        edge leaves such a jump — the thing preview would silently bridge.
+
+        Returns a list of {idx, j, p0, p1, dist, wrap}: ``idx``/``j`` index the
+        two straddling points in ``original_points`` (``wrap`` marks the closing
+        seam where j wraps to 0)."""
+        pts = session.original_points
+        if pts is None or len(pts) < 3:
+            return []
+        pts = np.asarray(pts, dtype=float)
+        n = len(pts)
+        d = np.hypot(pts[1:, 0] - pts[:-1, 0], pts[1:, 1] - pts[:-1, 1])
+        closed = bool(session.project_model.is_closed)
+        wrap_d = float(np.hypot(*(pts[0] - pts[-1]))) if closed else 0.0
+        alld = np.concatenate([d, [wrap_d]]) if closed else d
+        pos = alld[alld > 1e-12]
+        if len(pos) == 0:
+            return []
+        thresh = max(4.0 * float(np.median(pos)), self._endpoint_tolerance(session))
+        gaps = []
+        for i in range(n - 1):
+            if d[i] > thresh:
+                gaps.append({"idx": i, "j": i + 1,
+                             "p0": pts[i].copy(), "p1": pts[i + 1].copy(),
+                             "dist": float(d[i]), "wrap": False})
+        if closed and wrap_d > thresh:
+            gaps.append({"idx": n - 1, "j": 0,
+                         "p0": pts[-1].copy(), "p1": pts[0].copy(),
+                         "dist": wrap_d, "wrap": True})
+        return gaps
+
+    @staticmethod
+    def gaps_signature(gaps: list[dict]):
+        return tuple(sorted((g["idx"], g["j"]) for g in gaps))
+
+    def open_endpoints_unclustered(self, session) -> list[dict]:
+        """Open endpoints (from analytic/open curve edges or the file polyline)
+        that are not paired with another endpoint within tolerance — i.e.
+        genuinely dangling. Unlike :meth:`find_geometry_gaps`, this also covers
+        geometries with no file polyline (purely analytic edges), which
+        otherwise produce no gaps and would be previewed/bridged silently."""
+        eps = self._collect_open_endpoints(session)
+        if not eps:
+            return []
+        tol = self._endpoint_tolerance(session)
+        groups = self._cluster_endpoints(eps, tol)
+        return [eps[g[0]] for g in groups if len(g) == 1]
+
+    @staticmethod
+    def open_endpoints_signature(eps: list[dict]):
+        return tuple(sorted((round(float(e["pt"][0]), 6), round(float(e["pt"][1]), 6))
+                            for e in eps))
+
+    # ── Detection / warning ───────────────────────────────────────────────
+    def detect_open_endpoints(self, session=None):
+        """Highlight open endpoints / internal gaps in red and report them in the
+        log. Safe to call after any geometry load / edit / preview."""
+        session = session or self.active_session()
+        canvas = self.main_window.canvas_view
+        if not session:
+            canvas.clear_open_endpoint_markers()
+            return
+        eps = self._collect_open_endpoints(session)
+        gaps = self.find_geometry_gaps(session)
+        marker_pts = [e["pt"] for e in eps]
+        for g in gaps:
+            marker_pts.append(g["p0"])
+            marker_pts.append(g["p1"])
+        if not marker_pts:
+            canvas.clear_open_endpoint_markers()
+            session._open_warn_sig = ()
+            return
+        canvas.show_open_endpoint_markers(marker_pts)
+        # Avoid repeating the same warning on every geometry refresh.
+        sig = tuple(sorted((round(float(p[0]), 6), round(float(p[1]), 6))
+                           for p in marker_pts))
+        if getattr(session, "_open_warn_sig", None) == sig:
+            return
+        session._open_warn_sig = sig
+        parts = []
+        if gaps:
+            parts.append(f"{len(gaps)} unclosed gap(s) (max {max(g['dist'] for g in gaps):.4g})")
+        if eps:
+            parts.append(f"{len(eps)} open endpoint(s)")
+        self.log("⚠ " + ", ".join(parts) + " — boundary not closed.")
+
+    # ── Auto-closure bridge marker ────────────────────────────────────────
+    def _refresh_closing_edge(self, session):
+        """Draw a distinct dashed edge over the auto-added closing segment
+        (active session only), so an auto-bridged last→first gap is visible and
+        not mistaken for real geometry. Cleared when open, coincident, or
+        inactive. Assumes closure is already resolved on the project model."""
+        cv = self.main_window.canvas_view
+        pm = session.project_model
+        pts = session.original_points
+        if (session is self.active_session() and pm.is_closed
+                and pts is not None and len(pts) >= 2
+                and not np.allclose(pts[0], pts[-1])):
+            cv.show_closing_edge(pts[-1], pts[0])
+        else:
+            cv.clear_closing_edge()
+
+    # ── Interactive weld / connect tool (canvas-driven, undoable) ──────────
+    def enter_endpoint_tool(self):
+        """Arm the canvas drag-to-weld tool (each endpoint gets a draggable
+        handle; drag one onto a target to weld)."""
+        session = self.active_session()
+        if not session:
+            self.log("No geometry session active.")
+            return
+        self.main_window.canvas_view.start_endpoint_tool()
+        self.log(
+            "Weld points: DRAG any endpoint handle onto another point to weld them "
+            "(it snaps to the nearest endpoint/vertex); drop in free space to move "
+            "the endpoint there. Right-click to finish.")
+
+    def _resolve_endpoint_ref(self, session, x, y):
+        """The ``ref`` of the datum nearest model-coord (x, y): a collected open
+        endpoint's ref (kind ∈ file/polygon/other) when one is closest, else a
+        plain file vertex ``('vertex', index, None)``. The vertex fallback lets
+        the weld tool move ANY picked point, not only a flagged open endpoint."""
+        best_ref = None
+        best_d = None
+        for e in self._collect_open_endpoints(session):
+            d = float(np.hypot(e["pt"][0] - x, e["pt"][1] - y))
+            if best_d is None or d < best_d:
+                best_d = d
+                best_ref = e["ref"]
+        pts = session.original_points
+        if pts is not None and len(pts) > 0:
+            pts = np.asarray(pts, dtype=float)
+            dd = np.hypot(pts[:, 0] - x, pts[:, 1] - y)
+            k = int(np.argmin(dd))
+            # Strict '<' so a coincident open endpoint (collected first) wins the
+            # tie — both move the same datum, but the endpoint ref is canonical.
+            if best_d is None or float(dd[k]) < best_d:
+                best_ref = ("vertex", k, None)
+        return best_ref
+
+    def handle_endpoint_weld(self, fx: float, fy: float,
+                             tx: float, ty: float, weld: bool):
+        """Canvas signal handler: WELD the picked endpoint onto (tx, ty), or when
+        the target is a free point CONNECT a line from the endpoint to it."""
+        session = self.active_session()
+        if not session:
+            return
+        if weld:
+            ref = self._resolve_endpoint_ref(session, fx, fy)
+            if ref is None:
+                self.log("No open endpoint at the picked point.")
+                return
+            from app.commands.endpoint_cmds import EndpointWeldCmd
+            cmd = EndpointWeldCmd(session, ref, (tx, ty),
+                                  refresh_cb=lambda: self._apply_geometry_update(session))
+            session.command_history.execute(cmd)
+            self._update_undo_redo_buttons(session)
+            self.log(
+                f"Welded endpoint → ({tx:.4g}, {ty:.4g}).")
+        else:
+            # Connect: draw a straight line from the endpoint to the picked point
+            # (reuses the normal add-line create-edit flow, undoable on commit).
+            self.on_shape_drawn("line", [(fx, fy), (tx, ty)])
+            self.log(
+                f"Connecting a line to ({tx:.4g}, {ty:.4g}) — confirm in the dialog.")
+
+    # ── Stitching (dialog-driven, undoable) ───────────────────────────────
+    def stitch_gaps(self, session, gaps: list[dict], method: str):
+        """Close the detected gaps using one of three methods, undoably.
+
+        - 'midpoint': move both straddling points to their midpoint (merge).
+        - 'snap':     move the later point onto the earlier one.
+        - 'line':     leave the points unchanged (the bridging line is accepted).
+        """
+        if method == "line" or not gaps:
+            return  # nothing to mutate; closure/bridge is accepted as-is
+        pts = session.original_points
+        if pts is None:
+            return
+        new = np.array(pts, dtype=float, copy=True)
+        for g in gaps:
+            i, j = g["idx"], g["j"]
+            if method == "midpoint":
+                mid = 0.5 * (new[i] + new[j])
+                new[i] = mid
+                new[j] = mid
+            elif method == "snap":
+                new[j] = new[i]
+        from app.commands.stitch_cmds import StitchCmd
+        cmd = StitchCmd(session,
+                        old_points=np.array(pts, copy=True), new_points=new,
+                        refresh_cb=lambda: self._apply_geometry_update(session))
+        session.command_history.execute(cmd)
+        self._update_undo_redo_buttons(session)

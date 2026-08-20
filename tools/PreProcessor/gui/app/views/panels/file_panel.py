@@ -1,12 +1,11 @@
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QFormLayout, QComboBox, QLabel
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFormLayout, QComboBox, QLabel
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, help_widget
 
 class FilePanel(CollapsibleSection):
     def __init__(self, parent=None):
-        super().__init__("Project", start_collapsed=True, parent=parent)
+        super().__init__("Import / File", start_collapsed=True, parent=parent)
 
         self.load_btn = make_button("Import Geometry (.dat)")
         self.load_btn.setToolTip("Open a .dat geometry file from disk")
@@ -26,10 +25,19 @@ class FilePanel(CollapsibleSection):
 
         form = QFormLayout()
         self.is_closed_combo = QComboBox()
-        self.is_closed_combo.addItems(["True", "False"])
+        self.is_closed_combo.addItems(["Auto", "Closed", "Open"])
         self.is_closed_combo.setStyleSheet(COMBO_STYLE)
-        self.is_closed_combo.setToolTip("Whether the geometry forms a closed loop (True) or is open-ended (False)")
-        form.addRow(help_label("Closed Curve:", "Whether the geometry forms a closed loop (True) or is open-ended (False)"), self.is_closed_combo)
+        _closed_tip = ("How the boundary's closure is decided:\n"
+                       "• Auto — detect from the geometry (endpoints near each "
+                       "other → closed; a clear gap → open).\n"
+                       "• Closed — force a closed loop (bridge the last→first gap).\n"
+                       "• Open — leave the boundary open-ended.")
+        self.is_closed_combo.setToolTip(_closed_tip)
+        form.addRow(help_label("Closed Loop:", _closed_tip), self.is_closed_combo)
+        # Shows the resolved result when the mode is Auto (e.g. "→ Closed").
+        self.closed_mode_status = QLabel("")
+        self.closed_mode_status.setStyleSheet("color:#6fae7a; font-size:10px;")
+        form.addRow("", self.closed_mode_status)
         align_form_labels(form)
 
         self.add_widget(help_widget(self.load_btn, "Open a .dat geometry file from disk"))

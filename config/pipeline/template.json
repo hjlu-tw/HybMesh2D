@@ -1,0 +1,68 @@
+{
+  "pipeline_version": 1,
+  "name": "template_case",
+
+  "cad": {
+    "input_file": "examples/geometries/naca0012.dat",
+    "is_closed": true,
+    "skip": true
+  },
+
+  "mesh": {
+    "domain_x_min": -4.0,
+    "domain_x_max": 8.0,
+    "domain_y_min": -5.0,
+    "domain_y_max": 5.0,
+
+    "surface_mesh_size": 0.02,
+    "auto_surface_size": true,
+    "farfield_mesh_size": 0.6,
+    "farfield_growth_rate": 0.2,
+
+    "bl_initial_thickness": 0.0005,
+    "bl_growth_rate": 1.15,
+    "bl_layers": 15,
+    "bl_transition_layers": 3,
+
+    "gmsh_algorithm": 6,
+    "gmsh_optimize": 1,
+
+    "bc_geom": "wall",
+    "bc_xmin": "inlet",
+    "bc_xmax": "outlet",
+    "bc_ymin": "outlet",
+    "bc_ymax": "outlet"
+  },
+
+  "solver": {
+    "case_name": "template_case",
+    "preset": "Laminar NS (subsonic, steady)",
+
+    "flow_solu_type": "ns_sol",
+    "turb_model_option": "laminar",
+
+    "fs_mach": 0.3,
+    "fs_flow_angle": 4.0,
+    "fs_unit_re": 1000.0,
+    "fs_tinf": 288.0,
+    "linf": 1.0,
+    "gamma": 1.4,
+    "prandtl": 0.72,
+
+    "cfl": 0.6,
+    "constant_cfl": true,
+    "num_half_iter": 2000,
+    "print_convg_per_niter": 50,
+    "print_sol_per_niter": 500,
+    "dump_zone_per_niter": 500,
+
+    "bc_definitions": []
+  },
+
+  "results": {
+    "variable": "M",
+    "cmap": "jet",
+    "save_png": "results/pipeline/template_case_M.png",
+    "mesh_overlay": false
+  }
+}

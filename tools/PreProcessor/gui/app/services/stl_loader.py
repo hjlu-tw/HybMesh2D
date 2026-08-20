@@ -24,6 +24,19 @@ _BIN_TRI_DTYPE = np.dtype([
 ])
 
 
+def triangle_normals(tris: np.ndarray) -> np.ndarray:
+    """Unit face normals for an (N, 3, 3) triangle-vertex array.
+
+    Degenerate (zero-area) triangles yield a zero normal rather than NaN. Shared
+    by ``stl_extrude.write_binary_stl`` and ``phi_quality`` so the formula and the
+    degenerate guard live in one place.
+    """
+    tris = np.asarray(tris, dtype=np.float64)
+    n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+    ln = np.linalg.norm(n, axis=1, keepdims=True)
+    return n / np.where(ln < 1e-300, 1.0, ln)
+
+
 class STLPlanarError(ValueError):
     """Raised when an STL file is not a valid z=0 planar surface."""
 

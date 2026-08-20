@@ -27,6 +27,28 @@ class SegmentModel:
         # Advanced
         self.match_previous: bool = False
 
+        # Per-segment boundary condition tag. Empty -> inherits the mesh's
+        # global geometry BC (BC_GEOM). Carried to the mesher via the .meta
+        # sidecar (the C++ backend reads sj["bc"]).
+        self.bc: str = ""
+
+        # Whether this segment grows a boundary layer. The other half of the
+        # per-segment fact whose first half is ``bc`` above, and a MESH-stage
+        # edit rather than a CAD one — a freshly drawn edge grows a layer, and
+        # the user turns it off for a wall that should not. It lives here, on
+        # the segment, for the same reason ``bc`` does: the resampler REWRITES
+        # the ``.meta`` sidecar from this config on every save, so a fact whose
+        # only home was that file came back as the default and three call sites
+        # grew snapshot/restore wrappers around the subprocess to compensate.
+        # Carried to the mesher via the sidecar's v3 grow column, which the
+        # backend fills from ``sj["grow_bl"]`` (tools/PreProcessor/src/main.cpp).
+        self.grow_bl: bool = True
+
+        # Whether a polygon / polyline-style edge closes back to its first
+        # vertex. Inherently-closed shapes (triangle/quad/circle) ignore this;
+        # it matters for `polygon` (incl. file edges baked into a polygon).
+        self.closed: bool = True
+
     # ── Strategy helpers ──────────────────────────────────────────────────
 
     def update_strategy(self, new_strategy: str):
@@ -43,7 +65,7 @@ class SegmentModel:
     # ── Serialisation ─────────────────────────────────────────────────────
 
     @classmethod
-    def from_dict(cls, segment_id: int, d: dict) -> "SegmentModel":
+    def from_dict(cls, segment_id: int, d: dict) -> SegmentModel:
         actual_id = d.get("id", segment_id)
         seg_type = d.get("type", "file")
         if seg_type == "curve":
@@ -57,6 +79,7 @@ class SegmentModel:
             seg.t_min = float(r[0])
             seg.t_max = float(r[1])
             seg.match_previous = d.get("match_previous", False)
+            seg.closed = d.get("closed", True)
 
             curve_mode = d.get("curve_mode")
             if curve_mode:
@@ -85,6 +108,12 @@ class SegmentModel:
             seg.strategy = d.get("strategy", "uniform")
             seg.parameters = copy.deepcopy(d.get("parameters", {"n_points": 50}))
             seg.match_previous = d.get("match_previous", False)
+            seg.closed = d.get("closed", True)
+        seg.bc = d.get("bc", "")
+        # The legacy spelling is accepted because the C++ backend has always
+        # read either (`sj.value("grow_bl", !sj.value("no_bl", false))`), so a
+        # hand-written CLI config using "no_bl" must mean the same thing here.
+        seg.grow_bl = bool(d.get("grow_bl", not d.get("no_bl", False)))
         return seg
 
     def to_dict(self) -> dict:
@@ -108,6 +137,8 @@ class SegmentModel:
                 d["formula"] = self.formula
             if self.match_previous:
                 d["match_previous"] = True
+            if not self.closed:
+                d["closed"] = False
         else:
             d = {
                 "id": self.id,
@@ -119,4 +150,10 @@ class SegmentModel:
             }
             if self.match_previous:
                 d["match_previous"] = True
+            if not self.closed:
+                d["closed"] = False
+        if self.bc:
+            d["bc"] = self.bc
+        if not self.grow_bl:
+            d["grow_bl"] = False
         return d

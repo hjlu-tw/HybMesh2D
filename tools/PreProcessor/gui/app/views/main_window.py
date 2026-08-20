@@ -1,22 +1,34 @@
 from __future__ import annotations
-import os
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QCheckBox,
-    QStackedWidget, QComboBox, QFrame, QScrollArea, QMenu, QProgressBar, QGridLayout
+    QHBoxLayout, QPushButton, QTabBar, QLabel, QSizePolicy, QStackedWidget, QComboBox, QFrame, QScrollArea
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QFont
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont
+from app.services import user_log
 from app.views.sidebar import SidebarView
 from app.views.canvas import CanvasView
 from app.views.log_panel import LogPanel
 from app.views.mesh_canvas import MeshCanvasView
+from app.views.result_canvas import ResultCanvasView
 from app.views.panels.mesh_config_panel import MeshConfigPanel
 from app.views.panels.mesh_stats_panel import MeshStatsPanel
-from app.styles import TOOLBAR_CHECKBOX_STYLE
+from app.views.panels.solver_config_panel import SolverConfigPanel
+from app.views.panels.solver_monitor_panel import SolverMonitorPanel
+from app.views.panels.stl3d_panel import Stl3dConfigPanel
+from app.views.stl3d_canvas import Stl3dCanvasView
+from app.views.panels.result_panel import ResultControlPanel
+from app.views.main_window_menu_mixin import MainWindowMenuMixin
+from app.views.main_window_toolbar_mixin import MainWindowToolbarMixin
+from app.views.main_window_toolbar_build_mixin import MainWindowToolbarBuildMixin
+from app.views.main_window_statusbar_mixin import MainWindowStatusBarMixin
 
 
-class MainWindow(QMainWindow):
+# Mixins listed BEFORE QMainWindow so the Qt virtual overrides they provide
+# (eventFilter / resizeEvent) resolve super() to QMainWindow, not object.
+class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
+                 MainWindowToolbarBuildMixin, MainWindowStatusBarMixin,
+                 QMainWindow):
     """
     Top-level window.
     Layout: [Sidebar] | [Tab-bar + shared CanvasView]
@@ -28,8 +40,20 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HybMesh PreProcessor")
-        self.setMinimumSize(1200, 800)
-        self.resize(1450, 900)
+        # A smaller minimum so the window fits (and can be shrunk on) laptop /
+        # scaled displays. The old 1200x800 floor forced the window larger than
+        # small screens, pushing the left sidebar's lower fields + footer buttons
+        # off the visible area. Every sidebar page is scrollable, so content
+        # stays reachable at this size.
+        self.setMinimumSize(900, 600)
+        # Open at a comfortable size but never larger than the available screen.
+        from PyQt6.QtWidgets import QApplication
+        scr = QApplication.primaryScreen()
+        if scr is not None:
+            avail = scr.availableGeometry()
+            self.resize(min(1450, avail.width()), min(900, avail.height()))
+        else:
+            self.resize(1450, 900)
         self.setStyleSheet("background: #0c0d16; color: #a0a8c0;")
 
         # ── Sidebar Stack ─────────────────────────────────────────────────
@@ -40,6 +64,11 @@ class MainWindow(QMainWindow):
 
         self.sidebar_view = SidebarView(self.sidebar_stack)
         self.sidebar_stack.addWidget(self.sidebar_view)
+        # The edge inspector says which preview applies to what it is showing;
+        # these buttons are the toolbar's, so the window shows them. The panel
+        # used to fetch them back out of self.window() and set them itself.
+        self.sidebar_view.edge_props_panel.preview_kind_changed.connect(
+            self._show_cad_preview_for)
 
         # Mesh Configuration Sidebar Page (directly in stack)
         self.mesh_config_panel = MeshConfigPanel(self.sidebar_stack)
@@ -72,6 +101,18 @@ class MainWindow(QMainWindow):
         self.mesh_stats_panel = MeshStatsPanel(self.stats_scroll)
         self.stats_scroll.setWidget(self.mesh_stats_panel)
         self.sidebar_stack.addWidget(self.stats_scroll)
+
+        # Solver config sidebar page (Phase 4.1). The monitor (idx 4) is still a
+        # placeholder until Phase 4.2.
+        self.solver_config_panel = SolverConfigPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.solver_config_panel)      # idx 3
+        # Results sidebar: color-scale (clim) control + field statistics
+        # (complements the canvas toolbar's variable/colormap/overlay controls).
+        self.result_control_panel = ResultControlPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.result_control_panel)     # idx 4
+        # Immersed-solid (STL -> phi) preprocessor config sidebar page
+        self.stl3d_config_panel = Stl3dConfigPanel(self.sidebar_stack)
+        self.sidebar_stack.addWidget(self.stl3d_config_panel)       # idx 5
 
         # ── Right panel: tab-bar row + shared canvas ──────────────────────
         self.right_panel = QWidget(self)
@@ -133,8 +174,11 @@ class MainWindow(QMainWindow):
             }
         """
         self.tab_bar.setStyleSheet(tab_bar_style)
+        # Preferred (not Expanding) so the bar spans only its tabs; a trailing
+        # stretch (added before the mode selector) absorbs the free space, which
+        # keeps the mode selector pinned to the right in every mode.
         self.tab_bar.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         tab_hl.addWidget(self.tab_bar)
 
         # Mesh Generator / Statistics share their own tab strip, kept separate
@@ -146,13 +190,16 @@ class MainWindow(QMainWindow):
         self.mesh_tab_bar.setExpanding(False)
         self.mesh_tab_bar.setStyleSheet(tab_bar_style)
         self.mesh_tab_bar.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.mesh_tab_bar.addTab("Mesh 1")
         self.mesh_tab_bar.setVisible(False)
         tab_hl.addWidget(self.mesh_tab_bar)
 
         self.mode_combo = QComboBox(self.tab_row)
-        self.mode_combo.addItems(["PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics"])
+        self.mode_combo.addItems([
+            "PreProcessor (CAD)", "Mesh Generator", "Mesh Statistics",
+            "Solver", "Results", "Immersed Boundary (φ)",
+        ])
         self.mode_combo.setStyleSheet("""
             QComboBox {
                 background: #181b30;
@@ -162,7 +209,6 @@ class MainWindow(QMainWindow):
                 padding: 4px 10px;
                 font-weight: bold;
                 font-size: 11px;
-                min-width: 150px;
                 margin-right: 6px;
             }
             QComboBox::drop-down {
@@ -172,179 +218,39 @@ class MainWindow(QMainWindow):
                 border-left: 1px solid #2d3356;
             }
         """)
-        tab_hl.addWidget(self.mode_combo)
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        # Pin the width to the widest tab name (measured in the bold QSS font) so
+        # the selector never resizes when a longer/shorter tab is selected.
+        from PyQt6.QtGui import QFontMetrics
+        _mc_font = QFont(self.mode_combo.font()); _mc_font.setBold(True)
+        _mc_fm = QFontMetrics(_mc_font)
+        _mc_w = max(_mc_fm.horizontalAdvance(self.mode_combo.itemText(i))
+                    for i in range(self.mode_combo.count()))
+        self.mode_combo.setFixedWidth(_mc_w + 46)   # + text padding, arrow, slack
+        # Stretch before the selector so it stays pinned to the right (fixed
+        # position) whether or not a tab strip is visible in the current mode.
+        tab_hl.addStretch(1)
 
-        # ── Canvas Toolbar ────────────────────────────────────────────────
-        self.canvas_toolbar = QWidget(self.right_panel)
-        self.canvas_toolbar.setStyleSheet("background: #06070d; border-bottom: 1px solid #1c1e36;")
-        self.tb_layout = QGridLayout(self.canvas_toolbar)
-        self.tb_layout.setContentsMargins(10, 2, 10, 2)
-        self.tb_layout.setHorizontalSpacing(8)
-        self.tb_layout.setVerticalSpacing(4)
-
-        # Helper to create buttons
-        def create_tb_btn(text: str, tooltip: str) -> QPushButton:
-            btn = QPushButton(text, self.canvas_toolbar)
-            btn.setToolTip(tooltip)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #181b30;
-                    color: #dde2ff;
-                    border: 1px solid #2d3356;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-weight: bold;
-                    font-size: 11px;
-                }
-                QPushButton:hover {
-                    background-color: #2c3258;
-                    border-color: #5a9ad4;
-                    color: #ffffff;
-                }
-                QPushButton:pressed {
-                    background-color: #1a1f3b;
-                }
-                QPushButton:disabled {
-                    background-color: #0b0c16;
-                    color: #4a4e69;
-                    border-color: #1b1d2e;
-                }
-            """)
-            return btn
-
-        self.undo_btn = create_tb_btn("Undo", "Undo last action (Ctrl+Z)")
-        self.redo_btn = create_tb_btn("Redo", "Redo last action (Ctrl+Shift+Z)")
-        self.focus_geom_btn = create_tb_btn("Fit View", "Fit canvas view to selected geometry")
-        
-        # New CAD Previews
-        self.cad_preview_btn = create_tb_btn("Preview", "Run PreProcessor and preview geometry/boundary conditions")
-        self.cad_curve_preview_btn = create_tb_btn("Preview Edge", "Preview the selected curve equation")
-        self.cad_file_preview_btn = create_tb_btn("Apply", "Apply and preview the selected imported file segment")
-        self.cad_curve_preview_btn.setVisible(False)
-        self.cad_file_preview_btn.setVisible(False)
-
-        # Separators
-        def create_sep():
-            v = QWidget(self.canvas_toolbar)
-            v.setFixedWidth(1)
-            v.setFixedHeight(16)
-            v.setStyleSheet("background-color: #1c1e36;")
-            return v
-
-        self.cad_sep1 = create_sep()
-        self.cad_sep2 = create_sep()
-
-        self.show_vertices_cb = QCheckBox("Vertices", self.canvas_toolbar)
-        self.show_vertices_cb.setToolTip("Show/hide geometry vertices (points) on the canvas")
-        self.show_vertices_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
-        self.show_vertices_cb.setChecked(True)
-
-        self.show_nodes_cb = QCheckBox("Nodes", self.canvas_toolbar)
-        self.show_nodes_cb.setToolTip("Show/hide resampled nodes on the canvas")
-        self.show_nodes_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
-        self.show_nodes_cb.setChecked(True)
-
-        self.quality_check_cb = QCheckBox("Heatmap", self.canvas_toolbar)
-        self.quality_check_cb.setToolTip("Show/hide geometry quality heatmap (Length / Ratio)")
-        self.quality_check_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
-
-        self.quality_mode_combo = QComboBox(self.canvas_toolbar)
-        self.quality_mode_combo.addItems(["Length", "Ratio"])
-        self.quality_mode_combo.setStyleSheet("""
-            QComboBox {
-                background: #181b30;
-                color: #dde2ff;
-                border: 1px solid #2d3356;
-                border-radius: 4px;
-                padding: 3px 8px;
-                font-weight: bold;
-                font-size: 10px;
-                min-width: 80px;
-            }
-        """)
-        self.quality_mode_combo.setVisible(False)
-
-        # Select Mode Toggle Buttons
-        toggle_btn_base = """
-            QPushButton {
-                background-color: #181b30;
-                color: #7a82a0;
-                border: 1px solid #2d3356;
-                padding: 3px 10px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:checked {
-                background-color: #2a4a7f;
-                color: #ffffff;
-                border: 1px solid #5a9ad4;
-            }
-            QPushButton:hover:!checked {
-                background-color: #232645;
-                color: #dde2ff;
-                border-color: #4a5280;
-            }
-        """
-        self.select_mode_label = QLabel("Edit:", self.canvas_toolbar)
-        self.select_mode_label.setStyleSheet("color: #a0a8c0; font-size: 11px; font-weight: bold; margin-left: 4px;")
-
-        self.select_mode_combo = QComboBox(self.canvas_toolbar)
-        self.select_mode_combo.addItems(["Vertex (Point)", "Edge (Segment)"])
-        self.select_mode_combo.setCurrentIndex(1)   # default to Edge mode
-        self.select_mode_combo.setToolTip(
-            "Selection Mode: Choose whether clicking/selecting affects Vertices or Edges.\n"
-            "In Edge mode, Shift+drag box-selects edges (Ctrl/Cmd+drag adds to the selection); "
-            "plain drag still pans.")
-        self.select_mode_combo.setStyleSheet("""
-            QComboBox {
-                background: #181b30;
-                color: #dde2ff;
-                border: 1px solid #2d3356;
-                border-radius: 4px;
-                padding: 3px 8px;
-                font-weight: bold;
-                font-size: 10px;
-                min-width: 120px;
-            }
-        """)
-
-        self.cad_sep3 = create_sep()
-
-        # Mesh Generation Toolbar controls
-        self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
-        self.mesh_generate_btn = create_tb_btn("Generate", "Run HybMesh2D to generate grid")
-        self.mesh_generate_btn.setStyleSheet("""
+        # "Run All" — one click runs CAD resample -> mesh -> solver -> results.
+        # Lives in the persistent tab row (not the rebuilt canvas toolbar) so it
+        # is available in every mode.
+        self.run_all_btn = QPushButton("▶ Run All", self.tab_row)
+        self.run_all_btn.setToolTip(
+            "Run the full pipeline for the active geometry:\n"
+            "CAD resample → mesh generation → solver → results contour.")
+        self.run_all_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1e4620;
-                color: #dde2ff;
+                color: #eaf6ea;
                 border: 1px solid #2d5630;
                 border-radius: 4px;
-                padding: 4px 8px;
+                padding: 4px 12px;
                 font-weight: bold;
                 font-size: 11px;
+                margin-right: 8px;
             }
             QPushButton:hover {
                 background-color: #2c5e2e;
                 border-color: #22c55e;
-                color: #ffffff;
-            }
-        """)
-        self.mesh_cancel_btn = create_tb_btn("Cancel", "Cancel background mesh generation")
-        self.mesh_cancel_btn.setEnabled(False)
-        self.mesh_cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4a1c1c;
-                color: #dde2ff;
-                border: 1px solid #5d2d2d;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #6a2c2c;
-                border-color: #ef4444;
                 color: #ffffff;
             }
             QPushButton:disabled {
@@ -353,97 +259,31 @@ class MainWindow(QMainWindow):
                 border-color: #1c1e36;
             }
         """)
+        tab_hl.addWidget(self.run_all_btn)
 
-        self.mesh_focus_btn = create_tb_btn("Fit View", "Fit canvas to mesh or preview boundaries")
+        tab_hl.addWidget(self.mode_combo)
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
-        self.mesh_show_wireframe_cb = QCheckBox("Mesh", self.canvas_toolbar)
-        self.mesh_show_wireframe_cb.setToolTip("Show/hide mesh wireframe")
-        self.mesh_show_wireframe_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
-        self.mesh_show_wireframe_cb.setChecked(True)
-
-        self.mesh_show_bc_cb = QCheckBox("BCs", self.canvas_toolbar)
-        self.mesh_show_bc_cb.setToolTip("Show/hide boundary conditions")
-        self.mesh_show_bc_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
-        self.mesh_show_bc_cb.setChecked(True)
-
-        self.mesh_show_domain_cb = QCheckBox("Domain", self.canvas_toolbar)
-        self.mesh_show_domain_cb.setToolTip("Show/hide calculation domain boundary")
-        self.mesh_show_domain_cb.setStyleSheet(TOOLBAR_CHECKBOX_STYLE)
-        self.mesh_show_domain_cb.setChecked(True)
-
-        self.mesh_color_label = QLabel("", self.canvas_toolbar) # Hidden dummy
-        self.mesh_color_label.setVisible(False)
-
-        self.mesh_color_mode_combo = QComboBox(self.canvas_toolbar)
-        self.mesh_color_mode_combo.addItems([
-            "Element Type", 
-            "Quality (Aspect Ratio)", 
-            "Quality (Skewness)",
-            "Uniform"
-        ])
-        self.mesh_color_mode_combo.setStyleSheet("""
-            QComboBox {
-                background: #181b30;
-                color: #dde2ff;
-                border: 1px solid #2d3356;
-                border-radius: 4px;
-                padding: 3px 8px;
-                font-weight: bold;
-                font-size: 10px;
-                min-width: 140px;
-            }
-        """)
-
-        self.mesh_sep2 = create_sep()
-        self.mesh_sep3 = create_sep()
-        self.mesh_sep4 = create_sep()
-
-        self.progress_bar = QProgressBar(self.canvas_toolbar)
-        self.progress_bar.setRange(0, 0)
-        self.progress_bar.setFixedHeight(12)
-        self.progress_bar.setFixedWidth(100)
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #181b30;
-                border: 1px solid #2d3356;
-                border-radius: 4px;
-            }
-            QProgressBar::chunk {
-                background-color: #22c55e;
-                border-radius: 3px;
-            }
-        """)
-
-        # Track layouts for visibility toggling
-        self.cad_tb_widgets = [
-            self.focus_geom_btn,
-            self.cad_preview_btn, self.cad_curve_preview_btn, self.cad_file_preview_btn,
-            self.show_vertices_cb, self.show_nodes_cb, self.quality_check_cb,
-            self.cad_sep2, self.cad_sep3,
-            self.select_mode_label,
-            self.select_mode_combo,
-        ]
-
-        self.mesh_tb_widgets = [
-            self.mesh_preview_btn, self.mesh_generate_btn, self.mesh_cancel_btn,
-            self.mesh_focus_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
-            self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,
-            self.mesh_sep2, self.mesh_sep3, self.mesh_sep4
-        ]
-
-        # Hide mesh widgets on start
-        for w in self.mesh_tb_widgets:
-            w.setVisible(False)
-
+        self._build_canvas_toolbar()
         # Shared Canvas Stack
         self.canvas_stack = QStackedWidget(self.right_panel)
         self.canvas_view = CanvasView(self.canvas_stack)
         self.canvas_stack.addWidget(self.canvas_view)
         
         self.mesh_canvas_view = MeshCanvasView(self.canvas_stack)
-        self.canvas_stack.addWidget(self.mesh_canvas_view)
+        self.canvas_stack.addWidget(self.mesh_canvas_view)          # idx 1
+
+        # Results canvas (matplotlib, Phase 4.3)
+        self.result_canvas_view = ResultCanvasView(self.canvas_stack)
+        self.canvas_stack.addWidget(self.result_canvas_view)        # idx 2
+
+        # Solver monitor (live residual plot) is the Solver-mode canvas.
+        self.solver_monitor_panel = SolverMonitorPanel(self.canvas_stack)
+        self.canvas_stack.addWidget(self.solver_monitor_panel)      # idx 3
+
+        # Immersed-solid 3D viewport (STL + domain box/grid + phi cells).
+        self.stl3d_canvas = Stl3dCanvasView(self.canvas_stack)
+        self.canvas_stack.addWidget(self.stl3d_canvas)              # idx 4
 
         right_layout.addWidget(self.tab_row)
         right_layout.addWidget(self.canvas_toolbar)
@@ -473,115 +313,31 @@ class MainWindow(QMainWindow):
         self.log_panel.setStyleSheet(
             "background: #06070d; color: #8892b0; font-family: monospace;")
         log_dock = QDockWidget("Log Console", self)
+        # Required by QMainWindow.saveState()/restoreState(): a dock without an
+        # objectName is skipped (with a runtime warning), so its size, visibility
+        # and floating state could never be restored between sessions.
+        log_dock.setObjectName("logConsoleDock")
+        self.log_dock = log_dock
         log_dock.setWidget(self.log_panel)
         log_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
-        log_dock.setMinimumHeight(90)
+        log_dock.setMinimumHeight(48)
         log_dock.setStyleSheet(
             "QDockWidget { background: #06070d; color: #8892b0; }"
-            "QDockWidget::title { background: #121422; padding: 4px; }")
+            "QDockWidget::title { background: #121422; padding: 3px; }")
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
+        # Default to a small log console height.
+        self.resizeDocks([log_dock], [80], Qt.Orientation.Vertical)
 
-    # ── Shortcuts ─────────────────────────────────────────────────────────
+        # This window is the on-screen ADAPTER of the user log; everything else
+        # emits through app.services.user_log and never reaches in here. The sink
+        # resolves `log_panel.log` at CALL time on purpose: a test that swaps that
+        # method out to capture messages must still intercept them. Released in
+        # closeEvent, or a closed window's deleted C++ panel stays on the list.
+        self._user_log_sink = lambda m: self.log_panel.log(m)
+        user_log.add_sink(self._user_log_sink)
 
-    def setup_shortcuts(self, controller):
-        # 1. Initialize QShortcuts (Global hotkeys)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(controller.undo)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(controller.redo)
-        QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(controller.redo)
-        QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(controller.load_geometry)
-        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(controller.save_output)
-        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(controller.new_blank_tab)
-        QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(controller.new_blank_tab)
-        QShortcut(QKeySequence("Ctrl+W"), self).activated.connect(lambda: controller.close_tab(controller.active_idx))
-        QShortcut(QKeySequence("F5"), self).activated.connect(controller.preview_backend)
-
-        # 2. Setup standard Menu Bar
-        menubar = self.menuBar()
-        menubar.setStyleSheet("""
-            QMenuBar {
-                background-color: #090a12;
-                color: #a0a8c0;
-                border-bottom: 1px solid #1c1e36;
-            }
-            QMenuBar::item {
-                background-color: transparent;
-                padding: 4px 10px;
-            }
-            QMenuBar::item:selected {
-                background-color: #1e2235;
-                color: #ffffff;
-            }
-            QMenu {
-                background-color: #121422;
-                color: #a0a8c0;
-                border: 1px solid #1c1e36;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-            }
-            QMenu::item:selected {
-                background-color: #3b82f6;
-                color: #ffffff;
-            }
-        """)
-
-        file_menu = menubar.addMenu("File")
-
-        load_action = file_menu.addAction("Load Geometry...")
-        load_action.setShortcut("Ctrl+O")
-        load_action.triggered.connect(controller.load_geometry)
-
-        load_json_action = file_menu.addAction("Load JSON Config...")
-        load_json_action.triggered.connect(controller.load_json_config)
-
-        file_menu.addSeparator()
-
-        self.recent_menu = file_menu.addMenu("Open Recent")
-        controller.init_recent_files()
-
-        file_menu.addSeparator()
-
-        new_tab_action = file_menu.addAction("New Tab")
-        new_tab_action.setShortcut("Ctrl+T")
-        new_tab_action.triggered.connect(controller.new_blank_tab)
-
-        close_tab_action = file_menu.addAction("Close Tab")
-        close_tab_action.setShortcut("Ctrl+W")
-        close_tab_action.triggered.connect(lambda: controller.close_tab(controller.active_idx))
-
-        file_menu.addSeparator()
-
-        save_action = file_menu.addAction("Export Mesh (.dat)...")
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(controller.save_output)
-
-        save_json_action = file_menu.addAction("Save Configuration (.json)...")
-        save_json_action.triggered.connect(controller.generate_json)
-
-        file_menu.addSeparator()
-
-        save_ws_action = file_menu.addAction("Save Workspace...")
-        save_ws_action.triggered.connect(controller.save_workspace)
-
-        load_ws_action = file_menu.addAction("Load Workspace...")
-        load_ws_action.triggered.connect(controller.load_workspace)
-
-        file_menu.addSeparator()
-
-        exit_action = file_menu.addAction("Exit")
-        exit_action.triggered.connect(self.close)
-
-    def refresh_recent_files_menu(self, files: list[str], controller):
-        self.recent_menu.clear()
-        if not files:
-            empty_action = self.recent_menu.addAction("No Recent Files")
-            empty_action.setEnabled(False)
-            return
-        for f in files:
-            action = self.recent_menu.addAction(os.path.basename(f))
-            action.setToolTip(f)
-            # Use default argument in lambda to bind loop variable f properly
-            action.triggered.connect(lambda checked, path=f: controller.load_recent_file(path))
+        # Status bar last: it reads the mode combo and the panels.
+        self._build_status_bar()
 
     # ── Title / tab helpers ────────────────────────────────────────────────
 
@@ -599,17 +355,32 @@ class MainWindow(QMainWindow):
             if color:
                 self.tab_bar.setTabTextColor(idx, QColor(color))
 
+    def _make_placeholder(self, text: str) -> QWidget:
+        """A simple centred-label stub widget used for not-yet-built pages."""
+        w = QWidget()
+        w.setStyleSheet("background: #0c0d16;")
+        lay = QVBoxLayout(w)
+        lbl = QLabel(text, w)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet("color: #4a4e69; font-size: 13px;")
+        lay.addWidget(lbl)
+        return w
+
     def _on_mode_changed(self, idx: int):
         self.sidebar_stack.setCurrentIndex(idx)
-        canvas_idx = 0 if idx == 0 else 1
-        self.canvas_stack.setCurrentIndex(canvas_idx)
-        
+        # Canvas mapping: CAD->0, Mesh/Stats/Solver->1 (mesh canvas), Results->2.
+        # CAD->geom, Mesh/Stats->mesh canvas, Solver->monitor, Results->result
+        # canvas, Immersed Solid (5)->stl3d 3D viewport (idx 4).
+        canvas_map = {0: 0, 1: 1, 2: 1, 3: 3, 4: 2, 5: 4}
+        self.canvas_stack.setCurrentIndex(canvas_map.get(idx, 0))
+
         is_pre = (idx == 0)
+        is_mesh = (idx in (1, 2))
         # CAD shows its per-file geometry tabs; the Mesh Generator / Statistics
         # pages show their own separate tab strip. They never share tabs, but
         # both keep their open tabs alive when the other mode is showing.
         self.tab_bar.setVisible(is_pre)
-        self.mesh_tab_bar.setVisible(not is_pre)
+        self.mesh_tab_bar.setVisible(is_mesh)
         for w in self.cad_tb_widgets:
             w.setVisible(is_pre)
 
@@ -620,202 +391,41 @@ class MainWindow(QMainWindow):
         if is_pre:
             props = self.sidebar_view.edge_props_panel
             is_curve_active = props.isVisible() and props._curve_group.isVisible()
-            is_file_active = props.isVisible() and props._file_seg_label.isVisible()
-            self.cad_curve_preview_btn.setVisible(is_curve_active)
-            self.cad_file_preview_btn.setVisible(is_file_active)
-            
-        is_mesh = (idx in [1, 2])
+            self._show_cad_preview_for("curve" if is_curve_active else "")
+
         for w in self.mesh_tb_widgets:
             w.setVisible(is_mesh)
-        self.progress_bar.setVisible(False)
-            
+
+        # Solver / Immersed-Boundary run+cancel toolbar buttons (idx 3 / 5).
+        for w in self.solver_tb_widgets:
+            w.setVisible(idx == 3)
+        for w in self.ib_tb_widgets:
+            w.setVisible(idx == 5)
+
+        # A run in flight keeps its progress bar across a mode switch; hide the
+        # bar only when no stage owns it (see claim_progress/release_progress).
+        self.progress_bar.setVisible(self._progress_owner is not None)
+
         self.adjust_toolbar_layout()
         self.mode_changed.emit(idx)
-
-    def eventFilter(self, watched, event) -> bool:
-        if event.type() in (QEvent.Type.Show, QEvent.Type.Hide):
-            if not getattr(self, '_layout_queued', False):
-                self._layout_queued = True
-                QTimer.singleShot(0, self._run_queued_layout)
-        return super().eventFilter(watched, event)
-
-    def _run_queued_layout(self):
-        self._layout_queued = False
-        self.adjust_toolbar_layout()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.adjust_toolbar_layout()
-
-    def adjust_toolbar_layout(self):
-        # Prevent recursion
-        if getattr(self, '_adjusting_layout', False):
-            return
-        self._adjusting_layout = True
-        
-        try:
-            # Clear layout first
-            while self.tb_layout.count() > 0:
-                self.tb_layout.takeAt(0)
-                
-            # Reset all column stretches
-            for col in range(30):
-                self.tb_layout.setColumnStretch(col, 0)
-                
-            idx = self.sidebar_stack.currentIndex()
-            width = self.width()
-            
-            # Determine threshold based on mode
-            if idx == 0:
-                threshold = 1200
-                is_narrow = (width < threshold)
-                
-                if is_narrow:
-                    self.canvas_toolbar.setFixedHeight(68)
-                    # cad_sep2 is redundant in two-row mode; hide so it is not
-                    # left visible-but-unpositioned after the grid is rebuilt.
-                    self.cad_sep2.setVisible(False)
-
-                    row0_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.focus_geom_btn,
-                        self.cad_preview_btn,
-                        self.cad_curve_preview_btn,
-                        self.cad_file_preview_btn,
-                    ]
-                    row1_widgets = [
-                        self.show_vertices_cb,
-                        self.show_nodes_cb,
-                        self.quality_check_cb,
-                        self.quality_mode_combo,
-                        self.cad_sep3,
-                        self.select_mode_label,
-                        self.select_mode_combo,
-                    ]
-                    
-                    # Add to row 0
-                    col_idx = 0
-                    for w in row0_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                            
-                    # Add to row 1
-                    col_idx = 0
-                    for w in row1_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 1, col_idx)
-                            col_idx += 1
-                            
-                    max_col = max(self.tb_layout.columnCount() - 1, 0)
-                    self.tb_layout.setColumnStretch(max_col + 1, 1)
-                else:
-                    self.canvas_toolbar.setFixedHeight(36)
-                    self.cad_sep2.setVisible(True)
-                    all_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.focus_geom_btn,
-                        self.cad_preview_btn,
-                        self.cad_curve_preview_btn,
-                        self.cad_file_preview_btn,
-                        self.cad_sep2,
-                        self.show_vertices_cb,
-                        self.show_nodes_cb,
-                        self.quality_check_cb,
-                        self.quality_mode_combo,
-                        self.cad_sep3,
-                        self.select_mode_label,
-                        self.select_mode_combo,
-                    ]
-                    col_idx = 0
-                    for w in all_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                    self.tb_layout.setColumnStretch(col_idx, 1)
-                    
-            else:  # Mesh modes (1 or 2)
-                threshold = 1100
-                is_narrow = (width < threshold)
-                
-                if is_narrow:
-                    self.canvas_toolbar.setFixedHeight(68)
-                    # mesh_sep3 is redundant in two-row mode; hide so it is not
-                    # left visible-but-unpositioned after the grid is rebuilt.
-                    self.mesh_sep3.setVisible(False)
-                    row0_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.mesh_preview_btn,
-                        self.mesh_generate_btn,
-                        self.mesh_cancel_btn,
-                        self.mesh_sep2,
-                        self.mesh_focus_btn,
-                    ]
-                    row1_widgets = [
-                        self.mesh_show_wireframe_cb,
-                        self.mesh_show_bc_cb,
-                        self.mesh_show_domain_cb,
-                        self.mesh_sep4,
-                        self.mesh_color_label,
-                        self.mesh_color_mode_combo,
-                        self.progress_bar,
-                    ]
-                    
-                    # Add to row 0
-                    col_idx = 0
-                    for w in row0_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                            
-                    # Add to row 1
-                    col_idx = 0
-                    for w in row1_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 1, col_idx)
-                            col_idx += 1
-                            
-                    max_col = max(self.tb_layout.columnCount() - 1, 0)
-                    self.tb_layout.setColumnStretch(max_col + 1, 1)
-                else:
-                    self.canvas_toolbar.setFixedHeight(36)
-                    self.mesh_sep3.setVisible(True)
-                    all_widgets = [
-                        self.undo_btn,
-                        self.redo_btn,
-                        self.cad_sep1,
-                        self.mesh_preview_btn,
-                        self.mesh_generate_btn,
-                        self.mesh_cancel_btn,
-                        self.mesh_sep2,
-                        self.mesh_focus_btn,
-                        self.mesh_sep3,
-                        self.mesh_show_wireframe_cb,
-                        self.mesh_show_bc_cb,
-                        self.mesh_show_domain_cb,
-                        self.mesh_sep4,
-                        self.mesh_color_label,
-                        self.mesh_color_mode_combo,
-                        self.progress_bar,
-                    ]
-                    col_idx = 0
-                    for w in all_widgets:
-                        if w.isVisible():
-                            self.tb_layout.addWidget(w, 0, col_idx)
-                            col_idx += 1
-                    self.tb_layout.setColumnStretch(col_idx, 1)
-        finally:
-            self._adjusting_layout = False
 
     def closeEvent(self, event):
         if hasattr(self, "controller") and self.controller is not None:
             if not self.controller.handle_close_event():
                 event.ignore()
                 return
+        # Stop displaying: after this the panel's C++ object may be gone, and a
+        # late log line (a worker winding down) must not reach it.
+        user_log.remove_sink(self._user_log_sink)
         event.accept()
+
+    def _show_cad_preview_for(self, kind: str):
+        """Show the CAD toolbar preview button that applies to `kind`.
+
+        '' hides both. The toolbar "Apply" (file preview) duplicated "Preview" —
+        both run the full resampler — so it stays hidden; the parameter is kept
+        because the edge inspector genuinely distinguishes the two cases and the
+        decision to hide one of them is the toolbar's, not the panel's.
+        """
+        self.cad_curve_preview_btn.setVisible(kind == "curve")
+        self.cad_file_preview_btn.setVisible(False)

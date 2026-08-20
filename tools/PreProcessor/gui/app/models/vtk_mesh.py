@@ -2,6 +2,46 @@ from __future__ import annotations
 import os
 import numpy as np
 
+
+# ── Vectorised cell metrics (operate on a (M, n, 2) block of M cells with n
+#    vertices each, returning (M,)). Vertices go counter-/clockwise around the
+#    cell; `roll(..., 1, axis=1)` therefore yields the previous vertex. ──────
+def _cell_areas(cp: np.ndarray) -> np.ndarray:
+    x = cp[..., 0]; y = cp[..., 1]
+    return 0.5 * np.abs(np.sum(x * np.roll(y, 1, axis=1) - y * np.roll(x, 1, axis=1), axis=1))
+
+
+def _cell_aspect_ratios(cp: np.ndarray) -> np.ndarray:
+    d = cp - np.roll(cp, 1, axis=1)                 # edge vectors (M, n, 2)
+    lengths = np.hypot(d[..., 0], d[..., 1])        # (M, n)
+    mx = lengths.max(axis=1)
+    mn = lengths.min(axis=1)
+    safe = mn > 1e-12
+    return np.where(safe, mx / np.where(safe, mn, 1.0), 1e6)
+
+
+def _cell_skewness(cp: np.ndarray) -> np.ndarray:
+    prev = np.roll(cp, 1, axis=1)
+    nxt = np.roll(cp, -1, axis=1)
+    v1 = prev - cp
+    v2 = nxt - cp
+    l1 = np.hypot(v1[..., 0], v1[..., 1])
+    l2 = np.hypot(v2[..., 0], v2[..., 1])
+    dot = v1[..., 0] * v2[..., 0] + v1[..., 1] * v2[..., 1]
+    good = (l1 > 1e-12) & (l2 > 1e-12)              # degenerate edges -> angle 0
+    cos = np.clip(np.divide(dot, l1 * l2, out=np.zeros_like(dot), where=good), -1.0, 1.0)
+    angles = np.where(good, np.degrees(np.arccos(cos)), 0.0)   # (M, n) in degrees
+    n = cp.shape[1]
+    theta_e = (n - 2) * 180.0 / n
+    theta_max = angles.max(axis=1)
+    theta_min = angles.min(axis=1)
+    skew_max = ((theta_max - theta_e) / (180.0 - theta_e)
+                if (180.0 - theta_e) > 1e-12 else np.zeros_like(theta_max))
+    skew_min = ((theta_e - theta_min) / theta_e
+                if theta_e > 1e-12 else np.zeros_like(theta_min))
+    return np.maximum(skew_max, skew_min)
+
+
 class VTKMesh:
     """Parse and store a VTK Legacy ASCII unstructured grid."""
 
@@ -12,13 +52,13 @@ class VTKMesh:
         self.polygons: list[list[int]] = []
 
     @classmethod
-    def from_file(cls, path: str) -> "VTKMesh":
+    def from_file(cls, path: str) -> VTKMesh:
         """Load and parse a VTK Legacy ASCII file from the given path."""
         mesh = cls()
         if not os.path.exists(path):
             raise FileNotFoundError(f"VTK file not found: {path}")
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             lines = f.readlines()
 
         # Simple line-by-line parser state
@@ -52,7 +92,7 @@ class VTKMesh:
                         continue
                     pt_tokens = pt_line.split()
                     # A line can contain multiple points or one point (x, y, z)
-                    # Typically, main.cpp writes one point per line: "x y 0.0"
+                    # Typically, the mesher writes one point per line: "x y 0.0"
                     for k in range(0, len(pt_tokens), 3):
                         if k + 1 < len(pt_tokens):
                             pts.append([float(pt_tokens[k]), float(pt_tokens[k+1])])
@@ -73,7 +113,7 @@ class VTKMesh:
                         continue
                     c_tokens = c_line.split()
                     # A line contains: size id0 id1 id2 ...
-                    # Typically, main.cpp writes one cell per line
+                    # Typically, the mesher writes one cell per line
                     idx = 0
                     while idx < len(c_tokens):
                         size = int(c_tokens[idx])
@@ -125,110 +165,36 @@ class VTKMesh:
         ymax = np.max(self.points[:, 1])
         return (xmin, xmax, ymin, ymax)
 
-    def get_element_areas(self) -> np.ndarray:
-        """Calculate and return area of each cell element."""
-        areas = []
-        
-        # 1. Triangles
-        for tri in self.triangles:
-            p = self.points[list(tri)]
-            # Shoelace formula for triangle
-            area = 0.5 * abs(p[0, 0] * (p[1, 1] - p[2, 1]) + p[1, 0] * (p[2, 1] - p[0, 1]) + p[2, 0] * (p[0, 1] - p[1, 1]))
-            areas.append(area)
-            
-        # 2. Quads
-        for quad in self.quads:
-            p = self.points[list(quad)]
-            # Shoelace formula for 4-vertex polygon
-            x = p[:, 0]
-            y = p[:, 1]
-            area = 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
-            areas.append(area)
-            
-        # 3. Polygons
-        for poly in self.polygons:
-            p = self.points[poly]
-            x = p[:, 0]
-            y = p[:, 1]
-            area = 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
-            areas.append(area)
+    # ── Vectorised per-cell metrics ──────────────────────────────────────
+    # Each metric fans out over all triangles, then all quads, then all
+    # polygons — the SAME order the fill renderer (`_rebuild_mesh_fills`) uses
+    # to index the returned array, so ordering must be preserved. Triangles
+    # and quads are the bulk and are computed as whole (M, n, 2) blocks; the
+    # rare variable-length polygons fall back to a per-cell numpy call.
 
-        return np.array(areas)
+    def _assemble_metric(self, fn) -> np.ndarray:
+        """Apply a vectorised (M, n, 2) -> (M,) metric to tris, quads and each
+        polygon, concatenated in cell order."""
+        P = self.points
+        parts: list[np.ndarray] = []
+        for cells in (self.triangles, self.quads):
+            if cells:
+                parts.append(fn(P[np.asarray(cells, dtype=np.int64)]))
+        for poly in self.polygons:
+            parts.append(fn(P[np.asarray(poly, dtype=np.int64)][None]))
+        return np.concatenate(parts) if parts else np.array([], dtype=float)
+
+    def get_element_areas(self) -> np.ndarray:
+        """Area of each cell (shoelace formula)."""
+        return self._assemble_metric(_cell_areas)
 
     def get_element_aspect_ratios(self) -> np.ndarray:
-        """Calculate aspect ratios of each cell element.
-        For a cell, aspect ratio is defined as (max edge length) / (min edge length).
-        For triangles/quads, aspect ratio closer to 1 is better.
-        """
-        ratios = []
-
-        # Helper to compute edge lengths of a polygon
-        def poly_aspect_ratio(nodes):
-            p = self.points[nodes]
-            # Compute distances between consecutive vertices
-            diffs = p - np.roll(p, 1, axis=0)
-            lengths = np.hypot(diffs[:, 0], diffs[:, 1])
-            max_len = np.max(lengths)
-            min_len = np.min(lengths)
-            return max_len / min_len if min_len > 1e-12 else 1e6
-
-        for tri in self.triangles:
-            ratios.append(poly_aspect_ratio(list(tri)))
-        for quad in self.quads:
-            ratios.append(poly_aspect_ratio(list(quad)))
-        for poly in self.polygons:
-            ratios.append(poly_aspect_ratio(poly))
-
-        return np.array(ratios)
+        """Aspect ratio (max edge length / min edge length) of each cell;
+        closer to 1 is better. Degenerate (zero min edge) -> 1e6."""
+        return self._assemble_metric(_cell_aspect_ratios)
 
     def get_element_skewness(self) -> np.ndarray:
-        """Calculate Equiangle Skewness of each cell element.
-        Skewness is defined as max((theta_max - theta_e)/(180 - theta_e), (theta_e - theta_min)/theta_e)
-        Where theta_e is the equiangle polygon angle (60 for triangles, 90 for quads).
-        Value ranges from 0 (perfect) to 1 (degenerate).
-        """
-        skewness_vals = []
-
-        def poly_skewness(nodes):
-            n = len(nodes)
-            p = self.points[nodes]
-            angles = []
-            for j in range(n):
-                pt = p[j]
-                pt_prev = p[(j - 1) % n]
-                pt_next = p[(j + 1) % n]
-                
-                v1 = pt_prev - pt
-                v2 = pt_next - pt
-                
-                l1 = np.linalg.norm(v1)
-                l2 = np.linalg.norm(v2)
-                
-                if l1 < 1e-12 or l2 < 1e-12:
-                    angles.append(0.0)
-                else:
-                    dot = np.dot(v1, v2)
-                    cos_theta = np.clip(dot / (l1 * l2), -1.0, 1.0)
-                    theta = np.arccos(cos_theta)
-                    angles.append(np.degrees(theta))
-            
-            if not angles:
-                return 0.0
-                
-            theta_max = np.max(angles)
-            theta_min = np.min(angles)
-            theta_e = (n - 2) * 180.0 / n
-            
-            skew_max = (theta_max - theta_e) / (180.0 - theta_e) if (180.0 - theta_e) > 1e-12 else 0.0
-            skew_min = (theta_e - theta_min) / theta_e if theta_e > 1e-12 else 0.0
-            return max(skew_max, skew_min)
-
-        for tri in self.triangles:
-            skewness_vals.append(poly_skewness(list(tri)))
-        for quad in self.quads:
-            skewness_vals.append(poly_skewness(list(quad)))
-        for poly in self.polygons:
-            skewness_vals.append(poly_skewness(poly))
-
-        return np.array(skewness_vals)
+        """Equiangle skewness of each cell: max((θmax-θe)/(180-θe),
+        (θe-θmin)/θe), θe = (n-2)·180/n. 0 (perfect) .. 1 (degenerate)."""
+        return self._assemble_metric(_cell_skewness)
 

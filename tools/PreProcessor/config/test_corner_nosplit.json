@@ -1,0 +1,18 @@
+{
+  "elements": [
+    {
+      "name": "LShapeNoSplit",
+      "input_file": "examples/geometries/L-shape.dat",
+      "output_file": "Results/corner_nosplit_lshape.dat",
+      "is_closed": true,
+      "segments": [
+        {
+          "id": 1,
+          "auto_split": false,
+          "strategy": "uniform",
+          "parameters": { "n_points": 40 }
+        }
+      ]
+    }
+  ]
+}
