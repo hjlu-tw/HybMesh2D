@@ -1,9 +1,73 @@
 from __future__ import annotations
 from app.commands.segment_cmds import (
     AddCurveSegmentCmd, UpdateSegmentStateCmd)
+from app.services.logging_setup import get_logger
+
+logger = get_logger(__name__)
+
+# ``confirm`` is imported inside the two prompt helpers, not here. This module's
+# commit/cancel path is deliberately drivable with no Qt at all — that is what
+# tests/test_edge_edit_owner.py exercises, and it is how the lifecycle stopped
+# needing a canvas and a dialog to be reasoned about. A module-level
+# ``from app.utils import confirm`` pulls in PyQt6 and ends that; session_tabs_ctrl
+# imports it inside close_tab for its own reasons and sets the precedent.
 
 
 class PendingEditControllerMixin:
+    # ── The "at most one edit is live" invariant, at the Qt boundary ──────
+    def _make_way_for_edit(self) -> bool:
+        """Clear the way for a new edit. False means: do not begin one.
+
+        The six ``_edit_in_progress()`` guards fire first and are unchanged;
+        this is reached only by the routes they do not block. The owner REFUSES
+        to begin while another edit is live — overwriting its snapshots is how a
+        later Cancel restores the wrong shape — so the live one has to be ended
+        deliberately, and that is a question for the user rather than a decision
+        for a Qt-free module.
+        """
+        if not self.edge_edit.is_active():
+            return True
+        from app.utils import confirm
+        # headless_default True: a batch run must not stall on this, and
+        # cancelling is the same answer it gives everywhere else.
+        if not confirm(self.main_window, "An edit is already open",
+                       "Cancel the edit in progress and start this one?",
+                       headless_default=True):
+            self.log("An edit is already open — the new one was not started.")
+            return False
+        self._cancel_live_edit()
+        return True
+
+    def _cancel_live_edit(self):
+        """Cancel whichever edit kind is live, through its own Cancel path."""
+        if self.edge_edit.is_shape_active():
+            self._cancel_file_edit()
+        elif self.edge_edit.is_active():
+            self._cancel_pending_edit()
+
+    def _release_edits_for_session(self, session, what: str) -> bool:
+        """A CAD session is being left (switched away from, or closed).
+
+        Returns False to ABORT the switch/close. An edit belongs to the session
+        it began in, so leaving that session must end it — otherwise the commit
+        that arrives afterwards targets a tab the user is no longer looking at.
+        A live DRAG is dropped silently: it holds only the snapshot that would
+        have made the gesture undoable, and a gesture the user walked away from
+        should record nothing.
+        """
+        if self.edge_edit.release_drag_for(session):
+            logger.debug("dropped a live handle drag on the session being left")
+        if not self.edge_edit.belongs_to(session):
+            return True
+        from app.utils import confirm
+        if not confirm(self.main_window, "Edit in progress",
+                       f"An edge edit is in progress. Cancel it and {what}?",
+                       headless_default=True):
+            self.log(f"Kept the edit in progress — did not {what}.")
+            return False
+        self._cancel_live_edit()
+        return True
+
     def _on_pending_dialog_changed(self, params, n_points):
         """The numeric dialog changed → update the pending edge, reposition the
         canvas control points, and refresh the preview (live, req 1).
@@ -52,10 +116,19 @@ class PendingEditControllerMixin:
         return True
 
     def _commit_pending_edge(self):
-        session = self.active_session()
         done = self.edge_edit.commit()
+        if done is None:
+            # A dialog signal arriving after the state was cleared. Not
+            # something the user did, so no pop-up and no user-log line.
+            logger.debug("commit with no edit live — ignored")
+            return
         self._clear_pending_canvas()
-        if done is None or not session:
+        # The session the edit BEGAN in, never active_session(): resolving the
+        # target through whichever tab is in front now is how an edit came to
+        # land on another tab's edge (segment ids are per-session, so the id
+        # fallback matched).
+        session = done.session or self.active_session()
+        if not session:
             return
         seg, is_new, orig_state = done.seg, done.is_new, done.orig_state
         if is_new:
@@ -71,22 +144,30 @@ class PendingEditControllerMixin:
             # Editing an existing edge: params were mutated in place — record the
             # change (undoable) then redraw and reselect it.
             self._record_segment_state_edit(session, seg, orig_state)
-            self._refresh_segment_list()
-            try:
-                self._select_segment_by_index(
-                    session.project_model.segments.index(seg))
-            except ValueError:
-                pass
             self.log(f"Updated {seg.curve_type} Edge {seg.id}.")
         session.is_geometry_modified = True
-        self.main_window.update_title(session.display_name, True)
+        # The list, the selection and the window title all describe the tab in
+        # FRONT. When the edit's own session is not that tab, updating them
+        # would relabel someone else's geometry with this one's name.
+        if session is self.active_session():
+            self._refresh_segment_list()
+            if not is_new:
+                try:
+                    self._select_segment_by_index(
+                        session.project_model.segments.index(seg))
+                except ValueError:
+                    pass
+            self.main_window.update_title(session.display_name, True)
 
     def _cancel_pending_edit(self):
         # The owner restores the shape (params + the polygon open/closed flag);
         # what is left here is the canvas and what the user is told.
         done = self.edge_edit.cancel()
+        if done is None:
+            logger.debug("cancel with no edit live — ignored")
+            return
         self._clear_pending_canvas()
-        if done is not None and done.reverted:
+        if done.reverted:
             self._refresh_segment_list()
             self.log("Edit cancelled (reverted).")
         else:

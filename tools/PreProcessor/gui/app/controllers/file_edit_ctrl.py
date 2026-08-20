@@ -1,6 +1,9 @@
 from __future__ import annotations
 import numpy as np
 from app.commands.vertex_cmds import ReplaceGeometryPointsCmd
+from app.services.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 class FileEditControllerMixin:
@@ -19,8 +22,11 @@ class FileEditControllerMixin:
         gp = session.original_points if session else None
         # The owner builds the edge specs and takes the pristine snapshot; it
         # refuses a geometry whose file segments describe no usable edge.
+        if not self._make_way_for_edit():
+            return
         if not self.edge_edit.begin_shape(
-                seg, gp, session.project_model.segments if session else []):
+                seg, gp, session.project_model.segments if session else [],
+                session=session):
             if gp is not None and len(gp):
                 self.log("This geometry can't be edited directly.")
             return
@@ -91,10 +97,14 @@ class FileEditControllerMixin:
         canvas.set_active_points(points)
 
     def _commit_file_edit(self):
-        session = self.active_session()
         done = self.edge_edit.end_shape()
-        orig = done.orig if done is not None else None
+        if done is None:
+            logger.debug("shape commit with no edit live — ignored")
+            return
+        orig = done.orig
         self._clear_file_edit_canvas()
+        # The session the edit began in, never active_session().
+        session = done.session or self.active_session()
         if session is None:
             return
         new_points = session.original_points
@@ -113,19 +123,23 @@ class FileEditControllerMixin:
                                            refresh_cb=refresh,
                                            label="Edit geometry shape")
             session.command_history.execute(cmd)
-        else:
+        elif session is self.active_session():
             self._apply_geometry_update(session)
         session.is_geometry_modified = True
-        self.main_window.update_title(session.display_name, True)
+        if session is self.active_session():
+            self.main_window.update_title(session.display_name, True)
         self.log("Updated geometry shape.")
 
     def _cancel_file_edit(self):
-        session = self.active_session()
         done = self.edge_edit.end_shape()
-        if session is not None and done is not None and done.orig is not None:
+        if done is None:
+            logger.debug("shape cancel with no edit live — ignored")
+            return
+        session = done.session or self.active_session()
+        if session is not None and done.orig is not None:
             session.original_points = done.orig
         self._clear_file_edit_canvas()
-        if session is not None:
+        if session is not None and session is self.active_session():
             self._apply_geometry_update(session)
         self.log("Shape edit cancelled (reverted).")
 

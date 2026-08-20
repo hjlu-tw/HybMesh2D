@@ -567,16 +567,18 @@ check("12d an idle owner refuses every shape verb",
       and owner.end_shape() is None
       and owner.edge_corner_points() is None)
 
-# The two kinds do not clobber each other's reset.
+# Each kind resets only its own state.
 owner = EdgeEditSession()
-owner.begin(_polygon(seg_id=11), is_new=True)
 owner.begin_shape(sess.project_model.segments[1], sess.original_points,
                   sess.project_model.segments)
-owner.commit()
-check("12e ending the analytic edit leaves the shape edit alone",
-      owner.is_shape_active() is True and owner.is_active() is True)
+owner.commit()   # the ANALYTIC verb, with only a shape edit live
+check("12e ending the analytic edit leaves a live shape edit alone",
+      owner.is_shape_active() is True)
 owner.end_shape()
-check("12f …and vice versa", owner.is_active() is False)
+owner.begin(_polygon(seg_id=11), is_new=True)
+owner.end_shape()   # the SHAPE verb, with only an analytic edit live
+check("12f …and vice versa", owner.is_active() is True)
+owner.cancel()
 
 # ══ 14: the committed-edge DRAG is a transition, not a nullable field ═══════
 owner = EdgeEditSession()
@@ -619,6 +621,68 @@ owner.begin_drag(a)
 check("14l a drag is not an 'edit in progress' — is_active() stays False",
       owner.is_active() is False)
 owner.finish_drag(a)
+
+# ══ 15: an edit BELONGS to the session it began in ══════════════════════════
+sA, sB = GeometrySession(), GeometrySession()
+owner = EdgeEditSession()
+pa = _polygon(seg_id=30)
+check("15a a fresh owner owns nothing",
+      owner.owning_session is None and owner.belongs_to(sA) is False)
+owner.begin(pa, is_new=False, session=sA)
+check("15b the edit reports the session it began in",
+      owner.owning_session is sA and owner.belongs_to(sA) is True
+      and owner.belongs_to(sB) is False)
+check("15c belongs_to(None) is False, not a match on a missing session",
+      owner.belongs_to(None) is False)
+
+# The invariant: a second begin is REFUSED, and the live edit is untouched.
+pb = _polygon(seg_id=31)
+check("15d begin while active is refused",
+      owner.begin(pb, is_new=True, session=sB) is False)
+check("15e …and the live edit is exactly as it was",
+      owner.segment is pa and owner.owning_session is sA)
+check("15f begin_shape while an analytic edit is live is refused too",
+      owner.begin_shape(_FileSeg(0, 2), _outline_session().original_points,
+                        _outline_session().project_model.segments,
+                        session=sB) is False)
+out = owner.cancel()
+check("15g the outcome carries the session the edit began in",
+      out is not None and out.session is sA)
+
+# …and the same in the other direction.
+osess = _outline_session()
+owner = EdgeEditSession()
+owner.begin_shape(osess.project_model.segments[1], osess.original_points,
+                  osess.project_model.segments, session=sA)
+check("15h a shape edit reports its session too",
+      owner.owning_session is sA and owner.belongs_to(sA) is True)
+check("15i begin while a SHAPE edit is live is refused",
+      owner.begin(pb, is_new=True, session=sB) is False
+      and owner.is_shape_active() is True)
+sout = owner.end_shape()
+check("15j the shape outcome carries its session",
+      sout is not None and sout.session is sA)
+
+# A commit outcome carries it as well — that is the one the cross-tab bug used.
+owner = EdgeEditSession()
+owner.begin(_polygon(seg_id=32), is_new=True, session=sB)
+cout = owner.commit()
+check("15k a commit outcome carries the session too",
+      cout is not None and cout.session is sB)
+
+# A DRAG belongs to a session but is not a modal edit: leaving drops it silently.
+owner = EdgeEditSession()
+owner.begin_drag(pa, session=sA)
+check("15l a live drag does not make the owner 'belong' to the session",
+      owner.belongs_to(sA) is False and owner.owning_session is None)
+check("15m release_drag_for ignores another session's drag",
+      owner.release_drag_for(sB) is False and owner.is_dragging() is True)
+check("15n …and drops its own",
+      owner.release_drag_for(sA) is True and owner.is_dragging() is False)
+check("15o …so the gesture records nothing when it finishes",
+      owner.finish_drag(pa) is None)
+check("15p release_drag_for with no drag live is False, not an error",
+      owner.release_drag_for(sA) is False)
 
 # ══ 1c: the owner imports no Qt, and the run never loaded any ═══════════════
 check("1c no PyQt6 module was loaded anywhere in this run",

@@ -142,6 +142,16 @@ class SessionTabsControllerMixin:
         if idx < 0 or idx >= len(self.sessions):
             self.active_idx = -1
             return
+        # An edit belongs to the session it began in. Leaving that session must
+        # end it, or the commit that arrives afterwards targets a tab the user
+        # is no longer looking at — and, because segment ids are per-session,
+        # silently lands on THAT tab's edge. Declining aborts the switch, so the
+        # tab bar has to be put back: Qt has already moved it.
+        leaving = self.active_session()
+        if leaving is not None and idx != self.active_idx:
+            if not self._release_edits_for_session(leaving, "switch tabs"):
+                self._restore_tab_selection()
+                return
         self.active_idx = idx
         self._sync_sidebar_to_session()
         session = self.active_session()
@@ -202,10 +212,27 @@ class SessionTabsControllerMixin:
             self._sync_closed_mode_ui(session)
             self._refresh_closing_edge(session)
 
+    def _restore_tab_selection(self):
+        """Put the tab bar back on the active session after an aborted switch.
+
+        Qt changes the current tab and then tells us; refusing the switch has to
+        undo that, or the tab bar shows one geometry while the canvas, the
+        sidebar and the live edit all belong to another."""
+        tw = self.main_window.tab_widget
+        if 0 <= self.active_idx < len(self.sessions):
+            with block_signals(tw):
+                tw.setCurrentIndex(self.active_idx)
+
     def close_tab(self, idx: int):
         if idx < 0 or idx >= len(self.sessions):
             return
         session = self.sessions[idx]
+        # The edit question comes FIRST and separately: declining it aborts the
+        # close, which makes the unsaved-changes question moot. They ask
+        # different things — is this edit worth keeping, is this geometry worth
+        # saving — so they are two prompts rather than one merged one.
+        if not self._release_edits_for_session(session, "close this tab"):
+            return
         # headless_default True: a batch run must be able to close a tab.
         from app.utils import confirm
         if session.is_geometry_modified and not confirm(

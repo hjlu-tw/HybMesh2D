@@ -479,6 +479,31 @@ live, so `_edit_in_progress()` is now one question with one answer instead of an
   `UpdateSegmentStateCmd` stays with the controller, which owns the undo stack. The
   *revert* does live in the owner, because it is the other half of the snapshot it
   took.
+- **An edit BELONGS to the CAD session it began in, and leaving that session is a
+  transition.** This is the half that was a *defect*, not a shape: nothing cancelled
+  a live edit when a tab was switched or closed, while the commit path resolved its
+  target through `active_session()` — the tab in front *now*. So committing an edit
+  looked the segment up in the wrong session, failed, and fell back to matching by
+  segment **id** (the fallback that exists to survive an intervening undo) — and ids
+  are per-session, so it landed on **another tab's edge**, recording an undo entry
+  whose before-state came from one geometry and whose after-state came from another;
+  committing a *new* edge added it to whichever tab was in front. Measured, the id
+  collision is worse than "possible": `ProjectModel.renumber_segments` assigns
+  contiguous 1..N across both edge kinds, so every tab's Nth edge has id N. Every
+  outcome now carries its session and the caller acts on **that** one, and the list /
+  selection / window title — which describe the tab in FRONT — are only touched when
+  the edit's session *is* that tab. Switching or closing away from a live edit
+  **asks**, defaulting to cancelling it (`headless_default=True`, so a batch run
+  never blocks and never comes out with an edit pointing at a tab that is gone); on
+  close the edit question comes **first**, and declining it aborts the close so the
+  unsaved-changes question is never reached. Declining a switch has to **put the tab
+  bar back** — Qt moves it and then tells us. And **at most one edit is live** stopped
+  being convention: `begin`/`begin_shape` REFUSE while another is live, so the Qt side
+  must ask and end the first one deliberately. Refusing is the backstop, not the
+  interaction — a module with no Qt cannot put up a prompt and should not decide to.
+  `commit`/`cancel` with nothing live is a silent no-op (a dialog signal arriving
+  after the state was cleared is a timing artefact, not something the user did):
+  `get_logger(__name__).debug`, never a pop-up or a user-log line.
 - **The committed-edge DRAG is a transition, not a nullable field.** Dragging a
   handle of an already-committed edge (no dialog open — a third modality the other
   two deliberately route drags away from) must collapse one gesture into one undo
@@ -502,10 +527,15 @@ live, so `_edit_in_progress()` is now one question with one answer instead of an
   Its one departure from symmetry is deliberate: the shape side has **`end_shape()`,
   not a commit/cancel pair**, because both endings need the same thing from the owner
   (the snapshot) and differ only in what the caller does with it.
-Gated by `tests/test_edge_edit_owner.py` (the owner's verbs, Qt-free) and
-`tests/test_committed_drag_undo.py` (the wiring, on the offscreen Qt platform with
-the real `AppController` — which is where the old bug lived). The first refuses PyQt6
-through a meta-path hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
+Gated by `tests/test_edge_edit_owner.py` (the owner's verbs, Qt-free),
+`tests/test_committed_drag_undo.py` (the drag wiring) and
+`tests/test_edit_session_binding.py` (the cross-tab defect and both prompts) — the
+last two on the offscreen Qt platform with the real `AppController`, which is where
+the old bugs lived. The session-binding test reaches the wrong-tab state by moving
+`active_idx` **directly** rather than through `switch_tab`, on purpose: `switch_tab`
+now ends the edit, so going through it would test the prompt instead of the binding,
+and the binding is the half that must still hold when some other route changes the
+front tab. The first refuses PyQt6 through a meta-path hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
 `PendingEditControllerMixin` / `FileEditControllerMixin` — re-implementing the commit
 branch in the test would prove only that a test can add a segment. (It loads both by
 file path: `app/controllers/__init__.py` eagerly re-exports eight Qt mixins, the same

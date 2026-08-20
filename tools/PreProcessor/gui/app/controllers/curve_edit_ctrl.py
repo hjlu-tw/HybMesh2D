@@ -96,7 +96,7 @@ class CurveEditControllerMixin:
         # never arrives finish-first; one that somehow did moved nothing, and an
         # unchanged state records nothing anyway.
         if not finished:
-            self.edge_edit.begin_drag(seg)
+            self.edge_edit.begin_drag(seg, session=session)
         # Apply the drag through the shared handle→param mapping, then push the
         # result back into the (silently-updated) sidebar widgets.
         params = sb.shape_params(ct)

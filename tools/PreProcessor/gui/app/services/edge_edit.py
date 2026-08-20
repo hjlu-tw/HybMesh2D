@@ -42,6 +42,26 @@ this module took: a cancelled analytic edit restores the parameters and — for 
 polygon — the ``closed`` flag the dialog may have toggled, and a cancelled shape
 edit hands back the pristine points.
 
+**An edit BELONGS to the CAD session it began in**, and that is not a detail.
+The commit path used to resolve its target through ``active_session()`` — the
+tab in front *now*, not the tab the edit began in — while nothing cancelled a
+live edit when a tab was switched or closed. Both consequences were silent:
+committing an edit looked the segment up in the wrong session, failed, and fell
+back to matching by segment **id**, which is per-session (every
+``ProjectModel._next_curve_id`` starts at 10001), so both tabs' first analytic
+edge is 10001 and the edit landed on ANOTHER TAB'S edge — recording an undo
+entry whose before-state came from one geometry and whose after-state came from
+another; and committing a NEW edge added it to whichever tab was in front. So
+every outcome carries its session, and the caller acts on THAT one.
+
+**At most one edit is live, and the owner enforces it.** It used to be
+convention: six call sites guard on ``_edit_in_progress()``, and a ``begin``
+that slipped past them would overwrite the live edit's snapshots — after which a
+Cancel restores the wrong shape. ``begin``/``begin_shape`` now REFUSE while
+another edit is live, so the caller has to end the first one deliberately (the
+Qt side asks the user first). Refusing is the backstop, not the interaction: a
+module with no Qt cannot put up a prompt, and should not decide to.
+
 The shape session also holds the CORNER POSITIONS rather than a live point
 array: every re-fit recomputes from the pristine snapshot, so dragging never
 accumulates transform onto transform and Cancel is exact rather than
@@ -82,12 +102,17 @@ class EditOutcome:
     change against ``orig_state``, the ``to_dict()`` taken before the edit).
     ``reverted`` is True when :meth:`EdgeEditSession.cancel` actually put the
     shape back — cancelling a *creation* has nothing to revert.
+
+    ``session`` is the CAD session the edit BEGAN in, and is the one the caller
+    must act on — never whichever tab happens to be in front when the dialog's
+    signal arrives.
     """
 
     seg: Any
     is_new: bool
     orig_state: Optional[dict] = None
     reverted: bool = False
+    session: Any = None
 
 
 @dataclass(frozen=True)
@@ -96,11 +121,14 @@ class ShapeOutcome:
 
     ``orig`` is the pristine point array the session snapshotted, which the
     caller needs for BOTH endings: to restore on cancel, and — on commit — as
-    the "before" half of the undoable geometry replacement.
+    the "before" half of the undoable geometry replacement. ``session`` is the
+    CAD session the edit began in, for the same reason as on
+    :class:`EditOutcome`.
     """
 
     seg: Any
     orig: Any
+    session: Any = None
 
 
 class EdgeEditSession:
@@ -112,6 +140,7 @@ class EdgeEditSession:
         self._is_new = True
         self._orig_params = None
         self._orig_state = None
+        self._session = None          # the CAD session this edit belongs to
         # Shape (imported-outline) edit.
         self._shape_seg = None
         self._shape_dialog = None
@@ -120,10 +149,12 @@ class EdgeEditSession:
         self._shape_corners = None    # sorted corner indices = handle order
         self._shape_pos = None        # {corner index: [x, y]} live positions
         self._shape_edge = None       # the double-clicked edge's two corners
+        self._shape_session = None
         # Drag of a committed edge's handle: the segment it began on, and that
         # segment's state before the gesture started.
         self._drag_seg = None
         self._drag_state = None
+        self._drag_session = None
 
     # ── Questions ────────────────────────────────────────────────────────
     def is_active(self) -> bool:
@@ -138,6 +169,23 @@ class EdgeEditSession:
         an open dialog and lock those out.
         """
         return self._seg is not None or self._shape_seg is not None
+
+    @property
+    def owning_session(self):
+        """The CAD session the live EDIT belongs to (either kind), or None.
+
+        A committed-edge drag is deliberately excluded: it is not a modal edit,
+        and leaving its session drops it silently rather than asking.
+        """
+        if self._seg is not None:
+            return self._session
+        if self._shape_seg is not None:
+            return self._shape_session
+        return None
+
+    def belongs_to(self, session) -> bool:
+        """True when a live edit — of either kind — began in ``session``."""
+        return session is not None and self.owning_session is session
 
     @property
     def active_segment(self):
@@ -161,20 +209,27 @@ class EdgeEditSession:
         return self._is_new
 
     # ── Lifecycle ────────────────────────────────────────────────────────
-    def begin(self, seg, is_new: bool = True):
-        """Start editing ``seg``. Returns the segment, for use at the call site.
+    def begin(self, seg, is_new: bool = True, session=None) -> bool:
+        """Start editing ``seg`` in ``session``. False if REFUSED.
+
+        Refused when another edit is already live: overwriting its snapshots is
+        how a later Cancel comes to restore the wrong shape. Ending the live one
+        is the caller's decision, not this module's — it has no way to ask.
 
         The parameters are deep-copied so cancelling an edit reverts nested
         values (a polygon's vertex list) rather than the outer dict alone; the
         full ``to_dict()`` is kept separately because committing an edit has to
         be undoable, and undo needs the state, not just the parameters.
         """
+        if seg is None or self.is_active():
+            return False
         self._seg = seg
         self._is_new = bool(is_new)
         self._orig_params = None if is_new else copy.deepcopy(seg.parameters)
         self._orig_state = None if is_new else seg.to_dict()
         self._dialog = None
-        return seg
+        self._session = session
+        return True
 
     def attach_dialog(self, dlg):
         """Hold the modeless dialog for the duration of the session."""
@@ -209,7 +264,8 @@ class EdgeEditSession:
         if self._seg is None:
             self._reset()
             return None
-        outcome = EditOutcome(self._seg, self._is_new, self._orig_state)
+        outcome = EditOutcome(self._seg, self._is_new, self._orig_state,
+                              session=self._session)
         self._reset()
         return outcome
 
@@ -222,6 +278,7 @@ class EdgeEditSession:
         """
         seg, is_new = self._seg, self._is_new
         orig_params, orig_state = self._orig_params, self._orig_state
+        session = self._session
         self._reset()
         if seg is None:
             return None
@@ -231,7 +288,8 @@ class EdgeEditSession:
             if orig_state is not None and hasattr(seg, "closed"):
                 seg.closed = bool(orig_state.get("closed", True))
             reverted = True
-        return EditOutcome(seg, is_new, orig_state, reverted=reverted)
+        return EditOutcome(seg, is_new, orig_state, reverted=reverted,
+                           session=session)
 
     def _reset(self):
         self._seg = None
@@ -239,6 +297,7 @@ class EdgeEditSession:
         self._is_new = True
         self._orig_params = None
         self._orig_state = None
+        self._session = None
 
     # ══ The committed-edge drag ══════════════════════════════════════════
     def is_dragging(self) -> bool:
@@ -249,7 +308,7 @@ class EdgeEditSession:
         """The segment the drag in progress began on, or None."""
         return self._drag_seg
 
-    def begin_drag(self, seg) -> bool:
+    def begin_drag(self, seg, session=None) -> bool:
         """Start a drag on ``seg``, or continue the one already on it.
 
         Called on EVERY move event, and snapshots only the first time — that is
@@ -263,6 +322,7 @@ class EdgeEditSession:
             return False
         self._drag_seg = seg
         self._drag_state = seg.to_dict()
+        self._drag_session = session
         return True
 
     def finish_drag(self, seg):
@@ -277,6 +337,7 @@ class EdgeEditSession:
         began_on, state = self._drag_seg, self._drag_state
         self._drag_seg = None
         self._drag_state = None
+        self._drag_session = None
         return state if (began_on is not None and began_on is seg) else None
 
     # ══ The shape (imported outline) edit ════════════════════════════════
@@ -294,15 +355,18 @@ class EdgeEditSession:
         dialog shows. None when no shape edit is live."""
         return self._shape_edge
 
-    def begin_shape(self, seg, points, segments) -> bool:
+    def begin_shape(self, seg, points, segments, session=None) -> bool:
         """Open ``seg``'s whole outline for corner editing. False if it has none.
 
         A geometry whose file segments describe no usable edge cannot be edited
         this way — the caller says so; refusing here rather than opening an empty
-        handle set is what keeps "a session is live" meaningful.
+        handle set is what keeps "a session is live" meaningful. Also refused
+        while ANOTHER edit is live, for the reason :meth:`begin` gives; ask
+        :meth:`is_active` first when the two need distinguishing, since "no
+        usable edge" and "an edit is already open" are different sentences.
         """
         pts = np.asarray(points, dtype=float) if points is not None else None
-        if pts is None or len(pts) == 0:
+        if pts is None or len(pts) == 0 or self.is_active():
             return False
         n = len(pts)
         specs, corners = build_edge_specs(segments, n)
@@ -317,6 +381,7 @@ class EdgeEditSession:
         # end_index may be one past the end (the closing edge wrapping to 0).
         self._shape_edge = (seg.start_index,
                             seg.end_index if seg.end_index < n else 0)
+        self._shape_session = session
         return True
 
     def attach_shape_dialog(self, dlg):
@@ -386,12 +451,28 @@ class EdgeEditSession:
         if self._shape_seg is None:
             self._reset_shape()
             return None
-        outcome = ShapeOutcome(self._shape_seg, self._shape_orig)
+        outcome = ShapeOutcome(self._shape_seg, self._shape_orig,
+                               session=self._shape_session)
         self._reset_shape()
         return outcome
 
     def _refit(self):
         return refit_shape(self._shape_orig, self._shape_specs, self._shape_pos)
+
+    def release_drag_for(self, session) -> bool:
+        """Drop a drag belonging to ``session``. True if one was dropped.
+
+        Leaving a CAD session ends any gesture that began in it. No prompt and
+        nothing to revert: a drag holds only the snapshot that would have made
+        the gesture undoable, so dropping it means the gesture records nothing —
+        which is the right answer for a gesture the user walked away from.
+        """
+        if self._drag_seg is None or self._drag_session is not session:
+            return False
+        self._drag_seg = None
+        self._drag_state = None
+        self._drag_session = None
+        return True
 
     def _reset_shape(self):
         self._shape_seg = None
@@ -401,3 +482,4 @@ class EdgeEditSession:
         self._shape_corners = None
         self._shape_pos = None
         self._shape_edge = None
+        self._shape_session = None

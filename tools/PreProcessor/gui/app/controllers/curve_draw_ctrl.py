@@ -79,8 +79,13 @@ class CurveDrawControllerMixin:
 
     def _begin_pending_edit(self, seg, is_new=True):
         # The owner takes the params + state snapshots that cancelling and
-        # committing an *edit* need; this method only builds the Qt side.
-        self.edge_edit.begin(seg, is_new=is_new)
+        # committing an *edit* need; this method only builds the Qt side. It
+        # also REFUSES while another edit is live, so ask first.
+        if not self._make_way_for_edit():
+            return
+        session = self.active_session()
+        if not self.edge_edit.begin(seg, is_new=is_new, session=session):
+            return
         # Clear the static selection highlight / transform gizmo so only the
         # live preview + control points are shown during the edit.
         canvas = self.main_window.canvas_view
