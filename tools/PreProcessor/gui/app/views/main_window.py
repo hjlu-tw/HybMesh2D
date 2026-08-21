@@ -230,6 +230,39 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         # position) whether or not a tab strip is visible in the current mode.
         tab_hl.addStretch(1)
 
+        # "Restart" — close this window and open a brand-new empty GUI. Lives in
+        # the same persistent row as "Run All" so it is reachable in every mode.
+        # The label is short because the row is measured, not guessed: at the
+        # narrowest supported window (setMinimumSize(900, 600), of which the
+        # sidebar keeps at least 300) this row is 540px wide, and "⟳ Restart"
+        # (88px) leaves 31px of slack beside Run All, the mode selector and the
+        # tab bar. "⟳ New Session" measured 119px, i.e. exactly zero slack — one
+        # longer geometry tab name and something would be squeezed.
+        # tests/test_gui_restart.py holds that measurement.
+        self.restart_btn = QPushButton("⟳ Restart", self.tab_row)
+        self.restart_btn.setToolTip(
+            "Close this window and open a new, empty PreProcessor session.\n"
+            "Unsaved changes are asked about first — answering No keeps this "
+            "window and launches nothing.")
+        self.restart_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #181b30;
+                color: #dde2ff;
+                border: 1px solid #2d3356;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                margin-right: 8px;
+            }
+            QPushButton:hover {
+                background-color: #23274a;
+                border-color: #5a9ad4;
+                color: #ffffff;
+            }
+        """)
+        tab_hl.addWidget(self.restart_btn)
+
         # "Run All" — one click runs CAD resample -> mesh -> solver -> results.
         # Lives in the persistent tab row (not the rebuilt canvas toolbar) so it
         # is available in every mode.
