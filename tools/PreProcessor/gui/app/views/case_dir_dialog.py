@@ -51,11 +51,14 @@ def ask_case_disposition(parent, case: str, case_root: str,
         box.setInformativeText(
             "This run RESTARTS from a previous dump, so it belongs in this same "
             "directory.\n\n"
-            f"Continuing here moves the previous run's outputs into work/{prev}/ "
-            "first — the dump this run resumes from included, and the restart "
-            "reference follows it there. Nothing is overwritten.\n\n"
-            "Overwriting in place writes over them instead, including the dump "
-            "being resumed from.")
+            f"Continuing here first moves the previous run's outputs into "
+            f"work/{prev}/, and renames the dump this run resumes from to "
+            f"….{prev} beside them — the solver can only read a restart source "
+            "from its own directory. Nothing is overwritten, and the restart "
+            "reference is updated to match.\n\n"
+            "Overwriting in place writes over them instead — including the dump "
+            "being resumed from, which the solver's own output dump is named "
+            "after.")
         archive_btn = box.addButton(f"Continue Here (archive to {prev})",
                                     QMessageBox.ButtonRole.AcceptRole)
         box.addButton("New Versioned Dir", QMessageBox.ButtonRole.ActionRole)

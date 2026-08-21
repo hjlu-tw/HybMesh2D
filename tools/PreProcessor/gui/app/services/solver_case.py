@@ -372,7 +372,20 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     # Before anything is written here: put the previous run's outputs out of
     # reach, so "continue in the same folder" cannot mean "write over the run
     # you are resuming from". Empty when there is nothing to archive.
-    archived = archive_previous_outputs(work_dir, log) if archive_prev else {}
+    #
+    # The zone dump this run RESUMES FROM is named so the archive can keep it
+    # reachable: the solver reads a restart source only by a bare name in its own
+    # cwd, so that one file is renamed in place instead of moved into prev_NNN/
+    # (see archive_previous_outputs). A dump living in some OTHER case dir is not
+    # in work_dir, so it is simply not among the files the archive considers.
+    keep_bare = ()
+    if archive_prev and cfg.restart:
+        raw = (cfg.zdump_fn_restart or "").strip()
+        if raw:
+            keep_bare = (os.path.abspath(
+                raw if os.path.isabs(raw) else os.path.join(work_dir, raw)),)
+    archived = (archive_previous_outputs(work_dir, log, keep_bare=keep_bare)
+                if archive_prev else {})
 
     # getPGrid runs in grid_dir: stage the STAR-CD inputs there with the
     # basenames para.in will reference, and have it write <case>.grid/.bc there.

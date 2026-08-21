@@ -37,10 +37,31 @@ Pinned here, against the real ``prepare_case_dir`` on a temp tree, the real
  7. the prompt's restart branch offers the archiving option, makes it the
     default, says where the outputs go, and keeps the destructive one and Cancel.
 
-Blind spot, named rather than papered over: like #25's test this pins the STRING
-written into ``input.in`` and that it resolves on this filesystem. That the
-solver then restarts rather than cold-starts is evidence only an acceptance run
-can give.
+What the checks here cannot give, an acceptance run did — and it is what
+established the design, so it is recorded rather than left as a blind spot.
+Driving the real ``prepare_case_dir`` over the reported case and then the real
+``unicones`` binary on what it produced: **exit 0, ``Global Iteration count
+1000``** (a cold start reports 0, so the run really resumed), the restart source
+byte-identical afterwards, no path errors, and a fresh dump written beside it.
+The same run measured the two facts the design turns on, neither of which is
+guessable from the file layout:
+
+* **the reference must be a BARE name.** With the dump moved into ``prev_001/``
+  and the reference pointing there, the solver derives a per-zone path from it —
+  ``binDumpZ.dat.prev_001/binDumpZ.0`` — into a directory that does not exist,
+  and dies with ``Can't open file``. That was the first, shipped version of this
+  fix, and it is why the dump is renamed in place instead.
+* **it must DIFFER from the solver's own output dump name.** That name is
+  ``binDumpZ.dat`` + the ``-t`` tag, i.e. exactly what a GUI restart resumes
+  from, so before this change every same-folder restart rewrote its own restart
+  point (measured: the source file's checksum changes). The issue described that
+  as a crash-window risk; it is in fact what happened on every run.
+
+One genuine residue, measured and out of scope: a reference into ANOTHER case
+dir (#25's ``../../own/work/binDumpZ.dat.gui``, which auto-versioning produces)
+does resume correctly — iteration 1000, source untouched — but leaves one empty
+``binDumpZ.dat.0`` behind in the work dir from the same derivation. Harmless,
+not fixed here.
 
 Run:  python3 tools/PreProcessor/tests/test_restart_archive.py
 """
@@ -146,12 +167,22 @@ check(os.path.abspath(w1) == os.path.abspath(work),
       "1. (precondition) the run continues in the SAME case dir — that is what "
       "a restart asked for")
 arch = os.path.join(work, "prev_001")
-check(sorted(os.listdir(arch)) == sorted(outputs),
-      f"1. every one of the previous run's outputs moved into work/prev_001/ "
+archived_expected = sorted(n for n in outputs if n != "binDumpZ.dat.gui")
+check(sorted(os.listdir(arch)) == archived_expected,
+      f"1. every one of the previous run's outputs moved into work/prev_001/ — "
+      f"except the dump this run resumes from "
       f"({sorted(os.listdir(arch)) if os.path.isdir(arch) else 'no such dir'})")
+check(os.path.isfile(os.path.join(work, "binDumpZ.dat.gui.prev_001"))
+      and not os.path.exists(os.path.join(work, "binDumpZ.dat.gui")),
+      f"1. the dump stays directly in work/, RENAMED — the solver reads a "
+      f"restart source only by a bare name in its own cwd (a dump moved into "
+      f"prev_001/ makes it derive binDumpZ.dat.prev_001/binDumpZ.0 and die), "
+      f"and the new name is what stops this run's own dump landing on top of it "
+      f"({sorted(n for n in os.listdir(work) if n.startswith('binDump'))})")
 check(all(not os.path.exists(os.path.join(work, n)) for n in outputs),
-      "1. ...MOVED, not copied — the zone dump is the largest file in a case, "
-      "and two of them would leave nothing recording their relationship")
+      "1. ...MOVED or renamed, never copied — the zone dump is the largest file "
+      "in a case, and two of them would leave nothing recording their "
+      "relationship")
 check(all(os.path.isfile(os.path.join(work, n)) for n in inputs),
       f"1. the run's own staged inputs stay in work/ — input.in, the BC table, "
       f"the phase field and a type-11 BC .so. Archive them and the resumed run "
@@ -159,14 +190,22 @@ check(all(os.path.isfile(os.path.join(work, n)) for n in inputs),
       f"({[n for n in inputs if not os.path.isfile(os.path.join(work, n))]})")
 
 ref = quoted(in1, "zdump_fn_restart")
-check(ref == "prev_001/binDumpZ.dat.gui",
-      f"2. the restart reference follows the dump into the archive, work-dir "
-      f"relative like every other quoted path ({ref!r})")
-check(not os.path.isabs(ref) and os.path.isfile(os.path.join(w1, ref)),
-      "2. ...and it really resolves from the work dir the solver runs in — "
-      "which is the whole point: the run must still find what it resumes from")
+check(ref == "binDumpZ.dat.gui.prev_001",
+      f"2. the restart reference follows the dump to its new name ({ref!r})")
+check("/" not in ref and os.path.isfile(os.path.join(w1, ref)),
+      "2. ...and it is a BARE name that resolves in the work dir the solver "
+      "runs in. Bare is not tidiness: measured on the real binary, any "
+      "reference with a directory component makes the solver build a per-zone "
+      "path out of it (prev_001/... -> binDumpZ.dat.prev_001/binDumpZ.0) and "
+      "the run dies with \"Can't open file\"")
+check(ref != "binDumpZ.dat.gui",
+      "2. ...and it differs from the name the solver writes its OWN dump to "
+      "(binDumpZ.dat + the -t tag), which is the whole hazard: measured, a "
+      "same-name restart rewrites the file it resumed from")
 check(quoted(in1, "convg_fn_restart") == "prev_001/unicones.enorm.gui",
-      f"2. both restart fields, not just the dump "
+      f"2. both restart fields, not just the dump — and the convergence file "
+      f"DOES go into the archive, because only the zone dump has the bare-name "
+      f"constraint (measured: a subdirectory path here runs clean) "
       f"({quoted(in1, 'convg_fn_restart')!r})")
 check(cfg1.zdump_fn_restart == dump,
       "2. the CONFIG keeps its absolute path to work/ — unchanged from #25, and "
@@ -201,13 +240,18 @@ check(sorted(n for n in os.listdir(work) if n.startswith("prev_"))
       f"4. a second restart archives into prev_002/ — the same never-clobber "
       f"counter discipline resolve_case_root uses for the case dir "
       f"({sorted(n for n in os.listdir(work) if n.startswith('prev_'))})")
-check(open(os.path.join(work, "prev_002", "binDumpZ.dat.gui")).read()
-      == "run 2 binDumpZ.dat.gui"
-      and open(os.path.join(work, "prev_001", "binDumpZ.dat.gui")).read()
-      == "binDumpZ.dat.gui",
-      "4. ...and prev_001 is untouched: each archive holds the run it came from")
-check(quoted(in2, "zdump_fn_restart") == "prev_002/binDumpZ.dat.gui",
-      f"4. the reference points at the newest archive, which is the run being "
+check(open(os.path.join(work, "binDumpZ.dat.gui.prev_002")).read()
+      == "run 2 binDumpZ.dat.gui",
+      "4. ...the dump kept bare in work/ is run 2's, tagged with the archive it "
+      "belongs to")
+check(os.path.isfile(os.path.join(work, "prev_002", "binDumpZ.dat.gui.prev_001"))
+      and not os.path.exists(os.path.join(work, "binDumpZ.dat.gui.prev_001")),
+      f"4. ...and the dump the PREVIOUS restart kept bare is now archived: it is "
+      f"an output like any other once nothing resumes from it, so no special "
+      f"case is needed to retire it "
+      f"({sorted(os.listdir(os.path.join(work, 'prev_002')))})")
+check(quoted(in2, "zdump_fn_restart") == "binDumpZ.dat.gui.prev_002",
+      f"4. the reference points at the newest one, which is the run being "
       f"resumed ({quoted(in2, 'zdump_fn_restart')!r})")
 
 # ── 2c. a RELATIVE restart reference follows the move as well ──────────────
@@ -220,7 +264,7 @@ delta_work, _do, _di = seed_previous_run("delta")
 cfg2c, (w2c, _g2c, in2c) = prep("delta", zdump="binDumpZ.dat.gui",
                                 convg="unicones.enorm.gui")
 ref2c = quoted(in2c, "zdump_fn_restart")
-check(ref2c == "prev_001/binDumpZ.dat.gui"
+check(ref2c == "binDumpZ.dat.gui.prev_001"
       and os.path.isfile(os.path.join(w2c, ref2c)),
       f"2c. a bare relative reference to a dump the archive just moved is "
       f"re-pointed at it, instead of naming a file that is no longer there "
@@ -282,19 +326,19 @@ check(on_disk <= (shipped | named),
       f"6. every file in the archive is either shipped or NAMED as skipped — a "
       f"nested folder the exporter cannot see is neither, and this repo has had "
       f"that exact bug ({sorted(on_disk - (shipped | named))})")
-check("work/prev_002/binDumpZ.dat.gui" in shipped,
-      f"6. the dump the resumed run restarts FROM ships, for the same reason the "
-      f"one in work/ does: input.in quotes it "
-      f"({sorted(r for r in shipped if 'binDump' in r)})")
+check("work/binDumpZ.dat.gui.prev_002" in shipped,
+      f"6. the dump the resumed run restarts FROM ships, for the same reason an "
+      f"un-renamed one does: input.in quotes it, and the rename keeps matching "
+      f"^binDump ({sorted(r for r in shipped if 'binDump' in r)})")
 check("work/prev_001/xtecp_sol_allz.dat.gui" in {r for r, _s in plan.skipped_output},
       f"6. the rest of an archive is skipped as produced-by-the-run, not shipped "
-      f"— an archive is a folder of outputs by construction, and only the ones "
-      f"input.in quotes are read back "
+      f"— an archive is a folder of outputs by construction, and only what "
+      f"input.in quotes is read back "
       f"({sorted(r for r, _s in plan.skipped_output if 'prev_' in r)})")
-check("work/prev_001/binDumpZ.dat.gui" not in shipped,
-      f"6. and only ONE dump ships: input.in names prev_002's, and matching a "
-      f"reference by BASENAME would have carried the older archive's copy too "
-      f"({sorted(r for r in shipped if 'binDump' in r)})")
+check(len([r for r in shipped if "binDump" in r]) == 1,
+      f"6. and only ONE dump ships: a restarted case legitimately holds several, "
+      f"and matching a reference by BASENAME would have carried the archived "
+      f"copies too ({sorted(r for r in shipped if 'binDump' in r)})")
 
 # ── 7. the prompt ──────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication, QMessageBox      # noqa: E402
