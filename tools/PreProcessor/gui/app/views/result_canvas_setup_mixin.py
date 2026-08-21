@@ -41,6 +41,10 @@ class ResultCanvasSetupMixin:
     def load_result_path(self, path: str, zone: int = -1):
         """Populate the zone selector from the file, then load the chosen zone."""
         self._result_path = path
+        # A manual colour range is view state for the result that is loaded, so a
+        # new file starts clean rather than colouring a new run with the previous
+        # one's numbers. Frames of ONE run go through set_result, which keeps it.
+        self.reset_clim_store()
         # Index the file first: the series owns the frame cache the playback
         # transport steps through, and the zone list comes from the same index.
         self._attach_series(path)
@@ -113,6 +117,7 @@ class ResultCanvasSetupMixin:
     def clear(self):
         """Clear the loaded result and reset to the empty placeholder."""
         self._detach_series()
+        self.reset_clim_store()
         self._building = True
         try:
             self._result = None

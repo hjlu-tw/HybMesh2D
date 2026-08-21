@@ -44,7 +44,6 @@ drive it without a display).
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import tarfile
 from dataclasses import dataclass, field
@@ -53,6 +52,21 @@ from dataclasses import dataclass, field
 # was over the GUI file-size budget). Imported under their old private names so
 # every call site here reads as it did.
 from app.services import case_sources
+# Facts about the files in a case directory — shared with ``services/case_archive``,
+# which moves exactly the files ``is_run_output`` names. Imported under the private
+# spellings the call sites here already use.
+from app.services.case_files import (
+    QUOTED_RE as _QUOTED_RE,
+    archive_subdirs as _archive_subdirs,
+    human_size,
+    is_inside as _is_inside,
+    is_restart_dump as _is_restart_dump,
+    is_run_output as _is_output,
+    keep_matches as _keeps,
+    referenced_inside as _referenced_inside,
+    size as _size,
+    tree_size as _tree_size,
+)
 from app.services.case_export_docs import (
     GETPGRID_INPUT,
     manifest_text as _manifest_text,
@@ -68,17 +82,6 @@ from app.services.case_export_usage import (
     loaded_shared_objects as _loaded_shared_objects,
     unused_reason as _unused_reason,
 )
-
-# Files a run PRODUCES. Only used to explain a skip in the manifest — the
-# copy decision is made by the allow-lists below, never by this list.
-_OUTPUT_PATTERNS = (
-    re.compile(r"^xtecp"), re.compile(r"^tWall"), re.compile(r"^unicones\."),
-    re.compile(r"^vsurface"), re.compile(r"^probe_data"),
-    re.compile(r"^xxprocess"), re.compile(r"^mesh_tecplot"),
-    re.compile(r"\.plt$"), re.compile(r"^fort\.\d+$"),
-)
-
-_RESTART_RE = re.compile(r"^binDump", re.IGNORECASE)
 
 # Per-subdirectory allow-lists: (exact names, suffixes).
 _GRID_KEEP = ({"para.in", "input.vrt", "input.cel", "input.bnd"},
@@ -104,15 +107,17 @@ _SOURCE_KEEP = ({case_sources.SOURCES_INDEX},
                 (".dat", ".meta", ".stl", ".txt", ".csv", ".json",
                  ".igs", ".iges", ".stp", ".step"))
 
+# work/prev_NNN/ holds the PREVIOUS run's outputs, moved aside so a restart could
+# continue in this directory. Nothing in it is an input by NAME — the one file a
+# resumed run reads back is the zone dump, and that travels because ``input.in``
+# quotes it, exactly as it does from work/ itself.
+_ARCHIVE_KEEP = (set(), ())
+
 # Files that travel under a different name. ``para.in`` says nothing about what
 # reads it, and there is a second para.in in this project (the STL3d stage), so
 # the copy is named after the program whose stdin it is. The rename lives here,
 # in the plan, so the manifest and run_case.sh cannot disagree about it.
 _RENAMES = {"grid/para.in": f"grid/{GETPGRID_INPUT}"}
-
-# Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
-_QUOTED_RE = re.compile(r'"([^"]*)"')
-
 
 class CaseExportError(Exception):
     """The case cannot be packaged (missing directory, unwritable target, …)."""
@@ -153,40 +158,6 @@ class ExportPlan:
         return any(i.rel == rel for i in self.items)
 
 
-def _size(path: str) -> int:
-    try:
-        return os.path.getsize(path)
-    except OSError:
-        return 0
-
-
-def human_size(n: float) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024 or unit == "GB":
-            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024.0
-    return f"{n:.1f} GB"
-
-
-def _is_output(name: str) -> bool:
-    return any(p.search(name) for p in _OUTPUT_PATTERNS)
-
-
-def _is_inside(child: str, parent: str) -> bool:
-    """Whether ``child`` lives under ``parent`` (False across volumes, where
-    commonpath refuses to answer rather than returning something misleading)."""
-    try:
-        return os.path.commonpath([os.path.abspath(child),
-                                   os.path.abspath(parent)]) == os.path.abspath(parent)
-    except ValueError:
-        return False
-
-
-def _keeps(name: str, keep) -> bool:
-    exact, suffixes = keep
-    return name in exact or name.endswith(suffixes)
-
-
 # --------------------------------------------------------------------------- #
 # Planning
 # --------------------------------------------------------------------------- #
@@ -205,15 +176,27 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
     plan = ExportPlan(case_dir=os.path.abspath(case_dir))
 
     input_in = _input_in_text(case_dir)
-    referenced = {os.path.basename(r.strip())
-                  for r in _QUOTED_RE.findall(input_in)
-                  if r.strip()}
+    # Which file inside the case each quoted reference actually names, as a
+    # case-relative path. By BASENAME would be ambiguous the moment a case holds
+    # two dumps with the same name — which is exactly what an archived restart
+    # leaves behind (work/binDumpZ.dat.gui from this run, work/prev_001/
+    # binDumpZ.dat.gui from the one it resumed from), and shipping both doubles
+    # the largest file in the package.
+    referenced = _referenced_inside(case_dir, input_in)
     loaded_so = _loaded_shared_objects(case_dir)
     immersed = _declares_immersed_solid(input_in)
     keeps = {"grid": _GRID_KEEP, "work": _WORK_KEEP, "dll": _DLL_KEEP,
              _SOURCE_SUBDIR: _SOURCE_KEEP}
+    # A restart that continues in an existing case dir archives the previous
+    # run's outputs into work/prev_NNN/ (#26). Each is walked like any other
+    # subdirectory, with NOTHING allow-listed: every file in it is an output by
+    # construction, so it is named as skipped — except the dump the resumed run
+    # restarts FROM, which travels for the same reason the one in work/ does,
+    # because input.in quotes it.
+    archives = _archive_subdirs(case_dir)
+    keeps.update({a: _ARCHIVE_KEEP for a in archives})
     found_any = False
-    for sub in _SUBDIRS + (_SOURCE_SUBDIR,):
+    for sub in _SUBDIRS + (_SOURCE_SUBDIR,) + archives:
         d = os.path.join(case_dir, *sub.split("/"))
         if not os.path.isdir(d):
             continue
@@ -221,15 +204,24 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
         found_any = found_any or sub in _SUBDIRS
         for name in sorted(os.listdir(d)):
             src = os.path.join(d, name)
+            rel = f"{sub}/{name}"
+            if os.path.isdir(src):
+                # A subdirectory cannot be shipped by an allow-list of file
+                # names, but it must not be INVISIBLE either — this repo has had
+                # that bug once already (grid/cad/, walked only one level deep).
+                # Folders the walk descends into on their own pass are skipped
+                # here so they are not ALSO reported as an unrecognised lump.
+                if rel not in keeps:
+                    plan.skipped_other.append((rel + "/", _tree_size(src)))
+                continue
             if not os.path.isfile(src):
                 continue
-            rel = f"{sub}/{name}"
-            restart = _RESTART_RE.match(name) is not None
+            restart = _is_restart_dump(name)
             if restart:
                 # The zone dump is an output that doubles as the input of a
                 # restart run — carried by request or by input.in, never by the
                 # allow-list.
-                by_ref = name in referenced
+                by_ref = rel in referenced
                 reason = ("restart zone dump — input.in restarts from it"
                           if by_ref else "restart zone dump (asked for)")
                 wanted = include_restart is True or (

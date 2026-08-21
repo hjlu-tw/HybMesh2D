@@ -341,16 +341,31 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
             f.write("\n".join(lines) + "\n")
 
     def generate_input_in(self, path: str, grid_rel: str | None = None,
-                          bc_rel: str | None = None):
+                          bc_rel: str | None = None,
+                          zdump_rel: str | None = None,
+                          convg_rel: str | None = None):
         """Write the solver input.in.
 
-        grid_rel/bc_rel let solver_ctrl inject paths relative to the case work
-        dir (e.g. "../grid/<case>.grid"); otherwise output_grid_file/output_bc_file
-        are used verbatim.
+        This is a writer: every quoted value in the file is a path, and the ones
+        that have to be relative to the case work dir are injected by
+        ``solver_case.prepare_case_dir`` rather than computed here — grid_rel /
+        bc_rel (e.g. "../grid/<case>.grid"), and zdump_rel / convg_rel for the
+        two restart references (#25). Each falls back to the field it overrides
+        (output_grid_file / output_bc_file / zdump_fn_restart / convg_fn_restart)
+        so a caller writing an input.in outside a staged case dir is unchanged.
+        The DLL paths arrive already relativised, on the config, because
+        ``stage_dll`` has to copy/compile the binary anyway; mpi_comm_map_fn,
+        cfl_schedule_fn and probe_points_def_fn are emitted verbatim and are the
+        remaining absolute-path exposure (#29, and see
+        solver_case.restart_refs_for_work_dir for why they were left).
         """
         bl = lambda b: "true" if b else "false"
         grid_path = grid_rel if grid_rel is not None else self.output_grid_file
         bc_path = bc_rel if bc_rel is not None else self.output_bc_file
+        zdump = (zdump_rel if zdump_rel is not None
+                 else self.zdump_fn_restart).strip()
+        convg = (convg_rel if convg_rel is not None
+                 else self.convg_fn_restart).strip()
 
         L = []
         a = L.append
@@ -445,10 +460,10 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
         # #4) > an explicit init_cond_depQ array > freestream default.
         if self.restart:
             a(f"   restart              \t{bl(self.restart)}")
-            if self.convg_fn_restart.strip():
-                a(f'   convg_fn_restart     \t"{self.convg_fn_restart.strip()}"')
-            if self.zdump_fn_restart.strip():
-                a(f'   zdump_fn_restart     \t"{self.zdump_fn_restart.strip()}"')
+            if convg:
+                a(f'   convg_fn_restart     \t"{convg}"')
+            if zdump:
+                a(f'   zdump_fn_restart     \t"{zdump}"')
             a("")
         elif self.init_cond_dll.strip():
             a(f'   init_cond_use_zdump_fn               "{self.init_cond_dll.strip()}"')

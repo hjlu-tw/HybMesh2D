@@ -113,7 +113,7 @@ def write_extras(plan, dest_dir: str, extra_files) -> None:
     a caller, and a package that can be made to write outside its own folder is
     worse than one missing a file — the export would be modifying the machine it
     was only supposed to read."""
-    from app.services.case_export import _is_inside
+    from app.services.case_files import is_inside as _is_inside
 
     for rel, text, note in extra_files or ():
         rel = str(rel).replace("\\", "/").strip("/")
@@ -133,7 +133,7 @@ def manifest_text(plan, solver_tag: str) -> str:
     """The package's own record: everything included, everything skipped (and
     why), every rewritten path, and the handful of facts the person running it
     on another machine has to know."""
-    from app.services.case_export import _size, human_size
+    from app.services.case_files import human_size, size as _size
 
     L = [f"Portable solver case: {os.path.basename(plan.case_dir)}",
          f"Exported from: {plan.case_dir}",

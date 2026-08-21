@@ -326,7 +326,7 @@ check(v.playback_clim() is None,
       "4. unticking hands the scale straight back to the current frame")
 v.lock_scale_cb.setChecked(True)
 v.set_clim(0.0, 1.0)
-check(v.playback_clim() is None and v._clim == (0.0, 1.0),
+check(v.playback_clim() is None and v.manual_clim() == (0.0, 1.0),
       "4. a manual colour range wins over the lock — locking fixes AUTO-scaling, "
       "it does not overrule an explicit choice")
 v.set_clim_auto(True)
