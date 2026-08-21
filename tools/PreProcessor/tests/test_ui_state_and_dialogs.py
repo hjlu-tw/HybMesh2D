@@ -2,10 +2,20 @@
 """Regression tests for findings N11 (layout persistence) and N12 (message grading).
 
 **N11** — ``QSettings`` was used only for the recent-files list, so every launch
-reset the window size/position, the Log Console dock, the open stage and every
-collapsible section in every panel. ``app/services/ui_state.py`` now saves and
-restores those, namespaced by ``LAYOUT_VERSION`` so a future layout change ignores
-stale state instead of restoring it into a window it no longer describes.
+reset the window size/position and the Log Console dock.
+``app/services/ui_state.py`` now saves and restores those, namespaced by
+``LAYOUT_VERSION`` so a future layout change ignores stale state instead of
+restoring it into a window it no longer describes.
+
+N11 originally covered two more facts — the open stage and every collapsible
+section's expanded flag — and **issue #27 took both back out** (USER-REQUESTED):
+every launch must start from one known state, the CAD stage with every sidebar
+section collapsed, because an unpredictable stage and an arbitrary set of open
+sections cost more than the view they saved. Checks 1/2/4 below are therefore the
+INVERSE of what they used to assert, and are kept inverted rather than deleted so
+that reinstating either restore fails this gate instead of passing it. Dialog
+accordions (``save_section_states`` / ``restore_section_states``, the Edit-BL
+dialog) are a different, still-wanted feature and are out of scope here.
 
 **N12** — a correction first: the original review claimed error severity was never
 used, having counted only the static ``QMessageBox.critical()`` method. In fact
@@ -23,11 +33,16 @@ narrower:
     been patched three times site-by-site; the guard now lives in the helpers.
 
 Checks:
- 1. ui_state saves/restores geometry, dock state, sections and stage.
- 2. It is namespaced by LAYOUT_VERSION, and a version bump ignores stale state.
+ 1. A launch lands on the CAD stage with every sidebar section collapsed, even
+    with a previous version's stage/section keys present; geometry and dock state
+    are still saved and restored, and neither the stage nor a section flag is
+    written or read any more.
+ 2. Keys are namespaced by LAYOUT_VERSION (now 2), and a version bump reads only
+    its own namespace.
  3. It never touches QSettings on a headless platform (tests must not overwrite
     the real user's saved layout).
- 4. Every CollapsibleSection exposes the stable `title` the keys depend on.
+ 4. The dialog-scope accordion API survives untouched, and every
+    CollapsibleSection still exposes the stable `title` its keys depend on.
  5. report_error / report_warning / report_info map to Critical / Warning /
     Information, and none of them blocks when headless.
  6. confirm() returns its headless_default instead of blocking.
@@ -92,91 +107,168 @@ class _SpySettings:
 
 
 _real_settings = ui_state._settings
+_real_headless = ui_state._headless
 ui_state._settings = lambda: _SpySettings()
 from app.controller import AppController  # noqa: E402
 
 probe = AppController()
 ui_state.save_ui_state(probe.main_window)
 ui_state.restore_ui_state(probe.main_window)
-ui_state.restore_active_stage(probe.main_window)
 check(not touched,
       f"3. headless neither reads nor writes the saved layout ({touched[:4]})")
 
-# ── 1/2/4: force the non-headless path with an in-memory settings double ───
+# ── 1/2/4. a launch lands on CAD with every sidebar section collapsed ─────
+# These checks are the INVERSE of what they used to assert. ui_state used to
+# save and restore the active stage and every sidebar section's expanded flag;
+# issue #27 removed both halves of both, deliberately, so that every launch
+# starts from one known state. Window furniture (geometry + dock state) is the
+# only thing a previous session still carries over. Inverting the checks rather
+# than deleting them is what stops the old behaviour arriving back as a bug fix.
+from app.views.collapsible import CollapsibleSection  # noqa: E402
+
+
 class _MemSettings:
-    def __init__(self, store):
+    """Records every read, so "the key is not written" and "the key is never
+    even looked at" stay distinguishable."""
+
+    def __init__(self, store, reads):
         self.store = store
+        self.reads = reads
 
     def setValue(self, key, val):
         self.store[key] = val
 
     def value(self, key, default=None):
+        self.reads.append(key)
         return self.store.get(key, default)
 
     def sync(self):
         pass
 
 
+def _sidebar_sections(mw):
+    """``(scope, section)`` for every collapsible section on every sidebar page,
+    ``scope`` being the owning page's class name — i.e. the key format the deleted
+    restore used, so the seeding below and the assertions share one walk. Walked
+    here rather than asked of ui_state, which no longer has a helper for it: a
+    gate that asked the code under test where to look would move with it."""
+    out = []
+    stack = getattr(mw, "sidebar_stack", None)
+    for i in range(stack.count() if stack is not None else 0):
+        page = stack.widget(i)
+        if page is not None:
+            out.extend((type(page).__name__, sec)
+                       for sec in page.findChildren(CollapsibleSection))
+    return out
+
+
 store: dict = {}
-ui_state._settings = lambda: _MemSettings(store)
+reads: list = []
+ui_state._settings = lambda: _MemSettings(store, reads)
 ui_state._headless = lambda: False        # pretend we have a screen
 
-mw = probe.main_window
+# Settings a PREVIOUS version wrote: stage 3 (Solver) and every section expanded.
+# The keys are rebuilt in the old format from the live sidebar rather than typed
+# out, so a stale key is really one the removed restore would have consumed —
+# under v1 (what a real upgrade finds on disk) and under the current prefix, so
+# the invariant cannot pass merely because the namespace moved.
+_seeded = _sidebar_sections(probe.main_window)
+for _pfx in ("ui/v1", ui_state._PREFIX):
+    store[f"{_pfx}/mode"] = 3
+    for _scope, _sec in _seeded:
+        store[f"{_pfx}/sections/{_scope}/{_sec.title}"] = True
 
-# 4. Stable section keys depend on the title attribute.
-sections = [s for _k, s in ui_state._sections(mw)]
-check(bool(sections), f"4. sidebar collapsible sections are discoverable ({len(sections)})")
-check(all(isinstance(getattr(s, "title", None), str) and s.title for s in sections),
-      "4. every section exposes a non-empty `title` for its settings key")
-keys = [k for k, _s in ui_state._sections(mw)]
-check(len(keys) == len(set(keys)),
-      f"4. section keys are unique ({len(keys)} sections, {len(set(keys))} keys)")
+launch = AppController()          # a launch, with that stale state in place
+lmw = launch.main_window
+# Index 0 is the invariant; the label is reported for diagnosis, not asserted, so
+# that renaming the combo item is not a test failure.
+check(lmw.mode_combo.currentIndex() == 0,
+      f"1. a launch lands on stage index 0 (CAD) whatever was saved "
+      f"(index {lmw.mode_combo.currentIndex()}, {lmw.mode_combo.currentText()!r})")
 
-# 1. Round-trip: flip some sections and the stage, save, change, restore.
-target = sections[0]
-target.expand() if not target.is_expanded else target.collapse()
-want_expanded = target.is_expanded
-stage_before = mw.mode_combo.currentIndex()
-new_stage = (stage_before + 1) % mw.mode_combo.count()
-mw.mode_combo.setCurrentIndex(new_stage)
+_secs = [s for _scope, s in _sidebar_sections(lmw)]
+# Not a magic threshold: this is the same sidebar that was just walked to seed the
+# stale keys, so a smaller count would let "every section is collapsed" pass
+# vacuously on a window that has no sections to speak of.
+check(bool(_secs) and len(_secs) == len(_seeded),
+      f"1. the launched window exposes the same {len(_seeded)} sidebar sections "
+      f"whose flags were seeded open ({len(_secs)})")
+_open = [s.title for s in _secs if s.is_expanded]
+check(not _open,
+      f"1. ...and every one of them is collapsed at launch (open: {_open})")
 
-ui_state.save_ui_state(mw)
+_stale = [k for k in reads if k.endswith("/mode") or "/sections/" in k]
+check(not _stale,
+      f"1. neither the stage nor a section flag is even read back ({_stale[:3]})")
+check(not hasattr(ui_state, "restore_active_stage"),
+      "1. ui_state exposes no restore_active_stage for a caller to reinstate")
+check(not hasattr(ui_state, "_sections"),
+      "1. ...nor the private sidebar walker the section loops used")
+
+# The save half goes with the restore half: a value written and never read is
+# dead code that reads as a working feature.
+store.clear()
+ui_state.save_ui_state(lmw)
 check(any(k.endswith("/geometry") for k in store),
-      "1. window geometry is saved")
+      "1. window geometry is still saved")
 check(any(k.endswith("/windowState") for k in store),
-      "1. dock/window state is saved")
-check(any("/sections/" in k for k in store),
-      "1. collapsible section states are saved")
-check(store.get(f"{ui_state._PREFIX}/mode") == new_stage,
-      "1. the active stage is saved")
+      "1. dock/window state is still saved")
 
-# Perturb, then restore.
-target.expand() if not want_expanded else target.collapse()
-check(target.is_expanded != want_expanded, "1. (section perturbed for the test)")
-ui_state.restore_ui_state(mw)
-check(target.is_expanded == want_expanded,
-      "1. restore brings the section's expanded state back")
+# ...and the half that is KEPT has to come BACK, not merely be written. Two Qt
+# facts bound what can be asserted here, and both were measured on a plain
+# QMainWindow rather than assumed:
+#   * ``saveState()`` is NOT byte-canonical across a restore (hide a dock,
+#     restoreState the old blob -> the dock reappears but the blob differs), so
+#     the dock is pinned by whether it is explicitly HIDDEN. ``isHidden()``, not
+#     ``isVisible()``: this main window is never shown, so every child of it is
+#     invisible and ``isVisible()`` would answer False either way;
+#   * the offscreen platform does not honour a restored window SIZE at all (a
+#     1234x777 blob comes back 798x774), so geometry is pinned as "the exact blob
+#     written is what is read back, and restoreGeometry accepts it" — which is the
+#     part this module actually owns.
+_geom_saved = bytes(lmw.saveGeometry())
+lmw.log_dock.hide()
+check(lmw.log_dock.isHidden(), "1. (dock perturbed for the test)")
+ui_state.restore_ui_state(lmw)
+check(not lmw.log_dock.isHidden(),
+      "1. restore brings the Log Console dock back")
+_geom_disk = bytes(store[f"{ui_state._PREFIX}/geometry"])
+check(_geom_disk == _geom_saved and lmw.restoreGeometry(_geom_disk),
+      "1. ...and the geometry blob read back is the one written, and is accepted")
 
-mw.mode_combo.setCurrentIndex(stage_before)
-ui_state.restore_active_stage(mw)
-check(mw.mode_combo.currentIndex() == new_stage,
-      "1. restore brings back the active stage")
+check(not any(k.endswith("/mode") for k in store),
+      f"1. no active-stage key is written ({sorted(store)})")
+check(not any("/sections/" in k for k in store),
+      f"1. no sidebar section key is written "
+      f"({[k for k in store if '/sections/' in k][:3]})")
 
 # 2. Namespacing / version bump.
-check(all(k.startswith("ui/v") for k in store),
-      f"2. every key is namespaced by layout version ({sorted(store)[:2]})")
+check(ui_state.LAYOUT_VERSION >= 2,
+      f"2. LAYOUT_VERSION has moved past the v1 state this change orphans "
+      f"({ui_state.LAYOUT_VERSION}) — `>=`, so a later legitimate layout bump "
+      f"does not fail a check about this one")
+check(all(k.startswith(f"ui/v{ui_state.LAYOUT_VERSION}/") for k in store),
+      f"2. every written key is namespaced by layout version ({sorted(store)})")
 old_prefix = ui_state._PREFIX
 try:
     ui_state._PREFIX = f"ui/v{ui_state.LAYOUT_VERSION + 1}"
-    marker = target.is_expanded
-    target.collapse() if marker else target.expand()
-    ui_state.restore_ui_state(mw)        # nothing saved under the new version
-    check(target.is_expanded != marker,
-          "2. a version bump ignores stale state instead of restoring it")
+    reads.clear()
+    ui_state.restore_ui_state(lmw)        # nothing saved under the next version
+    check(bool(reads) and all(k.startswith(ui_state._PREFIX) for k in reads),
+          f"2. a version bump reads only its own namespace ({reads})")
 finally:
     ui_state._PREFIX = old_prefix
 
+# 4. Dialog accordions are OUT of scope and must keep working: they key off the
+#    same stable `title`, through the two functions that had to survive.
+check(all(isinstance(getattr(s, "title", None), str) and s.title for s in _secs),
+      "4. every section still exposes a non-empty `title` for a settings key")
+check(callable(getattr(ui_state, "save_section_states", None))
+      and callable(getattr(ui_state, "restore_section_states", None)),
+      "4. the dialog-scope save/restore pair is untouched")
+
 ui_state._settings = _real_settings
+ui_state._headless = _real_headless
 
 # ── 5/6. graded, non-blocking message helpers ─────────────────────────────
 import app.utils as utils  # noqa: E402

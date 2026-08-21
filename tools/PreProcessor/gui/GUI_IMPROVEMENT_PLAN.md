@@ -260,9 +260,12 @@
 
 ### 已完成：N11 + N12（2026-08-06，同日第六批）
 
-- [x] **N11 視窗版面持久化**
+- [x] **N11 視窗版面持久化**（**2026-08-21 / issue #27 部分反轉**，見下方註記）
   - [x] 新增 `services/ui_state.py`：`save_ui_state()` / `restore_ui_state()` / `restore_active_stage()`
     - 存：視窗 geometry、dock state（`saveState()`）、目前 stage、每個 collapsible section 的展開狀態
+    - **註（2026-08-21，issue #27）**：後兩項已依使用者要求移除，`restore_active_stage()` 也一併刪除。
+      現在只存視窗 geometry 與 dock state；每次啟動固定落在 CAD 階段、側邊欄全部收合。
+      對話框自己的 accordion 是另一個功能，仍由 `save/restore_section_states` 保存。
     - **不存**任何案例資料 —— 還原版面絕不能改變「會被 mesh / solve 的東西」
   - [x] **以 `LAYOUT_VERSION` 命名空間**：版面日後不相容變更時 bump，舊狀態會被**忽略**而非還原進一個已不符的視窗（還原成錯的比預設的更糟，而使用者很難自己重設）
   - [x] **headless 完全不讀不寫** QSettings —— 否則測試與批次執行會用 offscreen 的版面覆蓋掉真實使用者存的版面
