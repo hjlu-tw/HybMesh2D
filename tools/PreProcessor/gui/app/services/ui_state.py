@@ -1,20 +1,40 @@
 """Persist and restore the window layout between sessions.
 
 ``QSettings`` was already used for the recent-files list, but nothing else: every
-launch reset the window size and position, the Log Console dock, which stage was
-open, and every collapsible section in every panel. An engineer who works with the
-Boundary Layer section open and the log dock tall had to rebuild that view on every
-start — the kind of small daily friction industrial tools do not have.
+launch reset the window size and position and the Log Console dock. An engineer
+who works with the log dock tall and the window on the second monitor had to
+rebuild that on every start — the kind of small daily friction industrial tools
+do not have.
 
 What is persisted, and why only this:
 
 * **Window geometry** and **dock state** — Qt's own opaque blobs, which cover
   size/position/maximised plus the dock's size, visibility and floating state.
-* **The active stage** (mode combo), so work resumes where it stopped.
-* **Collapsible section expanded flags**, keyed by owning panel + section title.
 
-Deliberately NOT persisted: anything that is *case data* rather than view state.
-A restored layout must never change what would be meshed or solved.
+Deliberately NOT persisted, and this is the interesting half:
+
+* **The active stage** (mode combo) and **every sidebar collapsible section's
+  expanded flag**. Both *were* saved and restored here, on the same
+  resume-where-you-stopped argument as the geometry. The user weighed that and
+  reversed it (issue #27): a launch must land on one known state — the **CAD**
+  stage, with **every** sidebar section collapsed — because an unpredictable
+  stage and an arbitrary set of open sections cost more than the view they
+  saved, and nothing offered a way to reset them. The convenience removed was
+  real; it was the user's call. Do not reinstate either as a bug fix: the CAD
+  default now comes from ``mode_combo``'s own index 0 and the collapsed default
+  from ``CollapsibleSection(start_collapsed=True)``, and
+  ``tests/test_ui_state_and_dialogs.py`` fails if a launch stops landing there.
+* Anything that is *case data* rather than view state. A restored layout must
+  never change what would be meshed or solved.
+
+A **dialog's own** accordion is a different feature and is still persisted, by
+:func:`save_section_states` / :func:`restore_section_states` under an explicit
+scope — the Edit-BL dialog opens all-closed and reopens what the user left it in,
+which is itself user-requested. Those two never walked the sidebar, so the code
+path above is not theirs. Their *stored* state is not exempt from the version
+bump, though: :func:`_section_key` is built from ``_PREFIX``, so v2 orphans a
+dialog's saved flags exactly as it orphans the geometry — see the note on
+``LAYOUT_VERSION`` below.
 
 Two safety rules:
 
@@ -38,7 +58,15 @@ APPLICATION = "PreProcessor"
 
 # Bump when the window/panel layout changes in a way that makes previously saved
 # state wrong (docks added or removed, panels reordered, sections restructured).
-LAYOUT_VERSION = 1
+#
+# v2 was requested as part of issue #27, and what it orphans is EVERYTHING under
+# v1 — not only the stage and sidebar-section keys this module stopped writing
+# (which the deleted readers had already made unreachable), but also every user's
+# saved geometry, dock state and dialog-accordion flags, because those share the
+# prefix. That one-time loss is the accepted cost of keeping the namespace honest:
+# nothing under v1 is read again, so a v1 key can never be a live value in some
+# later session that nothing wrote.
+LAYOUT_VERSION = 2
 
 _PREFIX = f"ui/v{LAYOUT_VERSION}"
 
@@ -52,41 +80,15 @@ def _headless() -> bool:
     return is_headless()
 
 
-def _section_key(scope: str, title: str, suffix: str = "") -> str:
-    return f"{_PREFIX}/sections/{scope}/{title}{suffix}"
-
-
-def _sections(main_window):
-    """Yield ``(key, section)`` for every collapsible section in the sidebar.
-
-    Scoped by the owning sidebar page's class name, so two panels that both have
-    an "Output" section keep separate state instead of sharing one flag.
-    """
-    from app.views.collapsible import CollapsibleSection
-
-    stack = getattr(main_window, "sidebar_stack", None)
-    if stack is None:
-        return
-    for i in range(stack.count()):
-        page = stack.widget(i)
-        if page is None:
-            continue
-        scope = type(page).__name__
-        seen: dict[str, int] = {}
-        for sec in page.findChildren(CollapsibleSection):
-            title = getattr(sec, "title", "") or sec.toggle_btn.text().strip()
-            # Two same-titled sections on one page get a stable ordinal suffix.
-            n = seen.get(title, 0)
-            seen[title] = n + 1
-            suffix = "" if n == 0 else f"#{n}"
-            yield _section_key(scope, title, suffix), sec
+def _section_key(scope: str, title: str) -> str:
+    return f"{_PREFIX}/sections/{scope}/{title}"
 
 
 def save_section_states(scope: str, sections) -> None:
-    """Persist the expanded flag of collapsible sections that do NOT live in the
-    sidebar — a dialog's own accordion, which :func:`_sections` cannot reach
-    (it walks ``sidebar_stack``). ``scope`` namespaces the keys, so pass a stable
-    string (the dialog's class name). Never raises."""
+    """Persist the expanded flag of a **dialog's** own collapsible accordion.
+    Sidebar sections are deliberately not persisted at all (see the module
+    docstring), so this is the only section state there is. ``scope`` namespaces
+    the keys, so pass a stable string (the dialog's class name). Never raises."""
     if _headless():
         return
     try:
@@ -123,18 +125,13 @@ def restore_section_states(scope: str, sections) -> None:
 
 
 def save_ui_state(main_window) -> None:
-    """Write the current layout to QSettings. Never raises."""
+    """Write the current window furniture to QSettings. Never raises."""
     if _headless():
         return
     try:
         s = _settings()
         s.setValue(f"{_PREFIX}/geometry", main_window.saveGeometry())
         s.setValue(f"{_PREFIX}/windowState", main_window.saveState())
-        combo = getattr(main_window, "mode_combo", None)
-        if combo is not None:
-            s.setValue(f"{_PREFIX}/mode", int(combo.currentIndex()))
-        for key, sec in _sections(main_window):
-            s.setValue(key, bool(sec.is_expanded))
         s.sync()
     except Exception:
         # Layout persistence is a convenience; failing it must never affect exit.
@@ -142,7 +139,7 @@ def save_ui_state(main_window) -> None:
 
 
 def restore_ui_state(main_window) -> None:
-    """Apply the saved layout, if any. Never raises."""
+    """Apply the saved window furniture, if any. Never raises."""
     if _headless():
         return
     try:
@@ -153,35 +150,5 @@ def restore_ui_state(main_window) -> None:
         state = s.value(f"{_PREFIX}/windowState")
         if state is not None:
             main_window.restoreState(state)
-        for key, sec in _sections(main_window):
-            saved = s.value(key)
-            if saved is None:
-                continue                      # never saved -> keep the default
-            want = saved if isinstance(saved, bool) else str(saved).lower() == "true"
-            if want != sec.is_expanded:
-                sec.expand() if want else sec.collapse()
     except Exception:
         _log.warning("could not restore the window layout", exc_info=True)
-
-
-def restore_active_stage(main_window) -> None:
-    """Re-select the stage that was open last.
-
-    Separate from :func:`restore_ui_state` because it has to run *after* the
-    controller has wired its mode signals and opened a session — switching stage
-    triggers panel population, which needs a live controller behind it.
-    """
-    if _headless():
-        return
-    combo = getattr(main_window, "mode_combo", None)
-    if combo is None:
-        return
-    try:
-        idx = _settings().value(f"{_PREFIX}/mode")
-        if idx is None:
-            return
-        idx = int(idx)
-        if 0 <= idx < combo.count() and idx != combo.currentIndex():
-            combo.setCurrentIndex(idx)
-    except Exception:
-        _log.warning("could not restore the active stage", exc_info=True)

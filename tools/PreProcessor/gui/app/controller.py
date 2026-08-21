@@ -222,12 +222,12 @@ class AppController(
         self.init_project_undo()
         self._wire_project_undo_signals()
 
-        # Restore the saved window layout (size/position, Log Console dock,
-        # collapsible sections). The stage is restored separately, last, because
-        # switching stage populates panels and needs a fully-wired controller.
-        from app.services.ui_state import restore_active_stage, restore_ui_state
+        # Restore the saved window furniture (size/position, Log Console dock).
+        # The active stage and the sidebar sections are deliberately NOT restored
+        # — every launch lands on CAD with everything collapsed (issue #27); see
+        # app/services/ui_state.py.
+        from app.services.ui_state import restore_ui_state
         restore_ui_state(self.main_window)
-        restore_active_stage(self.main_window)
 
         self._autosave_timer = QTimer(self.main_window)
         self._autosave_timer.timeout.connect(self._autosave)

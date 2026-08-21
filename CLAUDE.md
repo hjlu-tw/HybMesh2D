@@ -744,7 +744,37 @@ into file segments, and the canvas draws it as a single pyqtgraph item.
   layer, hit-test points, split markers, closing edge, stats — but never the
   analytic (curve) items, which a session can legitimately have on their own.
 
-**Window layout** is persisted by `app/services/ui_state.py` (geometry, dock state, active stage, collapsible sections), namespaced by `LAYOUT_VERSION` — bump it when the layout changes so stale state is ignored rather than restored. It never touches `QSettings` when headless. `restore_ui_state` only walks `sidebar_stack`, so a **dialog's** accordion persists itself through `save_section_states(scope, sections)` / `restore_section_states(...)` with an explicit scope string.
+**Window layout** is persisted by `app/services/ui_state.py` — **window geometry and
+dock state, and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when
+the layout changes so stale state is ignored rather than restored). It never touches
+`QSettings` when headless. **The active stage and the sidebar sections are
+deliberately NOT persisted, and that is a reversal, not an omission** (issue #27,
+USER-REQUESTED): both used to be saved and restored here on the same
+resume-where-you-stopped argument, and the user weighed that against landing
+somewhere unpredictable — with no way to reset it — and chose predictability. Every
+launch therefore starts on **CAD** with **every** sidebar section collapsed, and both
+defaults come from code that was already there rather than from a new constant:
+`mode_combo`'s own index 0 (`main_window.py`) and
+`CollapsibleSection`'s own `start_collapsed=True` default — measured: of the 39
+`start_collapsed` mentions under `app/`, **zero** pass `False`, so the default is the
+guarantee and no call site overrides it. **The `LAYOUT_VERSION` bump orphans more than the keys this removed**, and
+that is worth stating rather than discovering: `_section_key` is built from `_PREFIX`,
+so moving to `ui/v2` drops every existing user's saved geometry, dock state and
+*dialog*-accordion flags along with the stage and section keys. The bump was requested
+in the issue and the one-time loss accepted there; what it buys is that no v1 key can
+ever come back as a live value. `restore_active_stage` and the private `_sections` walker are **gone** —
+the save half went with the restore half, because a value written and never read
+reads as a working feature. The convenience removed was real; do not reinstate it as
+a bug fix. `tests/test_ui_state_and_dialogs.py` checks 1/2/4 are the **inverted**
+versions of the checks that used to pin the old behaviour (seeded with a previous
+version's `ui/v1` stage + section keys, rebuilt in the old key format from the live
+sidebar so the stale state is really the kind the deleted restore consumed), so
+bringing either restore back fails the gate. A **dialog's** accordion is a separate,
+still-wanted feature and its *code path* is untouched: it persists itself through
+`save_section_states(scope, sections)` / `restore_section_states(...)` with an
+explicit scope string, which never walked `sidebar_stack` — the Edit-BL dialog still
+opens all-closed and reopens the groups the user left open. Its *stored* flags are
+not exempt from the version bump, per the paragraph above.
 
 **Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
 `mesh_bl_field_specs.py`, accordion + window fitting in `mesh_bl_dialog_layout.py`):
