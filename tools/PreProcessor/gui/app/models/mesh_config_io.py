@@ -63,7 +63,7 @@ def load_config_from_file(cfg, path: str):
                 # KEY=VALUE tokens are per-geometry BL overrides (see the C++
                 # parser in include/Config.hpp — keep the two in sync).
                 gp = resolve(val_str)
-                cfg.geom_files.append(gp)
+                cfg.add_geom_file(gp)
                 role_name, bl_params, bc = None, {}, None
                 for tok in tokens[2:]:
                     if tok == "nobl":
@@ -94,7 +94,7 @@ def load_config_from_file(cfg, path: str):
                 # (external, default). Trailing KEY=VALUE tokens are per-domain
                 # BL overrides (only meaningful for a BL-growing wall).
                 dom_path = resolve(val_str)
-                cfg.geom_files.append(dom_path)
+                cfg.add_geom_file(dom_path)
                 role, bl_params, bc = "farfield", {}, None
                 for tok in tokens[2:]:
                     if tok == "bl":
@@ -143,7 +143,7 @@ def load_config_from_file(cfg, path: str):
                             numi += 1
                         except ValueError:
                             pass
-                cfg.geom_files.append(seed_path)
+                cfg.add_geom_file(seed_path)
                 cfg.geom_roles[seed_path] = {
                     "role": "seed", "size": size, "radius": radius, "mode": mode,
                 }

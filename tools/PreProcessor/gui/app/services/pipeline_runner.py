@@ -206,7 +206,7 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     # Same refusal as the GUI pre-flight, same wording (mesh_config owns it):
     # a geom_files entry naming no file otherwise reaches the mesher and comes
     # back as HYBMESH_ERROR 3 GEOMETRY_LOAD.
-    missing = mc.missing_geometry_files()
+    missing = mc.geom_files_not_on_disk()
     if missing:
         raise PipelineError(mc.missing_geometry_message(missing))
 
