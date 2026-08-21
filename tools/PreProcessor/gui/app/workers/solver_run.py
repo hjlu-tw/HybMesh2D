@@ -58,7 +58,7 @@ class SolverPipelineWorker(QThread):
                  solver_work_dir: str | None = None,
                  input_in_path: str | None = None, tag: str = ".gui",
                  prepare: bool = False, overwrite: bool = False,
-                 sources=(), generated_sources=()):
+                 sources=(), generated_sources=(), archive_prev: bool = False):
         super().__init__()
         self._config = config
         self._getpgrid_dir = getpgrid_dir
@@ -70,6 +70,10 @@ class SolverPipelineWorker(QThread):
         # thread, so the event loop never freezes for the g++ subprocess.
         self._prepare = prepare
         self._overwrite = overwrite
+        # Reusing the case dir for a RESTART moves the previous run's outputs
+        # into work/prev_NNN/ first, so this run cannot write over the dump it
+        # is resuming from (#26). See services/case_archive.
+        self._archive_prev = archive_prev
         # CAD/STL this case was built from: copied into grid/cad/ by the same
         # staging step, so the case carries its own geometry.
         self._sources = list(sources or ())
@@ -105,7 +109,8 @@ class SolverPipelineWorker(QThread):
                 work_dir, grid_dir, input_in = solver_case.prepare_case_dir(
                     self._config, log=self.log_signal.emit,
                     overwrite=self._overwrite, sources=self._sources,
-                    generated_sources=self._generated_sources)
+                    generated_sources=self._generated_sources,
+                    archive_prev=self._archive_prev)
                 self._solver_work_dir = work_dir
                 self._getpgrid_dir = grid_dir
                 self._input_in_path = input_in

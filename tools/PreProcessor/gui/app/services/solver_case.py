@@ -13,8 +13,17 @@ import shutil
 import subprocess
 
 from app.models.solver_config import SolverConfig
+from app.services.case_archive import archive_previous_outputs
 from app.services.case_sources import stage_case_sources
 from app.services.paths import repo_root
+
+# The three answers to "this case name already has results". One value rather
+# than a pair of booleans, because the GUI asks ONE question and the two
+# mechanical facts ``prepare_case_dir`` takes are derived from the answer by
+# :func:`case_dir_flags` — so a caller cannot get half of the mapping right.
+CASE_NEW_VERSION = "version"    # leave them; run in <case>_002
+CASE_ARCHIVE = "archive"        # same dir; move the previous outputs aside first
+CASE_IN_PLACE = "in_place"      # same dir; write over them
 
 
 def _noop(_msg: str) -> None:
@@ -32,8 +41,11 @@ def sanitize_case_name(name: str, default: str = "case") -> str:
     return s or default
 
 
-def _dir_has_content(path: str) -> bool:
-    """True when ``path`` exists and is a non-empty directory."""
+def dir_has_content(path: str) -> bool:
+    """True when ``path`` exists and is a non-empty directory.
+
+    Public because ``solver_ctrl`` asks it before deciding whether the case-dir
+    question needs asking at all."""
     return os.path.isdir(path) and bool(os.listdir(path))
 
 
@@ -46,11 +58,11 @@ def resolve_case_root(root: str, case: str, overwrite: bool, log=_noop) -> str:
     created). ``overwrite=True`` reuses the default dir in place.
     """
     default = os.path.join(root, "results", "solver", case)
-    if overwrite or not _dir_has_content(default):
+    if overwrite or not dir_has_content(default):
         return default
     for n in range(2, 1000):
         candidate = os.path.join(root, "results", "solver", f"{case}_{n:03d}")
-        if not _dir_has_content(candidate):
+        if not dir_has_content(candidate):
             log(f"[case] '{case}' already has results; writing to "
                 f"'{os.path.basename(candidate)}' to preserve them "
                 "(pass overwrite=True to reuse the existing dir).")
@@ -60,6 +72,25 @@ def resolve_case_root(root: str, case: str, overwrite: bool, log=_noop) -> str:
     log(f"[WARNING] too many versions of case '{case}'; overwriting "
         f"'{case}'.")
     return default
+
+
+def case_dir_flags(disposition: str) -> tuple[bool, bool]:
+    """``(overwrite, archive_prev)`` for one of the ``CASE_*`` answers above.
+
+    The user is asked one question — which directory this run writes into and
+    what happens to what is already there — and ``prepare_case_dir`` takes two
+    independent mechanical facts. Mapping them in one place is what stops a
+    caller passing ``archive_prev`` without ``overwrite`` (an archive of a
+    directory the run is not going to use) or, worse, the reverse.
+    """
+    if disposition not in (CASE_NEW_VERSION, CASE_ARCHIVE, CASE_IN_PLACE):
+        # A typo must not resolve to a plausible answer. ``(False, False)`` is a
+        # real disposition — auto-version — so a misspelling would silently run
+        # somewhere the user did not choose. The same defect the pipeline-stage
+        # gate records for ``plan()`` ignoring an unknown key.
+        raise ValueError(f"unknown case disposition {disposition!r}")
+    return (disposition in (CASE_ARCHIVE, CASE_IN_PLACE),
+            disposition == CASE_ARCHIVE)
 
 
 def stage_dll(src: str, out_dir: str, rel_prefix: str = "../dll",
@@ -188,7 +219,8 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
         log(f"[getPGrid] segment table -> {def_name}")
 
 
-def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop) -> str:
+def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop,
+                  moved: dict | None = None) -> str:
     """``raw`` as ``input.in`` should quote it: relative to ``work_dir``.
 
     Rewritten only when ``raw`` is an ABSOLUTE path to an existing file — inside
@@ -198,22 +230,45 @@ def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop) -> str:
     to the work dir the solver runs in, and a path that is simply wrong must
     surface as the solver's own error rather than be rewritten into something
     that merely looks valid.
+
+    ``moved`` is :func:`~app.services.case_archive.archive_previous_outputs`'
+    mapping, consulted BEFORE the existence check for the reason the check
+    exists: the file this reference names has just been moved, so at its old path
+    it is gone, and "does not resolve" would send the run's own restart point
+    through the pass-through branch and into the solver as a path to nothing. It
+    is the one thing that also rewrites a RELATIVE value — a bare
+    ``binDumpZ.dat.gui`` (hand-written, or loaded from a ``.hws`` / pipeline
+    script) names nothing once the file is in ``prev_001/``, and the autofilled
+    absolute path is not the only way that field gets filled in.
     """
     raw = (raw or "").strip()
-    if not raw or not os.path.isabs(raw):
+    if not raw:
         return raw
-    resolved = os.path.abspath(raw)
+    resolved = os.path.abspath(
+        raw if os.path.isabs(raw) else os.path.join(work_dir, raw))
+    archived = bool(moved) and resolved in moved
+    if not archived and not os.path.isabs(raw):
+        # Rule 3 stands: an already-relative value is relative to the work dir
+        # the solver runs in, so it is passed through untouched. The ONE
+        # exception is a file this run just moved — a hand-written or scripted
+        # ``binDumpZ.dat.gui`` names nothing once it is in prev_001/, and the
+        # archive must not strand the restart it exists to protect.
+        return raw
+    if archived:
+        resolved = moved[resolved]
     if not os.path.isfile(resolved):
         return raw
     rel = os.path.relpath(resolved,
                           os.path.abspath(work_dir)).replace(os.sep, "/")
-    log(f"[restart] {what} -> {rel} (relative to the work dir the solver runs "
-        f"in)")
+    log(f"[restart] {what} -> {rel}"
+        + (" (moved with the previous run's outputs; the resumed run reads it "
+           "there)" if archived else
+           " (relative to the work dir the solver runs in)"))
     return rel
 
 
-def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str,
-                              log=_noop) -> tuple[str, str]:
+def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str, log=_noop,
+                              moved: dict | None = None) -> tuple[str, str]:
     """``(zdump_rel, convg_rel)``: the two restart references as ``input.in``
     should quote them, i.e. relative to the work dir the solver runs in.
 
@@ -260,15 +315,21 @@ def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str,
 
     The two fields are named here rather than walked by string, so renaming one
     is a NameError instead of a rewrite that silently stops happening.
+
+    ``moved`` carries :func:`archive_previous_outputs`' result, so a reference to
+    a dump that was archived a moment ago follows it into ``prev_NNN/`` instead
+    of resolving to nothing. That is the other half of #26: continuing in the
+    same folder is only safe if the run can still find what it is resuming from.
     """
     return (_work_dir_ref(cfg.zdump_fn_restart, work_dir, "zdump_fn_restart",
-                          log),
+                          log, moved),
             _work_dir_ref(cfg.convg_fn_restart, work_dir, "convg_fn_restart",
-                          log))
+                          log, moved))
 
 
 def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
-                     sources=(), generated_sources=()):
+                     sources=(), generated_sources=(),
+                     archive_prev: bool = False):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
     rename outputs, write ``input.in`` / ``.def``, and compile IBM DLLs.
 
@@ -285,6 +346,13 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     clobbered: the case auto-versions to ``<case>_002`` etc. (see
     :func:`resolve_case_root`) so prior results are preserved. Pass
     ``overwrite=True`` to reuse the existing dir in place.
+
+    ``archive_prev`` moves the previous run's outputs into ``work/prev_<NNN>/``
+    before this run writes anything, which is what makes reusing the directory
+    safe for a restart (#26). The two flags are independent rather than one
+    tri-state because the second is well defined without the first: an
+    auto-versioned run archives nothing because its work dir holds nothing. The
+    GUI never spells the pair out — see :func:`case_dir_flags`.
     """
     root = repo_root()
     case = sanitize_case_name(cfg.case_name)
@@ -300,6 +368,11 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     for d in (work_dir, grid_dir, dll_dir):
         os.makedirs(d, exist_ok=True)
     cfg.work_dir = work_dir
+
+    # Before anything is written here: put the previous run's outputs out of
+    # reach, so "continue in the same folder" cannot mean "write over the run
+    # you are resuming from". Empty when there is nothing to archive.
+    archived = archive_previous_outputs(work_dir, log) if archive_prev else {}
 
     # getPGrid runs in grid_dir: stage the STAR-CD inputs there with the
     # basenames para.in will reference, and have it write <case>.grid/.bc there.
@@ -356,7 +429,8 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     # input.in with paths relative to the work dir -- now including the two
     # restart references, which this function used to leave as the absolute path
     # the panel put in them (#25).
-    zdump_rel, convg_rel = restart_refs_for_work_dir(cfg, work_dir, log)
+    zdump_rel, convg_rel = restart_refs_for_work_dir(cfg, work_dir, log,
+                                                     moved=archived)
     input_in_path = os.path.join(work_dir, "input.in")
     cfg.generate_input_in(
         input_in_path,

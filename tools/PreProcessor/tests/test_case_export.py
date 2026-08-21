@@ -488,6 +488,50 @@ man = open(os.path.join(uni_dest, "MANIFEST.txt"), encoding="utf-8").read()
 check("案例" in man,
       "13. ...and a case exported from a non-ASCII path really round-trips")
 
+# --------------------------------------------------------------------------- #
+# 16. A nested directory in the case is never INVISIBLE.
+#
+# A restart that continues in an existing case dir archives the previous run's
+# outputs into work/prev_NNN/ (services/case_archive, #26). plan_export used to
+# `continue` past anything that was not a file, so such a folder was neither
+# shipped nor named as skipped — the same bug class as plan_export once walking
+# only one level deep into grid/cad/. The archive's own behaviour is gated by
+# test_restart_archive.py; what is pinned HERE is the exporter's side of it, in
+# the exporter's own gate.
+arch_case, arch_src, _ = build_case(os.path.join(tmp, "arch"), restart_ref=True)
+prev = os.path.join(arch_case, "work", "prev_001")
+os.makedirs(prev)
+for name in ("binDumpZ.dat.gui", "unicones.enorm.gui", "xtecp_sol_allz.dat.gui"):
+    with open(os.path.join(prev, name), "w") as f:
+        f.write("archived " + name)
+stray = os.path.join(arch_case, "grid", "notes_dir")
+os.makedirs(stray)
+with open(os.path.join(stray, "a.txt"), "w") as f:
+    f.write("x")
+
+plan = case_export.plan_export(arch_case, dll_src_dirs=(arch_src,))
+shipped = {i.rel for i in plan.items}
+named = ({r for r, _s in plan.skipped_output}
+         | {r for r, _s in plan.skipped_other}
+         | {r for r, _s, _w in plan.skipped_unused})
+on_disk = {f"work/prev_001/{n}" for n in os.listdir(prev)}
+check(on_disk <= (shipped | named),
+      f"16. every file in work/prev_001/ is either shipped or NAMED as skipped "
+      f"({sorted(on_disk - (shipped | named))})")
+check("grid/notes_dir/" in {r for r, _s in plan.skipped_other},
+      f"16. ...and an unrecognised subdirectory is named as a lump rather than "
+      f"passed over in silence "
+      f"({sorted(r for r, _s in plan.skipped_other)})")
+check(all(sz > 0 for r, sz in plan.skipped_other if r.endswith("/")),
+      "16. a directory skip line carries the tree's size, so 'not shipped' "
+      "comes with the number that makes it a decision")
+check("work/binDumpZ.dat.gui" in shipped
+      and "work/prev_001/binDumpZ.dat.gui" not in shipped,
+      f"16. only the dump input.in actually resolves to ships — a case with an "
+      f"archive legitimately holds two files of that name, and matching a "
+      f"reference by BASENAME shipped both, doubling the largest file in the "
+      f"package ({sorted(r for r in shipped if 'binDump' in r)})")
+
 shutil.rmtree(tmp, ignore_errors=True)
 
 _wd.cancel()

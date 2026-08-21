@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QFileDialog
 
 from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
+from app.views.case_dir_dialog import ask_case_disposition
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import solver_case
 from app.services.case_sources import mesh_provenance_paths
@@ -212,9 +213,10 @@ class SolverControllerMixin:
         # clobber prior results. Decide here (on the GUI thread, where we can
         # prompt) whether to reuse the existing dir or auto-version a new one;
         # the actual (blocking) staging + DLL compile happens in the worker.
-        overwrite = self._resolve_case_overwrite(cfg)
-        if overwrite is None:
+        disposition = self._resolve_case_disposition(cfg)
+        if disposition is None:
             return  # user cancelled
+        overwrite, archive_prev = solver_case.case_dir_flags(disposition)
 
         panel = self.main_window.solver_config_panel
         panel.run_solver_btn.setEnabled(False)
@@ -238,6 +240,7 @@ class SolverControllerMixin:
 
         self._solver_worker = SolverPipelineWorker(
             cfg, tag=self.SOLVER_TAG, prepare=True, overwrite=overwrite,
+            archive_prev=archive_prev,
             sources=self._case_source_files(),
             generated_sources=self._case_generated_files())
         self._solver_worker.log_signal.connect(log)
@@ -333,52 +336,43 @@ class SolverControllerMixin:
         that want a synchronous prepare."""
         return solver_case.prepare_case_dir(cfg, log=self.log)
 
-    def _resolve_case_overwrite(self, cfg: SolverConfig):
-        """Return True to overwrite the existing case dir, False to auto-version
-        a new one, or None if the user cancelled.
+    def _resolve_case_disposition(self, cfg: SolverConfig):
+        """One of ``solver_case.CASE_*`` — which directory this run writes into
+        and what happens to what is already there — or None if the user
+        cancelled.
 
-        Only prompts when a case dir of this name already holds prior results;
-        otherwise returns False (nothing to preserve, so the default dir is used
-        as-is by the worker)."""
-        from PyQt6.QtWidgets import QMessageBox
+        Only asks when a case dir of this name already holds prior results;
+        otherwise ``CASE_NEW_VERSION``, i.e. the default dir used as-is by the
+        worker. The dialog itself (and why a restart needs a third answer) is
+        ``views/case_dir_dialog``; this decides whether to ask at all and says
+        what came back.
+        """
         root = repo_root()
         case = _sanitize(cfg.case_name)
         case_root = os.path.join(root, "results", "solver", case)
-        if not solver_case._dir_has_content(case_root):
-            return False
+        if not solver_case.dir_has_content(case_root):
+            return solver_case.CASE_NEW_VERSION
 
-        # Run All (pipeline batch) must run unattended: never pop a modal. Preserve
-        # prior results by auto-versioning a new dir (overwrite=False) instead of
-        # blocking. The worker reports the real (versioned) work dir via
-        # prepared_signal, so the Results stage still finds the output.
+        # Run All (pipeline batch) must run unattended: never pop a modal.
+        # Preserve prior results by auto-versioning a new dir instead of blocking.
+        # The worker reports the real (versioned) work dir via prepared_signal, so
+        # the Results stage still finds the output.
         if getattr(self, "_pipeline_running", False):
             self.log(
                 f"[case] '{case}' already has results; Run All auto-versions a new "
                 "directory to preserve them.")
-            return False
+            return solver_case.CASE_NEW_VERSION
 
-        box = QMessageBox(self.main_window)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Case already exists")
-        box.setText(
-            f"Solver results for case '{case}' already exist at\n{case_root}")
-        box.setInformativeText(
-            "Overwrite the existing results, or keep them and run into a new "
-            f"auto-versioned directory (e.g. '{case}_002')?")
-        overwrite_btn = box.addButton("Overwrite", QMessageBox.ButtonRole.DestructiveRole)
-        new_btn = box.addButton("New Versioned Dir", QMessageBox.ButtonRole.AcceptRole)
-        cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
-        box.setDefaultButton(new_btn)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is cancel_btn:
+        choice = ask_case_disposition(self.main_window, case, case_root,
+                                      cfg.restart)
+        if choice is None:
             self.log("Solver run cancelled (case exists).")
-            return None
-        if clicked is overwrite_btn:
-            self.log(
-                f"[case] overwriting existing results for '{case}'.")
-            return True
-        return False
+        elif choice == solver_case.CASE_IN_PLACE:
+            self.log(f"[case] overwriting existing results for '{case}'.")
+        elif choice == solver_case.CASE_ARCHIVE:
+            self.log(f"[case] restarting in '{case}'; the previous run's outputs "
+                     "are archived rather than overwritten.")
+        return choice
 
     def _on_solver_prepared(self, work_dir: str):
         """The worker finished staging the (possibly auto-versioned) case dir;
