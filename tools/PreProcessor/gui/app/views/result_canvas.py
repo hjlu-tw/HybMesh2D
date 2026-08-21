@@ -62,8 +62,12 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         self._result: TecplotResult | None = None
         self._triang: mtri.Triangulation | None = None
         self._building = False  # guard against re-entrant renders during setup
+        # Auto/Custom is one global MODE (one checkbox, one meaning); the manual
+        # NUMBERS belong to ONE variable each, exactly as the playback lock's
+        # range does (`_range_lock_var`). An unkeyed tuple here is what coloured
+        # vorticity with a pressure range — issue #24.
         self._clim_auto = True
-        self._clim: tuple[float, float] | None = None
+        self._clim_by_var: dict[str, tuple[float, float]] = {}
 
         # Interaction / overlay state (Results post-processing tools).
         self._interact_mode = None        # None / "probe" / "line"
@@ -332,8 +336,18 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             # frames instead (playback_clim), so colours mean the same thing in
             # every frame; a manual range still wins over both.
             locked = self.playback_clim()
-            if not self._clim_auto and self._clim is not None:
-                vmin, vmax = self._clim
+            manual = self.manual_clim(var)
+            # First render of this variable in Custom mode: seed it from its OWN
+            # data range and remember that, rather than inheriting the numbers of
+            # whatever was displayed before. Remembering is what keeps playback
+            # from re-seeding (and so drifting) every frame. The flag travels in
+            # the signal because a seeded range is one the user did NOT type, so
+            # a panel showing their numbers has to be refreshed.
+            seeded = not self._clim_auto and manual is None
+            if seeded:
+                manual = self.remember_clim(var, dmin, dmax)
+            if manual is not None:
+                vmin, vmax = manual
             elif locked is not None:
                 vmin, vmax = locked
             else:
@@ -403,7 +417,7 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
                 self._cbar.set_label(var, color=_FG)
             self.result_rendered.emit({
                 "var": var, "dmin": dmin, "dmax": dmax, "mean": mean,
-                "vmin": vmin, "vmax": vmax})
+                "vmin": vmin, "vmax": vmax, "clim_seeded": seeded})
 
             # Explicit iso-value contour lines (e.g. M=1 sonic line) over the field.
             if self._iso_on and self._iso_levels:

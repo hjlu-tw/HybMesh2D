@@ -37,6 +37,10 @@ class ResultControlPanel(ResultPanelBuildMixin, ResultPanelCadMixin,
         self.setStyleSheet("background: #121422; color: #a0a8c0;")
         self._canvas = None
         self._controller = None
+        # Which variable the Min/Max boxes currently describe (issue #24): in
+        # Custom mode they are refreshed when the variable moves or the canvas
+        # seeds a range, not on every render.
+        self._clim_box_var = ""
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)

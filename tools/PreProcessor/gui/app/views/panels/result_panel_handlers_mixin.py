@@ -182,8 +182,15 @@ class ResultPanelHandlersMixin:
     def _on_auto_toggled(self, checked: bool):
         # Reveal the Min/Max/Apply box only in custom-range mode.
         self._range_box.setVisible(not checked)
-        if self._canvas is not None and checked:
-            self._canvas.set_clim_auto(True)
+        if self._canvas is not None:
+            # The checkbox IS the mode, in both directions. Unticking used to tell
+            # the canvas nothing until Apply, so the panel showed the Custom box
+            # while the canvas kept auto-scaling every frame to its own min/max —
+            # and the Min/Max boxes, no longer refreshed by the Auto branch, froze
+            # on the frame the untick happened on. Found in review of issue #24;
+            # it is that issue's own symptom (boxes describing a range that is not
+            # on screen) reached by the other route.
+            self._canvas.set_clim_auto(checked)
 
     def _on_apply(self):
         if self._canvas is not None:
@@ -212,10 +219,20 @@ class ResultPanelHandlersMixin:
             self.lbl_mean.setText(f"{info.get('mean', 0.0):.6g}")
             self.lbl_std.setText("—")
             self.lbl_integral.setText("—")
-        if self.auto_cb.isChecked():
+        # The boxes must describe the range in force for the field ON SCREEN
+        # (issue #24). In Auto they follow every render. In Custom they are an
+        # INPUT the user may be halfway through typing, so they are refreshed on
+        # the two events that make them wrong: the VARIABLE moved, or the canvas
+        # SEEDED the range (i.e. it is not a number the user typed — which is also
+        # how a newly loaded result, whose store was cleared, gets here even
+        # though the variable name did not change).
+        var = str(info.get("var", ""))
+        if (self.auto_cb.isChecked() or var != self._clim_box_var
+                or info.get("clim_seeded")):
             with block_signals(self.vmin, self.vmax):
                 self.vmin.setValue(info.get("vmin", 0.0))
                 self.vmax.setValue(info.get("vmax", 1.0))
+        self._clim_box_var = var
         # A new result drops the canvas's probes -> clear the tables.
         if self._canvas is not None and not getattr(self._canvas, "_probes", []):
             self.probe_table.setRowCount(0)

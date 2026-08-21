@@ -9,6 +9,9 @@ matplotlib.use("QtAgg")
 
 from app.models.result_data import TecplotResult
 from app.utils import block_signals
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 _BG = "#0c0d16"
 _FG = "#a0a8c0"
@@ -52,15 +55,63 @@ class ResultCanvasControlsMixin:
         self.render()
 
     def set_clim_auto(self, auto: bool):
-        """Auto color scale = use the field's data min/max each render."""
+        """Auto color scale = use the field's data min/max each render.
+
+        The MODE is global — one checkbox with one meaning — so this does not
+        forget the per-variable numbers; switching back to Custom brings them
+        back.
+        """
         self._clim_auto = bool(auto)
         self.render()
 
     def set_clim(self, vmin: float, vmax: float):
-        """Set a manual color-scale range and switch off auto."""
+        """Set a manual color-scale range for the DISPLAYED variable, and switch
+        off auto.
+
+        The range belongs to one variable (issue #24): a pressure range must not
+        colour vorticity. Same fact and same shape as the playback lock's
+        ``_range_lock`` / ``_range_lock_var`` pair, so the two cannot drift.
+        """
+        var = self._current_var()
+        if not var:
+            # Nothing is displayed, so there is no variable to own the range.
+            # Flipping the mode alone would half-apply the call; render() bails on
+            # an empty variable anyway, so this is a no-op rather than a state.
+            _log.debug("set_clim(%r, %r) ignored: no variable is displayed",
+                       vmin, vmax)
+            return
         self._clim_auto = False
-        self._clim = (float(vmin), float(vmax))
+        self.remember_clim(var, vmin, vmax)
         self.render()
+
+    def manual_clim(self, var: str | None = None):
+        """The manual (vmin, vmax) remembered for ``var``, or None.
+
+        None in auto mode, and None for a variable that has never been given one
+        — ``render`` seeds that case from the field's own data range.
+        """
+        if self._clim_auto:
+            return None
+        return self._clim_by_var.get(var or self._current_var())
+
+    def remember_clim(self, var: str, vmin: float, vmax: float):
+        """Record ``var``'s manual range WITHOUT touching the mode.
+
+        The store is written only through here — `render`'s seed path included —
+        so "which variable does this range belong to?" is answered in one file
+        rather than by every caller keying the dict by hand.
+        """
+        rng = (float(vmin), float(vmax))
+        self._clim_by_var[var] = rng
+        return rng
+
+    def reset_clim_store(self):
+        """Forget every variable's manual range.
+
+        View state for the loaded result: a NEW result file must not be coloured
+        with the previous run's numbers. Frames of one run deliberately keep it.
+        """
+        self._clim_by_var = {}
 
     def mark_extrema(self, which: str):
         """Mark the min and/or max of the current field's nodal values."""

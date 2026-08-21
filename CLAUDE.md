@@ -795,13 +795,57 @@ further rules decide whether the animation is readable:
   data on screen, i.e. the frame being shown. A **manual** clim always wins over
   both: the lock fixes auto-scaling, it does not overrule an explicit choice, and
   it is dropped when the displayed variable changes.
+- **A colour range — pinned OR typed — belongs to ONE variable.** The lock always
+  carried `_range_lock_var` beside `_range_lock`; the manual clim was one unkeyed
+  tuple, so Auto off → Min/Max → Apply coloured *every* variable, and a pressure
+  range rendered vorticity as one flat colour or one saturated blob with the
+  Min/Max boxes still showing the old numbers as if they belonged to it —
+  USER-REPORTED (2026-08-20, issue #24). It is now `_clim_by_var`
+  (`dict[str, tuple]`), written by `set_clim` under the displayed variable and
+  read by `render` for the variable it is about to draw; the same fact got the
+  same shape rather than a second pattern. Four rules: **the MODE stays global**
+  (one Auto/Custom checkbox with one meaning — making it per-variable would be a
+  second hidden mode), so switching to Auto does not forget the numbers; **a
+  variable with no remembered pair is SEEDED from its own data range on first
+  render and remembered**, which is both what stops it inheriting another
+  variable's numbers and what stops playback re-seeding (and so drifting) every
+  frame; **precedence is untouched** — manual > lock > auto data range, enforced
+  where it always was, in `playback_clim` returning None unless `_clim_auto`;
+  and **the store is view state for the loaded result**, cleared by
+  `load_result_path` / `clear` (a new run must not wear the old one's numbers)
+  but deliberately kept across frames of one run. It is written ONLY through
+  `remember_clim` / `set_clim` and read through `manual_clim`, `render`'s seed
+  path included — the same reason `recordBoundaryEdge` is the only way to write
+  a boundary edge's BC.
+  The panel's Min/Max boxes follow the range in force through the existing
+  `result_rendered` signal — never by reading canvas privates — and in Custom
+  mode they are refreshed on exactly two events, because there they are an input
+  the user may be halfway through typing: the variable MOVED, or the canvas
+  reports `clim_seeded`, i.e. the range on screen is not one the user typed.
+  **The seed flag is why the refresh is not keyed on the variable NAME**: a
+  newly loaded run clears the store and re-seeds under the *same* variable name,
+  so a name-keyed refresh left the boxes showing the previous run's numbers —
+  verbatim the reported symptom, found in review of the first version of this
+  fix and now its own check.
+  And **the Auto checkbox IS the mode, in both directions**: unticking it used to
+  tell the canvas nothing until Apply, so the panel showed the Custom box while
+  the canvas kept auto-scaling every frame to its own min/max and the Min/Max
+  boxes — no longer refreshed by the Auto branch — froze on the frame the untick
+  happened on. That is the same "the boxes describe a range that is not on
+  screen" symptom reached by the other route, and it needs a multi-frame run to
+  see, which is why it is its own section in the gate. Unticking now seeds from
+  the frame on screen, so nothing jumps at that moment.
+  Gated by `tests/test_result_clim_per_variable.py` (8 properties, every one
+  verified by injection — including both wrong versions found in review — with
+  the one blind spot named in its docstring).
 - **`set_result` reuses the triangulation when the incoming frame has the same
   nodes**, which also keeps probes/line/extrema alive across a step (they mark
   geometry, and the geometry did not move). Field caches are always dropped.
 Frames are labelled by POSITION (`Frame 4 / 10`): the solver writes `t = "time 0"`
 for *every* zone, so the file carries no real timestamp to show. Gated by
 `tests/test_result_playback.py`, which pins the byte-range parse to be identical
-to a whole-file scan.
+to a whole-file scan, and `tests/test_result_clim_per_variable.py` for the
+per-variable colour range.
 
 **"The surface" of a surface plot is a CHOICE, and so is where s = 0 is**
 (`services/surface_source.py` + `services/surface_sample.py`, both Qt-free;
