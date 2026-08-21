@@ -356,7 +356,8 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
         The DLL paths arrive already relativised, on the config, because
         ``stage_dll`` has to copy/compile the binary anyway; mpi_comm_map_fn,
         cfl_schedule_fn and probe_points_def_fn are emitted verbatim and are the
-        remaining absolute-path exposure (see restart_refs_for_work_dir).
+        remaining absolute-path exposure (#29, and see
+        solver_case.restart_refs_for_work_dir for why they were left).
         """
         bl = lambda b: "true" if b else "false"
         grid_path = grid_rel if grid_rel is not None else self.output_grid_file

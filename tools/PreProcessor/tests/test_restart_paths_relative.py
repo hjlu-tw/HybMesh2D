@@ -43,7 +43,7 @@ was not captured in the report — see the issue's open question). And three quo
 paths are NOT covered by the fix or by this test — ``mpi_comm_map_fn``,
 ``cfl_schedule_fn``, ``probe_points_def_fn`` are still emitted verbatim, so a
 browsed-to absolute path still reaches the solver in the shape #25 was about.
-That is scoped-out residue, not a passing check.
+That is scoped-out residue (#29), not a passing check.
 
 Run:  python3 tools/PreProcessor/tests/test_restart_paths_relative.py
 """

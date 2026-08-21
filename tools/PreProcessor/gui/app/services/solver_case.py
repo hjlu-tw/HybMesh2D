@@ -232,10 +232,10 @@ def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str,
     than tidy about it: ``mpi_comm_map_fn``, ``cfl_schedule_fn`` and
     ``probe_points_def_fn`` are still emitted verbatim, so a browsed-to absolute
     path reaches the solver in the same shape #25 was about. They are out of
-    scope here (nothing has reported them, and each needs its own answer about
+    scope here — nothing has reported them, and each needs its own answer about
     whether the file should be STAGED into the case rather than referenced out of
-    it, which is what ``case_export`` does for them), but they are the residue,
-    not an oversight.
+    it (which is what ``case_export`` already does for them). Tracked as **#29**;
+    they are the residue, not an oversight.
 
     Relative-path rules are :func:`_work_dir_ref`'s. The dump itself is never
     copied: it is the largest file in a case — which is why ``case_export``
