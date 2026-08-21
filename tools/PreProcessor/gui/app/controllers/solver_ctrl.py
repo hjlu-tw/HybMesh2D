@@ -216,7 +216,6 @@ class SolverControllerMixin:
         disposition = self._resolve_case_disposition(cfg)
         if disposition is None:
             return  # user cancelled
-        overwrite, archive_prev = solver_case.case_dir_flags(disposition)
 
         panel = self.main_window.solver_config_panel
         panel.run_solver_btn.setEnabled(False)
@@ -239,8 +238,7 @@ class SolverControllerMixin:
             + "unicones) ---")
 
         self._solver_worker = SolverPipelineWorker(
-            cfg, tag=self.SOLVER_TAG, prepare=True, overwrite=overwrite,
-            archive_prev=archive_prev,
+            cfg, tag=self.SOLVER_TAG, prepare=True, disposition=disposition,
             sources=self._case_source_files(),
             generated_sources=self._case_generated_files())
         self._solver_worker.log_signal.connect(log)

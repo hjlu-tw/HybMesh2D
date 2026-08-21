@@ -159,6 +159,8 @@ def seed_previous_run(case, extra=()):
 
 # ── 1/2/3. the archive itself, through the real prepare_case_dir ───────────
 work, outputs, inputs = seed_previous_run("beta", extra=["notes.txt"])
+os.makedirs(os.path.join(work, "stray_dir"), exist_ok=True)
+w(os.path.join(work, "stray_dir", "something.txt"), "x")
 dump = os.path.join(work, "binDumpZ.dat.gui")
 convg = os.path.join(work, "unicones.enorm.gui")
 cfg1, (w1, _g1, in1) = prep("beta", zdump=dump, convg=convg)
@@ -220,6 +222,13 @@ check(bare == dump,
       f"2b. without the moved mapping the same reference comes back as this "
       f"machine's absolute path — the archive would have broken the restart it "
       f"exists to protect ({bare!r})")
+
+check(any("stray_dir/" in m and "not a recognised" in m for m in LOG),
+      f"3. an unrecognised SUBDIRECTORY is named too — skipping every non-file "
+      f"is how a folder becomes invisible, which is the bug this repo already "
+      f"had in the exporter ({[m for m in LOG if 'stray_dir' in m]})")
+check(os.path.isdir(os.path.join(work, "stray_dir")),
+      "3. ...and it is left where it is, like an unrecognised file")
 
 check(os.path.isfile(os.path.join(work, "notes.txt")),
       "3. a file neither the output list nor the staged-input list recognises "
@@ -407,6 +416,20 @@ check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True)
 drive(lambda box: box.button(QMessageBox.StandardButton.Cancel))
 check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True) is None,
       "7. Cancel still cancels")
+
+# The window dismissed with its close button / Esc: clickedButton() is None, and
+# an unmatched answer used to fall through to CASE_NEW_VERSION — i.e. dismissing
+# the question STARTED A SOLVER RUN. Same rule as case_dir_flags refusing an
+# unknown disposition, from the other side.
+drive(lambda box: None)
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True) is None,
+      "7. dismissing the window (no button clicked) cancels — it must not fall "
+      "through to a disposition and launch a run nobody chose")
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, False) is None,
+      "7. ...in the NON-restart branch too, where the archive button does not "
+      "exist: `archive_btn` is None there and so is `clicked`, so an unguarded "
+      "identity test matches them to each other and answers ARCHIVE for a "
+      "dialog that never offered it")
 
 drive(by_text("Overwrite"))
 got = case_dir_dialog.ask_case_disposition(None, "beta", case_dir, False)

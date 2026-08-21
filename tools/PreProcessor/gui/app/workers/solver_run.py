@@ -57,8 +57,9 @@ class SolverPipelineWorker(QThread):
     def __init__(self, config: SolverConfig, getpgrid_dir: str | None = None,
                  solver_work_dir: str | None = None,
                  input_in_path: str | None = None, tag: str = ".gui",
-                 prepare: bool = False, overwrite: bool = False,
-                 sources=(), generated_sources=(), archive_prev: bool = False):
+                 prepare: bool = False,
+                 disposition: str = solver_case.CASE_NEW_VERSION,
+                 sources=(), generated_sources=()):
         super().__init__()
         self._config = config
         self._getpgrid_dir = getpgrid_dir
@@ -69,11 +70,11 @@ class SolverPipelineWorker(QThread):
         # compile run inside run() on this worker thread instead of on the GUI
         # thread, so the event loop never freezes for the g++ subprocess.
         self._prepare = prepare
-        self._overwrite = overwrite
-        # Reusing the case dir for a RESTART moves the previous run's outputs
-        # into work/prev_NNN/ first, so this run cannot write over the dump it
-        # is resuming from (#26). See services/case_archive.
-        self._archive_prev = archive_prev
+        # ONE answer to "this case name already has results" (solver_case.CASE_*),
+        # split into prepare_case_dir's two mechanical flags at the single place
+        # that knows the mapping. Carrying the pair from the controller instead
+        # would let a caller set half of it.
+        self._disposition = disposition
         # CAD/STL this case was built from: copied into grid/cad/ by the same
         # staging step, so the case carries its own geometry.
         self._sources = list(sources or ())
@@ -106,11 +107,13 @@ class SolverPipelineWorker(QThread):
             # off the GUI thread: run it here so the window stays responsive.
             if self._prepare:
                 self.stage_signal.emit("Preparing case")
+                overwrite, archive_prev = solver_case.case_dir_flags(
+                    self._disposition)
                 work_dir, grid_dir, input_in = solver_case.prepare_case_dir(
                     self._config, log=self.log_signal.emit,
-                    overwrite=self._overwrite, sources=self._sources,
+                    overwrite=overwrite, sources=self._sources,
                     generated_sources=self._generated_sources,
-                    archive_prev=self._archive_prev)
+                    archive_prev=archive_prev)
                 self._solver_work_dir = work_dir
                 self._getpgrid_dir = grid_dir
                 self._input_in_path = input_in

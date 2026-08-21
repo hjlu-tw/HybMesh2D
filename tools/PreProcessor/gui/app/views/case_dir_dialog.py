@@ -61,7 +61,8 @@ def ask_case_disposition(parent, case: str, case_root: str,
             "after.")
         archive_btn = box.addButton(f"Continue Here (archive to {prev})",
                                     QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("New Versioned Dir", QMessageBox.ButtonRole.ActionRole)
+        new_btn = box.addButton("New Versioned Dir",
+                                QMessageBox.ButtonRole.ActionRole)
         overwrite_btn = box.addButton("Overwrite in Place",
                                       QMessageBox.ButtonRole.DestructiveRole)
         box.setDefaultButton(archive_btn)
@@ -74,14 +75,22 @@ def ask_case_disposition(parent, case: str, case_root: str,
         new_btn = box.addButton("New Versioned Dir",
                                 QMessageBox.ButtonRole.AcceptRole)
         box.setDefaultButton(new_btn)
-    cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
+    box.addButton(QMessageBox.StandardButton.Cancel)
 
     box.exec()
     clicked = box.clickedButton()
-    if clicked is cancel_btn:
-        return None
     if clicked is overwrite_btn:
         return CASE_IN_PLACE
+    # `archive_btn is None` in the non-restart branch, and `clicked` is None when
+    # the window was dismissed — so the identity test alone would match them to
+    # each other and answer ARCHIVE for a dialog that offered no such button.
     if archive_btn is not None and clicked is archive_btn:
         return CASE_ARCHIVE
-    return CASE_NEW_VERSION
+    if clicked is new_btn:
+        return CASE_NEW_VERSION
+    # Cancel, or the window dismissed with its close button / Esc, where
+    # clickedButton() can be None. Falling through to a disposition would START A
+    # SOLVER RUN nobody asked for — the same "an unknown value must not resolve to
+    # a plausible answer" rule solver_case.case_dir_flags enforces from the other
+    # side. Every non-cancelling answer is matched explicitly above.
+    return None

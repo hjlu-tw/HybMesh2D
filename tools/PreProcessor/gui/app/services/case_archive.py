@@ -135,7 +135,13 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     for name in sorted(os.listdir(work_dir)):
         src = os.path.join(work_dir, name)
         if not os.path.isfile(src):
-            continue                       # earlier archives, and nothing else
+            # Earlier archives are ours and expected; any other directory is the
+            # same "nobody classified this" case as an unknown file, and gets the
+            # same treatment — left alone, and said out loud. An `isfile` guard
+            # that just skips is how a folder becomes invisible.
+            if not name.startswith(ARCHIVE_DIR_PREFIX):
+                unknown.append(name + "/")
+            continue
         if is_run_output(name):
             (to_tag if os.path.abspath(src) in bare else to_move).append(name)
         elif not keep_matches(name, _WORK_STAGED):

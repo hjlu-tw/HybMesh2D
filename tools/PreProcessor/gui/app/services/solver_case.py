@@ -219,6 +219,22 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
         log(f"[getPGrid] segment table -> {def_name}")
 
 
+def _resolve_ref(raw: str, work_dir: str) -> str:
+    """The absolute file a quoted restart value names, resolving a relative one
+    against the work dir the solver runs in.
+
+    One spelling, because it is asked TWICE about the same value and the two
+    answers have to be the same file: :func:`prepare_case_dir` builds the archive's
+    ``keep_bare`` from it, and :func:`_work_dir_ref` looks the result up in the
+    archive's move map. If those two ever disagreed, the dump would be archived
+    under one identity and looked up under another — the reference would fall
+    through to the pass-through branch and strand the restart, which is the exact
+    failure #26 exists to prevent.
+    """
+    return os.path.abspath(
+        raw if os.path.isabs(raw) else os.path.join(work_dir, raw))
+
+
 def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop,
                   moved: dict | None = None) -> str:
     """``raw`` as ``input.in`` should quote it: relative to ``work_dir``.
@@ -244,8 +260,7 @@ def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop,
     raw = (raw or "").strip()
     if not raw:
         return raw
-    resolved = os.path.abspath(
-        raw if os.path.isabs(raw) else os.path.join(work_dir, raw))
+    resolved = _resolve_ref(raw, work_dir)
     archived = bool(moved) and resolved in moved
     if not archived and not os.path.isabs(raw):
         # Rule 3 stands: an already-relative value is relative to the work dir
@@ -382,8 +397,7 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     if archive_prev and cfg.restart:
         raw = (cfg.zdump_fn_restart or "").strip()
         if raw:
-            keep_bare = (os.path.abspath(
-                raw if os.path.isabs(raw) else os.path.join(work_dir, raw)),)
+            keep_bare = (_resolve_ref(raw, work_dir),)
     archived = (archive_previous_outputs(work_dir, log, keep_bare=keep_bare)
                 if archive_prev else {})
 

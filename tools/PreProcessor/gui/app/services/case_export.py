@@ -56,7 +56,7 @@ from app.services import case_sources
 # which moves exactly the files ``is_run_output`` names. Imported under the private
 # spellings the call sites here already use.
 from app.services.case_files import (
-    _QUOTED_RE,
+    QUOTED_RE as _QUOTED_RE,
     archive_subdirs as _archive_subdirs,
     human_size,
     is_inside as _is_inside,

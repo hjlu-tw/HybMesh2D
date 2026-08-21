@@ -39,7 +39,10 @@ _RESTART_RE = re.compile(r"^binDump", re.IGNORECASE)
 ARCHIVE_DIR_PREFIX = "prev_"
 
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
-_QUOTED_RE = re.compile(r'"([^"]*)"')
+# Public: three modules read it — the export planner, "does this run use that
+# file?" and the reference resolver below. It was copied into two of them before
+# this module existed.
+QUOTED_RE = re.compile(r'"([^"]*)"')
 
 
 def is_restart_dump(name: str) -> bool:
@@ -122,7 +125,7 @@ def referenced_inside(case_dir: str, input_in: str) -> set:
     """
     work = os.path.join(case_dir, "work")
     out = set()
-    for raw in _QUOTED_RE.findall(input_in):
+    for raw in QUOTED_RE.findall(input_in):
         ref = raw.strip()
         if not ref:
             continue

@@ -20,8 +20,10 @@ from __future__ import annotations
 import os
 import re
 
-# Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
-_QUOTED_RE = re.compile(r'"([^"]*)"')
+# Quoted values in input.in are ALL file paths. One spelling, in ``case_files``,
+# because this module and the export planner both read it and used to keep their
+# own copy.
+from app.services.case_files import QUOTED_RE as _QUOTED_RE
 
 # The immersed solid is declared in input.in itself, which makes "does this run
 # read phi.dat?" a fact. Read off the file, so a hand-edited input.in is obeyed.
