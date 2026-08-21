@@ -188,6 +188,85 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
         log(f"[getPGrid] segment table -> {def_name}")
 
 
+def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop) -> str:
+    """``raw`` as ``input.in`` should quote it: relative to ``work_dir``.
+
+    Rewritten only when ``raw`` is an ABSOLUTE path to an existing file — inside
+    ``work_dir`` it becomes its bare basename, elsewhere a relative path out and
+    back (``../../<case>/work/<name>``). A blank, an already-relative or a
+    non-resolving value is returned unchanged: relative is by definition relative
+    to the work dir the solver runs in, and a path that is simply wrong must
+    surface as the solver's own error rather than be rewritten into something
+    that merely looks valid.
+    """
+    raw = (raw or "").strip()
+    if not raw or not os.path.isabs(raw):
+        return raw
+    resolved = os.path.abspath(raw)
+    if not os.path.isfile(resolved):
+        return raw
+    rel = os.path.relpath(resolved,
+                          os.path.abspath(work_dir)).replace(os.sep, "/")
+    log(f"[restart] {what} -> {rel} (relative to the work dir the solver runs "
+        f"in)")
+    return rel
+
+
+def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str,
+                              log=_noop) -> tuple[str, str]:
+    """``(zdump_rel, convg_rel)``: the two restart references as ``input.in``
+    should quote them, i.e. relative to the work dir the solver runs in.
+
+    The paths ``input.in`` quotes are made work-dir relative by
+    :func:`prepare_case_dir` — the grid/bc as ``../grid/<case>.*``, the
+    init-condition and motion DLLs as ``../dll/*.so`` (:func:`stage_dll`), a BC
+    type-11 DLL as ``./x.so``, the phi field staged into ``work/`` under a fixed
+    name. The two restart fields were the only ones nothing touched, so they
+    reached the solver as an absolute path on the machine that wrote them and the
+    run errored out (USER-REPORTED 2026-08-20, #25). The shipped reference case
+    quotes them the same way (``solver/case/Cyl_IBM_Rotate/work/input.in``), and
+    ``case_export`` already relativises exactly these references when it packages
+    a case — so an exported case ran while the case it was exported from did not.
+
+    Not every quoted path is covered even now, and it is worth being exact rather
+    than tidy about it: ``mpi_comm_map_fn``, ``cfl_schedule_fn`` and
+    ``probe_points_def_fn`` are still emitted verbatim, so a browsed-to absolute
+    path reaches the solver in the same shape #25 was about. They are out of
+    scope here (nothing has reported them, and each needs its own answer about
+    whether the file should be STAGED into the case rather than referenced out of
+    it, which is what ``case_export`` does for them), but they are the residue,
+    not an oversight.
+
+    Relative-path rules are :func:`_work_dir_ref`'s. The dump itself is never
+    copied: it is the largest file in a case — which is why ``case_export``
+    treats it specially — and a reference costs nothing. That the reference may
+    need to point OUT of the case is the real case rather than a hypothetical
+    one: the panel computes the dump's path from the case NAME, before
+    :func:`resolve_case_root` may auto-version the directory, so a run landing in
+    ``<case>_002/`` genuinely restarts from ``<case>/work/`` and a hard-coded
+    basename would point at nothing.
+
+    Returned rather than written back onto ``cfg``, which is the one place this
+    departs from the staging around it. ``prepare_case_dir`` mutates ``cfg``
+    freely because it can RE-derive what it overwrites (``output_grid_file`` is
+    rebuilt from ``case_name`` every run), and it cannot re-derive this: the
+    absolute path is the only form that still means the same thing from another
+    work dir, so overwriting it would put a work-dir-relative value into the
+    model the ``.hws`` and the pipeline script are saved from — where the next
+    run, landing in an auto-versioned directory, would resolve it to nothing. The
+    panel keeps its absolute path for the same reason it is filled in that way:
+    it is browsable, and it is the same absolute-in-the-GUI /
+    relative-in-``input.in`` split ``grid_rel``/``bc_rel`` already have.
+
+    The two fields are named here rather than walked by string, so renaming one
+    is a NameError instead of a rewrite that silently stops happening.
+    """
+    return (_work_dir_ref(cfg.zdump_fn_restart, work_dir, "zdump_fn_restart",
+                          log),
+            _work_dir_ref(cfg.convg_fn_restart, work_dir, "convg_fn_restart",
+                          log))
+
+
 def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
                      sources=(), generated_sources=()):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
@@ -274,11 +353,16 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
         def_name = os.path.basename(cfg.output_bc_file) + ".def"
         cfg.generate_bc_def(os.path.join(work_dir, def_name))
 
-    # input.in with paths relative to the work dir.
+    # input.in with paths relative to the work dir -- now including the two
+    # restart references, which this function used to leave as the absolute path
+    # the panel put in them (#25).
+    zdump_rel, convg_rel = restart_refs_for_work_dir(cfg, work_dir, log)
     input_in_path = os.path.join(work_dir, "input.in")
     cfg.generate_input_in(
         input_in_path,
         grid_rel=f"../grid/{stem}.grid",
-        bc_rel=f"../grid/{stem}.bc")
+        bc_rel=f"../grid/{stem}.bc",
+        zdump_rel=zdump_rel,
+        convg_rel=convg_rel)
 
     return work_dir, grid_dir, input_in_path
