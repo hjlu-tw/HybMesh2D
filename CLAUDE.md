@@ -811,14 +811,22 @@ relaunching by hand. Four rules:
 `preflight()` exists because of that ordering: a bad interpreter or a missing
 `main.py` has to be caught while there is still a window to report it in. The
 residue is named rather than hidden — a `Popen` that fails *after* the window is
-gone can only reach `user_log`'s file mirror, since there is no parent left for a
-modal. The button's **label is a measurement**: at the narrowest supported window
-(`setMinimumSize(900, 600)`, of which the sidebar keeps >= 300) the tab row is 540px,
-and "⟳ Restart" (88px) leaves 31px of slack while "⟳ New Session" measured 119px,
-i.e. none — one longer geometry tab name and something would be squeezed. Gated by
-`tests/test_gui_restart.py` (8 properties, including that negative control on
-`popen_kwargs`), plus a one-off acceptance run: the real spawn was reparented to
-init in its own session and outlived the parent.
+gone can only reach `user_log`'s file mirror, since there is no parent window left
+to put a modal on and the app is already quitting; the gate pins that it is at
+least *said*. The button's **caption is a measurement, and the measurement lives in
+the gate rather than in a comment**: at the 900px minimum window the tab row is
+540px, "⟳ Restart" (88px) leaves 31px of slack in the tightest stage and
+"⟳ New Session" (119px) leaves 0 — but those numbers are re-derived per run by
+`tests/test_gui_restart.py`, which sums what each visible widget asked for across
+**every** stage, because a tab bar is visible in some stages and hidden in others
+(measuring in the IB stage reports 171px of slack where CAD has 31). The two
+tab-row buttons also share one QSS builder (`_tab_row_btn_qss`) for exactly that
+reason: the fit is measured against padding and font size, so two copies of them
+could drift apart. Gated by `tests/test_gui_restart.py` — 9 properties, the
+source-reading ones AST-based and injection-verified, with a negative control on
+`popen_kwargs` and its blind spots named in its own docstring — plus a one-off
+acceptance run: the real spawn was reparented to init in its own session and
+outlived the parent.
 
 **Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
 `mesh_bl_field_specs.py`, accordion + window fitting in `mesh_bl_dialog_layout.py`):

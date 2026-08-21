@@ -26,6 +26,45 @@ from app.views.main_window_statusbar_mixin import MainWindowStatusBarMixin
 
 # Mixins listed BEFORE QMainWindow so the Qt virtual overrides they provide
 # (eventFilter / resizeEvent) resolve super() to QMainWindow, not object.
+def _tab_row_btn_qss(bg: str, fg: str, border: str,
+                     hover_bg: str, hover_border: str) -> str:
+    """QSS for one of the persistent tab-row buttons ("Run All", "Restart").
+
+    The two differ only in their colours; everything that decides how much room
+    they take in the row — padding, font size and weight, the right margin — is
+    shared, and was a near-verbatim copy in both call sites. Since the row's fit
+    at the narrowest supported window is measured against exactly those numbers
+    (see :file:`tests/test_gui_restart.py`), two copies meant the measurement
+    could hold for one button and not the other. ``tab_bar_style`` below is the
+    same pattern for the two tab bars.
+
+    The ``:disabled`` block is shared too: only Run All is ever disabled today,
+    but a rule nobody applies costs nothing and a colour pair that drifts does.
+    """
+    return f"""
+        QPushButton {{
+            background-color: {bg};
+            color: {fg};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-weight: bold;
+            font-size: 11px;
+            margin-right: 8px;
+        }}
+        QPushButton:hover {{
+            background-color: {hover_bg};
+            border-color: {hover_border};
+            color: #ffffff;
+        }}
+        QPushButton:disabled {{
+            background-color: #1a1f3b;
+            color: #4a4e69;
+            border-color: #1c1e36;
+        }}
+    """
+
+
 class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
                  MainWindowToolbarBuildMixin, MainWindowStatusBarMixin,
                  QMainWindow):
@@ -232,35 +271,19 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
 
         # "Restart" — close this window and open a brand-new empty GUI. Lives in
         # the same persistent row as "Run All" so it is reachable in every mode.
-        # The label is short because the row is measured, not guessed: at the
-        # narrowest supported window (setMinimumSize(900, 600), of which the
-        # sidebar keeps at least 300) this row is 540px wide, and "⟳ Restart"
-        # (88px) leaves 31px of slack beside Run All, the mode selector and the
-        # tab bar. "⟳ New Session" measured 119px, i.e. exactly zero slack — one
-        # longer geometry tab name and something would be squeezed.
-        # tests/test_gui_restart.py holds that measurement.
+        # The LABEL is a width decision, not a wording one: this row is narrow at
+        # the minimum window size (setMinimumSize(900, 600), of which the sidebar
+        # keeps at least 300), and a longer caption squeezes the tab bar. The
+        # numbers are deliberately not repeated here — a comment cannot notice a
+        # renamed or translated control; tests/test_gui_restart.py measures the
+        # row live and refuses a caption this one does not leave room for.
         self.restart_btn = QPushButton("⟳ Restart", self.tab_row)
         self.restart_btn.setToolTip(
             "Close this window and open a new, empty PreProcessor session.\n"
             "Unsaved changes are asked about first — answering No keeps this "
             "window and launches nothing.")
-        self.restart_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #181b30;
-                color: #dde2ff;
-                border: 1px solid #2d3356;
-                border-radius: 4px;
-                padding: 4px 12px;
-                font-weight: bold;
-                font-size: 11px;
-                margin-right: 8px;
-            }
-            QPushButton:hover {
-                background-color: #23274a;
-                border-color: #5a9ad4;
-                color: #ffffff;
-            }
-        """)
+        self.restart_btn.setStyleSheet(_tab_row_btn_qss(
+            "#181b30", "#dde2ff", "#2d3356", "#23274a", "#5a9ad4"))
         tab_hl.addWidget(self.restart_btn)
 
         # "Run All" — one click runs CAD resample -> mesh -> solver -> results.
@@ -270,28 +293,8 @@ class MainWindow(MainWindowMenuMixin, MainWindowToolbarMixin,
         self.run_all_btn.setToolTip(
             "Run the full pipeline for the active geometry:\n"
             "CAD resample → mesh generation → solver → results contour.")
-        self.run_all_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1e4620;
-                color: #eaf6ea;
-                border: 1px solid #2d5630;
-                border-radius: 4px;
-                padding: 4px 12px;
-                font-weight: bold;
-                font-size: 11px;
-                margin-right: 8px;
-            }
-            QPushButton:hover {
-                background-color: #2c5e2e;
-                border-color: #22c55e;
-                color: #ffffff;
-            }
-            QPushButton:disabled {
-                background-color: #1a1f3b;
-                color: #4a4e69;
-                border-color: #1c1e36;
-            }
-        """)
+        self.run_all_btn.setStyleSheet(_tab_row_btn_qss(
+            "#1e4620", "#eaf6ea", "#2d5630", "#2c5e2e", "#22c55e"))
         tab_hl.addWidget(self.run_all_btn)
 
         tab_hl.addWidget(self.mode_combo)

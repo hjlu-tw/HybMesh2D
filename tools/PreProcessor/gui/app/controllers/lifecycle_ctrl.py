@@ -242,10 +242,12 @@ class LifecycleControllerMixin:
         try:
             gui_restart.launch()
         except OSError as e:
-            # The window is gone, so the log PANEL is gone with it and there is no
-            # parent left to put a modal on; user_log's own file mirror is the only
-            # place this can still be said. That residue is the accepted cost of
-            # closing first — :func:`gui_restart.preflight` is what keeps the
+            # The window is gone, so the log PANEL is gone with it, there is no
+            # parent left to put a modal on, and the application is already on its
+            # way out — a nested modal here would be torn down by the pending quit.
+            # user_log's own file mirror is the only place this can still be said,
+            # and saying it is what the gate pins. That residue is the accepted cost
+            # of closing first; :func:`gui_restart.preflight` is what keeps the
             # foreseeable failures (bad interpreter, missing script) on the side of
             # the close where a dialog still works.
             self.log(f"[ERROR] Could not start the new session: {e}")
