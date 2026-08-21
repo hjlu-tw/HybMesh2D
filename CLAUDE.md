@@ -776,6 +776,58 @@ explicit scope string, which never walked `sidebar_stack` — the Edit-BL dialog
 opens all-closed and reopens the groups the user left open. Its *stored* flags are
 not exempt from the version bump, per the paragraph above.
 
+**"⟳ Restart" closes THIS window first and spawns only if the close happened**
+(`services/gui_restart.py`, Qt-free — `restart_command` / `preflight` / `launch`;
+`lifecycle_ctrl.restart_gui`; the button sits beside `Run All` in the persistent tab
+row, so it is present in every stage). USER-REQUESTED (2026-08-20, issue #28):
+`Clear All` resets the model but leaves the process — its view state, temp dir, log
+and worker threads — in place, so a truly fresh instance meant quitting and
+relaunching by hand. Four rules:
+- **The order IS the feature.** Spawning first and *then* asking "discard unsaved
+  changes?" leaves **two** GUIs running when the answer is No, which is the opposite
+  of the request. So `main_window.close()` goes first and the child is launched only
+  if it returned True.
+- **The outcome comes from `close()`'s return value, not from `isVisible()`.**
+  Measured under the offscreen platform: a *cancelled* close on a window that was
+  never shown reports `isVisible() == False` and `isHidden() == True` — identical to
+  a successful one — while `close()` returns False exactly when the close event was
+  ignored, shown or not. The issue's own text suggests `isVisible()`; it would have
+  made the gate pass for the wrong reason.
+- **There is no second copy of the unsaved-work prompt.** The close routes through
+  `MainWindow.closeEvent` → `handle_close_event`, which already covers modified
+  geometry sessions *and* a dirty Mesh/Solver/IB configuration, saves the layout
+  before teardown, joins every worker within its bounded budget, and removes the
+  autosave file — so the new instance does not offer to recover the session the user
+  just chose to leave. A second prompt would be a second place to forget a
+  dirty-state source.
+- **`proc_util.popen_kwargs()` must NOT be reused here.** It sets `stdout=PIPE`
+  (with `stderr` folded in) for the streaming workers; with the parent gone nobody
+  drains that pipe and the child stalls once the buffer fills. The restart builds its
+  own kwargs — `start_new_session=True` repeated deliberately rather than inherited,
+  `stdin`/`stdout`/`stderr` all `DEVNULL` — and passes **no arguments**, because the
+  request is a brand-new session and carrying the case over would be a different
+  feature. The entry point resolves through `paths.repo_root()`, never by counting
+  `..` segments.
+`preflight()` exists because of that ordering: a bad interpreter or a missing
+`main.py` has to be caught while there is still a window to report it in. The
+residue is named rather than hidden — a `Popen` that fails *after* the window is
+gone can only reach `user_log`'s file mirror, since there is no parent window left
+to put a modal on and the app is already quitting; the gate pins that it is at
+least *said*. The button's **caption is a measurement, and the measurement lives in
+the gate rather than in a comment**: at the 900px minimum window the tab row is
+540px, "⟳ Restart" (88px) leaves 31px of slack in the tightest stage and
+"⟳ New Session" (119px) leaves 0 — but those numbers are re-derived per run by
+`tests/test_gui_restart.py`, which sums what each visible widget asked for across
+**every** stage, because a tab bar is visible in some stages and hidden in others
+(measuring in the IB stage reports 171px of slack where CAD has 31). The two
+tab-row buttons also share one QSS builder (`_tab_row_btn_qss`) for exactly that
+reason: the fit is measured against padding and font size, so two copies of them
+could drift apart. Gated by `tests/test_gui_restart.py` — 9 properties, the
+source-reading ones AST-based and injection-verified, with a negative control on
+`popen_kwargs` and its blind spots named in its own docstring — plus a one-off
+acceptance run: the real spawn was reparented to init in its own session and
+outlived the parent.
+
 **Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
 `mesh_bl_field_specs.py`, accordion + window fitting in `mesh_bl_dialog_layout.py`):
 the 21 BL parameters are collapsible groups (`_BL_FIELD_GROUPS`, mirroring the `.dat`

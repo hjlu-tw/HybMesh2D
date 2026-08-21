@@ -284,6 +284,11 @@ class SignalWiringMixin:
         if getattr(mw, "run_all_btn", None) is not None:
             mw.run_all_btn.clicked.connect(self.run_full_pipeline)
 
+        # "Restart" — close this window (through the normal unsaved-work path)
+        # and open a fresh GUI only if the close really happened.
+        if getattr(mw, "restart_btn", None) is not None:
+            mw.restart_btn.clicked.connect(self.restart_gui)
+
     def _wire_toolbar_sync(self):
         mw = self.main_window
         # Wire Toolbar Toggles & Synchronization with Sidebar Panel

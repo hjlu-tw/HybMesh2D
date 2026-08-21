@@ -203,6 +203,58 @@ class LifecycleControllerMixin:
             except Exception:
                 _log.debug("could not remove the session temp directory", exc_info=True)
 
+    def restart_gui(self) -> bool:
+        """Close this window the normal way and, only if it closed, open a fresh GUI.
+
+        The order is the whole feature. Spawning first and *then* asking "discard
+        unsaved changes?" leaves two GUIs running when the answer is No — the exact
+        opposite of what the button is for. So the close goes first, through
+        :meth:`MainWindow.closeEvent` → :meth:`handle_close_event`, which is also
+        why there is no second copy of the unsaved-work question here: that method
+        already covers both modified geometry sessions and a dirty Mesh/Solver/IB
+        configuration, saves the layout, joins the workers within their budget and
+        removes the autosave file so the new instance does not offer to recover the
+        session the user just chose to leave.
+
+        **The outcome is read from ``close()``'s return value, not from
+        ``isVisible()``.** Measured under the offscreen platform: a cancelled close
+        on a window that was never shown reports ``isVisible() == False`` and
+        ``isHidden() == True`` — indistinguishable from a successful one — while
+        ``close()`` returns False exactly when the close event was ignored, shown
+        or not.
+        """
+        from app.services import gui_restart
+
+        # Validate while there is still a window to report an error in: after the
+        # close there is no GUI left to tell.
+        reason = gui_restart.preflight()
+        if reason:
+            from app.utils import report_error
+            report_error(self.main_window, "Cannot Start a New Session", reason)
+            self.log(f"[ERROR] Restart not possible: {reason.splitlines()[0]}")
+            return False
+
+        self.log("Restarting: closing this window, then opening a new empty session...")
+        if not self.main_window.close():
+            self.log("Restart cancelled - this window stays open and nothing was launched.")
+            return False
+
+        try:
+            gui_restart.launch()
+        except OSError as e:
+            # The window is gone, so the log PANEL is gone with it, there is no
+            # parent left to put a modal on, and the application is already on its
+            # way out — a nested modal here would be torn down by the pending quit.
+            # user_log's own file mirror is the only place this can still be said,
+            # and saying it is what the gate pins. That residue is the accepted cost
+            # of closing first; :func:`gui_restart.preflight` is what keeps the
+            # foreseeable failures (bad interpreter, missing script) on the side of
+            # the close where a dialog still works.
+            self.log(f"[ERROR] Could not start the new session: {e}")
+            _log.warning("restart: launching a new GUI failed", exc_info=True)
+            return False
+        return True
+
     def handle_close_event(self) -> bool:
         """Return True if the app can close, False to cancel closing."""
         # Unsaved work is not only CAD geometry: an unsaved Mesh / Solver / IB
