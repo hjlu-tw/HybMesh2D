@@ -21,6 +21,8 @@ from __future__ import annotations
 import os
 import re
 
+from app.services.logging_setup import get_logger
+
 # Files a run PRODUCES. Used to explain a skip in an export manifest and to pick
 # what an archive moves — never to decide what an export COPIES, which is what
 # the allow-lists are for.
@@ -56,6 +58,16 @@ def is_run_output(name: str) -> bool:
     included."""
     return (any(p.search(name) for p in _OUTPUT_PATTERNS)
             or is_restart_dump(name))
+
+
+# What ``solver_case.prepare_case_dir`` stages INTO work/ under a FIXED name:
+# input.in, the BC table, the phase field and a type-11 BC DLL. Two modules ask
+# about it and neither owns it — ``case_archive`` must not archive them (they are
+# the resumed run's own configuration) and ``solver_case`` must not stage a
+# user-named table on top of one. It lived in ``case_archive`` and was restated
+# as a shorter tuple in ``solver_case``; the two could already disagree, and did:
+# the ``.so`` was in one and not the other.
+WORK_STAGED = ({"input.in", "phi.dat"}, (".def", ".so"))
 
 
 def keep_matches(name: str, keep) -> bool:
@@ -134,4 +146,46 @@ def referenced_inside(case_dir: str, input_in: str) -> set:
         if is_inside(resolved, case_dir):
             out.add(os.path.relpath(resolved, os.path.abspath(case_dir))
                     .replace(os.sep, "/"))
+    return out
+
+
+def staged_bare_names(work_dir: str) -> set:
+    """Basenames the work dir's own ``input.in`` quotes as files sitting in it.
+
+    The counterpart to :data:`WORK_STAGED` for what ``prepare_case_dir`` stages
+    under a name the USER chose — the CFL schedule, the probe-point list and the
+    MPI comm map (#29) — which no list can hold. ``input.in`` can, and it is the
+    same authority :func:`referenced_inside` and ``case_export_usage`` read for
+    "is this file an input of THIS run?".
+
+    Bare names only, so an archived restart's ``prev_001/binDumpZ.dat.gui`` is
+    not swept up. Callers that must not confuse a staged input with an output ask
+    :func:`is_run_output` first; this function does not, because "quoted by
+    input.in" and "produced by a run" are both true of a restart dump and the
+    caller is the one that knows which answer it wants.
+    """
+    path = os.path.join(work_dir, "input.in")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except FileNotFoundError:
+        # A work dir with no input.in yet is the normal case for a fresh run,
+        # not a problem: nothing was staged, so the answer is genuinely empty.
+        return set()
+    except OSError:
+        # An input.in that exists and cannot be READ is different, and the
+        # failure is not inert — every user-named staged table would come back
+        # unclassified, which is what the caller then says out loud about it.
+        get_logger(__name__).warning(
+            "could not read %s, so a file staged into this work dir under a "
+            "user-chosen name cannot be recognised as an input", path,
+            exc_info=True)
+        return set()
+    out = set()
+    for raw in QUOTED_RE.findall(text):
+        ref = raw.strip()
+        if not ref or os.path.isabs(ref) or "/" in ref or os.sep in ref:
+            continue
+        if os.path.isfile(os.path.join(work_dir, ref)):
+            out.add(ref)
     return out

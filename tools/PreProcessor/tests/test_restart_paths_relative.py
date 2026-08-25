@@ -36,14 +36,15 @@ Pinned here, all against the real ``prepare_case_dir`` on a temp tree:
     shipped rather than dropped from the package as unreferenced, AND the
     reference resolves inside the written package.
 
-Two blind spots, named rather than papered over. This pins the STRING written
+One blind spot, named rather than papered over. This pins the STRING written
 into ``input.in`` and that it resolves on this filesystem; whether the solver
 accepts it is evidence only the acceptance run can give (the original error text
-was not captured in the report — see the issue's open question). And three quoted
-paths are NOT covered by the fix or by this test — ``mpi_comm_map_fn``,
-``cfl_schedule_fn``, ``probe_points_def_fn`` are still emitted verbatim, so a
-browsed-to absolute path still reaches the solver in the shape #25 was about.
-That is scoped-out residue (#29), not a passing check.
+was not captured in the report — see the issue's open question).
+
+Scope: the two RESTART references. The other three quoted paths this file used to
+name as uncovered residue — ``mpi_comm_map_fn``, ``cfl_schedule_fn``,
+``probe_points_def_fn`` — are ``test_input_in_staged_paths.py``'s (#29), and they
+are STAGED rather than relativised, for the reason recorded there.
 
 Run:  python3 tools/PreProcessor/tests/test_restart_paths_relative.py
 """
