@@ -405,7 +405,7 @@ for key in KEYS:
           f"9. ...and no longer calls it unrecognised: this toolchain staged "
           f"it, so 'nobody classified this' would be a false statement about "
           f"a file the previous input.in names ({base})")
-check(os.path.isfile(os.path.join(w9, "prev_001", "xtecplot.plt"))
+check(os.path.isfile(os.path.join(w9, "prev_001", "xtecplot.plt.prev_001"))
       and not os.path.isfile(os.path.join(w9, "xtecplot.plt")),
       "9. (control) a real output still moves into prev_001/ — the tables were "
       "exempted from the archive, not the whole classification")

@@ -8,6 +8,7 @@ from app.workers.solver_run import SolverPipelineWorker
 from app.views.case_dir_dialog import ask_case_disposition
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import solver_case
+from app.services.case_files import GUI_RUN_TAG
 from app.services.case_sources import mesh_provenance_paths
 from app.services.mesh_grid_lookup import resolve_case_grid
 from app.services.logging_setup import get_logger
@@ -26,7 +27,11 @@ class SolverControllerMixin:
     input.in paths, compiling IBM DLLs, and driving SolverPipelineWorker.
     """
 
-    SOLVER_TAG = ".gui"
+    # The ``-t`` tag this host's outputs carry. Declared in ``case_files``
+    # because the archive's rename rule has to strip exactly the tags something
+    # writes (#30) — a tag spelled twice can be stripped in one place and
+    # written in the other, and the rename would then silently do nothing.
+    SOLVER_TAG = GUI_RUN_TAG
 
     # ------------------------------------------------------------------ #
     def _case_source_files(self) -> list:

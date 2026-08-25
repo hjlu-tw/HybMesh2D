@@ -57,6 +57,7 @@ from app.services import case_sources
 # spellings the call sites here already use.
 from app.services.case_files import (
     QUOTED_RE as _QUOTED_RE,
+    RUN_NOTE_NAME,
     archive_subdirs as _archive_subdirs,
     human_size,
     is_inside as _is_inside,
@@ -239,7 +240,21 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                     src, dest,
                     f"input (renamed from {os.path.basename(rel)})"
                     if dest != rel else "input"))
-            elif _is_output(name):
+            elif _is_output(name) or (sub in archives
+                                      and name == RUN_NOTE_NAME):
+                # An archive's own RUN.txt (#30) is not an input of anything —
+                # it is what the archiving of a run produced — so it is named
+                # as a skipped output rather than falling through to "not
+                # recognised as a solver input", which would be a false
+                # statement about a file this toolchain wrote itself. It does
+                # not SHIP, for the reason the whole allow-list exists: the
+                # package holds a case's inputs.
+                #
+                # The `sub in archives` guard is load bearing rather than
+                # tidiness, which is why this is not folded into is_run_output:
+                # a RUN.txt sitting in work/ is a file nobody classified, and
+                # classifying it as an output would have ``case_archive`` move
+                # it into the next archive as if a run had produced it.
                 plan.skipped_output.append((rel, _size(src)))
             elif rel in referenced:
                 # ``input.in`` names it and no run produced it, so it is an

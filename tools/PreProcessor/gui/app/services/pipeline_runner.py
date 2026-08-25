@@ -22,6 +22,7 @@ from app.services import (
 )
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
+from app.services.case_files import CLI_RUN_TAG
 from app.services.paths import (
     find_binary_executable, find_solver_executables, repo_root,
 )
@@ -31,7 +32,10 @@ from app.workers.proc_util import stop_process
 _log = get_logger(__name__)
 
 # tag distinguishes CLI solver output (xtecp_sol_allz.dat.cli) from the GUI's.
-SOLVER_TAG = ".cli"
+# One declaration, in case_files: the archive's rename rule strips exactly the
+# tags a host writes (#30), so a second spelling here could be stripped in one
+# place and written in the other.
+SOLVER_TAG = CLI_RUN_TAG
 
 
 class PipelineError(RuntimeError):

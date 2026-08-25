@@ -71,7 +71,7 @@ _wd = threading.Timer(180, _watchdog)
 _wd.daemon = True
 _wd.start()
 
-from app.services import case_export  # noqa: E402
+from app.services import case_export, case_run_note  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -498,12 +498,27 @@ check("案例" in man,
 # only one level deep into grid/cad/. The archive's own behaviour is gated by
 # test_restart_archive.py; what is pinned HERE is the exporter's side of it, in
 # the exporter's own gate.
+# #30 changed the SHAPE of an archive under the exporter, so the fixture is the
+# one the real archiver now leaves: every file renamed to end in .prev_001, the
+# zone dump inside the folder with a bare-named HARD LINK to it in work/ (one
+# inode, two paths), and a RUN.txt recording the run.
 arch_case, arch_src, _ = build_case(os.path.join(tmp, "arch"), restart_ref=True)
-prev = os.path.join(arch_case, "work", "prev_001")
+arch_work = os.path.join(arch_case, "work")
+prev = os.path.join(arch_work, "prev_001")
 os.makedirs(prev)
-for name in ("binDumpZ.dat.gui", "unicones.enorm.gui", "xtecp_sol_allz.dat.gui"):
+for name in ("binDumpZ.dat.prev_001", "unicones.enorm.prev_001",
+             "xtecp_sol_allz.dat.prev_001", "fort.11.prev_001"):
     with open(os.path.join(prev, name), "w") as f:
         f.write("archived " + name)
+with open(os.path.join(prev, case_run_note.RUN_NOTE_NAME), "w") as f:
+    f.write("archive: prev_001\nrun_tag: .gui\nfiles: 4\n")
+os.remove(os.path.join(arch_work, "binDumpZ.dat.gui"))
+os.link(os.path.join(prev, "binDumpZ.dat.prev_001"),
+        os.path.join(arch_work, "binDumpZ.dat.prev_001"))
+with open(os.path.join(arch_work, "input.in")) as f:
+    _txt = f.read().replace('"binDumpZ.dat.gui"', '"binDumpZ.dat.prev_001"')
+with open(os.path.join(arch_work, "input.in"), "w") as f:
+    f.write(_txt)
 stray = os.path.join(arch_case, "grid", "notes_dir")
 os.makedirs(stray)
 with open(os.path.join(stray, "a.txt"), "w") as f:
@@ -525,12 +540,24 @@ check("grid/notes_dir/" in {r for r, _s in plan.skipped_other},
 check(all(sz > 0 for r, sz in plan.skipped_other if r.endswith("/")),
       "16. a directory skip line carries the tree's size, so 'not shipped' "
       "comes with the number that makes it a decision")
-check("work/binDumpZ.dat.gui" in shipped
-      and "work/prev_001/binDumpZ.dat.gui" not in shipped,
-      f"16. only the dump input.in actually resolves to ships — a case with an "
-      f"archive legitimately holds two files of that name, and matching a "
-      f"reference by BASENAME shipped both, doubling the largest file in the "
-      f"package ({sorted(r for r in shipped if 'binDump' in r)})")
+check("work/binDumpZ.dat.prev_001" in shipped
+      and "work/prev_001/binDumpZ.dat.prev_001" not in shipped,
+      f"16. only the path input.in actually resolves to ships — and since #30 "
+      f"the two paths are ONE FILE (a hard link), so shipping both would put "
+      f"the largest file in the case into the package twice while a du of the "
+      f"case shows it once ({sorted(r for r in shipped if 'binDump' in r)})")
+arch_outputs = {r for r, _s in plan.skipped_output}
+arch_other = sorted(r for r, _s in plan.skipped_other if "prev_" in r)
+check("work/prev_001/fort.11.prev_001" in arch_outputs,
+      f"16. an archived output whose pattern anchors on the END of the name "
+      f"(^fort.N$) is still classified as produced-by-the-run: #30's rename "
+      f"moves that end, and the classifier sees through the archive suffix "
+      f"rather than the patterns being widened "
+      f"({sorted(r for r in arch_outputs if 'fort' in r)})")
+check(f"work/prev_001/{case_run_note.RUN_NOTE_NAME}" in arch_outputs,
+      f"16. and the archive's own RUN.txt is named as an output, not as "
+      f"'not recognised as a solver input' — a false statement about a file "
+      f"this toolchain wrote itself ({arch_other})")
 
 shutil.rmtree(tmp, ignore_errors=True)
 
