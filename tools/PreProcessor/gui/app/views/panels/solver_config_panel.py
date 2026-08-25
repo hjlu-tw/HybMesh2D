@@ -34,7 +34,7 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMi
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Guards signal handlers (e.g. restart auto-fill) from firing during
+        # Guards signal handlers (e.g. the restart chooser's rows) from firing during
         # set_config's programmatic widget updates — they should react only to
         # genuine user interaction.
         self._loading = False
@@ -124,12 +124,13 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMi
         self.immersed_solid.toggled.connect(self._update_ibm_visibility)
         self.enable_decompose.toggled.connect(self._update_decompose_visibility)
         self.enable_shock.toggled.connect(self._update_shock_visibility)
-        self.restart.toggled.connect(self._update_restart_visibility)
-        self.restart.toggled.connect(self._autofill_restart_from_last_run)
+        # The restart chooser lists this case's own history, so it follows the
+        # case NAME (#31). textEdited, so set_config's population does not
+        # re-list on every keystroke of a programmatic push.
+        self.case_name.textEdited.connect(self.refresh_restart_choices)
         self.flow_solu_type.currentTextChanged.connect(self._on_flow_solu_changed)
         self._update_ibm_visibility()
         self._update_decompose_visibility()
         self._update_shock_visibility()
-        self._update_restart_visibility()
         # Linf mode + the derived reference-Reynolds read-out (SolverUnitsMixin).
         self._wire_unit_widgets()

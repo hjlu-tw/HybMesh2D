@@ -1,16 +1,22 @@
 """The prompt for "this case name already has results — now what?".
 
-Three answers, and until #26 only two of them existed. A **restart** continues a
-solution and therefore belongs in the case folder it is resuming; the only option
-that stayed in that folder was ``Overwrite``, which wrote over the previous run's
-outputs as the new run produced its own — the dump being resumed from included.
-So the destructive option was the only one that did what the user asked for, and
-the dialog said nothing about restart at all. USER-REPORTED (2026-08-20).
+**A restart no longer reaches here** (#31, CONFIRMED 2026-08-21). #26 gave this
+dialog a third answer for one: a restart continues a solution and therefore
+belongs in the folder it is resuming, and the only option that stayed in that
+folder used to be ``Overwrite`` — which wrote over the previous run's outputs as
+the new run produced its own, the dump being resumed from included
+(USER-REPORTED 2026-08-20). Now that the start point is picked from that case's
+own history (``views/panels/restart_chooser``), "same directory, archive the
+previous outputs" is the only coherent answer to a question the user has already
+answered, so ``solver_ctrl._resolve_case_disposition`` decides it instead of
+asking. The archive step is legible in the user log on its own, which is what
+that confirmation used to provide; an explicit overwrite-in-place escape belongs
+somewhere non-default (#33).
 
-With a restart on, the same-directory option is now the ARCHIVING one
-(``services/case_archive`` moves the previous outputs to ``work/prev_NNN/``
-first), the dialog says so, and that is the default button. Overwriting in place
-survives as an explicit escape and stays labelled destructive.
+What is left is the genuinely ambiguous non-restart case: overwrite, or keep the
+results and run in a new auto-versioned directory. ``CASE_ARCHIVE`` is therefore
+not offered here — a branch nothing can reach reads as a working feature, so it
+is gone rather than left as an answer the dialog can no longer give.
 
 A view, not a decision: this asks and reports the answer. What the answer means
 mechanically is ``solver_case.case_dir_flags``, and the logging is the
@@ -18,18 +24,16 @@ controller's, which owns the user log.
 """
 from __future__ import annotations
 
-from app.services.case_archive import next_archive_name
 from app.services.solver_case import (
-    CASE_ARCHIVE,
     CASE_IN_PLACE,
     CASE_NEW_VERSION,
 )
 from app.utils import is_headless
 
 
-def ask_case_disposition(parent, case: str, case_root: str,
-                         restart: bool) -> str | None:
-    """One of the ``CASE_*`` values, or None when the user cancelled.
+def ask_case_disposition(parent, case: str, case_root: str) -> str | None:
+    """``CASE_IN_PLACE`` or ``CASE_NEW_VERSION``, or None when the user
+    cancelled. Never ``CASE_ARCHIVE`` — see the module docstring.
 
     Headless returns ``CASE_NEW_VERSION`` without showing anything: prior results
     are preserved and nothing blocks, which is the same answer the unattended
@@ -43,50 +47,20 @@ def ask_case_disposition(parent, case: str, case_root: str,
     box.setIcon(QMessageBox.Icon.Warning)
     box.setWindowTitle("Case already exists")
     box.setText(f"Solver results for case '{case}' already exist at\n{case_root}")
-    archive_btn = None
-    if restart:
-        # Name the concrete directory rather than a placeholder: the counter is
-        # cheap to read and "prev_003" tells the user this has happened twice.
-        prev = next_archive_name(case_root) or "prev_NNN"
-        box.setInformativeText(
-            "This run RESTARTS from a previous dump, so it belongs in this same "
-            "directory.\n\n"
-            f"Continuing here first moves the previous run's outputs into "
-            f"work/{prev}/, each renamed to end in .{prev}, and leaves a link "
-            f"to the dump this run resumes from beside them — the solver can "
-            "only read a restart source from its own directory. Nothing is "
-            "overwritten, nothing is copied, and the restart reference is "
-            "updated to match.\n\n"
-            "Overwriting in place writes over them instead — including the dump "
-            "being resumed from, which the solver's own output dump is named "
-            "after.")
-        archive_btn = box.addButton(f"Continue Here (archive to {prev})",
-                                    QMessageBox.ButtonRole.AcceptRole)
-        new_btn = box.addButton("New Versioned Dir",
-                                QMessageBox.ButtonRole.ActionRole)
-        overwrite_btn = box.addButton("Overwrite in Place",
-                                      QMessageBox.ButtonRole.DestructiveRole)
-        box.setDefaultButton(archive_btn)
-    else:
-        box.setInformativeText(
-            "Overwrite the existing results, or keep them and run into a new "
-            f"auto-versioned directory (e.g. '{case}_002')?")
-        overwrite_btn = box.addButton("Overwrite",
-                                      QMessageBox.ButtonRole.DestructiveRole)
-        new_btn = box.addButton("New Versioned Dir",
-                                QMessageBox.ButtonRole.AcceptRole)
-        box.setDefaultButton(new_btn)
+    box.setInformativeText(
+        "Overwrite the existing results, or keep them and run into a new "
+        f"auto-versioned directory (e.g. '{case}_002')?")
+    overwrite_btn = box.addButton("Overwrite",
+                                  QMessageBox.ButtonRole.DestructiveRole)
+    new_btn = box.addButton("New Versioned Dir",
+                            QMessageBox.ButtonRole.AcceptRole)
+    box.setDefaultButton(new_btn)
     box.addButton(QMessageBox.StandardButton.Cancel)
 
     box.exec()
     clicked = box.clickedButton()
     if clicked is overwrite_btn:
         return CASE_IN_PLACE
-    # `archive_btn is None` in the non-restart branch, and `clicked` is None when
-    # the window was dismissed — so the identity test alone would match them to
-    # each other and answer ARCHIVE for a dialog that offered no such button.
-    if archive_btn is not None and clicked is archive_btn:
-        return CASE_ARCHIVE
     if clicked is new_btn:
         return CASE_NEW_VERSION
     # Cancel, or the window dismissed with its close button / Esc, where

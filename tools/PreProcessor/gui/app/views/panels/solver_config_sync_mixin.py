@@ -1,20 +1,20 @@
 """Visibility toggles + model sync for SolverConfigPanel, split out as a mixin
 (behaviour unchanged). Holds the feature-gated form show/hide helpers, the
-restart auto-fill, the preset apply, and the `set_config` / `get_config`
+the restart chooser's refresh, the preset apply, and the `set_config` / `get_config`
 read/write bridge between the panel widgets and a SolverConfig. Every method
 references widgets created in the panel's `__init__` / `_build_*` and resolves
 via MRO."""
 from __future__ import annotations
-import os
 from PyQt6.QtWidgets import QFormLayout
 
 from app.models.solver_config import SolverConfig, PRESETS, BC_FLAGS_NEEDING_EXTRA
+from app.services import restart_points
 from app.views.panels.field_widgets import read_specs, write_specs
 from app.views.panels.solver_field_specs import SOLVER_SPECS
 
 
 class SolverConfigSyncMixin:
-    """Visibility toggles, restart auto-fill, preset apply, get/set_config."""
+    """Visibility toggles, restart choices, preset apply, get/set_config."""
 
     # ------------------------------------------------------------------ #
     # Visibility toggles
@@ -37,45 +37,21 @@ class SolverConfigSyncMixin:
     def _update_shock_visibility(self):
         self._set_form_visible(self._shock_form, self.enable_shock.isChecked())
 
-    def _update_restart_visibility(self):
-        self._set_form_visible(self._restart_form, self.restart.isChecked())
+    def refresh_restart_choices(self):
+        """Re-list what this case can be restarted from (#31).
 
-    def _autofill_restart_from_last_run(self):
-        """When the user turns Restart on with empty fields, pre-fill them from
-        this case's last run. The solver writes the zone-dump/convergence files
-        into results/solver/<case>/work/ with a tag suffix (.gui for GUI runs,
-        .cli for headless), which is easy to miss — so point the fields at the
-        actual filenames instead of leaving the user to hunt for them."""
-        if self._loading or not self.restart.isChecked():
-            return
-        try:
-            from app.services.case_files import RUN_TAGS
-            from app.services.solver_case import sanitize_case_name
-            from app.utils import repo_root
-        except Exception:
-            return
-        case = sanitize_case_name(self.case_name.text().strip() or "case")
-        work = os.path.join(repo_root(), "results", "solver", case, "work")
-        if not os.path.isdir(work):
-            return
+        Called when the case NAME changes and after a run, because both change
+        the answer: the rows are derived from ``results/solver/<case>/`` every
+        time and nothing about them is cached — a workspace reopened after the
+        case moved on must not offer legs that are gone.
 
-        def _pick(stem: str) -> str:
-            # GUI solves tag outputs ".gui"; prefer that, fall back to ".cli".
-            # RUN_TAGS in that order, from the one module that declares them.
-            for tag in RUN_TAGS:
-                p = os.path.join(work, stem + tag)
-                if os.path.exists(p):
-                    return p
-            return ""
-
-        if not self.zdump_fn_restart.text().strip():
-            z = _pick("binDumpZ.dat")
-            if z:
-                self.zdump_fn_restart.setText(z)
-        if not self.convg_fn_restart.text().strip():
-            c = _pick("unicones.enorm")
-            if c:
-                self.convg_fn_restart.setText(c)
+        This replaced ``_autofill_restart_from_last_run``, which guessed one
+        fixed filename in ``work/`` when the user ticked Restart and knew nothing
+        about the ``work/prev_<NNN>/`` archives a restart creates. A guess that
+        can only ever name the newest dump cannot express "re-run the same leg".
+        """
+        self.restart_chooser.refresh(
+            restart_points.case_root_for(self.case_name.text().strip()))
 
     def _apply_preset(self):
         """Apply the selected workload preset onto the current config + UI."""
@@ -117,10 +93,16 @@ class SolverConfigSyncMixin:
                              str(bc.get("values", "") or ""),
                              str(bc.get("name", "") or ""))
 
+        # The restart chooser is a view over the CASE DIR, so the rows have to
+        # be re-listed for the case this config names before the selection can
+        # find its row in them.
+        self.refresh_restart_choices()
+        self.restart_chooser.set_selection(
+            cfg.restart, cfg.zdump_fn_restart, cfg.convg_fn_restart)
+
         self._update_ibm_visibility()
         self._update_decompose_visibility()
         self._update_shock_visibility()
-        self._update_restart_visibility()
 
     def get_config(self, cfg: SolverConfig | None = None) -> SolverConfig:
         cfg = cfg or SolverConfig()
@@ -128,6 +110,10 @@ class SolverConfigSyncMixin:
         # does not parse keeps the value cfg already holds, which is the fallback the
         # hand-written `_parse_float(self.beta.text(), cfg.beta)` calls had.
         read_specs(self, SOLVER_SPECS, cfg)
+        # Three fields, one control: which of this case's legs this run starts
+        # from (#31). Declared in SOLVER_EXTRA_AUTHORED beside the table.
+        (cfg.restart, cfg.zdump_fn_restart,
+         cfg.convg_fn_restart) = self.restart_chooser.selection()
 
         cfg.bc_definitions = []
         for r in range(self.bc_table.rowCount()):

@@ -13,7 +13,10 @@ import shutil
 import subprocess
 
 from app.models.solver_config import SolverConfig
-from app.services.case_archive import archive_previous_outputs
+from app.services.case_archive import (
+    archive_previous_outputs,
+    bare_link_for_archived_dump,
+)
 # What each of input.in's nine quoted values should say from the work dir the
 # solver runs in. Its own module because it is its own question — see there.
 from app.services.case_input_paths import (
@@ -274,16 +277,31 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     #
     # The zone dump this run RESUMES FROM is named so the archive can keep it
     # reachable: the solver reads a restart source only by a bare name in its own
-    # cwd, so that one file is renamed in place instead of moved into prev_NNN/
-    # (see archive_previous_outputs). A dump living in some OTHER case dir is not
-    # in work_dir, so it is simply not among the files the archive considers.
-    keep_bare = ()
-    if archive_prev and cfg.restart:
+    # cwd, so that one file keeps a bare-named hard link in work/ rather than
+    # only moving into prev_NNN/ (see archive_previous_outputs). A dump living in
+    # some OTHER case dir is not in work_dir, so it is simply not among the files
+    # the archive considers.
+    #
+    # A dump the user picked out of an OLDER archive (#31's chooser — "re-run the
+    # same leg") needs the same bare name and has no run to have left it one, so
+    # it gets the link on demand and the reference follows it through the same
+    # `moved` map the archive uses. Before the archive, so the link is already
+    # the file this run resumes from when the archive decides what to leave
+    # alone; and independent of `archive_prev`, because the solver's constraint
+    # is not a consequence of archiving.
+    keep_bare, relinked = (), {}
+    if cfg.restart:
         raw = (cfg.zdump_fn_restart or "").strip()
         if raw:
-            keep_bare = (resolve_ref(raw, work_dir),)
+            src = resolve_ref(raw, work_dir)
+            link = bare_link_for_archived_dump(work_dir, src, log)
+            if link:
+                relinked[src] = os.path.abspath(link)
+                src = os.path.abspath(link)
+            keep_bare = (src,)
     archived = (archive_previous_outputs(work_dir, log, keep_bare=keep_bare)
                 if archive_prev else {})
+    archived.update(relinked)
 
     # getPGrid runs in grid_dir: stage the STAR-CD inputs there with the
     # basenames para.in will reference, and have it write <case>.grid/.bc there.
