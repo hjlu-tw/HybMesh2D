@@ -239,6 +239,19 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                     src, dest,
                     f"input (renamed from {os.path.basename(rel)})"
                     if dest != rel else "input"))
+            elif rel in referenced:
+                # ``input.in`` names it, so it is an input by definition, and
+                # ``_resolve_input_in`` adds it below with exactly that reason.
+                # Reporting it here as well would put one path under INCLUDED
+                # *and* under a SKIPPED heading in the same manifest — the
+                # contradiction the named-skip design exists to make impossible.
+                # #29 is what made this reachable: the CFL schedule, the probe
+                # list and the comm map are now STAGED into work/ instead of
+                # referenced out of the machine that ran, and two of the three
+                # carry no name the allow-list knows. The allow-list is NOT
+                # widened for them (see _WORK_KEEP): a reference is a fact about
+                # THIS run, a suffix would be a glob over every future one.
+                continue
             elif _is_output(name):
                 plan.skipped_output.append((rel, _size(src)))
             else:

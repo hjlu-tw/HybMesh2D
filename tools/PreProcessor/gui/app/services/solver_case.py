@@ -282,6 +282,117 @@ def _work_dir_ref(raw: str, work_dir: str, what: str, log=_noop,
     return rel
 
 
+def _stage_table(raw: str, work_dir: str, what: str, taken: set,
+                 log=_noop) -> str:
+    """``raw`` as ``input.in`` should quote it, copying the file it names into
+    ``work_dir`` when it is a PATH.
+
+    Three of the nine quoted values are small tables the case ought to hold
+    rather than reach out of this machine for — a CFL schedule, a probe-point
+    list, an MPI comm map — so the answer here is the opposite of the restart
+    dump's (#25), and for a stated reason: the dump is the largest file in a
+    case, which is why it is referenced and never copied, while a table costs
+    nothing to carry and a case that does not hold its own inputs is the
+    problem. Staging is also what ``case_export`` already does to exactly these
+    three, so the exported case was self-contained while the case it came from
+    referenced this machine's filesystem.
+
+    Three shapes, and only one of them copies anything:
+
+    * a **bare name** is returned unchanged (and reserves itself in ``taken``) —
+      it is already relative to the work dir, which is the solver's cwd, and is
+      the intended form for ``cfl_schedule_fn`` (whose tip says "schedule table
+      filename");
+    * a **path to an existing file** (absolute, or relative with a separator and
+      resolving from the work dir) is copied in under a collision-safe basename
+      and quoted by that bare name;
+    * anything that does **not** resolve is returned unchanged, so it surfaces as
+      the solver's own error rather than being rewritten into something that
+      merely looks valid (#25's rule 4).
+
+    Copy, never move and never hard-link: one table may feed several cases, the
+    user's own copy must not be taken away, and one inode would let a later edit
+    silently rewrite what the case holds (``case_sources``' rule, same reason).
+
+    ``taken`` collects the basenames this pass has claimed, so two tables with
+    the same basename from different directories both travel. It is seeded with
+    the fixed names ``prepare_case_dir`` writes into the work dir itself; a name
+    left by an EARLIER run is deliberately not in it, or re-running a case would
+    walk ``probe.dat`` -> ``probe_2.dat`` -> ``probe_3.dat`` instead of
+    overwriting its own staged copy, exactly as the grid and phi staging above
+    overwrite theirs.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return raw
+    if os.sep not in raw and "/" not in raw:
+        # A bare name is returned untouched — but it still CLAIMS that basename,
+        # or a later field holding an absolute path to a different file with the
+        # same basename would be copied on top of the name this one quotes and
+        # both references would resolve to one table. It claims it even when
+        # nothing is there yet: the whole point of a bare name is that the user
+        # manages that file themselves, so the work dir not holding it at
+        # staging time says nothing about the run.
+        taken.add(raw)
+        return raw
+    src = raw if os.path.isabs(raw) else os.path.join(work_dir, raw)
+    if not os.path.isfile(src):
+        return raw
+    stem, ext = os.path.splitext(os.path.basename(src))
+    base = stem + ext
+    n = 2
+    while base in taken:
+        base = f"{stem}_{n}{ext}"
+        n += 1
+    taken.add(base)
+    dst = os.path.join(work_dir, base)
+    if os.path.abspath(src) != os.path.abspath(dst):
+        shutil.copy2(src, dst)
+        log(f"[case] {what} -> {base} (copied into the work dir the solver "
+            f"runs in)")
+    return base
+
+
+def table_refs_for_work_dir(cfg: SolverConfig, work_dir: str,
+                            reserved=(), log=_noop) -> tuple[str, str, str]:
+    """``(comm_map_rel, cfl_rel, probe_rel)``: the three remaining quoted paths
+    as ``input.in`` should quote them, with the files they name staged into the
+    work dir.
+
+    Found in review of #25 (#29), not from a user report: of the nine values
+    ``SolverConfig.generate_input_in`` quotes — and every quoted value in
+    ``input.in`` is a file path — six were resolved before the file was written
+    (grid, bc, the two restart references, the init-condition DLL, the motion
+    DLL) and these three were emitted with ``.strip()`` and nothing else. Two of
+    them are ``"path"`` field specs with a file dialog behind them, so the GUI
+    routinely puts an absolute path on this machine into them, in the same shape
+    #25 was about.
+
+    Per-value rules are :func:`_stage_table`'s. Returned rather than written back
+    onto ``cfg``, for the reason the restart references are: ``cfg`` is the model
+    the ``.hws`` and the pipeline script are saved from, so a work-dir-relative
+    value stored there resolves to nothing from the next, auto-versioned work
+    dir — and the panel keeps its browsable absolute path, the same
+    absolute-in-the-GUI / relative-in-``input.in`` split every other path field
+    has. (This is the opposite of :func:`stage_dll`, which does write back; the
+    difference is whether the value can be re-derived next run.)
+
+    The three fields are named here rather than walked by string, so renaming one
+    is a NameError instead of a staging step that silently stops happening.
+
+    ``reserved`` seeds the collision-safe basenames with what
+    :func:`prepare_case_dir` writes into the work dir itself, so a table cannot
+    land on top of ``input.in``, the phi field or the BC ``.def``.
+    """
+    taken = set(reserved)
+    return (_stage_table(cfg.mpi_comm_map_fn, work_dir, "mpi_comm_map_fn",
+                         taken, log),
+            _stage_table(cfg.cfl_schedule_fn, work_dir, "cfl_schedule_fn",
+                         taken, log),
+            _stage_table(cfg.probe_points_def_fn, work_dir,
+                         "probe_points_def_fn", taken, log))
+
+
 def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str, log=_noop,
                               moved: dict | None = None) -> tuple[str, str]:
     """``(zdump_rel, convg_rel)``: the two restart references as ``input.in``
@@ -298,14 +409,12 @@ def restart_refs_for_work_dir(cfg: SolverConfig, work_dir: str, log=_noop,
     ``case_export`` already relativises exactly these references when it packages
     a case — so an exported case ran while the case it was exported from did not.
 
-    Not every quoted path is covered even now, and it is worth being exact rather
-    than tidy about it: ``mpi_comm_map_fn``, ``cfl_schedule_fn`` and
-    ``probe_points_def_fn`` are still emitted verbatim, so a browsed-to absolute
-    path reaches the solver in the same shape #25 was about. They are out of
-    scope here — nothing has reported them, and each needs its own answer about
-    whether the file should be STAGED into the case rather than referenced out of
-    it (which is what ``case_export`` already does for them). Tracked as **#29**;
-    they are the residue, not an oversight.
+    All nine quoted paths are covered now. The last three —
+    ``mpi_comm_map_fn``, ``cfl_schedule_fn`` and ``probe_points_def_fn`` — were
+    residue this docstring named until #29, and they got the OPPOSITE answer:
+    :func:`table_refs_for_work_dir` copies the file into the work dir and quotes
+    the bare name, because a table is small and a case that does not hold its own
+    inputs is the problem, while the dump below is the largest file in a case.
 
     Relative-path rules are :func:`_work_dir_ref`'s. The dump itself is never
     copied: it is the largest file in a case — which is why ``case_export``
@@ -453,17 +562,29 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
         def_name = os.path.basename(cfg.output_bc_file) + ".def"
         cfg.generate_bc_def(os.path.join(work_dir, def_name))
 
-    # input.in with paths relative to the work dir -- now including the two
-    # restart references, which this function used to leave as the absolute path
-    # the panel put in them (#25).
+    # input.in with paths relative to the work dir -- the two restart references
+    # (#25) and the three tables (#29), which this function used to leave as the
+    # absolute path the panel put in them.
     zdump_rel, convg_rel = restart_refs_for_work_dir(cfg, work_dir, log,
                                                      moved=archived)
+    # The fixed names this function writes into the work dir itself, so a staged
+    # table cannot land on top of one of them. ``.def`` is computed here rather
+    # than inside the bc_definitions branch above because the runner's
+    # stage_bc_def_companion writes the same name when that branch does not.
+    comm_map_rel, cfl_rel, probe_rel = table_refs_for_work_dir(
+        cfg, work_dir,
+        reserved=("input.in", "phi.dat",
+                  os.path.basename(cfg.output_bc_file) + ".def"),
+        log=log)
     input_in_path = os.path.join(work_dir, "input.in")
     cfg.generate_input_in(
         input_in_path,
         grid_rel=f"../grid/{stem}.grid",
         bc_rel=f"../grid/{stem}.bc",
         zdump_rel=zdump_rel,
-        convg_rel=convg_rel)
+        convg_rel=convg_rel,
+        comm_map_rel=comm_map_rel,
+        cfl_rel=cfl_rel,
+        probe_rel=probe_rel)
 
     return work_dir, grid_dir, input_in_path

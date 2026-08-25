@@ -343,21 +343,28 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
     def generate_input_in(self, path: str, grid_rel: str | None = None,
                           bc_rel: str | None = None,
                           zdump_rel: str | None = None,
-                          convg_rel: str | None = None):
+                          convg_rel: str | None = None,
+                          comm_map_rel: str | None = None,
+                          cfl_rel: str | None = None,
+                          probe_rel: str | None = None):
         """Write the solver input.in.
 
-        This is a writer: every quoted value in the file is a path, and the ones
-        that have to be relative to the case work dir are injected by
+        This is a writer: every quoted value in the file is a path, and every one
+        that has to be relative to the case work dir is injected by
         ``solver_case.prepare_case_dir`` rather than computed here — grid_rel /
-        bc_rel (e.g. "../grid/<case>.grid"), and zdump_rel / convg_rel for the
-        two restart references (#25). Each falls back to the field it overrides
-        (output_grid_file / output_bc_file / zdump_fn_restart / convg_fn_restart)
-        so a caller writing an input.in outside a staged case dir is unchanged.
-        The DLL paths arrive already relativised, on the config, because
-        ``stage_dll`` has to copy/compile the binary anyway; mpi_comm_map_fn,
-        cfl_schedule_fn and probe_points_def_fn are emitted verbatim and are the
-        remaining absolute-path exposure (#29, and see
-        solver_case.restart_refs_for_work_dir for why they were left).
+        bc_rel (e.g. "../grid/<case>.grid"), zdump_rel / convg_rel for the two
+        restart references (#25), and comm_map_rel / cfl_rel / probe_rel for the
+        three tables staged into the work dir (#29). Each falls back to the field
+        it overrides (output_grid_file / output_bc_file / zdump_fn_restart /
+        convg_fn_restart / mpi_comm_map_fn / cfl_schedule_fn /
+        probe_points_def_fn) so a caller writing an input.in outside a staged
+        case dir is unchanged. The DLL paths arrive already relativised, on the
+        config, because ``stage_dll`` has to copy/compile the binary anyway.
+
+        Each injected value replaces its field for the EMIT TEST as well as for
+        the value written, which changes nothing: staging never turns a blank
+        field into a name or a name into a blank, so the set of lines this writes
+        is the same either way.
         """
         bl = lambda b: "true" if b else "false"
         grid_path = grid_rel if grid_rel is not None else self.output_grid_file
@@ -366,6 +373,12 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
                  else self.zdump_fn_restart).strip()
         convg = (convg_rel if convg_rel is not None
                  else self.convg_fn_restart).strip()
+        comm_map = (comm_map_rel if comm_map_rel is not None
+                    else self.mpi_comm_map_fn).strip()
+        cfl_sched = (cfl_rel if cfl_rel is not None
+                     else self.cfl_schedule_fn).strip()
+        probe_def = (probe_rel if probe_rel is not None
+                     else self.probe_points_def_fn).strip()
 
         L = []
         a = L.append
@@ -386,8 +399,8 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
         # MPI multi-block options (only meaningful with domain decomposition).
         if self.enable_decompose:
             a(f"   readin_iface_info   \t{bl(self.readin_iface_info)}")
-            if self.mpi_comm_map_fn.strip():
-                a(f'   mpi_comm_map_fn     \t"{self.mpi_comm_map_fn.strip()}"')
+            if comm_map:
+                a(f'   mpi_comm_map_fn     \t"{comm_map}"')
         a("")
         # ── Flow conditions ──
         a(f"   flow_solu_type      \t{self.flow_solu_type}")
@@ -428,8 +441,8 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
         a(f"   constant_cfl      \t{bl(self.constant_cfl)}")
         if (not self.constant_cfl) and self.dt_const.strip():
             a(f"   dt_const          \t{self.dt_const.strip()}")
-        if self.cfl_schedule_fn.strip():
-            a(f'   cfl_schedule_fn     \t"{self.cfl_schedule_fn.strip()}"')
+        if cfl_sched:
+            a(f'   cfl_schedule_fn     \t"{cfl_sched}"')
         a(f"   unsteady_lstep \t{bl(self.unsteady_lstep)}")
         # Incenter reconstruction is undefined for quad/hex cells, so it is forced
         # off for mixed meshes regardless of the UI setting (manual guidance).
@@ -450,8 +463,8 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
             a(f"   tecplot_write_vtx_output  {bl(self.tecplot_write_vtx_output)}")
         if self.calc_time_mean_values:
             a(f"   calc_time_mean_values  \t{bl(self.calc_time_mean_values)}")
-        if self.probe_points_def_fn.strip():
-            a(f'   probe_points_def_fn   \t"{self.probe_points_def_fn.strip()}"')
+        if probe_def:
+            a(f'   probe_points_def_fn   \t"{probe_def}"')
             a(f"   probe_output_skip_niter  {self.probe_output_skip_niter}")
         a("")
 
