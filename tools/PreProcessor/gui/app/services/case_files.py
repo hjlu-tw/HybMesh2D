@@ -40,6 +40,13 @@ _RESTART_RE = re.compile(r"^binDump", re.IGNORECASE)
 # one that has to account for it in a package cannot disagree about its name.
 ARCHIVE_DIR_PREFIX = "prev_"
 
+# The archive's own record of the run it holds, written by ``case_run_note``.
+# Beside ARCHIVE_DIR_PREFIX for that constant's reason: ``case_export`` has to
+# know the name so it does not report it as "not recognised as a solver input",
+# and the module that WRITES it must not become the owner of a name the export
+# reads — that is exactly the one-way import this file was created to undo.
+RUN_NOTE_NAME = "RUN.txt"
+
 # The ``-t`` tag every solver output carries, one per HOST: ``.gui`` for a run
 # driven by the GUI, ``.cli`` for the headless pipeline. Declared here because
 # THREE modules need the same two strings and each used to spell them itself —
@@ -72,6 +79,17 @@ def archive_suffix(name: str) -> str:
     """The ``"prev_001"`` an already-archived name carries, or ""."""
     m = _ARCHIVE_SUFFIX_RE.search(name)
     return m.group(1) if m else ""
+
+
+def strip_archive_suffix(name: str) -> str:
+    """``name`` without its trailing ``.prev_<NNN>``, if it has one.
+
+    Its own function so the dot is counted in ONE place: the suffix travels as a
+    bare ``"prev_001"`` (it is also a directory name), so every reader that
+    stripped it by hand had to remember the separator too.
+    """
+    suffix = archive_suffix(name)
+    return name[:-(len(suffix) + 1)] if suffix else name
 
 
 def archive_name(name: str, suffix: str) -> str:
@@ -121,8 +139,7 @@ def is_run_output(name: str) -> bool:
     would loosen them for every future name; seeing through a suffix this repo
     creates does not.
     """
-    suffix = archive_suffix(name)
-    base = name[:-(len(suffix) + 1)] if suffix else name
+    base = strip_archive_suffix(name)
     return (any(p.search(base) for p in _OUTPUT_PATTERNS)
             or is_restart_dump(base))
 

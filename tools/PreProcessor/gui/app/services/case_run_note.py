@@ -36,9 +36,15 @@ import os
 import re
 from datetime import datetime
 
-from app.services.case_files import QUOTED_RE, human_size, size
+from app.services.case_files import (
+    QUOTED_RE,
+    RUN_NOTE_NAME,
+    human_size,
+    size,
+)
+from app.services.logging_setup import get_logger
 
-RUN_NOTE_NAME = "RUN.txt"
+_log = get_logger(__name__)
 
 # The solver's convergence history: iteration number in column 1, one row per
 # ``print_convg_per_niter`` iterations.
@@ -53,6 +59,11 @@ def convergence_file(archive_dir: str) -> str:
     try:
         names = sorted(os.listdir(archive_dir))
     except OSError:
+        # The caller has just created and filled this directory, so a failure
+        # here is a real surprise rather than an allowed step — but it only
+        # costs the note one field, so it degrades rather than raising.
+        _log.warning("could not list %s, so the archived run's convergence "
+                     "history cannot be found", archive_dir, exc_info=True)
         return ""
     return next((n for n in names if _CONVG_RE.match(n)), "")
 
@@ -68,7 +79,13 @@ def last_iteration(path: str) -> tuple:
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             rows = [ln.split() for ln in f if ln.split()]
+    except FileNotFoundError:
+        # A run that produced no convergence history is a normal thing to meet
+        # (it never reached the first print interval), and -1 says so.
+        return -1, 0
     except OSError:
+        _log.warning("could not read %s, so the archived run's iteration count "
+                     "is reported as unknown", path, exc_info=True)
         return -1, 0
     for row in reversed(rows):
         try:
@@ -78,29 +95,67 @@ def last_iteration(path: str) -> tuple:
     return -1, len(rows)
 
 
-def resumed_from(work_dir: str) -> str:
-    """What the run being archived itself restarted FROM, read out of the
-    ``input.in`` it ran with, or "" for a cold start.
+def convergence_interval(work_dir: str) -> int:
+    """``print_convg_per_niter`` from the ``input.in`` the archived run used, or
+    -1 when it cannot be read.
 
-    That file is still the previous run's at archive time —
-    ``prepare_case_dir`` writes the new one after archiving — so this is the
-    last moment the answer exists. ``generate_input_in`` emits the key only
-    under ``restart``, so its absence IS "cold start" rather than a guess.
+    It is what turns :func:`last_iteration` from a number that is quietly WRONG
+    into a bound that is right: the solver writes one row every N iterations, so
+    a history ending at 1990 means the run reached at least 1990 and fewer than
+    1990 + N (measured: 2000, N = 10). Without N a reader has no way to know how
+    far the file's last row is from the truth, which is the complaint #30 makes
+    about the folder in the first place.
     """
     try:
         with open(os.path.join(work_dir, "input.in"),
                   encoding="utf-8", errors="replace") as f:
             for line in f:
-                if line.split()[:1] == ["zdump_fn_restart"]:
-                    found = QUOTED_RE.findall(line)
-                    return found[0].strip() if found else ""
-    except (OSError, IndexError):
+                parts = line.split()
+                if parts[:1] == ["print_convg_per_niter"] and len(parts) > 1:
+                    return int(parts[1])
+    except (OSError, ValueError):
+        # Already reported by resumed_from, which reads the same file for the
+        # same archive; a second warning would say nothing new.
+        return -1
+    return -1
+
+
+def resumed_from(work_dir: str):
+    """What the run being archived itself restarted FROM, read out of the
+    ``input.in`` it ran with: the quoted value, ``""`` for a cold start, or
+    **None** when the file could not be read at all.
+
+    That file is still the previous run's at archive time —
+    ``prepare_case_dir`` writes the new one after archiving — so this is the
+    last moment the answer exists. ``generate_input_in`` emits the key only
+    under ``restart``, so its absence IS "cold start" rather than a guess, and
+    a work dir with no ``input.in`` has never run one.
+
+    None is a third state for :func:`last_iteration`'s reason, and it matters
+    more here: "we could not tell" rendered as "cold start" would be a POSITIVE
+    FALSE CLAIM in the one field #30 exists to provide, on a case whose history
+    the reader cannot check any other way.
+    """
+    path = os.path.join(work_dir, "input.in")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except FileNotFoundError:
         return ""
+    except OSError:
+        _log.warning("could not read %s, so what the archived run resumed from "
+                     "is reported as unknown rather than as a cold start",
+                     path, exc_info=True)
+        return None
+    for line in text.splitlines():
+        if line.split()[:1] == ["zdump_fn_restart"]:
+            found = QUOTED_RE.findall(line)
+            return found[0].strip() if found else ""
     return ""
 
 
 def write_run_note(archive_dir: str, suffix: str, *, tag: str = "",
-                   came_from: str = "", zone_dump: str = "",
+                   came_from="", zone_dump: str = "", interval: int = -1,
                    now: datetime | None = None) -> str:
     """Write ``RUN.txt`` into ``archive_dir`` and return its path.
 
@@ -123,16 +178,21 @@ def write_run_note(archive_dir: str, suffix: str, *, tag: str = "",
         f"archive: {suffix}",
         f"archived_at: {stamp}",
         f"run_tag: {tag}",
-        f"resumed_from: {came_from or 'cold start'}",
+        f"resumed_from: {_resumed_field(came_from)}",
         f"zone_dump: {zone_dump}",
         f"convergence_file: {convg}",
         f"last_iteration: {iters}",
         f"convergence_rows: {rows}",
+        f"convergence_interval: {interval}",
         f"total_bytes: {total}",
         "",
-        "# The last row of the convergence history, not the solver's own final",
-        "# 'Global Iteration count': it writes one row every",
-        "# print_convg_per_niter iterations, so the run reached at least this.",
+        "# last_iteration is the last ROW of the convergence history, not the",
+        "# solver's own final 'Global Iteration count' — that goes to stdout and",
+        "# is gone by the time a run is archived. The solver writes one row",
+        "# every convergence_interval iterations, so the run reached at least",
+        "# last_iteration and fewer than last_iteration + convergence_interval.",
+        "# -1 in either field means it could not be determined, which is NOT the",
+        "# same as 0 (a real answer, printed for a cold start).",
         "",
         f"files: {len(names)}",
     ]
@@ -142,6 +202,14 @@ def write_run_note(archive_dir: str, suffix: str, *, tag: str = "",
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return path
+
+
+def _resumed_field(came_from) -> str:
+    """``resumed_from``'s three states as three distinct strings — see
+    :func:`resumed_from`. None must not collapse onto "cold start"."""
+    if came_from is None:
+        return "unknown (the previous input.in could not be read)"
+    return came_from or "cold start"
 
 
 def read_run_note(archive_dir: str) -> dict:
@@ -156,7 +224,12 @@ def read_run_note(archive_dir: str) -> dict:
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read()
+    except FileNotFoundError:
+        # An archive written before #30 has no note. Normal, not a failure.
+        return {}
     except OSError:
+        _log.warning("could not read %s, so this archive reads as one with no "
+                     "record even though it has one", path, exc_info=True)
         return {}
     out, files, in_files = {}, [], False
     for raw in text.splitlines():
@@ -169,7 +242,8 @@ def read_run_note(archive_dir: str) -> dict:
         key, _, val = raw.partition(":")
         in_files = key == "files"
         out[key.strip()] = val.strip()
-    for key in ("last_iteration", "convergence_rows", "total_bytes"):
+    for key in ("last_iteration", "convergence_rows", "convergence_interval",
+                "total_bytes"):
         try:
             out[key] = int(out[key])
         except (KeyError, ValueError):

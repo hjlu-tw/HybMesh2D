@@ -55,9 +55,9 @@ from app.services import case_sources
 # Facts about the files in a case directory — shared with ``services/case_archive``,
 # which moves exactly the files ``is_run_output`` names. Imported under the private
 # spellings the call sites here already use.
-from app.services.case_run_note import RUN_NOTE_NAME
 from app.services.case_files import (
     QUOTED_RE as _QUOTED_RE,
+    RUN_NOTE_NAME,
     archive_subdirs as _archive_subdirs,
     human_size,
     is_inside as _is_inside,
@@ -249,6 +249,12 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                 # statement about a file this toolchain wrote itself. It does
                 # not SHIP, for the reason the whole allow-list exists: the
                 # package holds a case's inputs.
+                #
+                # The `sub in archives` guard is load bearing rather than
+                # tidiness, which is why this is not folded into is_run_output:
+                # a RUN.txt sitting in work/ is a file nobody classified, and
+                # classifying it as an output would have ``case_archive`` move
+                # it into the next archive as if a run had produced it.
                 plan.skipped_output.append((rel, _size(src)))
             elif rel in referenced:
                 # ``input.in`` names it and no run produced it, so it is an

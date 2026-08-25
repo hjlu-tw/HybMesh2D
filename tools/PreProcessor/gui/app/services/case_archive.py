@@ -36,7 +36,11 @@ from app.services.case_files import (
     run_tag,
     staged_bare_names,
 )
-from app.services.case_run_note import resumed_from, write_run_note
+from app.services.case_run_note import (
+    convergence_interval,
+    resumed_from,
+    write_run_note,
+)
 
 
 def _noop(_msg: str) -> None:
@@ -107,6 +111,22 @@ def _archived_inodes(work_dir: str) -> dict:
             out.setdefault((st.st_dev, st.st_ino),
                            f"{os.path.basename(d)}/{name}")
     return out
+
+
+def _into_archive(work_dir: str, name: str, dest: str, suffix: str,
+                  moved: dict) -> str:
+    """Move one output into ``dest`` under its archived name; return that path.
+
+    The step both the plain move and the hard-linked zone dump begin with — one
+    spelling, because recording the move in ``moved`` and deriving the archived
+    name are the two things a caller must not forget and the linked path forgot
+    neither by luck.
+    """
+    src = os.path.join(work_dir, name)
+    dst = os.path.join(dest, archive_name(name, suffix))
+    shutil.move(src, dst)
+    moved[os.path.abspath(src)] = os.path.abspath(dst)
+    return dst
 
 
 def _retire(work_dir: str, name: str, inodes: dict, log) -> tuple:
@@ -199,7 +219,12 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
       edited. Sharing the inode is the property wanted here, not a shortcut.
     * **A file that already names an earlier run is not this run's to file.**
       See :func:`_retire` — this is what retires #26's ``prev_002``-holds-
-      ``prev_001``'s-dump wart.
+      ``prev_001``'s-dump wart. Note the precise shape of "an archive is
+      finished": what a later run may not do is add ITS OWN outputs to one.
+      Putting a file the previous version left in ``work/`` into the archive it
+      is *already named for* is the opposite move — it completes that archive
+      rather than mixing two runs — and it is refused the moment the name is
+      taken.
     * **Nothing is created when nothing moves.** An empty or output-free work dir
       (a fresh case, or an auto-versioned one) returns ``{}`` silently, which is
       what lets the caller pass ``archive_prev`` without first asking whether
@@ -250,6 +275,11 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     for name in unknown:
         log(f"[case] work/{name} is not a recognised solver input or output — "
             "left where it is, not archived.")
+    # Read before anything moves: this is the run being archived, and its own
+    # input.in is the only record of what IT resumed from. Above the retire loop
+    # rather than beside its use, because that loop already moves files.
+    came_from = resumed_from(work_dir)
+    interval = convergence_interval(work_dir)
     moved = {}
     for name in retired:
         pair = _retire(work_dir, name, inodes, log)
@@ -264,29 +294,20 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
             "outputs were left in place and THIS run will write over them.")
         return moved
     suffix = os.path.basename(dest)
-    # Read before anything else touches work/: this is the run being archived,
-    # and its own input.in is the only record of what IT resumed from.
-    came_from = resumed_from(work_dir)
     os.makedirs(dest)
-    total, dump_name = 0, ""
+    total = 0
     for name in to_move:
-        src = os.path.join(work_dir, name)
-        arch = archive_name(name, suffix)
-        total += os.path.getsize(src)
-        shutil.move(src, os.path.join(dest, arch))
-        moved[os.path.abspath(src)] = os.path.abspath(os.path.join(dest, arch))
-        if is_restart_dump(name):
-            dump_name = arch
+        total += os.path.getsize(os.path.join(work_dir, name))
+        _into_archive(work_dir, name, dest, suffix, moved)
     if to_move:
         log(f"[case] previous outputs -> work/{suffix}/ "
             f"({len(to_move)} file{'s' if len(to_move) != 1 else ''}, "
             f"{human_size(total)}); this run writes clean files into work/.")
     for name in to_link:
         src = os.path.join(work_dir, name)
-        arch = archive_name(name, suffix)
-        real = os.path.join(dest, arch)
+        real = _into_archive(work_dir, name, dest, suffix, moved)
+        arch = os.path.basename(real)
         link = os.path.join(work_dir, arch)
-        shutil.move(src, real)
         try:
             os.link(real, link)
         except OSError:
@@ -304,12 +325,27 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
                 f"with a hard link at work/{arch} — the solver reads a restart "
                 f"source only by a bare name in its own directory, and one inode "
                 f"means the archive is complete without a second copy.")
+        # The map points at the LINK, not at the file in the archive: the bare
+        # name is the whole reason the link exists (see the docstring).
         moved[os.path.abspath(src)] = os.path.abspath(link)
-        if is_restart_dump(name):
-            dump_name = arch
+    # to_link first, so a case holding two dumps reports the one being resumed
+    # from rather than whichever the directory listing reached first.
+    dump_name = next((archive_name(n, suffix) for n in to_link + to_move
+                      if is_restart_dump(n)), "")
+    if dump_name and not os.path.isfile(os.path.join(dest, dump_name)):
+        # The no-hard-link fallback above put it back in work/, so the archive
+        # does not hold it. Read off the tree rather than from a flag, because a
+        # note claiming a file the folder has not got is the same false-record
+        # failure `resumed_from` returning None exists to avoid.
+        dump_name = ""
     if os.listdir(dest):
-        note = write_run_note(dest, suffix, tag=_run_tag_of(to_move + to_link),
-                              came_from=came_from, zone_dump=dump_name)
+        note = write_run_note(
+            dest, suffix, came_from=came_from, zone_dump=dump_name,
+            interval=interval,
+            # Read off the names BEFORE the rename, since replacing that tag is
+            # what makes the archive uniformly named — RUN.txt is where it
+            # survives.
+            tag=next((run_tag(n) for n in to_move + to_link if run_tag(n)), ""))
         log(f"[case] work/{suffix}/{os.path.basename(note)} records when that "
             f"run happened, what it resumed from and how far it got.")
     else:
@@ -318,12 +354,3 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
         # with a RUN.txt in it would describe an archive that holds nothing.
         os.rmdir(dest)
     return moved
-
-
-def _run_tag_of(names) -> str:
-    """The ``-t`` tag the archived run wrote its files under, or "".
-
-    Read off the names BEFORE they are renamed, since replacing that tag is what
-    makes the archive uniformly named — so ``RUN.txt`` is where it survives.
-    """
-    return next((run_tag(n) for n in names if run_tag(n)), "")

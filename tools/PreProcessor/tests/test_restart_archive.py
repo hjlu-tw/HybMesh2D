@@ -91,8 +91,10 @@ real ``unicones`` binary:
   cold-starting at 0), the restart source **sha256-identical** afterwards, a
   fresh ``binDumpZ.dat.gui`` written beside it, and ``prev_003/`` holding all
   six outputs named ``…prev_003`` plus ``RUN.txt`` reporting
-  ``last_iteration: 1990`` — which is exactly the "records 1990, reached 2000"
-  gap the file's own comment warns about, measured rather than argued;
+  ``last_iteration: 1990`` beside ``convergence_interval: 10`` — i.e. the note's
+  own bound, [1990, 2000), containing the 2000 the solver reported. That is the
+  "records 1990, reached 2000" gap measured rather than argued, and the reason
+  the interval is recorded at all;
 * **run 2** — exit 0, resumed again (``Global Iteration count 4020``), source
   identical, ``prev_004/`` created, ``prev_003/`` byte-for-byte untouched and
   its dump down to ONE link because the stale bare-named link in ``work/`` was
@@ -336,8 +338,10 @@ check(open(os.path.join(work, "prev_002", "binDumpZ.dat.prev_002")).read()
       == "run 2 binDumpZ.dat.gui",
       "4. ...prev_002/ holds run 2's dump, named for run 2")
 check(sorted(os.listdir(arch)) == first_archive,
-      f"4. ...and prev_001/ is byte-for-byte the folder it was: an archive is "
-      f"finished, and a later run has no business adding to it "
+      f"4. ...and prev_001/ is byte-for-byte the folder it was: a later run has "
+      f"no business adding ITS OWN outputs to a finished archive (the one thing "
+      f"that may still land in an old archive is a file already NAMED for it — "
+      f"see 4b, which is the opposite move) "
       f"({sorted(set(os.listdir(arch)) ^ set(first_archive))})")
 check(not any("prev_001" in n
               for n in os.listdir(os.path.join(work, "prev_002"))),
@@ -354,6 +358,42 @@ check(not os.path.exists(os.path.join(work, "binDumpZ.dat.prev_001"))
 check(quoted(in2, "zdump_fn_restart") == "binDumpZ.dat.prev_002",
       f"4. the reference points at the newest one, which is the run being "
       f"resumed ({quoted(in2, 'zdump_fn_restart')!r})")
+
+# ── 4b. a file already NAMED for an earlier archive goes back to it ────────
+# The upgrade path, and the only branch that writes into an existing archive.
+# #26 renamed the resumed dump IN PLACE and left it in work/, so a case that ran
+# under that version still has one; a real file (not a hard link) whose name
+# already says which run it belongs to is filed there rather than into this
+# run's archive, which is what retires the wart instead of moving it along.
+# Covered here because the acceptance run is the only other thing that exercises
+# it, and an acceptance run is not a gate.
+ework, _eo, _ei = seed_previous_run("epsilon")
+os.makedirs(os.path.join(ework, "prev_001"), exist_ok=True)
+w(os.path.join(ework, "prev_001", "unicones.enorm.prev_001"), "10 1e-3\n")
+w(os.path.join(ework, "binDumpZ.dat.gui.prev_001"), "#26 left this here")
+w(os.path.join(ework, "tWall.dat.prev_001"), "mine")
+w(os.path.join(ework, "prev_001", "tWall.dat.prev_001"), "already taken")
+cfg4b, (w4b, _g4b, _in4b) = prep(
+    "epsilon", zdump=os.path.join(ework, "binDumpZ.dat.gui"))
+check(os.path.isfile(os.path.join(ework, "prev_001",
+                                  "binDumpZ.dat.gui.prev_001"))
+      and not os.path.exists(os.path.join(ework, "binDumpZ.dat.gui.prev_001")),
+      f"4b. a #26-era dump left bare in work/ is filed into the archive it is "
+      f"already NAMED for, not into this run's — the name is the claim, and "
+      f"re-tagging it would move that claim onto a run it did not come from "
+      f"({sorted(os.listdir(os.path.join(ework, 'prev_001')))})")
+check(not any("prev_001" in n for n in os.listdir(os.path.join(ework, "prev_002"))),
+      f"4b. ...so this run's archive holds only this run's outputs "
+      f"({sorted(os.listdir(os.path.join(ework, 'prev_002')))})")
+check(os.path.isfile(os.path.join(ework, "tWall.dat.prev_001"))
+      and open(os.path.join(ework, "prev_001",
+                            "tWall.dat.prev_001")).read() == "already taken",
+      "4b. ...and when that archive already holds the name, the file STAYS in "
+      "work/ — an archive is evidence, so a collision is refused rather than "
+      "resolved by overwriting one run's output with another's")
+check(any("tWall.dat.prev_001" in m and "already holds" in m for m in LOG),
+      f"4b. ...named in the log, like every other file this module declines to "
+      f"place ({[m for m in LOG if 'tWall' in m]})")
 
 # ── 2c. a RELATIVE restart reference follows the move as well ──────────────
 # The autofill writes an absolute path, but it is not the only way the field is
@@ -472,18 +512,30 @@ check(note.get("resumed_from") == "cold start",
       f"8. ...and what that run itself resumed from, read out of the input.in it "
       f"ran with — the last moment the answer exists, since prepare_case_dir "
       f"overwrites that file next ({note.get('resumed_from')!r})")
+note2 = case_run_note.read_run_note(os.path.join(work, "prev_002"))
+check(note2.get("convergence_interval") == SolverConfig().print_convg_per_niter
+      and note.get("convergence_interval") == -1,
+      f"8. ...and the INTERVAL the solver printed at, which is what turns a "
+      f"last row into a bound instead of a quietly wrong number: the run "
+      f"reached at least last_iteration and fewer than last_iteration + this. "
+      f"Read from the same input.in as resumed_from, so run 1 — whose work dir "
+      f"held no real input.in — reports -1 rather than a made-up interval "
+      f"({note.get('convergence_interval')!r} then "
+      f"{note2.get('convergence_interval')!r})")
 check(note.get("last_iteration") == 30 and note.get("convergence_rows") == 3,
       f"8. ...and how far it got, from the last row of its own convergence "
       f"history: the solver prints Global Iteration count to stdout, which by "
       f"archive time is gone ({note.get('last_iteration')!r}, "
       f"{note.get('convergence_rows')!r} row(s))")
-check("990" not in open(os.path.join(arch, case_run_note.RUN_NOTE_NAME)).read()
-      and "print_convg_per_niter" in open(
-          os.path.join(arch, case_run_note.RUN_NOTE_NAME)).read(),
-      "8. ...labelled as the last RECORDED iteration rather than the final "
-      "count: the solver writes a row every print_convg_per_niter, so a run "
-      "that reached 1000 leaves 990 in the file, and calling that the final "
-      "count would be a small lie in the one field a user reads")
+note_text = open(os.path.join(arch, case_run_note.RUN_NOTE_NAME)).read()
+check("reached at least" in note_text
+      and "not the" in note_text and "final" in note_text
+      and "-1 in either field" in note_text,
+      "8. ...and the FILE says which number it is: the last recorded row, not "
+      "the solver's final count, bounded above by the interval, with -1 called "
+      "out as 'could not determine' rather than 0. A run that reached 2000 "
+      "leaves 1990 here (measured), so a field labelled 'final' would be a "
+      "small lie in the one number a user reads")
 check(note.get("zone_dump") == "binDumpZ.dat.prev_001",
       f"8. ...and which file in it is the zone dump, so a restart chooser does "
       f"not have to know the naming rule ({note.get('zone_dump')!r})")
@@ -505,6 +557,22 @@ check(case_run_note.last_iteration(os.path.join(tmp, "empty.enorm")) == (-1, 0)
       f"solver really prints 0 for a cold start, so 'we could not tell' must "
       f"not be spelled the same way as 'it had not started' "
       f"({case_run_note.last_iteration(os.path.join(tmp, 'empty.enorm'))})")
+unreadable = os.path.join(tmp, "unreadable")
+w(os.path.join(unreadable, "input.in"), '   zdump_fn_restart  "x.dat"\n')
+os.chmod(os.path.join(unreadable, "input.in"), 0)
+got_unreadable = case_run_note.resumed_from(unreadable)
+os.chmod(os.path.join(unreadable, "input.in"), 0o644)
+check(got_unreadable is None
+      and case_run_note.resumed_from(os.path.join(tmp, "no_work_dir")) == "",
+      f"8. an input.in that cannot be READ reports None, and only a work dir "
+      f"with no input.in at all reports a cold start — 'we could not tell' "
+      f"rendered as 'cold start' would be a POSITIVE FALSE CLAIM in the one "
+      f"field #30 exists to provide, on a case whose history the reader cannot "
+      f"check any other way ({got_unreadable!r})")
+check(case_run_note._resumed_field(None).startswith("unknown")
+      and case_run_note._resumed_field("") == "cold start"
+      and case_run_note._resumed_field("d.dat") == "d.dat",
+      "8. ...and the three states reach the file as three distinct strings")
 check(case_run_note.read_run_note(os.path.join(work, "no_such_archive")) == {},
       "8. and an archive with no note (one written before #30) reads as empty "
       "rather than raising — a reader over a case's history meets both")
