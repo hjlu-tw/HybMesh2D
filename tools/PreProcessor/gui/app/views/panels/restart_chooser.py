@@ -108,6 +108,11 @@ def _row_tip(point) -> str:
     else:
         lines.append("This archive carries no RUN.txt (it predates one), so how "
                      "far that run got is not recorded.")
+    if point.tag:
+        # The run tag is the one thing #30's rename discards and RUN.txt keeps:
+        # which HOST produced that leg, .gui for the GUI and .cli for the
+        # headless pipeline.
+        lines.append(f"Produced by a {point.tag.lstrip('.')} run.")
     if point.resumed_by_last:
         lines.append("The previous run in this case started from here — pick it "
                      "to run the same leg again.")
@@ -129,7 +134,6 @@ class RestartChooser(QWidget):
         self._points: tuple = ()
         self._buttons: list = []
         self._loading = False
-        self._case_root = ""
 
         box = QVBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
@@ -213,7 +217,6 @@ class RestartChooser(QWidget):
         workspace reopened after the case moved on must not offer rows that are
         gone.
         """
-        self._case_root = case_root or ""
         restart, zdump, convg = self.selection() if self._buttons else (False, "", "")
         try:
             points = (rp.list_restart_points(case_root) if case_root else ())

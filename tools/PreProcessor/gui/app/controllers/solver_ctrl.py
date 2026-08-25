@@ -303,9 +303,8 @@ class SolverControllerMixin:
                     "[WARNING] IBM is on without an init-condition DLL; the solid "
                     "phase will start from freestream init.")
 
-        # Restart needs a zone dump to continue from, and it has to BE there —
-        # both questions are about the case's own history, so they are asked of
-        # the module that lists it (#31).
+        # Restart: chosen at all, and still on disk (#31 — asked of the module
+        # that lists a case's history, which is where both answers live).
         errs.extend(restart_points.restart_errors(cfg))
 
         # Domain decomposition implies a real MPI run. Refuse rather than silently
@@ -326,18 +325,6 @@ class SolverControllerMixin:
     # ------------------------------------------------------------------ #
     # Case directory orchestration (D6)
     # ------------------------------------------------------------------ #
-    def _prepare_case_dir(self, cfg: SolverConfig):
-        """Build case/<name>/{work,grid,dll}, stage inputs, rename outputs, write
-        input.in / .def, and compile IBM DLLs. Returns (work_dir, grid_dir,
-        input_in_path). Delegates to the shared, Qt-free solver_case service so
-        the GUI and the headless pipeline runner lay out cases identically.
-
-        Note: the interactive Run path no longer calls this on the GUI thread
-        (it would freeze the window during the g++ DLL compile); the solver
-        worker runs prepare_case_dir itself. Kept for completeness / callers
-        that want a synchronous prepare."""
-        return solver_case.prepare_case_dir(cfg, log=self.log)
-
     def _resolve_case_disposition(self, cfg: SolverConfig):
         """One of ``solver_case.CASE_*`` — which directory this run writes into
         and what happens to what is already there — or None if the user

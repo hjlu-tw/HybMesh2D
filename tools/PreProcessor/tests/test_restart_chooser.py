@@ -120,8 +120,9 @@ def w(path, text=""):
 for ext in (".vrt", ".cel", ".bnd"):
     w(mesh + ext, "mesh")
 
+# `case_root_for` lives in solver_case (which owns a case's layout) and
+# restart_points re-exports it, so ONE patch redirects every caller.
 solver_case.repo_root = lambda: repo
-rp.repo_root = lambda: repo
 
 LOG = []
 
@@ -203,6 +204,10 @@ check(latest is not None
       f"({latest.zdump if latest else None!r})")
 check(latest.convg.endswith("unicones.enorm.gui"),
       f"2. ...paired with the convergence history of the SAME run ({latest.convg!r})")
+check(latest.stamp and latest.stamp[:2] == "20",
+      f"2. ...and WHEN it ran, from the dump's own mtime — an archive records "
+      f"that when its files move and nothing has moved this one yet, so the "
+      f"newest leg would otherwise be the one row with no date ({latest.stamp!r})")
 check(latest.iteration == 990 and latest.interval == 10,
       f"2. ...and its iteration count is the last ROW of that history, with the "
       f"print interval beside it so the number reads as a bound "
@@ -308,7 +313,6 @@ check(any("prev_001" in m and "bare" in m.lower() for m in LOG),
 # ── 8. the widget writes the model ────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication                            # noqa: E402
 from app.views.panels.solver_config_panel import SolverConfigPanel   # noqa: E402
-import app.views.panels.solver_config_sync_mixin as sync_mixin       # noqa: E402
 import app.services.paths as paths_mod                              # noqa: E402
 
 # The last restart archived work/'s outputs into prev_003, so seed one more
@@ -321,7 +325,6 @@ w(os.path.join(work, "input.in"), INPUT_IN + (
 
 _app = QApplication.instance() or QApplication([])
 paths_mod.repo_root = lambda: repo
-sync_mixin.restart_points.repo_root = lambda: repo
 
 panel = SolverConfigPanel()
 cfg = SolverConfig()
@@ -390,8 +393,6 @@ check(chooser._picked().kind == rp.OTHER
 # ── 9. a restart whose source is gone is refused before the solver runs ────
 from app.controllers.solver_ctrl import SolverControllerMixin        # noqa: E402
 import app.controllers.solver_ctrl as solver_ctrl                   # noqa: E402
-
-solver_ctrl.restart_points.repo_root = lambda: repo
 
 
 class _Ctl(SolverControllerMixin):

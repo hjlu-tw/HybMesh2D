@@ -44,13 +44,15 @@ Qt-free, like the rest of the case services.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
+from datetime import datetime
 
 from app.services.case_files import (
     RUN_TAGS,
     archive_subdirs,
     archive_suffix,
     is_restart_dump,
+    run_tag,
 )
 from app.services.case_run_note import (
     convergence_interval,
@@ -58,8 +60,10 @@ from app.services.case_run_note import (
     read_run_note,
     resumed_from,
 )
-from app.services.paths import repo_root
-from app.services.solver_case import sanitize_case_name
+from app.services.logging_setup import get_logger
+from app.services.solver_case import case_root_for, work_dir_of
+
+_log = get_logger(__name__)
 
 #: "we could not tell how far that run got" — never 0, which is a real answer
 #: the solver prints for a cold start (``case_run_note.last_iteration``'s rule,
@@ -95,7 +99,6 @@ class RestartPoint:
     stamp: str = ""                         #: RUN.txt's archived_at
     tag: str = ""                           #: ".gui" / ".cli", when known
     resumed_by_last: bool = False
-    files: tuple = field(default_factory=tuple)
 
     @property
     def selectable(self) -> bool:
@@ -109,20 +112,12 @@ class RestartPoint:
         return self.kind in (COLD, OTHER) or bool(self.zdump)
 
 
-def case_root_for(case_name: str) -> str:
-    """``<repo>/results/solver/<sanitised case>`` — where a case's history lives.
-
-    One spelling: the panel needs it to list the rows, the controller to decide
-    the case disposition, and the validator to resolve a relative reference. It
-    was written out by hand in each.
-    """
-    return os.path.join(repo_root(), "results", "solver",
-                        sanitize_case_name(case_name or "case"))
-
-
-def work_dir_of(case_root: str) -> str:
-    """``<case>/work`` — the directory the solver runs in."""
-    return os.path.join(case_root, "work")
+# ``case_root_for`` / ``work_dir_of`` are re-exported from ``solver_case``, which
+# owns a case's layout — imported above rather than restated here, and named in
+# ``__all__`` so a reader of this module's API still finds them.
+__all__ = ["RestartPoint", "case_root_for", "list_restart_points",
+           "missing_source", "restart_errors", "work_dir_of",
+           "COLD", "LATEST", "ARCHIVE", "OTHER", "UNKNOWN_ITERATION"]
 
 
 def list_restart_points(case_root: str) -> tuple:
@@ -150,15 +145,10 @@ def list_restart_points(case_root: str) -> tuple:
 def missing_source(raw: str, work_dir: str) -> str:
     """The absolute path ``raw`` names when that file is NOT there, else "".
 
-    ``solver_ctrl._validate`` used to check only that the field was non-empty, so
-    a stale path — a case that moved on, a reopened ``.hws``, a hand-typed one —
-    passed validation and died inside ``unicones`` with a message about a derived
-    per-zone filename that names neither the field nor the file. The chooser
-    removes most routes to that state (it can only list files that are there),
-    but "Other file…" and a restored workspace still reach it.
-
-    A blank value is not this function's business: "restart with no source at
-    all" is a different error with its own message.
+    The half of :func:`restart_errors` that is worth asking on its own — see
+    there for why a stale path had to become a GUI error. A blank value is not
+    this function's business: "restart with no source at all" is a different
+    error with its own message.
     """
     raw = (raw or "").strip()
     if not raw:
@@ -245,7 +235,7 @@ def _convg_beside(directory: str, dump: str) -> str:
     dump.
     """
     suffix = archive_suffix(dump)
-    tag = next((t for t in RUN_TAGS if dump.endswith(t)), "")
+    tag = run_tag(dump)
     wanted = _CONVG_STEM + (("." + suffix) if suffix else tag)
     path = os.path.join(directory, wanted)
     if os.path.isfile(path):
@@ -270,20 +260,38 @@ def _latest_point(work: str):
     Its iteration count comes from the convergence history beside it rather than
     from a note, because this leg has not been archived and so has none — the
     same computation ``case_run_note.write_run_note`` performs, on the same file,
-    at the moment the archive is made.
+    at the moment the archive is made. Its timestamp comes from the dump's own
+    mtime for the same reason: an archive's ``archived_at`` is recorded when the
+    files move, and nothing has moved this one yet. Formatted exactly like
+    ``RUN.txt``'s, so a reader comparing rows is comparing one thing.
     """
     dump = _dump_in(work, archived=False)
     if not dump:
         return None
+    path = os.path.abspath(os.path.join(work, dump))
     convg = _convg_beside(work, dump)
     iters = last_iteration(convg)[0] if convg else UNKNOWN_ITERATION
     return RestartPoint(
         kind=LATEST, key=LATEST,
-        zdump=os.path.abspath(os.path.join(work, dump)),
+        zdump=path,
         convg=os.path.abspath(convg) if convg else "",
         iteration=iters,
         interval=convergence_interval(work),
-        tag=next((t for t in RUN_TAGS if dump.endswith(t)), ""))
+        stamp=_mtime_stamp(path),
+        tag=run_tag(dump))
+
+
+def _mtime_stamp(path: str) -> str:
+    """``path``'s mtime in ``RUN.txt``'s ``archived_at`` format, or ""."""
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path)).strftime(
+            "%Y-%m-%d %H:%M:%S")
+    except OSError:
+        # The file was listed a moment ago, so this is a real surprise — but it
+        # costs the row one field, so it degrades rather than raising.
+        _log.warning("could not read the mtime of %s, so this restart point is "
+                     "listed without a date", path, exc_info=True)
+        return ""
 
 
 def _archive_points(case_root: str) -> list:
@@ -315,12 +323,11 @@ def _archive_points(case_root: str) -> list:
             if isinstance(note.get("convergence_interval"), int)
             else UNKNOWN_ITERATION,
             stamp=note.get("archived_at", ""),
-            tag=note.get("run_tag", ""),
-            files=tuple(note.get("files", ()))))
+            tag=note.get("run_tag", "")))
     return out
 
 
-def _last_resumed_basename(work: str) -> str:
+def _last_resumed_basename(work: str) -> str | None:
     """The basename of what the run that last used ``work/`` resumed from, ""
     for a cold start, or None when it cannot be told.
 

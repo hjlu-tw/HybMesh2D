@@ -1,6 +1,6 @@
 """Visibility toggles + model sync for SolverConfigPanel, split out as a mixin
 (behaviour unchanged). Holds the feature-gated form show/hide helpers, the
-the restart chooser's refresh, the preset apply, and the `set_config` / `get_config`
+restart chooser's refresh, the preset apply, and the `set_config` / `get_config`
 read/write bridge between the panel widgets and a SolverConfig. Every method
 references widgets created in the panel's `__init__` / `_build_*` and resolves
 via MRO."""
