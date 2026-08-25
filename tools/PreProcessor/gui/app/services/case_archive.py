@@ -26,11 +26,18 @@ import shutil
 from app.services.case_files import (
     ARCHIVE_DIR_PREFIX,
     WORK_STAGED,
+    archive_name,
+    archive_subdirs,
+    archive_suffix,
     human_size,
+    is_restart_dump,
     is_run_output,
     keep_matches,
+    run_tag,
     staged_bare_names,
 )
+from app.services.case_run_note import resumed_from, write_run_note
+
 
 def _noop(_msg: str) -> None:
     pass
@@ -48,17 +55,18 @@ def next_archive_dir(work_dir: str, tagged=()) -> str:
     exact destruction the archive exists to prevent. So an exhausted counter
     archives NOTHING and says so.
 
-    ``tagged`` are basenames that will be renamed ``<name>.prev_<NNN>`` and left
-    in ``work/`` (see :func:`archive_previous_outputs`). One counter has to clear
-    BOTH, or the directory could be free while the renamed file is not and the
-    rename would clobber the very dump it is protecting.
+    ``tagged`` are basenames the archive will also leave a HARD LINK to directly
+    in ``work/``, under their archived name (see
+    :func:`archive_previous_outputs`). One counter has to clear BOTH, or the
+    directory could be free while the link name is not and creating it would
+    clobber the very dump it is protecting.
     """
     for n in range(1, 1000):
         suffix = f"{ARCHIVE_DIR_PREFIX}{n:03d}"
         candidate = os.path.join(work_dir, suffix)
         if os.path.exists(candidate):
             continue
-        if any(os.path.exists(os.path.join(work_dir, f"{t}.{suffix}"))
+        if any(os.path.exists(os.path.join(work_dir, archive_name(t, suffix)))
                for t in tagged):
             continue
         return candidate
@@ -77,9 +85,77 @@ def next_archive_name(case_root: str) -> str:
         next_archive_dir(os.path.join(case_root, "work")))
 
 
+def _archived_inodes(work_dir: str) -> dict:
+    """``{(st_dev, st_ino): "prev_001/binDumpZ.dat.prev_001"}`` for every file
+    already inside an archive under this work dir.
+
+    By INODE, because that is the question: the zone dump lives in its archive
+    and ``work/`` holds a HARD LINK to it, so "is this work-dir file already
+    archived?" is "does something in an archive share its bytes?" — not "is
+    there a file with the same name over there", which two runs of the same case
+    satisfy by coincidence.
+    """
+    out = {}
+    case_dir = os.path.dirname(os.path.abspath(work_dir))
+    for rel in archive_subdirs(case_dir):
+        d = os.path.join(case_dir, *rel.split("/"))
+        for name in sorted(os.listdir(d)):
+            f = os.path.join(d, name)
+            if not os.path.isfile(f):
+                continue
+            st = os.stat(f)
+            out.setdefault((st.st_dev, st.st_ino),
+                           f"{os.path.basename(d)}/{name}")
+    return out
+
+
+def _retire(work_dir: str, name: str, inodes: dict, log) -> tuple:
+    """Deal with a work-dir output whose name already carries an archive suffix,
+    i.e. one that belongs to a run archived earlier. Returns
+    ``(old_abspath, new_abspath)`` when it moved, else ``()``.
+
+    This is the wart #26 left and #30 retires. There, the dump a restart resumed
+    from was renamed in place and stayed in ``work/``, so on the NEXT restart it
+    was just another output and got archived into ``prev_002/`` — prev_001's dump
+    filed under run 2. Now the real file is already in its own archive and this
+    is only the hard link that made it reachable by a bare name; that job is
+    over, so the link goes and the bytes stay where they belong.
+
+    Two other shapes reach here and neither may be moved blind. A file whose
+    inode is NOT in an archive is a real file — the archive it names exists but
+    something (a copy of the tree, which does not preserve links, or #26's own
+    rename) left the only copy out here — so it is moved into the archive it is
+    already named for, never into this run's. And if that archive cannot take it,
+    it stays and is said out loud: a file this module cannot place is not a file
+    to guess about.
+    """
+    src = os.path.join(work_dir, name)
+    st = os.stat(src)
+    known = inodes.get((st.st_dev, st.st_ino))
+    if known:
+        os.remove(src)
+        log(f"[case] work/{name} was a hard link to {known}, which is where the "
+            f"bytes stay — the link existed so a restart could read the dump by "
+            f"a bare name, and nothing resumes from it now.")
+        return ()
+    suffix = archive_suffix(name)
+    dest = os.path.join(work_dir, suffix)
+    dst = os.path.join(dest, name)
+    if not os.path.isdir(dest) or os.path.exists(dst):
+        log(f"[case] work/{name} belongs to {suffix}, which "
+            + ("already holds a file of that name" if os.path.isdir(dest)
+               else "no longer exists")
+            + " — left where it is rather than filed under this run.")
+        return ()
+    shutil.move(src, dst)
+    log(f"[case] work/{name} -> {suffix}/{name} — it belongs to the run it is "
+        f"named for, not to the one being archived now.")
+    return os.path.abspath(src), os.path.abspath(dst)
+
+
 def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     """Put the previous run's OUTPUTS in ``work_dir`` beyond this run's reach.
-    Returns ``{old_abspath: new_abspath}`` of everything that moved.
+    Returns ``{old_abspath: where_a_reference_should_now_point}``.
 
     This is what makes "continue in the same folder" a safe answer for a restart
     (#26, USER-REPORTED 2026-08-20). Reusing a case directory meant the new run
@@ -90,19 +166,21 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     restart overwrote its own restart point in place (measured on the real
     binary: the source file's checksum changes).
 
-    Most outputs go into a fresh ``work/prev_<NNN>/``. The zone dump named in
-    ``keep_bare`` does NOT: it is renamed **in place** to ``<name>.prev_<NNN>``
-    and stays directly in ``work/``, because the solver can only read a restart
-    source by a bare name in its own cwd. Measured on the real binary, with the
-    dump moved into the subdirectory and ``zdump_fn_restart`` pointing at
-    ``prev_001/binDumpZ.dat.gui``, it derives a per-zone path from the reference
-    — ``binDumpZ.dat.prev_001/binDumpZ.0`` — whose directory does not exist, and
-    the run dies with ``Can't open file``. The rename satisfies both halves at
-    once: bare, so the derivation never happens, and different from the output
-    name, so the run cannot write over it (measured: ``Global Iteration count
-    1000``, i.e. a real resume, with the source file unchanged).
+    Everything moves into a fresh ``work/prev_<NNN>/``, the zone dump included,
+    and every archived file is renamed so it ends in ``.prev_<NNN>``
+    (:func:`~app.services.case_files.archive_name`). The dump named in
+    ``keep_bare`` additionally gets a **hard link** at ``work/<archived name>``,
+    because the solver can only read a restart source by a bare name in its own
+    cwd. Measured on the real binary, with the dump in the subdirectory and
+    ``zdump_fn_restart`` pointing at ``prev_001/binDumpZ.dat.gui``, it derives a
+    per-zone path from the reference — ``binDumpZ.dat.prev_001/binDumpZ.0`` —
+    whose directory does not exist, and the run dies with ``Can't open file``.
+    The link satisfies both halves at once: bare, so the derivation never
+    happens, and different from the output name, so the run cannot write over it
+    (measured: ``Global Iteration count 1000``, i.e. a real resume, with the
+    source file unchanged).
 
-    Four rules:
+    Six rules:
 
     * **An allow-list decides, not a glob.** Only what ``case_files`` classifies
       as produced-by-a-run is touched. The inputs ``prepare_case_dir`` stages
@@ -111,23 +189,39 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
       ``input.in`` quoting them (``case_files.staged_bare_names``), since no list
       can hold a name the user chose. Anything none of that recognises **stays and is
       named in the log** — a file nobody classified is not a file to move blind.
-    * **Move or rename, never copy.** The zone dump is the largest file in a
-      case; copying it doubles the case on every resume and leaves two dumps
-      whose relationship nothing records.
+    * **Move or link, never copy.** The zone dump is the largest file in a case
+      — 10.6 MB in the reported one and hundreds of MB in a real one — so a
+      copy would grow the case on every resume and leave two dumps whose
+      relationship nothing records. The hard link is the one place this repo's
+      "a hard link is not the cheap version of a copy" rule (``case_sources``)
+      flips, and for the reason that rule gives: there the danger is that
+      editing one path rewrites what the case holds, and a zone dump is never
+      edited. Sharing the inode is the property wanted here, not a shortcut.
+    * **A file that already names an earlier run is not this run's to file.**
+      See :func:`_retire` — this is what retires #26's ``prev_002``-holds-
+      ``prev_001``'s-dump wart.
     * **Nothing is created when nothing moves.** An empty or output-free work dir
       (a fresh case, or an auto-versioned one) returns ``{}`` silently, which is
       what lets the caller pass ``archive_prev`` without first asking whether
       there is anything to archive.
     * **One counter clears both names** (see :func:`next_archive_dir`).
+    * **The archive describes itself**, in a ``RUN.txt`` beside the files (see
+      ``services/case_run_note``). It is the one file in there that does NOT end
+      in ``.prev_<NNN>``, deliberately: it is the archive's own record rather
+      than something the run produced, and #30 asks for it by that name.
 
     The returned mapping is how the restart reference follows the file it
-    names: see :func:`~app.services.solver_case.restart_refs_for_work_dir`.
+    names: see :func:`~app.services.solver_case.restart_refs_for_work_dir`. It
+    maps a file's old path to **where a reference to it should now point**,
+    which for the zone dump is the hard link in ``work/`` rather than the real
+    file in the archive — the bare name is the whole reason the link exists.
     """
     if not os.path.isdir(work_dir):
         return {}
     bare = {os.path.abspath(p) for p in keep_bare}
-    to_move, to_tag, unknown = [], [], []
+    to_move, to_link, retired, unknown = [], [], [], []
     staged = staged_bare_names(work_dir)
+    inodes = _archived_inodes(work_dir)
     for name in sorted(os.listdir(work_dir)):
         src = os.path.join(work_dir, name)
         if not os.path.isfile(src):
@@ -139,41 +233,97 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
                 unknown.append(name + "/")
             continue
         if is_run_output(name):
-            (to_tag if os.path.abspath(src) in bare else to_move).append(name)
+            resumed = os.path.abspath(src) in bare
+            if archive_suffix(name):
+                # Already named for the run it came from. Leave it completely
+                # alone when it is the dump THIS run resumes from: it is already
+                # bare, already differs from the name the solver will write, and
+                # re-tagging it would file it under a run it did not come from.
+                if not resumed:
+                    retired.append(name)
+            elif resumed:
+                to_link.append(name)
+            else:
+                to_move.append(name)
         elif not keep_matches(name, WORK_STAGED) and name not in staged:
             unknown.append(name)
     for name in unknown:
         log(f"[case] work/{name} is not a recognised solver input or output — "
             "left where it is, not archived.")
-    if not to_move and not to_tag:
-        return {}
+    moved = {}
+    for name in retired:
+        pair = _retire(work_dir, name, inodes, log)
+        if pair:
+            moved[pair[0]] = pair[1]
+    if not to_move and not to_link:
+        return moved
 
-    dest = next_archive_dir(work_dir, tagged=to_tag)
+    dest = next_archive_dir(work_dir, tagged=to_link)
     if not dest:
         log("[WARNING] work/ already holds 999 archived runs; the previous "
             "outputs were left in place and THIS run will write over them.")
-        return {}
+        return moved
     suffix = os.path.basename(dest)
-    moved, total = {}, 0
-    if to_move:
-        os.makedirs(dest)
+    # Read before anything else touches work/: this is the run being archived,
+    # and its own input.in is the only record of what IT resumed from.
+    came_from = resumed_from(work_dir)
+    os.makedirs(dest)
+    total, dump_name = 0, ""
     for name in to_move:
         src = os.path.join(work_dir, name)
+        arch = archive_name(name, suffix)
         total += os.path.getsize(src)
-        shutil.move(src, os.path.join(dest, name))
-        moved[os.path.abspath(src)] = os.path.abspath(os.path.join(dest, name))
+        shutil.move(src, os.path.join(dest, arch))
+        moved[os.path.abspath(src)] = os.path.abspath(os.path.join(dest, arch))
+        if is_restart_dump(name):
+            dump_name = arch
     if to_move:
         log(f"[case] previous outputs -> work/{suffix}/ "
             f"({len(to_move)} file{'s' if len(to_move) != 1 else ''}, "
             f"{human_size(total)}); this run writes clean files into work/.")
-    for name in to_tag:
+    for name in to_link:
         src = os.path.join(work_dir, name)
-        dst = os.path.join(work_dir, f"{name}.{suffix}")
-        shutil.move(src, dst)
-        moved[os.path.abspath(src)] = os.path.abspath(dst)
-        log(f"[case] the dump this run resumes from -> work/{name}.{suffix} "
-            f"({human_size(os.path.getsize(dst))}); it stays in work/ rather "
-            f"than in {suffix}/ because the solver reads a restart source only "
-            f"by a bare name in its own directory, and it is renamed so this "
-            f"run's own dump cannot land on top of it.")
+        arch = archive_name(name, suffix)
+        real = os.path.join(dest, arch)
+        link = os.path.join(work_dir, arch)
+        shutil.move(src, real)
+        try:
+            os.link(real, link)
+        except OSError:
+            # A filesystem with no hard links (or one refusing this one): the
+            # RESTART matters more than a complete archive, so the dump goes back
+            # out to the bare name the solver requires and the archive is short
+            # one file — said out loud rather than left to be discovered.
+            shutil.move(real, link)
+            log(f"[WARNING] work/ cannot hold a hard link, so the zone dump "
+                f"stays directly in work/{arch} instead of inside {suffix}/. "
+                f"The restart is unaffected; the archive is incomplete.")
+        else:
+            log(f"[case] the dump this run resumes from -> "
+                f"work/{suffix}/{arch} ({human_size(os.path.getsize(real))}), "
+                f"with a hard link at work/{arch} — the solver reads a restart "
+                f"source only by a bare name in its own directory, and one inode "
+                f"means the archive is complete without a second copy.")
+        moved[os.path.abspath(src)] = os.path.abspath(link)
+        if is_restart_dump(name):
+            dump_name = arch
+    if os.listdir(dest):
+        note = write_run_note(dest, suffix, tag=_run_tag_of(to_move + to_link),
+                              came_from=came_from, zone_dump=dump_name)
+        log(f"[case] work/{suffix}/{os.path.basename(note)} records when that "
+            f"run happened, what it resumed from and how far it got.")
+    else:
+        # Only reachable through the no-hard-link fallback above, where the one
+        # file the archive was for went back out to work/. An empty prev_NNN/
+        # with a RUN.txt in it would describe an archive that holds nothing.
+        os.rmdir(dest)
     return moved
+
+
+def _run_tag_of(names) -> str:
+    """The ``-t`` tag the archived run wrote its files under, or "".
+
+    Read off the names BEFORE they are renamed, since replacing that tag is what
+    makes the archive uniformly named — so ``RUN.txt`` is where it survives.
+    """
+    return next((run_tag(n) for n in names if run_tag(n)), "")

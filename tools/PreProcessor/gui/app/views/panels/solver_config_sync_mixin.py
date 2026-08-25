@@ -49,6 +49,7 @@ class SolverConfigSyncMixin:
         if self._loading or not self.restart.isChecked():
             return
         try:
+            from app.services.case_files import RUN_TAGS
             from app.services.solver_case import sanitize_case_name
             from app.utils import repo_root
         except Exception:
@@ -60,7 +61,8 @@ class SolverConfigSyncMixin:
 
         def _pick(stem: str) -> str:
             # GUI solves tag outputs ".gui"; prefer that, fall back to ".cli".
-            for tag in (".gui", ".cli"):
+            # RUN_TAGS in that order, from the one module that declares them.
+            for tag in RUN_TAGS:
                 p = os.path.join(work, stem + tag)
                 if os.path.exists(p):
                     return p

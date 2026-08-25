@@ -40,6 +40,61 @@ _RESTART_RE = re.compile(r"^binDump", re.IGNORECASE)
 # one that has to account for it in a package cannot disagree about its name.
 ARCHIVE_DIR_PREFIX = "prev_"
 
+# The ``-t`` tag every solver output carries, one per HOST: ``.gui`` for a run
+# driven by the GUI, ``.cli`` for the headless pipeline. Declared here because
+# THREE modules need the same two strings and each used to spell them itself —
+# ``solver_ctrl`` and ``pipeline_runner`` PRODUCE them, the restart autofill
+# looks for them, and :func:`archive_name` below has to strip one. A rename rule
+# that strips a tag nobody writes silently does nothing, which is the failure
+# mode a second spelling has here.
+GUI_RUN_TAG = ".gui"
+CLI_RUN_TAG = ".cli"
+RUN_TAGS = (GUI_RUN_TAG, CLI_RUN_TAG)
+
+# ``…prev_001`` at the END of a file name: an archived file says which run it
+# belongs to (#30). Built from ARCHIVE_DIR_PREFIX so the directory's name and the
+# file suffix inside it cannot drift apart.
+_ARCHIVE_SUFFIX_RE = re.compile(
+    r"\.(" + re.escape(ARCHIVE_DIR_PREFIX) + r"\d{3})$")
+
+
+def run_tag(name: str) -> str:
+    """The run tag ``name`` ends in (``".gui"``), or "" — the one piece of
+    information :func:`archive_name` discards, which is why ``RUN.txt`` records
+    it (see ``services/case_run_note``)."""
+    for tag in RUN_TAGS:
+        if name.endswith(tag):
+            return tag
+    return ""
+
+
+def archive_suffix(name: str) -> str:
+    """The ``"prev_001"`` an already-archived name carries, or ""."""
+    m = _ARCHIVE_SUFFIX_RE.search(name)
+    return m.group(1) if m else ""
+
+
+def archive_name(name: str, suffix: str) -> str:
+    """What ``name`` is called once it belongs to the archive ``suffix``.
+
+    ONE naming scheme: every archived file ends in ``.prev_<NNN>`` (#30). #26
+    left two — the zone dump was renamed with the archive's tag while everything
+    moved into the folder kept its run tag verbatim, so one archive read as two.
+    A trailing run tag is REPLACED (``unicones.enorm.gui`` ->
+    ``unicones.enorm.prev_001``) because it is the same slot saying the same kind
+    of thing; a name with no tag is appended to (``fort.11`` ->
+    ``fort.11.prev_001``).
+
+    A name that already carries an archive suffix is returned UNCHANGED: it
+    already says which run it belongs to, and re-tagging it would move that
+    claim onto a run it did not come from.
+    """
+    if archive_suffix(name):
+        return name
+    tag = run_tag(name)
+    return (name[:-len(tag)] if tag else name) + "." + suffix
+
+
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
 # Public: three modules read it — the export planner, "does this run use that
 # file?" and the reference resolver below. It was copied into two of them before
@@ -54,10 +109,22 @@ def is_restart_dump(name: str) -> bool:
 
 
 def is_run_output(name: str) -> bool:
-    """Whether ``name`` is a file a solver run PRODUCES, the zone dump
-    included."""
-    return (any(p.search(name) for p in _OUTPUT_PATTERNS)
-            or is_restart_dump(name))
+    r"""Whether ``name`` is a file a solver run PRODUCES, the zone dump
+    included — and an ARCHIVED one still is.
+
+    The archive suffix is stripped before the patterns are applied, because two
+    of them anchor on the END of the name (``\.plt$``, ``^fort\.\d+$``) and #30's
+    rename moves that end. Without this an archived ``fort.11.prev_001`` reads as
+    "not a recognised solver input or output" — a false statement about a file
+    this toolchain named itself, and the same class of wrong skip line
+    ``case_archive`` already refuses to print. Widening the patterns instead
+    would loosen them for every future name; seeing through a suffix this repo
+    creates does not.
+    """
+    suffix = archive_suffix(name)
+    base = name[:-(len(suffix) + 1)] if suffix else name
+    return (any(p.search(base) for p in _OUTPUT_PATTERNS)
+            or is_restart_dump(base))
 
 
 # What ``solver_case.prepare_case_dir`` stages INTO work/ under a FIXED name:
