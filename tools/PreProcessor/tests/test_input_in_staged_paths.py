@@ -36,8 +36,14 @@ planner on a temp tree:
     something that merely looks valid (#25's rule 4);
  5. two tables with the SAME basename from different directories both travel,
     under distinct names;
- 6. a staged table cannot land on top of the fixed names ``prepare_case_dir``
-    writes into the work dir itself;
+ 6. a staged table cannot land on a file the work dir already means — the
+    fixed names ``prepare_case_dir`` writes (``input.in`` needing its own rule,
+    since it is written AFTER staging and so cannot be seen by an existence
+    check) and a type-11 BC ``.so`` staged in before any table, which the
+    hand-written tuple this replaced did not have. A table NAMED like a run
+    output gets the other answer entirely — referenced as written, out loud —
+    because numbering cannot escape a rule anchored to the name (``^binDump``
+    matches ``binDumpZ.dat_2.gui`` too, which is an infinite loop, measured);
  7. re-running the same case overwrites its own staged copy instead of walking
     ``probe.dat`` -> ``probe_2.dat`` -> ``probe_3.dat``;
  8. ``case_export`` still ships all three and the exported ``input.in`` resolves
@@ -46,6 +52,14 @@ planner on a temp tree:
     ``_WORK_KEEP`` knows, so before the planner learned to see a reference they
     were listed under INCLUDED (by ``_resolve_input_in``) *and* under a SKIPPED
     heading in the same manifest;
+ 8b. and that new "a reference is an input" branch must sit AFTER the output
+    test, not before it. A restart's convergence file is referenced by
+    ``input.in`` and produced by a run, and is not a ``binDump`` so it misses the
+    restart branch — ahead of the output test the branch swallowed it, shipping
+    an output as an input and taking the "deliberately NOT exported" warning with
+    it, since ``declined`` is built from ``skipped_output``. That is a regression
+    this change introduced in code #29 only asked to leave working, found by
+    review rather than by the tests written for the feature;
  9. a restart that archives the previous run's outputs leaves a staged table
     alone AND stops calling it unrecognised — it is an input this toolchain put
     there.
@@ -255,6 +269,43 @@ check("solver" not in open(os.path.join(w6, "input.in")).read().lower()
       or quoted(in6, "grid_fname") is not None,
       "6. ...and work/input.in is still the solver input file it was")
 
+# The reserved set is not a hand-written tuple: it is what case_files says a work
+# dir already MEANS, so it cannot drift from the archive's list the way a restated
+# tuple did. Two names no such tuple had: a type-11 BC .so (stage_bc_dll_paths
+# copies one into work/ BEFORE any table is staged) and a run OUTPUT — the restart
+# dump is left bare in work/ so a resumed run can find it (#26), and copying a
+# table onto it is the destruction that archive exists to prevent.
+so_case_work = os.path.join(repo, "results", "solver", "so_clash", "work")
+w(os.path.join(so_case_work, "bcuser.so"), "THE_RUNS_OWN_BC_DLL")
+w(os.path.join(dir_b, "bcuser.so"), "A_USER_TABLE_THAT_HAPPENS_TO_END_IN_SO")
+cfg6c, (w6c, _g6c, in6c) = prep("so_clash", comm_map="",
+                                cfl=os.path.join(dir_b, "bcuser.so"), probe="",
+                                overwrite=True)
+ref6c = quoted(in6c, "cfl_schedule_fn")
+check(ref6c != "bcuser.so" and not os.path.isabs(ref6c)
+      and open(os.path.join(w6c, "bcuser.so")).read() == "THE_RUNS_OWN_BC_DLL"
+      and open(os.path.join(w6c, ref6c)).read().startswith("A_USER_TABLE"),
+      f"6. a table basenamed like a type-11 BC .so already in work/ is staged "
+      f"BESIDE it — stage_bc_dll_paths copies one in before any table, and no "
+      f"hand-written tuple at the call site had '.so' in it ({ref6c!r})")
+
+# A name this toolchain reads as a RUN OUTPUT gets the other answer, because
+# numbering cannot escape it: ^binDump matches binDumpZ.dat_2.gui too. Copying a
+# table under such a name would have it archived aside by the next restart or
+# reported as a skipped output — so it is referenced as written, and said out loud.
+out_named = os.path.join(dir_b, "binDumpZ.dat.gui")
+w(out_named, "A_TABLE_NAMED_LIKE_A_DUMP")
+warn6 = []
+cfg6d, (w6d, _g6d, in6d) = prep("outname", comm_map="", cfl=out_named, probe="",
+                                log=warn6.append)
+ref6d = quoted(in6d, "cfl_schedule_fn")
+check(ref6d == out_named
+      and not any(n.startswith("binDump") for n in os.listdir(w6d))
+      and any("reads as a file a solver run produces" in x for x in warn6),
+      f"6. a table NAMED like a run output is referenced as written, not copied "
+      f"under a name the archive and the export would both treat as an output — "
+      f"and the run says so ({ref6d!r}, {sorted(os.listdir(w6d))})")
+
 # ── 7. re-running the same case overwrites its own staged copy ─────────────
 w(os.path.join(g1, "tables.grid"), "G")
 w(os.path.join(g1, "tables.bc"), "B")
@@ -291,6 +342,40 @@ for key in KEYS:
     check(ref is not None and os.path.isfile(os.path.join(pkg, "work", ref)),
           f"8. the exported input.in quotes {key} by a name that resolves "
           f"inside the package ({ref!r})")
+
+# ...and the new "a reference is an input" branch must NOT reach a run OUTPUT.
+# The convergence file is referenced by a restart's input.in and is an output by
+# name (^unicones\.), but it is not a binDump, so it misses the restart branch
+# above. Before this check the branch sat ahead of the output test and swallowed
+# it: the file was shipped as an input, and because `declined` is built FROM
+# skipped_output, the "deliberately NOT exported" warning disappeared with it.
+# Found by review; the spec asked only about the three tables.
+out_case = os.path.join(repo, "results", "solver", "outref")
+out_work = os.path.join(out_case, "work")
+w(os.path.join(out_work, "unicones.enorm.gui"), "CONVG")
+w(os.path.join(out_work, "binDumpZ.dat.gui"), "DUMP")
+w(os.path.join(out_case, "grid", "outref.grid"), "G")
+w(os.path.join(out_case, "grid", "outref.bc"), "B")
+cfg8b = SolverConfig()
+cfg8b.case_name = "outref"
+cfg8b.input_vrt_file = mesh + ".vrt"
+cfg8b.input_cel_file = mesh + ".cel"
+cfg8b.input_bnd_file = mesh + ".bnd"
+cfg8b.restart = True
+cfg8b.zdump_fn_restart = os.path.join(out_work, "binDumpZ.dat.gui")
+cfg8b.convg_fn_restart = os.path.join(out_work, "unicones.enorm.gui")
+solver_case.prepare_case_dir(cfg8b, overwrite=True)
+plan8b = case_export.plan_export(out_case, include_restart=False)
+out_skipped = [r for r, _s in plan8b.skipped_output]
+check("work/unicones.enorm.gui" in out_skipped
+      and not plan8b.has("work/unicones.enorm.gui"),
+      f"8. a file that input.in references but that a RUN PRODUCED is still "
+      f"skipped-and-named, not silently packaged as an input — the output test "
+      f"comes first, and `declined` (which carries the 'deliberately NOT "
+      f"exported' warning) is built from that list ({out_skipped})")
+check(any("deliberately NOT exported" in x for x in plan8b.warnings),
+      f"8. ...and the warning that names it survives, which is the half a "
+      f"reference-wins branch quietly removes ({plan8b.warnings})")
 
 # ── 9. an archiving restart leaves a staged table alone, and knows why ─────
 lines = []

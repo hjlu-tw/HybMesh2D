@@ -349,9 +349,9 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
                           probe_rel: str | None = None):
         """Write the solver input.in.
 
-        This is a writer: every quoted value in the file is a path, and every one
-        that has to be relative to the case work dir is injected by
-        ``solver_case.prepare_case_dir`` rather than computed here — grid_rel /
+        This is a writer: every quoted value in the file is a path, and each one
+        is injected by ``solver_case.prepare_case_dir`` (through
+        ``services/case_input_paths``) rather than computed here — grid_rel /
         bc_rel (e.g. "../grid/<case>.grid"), zdump_rel / convg_rel for the two
         restart references (#25), and comm_map_rel / cfl_rel / probe_rel for the
         three tables staged into the work dir (#29). Each falls back to the field

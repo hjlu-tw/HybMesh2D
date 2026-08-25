@@ -25,51 +25,12 @@ import shutil
 # moves — see ``services/case_files``.
 from app.services.case_files import (
     ARCHIVE_DIR_PREFIX,
-    QUOTED_RE,
+    WORK_STAGED,
     human_size,
     is_run_output,
     keep_matches,
+    staged_bare_names,
 )
-
-# What ``solver_case.prepare_case_dir`` stages INTO work/ under a FIXED name:
-# input.in, the BC table, the phase field and a type-11 BC DLL. They are the
-# resumed run's own configuration and must survive the archive, or it restarts
-# into nothing. Its own list rather than the export's ``_WORK_KEEP`` because the
-# two answer different questions — that one is "does this ship in a package?",
-# which has never had to include a staged ``.so``.
-_WORK_STAGED = ({"input.in", "phi.dat"}, (".def", ".so"))
-
-
-def _staged_by_name(work_dir: str) -> set:
-    """Basenames the work dir's own ``input.in`` quotes as files sitting in it.
-
-    The rest of what ``prepare_case_dir`` stages has a fixed name and is in
-    ``_WORK_STAGED``; the three tables it stages for #29 — a CFL schedule, a
-    probe-point list, an MPI comm map — are named by the user, so no list can
-    hold them. ``input.in`` can, and it is the same authority
-    ``case_export_usage`` reads for "is this file an input of THIS run?".
-
-    It is the PREVIOUS run's ``input.in`` at this point, which is the right one:
-    the question being asked is what that run staged. Only a reference resolving
-    to a file directly in ``work_dir`` counts, so an archived restart's
-    ``prev_001/binDumpZ.dat.gui`` is not swept up — and the zone dump in
-    ``work/`` is not either, because :func:`is_run_output` is asked first.
-    """
-    try:
-        with open(os.path.join(work_dir, "input.in"), encoding="utf-8",
-                  errors="replace") as f:
-            text = f.read()
-    except OSError:
-        return set()
-    out = set()
-    for raw in QUOTED_RE.findall(text):
-        ref = raw.strip()
-        if not ref or os.path.isabs(ref) or "/" in ref or os.sep in ref:
-            continue
-        if os.path.isfile(os.path.join(work_dir, ref)):
-            out.add(ref)
-    return out
-
 
 def _noop(_msg: str) -> None:
     pass
@@ -146,9 +107,9 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     * **An allow-list decides, not a glob.** Only what ``case_files`` classifies
       as produced-by-a-run is touched. The inputs ``prepare_case_dir`` stages
       stay, or the resumed run loses its own configuration — the fixed-name ones
-      by ``_WORK_STAGED``, the user-named tables of #29 by the previous
-      ``input.in`` quoting them (:func:`_staged_by_name`), since no list can hold
-      a name the user chose. Anything none of that recognises **stays and is
+      by ``case_files.WORK_STAGED``, the user-named tables of #29 by the previous
+      ``input.in`` quoting them (``case_files.staged_bare_names``), since no list
+      can hold a name the user chose. Anything none of that recognises **stays and is
       named in the log** — a file nobody classified is not a file to move blind.
     * **Move or rename, never copy.** The zone dump is the largest file in a
       case; copying it doubles the case on every resume and leaves two dumps
@@ -166,7 +127,7 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
         return {}
     bare = {os.path.abspath(p) for p in keep_bare}
     to_move, to_tag, unknown = [], [], []
-    staged = _staged_by_name(work_dir)
+    staged = staged_bare_names(work_dir)
     for name in sorted(os.listdir(work_dir)):
         src = os.path.join(work_dir, name)
         if not os.path.isfile(src):
@@ -179,7 +140,7 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
             continue
         if is_run_output(name):
             (to_tag if os.path.abspath(src) in bare else to_move).append(name)
-        elif not keep_matches(name, _WORK_STAGED) and name not in staged:
+        elif not keep_matches(name, WORK_STAGED) and name not in staged:
             unknown.append(name)
     for name in unknown:
         log(f"[case] work/{name} is not a recognised solver input or output — "
