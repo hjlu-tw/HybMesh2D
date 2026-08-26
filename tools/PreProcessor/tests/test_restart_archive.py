@@ -45,7 +45,13 @@ Pinned here, against the real ``prepare_case_dir`` on a temp tree, the real
  8. each archive carries a ``RUN.txt`` recording when that leg ran, the run tag
     the rename discards, what it resumed from and how far it got — and it round
     trips through the reader the next feature will use, rather than being prose
-    only a human can parse.
+    only a human can parse;
+ 9. two runs' outputs in ONE work dir (a headless run reused from the GUI with
+    "Overwrite", then restarted) are REFUSED rather than archived on top of each
+    other — #42, and the only property here that is about what the archive must
+    NOT do. 9b injects the guard's absence and measures the destruction it
+    prevents; 9c is the negative control that a work dir holding one run's
+    outputs still archives exactly as before.
 
 #30 is the finishing work on top of #26 and changed two of the properties above
 rather than adding to them, so the old expectations are gone from this file
@@ -76,6 +82,29 @@ guessable from the file layout:
   from, so before this change every same-folder restart rewrote its own restart
   point (measured: the source file's checksum changes). The issue described that
   as a crash-window risk; it is in fact what happened on every run.
+
+Property 9's own blind spots, named rather than left to be discovered:
+
+* **the mixed-tag work dir is SEEDED, not reached.** The route the issue
+  measured is headless run -> GUI run answering *Overwrite* -> GUI restart, and
+  nothing here drives it; the pre-state is written by hand. What the checks
+  therefore prove is that the archiver refuses the state, not that the state is
+  reachable — reachability was established in the issue and re-derived by
+  reading (the headless pipeline auto-versions and can never land on an occupied
+  case dir, so the GUI's Overwrite is the only door);
+* **the guard protects the ARCHIVE, and the run that follows still overwrites.**
+  A refusing restart carries one of the two tags itself, so it writes over the
+  half of every pair that shares it — including the dump it resumes from. That
+  is #26's hazard reappearing through the door the refusal deliberately leaves
+  open (the issue puts the Overwrite disposition out of scope), and the only
+  thing pinned about it is that the message SAYS so. Nothing here runs the
+  solver;
+* **9b injects by monkeypatching the imported name**, not by mutating source and
+  re-parsing it. That is this file's existing idiom for a behavioural gate (see
+  the 2b negative control) and it removes the exact call the fix added, so the
+  destruction it measures is real; what it does not give is the AST-level
+  "the mutation still parses and really differs" the static gates in this repo
+  perform on their own source.
 
 One genuine residue, measured and out of scope: a reference into ANOTHER case
 dir (#25's ``../../own/work/binDumpZ.dat.gui``, which auto-versioning produces)
@@ -578,6 +607,136 @@ check(case_run_note._resumed_field(None).startswith("unknown")
 check(case_run_note.read_run_note(os.path.join(work, "no_such_archive")) == {},
       "8. and an archive with no note (one written before #30) reads as empty "
       "rather than raising — a reader over a case's history meets both")
+
+# ── 9. two runs' outputs in one work dir: refuse, do not destroy ──────────
+# #42. Every solver output carries a run tag saying which HOST produced it, and
+# archiving REPLACES that tag (#30's one-naming-scheme rule), so `x.cli` and
+# `x.gui` want ONE archived name. The move was unguarded: the second landed on
+# the first and an entire run's field output and convergence history were gone
+# with no message, the survivor decided by directory listing order. Reachable
+# without misuse — run a case headless (.cli), reopen it in the GUI and answer
+# Overwrite (.gui joins it), then restart (a restart archives).
+#
+# The property pinned is what the USER can observe, not the name mapping: the
+# mapping's return value was always right, and the defect is that its caller
+# never asked the question.
+zwork, zoutputs, zinputs = seed_previous_run("zeta")
+cli_twins = ["binDumpZ.dat.cli", "unicones.enorm.cli", "xtecp_sol_allz.dat.cli"]
+for name in cli_twins:
+    w(os.path.join(zwork, name), "headless run: " + name)
+# input.in is left out on purpose: it is the file prepare_case_dir WRITES for
+# the run it is preparing, so it is the one thing in a work dir that is meant to
+# change. Everything else — both runs' outputs and the staged inputs beside them
+# — must come out byte-identical.
+before = {n: open(os.path.join(zwork, n)).read()
+          for n in zoutputs + cli_twins
+          + [i for i in zinputs if i != "input.in"]}
+cfg9, (w9, _g9, in9) = prep("zeta", zdump=os.path.join(zwork, "binDumpZ.dat.gui"))
+
+after = {n: (open(os.path.join(zwork, n)).read()
+             if os.path.isfile(os.path.join(zwork, n)) else None)
+         for n in before}
+check(after == before,
+      f"9. every file of BOTH runs is still where it was, with its own bytes — "
+      f"an archive may not cost a solve, so a collision refuses wholesale "
+      f"rather than moving the pairs that happen not to clash "
+      f"({[n for n in before if after[n] != before[n]]})")
+check(not any(n.startswith("prev_") for n in os.listdir(zwork)),
+      f"9. ...and nothing was half-archived: the check runs BEFORE the first "
+      f"move, so the refusal is a no-op the user can retry after tidying up "
+      f"({sorted(n for n in os.listdir(zwork) if n.startswith('prev_'))})")
+check(any("binDumpZ.dat.cli" in m and "binDumpZ.dat.gui" in m
+          and "binDumpZ.dat.prev_001" in m for m in LOG),
+      f"9. the zone dump is protected by the same rule as everything else — the "
+      f"largest and most irreplaceable file in a case, and the one a restart "
+      f"reads back — and the name the pair WANTED is the concrete one the "
+      f"counter would have given them, not a prev_NNN template: detecting the "
+      f"collision needs no counter (a pair collides under every suffix), but "
+      f"saying which name they fought over does "
+      f"({[m for m in LOG if 'binDump' in m and 'WARNING' in m]})")
+check(any("unicones.enorm.cli" in m and "unicones.enorm.gui" in m for m in LOG),
+      f"9. ...and so is the convergence history, or the record of how far a run "
+      f"got is lost while its field output survives "
+      f"({[m for m in LOG if 'unicones' in m and 'WARNING' in m]})")
+check(any(".gui" in m and ".cli" in m and "tag" in m for m in LOG),
+      f"9. the message says WHY they collided — archiving drops the run tag, "
+      f"which is invisible from the file names alone. A message that only says "
+      f"'collision' leaves the user with nothing to do "
+      f"({[m for m in LOG if 'WARNING' in m]})")
+check(any("nothing was archived" in m and "work/" in m for m in LOG),
+      f"9. ...and what to do about it, in the same user log every other archive "
+      f"decision appears in ({[m for m in LOG if 'nothing was archived' in m]})")
+check(any("writes over" in m and "resuming from" in m for m in LOG),
+      f"9. ...without softening what the refusal leaves behind: the ARCHIVE "
+      f"destroyed nothing, but the run that follows carries one of the two tags "
+      f"and overwrites the half of every pair that shares it — the dump it "
+      f"resumes from included. 'writes beside them' would be the reassuring "
+      f"half-truth this repo keeps `resumed_from`'s None and \"\" apart to "
+      f"avoid ({[m for m in LOG if 'nothing was archived' in m]})")
+check(os.path.isfile(in9) and os.path.abspath(w9) == os.path.abspath(zwork),
+      "9. the run that triggered the archive still makes progress or fails on "
+      "its own terms — a refusal to archive is not a refusal to work (same "
+      "shape as the exhausted-counter refusal, which also returns an empty map "
+      "every caller already handles)")
+
+# Negative control 1: the guard is what saved those files, not something else.
+# Injected by taking the QUESTION away — the shipped code's exact shape — and
+# the same seeded state then really does lose a run's output.
+ywork, youtputs, _yi = seed_previous_run("eta")
+for name in cli_twins:
+    w(os.path.join(ywork, name), "headless run: " + name)
+_real_collisions = case_archive.archive_name_collisions
+case_archive.archive_name_collisions = lambda *a, **k: ()
+try:
+    prep("eta", zdump=os.path.join(ywork, "binDumpZ.dat.gui"))
+finally:
+    case_archive.archive_name_collisions = _real_collisions
+yarch = os.path.join(ywork, "prev_001")
+survivors = [n for n in cli_twins + youtputs
+             if os.path.isfile(os.path.join(ywork, n))
+             or os.path.isfile(os.path.join(yarch, n))]
+check(os.path.isdir(yarch) and not survivors
+      and len(os.listdir(yarch)) < len(youtputs) + len(cli_twins) + 1,
+      f"9b. (injection) with the collision question removed, the archive moves "
+      f"one run's file on top of the other's and {len(youtputs) + len(cli_twins)} "
+      f"files come out as {len(os.listdir(yarch)) - 1} — the destruction this "
+      f"guard exists to refuse, measured rather than argued "
+      f"({sorted(os.listdir(yarch))})")
+
+# Negative control 2: a fix that simply stopped archiving would pass everything
+# above. One run's outputs still archive exactly as they did (checks 1-2 are the
+# full version of this; here it is the CONTRAST that matters).
+twork, toutputs, _ti = seed_previous_run("theta")
+prep("theta", zdump=os.path.join(twork, "binDumpZ.dat.gui"))
+tarch = os.path.join(twork, "prev_001")
+check(os.path.isdir(tarch)
+      and sorted(os.listdir(tarch)) == sorted(
+          [archive_name(n, "prev_001") for n in toutputs]
+          + [case_run_note.RUN_NOTE_NAME]),
+      f"9c. a work dir holding ONE run's outputs still archives normally — the "
+      f"refusal is a collision guard, not a switch that turned archiving off, "
+      f"and a user who has only ever run one host pays nothing "
+      f"({sorted(os.listdir(tarch)) if os.path.isdir(tarch) else 'no archive'})")
+
+# The mapping's own answer, asked directly: the collision is a property of the
+# SET, so it is reported per wanted name with every source that wants it, and a
+# clean set costs one dict build (no stat, no listdir).
+from app.services.case_files import (                             # noqa: E402
+    ARCHIVE_SUFFIX_PLACEHOLDER, archive_name_collisions,
+)
+
+check(archive_name_collisions(
+          ["a.dat.gui", "a.dat.cli", "fort.11", "b.dat.gui"], "prev_001")
+      == (("a.dat.prev_001", ("a.dat.cli", "a.dat.gui")),)
+      and archive_name_collisions(["a.dat.gui", "fort.11"],
+                                  ARCHIVE_SUFFIX_PLACEHOLDER) == (),
+      f"9d. (shape only) the question is answered once over the whole set, "
+      f"naming the wanted name and every source that wants it — a per-move "
+      f"check could only see a collision from one side, by which time the other "
+      f"file has moved. This one pins the mapping's CONTRACT and would have "
+      f"passed on the shipped code, where the function was right and nobody "
+      f"called it; 9/9b are the checks that would have failed "
+      f"({archive_name_collisions(['a.dat.gui', 'a.dat.cli'], 'prev_001')})")
 
 # ── 7. the prompt ──────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication, QMessageBox      # noqa: E402

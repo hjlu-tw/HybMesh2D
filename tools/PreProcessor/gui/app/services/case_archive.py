@@ -25,8 +25,11 @@ import shutil
 # moves — see ``services/case_files``.
 from app.services.case_files import (
     ARCHIVE_DIR_PREFIX,
+    ARCHIVE_SUFFIX_PLACEHOLDER,
+    RUN_TAGS,
     WORK_STAGED,
     archive_name,
+    archive_name_collisions,
     archive_subdirs,
     archive_suffix,
     human_size,
@@ -99,7 +102,7 @@ def archive_notice(case: str, case_root: str) -> str:
     is about to do, naming the concrete directory the counter has already picked
     (``prev_003`` also tells the user this has happened twice).
     """
-    prev = next_archive_name(case_root) or "prev_NNN"
+    prev = next_archive_name(case_root) or ARCHIVE_SUFFIX_PLACEHOLDER
     return (f"[case] restarting in '{case}': the previous run's outputs move to "
             f"work/{prev}/, each renamed to end in .{prev}, and work/ keeps a "
             f"link to the dump this run resumes from — the solver reads a "
@@ -189,6 +192,35 @@ def _retire(work_dir: str, name: str, inodes: dict, log) -> tuple:
     log(f"[case] work/{name} -> {suffix}/{name} — it belongs to the run it is "
         f"named for, not to the one being archived now.")
     return os.path.abspath(src), os.path.abspath(dst)
+
+
+def _report_collision(clash, log) -> None:
+    """Say which files wanted one archived name, and why they did.
+
+    A message that only says "collision" leaves the user with nothing to do, so
+    it names both files of every pair, the name they both wanted, and the reason
+    they wanted it — that archiving REPLACES the run tag, which is the whole
+    point of #30's one-naming-scheme rule and is invisible from the file names
+    alone. The last line is what makes it actionable, and it does not soften
+    what a refusal leaves behind: nothing was destroyed by the ARCHIVE, but the
+    run that follows carries one of the two tags and so writes over the half of
+    every pair that shares it — the same claim the exhausted-counter refusal
+    makes about the files it declines to move, for the same reason (a
+    reassuring-but-not-quite-true line is the failure class ``resumed_from``
+    keeps None and "" apart to avoid).
+    """
+    for wanted, names in clash:
+        log(f"[WARNING] work/ holds {len(names)} files that archiving would "
+            f"give ONE name: {', '.join(names)} -> {wanted}. Archiving replaces "
+            f"a run's tag ({'/'.join(RUN_TAGS)}, saying which host produced the "
+            f"file) with the archive's, so two runs' outputs want the same "
+            f"archived name.")
+    log("[WARNING] nothing was archived and nothing was moved — every file is "
+        "still where it was, which is what makes this recoverable. Move or "
+        "rename one of each pair out of work/ and restart again. THIS run "
+        "carries one of those tags itself, so until then it writes over the "
+        "half of every pair that shares it — the dump it is resuming from "
+        "included.")
 
 
 def bare_link_for_archived_dump(work_dir: str, resolved: str,
@@ -282,7 +314,7 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     (measured: ``Global Iteration count 1000``, i.e. a real resume, with the
     source file unchanged).
 
-    Six rules:
+    Seven rules:
 
     * **An allow-list decides, not a glob.** Only what ``case_files`` classifies
       as produced-by-a-run is touched. The inputs ``prepare_case_dir`` stages
@@ -307,6 +339,19 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
       is *already named for* is the opposite move — it completes that archive
       rather than mixing two runs — and it is refused the moment the name is
       taken.
+    * **Two files that want ONE archived name are REFUSED, wholesale.** The
+      rename above replaces a run's tag, so ``xtecp_sol_allz.dat.cli`` and
+      ``xtecp_sol_allz.dat.gui`` — the same output of one case run by the two
+      hosts, which a work dir holds after a headless run is reused from the GUI
+      with "Overwrite" — both want ``xtecp_sol_allz.dat.prev_001``, and the
+      second move landed on the first: a whole run's field output and
+      convergence history destroyed with no message (#42, and which of the two
+      survived was decided by directory listing order). Asked once over the set
+      about to move (``case_files.archive_name_collisions``) and refused BEFORE
+      anything moves, so a refusal is a no-op rather than a half-archive: same
+      answer, and the same reason, as the exhausted counter below. The run then
+      proceeds on its own terms with every file still on disk.
+
     * **Nothing is created when nothing moves.** An empty or output-free work dir
       (a fresh case, or an auto-versioned one) returns ``{}`` silently, which is
       what lets the caller pass ``archive_prev`` without first asking whether
@@ -357,6 +402,16 @@ def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
     for name in unknown:
         log(f"[case] work/{name} is not a recognised solver input or output — "
             "left where it is, not archived.")
+    # Two names collide under EVERY suffix or none — it is the same suffix for
+    # both — so detecting one costs a dict build and no directory scan, which is
+    # what keeps the common case free. Naming the archive they wanted DOES cost
+    # the counter, so it is asked once a refusal is certain and never otherwise.
+    if archive_name_collisions(to_move + to_link, ARCHIVE_SUFFIX_PLACEHOLDER):
+        wanted = os.path.basename(next_archive_dir(work_dir, tagged=to_link))
+        _report_collision(
+            archive_name_collisions(to_move + to_link,
+                                    wanted or ARCHIVE_SUFFIX_PLACEHOLDER), log)
+        return {}
     # Read before anything moves: this is the run being archived, and its own
     # input.in is the only record of what IT resumed from. Above the retire loop
     # rather than beside its use, because that loop already moves files.

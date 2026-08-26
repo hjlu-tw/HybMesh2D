@@ -40,6 +40,13 @@ _RESTART_RE = re.compile(r"^binDump", re.IGNORECASE)
 # one that has to account for it in a package cannot disagree about its name.
 ARCHIVE_DIR_PREFIX = "prev_"
 
+# The suffix to write when an archive has not been NUMBERED yet — the counter has
+# not run, or it is exhausted. Beside ARCHIVE_DIR_PREFIX for that constant's own
+# reason: ``case_archive`` spells it in two unrelated messages (the notice it
+# gives before archiving and the collision it refuses), and a second literal is
+# how the directory's name and the name promised for it drift apart.
+ARCHIVE_SUFFIX_PLACEHOLDER = ARCHIVE_DIR_PREFIX + "NNN"
+
 # The archive's own record of the run it holds, written by ``case_run_note``.
 # Beside ARCHIVE_DIR_PREFIX for that constant's reason: ``case_export`` has to
 # know the name so it does not report it as "not recognised as a solver input",
@@ -123,6 +130,39 @@ def archive_name(name: str, suffix: str) -> str:
     if archive_suffix(name):
         return name
     return strip_run_tag(name) + "." + suffix
+
+
+def archive_name_collisions(names, suffix: str) -> tuple:
+    """``((archived_name, (src, src, …)), …)`` for every archived name that
+    MORE THAN ONE of ``names`` wants — the question ":func:`archive_name` is
+    not injective, so is it injective over THIS set?".
+
+    It is not injective by design: the run tag is the slot the archive suffix
+    replaces (#30), so ``xtecp_sol_allz.dat.gui`` and ``xtecp_sol_allz.dat.cli``
+    — the same output of the same case run by the two different hosts — both
+    want ``xtecp_sol_allz.dat.prev_001``. A work dir holds both after a headless
+    run is reused from the GUI with "Overwrite", and the archive that followed
+    moved one on top of the other and destroyed a whole run's output in silence
+    (#42).
+
+    Here rather than at the move site because this is a question about the
+    mapping, and the mapping lives here: one function owns "what is this file
+    called once it is archived", so one function answers "do two of these want
+    the same name". Asked once over the whole set — a per-move check could only
+    ever see the collision from one side, and by then the other file has already
+    been moved.
+
+    ``suffix`` is the archive the names are headed for; pass
+    :data:`ARCHIVE_SUFFIX_PLACEHOLDER` when it has not been picked yet, which is
+    the normal case since the collision is refused BEFORE the counter runs. It
+    changes only what the pair is called in the message: two names collide under
+    every suffix or none, because it is the same suffix for both.
+    """
+    groups = {}
+    for name in names:
+        groups.setdefault(archive_name(name, suffix), []).append(name)
+    return tuple((k, tuple(sorted(v)))
+                 for k, v in sorted(groups.items()) if len(v) > 1)
 
 
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
