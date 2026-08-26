@@ -75,6 +75,19 @@ def run_tag(name: str) -> str:
     return ""
 
 
+def strip_run_tag(name: str) -> str:
+    """``name`` without its trailing run tag, if it has one.
+
+    The counterpart of :func:`run_tag`, in one place because two callers strip
+    the same slot: :func:`archive_name` replaces it with the archive suffix, and
+    ``services/result_legs`` normalises a result file's name to the stem its
+    other legs carry it under (``xtecp_sol_allz.dat.gui`` and
+    ``xtecp_sol_allz.dat.prev_001`` are the same output of two runs).
+    """
+    tag = run_tag(name)
+    return name[:-len(tag)] if tag else name
+
+
 def archive_suffix(name: str) -> str:
     """The ``"prev_001"`` an already-archived name carries, or ""."""
     m = _ARCHIVE_SUFFIX_RE.search(name)
@@ -109,8 +122,7 @@ def archive_name(name: str, suffix: str) -> str:
     """
     if archive_suffix(name):
         return name
-    tag = run_tag(name)
-    return (name[:-len(tag)] if tag else name) + "." + suffix
+    return strip_run_tag(name) + "." + suffix
 
 
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).
@@ -158,6 +170,28 @@ def keep_matches(name: str, keep) -> bool:
     """``name`` against a ``(exact_names, suffixes)`` allow-list."""
     exact, suffixes = keep
     return name in exact or name.endswith(suffixes)
+
+
+def newest_first(directory: str, names) -> list:
+    """``names`` sorted newest-mtime first, ties broken by :data:`RUN_TAGS` order
+    then by name.
+
+    "Which of these is the current one?" is asked of two different kinds of file
+    in the same directory — the zone dump (``restart_points``) and the Tecplot
+    field output (``result_legs``) — and both want the same answer for the same
+    reason: a work dir can hold a ``.gui`` and a ``.cli`` file of the same age,
+    and the tag order is what makes the choice reproducible rather than
+    filesystem-dependent. It was written out twice before it was written here.
+    """
+    def key(name):
+        try:
+            mtime = os.path.getmtime(os.path.join(directory, name))
+        except OSError:
+            mtime = 0.0
+        tag = next((i for i, t in enumerate(RUN_TAGS) if name.endswith(t)),
+                   len(RUN_TAGS))
+        return (-mtime, tag, name)
+    return sorted(names, key=key)
 
 
 def size(path: str) -> int:

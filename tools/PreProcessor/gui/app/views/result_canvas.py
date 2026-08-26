@@ -345,7 +345,12 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             # a panel showing their numbers has to be refreshed.
             seeded = not self._clim_auto and manual is None
             if seeded:
-                manual = self.remember_clim(var, dmin, dmax)
+                # The basis is the frame on screen for a single file (#24) and
+                # the WHOLE SERIES for a restarted solve (#32) — see
+                # ``series_seed_range``. Either way it is remembered, which is
+                # what stops playback re-seeding and drifting.
+                span = self.series_seed_range(var)
+                manual = self.remember_clim(var, *(span if span else (dmin, dmax)))
             if manual is not None:
                 vmin, vmax = manual
             elif locked is not None:

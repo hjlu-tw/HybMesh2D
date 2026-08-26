@@ -178,8 +178,20 @@ class ResultCanvasControlsMixin:
         lists ONLY the chosen kind. Item data is the variable CODE. Raw fields
         show their symbol only (no '— description'); derived keep the full label
         to stay discoverable. The Kind selector is hidden when nothing derived."""
-        self._base_vars = list(result.base_scalar_variables())
-        self._derived_vars = list(result.derived_scalar_variables())
+        allowed = self._series_variables()
+        if allowed is None:
+            self._base_vars = list(result.base_scalar_variables())
+            self._derived_vars = list(result.derived_scalar_variables())
+        else:
+            # A restarted solve's legs may not carry the same variables (#32), and a
+            # variable only some frames have would blank — or change meaning — at
+            # every boundary that lacks it. The list is therefore the INTERSECTION,
+            # and the derived quantities are recomputed from THAT set rather than
+            # from this frame's, so a derived field cannot outlive its inputs either.
+            self._base_vars = [v for v in result.base_scalar_variables()
+                               if v in allowed]
+            self._derived_vars = [d for d in result.derived_from_names(allowed)
+                                  if d not in self._base_vars]
         has_d = bool(self._derived_vars)
         self.kind_combo.setVisible(has_d)
         self.kind_label.setVisible(has_d)
@@ -187,6 +199,18 @@ class ResultCanvasControlsMixin:
             with block_signals(self.kind_combo):
                 self.kind_combo.setCurrentIndex(0)
         self._fill_var_combo_for_kind()
+
+    def _series_variables(self):
+        """The variables every frame of the loaded series can render, or None.
+
+        None for a single-file series — its intersection is its own variable list,
+        so filtering would be a no-op, and saying so here is what keeps the
+        one-file path provably unchanged by #32.
+        """
+        series = getattr(self, "_series", None)
+        if series is None or series.n_files < 2:
+            return None
+        return set(series.variables)
 
     def _fill_var_combo_for_kind(self):
         """Repopulate `var_combo` with the variables of the currently selected

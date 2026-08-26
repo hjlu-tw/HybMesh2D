@@ -53,6 +53,10 @@ _CONVG_RE = re.compile(r"^unicones\.enorm")
 _HEADER = ("# HybMesh solver run archive — the run whose outputs this folder "
            "holds.")
 
+#: How a run's time is written in a note, and read back off a file's mtime for a
+#: leg that has not been archived yet. One spelling, so the two are comparable.
+_STAMP_FMT = "%Y-%m-%d %H:%M:%S"
+
 
 def convergence_file(archive_dir: str) -> str:
     """The archived convergence history's basename, or ""."""
@@ -154,6 +158,37 @@ def resumed_from(work_dir: str):
     return ""
 
 
+def mtime_stamp(path: str) -> str:
+    """``path``'s mtime in :func:`write_run_note`'s ``archived_at`` format, or "".
+
+    Here because THIS module owns that format. Two callers need it for a leg that
+    has not been archived and so has no note — ``restart_points`` for the live
+    dump, ``result_legs`` for the live field output — and a reader comparing an
+    archived row against a live one is then comparing one thing.
+    """
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path)).strftime(
+            _STAMP_FMT)
+    except OSError:
+        # The file was listed a moment ago, so this is a real surprise — but it
+        # costs the row one field, so it degrades rather than raising.
+        _log.warning("could not read the mtime of %s, so this run is listed "
+                     "without a date", path, exc_info=True)
+        return ""
+
+
+def note_int(note: dict, key: str, default: int = -1) -> int:
+    """An integer field of a note, or ``default``.
+
+    :func:`read_run_note` already coerces the numeric fields, but a note that is
+    missing (a pre-#30 archive) or whose field did not parse leaves a non-int
+    there — so every caller wrote the same ``isinstance`` guard beside the same
+    ``.get``. One guard, in the module that decides what a note's fields mean.
+    """
+    val = note.get(key, default)
+    return val if isinstance(val, int) else default
+
+
 def write_run_note(archive_dir: str, suffix: str, *, tag: str = "",
                    came_from="", zone_dump: str = "", interval: int = -1,
                    now: datetime | None = None) -> str:
@@ -165,7 +200,7 @@ def write_run_note(archive_dir: str, suffix: str, *, tag: str = "",
     holds a hard link to it, which is what keeps the archive complete without a
     second copy of the largest file in the case).
     """
-    stamp = (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+    stamp = (now or datetime.now()).strftime(_STAMP_FMT)
     convg = convergence_file(archive_dir)
     iters, rows = (last_iteration(os.path.join(archive_dir, convg))
                    if convg else (-1, 0))

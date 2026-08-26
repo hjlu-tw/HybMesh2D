@@ -45,18 +45,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, replace
-from datetime import datetime
 
 from app.services.case_files import (
-    RUN_TAGS,
     archive_subdirs,
     archive_suffix,
     is_restart_dump,
+    newest_first,
     run_tag,
 )
 from app.services.case_run_note import (
     convergence_interval,
     last_iteration,
+    mtime_stamp,
+    note_int,
     read_run_note,
     resumed_from,
 )
@@ -115,8 +116,9 @@ class RestartPoint:
 # ``case_root_for`` / ``work_dir_of`` are re-exported from ``solver_case``, which
 # owns a case's layout — imported above rather than restated here, and named in
 # ``__all__`` so a reader of this module's API still finds them.
-__all__ = ["RestartPoint", "case_root_for", "list_restart_points",
-           "missing_source", "restart_errors", "work_dir_of",
+__all__ = ["RestartPoint", "case_root_for", "convg_beside",
+           "list_restart_points", "missing_source", "restart_errors",
+           "work_dir_of",
            "COLD", "LATEST", "ARCHIVE", "OTHER", "UNKNOWN_ITERATION"]
 
 
@@ -216,26 +218,26 @@ def _dump_in(directory: str, archived: bool) -> str:
     # both a .gui and a .cli dump of the same age answers the way the retired
     # autofill did. Only ONE row is offered for work/; a second dump there is
     # reachable through "Other file…", which is what that escape is for.
-    def key(name):
-        try:
-            mtime = os.path.getmtime(os.path.join(directory, name))
-        except OSError:
-            mtime = 0.0
-        tag = next((i for i, t in enumerate(RUN_TAGS) if name.endswith(t)),
-                   len(RUN_TAGS))
-        return (-mtime, tag, name)
-    return sorted(cands, key=key)[0]
+    # ``case_files.newest_first`` owns that rule: ``result_legs`` asks the same
+    # question about the Tecplot field output beside these dumps (#32).
+    return newest_first(directory, cands)[0]
 
 
-def _convg_beside(directory: str, dump: str) -> str:
-    """The convergence history that belongs with ``dump``, or "".
+def convg_beside(directory: str, name: str) -> str:
+    """The convergence history that belongs with the file ``name``, or "".
 
     Same tag / same archive suffix, so a work dir holding a ``.gui`` and a
     ``.cli`` leg does not report one run's iteration count against the other's
     dump.
+
+    Public because it is not a question about DUMPS: ``services/result_legs``
+    asks it about a leg's *Tecplot result* file, which carries the same
+    ``.gui`` / ``.prev_001`` slot for the same reason. One answer to "how far did
+    the run that produced this file get?", rather than a second copy of the
+    tag-matching rule in the module that plays the legs back.
     """
-    suffix = archive_suffix(dump)
-    tag = run_tag(dump)
+    suffix = archive_suffix(name)
+    tag = run_tag(name)
     wanted = _CONVG_STEM + (("." + suffix) if suffix else tag)
     path = os.path.join(directory, wanted)
     if os.path.isfile(path):
@@ -269,7 +271,7 @@ def _latest_point(work: str):
     if not dump:
         return None
     path = os.path.abspath(os.path.join(work, dump))
-    convg = _convg_beside(work, dump)
+    convg = convg_beside(work, dump)
     iters = last_iteration(convg)[0] if convg else UNKNOWN_ITERATION
     return RestartPoint(
         kind=LATEST, key=LATEST,
@@ -277,21 +279,8 @@ def _latest_point(work: str):
         convg=os.path.abspath(convg) if convg else "",
         iteration=iters,
         interval=convergence_interval(work),
-        stamp=_mtime_stamp(path),
+        stamp=mtime_stamp(path),
         tag=run_tag(dump))
-
-
-def _mtime_stamp(path: str) -> str:
-    """``path``'s mtime in ``RUN.txt``'s ``archived_at`` format, or ""."""
-    try:
-        return datetime.fromtimestamp(os.path.getmtime(path)).strftime(
-            "%Y-%m-%d %H:%M:%S")
-    except OSError:
-        # The file was listed a moment ago, so this is a real surprise — but it
-        # costs the row one field, so it degrades rather than raising.
-        _log.warning("could not read the mtime of %s, so this restart point is "
-                     "listed without a date", path, exc_info=True)
-        return ""
 
 
 def _archive_points(case_root: str) -> list:
@@ -312,16 +301,13 @@ def _archive_points(case_root: str) -> list:
             dump = _dump_in(d, archived=True)
         convg = note.get("convergence_file") or ""
         if not convg or not os.path.isfile(os.path.join(d, convg)):
-            convg = os.path.basename(_convg_beside(d, dump or ""))
-        iters = note.get("last_iteration", UNKNOWN_ITERATION)
+            convg = os.path.basename(convg_beside(d, dump or ""))
         out.append(RestartPoint(
             kind=ARCHIVE, key=os.path.basename(d),
             zdump=os.path.abspath(os.path.join(d, dump)) if dump else "",
             convg=os.path.abspath(os.path.join(d, convg)) if convg else "",
-            iteration=iters if isinstance(iters, int) else UNKNOWN_ITERATION,
-            interval=note.get("convergence_interval", UNKNOWN_ITERATION)
-            if isinstance(note.get("convergence_interval"), int)
-            else UNKNOWN_ITERATION,
+            iteration=note_int(note, "last_iteration", UNKNOWN_ITERATION),
+            interval=note_int(note, "convergence_interval", UNKNOWN_ITERATION),
             stamp=note.get("archived_at", ""),
             tag=note.get("run_tag", "")))
     return out
