@@ -27,12 +27,21 @@ reads ``RUN.txt``); this file is the control. Four things about it are deliberat
   case dir, which #25 supports — is still reachable, and a config restored from a
   ``.hws`` whose path is not in this case's history lands here rather than being
   silently rewritten to something that merely looks valid.
-* **The iteration count is shown as a BOUND.** ``RUN.txt`` records the last ROW
-  of a convergence history, and the solver writes one every
-  ``print_convg_per_niter`` iterations, so a run that reached 2000 leaves 1990 in
-  the file (#30, measured). Printing 1990 as the final count would be a small lie
-  in the one field the user reads, so the row says ``1990+`` and the tooltip says
-  what that means.
+* **The iteration count is the count the SOLVER PRINTED**, and this file does
+  not compute it: ``point.span`` comes from ``case_run_note.iteration_span``, so
+  this window and the Results leg list cannot describe one archive differently.
+  A row reads ``iteration 2000``.
+
+  **That is a REVERSAL** (#43). The first version of this file rendered it as the
+  bound ``1990+``, on the argument that naming 2000 would be a fabrication, and
+  recorded that as a deliberate departure from #31's own specification — which
+  had asked for a bare ``iteration 2000``. The specification was right: the
+  solver writes a row every ``print_convg_per_niter`` iterations and none for the
+  final one, so ``1990 + 10`` recovers 2000 exactly (measured against the real
+  binary for both #26 and #30). What survives of the caveat is that an
+  INTERRUPTED run got no further than the printed count, which makes the figure
+  an upper bound — that, and whether it was recorded or recomputed, is what the
+  tooltip is for.
 """
 from __future__ import annotations
 
@@ -67,11 +76,12 @@ _TITLES = {
 
 
 def _iteration_text(point) -> str:
-    """``"iteration 1990+"`` — a bound, never a final count (see the module
-    docstring), and "iteration unknown" when the archive predates ``RUN.txt``."""
-    if point.iteration == rp.UNKNOWN_ITERATION:
+    """``"iteration 2000"`` — the count the solver printed (see the module
+    docstring), and "iteration unknown" only when neither the archive's record nor
+    its convergence history can supply one."""
+    if not point.span.known:
         return "iteration unknown"
-    return f"iteration {point.iteration}+"
+    return f"iteration {point.span.end}"
 
 
 def _row_text(point) -> str:
@@ -89,6 +99,29 @@ def _row_text(point) -> str:
     return "   ".join(bits)
 
 
+def _span_tip(span) -> str:
+    """Where the row's iteration count came from, and what it is not.
+
+    Both caveats, because they are different questions and a user is entitled to
+    each (#43): whether the figure was RECORDED in the archive's ``RUN.txt`` or
+    RECOMPUTED from its convergence history, and that an interrupted run makes it
+    an upper bound rather than an exact count. The arithmetic is spelled out
+    because it is the thing #30 and #31 got wrong, and a reader meeting a
+    suspiciously round number should be able to check it.
+    """
+    if not span.known:
+        return ("Neither a RUN.txt record nor a readable convergence history, so "
+                "how far that run got cannot be told.")
+    source = ("recorded in this archive's RUN.txt" if span.recorded
+              else "recomputed from this archive's own convergence history")
+    return (f"That run reached iteration {span.end} — its last convergence row is "
+            f"{span.last_row} and the solver prints one every {span.interval} "
+            f"iterations, writing none for the final one ({span.last_row} + "
+            f"{span.interval} = {span.end}; last row {source}).\n"
+            "An upper bound: a run interrupted part-way through an interval got "
+            "no further than this.")
+
+
 def _row_tip(point) -> str:
     if point.kind == rp.OTHER:
         return ("Restart from a dump this case does not hold — one in another "
@@ -99,15 +132,7 @@ def _row_tip(point) -> str:
     lines = [point.zdump or "(this archive holds no zone dump)"]
     if point.convg:
         lines.append(point.convg)
-    if point.iteration != rp.UNKNOWN_ITERATION:
-        bound = (f" and fewer than {point.iteration + point.interval}"
-                 if point.interval > 0 else "")
-        lines.append(f"The convergence history's last row is "
-                     f"{point.iteration}, so that run reached at least "
-                     f"{point.iteration}{bound} iterations.")
-    else:
-        lines.append("This archive carries no RUN.txt (it predates one), so how "
-                     "far that run got is not recorded.")
+    lines.append(_span_tip(point.span))
     if point.tag:
         # The run tag is the one thing #30's rename discards and RUN.txt keeps:
         # which HOST produced that leg, .gui for the GUI and .cli for the

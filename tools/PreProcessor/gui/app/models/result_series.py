@@ -26,6 +26,7 @@ Qt-free on purpose: the playback UI owns the timer, this owns the data.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -221,6 +222,23 @@ class ResultSeries:
     def path_of(self, k: int) -> str:
         """Which file global frame ``k`` comes from."""
         return self._files[self.locate(k)[0]].path
+
+    def last_frame_of(self, path: str) -> int:
+        """The last frame served from ``path``, or of the whole series.
+
+        Which frame to LAND on when a caller names a file: the last of the leg it
+        asked for, not the last of the solve that leg belongs to (#43). A path the
+        series does not hold falls back to the end, which is where a load has
+        always opened.
+        """
+        m = self._live_map()
+        want = os.path.abspath(path)
+        fi = next((i for i, f in enumerate(self._files)
+                   if os.path.abspath(f.path) == want), -1)
+        if fi < 0:
+            return len(m) - 1
+        return max((k for k, (f, _z) in enumerate(m) if f == fi),
+                   default=len(m) - 1)
 
     def frame_label(self, k: int) -> str:
         """Human label for frame ``k`` — its 1-based position, named by leg.

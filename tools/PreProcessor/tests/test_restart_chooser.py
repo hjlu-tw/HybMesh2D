@@ -9,18 +9,35 @@ same leg** from the dump the last run itself resumed from. The panel offered a
 name in ``work/`` only — blind to the ``work/prev_<NNN>/`` archives #26 creates —
 so "re-run the same leg" meant remembering which file that was.
 
+**Checks 2, 3 and 4 were reversed by #43** and the old expectations are gone from
+this file deliberately, in the repo's usual way. They asserted the RAW last
+convergence row (990) and, for a pre-#30 archive, ``UNKNOWN_ITERATION``. The
+first was #31's own recorded departure from its specification — which had asked
+for a bare ``iteration 2000`` — on the argument that naming the corrected count
+would be a fabrication; the solver writes no row for the final iteration, so
+``990 + 10`` recovers it exactly, and the evidence written to support the bound
+contradicted itself (the archive gate stated it as ``[1990, 2000)``, an interval
+excluding the value it claimed to contain). The second was #31's "the note IS the
+record, its history deliberately not re-read", which made an archive predating
+#30 second-class for no reason its own folder supports. Both consumers now read
+``case_run_note.iteration_span``, whose own properties are pinned in
+``test_restart_archive.py`` section 10; what is pinned HERE is what this window
+does with the answer, and that it agrees with the Results leg list.
+
 Pinned here, against the real ``prepare_case_dir`` (so the archives are the ones
 the toolchain really makes), the real ``RestartChooser`` widget on the offscreen
 platform, and the real ``SolverControllerMixin``:
 
  1. a case with no history offers Cold start alone; the rows are DERIVED, so the
     same call after a run returns more of them with nothing invalidated;
- 2. the newest un-archived dump in ``work/`` is the "latest" row, and its
-    iteration count comes from the convergence history beside it;
- 3. the archives are rows, newest first, each carrying the iteration count and
-    timestamp from its own ``RUN.txt``;
- 4. an archive with NO ``RUN.txt`` (one from before #30) still appears, with no
-    iteration count rather than being hidden;
+ 2. the newest un-archived dump in ``work/`` is the "latest" row, and its span
+    comes from the convergence history beside it — as the count the SOLVER
+    PRINTED (``last row + interval``), not the last row it wrote;
+ 3. the archives are rows, newest first, each carrying that count and the
+    timestamp from its own ``RUN.txt``, flagged as RECORDED;
+ 4. an archive with NO ``RUN.txt`` (one from before #30) still appears — and now
+    reports a REAL count, recomputed from the convergence history inside it,
+    while nothing is fabricated for a field the folder genuinely lacks;
  5. the row the previous run resumed from is marked — by BASENAME, because the
     bare-named hard link that reference pointed at is retired by the next
     archive while the bytes keep that name inside ``prev_<NNN>/``;
@@ -126,8 +143,9 @@ solver_case.repo_root = lambda: repo
 
 LOG = []
 
-# One row every 10 iterations, which is what makes RUN.txt's number a BOUND
-# rather than the final count (#30).
+# One row every 10 iterations, and none for the final one — so the run reached
+# 1000 and its history ends at 990. Recovering the 1000 is #43's correction of
+# what #30/#31 rendered as the bound "990+".
 CONVG = "".join(f"{n}   1.5e-16  5.5e-03\n" for n in range(10, 1000, 10))
 INPUT_IN = '   print_convg_per_niter\t10\n'
 
@@ -208,10 +226,13 @@ check(latest.stamp and latest.stamp[:2] == "20",
       f"2. ...and WHEN it ran, from the dump's own mtime — an archive records "
       f"that when its files move and nothing has moved this one yet, so the "
       f"newest leg would otherwise be the one row with no date ({latest.stamp!r})")
-check(latest.iteration == 990 and latest.interval == 10,
-      f"2. ...and its iteration count is the last ROW of that history, with the "
-      f"print interval beside it so the number reads as a bound "
-      f"({latest.iteration}, every {latest.interval})")
+check(latest.span.end == 1000 and latest.span.interval == 10
+      and latest.span.last_row == 990 and latest.span.start == 0,
+      f"2. ...and its span is the count the SOLVER PRINTED, not the last row it "
+      f"wrote: the history ends at 990 with one row every 10, so the run reached "
+      f"1000 (#43 — #31 rendered this as the bound '990+' and recorded the "
+      f"departure from its own spec; the departure is reversed). start=0 is the "
+      f"cold start it took over from ({latest.span})")
 
 # ── 3./5. archives, newest first, marked ──────────────────────────────────
 # Two real legs: restart from the dump, which archives the previous run.
@@ -227,8 +248,10 @@ rows = rp.list_restart_points(case_root("alpha"))
 check(keys(rows) == [rp.COLD, rp.LATEST, "prev_001"],
       f"3. the archived leg is a row, after the latest result ({keys(rows)})")
 a1 = by_key(rows, "prev_001")
-check(a1.iteration == 990 and a1.interval == 10,
-      f"3. ...with the iteration count from its OWN RUN.txt ({a1.iteration})")
+check(a1.span.end == 1000 and a1.span.interval == 10 and a1.span.recorded,
+      f"3. ...with the iteration count from its OWN RUN.txt — corrected the same "
+      f"way, and flagged as RECORDED so the tooltip can say where it came from "
+      f"({a1.span})")
 check(a1.stamp and a1.tag == ".gui",
       f"3. ...and when it ran, plus the run tag the rename discards "
       f"({a1.stamp!r}, {a1.tag!r})")
@@ -273,9 +296,15 @@ rows = rp.list_restart_points(case_root("alpha"))
 legacy = by_key(rows, "prev_002")
 check(legacy is not None and legacy.selectable,
       "4. an archive from before #30 still appears, and is still pickable")
-check(legacy.iteration == rp.UNKNOWN_ITERATION and legacy.stamp == "",
-      f"4. ...with no iteration count rather than a fabricated one "
-      f"({legacy.iteration}, {legacy.stamp!r})")
+check(legacy.span.end == 1000 and not legacy.span.recorded,
+      f"4. ...and it now reports a REAL count, recomputed from the convergence "
+      f"history sitting inside it — #31 refused to read that file ('the note IS "
+      f"the record'), which made an archive predating #30 second-class for no "
+      f"reason its own folder supports (#43) ({legacy.span})")
+check(legacy.stamp == "",
+      f"4. ...but nothing is fabricated for a field the folder really does not "
+      f"record: WHEN it ran is the archive's own archived_at and there is none "
+      f"({legacy.stamp!r})")
 
 # ── 6. the marker's three states ──────────────────────────────────────────
 w(os.path.join(work, "input.in"), INPUT_IN)            # cold-started last run

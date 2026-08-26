@@ -53,12 +53,12 @@ class PostprocessControllerMixin:
             self.log(f"[ERROR] Result file not found: {path}")
             return
         try:
-            # A pipeline / batch run reaches this from the solver's finished
-            # handler, and #32's "open the whole restarted solve?" question is a
-            # modal like the one guarded below: an unattended run must not stop on
-            # it. Only the PERMISSION to ask travels; the canvas still decides.
-            self.main_window.result_canvas_view.load_result_path(
-                path, ask_legs=not getattr(self, "_pipeline_running", False))
+            # No permission flag travels any more (#43): the load asks nothing,
+            # so an unattended run and an interactive one take one path and a CI
+            # screenshot shows what the user would see. The `_pipeline_running`
+            # guard below is a different question — it is about the ERROR modal,
+            # which is still a modal.
+            self.main_window.result_canvas_view.load_result_path(path)
         except Exception as e:
             self.log(f"[ERROR] Failed to load result: {e}")
             # Only interrupt a person. This is also reached from the solver's

@@ -51,7 +51,20 @@ Pinned here, against the real ``prepare_case_dir`` on a temp tree, the real
     other — #42, and the only property here that is about what the archive must
     NOT do. 9b injects the guard's absence and measures the destruction it
     prevents; 9c is the negative control that a work dir holding one run's
-    outputs still archives exactly as before.
+    outputs still archives exactly as before;
+10. ``iteration_span`` is the ONE answer to "how far did this run get?" — #43.
+    The endpoint arithmetic (``last row + interval``, the count the solver
+    PRINTED), the half-open span that keeps an ordinary restart chain from
+    reading as an overlap, the precedence of the spacing a history EXHIBITS over
+    one a config declared, and the unknown case spelled -1 rather than 0. It
+    lives here because this module owns the arithmetic; what each consumer does
+    with the answer is pinned in that consumer's own gate
+    (``test_restart_chooser.py`` 2-4, ``test_result_legs_playback.py`` group 1).
+    Every one of its checks was verified by mutating this module's source and
+    re-running: putting back #30/#31's "end IS the last row" costs 6 of them,
+    closing the half-open range costs 2, letting a declared interval win costs 1,
+    taking ``start`` from the note instead of the file costs 2, never reading a
+    convergence history costs 7, and spelling unknown as 0 costs 5.
 
 #30 is the finishing work on top of #26 and changed two of the properties above
 rather than adding to them, so the old expectations are gone from this file
@@ -122,10 +135,20 @@ real ``unicones`` binary:
   cold-starting at 0), the restart source **sha256-identical** afterwards, a
   fresh ``binDumpZ.dat.gui`` written beside it, and ``prev_003/`` holding all
   six outputs named ``…prev_003`` plus ``RUN.txt`` reporting
-  ``last_iteration: 1990`` beside ``convergence_interval: 10`` — i.e. the note's
-  own bound, [1990, 2000), containing the 2000 the solver reported. That is the
-  "records 1990, reached 2000" gap measured rather than argued, and the reason
-  the interval is recorded at all;
+  ``last_iteration: 1990`` beside ``convergence_interval: 10`` — i.e. exactly the
+  2000 the solver reported, since the solver writes no row for the final
+  iteration and ``1990 + 10`` recovers it. That is the "records 1990, reached
+  2000" gap measured rather than argued, and the reason the interval is recorded
+  at all.
+
+  **This sentence used to state that bound as ``[1990, 2000)``** — a half-open
+  interval that EXCLUDES the value it claimed to contain, sitting in a gate for
+  two issues while the argument built on it overruled #31's specification. The
+  interval is ``(1990, 2000]`` and the point estimate is 2000; #43 reverses the
+  reasoning here, in ``case_run_note`` (where the arithmetic now lives, as
+  ``iteration_span``), in ``restart_points``, in ``restart_chooser`` and in the
+  prose every ``RUN.txt`` writes about itself. It is worth remembering that a
+  recorded rationale is only as good as the arithmetic inside it;
 * **run 2** — exit 0, resumed again (``Global Iteration count 4020``), source
   identical, ``prev_004/`` created, ``prev_003/`` byte-for-byte untouched and
   its dump down to ONE link because the stale bare-named link in ``work/`` was
@@ -559,14 +582,18 @@ check(note.get("last_iteration") == 30 and note.get("convergence_rows") == 3,
       f"archive time is gone ({note.get('last_iteration')!r}, "
       f"{note.get('convergence_rows')!r} row(s))")
 note_text = open(os.path.join(arch, case_run_note.RUN_NOTE_NAME)).read()
-check("reached at least" in note_text
+check("last_iteration + convergence_interval" in note_text
+      and "upper bound" in note_text
       and "not the" in note_text and "final" in note_text
       and "-1 in either field" in note_text,
-      "8. ...and the FILE says which number it is: the last recorded row, not "
-      "the solver's final count, bounded above by the interval, with -1 called "
-      "out as 'could not determine' rather than 0. A run that reached 2000 "
-      "leaves 1990 here (measured), so a field labelled 'final' would be a "
-      "small lie in the one number a user reads")
+      "8. ...and the FILE says which number it is and how to correct it: the "
+      "last recorded ROW, not the solver's final count, plus the interval that "
+      "recovers that count (990 -> 1000, 1990 -> 2000, both measured against "
+      "the real binary), with the sum called an UPPER bound because an "
+      "interrupted run got no further, and -1 called out as 'could not "
+      "determine' rather than 0. #30 wrote 'reached at least last_iteration and "
+      "fewer than last_iteration + convergence_interval' here — a bound that "
+      "excludes the very value the acceptance run measured; #43 reverses it")
 check(note.get("zone_dump") == "binDumpZ.dat.prev_001",
       f"8. ...and which file in it is the zone dump, so a restart chooser does "
       f"not have to know the naming rule ({note.get('zone_dump')!r})")
@@ -607,6 +634,122 @@ check(case_run_note._resumed_field(None).startswith("unknown")
 check(case_run_note.read_run_note(os.path.join(work, "no_such_archive")) == {},
       "8. and an archive with no note (one written before #30) reads as empty "
       "rather than raising — a reader over a case's history meets both")
+
+# ── 10. iteration_span: the ONE answer to "how far did this run get?" ─────
+# #43. The count is what a user picks a restart point BY and tells one leg of a
+# playback from another, and until this function there were two answers to it:
+# an archive was read from its RUN.txt only (so one written before #30 reported
+# "unknown" with a readable convergence history inside it) while the live leg
+# computed its own from exactly that kind of file with exactly this module's
+# reader. Both consumers — services/restart_points and services/result_legs —
+# now ask this, which is also what stops the two windows describing one folder
+# differently. Pinned HERE because this module owns the arithmetic; what each
+# consumer DOES with the answer is pinned in its own gate.
+span_dir = os.path.join(tmp, "spans")
+SPAN = case_run_note.iteration_span
+
+
+def convg(name, first, last, step=10):
+    """A convergence history: one row every `step` iterations, and no row for
+    the final iteration — which is the whole reason `end` is not `last`."""
+    path = os.path.join(span_dir, name)
+    w(path, "".join(f"{n}  1.5e-16  5.5e-03\n"
+                    for n in range(first, last + 1, step)))
+    return path
+
+
+leg1 = convg("leg1.enorm", 10, 990)          # a cold start that reached 1000
+leg2 = convg("leg2.enorm", 1010, 1990)       # resumed from it, reached 2000
+sp1, sp2 = SPAN(leg1), SPAN(leg2)
+check((sp1.start, sp1.end, sp1.interval) == (0, 1000, 10),
+      f"10. the count is the one the SOLVER PRINTED: the history ends at 990 "
+      f"with one row every 10 and none for the final iteration, so 990 + 10 = "
+      f"1000 — the figure both of this repo's acceptance runs measured against "
+      f"the real binary (#26: 990 -> 1000, #30: 1990 -> 2000). #30 called that "
+      f"sum a fabrication and #31 printed '990+' instead; #43 reverses it "
+      f"({sp1})")
+check(sp1.start == 0 and sp2.start == 1000,
+      f"10. ...and `start` is where the leg TOOK OVER (first row - interval), so "
+      f"0 for a cold start and the resume point otherwise — an endpoint alone "
+      f"cannot be intersected with anything ({sp1.start}, {sp2.start})")
+check(sp1.overlap(sp2) == () and sp2.overlap(sp1) == (),
+      f"10. two consecutive legs of a restart chain MEET at 1000 and do not "
+      f"overlap: the span is half-open, (start, end], so the boundary belongs to "
+      f"the earlier leg alone. A closed range would report every ordinary "
+      f"restart as a re-run ({sp1.overlap(sp2)})")
+rerun_span = SPAN(convg("leg3.enorm", 10, 890))     # re-ran 0-900 from scratch
+check(sp1.overlap(rerun_span) == (0, 900)
+      and rerun_span.overlap(sp1) == (0, 900),
+      f"10. ...while a leg that really did re-run a stretch reports WHICH "
+      f"iterations, symmetrically — that precision is what a heuristic over two "
+      f"endpoints could not give ({sp1.overlap(rerun_span)})")
+check(sp2.overlap(SPAN(convg("leg4.enorm", 2010, 2990))) == (),
+      "10. ...and a disjoint later leg is disjoint: 'ran later but got no "
+      "further' called that an overlap, which is the false positive interval "
+      "intersection removes")
+
+# Precedence: what the FILE exhibits beats what a config DECLARED.
+mixed = SPAN(convg("leg5.enorm", 100, 1000, step=100), declared_interval=10,
+             note={"convergence_interval": 10, "last_iteration": 1000})
+check(mixed.interval == 100 and mixed.end == 1100,
+      f"10. the interval is the spacing the history EXHIBITS, measured on its "
+      f"final segment — a value declared in input.in or recorded in a note is a "
+      f"fallback. 'How far past the last row did it get?' is a question about "
+      f"the interval in force when that row was WRITTEN, which a declaration "
+      f"made before a mid-run change no longer describes ({mixed})")
+one_row = SPAN(convg("leg6.enorm", 500, 500), declared_interval=25)
+check(one_row.interval == 25 and one_row.end == 525 and one_row.start == 475,
+      f"10. ...and the fallback really is used where the file cannot answer: a "
+      f"single-row history exhibits no spacing ({one_row})")
+
+# A note supplies `end`; `start` still comes from the file.
+noted = SPAN(leg2, note={"last_iteration": 1990, "convergence_interval": 10})
+check(noted.recorded and noted.end == 2000 and noted.start == 1000,
+      f"10. a RUN.txt's last_iteration is preferred for `end` — the record is "
+      f"the record, and `recorded` says so, since a reader is entitled to know "
+      f"whether a figure was recorded or recomputed. But `start` is read from "
+      f"the FILE even then: the note records no first row, so otherwise the "
+      f"best-documented archives would be the only ones that cannot be "
+      f"intersected ({noted})")
+check(not SPAN(leg2).recorded and SPAN(leg2).end == 2000,
+      f"10. ...and with NO note the same file gives the same count, flagged as "
+      f"recomputed. That is the whole of #43's user-visible fix: an archive "
+      f"written before RUN.txt existed stops being second-class ({SPAN(leg2)})")
+
+# The unknown case, and that it is not spelled like a real answer.
+w(os.path.join(span_dir, "blank.enorm"), "\n\n")
+for label, got in (("no file", SPAN(os.path.join(span_dir, "nope"))),
+                   ("blank file", SPAN(os.path.join(span_dir, "blank.enorm"))),
+                   ("no path at all", SPAN(""))):
+    check(not got.known and not got.measurable
+          and got.end == case_run_note.UNKNOWN_ITERATION,
+          f"10. {label}: unknown, and spelled -1 rather than 0 — the solver "
+          f"really prints 0 for a cold start ({got})")
+check(not SPAN(convg("leg7.enorm", 500, 500)).known,
+      "10. a last row with no interval from ANY source is unknown too: a count "
+      "that cannot be corrected must not be reported as if it were the answer, "
+      "which is the defect this function exists to remove")
+check(SPAN(os.path.join(span_dir, "nope"),
+           note={"last_iteration": 990}).end
+      == case_run_note.UNKNOWN_ITERATION,
+      "10. ...including a note that records a last row and no interval — the "
+      "two fields are independent and one of them alone answers nothing")
+# A history whose first row precedes its own print interval is not something the
+# solver writes — its first row IS the first interval — so `first - interval`
+# there is a NEGATIVE start, i.e. a leg that took over before iteration 0. Rows
+# 0/10/20 make that -10, which is measurable and nonsense; rows 0/1/2 make it
+# exactly -1, which collides with UNKNOWN_ITERATION and reads as "not
+# measurable" by accident rather than by decision. The first case is the one an
+# injection can see, so it is the one asserted; the second is why the guard is
+# `first >= interval` rather than a check against the sentinel.
+early = SPAN(convg("leg8.enorm", 0, 20, step=10))
+collide = SPAN(convg("leg9.enorm", 0, 2, step=1))
+check(early.end == 30 and early.start == case_run_note.UNKNOWN_ITERATION
+      and not early.measurable and not collide.measurable,
+      f"10. a first row EARLIER than one interval reports no start rather than a "
+      f"negative one: the count is still answerable, but 'where did this leg "
+      f"take over' is not — and a sentinel a computation can reach by arithmetic "
+      f"is not a sentinel ({early}; the -1 collision: {collide})")
 
 # ── 9. two runs' outputs in one work dir: refuse, do not destroy ──────────
 # #42. Every solver output carries a run tag saying which HOST produced it, and
