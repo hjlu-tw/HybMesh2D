@@ -9,18 +9,35 @@ same leg** from the dump the last run itself resumed from. The panel offered a
 name in ``work/`` only — blind to the ``work/prev_<NNN>/`` archives #26 creates —
 so "re-run the same leg" meant remembering which file that was.
 
+**Checks 2, 3 and 4 were reversed by #43** and the old expectations are gone from
+this file deliberately, in the repo's usual way. They asserted the RAW last
+convergence row (990) and, for a pre-#30 archive, ``UNKNOWN_ITERATION``. The
+first was #31's own recorded departure from its specification — which had asked
+for a bare ``iteration 2000`` — on the argument that naming the corrected count
+would be a fabrication; the solver writes no row for the final iteration, so
+``990 + 10`` recovers it exactly, and the evidence written to support the bound
+contradicted itself (the archive gate stated it as ``[1990, 2000)``, an interval
+excluding the value it claimed to contain). The second was #31's "the note IS the
+record, its history deliberately not re-read", which made an archive predating
+#30 second-class for no reason its own folder supports. Both consumers now read
+``case_run_note.iteration_span``, whose own properties are pinned in
+``test_restart_archive.py`` section 10; what is pinned HERE is what this window
+does with the answer, and that it agrees with the Results leg list.
+
 Pinned here, against the real ``prepare_case_dir`` (so the archives are the ones
 the toolchain really makes), the real ``RestartChooser`` widget on the offscreen
 platform, and the real ``SolverControllerMixin``:
 
  1. a case with no history offers Cold start alone; the rows are DERIVED, so the
     same call after a run returns more of them with nothing invalidated;
- 2. the newest un-archived dump in ``work/`` is the "latest" row, and its
-    iteration count comes from the convergence history beside it;
- 3. the archives are rows, newest first, each carrying the iteration count and
-    timestamp from its own ``RUN.txt``;
- 4. an archive with NO ``RUN.txt`` (one from before #30) still appears, with no
-    iteration count rather than being hidden;
+ 2. the newest un-archived dump in ``work/`` is the "latest" row, and its span
+    comes from the convergence history beside it — as the count the SOLVER
+    PRINTED (``last row + interval``), not the last row it wrote;
+ 3. the archives are rows, newest first, each carrying that count and the
+    timestamp from its own ``RUN.txt``, flagged as RECORDED;
+ 4. an archive with NO ``RUN.txt`` (one from before #30) still appears — and now
+    reports a REAL count, recomputed from the convergence history inside it,
+    while nothing is fabricated for a field the folder genuinely lacks;
  5. the row the previous run resumed from is marked — by BASENAME, because the
     bare-named hard link that reference pointed at is retired by the next
     archive while the bytes keep that name inside ``prev_<NNN>/``;

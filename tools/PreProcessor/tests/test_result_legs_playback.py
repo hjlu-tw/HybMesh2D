@@ -11,11 +11,15 @@ What is pinned here, in three groups:
 
  1. **``services/result_legs``** — which files are the legs, and in what ORDER.
     A leg is found by its STEM (#30 renames an archived file's tag to
-    ``.prev_NNN``, so one output has two spellings); the order is by iteration
-    count from ``RUN.txt``, NOT by filename; an overlap is reported rather than
-    spliced, by lineage where the notes record a shared start and by
-    non-monotonicity otherwise; a legacy archive with no note is played WHERE IT
-    RAN; and a file outside a case is one leg with no history.
+    ``.prev_NNN``, so one output has two spellings); every leg's SPAN comes from
+    ``case_run_note.iteration_span``, so an archive predating ``RUN.txt`` reports
+    a real count from its own convergence history instead of "unknown"; the order
+    is by that corrected count, NOT by filename; an overlap is a measurement —
+    interval intersection over the half-open ``(start, end]`` — reported and
+    never spliced, with lineage as the fallback where a span cannot be computed;
+    a leg measurable NEITHER way is played WHERE IT RAN; the legs are filtered to
+    the RUN the opened file belongs to; and a file outside a case is one leg with
+    no history.
 
  2. **``models/result_series`` over several files** — one flat frame numbering,
     one LRU byte budget, one value range per variable. The byte-range parse stays
@@ -26,35 +30,75 @@ What is pinned here, in three groups:
  3. **The transport and the canvas** — Play crosses a leg boundary without
     interruption, the read-out names the leg, the colour range spans the series, a
     manual clim still wins (#24's precedence unchanged), the variable list is the
-    INTERSECTION of the legs, and the offer to open them together is really asked
-    (declining loads exactly the file requested).
+    INTERSECTION of the legs, and opening a leg opens the SOLVE without asking
+    (#43 removed #32's per-load modal and its permission flag). ``This leg only``
+    is the escape: shown only when the solve HAS more than one leg, unticked on
+    every load, landing on the same frame. The whole-series colour scan runs when
+    Auto is unticked rather than inside ``render``, and a FAILED scan is not
+    remembered.
 
 Every property here was verified by INJECTION — the rule was broken in the real
-module and the named check re-run — and two of those injections paid for
-themselves at once. One passed with the variable filter DELETED, because the
-frame on screen was the leg with FEWER variables, whose own list is already the
+module and the named check re-run — and four of those injections paid for
+themselves. One passed with the variable filter DELETED, because the frame on
+screen was the leg with FEWER variables, whose own list is already the
 intersection; the check now stands on the leg that has more. Another was inert:
 ``from_file``'s ``path`` argument is unused when an index is supplied (the index
 reads through its own path), so "read the wrong file" changes nothing and the
-mutation that bites is "read through the wrong leg's INDEX".
+mutation that bites is "read through the wrong leg's INDEX". Two more found
+missing checks rather than a defect: the suite stayed GREEN with the
+``This leg only`` reset deleted and with a failed range scan recorded as the
+answer, so both now have properties of their own.
+
+**Two injections are PERMANENT here, because the obvious construction of each
+passes with the code removed.**
+
+  * *The convergence fallback* is injected on the legs that HAVE a run note
+    (``case_run_note._iteration_rows`` patched to read nothing). Their ends still
+    come from those notes, so what the injection removes is the START — and with
+    it the overlap the check above reports. Injected on a note-LESS leg it would
+    prove only that a count appears at all; this direction pins the rule that is
+    cheapest to delete unnoticed, that the file is read even when a note has
+    already answered "how far". The note-less direction is checked too, one
+    property later, where the count itself is what is at stake.
+  * *The run-tag filter* is injected in the direction that FAILS: an older
+    headless leg opened in a case whose archives belong to the interactive run.
+    Opening the ``.gui`` leg gets the ``.gui`` archive with or without the filter,
+    so a check built that way certifies a filter that is not there — the
+    assertion therefore covers both directions and says which one is evidence.
+
+Both injections have a negative control: making the patch call the real function
+turns the checks red, so they cannot pass because the injection was inert.
 
 Two blind spots, named rather than papered over:
 
   * Nothing here runs the solver. The legs are written by hand in the layout
     ``case_archive`` produces, which ``test_restart_archive`` pins against the
     real ``prepare_case_dir``; if that layout moves, this test keeps passing
-    against a shape nothing produces. What partly closes that is an acceptance
-    run recorded here rather than automated: ``results/solver/case`` in this repo
-    is a real twice-restarted solve whose archives predate #30, and listing it
-    reports ``prev_001, prev_002, latest`` with one known count, 3 frames over
-    3 files, a whole-series ``\`r`` range of (14.82, 18.96) and 12 ms for a
-    6384-node frame. That run is what found the ordering defect above.
-  * The ORDERING axis is ``RUN.txt``'s ``last_iteration``, and a leg without one
-    falls back to the order it RAN in. That fallback is right for every case
-    except the one it cannot see — a NOTELESS leg that was itself re-run from an
-    earlier point — because the note records no per-leg START iteration, which is
-    also why ``result_legs`` reports an overlap instead of claiming to resolve
-    one.
+    against a shape nothing produces. The corrected endpoint arithmetic is
+    likewise pinned against the two figures this repo already measured against
+    the real binary (#26's 990 -> 1000, #30's 1990 -> 2000), not against a fresh
+    run. What partly closes both is an acceptance run recorded here rather than
+    automated: ``results/solver/case`` is a real twice-restarted solve whose two
+    archives predate #30, and under #43 it reports
+
+      prev_001  (0, 1000]   prev_002  (0, 1000]   latest  (1000, 2000]
+
+    all three recomputed from their own convergence histories, interval 10 —
+    where #32 reported "iteration unknown" for both archives. The overlap that
+    follows, ``prev_001`` and ``prev_002`` both covering iterations 1-1000, was
+    SILENT before this and is now named. The restart chooser reports the same
+    three numbers for the same folders, which is the point of there being one
+    ``iteration_span``. 3 frames over 3 files, 11 ms for a 6384-node frame,
+    ``last_frame_of`` landing on frame 0 for ``prev_001`` and 2 for the live leg.
+    An earlier version of that same run is what found the backwards-ordering
+    defect this file's group 1 exists for.
+  * The ordering axis is the corrected ``end``, and a leg measurable NEITHER by a
+    note nor by a convergence history still falls back to the order it RAN in.
+    That fallback is right for every case except the one it cannot see — such a
+    leg re-run from an earlier point — which is also why ``result_legs`` reports
+    an overlap instead of claiming to resolve one. #43 demoted it from the first
+    line of defence to the third, so the set of legs it applies to is now much
+    smaller: a pre-#30 archive that still holds its history is no longer in it.
 
 Run:  python3 tools/PreProcessor/tests/test_result_legs_playback.py
 """
@@ -95,6 +139,7 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 app = QApplication.instance() or QApplication(sys.argv)
 
 from app.models.result_series import ResultSeries  # noqa: E402
+from app.services import case_run_note, result_legs  # noqa: E402
 from app.services.case_files import RUN_NOTE_NAME as RUN_NOTE  # noqa: E402
 from app.services.result_legs import (  # noqa: E402
     leg_stem, list_result_legs,
@@ -104,6 +149,8 @@ from app import utils as utils_mod  # noqa: E402
 from app.views.result_canvas import ResultCanvasView  # noqa: E402
 
 RESULT = "xtecp_sol_allz.dat"
+#: "we could not tell how far that run got" — case_run_note's, one spelling.
+UNKNOWN = case_run_note.UNKNOWN_ITERATION
 
 
 # --------------------------------------------------------------------------- #
@@ -294,6 +341,30 @@ check(not any("same part" in w for w in d.warnings),
       f"reported: 'ran later but got no further' called that an overlap, which "
       f"is exactly the false positive interval intersection removes ({d.warnings})")
 
+# INJECTION — stop iteration_span reading any convergence history, i.e. put
+# back #32's "the note IS the record". Done on the RE-RUN case, whose legs BOTH
+# carry a RUN.txt: their ends still come from those notes, so what is lost is
+# the START, and with it the overlap. Injected on a note-LESS leg this proves
+# only the easy half (a count appearing at all); this direction proves the rule
+# that is cheapest to delete unnoticed — that the file is read even when a note
+# has already answered "how far".
+_real_rows = case_run_note._iteration_rows
+case_run_note._iteration_rows = lambda _p: ((), 0)
+try:
+    blind = list_result_legs(os.path.join(rework, f"{RESULT}.gui"))
+finally:
+    case_run_note._iteration_rows = _real_rows
+blind_arch = [leg for leg in blind.legs if leg.kind == ARCHIVE]
+check(any("same part" in w for w in r.warnings)
+      and not any("same part" in w for w in blind.warnings)
+      and all(leg.span.known and not leg.span.measurable
+              for leg in blind_arch),
+      f"1. INJECTED: with the convergence history unreadable the two legs keep "
+      f"the ends their notes record ({[leg.span.end for leg in blind_arch]}) and "
+      f"lose their STARTS, so the re-run above goes silent — `start` is read "
+      f"from the file even for a noted archive, or the best-documented legs are "
+      f"the only ones nothing can intersect ({blind.warnings})")
+
 # Lineage is the direct evidence of a re-run and needs no counts at all: two
 # legs whose notes record the same start really did cover the same stretch.
 # `bare_link_for_archived_dump` links an archived dump into work/ under its
@@ -342,6 +413,20 @@ check(any("prev_002" in w and "prev_001" in w and "1-1000" in w
       f"1. ...and that makes a real overlap VISIBLE that was silent: both legs "
       f"ran 0-1000, so a stretch of the animation repeats and the user is told "
       f"which stretch ({pn.warnings})")
+
+# INJECTION — the other half of the same rule, where the COUNT is what is at
+# stake rather than the start. Same mutation, a case with no notes at all.
+case_run_note._iteration_rows = lambda _p: ((), 0)
+try:
+    blind_pre = list_result_legs(os.path.join(owork, f"{RESULT}.gui"))
+finally:
+    case_run_note._iteration_rows = _real_rows
+check([leg.span.end for leg in blind_pre.legs] == [UNKNOWN] * 3
+      and not any("1-1000" in w for w in blind_pre.warnings),
+      f"1. INJECTED: with no history read, a case whose archives predate RUN.txt "
+      f"loses every count and its overlap with them — which is precisely the "
+      f"state #32 shipped and #43 measured on this repo's own "
+      f"results/solver/case ({[leg.span.end for leg in blind_pre.legs]})")
 
 # A leg that can be measured NEITHER way still has to be played somewhere.
 legacy = os.path.join(tmp, "legacy")
@@ -409,6 +494,24 @@ check(list(b_gui.labels) == ["prev_001", LATEST]
 check(any("prev_001" in w and "gui" in w and "cli" in w for w in b_cli.warnings),
       f"1. ...and the excluded leg is NAMED, with both tags, so a leg missing "
       f"from the animation is never silent ({b_cli.warnings})")
+
+# INJECTION — remove the filter and re-list BOTH directions. Only the headless
+# one changes: opening .gui was always going to get the .gui archive, so a check
+# built that way certifies a filter that is not there.
+_real_same_run = result_legs._same_run
+result_legs._same_run = lambda legs, anchor: (legs, [])
+try:
+    nf_cli = list_result_legs(os.path.join(bwork, f"{RESULT}.cli"))
+    nf_gui = list_result_legs(os.path.join(bwork, f"{RESULT}.gui"))
+finally:
+    result_legs._same_run = _real_same_run
+check(list(nf_cli.labels) == ["prev_001", LATEST]
+      and list(nf_gui.labels) == list(b_gui.labels),
+      f"1. INJECTED: without the filter the interactive run's archive is spliced "
+      f"into the headless one's animation — two solves shown as one, and the "
+      f"discontinuity between them reads as physics. The .gui direction is "
+      f"UNCHANGED by the injection, which is why it is not the evidence "
+      f"({list(nf_cli.labels)} vs {list(nf_gui.labels)})")
 # An archived leg whose OWN name cannot carry a tag anchors on its note (#30's
 # rename replaced the tag), and it must not drag work/'s newest file in with it.
 b_arch = list_result_legs(
@@ -678,6 +781,34 @@ solo_v.select_variable("p")
 solo_v.show_frame(0)
 solo_v.set_clim_auto(False)
 solo_v.render()
+# A scan that FAILS must not be recorded as the answer, or one transient read
+# error pins the variable to a single frame's numbers for the rest of the session.
+fv = ResultCanvasView()
+fv.load_result_path(live_path)
+fv.select_variable("u")
+_real_gr = ResultSeries.global_range
+
+
+def _boom(self, var, progress=None):
+    raise OSError("simulated transient read failure")
+
+
+ResultSeries.global_range = _boom
+try:
+    fv.set_clim_auto(False)
+    fv.render()
+finally:
+    ResultSeries.global_range = _real_gr
+after_fail = fv.manual_clim("u")
+fv.set_clim_auto(True)
+fv.set_clim_auto(False)
+fv.render()
+check("u" in fv._series_seeded and fv.manual_clim("u") != after_fail,
+      f"3. a FAILED whole-series scan is NOT remembered, so the next untick "
+      f"retries and the real range still takes effect — the alternative pins a "
+      f"variable to one frame's numbers for the session on a transient read "
+      f"error ({after_fail} -> {fv.manual_clim('u')})")
+
 check(solo_v.manual_clim("p") == (201.0, 202.0),
       f"3. ...while a SINGLE file still seeds from the frame on screen, so #24's "
       f"'nothing jumps when you untick' is untouched where it was decided "
@@ -705,6 +836,14 @@ check(v2._series.n_files == 3 and v2._frame_count() == 8 and v2._frame == 7,
       f"3. ...unticking rebuilds the whole series and lands on the same leg's "
       f"last frame, so the control moves the animation around the picture "
       f"rather than moving the picture ({v2._series.n_files}, {v2._frame})")
+
+# The box is view state for the result in front of you, never a preference.
+v2.one_leg_cb.setChecked(True)
+v2.load_result_path(live_path)
+check(not v2.one_leg_cb.isChecked() and v2._series.n_files == 3,
+      f"3. ...and a fresh load unticks it: it is an escape the user asks for on "
+      f"one result, not a preference the view carries to the next one "
+      f"({v2.one_leg_cb.isChecked()}, {v2._series.n_files})")
 
 # Opening an ARCHIVED leg lands on THAT leg's last frame, not the solve's.
 v3 = ResultCanvasView()
