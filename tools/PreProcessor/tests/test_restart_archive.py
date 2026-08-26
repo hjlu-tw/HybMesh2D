@@ -38,8 +38,10 @@ Pinned here, against the real ``prepare_case_dir`` on a temp tree, the real
  6. ``case_export`` accounts for ``work/prev_001/`` — every file in it is either
     shipped or named as skipped, never silently omitted (the exporter's own gate
     sees an archive too: ``test_case_export.py`` check 16);
- 7. the prompt's restart branch offers the archiving option, makes it the
-    default, says where the outputs go, and keeps the destructive one and Cancel;
+ 7. the prompt is now the NON-restart question only — #31 took the restart
+    branch away, because once the start point is chosen from this case's own
+    history there is nothing left to ask (the controller's side of that is
+    pinned in tests/test_restart_chooser.py check 10);
  8. each archive carries a ``RUN.txt`` recording when that leg ran, the run tag
     the rename discards, what it resumed from and how far it got — and it round
     trips through the reader the next feature will use, rather than being prose
@@ -605,44 +607,46 @@ def by_text(frag):
     return lambda box: next((b for b in box.buttons() if frag in b.text()), None)
 
 
-drive(by_text("Continue Here"))
-got = case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True)
-box = _seen["box"]
-labels = [b.text() for b in box.buttons()]
-check(got == solver_case.CASE_ARCHIVE,
-      f"7. the restart branch offers a same-directory option and it returns the "
-      f"ARCHIVING disposition ({got!r}, buttons {labels})")
-check(box.defaultButton() is not None
-      and "Continue Here" in box.defaultButton().text()
-      and box.buttonRole(box.defaultButton()) == QMessageBox.ButtonRole.AcceptRole,
-      f"7. ...and it is the DEFAULT and the accept role — the destructive option "
-      f"was the only thing that stayed in the folder, which is the bug "
-      f"({box.defaultButton().text() if box.defaultButton() else None!r})")
-info = box.informativeText()
-check("prev_003" in info and "work/" in info,
-      f"7. the prompt says where the previous outputs go, naming the concrete "
-      f"directory ({info!r})")
-check("restart" in info.lower() or "RESTARTS" in info,
-      "7. ...and that this is a restart at all — the old dialog said nothing "
-      "about it, so the safe reading was not available to the user")
+# #31 removed the restart BRANCH of this prompt, and the checks below are the
+# inverted versions of the ones that used to pin it. Once the start point is
+# picked from the case's own history there is nothing left to ask: "same
+# directory, archive the previous outputs" is the only coherent answer, so
+# `solver_ctrl._resolve_case_disposition` returns it without showing anything
+# (pinned in tests/test_restart_chooser.py check 10, with the log line that
+# replaces the confirmation). The archive MECHANISM above is untouched — what
+# changed is who chooses it.
+import inspect                                                    # noqa: E402
 
-drive(by_text("Overwrite in Place"))
-check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True)
-      == solver_case.CASE_IN_PLACE,
-      "7. the destructive escape survives: a user who wants a clean slate in "
-      "place still has it")
+check("restart" not in inspect.signature(
+          case_dir_dialog.ask_case_disposition).parameters,
+      f"7. the prompt no longer takes a restart flag at all — a branch nothing "
+      f"can reach reads as a working feature, so it is gone rather than left as "
+      f"an answer the dialog can no longer give "
+      f"({list(inspect.signature(case_dir_dialog.ask_case_disposition).parameters)})")
+
+drive(by_text("Overwrite"))
+got = case_dir_dialog.ask_case_disposition(None, "beta", case_dir)
+labels = [b.text() for b in _seen["box"].buttons()]
+check(got == solver_case.CASE_IN_PLACE
+      and not any("Continue Here" in t or "archive" in t.lower() for t in labels),
+      f"7. what is left is the genuinely ambiguous NON-restart question — two "
+      f"answers and Cancel, no archive option for a run that is not resuming "
+      f"anything ({labels})")
 check(_seen["box"].buttonRole(
           next(b for b in _seen["box"].buttons() if "Overwrite" in b.text()))
       == QMessageBox.ButtonRole.DestructiveRole,
-      "7. ...still labelled destructive")
+      "7. ...with the overwrite still labelled destructive")
 
 drive(by_text("New Versioned Dir"))
-check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True)
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir)
       == solver_case.CASE_NEW_VERSION,
-      "7. and the versioned dir is still reachable from the restart branch")
+      "7. the preserving answer still comes back")
+check(_seen["box"].defaultButton() is not None
+      and "New Versioned" in _seen["box"].defaultButton().text(),
+      "7. ...and is still the default")
 
 drive(lambda box: box.button(QMessageBox.StandardButton.Cancel))
-check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True) is None,
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir) is None,
       "7. Cancel still cancels")
 
 # The window dismissed with its close button / Esc: clickedButton() is None, and
@@ -650,25 +654,9 @@ check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True) is None
 # the question STARTED A SOLVER RUN. Same rule as case_dir_flags refusing an
 # unknown disposition, from the other side.
 drive(lambda box: None)
-check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, True) is None,
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir) is None,
       "7. dismissing the window (no button clicked) cancels — it must not fall "
       "through to a disposition and launch a run nobody chose")
-check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir, False) is None,
-      "7. ...in the NON-restart branch too, where the archive button does not "
-      "exist: `archive_btn` is None there and so is `clicked`, so an unguarded "
-      "identity test matches them to each other and answers ARCHIVE for a "
-      "dialog that never offered it")
-
-drive(by_text("Overwrite"))
-got = case_dir_dialog.ask_case_disposition(None, "beta", case_dir, False)
-labels = [b.text() for b in _seen["box"].buttons()]
-check(got == solver_case.CASE_IN_PLACE
-      and not any("Continue Here" in t for t in labels),
-      f"7. the NON-restart branch is unchanged — two answers and Cancel, no "
-      f"archive option for a run that is not resuming anything ({labels})")
-check(_seen["box"].defaultButton() is not None
-      and "New Versioned" in _seen["box"].defaultButton().text(),
-      "7. ...and its default is still the preserving one")
 
 solver_case.repo_root = _real_repo_root
 shutil.rmtree(tmp, ignore_errors=True)

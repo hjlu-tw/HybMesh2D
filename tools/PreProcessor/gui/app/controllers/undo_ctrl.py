@@ -162,6 +162,7 @@ class UndoControllerMixin:
         """
         from PyQt6.QtWidgets import (
             QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit, QPlainTextEdit,
+            QWidget,
         )
         slot = lambda *_a: self.on_panel_edited(panel_attr)  # noqa: E731
         for w in root.findChildren(QAbstractSpinBox):
@@ -179,6 +180,17 @@ class UndoControllerMixin:
             w.textEdited.connect(slot)
         for w in root.findChildren(QPlainTextEdit):
             w.textChanged.connect(slot)
+        # A COMPOSITE control that rebuilds its own children cannot be covered by
+        # a one-shot traversal of them: the restart chooser (#31) re-lists its
+        # radio rows every time the case changes, i.e. long after this ran, so a
+        # row created later would edit the panel and never reach the model. Such a
+        # widget declares `panel_edited` and reports for its own children; it is
+        # named by that attribute rather than by class so this stays free of an
+        # import from views/panels.
+        for w in root.findChildren(QWidget):
+            sig = getattr(w, "panel_edited", None)
+            if sig is not None and hasattr(sig, "connect"):
+                sig.connect(slot)
 
     def schedule_project_snapshot(self):
         """Note that a project panel changed; record it once the burst settles."""

@@ -233,17 +233,11 @@ SOLVER_SPECS: tuple[FieldSpec, ...] = (
               group="output", opts=dict(_BIG_INT)),
 
     # ── Restart / Initial Condition ──────────────────────────────────────────
-    FieldSpec("restart", "bool", "Restart from previous run",
-              "Continue from a previous run's zone-dump and convergence files.",
-              group="restart_enable", opts=dict(text="Restart from previous run")),
-    FieldSpec("convg_fn_restart", "path", "Convg file",
-              "Previous-run convergence file — the solver writes it into the case "
-              "work dir as unicones.enorm.gui (GUI) / .cli (headless)",
-              group="restart", opts=dict(caption="Select convergence file")),
-    FieldSpec("zdump_fn_restart", "path", "Zone dump",
-              "Previous-run zone-dump file — the solver writes it into the case "
-              "work dir as binDumpZ.dat.gui (GUI) / .cli (headless)",
-              group="restart", opts=dict(caption="Select zone-dump file")),
+    # `restart`, `zdump_fn_restart` and `convg_fn_restart` are NOT rows here:
+    # one control (views/panels/restart_chooser) holds all three, because the
+    # question is "which of this case's own legs does this run start from?" and
+    # the answer sets the flag and both paths together. See
+    # SOLVER_EXTRA_AUTHORED at the foot of this file.
     FieldSpec("init_cond_depQ", "text", "init Q",
               "Explicit initial dep-var array, e.g. '1 1 0 0 0.524' (rho u v [w] et). "
               "Leave blank for freestream init. Ignored on restart, or when an init "
@@ -312,4 +306,15 @@ SOLVER_SPECS: tuple[FieldSpec, ...] = (
 #: SolverConfig fields the panel authors OUTSIDE the table. One entry, and it is a
 #: TABLE of rows rather than a field: each row is a mesh segment with its patch name
 #: and BC type, and the extra value is dropped for types that do not take one.
-SOLVER_EXTRA_AUTHORED = frozenset({"bc_definitions"})
+SOLVER_EXTRA_AUTHORED = frozenset({
+    "bc_definitions",
+    # One control for three fields (#31): the restart chooser lists this case's
+    # own history — cold start, the latest result, each archived leg — so picking
+    # a row sets the flag AND both paths at once. Three specs would be three
+    # widgets for one decision, which is the duplication the tables removed, and
+    # a `Restart` tick in a different place from what it restarts FROM is the
+    # interface the issue is about.
+    "restart",
+    "zdump_fn_restart",
+    "convg_fn_restart",
+})

@@ -7,7 +7,8 @@ from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
 from app.views.case_dir_dialog import ask_case_disposition
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
-from app.services import solver_case
+from app.services import restart_points, solver_case
+from app.services.case_archive import archive_notice
 from app.services.case_files import GUI_RUN_TAG
 from app.services.case_sources import mesh_provenance_paths
 from app.services.mesh_grid_lookup import resolve_case_grid
@@ -302,12 +303,9 @@ class SolverControllerMixin:
                     "[WARNING] IBM is on without an init-condition DLL; the solid "
                     "phase will start from freestream init.")
 
-        # Restart needs a zone dump to continue from.
-        if cfg.restart and not cfg.zdump_fn_restart.strip():
-            errs.append("Restart is on but no restart zone-dump file is set. A "
-                        "previous run writes it to results/solver/"
-                        f"{_sanitize(cfg.case_name)}/work/binDumpZ.dat.gui "
-                        "— point the 'Zone dump' field at it (or Browse).")
+        # Restart: chosen at all, and still on disk (#31 — asked of the module
+        # that lists a case's history, which is where both answers live).
+        errs.extend(restart_points.restart_errors(cfg))
 
         # Domain decomposition implies a real MPI run. Refuse rather than silently
         # partition the grid and then run a serial solver on the un-partitioned mesh.
@@ -327,32 +325,22 @@ class SolverControllerMixin:
     # ------------------------------------------------------------------ #
     # Case directory orchestration (D6)
     # ------------------------------------------------------------------ #
-    def _prepare_case_dir(self, cfg: SolverConfig):
-        """Build case/<name>/{work,grid,dll}, stage inputs, rename outputs, write
-        input.in / .def, and compile IBM DLLs. Returns (work_dir, grid_dir,
-        input_in_path). Delegates to the shared, Qt-free solver_case service so
-        the GUI and the headless pipeline runner lay out cases identically.
-
-        Note: the interactive Run path no longer calls this on the GUI thread
-        (it would freeze the window during the g++ DLL compile); the solver
-        worker runs prepare_case_dir itself. Kept for completeness / callers
-        that want a synchronous prepare."""
-        return solver_case.prepare_case_dir(cfg, log=self.log)
-
     def _resolve_case_disposition(self, cfg: SolverConfig):
         """One of ``solver_case.CASE_*`` — which directory this run writes into
         and what happens to what is already there — or None if the user
         cancelled.
 
-        Only asks when a case dir of this name already holds prior results;
-        otherwise ``CASE_NEW_VERSION``, i.e. the default dir used as-is by the
-        worker. The dialog itself (and why a restart needs a third answer) is
-        ``views/case_dir_dialog``; this decides whether to ask at all and says
-        what came back.
+        Only asks when a case dir of this name already holds prior results AND
+        this run is not a restart; otherwise the answer is decided here — a
+        restart archives and continues in place (#31), and a fresh case uses its
+        default dir as-is. The dialog itself is ``views/case_dir_dialog``; this
+        decides whether to ask at all and says what came back.
         """
-        root = repo_root()
         case = _sanitize(cfg.case_name)
-        case_root = os.path.join(root, "results", "solver", case)
+        # One spelling of "where this case lives", shared with the panel that
+        # lists its restart points and the validator that resolves a relative
+        # reference against its work dir.
+        case_root = restart_points.case_root_for(cfg.case_name)
         if not solver_case.dir_has_content(case_root):
             return solver_case.CASE_NEW_VERSION
 
@@ -366,15 +354,19 @@ class SolverControllerMixin:
                 "directory to preserve them.")
             return solver_case.CASE_NEW_VERSION
 
-        choice = ask_case_disposition(self.main_window, case, case_root,
-                                      cfg.restart)
+        # A RESTART is no longer an ambiguous question (#31): the start point was
+        # chosen from this case's own history, so the prompt is dropped rather
+        # than answered — see views/case_dir_dialog for why, and archive_notice
+        # for what the log has to say in its place.
+        if cfg.restart:
+            self.log(archive_notice(case, case_root))
+            return solver_case.CASE_ARCHIVE
+
+        choice = ask_case_disposition(self.main_window, case, case_root)
         if choice is None:
             self.log("Solver run cancelled (case exists).")
         elif choice == solver_case.CASE_IN_PLACE:
             self.log(f"[case] overwriting existing results for '{case}'.")
-        elif choice == solver_case.CASE_ARCHIVE:
-            self.log(f"[case] restarting in '{case}'; the previous run's outputs "
-                     "are archived rather than overwritten.")
         return choice
 
     def _on_solver_prepared(self, work_dir: str):
@@ -469,6 +461,9 @@ class SolverControllerMixin:
         panel = self.main_window.solver_config_panel
         panel.run_solver_btn.setEnabled(True)
         panel.cancel_solver_btn.setEnabled(False)
+        # This run archived the previous leg and wrote a new dump, so what the
+        # case can be restarted FROM has changed (#31).
+        panel.refresh_restart_choices()
 
         if rc == 0:
             self.log("--- Solver Pipeline Success ---")

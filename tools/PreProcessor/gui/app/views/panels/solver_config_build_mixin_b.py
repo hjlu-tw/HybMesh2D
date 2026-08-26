@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.utils import make_button, align_form_labels, help_label
+from app.views.panels.restart_chooser import RestartChooser
 
 
 class SolverConfigBuildMixinB:
@@ -50,14 +51,12 @@ class SolverConfigBuildMixinB:
 
     def _build_restart_section(self):
         sec = self._section("Restart / Initial Condition")
-        self._spec_widgets("restart_enable")
-        sec.add_widget(self.restart)
-
-        form = QFormLayout()
-        self._spec_rows(form, "restart")
-        self._grow(form, 110)
-        sec.add_layout(form)
-        self._restart_form = form
+        # ONE control for "what does this run start from?" — the case's own
+        # history as a list, cold start included (#31). It replaced a `Restart`
+        # tick plus two path fields: three widgets for one decision, and the
+        # tick sat in a different place from the thing it restarted FROM.
+        self.restart_chooser = RestartChooser()
+        sec.add_widget(self.restart_chooser)
 
         # 'Build…' opens the DLL builder (freestream / normal-shock templates, IBM and
         # non-IBM); the controller writes the resulting .cc path into the field. The

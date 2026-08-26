@@ -417,7 +417,7 @@ segment 迴圈內是**互斥的三條分支**，不是單一鏈：
 | `mesh_gen_ctrl.py` | 458 | 跑 `HybMesh2D`（`run_mesh_generator`:144、`_on_mesh_gen_finished`:318） |
 | `mesh_export_ctrl.py` | 315 | VTK／STAR-CD 匯出、送給 solver、mesh BC 稽核（`mesh_bc_problems`、`warn_if_mesh_bc_stale`） |
 | `mesh_layers_ctrl.py` | 255 | Geometry Layers 清單與 mesh config 的雙向維護 |
-| `solver_ctrl.py` | 497 | solver 流程：`run_solver_pipeline`、`_prepare_case_dir`、`_auto_link_mesh_output`、`_confirm_mesh_bc_state` |
+| `solver_ctrl.py` | 494 | solver 流程：`run_solver_pipeline`、`_resolve_case_disposition`、`_auto_link_mesh_output`、`_confirm_mesh_bc_state`（`_prepare_case_dir` 於 #31 刪除：零呼叫者） |
 | `solver_bc_ctrl.py` | 153 | 從 `.bnd` 偵測 BC、`resync_solver_bc_from_group`、`_locate_mesh_bnd` |
 | `solver_tools_ctrl.py` | 171 | DLL builder、CAD→φ、probe 座標對話框 |
 | `stl3d_ctrl.py` | 335 | 沉浸固體 STL→φ stage 的執行與 3D 顯示 |

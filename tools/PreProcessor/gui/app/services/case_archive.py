@@ -89,6 +89,24 @@ def next_archive_name(case_root: str) -> str:
         next_archive_dir(os.path.join(case_root, "work")))
 
 
+def archive_notice(case: str, case_root: str) -> str:
+    """What continuing a RESTART in this case dir will do, as one log line.
+
+    #31 dropped the case-dir prompt on the restart path, so this is where that
+    confirmation's information now lives: with nobody agreeing to the archive in
+    a dialog first, the step has to be legible in the user log on its own. Here
+    rather than in the controller because it is a promise about what this module
+    is about to do, naming the concrete directory the counter has already picked
+    (``prev_003`` also tells the user this has happened twice).
+    """
+    prev = next_archive_name(case_root) or "prev_NNN"
+    return (f"[case] restarting in '{case}': the previous run's outputs move to "
+            f"work/{prev}/, each renamed to end in .{prev}, and work/ keeps a "
+            f"link to the dump this run resumes from — the solver reads a "
+            f"restart source only by a bare name in its own directory. Nothing "
+            f"is overwritten and nothing is copied.")
+
+
 def _archived_inodes(work_dir: str) -> dict:
     """``{(st_dev, st_ino): "prev_001/binDumpZ.dat.prev_001"}`` for every file
     already inside an archive under this work dir.
@@ -171,6 +189,70 @@ def _retire(work_dir: str, name: str, inodes: dict, log) -> tuple:
     log(f"[case] work/{name} -> {suffix}/{name} — it belongs to the run it is "
         f"named for, not to the one being archived now.")
     return os.path.abspath(src), os.path.abspath(dst)
+
+
+def bare_link_for_archived_dump(work_dir: str, resolved: str,
+                                log=_noop) -> str:
+    """Give a restart dump that lives in one of this work dir's own archives a
+    BARE name in ``work/``, and return that path — or "" when there is nothing to
+    do or it cannot be done.
+
+    The other half of #31's chooser. :func:`archive_previous_outputs` already
+    leaves such a link for the dump a run resumes from, because the solver reads
+    a restart source only by a bare name in its own directory: point
+    ``zdump_fn_restart`` at ``prev_001/binDumpZ.dat.prev_001`` and it derives a
+    per-zone path out of it — ``binDumpZ.dat.prev_001/binDumpZ.0`` — into a
+    directory that does not exist, and the run dies with ``Can't open file``
+    (measured on the real binary; see the docstring below).
+
+    That link is retired the next time this case is archived, and #31 lets the
+    user pick ANY archived leg — "re-run the same leg", the whole point of the
+    chooser — so the one mechanism has to be available on demand rather than only
+    as a side effect of the run that produced it. Same trade for the same reason:
+    a HARD link, so the archive stays complete and the case does not grow by a
+    second copy of its largest file, and the file is never edited (the one place
+    this repo's "a hard link is not the cheap version of a copy" rule flips —
+    ``services/case_sources``).
+
+    Two things it refuses to do rather than guess. A name in ``work/`` that is
+    already taken by a DIFFERENT file is not overwritten — the reference then
+    stays as it was and the solver reports its own error, which is honest, where
+    clobbering would destroy a file nobody asked about. And on a filesystem that
+    cannot make the link, nothing is copied: the dump is the largest file in a
+    case, so silently doubling it is worse than saying the restart cannot be made
+    readable and letting the run fail with its own message.
+    """
+    resolved = os.path.abspath(resolved)
+    parent = os.path.dirname(resolved)
+    if (not os.path.isfile(resolved)
+            or not os.path.basename(parent).startswith(ARCHIVE_DIR_PREFIX)
+            or os.path.dirname(parent) != os.path.abspath(work_dir)):
+        # Not a dump inside one of THIS work dir's archives: a dump sitting
+        # directly in work/ is already bare, and one in another case dir is #25's
+        # relative reference, which resumes correctly as it is.
+        return ""
+    link = os.path.join(work_dir, os.path.basename(resolved))
+    if os.path.exists(link):
+        if os.path.samefile(link, resolved):
+            return link
+        log(f"[WARNING] work/{os.path.basename(link)} is a different file, so "
+            f"the dump in {os.path.basename(parent)}/ cannot be given the bare "
+            f"name the solver needs; the restart reference is left pointing "
+            f"into the archive.")
+        return ""
+    try:
+        os.link(resolved, link)
+    except OSError:
+        log(f"[WARNING] could not link work/{os.path.basename(link)} to "
+            f"{os.path.basename(parent)}/{os.path.basename(resolved)}; the "
+            f"solver reads a restart source only by a bare name in its own "
+            f"directory, so this run may not find what it is resuming from.")
+        return ""
+    log(f"[case] the dump this run resumes from is in "
+        f"{os.path.basename(parent)}/, so work/ gets a bare-named hard link to "
+        f"it ({os.path.basename(link)}) — the solver reads a restart source "
+        f"only by a bare name, and one inode means no second copy.")
+    return link
 
 
 def archive_previous_outputs(work_dir: str, log=_noop, keep_bare=()) -> dict:
