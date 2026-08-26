@@ -165,18 +165,40 @@ class ResultPlaybackMixin:
         self._play_timer.setTimerType(Qt.TimerType.CoarseTimer)
         self._play_timer.timeout.connect(self._advance_frame)
 
-    def _attach_series(self, path: str):
-        """Point the transport at ``path`` and show/hide it by zone count."""
+    def _attach_series(self, paths, labels=None):
+        """Point the transport at ``paths`` and show/hide it by frame count.
+
+        ``paths`` is one path or the legs of a restarted solve in playback order
+        (#32); ``labels`` names them for the frame read-out. The transport does
+        not care how many files there are — the series flattens them into one
+        frame numbering — so everything below this line is unchanged by #32.
+        """
         self.stop_playback()
         self._range_lock = None
         self._range_lock_var = ""
         try:
-            self._series = ResultSeries(path)
+            self._series = ResultSeries(paths, labels=labels)
         except (OSError, ValueError) as e:
             self._series = None
-            _log.warning("could not index %s for playback: %s", path, e)
+            _log.warning("could not index %s for playback: %s", paths, e)
+        if self._series is not None:
+            self._report_variable_gaps(self._series)
         self._frame = max(0, (self._series.n_frames - 1) if self._series else 0)
         self._update_playback_ui()
+
+    def _report_variable_gaps(self, series):
+        """Say which leg is short of which variable, when the legs disagree.
+
+        The selector offers the INTERSECTION (``ResultSeries.variables``), which
+        is the only set every frame can render. That is a real subtraction, so it
+        is said out loud rather than left as a variable that quietly stopped being
+        on the list.
+        """
+        for label, missing in series.variable_gaps():
+            self._log(f"[Results] leg '{label}' does not carry "
+                      f"{', '.join(missing)} — the variable list shows only what "
+                      "every leg has, so the animation never changes subject "
+                      "part-way through.")
 
     def _detach_series(self):
         self.stop_playback()

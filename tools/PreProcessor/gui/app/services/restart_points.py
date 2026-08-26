@@ -115,8 +115,9 @@ class RestartPoint:
 # ``case_root_for`` / ``work_dir_of`` are re-exported from ``solver_case``, which
 # owns a case's layout — imported above rather than restated here, and named in
 # ``__all__`` so a reader of this module's API still finds them.
-__all__ = ["RestartPoint", "case_root_for", "list_restart_points",
-           "missing_source", "restart_errors", "work_dir_of",
+__all__ = ["RestartPoint", "case_root_for", "convg_beside",
+           "list_restart_points", "missing_source", "restart_errors",
+           "work_dir_of",
            "COLD", "LATEST", "ARCHIVE", "OTHER", "UNKNOWN_ITERATION"]
 
 
@@ -227,15 +228,21 @@ def _dump_in(directory: str, archived: bool) -> str:
     return sorted(cands, key=key)[0]
 
 
-def _convg_beside(directory: str, dump: str) -> str:
-    """The convergence history that belongs with ``dump``, or "".
+def convg_beside(directory: str, name: str) -> str:
+    """The convergence history that belongs with the file ``name``, or "".
 
     Same tag / same archive suffix, so a work dir holding a ``.gui`` and a
     ``.cli`` leg does not report one run's iteration count against the other's
     dump.
+
+    Public because it is not a question about DUMPS: ``services/result_legs``
+    asks it about a leg's *Tecplot result* file, which carries the same
+    ``.gui`` / ``.prev_001`` slot for the same reason. One answer to "how far did
+    the run that produced this file get?", rather than a second copy of the
+    tag-matching rule in the module that plays the legs back.
     """
-    suffix = archive_suffix(dump)
-    tag = run_tag(dump)
+    suffix = archive_suffix(name)
+    tag = run_tag(name)
     wanted = _CONVG_STEM + (("." + suffix) if suffix else tag)
     path = os.path.join(directory, wanted)
     if os.path.isfile(path):
@@ -269,7 +276,7 @@ def _latest_point(work: str):
     if not dump:
         return None
     path = os.path.abspath(os.path.join(work, dump))
-    convg = _convg_beside(work, dump)
+    convg = convg_beside(work, dump)
     iters = last_iteration(convg)[0] if convg else UNKNOWN_ITERATION
     return RestartPoint(
         kind=LATEST, key=LATEST,
@@ -312,7 +319,7 @@ def _archive_points(case_root: str) -> list:
             dump = _dump_in(d, archived=True)
         convg = note.get("convergence_file") or ""
         if not convg or not os.path.isfile(os.path.join(d, convg)):
-            convg = os.path.basename(_convg_beside(d, dump or ""))
+            convg = os.path.basename(convg_beside(d, dump or ""))
         iters = note.get("last_iteration", UNKNOWN_ITERATION)
         out.append(RestartPoint(
             kind=ARCHIVE, key=os.path.basename(d),

@@ -246,7 +246,7 @@ class TecplotResult:
     # carry (a solver-side addition), so faking them would mislead.
     # ------------------------------------------------------------------ #
     def _density_field(self):
-        for name in ("`r", "r", "rho"):
+        for name in self.DENSITY_NAMES:
             if name in self.cell_data or name in self.node_data:
                 return self._base_cell_field(name)
         return None
@@ -256,20 +256,37 @@ class TecplotResult:
             return self._base_cell_field(name)
         return None
 
-    def _derived_available(self) -> list[str]:
-        u, v = self._field_or_none("u"), self._field_or_none("v")
-        rho, p = self._density_field(), self._field_or_none("p")
-        T, M = self._field_or_none("T"), self._field_or_none("M")
+    #: The density field's accepted spellings, in the order they are tried.
+    DENSITY_NAMES = ("`r", "r", "rho")
+
+    @classmethod
+    def derived_from_names(cls, names) -> list[str]:
+        """Which derived quantities a result carrying exactly ``names`` can produce.
+
+        A pure function of the variable NAMES, which is all the availability test
+        ever was — it loaded each field and then only asked whether it was None.
+        Public and name-based because #32 has to ask it of a SET rather than of a
+        loaded frame: across the legs of a restarted solve the selector offers the
+        intersection of the legs' variables, and answering "and which derived
+        quantities does that leave?" by materialising one frame per leg would mean
+        reading every file to fill a combo box.
+        """
+        have = set(names)
+        rho = any(n in have for n in cls.DENSITY_NAMES)
         out: list[str] = []
-        if u is not None and v is not None:
+        if "u" in have and "v" in have:
             out.append("|V|")
-        if p is not None and rho is not None:
+        if "p" in have and rho:
             out += ["Cp", "s"]
-        if p is not None and M is not None:
+        if "p" in have and "M" in have:
             out.append("p0")
-        if T is not None and M is not None:
+        if "T" in have and "M" in have:
             out.append("T0")
         return out
+
+    def _derived_available(self) -> list[str]:
+        return self.derived_from_names(
+            list(self.cell_data) + list(self.node_data))
 
     def _compute_derived(self, var: str) -> np.ndarray:
         g = self.GAMMA

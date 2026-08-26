@@ -929,6 +929,72 @@ for *every* zone, so the file carries no real timestamp to show. Gated by
 to a whole-file scan, and `tests/test_result_clim_per_variable.py` for the
 per-variable colour range.
 
+**A restarted solve is ONE run split across several files, and it plays as one
+animation** (`services/result_legs.py`, Qt-free — `list_result_legs` → a
+`LegSeries` of `ResultLeg`s in playback order plus its warnings as data;
+`ResultSeries` takes a LIST of paths). #32, USER-REQUESTED (2026-08-21), blocked
+by #30 because it reads the `RUN.txt` #30 writes. #26 moves a finished run's
+outputs into `work/prev_<NNN>/`, so the field output of a twice-restarted solve
+is three files and the transport could only ever animate one of them — watching
+the solve evolve meant opening each leg by hand and losing the animation at every
+boundary. Rules that are load bearing:
+- **A list, never a concatenated temp file.** The byte-offset index exists so a
+  frame costs 0.07 s instead of 0.35 s; merging hundreds of MB would throw that
+  away. So the per-file `tecplot_index` is untouched and a FLAT frame index sits
+  above it — global frame *k* → `(file, zone)`. Three things become global with
+  it: the numbering, the LRU **byte** budget (a solve restarted ten times must
+  not hold ten caches) and every range `global_range` reports. A change in ANY
+  file therefore drops EVERY cached frame and range, because the numbering shifts
+  and a frame kept under its old global number would serve another leg's zone.
+- **A leg is found by its STEM.** #30 renames an archived file's run tag to
+  `.prev_<NNN>`, so one solver output is `xtecp_sol_allz.dat.gui` live and
+  `xtecp_sol_allz.dat.prev_001` archived; `strip_archive_suffix` +
+  `strip_run_tag` (the inverse of `archive_name`, and the reason `strip_run_tag`
+  now exists in `case_files`) recovers the one name both carry. That also makes
+  it work on **pre-#30 archives**, which kept `.gui` — measured on this repo's
+  own `results/solver/case`.
+- **Order by ITERATION COUNT, and lineage is NOT recoverable — which is why.**
+  The issue asks to order by `RUN.txt`'s "recorded lineage"; measuring what the
+  note holds says that cannot be done, since `resumed_from` is a BASENAME and
+  every leg's dump is the same solver output under the same name, so normalising
+  the two spellings collapses every leg onto one key. `last_iteration` is what
+  the note does hold per leg, so that is the axis, with creation order as the
+  tie-break.
+- **A leg with no count is played WHERE IT RAN, not last** — a deliberate
+  departure from the issue's "offered last", because that phrasing is right for a
+  chooser LIST and wrong for a playback ORDER. Not academic: the FIRST version
+  shipped the literal rule and the acceptance run against `results/solver/case`
+  (two archives predating #30, so no note; only the live leg has a count) played
+  the solve **backwards** — newest leg first, the two oldest after it. An unknown
+  leg now inherits the last count recorded before it, which is creation order
+  except where a recorded count says otherwise.
+- **An overlap is REPORTED, never interleaved.** #31 makes re-running a leg from
+  an earlier point a click, so a later run can cover ground an earlier one did.
+  Since the per-leg START iteration cannot be recovered, the overlap is inferred
+  from NON-MONOTONICITY (a leg that ran later reporting no higher a count) and
+  said out loud with both legs named; nothing is merged or spliced.
+- **Ask, do not assume — and NOT asking means No.** The offer is a `confirm` with
+  `headless_default=False`, and `load_result_path(..., ask_legs=False)` (passed by
+  `postprocess_ctrl` when `_pipeline_running`) declines rather than opening
+  everything silently: a caller that cannot put up a modal cannot consent for the
+  user, and one file is what every caller got before #32. Declining yields a
+  ONE-leg series rather than a second code path, so the cache, the labels and the
+  ranges behave identically either way.
+- **The variable selector is the INTERSECTION**, and the subtraction is logged
+  naming the short leg. The derived quantities are recomputed from that
+  intersection through the new `TecplotResult.derived_from_names` — a pure
+  function of the variable NAMES, which is all the old availability test ever was
+  — so a derived field cannot outlive its inputs either. Asking this from the leg
+  with FEWER variables proves nothing (its own list is already the intersection),
+  which is a hole the gate's own injections found.
+- **The leg name prefixes a label only when the series has more than one file**
+  (`prev_002 · Frame 3 / 10`), so a case that was never restarted reads exactly as
+  it did. `set_result`'s triangulation reuse and #24's clim precedence
+  (manual > lock > auto) are unchanged and both are pinned across a leg boundary.
+Gated by `tests/test_result_legs_playback.py` — 13 properties over 3 groups,
+every one verified by injection, with its two blind spots and the acceptance run
+named in its own docstring.
+
 **"The surface" of a surface plot is a CHOICE, and so is where s = 0 is**
 (`services/surface_source.py` + `services/surface_sample.py`, both Qt-free;
 `controllers/surface_source_ctrl.py` decides availability; `views/surface_source_dialog.py`

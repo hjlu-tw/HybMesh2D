@@ -11,6 +11,17 @@ things the single-zone :class:`TecplotResult` cannot provide on its own:
   is meant to show. :meth:`global_range` scans every frame ONCE per variable and
   caches the result, so the whole animation shares one scale.
 
+**A series is one or MORE files** (#32). A restarted solve is one physical run
+split across ``work/xtecp_sol_allz.dat.gui`` plus one file per ``work/prev_<NNN>/``
+archive, so playing it as one animation means a flat frame index ABOVE the
+per-file byte-offset indices: global frame *k* resolves to ``(file, zone)``. The
+per-file ``tecplot_index`` is kept exactly as it was — its ``(path, mtime, size)``
+cache is right, and a merged temp file would throw away the byte-offset seek that
+makes a frame cost 0.07 s instead of 0.35 s. Three things are therefore GLOBAL
+rather than per file: the frame numbering, the LRU byte budget, and every value
+range :meth:`global_range` reports. Which files make up a series, and in what
+order, is ``services/result_legs``'s question, not this module's.
+
 Qt-free on purpose: the playback UI owns the timer, this owns the data.
 """
 from __future__ import annotations
@@ -27,6 +38,9 @@ _log = get_logger(__name__)
 # byte cap (not a frame count) is what keeps a big transient run from filling
 # memory: 512 MB holds ~70 such frames and only a handful of very large ones.
 _DEFAULT_MAX_BYTES = 512 * 1024 * 1024
+
+#: What separates a leg's name from the frame position in a label.
+_LEG_SEP = " · "
 
 
 def _frame_nbytes(r: TecplotResult) -> int:
@@ -51,23 +65,73 @@ def _frame_nbytes(r: TecplotResult) -> int:
 
 
 class ResultSeries:
-    """Frame access + global value ranges for one multi-zone result file."""
+    """Frame access + global value ranges over one or more result files.
 
-    def __init__(self, path: str, max_bytes: int = _DEFAULT_MAX_BYTES):
-        self.path = path
+    ``paths`` is a single path or an ordered sequence of them (the legs of a
+    restarted solve, oldest solution first). ``labels`` names each file for
+    :meth:`frame_label`; an empty label means "do not prefix", which is what a
+    single-file series uses so its labels are unchanged.
+    """
+
+    def __init__(self, paths, max_bytes: int = _DEFAULT_MAX_BYTES,
+                 labels=None):
+        if isinstance(paths, str):
+            paths = [paths]
+        paths = [str(p) for p in paths]
+        labels = list(labels) if labels is not None else [""] * len(paths)
+        if len(labels) != len(paths):
+            raise ValueError(
+                f"{len(paths)} path(s) but {len(labels)} label(s)")
         self._max_bytes = int(max_bytes)
-        self._frames: dict = {}          # zone index -> TecplotResult (LRU by order)
+        self._frames: dict = {}          # global frame index -> TecplotResult (LRU)
         self._bytes = 0
         self._ranges: dict = {}          # var -> (vmin, vmax) over ALL frames
-        # Stamp FIRST, then index: if the file is written in between, the recorded stamp
-        # is older than the content we hold, so the next access notices and re-indexes.
-        # The other order would record "up to date" over a stale index, permanently.
-        self._stamp = stamp(path)
-        self._index = index_for(path)
+        self.paths: list = []
+        self.labels: list = []
+        self._stamps: list = []
+        self._indices: list = []
+        for path, label in zip(paths, labels):
+            try:
+                # Stamp FIRST, then index: if the file is written in between, the
+                # recorded stamp is older than the content we hold, so the next access
+                # notices and re-indexes. The other order would record "up to date"
+                # over a stale index, permanently.
+                st = stamp(path)
+                idx = index_for(path)
+            except OSError:
+                # One unreadable leg must not cost the whole animation: a case is
+                # free to have had a leg deleted. Dropped here, before anything is
+                # numbered, so no index can point at a file that is not in the list.
+                _log.warning("dropping %s from the series: it cannot be read",
+                             path, exc_info=True)
+                continue
+            self.paths.append(path)
+            self.labels.append(label)
+            self._stamps.append(st)
+            self._indices.append(idx)
+        if not self.paths:
+            raise ValueError(f"no readable result file among {len(paths)}")
+        self._map = self._build_map()
 
     # ------------------------------------------------------------------ #
-    def _live_index(self):
-        """The index for the file AS IT IS NOW, dropping cached frames if it changed.
+    @property
+    def path(self) -> str:
+        """The FIRST file of the series — kept for the callers that only ever
+        held one, and the honest answer for a single-file series."""
+        return self.paths[0]
+
+    def _build_map(self) -> list:
+        """``[(file index, zone index), …]`` — the flat frame numbering.
+
+        Rebuilt whenever any file's index is, since a leg that gained a zone
+        renumbers every frame after it.
+        """
+        return [(fi, zi)
+                for fi, idx in enumerate(self._indices)
+                for zi in range(len(idx.zones))]
+
+    def _live_indices(self) -> list:
+        """The indices for the files AS THEY ARE NOW, dropping caches on a change.
 
         Everything public reads through this instead of the snapshot taken in
         ``__init__``, because the frame COUNT/labels and the frame DATA used to come from
@@ -75,24 +139,34 @@ class ResultSeries:
         rewritten under an open Results tab therefore reported the old zone count while
         serving frames from the new file — and replayed already-cached frames from the
         OLD one, interleaving two solutions under a colour scale pinned to the first,
-        which reads as physics. One index per series, refreshed on a real content change.
+        which reads as physics. One index per file, refreshed on a real content change.
+
+        A change in ANY file drops EVERY cached frame and range, not just that
+        file's: the flat numbering shifts, so a cache keyed by global frame would
+        serve one leg's zone under another's number, and a range that spans the
+        series is no longer a range of this series.
         """
-        try:
-            st = stamp(self.path)
-        except OSError:
-            # The file went away (a case directory cleaned up mid-session). Keep
-            # answering from the last good index rather than raising out of a paint
-            # path; the next frame read reports the real error.
-            _log.debug("could not stat %s; keeping the last index", self.path,
-                       exc_info=True)
-            return self._index
-        if st != self._stamp:
-            _log.info("%s changed on disk — re-indexing, dropping %d cached frame(s)",
-                      self.path, len(self._frames))
-            self._stamp = st
-            self._index = index_for(self.path)
+        changed = []
+        for i, path in enumerate(self.paths):
+            try:
+                st = stamp(path)
+            except OSError:
+                # The file went away (a case directory cleaned up mid-session). Keep
+                # answering from the last good index rather than raising out of a paint
+                # path; the next frame read reports the real error.
+                _log.debug("could not stat %s; keeping the last index", path,
+                           exc_info=True)
+                continue
+            if st != self._stamps[i]:
+                self._stamps[i] = st
+                self._indices[i] = index_for(path)
+                changed.append(path)
+        if changed:
+            _log.info("%s changed on disk — re-indexing, dropping %d cached "
+                      "frame(s)", ", ".join(changed), len(self._frames))
             self._drop_caches()
-        return self._index
+            self._map = self._build_map()
+        return self._indices
 
     def _drop_caches(self) -> None:
         """Forget every materialised frame and every scanned range."""
@@ -100,44 +174,114 @@ class ResultSeries:
         self._bytes = 0
         self._ranges.clear()
 
+    def _live_map(self) -> list:
+        """The flat frame map, refreshed against the files on disk."""
+        self._live_indices()
+        return self._map
+
     # ------------------------------------------------------------------ #
     @property
     def zones(self) -> list:
-        return list(self._live_index().zones)
+        """Every file's zones, concatenated in series order.
+
+        ``ZoneInfo.index`` is a position WITHIN its file, so it is not a frame
+        number here; ask :meth:`frame_label` or index this list.
+        """
+        return [z for idx in self._live_indices() for z in idx.zones]
 
     @property
     def n_frames(self) -> int:
-        return len(self._live_index().zones)
+        return len(self._live_map())
+
+    @property
+    def n_files(self) -> int:
+        return len(self.paths)
+
+    def locate(self, k: int) -> tuple:
+        """``(file index, zone index)`` for global frame ``k``."""
+        return self._live_map()[k]
+
+    def path_of(self, k: int) -> str:
+        """Which file global frame ``k`` comes from."""
+        return self.paths[self.locate(k)[0]]
 
     def frame_label(self, k: int) -> str:
-        """Human label for frame ``k`` — 1-based position in the file.
+        """Human label for frame ``k`` — its 1-based position, named by leg.
 
         The solver writes the same zone title ("time 0") for every dumped step,
         so the position is the only honest identifier; the title is appended only
         when the file actually distinguishes its zones.
+
+        Across a restarted solve the position alone stops being meaningful — two
+        legs both have a "Frame 3" — so the leg's name leads (#32):
+        ``prev_002 · Frame 3 / 10``. The position stays WITHIN the leg, which is
+        the pair the label is identifying; a single-file series has no leg name
+        and its labels are byte-identical to what they were.
         """
-        zones = self._live_index().zones
-        n = len(zones)
-        label = f"Frame {k + 1} / {n}"
-        titles = {z.title for z in zones}
-        # A label must never raise: the caller's frame index can outlive a file that
-        # shrank under it (a re-run with fewer dumped steps), and this is called from the
-        # UI refresh, not from a load path that can report the error.
-        if len(titles) > 1 and 0 <= k < n:
-            label += f" — {zones[k].title}"
-        return label
+        m = self._live_map()
+        n = len(m)
+        if not (0 <= k < n):
+            # A label must never raise: the caller's frame index can outlive a file
+            # that shrank under it (a re-run with fewer dumped steps), and this is
+            # called from the UI refresh, not from a load path that can report it.
+            return f"Frame {k + 1} / {n}"
+        fi, zi = m[k]
+        zones = self._indices[fi].zones
+        label = f"Frame {zi + 1} / {len(zones)}"
+        if len({z.title for z in zones}) > 1:
+            label += f" — {zones[zi].title}"
+        leg = self.labels[fi]
+        # Only a MULTI-file series prefixes. A case that was never restarted has
+        # exactly one leg and its read-out must not grow a name that distinguishes
+        # it from nothing — and a caller that declines the whole solve gets the
+        # single file it asked for, labelled the way it always was.
+        return (f"{leg}{_LEG_SEP}{label}"
+                if leg and len(self.paths) > 1 else label)
+
+    # ------------------------------------------------------------------ #
+    @property
+    def variables(self) -> list:
+        """The variables EVERY file in the series carries, in the first's order.
+
+        The intersection, not the union (#32): a variable only some legs hold
+        would render as a blank frame — or worse, as a differently-meaning column
+        — at every boundary that lacks it. Which legs are short of what is
+        :meth:`variable_gaps`, so the caller can say so instead of the animation
+        silently changing subject.
+        """
+        indices = self._live_indices()
+        common = set(indices[0].variables)
+        for idx in indices[1:]:
+            common &= set(idx.variables)
+        return [v for v in indices[0].variables if v in common]
+
+    def variable_gaps(self) -> list:
+        """``[(label, (missing, …)), …]`` for the files short of a variable some
+        other file in the series has. Empty when they all agree."""
+        indices = self._live_indices()
+        union = []
+        for idx in indices:
+            union += [v for v in idx.variables if v not in union]
+        out = []
+        for i, idx in enumerate(indices):
+            missing = tuple(v for v in union if v not in set(idx.variables))
+            if missing:
+                out.append((self.labels[i] or self.paths[i], missing))
+        return out
 
     # ------------------------------------------------------------------ #
     def frame(self, k: int) -> TecplotResult:
-        """Materialise zone ``k``, serving it from the cache when possible."""
-        # Ask for the index BEFORE the cache lookup: on a changed file it is what drops
-        # the now-foreign frames, and it is the index the read below must go through.
-        idx = self._live_index()
+        """Materialise global frame ``k``, serving it from the cache when possible."""
+        # Ask for the map BEFORE the cache lookup: on a changed file it is what drops
+        # the now-foreign frames, and it holds the index the read below goes through.
+        m = self._live_map()
         if k in self._frames:
             r = self._frames.pop(k)      # re-insert: most-recently-used last
             self._frames[k] = r
             return r
-        r = TecplotResult.from_file(self.path, zone=k, index=idx)
+        fi, zi = m[k]
+        r = TecplotResult.from_file(self.paths[fi], zone=zi,
+                                    index=self._indices[fi])
         self._frames[k] = r
         self._bytes += _frame_nbytes(r)
         self._evict()
@@ -160,7 +304,8 @@ class ResultSeries:
 
     # ------------------------------------------------------------------ #
     def global_range(self, var: str, progress=None):
-        """(vmin, vmax) of ``var`` across EVERY frame, cached per variable.
+        """(vmin, vmax) of ``var`` across EVERY frame of EVERY file, cached per
+        variable.
 
         ``progress(done, total)`` is called after each frame so a long scan can
         report itself. Returns None when the variable has no finite values
@@ -169,10 +314,11 @@ class ResultSeries:
         if var in self._ranges:
             return self._ranges[var]
         lo, hi = np.inf, -np.inf
-        # The scan must describe ONE file: if it is rewritten while we are part-way
-        # through (a re-run into the same case dir), the frames already read belong to
-        # the previous one, so the result is not cached as this file's range.
-        started_on = self._stamp
+        # The scan must describe ONE generation of these files: if any is rewritten
+        # while we are part-way through (a re-run into the same case dir), the frames
+        # already read belong to the previous one, so the result is not cached as this
+        # series' range.
+        started_on = list(self._stamps)
         n = self.n_frames
         for k in range(n):
             vals = np.asarray(self.frame(k).get_cell_field(var), dtype=float)
@@ -183,7 +329,7 @@ class ResultSeries:
             if progress is not None:
                 progress(k + 1, n)
         rng = None if lo > hi else (lo, hi)
-        if self._stamp == started_on:
+        if self._stamps == started_on:
             self._ranges[var] = rng
         return rng
 
@@ -192,7 +338,7 @@ class ResultSeries:
         return var in self._ranges
 
     def invalidate(self) -> None:
-        """Force a rebuild: drop every cache and re-scan the file from scratch.
+        """Force a rebuild: drop every cache and re-scan every file from scratch.
 
         Ordinary staleness needs no call — every access re-checks (mtime, size). This is
         for the case that check cannot see: a rewrite landing inside one mtime tick at
@@ -200,5 +346,7 @@ class ResultSeries:
         ``index_for``, which would hand back the very index it was told to discard.
         """
         self._drop_caches()
-        self._stamp = stamp(self.path)      # before the scan; see __init__
-        self._index = build_index(self.path)
+        for i, path in enumerate(self.paths):
+            self._stamps[i] = stamp(path)      # before the scan; see __init__
+            self._indices[i] = build_index(path)
+        self._map = self._build_map()

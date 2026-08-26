@@ -75,6 +75,19 @@ def run_tag(name: str) -> str:
     return ""
 
 
+def strip_run_tag(name: str) -> str:
+    """``name`` without its trailing run tag, if it has one.
+
+    The counterpart of :func:`run_tag`, in one place because two callers strip
+    the same slot: :func:`archive_name` replaces it with the archive suffix, and
+    ``services/result_legs`` normalises a result file's name to the stem its
+    other legs carry it under (``xtecp_sol_allz.dat.gui`` and
+    ``xtecp_sol_allz.dat.prev_001`` are the same output of two runs).
+    """
+    tag = run_tag(name)
+    return name[:-len(tag)] if tag else name
+
+
 def archive_suffix(name: str) -> str:
     """The ``"prev_001"`` an already-archived name carries, or ""."""
     m = _ARCHIVE_SUFFIX_RE.search(name)
@@ -109,8 +122,7 @@ def archive_name(name: str, suffix: str) -> str:
     """
     if archive_suffix(name):
         return name
-    tag = run_tag(name)
-    return (name[:-len(tag)] if tag else name) + "." + suffix
+    return strip_run_tag(name) + "." + suffix
 
 
 # Quoted values in input.in are ALL file paths (see SolverConfig.generate_input_in).

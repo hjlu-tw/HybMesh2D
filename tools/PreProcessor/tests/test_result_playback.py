@@ -478,10 +478,10 @@ check(len(tecplot_index._CACHE) <= tecplot_index._CACHE_MAX,
 # it must force a rebuild rather than re-ask the shared cache — which would hand back
 # the very index it was told to discard.
 inv = ResultSeries(multi)
-before = inv._index
+before = inv._indices[0]
 inv.frame(0)
 inv.invalidate()
-check(inv._index is not before and inv.n_frames == 5 and inv.cached_frames() == 0,
+check(inv._indices[0] is not before and inv.n_frames == 5 and inv.cached_frames() == 0,
       "9. invalidate() rebuilds the index and drops the frames even when the file looks "
       "unchanged (a rewrite inside one mtime tick at the same size)")
 

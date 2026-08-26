@@ -1,4 +1,6 @@
 from __future__ import annotations
+import os
+
 import numpy as np
 
 import matplotlib
@@ -6,9 +8,10 @@ matplotlib.use("QtAgg")
 import matplotlib.tri as mtri
 
 from app.models.result_data import TecplotResult
-
 from app.services.logging_setup import get_logger
-from app.utils import block_signals
+from app.services.result_legs import LegSeries, ResultLeg, list_result_legs
+from app.services.restart_points import OTHER, UNKNOWN_ITERATION
+from app.utils import block_signals, confirm
 
 _log = get_logger(__name__)
 
@@ -38,39 +41,103 @@ class ResultCanvasSetupMixin:
                      transform=self.ax.transAxes, fontsize=12)
         self.canvas.draw_idle()
 
-    def load_result_path(self, path: str, zone: int = -1):
-        """Populate the zone selector from the file, then load the chosen zone."""
+    def load_result_path(self, path: str, zone: int = -1,
+                         ask_legs: bool = True):
+        """Populate the zone selector from the result, then load the chosen frame.
+
+        ``ask_legs`` is what lets a caller that must not open a modal — a
+        pipeline or batch run driving the auto-load at the end of a solve —
+        suppress the "open the whole restarted solve?" question. The DECISION
+        stays here (a view owns its prompts); only the permission to ask is the
+        caller's.
+        """
         self._result_path = path
         # A manual colour range is view state for the result that is loaded, so a
         # new file starts clean rather than colouring a new run with the previous
         # one's numbers. Frames of ONE run go through set_result, which keeps it.
         self.reset_clim_store()
-        # Index the file first: the series owns the frame cache the playback
-        # transport steps through, and the zone list comes from the same index.
-        self._attach_series(path)
+        # Index the files first: the series owns the frame cache the playback
+        # transport steps through, and the zone list comes from the same indices.
+        legs = self._resolve_legs(path, ask_legs)
+        self._attach_series(legs.paths, legs.labels)
+        n = self._series.n_frames if self._series is not None else 0
+        k = (n - 1 if zone < 0 else max(0, min(n - 1, zone))) if n else 0
         self._building = True
         try:
-            zones = TecplotResult.list_zones(path)
             self.zone_combo.clear()
-            # A transient run labels every zone "time 0", so the position is the
-            # only thing distinguishing them; show the title only when the file
-            # actually gives its zones different ones.
-            distinct = len({z.title for z in zones}) > 1
-            for z in zones:
-                label = (f"{z.index + 1}: {z.title}" if distinct
-                         else f"Frame {z.index + 1}")
-                self.zone_combo.addItem(label, z.index)
-            if zones:
-                self.zone_combo.setCurrentIndex(len(zones) - 1 if zone < 0 else zone)
+            # One item per frame OF THE SERIES, labelled by the series so the
+            # selector and the frame read-out say the same thing — including which
+            # leg of a restarted solve a frame belongs to. The item DATA is the
+            # global frame number, which is what ``_on_zone_changed`` shows.
+            for i in range(n):
+                self.zone_combo.addItem(self._series.frame_label(i), i)
+            if n:
+                self.zone_combo.setCurrentIndex(k)
         finally:
             self._building = False
-        k = len(zones) - 1 if zone < 0 else zone
-        if self._series is not None and 0 <= k < self._series.n_frames:
+        if n:
             self._frame = k
             self.set_result(self._series.frame(k))
             self._update_playback_ui()
         else:
             self.set_result(TecplotResult.from_file(path, zone=zone))
+
+    # ------------------------------------------------------------------ #
+    def _resolve_legs(self, path: str, ask: bool) -> LegSeries:
+        """Which files this load covers: only ``path``, or every leg of the solve.
+
+        **Ask, do not assume** (#32). A restarted solve's result is several files
+        and playing them as one animation is what the user usually wants, but
+        opening one leg on its own stays a normal thing to do — so the whole
+        series is offered and declining loads exactly the file that was asked
+        for. Declining yields a ONE-leg series rather than a different code path,
+        so the frame cache, the labels and the ranges work the same way either
+        way.
+
+        **Not asking means No**, never "yes on their behalf": a caller that
+        cannot put up a modal cannot consent for the user, and one file is what
+        every caller got before #32 — the same reason
+        :meth:`_confirm_open_legs` answers No when headless.
+        """
+        found = list_result_legs(path)
+        if len(found) < 2:
+            return found
+        if not (ask and self._confirm_open_legs(found, path)):
+            i = found.index_of(path)
+            leg = (found.legs[i] if i >= 0
+                   else ResultLeg(kind=OTHER, key="", path=path))
+            self._log(f"[Results] opened only {os.path.basename(path)}; this "
+                      f"solve has {len(found)} legs (open it again and answer "
+                      "Yes to play them as one animation).")
+            return LegSeries(legs=(leg,))
+        for msg in found.warnings:
+            self._log(msg)
+        self._log(f"[Results] playing {len(found)} legs of this solve as one "
+                  f"series: {', '.join(found.labels)}.")
+        return found
+
+    def _confirm_open_legs(self, found: LegSeries, path: str) -> bool:
+        """Offer the whole restarted solve. Headless answers No.
+
+        No, because that is what every caller did before this existed: a batch or
+        CI run asked for one file and must keep getting one file, and the same
+        answer is the conservative one for a prompt nobody can see.
+        """
+        rows = "\n".join(
+            f"{leg.key or os.path.basename(leg.path)}: "
+            f"{os.path.basename(leg.path)}"
+            + ("" if leg.iteration == UNKNOWN_ITERATION
+               else f"  (to iteration {leg.iteration}+)")
+            for leg in found.legs)
+        return confirm(
+            self, "Open the whole restarted solve?",
+            f"This solve is split across {len(found)} result files — it was "
+            f"restarted {len(found) - 1} time(s), and each leg's output was "
+            "archived beside it.\n\n"
+            "Play them all as one animation?\n\n"
+            f"No: open only '{os.path.basename(path)}'.",
+            detail="Legs, oldest solution first:\n" + rows,
+            headless_default=False)
 
     def set_result(self, result: TecplotResult):
         # Frames of one transient run share their mesh, so stepping/playing must
