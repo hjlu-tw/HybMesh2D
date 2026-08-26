@@ -100,7 +100,7 @@ from app.services.result_legs import (  # noqa: E402
     leg_stem, list_result_legs,
 )
 from app.services.restart_points import ARCHIVE, LATEST, OTHER  # noqa: E402
-from app.views import result_canvas_setup_mixin as setup_mod  # noqa: E402
+from app import utils as utils_mod  # noqa: E402
 from app.views.result_canvas import ResultCanvasView  # noqa: E402
 
 RESULT = "xtecp_sol_allz.dat"
@@ -543,31 +543,47 @@ check(vs.variable_gaps() == [("latest", ("M",))],
       f"({vs.variable_gaps()})")
 
 # ── 3. the transport and the canvas ──────────────────────────────────────
+# Nothing here may put up a modal. #32 asked one on every load and gave the
+# entry point a flag to suppress it; #43 deleted both, so a confirm() reaching
+# the canvas at all is now the failure — hence a fake that RECORDS rather than
+# one that answers.
 _asked = []
-_answer = [True]
-_real_confirm = setup_mod.confirm
+_real_confirm = utils_mod.confirm
 
 
 def fake_confirm(*a, **k):
     _asked.append((a, k))
-    return _answer[0]
+    return False
 
 
-setup_mod.confirm = fake_confirm
+utils_mod.confirm = fake_confirm
 
 v = ResultCanvasView()
 v.load_result_path(live_path)
-check(len(_asked) == 1 and _asked[0][1].get("headless_default") is False,
-      f"3. loading a result in a case with archives ASKS, and the headless "
-      f"answer is No — a batch run asked for one file and keeps getting one "
-      f"({_asked[0][1].get('headless_default') if _asked else None})")
+check(_asked == [],
+      f"3. opening a leg of a restarted solve asks NOTHING — the common case "
+      f"costs no clicks, and an unattended run takes the same path an "
+      f"interactive one does, so a CI screenshot shows what the user sees "
+      f"({_asked})")
 check(v._series is not None and v._series.n_files == 3
       and v._frame_count() == 8,
-      f"3. answering Yes plays the whole solve: 8 frames over 3 legs "
+      f"3. ...and it plays the whole solve by default: 8 frames over 3 legs "
       f"({v._frame_count()})")
 check(v._frame == 7,
-      f"3. ...and it opens on the LAST frame of the NEWEST leg, which is still "
-      f"the most-converged solution ({v._frame})")
+      f"3. ...opening on the LAST frame of the leg that was opened — here the "
+      f"live one, which is also the most-converged solution ({v._frame})")
+# isHidden(), not isVisible(): under the offscreen platform a child of a
+# top-level that was never shown reports isVisible() False either way.
+check(not v.one_leg_cb.isHidden() and not v.one_leg_cb.isChecked(),
+      f"3. ...with 'This leg only' offered and unticked: the escape is a control "
+      f"the user can see and reverse, not a question they must answer before the "
+      f"picture appears ({v.one_leg_cb.isHidden()}, {v.one_leg_cb.isChecked()})")
+tip = v.frame_label.toolTip()
+check("prev_001" in tip and "500" in tip and "3000" in tip
+      and tip == v.zone_combo.toolTip(),
+      f"3. ...and each leg's count is where the leg is NAMED — the frame "
+      f"read-out and the frame selector — rather than in a log line to scroll "
+      f"back to ({tip!r})")
 check(v.zone_combo.count() == 8
       and v.zone_combo.itemText(0).startswith("prev_001")
       and v.zone_combo.currentIndex() == 7,
@@ -656,7 +672,8 @@ check(v.manual_clim("p") == seeded,
       f"3. ...and it is remembered, so a leg boundary cannot re-seed (and so "
       f"drift) it ({v.manual_clim('p')})")
 solo_v = ResultCanvasView()
-solo_v.load_result_path(paths[2], ask_legs=False)
+solo_v.load_result_path(paths[2])
+solo_v.one_leg_cb.setChecked(True)
 solo_v.select_variable("p")
 solo_v.show_frame(0)
 solo_v.set_clim_auto(False)
@@ -667,26 +684,39 @@ check(solo_v.manual_clim("p") == (201.0, 202.0),
       f"({solo_v.manual_clim('p')})")
 v.set_clim_auto(True)
 
-# Declining loads exactly the file that was asked for.
-_answer[0] = False
+# "This leg only" restricts the series to exactly the file that was opened.
 _asked.clear()
 v2 = ResultCanvasView()
 v2.load_result_path(live_path)
-check(len(_asked) == 1 and v2._series.n_files == 1
-      and v2._series.paths == [live_path] and v2._frame_count() == 3,
-      f"3. declining loads ONLY the file requested — opening one leg on its own "
-      f"stays a normal thing to do ({v2._series.paths})")
+v2.one_leg_cb.setChecked(True)
+check(v2._series.n_files == 1 and v2._series.paths == [live_path]
+      and v2._frame_count() == 3,
+      f"3. 'This leg only' plays ONLY the file that was opened — inspecting one "
+      f"leg stays a normal thing to do ({v2._series.paths})")
 check(v2.frame_label.text() == "Frame 3 / 3",
       f"3. ...and that one file is labelled the way it always was, with no leg "
       f"name and no series position to distinguish it from "
       f"({v2.frame_label.text()!r})")
+check(not v2.one_leg_cb.isHidden(),
+      "3. ...and the box stays visible while it is ticked, or there would be no "
+      "way back: it follows how many legs the SOLVE has, not how many are loaded")
+v2.one_leg_cb.setChecked(False)
+check(v2._series.n_files == 3 and v2._frame_count() == 8 and v2._frame == 7,
+      f"3. ...unticking rebuilds the whole series and lands on the same leg's "
+      f"last frame, so the control moves the animation around the picture "
+      f"rather than moving the picture ({v2._series.n_files}, {v2._frame})")
 
-_asked.clear()
+# Opening an ARCHIVED leg lands on THAT leg's last frame, not the solve's.
 v3 = ResultCanvasView()
-v3.load_result_path(live_path, ask_legs=False)
-check(_asked == [] and v3._series.n_files == 1,
-      "3. ask_legs=False does not ask at all — a pipeline or batch run reaches "
-      "this from the solver's finished handler and must not stop on a modal")
+v3.load_result_path(paths[0])
+check(v3._series.n_files == 3 and v3._frame == 1
+      and v3._series.path_of(v3._frame) == paths[0],
+      f"3. opening an archived leg plays the whole solve but LANDS on that "
+      f"leg's last frame — the file the user named is the one they should be "
+      f"looking at ({v3._frame})")
+v3.one_leg_cb.setChecked(True)
+check(v3._series.n_files == 1 and v3._frame == 1,
+      f"3. ...and toggling 'This leg only' keeps them on it ({v3._frame})")
 
 # A single-leg case is not a restarted solve: nothing is offered.
 _asked.clear()
@@ -694,13 +724,13 @@ solo_case = os.path.join(tmp, "solo")
 swork = build_case(solo_case, [], live=(3, 0.0), live_rows=(10, 100))
 v4 = ResultCanvasView()
 v4.load_result_path(os.path.join(swork, f"{RESULT}.gui"))
-check(_asked == [] and v4._frame_count() == 3
-      and v4.frame_label.text() == "Frame 3 / 3",
+check(v4._frame_count() == 3 and v4.frame_label.text() == "Frame 3 / 3"
+      and v4.one_leg_cb.isHidden(),
       f"3. a case that was never restarted has one leg, so there is nothing to "
-      f"offer and nothing to rename ({v4.frame_label.text()!r})")
+      f"rename and no 'This leg only' to offer ({v4.frame_label.text()!r}, "
+      f"{v4.one_leg_cb.isHidden()})")
 
 # The variable list is the intersection, and the subtraction is logged.
-_answer[0] = True
 _asked.clear()
 vcase = os.path.join(tmp, "vcase")
 vwork = build_case(vcase, [("prev_001", 2, 0.0, 490, (10, 490))],
@@ -728,7 +758,7 @@ check(any("does not carry" in m and "M" in m for m in said),
       f"3. ...and the leg that is short of it is named, because a silent "
       f"subtraction reads as a variable that was never there ({said})")
 
-setup_mod.confirm = _real_confirm
+utils_mod.confirm = _real_confirm
 shutil.rmtree(tmp, ignore_errors=True)
 
 _wd.cancel()

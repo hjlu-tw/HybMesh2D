@@ -227,6 +227,14 @@ class ResultPanelHandlersMixin:
         # how a newly loaded result, whose store was cleared, gets here even
         # though the variable name did not change).
         var = str(info.get("var", ""))
+        # Where a whole-series range is available, and when it is scanned, is
+        # stated on the fields it applies to rather than logged on every variable
+        # change (#43 moved the scan out of the paint path, so it happens at one
+        # moment and that moment has to be findable).
+        hint = (self._canvas.series_range_hint()
+                if self._canvas is not None else "")
+        for w in (self.vmin, self.vmax):
+            w.setToolTip(hint)
         if (self.auto_cb.isChecked() or var != self._clim_box_var
                 or info.get("clim_seeded")):
             with block_signals(self.vmin, self.vmax):

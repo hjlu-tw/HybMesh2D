@@ -11,19 +11,18 @@ animation into a repeating one. The same switch governs the step buttons, which
 clamp at the ends rather than jumping to the far end of the run. First/Last are
 the deliberate jumps to an end and ignore Loop entirely.
 
+**A restarted solve plays as one animation, and is not asked about.** Opening
+any leg of it opens the whole solve (#32 asked a modal on every load; #43 removed
+it, along with the permission flag that let a caller suppress it — interactive
+and unattended loads now take one path). **"This leg only"** is the escape, and
+it follows the same rules as "Lock scale": shown only when there IS more than one
+leg, never persisted, unticked on every load. Toggling it rebuilds the series.
+
 Two things make the animation readable rather than merely possible:
 
-* **The colour scale can be locked across the whole run** (the "Lock scale" box,
-  which only exists for a transient result). Auto-scaling every frame to its own
-  min/max repaints the same colours onto a changing range, so a field that decays
-  by 5x looks identical from frame to frame; ticking the box scans all frames for
-  the current variable (cached per variable, see ``ResultSeries.global_range``)
-  and pins that range for the run.
-
-  USER-REQUESTED (2026-08-12): the lock is **off by default**, because
-  "Auto (fit to data)" has to mean what it says — the data on screen, i.e. the
-  frame being shown. A range the user set by hand always wins over both: the
-  lock is a fix for auto-scaling, not an override of an explicit choice.
+* **The colour scale is its own concern**, in ``result_scale_lock_mixin`` — the
+  lock, the seed and the precedence between them. Split out when this file passed
+  the GUI length budget; the two only ever shared a toolbar row.
 * **The mesh is not rebuilt per frame.** ``set_result`` reuses the triangulation
   when the incoming frame has the same nodes, which also keeps probes/lines/
   extrema alive across a step (they are pinned to geometry that did not move).
@@ -32,7 +31,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton,
 )
 
 from app.models.result_series import ResultSeries
@@ -127,9 +126,22 @@ class ResultPlaybackMixin:
             "Off (default): 'Auto (fit to data)' fits each frame on its own.\n"
             "A range typed into Min/Max wins over both.")
 
+        # Only for a restarted solve, and unticked every time: opening any leg
+        # plays the whole solve, and inspecting one on its own is the exception
+        # the user asks for rather than a preference the view carries over.
+        self.one_leg_cb = QCheckBox("This leg only")
+        self.one_leg_cb.setChecked(False)
+        self.one_leg_cb.setStyleSheet(f"color:{_FG};font-size:11px;")
+        self.one_leg_cb.setToolTip(
+            "Play only the file you opened, instead of every leg of this "
+            "restarted solve.\n"
+            "Shown only when the solve HAS more than one leg, and always off "
+            "when a result is opened.")
+
         for w in (self.first_btn, self.prev_btn, self.play_btn, self.next_btn,
                   self.last_btn, self.frame_label, speed_label,
-                  self.speed_combo, self.loop_cb, self.lock_scale_cb):
+                  self.speed_combo, self.loop_cb, self.lock_scale_cb,
+                  self.one_leg_cb):
             row.addWidget(w)
         row.addStretch()
         # Directly under row 1 (the data selectors it belongs with), not appended
@@ -143,6 +155,11 @@ class ResultPlaybackMixin:
                                   self.lock_scale_cb]
         for w in self._playback_widgets:
             w.setVisible(False)
+        # Deliberately NOT in _playback_widgets: that group answers "does this
+        # result have several FRAMES?", and this box answers "does this SOLVE have
+        # several LEGS?" — two different questions, so it gets its own line in
+        # _update_playback_ui rather than riding along with the transport.
+        self.one_leg_cb.setVisible(False)
 
         self.first_btn.clicked.connect(lambda: self.go_to_end(-1))
         self.prev_btn.clicked.connect(lambda: self.step_frame(-1))
@@ -153,14 +170,20 @@ class ResultPlaybackMixin:
         # Ticking Loop at an end must re-enable the step button parked there.
         self.loop_cb.toggled.connect(lambda _=None: self._update_playback_ui())
         self.lock_scale_cb.toggled.connect(self._on_lock_scale_toggled)
+        self.one_leg_cb.toggled.connect(self._on_one_leg_toggled)
 
     def _init_playback(self):
         self._series: ResultSeries | None = None
         self._frame = 0
         self._playing = False
+        self._legs = None            # the whole solve, whether or not it is loaded
         self._range_lock = None      # (vmin, vmax) pinned across the animation
         self._range_lock_var = ""    # which variable _range_lock belongs to
         self._scanning = False       # a range scan is running (blocks re-entry)
+        # Variables whose range came from a SUCCESSFUL whole-series scan. Not
+        # "variables that have a range": a failed scan must be retryable, and a
+        # range the user typed must not be scanned away. See the scale mixin.
+        self._series_seeded: set = set()
         self._play_timer = QTimer(self)
         self._play_timer.setTimerType(Qt.TimerType.CoarseTimer)
         self._play_timer.timeout.connect(self._advance_frame)
@@ -176,6 +199,7 @@ class ResultPlaybackMixin:
         self.stop_playback()
         self._range_lock = None
         self._range_lock_var = ""
+        self._series_seeded.clear()
         try:
             self._series = ResultSeries(paths, labels=labels)
         except (OSError, ValueError) as e:
@@ -198,14 +222,31 @@ class ResultPlaybackMixin:
             self._log(f"[Results] leg '{label}' does not carry "
                       f"{', '.join(missing)} — the variable list shows only what "
                       "every leg has, so the animation never changes subject "
-                      "part-way through.")
+                      "part-way through. Tick 'This leg only' on a leg that has "
+                      "it to see it.")
+
+    def _on_one_leg_toggled(self, _on=None):
+        """Rebuild the series with / without the other legs.
+
+        The landing frame is the last frame of the leg the user OPENED, which is
+        where the load put them too — so the control moves the surrounding
+        animation and not the picture in front of them.
+        """
+        if getattr(self, "_result_path", ""):
+            self.reload_legs()
+
+    def _one_leg_only(self) -> bool:
+        cb = getattr(self, "one_leg_cb", None)
+        return bool(cb.isChecked()) if cb is not None else False
 
     def _detach_series(self):
         self.stop_playback()
         self._series = None
         self._frame = 0
+        self._legs = None
         self._range_lock = None
         self._range_lock_var = ""
+        self._series_seeded.clear()
         self._update_playback_ui()
 
     # ------------------------------------------------------------------ #
@@ -351,122 +392,6 @@ class ResultPlaybackMixin:
             self._play_timer.start(max(1, int(1000 / self._playback_rate())))
 
     # ------------------------------------------------------------------ #
-    # Colour-scale lock
-    # ------------------------------------------------------------------ #
-    def _lock_color_range(self):
-        """Pin the colour scale to the current variable's range over ALL frames.
-
-        Skipped unless the user ticked "Lock scale" — auto means the frame on
-        screen — and also when the range was set by hand (their choice stands)
-        or the file has a single frame (nothing to keep steady). The scan is paid
-        once per variable; afterwards the answer is cached on the series.
-        """
-        if (self._series is None or self._frame_count() < 2
-                or not self._clim_auto or not self._scale_locked()):
-            return
-        var = self._current_var()
-        if not var:
-            return
-        if self._range_lock is not None and self._range_lock_var == var:
-            return
-        known = self._series.has_global_range(var)
-        rng = self.scan_series_range(var)
-        if rng is None and not self._series.has_global_range(var):
-            return                      # a re-entrant call, or the scan failed
-        self._range_lock = rng
-        self._range_lock_var = var
-        if rng and not known:
-            self._log(f"[Results] '{var}' locked to [{rng[0]:.6g}, {rng[1]:.6g}] "
-                      "for playback (all frames share one colour scale).")
-
-    def scan_series_range(self, var: str, pump: bool = True):
-        """``var``'s range over EVERY frame of the series, or None.
-
-        The one place that pays for a full scan, so a variable is scanned once
-        whichever of its two callers asked — the "Lock scale" box, and the
-        per-variable seed in ``render`` when the series has several legs (#32).
-        Returns None on a re-entrant call or a failed read; the answer itself is
-        cached on the series, so asking again is free.
-
-        ``pump`` is the difference between those two callers, not a knob. The
-        lock is ticked by a CLICK, so the event loop can be pumped to paint the
-        "this is going to take a moment" message before the scan blocks — an
-        unexplained freeze reads as a hang. The seed happens INSIDE ``render``,
-        where pumping would re-enter the paint we are in the middle of, so there
-        the cursor is the only feedback and the message lands afterwards.
-        """
-        if self._series is None or not var or self._scanning:
-            return None
-        known = self._series.has_global_range(var)
-        self._scanning = True
-        try:
-            if not known:
-                self._log(f"[Results] scanning {self._frame_count()} frames for "
-                          f"the '{var}' range (once per variable)…")
-                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                if pump:
-                    QApplication.processEvents()
-            try:
-                return self._series.global_range(var)
-            except (OSError, ValueError) as e:
-                _log.warning("global range scan failed for %s: %s", var, e)
-                return None
-        finally:
-            self._scanning = False
-            if not known:
-                QApplication.restoreOverrideCursor()
-
-    def series_seed_range(self, var: str):
-        """What a manual colour range should be SEEDED from, or None for "the
-        frame on screen".
-
-        #24 seeds an untouched variable from the frame being shown, so nothing
-        jumps at the moment Auto is unticked. Across the legs of a restarted
-        solve that is the wrong basis and #32 says so: one leg's band applied to
-        the whole solve saturates or flattens every other leg, and the numbers in
-        the Min/Max boxes then describe a range that is not on screen — the very
-        symptom #24 exists to remove, reached one level up. So a MULTI-LEG series
-        seeds from the series, and a single file keeps #24's rule untouched.
-
-        The cost is the same scan "Lock scale" pays and is not hidden: unticking
-        Auto on a long restarted solve blocks while every frame is read once.
-        """
-        series = getattr(self, "_series", None)
-        if series is None or series.n_files < 2:
-            return None
-        return self.scan_series_range(var, pump=False)
-
-    def _on_lock_scale_toggled(self, on: bool):
-        """Tick = scan the run and pin its range; untick = back to per-frame auto."""
-        if on:
-            self._lock_color_range()
-        else:
-            self._range_lock = None
-            self._range_lock_var = ""
-            self._log("[Results] colour scale follows each frame again "
-                      "(Auto fits the frame on screen).")
-        self.render()
-
-    def _invalidate_range_lock(self):
-        """Called when the displayed variable changes — the lock is per-variable."""
-        if self._range_lock is not None and self._range_lock_var != self._current_var():
-            self._range_lock = None
-            self._range_lock_var = ""
-
-    def playback_clim(self):
-        """The pinned (vmin, vmax) if it applies to what is on screen, else None.
-
-        ``render`` consults this ONLY in auto mode, so a manual colour range is
-        never silently replaced by the animation's.
-        """
-        if (self._range_lock is None or not self._clim_auto
-                or not self._scale_locked()):
-            return None
-        if self._range_lock_var != self._current_var():
-            return None
-        return self._range_lock
-
-    # ------------------------------------------------------------------ #
     def _update_playback_ui(self):
         """Reflect frame position / playing state; hide the bar for 1-frame files."""
         n = self._frame_count()
@@ -475,6 +400,9 @@ class ResultPlaybackMixin:
             w.setVisible(multi)
         if not hasattr(self, "play_btn"):
             return
+        # Visibility follows how many legs the SOLVE has, not how many are loaded
+        # — ticking the box leaves one, and the box has to stay reachable to untick.
+        self.one_leg_cb.setVisible(multi and len(self._legs or ()) > 1)
         self.play_btn.setText("❚❚ Pause" if self._playing else "▶ Play")
         self.play_btn.setToolTip(
             "Pause the animation" if self._playing else
@@ -491,6 +419,9 @@ class ResultPlaybackMixin:
         self.first_btn.setEnabled(multi and not at_first)
         self.last_btn.setEnabled(multi and not at_last)
         self.frame_label.setText(self._read_out())
+        tip = self._legs_tip()
+        self.frame_label.setToolTip(tip)
+        self.zone_combo.setToolTip(tip)
 
     def _read_out(self) -> str:
         """What the transport says about where it is.
@@ -510,6 +441,24 @@ class ResultPlaybackMixin:
         if self._series.n_files > 1:
             label += f" ({self._frame + 1} / {n})"
         return label
+
+    def _legs_tip(self) -> str:
+        """How far each leg of this solve got, for the two widgets that name a leg.
+
+        The frame read-out and the frame selector both say WHICH leg a frame
+        belongs to, so the count belongs beside them rather than in a log line the
+        user has to scroll back to (#43). "" for a solve with one leg: there is
+        nothing to distinguish.
+        """
+        legs = self._legs
+        if not legs or len(legs) < 2:
+            return ""
+        rows = []
+        for leg in legs.legs:
+            got = (f"reached iteration {leg.span.end}" if leg.span.known
+                   else "how far it got is not recorded")
+            rows.append(f"{leg.key}: {got}")
+        return "This solve's legs, oldest first:\n" + "\n".join(rows)
 
     def _log(self, msg: str):
         """Say something to the user about playback.

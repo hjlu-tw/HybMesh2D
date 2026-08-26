@@ -1004,13 +1004,30 @@ boundary. Rules that are load bearing:
   rather than dropped. Note the direction that is evidence: opening the `.gui`
   leg passes with or without the filter, so only the headless-leg direction
   proves anything.
-- **Ask, do not assume — and NOT asking means No.** The offer is a `confirm` with
-  `headless_default=False`, and `load_result_path(..., ask_legs=False)` (passed by
-  `postprocess_ctrl` when `_pipeline_running`) declines rather than opening
-  everything silently: a caller that cannot put up a modal cannot consent for the
-  user, and one file is what every caller got before #32. Declining yields a
-  ONE-leg series rather than a second code path, so the cache, the labels and the
-  ranges behave identically either way.
+- **Opening any leg opens the SOLVE, and nothing is asked** (#43, reversing #32).
+  #32 shipped "ask, do not assume": a `confirm` with `headless_default=False` on
+  every result load, plus `load_result_path(..., ask_legs=False)` for a caller
+  that must not open a modal (`postprocess_ctrl`, reaching into `pipeline_ctrl`'s
+  private `_pipeline_running`). That made the common case cost a click and made an
+  unattended run behave differently from an interactive one, so a CI screenshot
+  showed something the user never sees. The modal is gone, the permission flag is
+  gone with it, and so is that reach — the one remaining `_pipeline_running` read
+  in `postprocess_ctrl` predates #32 and guards the load-FAILED modal, which is
+  still a modal. **`This leg only`** is the escape and it follows `Lock scale`'s
+  rules: shown only when the solve HAS more than one leg (so it stays reachable
+  while ticked — visibility asks how many legs the SOLVE has, not how many are
+  loaded), never persisted, unticked on every load. Restricting yields a ONE-leg
+  series rather than a second code path, so the cache, the labels and the ranges
+  behave identically either way.
+- **The landing frame is the last frame of the leg that was OPENED**, not of the
+  series (`ResultSeries.last_frame_of`). The two differ only when an archived leg
+  was named deliberately, and then the file the user asked for is the one they
+  should be looking at. A `This leg only` toggle lands there too, so the control
+  moves the animation around the picture instead of moving the picture.
+- **`load_result_path`'s second argument is a `frame`, not a `zone`.** It was a
+  zone index within one file until #32 made a load cover several, and the
+  single-file fallback (no readable series at all) no longer reuses that value as
+  a file-local zone — a series index has no meaning there.
 - **The variable selector is the INTERSECTION**, and the subtraction is logged
   naming the short leg. The derived quantities are recomputed from that
   intersection through the new `TecplotResult.derived_from_names` — a pure
@@ -1030,12 +1047,29 @@ boundary. Rules that are load bearing:
   leg's band saturates every other leg and the Min/Max boxes then describe a
   range that is not on screen, #24's own symptom one level up. So a MULTI-leg
   series seeds from the series and a single file keeps #24 exactly. The scan is
-  the one "Lock scale" already pays (`scan_series_range`, now shared), and its
-  `pump` argument is the difference between the two callers rather than a knob:
-  the lock is ticked by a click and can pump the event loop to paint its message
-  first, while the seed runs INSIDE `render`, where pumping would re-enter the
-  paint in progress. The first version shipped persistence only and the Spec axis
-  marked the acceptance item partial.
+  the one "Lock scale" already pays (`scan_series_range`, now shared). **It no
+  longer runs inside a paint** (#43): #32 called it from `render`, which is a
+  place that cannot pump the event loop — it would re-enter the paint in progress
+  — so switching variables in Custom mode froze the application for as long as
+  reading every frame takes, with no way to say why. It now runs in
+  `seed_range_from_series()`, called by the handler that unticks Auto, where the
+  "this will take a moment" line is painted first; switching variables afterwards
+  seeds from the frame on screen, and where the whole-series range is available is
+  stated in the Min/Max tooltip (`series_range_hint`) rather than logged on every
+  change. **A failed scan is not remembered** — `_series_seeded` records the
+  variables whose range came from a scan that actually SUCCEEDED, so a transient
+  read error does not pin a variable to one frame's numbers for the session, and
+  it is keyed on the scan rather than on "is a range remembered" because a range
+  the user TYPED must not be scanned away. The whole colour-scale concern (lock,
+  seed, precedence) moved into `views/result_scale_lock_mixin.py` when
+  `result_playback_mixin.py` passed the GUI length budget; the two only ever
+  shared a toolbar row.
+- **Each leg's iteration count is where the leg is NAMED** — the tooltips of the
+  frame read-out and the frame selector, which already say which leg a frame
+  belongs to — rather than in a log line the user scrolls back to. A load emits
+  ONE summary line naming the legs opened; each warning (overlap, tag exclusion,
+  a variable gap) stays a full line of its own, because each changes how the
+  picture should be read.
 - `set_result`'s triangulation reuse and #24's clim precedence
   (manual > lock > auto) are unchanged and both are pinned across a leg boundary.
 Three duplications this created were pushed to their owners rather than left:

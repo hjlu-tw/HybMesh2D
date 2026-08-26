@@ -22,6 +22,7 @@ from app.views.result_canvas_controls_mixin import ResultCanvasControlsMixin
 from app.views.result_canvas_setup_mixin import ResultCanvasSetupMixin
 from app.views.result_canvas_surface_mixin import ResultCanvasSurfaceMixin
 from app.views.result_playback_mixin import ResultPlaybackMixin
+from app.views.result_scale_lock_mixin import ResultScaleLockMixin
 from app.services.surface_source import SurfaceSpec
 
 from app.services.logging_setup import get_logger
@@ -39,6 +40,7 @@ _COLORMAPS = ["turbo", "viridis", "inferno", "plasma", "coolwarm", "jet", "RdBu_
 class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
                        ResultCanvasSurfaceMixin,
                        ResultCanvasVectorMixin, ResultCanvasControlsMixin,
+                       ResultScaleLockMixin,
                        ResultPlaybackMixin, ResultCanvasSetupMixin, QWidget):
     """Matplotlib-embedded 2D result viewer.
 
@@ -345,12 +347,12 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
             # a panel showing their numbers has to be refreshed.
             seeded = not self._clim_auto and manual is None
             if seeded:
-                # The basis is the frame on screen for a single file (#24) and
-                # the WHOLE SERIES for a restarted solve (#32) — see
-                # ``series_seed_range``. Either way it is remembered, which is
-                # what stops playback re-seeding and drifting.
-                span = self.series_seed_range(var)
-                manual = self.remember_clim(var, *(span if span else (dmin, dmax)))
+                # Always the frame on screen, so nothing here reads a file (#43):
+                # the whole-series basis a restarted solve needs is applied by
+                # ``seed_range_from_series`` at the moment Auto is unticked, where
+                # a scan can explain itself. Remembering is what stops playback
+                # re-seeding (and so drifting) every frame.
+                manual = self.remember_clim(var, dmin, dmax)
             if manual is not None:
                 vmin, vmax = manual
             elif locked is not None:

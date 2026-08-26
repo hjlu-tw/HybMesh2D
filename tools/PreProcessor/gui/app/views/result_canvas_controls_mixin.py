@@ -60,8 +60,15 @@ class ResultCanvasControlsMixin:
         The MODE is global — one checkbox with one meaning — so this does not
         forget the per-variable numbers; switching back to Custom brings them
         back.
+
+        Leaving Auto is also the moment a restarted solve's whole-series range is
+        scanned (#43): it is a CLICK, so the scan can pump the event loop and
+        paint a "this will take a moment" line first. It used to happen inside
+        ``render``, where it froze a repaint with no way to say why.
         """
         self._clim_auto = bool(auto)
+        if not self._clim_auto:
+            self.seed_range_from_series()
         self.render()
 
     def set_clim(self, vmin: float, vmax: float):
