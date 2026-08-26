@@ -4,19 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Important: Git and Commit Policy
 
-**Still never run a mutating git command on your own** — `add`, `commit`, `push`,
-`checkout`, `reset`, `rebase`, `merge`, branch creation or deletion all wait for
-an explicit instruction. Read-only inspection (`git status`, `git diff`,
-`git log`) is free: you need it to do the job below.
+**Commit freely; everything else waits for an explicit instruction.** `add` and
+`commit` are yours to run when the work warrants one. `push`, `checkout`,
+`reset`, `rebase`, `merge`, branch creation or deletion all still wait to be
+asked for. Read-only inspection (`git status`, `git diff`, `git log`) is free:
+you need it to do the job below.
 
-**What changed (2026-08-14, USER-REQUESTED): you must now raise the subject
-yourself instead of staying silent.** The old rule made the assistant wait to be
-asked, so work piled up uncommitted and unreviewed.
+**What changed (2026-08-26, USER-REQUESTED): committing no longer needs
+permission.** The rule before this made every commit a round trip — propose a
+message, wait to be told yes — which was the same stall the 2026-08-14 change
+had already tried to remove by making the assistant raise the subject at all.
 
-**Prompt for a commit** once the working tree holds a *coherent, finished* unit
-of work — a feature that runs, a bug fixed with its test, a refactor that
-builds. Say what you'd commit and propose a message; do not run it. Signals that
-one has accumulated, any of which is enough:
+**Commits land on the current branch, `main` included.** Branch creation is one
+of the commands that still waits, so there is no branching around that: if a
+piece of work should not go onto the branch that is checked out, say so and it
+waits.
+
+**Commit** once the working tree holds a *coherent, finished* unit of work — a
+feature that runs, a bug fixed with its test, a refactor that builds. Say what
+you committed and the message you used; do not ask first. Signals that one has
+accumulated, any of which is enough:
 
 - a task the user framed as one job is done and verified;
 - roughly **200+ changed lines** or **5+ touched files** since the last commit;
@@ -25,19 +32,15 @@ one has accumulated, any of which is enough:
 - something risky comes next (a large refactor, a dependency bump, a migration)
   — a checkpoint before it is worth more than one after.
 
-Raise it **once per threshold crossing**, in a sentence or two at a natural
-pause, never mid-edit and never repeatedly for the same pile. "No" ends it for
-that unit of work.
-
 **Ask about a code review** when the uncommitted-or-unpushed body of work grows
-past what a commit prompt covers — about **3+ commits' worth**, **500+ changed
+past what a single commit covers — about **3+ commits' worth**, **500+ changed
 lines**, or a whole stage of a feature landing. Offer `/code-review` (Standards
 + Spec) and let the user decline. Prefer asking *before* a branch is pushed or a
 PR opened, since that is when a review is cheapest to act on.
 
 These numbers are defaults, not gates — a 30-line change to `BoundaryLayer.cpp`
-can deserve both prompts, and 400 lines of new test data can deserve neither.
-Judge by whether a reviewer would want a boundary there.
+can deserve both a commit boundary and a review, and 400 lines of new test data
+can deserve neither. Judge by whether a reviewer would want a boundary there.
 
 ## Important: Dispatch subagents ONE AT A TIME
 
