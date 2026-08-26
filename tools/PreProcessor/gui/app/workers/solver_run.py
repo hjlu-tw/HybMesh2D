@@ -6,7 +6,7 @@ import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from app.models.solver_config import SolverConfig
-from app.services import solver_case
+from app.services import case_files, solver_case
 from app.services.paths import find_mpi_launcher
 from app.workers.exit_codes import RC_EXCEPTION, RC_CANCELLED, RC_TIMEOUT
 from app.workers.proc_util import popen_kwargs, stop_process_async, kill_process
@@ -180,12 +180,23 @@ class SolverPipelineWorker(QThread):
             os.chmod(self._config.bdecompose_binary, 0o755)
         except OSError:
             pass
-        bd_dir = os.path.dirname(self._config.bdecompose_binary)
-        para_path = os.path.join(bd_dir, "para.in")
+        # Runs in the case's grid/, exactly where getPGrid ran (#37). It used to
+        # run in the BINARY's install dir, which got three things wrong at once:
+        # ``generate_bdecompose_para`` names the grid and bc by BARE BASENAME and
+        # nothing ever copied them out of the case, so the stage was asked to read
+        # a grid from a directory that does not contain it; the install dir does
+        # hold a stale hand-copied ``mesh_cartesian.grid``, so a case with that
+        # name found one and decomposed the WRONG mesh in silence; and the answer
+        # file was written into a shared, possibly read-only location that two
+        # concurrent runs would race on. grid/ answers all three — after stage 1
+        # it holds every file this stage reads, and the outputs land in the case
+        # that needs them.
+        grid_dir = self._getpgrid_dir
+        para_path = os.path.join(grid_dir, case_files.BDECOMPOSE_INPUT)
         self._config.generate_bdecompose_para(para_path)
-        self.log_signal.emit(f"[bDecompose] running in {bd_dir}")
+        self.log_signal.emit(f"[bDecompose] running in {grid_dir}")
         rc = self._run_stdin_stage(self._config.bdecompose_binary, para_path,
-                                   bd_dir, label="bDecompose")
+                                   grid_dir, label="bDecompose")
         if rc != 0:
             if self._cancelled:
                 # Cancel mid-stage must still signal completion, or the UI stays
@@ -195,6 +206,28 @@ class SolverPipelineWorker(QThread):
                 self.log_signal.emit(f"[bDecompose] exited with code {rc}")
                 self.finished_signal.emit(rc if rc else RC_EXCEPTION)
             return False
+        # Say where the comm map landed. Filling ``mpi_comm_map_fn`` in is #29's
+        # staging plus the user's declaration — a stage does not overrule what the
+        # caller declared (``services/ib_handoff``' rule) — so naming the produced
+        # path is what connects the two without deciding for them.
+        #
+        # Two residues worth knowing, both found in review and neither fixed here.
+        # (a) ORDER: ``prepare_case_dir`` stages the tables and writes ``input.in``
+        # BEFORE stage 1, so on the run that first produces this file there is
+        # nothing to stage yet. That still resolves rather than breaking — a
+        # relative ``../grid/mpi_comm_map.dat`` is passed through by
+        # ``_stage_table`` untouched (#25's rule 3) and the solver's cwd is
+        # ``work/`` — but it is referenced out of grid/ on that run and staged into
+        # work/ only on the next. (b) bDecompose also writes ``mpi_grid.dat``,
+        # ``mpi_bc<N>.dat`` and ``<bc>.def.mpi``, and whether the solver wants any
+        # of those in its own cwd is NOT known here: bDecompose ships prebuilt
+        # with no source and cannot run on this machine, so inventing a staging
+        # rule for them would be the "believable answer for the wrong input" class
+        # this repo already has two defences against. It is a question for the
+        # Linux acceptance run the issue asks for, not a guess to encode.
+        comm_map = os.path.join(grid_dir, case_files.COMM_MAP_NAME)
+        if os.path.exists(comm_map):
+            self.log_signal.emit(f"[bDecompose] comm map -> {comm_map}")
         self.progress_signal.emit(25)
         return True
 

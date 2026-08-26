@@ -11,10 +11,11 @@ from app.services.case_files import GUI_RUN_TAG
 from app.services.case_sources import mesh_provenance_paths
 from app.services.mesh_grid_lookup import resolve_case_grid
 from app.services.logging_setup import get_logger
-from app.services.solver_case import sanitize_case_name as _sanitize
-from app.utils import (
-    find_solver_executables, repo_root, find_mpi_launcher, is_mpi_binary,
+from app.services.paths import (
+    find_solver_executables, find_mpi_launcher, is_mpi_binary, repo_root,
+    wrong_executable_format,
 )
+from app.services.solver_case import sanitize_case_name as _sanitize
 
 _log = get_logger(__name__)
 
@@ -309,15 +310,43 @@ class SolverControllerMixin:
         # Domain decomposition implies a real MPI run. Refuse rather than silently
         # partition the grid and then run a serial solver on the un-partitioned mesh.
         if cfg.enable_decompose:
+            # Every message in this block says the same two things — which
+            # feature is on, and that turning it off is always an option — so
+            # the wrapper is shared rather than spelled once per precondition.
+            def mpi_err(problem: str, fix: str):
+                errs.append(f"Domain decomposition (MPI) is enabled but "
+                            f"{problem}. {fix}, or turn off decomposition.")
+
             if find_mpi_launcher() is None:
-                errs.append("Domain decomposition (MPI) is enabled but no mpirun/"
-                            "mpiexec was found on PATH. Install an MPI runtime or "
-                            "turn off decomposition.")
+                mpi_err("no mpirun/mpiexec was found on PATH",
+                        "Install an MPI runtime")
             if not is_mpi_binary(cfg.solver_binary):
-                errs.append("Domain decomposition (MPI) is enabled but the solver "
-                            "binary is not MPI-capable (no MPI symbols — likely the "
-                            "pthread build). Point to an MPI build of unicones or "
-                            "turn off decomposition.")
+                mpi_err("the solver binary is not MPI-capable (no MPI symbols "
+                        "— likely the pthread build)",
+                        "Point to an MPI build of unicones")
+            # The stage that partitions the grid was never checked at all, so
+            # enabling decomposition on a machine the prebuilt bDecompose cannot
+            # run on passed validation and died in stage 2 as a bare
+            # "[bDecompose] exited with code …" naming neither the field nor the
+            # file (#37, finding 3). Named here instead, beside the other two
+            # preconditions of the same feature.
+            # ``ensure_default_binaries`` fills this field at startup and on
+            # every project load, so a blank looks unreachable — it is not: the
+            # spec is a ``path`` row with a line edit, clearing it syncs "" into
+            # the model on the edit (panel -> model runs on every edit) and
+            # nothing re-fills it before Run. Measured; the branch stays.
+            bd = cfg.bdecompose_binary.strip()
+            if not bd:
+                mpi_err("no bDecompose binary is set",
+                        "Point the bDecompose field at the partitioning tool")
+            elif not os.path.isfile(bd):
+                mpi_err(f"the bDecompose binary is not there: {bd}",
+                        "Point the bDecompose field at the partitioning tool")
+            elif wrong_executable_format(bd):
+                mpi_err(f"the bDecompose binary {bd} is not in this platform's "
+                        f"executable format, so it cannot run on this machine",
+                        "Build or obtain bDecompose for this platform, or run "
+                        "the case on one that matches")
 
         return errs
 

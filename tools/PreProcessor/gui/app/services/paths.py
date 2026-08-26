@@ -19,6 +19,7 @@ though its own import of ``QApplication`` is deferred into the function body.
 from __future__ import annotations
 import os
 import shutil
+import sys
 
 # The module's own list of what moved here off the Qt side. `test_qt_free_seam`
 # derives its check from this rather than repeating the six names, so the gate
@@ -114,6 +115,71 @@ def find_stl3d_binary() -> str | None:
 def find_mpi_launcher() -> str | None:
     """Return the path to mpirun/mpiexec on PATH, or None if neither is present."""
     return shutil.which("mpirun") or shutil.which("mpiexec")
+
+
+# Executable-format magic, by platform. Only used to answer "is this file
+# definitely NOT runnable here?", so the map is deliberately small and anything
+# it cannot classify is left alone (see below).
+_ELF_MAGIC = (b"\x7fELF",)
+_MACHO_MAGIC = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",   # thin, LE 64/32
+                b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",   # thin, BE
+                b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca")   # universal (fat)
+_PE_MAGIC = (b"MZ",)
+_KNOWN_FORMATS = (("ELF", _ELF_MAGIC), ("Mach-O", _MACHO_MAGIC),
+                  ("PE", _PE_MAGIC))
+# Every platform whose native format we are prepared to ASSERT. Anything absent
+# answers "" below, which makes the whole test abstain — the alternative,
+# defaulting to ELF, would have refused a perfectly good PE binary on Windows,
+# i.e. produced the false refusal this test exists to avoid.
+_NATIVE_FORMAT = {"darwin": "Mach-O", "linux": "ELF", "win32": "PE"}
+
+
+def _executable_format(path: str) -> str:
+    """``"ELF"`` / ``"Mach-O"`` / ``"PE"``, or "" when the file is something else
+    (a ``#!`` script, an unreadable path, an archive) — i.e. something this test
+    has no opinion about."""
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4)
+    except OSError:
+        return ""
+    for name, magics in _KNOWN_FORMATS:
+        if any(head.startswith(m) for m in magics):
+            return name
+    return ""
+
+
+def _native_executable_format() -> str:
+    """The executable format this platform runs, or "" when we would be
+    guessing."""
+    for prefix, fmt in _NATIVE_FORMAT.items():
+        if sys.platform.startswith(prefix):
+            return fmt
+    return ""
+
+
+def wrong_executable_format(path: str) -> bool:
+    """True only when ``path`` is definitely not runnable on this machine.
+
+    The prebuilt bDecompose ships as an x86-64 **ELF** binary while a developer
+    machine here is arm64 macOS, so enabling domain decomposition passed
+    validation and died in stage 2 as a bare ``exited with code …`` naming
+    nothing (#37, finding 3). A format mismatch is never runnable, so it can be
+    said before the run rather than discovered by it.
+
+    Three limits, all deliberate, and all of them err towards abstaining. A file
+    whose format is not recognised — a ``#!`` shell wrapper, most obviously —
+    answers **False**: "we cannot judge this" must not be reported as "this is
+    broken", and a wrapper script really is runnable. A platform whose native
+    format is not in :data:`_NATIVE_FORMAT` abstains for the same reason. And the
+    MACHINE word is not compared: macOS runs x86-64 Mach-O on arm64 under
+    Rosetta, so refusing on ``e_machine`` would reject binaries that work.
+    """
+    fmt = _executable_format(path)
+    native = _native_executable_format()
+    return bool(fmt) and bool(native) and fmt != native
 
 
 def is_mpi_binary(path: str) -> bool:

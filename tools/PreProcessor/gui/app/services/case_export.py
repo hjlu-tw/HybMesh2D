@@ -56,10 +56,12 @@ from app.services import case_sources
 # which moves exactly the files ``is_run_output`` names. Imported under the private
 # spellings the call sites here already use.
 from app.services.case_files import (
+    BDECOMPOSE_INPUT,
     QUOTED_RE as _QUOTED_RE,
     RUN_NOTE_NAME,
     archive_subdirs as _archive_subdirs,
     human_size,
+    is_decompose_output as _is_decompose_output,
     is_inside as _is_inside,
     is_restart_dump as _is_restart_dump,
     is_run_output as _is_output,
@@ -85,8 +87,10 @@ from app.services.case_export_usage import (
 )
 
 # Per-subdirectory allow-lists: (exact names, suffixes).
-_GRID_KEEP = ({"para.in", "input.vrt", "input.cel", "input.bnd"},
-              (".grid", ".bc", ".def"))
+# ``BDECOMPOSE_INPUT`` (#37) is bDecompose's stdin answer file, now written into
+# the case: an input, so allow-listed by exact name like getPGrid's ``para.in``.
+_GRID_KEEP = ({"para.in", BDECOMPOSE_INPUT, "input.vrt", "input.cel",
+               "input.bnd"}, (".grid", ".bc", ".def"))
 # No ".in" suffix here: it would subsume the exact "input.in" entry and, worse, turn
 # this allow-list into a glob — a future solver writing work/restart.in or work/monitor.in
 # would be copied as an input with no skip line to notice it, which is exactly the
@@ -240,8 +244,9 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                     src, dest,
                     f"input (renamed from {os.path.basename(rel)})"
                     if dest != rel else "input"))
-            elif _is_output(name) or (sub in archives
-                                      and name == RUN_NOTE_NAME):
+            elif (_is_output(name)
+                  or (sub == "grid" and _is_decompose_output(name))
+                  or (sub in archives and name == RUN_NOTE_NAME)):
                 # An archive's own RUN.txt (#30) is not an input of anything —
                 # it is what the archiving of a run produced — so it is named
                 # as a skipped output rather than falling through to "not
@@ -255,6 +260,9 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                 # a RUN.txt sitting in work/ is a file nobody classified, and
                 # classifying it as an output would have ``case_archive`` move
                 # it into the next archive as if a run had produced it.
+                #
+                # `sub == "grid"` is the same shape for bDecompose's outputs
+                # (#37); why it is guarded: `case_files.is_decompose_output`.
                 plan.skipped_output.append((rel, _size(src)))
             elif rel in referenced:
                 # ``input.in`` names it and no run produced it, so it is an

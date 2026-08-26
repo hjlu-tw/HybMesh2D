@@ -133,7 +133,9 @@ def manifest_text(plan, solver_tag: str) -> str:
     """The package's own record: everything included, everything skipped (and
     why), every rewritten path, and the handful of facts the person running it
     on another machine has to know."""
-    from app.services.case_files import human_size, size as _size
+    from app.services.case_files import (
+        BDECOMPOSE_INPUT, human_size, size as _size,
+    )
 
     L = [f"Portable solver case: {os.path.basename(plan.case_dir)}",
          f"Exported from: {plan.case_dir}",
@@ -185,6 +187,13 @@ def manifest_text(plan, solver_tag: str) -> str:
           f"  * grid/{GETPGRID_INPUT} is getPGrid's stdin input — it is the "
           "case's own para.in,",
           "    renamed here so the file says what reads it.",
+          f"  * grid/{BDECOMPOSE_INPUT} is bDecompose's stdin input, for an MPI "
+          "run. run_case.sh does",
+          "    NOT re-partition: it travels so the decomposition can be "
+          "reproduced by hand",
+          f"    ('cd grid && ./bDecompose < {BDECOMPOSE_INPUT}'), which needs a "
+          "bDecompose built",
+          "    for that machine.",
           "  * grid/*.grid is c_binary. If the solver rejects it, regenerate "
           "with --regrid.",
           "  * work/binDump* is the solver's zone snapshot: an OUTPUT that a "

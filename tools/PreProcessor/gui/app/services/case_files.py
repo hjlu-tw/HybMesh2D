@@ -47,6 +47,26 @@ ARCHIVE_DIR_PREFIX = "prev_"
 # how the directory's name and the name promised for it drift apart.
 ARCHIVE_SUFFIX_PLACEHOLDER = ARCHIVE_DIR_PREFIX + "NNN"
 
+# The stdin answer file ``workers/solver_run`` writes for bDecompose, in the
+# case's ``grid/`` beside the grid it decomposes (#37). NOT ``para.in``: getPGrid
+# already owns that name in that directory, and ``case_export`` ships it as
+# ``grid/getPGrid.in`` for ``run_case.sh --regrid`` to feed back — sharing the
+# name would silently replace getPGrid's answers with bDecompose's in every
+# exported package. The file is fed on stdin, so the name is ours to choose, and
+# it is chosen the way ``case_export._RENAMES`` chooses the other one: after the
+# program whose stdin it is. Here rather than in either module because the writer
+# and the export planner are peers and a second spelling is how the file written
+# and the file shipped drift apart.
+#
+# Its sibling is the literal ``"para.in"``, NOT ``case_export_docs.GETPGRID_INPUT``
+# — a review read those two as the same kind of constant and they are not. This is
+# the name a file has IN THE CASE; ``GETPGRID_INPUT`` is the name a file travels
+# under IN THE PACKAGE, which is an export-only fact and rightly lives with the
+# export's other prose. bDecompose's answer file happens to need no rename, so it
+# is the same string in both roles — which is exactly what makes the two easy to
+# confuse and worth separating here.
+BDECOMPOSE_INPUT = "bDecompose.in"
+
 # The archive's own record of the run it holds, written by ``case_run_note``.
 # Beside ARCHIVE_DIR_PREFIX for that constant's reason: ``case_export`` has to
 # know the name so it does not report it as "not recognised as a solver input",
@@ -194,6 +214,43 @@ def is_run_output(name: str) -> bool:
     base = strip_archive_suffix(name)
     return (any(p.search(base) for p in _OUTPUT_PATTERNS)
             or is_restart_dump(base))
+
+
+# The communication map bDecompose writes, which the solver then reads from its
+# own cwd under the bare name ``input.in`` quotes. Named once because it is the
+# file BOTH halves of the MPI path are about: :func:`is_decompose_output` has to
+# classify it in grid/ and the stage has to report where it landed.
+COMM_MAP_NAME = "mpi_comm_map.dat"
+
+# What bDecompose PRODUCES: the partitioned grid, one bc file per partition, the
+# communication map, and the segment table re-emitted per partition
+# (``<case>.bc.def.mpi``). Read off the ``.bench`` files the one hand run left in
+# the install dir.
+_DECOMPOSE_OUTPUT_PATTERNS = (re.compile(r"^mpi_"), re.compile(r"\.mpi$"))
+
+
+def is_decompose_output(name: str) -> bool:
+    """Whether ``name`` is a file the bDecompose stage produces.
+
+    Deliberately SEPARATE from :func:`is_run_output` rather than folded into it,
+    and the separation is load bearing rather than tidiness. For the
+    communication map, "the file bDecompose produces" and "the file the solver
+    reads" are the SAME NAME — ``mpi_comm_map.dat`` — and
+    ``case_input_paths._stage_table`` asks ``is_run_output`` whether to stage a
+    user-named table into ``work/``, refusing (out loud, referencing it as
+    written) for anything a run produces, because numbering cannot escape a rule
+    anchored to the name. So teaching ``is_run_output`` ``mpi_*`` would stop #29
+    staging the comm map and send the run back to referencing this machine's
+    filesystem — measured, and the reason this is its own question.
+
+    The two callers are therefore disjoint by DIRECTORY: this one is asked about
+    ``grid/`` (where #37 makes the stage run), ``is_run_output`` about ``work/``,
+    which is what ``case_archive`` and ``case_clean`` act on. Its only consumer
+    is the export planner, so that a file this toolchain produced is named as an
+    output instead of as "not a recognised solver input or output" — the same
+    false statement ``RUN.txt`` already had to be spared.
+    """
+    return any(p.search(name) for p in _DECOMPOSE_OUTPUT_PATTERNS)
 
 
 # What ``solver_case.prepare_case_dir`` stages INTO work/ under a FIXED name:

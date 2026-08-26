@@ -72,8 +72,12 @@ keys. Unlike #25 — where the solver's own path derivation WAS the failure — 
 justification is self-containment and one rule for all nine quoted paths, and
 the target shape (``./<name>`` beside ``input.in``) is already proven runnable
 by ``case_export``'s own acceptance run. Nothing here claims a solver failure
-was fixed. Separately, WHERE bDecompose runs is untouched: it still writes the
-comm map next to its own binary, outside the case (#37).
+was fixed. Separately, WHERE bDecompose runs was out of scope here and is #37,
+which moved the stage into the case's ``grid/``; the two do not overlap — this
+file is about the SHAPE of a reference, #37 about which directory produces the
+file it names. #37's own gate (``test_bdecompose_in_case.py``) pins why
+``is_run_output`` must NOT learn ``mpi_*``: ``_stage_table`` asks it, and for the
+comm map the produced and the consumed file are the same name.
 
 Run:  python3 tools/PreProcessor/tests/test_input_in_staged_paths.py
 """
