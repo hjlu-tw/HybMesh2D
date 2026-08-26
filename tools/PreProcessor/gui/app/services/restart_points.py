@@ -16,14 +16,27 @@ resumed from and how far it got. So this module reads the case dir and returns
 the rows a chooser shows. It answers facts only — the row's prose, its marker and
 the "Other file…" escape are the view's (``views/panels/restart_chooser``).
 
-Three rules the shape follows from:
+Four rules the shape follows from:
 
-* **``RUN.txt`` is the record; nothing here parses a dump.** That is why #31 was
-  blocked by #30. An archive from before that (or one whose note cannot be read)
-  still gets a row, with :data:`UNKNOWN_ITERATION` — hiding a restart point that
-  exists would be worse than showing it without a number, and its convergence
-  history is deliberately not re-read: the note IS the record, and inventing a
-  second way to compute the field would make two answers for one question.
+* **One function answers "how far did that run get?", and it is not here.**
+  Every row's count comes from ``case_run_note.iteration_span``, which prefers
+  the archive's ``RUN.txt`` and falls back to its own convergence history. #31
+  shipped the opposite rule — the note IS the record, its history "deliberately
+  not re-read", on the argument that a second computation would make two answers
+  — and #43 reverses it, because the rule cost exactly the legs it was meant to
+  protect: an archive written before #30 has no note and reported
+  :data:`UNKNOWN_ITERATION` with a perfectly readable history sitting inside it,
+  while the LIVE row two functions below computed its count from that same file
+  with that same reader. One module was applying a computation to one leg and
+  refusing it for its siblings. There is still exactly one answer; it just is not
+  read from exactly one place.
+* **The count shown is the count the solver PRINTED**, not the last row it wrote
+  — ``last_row + interval``. #31 rendered it as the bound ``1990+`` and recorded
+  that as a deliberate departure from its own specification; that departure is
+  reversed (see ``case_run_note``'s module docstring for the full reversal and
+  its evidence). An archive whose span cannot be computed at all still gets a
+  row, unlabelled: hiding a restart point that exists would be worse than showing
+  it without a number.
 * **The list is derived on every call, never cached.** The case dir is the truth.
   A ``.hws`` reopened after the case moved on must not offer rows that are gone,
   which is also why the workspace stores none of this. The cost is stated rather
@@ -54,10 +67,11 @@ from app.services.case_files import (
     run_tag,
 )
 from app.services.case_run_note import (
+    UNKNOWN_ITERATION,
+    IterationSpan,
     convergence_interval,
-    last_iteration,
+    iteration_span,
     mtime_stamp,
-    note_int,
     read_run_note,
     resumed_from,
 )
@@ -66,10 +80,9 @@ from app.services.solver_case import case_root_for, work_dir_of
 
 _log = get_logger(__name__)
 
-#: "we could not tell how far that run got" — never 0, which is a real answer
-#: the solver prints for a cold start (``case_run_note.last_iteration``'s rule,
-#: reused so one number means one thing across the two modules).
-UNKNOWN_ITERATION = -1
+# ``UNKNOWN_ITERATION`` is ``case_run_note``'s, imported above rather than
+# re-declared: it is what that module's readers return, and two copies of a
+# sentinel is two chances for them to stop being the same number.
 
 #: The kinds of row, which is also what the view switches on.
 COLD = "cold"          #: no restart at all — initial conditions
@@ -95,8 +108,11 @@ class RestartPoint:
     key: str                                #: "cold" / "latest" / "prev_002"
     zdump: str = ""
     convg: str = ""
-    iteration: int = UNKNOWN_ITERATION
-    interval: int = UNKNOWN_ITERATION
+    #: How far that run got, from ``case_run_note.iteration_span`` — the whole
+    #: answer, rather than the raw last row plus an interval the view has to
+    #: combine for itself. It used to be exactly that pair, and the view combined
+    #: them into a bound instead of a count (#43).
+    span: IterationSpan = IterationSpan()
     stamp: str = ""                         #: RUN.txt's archived_at
     tag: str = ""                           #: ".gui" / ".cli", when known
     resumed_by_last: bool = False
@@ -272,13 +288,12 @@ def _latest_point(work: str):
         return None
     path = os.path.abspath(os.path.join(work, dump))
     convg = convg_beside(work, dump)
-    iters = last_iteration(convg)[0] if convg else UNKNOWN_ITERATION
     return RestartPoint(
         kind=LATEST, key=LATEST,
         zdump=path,
         convg=os.path.abspath(convg) if convg else "",
-        iteration=iters,
-        interval=convergence_interval(work),
+        span=iteration_span(convg,
+                            declared_interval=convergence_interval(work)),
         stamp=mtime_stamp(path),
         tag=run_tag(dump))
 
@@ -286,8 +301,11 @@ def _latest_point(work: str):
 def _archive_points(case_root: str) -> list:
     """One row per ``work/prev_<NNN>/``, newest first.
 
-    Every field comes from that archive's own ``RUN.txt``; an archive without one
-    predates #30 and gets a row anyway, with :data:`UNKNOWN_ITERATION`.
+    The identifying fields come from that archive's own ``RUN.txt``; the
+    iteration span comes from :func:`~app.services.case_run_note.iteration_span`,
+    which prefers the note and falls back to the convergence history the archive
+    holds — so an archive predating #30 gets a real count instead of a blank
+    (#43). One with neither still gets a row, unlabelled.
     """
     out = []
     for rel in reversed(archive_subdirs(case_root)):
@@ -306,8 +324,8 @@ def _archive_points(case_root: str) -> list:
             kind=ARCHIVE, key=os.path.basename(d),
             zdump=os.path.abspath(os.path.join(d, dump)) if dump else "",
             convg=os.path.abspath(os.path.join(d, convg)) if convg else "",
-            iteration=note_int(note, "last_iteration", UNKNOWN_ITERATION),
-            interval=note_int(note, "convergence_interval", UNKNOWN_ITERATION),
+            span=iteration_span(
+                os.path.join(d, convg) if convg else "", note=note),
             stamp=note.get("archived_at", ""),
             tag=note.get("run_tag", "")))
     return out

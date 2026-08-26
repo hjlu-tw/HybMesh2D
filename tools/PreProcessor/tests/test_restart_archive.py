@@ -122,10 +122,20 @@ real ``unicones`` binary:
   cold-starting at 0), the restart source **sha256-identical** afterwards, a
   fresh ``binDumpZ.dat.gui`` written beside it, and ``prev_003/`` holding all
   six outputs named ``…prev_003`` plus ``RUN.txt`` reporting
-  ``last_iteration: 1990`` beside ``convergence_interval: 10`` — i.e. the note's
-  own bound, [1990, 2000), containing the 2000 the solver reported. That is the
-  "records 1990, reached 2000" gap measured rather than argued, and the reason
-  the interval is recorded at all;
+  ``last_iteration: 1990`` beside ``convergence_interval: 10`` — i.e. exactly the
+  2000 the solver reported, since the solver writes no row for the final
+  iteration and ``1990 + 10`` recovers it. That is the "records 1990, reached
+  2000" gap measured rather than argued, and the reason the interval is recorded
+  at all.
+
+  **This sentence used to state that bound as ``[1990, 2000)``** — a half-open
+  interval that EXCLUDES the value it claimed to contain, sitting in a gate for
+  two issues while the argument built on it overruled #31's specification. The
+  interval is ``(1990, 2000]`` and the point estimate is 2000; #43 reverses the
+  reasoning here, in ``case_run_note`` (where the arithmetic now lives, as
+  ``iteration_span``), in ``restart_points``, in ``restart_chooser`` and in the
+  prose every ``RUN.txt`` writes about itself. It is worth remembering that a
+  recorded rationale is only as good as the arithmetic inside it;
 * **run 2** — exit 0, resumed again (``Global Iteration count 4020``), source
   identical, ``prev_004/`` created, ``prev_003/`` byte-for-byte untouched and
   its dump down to ONE link because the stale bare-named link in ``work/`` was
@@ -559,14 +569,18 @@ check(note.get("last_iteration") == 30 and note.get("convergence_rows") == 3,
       f"archive time is gone ({note.get('last_iteration')!r}, "
       f"{note.get('convergence_rows')!r} row(s))")
 note_text = open(os.path.join(arch, case_run_note.RUN_NOTE_NAME)).read()
-check("reached at least" in note_text
+check("last_iteration + convergence_interval" in note_text
+      and "upper bound" in note_text
       and "not the" in note_text and "final" in note_text
       and "-1 in either field" in note_text,
-      "8. ...and the FILE says which number it is: the last recorded row, not "
-      "the solver's final count, bounded above by the interval, with -1 called "
-      "out as 'could not determine' rather than 0. A run that reached 2000 "
-      "leaves 1990 here (measured), so a field labelled 'final' would be a "
-      "small lie in the one number a user reads")
+      "8. ...and the FILE says which number it is and how to correct it: the "
+      "last recorded ROW, not the solver's final count, plus the interval that "
+      "recovers that count (990 -> 1000, 1990 -> 2000, both measured against "
+      "the real binary), with the sum called an UPPER bound because an "
+      "interrupted run got no further, and -1 called out as 'could not "
+      "determine' rather than 0. #30 wrote 'reached at least last_iteration and "
+      "fewer than last_iteration + convergence_interval' here — a bound that "
+      "excludes the very value the acceptance run measured; #43 reverses it")
 check(note.get("zone_dump") == "binDumpZ.dat.prev_001",
       f"8. ...and which file in it is the zone dump, so a restart chooser does "
       f"not have to know the naming rule ({note.get('zone_dump')!r})")
