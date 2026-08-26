@@ -95,8 +95,9 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 app = QApplication.instance() or QApplication(sys.argv)
 
 from app.models.result_series import ResultSeries  # noqa: E402
+from app.services.case_files import RUN_NOTE_NAME as RUN_NOTE  # noqa: E402
 from app.services.result_legs import (  # noqa: E402
-    UNKNOWN_ITERATION, leg_stem, list_result_legs,
+    leg_stem, list_result_legs,
 )
 from app.services.restart_points import ARCHIVE, LATEST, OTHER  # noqa: E402
 from app.views import result_canvas_setup_mixin as setup_mod  # noqa: E402
@@ -172,30 +173,53 @@ def write_note(archive, suffix, iteration, interval=10, stamp="2026-08-20 10:00:
         f.write("\n".join(lines) + "\n")
 
 
-def build_case(root, legs, live=(3, 0.0), live_iters=None, live_tag=".gui"):
+def write_convg(path, rows, interval=10):
+    """A convergence history: one row every ``interval`` iterations.
+
+    ``rows`` is ``(first, last)``. A real archive holds one of these, and #43 is
+    what makes the playback side read it — a leg's SPAN, where it took over as
+    well as where it got to, is recovered from the file's own first row, last row
+    and spacing. A fixture with notes but no histories can only ever exercise the
+    note, which is the state this gate was in.
+    """
+    first, last = rows
+    with open(path, "w") as f:
+        f.write("".join(f"{n}   1.5e-16  5.5e-03\n"
+                        for n in range(first, last + 1, interval)))
+
+
+def build_case(root, legs, live=(3, 0.0), live_rows=None, live_tag=".gui"):
     """A case dir shaped like ``case_archive`` leaves one.
 
-    ``legs`` is ``[(suffix, n_zones, base, iteration or None), …]`` oldest first;
+    ``legs`` is ``[(suffix, n_zones, base, note iteration or None[, convg rows]),
+    …]`` oldest first: the 4th item writes a ``RUN.txt`` recording that last row,
+    the optional 5th writes the convergence history that leg archived. The two are
+    independent on purpose — a pre-#30 archive has only the history, and a fixture
+    with only the note is what proves ``start`` is read from the file even when
+    ``end`` is recorded.
+
     ``live`` is ``(n_zones, base)`` for the un-archived leg in ``work/``, whose
-    iteration comes from a convergence history rather than from a note (it has
-    not been archived, so it has none).
+    span comes from ``live_rows`` (it has not been archived, so it has no note).
     """
     work = os.path.join(root, "work")
     os.makedirs(work, exist_ok=True)
-    for suffix, n, base, iters in legs:
+    for leg in legs:
+        suffix, n, base, iters = leg[:4]
         d = os.path.join(work, suffix)
         os.makedirs(d, exist_ok=True)
         write_transient(os.path.join(d, f"{RESULT}.{suffix}"), n_zones=n,
                         base=base)
         if iters is not None:
             write_note(d, suffix, iters)
+        if len(leg) > 4 and leg[4] is not None:
+            write_convg(os.path.join(d, f"unicones.enorm.{suffix}"), leg[4])
     if live is not None:
         n, base = live
         write_transient(os.path.join(work, f"{RESULT}{live_tag}"), n_zones=n,
                         base=base)
-        if live_iters is not None:
-            with open(os.path.join(work, f"unicones.enorm{live_tag}"), "w") as f:
-                f.write(f"1 0.5\n{live_iters} 0.1\n")
+        if live_rows is not None:
+            write_convg(os.path.join(work, f"unicones.enorm{live_tag}"),
+                        live_rows)
         with open(os.path.join(work, "input.in"), "w") as f:
             f.write('print_convg_per_niter 10\nzdump_fn_restart "binDumpZ.dat"\n')
     return work
@@ -210,41 +234,65 @@ check(leg_stem(f"{RESULT}.gui") == RESULT
       "1. one solver output has two spellings — a run tag while it is live and "
       "#30's archive suffix once it is filed — and both reduce to the same stem")
 
+# A clean restart chain: each leg takes over exactly where the last stopped.
+# 490/1990 are LAST ROWS, so the counts the solver printed are 500/2000/3000.
 case = os.path.join(tmp, "case")
-work = build_case(case, [("prev_001", 2, 0.0, 500),
-                         ("prev_002", 3, 100.0, 1990)],
-                  live=(3, 200.0), live_iters=3000)
+work = build_case(case, [("prev_001", 2, 0.0, 490, (10, 490)),
+                         ("prev_002", 3, 100.0, 1990, (510, 1990))],
+                  live=(3, 200.0), live_rows=(2010, 2990))
 live_path = os.path.join(work, f"{RESULT}.gui")
 found = list_result_legs(live_path)
 check(len(found) == 3 and list(found.labels) == ["prev_001", "prev_002", LATEST],
       f"1. every leg of the solve is found — the two archives and the live one — "
       f"oldest solution first ({list(found.labels)})")
 check([leg.kind for leg in found.legs] == [ARCHIVE, ARCHIVE, LATEST]
-      and [leg.iteration for leg in found.legs] == [500, 1990, 3000],
-      f"1. each leg reports how far it got: the archives from their own RUN.txt, "
-      f"the live one from the convergence history beside it (it has no note yet) "
-      f"({[leg.iteration for leg in found.legs]})")
+      and [leg.span.end for leg in found.legs] == [500, 2000, 3000],
+      f"1. each leg reports the count the SOLVER PRINTED, not the last row it "
+      f"wrote: a history ending at 490 with one row every 10 means 500. #30/#31 "
+      f"showed the raw row and called the correction a fabrication; #43 reverses "
+      f"that ({[leg.span.end for leg in found.legs]})")
+check([leg.span.start for leg in found.legs] == [0, 500, 2000],
+      f"1. ...and where it took OVER, from its own history's first row — which is "
+      f"what turns 'how far did it get' into a range that can be intersected, and "
+      f"0 for the leg that cold-started ({[leg.span.start for leg in found.legs]})")
+check([leg.span.recorded for leg in found.legs] == [True, True, False],
+      f"1. ...saying which figures were RECORDED in a RUN.txt and which were "
+      f"recomputed, since a reader is entitled to know how much to trust one "
+      f"({[leg.span.recorded for leg in found.legs]})")
 check(found.warnings == (),
-      f"1. a clean chain says nothing — a warning is for a real anomaly, not for "
-      f"every restart ({found.warnings})")
+      f"1. a clean chain says nothing — consecutive legs MEET at a boundary "
+      f"iteration and a half-open span gives it to the earlier leg alone, so an "
+      f"ordinary restart is not reported as an overlap ({found.warnings})")
 check(found.index_of(live_path) == 2 and found.index_of("/nope") == -1,
       "1. the caller can ask which leg it opened without re-deriving the match")
 
-# Order is by ITERATION, not by name: prev_002 re-ran the same leg from an
-# earlier point (#31 makes that a click), so it got LESS far than prev_001.
+# Order is by ITERATION, not by name: prev_002 re-ran 1000-1900 after prev_001
+# had already reached 2000 (#31 makes that a click), so it got LESS far.
 rerun = os.path.join(tmp, "rerun")
-rework = build_case(rerun, [("prev_001", 2, 0.0, 1990),
-                            ("prev_002", 3, 100.0, 900)],
-                    live=(2, 200.0), live_iters=3000)
+rework = build_case(rerun, [("prev_001", 2, 0.0, 1990, (1010, 1990)),
+                            ("prev_002", 3, 100.0, 1890, (1010, 1890))],
+                    live=(2, 200.0), live_rows=(2010, 2990))
 r = list_result_legs(os.path.join(rework, f"{RESULT}.gui"))
 check(list(r.labels) == ["prev_002", "prev_001", LATEST],
       f"1. the legs are ordered by ITERATION COUNT, so a leg re-run from an "
       f"earlier point plays where it belongs in the solve rather than where its "
       f"directory name falls ({list(r.labels)})")
 check(any("prev_002" in w and "prev_001" in w and "same part" in w
-          for w in r.warnings),
-      f"1. ...and the overlap is SAID, naming both legs — the note records no "
-      f"start iteration, so it is reported rather than resolved ({r.warnings})")
+          and "1001-1900" in w for w in r.warnings),
+      f"1. ...and the overlap is a MEASUREMENT, naming both legs AND the "
+      f"iterations that repeat: two spans that intersect really did cover one "
+      f"stretch twice, where 'ran later, got no further' was a heuristic that "
+      f"could not say which part ({r.warnings})")
+# The case non-monotonicity got wrong: a later leg over an EARLIER, disjoint
+# range. prev_002 re-ran 0-900 from scratch, which repeats nothing prev_001 did.
+disj = os.path.join(tmp, "disjoint")
+dwork = build_case(disj, [("prev_001", 2, 0.0, 1990, (1010, 1990)),
+                          ("prev_002", 2, 100.0, 890, (10, 890))], live=None)
+d = list_result_legs(os.path.join(dwork, "prev_001", f"{RESULT}.prev_001"))
+check(not any("same part" in w for w in d.warnings),
+      f"1. ...and a leg that ran LATER over an earlier, DISJOINT range is not "
+      f"reported: 'ran later but got no further' called that an overlap, which "
+      f"is exactly the false positive interval intersection removes ({d.warnings})")
 
 # Lineage is the direct evidence of a re-run and needs no counts at all: two
 # legs whose notes record the same start really did cover the same stretch.
@@ -274,32 +322,53 @@ check(not any("both resumed from" in w for w in qi.warnings),
       f"1. ...and two legs whose notes record NO start are not reported as "
       f"sharing one ({qi.warnings})")
 
-# A legacy archive (no RUN.txt) has no place on the iteration axis.
+# THE case #43 is about, and the layout of this repo's own results/solver/case:
+# two archives predating RUN.txt, each holding a perfectly readable convergence
+# history. #32 read the note ONLY, so both played with no count at all.
+old = os.path.join(tmp, "preNote")
+owork = build_case(old, [("prev_001", 2, 0.0, None, (10, 990)),
+                         ("prev_002", 2, 100.0, None, (10, 990))],
+                   live=(2, 200.0), live_rows=(1010, 1990))
+pn = list_result_legs(os.path.join(owork, f"{RESULT}.gui"))
+check([leg.span.end for leg in pn.legs] == [1000, 1000, 2000]
+      and not any(leg.span.recorded for leg in pn.legs),
+      f"1. an archive written before RUN.txt existed reports a REAL count, "
+      f"recomputed from the convergence history inside it — the live leg two "
+      f"functions away always did exactly this, with this reader, so refusing it "
+      f"to the archives made them second-class for no reason their own folder "
+      f"supports ({[leg.span.end for leg in pn.legs]})")
+check(any("prev_002" in w and "prev_001" in w and "1-1000" in w
+          for w in pn.warnings),
+      f"1. ...and that makes a real overlap VISIBLE that was silent: both legs "
+      f"ran 0-1000, so a stretch of the animation repeats and the user is told "
+      f"which stretch ({pn.warnings})")
+
+# A leg that can be measured NEITHER way still has to be played somewhere.
 legacy = os.path.join(tmp, "legacy")
 lwork = build_case(legacy, [("prev_001", 2, 0.0, None),
-                            ("prev_002", 2, 100.0, 1990)],
-                   live=(2, 200.0), live_iters=3000)
+                            ("prev_002", 2, 100.0, 1990, (510, 1990))],
+                   live=(2, 200.0), live_rows=(2010, 2990))
 lg = list_result_legs(os.path.join(lwork, f"{RESULT}.gui"))
 check(list(lg.labels) == ["prev_001", "prev_002", LATEST]
-      and lg.legs[0].iteration == UNKNOWN_ITERATION,
-      f"1. a leg with no RUN.txt is played WHERE IT RAN, not last: it is a real "
-      f"part of the solve and creation order is the fact that is always there "
-      f"({list(lg.labels)})")
-check(any("prev_001" in w and "RUN.txt" in w for w in lg.warnings),
-      f"1. ...and that it was placed that way is said ({lg.warnings})")
+      and not lg.legs[0].known,
+      f"1. a leg with neither a record nor a history is played WHERE IT RAN, not "
+      f"last: it is a real part of the solve and creation order is the fact that "
+      f"is always there ({list(lg.labels)})")
+check(any("prev_001" in w and RUN_NOTE in w and "convergence history" in w
+          for w in lg.warnings),
+      f"1. ...and that it was placed that way is said, naming BOTH sources that "
+      f"failed rather than only the record ({lg.warnings})")
 
-# The case that measures WHY: an archive from before #30 has no note, so a
-# "played last" rule sends the NEWEST leg to the front and runs the solve
-# backwards. This is the layout of this repo's own results/solver/case.
+# The case that measures WHY: with nothing measurable anywhere, a "played last"
+# rule sends the NEWEST leg to the front and runs the solve backwards.
 allold = os.path.join(tmp, "allold")
 awork = build_case(allold, [("prev_001", 1, 0.0, None),
                             ("prev_002", 1, 100.0, None)],
-                   live=(1, 200.0), live_iters=1990)
+                   live=(1, 200.0), live_rows=(10, 1990))
 ao = list_result_legs(os.path.join(awork, f"{RESULT}.gui"))
 check(list(ao.labels) == ["prev_001", "prev_002", LATEST],
-      f"1. ...and when only the LIVE leg has a count — every archive predating "
-      f"#30 — the solve still plays oldest first instead of newest first "
-      f"({list(ao.labels)})")
+      f"1. ...and when only the LIVE leg can be measured, the solve still plays "
+      f"oldest first instead of newest first ({list(ao.labels)})")
 
 # An archive that produced no field output is not a leg at all.
 noout = os.path.join(tmp, "noout")
@@ -319,9 +388,10 @@ check(len(lo) == 1 and lo.legs[0].kind == OTHER and lo.warnings == ()
       "caller builds a series the same way instead of branching on None")
 
 # Two hosts in one work dir are two different solves; the file OPENED decides.
+# write_note stamps run_tag .gui, so prev_001 belongs to the interactive run.
 both = os.path.join(tmp, "both")
-bwork = build_case(both, [("prev_001", 2, 0.0, 500)], live=(2, 100.0),
-                   live_tag=".gui")
+bwork = build_case(both, [("prev_001", 2, 0.0, 490, (10, 490))],
+                   live=(2, 100.0), live_rows=(510, 990), live_tag=".gui")
 write_transient(os.path.join(bwork, f"{RESULT}.cli"), n_zones=4, base=900.0)
 b_gui = list_result_legs(os.path.join(bwork, f"{RESULT}.gui"))
 b_cli = list_result_legs(os.path.join(bwork, f"{RESULT}.cli"))
@@ -329,6 +399,26 @@ check(os.path.basename(b_gui.legs[-1].path) == f"{RESULT}.gui"
       and os.path.basename(b_cli.legs[-1].path) == f"{RESULT}.cli",
       "1. a case run by both hosts holds two live outputs, and the one the user "
       "OPENED is the live leg — they are two solves, not two halves of one")
+check(list(b_gui.labels) == ["prev_001", LATEST]
+      and list(b_cli.labels) == [LATEST],
+      f"1. ...and the ARCHIVES follow the same rule: opening the headless leg "
+      f"plays only the headless run, where #32 spliced the interactive run's "
+      f"archive into it. Note the direction — opening .gui passes with or "
+      f"without the filter, so only this one is evidence "
+      f"({list(b_cli.labels)} vs {list(b_gui.labels)})")
+check(any("prev_001" in w and "gui" in w and "cli" in w for w in b_cli.warnings),
+      f"1. ...and the excluded leg is NAMED, with both tags, so a leg missing "
+      f"from the animation is never silent ({b_cli.warnings})")
+# An archived leg whose OWN name cannot carry a tag anchors on its note (#30's
+# rename replaced the tag), and it must not drag work/'s newest file in with it.
+b_arch = list_result_legs(
+    os.path.join(bwork, "prev_001", f"{RESULT}.prev_001"))
+check(list(b_arch.labels) == ["prev_001", LATEST]
+      and os.path.basename(b_arch.legs[-1].path) == f"{RESULT}.gui",
+      f"1. ...and opening an ARCHIVED leg anchors on its RUN.txt tag, which is "
+      f"the only place the tag survives the rename — so the live leg it is "
+      f"played with is its own run's, not whichever file in work/ is newest "
+      f"({[os.path.basename(p) for p in b_arch.paths]})")
 
 # ── 2. the series over several files ──────────────────────────────────────
 paths = list(found.paths)
@@ -601,7 +691,7 @@ check(_asked == [] and v3._series.n_files == 1,
 # A single-leg case is not a restarted solve: nothing is offered.
 _asked.clear()
 solo_case = os.path.join(tmp, "solo")
-swork = build_case(solo_case, [], live=(3, 0.0), live_iters=100)
+swork = build_case(solo_case, [], live=(3, 0.0), live_rows=(10, 100))
 v4 = ResultCanvasView()
 v4.load_result_path(os.path.join(swork, f"{RESULT}.gui"))
 check(_asked == [] and v4._frame_count() == 3
@@ -613,8 +703,8 @@ check(_asked == [] and v4._frame_count() == 3
 _answer[0] = True
 _asked.clear()
 vcase = os.path.join(tmp, "vcase")
-vwork = build_case(vcase, [("prev_001", 2, 0.0, 500)], live=(2, 100.0),
-                   live_iters=1000)
+vwork = build_case(vcase, [("prev_001", 2, 0.0, 490, (10, 490))],
+                   live=(2, 100.0), live_rows=(510, 990))
 # Rewrite the two legs so the archive carries a variable the live one does not.
 write_transient(os.path.join(vwork, "prev_001", f"{RESULT}.prev_001"),
                 n_zones=2, base=0.0, variables=("p", "u", "M"))

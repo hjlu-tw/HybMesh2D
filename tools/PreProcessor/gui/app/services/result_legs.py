@@ -13,7 +13,7 @@ result belongs to, and in what order they should be played. Whether to open them
 together is the view's question (it asks), and how to serve frames across them is
 ``models/result_series``'s.
 
-Four rules the shape follows from:
+Seven rules the shape follows from:
 
 * **A leg is found by its STEM, not by a fixed name.** #30 renames every archived
   file to ``.prev_<NNN>``, so the same solver output is ``xtecp_sol_allz.dat.gui``
@@ -23,41 +23,65 @@ Four rules the shape follows from:
   name both carry. Matching a literal ``xtecp_sol_allz.dat.*`` would tie playback
   to one solver's output name.
 
-* **Order by ITERATION COUNT; lineage says who resumed from whom, which is a
-  different question.** The issue asks to "order by ``RUN.txt``'s recorded
-  lineage". Lineage IS recoverable — ``resumed_from`` is a basename, and
+* **How far a leg got is not computed here.** Every leg's span comes from
+  ``case_run_note.iteration_span``, the one owner of that arithmetic (#43), which
+  prefers an archive's ``RUN.txt`` and falls back to the convergence history the
+  archive holds. The first version of this module read the note ONLY, so an
+  archive written before #30 played with no count at all while the live leg —
+  eight lines further down — computed its own from exactly that kind of file. On
+  this repo's own restarted case that was every archive it has.
+
+* **Order by the corrected iteration count; lineage says who resumed from whom,
+  which is a different question.** The issue asks to "order by ``RUN.txt``'s
+  recorded lineage". Lineage IS recoverable — ``resumed_from`` is a basename, and
   ``case_archive.bare_link_for_archived_dump`` links an archived dump into
   ``work/`` under its ARCHIVED name, so a reference reading
   ``binDumpZ.dat.prev_001`` names that leg exactly (an earlier version of this
   module claimed the opposite and was simply wrong). What lineage gives is a
   PREDECESSOR relation, not a position: it says where a leg started, never how
   far it went, and two legs resumed from the same point are indistinguishable by
-  it — which is precisely the re-run the issue is worried about. So
-  ``last_iteration`` orders the legs and lineage is what DETECTS the overlap
-  (below), each used for the question it can answer.
+  it — which is precisely the re-run the issue is worried about. So the span's
+  ``end`` orders the legs, and it is the CORRECTED end rather than the raw last
+  row: two legs printing at different intervals sort correctly only after the
+  correction.
 
-* **A leg with no count is played WHERE IT RAN, not last.** The issue says a
-  legacy archive is "offered last, unlabelled, rather than excluded", and that is
-  right for a chooser LIST — last means least prominent. This is a playback
-  ORDER, an axis with physical meaning, and the difference is not academic:
-  measured on this repo's own restarted case (``results/solver/case``, whose two
-  archives predate #30 and so carry no note), "last" put the NEWEST leg first and
-  the two oldest after it — the solve played backwards. Creation order is a
-  total, always-available fact (``prev_001`` ran before ``prev_002`` ran before
-  ``work/``) and it agrees with iteration order in every case except a leg
-  re-run from an earlier point — which is exactly the case where the note exists
-  and its count decides. So an unknown leg inherits the position its creation
-  order gives it: it sorts with the last count recorded BEFORE it, and stays put.
+* **A leg that still cannot be measured is played WHERE IT RAN — the THIRD
+  fallback, not the first.** The issue says a legacy archive is "offered last,
+  unlabelled, rather than excluded", and that is right for a chooser LIST, where
+  last means least prominent. This is a playback ORDER, an axis with physical
+  meaning, and the difference is not academic: measured on this repo's own
+  restarted case, "last" put the NEWEST leg first and the two oldest after it —
+  the solve played backwards. So an unmeasurable leg inherits the position its
+  creation order gives it (``prev_001`` ran before ``prev_002`` ran before
+  ``work/``): it sorts with the last count recorded BEFORE it and stays put.
+  It was the FIRST line of defence when the note was the only source; now that a
+  convergence history answers too, it is what is left after both have failed.
 
-* **An overlap is REPORTED, never interleaved.** Re-running a leg from an earlier
-  point is easy after #31, and then a later run covers ground an earlier one
-  already did. Two independent signals, because they catch different cases:
-  **lineage** — two legs whose ``resumed_from`` names the same start really did
-  re-run the same segment, and this holds even when neither reports a count — and
-  **non-monotonicity** — a leg that ran later reporting a count no higher than
-  one that ran earlier, which catches a pair whose notes are missing or whose
-  start was never recorded. Both name both legs. The legs are still concatenated
-  in count order; nothing is dropped, merged or spliced.
+* **An overlap is a MEASUREMENT, and it is reported, never interleaved.**
+  Re-running a leg from an earlier point is easy after #31, and then a later run
+  covers ground an earlier one already did. Because a leg now reports a SPAN
+  rather than an endpoint, the test is interval intersection over the half-open
+  ranges ``(start, end]`` — precise, and it says WHICH iterations repeat.
+  Lineage stays as the fallback for a pair whose spans cannot both be computed:
+  two legs whose ``resumed_from`` names the same start really did re-run one
+  segment, and that holds when neither reports a count.
+
+  **Non-monotonicity is GONE** (#43). "A leg that ran later reporting no higher a
+  count" false-positives on a later leg covering an earlier, DISJOINT range — a
+  genuinely separate re-run — and wherever both spans are measurable, intersection
+  answers the same question correctly. It was the right heuristic while a start
+  iteration was unavailable; it is strictly dominated now that one is not.
+  Nothing is dropped, merged or spliced either way: both legs are named.
+
+* **The legs are the legs of ONE run.** A case run by both hosts holds
+  ``…dat.gui`` and ``…dat.cli`` side by side, and those are two different solves
+  — the live-directory lookup has always said so and picked the file the user
+  opened. Archived legs get the same rule: the anchor is the run tag of the file
+  that was opened (from its name where it has one, otherwise from its own
+  ``RUN.txt``, since #30's rename replaces the tag with the archive suffix), and
+  a leg whose tag differs is excluded and NAMED. A leg whose tag cannot be
+  determined is included rather than dropped — an unreadable record must not
+  hide part of a solve.
 
 * **A path outside a case is one leg and no history.** The Results view opens any
   Tecplot file, including one that was never a solver case's own output. That is
@@ -83,10 +107,11 @@ from app.services.case_files import (
     strip_run_tag,
 )
 from app.services.case_run_note import (
+    IterationSpan,
+    convergence_file,
     convergence_interval,
-    last_iteration,
+    iteration_span,
     mtime_stamp,
-    note_int,
     read_run_note,
 )
 from app.services.logging_setup import get_logger
@@ -120,8 +145,10 @@ class ResultLeg:
     key: str                                #: "latest" / "prev_002" / ""
     path: str                               #: ABSOLUTE path to the result file
     order: int = 0
-    iteration: int = UNKNOWN_ITERATION
-    interval: int = UNKNOWN_ITERATION
+    #: How far this leg's run got, from ``case_run_note.iteration_span``. A SPAN
+    #: rather than an endpoint, which is what makes an overlap an intersection
+    #: instead of a heuristic (#43).
+    span: IterationSpan = IterationSpan()
     stamp: str = ""                         #: RUN.txt's archived_at, or the mtime
     tag: str = ""                           #: ".gui" / ".cli", when known
     has_note: bool = False                  #: this leg carries a RUN.txt
@@ -134,7 +161,7 @@ class ResultLeg:
     @property
     def known(self) -> bool:
         """Whether this leg reports how far its run got."""
-        return self.iteration != UNKNOWN_ITERATION
+        return self.span.known
 
 
 @dataclass(frozen=True)
@@ -192,47 +219,83 @@ def list_result_legs(result_path: str) -> LegSeries:
     if not case_root:
         return LegSeries(legs=(ResultLeg(kind=OTHER, key="", path=path),))
     stem = leg_stem(path)
+    anchor = _anchor_tag(path)
     legs = _archive_legs(case_root, stem)
     live = _live_leg(work_dir_of(case_root), stem,
-                     prefer=path, order=len(legs))
+                     prefer=path, order=len(legs), tag=anchor)
     if live is not None:
         legs.append(live)
+    legs, foreign = _same_run(legs, anchor)
     if not legs:
         # The file is inside a case work dir but nothing there matches its stem —
         # only reachable if it vanished between the caller's open and this listing.
         return LegSeries(legs=(ResultLeg(kind=OTHER, key="", path=path),))
-    ordered = _ordered(legs)
-    return LegSeries(legs=tuple(ordered), warnings=tuple(_warnings(legs)))
+    return LegSeries(legs=tuple(_ordered(legs)),
+                     warnings=tuple(_warnings(legs, foreign, anchor)))
+
+
+def _anchor_tag(path: str) -> str:
+    """Which RUN the user opened, as a run tag, or "" when it cannot be told.
+
+    From the file's own name where it carries one (a live leg is
+    ``…dat.gui``), otherwise from the ``RUN.txt`` beside it — #30's rename
+    replaces the tag with the archive suffix, so an archived leg's NAME cannot
+    say which host produced it and only its own note can.
+
+    "" is a real third state and nothing is filtered on it: an unreadable record
+    must not hide part of a solve (#43, story 27).
+    """
+    tag = run_tag(os.path.basename(path))
+    if tag:
+        return tag
+    return read_run_note(os.path.dirname(path)).get("run_tag", "")
+
+
+def _same_run(legs: list, anchor: str) -> tuple:
+    """``(the legs of the anchor's run, the legs of another)``.
+
+    A case run by both hosts holds two solves in one directory tree, and splicing
+    them into one animation would show a discontinuity as physics. The live
+    lookup has always applied this (it plays the file the user OPENED); this
+    extends it to the archives, which is where the tag lives in a note rather
+    than in the name.
+    """
+    if not anchor:
+        return legs, []
+    keep = [leg for leg in legs if leg.tag in ("", anchor)]
+    return keep, [leg for leg in legs if leg.tag not in ("", anchor)]
 
 
 # ── ordering ──────────────────────────────────────────────────────────────
 def _ordered(legs: list) -> list:
     """``legs`` (in creation order) sorted for playback.
 
-    Known iteration counts ascending, creation order breaking a tie. A leg with
-    no count of its own takes the last count recorded BEFORE it, so it lands
-    between the legs that ran either side of it rather than at the end — see the
-    module docstring for the case that measured the difference. A leg with no
-    count and no counted predecessor sorts first, which is the same rule: nothing
-    ran before it.
+    By the CORRECTED end of each leg's span, ascending, creation order breaking a
+    tie — corrected because two legs printing at different intervals sort
+    correctly only after the raw last rows have been turned into the counts the
+    solver reported. A leg whose span cannot be computed at all takes the last
+    count recorded BEFORE it, so it lands between the legs that ran either side of
+    it rather than at the end; see the module docstring for the case that measured
+    the difference, and for why that rule is now the third fallback rather than
+    the first. A leg with no span and no measured predecessor sorts first, which
+    is the same rule: nothing ran before it.
     """
     keyed, floor = [], float("-inf")
     for leg in legs:
         if leg.known:
-            floor = leg.iteration
+            floor = leg.span.end
         keyed.append(((floor, leg.order), leg))
     keyed.sort(key=lambda pair: pair[0])
     return [leg for _key, leg in keyed]
 
 
-def _warnings(legs: list) -> list:
-    """What to tell the user about this ordering — empty when it is a clean chain.
+def _warnings(legs: list, foreign: list = (), anchor: str = "") -> list:
+    """What to tell the user about this series — empty when it is a clean chain.
 
-    Three things are worth saying and none is an error: two legs that started
-    from the same place re-ran the same segment, a leg that ran later and got no
-    further than one that ran earlier covers ground twice, and a leg with no
-    ``RUN.txt`` is being placed by the order it RAN in rather than by a number it
-    reports.
+    Three things are worth saying and none is an error: two legs cover the same
+    iterations, so a stretch of the animation repeats; a leg belongs to the other
+    host's run in this directory and is not being played; and a leg cannot be
+    measured at all, so it is placed by the order it RAN in.
     """
     out = []
     seen = set()
@@ -244,40 +307,52 @@ def _warnings(legs: list) -> list:
             f"[Results] '{b.key}' and '{a.key}' cover the same part of the "
             f"solve ({why}). They are played in iteration order, not merged — "
             "expect that stretch to repeat.")
+    if foreign:
+        out.append(
+            f"[Results] not playing {', '.join(leg.key for leg in foreign)}: "
+            f"produced by a {'/'.join(sorted({leg.tag.lstrip('.') for leg in foreign}))} "
+            f"run, while you opened a {anchor.lstrip('.')} one. This case was run "
+            "by both hosts, and those are two different solves — open one of "
+            "those files to play that run instead.")
     missing = [leg.key for leg in legs if not leg.known]
     if missing:
         out.append(
-            f"[Results] {', '.join(missing)} carries no {RUN_NOTE_NAME} record "
-            "of how far it got (an archive written before that record existed), "
-            "so it is played in the order it RAN rather than left out.")
+            f"[Results] {', '.join(missing)} carries neither a {RUN_NOTE_NAME} "
+            "record of how far it got nor a readable convergence history, so it "
+            "is played in the order it RAN rather than left out.")
     return out
 
 
 def _overlaps(legs: list):
     """``(earlier, later, reason)`` for each pair of legs covering one stretch.
 
-    The lineage signal first because it is the direct evidence: two legs whose
-    ``resumed_from`` names the same start really did re-run the same segment, and
-    that holds even when neither reports an iteration count. Non-monotonicity is
-    the fallback for the pairs lineage cannot see — a leg whose note is missing
-    records no start at all — and it needs both counts, which is why neither
-    signal makes the other redundant.
+    **Interval intersection is the measurement.** A leg reports the half-open
+    range ``(start, end]`` it covers, so two legs re-running one segment share an
+    interior and the report can name the iterations that repeat. Half-open is
+    what keeps an ordinary restart chain quiet: consecutive legs MEET at a
+    boundary iteration and share no interior.
 
-    A blank ``resumed_from`` is NOT matched against another blank: it means "cold
-    start" for a leg whose note says so and "we have no note" for one that has
-    none, and treating those as the same start would report an overlap between
-    two legs about which nothing is known.
+    Lineage is the fallback for a pair whose spans cannot BOTH be measured: two
+    legs whose ``resumed_from`` names the same start really did re-run one
+    segment, and that holds when neither reports a count. A blank
+    ``resumed_from`` is not matched against another blank — it means "cold start"
+    for a leg whose note says so and "we have no note" for one that has none, and
+    conflating them would report an overlap between two legs about which nothing
+    is known.
+
+    Non-monotonicity ("ran later, got no further") is deliberately gone; see the
+    module docstring.
     """
     for i, leg in enumerate(legs):
         for earlier in legs[:i]:
-            if earlier.resumed_from and earlier.resumed_from == leg.resumed_from:
+            shared = earlier.span.overlap(leg.span)
+            if shared:
                 yield earlier, leg, (
-                    f"both resumed from {leg.resumed_from}")
-            elif (earlier.known and leg.known
-                    and earlier.iteration >= leg.iteration):
-                yield earlier, leg, (
-                    f"'{leg.key}' ran later but records iteration "
-                    f"{leg.iteration} against {earlier.iteration}")
+                    f"iterations {shared[0] + 1}-{shared[1]} are in both")
+            elif (not (earlier.span.measurable and leg.span.measurable)
+                    and earlier.resumed_from
+                    and earlier.resumed_from == leg.resumed_from):
+                yield earlier, leg, f"both resumed from {leg.resumed_from}"
 
 
 # ── finding the legs ──────────────────────────────────────────────────────
@@ -299,13 +374,17 @@ def _case_root_of(path: str) -> str:
     return ""
 
 
-def _result_in(directory: str, stem: str, prefer: str = "") -> str:
+def _result_in(directory: str, stem: str, prefer: str = "",
+               tag: str = "") -> str:
     """The basename of ``stem``'s result file in ``directory``, or "".
 
     ``prefer`` wins when it is in this directory: the file the user actually
     opened decides which host's leg is being played, since a case run by both the
     GUI and the headless pipeline holds ``…dat.gui`` and ``…dat.cli`` side by side
-    and they are two different solves. Failing that, newest wins with
+    and they are two different solves. Failing that, ``tag`` narrows to the run
+    being played — the user may have opened an ARCHIVED leg, in which case
+    ``prefer`` names no file here and "newest" would otherwise hand back the other
+    host's live output (#43, story 25). Failing both, newest wins and
     ``case_files.newest_first`` decides, which is the same rule ``_dump_in``
     applies to dumps and now the same code.
     """
@@ -323,16 +402,21 @@ def _result_in(directory: str, stem: str, prefer: str = "") -> str:
         if (os.path.dirname(os.path.abspath(prefer))
                 == os.path.abspath(directory) and want in cands):
             return want
-    return newest_first(directory, cands)[0]
+    # Only when something here carries it: an ARCHIVE's names never do (the
+    # rename replaced the tag), so this must narrow rather than exclude.
+    tagged = [n for n in cands if run_tag(n) == tag] if tag else []
+    return newest_first(directory, tagged or cands)[0]
 
 
 def _archive_legs(case_root: str, stem: str) -> list:
     """One leg per ``work/prev_<NNN>/`` that holds this stem, oldest first.
 
-    Every field comes from that archive's own ``RUN.txt`` (#30) — the record, not
-    a re-derivation. An archive whose note is missing or unreadable still gets a
-    leg, with :data:`UNKNOWN_ITERATION`, for ``restart_points``' reason: hiding a
-    part of the solve that exists is worse than playing it without a number.
+    The identifying fields come from that archive's own ``RUN.txt`` (#30). The
+    SPAN comes from ``case_run_note.iteration_span``, which prefers that record
+    and falls back to the convergence history the archive holds — so an archive
+    written before the record existed reports a real count instead of a blank
+    (#43). An archive that can supply neither still gets a leg: hiding a part of
+    the solve that exists is worse than playing it without a number.
     """
     out = []
     for rel in archive_subdirs(case_root):
@@ -345,8 +429,7 @@ def _archive_legs(case_root: str, stem: str) -> list:
             kind=ARCHIVE, key=os.path.basename(d),
             path=os.path.abspath(os.path.join(d, name)),
             order=len(out),
-            iteration=note_int(note, "last_iteration", UNKNOWN_ITERATION),
-            interval=note_int(note, "convergence_interval", UNKNOWN_ITERATION),
+            span=iteration_span(_convg_in(d, note), note=note),
             stamp=note.get("archived_at", ""),
             tag=note.get("run_tag", ""),
             has_note=bool(note),
@@ -354,7 +437,22 @@ def _archive_legs(case_root: str, stem: str) -> list:
     return out
 
 
-def _live_leg(work: str, stem: str, prefer: str, order: int):
+def _convg_in(archive_dir: str, note: dict) -> str:
+    """The archived run's convergence history, or "".
+
+    The note's recorded name first — it is the record — but an archive predating
+    #30 has no note at all and is exactly the leg this fallback exists for, so it
+    is found by pattern when the record does not resolve. Both go through
+    ``case_run_note.convergence_file``, which owns what such a file is called.
+    """
+    named = note.get("convergence_file") or ""
+    if named and os.path.isfile(os.path.join(archive_dir, named)):
+        return os.path.join(archive_dir, named)
+    found = convergence_file(archive_dir)
+    return os.path.join(archive_dir, found) if found else ""
+
+
+def _live_leg(work: str, stem: str, prefer: str, order: int, tag: str = ""):
     """The un-archived leg in ``work/`` as a leg, or None.
 
     It has no ``RUN.txt`` — nothing has archived it yet — so its iteration count
@@ -364,15 +462,15 @@ def _live_leg(work: str, stem: str, prefer: str, order: int):
     does it for the field output, through the same
     :func:`~app.services.restart_points.convg_beside`.
     """
-    name = _result_in(work, stem, prefer=prefer)
+    name = _result_in(work, stem, prefer=prefer, tag=tag)
     if not name:
         return None
     path = os.path.abspath(os.path.join(work, name))
     convg = convg_beside(work, name)
     return ResultLeg(
         kind=LATEST, key=LATEST, path=path, order=order,
-        iteration=last_iteration(convg)[0] if convg else UNKNOWN_ITERATION,
-        interval=convergence_interval(work),
+        span=iteration_span(convg,
+                            declared_interval=convergence_interval(work)),
         stamp=mtime_stamp(path),
         tag=run_tag(name))
 

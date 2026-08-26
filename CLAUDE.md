@@ -961,23 +961,49 @@ boundary. Rules that are load bearing:
   `_last_resumed_basename` already relies on it. What lineage really gives is a
   PREDECESSOR relation, never a position: it says where a leg started, not how
   far it went, and two legs resumed from the same point are indistinguishable by
-  it — which is exactly the re-run case. So `last_iteration` orders (creation
-  order breaking ties) and lineage DETECTS the overlap.
-- **A leg with no count is played WHERE IT RAN, not last** — a deliberate
-  departure from the issue's "offered last", because that phrasing is right for a
-  chooser LIST and wrong for a playback ORDER. Not academic: the FIRST version
-  shipped the literal rule and the acceptance run against `results/solver/case`
-  (two archives predating #30, so no note; only the live leg has a count) played
-  the solve **backwards** — newest leg first, the two oldest after it. An unknown
-  leg now inherits the last count recorded before it, which is creation order
-  except where a recorded count says otherwise.
-- **An overlap is REPORTED, never interleaved**, by TWO signals that catch
-  different pairs. **Lineage**: two legs whose notes record the same start really
-  did re-run one segment, and that holds when neither reports a count.
-  **Non-monotonicity**: a leg that ran later reporting no higher a count, which
-  is the only signal left when a note is missing. A blank start is deliberately
-  not a key — "cold start" and "we have no record" must not match each other.
-  Nothing is merged or spliced; both legs are named.
+  it — which is exactly the re-run case. So the corrected `end` orders (creation
+  order breaking ties) and lineage DETECTS the overlap where a span cannot.
+- **How far a leg got is NOT computed here** (#43): every leg's span comes from
+  `case_run_note.iteration_span`, which the restart chooser reads too, so the two
+  windows cannot describe one archive differently. #32 shipped the note as the
+  only source, so an archive predating #30 played with no count while `_live_leg`
+  eight lines below computed its own from a convergence history with that same
+  reader — on `results/solver/case` that was every archive it has. Ordering is by
+  the CORRECTED `end`, not the raw last row: two legs printing at different
+  intervals sort correctly only after the correction.
+- **A leg that can be measured NEITHER way is played WHERE IT RAN, not last** — a
+  deliberate departure from the issue's "offered last", because that phrasing is
+  right for a chooser LIST and wrong for a playback ORDER. Not academic: the
+  FIRST version shipped the literal rule and the acceptance run against
+  `results/solver/case` played the solve **backwards** — newest leg first, the
+  two oldest after it. Such a leg inherits the last count recorded before it,
+  which is creation order except where a measured count says otherwise. #43
+  demotes this from the first line of defence to the **third**: it was written
+  when a `RUN.txt` was the only source, and it now only applies once both the
+  record and the convergence history have failed.
+- **An overlap is a MEASUREMENT** (#43), reported and never interleaved. A leg
+  reports a half-open **span** `(start, end]`, so the test is interval
+  intersection and the message names the iterations that repeat. Half-open is
+  load bearing: consecutive legs of a restart chain MEET at a boundary iteration,
+  and a closed range would report every ordinary restart as an overlap.
+  **Lineage** stays as the fallback for a pair whose spans cannot both be
+  measured — two legs whose notes record the same start really did re-run one
+  segment, and that holds when neither reports a count; a blank start is
+  deliberately not a key, since "cold start" and "we have no record" must not
+  match each other. **Non-monotonicity is gone**: "ran later, got no higher a
+  count" false-positives on a later leg covering an earlier, DISJOINT range, and
+  intersection strictly dominates it wherever both spans are known. Measured on
+  `results/solver/case`: `prev_001` and `prev_002` both ran 0-1000, an overlap
+  that was silent under #32 and is now named.
+- **The legs are the legs of ONE run.** A case run by both hosts holds
+  `…dat.gui` and `…dat.cli` side by side and those are two solves; the live
+  lookup always picked the file the user opened, and #43 extends the rule to the
+  archives. The anchor is the opened file's run tag — from its name, or from its
+  own `RUN.txt` when #30's rename took the tag off it — a leg whose tag differs
+  is excluded and NAMED, and a leg whose tag cannot be determined is included
+  rather than dropped. Note the direction that is evidence: opening the `.gui`
+  leg passes with or without the filter, so only the headless-leg direction
+  proves anything.
 - **Ask, do not assume — and NOT asking means No.** The offer is a `confirm` with
   `headless_default=False`, and `load_result_path(..., ask_legs=False)` (passed by
   `postprocess_ctrl` when `_pipeline_running`) declines rather than opening

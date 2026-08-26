@@ -10,7 +10,7 @@ import matplotlib.tri as mtri
 from app.models.result_data import TecplotResult
 from app.services.logging_setup import get_logger
 from app.services.result_legs import LegSeries, ResultLeg, list_result_legs
-from app.services.restart_points import OTHER, UNKNOWN_ITERATION
+from app.services.restart_points import OTHER
 from app.utils import block_signals, confirm
 
 _log = get_logger(__name__)
@@ -126,8 +126,8 @@ class ResultCanvasSetupMixin:
         rows = "\n".join(
             f"{leg.key or os.path.basename(leg.path)}: "
             f"{os.path.basename(leg.path)}"
-            + ("" if leg.iteration == UNKNOWN_ITERATION
-               else f"  (to iteration {leg.iteration}+)")
+            + ("" if not leg.span.known
+               else f"  (to iteration {leg.span.end})")
             for leg in found.legs)
         return confirm(
             self, "Open the whole restarted solve?",
