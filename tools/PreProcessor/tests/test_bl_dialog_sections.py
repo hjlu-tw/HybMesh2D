@@ -29,8 +29,15 @@ Checks:
  7. The dialog still round-trips every parameter through result_params().
  8. Section state persistence is scoped and headless-safe (ui_state contract).
 
+Checks 13-14 are the OTHER half of a greyed-out field: the lock and its reason.
+BL_JUNCTION_ANGLE_C1 is dead under the default junction scheme and is disabled for
+it (13), and USER-REPORTED (issue #23) that a silent lock reads as a bug — so the row
+must also SAY why, on screen, with no hover (14). 14 binds the two in both directions
+and proves the binding is not vacuous by breaking the real wiring.
+
 Run:  python3 tools/PreProcessor/tests/test_bl_dialog_sections.py
 """
+import ast
 import os
 import sys
 
@@ -51,7 +58,11 @@ def check(cond, msg):
 
 
 from PyQt6.QtWidgets import QApplication, QLabel                    # noqa: E402
+from app.utils import HelpButton, help_label                         # noqa: E402
 from app.views.collapsible import CollapsibleSection                # noqa: E402
+from app.views.panels.mesh_bl_dialog_layout import (                 # noqa: E402
+    BLDialogLayoutMixin,
+)
 from app.views.panels.mesh_dialogs_bl import (                      # noqa: E402
     _BL_FIELD_SPECS, _BL_FIELD_GROUPS, _value_differs, PerGeomBLDialog,
 )
@@ -250,6 +261,157 @@ check(c1_w.isEnabled(),
 check("BL_JUNCTION_ANGLE_C1" in (jd.result_params() or {}),
       "13. a disabled field is still written back, so the value round-trips through "
       "the config instead of being lost on OK")
+
+# ── 14. the lock and its REASON are one decision ──────────────────────────
+# USER-REPORTED (issue #23): the greying is correct, its silence was the defect. On
+# screen a field disabled with no explanation is indistinguishable from a field
+# disabled for another reason, or from a bug — which is what it was reported as. And
+# the disabled widget's own tooltip is not a fallback: MEASURED on this Qt, hovering an
+# enabled spin box delivers Enter to it while hovering a disabled one delivers nothing
+# to it OR to its parent, because Qt picks the mouse receiver by walking past disabled
+# widgets. So the reason has to be VISIBLE in the row.
+C1 = "BL_JUNCTION_ANGLE_C1"
+
+
+def c1_bound(d) -> bool:
+    """C1 disabled <=> a non-empty reason showing in its own row. Both directions:
+    a lock with no reason is the reported bug, and a reason beside a live field is a
+    form describing a method it is not on."""
+    return (not d._widgets[C1][0].isEnabled()) == bool(d.field_note(C1))
+
+
+bd = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+m_w, m_kind = bd._widgets["BL_JUNCTION_METHOD"]
+seen = []
+for meth in (1, 0, 1, 0):          # repeatedly, in both directions
+    bd._set_widget_value(m_w, m_kind, meth)
+    app.processEvents()
+    seen.append((meth, bd._widgets[C1][0].isEnabled(), bd.field_note(C1), c1_bound(bd)))
+check(all(ok for _m, _e, _n, ok in seen),
+      f"14. C1 disabled <=> a reason is visible in its row, on every toggle ({seen})")
+check([n for m, _e, n, _ok in seen if m == 1] and all(
+          n for m, _e, n, _ok in seen if m == 1),
+      "14. ...the default 4-case scheme leaves a non-empty reason on screen")
+check(all(not n for m, _e, n, _ok in seen if m == 0),
+      "14. ...and Taper-to-zero, which reads C1, leaves none")
+check("method 0" in seen[0][2].lower(),
+      f"14. the reason names the scheme that does read it (got {seen[0][2]!r})")
+
+# The reason is the SHORT pointer; the prose stays the spec's single declaration and
+# still reaches the '?' together with the .dat KEY.
+c1_tips = [hb._tooltip_text for hb in bd.findChildren(HelpButton)
+           if C1 in hb._tooltip_text]
+check(len(c1_tips) == 1 and "Method 0" in c1_tips[0] and f"({C1})" in c1_tips[0],
+      "14. the long form still reaches the '?' with its .dat KEY")
+# Read from the method-1 state captured above, not from bd's CURRENT state: the loop
+# above left it on method 0, where the marker is empty and any length bound passes.
+check(0 < len(seen[0][2]) < 30,
+      f"14. ...and the row marker stays a short pointer, not a copy of it "
+      f"({len(seen[0][2])} chars)")
+
+# INJECTION: break the real wiring — disable the field without saying why, exactly as
+# it shipped before this issue — and check 14 must fail. Without this the binding
+# could hold because nothing ever disables C1.
+_real_wire = BLDialogLayoutMixin._wire_method_dependent_fields
+
+
+def _wire_silently(self):
+    """The pre-issue-#23 body: greys the field, explains nothing."""
+    m = self._widgets.get("BL_JUNCTION_METHOD")
+    c1 = self._widgets.get(C1)
+    if not m or not c1:
+        return
+
+    def _s(*_a):
+        c1[0].setEnabled(self._widget_value(m[0], m[1]) == 0)
+
+    m[0].currentIndexChanged.connect(_s)
+    _s()
+
+
+PerGeomBLDialog._wire_method_dependent_fields = _wire_silently
+try:
+    broken = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+    bm, bk = broken._widgets["BL_JUNCTION_METHOD"]
+    broken._set_widget_value(bm, bk, 1)
+    app.processEvents()
+    silent = (not broken._widgets[C1][0].isEnabled()) and not broken.field_note(C1)
+finally:
+    del PerGeomBLDialog._wire_method_dependent_fields
+check(BLDialogLayoutMixin._wire_method_dependent_fields is _real_wire,
+      "14. (injection restored the real wiring)")
+check(silent and not c1_bound(broken),
+      "14. INJECTION: wiring that disables C1 without a reason fails this check")
+
+# The other direction: a reason beside a field the scheme DOES read must fail too, so
+# the marker cannot simply be left on permanently.
+stuck = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+sm, sk = stuck._widgets["BL_JUNCTION_METHOD"]
+stuck._set_widget_value(sm, sk, 0)
+app.processEvents()
+stuck._notes[C1].setText("method 0 only")
+check(not c1_bound(stuck),
+      "14. INJECTION: a reason left showing beside an ENABLED C1 fails it as well")
+
+# The label column is MEASURED from the labels built (bounded 120..240), so the reason
+# rides beside the FIELD: suffixing the label measures 240 against today's 171 and
+# would shove every label right. Labels are right-aligned in a fixed-width cell, so a
+# clip eats the FIRST characters — check every one of them, widest included.
+wide = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+wide._set_all_sections(True)
+wide.show()
+app.processEvents()
+app.processEvents()
+cells = [hb.parentWidget() for hb in wide.findChildren(HelpButton)]
+widths = {c.width() for c in cells}
+# Recomputed from the LABELS ALONE, the way the build measures them: the invariant is
+# that the note fed no measurement, not that the answer is any particular number of
+# pixels. A literal here would be a macOS font metric asserted on an Ubuntu CI runner
+# — a gate that goes red for the platform rather than for the code.
+label_only = max(help_label(lbl + ":", "t").sizeHint().width()
+                 for _k, lbl, _kind, _o in _BL_FIELD_SPECS)
+want_w = min(max(label_only, 120), 240)
+check(len(cells) == len(spec_keys) and widths == {want_w},
+      f"14. the label column is what the LABELS measure ({want_w} px), i.e. the row "
+      f"note fed nothing into it (got {widths})")
+check(120 <= want_w <= 240,
+      f"14. ...and that measurement is still inside its declared bound ({want_w})")
+# The number that LICENSES the field cell rather than the spec's first choice (a
+# suffix on the label): the suffixed composite must really reach the 240 clamp, or
+# the label was the right place after all and this row should go back to it.
+suffixed = help_label("Junction \u03b8 C1 (deg) \u2014 method 0 only:", "t")
+check(suffixed.sizeHint().width() >= 240 > want_w,
+      f"14. ...and suffixing the LABEL instead would push the column from {want_w} to "
+      f"its 240 ceiling ({suffixed.sizeHint().width()}), which is why the reason rides "
+      f"beside the field")
+# Every text label in a row, the NOTE included: it is right-aligned in a fixed cell,
+# so a clip eats the first characters rather than the last.
+texts = [t for c in cells for t in c.findChildren(QLabel)[:1]]
+texts += [n for n in wide._notes.values() if n.text()]
+clipped = [(t.text(), t.width(), t.sizeHint().width())
+           for t in texts if t.width() < t.sizeHint().width()]
+check(not clipped, f"14. ...and nothing clips its own text, note included ({clipped})")
+check(wide._widgets[C1][0].width() == wide._widgets["BL_JUNCTION_ANGLE_C2"][0].width(),
+      "14. ...and the note cell leaves C1's box the same width as C2's beside it")
+
+# The note cell is the ONE composite field cell in the GUI, against CLAUDE.md's
+# "never wrapped" rule. What that rule protects is labelForField, so pin its
+# precondition: nothing may resolve a label on this dialog's forms. Without this the
+# exemption is a comment, and a visibility helper added here would silently find no
+# label instead of failing the build.
+# Every class actually mixed into the dialog, read off its own MRO rather than from
+# two hand-named files: a visibility helper added in a THIRD mixin would evade a
+# hand-written list, and the list would go stale exactly when the class grew a base.
+_own = {sys.modules[c.__module__].__file__ for c in PerGeomBLDialog.__mro__
+        if c.__module__.startswith("app.")}
+# A CALL, not the word: the docstring that records this exemption names the method,
+# and a substring check would fire on the prose explaining itself.
+_calls = [(os.path.basename(f), n.lineno) for f in sorted(_own)
+          for n in ast.walk(ast.parse(open(f).read()))
+          if isinstance(n, ast.Attribute) and n.attr == "labelForField"]
+check(len(_own) >= 2 and not _calls,
+      f"14. nothing in the dialog's own {len(_own)} mixin(s) resolves a label on its "
+      f"forms ({_calls}), which is the precondition the wrapped C1 field cell needs")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

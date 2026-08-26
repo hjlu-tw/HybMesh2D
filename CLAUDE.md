@@ -333,7 +333,7 @@ Layered PyQt6 application:
 
 - **`controller.py`**: Top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
 - **`controllers/`**: Business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
-- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`, see "A re-save of the geometry" below; serialized via `to_dict()`/`from_dict()`, which is the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py` — see "The Output field's `.*`"), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py` (see "Transient results" below). Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/cli.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
+- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`, see "A re-save of the geometry" below; serialized via `to_dict()`/`from_dict()`, which is the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py` — see "The Output field's `.*`" — and `mesh_config_geoms.py`, see "A geometry in the mesh config"), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py` (see "Transient results" below). Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/cli.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
 - **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py` (mesh visualization), `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
 - **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd` — snapshot of the Mesh/Solver/IB configuration)
 
@@ -840,7 +840,26 @@ left it in (`ui_state.save/restore_section_states`), and an override (below).
 that is still written back on OK — gated by `tests/test_bl_dialog_sections.py`, with
 stray keys falling into a trailing "Other" group as a backstop. A group holding a value
 that differs from the global default expands itself, so a per-geometry override never
-hides behind a collapsed header. The window follows the open groups
+hides behind a collapsed header.
+**A field the selected scheme cannot read is greyed out AND says why, in the visible
+row.** `BL_JUNCTION_ANGLE_C1` is dead under the default junction method (whose 95°
+slide bound is geometric, not a knob) and disabling it is correct — but the silence
+was USER-REPORTED as a bug (#23), because on screen a greyed box with no reason is
+indistinguishable from one greyed for another reason, or from a defect. The same
+`_sync` that calls `setEnabled` sets or clears the row's short marker, so the lock and
+its explanation cannot disagree; the long prose stays the spec's own `_C1_TIP` and is
+not copied. Three things about the placement are MEASURED, not stylistic: the marker
+rides beside the FIELD because the label column is sized from the labels actually
+built (171 px today, bounded 120..240) and a suffixed C1 label measures **240**, i.e.
+it would shove every label right and sit on the ceiling; the note cell is the ONE
+composite field cell in the GUI, allowed only because nothing in the dialog's mixins
+calls `labelForField` (gated by AST over its own MRO, so a third mixin cannot evade
+it); and a hint on the disabled widget is impossible — hovering an enabled spin box
+delivers `Enter`, hovering the disabled one delivers nothing to it **or its parent**,
+since Qt picks the mouse receiver by walking past disabled widgets. Gated by
+`tests/test_bl_dialog_sections.py` check 14, which binds "disabled ⇔ a non-empty
+reason showing" in both directions and proves it non-vacuous by re-running the real
+pre-fix wiring. The window follows the open groups
 (`_relayout` → `_autofit_height`), bounded by the screen and never below a height the
 user set by dragging. Two Qt facts that fit depends on, both learned the hard way:
 `QScrollArea::sizeHint()` is **clamped to 24 font heights**, so the dialog's own
@@ -1219,6 +1238,47 @@ gates the resolver, the end-to-end `-out_name <dir>/probe.*` run (no file with a
 in its name, banner reports the resolved basename), and **statically fails the build
 if any other GUI file grows its own `endswith(".*")`** — a second private copy is how
 this diverged in the first place.
+
+**A geometry in the mesh config is the FILE it names, not the string that names
+it** (`services/geom_path_identity.py`, Qt-free — `canonical_geom_path` /
+`same_geom_file` / `dedupe_geom_paths`; the model's verbs are
+`models/mesh_config_geoms.py::GeomListMixin`, split off when `mesh_config.py` went
+over the file-size budget). Every dedup guard in the tree used to be a `not in`
+string compare over `MeshConfig.geom_files`, so the repo-relative and absolute
+spellings of one file were two entries: the Mesh Generator listed the geometry
+twice and the mesher was handed a doubled boundary — USER-REPORTED (2026-08-20),
+reopening an exported case package, which is exactly the case that mixes spellings
+(the workspace stores relative, the panel computes absolute). Two rules, and the
+second is the one that was wrong:
+- **The base is the repo, never the process cwd.** `os.path.abspath` is
+  cwd-relative, so the same stored entry named a different file depending on where
+  the GUI was launched from (measured: `<repo>/results/...` from the repo root,
+  `/private/tmp/results/...` from `/tmp`). Every relative path this app stores is
+  repo-relative — that is what `mesh_config_io` writes.
+- **Canonical means realpath**, so a symlinked scratch dir or a case-insensitive
+  volume cannot reintroduce two-strings-one-file. Identity by inode
+  (`case_workspace`'s rule) is stronger but needs the file to EXIST, and the whole
+  point here is entries that may not.
+**Membership and removal had to move with addition, and shipping only the
+additions was worse than not starting.** The first round converted the six `add`
+sites and left the removals and the `in` tests comparing strings, so
+`mesh_layers_ctrl` added a layer by identity and un-added it by string: on a
+config holding the relative spelling the checkbox drew **Unchecked for a geometry
+that was in the mesh**, and unchecking it cleared the box and left the geometry to
+be meshed. `remove_geom_file` existed and was called from nowhere. The full set is
+now `add_geom_file` / `remove_geom_file` / `has_geom_file` / `role_of` /
+`prune_roles` / `dedupe_geom_paths`, and **`tests/test_geom_files_identity.py`
+check 7 fails the build on a raw `append` / `remove` / `in` over `geom_files`
+anywhere outside the mixin** — by AST, because the prose recording the rule names
+every construct it forbids and a substring scan fires on that. Its allow-list is
+keyed to where the verbs LIVE, which is how it noticed them moving into the mixin.
+Two things the fix deliberately does not do: `dedupe_geom_paths` keeps the FIRST
+spelling rather than rewriting entries to canonical form (that would churn a saved
+config on load, and `pipeline_config` regressed a test by trying it — `/tmp` became
+`/private/tmp`), and `validate()` stays PURE, so "is this file on disk?" is
+`geom_files_not_on_disk()` and not a validation error. That method is **not**
+`missing_geom_files`, the field one word away on the same class: the field holds
+`GEOM_FILE` tokens a `.dat` read could not resolve at all.
 
 **The last generated mesh is not where a reopened case left it**
 (`services/mesh_grid_lookup.py::resolve_case_grid`, Qt-free): Generate Mesh writes its

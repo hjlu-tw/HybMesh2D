@@ -20,7 +20,7 @@ MRO or those calls land on ``object``.
 """
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QFormLayout, QLabel
+from PyQt6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QWidget
 
 from app.utils import align_form_labels, help_label
 from app.views.collapsible import CollapsibleSection
@@ -30,6 +30,18 @@ from app.views.panels.mesh_bl_field_specs import (
 )
 
 __all__ = ["BLDialogLayoutMixin"]
+
+#: A field the selected junction scheme cannot read is greyed out, and its row says
+#: WHY -> the short on-screen reason, keyed by parameter. ONE declaration: the row
+#: cell is built for these keys and :meth:`_wire_method_dependent_fields` is the only
+#: thing that fills or clears the text, so "is C1 live?" is decided in one place and
+#: the lock and its explanation cannot disagree. The long form stays in the spec's
+#: own tip (``services/mesh_bl_field_specs._C1_TIP``) and is NOT repeated here.
+_C1_KEY = "BL_JUNCTION_ANGLE_C1"
+_FIELD_NOTES = {_C1_KEY: "method 0 only"}
+
+#: The dialog's secondary-text style, for a group's hint line and a row's note alike.
+_HINT_QSS = "color:#8a93ad; font-size:10px;"
 
 
 class BLDialogLayoutMixin:
@@ -59,7 +71,7 @@ class BLDialogLayoutMixin:
             if hint:
                 h = QLabel(hint)
                 h.setWordWrap(True)
-                h.setStyleSheet("color:#8a93ad; font-size:10px;")
+                h.setStyleSheet(_HINT_QSS)
                 sec.add_widget(h)
             form = QFormLayout()
             form.setContentsMargins(0, 0, 0, 0)
@@ -82,7 +94,7 @@ class BLDialogLayoutMixin:
                 lbl = help_label(spec.label + ":",
                                  f"{spec.tip}\n\n({key})" if spec.tip else key)
                 labels.append(lbl)
-                form.addRow(lbl, w)
+                form.addRow(lbl, self._field_cell(key, w))
             forms.append(form)
             sec.add_layout(form)
             sec.toggle_btn.toggled.connect(lambda _c: self._relayout())
@@ -112,6 +124,72 @@ class BLDialogLayoutMixin:
             if not sec.is_expanded:
                 sec.expand()
 
+    def _field_cell(self, key: str, w):
+        """The FIELD half of one row: the widget itself, or — for a parameter the
+        selected scheme can render dead (:data:`_FIELD_NOTES`) — the widget beside an
+        initially empty note label that :meth:`_wire_method_dependent_fields` fills
+        with the reason.
+
+        The note rides beside the FIELD rather than being appended to the LABEL, and
+        that is measured rather than stylistic. The label column is sized from the
+        labels actually built (bounded 120..240) and measures 171 today; the composite
+        for ``Junction \u03b8 C1 (deg) \u2014 method 0 only:`` measures 240, so
+        suffixing the label would shove every label in the dialog 69 px right and sit
+        on the upper bound, where the next parameter added would clip instead. The note
+        cell feeds no measurement: 171 + 86 (spin box) + 4 + 73 (note) = 334 px, inside
+        the dialog's own 380 px minimum width, so nothing moves and nothing clips.
+
+        This is the ONE row in the GUI whose field cell is a composite, against
+        CLAUDE.md's "Numeric and combo rows go into the form DIRECTLY, never wrapped".
+        The precondition that rule protects is named there and holds here: a wrapped
+        cell hides the row from ``QFormLayout.labelForField``, which the four
+        visibility helpers use to hide a label with its field — and NO caller resolves
+        a label on this dialog's forms (all twelve live in ``mesh_sizing_mixin`` and
+        ``edge_props_*``, over the mesh panel's own forms). ``align_form_labels`` reads
+        ``itemAt(i, LabelRole)``, not the field, so it is unaffected. The gate pins
+        that precondition, so a visibility helper added here fails the build rather
+        than silently finding no label.
+
+        A hint on the disabled widget itself is not an option, which is also measured:
+        hovering an ENABLED spin box delivers ``Enter`` to it, and hovering the disabled
+        one delivers no event to it OR to its parent — Qt picks the mouse receiver by
+        walking past disabled widgets, so the box's own tooltip is never shown. The
+        '?' beside the label stays enabled and carries the long prose.
+        """
+        note_text = _FIELD_NOTES.get(key)
+        if note_text is None:
+            return w
+        cell = QWidget()
+        row = QHBoxLayout(cell)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        row.addWidget(w)
+        note = QLabel("")
+        note.setStyleSheet(_HINT_QSS)
+        # No trailing stretch: the spin box carries Qt's (Expanding, Fixed) policy, so
+        # the surplus goes to IT and the box stays the same width as C2's and C3's beside
+        # it. A stretch here would absorb that surplus and leave this one row's box
+        # visibly narrower than its neighbours.
+        row.addWidget(note)
+        self._notes[key] = note
+        return cell
+
+    def field_note(self, key: str) -> str:
+        """The reason the row beside ``key``'s field is showing, '' when it shows none.
+        The dialog's answer to "why can I not edit this?", read from the row itself
+        rather than from a tooltip nobody knows to hover.
+
+        ``isHidden()`` is not a visibility test and is not read as one: a widget inside
+        a COLLAPSED group reports ``isHidden() == False`` while ``isVisible()`` is
+        False, and that is the right answer here — the field is hidden with it, so
+        there is nothing to explain. What the guard rejects is a note deliberately
+        hidden while its text still says the field is dead, which is the silent lock
+        this whole row exists to prevent, coming back through the other door. Nothing
+        shipped hides one today.
+        """
+        note = self._notes.get(key)
+        return note.text() if note is not None and not note.isHidden() else ""
+
     def _wire_method_dependent_fields(self):
         """Grey out C1 unless the junction scheme that reads it is selected.
 
@@ -121,9 +199,16 @@ class BLDialogLayoutMixin:
         back on OK, round-trips through the config, and never changes a mesh; the only
         way to discover that was to regenerate and diff. Still ENABLED for method 0,
         whose taper-to-zero scheme does read it.
+
+        The lock was correct and its SILENCE was the defect (issue #23): on screen the
+        greyed box was indistinguishable from a field greyed for some other reason, or
+        from a bug — which is exactly what it was reported as. So the same ``_sync``
+        that disables the field also states why, in the row's own note cell, and clears
+        it again when method 0 re-enables the field. One decision, one place: a second
+        thing deciding "is C1 live?" is how the two would come to disagree.
         """
         m = self._widgets.get("BL_JUNCTION_METHOD")
-        c1 = self._widgets.get("BL_JUNCTION_ANGLE_C1")
+        c1 = self._widgets.get(_C1_KEY)
         if not m or not c1 or not hasattr(m[0], "currentIndexChanged"):
             return
 
@@ -133,6 +218,12 @@ class BLDialogLayoutMixin:
             except (TypeError, ValueError):
                 reads_c1 = True          # unreadable: leave it editable, never stuck off
             c1[0].setEnabled(reads_c1)
+            # ...and say so where the user is already looking. Editable means there is
+            # nothing to explain, which is why the unreadable-method fallback shows no
+            # marker: it leaves the field live.
+            note = self._notes.get(_C1_KEY)
+            if note is not None:
+                note.setText("" if reads_c1 else _FIELD_NOTES[_C1_KEY])
 
         m[0].currentIndexChanged.connect(_sync)
         _sync()

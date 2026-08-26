@@ -7,7 +7,8 @@ from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
-from app.utils import find_binary_executable, repo_root, confirm
+from app.utils import (find_binary_executable, repo_root, confirm,
+                       report_error, report_warning)
 
 if TYPE_CHECKING:
     from app.models.mesh_config import MeshConfig
@@ -64,7 +65,6 @@ class MeshGenControllerMixin:
             self.sync_mesh_layers_panel()
         except Exception as e:
             self.log(f"[ERROR] Failed to load mesh config: {e}")
-            from app.utils import report_warning
             report_warning(self.main_window, "Load Mesh Config Failed",
                            "The mesh configuration could not be loaded.",
                            detail=str(e))
@@ -100,7 +100,6 @@ class MeshGenControllerMixin:
             self.log(f"Saved mesh configuration to {path}")
         except Exception as e:
             self.log(f"[ERROR] Failed to save mesh config: {e}")
-            from app.utils import report_error
             report_error(self.main_window, "Save Mesh Config Failed",
                          "The mesh configuration could not be saved to disk.",
                          detail=str(e))
@@ -179,13 +178,31 @@ class MeshGenControllerMixin:
         # non-positive sizes, shrinking BL) BEFORE launching the backend, and
         # log advisory warnings. This turns a cryptic C++ crash into an
         # actionable message pointing at the offending parameter.
+        # A geometry file that is not on disk is checked HERE rather than in
+        # cfg.validate(), which is a pure function of the config: this one asks
+        # the filesystem. It used to be a [WARNING] in the diagnostic scan above
+        # and the entry was written into the mesher config regardless, so the run
+        # died as HYBMESH_ERROR 3 GEOMETRY_LOAD -- naming the wrong layer.
+        # Refusing rather than dropping it is deliberate: a mesh quietly missing
+        # a body looks like a converged answer for the wrong geometry.
         errors, warnings = cfg.validate(geom_bbox=geom_bbox, domain_bbox=domain_bbox)
+        missing = cfg.geom_files_not_on_disk()
+        if missing:
+            msg = cfg.missing_geometry_message(missing)
+            # ONE [ERROR] for one error: the log service classifies on the raw
+            # message, so tagging every wrapped prose line of a multi-line message
+            # made a single failure read as four.
+            head, _, rest = msg.partition("\n")
+            self.log(f"[ERROR] {head}")
+            for line in rest.splitlines():
+                self.log(line)
+            report_error(self.main_window, "Geometry File Not Found", msg)
+            return
         for w in warnings:
             self.log(f"[WARNING] {w}")
         if errors:
             for e in errors:
                 self.log(f"[ERROR] {e}")
-            from app.utils import report_error
             report_error(
                 self.main_window, "Invalid Mesh Parameters",
                 "The mesh cannot be generated — please fix the following:\n\n"
@@ -252,7 +269,12 @@ class MeshGenControllerMixin:
         have = have_dom = False
         for gf in cfg.geom_files:
             if not os.path.exists(gf):
-                self.log(f"[WARNING] Geometry file missing: {gf}")
+                # Not logged here: the pre-flight above already refused the run
+                # over it (cfg.geom_files_not_on_disk(), which asks the filesystem
+                # -- deliberately NOT validate(), which is pure).
+                # This loop only skips it for the bbox scan -- a WARNING beside
+                # a fatal error reads as "the run went ahead anyway", which is
+                # exactly what it used to do.
                 continue
             try:
                 pts = np.loadtxt(gf, ndmin=2)

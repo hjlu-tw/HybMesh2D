@@ -63,7 +63,7 @@ def load_config_from_file(cfg, path: str):
                 # KEY=VALUE tokens are per-geometry BL overrides (see the C++
                 # parser in include/Config.hpp — keep the two in sync).
                 gp = resolve(val_str)
-                cfg.geom_files.append(gp)
+                cfg.add_geom_file(gp)
                 role_name, bl_params, bc = None, {}, None
                 for tok in tokens[2:]:
                     if tok == "nobl":
@@ -94,7 +94,7 @@ def load_config_from_file(cfg, path: str):
                 # (external, default). Trailing KEY=VALUE tokens are per-domain
                 # BL overrides (only meaningful for a BL-growing wall).
                 dom_path = resolve(val_str)
-                cfg.geom_files.append(dom_path)
+                cfg.add_geom_file(dom_path)
                 role, bl_params, bc = "farfield", {}, None
                 for tok in tokens[2:]:
                     if tok == "bl":
@@ -143,7 +143,7 @@ def load_config_from_file(cfg, path: str):
                             numi += 1
                         except ValueError:
                             pass
-                cfg.geom_files.append(seed_path)
+                cfg.add_geom_file(seed_path)
                 cfg.geom_roles[seed_path] = {
                     "role": "seed", "size": size, "radius": radius, "mode": mode,
                 }
@@ -286,8 +286,14 @@ def config_to_text(cfg, path: str = "") -> str:
     project_root = repo_root()
     cfg_dir = os.path.dirname(os.path.abspath(path)) if path else project_root
     domain_emitted = False   # at most one DOMAIN_FILE (the backend keeps one)
-    for gf in cfg.geom_files:
-        abs_gf = os.path.abspath(gf)
+    # By IDENTITY: two spellings of one file used to emit two GEOM_FILE lines,
+    # i.e. hand the mesher a doubled boundary. And the resolution base is the
+    # repo, never the process cwd -- os.path.abspath made the same entry name a
+    # different file depending on where the GUI was launched from.
+    from app.services.geom_path_identity import (canonical_geom_path,
+                                                 dedupe_geom_paths)
+    for gf in dedupe_geom_paths(cfg.geom_files):
+        abs_gf = canonical_geom_path(gf)
 
         # Real containment test (avoids matching siblings like HybMesh_old)
         if abs_gf == project_root or abs_gf.startswith(project_root + os.sep):
