@@ -400,9 +400,13 @@ class ResultPlaybackMixin:
             w.setVisible(multi)
         if not hasattr(self, "play_btn"):
             return
-        # Visibility follows how many legs the SOLVE has, not how many are loaded
-        # — ticking the box leaves one, and the box has to stay reachable to untick.
-        self.one_leg_cb.setVisible(multi and len(self._legs or ()) > 1)
+        # Visibility follows how many legs the SOLVE has, and NOTHING else — not
+        # `multi`, which is a fact about frames. Ticking the box can leave a
+        # single-frame series (one zone per leg is an ordinary restarted solve),
+        # and `multi` then hid the whole transport row INCLUDING the box that had
+        # just been ticked, with no way back. Measured in review of #43: 3 legs x
+        # 1 zone, tick -> frames=1, hidden=True.
+        self.one_leg_cb.setVisible(len(self._legs or ()) > 1)
         self.play_btn.setText("❚❚ Pause" if self._playing else "▶ Play")
         self.play_btn.setToolTip(
             "Pause the animation" if self._playing else
@@ -455,10 +459,18 @@ class ResultPlaybackMixin:
             return ""
         rows = []
         for leg in legs.legs:
-            got = (f"reached iteration {leg.span.end}" if leg.span.known
-                   else "how far it got is not recorded")
-            rows.append(f"{leg.key}: {got}")
-        return "This solve's legs, oldest first:\n" + "\n".join(rows)
+            if not leg.span.known:
+                rows.append(f"{leg.key}: how far it got is not recorded")
+                continue
+            # Both caveats, the same two the restart chooser's tooltip carries:
+            # #43 unified the ARITHMETIC so the two windows cannot disagree about
+            # a number, and reporting that number with different confidence in
+            # each window would put the disagreement back one level up.
+            how = "recorded" if leg.span.recorded else "recomputed"
+            rows.append(f"{leg.key}: reached iteration {leg.span.end} ({how})")
+        return ("This solve's legs, oldest first:\n" + "\n".join(rows)
+                + "\nAn upper bound: a run interrupted part-way through a print "
+                  "interval got no further than this.")
 
     def _log(self, msg: str):
         """Say something to the user about playback.

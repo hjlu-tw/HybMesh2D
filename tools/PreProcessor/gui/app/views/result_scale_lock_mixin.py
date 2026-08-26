@@ -74,21 +74,20 @@ class ResultScaleLockMixin:
             self._log(f"[Results] '{var}' locked to [{rng[0]:.6g}, {rng[1]:.6g}] "
                       "for playback (all frames share one colour scale).")
 
-    def scan_series_range(self, var: str, pump: bool = True):
+    def scan_series_range(self, var: str):
         """``var``'s range over EVERY frame of the series, or None.
 
         The one place that pays for a full scan, so a variable is scanned once
-        whichever of its two callers asked — the "Lock scale" box, and the
-        per-variable seed in ``render`` when the series has several legs (#32).
-        Returns None on a re-entrant call or a failed read; the answer itself is
-        cached on the series, so asking again is free.
+        whichever of its two callers asked — the "Lock scale" box and the
+        per-variable seed. Returns None on a re-entrant call or a failed read;
+        the answer itself is cached on the series, so asking again is free.
 
-        ``pump`` is the difference between those two callers, not a knob. The
-        lock is ticked by a CLICK, so the event loop can be pumped to paint the
-        "this is going to take a moment" message before the scan blocks — an
-        unexplained freeze reads as a hang. The seed happens INSIDE ``render``,
-        where pumping would re-enter the paint we are in the middle of, so there
-        the cursor is the only feedback and the message lands afterwards.
+        Both callers are now a CLICK (ticking Lock scale, unticking Auto), so the
+        event loop is pumped to paint the "this is going to take a moment" message
+        before the scan blocks — an unexplained freeze reads as a hang. It used to
+        take a ``pump`` flag because the seed ran inside ``render``, where pumping
+        would have re-entered the paint in progress; #43 moved that caller out, so
+        the flag had one value left and is gone.
         """
         if self._series is None or not var or self._scanning:
             return None
@@ -99,8 +98,7 @@ class ResultScaleLockMixin:
                 self._log(f"[Results] scanning {self._frame_count()} frames for "
                           f"the '{var}' range (once per variable)…")
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                if pump:
-                    QApplication.processEvents()
+                QApplication.processEvents()
             try:
                 return self._series.global_range(var)
             except (OSError, ValueError) as e:
@@ -127,18 +125,23 @@ class ResultScaleLockMixin:
         mode froze the application for as long as reading every frame takes. Here
         the "this will take a moment" line is painted first.
 
-        Three guards, each for its own reason: a variable already scanned is not
-        re-scanned (and a range the user has since TYPED is therefore safe); a
-        FAILED scan is not recorded, so the next untick retries instead of pinning
-        the variable to one frame's numbers for the session; and a single-file
-        series is left to #24.
+        Four guards, each for its own reason. A variable already scanned is not
+        re-scanned. A range the user TYPED is never scanned away — #24's
+        manual-over-lock-over-auto precedence is out of scope for #43, and
+        "already scanned" does NOT imply it: the first version of this guarded on
+        the scan set alone, and typing a range for a variable that had never been
+        scanned, then toggling Auto off and on, replaced the user's numbers with
+        the series band (measured in review, -999..999 -> 1.0..134.33). A FAILED
+        scan is not recorded, so the next untick retries instead of pinning the
+        variable to one frame's numbers for the session. And a single-file series
+        is left to #24.
         """
         series = getattr(self, "_series", None)
         var = self._current_var()
         if (series is None or not var or series.n_files < 2
-                or var in self._series_seeded):
+                or var in self._series_seeded or var in self._clim_typed):
             return
-        rng = self.scan_series_range(var, pump=True)
+        rng = self.scan_series_range(var)
         if rng is None:
             return          # not remembered — a transient failure must not pin
         self._series_seeded.add(var)

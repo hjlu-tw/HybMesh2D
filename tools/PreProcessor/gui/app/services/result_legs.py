@@ -119,7 +119,6 @@ from app.services.restart_points import (
     ARCHIVE,
     LATEST,
     OTHER,
-    UNKNOWN_ITERATION,
     convg_beside,
     work_dir_of,
 )
@@ -129,8 +128,11 @@ _log = get_logger(__name__)
 #: The directory a case's live (un-archived) run works in.
 _WORK = "work"
 
-__all__ = ["LegSeries", "ResultLeg", "UNKNOWN_ITERATION", "leg_stem",
-           "list_result_legs"]
+# ``UNKNOWN_ITERATION`` used to be re-exported from here as well. It is
+# ``case_run_note``'s and nothing imported this copy once a leg carried a whole
+# ``IterationSpan``; a hop through two modules is two places for one number to
+# stop meaning one thing.
+__all__ = ["LegSeries", "ResultLeg", "leg_stem", "list_result_legs"]
 
 
 @dataclass(frozen=True)

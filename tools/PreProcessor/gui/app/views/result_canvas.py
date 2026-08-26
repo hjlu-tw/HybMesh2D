@@ -70,6 +70,10 @@ class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
         # vorticity with a pressure range — issue #24.
         self._clim_auto = True
         self._clim_by_var: dict[str, tuple[float, float]] = {}
+        # Which of those the user TYPED, as opposed to `render` seeding them or
+        # a whole-series scan supplying them. Only `set_clim` writes it, and it
+        # is what keeps an explicit choice out of the scan's way.
+        self._clim_typed: set = set()
 
         # Interaction / overlay state (Results post-processing tools).
         self._interact_mode = None        # None / "probe" / "line"

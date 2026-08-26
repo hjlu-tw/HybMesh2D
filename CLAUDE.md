@@ -1011,14 +1011,21 @@ boundary. Rules that are load bearing:
   private `_pipeline_running`). That made the common case cost a click and made an
   unattended run behave differently from an interactive one, so a CI screenshot
   showed something the user never sees. The modal is gone, the permission flag is
-  gone with it, and so is that reach — the one remaining `_pipeline_running` read
-  in `postprocess_ctrl` predates #32 and guards the load-FAILED modal, which is
-  still a modal. **`This leg only`** is the escape and it follows `Lock scale`'s
-  rules: shown only when the solve HAS more than one leg (so it stays reachable
-  while ticked — visibility asks how many legs the SOLVE has, not how many are
-  loaded), never persisted, unticked on every load. Restricting yields a ONE-leg
-  series rather than a second code path, so the cache, the labels and the ranges
-  behave identically either way.
+  gone with it, and so is that reach. **The residue is named rather than claimed
+  away**: `postprocess_ctrl` still reads `_pipeline_running` once, guarding the
+  load-FAILED modal — a *different* modal, predating #32, and one an unattended
+  run genuinely must not stop on. #43's story 45 asks for "no controller left
+  reaching into another mixin's private state"; what landed is the reach #32
+  added, not every reach. **`This leg only`** is the escape and it follows
+  `Lock scale`'s rules: shown only when the solve HAS more than one leg, never
+  persisted, unticked on every load. Restricting yields a ONE-leg series rather
+  than a second code path, so the cache, the labels and the ranges behave
+  identically either way. **Its visibility asks how many LEGS the solve has and
+  nothing else** — not the `multi` (frame-count) flag the rest of the transport
+  row uses. One zone per leg is an ordinary restarted solve, so ticking the box
+  can leave a single-frame series, and keying on `multi` hid the whole row
+  *including the box that had just been ticked*: the escape closed behind the
+  user. Found in review, measured at 3 legs x 1 zone.
 - **The landing frame is the last frame of the leg that was OPENED**, not of the
   series (`ResultSeries.last_frame_of`). The two differ only when an archived leg
   was named deliberately, and then the file the user asked for is the one they
@@ -1058,18 +1065,27 @@ boundary. Rules that are load bearing:
   stated in the Min/Max tooltip (`series_range_hint`) rather than logged on every
   change. **A failed scan is not remembered** — `_series_seeded` records the
   variables whose range came from a scan that actually SUCCEEDED, so a transient
-  read error does not pin a variable to one frame's numbers for the session, and
-  it is keyed on the scan rather than on "is a range remembered" because a range
-  the user TYPED must not be scanned away. The whole colour-scale concern (lock,
-  seed, precedence) moved into `views/result_scale_lock_mixin.py` when
-  `result_playback_mixin.py` passed the GUI length budget; the two only ever
-  shared a toolbar row.
+  read error does not pin a variable to one frame's numbers for the session. **A
+  range the user TYPED is tracked separately (`_clim_typed`, written only by
+  `set_clim`) and is never scanned away.** "Already scanned" does not imply it,
+  and assuming it did was a real defect: the first version guarded on the scan
+  set alone, so typing numbers for a variable that had never been scanned and
+  then toggling Auto off and on replaced them with the series band (found in
+  review, measured -999..999 -> 1.0..134.33). #24's manual-over-lock-over-auto
+  precedence is out of scope for #43 and this is what keeps it that way. The
+  whole colour-scale concern (lock, seed, precedence) moved into
+  `views/result_scale_lock_mixin.py` when `result_playback_mixin.py` passed the
+  GUI length budget; the two only ever shared a toolbar row.
 - **Each leg's iteration count is where the leg is NAMED** — the tooltips of the
   frame read-out and the frame selector, which already say which leg a frame
-  belongs to — rather than in a log line the user scrolls back to. A load emits
-  ONE summary line naming the legs opened; each warning (overlap, tag exclusion,
-  a variable gap) stays a full line of its own, because each changes how the
-  picture should be read.
+  belongs to — rather than in a log line the user scrolls back to. It carries
+  the SAME two caveats the restart chooser's tooltip does (recorded vs
+  recomputed, and that an interrupted run makes the figure an upper bound):
+  unifying the arithmetic so the two windows cannot disagree about a number, and
+  then reporting that number with different confidence in each, would put the
+  disagreement back one level up. A load emits ONE summary line naming the legs
+  opened; each warning (overlap, tag exclusion, a variable gap) stays a full line
+  of its own, because each changes how the picture should be read.
 - `set_result`'s triangulation reuse and #24's clim precedence
   (manual > lock > auto) are unchanged and both are pinned across a leg boundary.
 Three duplications this created were pushed to their owners rather than left:

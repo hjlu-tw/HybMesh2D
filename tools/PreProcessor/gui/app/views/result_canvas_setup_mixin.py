@@ -56,9 +56,10 @@ class ResultCanvasSetupMixin:
         self.reset_clim_store()
         # Never persisted, and off for every load: "This leg only" is an escape
         # the user asks for, not a preference the view carries between results.
-        if hasattr(self, "one_leg_cb"):
-            with block_signals(self.one_leg_cb):
-                self.one_leg_cb.setChecked(False)
+        box = getattr(self, "one_leg_cb", None)
+        if box is not None:
+            with block_signals(box):
+                box.setChecked(False)
         self.reload_legs(frame)
 
     def reload_legs(self, frame: int = -1):

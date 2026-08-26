@@ -734,6 +734,22 @@ check(SPAN(os.path.join(span_dir, "nope"),
       == case_run_note.UNKNOWN_ITERATION,
       "10. ...including a note that records a last row and no interval — the "
       "two fields are independent and one of them alone answers nothing")
+# A history whose first row precedes its own print interval is not something the
+# solver writes — its first row IS the first interval — so `first - interval`
+# there is a NEGATIVE start, i.e. a leg that took over before iteration 0. Rows
+# 0/10/20 make that -10, which is measurable and nonsense; rows 0/1/2 make it
+# exactly -1, which collides with UNKNOWN_ITERATION and reads as "not
+# measurable" by accident rather than by decision. The first case is the one an
+# injection can see, so it is the one asserted; the second is why the guard is
+# `first >= interval` rather than a check against the sentinel.
+early = SPAN(convg("leg8.enorm", 0, 20, step=10))
+collide = SPAN(convg("leg9.enorm", 0, 2, step=1))
+check(early.end == 30 and early.start == case_run_note.UNKNOWN_ITERATION
+      and not early.measurable and not collide.measurable,
+      f"10. a first row EARLIER than one interval reports no start rather than a "
+      f"negative one: the count is still answerable, but 'where did this leg "
+      f"take over' is not — and a sentinel a computation can reach by arithmetic "
+      f"is not a sentinel ({early}; the -1 collision: {collide})")
 
 # ── 9. two runs' outputs in one work dir: refuse, do not destroy ──────────
 # #42. Every solver output carries a run tag saying which HOST produced it, and

@@ -331,8 +331,14 @@ def iteration_span(convg_path: str, *, note: dict | None = None,
         return IterationSpan(interval=interval, last_row=last,
                              recorded=noted >= 0)
     first = values[0] if values else UNKNOWN_ITERATION
+    # `first >= interval`, not `first >= 0`: the solver's first row IS its first
+    # print interval, so a leg that took over at k has first = k + interval and
+    # start = k >= 0. A file starting earlier than that has no meaningful start,
+    # and computing one would be a NEGATIVE start — which at exactly -1 collides
+    # with UNKNOWN_ITERATION and reads as "not measurable" by accident rather
+    # than by decision (found in review of #43).
     return IterationSpan(
-        start=(first - interval) if first >= 0 else UNKNOWN_ITERATION,
+        start=(first - interval) if first >= interval else UNKNOWN_ITERATION,
         end=last + interval, interval=interval, last_row=last,
         recorded=noted >= 0)
 

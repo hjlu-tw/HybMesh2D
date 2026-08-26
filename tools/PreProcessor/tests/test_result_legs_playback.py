@@ -809,6 +809,35 @@ check("u" in fv._series_seeded and fv.manual_clim("u") != after_fail,
       f"variable to one frame's numbers for the session on a transient read "
       f"error ({after_fail} -> {fv.manual_clim('u')})")
 
+# A range the user TYPED is never scanned away. #24's manual-over-lock-over-auto
+# precedence is explicitly out of scope for #43, and "already scanned" does not
+# imply it: the first version of seed_range_from_series guarded on the scan set
+# alone, so typing numbers for a variable that had never been scanned and then
+# toggling Auto off and on replaced them with the series band (found in review,
+# measured -999..999 -> 1.0..134.33).
+tv = ResultCanvasView()
+tv.load_result_path(live_path)
+tv.select_variable("u")
+tv.set_clim_auto(False)          # scans 'u'
+tv.render()
+tv.select_variable("p")
+tv.render()
+tv.set_clim(-999.0, 999.0)
+tv.set_clim_auto(True)
+tv.set_clim_auto(False)
+tv.render()
+check(tv.manual_clim("p") == (-999.0, 999.0),
+      f"3. a range the user TYPED survives unticking Auto again — the "
+      f"whole-series scan is a fix for auto-scaling, never an override of an "
+      f"explicit choice, and it must not reach a variable that was never "
+      f"scanned merely because it was never scanned ({tv.manual_clim('p')})")
+tv.select_variable("v" if "v" in tv._series.variables else "u")
+tv.render()
+check(tv.manual_clim("u") == (11.0, 214.0),
+      f"3. ...while a variable nobody typed still gets the whole-series band, so "
+      f"the guard is not simply 'never scan once anything is remembered' "
+      f"({tv.manual_clim('u')})")
+
 check(solo_v.manual_clim("p") == (201.0, 202.0),
       f"3. ...while a SINGLE file still seeds from the frame on screen, so #24's "
       f"'nothing jumps when you untick' is untouched where it was decided "
@@ -856,6 +885,29 @@ check(v3._series.n_files == 3 and v3._frame == 1
 v3.one_leg_cb.setChecked(True)
 check(v3._series.n_files == 1 and v3._frame == 1,
       f"3. ...and toggling 'This leg only' keeps them on it ({v3._frame})")
+
+# One zone per leg is an ordinary restarted solve, and ticking the box then
+# leaves a SINGLE-frame series — which hides the transport row. The box must not
+# go with it, or the escape closes behind the user (found in review of #43;
+# measured 3 legs x 1 zone: tick -> frames=1, the box hidden).
+one_zone = os.path.join(tmp, "onezone")
+ozwork = build_case(one_zone, [("prev_001", 1, 0.0, 490, (10, 490)),
+                               ("prev_002", 1, 100.0, 1990, (510, 1990))],
+                    live=(1, 200.0), live_rows=(2010, 2990))
+vz = ResultCanvasView()
+vz.load_result_path(os.path.join(ozwork, f"{RESULT}.gui"))
+check(vz._frame_count() == 3 and not vz.one_leg_cb.isHidden(),
+      f"3. a solve of three one-zone legs is three frames, and the box is offered "
+      f"({vz._frame_count()}, hidden={vz.one_leg_cb.isHidden()})")
+vz.one_leg_cb.setChecked(True)
+check(vz._frame_count() == 1 and not vz.one_leg_cb.isHidden(),
+      f"3. ...and ticking it leaves ONE frame without hiding the box: its "
+      f"visibility is a fact about how many LEGS the solve has, never about how "
+      f"many frames are loaded, or the escape closes behind the user "
+      f"({vz._frame_count()}, hidden={vz.one_leg_cb.isHidden()})")
+vz.one_leg_cb.setChecked(False)
+check(vz._series.n_files == 3,
+      f"3. ...so there is a way back ({vz._series.n_files})")
 
 # A single-leg case is not a restarted solve: nothing is offered.
 _asked.clear()
