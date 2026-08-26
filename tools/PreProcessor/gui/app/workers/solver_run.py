@@ -59,7 +59,8 @@ class SolverPipelineWorker(QThread):
                  input_in_path: str | None = None, tag: str = ".gui",
                  prepare: bool = False,
                  disposition: str = solver_case.CASE_NEW_VERSION,
-                 sources=(), generated_sources=()):
+                 sources=(), generated_sources=(),
+                 clean=None):
         super().__init__()
         self._config = config
         self._getpgrid_dir = getpgrid_dir
@@ -75,6 +76,12 @@ class SolverPipelineWorker(QThread):
         # that knows the mapping. Carrying the pair from the controller instead
         # would let a caller set half of it.
         self._disposition = disposition
+        # The list the user was SHOWN for a Clean and Run, with their decision
+        # about the archives, as ONE value (#33). Carried rather than recomputed
+        # here: what was confirmed is what gets deleted, and a worker that
+        # re-globbed could act on a directory that changed in between. None for
+        # every other disposition.
+        self._clean = clean
         # CAD/STL this case was built from: copied into grid/cad/ by the same
         # staging step, so the case carries its own geometry.
         self._sources = list(sources or ())
@@ -113,7 +120,7 @@ class SolverPipelineWorker(QThread):
                     self._config, log=self.log_signal.emit,
                     overwrite=overwrite, sources=self._sources,
                     generated_sources=self._generated_sources,
-                    archive_prev=archive_prev)
+                    archive_prev=archive_prev, clean=self._clean)
                 self._solver_work_dir = work_dir
                 self._getpgrid_dir = grid_dir
                 self._input_in_path = input_in

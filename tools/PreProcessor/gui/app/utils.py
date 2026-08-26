@@ -102,6 +102,54 @@ def confirm(parent, title: str, question: str,
     return box.exec() == QMessageBox.StandardButton.Yes
 
 
+def confirm_destructive(parent, title: str, question: str,
+                        action_label: str, informative: str | None = None,
+                        detail: str | None = None,
+                        option_label: str | None = None):
+    """Confirm an IRREVERSIBLE action. ``None`` when declined; otherwise the
+    state of the optional extra tick (``False`` when none was offered).
+
+    The third shape of prompt this app needs, added rather than letting a third
+    raw ``QMessageBox`` accumulate — which is what the rule beside the two
+    recorded exemptions asks for. It differs from :func:`confirm` in four ways
+    that all matter for a deletion:
+
+    * the action button is **named** ("Delete and Run"), because "Yes" to a
+      question about removing files does not say what is about to happen;
+    * the icon is Warning, and **the cancelling button is the default**, so
+      Return and Esc both back out;
+    * an optional **tick** rides along for a second, narrower consent
+      ("…and the archives too"). It is rebuilt on every call and never
+      persisted, so it cannot arrive already set from last time;
+    * headless **declines** — there is no ``headless_default`` to pass, on
+      purpose. A destructive prompt has no safe default to proceed with, and
+      making it an argument would let a caller opt an unattended path into
+      deleting files.
+    """
+    if is_headless():
+        return None
+    from PyQt6.QtWidgets import QCheckBox, QMessageBox
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle(title)
+    box.setText(question)
+    if informative:
+        box.setInformativeText(informative)
+    if detail:
+        box.setDetailedText(detail)
+    tick = None
+    if option_label:
+        tick = QCheckBox(option_label)
+        box.setCheckBox(tick)
+    act = box.addButton(action_label, QMessageBox.ButtonRole.DestructiveRole)
+    cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(cancel)
+    box.exec()
+    if box.clickedButton() is not act:
+        return None
+    return bool(tick is not None and tick.isChecked())
+
+
 _ICONS = {"error": "Critical", "warning": "Warning", "info": "Information"}
 
 

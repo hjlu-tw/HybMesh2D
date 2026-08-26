@@ -421,10 +421,17 @@ check(chooser._picked().kind == rp.OTHER
 
 # ── 9. a restart whose source is gone is refused before the solver runs ────
 from app.controllers.solver_ctrl import SolverControllerMixin        # noqa: E402
-import app.controllers.solver_ctrl as solver_ctrl                   # noqa: E402
+# "which directory does this run write into" moved out of solver_ctrl when #33
+# gave the question a second step (measure, show the list, delete). The stub
+# composes both mixins because a real AppController does — the split is where
+# the code lives, not what answers the question.
+from app.controllers.case_disposition_ctrl import (                 # noqa: E402
+    CaseDispositionControllerMixin,
+)
+import app.controllers.case_disposition_ctrl as case_disp_ctrl      # noqa: E402
 
 
-class _Ctl(SolverControllerMixin):
+class _Ctl(CaseDispositionControllerMixin, SolverControllerMixin):
     def __init__(self):
         self.msgs = []
         self.main_window = None
@@ -460,7 +467,7 @@ check(not [e for e in ctl._validate_solver_config(relative) if "Restart" in e],
 
 # ── 10. Run does not raise the case-dir modal on a restart ─────────────────
 asked = []
-solver_ctrl.ask_case_disposition = (
+case_disp_ctrl.ask_case_disposition = (
     lambda *a, **k: asked.append(a) or solver_case.CASE_NEW_VERSION)
 
 ctl.msgs.clear()
