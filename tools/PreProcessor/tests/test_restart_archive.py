@@ -929,11 +929,33 @@ check("restart" not in inspect.signature(
 drive(by_text("Overwrite"))
 got = case_dir_dialog.ask_case_disposition(None, "beta", case_dir)
 labels = [b.text() for b in _seen["box"].buttons()]
-check(got == solver_case.CASE_IN_PLACE
-      and not any("Continue Here" in t or "archive" in t.lower() for t in labels),
-      f"7. what is left is the genuinely ambiguous NON-restart question — two "
-      f"answers and Cancel, no archive option for a run that is not resuming "
-      f"anything ({labels})")
+check(got == solver_case.CASE_IN_PLACE,
+      f"7. what is left is the genuinely ambiguous NON-restart question, and "
+      f"'Overwrite in Place' still means reuse-and-write-over ({labels})")
+# #33 REVERSES the second half of this check, which used to read "…no archive
+# option for a run that is not resuming anything". Note precisely what #31's
+# argument was and was not: it removed CASE_ARCHIVE because a restart stopped
+# reaching this prompt and NOTHING could then select the answer — "a branch
+# nothing can reach reads as a working feature" — not because archiving is
+# wrong for a run that is not resuming. #33 asks for it back on a different
+# ground ("#26 already makes a non-destructive same-folder run possible, so the
+# honest framing may be 'archive these, or delete these?'"), and once Clean and
+# Run exists the alternative is needed: without it a user who wants to keep the
+# previous results in THIS folder has no answer but New Versioned Dir, which
+# splits one case across two directories. The branch is reachable again, so it
+# is a feature again.
+check(any("Archive" in t for t in labels),
+      f"7. …and #33 restores 'Archive Previous' as the non-destructive "
+      f"same-folder answer, which #31 removed only because nothing could reach "
+      f"it ({labels})")
+drive(by_text("Archive Previous"))
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir)
+      == solver_case.CASE_ARCHIVE,
+      "7. …and it really returns the archiving disposition")
+drive(by_text("Clean and Run"))
+check(case_dir_dialog.ask_case_disposition(None, "beta", case_dir)
+      == solver_case.CASE_CLEAN,
+      "7. …with Clean and Run the fourth answer, at #33's stated ceiling")
 check(_seen["box"].buttonRole(
           next(b for b in _seen["box"].buttons() if "Overwrite" in b.text()))
       == QMessageBox.ButtonRole.DestructiveRole,

@@ -24,6 +24,7 @@ from app.services.case_input_paths import (
     restart_refs_for_work_dir,
     table_refs_for_work_dir,
 )
+from app.services.case_clean import apply_case_clean
 from app.services.case_sources import stage_case_sources
 from app.services.paths import repo_root
 
@@ -34,6 +35,7 @@ from app.services.paths import repo_root
 CASE_NEW_VERSION = "version"    # leave them; run in <case>_002
 CASE_ARCHIVE = "archive"        # same dir; move the previous outputs aside first
 CASE_IN_PLACE = "in_place"      # same dir; write over them
+CASE_CLEAN = "clean"            # same dir; DELETE the previous outputs first
 
 
 def _noop(_msg: str) -> None:
@@ -125,13 +127,20 @@ def case_dir_flags(disposition: str) -> tuple[bool, bool]:
     caller passing ``archive_prev`` without ``overwrite`` (an archive of a
     directory the run is not going to use) or, worse, the reverse.
     """
-    if disposition not in (CASE_NEW_VERSION, CASE_ARCHIVE, CASE_IN_PLACE):
+    if disposition not in (CASE_NEW_VERSION, CASE_ARCHIVE, CASE_IN_PLACE,
+                           CASE_CLEAN):
         # A typo must not resolve to a plausible answer. ``(False, False)`` is a
         # real disposition — auto-version — so a misspelling would silently run
         # somewhere the user did not choose. The same defect the pipeline-stage
         # gate records for ``plan()`` ignoring an unknown key.
         raise ValueError(f"unknown case disposition {disposition!r}")
-    return (disposition in (CASE_ARCHIVE, CASE_IN_PLACE),
+    # ``CASE_CLEAN`` reuses the directory like the other two same-dir answers and
+    # archives NOTHING: it is the answer that deletes, so moving the same files
+    # aside first would be both contradictory and (for the archives it is asked
+    # to keep) a way of quietly nesting one previous run inside another. What it
+    # deletes is not a flag — it is the LIST the user was shown, which travels
+    # to :func:`prepare_case_dir` as ``clean_plan``.
+    return (disposition in (CASE_ARCHIVE, CASE_IN_PLACE, CASE_CLEAN),
             disposition == CASE_ARCHIVE)
 
 
@@ -209,6 +218,34 @@ def stage_phi_file(src: str, work_dir: str, log=_noop) -> None:
     log(f"[IBM] phi field -> {os.path.basename(dst)}")
 
 
+def stale_phi_name(cfg: SolverConfig, work_dir: str) -> str:
+    """``"phi.dat"`` when the work dir holds a phase field THIS run will not
+    write, else ``""``.
+
+    ``work/phi.dat`` is only ever created by :func:`stage_phi_file`, and only
+    when the run both has an immersed solid and names a field for it. So one
+    that exists while this run stages none is the PREVIOUS run's geometry — the
+    reported defect (#33's problem statement) that the init DLL reads by that
+    fixed name and converges to a believable answer for the wrong shape.
+
+    ONE owner, because two callers now act on the answer and they must not
+    disagree about it: :func:`report_stale_ibm_artifacts` warns, and
+    ``case_clean`` deletes (a ``Clean and Run`` exists to retire exactly this).
+
+    The condition also carries its own safety, which is why it is written this
+    way round rather than as a list of names. A config whose ``ibm_phi_file``
+    resolves to ``work/phi.dat`` ITSELF — an exported case reopened in place —
+    has no second copy of that field, and ``stage_phi_file`` deliberately skips
+    the copy when source and destination are the same file. Such a run stages a
+    phi, so this returns ``""`` and the file is kept. Asking "is it stale?"
+    gets that right for free; asking "is it in WORK_STAGED?" would delete the
+    only copy.
+    """
+    if not os.path.isfile(os.path.join(work_dir, "phi.dat")):
+        return ""
+    return "" if (cfg.immersed_solid and cfg.ibm_phi_file) else "phi.dat"
+
+
 def report_stale_ibm_artifacts(cfg: SolverConfig, work_dir: str,
                                log=_noop) -> None:
     """Name a ``work/phi.dat`` this run did not stage, so it cannot pass for one.
@@ -228,8 +265,7 @@ def report_stale_ibm_artifacts(cfg: SolverConfig, work_dir: str,
     Reporting only; nothing is deleted, because a phi field is expensive to
     regenerate and the user may well mean to reuse it.
     """
-    phi = os.path.join(work_dir, "phi.dat")
-    if not os.path.exists(phi):
+    if not stale_phi_name(cfg, work_dir):
         return
     if cfg.immersed_solid and not cfg.ibm_phi_file:
         log("[WARNING] immersed solid is ON but no phi field was given: the run "
@@ -263,7 +299,7 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
 
 def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
                      sources=(), generated_sources=(),
-                     archive_prev: bool = False):
+                     archive_prev: bool = False, clean=None):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
     rename outputs, write ``input.in`` / ``.def``, and compile IBM DLLs.
 
@@ -287,6 +323,11 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     tri-state because the second is well defined without the first: an
     auto-versioned run archives nothing because its work dir holds nothing. The
     GUI never spells the pair out — see :func:`case_dir_flags`.
+
+    ``clean`` is a ``case_clean.ApprovedClean`` — the list the user was SHOWN,
+    plus the one decision they made about it (#33). It is passed rather than
+    recomputed on purpose: the list that was confirmed is the list that is acted
+    on, so nothing can be deleted that the prompt did not name.
     """
     root = repo_root()
     case = sanitize_case_name(cfg.case_name)
@@ -302,6 +343,33 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     for d in (work_dir, grid_dir, dll_dir):
         os.makedirs(d, exist_ok=True)
     cfg.work_dir = work_dir
+
+    # A clean slate, when one was asked for and approved (#33). Before the
+    # archive step and before any staging, so this run never deletes a file it
+    # just wrote.
+    #
+    # REFUSED FOR A RESTART, and not only as a belt: the restart source lives in
+    # this work dir under a name `is_run_output` classifies as an output (it IS
+    # one — the solver produced it), so a clean would delete the very file the
+    # run is about to resume from. The GUI cannot reach this state — a restart
+    # never gets the case-dir prompt (#31), so CASE_CLEAN is not an answer it can
+    # come back with — but the two facts are only both in scope HERE, which makes
+    # this the one place the guard can be stated at all.
+    if clean is not None:
+        if cfg.restart:
+            # ARCHIVE instead, rather than merely skipping the deletion. The
+            # caller's flags for a clean are (overwrite, no-archive), so
+            # declining to delete would leave the run overwriting the previous
+            # outputs in place as it produced its own — #26's hazard, and worse
+            # than either answer the user could have picked. A guard that
+            # invalidates the flags it was given has to correct them.
+            archive_prev = True
+            log("[WARNING] 'Clean and Run' would delete the dump this run "
+                "restarts from, so nothing is deleted: the previous outputs are "
+                "ARCHIVED instead, which is what a restart in the same "
+                "directory does.")
+        else:
+            apply_case_clean(clean, work_dir, log=log)
 
     # Before anything is written here: put the previous run's outputs out of
     # reach, so "continue in the same folder" cannot mean "write over the run

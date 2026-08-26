@@ -24,6 +24,9 @@ from app.controllers.mesh_gen_ctrl import MeshGenControllerMixin
 from app.controllers.mesh_export_ctrl import MeshExportControllerMixin
 from app.controllers.mesh_layers_ctrl import MeshLayersControllerMixin
 from app.controllers.open_endpoint_ctrl import OpenEndpointControllerMixin
+from app.controllers.case_disposition_ctrl import (
+    CaseDispositionControllerMixin,
+)
 from app.controllers.solver_ctrl import SolverControllerMixin
 from app.controllers.solver_bc_ctrl import SolverBcControllerMixin
 from app.controllers.solver_tools_ctrl import SolverToolsControllerMixin
@@ -58,6 +61,7 @@ __all__ = [
     "PendingEditControllerMixin", "BackendControllerMixin",
     "MeshGenControllerMixin", "MeshExportControllerMixin",
     "MeshLayersControllerMixin", "OpenEndpointControllerMixin",
+    "CaseDispositionControllerMixin",
     "SolverControllerMixin", "SolverBcControllerMixin",
     "SolverToolsControllerMixin", "CaseExportControllerMixin",
     "PostprocessControllerMixin", "SurfaceSourceControllerMixin",

@@ -5,10 +5,8 @@ from PyQt6.QtWidgets import QFileDialog
 
 from app.models.solver_config import SolverConfig, BC_FLAGS_NEEDING_EXTRA
 from app.workers.solver_run import SolverPipelineWorker
-from app.views.case_dir_dialog import ask_case_disposition
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
-from app.services import restart_points, solver_case
-from app.services.case_archive import archive_notice
+from app.services import restart_points
 from app.services.case_files import GUI_RUN_TAG
 from app.services.case_sources import mesh_provenance_paths
 from app.services.mesh_grid_lookup import resolve_case_grid
@@ -246,7 +244,8 @@ class SolverControllerMixin:
         self._solver_worker = SolverPipelineWorker(
             cfg, tag=self.SOLVER_TAG, prepare=True, disposition=disposition,
             sources=self._case_source_files(),
-            generated_sources=self._case_generated_files())
+            generated_sources=self._case_generated_files(),
+            clean=self.pending_clean())
         self._solver_worker.log_signal.connect(log)
         self._solver_worker.prepared_signal.connect(self._on_solver_prepared)
         self._solver_worker.stage_signal.connect(self._on_solver_stage)
@@ -325,50 +324,6 @@ class SolverControllerMixin:
     # ------------------------------------------------------------------ #
     # Case directory orchestration (D6)
     # ------------------------------------------------------------------ #
-    def _resolve_case_disposition(self, cfg: SolverConfig):
-        """One of ``solver_case.CASE_*`` — which directory this run writes into
-        and what happens to what is already there — or None if the user
-        cancelled.
-
-        Only asks when a case dir of this name already holds prior results AND
-        this run is not a restart; otherwise the answer is decided here — a
-        restart archives and continues in place (#31), and a fresh case uses its
-        default dir as-is. The dialog itself is ``views/case_dir_dialog``; this
-        decides whether to ask at all and says what came back.
-        """
-        case = _sanitize(cfg.case_name)
-        # One spelling of "where this case lives", shared with the panel that
-        # lists its restart points and the validator that resolves a relative
-        # reference against its work dir.
-        case_root = restart_points.case_root_for(cfg.case_name)
-        if not solver_case.dir_has_content(case_root):
-            return solver_case.CASE_NEW_VERSION
-
-        # Run All (pipeline batch) must run unattended: never pop a modal.
-        # Preserve prior results by auto-versioning a new dir instead of blocking.
-        # The worker reports the real (versioned) work dir via prepared_signal, so
-        # the Results stage still finds the output.
-        if getattr(self, "_pipeline_running", False):
-            self.log(
-                f"[case] '{case}' already has results; Run All auto-versions a new "
-                "directory to preserve them.")
-            return solver_case.CASE_NEW_VERSION
-
-        # A RESTART is no longer an ambiguous question (#31): the start point was
-        # chosen from this case's own history, so the prompt is dropped rather
-        # than answered — see views/case_dir_dialog for why, and archive_notice
-        # for what the log has to say in its place.
-        if cfg.restart:
-            self.log(archive_notice(case, case_root))
-            return solver_case.CASE_ARCHIVE
-
-        choice = ask_case_disposition(self.main_window, case, case_root)
-        if choice is None:
-            self.log("Solver run cancelled (case exists).")
-        elif choice == solver_case.CASE_IN_PLACE:
-            self.log(f"[case] overwriting existing results for '{case}'.")
-        return choice
-
     def _on_solver_prepared(self, work_dir: str):
         """The worker finished staging the (possibly auto-versioned) case dir;
         record where the Tecplot result will land."""
