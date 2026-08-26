@@ -26,6 +26,8 @@ Qt-free on purpose: the playback UI owns the timer, this owns the data.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from app.models.result_data import TecplotResult
@@ -41,6 +43,25 @@ _DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 
 #: What separates a leg's name from the frame position in a label.
 _LEG_SEP = " · "
+
+
+@dataclass
+class _File:
+    """One file of the series and everything the series knows about it.
+
+    A record rather than four lists indexed by the same ``fi`` — the repo's own
+    reasoning for ``JunctionNode`` ("AoS, not six parallel arrays"), and here the
+    alignment is a real invariant rather than a tidiness point: an unreadable leg
+    is dropped at construction, and dropping it from three lists and forgetting
+    the fourth would silently pair one file's label with another's index.
+
+    ``stamp`` and ``index`` are re-assigned when the file changes on disk, so
+    this is mutable on purpose.
+    """
+    path: str
+    label: str
+    stamp: tuple
+    index: object
 
 
 def _frame_nbytes(r: TecplotResult) -> int:
@@ -86,10 +107,7 @@ class ResultSeries:
         self._frames: dict = {}          # global frame index -> TecplotResult (LRU)
         self._bytes = 0
         self._ranges: dict = {}          # var -> (vmin, vmax) over ALL frames
-        self.paths: list = []
-        self.labels: list = []
-        self._stamps: list = []
-        self._indices: list = []
+        self._files: list = []
         for path, label in zip(paths, labels):
             try:
                 # Stamp FIRST, then index: if the file is written in between, the
@@ -105,20 +123,19 @@ class ResultSeries:
                 _log.warning("dropping %s from the series: it cannot be read",
                              path, exc_info=True)
                 continue
-            self.paths.append(path)
-            self.labels.append(label)
-            self._stamps.append(st)
-            self._indices.append(idx)
-        if not self.paths:
+            self._files.append(_File(path=path, label=label, stamp=st, index=idx))
+        if not self._files:
             raise ValueError(f"no readable result file among {len(paths)}")
         self._map = self._build_map()
 
     # ------------------------------------------------------------------ #
     @property
-    def path(self) -> str:
-        """The FIRST file of the series — kept for the callers that only ever
-        held one, and the honest answer for a single-file series."""
-        return self.paths[0]
+    def paths(self) -> list:
+        return [f.path for f in self._files]
+
+    @property
+    def labels(self) -> list:
+        return [f.label for f in self._files]
 
     def _build_map(self) -> list:
         """``[(file index, zone index), …]`` — the flat frame numbering.
@@ -127,8 +144,8 @@ class ResultSeries:
         renumbers every frame after it.
         """
         return [(fi, zi)
-                for fi, idx in enumerate(self._indices)
-                for zi in range(len(idx.zones))]
+                for fi, f in enumerate(self._files)
+                for zi in range(len(f.index.zones))]
 
     def _live_indices(self) -> list:
         """The indices for the files AS THEY ARE NOW, dropping caches on a change.
@@ -147,26 +164,26 @@ class ResultSeries:
         series is no longer a range of this series.
         """
         changed = []
-        for i, path in enumerate(self.paths):
+        for f in self._files:
             try:
-                st = stamp(path)
+                st = stamp(f.path)
             except OSError:
                 # The file went away (a case directory cleaned up mid-session). Keep
                 # answering from the last good index rather than raising out of a paint
                 # path; the next frame read reports the real error.
-                _log.debug("could not stat %s; keeping the last index", path,
+                _log.debug("could not stat %s; keeping the last index", f.path,
                            exc_info=True)
                 continue
-            if st != self._stamps[i]:
-                self._stamps[i] = st
-                self._indices[i] = index_for(path)
-                changed.append(path)
+            if st != f.stamp:
+                f.stamp = st
+                f.index = index_for(f.path)
+                changed.append(f.path)
         if changed:
             _log.info("%s changed on disk — re-indexing, dropping %d cached "
                       "frame(s)", ", ".join(changed), len(self._frames))
             self._drop_caches()
             self._map = self._build_map()
-        return self._indices
+        return [f.index for f in self._files]
 
     def _drop_caches(self) -> None:
         """Forget every materialised frame and every scanned range."""
@@ -195,7 +212,7 @@ class ResultSeries:
 
     @property
     def n_files(self) -> int:
-        return len(self.paths)
+        return len(self._files)
 
     def locate(self, k: int) -> tuple:
         """``(file index, zone index)`` for global frame ``k``."""
@@ -203,7 +220,7 @@ class ResultSeries:
 
     def path_of(self, k: int) -> str:
         """Which file global frame ``k`` comes from."""
-        return self.paths[self.locate(k)[0]]
+        return self._files[self.locate(k)[0]].path
 
     def frame_label(self, k: int) -> str:
         """Human label for frame ``k`` — its 1-based position, named by leg.
@@ -226,17 +243,17 @@ class ResultSeries:
             # called from the UI refresh, not from a load path that can report it.
             return f"Frame {k + 1} / {n}"
         fi, zi = m[k]
-        zones = self._indices[fi].zones
+        zones = self._files[fi].index.zones
         label = f"Frame {zi + 1} / {len(zones)}"
         if len({z.title for z in zones}) > 1:
             label += f" — {zones[zi].title}"
-        leg = self.labels[fi]
+        leg = self._files[fi].label
         # Only a MULTI-file series prefixes. A case that was never restarted has
         # exactly one leg and its read-out must not grow a name that distinguishes
         # it from nothing — and a caller that declines the whole solve gets the
         # single file it asked for, labelled the way it always was.
         return (f"{leg}{_LEG_SEP}{label}"
-                if leg and len(self.paths) > 1 else label)
+                if leg and len(self._files) > 1 else label)
 
     # ------------------------------------------------------------------ #
     @property
@@ -263,10 +280,10 @@ class ResultSeries:
         for idx in indices:
             union += [v for v in idx.variables if v not in union]
         out = []
-        for i, idx in enumerate(indices):
+        for f, idx in zip(self._files, indices):
             missing = tuple(v for v in union if v not in set(idx.variables))
             if missing:
-                out.append((self.labels[i] or self.paths[i], missing))
+                out.append((f.label or f.path, missing))
         return out
 
     # ------------------------------------------------------------------ #
@@ -280,8 +297,8 @@ class ResultSeries:
             self._frames[k] = r
             return r
         fi, zi = m[k]
-        r = TecplotResult.from_file(self.paths[fi], zone=zi,
-                                    index=self._indices[fi])
+        f = self._files[fi]
+        r = TecplotResult.from_file(f.path, zone=zi, index=f.index)
         self._frames[k] = r
         self._bytes += _frame_nbytes(r)
         self._evict()
@@ -318,7 +335,7 @@ class ResultSeries:
         # while we are part-way through (a re-run into the same case dir), the frames
         # already read belong to the previous one, so the result is not cached as this
         # series' range.
-        started_on = list(self._stamps)
+        started_on = [f.stamp for f in self._files]
         n = self.n_frames
         for k in range(n):
             vals = np.asarray(self.frame(k).get_cell_field(var), dtype=float)
@@ -329,7 +346,7 @@ class ResultSeries:
             if progress is not None:
                 progress(k + 1, n)
         rng = None if lo > hi else (lo, hi)
-        if self._stamps == started_on:
+        if [f.stamp for f in self._files] == started_on:
             self._ranges[var] = rng
         return rng
 
@@ -346,7 +363,7 @@ class ResultSeries:
         ``index_for``, which would hand back the very index it was told to discard.
         """
         self._drop_caches()
-        for i, path in enumerate(self.paths):
-            self._stamps[i] = stamp(path)      # before the scan; see __init__
-            self._indices[i] = build_index(path)
+        for f in self._files:
+            f.stamp = stamp(f.path)            # before the scan; see __init__
+            f.index = build_index(f.path)
         self._map = self._build_map()

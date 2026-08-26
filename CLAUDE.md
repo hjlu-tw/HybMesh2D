@@ -953,13 +953,16 @@ boundary. Rules that are load bearing:
   now exists in `case_files`) recovers the one name both carry. That also makes
   it work on **pre-#30 archives**, which kept `.gui` — measured on this repo's
   own `results/solver/case`.
-- **Order by ITERATION COUNT, and lineage is NOT recoverable — which is why.**
-  The issue asks to order by `RUN.txt`'s "recorded lineage"; measuring what the
-  note holds says that cannot be done, since `resumed_from` is a BASENAME and
-  every leg's dump is the same solver output under the same name, so normalising
-  the two spellings collapses every leg onto one key. `last_iteration` is what
-  the note does hold per leg, so that is the axis, with creation order as the
-  tie-break.
+- **Order by ITERATION COUNT; lineage answers a different question.** The first
+  version of this said lineage was NOT recoverable and that was simply FALSE —
+  found by the Spec axis. `case_archive.bare_link_for_archived_dump` links an
+  archived dump into `work/` under its ARCHIVED name, so a `resumed_from` reading
+  `binDumpZ.dat.prev_001` names that leg exactly, and #31's own
+  `_last_resumed_basename` already relies on it. What lineage really gives is a
+  PREDECESSOR relation, never a position: it says where a leg started, not how
+  far it went, and two legs resumed from the same point are indistinguishable by
+  it — which is exactly the re-run case. So `last_iteration` orders (creation
+  order breaking ties) and lineage DETECTS the overlap.
 - **A leg with no count is played WHERE IT RAN, not last** — a deliberate
   departure from the issue's "offered last", because that phrasing is right for a
   chooser LIST and wrong for a playback ORDER. Not academic: the FIRST version
@@ -968,11 +971,13 @@ boundary. Rules that are load bearing:
   the solve **backwards** — newest leg first, the two oldest after it. An unknown
   leg now inherits the last count recorded before it, which is creation order
   except where a recorded count says otherwise.
-- **An overlap is REPORTED, never interleaved.** #31 makes re-running a leg from
-  an earlier point a click, so a later run can cover ground an earlier one did.
-  Since the per-leg START iteration cannot be recovered, the overlap is inferred
-  from NON-MONOTONICITY (a leg that ran later reporting no higher a count) and
-  said out loud with both legs named; nothing is merged or spliced.
+- **An overlap is REPORTED, never interleaved**, by TWO signals that catch
+  different pairs. **Lineage**: two legs whose notes record the same start really
+  did re-run one segment, and that holds when neither reports a count.
+  **Non-monotonicity**: a leg that ran later reporting no higher a count, which
+  is the only signal left when a note is missing. A blank start is deliberately
+  not a key — "cold start" and "we have no record" must not match each other.
+  Nothing is merged or spliced; both legs are named.
 - **Ask, do not assume — and NOT asking means No.** The offer is a `confirm` with
   `headless_default=False`, and `load_result_path(..., ask_legs=False)` (passed by
   `postprocess_ctrl` when `_pipeline_running`) declines rather than opening
@@ -989,11 +994,30 @@ boundary. Rules that are load bearing:
   which is a hole the gate's own injections found.
 - **The leg name prefixes a label only when the series has more than one file**
   (`prev_002 · Frame 3 / 10`), so a case that was never restarted reads exactly as
-  it did. `set_result`'s triangulation reuse and #24's clim precedence
+  it did. The transport's own read-out appends the SERIES position on top
+  (`… (7 / 30)`) because every button here moves through the series; that is
+  added in `_read_out`, not in `frame_label`, since the zone selector uses the
+  label as a list entry where a second pair of numbers on every row is noise.
+- **The per-variable seeded range is COMPUTED over the series, not just carried
+  across it.** #24 seeds an untouched variable from the frame on screen so
+  nothing jumps when Auto is unticked; across legs that basis is wrong — one
+  leg's band saturates every other leg and the Min/Max boxes then describe a
+  range that is not on screen, #24's own symptom one level up. So a MULTI-leg
+  series seeds from the series and a single file keeps #24 exactly. The scan is
+  the one "Lock scale" already pays (`scan_series_range`, now shared), and its
+  `pump` argument is the difference between the two callers rather than a knob:
+  the lock is ticked by a click and can pump the event loop to paint its message
+  first, while the seed runs INSIDE `render`, where pumping would re-enter the
+  paint in progress. The first version shipped persistence only and the Spec axis
+  marked the acceptance item partial.
+- `set_result`'s triangulation reuse and #24's clim precedence
   (manual > lock > auto) are unchanged and both are pinned across a leg boundary.
-Gated by `tests/test_result_legs_playback.py` — 13 properties over 3 groups,
-every one verified by injection, with its two blind spots and the acceptance run
-named in its own docstring.
+Three duplications this created were pushed to their owners rather than left:
+`case_files.strip_run_tag` / `newest_first` and `case_run_note.mtime_stamp` /
+`note_int` are each now read by both `restart_points` and `result_legs`.
+Gated by `tests/test_result_legs_playback.py` — 13 injection-verified properties
+over 3 groups, with its two blind spots and the acceptance run
+(`results/solver/case`, a real twice-restarted solve) named in its own docstring.
 
 **"The surface" of a surface plot is a CHOICE, and so is where s = 0 is**
 (`services/surface_source.py` + `services/surface_sample.py`, both Qt-free;

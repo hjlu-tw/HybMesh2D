@@ -198,6 +198,9 @@ class TecplotResult:
     # those whose inputs are present are actually offered (see scalar_variables).
     DERIVED = ("|V|", "Cp", "s", "p0", "T0")
 
+    #: The density field's accepted spellings, in the order they are tried.
+    DENSITY_NAMES = ("`r", "r", "rho")
+
     # Human-readable labels for the variable selector (#6): the raw Tecplot codes
     # are cryptic (`r, vort, phi…), so map each to "code — description". Keyed by
     # the exact variable string; unknown codes fall back to the code itself.
@@ -255,9 +258,6 @@ class TecplotResult:
         if name in self.cell_data or name in self.node_data:
             return self._base_cell_field(name)
         return None
-
-    #: The density field's accepted spellings, in the order they are tried.
-    DENSITY_NAMES = ("`r", "r", "rho")
 
     @classmethod
     def derived_from_names(cls, names) -> list[str]:

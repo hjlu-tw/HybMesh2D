@@ -369,8 +369,34 @@ class ResultPlaybackMixin:
             return
         if self._range_lock is not None and self._range_lock_var == var:
             return
-        if self._scanning:
-            return
+        known = self._series.has_global_range(var)
+        rng = self.scan_series_range(var)
+        if rng is None and not self._series.has_global_range(var):
+            return                      # a re-entrant call, or the scan failed
+        self._range_lock = rng
+        self._range_lock_var = var
+        if rng and not known:
+            self._log(f"[Results] '{var}' locked to [{rng[0]:.6g}, {rng[1]:.6g}] "
+                      "for playback (all frames share one colour scale).")
+
+    def scan_series_range(self, var: str, pump: bool = True):
+        """``var``'s range over EVERY frame of the series, or None.
+
+        The one place that pays for a full scan, so a variable is scanned once
+        whichever of its two callers asked — the "Lock scale" box, and the
+        per-variable seed in ``render`` when the series has several legs (#32).
+        Returns None on a re-entrant call or a failed read; the answer itself is
+        cached on the series, so asking again is free.
+
+        ``pump`` is the difference between those two callers, not a knob. The
+        lock is ticked by a CLICK, so the event loop can be pumped to paint the
+        "this is going to take a moment" message before the scan blocks — an
+        unexplained freeze reads as a hang. The seed happens INSIDE ``render``,
+        where pumping would re-enter the paint we are in the middle of, so there
+        the cursor is the only feedback and the message lands afterwards.
+        """
+        if self._series is None or not var or self._scanning:
+            return None
         known = self._series.has_global_range(var)
         self._scanning = True
         try:
@@ -378,24 +404,37 @@ class ResultPlaybackMixin:
                 self._log(f"[Results] scanning {self._frame_count()} frames for "
                           f"the '{var}' range (once per variable)…")
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                # Paint the message and the cursor BEFORE the scan blocks: a long
-                # run means seconds of frozen UI, and an unexplained freeze reads
-                # as a hang. Re-entry is what _scanning guards.
-                QApplication.processEvents()
+                if pump:
+                    QApplication.processEvents()
             try:
-                rng = self._series.global_range(var)
+                return self._series.global_range(var)
             except (OSError, ValueError) as e:
                 _log.warning("global range scan failed for %s: %s", var, e)
-                rng = None
+                return None
         finally:
             self._scanning = False
             if not known:
                 QApplication.restoreOverrideCursor()
-        self._range_lock = rng
-        self._range_lock_var = var
-        if rng and not known:
-            self._log(f"[Results] '{var}' locked to [{rng[0]:.6g}, {rng[1]:.6g}] "
-                      "for playback (all frames share one colour scale).")
+
+    def series_seed_range(self, var: str):
+        """What a manual colour range should be SEEDED from, or None for "the
+        frame on screen".
+
+        #24 seeds an untouched variable from the frame being shown, so nothing
+        jumps at the moment Auto is unticked. Across the legs of a restarted
+        solve that is the wrong basis and #32 says so: one leg's band applied to
+        the whole solve saturates or flattens every other leg, and the numbers in
+        the Min/Max boxes then describe a range that is not on screen — the very
+        symptom #24 exists to remove, reached one level up. So a MULTI-LEG series
+        seeds from the series, and a single file keeps #24's rule untouched.
+
+        The cost is the same scan "Lock scale" pays and is not hidden: unticking
+        Auto on a long restarted solve blocks while every frame is read once.
+        """
+        series = getattr(self, "_series", None)
+        if series is None or series.n_files < 2:
+            return None
+        return self.scan_series_range(var, pump=False)
 
     def _on_lock_scale_toggled(self, on: bool):
         """Tick = scan the run and pin its range; untick = back to per-frame auto."""
@@ -451,8 +490,26 @@ class ResultPlaybackMixin:
         # case where the button has nothing to do.
         self.first_btn.setEnabled(multi and not at_first)
         self.last_btn.setEnabled(multi and not at_last)
-        self.frame_label.setText(
-            self._series.frame_label(self._frame) if multi else "")
+        self.frame_label.setText(self._read_out())
+
+    def _read_out(self) -> str:
+        """What the transport says about where it is.
+
+        The series label names the leg and the position WITHIN it
+        (``prev_002 · Frame 3 / 10``), which is the pair that identifies a frame
+        — but every button here moves through the whole series, so across legs
+        the read-out also carries the overall position. It is appended HERE
+        rather than inside ``frame_label`` because the zone selector uses that
+        label as a list entry, where a second pair of numbers on every row is
+        noise; this is the one place describing the transport itself.
+        """
+        n = self._frame_count()
+        if n < 2 or self._series is None:
+            return ""
+        label = self._series.frame_label(self._frame)
+        if self._series.n_files > 1:
+            label += f" ({self._frame + 1} / {n})"
+        return label
 
     def _log(self, msg: str):
         """Say something to the user about playback.

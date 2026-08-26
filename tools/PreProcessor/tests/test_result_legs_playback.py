@@ -12,9 +12,10 @@ What is pinned here, in three groups:
  1. **``services/result_legs``** — which files are the legs, and in what ORDER.
     A leg is found by its STEM (#30 renames an archived file's tag to
     ``.prev_NNN``, so one output has two spellings); the order is by iteration
-    count from ``RUN.txt``, NOT by filename; a leg that ran later and got no
-    further is reported as an overlap rather than spliced; a legacy archive with
-    no note is played last; and a file outside a case is one leg with no history.
+    count from ``RUN.txt``, NOT by filename; an overlap is reported rather than
+    spliced, by lineage where the notes record a shared start and by
+    non-monotonicity otherwise; a legacy archive with no note is played WHERE IT
+    RAN; and a file outside a case is one leg with no history.
 
  2. **``models/result_series`` over several files** — one flat frame numbering,
     one LRU byte budget, one value range per variable. The byte-range parse stays
@@ -245,6 +246,34 @@ check(any("prev_002" in w and "prev_001" in w and "same part" in w
       f"1. ...and the overlap is SAID, naming both legs — the note records no "
       f"start iteration, so it is reported rather than resolved ({r.warnings})")
 
+# Lineage is the direct evidence of a re-run and needs no counts at all: two
+# legs whose notes record the same start really did cover the same stretch.
+# `bare_link_for_archived_dump` links an archived dump into work/ under its
+# ARCHIVED name, so `binDumpZ.dat.prev_001` in a note names one leg exactly.
+lin = os.path.join(tmp, "lineage")
+lwk = build_case(lin, [("prev_001", 2, 0.0, None),
+                       ("prev_002", 2, 100.0, None)], live=None)
+write_note(os.path.join(lwk, "prev_001"), "prev_001", -1,
+           resumed="binDumpZ.dat.prev_000")
+write_note(os.path.join(lwk, "prev_002"), "prev_002", -1,
+           resumed="binDumpZ.dat.prev_000")
+li = list_result_legs(os.path.join(lwk, "prev_001", f"{RESULT}.prev_001"))
+check(any("prev_002" in w and "prev_001" in w and "both resumed from" in w
+          for w in li.warnings),
+      f"1. two legs that RESUMED FROM THE SAME DUMP are reported as covering "
+      f"one stretch even though neither records an iteration count — lineage is "
+      f"direct evidence where non-monotonicity needs two numbers ({li.warnings})")
+
+# ...but a blank start is not a shared start: "we have no record" must not be
+# matched against another "we have no record" and reported as a re-run.
+quiet = os.path.join(tmp, "quiet")
+qwk = build_case(quiet, [("prev_001", 2, 0.0, 500),
+                         ("prev_002", 2, 100.0, 900)], live=None)
+qi = list_result_legs(os.path.join(qwk, "prev_001", f"{RESULT}.prev_001"))
+check(not any("both resumed from" in w for w in qi.warnings),
+      f"1. ...and two legs whose notes record NO start are not reported as "
+      f"sharing one ({qi.warnings})")
+
 # A legacy archive (no RUN.txt) has no place on the iteration axis.
 legacy = os.path.join(tmp, "legacy")
 lwork = build_case(legacy, [("prev_001", 2, 0.0, None),
@@ -319,9 +348,24 @@ check(s.path_of(0) == paths[0] and s.path_of(7) == paths[2],
 # (file, zone) map raises out of ``from_file`` as easily as it returns the wrong
 # array, and a raise here would take every check below it with it — the same
 # reason the C++ side's check.hpp records instead of aborting.
+# The expected (file, zone) for every global frame, counted off the FILES rather
+# than asked of the series: a reference parse that routes through `locate` agrees
+# with a broken map by construction — measured, a map collapsing every frame onto
+# zone 0 passed this check while failing eight others.
+def zone_count(path):
+    with open(path) as f:
+        return sum(1 for ln in f if ln.lstrip().lower().startswith("zone"))
+
+
+expected = [(fi, zi) for fi, p_ in enumerate(paths)
+            for zi in range(zone_count(p_))]
+check(len(expected) == s.n_frames and [s.locate(k) for k in range(s.n_frames)]
+      == expected,
+      f"2. the flat map is exactly the legs' zones in order, counted off the "
+      f"files themselves ({len(expected)} vs {s.n_frames})")
+
 same = True
-for k in range(s.n_frames):
-    fi, zi = s.locate(k)
+for k, (fi, zi) in enumerate(expected):
     try:
         r = s.frame(k)
         ref = whole_file_parse(paths[fi], zi)
@@ -440,8 +484,10 @@ check(v.zone_combo.count() == 8
       f"3. the zone selector lists every frame of the series and names the leg, "
       f"so the selector and the read-out say the same thing "
       f"({v.zone_combo.itemText(0)!r})")
-check(v.frame_label.text() == "latest · Frame 3 / 3",
-      f"3. the frame read-out names the leg ({v.frame_label.text()!r})")
+check(v.frame_label.text() == "latest · Frame 3 / 3 (8 / 8)",
+      f"3. the frame read-out names the leg AND says where that is in the whole "
+      f"series — every transport button moves through the series, so the "
+      f"read-out has to describe the same thing ({v.frame_label.text()!r})")
 
 # Play crosses every boundary without interruption.
 v.go_to_end(-1)
@@ -499,17 +545,36 @@ check(v.playback_clim() is None and v.manual_clim("p") == (-1.0, 1.0),
       "untouched by there being several legs")
 v.set_clim_auto(True)
 
-# The per-variable seeded range is one range for the whole series: it is stored
-# per VARIABLE, not per file, so a leg boundary cannot re-seed (and so drift) it.
+# The per-variable seeded range is COMPUTED over every leg, not over the frame
+# that happened to be on screen when Auto was unticked. Standing on frame 0 —
+# whose own band is 1..2 — the seed must still be the series' 1..204, or one
+# leg's numbers colour the whole solve and the Min/Max boxes describe a range
+# that is not on screen (#24's symptom, one level up).
 v.show_frame(0)
 v.reset_clim_store()          # the manual range above was this variable's
+frame_band = (float(v._result.get_cell_field("p").min()),
+              float(v._result.get_cell_field("p").max()))
 v.set_clim_auto(False)
 v.render()
 seeded = v.manual_clim("p")
+check(seeded == (1.0, 204.0) and frame_band == (1.0, 2.0),
+      f"3. unticking Auto over a restarted solve seeds from the WHOLE SERIES, "
+      f"not from the frame on screen (whose own band is {frame_band}) — one "
+      f"leg's numbers would saturate every other leg ({seeded})")
 v.show_frame(7)
-check(v.manual_clim("p") == seeded and seeded == (1.0, 2.0),
-      f"3. the per-variable seeded range is remembered ACROSS legs, so playback "
-      f"does not re-seed itself at every boundary ({v.manual_clim('p')})")
+check(v.manual_clim("p") == seeded,
+      f"3. ...and it is remembered, so a leg boundary cannot re-seed (and so "
+      f"drift) it ({v.manual_clim('p')})")
+solo_v = ResultCanvasView()
+solo_v.load_result_path(paths[2], ask_legs=False)
+solo_v.select_variable("p")
+solo_v.show_frame(0)
+solo_v.set_clim_auto(False)
+solo_v.render()
+check(solo_v.manual_clim("p") == (201.0, 202.0),
+      f"3. ...while a SINGLE file still seeds from the frame on screen, so #24's "
+      f"'nothing jumps when you untick' is untouched where it was decided "
+      f"({solo_v.manual_clim('p')})")
 v.set_clim_auto(True)
 
 # Declining loads exactly the file that was asked for.
@@ -522,7 +587,8 @@ check(len(_asked) == 1 and v2._series.n_files == 1
       f"3. declining loads ONLY the file requested — opening one leg on its own "
       f"stays a normal thing to do ({v2._series.paths})")
 check(v2.frame_label.text() == "Frame 3 / 3",
-      f"3. ...and that one file is labelled the way it always was "
+      f"3. ...and that one file is labelled the way it always was, with no leg "
+      f"name and no series position to distinguish it from "
       f"({v2.frame_label.text()!r})")
 
 _asked.clear()

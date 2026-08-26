@@ -45,18 +45,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, replace
-from datetime import datetime
 
 from app.services.case_files import (
-    RUN_TAGS,
     archive_subdirs,
     archive_suffix,
     is_restart_dump,
+    newest_first,
     run_tag,
 )
 from app.services.case_run_note import (
     convergence_interval,
     last_iteration,
+    mtime_stamp,
+    note_int,
     read_run_note,
     resumed_from,
 )
@@ -217,15 +218,9 @@ def _dump_in(directory: str, archived: bool) -> str:
     # both a .gui and a .cli dump of the same age answers the way the retired
     # autofill did. Only ONE row is offered for work/; a second dump there is
     # reachable through "Other file…", which is what that escape is for.
-    def key(name):
-        try:
-            mtime = os.path.getmtime(os.path.join(directory, name))
-        except OSError:
-            mtime = 0.0
-        tag = next((i for i, t in enumerate(RUN_TAGS) if name.endswith(t)),
-                   len(RUN_TAGS))
-        return (-mtime, tag, name)
-    return sorted(cands, key=key)[0]
+    # ``case_files.newest_first`` owns that rule: ``result_legs`` asks the same
+    # question about the Tecplot field output beside these dumps (#32).
+    return newest_first(directory, cands)[0]
 
 
 def convg_beside(directory: str, name: str) -> str:
@@ -284,21 +279,8 @@ def _latest_point(work: str):
         convg=os.path.abspath(convg) if convg else "",
         iteration=iters,
         interval=convergence_interval(work),
-        stamp=_mtime_stamp(path),
+        stamp=mtime_stamp(path),
         tag=run_tag(dump))
-
-
-def _mtime_stamp(path: str) -> str:
-    """``path``'s mtime in ``RUN.txt``'s ``archived_at`` format, or ""."""
-    try:
-        return datetime.fromtimestamp(os.path.getmtime(path)).strftime(
-            "%Y-%m-%d %H:%M:%S")
-    except OSError:
-        # The file was listed a moment ago, so this is a real surprise — but it
-        # costs the row one field, so it degrades rather than raising.
-        _log.warning("could not read the mtime of %s, so this restart point is "
-                     "listed without a date", path, exc_info=True)
-        return ""
 
 
 def _archive_points(case_root: str) -> list:
@@ -320,15 +302,12 @@ def _archive_points(case_root: str) -> list:
         convg = note.get("convergence_file") or ""
         if not convg or not os.path.isfile(os.path.join(d, convg)):
             convg = os.path.basename(convg_beside(d, dump or ""))
-        iters = note.get("last_iteration", UNKNOWN_ITERATION)
         out.append(RestartPoint(
             kind=ARCHIVE, key=os.path.basename(d),
             zdump=os.path.abspath(os.path.join(d, dump)) if dump else "",
             convg=os.path.abspath(os.path.join(d, convg)) if convg else "",
-            iteration=iters if isinstance(iters, int) else UNKNOWN_ITERATION,
-            interval=note.get("convergence_interval", UNKNOWN_ITERATION)
-            if isinstance(note.get("convergence_interval"), int)
-            else UNKNOWN_ITERATION,
+            iteration=note_int(note, "last_iteration", UNKNOWN_ITERATION),
+            interval=note_int(note, "convergence_interval", UNKNOWN_ITERATION),
             stamp=note.get("archived_at", ""),
             tag=note.get("run_tag", "")))
     return out

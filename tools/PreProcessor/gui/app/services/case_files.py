@@ -172,6 +172,28 @@ def keep_matches(name: str, keep) -> bool:
     return name in exact or name.endswith(suffixes)
 
 
+def newest_first(directory: str, names) -> list:
+    """``names`` sorted newest-mtime first, ties broken by :data:`RUN_TAGS` order
+    then by name.
+
+    "Which of these is the current one?" is asked of two different kinds of file
+    in the same directory — the zone dump (``restart_points``) and the Tecplot
+    field output (``result_legs``) — and both want the same answer for the same
+    reason: a work dir can hold a ``.gui`` and a ``.cli`` file of the same age,
+    and the tag order is what makes the choice reproducible rather than
+    filesystem-dependent. It was written out twice before it was written here.
+    """
+    def key(name):
+        try:
+            mtime = os.path.getmtime(os.path.join(directory, name))
+        except OSError:
+            mtime = 0.0
+        tag = next((i for i, t in enumerate(RUN_TAGS) if name.endswith(t)),
+                   len(RUN_TAGS))
+        return (-mtime, tag, name)
+    return sorted(names, key=key)
+
+
 def size(path: str) -> int:
     try:
         return os.path.getsize(path)
