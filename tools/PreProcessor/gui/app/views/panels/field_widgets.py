@@ -45,7 +45,8 @@ from app.views.clean_double_spin_box import (
 __all__ = [
     "make_widget", "read_widget", "write_widget", "edit_signal",
     "build_spec_widgets", "add_spec_rows", "read_specs", "write_specs",
-    "wire_specs", "spec_widgets", "browse_row", "SpecRowsMixin",
+    "wire_specs", "spec_widgets", "set_spec_row_visible", "browse_row",
+    "SpecRowsMixin",
 ]
 
 _BROWSE_QSS = (
@@ -266,6 +267,16 @@ def add_spec_rows(host, form, specs: Iterable[FieldSpec], defaults=None,
     """
     wrap = wrap or {}
     built = []
+    # Which form each row landed in, and which widget IS its field cell. Recorded
+    # because hiding a ROW means hiding three things — the widget, the cell it may
+    # be wrapped in (a Browse row) and the label QFormLayout paired with that cell —
+    # and `labelForField` only answers for the cell. Every helper that hid a row used
+    # to carry its own `self._some_form` for exactly this, which is fine for one field
+    # and wrong for a rule (mode applicability) that spans several sections.
+    cells: dict = getattr(host, "_spec_cells", None)
+    if cells is None:
+        cells = {}
+        host._spec_cells = cells
     for spec in specs:
         w = build_spec_widgets(host, [spec], defaults)[0]
         built.append(w)
@@ -275,6 +286,7 @@ def add_spec_rows(host, form, specs: Iterable[FieldSpec], defaults=None,
         elif spec.kind == "path":
             cell = browse_row(host, w, spec.opts.get("caption", "Select file"),
                               spec.opts.get("filter", "All Files (*)"))
+        cells[spec.attr] = (form, cell)
         if spec.kind == "bool":
             # The text is on the checkbox; an empty label column keeps the row's
             # shape identical to the hand-written forms.
@@ -285,6 +297,24 @@ def add_spec_rows(host, form, specs: Iterable[FieldSpec], defaults=None,
             form.addRow(help_label(spec.label + spec.opts.get("colon", ":"),
                                    spec.tip), cell)
     return built
+
+
+def set_spec_row_visible(host, attr: str, visible: bool) -> None:
+    """Show/hide one table-built row: its widget, its field cell and its label.
+
+    A no-op for an attr the host never built through :func:`add_spec_rows` (the BL
+    tables are also built without rows, and a caller should not have to know which).
+    """
+    w = getattr(host, attr, None)
+    form, cell = getattr(host, "_spec_cells", {}).get(attr, (None, None))
+    if w is not None:
+        w.setVisible(visible)
+    if cell is not None and cell is not w:
+        cell.setVisible(visible)
+    if form is not None:
+        lbl = form.labelForField(cell if cell is not None else w)
+        if lbl is not None:
+            lbl.setVisible(visible)
 
 
 def spec_widgets(host, specs: Iterable[FieldSpec]) -> list:

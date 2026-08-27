@@ -42,6 +42,17 @@ pins down is that it STAYS one:
     every spec a ``tip`` silently killed the ``spec.tip or key`` fallback that was the
     ONLY help 20 of the 21 fields had, so the dialog stopped showing the name a user
     reading a config file matches against. Found in review; pinned here.
+14. A field's MODE APPLICABILITY (``modes=`` on its spec) agrees with the mesher's own
+    inert-parameter declaration, IN BOTH DIRECTIONS. One direction alone has a hole
+    each way: a key the mesher warns about but the panel still shows is a control the
+    user can set and watch do nothing (the exact failure the warning exists to stop),
+    and a field the panel hides but the mesher happily reads is a value silently
+    frozen at whatever it last held. Checks 14f/14h then ask the LIVE panel and the
+    LIVE Edit-BL dialog whether the declaration takes effect — both verified by
+    injection (hide removed -> 14f and 14h go red on 17 parameters and on the group
+    hides; mutated sources still parse), because the panel's four BL sections are
+    hidden wholesale, so a panel-only check cannot tell a working rule from a missing
+    one for exactly the 17 fields the rule is about.
 11. The BL coercion sets are derived from ``MeshConfig``'s DECLARED field types and
     cover every BL parameter. That derivation reads ``dataclasses.fields(...).type``,
     which is a STRING under ``from __future__ import annotations``; a switch to
@@ -817,6 +828,303 @@ for _legacy, _expect in ((False, 0), (True, 1)):
     check(_mig.bl_auto_fan_nodes == _expect,
           f"13g. a pre-widening workspace value {_legacy!r} migrates to {_expect} "
           f"rather than raising or landing as a bool")
+
+
+# ── 14. mode applicability agrees with the mesher, in both directions ────────
+# The multi-block path (issue #48/#49) reads a different set of parameters, and that
+# fact is written down TWICE by necessity — once in C++ (include/MeshMode.hpp, which
+# is what produces the "MESH_MODE 1 never reads 'X'" warning) and once as `modes=` on
+# each field's spec (which is what hides the row). Two spellings of one fact is the
+# duplication this whole file exists to gate, so they are compared here rather than
+# left to agree by hand.
+#
+# Read as TEXT and checked by functions taking that text, so the injections below can
+# mutate a declaration in memory. A checker that opens its own input cannot be
+# injected at all.
+_REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+_MESH_MODE_HPP = os.path.join(_REPO, "include", "MeshMode.hpp")
+_BL_PARAMS_HPP = os.path.join(_REPO, "include", "BLParams.hpp")
+
+
+def _macro_body(src: str, name: str) -> str:
+    """The body of ``#define NAME(X) ...``, following its backslash continuations."""
+    lines = src.split("\n")
+    for i, ln in enumerate(lines):
+        if ln.startswith(f"#define {name}("):
+            body = [ln]
+            while body[-1].rstrip().endswith("\\") and i + 1 < len(lines):
+                i += 1
+                body.append(lines[i])
+            return "\n".join(body)
+    return ""
+
+
+def cpp_mode_facts(mode_src: str, bl_src: str) -> dict:
+    """What the MESHER declares about the multi-block mode, from its own headers."""
+    inert_globals = set()
+    for macro in ("HYBMESH_MULTIBLOCK_INERT_GLOBALS", "HYBMESH_MULTIBLOCK_INERT_LISTS"):
+        inert_globals |= set(re.findall(r'X\("([A-Z][A-Z0-9_]{2,})"',
+                                        _macro_body(mode_src, macro)))
+    surviving = set(re.findall(
+        r'X\("([A-Z][A-Z0-9_]{2,})"',
+        _macro_body(mode_src, "HYBMESH_MULTIBLOCK_BL_SURVIVING")))
+    bl_keys = set(re.findall(r'X\("([A-Z][A-Z0-9_]{2,})"', bl_src))
+    modes = {name: int(val) for name, val in
+             re.findall(r"(MESH_MODE_[A-Z]+)\s*=\s*(-?\d+)", mode_src)}
+    return {
+        "inert": inert_globals | (bl_keys - surviving),
+        "surviving": surviving,
+        "bl_keys": bl_keys,
+        "modes": modes,
+    }
+
+
+def mode_disagreements(cpp: dict, specs, multiblock: int) -> tuple:
+    """``(shown_but_inert, hidden_but_read)`` over the specs that carry a KEY.
+
+    Both directions from one walk, because they are the two halves of one equality
+    and computing them apart is how a gate ends up covering only the easy one.
+    """
+    shown_but_inert, hidden_but_read = [], []
+    for spec in specs:
+        if not spec.key:
+            continue
+        reads = fs.reads_in_mode(spec, multiblock)
+        inert = spec.key in cpp["inert"]
+        if inert and reads:
+            shown_but_inert.append(spec.key)
+        elif not inert and not reads:
+            hidden_but_read.append(spec.key)
+    return sorted(shown_but_inert), sorted(hidden_but_read)
+
+
+#: Keys the MESHER declares inert that no GUI spec carries, each with the reason it
+#: has no widget to hide. A dict rather than a set: a key that merely got forgotten
+#: would land here silently otherwise, which is the shape KNOWN_CPP_ONLY already has
+#: next door in the parity gate.
+MODE_KEYS_WITHOUT_SPEC = {
+    "SEED_SIZE": "global seed fallback with no GUI control; the GUI emits per-seed "
+                 "tokens on the SEED_FILE line instead",
+    "SEED_RADIUS": "as SEED_SIZE",
+    "SEED_MODE": "as SEED_SIZE",
+    "SEED_FILE": "a geometry-list role, not a field: one widget holds it for many "
+                 "geometries (MESH_EXTRA_AUTHORED)",
+    "GMSH_NUM_THREADS": "performance knob deliberately not exposed in the GUI",
+    "BL_FRONT_SMOOTHING_ITERS": "diagnostic escape hatch, deliberately not a GUI "
+                                "setting (see KNOWN_CPP_ONLY in the parity gate)",
+}
+
+#: Specs that declare a mode restriction but carry no ``.dat`` KEY, so there is no
+#: mesher-side counterpart to compare them with. Each names the key whose declaration
+#: it follows, which is what keeps "no key" from meaning "unchecked".
+MODE_SPECS_WITHOUT_KEY = {
+    "seed_size": "per-geometry seed role data (model=None); follows SEED_SIZE, which "
+                 "the mesher declares inert",
+    "seed_radius": "as seed_size, following SEED_RADIUS",
+    "auto_farfield_hint": "a derived read-out beside auto_farfield_size; hidden with "
+                          "the field it describes",
+}
+
+from app.services.mesh_modes import (  # noqa: E402
+    MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK, MESH_MODES,
+)
+
+_MODE_SRC = open(_MESH_MODE_HPP, encoding="utf-8").read()
+_BLP_SRC = open(_BL_PARAMS_HPP, encoding="utf-8").read()
+_CPP_MODE = cpp_mode_facts(_MODE_SRC, _BLP_SRC)
+_MESH_TABLE_SPECS = [sp for tbl in spec_tables("mesh_config_panel") for sp in tbl]
+
+# 14a. the extractor really read both headers. Without this the two comparisons below
+# would pass vacuously on an empty inert set, which is what a renamed macro looks like.
+check(len(_CPP_MODE["bl_keys"]) >= 20 and len(_CPP_MODE["surviving"]) == 4
+      and len(_CPP_MODE["inert"]) >= 20,
+      f"14a. the mesher's mode declaration was parsed "
+      f"({len(_CPP_MODE['inert'])} inert keys, {len(_CPP_MODE['surviving'])} "
+      f"surviving BL parameters of {len(_CPP_MODE['bl_keys'])} declared)")
+check(_CPP_MODE["modes"] == {"MESH_MODE_HYBRID": MESH_MODE_HYBRID,
+                             "MESH_MODE_MULTIBLOCK": MESH_MODE_MULTIBLOCK},
+      f"14a. ...and the GUI's mode constants ARE the mesher's, value for value "
+      f"({_CPP_MODE['modes']})")
+
+# 14b/14c. the equality itself, both directions.
+_shown, _hidden = mode_disagreements(_CPP_MODE, _MESH_TABLE_SPECS, MESH_MODE_MULTIBLOCK)
+check(not _shown,
+      f"14b. every key the mesher declares inert in the multi-block mode is declared "
+      f"`modes=` without it, so the panel hides the row instead of offering a control "
+      f"the mesher will warn about ({_shown})")
+check(not _hidden,
+      f"14c. ...and no field is hidden in a mode the mesher still READS, which would "
+      f"freeze its value at whatever it last held ({_hidden})")
+
+# 14d. the residue on both sides is declared with a reason, not merely absent.
+_no_spec = sorted(_CPP_MODE["inert"]
+                  - {sp.key for sp in _MESH_TABLE_SPECS if sp.key})
+check(sorted(MODE_KEYS_WITHOUT_SPEC) == _no_spec,
+      f"14d. every inert key with no GUI spec is named with its reason, and none of "
+      f"those names is stale (declared {sorted(MODE_KEYS_WITHOUT_SPEC)}, found "
+      f"{_no_spec})")
+_no_key = sorted(sp.attr for sp in _MESH_TABLE_SPECS if sp.modes is not None
+                 and not sp.key)
+check(sorted(MODE_SPECS_WITHOUT_KEY) == _no_key,
+      f"14d. ...and so is every mode-restricted spec with no KEY, which has no "
+      f"mesher-side counterpart to be compared with (declared "
+      f"{sorted(MODE_SPECS_WITHOUT_KEY)}, found {_no_key})")
+check(all(str(v).strip() for v in
+          (*MODE_KEYS_WITHOUT_SPEC.values(), *MODE_SPECS_WITHOUT_KEY.values())),
+      "14d. ...and every one of those entries carries a reason")
+
+# 14e. only known modes may be declared, and the mode SELECTOR is never restricted.
+_unknown = sorted({m for sp in _MESH_TABLE_SPECS if sp.modes for m in sp.modes}
+                  - set(MESH_MODES))
+check(not _unknown,
+      f"14e. every declared mode is one the tool has — a typo'd number would hide the "
+      f"field in EVERY mode, i.e. a control nobody can reach ({_unknown})")
+_mode_spec = fs.by_attr(*spec_tables("mesh_config_panel")).get("mesh_mode")
+check(_mode_spec is not None and _mode_spec.modes is None,
+      "14e. ...and the mode selector itself declares no restriction: a control that "
+      "can hide itself cannot be switched back")
+_topo = fs.by_attr(*spec_tables("mesh_config_panel")).get("mesh_topology_file")
+check(_topo is not None and _topo.modes == (MESH_MODE_MULTIBLOCK,),
+      "14e. ...and the topology file is declared for the multi-block mode alone")
+
+# 14f. the panel really hides them. The declaration is the rule; this is the rule
+# taking effect, asked of the LIVE panel rather than of the table it came from.
+_mp = _PANEL_OBJS["mesh_config_panel"]
+_seen = {}
+for _mode in (MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK):
+    _cfg = MeshConfig()
+    _cfg.mesh_mode = _mode
+    _mp.set_config(_cfg)
+    _seen[_mode] = {sp.attr: not getattr(_mp, sp.attr).isHidden()
+                    for sp in _MESH_TABLE_SPECS
+                    if sp.modes is not None and getattr(_mp, sp.attr, None) is not None}
+_wrong_vis = sorted(
+    a for a, shown in _seen[MESH_MODE_MULTIBLOCK].items()
+    if shown and MESH_MODE_MULTIBLOCK not in fs.by_attr(*spec_tables(
+        "mesh_config_panel"))[a].modes)
+check(not _wrong_vis,
+      f"14f. the live panel hides every row the multi-block mode does not read "
+      f"({_wrong_vis})")
+check(_seen[MESH_MODE_MULTIBLOCK].get("mesh_topology_file") is True
+      and _seen[MESH_MODE_HYBRID].get("mesh_topology_file") is False,
+      "14f. ...and shows the topology file in that mode and only that mode, so the "
+      "check above cannot pass by hiding everything")
+check(_seen[MESH_MODE_HYBRID].get("gmsh_algorithm") is True
+      and _seen[MESH_MODE_MULTIBLOCK].get("gmsh_algorithm") is False,
+      "14f. ...and a hybrid-only row really does come back when the mode does")
+# A section left with no readable row is hidden whole, so the mode does not leave an
+# empty header the user can open onto nothing. Asked of the live section, because the
+# rule is one line in _apply_mode_visibility that nothing else would notice losing.
+_cfg = MeshConfig()
+_cfg.mesh_mode = MESH_MODE_MULTIBLOCK
+_mp.set_config(_cfg)
+_meshing_hidden = _mp.sec_meshing.isHidden()
+_cfg.mesh_mode = MESH_MODE_HYBRID
+_mp.set_config(_cfg)
+check(_meshing_hidden and not _mp.sec_meshing.isHidden(),
+      "14f. ...and a section whose every row the mode drops is hidden whole, in that "
+      "mode and only that mode")
+
+# 14h. the EDIT-BL DIALOG, which is where 17 of the 21 declarations actually bite.
+# Hiding them in the mesh panel alone would hide nothing a user was looking at: the
+# panel's four BL sections are setVisible(False) wholesale, so the panel checks above
+# cannot tell a working rule from a missing one for those fields.
+_bl_defaults = {sp.key: getattr(MeshConfig(), sp.model_name)
+                for sp in _BL_TABLE if sp.key and sp.model_name}
+
+
+def bl_dialog_visibility(mode: int) -> dict:
+    """``{KEY: is the row shown?}`` for a dialog opened in ``mode``."""
+    dlg = PerGeomBLDialog("gate", dict(_bl_defaults), None, mesh_mode=mode)
+    out = {k: not w.isHidden() for k, (w, _sp) in dlg._widgets.items()}
+    out["#sections"] = [not sec.isHidden() for sec in dlg._sections]
+    out["#params"] = dlg.result_params()
+    dlg.deleteLater()
+    return out
+
+
+_bl_vis = {m: bl_dialog_visibility(m)
+           for m in (MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK)}
+_bl_wrong = sorted(
+    sp.key for sp in _BL_TABLE if sp.key
+    and _bl_vis[MESH_MODE_MULTIBLOCK].get(sp.key)
+    is not fs.reads_in_mode(sp, MESH_MODE_MULTIBLOCK))
+check(not _bl_wrong,
+      f"14h. the Edit-BL dialog shows exactly the parameters the active mode reads "
+      f"({_bl_wrong})")
+check(all(_bl_vis[MESH_MODE_HYBRID].get(sp.key) for sp in _BL_TABLE if sp.key),
+      "14h. ...and shows all of them in the default mode, so the check above cannot "
+      "pass by hiding everything")
+# Hidden, never DROPPED. Dropping would make switching the mode a silent edit of 17
+# values, which is a worse failure than the one the hiding fixes.
+check(_bl_vis[MESH_MODE_MULTIBLOCK]["#params"] == _bl_vis[MESH_MODE_HYBRID]["#params"]
+      and set(_bl_vis[MESH_MODE_MULTIBLOCK]["#params"]) == set(_bl_defaults),
+      "14h. ...and a hidden parameter still round-trips through result_params, so "
+      "opening the dialog in the multi-block mode does not silently rewrite 17 values")
+_groups_multi = _bl_vis[MESH_MODE_MULTIBLOCK]["#sections"]
+check(any(_groups_multi) and not all(_groups_multi)
+      and all(_bl_vis[MESH_MODE_HYBRID]["#sections"]),
+      f"14h. ...and a group left with no readable row is hidden whole, while the "
+      f"default mode shows every group ({_groups_multi})")
+
+# 14g. injections. Each mutates the mesher's header in memory, asserts the text
+# really changed, and asserts the comparison then reports the defect.
+def _mut14(src: str, old: str, new: str) -> str:
+    if src.count(old) != 1:
+        raise AssertionError(f"injection target is not unique: {old[:60]!r}")
+    out = src.replace(old, new)
+    assert out != src, "injection did not change the text"
+    return out
+
+
+# A key the mesher stops declaring inert, while the GUI still hides it -> 14c.
+# By regex rather than by an exact line, so a reflowed macro does not turn the
+# injection into an error that reads like the check working.
+_drop_src = re.sub(r'X\("GMSH_OPTIMIZE",(\s*)gmshOptimize\)',
+                   r'X("GMSH_RETIRED_KNOB",\1gmshOptimize)', _MODE_SRC)
+assert _drop_src != _MODE_SRC, "injection did not change the text"
+_drop = cpp_mode_facts(_drop_src, _BLP_SRC)
+assert "GMSH_OPTIMIZE" not in _drop["inert"], "injection was inert"
+check(mode_disagreements(_drop, _MESH_TABLE_SPECS, MESH_MODE_MULTIBLOCK)[1]
+      == ["GMSH_OPTIMIZE"],
+      "14g. (injection) a key the mesher no longer declares inert, while the panel "
+      "still hides it, is reported")
+
+# A BL parameter promoted to SURVIVING while the GUI still hides it -> 14c.
+_surv_src = _mut14(_MODE_SRC, 'X("BL_USE_ANALYTIC_GEOM")',
+                   'X("BL_USE_ANALYTIC_GEOM")   \\\n    X("BL_FAN_NODES")')
+_surv = cpp_mode_facts(_surv_src, _BLP_SRC)
+assert "BL_FAN_NODES" not in _surv["inert"], "injection was inert"
+check("BL_FAN_NODES" in mode_disagreements(
+          _surv, _MESH_TABLE_SPECS, MESH_MODE_MULTIBLOCK)[1],
+      "14g. (injection) a BL parameter the mesher starts reading in this mode, while "
+      "the panel still hides it, is reported — so the SUBTRACTION is really what is "
+      "compared, not just the globals macro")
+
+# A spec that forgets its declaration, while the mesher still warns -> 14b.
+_forgot = [dataclasses.replace(sp, modes=None)
+           if sp.key == "FARFIELD_GROWTH_RATE" else sp for sp in _MESH_TABLE_SPECS]
+assert any(sp.key == "FARFIELD_GROWTH_RATE" and sp.modes is None for sp in _forgot)
+check(mode_disagreements(_CPP_MODE, _forgot, MESH_MODE_MULTIBLOCK)[0]
+      == ["FARFIELD_GROWTH_RATE"],
+      "14g. (injection) a spec that drops its `modes=` while the mesher still declares "
+      "the key inert is reported")
+
+# The extractor going blind must FAIL 14a rather than silently emptying the compare.
+_blind = cpp_mode_facts(
+    _mut14(_MODE_SRC, "#define HYBMESH_MULTIBLOCK_INERT_GLOBALS(X)",
+           "#define HYBMESH_MULTIBLOCK_INERT_GLOBALS_RENAMED(X)"),
+    _BLP_SRC)
+check(not (len(_blind["inert"]) >= 20 and len(_blind["surviving"]) == 4),
+      "14g. (injection) a renamed macro the extractor cannot find fails check 14a "
+      "instead of making 14b/14c pass with nothing to compare")
+check("SEED_FILE" not in cpp_mode_facts(
+          _mut14(_MODE_SRC, "#define HYBMESH_MULTIBLOCK_INERT_LISTS(X)",
+                 "#define HYBMESH_MULTIBLOCK_INERT_LISTS_RENAMED(X)"),
+          _BLP_SRC)["inert"],
+      "14g. (injection) ...and the LIST-valued macro is really read, not assumed — "
+      "SEED_FILE is warned about by a generated branch like the scalars, so it must "
+      "be visible to this comparison rather than a hand-written special case")
 
 _wd.cancel()
 if _FAILS:

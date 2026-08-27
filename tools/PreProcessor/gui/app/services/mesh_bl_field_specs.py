@@ -36,6 +36,17 @@ from __future__ import annotations
 
 from app.models.mesh_config import MeshConfig
 from app.services.field_spec import FieldSpec, model_types, panel_table
+from app.services.mesh_modes import MESH_MODE_HYBRID
+
+#: The 17 BL parameters below that the multi-block path never reads — every corner,
+#: junction and transition knob. Declared as ``modes=`` on each spec rather than as a
+#: list beside the table, so the fact travels with the field; the mesher's half of it
+#: is ``HYBMESH_MULTIBLOCK_BL_SURVIVING`` in ``include/MeshMode.hpp``, and
+#: ``tests/test_field_spec_tables.py`` check 14 compares the two in both directions.
+#: Four parameters are NOT marked and that is the whole point of the list being a
+#: subtraction: initial thickness, growth rate and layer count become the multi-block
+#: wall-normal clustering law, and the analytic-geometry flag its projection basis.
+_HYBRID_ONLY = (MESH_MODE_HYBRID,)
 
 _ANGLE = dict(lo=0.0, hi=360.0, dec=2, step=1.0)
 _RATE = dict(lo=1.001, hi=5.0, dec=4, step=0.05)
@@ -76,24 +87,24 @@ BL_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec("bl_convex_method", "choice", "Convex Method",
               "Method for handling convex (outward-pointing) corners in the "
               "boundary layer",
-              key="BL_CONVEX_METHOD", group="convex",
+              key="BL_CONVEX_METHOD", group="convex", modes=_HYBRID_ONLY,
               opts=dict(choices=[(0, "Fan"), (2, "Parallelogram")], fallback=2)),
     FieldSpec("bl_fan_nodes", "int", "Fan Nodes",
               "Number of fan elements inserted at convex corners (Fan method only)",
-              key="BL_FAN_NODES", group="convex", opts=dict(lo=1, hi=100)),
+              key="BL_FAN_NODES", group="convex", modes=_HYBRID_ONLY, opts=dict(lo=1, hi=100)),
     FieldSpec("bl_auto_fan_nodes", "choice", "Auto Fan Nodes",
               "Automatically determine fan node count based on corner angle",
-              key="BL_AUTO_FAN_NODES", group="convex",
+              key="BL_AUTO_FAN_NODES", group="convex", modes=_HYBRID_ONLY,
               opts=dict(choices=list(_AUTO_CHOICES), fallback=0)),
     FieldSpec("bl_fan_angle_threshold", "float", "Fan Threshold (deg)",
               "Minimum corner angle (degrees) to trigger fan insertion",
-              key="BL_FAN_ANGLE_THRESHOLD", group="convex", opts=dict(_ANGLE)),
+              key="BL_FAN_ANGLE_THRESHOLD", group="convex", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
     FieldSpec("bl_convex_angle_threshold", "float", "Convex Threshold (deg)",
               "Angle threshold to classify a corner as convex",
-              key="BL_CONVEX_ANGLE_THRESHOLD", group="convex", opts=dict(_ANGLE)),
+              key="BL_CONVEX_ANGLE_THRESHOLD", group="convex", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
     FieldSpec("bl_para_fallback_angle", "float", "Para Fallback (deg)",
               "When corner angle exceeds this, fall back to parallelogram method",
-              key="BL_PARA_FALLBACK_ANGLE", group="convex", opts=dict(_ANGLE)),
+              key="BL_PARA_FALLBACK_ANGLE", group="convex", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
 
     # panel_choices: the mesh panel's backing combo offers method 5 ONLY, because
     # method 0 (Merge) is CLI-side and the GUI has never emitted it. The dialog still
@@ -101,21 +112,21 @@ BL_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec("bl_concave_method", "choice", "Concave Method",
               "Method for handling concave (inward-pointing) corners in the "
               "boundary layer",
-              key="BL_CONCAVE_METHOD", group="concave",
+              key="BL_CONCAVE_METHOD", group="concave", modes=_HYBRID_ONLY,
               opts=dict(choices=[(0, "Merge"), (5, "Thickness Blending")],
                         panel_choices=[(5, "5: Thickness Blending")])),
     FieldSpec("bl_concave_angle_threshold", "float", "Concave Threshold (deg)",
               "Angle threshold to classify a corner as concave",
-              key="BL_CONCAVE_ANGLE_THRESHOLD", group="concave", opts=dict(_ANGLE)),
+              key="BL_CONCAVE_ANGLE_THRESHOLD", group="concave", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
     FieldSpec("bl_concave_influence_multiplier", "float", "Concave Influence",
               "Controls how far the concave corner correction propagates along the wall",
-              key="BL_CONCAVE_INFLUENCE_MULTIPLIER", group="concave",
+              key="BL_CONCAVE_INFLUENCE_MULTIPLIER", group="concave", modes=_HYBRID_ONLY,
               opts=dict(lo=0.0, hi=100.0, dec=2, step=0.5)),
 
     FieldSpec("bl_junction_method", "choice", "Junction Method",
               "How a BL edge meeting a no-BL neighbour is capped "
               "(1: angle-driven, default)",
-              key="BL_JUNCTION_METHOD", group="concave",
+              key="BL_JUNCTION_METHOD", group="concave", modes=_HYBRID_ONLY,
               opts=dict(choices=[(0, "Taper-to-zero"), (1, "4-case angle-driven")],
                         fallback=1)),
     # C1 binned the old scheme's concave slide. Method 1 does not read it: its slide
@@ -124,26 +135,26 @@ BL_SPECS: tuple[FieldSpec, ...] = (
     # field stays for method 0 and for config round-trip, and says so — a knob that
     # cannot do anything must not look adjustable.
     FieldSpec("bl_junction_angle_c1", "float", "Junction θ C1 (deg)", _C1_TIP,
-              key="BL_JUNCTION_ANGLE_C1", group="concave", opts=dict(_ANGLE)),
+              key="BL_JUNCTION_ANGLE_C1", group="concave", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
     FieldSpec("bl_junction_angle_c2", "float", "Junction θ C2 (deg)", _JUNCTION_TIP,
-              key="BL_JUNCTION_ANGLE_C2", group="concave", opts=dict(_ANGLE)),
+              key="BL_JUNCTION_ANGLE_C2", group="concave", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
     FieldSpec("bl_junction_angle_c3", "float", "Junction θ C3 (deg)", _JUNCTION_TIP,
-              key="BL_JUNCTION_ANGLE_C3", group="concave", opts=dict(_ANGLE)),
+              key="BL_JUNCTION_ANGLE_C3", group="concave", modes=_HYBRID_ONLY, opts=dict(_ANGLE)),
 
     FieldSpec("bl_transition_layers", "int", "Transition Layers",
               "Number of transitional element rows blending BL quads into "
               "far-field triangles",
-              key="BL_TRANSITION_LAYERS", group="transition", opts=dict(lo=0, hi=100)),
+              key="BL_TRANSITION_LAYERS", group="transition", modes=_HYBRID_ONLY, opts=dict(lo=0, hi=100)),
     FieldSpec("bl_auto_transition_layers", "choice", "Auto Transition",
               "Automatically compute transition layer count (OFF / GLOBAL / LOCAL)",
-              key="BL_AUTO_TRANSITION_LAYERS", group="transition",
+              key="BL_AUTO_TRANSITION_LAYERS", group="transition", modes=_HYBRID_ONLY,
               opts=dict(choices=list(_AUTO_CHOICES), fallback=0)),
     FieldSpec("bl_transition_growth_rate", "float", "Transition Growth",
               "Growth rate applied within the transition zone between BL and far-field",
-              key="BL_TRANSITION_GROWTH_RATE", group="transition", opts=dict(_RATE)),
+              key="BL_TRANSITION_GROWTH_RATE", group="transition", modes=_HYBRID_ONLY, opts=dict(_RATE)),
     FieldSpec("bl_transition_buffer", "float", "Transition Buffer",
               "Buffer distance multiplier around geometry for transition smoothing",
-              key="BL_TRANSITION_BUFFER", group="transition",
+              key="BL_TRANSITION_BUFFER", group="transition", modes=_HYBRID_ONLY,
               opts=dict(lo=0.0, hi=100.0, dec=4, step=0.5)),
 
     # text="": the checkbox itself stays unlabelled so the dialog's form label is the

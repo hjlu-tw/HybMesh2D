@@ -9,14 +9,84 @@ factory relocated from the panel body."""
 from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox, QLabel
-from app.services.field_spec import by_attr
+from app.services.field_spec import by_attr, reads_in_mode
+from app.services.mesh_modes import MESH_MODE_HYBRID
 from app.utils import keep_on_top, BC_COLORS, DEFAULT_BC_COLOR
-from app.views.panels.field_widgets import read_widget
+from app.views.panels.field_widgets import read_widget, set_spec_row_visible
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
+from app.views.panels.mesh_field_specs import MESH_SPECS
 
 
 class MeshConfigSizingMixin:
     """Domain-source, sizing, auto-hint and BC-indicator helpers."""
+
+    # ── mesh-mode applicability ─────────────────────────────────────────────
+    # One rule over the table's own `modes=` declarations, rather than a list of
+    # fields kept here. Every finer visibility helper below ANDs its answer with
+    # `_mode_reads`, because those helpers are driven by signals that fire long
+    # after this ran (a geometry selection, a checkbox) and would otherwise put a
+    # row back that the active mode does not read.
+
+    def _mesh_mode_value(self) -> int:
+        """The mode the panel currently shows, read through its own spec.
+
+        By VALUE, never by combo index: the mode numbers are the mesher's
+        (include/MeshMode.hpp) and an index only equals a value while the list
+        happens to be dense — the same rule `_bl_value` follows for the method
+        combos, whose numbers are 0/2 and 1/2/5/6/7/8.
+        """
+        w = getattr(self, "mesh_mode", None)
+        if w is None:
+            return MESH_MODE_HYBRID
+        spec = by_attr(MESH_SPECS).get("mesh_mode")
+        try:
+            return int(read_widget(w, spec, MESH_MODE_HYBRID))
+        except (TypeError, ValueError):
+            return MESH_MODE_HYBRID
+
+    def _mode_reads(self, attr: str) -> bool:
+        """Does the active mode read the field declared under ``attr``?
+
+        Looks in BOTH of the panel's tables, so a caller does not have to know which
+        one declares a field (no attribute is declared twice — check 1 of
+        tests/test_field_spec_tables.py is what makes that safe). True for an attr
+        with no spec or no declaration, so this can be ANDed into any existing
+        visibility rule without that rule having to know which fields declare one.
+        """
+        spec = by_attr(MESH_SPECS, PANEL_BL_SPECS).get(attr)
+        return spec is None or reads_in_mode(spec, self._mesh_mode_value())
+
+    def _apply_mode_visibility(self, *_args):
+        """Hide every row the active mode does not read; restore the rest.
+
+        Restoring is handed straight back to the finer rules rather than being a
+        `setVisible(True)`: the far-field outer growth rate is hidden by the
+        bidirectional toggle and the seed size/radius by the geometry role, so
+        showing them unconditionally would undo two other decisions.
+        """
+        mode = self._mesh_mode_value()
+        # BOTH of the panel's tables. The 21 BL backing widgets sit in sections the
+        # panel hides wholesale, so this changes nothing a user sees here — it is
+        # the Edit-BL dialog that shows them, and it applies the same declaration
+        # from the same table. Walking them anyway keeps "the panel's state matches
+        # the declaration" a property that can be asked of the panel.
+        for spec in (sp for tbl in (MESH_SPECS, PANEL_BL_SPECS) for sp in tbl):
+            if spec.modes is None:
+                continue                     # not this rule's business
+            set_spec_row_visible(self, spec.attr, reads_in_mode(spec, mode))
+        # A section whose every declared row is gone is hidden whole, so the mode
+        # does not leave an empty header behind. Asked of the table, not listed.
+        if getattr(self, "sec_meshing", None) is not None:
+            self.sec_meshing.setVisible(
+                any(reads_in_mode(sp, mode) for sp in MESH_SPECS
+                    if sp.group == "meshing"))
+        # Hand back to the finer rules for the rows this mode does keep.
+        self._update_domain_source_visibility()
+        self._update_bidirectional_visibility()
+        self._update_auto_farfield_hint()
+        self._update_role_visibility()
+        self._update_transition_visibility()
+        self._update_convex_widgets_visibility()
 
     def _update_domain_source_visibility(self):
         """Show the rectangular box X/Y Min/Max only when Domain Source is
@@ -28,7 +98,11 @@ class MeshConfigSizingMixin:
         outer-boundary patches come from the outline's per-edge CAD names). The
         canvas is told to drop the rectangular box + its patch colours."""
         is_custom = self.domain_source_combo.currentIndex() == 1
-        self._domain_box_widget.setVisible(not is_custom)
+        # The four box rows are one container widget, so the mode gates the
+        # container rather than each row (they are declared hybrid-only for the
+        # mesher's warning, which is the same declaration read here).
+        self._domain_box_widget.setVisible(not is_custom
+                                           and self._mode_reads("domain_x_min"))
         self.domain_patch_btn.setVisible(not is_custom)
         if is_custom and self._domain_patch_dialog is not None:
             self._domain_patch_dialog.hide()   # not applicable to a custom domain
@@ -109,7 +183,7 @@ class MeshConfigSizingMixin:
         """#6: when Auto Far-field Sizing is on, show the far-field size the mesher
         will derive from the domain extent (5% of the larger side). The mesher also
         clamps it to be >= the last BL thickness, which isn't known in the GUI."""
-        on = self.auto_farfield_size.isChecked()
+        on = self.auto_farfield_size.isChecked() and self._mode_reads("auto_farfield_size")
         self.auto_farfield_hint.setVisible(on)
         if not on:
             return
@@ -173,7 +247,8 @@ class MeshConfigSizingMixin:
 
     def _update_bidirectional_visibility(self, *args):
         """#7: show the Outer Growth Rate only when bidirectional grading is on."""
-        on = self.farfield_bidirectional.isChecked()
+        on = (self.farfield_bidirectional.isChecked()
+              and self._mode_reads("farfield_growth_rate_outer"))
         self.farfield_growth_rate_outer.setVisible(on)
         lbl = self._sizing_form.labelForField(self.farfield_growth_rate_outer)
         if lbl:
@@ -207,7 +282,10 @@ class MeshConfigSizingMixin:
         per-geometry Wall BC field was removed from this editor.)"""
         enabled = self.geom_role_combo.isEnabled()
         idx = self.geom_role_combo.currentIndex()
-        is_seed = enabled and idx == 2
+        # A refinement seed only ever drove the far-field size field, which the
+        # multi-block path does not have — so the whole seed row block follows the
+        # declaration on seed_size (seed_mode has no spec of its own to carry one).
+        is_seed = enabled and idx == 2 and self._mode_reads("seed_size")
         for w in (self.seed_size, self.seed_radius, self.seed_mode):
             w.setVisible(is_seed)
             w.setEnabled(is_seed)
@@ -232,14 +310,16 @@ class MeshConfigSizingMixin:
 
     def _update_transition_visibility(self):
         """Hide the manual Transition Layers count when Auto Transition computes it."""
-        manual = self._bl_value("bl_auto_transition_layers") == 0  # 0: OFF
+        manual = (self._bl_value("bl_auto_transition_layers") == 0  # 0: OFF
+                  and self._mode_reads("bl_transition_layers"))
         self.bl_transition_layers.setVisible(manual)
         lbl = self._trans_form.labelForField(self.bl_transition_layers)
         if lbl:
             lbl.setVisible(manual)
 
     def _update_convex_widgets_visibility(self):
-        is_fan = self._bl_value("bl_convex_method") == 0        # 0: Fan
+        is_fan = (self._bl_value("bl_convex_method") == 0       # 0: Fan
+                  and self._mode_reads("bl_fan_nodes"))
 
         self.bl_fan_nodes.setVisible(is_fan)
         self.bl_auto_fan_nodes.setVisible(is_fan)

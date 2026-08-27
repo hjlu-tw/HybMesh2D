@@ -98,6 +98,13 @@ class FieldSpec:
     ``read`` / ``write``  the escape hatch for a field whose widget does not map
                onto its model field by kind alone. ``read(widget)`` returns the
                model value; ``write(widget, value)`` sets the widget.
+    ``modes``  which generation MODES read this field, or ``None`` for a field
+               every mode reads. Declared here rather than in a lookup table
+               beside the panel, for the reason the KEY is: a second table is a
+               second source of truth, and this one decides both what the panel
+               shows and what the mesher warns about (``include/MeshMode.hpp``
+               holds the mesher's half, and the two are compared in both
+               directions by ``tests/test_field_spec_tables.py`` check 14).
     """
 
     attr: str
@@ -110,8 +117,22 @@ class FieldSpec:
     opts: Mapping[str, Any] = field(default_factory=dict)
     read: Callable[[Any], Any] | None = None
     write: Callable[[Any, Any], None] | None = None
+    modes: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
+        if self.modes is not None:
+            # A tuple, so the spec stays hashable/frozen; non-empty, because a
+            # field no mode reads is a control that can never do anything, which
+            # is exactly the silent failure this table exists to remove. `bool` is
+            # excluded explicitly: it is an int subclass, so `modes=(True,)` would
+            # otherwise pass and quietly mean mode 1.
+            ok = (isinstance(self.modes, tuple) and self.modes
+                  and all(type(m) is int for m in self.modes))
+            if not ok:
+                raise ValueError(
+                    f"FieldSpec({self.attr!r}): modes must be a NON-EMPTY tuple of "
+                    f"ints (the generation modes that read this field), got "
+                    f"{self.modes!r}. Leave it None for a field every mode reads.")
         if self.kind not in KINDS:
             raise ValueError(
                 f"FieldSpec({self.attr!r}): unknown kind {self.kind!r}. "
@@ -210,6 +231,21 @@ def group_names(table: Iterable[FieldSpec]) -> tuple[str, ...]:
         if spec.group and spec.group not in out:
             out.append(spec.group)
     return tuple(out)
+
+
+def reads_in_mode(spec: FieldSpec, mode: int) -> bool:
+    """Does ``mode`` read this field? An undeclared spec is read by every mode."""
+    return spec.modes is None or mode in spec.modes
+
+
+def hidden_attrs(mode: int, *tables: Iterable[FieldSpec]) -> tuple[str, ...]:
+    """Panel attributes ``mode`` does NOT read, in table order.
+
+    What the panel hides. A subtraction over the declarations, not a list — the
+    same shape as ``preserved`` and ``length_attrs``, and for the same reason.
+    """
+    return tuple(s.attr for table in tables for s in table
+                 if not reads_in_mode(s, mode))
 
 
 def length_attrs(*tables: Iterable[FieldSpec]) -> tuple[str, ...]:

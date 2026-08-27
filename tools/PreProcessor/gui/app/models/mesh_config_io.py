@@ -195,6 +195,21 @@ def config_to_text(cfg, path: str = "") -> str:
     lines += [
         "",
         "# ==============================================================================",
+        "# 0b. Generation path",
+        "#    0 = hybrid (boundary layer + Gmsh far field), the default and what every",
+        "#    existing case uses. 1 = topology-driven multi-block structured. A",
+        "#    parameter the active mode never reads is NAMED in a mesher warning.",
+        "# ==============================================================================",
+        f"MESH_MODE {int(getattr(cfg, 'mesh_mode', 0))}",
+    ]
+    # Only when there is one: a bare "MESH_TOPOLOGY_FILE" line with no value would
+    # read back as a key with no token, which every reader here skips silently.
+    _topo = str(getattr(cfg, "mesh_topology_file", "") or "").strip()
+    if _topo:
+        lines.append(f"MESH_TOPOLOGY_FILE {_topo}")
+    lines += [
+        "",
+        "# ==============================================================================",
         "# 1. Domain Settings",
         "# ==============================================================================",
         f"DOMAIN_X_MIN {cfg.domain_x_min:.6g}",

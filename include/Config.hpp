@@ -10,8 +10,35 @@
 #include <iostream>
 #include "Logger.hpp"
 #include "BLParams.hpp"
+#include "MeshMode.hpp"
 
 struct Config {
+    // Which GENERATION PATH runs. 0 = the existing hybrid path (boundary-layer
+    // quads grown from every geometry, Gmsh triangles in the far field) and the
+    // DEFAULT, so every case that exists today produces exactly the mesh it
+    // produced before. 1 = the topology-driven multi-block path, where the
+    // blocking is DECLARED in topologyFile rather than inferred from angles and
+    // distance tolerances.
+    //
+    // The two paths read different parameters. A parameter the ACTIVE mode never
+    // reads is named in a warning rather than silently doing nothing — see
+    // include/MeshMode.hpp, which owns that list and is where the answer is
+    // computed.
+    // Spelled `0` rather than `MESH_MODE_HYBRID`, and that is not laziness: the
+    // GUI/C++ parity gate resolves this member's INITIALISER to compare it with
+    // MeshConfig.mesh_mode's default, and it reads a literal. An enum name here
+    // would make the gate report "initialiser not readable" — i.e. one of the two
+    // sides would stop being compared. The name is in the comment above instead.
+    int meshMode = 0;
+
+    // The block topology document (JSON) the multi-block path reads. Chosen by
+    // EXPLICIT declaration, never guessed from a filename convention sitting
+    // beside the geometry: a guess is silent when it is wrong, and the file
+    // decides the whole mesh here.
+    // `= ""` for the same reason: the gate's struct reader only sees a member that
+    // carries an initialiser, and a member it cannot see is a key it cannot compare.
+    std::string topologyFile = "";
+
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
 
@@ -241,6 +268,10 @@ struct Config {
                 std::string gname, gtype;
                 if (ss >> gname >> gtype) groupBc[gname] = gtype;
             }
+            else if (key == "MESH_MODE") {
+                double val; ss >> val; meshMode = static_cast<int>(val);
+            }
+            else if (key == "MESH_TOPOLOGY_FILE") ss >> topologyFile;
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -321,6 +352,16 @@ struct Config {
     // clamped meaningfully (an empty x or y domain span).
     bool validate() {
         bool ok = true;
+        // NOT clamped to 0. Every other repair in this function has an obviously
+        // right value to fall back on; a mode does not — silently running the
+        // hybrid path for someone who asked for MESH_MODE 2 would produce a mesh
+        // nobody asked for, which is the failure class this file keeps closing.
+        if (!hybmesh::isKnownMeshMode(meshMode)) {
+            LOG_ERROR("MESH_MODE " << meshMode << " is not a known mode ("
+                      << MESH_MODE_HYBRID << " = hybrid BL + Gmsh, "
+                      << MESH_MODE_MULTIBLOCK << " = multi-block structured).");
+            ok = false;
+        }
         if (bl.blLayers < 0) {
             LOG_WARN("BL_LAYERS < 0 (" << bl.blLayers << "); clamping to 0.");
             bl.blLayers = 0;
@@ -417,6 +458,14 @@ struct Config {
         os << "==================================================\n";
         os << "              HybMesh2D Configuration             \n";
         os << "==================================================\n\n";
+
+        os << "[ Mesh Mode ]\n";
+        os << "  - Mesh Mode            : " << meshMode << " ("
+           << hybmesh::meshModeName(meshMode) << ")\n";
+        if (meshMode == MESH_MODE_MULTIBLOCK)
+            os << "  - Topology File        : "
+               << (topologyFile.empty() ? "(none declared)" : topologyFile) << "\n";
+        os << "\n";
 
         os << "[ Input & Domain ]\n";
         // Printed first, and deliberately in the banner rather than only in the

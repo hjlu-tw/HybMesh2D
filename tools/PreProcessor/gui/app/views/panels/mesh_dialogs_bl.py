@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QDialog, QDialogButtonBox, QSizePolicy,
 )
 from PyQt6.QtCore import Qt
+from app.services.mesh_modes import MESH_MODE_HYBRID
 from app.utils import make_button
 from app.views.panels.field_widgets import make_widget, read_widget, write_widget
 from app.views.panels.mesh_bl_dialog_layout import BLDialogLayoutMixin
@@ -163,12 +164,18 @@ class PerGeomBLDialog(BLDialogLayoutMixin, QDialog):
                  segments: list[tuple[int, str, str]] | None = None,
                  seg_grow: dict | None = None, highlight_cb=None,
                  apply_cb=None, parent=None, length_unit: str = "",
-                 length_unit_name: str = ""):
+                 length_unit_name: str = "",
+                 mesh_mode: int = MESH_MODE_HYBRID):
         # The unit is passed in rather than read from a global: this dialog holds the
         # first-cell height, the one number in the whole GUI where getting the unit
         # wrong by 1000x still produces a mesh that looks plausible.
         self._length_unit = length_unit
         self._length_unit_name = length_unit_name
+        # Which generation path the case is on, so _build_sections can hide the
+        # parameters that path never reads. Passed in for the unit's own reason:
+        # this is a fact about the CASE, and a dialog that read it from a global
+        # would be one more place for the two to disagree.
+        self._mesh_mode = mesh_mode
         super().__init__(parent)
         self.setWindowTitle(f"Boundary Layer — {geom_name}")
         self.setStyleSheet("background:#121422; color:#cdd6f4;")

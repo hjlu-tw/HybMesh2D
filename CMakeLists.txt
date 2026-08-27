@@ -184,6 +184,7 @@ target_include_directories(HybMeshUtils INTERFACE include)
 # tools/PreProcessor/tests/test_cpp_pure_layer.py 的 HEAVY_SOURCES 並附理由。
 add_library(hybmesh_pure STATIC
     src/JunctionScheme.cpp
+    src/MeshMode.cpp
 )
 target_include_directories(hybmesh_pure PUBLIC include)
 

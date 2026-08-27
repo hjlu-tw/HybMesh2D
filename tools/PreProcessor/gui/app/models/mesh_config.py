@@ -25,7 +25,18 @@ def _key_map() -> dict:
 
 @dataclass
 class MeshConfig:
-    # Section 0: Units
+    # Section 0: Which generation PATH runs.
+    # 0 = the existing hybrid path (BL quads + Gmsh far-field triangles) and the
+    # default, so every case that exists today meshes exactly as it did. 1 = the
+    # topology-driven multi-block path. The numbers are the mesher's
+    # (include/MeshMode.hpp); app/services/mesh_modes.py is the GUI's one spelling
+    # of them. Which fields each mode reads is declared per field, on its spec.
+    mesh_mode: int = 0
+    # The block topology document the multi-block path reads. Explicit, never
+    # guessed from a name beside the geometry.
+    mesh_topology_file: str = ""
+
+    # Section 0b: Units
     # The unit EVERY length in this config is expressed in — domain bounds, mesh
     # sizes, BL thickness, seed radii. The mesher never converts them (it only
     # compares lengths against each other), so this is a label as far as meshing is

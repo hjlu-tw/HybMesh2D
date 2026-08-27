@@ -5,6 +5,7 @@
 #include "Logger.hpp"
 #include "Provenance.hpp"
 #include "ExitCodes.hpp"
+#include "MeshMode.hpp"
 #include "PointTolerance.hpp"
 #include <iostream>
 #include <fstream>
@@ -557,6 +558,31 @@ int hybmesh::runCli(int argc, char* argv[]) {
     }
 
     config.print();
+
+    // A parameter the active mode never reads is NAMED. One line per key, and the
+    // list is data (include/MeshMode.hpp) rather than prose here, so the GUI's
+    // per-field `modes=` declaration can be compared against it in both directions.
+    // Emitted after the banner so the banner still reports the config verbatim,
+    // and before the refusal below so a user sees both in one run.
+    for (const std::string& key : hybmesh::inertParamsSet(config)) {
+        LOG_WARN("MESH_MODE " << config.meshMode << " ("
+                 << hybmesh::meshModeName(config.meshMode) << ") never reads '"
+                 << key << "'; the value set for it has no effect on this mesh.");
+    }
+
+    if (config.meshMode == MESH_MODE_MULTIBLOCK) {
+        // The mode SELECTS a path that does not exist yet. Refused with the
+        // topology code rather than a generic config failure, because that is the
+        // code every later failure of a declaration will carry: a caller that
+        // learns to branch on it now keeps working when the path lands.
+        LOG_ERROR("MESH_MODE " << MESH_MODE_MULTIBLOCK << " ("
+                  << hybmesh::meshModeName(MESH_MODE_MULTIBLOCK)
+                  << ") is not implemented yet. Nothing was meshed or exported. "
+                  << "Use MESH_MODE " << MESH_MODE_HYBRID << " for the existing "
+                  << "boundary-layer + Gmsh path.");
+        return reportError(EXIT_ERR_TOPOLOGY, "not-implemented");
+    }
+
     Mesh mesh;
 
     // Auto output paths are per-case: results/meshes/<case>/mesh_<case>.vtk so

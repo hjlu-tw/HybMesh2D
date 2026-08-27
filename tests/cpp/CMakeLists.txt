@@ -42,6 +42,9 @@ set(HYBMESH_PURE_TESTS
     # so the BL declaration is testable here; this executable failing to link
     # is the signal that stopped being true.
     test_bl_params_decl
+    # "which parameters does the active mode never read?" — the same argument:
+    # a mode's applicability is a decision over declarations, not a mesh.
+    test_mesh_mode
 )
 
 foreach(t IN LISTS HYBMESH_PURE_TESTS)

@@ -35,6 +35,20 @@ class MeshConfigBuildMixin(SpecRowsMixin):
     _SPEC_TABLE = MESH_SPECS
     _SPEC_MODEL = MeshConfig
 
+    def _build_mode_section(self):
+        # ── 0b. Which generation path runs ────────────────────────────────
+        # NOT collapsible and first after the unit row, for the unit row's own
+        # reason: it decides which of the fields below take effect at all. The
+        # topology-file row is declared `modes=(MULTIBLOCK,)` and so is hidden by
+        # _apply_mode_visibility in the default mode — one declaration drives both
+        # this panel and the mesher's inert-parameter warnings.
+        mode_form = QFormLayout()
+        mode_form.setContentsMargins(6, 0, 6, 0)
+        self._spec_rows(mode_form, "mode")
+        align_form_labels(mode_form, 130)
+        self._layout.addLayout(mode_form)
+        self.mesh_mode.currentIndexChanged.connect(self._apply_mode_visibility)
+
     def _build_sizing_section(self):
         # ── 2. General Sizing ─────────────────────────────────────────────
         # #11: renamed back to "Mesh Sizing" (it covers surface + far-field, not

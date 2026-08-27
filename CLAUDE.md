@@ -198,6 +198,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 
 | Group | Key examples |
 |-------|-------------|
+| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE` |
 | Domain | `DOMAIN_X_MIN/MAX`, `DOMAIN_Y_MIN/MAX` |
 | Surface | `SURFACE_MESH_SIZE`, `AUTO_SURFACE_SIZE` |
 | BL Core | `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS` |
@@ -220,6 +221,51 @@ be reachable from the banner AND (where the banner renders it as a number) its o
 value must appear there. That check's blind spot is named in its own docstring: it
 cannot see a SWAPPED PAIR, because the pairing of a value to its meaning IS the label
 prose.
+
+**`MESH_MODE` selects the generation path, and a parameter the active mode never
+reads is NAMED** (`include/MeshMode.hpp` + `src/MeshMode.cpp`, in `hybmesh_pure`;
+issue #49, the configuration surface of #48's multi-block path). Mode 0 is the
+existing hybrid path and the DEFAULT, so the correct effect of the whole feature on
+an existing case is zero — measured, not asserted: the nine golden cases were
+captured from the pre-change binary (`git archive 25bd1cf` → build → capture with
+`HYBMESH_GOLDEN_BIN`) and compare **9/9 SAME, worst deviation 0.000e+00**, with the
+procedure recorded in `tests/test_mesh_mode_surface.py`'s docstring. Rules:
+- **"Which parameters does this mode read?" is DATA, in one place.** Two macros
+  declare it — the inert non-BL keys as `(KEY, Config member)` rows, and the four BL
+  parameters that SURVIVE — and the 18 casualties are the declaration in
+  `BLParams.hpp` minus those four, so a parameter added there is covered with no edit.
+  Declaring the survivors rather than the casualties is deliberate: the next BL
+  parameter is far likelier to be another corner knob than another wall-spacing one,
+  so a new row gets the right answer by default.
+- **"Set" means "differs from a default-constructed Config", never "the key appeared
+  in the file".** The GUI writes nearly every key on every save, so the file-based
+  reading would warn about all of them at once and mean nothing.
+- **The GUI's half is `modes=` on each field's own spec**, not a second table — the
+  same argument the `.dat` KEY already carries — and `test_field_spec_tables.py`
+  check 14 compares the two **in both directions**, reading the C++ macros as text so
+  its five injections can mutate them. One direction alone has a hole each way: a key
+  the mesher warns about but the panel still shows is a control the user can set and
+  watch do nothing, and a field the panel hides but the mesher still reads is a value
+  silently frozen. Rows the mode does not read are hidden in the mesh panel AND in the
+  **Edit-BL dialog**, which is where 17 of them actually live — hidden, never dropped,
+  so switching the mode is not a silent edit of 17 values.
+- **`MESH_MODE 1` today refuses with `EXIT_ERR_TOPOLOGY` (8, token `TOPOLOGY`)** and
+  exports nothing; `EXIT_ERR_INVERTED` (9, token `INVERTED`) is declared beside it for
+  a mesh that generates but holds inverted cells, which will EXPORT anyway. Two codes
+  rather than one because the caller's response differs: fix the declaration, versus
+  look at the mesh. An **unknown** mode is refused by `validate()` rather than clamped
+  to 0 — every other repair there has an obviously right fallback and a mode does not,
+  so clamping would mesh the hybrid path for someone who asked for something else.
+- Three departures from #49's acceptance text, all recorded in `MeshMode.hpp`:
+  `GMSH_NUM_THREADS` is warned about too (this path uses Gmsh nowhere, so the same
+  argument covers it); so are `BL_MERGE_CONCAVE` and `BL_SMOOTHING_ITERS`, which are
+  global-only settings outside the 22-row declaration and inert for the same reason,
+  making **20** BL-ish names against the ticket's 18; and `SURFACE_MESH_SIZE` /
+  `AUTO_SURFACE_SIZE` are deliberately NOT declared inert — #49 does not name them, and whether a surface size seeds
+  default edge counts is a question the later tickets answer. `Config::meshMode`'s
+  initialiser is the literal `0` rather than `MESH_MODE_HYBRID` because the parity
+  gate resolves that initialiser to compare it with the GUI default and reads a
+  literal; an enum name there would make one of the two sides stop being compared.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
@@ -307,7 +353,7 @@ assumed pure and making it heavy costs an entry, because an allow-list would hav
 failure mode backwards — forgetting to enrol a new pure module would silently exempt it.
 
 `hybmesh::classifyJunctions` (`include/JunctionScheme.hpp`, `src/JunctionScheme.cpp`) is
-its first member, and its history is the argument for the layer. It was extracted from
+its first member, and its history is the argument for the layer. `hybmesh::inertParamsSet` (`include/MeshMode.hpp`) joined it for the same reason: "which parameters does this mode never read?" is a decision over declarations, so `tests/cpp/test_mesh_mode.cpp` can prove the four surviving BL parameters SILENT — a negative that a test scraping the mesher's log would have to establish by absence. It was extracted from
 `generate()` specifically so the junction binning could be reasoned about and tested, and
 then could not be tested at all: it was private, and it took a 22-field mutable
 `FrontState` plus `Mesh&` while actually reading three positions/normals per node, one

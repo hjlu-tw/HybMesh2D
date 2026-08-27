@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import QFormLayout, QLabel
 
 from app.utils import align_form_labels, help_label
 from app.views.collapsible import CollapsibleSection
-from app.services.field_spec import by_key
+from app.services.field_spec import by_key, reads_in_mode
 from app.views.panels.mesh_bl_field_specs import (
     BL_SPECS, _BL_FIELD_GROUPS, _value_differs,
 )
@@ -43,7 +43,12 @@ class BLDialogLayoutMixin:
         it: a group holding a value that DIFFERS from ``defaults`` (i.e. something this
         geometry actually overrides) is expanded, and any spec key missing from the
         table lands in a trailing 'Other' group, which opens so an unreachable
-        parameter cannot also be an invisible one."""
+        parameter cannot also be an invisible one.
+
+        Rows the ACTIVE mesh mode does not read are hidden (and a group left with
+        none of them is hidden whole), driven by each spec's own `modes=`. This is
+        where the 17 corner/junction/transition parameters actually live, so hiding
+        them in the mesh panel alone would hide nothing a user was looking at."""
         specs = by_key(BL_SPECS)
         listed = {k for _t, _e, _h, keys in _BL_FIELD_GROUPS for k in keys}
         groups = list(_BL_FIELD_GROUPS)
@@ -54,6 +59,7 @@ class BLDialogLayoutMixin:
         forced: list = []
         forms: list = []
         labels: list = []
+        hidden_keys: set = set()
         for title, start_expanded, hint, keys in groups:
             sec = CollapsibleSection(title, start_collapsed=not start_expanded)
             if hint:
@@ -83,12 +89,30 @@ class BLDialogLayoutMixin:
                                  f"{spec.tip}\n\n({key})" if spec.tip else key)
                 labels.append(lbl)
                 form.addRow(lbl, w)
+                # A parameter the ACTIVE generation mode never reads is hidden, not
+                # dropped: it is still seeded, still read back by result_params, and
+                # so still round-trips untouched. Dropping it would make switching
+                # the mode a silent edit of 17 values, which is a worse failure than
+                # the one this hides. Same `modes=` declaration the mesher warns from.
+                if not reads_in_mode(spec, self._mesh_mode):
+                    w.setVisible(False)
+                    lbl.setVisible(False)
+                    hidden_keys.add(key)
             forms.append(form)
             sec.add_layout(form)
             sec.toggle_btn.toggled.connect(lambda _c: self._relayout())
             col.addWidget(sec)
             self._sections.append(sec)
-            if any(_value_differs(seed.get(k), defaults.get(k)) for k in keys):
+            # `keys and` first: all([]) is True, so an empty group would hide
+            # itself here for the wrong reason. No shipped group is empty, which
+            # is exactly why it would go unnoticed.
+            if keys and all(k in hidden_keys for k in keys):
+                # Every row gone: hide the header too, or the mode leaves an empty
+                # group the user can open onto nothing.
+                sec.setVisible(False)
+                continue
+            if any(_value_differs(seed.get(k), defaults.get(k))
+                   for k in keys if k not in hidden_keys):
                 forced.append(sec)
 
         # One label column across all groups, MEASURED from the labels actually

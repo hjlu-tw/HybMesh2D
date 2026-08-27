@@ -133,6 +133,11 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         # First, and not collapsible: it is what every number below means.
         self._build_units_section()
 
+        # ── 0b. Mesh mode ─────────────────────────────────────────────────
+        # Before every section it governs: switching it hides the fields the other
+        # path reads (driven by each field's own `modes=` declaration).
+        self._build_mode_section()
+
         # ── 1. Domain & Geometry Files ────────────────────────────────────
         # Section builder (combo + bounding box + geometry list + role editor)
         # relocated to MeshConfigDomainMixin.
@@ -177,4 +182,6 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self._apply_unit_suffixes()
 
         self._update_domain_source_visibility()
+        # Last, so it wins over every finer visibility rule above.
+        self._apply_mode_visibility()
     # Geometry-list / role handlers + get_config/set_config: MeshConfigConfigMixin.

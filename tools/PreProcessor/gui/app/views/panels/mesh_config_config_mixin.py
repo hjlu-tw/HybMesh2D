@@ -208,8 +208,8 @@ class MeshConfigConfigMixin:
             dsrc = 1
         with block_signals(self.domain_source_combo):
             self.domain_source_combo.setCurrentIndex(dsrc)
-        self._update_domain_source_visibility()
-        self._update_bidirectional_visibility()   # #7: outer growth rate follows it
+        # Mode last: it is the outer gate and hands back to the two rules above.
+        self._apply_mode_visibility()
 
         # Geometries (with per-file role carried as item data). Block selection
         # signals during the rebuild, then resync the role editor once.
