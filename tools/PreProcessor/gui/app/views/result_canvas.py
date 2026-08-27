@@ -22,6 +22,7 @@ from app.views.result_canvas_controls_mixin import ResultCanvasControlsMixin
 from app.views.result_canvas_setup_mixin import ResultCanvasSetupMixin
 from app.views.result_canvas_surface_mixin import ResultCanvasSurfaceMixin
 from app.views.result_playback_mixin import ResultPlaybackMixin
+from app.views.result_leg_select_mixin import ResultLegSelectMixin
 from app.views.result_scale_lock_mixin import ResultScaleLockMixin
 from app.services.surface_source import SurfaceSpec
 
@@ -40,7 +41,7 @@ _COLORMAPS = ["turbo", "viridis", "inferno", "plasma", "coolwarm", "jet", "RdBu_
 class ResultCanvasView(ResultCanvasInteractionMixin, ResultCanvasPlotsMixin,
                        ResultCanvasSurfaceMixin,
                        ResultCanvasVectorMixin, ResultCanvasControlsMixin,
-                       ResultScaleLockMixin,
+                       ResultScaleLockMixin, ResultLegSelectMixin,
                        ResultPlaybackMixin, ResultCanvasSetupMixin, QWidget):
     """Matplotlib-embedded 2D result viewer.
 

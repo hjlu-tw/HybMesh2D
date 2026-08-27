@@ -646,10 +646,14 @@ check(vs.variable_gaps() == [("latest", ("M",))],
       f"({vs.variable_gaps()})")
 
 # ── 3. the transport and the canvas ──────────────────────────────────────
-# Nothing here may put up a modal. #32 asked one on every load and gave the
-# entry point a flag to suppress it; #43 deleted both, so a confirm() reaching
-# the canvas at all is now the failure — hence a fake that RECORDS rather than
-# one that answers.
+# Nothing here may put up a modal ON AN UNATTENDED PATH. #32 asked one on every
+# load and gave the entry point a flag to suppress it; #43 deleted both. The
+# INTERACTIVE half of that was reversed on 2026-08-27 (USER-REQUESTED — the leg
+# picker, gated in test_result_leg_picker.py), so what is pinned here is now the
+# narrower and more important claim: a headless load still asks nothing and
+# still plays every leg, i.e. batch and CI behave exactly as they did. A
+# confirm() reaching the canvas here is still the failure — hence a fake that
+# RECORDS rather than one that answers.
 _asked = []
 _real_confirm = utils_mod.confirm
 
@@ -664,10 +668,9 @@ utils_mod.confirm = fake_confirm
 v = ResultCanvasView()
 v.load_result_path(live_path)
 check(_asked == [],
-      f"3. opening a leg of a restarted solve asks NOTHING — the common case "
-      f"costs no clicks, and an unattended run takes the same path an "
-      f"interactive one does, so a CI screenshot shows what the user sees "
-      f"({_asked})")
+      f"3. opening a leg of a restarted solve asks nothing HEADLESS — an "
+      f"unattended run is unchanged by the 2026-08-27 leg picker, so batch and "
+      f"CI still play every leg without a prompt to hang on ({_asked})")
 check(v._series is not None and v._series.n_files == 3
       and v._frame_count() == 8,
       f"3. ...and it plays the whole solve by default: 8 frames over 3 legs "

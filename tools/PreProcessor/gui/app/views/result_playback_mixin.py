@@ -138,10 +138,23 @@ class ResultPlaybackMixin:
             "Shown only when the solve HAS more than one leg, and always off "
             "when a result is opened.")
 
+        # "Which legs?" as a reopenable control, so the load-time question is an
+        # answer the user can revise rather than one they are stuck with
+        # (USER-REQUESTED 2026-08-27). Shown on the same condition as the
+        # checkbox beside it: does this SOLVE have more than one leg.
+        self.pick_legs_btn = QPushButton("Legs…")
+        self.pick_legs_btn.setFixedWidth(52)
+        self.pick_legs_btn.setStyleSheet(f"color:{_FG};font-size:11px;")
+        self.pick_legs_btn.setToolTip(
+            "Choose which legs of this restarted solve play as one animation.\n"
+            "All of them unless you say otherwise; 'This leg only' overrides "
+            "this while it is ticked.")
+        self.pick_legs_btn.clicked.connect(self._on_pick_legs)
+
         for w in (self.first_btn, self.prev_btn, self.play_btn, self.next_btn,
                   self.last_btn, self.frame_label, speed_label,
                   self.speed_combo, self.loop_cb, self.lock_scale_cb,
-                  self.one_leg_cb):
+                  self.one_leg_cb, self.pick_legs_btn):
             row.addWidget(w)
         row.addStretch()
         # Directly under row 1 (the data selectors it belongs with), not appended
@@ -224,20 +237,6 @@ class ResultPlaybackMixin:
                       "every leg has, so the animation never changes subject "
                       "part-way through. Tick 'This leg only' on a leg that has "
                       "it to see it.")
-
-    def _on_one_leg_toggled(self, _on=None):
-        """Rebuild the series with / without the other legs.
-
-        The landing frame is the last frame of the leg the user OPENED, which is
-        where the load put them too — so the control moves the surrounding
-        animation and not the picture in front of them.
-        """
-        if getattr(self, "_result_path", ""):
-            self.reload_legs()
-
-    def _one_leg_only(self) -> bool:
-        cb = getattr(self, "one_leg_cb", None)
-        return bool(cb.isChecked()) if cb is not None else False
 
     def _detach_series(self):
         self.stop_playback()
@@ -406,7 +405,13 @@ class ResultPlaybackMixin:
         # and `multi` then hid the whole transport row INCLUDING the box that had
         # just been ticked, with no way back. Measured in review of #43: 3 legs x
         # 1 zone, tick -> frames=1, hidden=True.
-        self.one_leg_cb.setVisible(len(self._legs or ()) > 1)
+        multi_leg = len(self._legs or ()) > 1
+        self.one_leg_cb.setVisible(multi_leg)
+        # Not keyed on the frame-count flag: a solve of three one-frame legs is
+        # an ordinary restarted run, and hiding this with the transport would
+        # close the escape behind the user (the bug #43 found for 'This leg
+        # only', measured at 3 legs x 1 zone).
+        self.pick_legs_btn.setVisible(multi_leg)
         self.play_btn.setText("❚❚ Pause" if self._playing else "▶ Play")
         self.play_btn.setToolTip(
             "Pause the animation" if self._playing else
@@ -445,32 +450,6 @@ class ResultPlaybackMixin:
         if self._series.n_files > 1:
             label += f" ({self._frame + 1} / {n})"
         return label
-
-    def _legs_tip(self) -> str:
-        """How far each leg of this solve got, for the two widgets that name a leg.
-
-        The frame read-out and the frame selector both say WHICH leg a frame
-        belongs to, so the count belongs beside them rather than in a log line the
-        user has to scroll back to (#43). "" for a solve with one leg: there is
-        nothing to distinguish.
-        """
-        legs = self._legs
-        if not legs or len(legs) < 2:
-            return ""
-        rows = []
-        for leg in legs.legs:
-            if not leg.span.known:
-                rows.append(f"{leg.key}: how far it got is not recorded")
-                continue
-            # Both caveats, the same two the restart chooser's tooltip carries:
-            # #43 unified the ARITHMETIC so the two windows cannot disagree about
-            # a number, and reporting that number with different confidence in
-            # each window would put the disagreement back one level up.
-            how = "recorded" if leg.span.recorded else "recomputed"
-            rows.append(f"{leg.key}: reached iteration {leg.span.end} ({how})")
-        return ("This solve's legs, oldest first:\n" + "\n".join(rows)
-                + "\nAn upper bound: a run interrupted part-way through a print "
-                  "interval got no further than this.")
 
     def _log(self, msg: str):
         """Say something to the user about playback.

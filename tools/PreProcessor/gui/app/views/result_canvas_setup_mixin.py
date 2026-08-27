@@ -10,6 +10,7 @@ import matplotlib.tri as mtri
 from app.models.result_data import TecplotResult
 from app.services.logging_setup import get_logger
 from app.services.result_legs import LegSeries, ResultLeg, list_result_legs
+from app.views.result_leg_picker import ask_legs
 from app.services.restart_points import OTHER
 from app.utils import block_signals
 
@@ -60,6 +61,12 @@ class ResultCanvasSetupMixin:
         if box is not None:
             with block_signals(box):
                 box.setChecked(False)
+        # A leg SUBSET is view state for the result being loaded, exactly like the
+        # clim store above: a new solve must not inherit the previous one's ticks.
+        # The prompt is armed for this load only — it is asked once per LOAD, not
+        # once per rebuild, or every "This leg only" toggle would re-ask it.
+        self._leg_selection = None
+        self._ask_legs_pending = True
         self.reload_legs(frame)
 
     def reload_legs(self, frame: int = -1):
@@ -130,6 +137,14 @@ class ResultCanvasSetupMixin:
         self._legs = found
         if len(found) < 2:
             return found
+        if getattr(self, "_ask_legs_pending", False):
+            self._ask_legs_pending = False
+            # USER-REQUESTED (2026-08-27), reversing half of #43 — see
+            # ``views/result_leg_picker`` for which half and why the rest of #43's
+            # reasoning still holds. Headless returns None without showing
+            # anything, so an unattended run is byte-for-byte what it was.
+            self._leg_selection = ask_legs(self, found.legs, path,
+                                           found.warnings)
         if self._one_leg_only():
             i = found.index_of(path)
             leg = (found.legs[i] if i >= 0
@@ -138,6 +153,20 @@ class ResultCanvasSetupMixin:
                       f"solve has {len(found)} legs (untick 'This leg only' to "
                       "play them as one animation).")
             return LegSeries(legs=(leg,))
+        chosen = getattr(self, "_leg_selection", None)
+        if chosen is not None:
+            # A SUBSET is still a LegSeries, not a second code path — the frame
+            # cache, the labels, the global ranges and the warnings all behave
+            # the way they do for the whole solve. Same rule as "This leg only".
+            kept = tuple(leg for leg in found.legs if leg.key in chosen)
+            if kept and len(kept) < len(found.legs):
+                dropped = [leg.key for leg in found.legs
+                           if leg.key not in chosen]
+                names = ", ".join(leg.key for leg in kept)
+                self._log(f"[Results] playing {len(kept)} of this solve's "
+                          f"{len(found.legs)} legs: {names} "
+                          f"(left out: {', '.join(dropped)}).")
+                return LegSeries(legs=kept, warnings=found.warnings)
         # One summary line, then every warning in full: each of them changes how
         # the picture should be read, so none of them is folded into the summary.
         self._log(f"[Results] playing {len(found)} legs of this solve as one "
