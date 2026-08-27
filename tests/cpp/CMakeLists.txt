@@ -49,6 +49,10 @@ set(HYBMESH_PURE_TESTS
     # behind one seam. This executable failing to link is the signal that the
     # path has reached for the mesh container or for gmsh.
     test_multiblock
+    # The quality instrument the v1 acceptance gate is measured with. Measuring a
+    # mesh must not require the mesh container, so it belongs on this side of the
+    # line: half its checks hand `measureMbQuality` a mesh nobody parsed.
+    test_mb_quality
 )
 
 foreach(t IN LISTS HYBMESH_PURE_TESTS)

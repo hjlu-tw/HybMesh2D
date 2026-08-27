@@ -558,6 +558,51 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     const MbBlock& b0 = r.blocks.front();
     const int blockIdx = 0;
 
+    // Publish what the DECLARATION asks the first cell height off each wall to
+    // be, for the quality report to measure the fill against (include/MbQuality.hpp).
+    //
+    // It has to be published from here because only this scope still knows the
+    // spacing laws: the request off a side is the FIRST INTERVAL of the edge
+    // running away from it, taken from the perpendicular edge at each of the
+    // side's two corners, and once the block is a grid of positions those laws
+    // are gone. Which edge that is comes from `mbSideAxis`, so the [south, east,
+    // north, west] convention is read here rather than restated.
+    //
+    // WHAT THIS IS NOT, stated here because it is easy to over-read: in this
+    // release nothing declares a wall-normal first-cell height independently of
+    // the edge distribution, so the request is DERIVED FROM THE SAME LAW the fill
+    // reproduces. The transfinite blend is exact on the boundary, so the number
+    // the report computes from it is zero at the side's two end columns BY
+    // CONSTRUCTION, and what it really measures in between is interior
+    // distortion. An independent target arrives with the wall-spacing resolution
+    // work (BL_INITIAL_THICKNESS and friends); when it does, only these two lines
+    // change source and nothing that reads the report has to change.
+    {
+        auto firstInterval = [](const std::vector<Point2D>& e, bool fromEnd) {
+            if (e.size() < 2) return 0.0;
+            return fromEnd ? (e[e.size() - 1] - e[e.size() - 2]).length()
+                           : (e[1] - e[0]).length();
+        };
+        for (int k = 0; k < 4; ++k) {
+            const MbSide side = static_cast<MbSide>(k);   // sides[] is in this order
+            const MbSideAxis ax = mbSideAxis(side);
+            const EdgeSpec& e = *sides[k];
+            // Gated on the KIND rather than on "v0 has only walls": interface and
+            // cut edges are refused by name today, so this is dead by construction
+            // now and correct the day they are not.
+            if (e.kind != "wall") continue;
+            const std::vector<Point2D>& perpLo = ax.alongI ? west : south;
+            const std::vector<Point2D>& perpHi = ax.alongI ? east : north;
+            MbWallSpec ws;
+            ws.block = blockIdx;
+            ws.side = side;
+            ws.edgeId = e.id;
+            ws.requestedLo = firstInterval(perpLo, ax.atFarEnd);
+            ws.requestedHi = firstInterval(perpHi, ax.atFarEnd);
+            r.wallSpecs.push_back(ws);
+        }
+    }
+
     for (int j = 0; j + 1 < nj; ++j) {
         for (int i = 0; i + 1 < ni; ++i) {
             const int n00 = b0.nodeAt(i, j),     n10 = b0.nodeAt(i + 1, j);

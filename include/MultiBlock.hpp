@@ -95,6 +95,60 @@ struct MbBoundaryEdge {
     int segId = -1;
 };
 
+// A block's four sides, in the [south, east, north, west] order the topology
+// document declares them and every check in this module is written against.
+enum MbSide { MB_SOUTH = 0, MB_EAST = 1, MB_NORTH = 2, MB_WEST = 3 };
+
+// WHERE a side sits in the block's logical grid. This is the [south, east,
+// north, west] convention as DATA, in one place, because it was on its way to
+// being encoded three times: once to pick the perpendicular edge whose spacing
+// law a wall's first-cell height is asked of (src/MultiBlock.cpp), once to walk
+// that side and step one grid line inward (src/MbQuality.cpp), and once to name
+// it in a report. Two of those were `switch (side)` cascades over the same four
+// values, which is the shape that lets one of them disagree with the others.
+//
+// The two facts are enough to derive all three: south and north run along i and
+// the other two along j, and north and east sit at the transverse index MAXIMUM.
+// So the perpendicular edges are (alongI ? west/east : south/north), read from
+// (atFarEnd ? the far end : the near end).
+struct MbSideAxis {
+    const char* name;   // "south" | "east" | "north" | "west"
+    bool alongI;        // the side runs along i (south, north) rather than along j
+    bool atFarEnd;      // it sits at the transverse index maximum (north, east)
+};
+
+inline MbSideAxis mbSideAxis(MbSide s) {
+    switch (s) {
+        case MB_EAST:  return {"east",  false, true};
+        case MB_NORTH: return {"north", true,  true};
+        case MB_WEST:  return {"west",  false, false};
+        case MB_SOUTH: break;
+    }
+    return {"south", true, false};
+}
+
+// One side of one block that was declared kind "wall", carrying the first-cell
+// height the DECLARATION asks for off it.
+//
+// It is published here rather than measured downstream because only the seam
+// knows the declaration: the request comes from the spacing law of the edge
+// running away from this side, and by the time the block is a grid of node
+// positions that law is gone. `MbQuality.hpp` then measures what the fill
+// achieved against it.
+//
+// In v0 every boundary edge is kind "wall" (interface and cut are refused by
+// name), so all four sides of the one block are reported. A body surface is not
+// distinguishable from a far-field boundary until boundary conditions come from
+// the declaration; when that lands, this list gets shorter and nothing that reads
+// it has to change.
+struct MbWallSpec {
+    int block = 0;                   // index into MbResult::blocks
+    MbSide side = MB_SOUTH;
+    std::string edgeId;
+    double requestedLo = 0.0;        // first interval off this side at its START corner
+    double requestedHi = 0.0;        // ... and at its END corner
+};
+
 struct MbResult {
     // false -> `error` names what is wrong and NOTHING was produced. The caller
     // turns this into EXIT_ERR_TOPOLOGY and exports nothing.
@@ -108,6 +162,7 @@ struct MbResult {
     std::vector<MbBlock> blocks;
     std::vector<MbCell> cells;
     std::vector<MbBoundaryEdge> boundaryEdges;
+    std::vector<MbWallSpec> wallSpecs;
 };
 
 // Parse `topologyJson`, resolve it against `geoms` and `params`, fill every

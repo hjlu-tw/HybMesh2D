@@ -6,6 +6,7 @@
 #include "Provenance.hpp"
 #include "ExitCodes.hpp"
 #include "MeshMode.hpp"
+#include "MbQuality.hpp"
 #include "MultiBlock.hpp"
 #include "PointTolerance.hpp"
 #include <iostream>
@@ -326,6 +327,74 @@ static std::vector<int> addTaggedLoop(Mesh& mesh, const std::vector<Point2D>& pt
 // Returns EXIT_OK, or the code the caller should exit with (nothing is exported
 // after a non-zero return: an invalid declaration is "fix your JSON", which is
 // what EXIT_ERR_TOPOLOGY exists to say).
+// One banner row's label column: 25 characters, then ": ". Every row of both
+// multi-block blocks goes through this; there used to be a second copy of the pad
+// expression inline in the topology banner.
+static std::string mbLabel(const std::string& prefix, const std::string& text) {
+    const std::string l = prefix + text;
+    return l + std::string(l.size() < 25 ? 25 - l.size() : 0, ' ') + ": ";
+}
+static std::string mbRow(const std::string& text) { return mbLabel("  - ", text); }
+// A per-wall detail row is indented WITHOUT a bullet, so it reads as detail under
+// the summary line above it rather than as another number beside it.
+static std::string mbSub(const std::string& text) { return mbLabel("      ", text); }
+
+// Print the quality report. Split out of the adapter because the adapter's whole
+// character is "a loop with no decisions in it", and eleven lines of formatting
+// was on its way to obscuring the one decision it does now make (the exit code).
+static void printMbQuality(const hybmesh::MbQualityReport& q) {
+    std::ostringstream sci;
+    sci << std::scientific << std::setprecision(3);
+    auto num = [&sci](double v) { sci.str(""); sci << v; return sci.str(); };
+    auto rel = [](double v) {
+        // NEGATIVE means not measured, and it must not print as a percentage —
+        // "0.00%" is an excellent result and would be a false claim here. See
+        // MbQualityReport.
+        if (v < 0.0) return std::string("not measured");
+        std::ostringstream os;
+        os << std::fixed << std::setprecision(2) << (100.0 * v) << "%";
+        return os.str();
+    };
+
+    std::cout << "\n[ Multi-block Mesh Quality ]\n";
+    std::cout << mbRow("Inverted cells") << q.invertedCells << " of " << q.cells
+              << " cells\n";
+    if (q.nonOrthoSamples == 0) {
+        std::cout << mbRow("Non-orthogonality")
+                  << "not measured (no structured block in the result)\n";
+    } else {
+        std::ostringstream ang;
+        ang << std::fixed << std::setprecision(3)
+            << "max " << q.maxNonOrthoDeg << " deg, mean " << q.meanNonOrthoDeg << " deg";
+        std::cout << mbRow("Non-orthogonality") << ang.str() << " (over "
+                  << q.nonOrthoSamples << " structured-cell corners)\n";
+    }
+    if (q.worstWallRelError < 0.0)
+        std::cout << mbRow("Wall first cell")
+                  << "not measured (no block side declares a measurable one)\n";
+    else
+        std::cout << mbRow("Wall first cell") << "worst " << rel(q.worstWallRelError)
+                  << " off the height the declaration asks for\n";
+    for (const hybmesh::MbWallHeight& w : q.walls)
+        std::cout << mbSub(std::string(w.side) + " '" + w.edgeId + "'")
+                  << "asked " << num(w.requestedLo) << " .. " << num(w.requestedHi)
+                  << ", got " << num(w.achievedMin) << " .. " << num(w.achievedMax)
+                  << " (" << rel(w.worstRelError) << ")\n";
+
+    // One machine-readable line, in the shape of the HYBMESH_ERROR convention, so
+    // the acceptance gate this instrument exists for is a grep rather than a prose
+    // parse. Each of the three measured figures is NEGATIVE when it could not be
+    // measured, never 0 — see MbQualityReport.
+    std::ostringstream mr;
+    mr << std::setprecision(6) << std::fixed;
+    mr << "HYBMESH_MB_QUALITY cells=" << q.cells
+       << " inverted=" << q.invertedCells
+       << " nonortho_max_deg=" << q.maxNonOrthoDeg
+       << " nonortho_mean_deg=" << q.meanNonOrthoDeg
+       << " wall_first_cell_worst_rel=" << q.worstWallRelError;
+    std::cout << mr.str() << std::endl;
+}
+
 static int buildMultiBlockMesh(Mesh& mesh, const Config& config,
                                std::vector<std::string>& inputFiles) {
     if (config.topologyFile.empty()) {
@@ -405,16 +474,30 @@ static int buildMultiBlockMesh(Mesh& mesh, const Config& config,
 
     std::cout << "\n[ Multi-block Topology ]\n";
     std::cout << "  - Source               : " << config.topologyFile << "\n";
-    for (const auto& b : res.blocks) {
-        // Pad to the banner's own label column ("  - " + 21 characters), so a
-        // block line reads as one of the report's rows rather than beside them.
-        const std::string label = "  - Block '" + b.id + "'";
-        std::cout << label << std::string(label.size() < 25 ? 25 - label.size() : 0, ' ')
-                  << ": " << b.ni << " x " << b.nj << " nodes\n";
-    }
+    for (const auto& b : res.blocks)
+        std::cout << mbRow("Block '" + b.id + "'") << b.ni << " x " << b.nj << " nodes\n";
     std::cout << "  - Cells                : " << res.cells.size() << " "
               << (config.mbSplitQuads ? "triangles (alternating diagonal by index parity)"
                                       : "quads (splitting is OFF)") << "\n";
+
+    // ── The mesh-quality report (issue #51) ─────────────────────────────────
+    // Printed on EVERY run of this path, not only on a bad one: three of the four
+    // numbers are a baseline the later elliptic-smoothing increment is judged
+    // against, and a baseline that is only recorded when something went wrong is
+    // not a baseline. The measuring itself is the pure instrument next door; this
+    // layer only says what came back and decides the exit code.
+    const hybmesh::MbQualityReport q = hybmesh::measureMbQuality(res);
+    printMbQuality(q);
+
+    if (q.invertedCells > 0) {
+        LOG_ERROR(q.invertedCells << " of " << q.cells << " cells are INVERTED (a corner "
+                  "that folds back on itself). The mesh is EXPORTED anyway, following the "
+                  "same precedent as a failed boundary layer, for the practical reason that "
+                  "an inverted cell is far easier to fix once you can look at it. The "
+                  "declaration itself is valid — its block corners wind correctly — so what "
+                  "folded is the interpolated interior, not the document.");
+        return EXIT_ERR_INVERTED;
+    }
     return EXIT_OK;
 }
 
@@ -720,6 +803,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
     bool hasIntersection = false;
     bool blSuccess = true;
     int failExit = EXIT_OK;                 // set to a distinct code on failure
+    std::string failDetail;                 // optional detail for that code's machine line
     std::string gmshVersion;                // resolved for provenance
     std::vector<std::string> inputFiles;    // geometry inputs for provenance
     for (const auto& f : config.geomFiles) inputFiles.push_back(f);
@@ -745,9 +829,25 @@ int hybmesh::runCli(int argc, char* argv[]) {
         // A detail that is never empty: with no MESH_TOPOLOGY_FILE declared the
         // path is "", and a machine-readable line naming nothing is one a script
         // cannot act on.
-        if (rc != EXIT_OK)
-            return reportError(rc, config.topologyFile.empty() ? "(no MESH_TOPOLOGY_FILE)"
-                                                               : config.topologyFile);
+        const std::string topoDetail = config.topologyFile.empty()
+                                     ? std::string("(no MESH_TOPOLOGY_FILE)")
+                                     : config.topologyFile;
+        if (rc == EXIT_ERR_INVERTED) {
+            // The one outcome on this path that EXPORTS AND FAILS, and the whole
+            // reason there are two multi-block exit codes rather than one. It goes
+            // through the same `failExit` mechanism a failed boundary layer uses,
+            // so the difference between the two failure kinds is where the code is
+            // set and not a second way of stopping.
+            //
+            // `blSuccess` is deliberately left TRUE, so the VTK keeps its ordinary
+            // name: the `_er` suffix marks a PARTIAL mesh, and this one is complete
+            // — it is the cell shapes that are wrong, which is the thing the export
+            // exists to let you look at.
+            failExit = EXIT_ERR_INVERTED;
+            failDetail = topoDetail;
+        } else if (rc != EXIT_OK) {
+            return reportError(rc, topoDetail);
+        }
     } else if (config.geomFiles.empty() && config.seedFiles.empty() && config.domainFile.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
@@ -1148,7 +1248,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
     }
 
     if (failExit != EXIT_OK)
-        return reportError(failExit);
+        return reportError(failExit, failDetail);
     // Backward-compat: any other unclassified stop still returns a nonzero code.
     return hasIntersection ? EXIT_ERR_BL : EXIT_OK;
 }

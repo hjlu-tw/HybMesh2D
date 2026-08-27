@@ -400,6 +400,158 @@ boundary edges, warnings as data and an optional error. Rules:
   `Global Iteration count 90` at interval 10 with `num_half_iter 100` — i.e. 100
   iterations. Not a shape check written up as one.
 
+**The quality report is the RULER, and it is built before the thing it measures**
+(`include/MbQuality.hpp` + `src/MbQuality.cpp`, in `hybmesh_pure`; the banner and
+the exit code are in `src/cli.cpp`; issue #51). Every multi-block run prints the
+inverted cell count, maximum and mean non-orthogonality, the wall first-cell height
+accuracy and the cell count, plus ONE machine-readable `HYBMESH_MB_QUALITY
+cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=…
+wall_first_cell_worst_rel=…` line — so the acceptance gate this instrument exists
+for is a grep and not a prose parse. Rules:
+- **Printed on every run, including a good one.** Three of the four numbers are the
+  baseline the later elliptic-smoothing increment is judged against, and a baseline
+  recorded only when something went wrong is not a baseline.
+- **Its own module rather than more of `MultiBlock.cpp`.** It answers a different
+  question — "is this mesh usable?" against "what does this document declare?" —
+  and it is a pure function of a finished mesh, so half its checks hand
+  `measureMbQuality` a mesh nobody parsed. Measuring a mesh must not require the
+  mesh container, which is why it is on the pure side of the line.
+- **Inverted is counted over the EXPORTED cells, and the test is PER CORNER, not
+  the signed area.** A bow-tie quad can self-intersect with a POSITIVE shoelace
+  area — measured: `(0,0) (3,0) (0,1) (2,1)` has area +0.5 and crosses itself, and
+  the obvious area-based implementation calls it fine (injected, and it fails
+  exactly that one check). For a triangle the per-corner rule REDUCES to the signed
+  area, so it is one rule for both cell kinds. Counted over the exported cells
+  because those are what the solver reads: the same folded topology reports 16 of
+  32 triangles or 10 of 16 quads.
+- **Non-orthogonality is measured on the STRUCTURED grid cells — each corner
+  angle's deviation from 90° — and NOT on the split triangles.** Three reasons, the
+  first being the ticket's own criterion. It comes from the corner positions
+  directly, so a block that is strongly stretched but axis-aligned measures
+  *exactly* zero, which no size-or-edge-length proxy can report — measured, through
+  the real binary: a square graded geometrically at 1.5 asks for a first cell of
+  2.030e-02 against a uniform 1.25e-01 and reports `0.000 deg` (the same trap the
+  `[ Mesh Size Field ]` report had to avoid, where cell edges run ~15% long on
+  stretched triangles). Second, it is the quantity elliptic smoothing moves;
+  measuring the triangles instead would let the fixed diagonal — an artefact of the
+  split that no smoother touches — dominate the number, so a grid that got worse in
+  the way that matters could report an unchanged figure. Third, it is therefore
+  independent of `MB_SPLIT_QUADS`, so the quads-for-diagnosis mode and the shipped
+  triangles report the same grid quality. It is an ANGLE with a closed form, not a
+  badness score: a parallelogram sheared by 1/2 reports atan(1/2) = 26.565° with
+  max == mean. The blind spot is named rather than papered over — it says nothing
+  about the shape of the split triangles, and a solver-facing skewness metric for
+  those is a different instrument, not this one wearing another name.
+- **A folded mesh is EXPORTED and exits 9; an invalid declaration exports nothing
+  and exits 8.** It goes through the same `failExit` mechanism a failed boundary
+  layer uses, so the difference between the two failure kinds is *where the code is
+  set* and not a second way of stopping. `blSuccess` is deliberately left TRUE, so
+  the VTK keeps its ordinary name: the `_er` suffix marks a PARTIAL mesh, and this
+  one is complete — it is the cell shapes that are wrong, which is the thing the
+  export exists to let you look at.
+- **The wall request is published from the SEAM, never re-derived downstream**
+  (`MbWallSpec` on `MbResult`). Only `buildMultiBlock` still knows the spacing
+  laws: the requested first-cell height off a side is the FIRST INTERVAL of the
+  edge running away from it, taken from the perpendicular edge at each of that
+  side's two corners, and once the block is a grid of positions those laws are
+  gone. Between the corners the request is the same linear blend in the logical
+  coordinate that the transfinite fill itself uses. The height is a distance ALONG
+  the grid line, not perpendicular to the wall; the two differ by
+  cos(non-orthogonality), which is why this number and the angle are always
+  reported together.
+- **"ASKED FOR" IS NOT AN INDEPENDENT TARGET YET, and the figure must not be
+  over-read** — the same class of gap #50 wrote down as "SURVIVING is not the same
+  as READ", and it is recorded here for the same reason. #51's criterion asks "how
+  closely the wall first-cell height matched what was asked for", and nothing in a
+  v0 topology asks for a wall-normal height independently of the edge counts: the
+  request is DERIVED from the same spacing law the fill reproduces, and the
+  transfinite blend is exact on the boundary, so at a side's two END COLUMNS the
+  achieved height IS the requested one identically. **A rectangle's 0.00% is
+  therefore a tautology, not evidence the instrument works** — the first write-up
+  of this entry presented it as evidence, and the test asserted it as "the first
+  cell off each of them is what was asked for", which is the overclaim habit this
+  file records against #25/#29/#37. What the number honestly measures is how far
+  the INTERIOR drifted from what the two ends declare, which is exactly the
+  quantity elliptic smoothing moves — so it is the right baseline under a narrower
+  claim. The discriminating evidence is a block the blend distorts: a trapezoid
+  measures 7.38%, the folded dart 25.41%. The independent target (a wall spacing
+  asked for by `BL_INITIAL_THICKNESS` and friends) arrives with the wall-spacing
+  resolution work; when it does, only the PUBLISHER in `buildMultiBlock` changes
+  source and no reader of the report changes at all. Both halves are pinned rather
+  than described: the test names the rectangle's zero AS a tautology, and check 7
+  asserts that the trapezoid's two end columns reproduce their request exactly, so
+  the whole deviation is interior.
+- **"We did not measure" must not read as "it came out perfect", and that holds
+  for ALL THREE measured figures.** `maxNonOrthoDeg`, `meanNonOrthoDeg` and every
+  `worstRelError` (per wall, and the headline) are NEGATIVE when they could not be
+  measured, never 0.0 — the same distinction `case_run_note` keeps between an
+  unreadable convergence history and a genuine cold start, and the banner prints
+  `not measured` rather than a percentage or `0.000 deg`. Two things worth knowing.
+  The first version got this **right at the report level and wrong at the row
+  level**: a wall whose request was not a positive length anywhere on it (a
+  degenerate perpendicular edge) was still pushed with `worstRelError == 0.0` and
+  dragged the headline to a flawless-looking 0.00% — found independently by BOTH
+  review axes, which is the strongest signal either gives. And the row-level rule
+  was then still **unguarded**, because the only test with no measurable wall
+  declares no wall at all and so exercised the report's default instead: injecting
+  the 0.0 default broke NOTHING until check 6b was written for it. Whether
+  `buildMultiBlock` can currently reach a zero request is a separate question
+  (a fully collapsed side is refused by the ring check), and the answer does not
+  matter — `measureMbQuality` is a public pure function that accepts any
+  `MbResult`, so a guarantee its header states must hold for every input it
+  accepts.
+- **The detector is proven to bite by a topology that folds, and that topology is
+  ACCEPTED.** A dart — corners `(0,0) (1,0) (0.1,0.1) (0,1)` — winds
+  counter-clockwise (signed area +0.1), so the clockwise-ring refusal does not
+  fire; the ring is strongly non-convex at `ne` and the fill folds anyway. That is
+  the whole reason there are two codes: a backwards-wound ring is a defect of the
+  DOCUMENT and is refused, while this is a valid document whose interpolated
+  interior came out folded and there is something worth looking at. The gate checks
+  that no topology refusal is printed on that run, or its check 4 would be pinning
+  a refusal wearing a second code.
+- **All four sides are reported, because v0 cannot say which boundary is a viscous
+  wall.** Every boundary edge is kind `wall` (interface and cut are refused by
+  name), so a body surface is not distinguishable from a far field until boundary
+  conditions come from the declaration. The publisher is gated on `kind` anyway, so
+  that list gets shorter and no reader has to change.
+- **The `[south, east, north, west]` convention is DATA, in one place**
+  (`mbSideAxis` in `MultiBlock.hpp`). It was on its way to three encodings — which
+  perpendicular edge a wall's request comes from, how to walk a side and step one
+  line inward, and what to call it in a report — two of them `switch (side)`
+  cascades over the same four values, which is the shape that lets one disagree
+  with the others. Two facts derive all three: south and north run along i, and
+  north and east sit at the transverse index maximum. One dedup was considered and
+  DECLINED: `MbWallSpec` and `MbWallHeight` share `edgeId`/`requestedLo`/
+  `requestedHi`, but they face opposite directions (one is the seam's declaration,
+  the other a report row), the shared part is three fields copied adjacently rather
+  than a fact that can be written HALF — which is what made `recordBoundaryEdge`
+  and `JunctionDecision` worth merging — and nesting them would make a printed row
+  read `w.asked.lo`.
+- The folded topology is written by #50's OWN `write_topology`, extended with a
+  `corners=` argument, rather than by a second writer — the reason that helper
+  already gives for `golden_mesh.py` importing it. Its default is the `x1`/`y1`
+  rectangle, so every existing caller is byte-identical.
+- Measured behaviour preservation: the **12 golden cases 12/12 SAME, worst
+  deviation 0.000e+00**, against a baseline captured from the pre-change binary
+  (`HYBMESH_GOLDEN_BIN`, `git archive 050f2af` → build → capture there). No mesh
+  moved; what is new is a report and an exit code.
+- Gated by `tests/cpp/test_mb_quality.cpp` (9 groups, 53 checks, through the pure
+  seam) and `tools/PreProcessor/tests/test_multiblock_quality_surface.py`
+  (8 properties, 29 assertions, through the real binary, where the export-anyway
+  and the two exit codes live). **The six injections are HAND runs, dated and recorded
+  in the C++ test's own docstring with the checks each one broke — deliberately NOT
+  written up as in-test injections**, because a C++ test cannot mutate the
+  implementation it linked against the way the Python gates next door do; #37's
+  entry above says that distinction must not be blurred, and the first write-up of
+  this entry blurred it. What IS permanent is two **negative controls** that
+  measure an injection's own premise inside the test: check 6 computes its
+  bow-tie's shoelace area (`+0.5`, so an area test really would pass it) and check
+  2 computes its own stretch ratio (~17x, so the zero angle really is a
+  measurement). An argument in a comment decays; those two do not. Blind spots are
+  named in each file's docstring; the sharpest is that nothing runs the solver or
+  the grid converter on the folded mesh — that it is written is the claim, that
+  anything downstream accepts it is not.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /
@@ -508,6 +660,7 @@ no geometry writer in the repo produces, so no mesh-level test has ever reached 
 - **`BoundaryLayer.cpp`**: Quad layer growth — normals, fan/parallel corner handling, concave merging, transition layers, smoothing. BL/no-BL junctions (a BL edge meeting a `grow=0` neighbour) use the angle-driven cap scheme (`BL_JUNCTION_METHOD=1`, default); **the binning itself is not here** — it is `hybmesh::classifyJunctions` in the decision layer (see `hybmesh_pure` above), and `generate()` only assembles its narrow input, applies the returned decisions and logs the returned warnings. The flow-facing angle θ picks case 1 (slide along the neighbour edge + absorb the no-BL nodes it covers, θ ≤ 95°), case 2/4 (perpendicular cap, 95° < θ ≤ C2 or θ > C3) or case 3 (neighbour-edge extension cap, C2 < θ ≤ C3); every cap leaves a free full-height lateral column whose edges are emitted as far-field constraints so the wedge is triangulated, and the step is scaled by 1/cos(tilt) so the *perpendicular* height is what stays fixed. **The 95° slide bound is geometric, not a knob**: a cap must point into the fluid wedge (which spans θ) while the perpendicular sits at 90°, so at θ ≤ 90° it provably exits through the no-BL wall — θ < 90° self-intersects the front (exit 5) and θ = 90° (a rectangular duct with one wall No-BL) hands Gmsh a doubled-back hole (exit 6). `C1` used to be that bound at 135°, wide enough to slide where an honest cap fit; it now only bins method 0 and round-trips through config. A slide at a **very sharp wedge** (`tan θ × BL_CONCAVE_INFLUENCE_MULTIPLIER < 1`, i.e. the corner squeezes more wall than the concave blend can lean over — 21.8° at the default 2.5, measured break between 22° and 21°) still fails downstream, so it emits `[WARN] Very sharp BL/no-BL wedge at (x, y)` naming the corner; advisory only, nothing is auto-corrected. An **isolated BL corner** (BOTH neighbours No-BL) gets the same treatment for the same reason (issue #2): it grows a full-height column with no lateral one, so the front doubles back and Gmsh triangulates nothing — the run has always ended at `empty far-field mesh … the domain loop likely failed to close`, which names the symptom at the wrong layer. `classifyJunctions` reports the corner's position and the caller emits `[WARN] Isolated BL corner at (x, y)`, pointing at the **`.meta` sidecar** rather than at the geometry — and that is the PERMANENT behaviour, not a placeholder. Issue #4 asked for the two lateral columns such a corner needs and was closed **wontfix** (2026-08-20), because the configuration is not reachable from this toolchain: the resampler flags EVERY segment boundary `corner = 1` (`resCorner.push_back(isBoundaryPt ? 1 : 0)`, where `isBoundaryPt` is "the first or last sample of a task" — NOT "sharp"), `cli.cpp`'s `prevBL || nextBL` rescue then promotes any such corner with a BL neighbour back to BL growth, and the GUI's `meta_io` only rewrites the NSEGMENTS bc / grow columns while copying the POINTS block through verbatim. Only a hand-written or foreign sidecar gets here, so naming THAT is worth more than two columns whose per-wall BC assignment is this repo's most expensive bug class. Advisory rather than a refusal is still right (issue #2): exit 6 is an honest failure. Gated by `tests/test_nobl_junction_acute.py`, which pins the sidecar pointer along with the corner's coordinates. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must carry that wall's BC by construction** (`slideColumns`/`slideWallRun` → `Mesh::recordBoundaryEdge`), matched to the wall edge each replacing edge covers by arc length: the column is a straight ray along the first neighbour chord, so on a *curved* no-BL wall it drifts off the wall polyline by ~a chord sagitta while `classifyBoundaryBc`'s `pointOnSegment` accepts 1e-6 of a chord (measured 6e-8..1.8e-6 vs a 2.0e-8 tolerance) — every column edge past the first fell through to `BC_GEOM`, so a No-BL inlet/outlet exported a `wall` band exactly D_total long at each BL junction and the solver ran a wall across part of the inlet. A straight no-BL wall has no drift, which is why straight-duct coverage missed it. Gated by `tests/test_nobl_junction_acute.py` (`write_curved_duct` — the curvature is the point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc length).
 - **`Mesh.cpp`**: Mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration, VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are private**: write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with `boundaryEdgeInfo(v1, v2)`. They used to be two public parallel maps every caller keyed by hand, so "wrote the BC, forgot the segment key" was a defect the interface could not prevent — and half an identity reaching the exporter is exported as the wall default. The compiler now rejects outside access, which is why nothing tests *that* — a test would be weaker than the type system. Their paired SEMANTICS are tested, in `tests/cpp/test_mesh_boundary_edge.cpp`: a refused overwrite must not half-apply, the key is the unordered node pair, and a BC with no resolvable segment still records. **`FARFIELD_MESH_SIZE` is a `Min()` cap on the size field, not a target**: the field is grown from the wall (`FARFIELD_GROWTH_RATE`, from the BL front or — no BL — the geometry surface) and/or inward from the domain bounding box (`FARFIELD_GROWTH_RATE_OUTER`), so in a domain that is small relative to the growth rate it tops out below the cap and *every* larger cap gives a byte-identical mesh. Every run therefore prints a `[ Mesh Size Field ]` block reporting how high growth actually reaches, the effective ceiling, and whether the cap is dead / marginal / active — computed by re-evaluating the field expressions at the generated mesh nodes, **not** by measuring cell edges (those run ~15% long on stretched triangles and would report a dead cap as live). Gated by `tests/test_size_field_ceiling.py`. Caveat: a custom domain outline is added with `geomId = -1`, so for a pure internal-flow case (`DOMAIN_FILE … nobl`, no `GEOM_FILE`) the wall-distance field is never built and `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` (distance to the *bounding box*) grades the mesh.
 - **`MultiBlock.cpp`**: The whole multi-block path behind one pure entry point — parse, resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges the adapter records. Never throws; a malformed document comes back as an error string. See Configuration above.
+- **`MbQuality.cpp`**: The multi-block quality instrument — inverted cells (per corner, over the exported cells), non-orthogonality (the corner angles of the structured cells), and the wall first-cell height against what the declaration asked for. Pure, total, never throws: an empty or half-built result is measured as what it is rather than refused. See Configuration above.
 - **`Config.hpp`**: Single-header; parses `.dat` files into ~50 typed parameters
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross products
 

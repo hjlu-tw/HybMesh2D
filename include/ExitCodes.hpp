@@ -15,13 +15,15 @@ enum ExitCode {
     // Multi-block path (MESH_MODE 1). Two codes rather than one, because the
     // caller's response differs: fix the declaration, versus look at the mesh.
     EXIT_ERR_TOPOLOGY     = 8, // topology declaration invalid -> nothing exported
-    // Declared before it has an emitter, deliberately and on the ticket's own
-    // instruction ("Two new exit codes are declared with stable machine-readable
-    // tokens"): the point of #49 is that a caller can learn to branch on both codes
-    // NOW and keep working when the path lands. That is in tension with this repo's
-    // "a branch nothing can reach reads as a working feature" rule, so it is written
-    // down rather than left to be rediscovered — the difference is that this is a
-    // published CONSTANT, not a branch claiming to do something.
+    // #49 declared this one BEFORE it had an emitter, deliberately and on that
+    // ticket's own instruction, so a caller could learn to branch on both codes
+    // while the path was being built — noted there as in tension with this repo's
+    // "a branch nothing can reach reads as a working feature" rule. #51 closed
+    // that: src/cli.cpp's multi-block adapter returns it when the quality report
+    // (include/MbQuality.hpp) finds a folded cell, and the mesh is EXPORTED first.
+    // The two multi-block codes differ because the reader's next move differs —
+    // fix the declaration, versus look at the mesh — which is why an inverted mesh
+    // is written out and an invalid topology is not.
     EXIT_ERR_INVERTED     = 9, // mesh generated but holds inverted cells -> EXPORTED anyway
 };
 

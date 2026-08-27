@@ -85,27 +85,34 @@ def check(msg, cond):
         failures.append(msg)
 
 
-def write_topology(path, ni=6, nj=5, x1=1.0, y1=1.0, spacing=None):
-    """One rectangular block, ni x nj nodes, as a topology document.
+def write_topology(path, ni=6, nj=5, x1=1.0, y1=1.0, spacing=None, corners=None):
+    """One block, ni x nj nodes, as a topology document.
 
-    Shared with ``tools/scripts/golden_mesh.py``, which imports it rather than
+    Shared with ``tools/scripts/golden_mesh.py`` and with
+    ``test_multiblock_quality_surface.py``, both of which import it rather than
     keeping a second copy: a topology written twice is a guaranteed future
     divergence, and this is where its shape is specified.
 
     `spacing` (a dict, e.g. ``{"law": "geometric", "growth": 1.2}``) is attached
     to the two i-direction edges, so a graded case differs from the uniform one
     by exactly that.
+
+    `corners` overrides the rectangle with four explicit ``(x, y)`` pairs in
+    ``[sw, se, ne, nw]`` order — the same order the block declares its edges in.
+    It exists so the quality gate next door can ask for a block whose corner ring
+    is still counter-clockwise (so the declaration is ACCEPTED) while its
+    transfinite interior folds. Default: the ``x1`` / ``y1`` rectangle, so every
+    existing caller is byte-identical.
     """
     edge_i = {"kind": "wall", "count": ni}
     if spacing:
         edge_i = dict(edge_i, spacing=spacing)
+    xy = corners or [(0.0, 0.0), (x1, 0.0), (x1, y1), (0.0, y1)]
     doc = {
         "format_version": 1,
         "corners": [
-            {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
-            {"id": "se", "kind": "free", "xy": [x1, 0.0]},
-            {"id": "ne", "kind": "free", "xy": [x1, y1]},
-            {"id": "nw", "kind": "free", "xy": [0.0, y1]},
+            {"id": cid, "kind": "free", "xy": [float(p[0]), float(p[1])]}
+            for cid, p in zip(("sw", "se", "ne", "nw"), xy)
         ],
         "edges": [
             dict(id="south", corners=["sw", "se"], **edge_i),
