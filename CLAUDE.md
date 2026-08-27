@@ -1007,7 +1007,12 @@ boundary. Rules that are load bearing:
   rather than dropped. Note the direction that is evidence: opening the `.gui`
   leg passes with or without the filter, so only the headless-leg direction
   proves anything.
-- **Opening any leg opens the SOLVE, and nothing is asked** (#43, reversing #32).
+- **Opening any leg opens the SOLVE. #43 asked nothing; since 2026-08-27 an
+  INTERACTIVE load asks, and a headless one still does not** (USER-REQUESTED —
+  see "Which legs play" below, which reverses half of this bullet and keeps the
+  other half exactly). What follows is #43's reasoning, unedited, because the
+  half that survives is the half it was really protecting: an unattended run must
+  not behave differently from what CI records.
   #32 shipped "ask, do not assume": a `confirm` with `headless_default=False` on
   every result load, plus `load_result_path(..., ask_legs=False)` for a caller
   that must not open a modal (`postprocess_ctrl`, reaching into `pipeline_ctrl`'s
@@ -1029,6 +1034,32 @@ boundary. Rules that are load bearing:
   can leave a single-frame series, and keying on `multi` hid the whole row
   *including the box that had just been ticked*: the escape closed behind the
   user. Found in review, measured at 3 legs x 1 zone.
+- **Which legs play is a CHOICE, and it is the user's** (`views/result_leg_picker.py`
+  + `views/result_leg_select_mixin.py`, gated by `tests/test_result_leg_picker.py`).
+  USER-REQUESTED 2026-08-27. The choice used to be binary — every leg, or `This
+  leg only` — with no way to say "these three, not that one", which is what
+  comparing a re-run leg against the one it replaced needs; #43's own measurement
+  of `results/solver/case` found `prev_001` and `prev_002` both running iterations
+  0-1000, one segment solved twice, played in sequence with no way to drop either.
+  A tick-list is offered on load and reopenable from `Legs…` in the transport row.
+  **`ask_legs` returns `None` — "every leg" — when headless, and `None` is also
+  what a CANCEL and an empty tick-list return**: one meaning, the state the view
+  already has for "no restriction", so batch and CI are byte-for-byte #43 and a
+  cancel leaves the animation as it would have been. **Precedence is stated, not
+  raced** (the rule `Lock scale`/manual-clim already follows): `This leg only`
+  wins while ticked, then the subset, then every leg — and unticking restores the
+  SUBSET, so the override does not destroy the answer it overrode. A subset is an
+  ordinary `LegSeries`, never a second code path. **Both controls key on the LEG
+  count and never on the frame count**, for the reason recorded above: restricting
+  to one one-frame leg leaves a one-frame series, so a control keyed on frames
+  hides itself the moment it is used. Asking that of a fixture with three frames
+  proves nothing — measured, the injection came back green — and two of the gate's
+  other three checks were weak in the same way on the first attempt (the reset
+  check could not see its own mechanism, since a multi-leg load reassigns the
+  selection regardless; the handler check surfaces as a CRASH, which an injection
+  harness that counts FAIL lines scores as zero). Blind spot named in the test:
+  offscreen the dialog is never shown, so what is gated is its verbs, the filter
+  its answer drives and the controls' visibility.
 - **The landing frame is the last frame of the leg that was OPENED**, not of the
   series (`ResultSeries.last_frame_of`). The two differ only when an archived leg
   was named deliberately, and then the file the user asked for is the one they
@@ -1091,6 +1122,27 @@ boundary. Rules that are load bearing:
   of its own, because each changes how the picture should be read.
 - `set_result`'s triangulation reuse and #24's clim precedence
   (manual > lock > auto) are unchanged and both are pinned across a leg boundary.
+- **A leg's timestamp is when its run FINISHED, never its `archived_at`**
+  (`case_run_note.finished_stamp`; USER-REPORTED 2026-08-27). An archive is made
+  by the NEXT run at the moment it starts, so `archived_at` answers "when was this
+  folder made?" while a live leg's stamp answers "when did this run finish?" —
+  and both were rendered as a bare parenthesised time in one list, which is what
+  invited them to be compared. On this repo's own `results/solver/case` the
+  restart chooser read `Latest result (09:35:11)` beside `prev_005 (09:35:01)`:
+  ten seconds apart, and they are two runs three minutes apart — the ten seconds
+  are merely how long the latest run took. `prev_003` displayed a date **six days**
+  out, and the two pre-#30 archives displayed nothing at all. The run's own
+  outputs still carry the answer (`shutil.move` preserves mtime, and #30's hard
+  link shares the inode), so the stamp is recovered from them, preferring the
+  ZONE DUMP because it is written at the end of a run and `RUN.txt` because it is
+  written at archive time. **`restart_points` and `result_legs` had the defect
+  independently** — `stamp=note.get("archived_at", "")` in each — so the answer has
+  ONE owner, the same rule #43 applied to the iteration count; `archived_at` is
+  kept as its own labelled tooltip line rather than discarded. The gate's checks 3,
+  4 and 8 are the INVERTED versions of the ones that pinned the old behaviour, and
+  check 4's blank stamp for a pre-#30 archive was not a refusal to fabricate but a
+  refusal to look.
+
 Three duplications this created were pushed to their owners rather than left:
 `case_files.strip_run_tag` / `newest_first` and `case_run_note.mtime_stamp` /
 `iteration_span` are each now read by both `restart_points` and `result_legs`.
@@ -1436,7 +1488,24 @@ A single unified JSON script drives the whole chain; the GUI and the headless CL
   - **`case_root_for` / `work_dir_of` live in `solver_case`**, which already owns a case's layout, and `restart_points` re-exports them — the panel, the validator and `_resolve_case_disposition` all ask one function instead of joining `results/solver/<case>` themselves. The claim to make is exactly that narrow: the first write-up of this said "where a case lives has one spelling" and it was **false** — 11 `results/solver` joins exist and one full case-root construction was replaced. `resolve_case_root` takes its root as an argument (so a test can move a whole run) and builds the versioned siblings inline; `case_export_ctrl` asks the same question for its dialog's starting guess and is the one remaining candidate; `postprocess_ctrl`, `solver_tools_ctrl` and `dll_builder_dialog` ask for the PARENT dir or for `dll_src`, which are different questions. Found by the Standards axis, which enumerated the call sites the sentence claimed to cover — the same overclaim #25/#29 record.
   - **One departure from the issue's own text, and one REVERSED.** The rows first showed the count as a **bound** (`1990+`) where the issue's mock showed a bare `iteration 2000`, on the argument that printing the spec's number would be a fabrication. **#43 reverses that**: `1990 + 10` recovers 2000 exactly, the rows read `iteration 2000`, and the tooltip carries both surviving caveats (recorded vs recomputed, and that an interrupted run makes it an upper bound). The departure is recorded here rather than deleted, so "we deliberately departed from the spec" is not left standing as a validated precedent — it was overruled, and the spec was right. The remaining departure stands: the issue says this keeps "`prepare_case_dir` untouched", which it does not: `bare_link_for_archived_dump` is called from it, because without the link the chooser's headline click is unrunnable (test check 11 was RED before it existed).
   - One residue, named rather than fixed: **a case-name change keeps the previously picked absolute path**, so it can land on "Other file…" as a cross-case restart the user did not deliberately choose. It is visible in the row's own field, it is a configuration #25 supports, and `_validate` refuses it if the file is gone — no worse than the retired autofill, which pointed at whatever `work/` held.
-  Gated by `tests/test_restart_chooser.py` (12 properties against the real `prepare_case_dir`, the real widget offscreen, the real `SolverControllerMixin` and the real `AppController`; its checks 2-4 are now the **inverted** versions of the ones that asserted the raw last row and a blank count for a pre-#30 archive, so #43's reversal cannot quietly come undone), and `test_restart_archive.py` check 7 is now the **inverted** version of the one that pinned the dialog's restart branch, so bringing that modal back fails the gate. Blind spot named in the test: nothing here runs `unicones`, so the bare-name reference is pinned against the SHAPE #30's acceptance run measured, not against the solver's acceptance of it.
+  - **A row has to FIT, and that is structural rather than cosmetic**
+    (USER-REPORTED 2026-08-27). `SolverConfigPanel` caps its content at 430px and
+    sets `setHorizontalScrollBarPolicy(ScrollBarAlwaysOff)` with
+    `setWidgetResizable(True)`, so a row wider than the viewport is CLIPPED and
+    the rest is unreachable — there is no window size that rescues it. Measured:
+    the marked row wanted **494px** against ~380px usable. The timestamp drops its
+    year and seconds and the marker became `← last run` (321px), and `_Row` elides
+    whatever a narrower sidebar still cannot fit — an ellipsis says there is more,
+    where a clip pretends the row ended. Two consequences worth knowing:
+    `minimumSizeHint` must stop advertising the full width, or the row forces the
+    scroll area's content wider than its viewport and re-creates the very state
+    being fixed; and **the marker is BOLD as well as worded**, because the words
+    sit at the END of the row and are therefore the first thing elided, which
+    would have made the fix for the over-wide row eat the one signal #31 exists to
+    give. A check asked of a row built from the CURRENT (now short) text proves
+    nothing about the elide — measured, it passed with the mechanism deleted — so
+    the gate asks it of a deliberately over-long row.
+  Gated by `tests/test_restart_chooser.py` (12 properties against the real `prepare_case_dir`, the real widget offscreen, the real `SolverControllerMixin` and the real `AppController`; its checks 2-4 and 8 are now the **inverted** versions of the ones that asserted the raw last row, a blank count and a blank TIMESTAMP for a pre-#30 archive, and the old marker wording, so neither #43's reversal nor the 2026-08-27 stamp correction can quietly come undone; check 13 pins both reported symptoms, all four of its assertions verified by injection), and `test_restart_archive.py` check 7 is now the **inverted** version of the one that pinned the dialog's restart branch, so bringing that modal back fails the gate. Blind spot named in the test: nothing here runs `unicones`, so the bare-name reference is pinned against the SHAPE #30's acceptance run measured, not against the solver's acceptance of it.
 - **`services/case_sources.py`** (Qt-free): copies the CAD/STL a case was cut from into **`grid/cad/`**, so the case describes its own geometry instead of only the mesh (the source otherwise lives in `examples/geometries/` or a Desktop, free to be edited or deleted while the case looks complete). Fed by `solver_ctrl._case_source_files` / `_case_generated_files` and `pipeline_runner._case_sources` — the imported source, the resampled `.dat` the mesher read, the immersed STL, the mesh `.provenance.json`, and the **mesh parameter file**, which is *generated* rather than copied because the GUI only ever materialises one in `temp_dir` and deletes it on exit (`mesh_config_io.config_to_text`, split out of `save_config_to_file` so the staged config is byte-identical to a hand-saved one; it takes the destination path because a geometry outside the repo is emitted relative to the config file). Rules: **copy, never move** (the mesher, the GUI session and other cases still point at the original — and a *move* is unimplementable anyway, since one resampled `.dat` legitimately feeds several cases and the pipeline is not one-directional); **a hard link is not the cheap version of a copy** — one inode means editing the CAD afterwards silently rewrites what the case holds, which is the property the copy exists to deny; **sidecars follow their file** (`<name>.dat.meta` carries the per-segment BC labels and No-BL flags, so the `.dat` without it is a different geometry); **collisions are renamed, not overwritten** (two bodies can both be `profile.dat`); generated files are staged **last** and marked `(generated)` in the index, because a reconstruction must not read as evidence. `SOURCES.txt` maps every staged name back to its absolute origin, rewritten in full each run so a body no longer in the case leaves no line — and it is the *only* index there is, so **`tools/scripts/case_sources_index.py`** reads them back to answer the question the case dir cannot ("if I change this CAD, which cases go stale?"), matching by `(st_dev, st_ino)` then path then substring, exit 1 on no match. `case_export` descends into `grid/cad/` with its own allow-list — a nested folder the exporter cannot see is neither shipped *nor named as skipped*.
 - **`services/stl3d_case.py`** (Qt-free): the same for the immersed-solid stage — `validate()`, `work_dir_for()`, `prepare_case_dir()` (stages the STL under a whitespace-safe name + writes `para.in`). Both `stl3d_ctrl.run_stl3d` and the headless runner's IB stage go through it. **`Stl3dConfig.para_in_text()` must match `solver/preprocess/STL3d/src/stl3d.cpp`'s `cin >>` sequence line for line** — there are five reads and deliberately no ascii y/n line (the binary auto-detects); an extra line is consumed as the case name and the run silently produces an empty phi field with exit code 0. `tests/test_stl3d_case_parity.py` parses the C++ and gates this. **Inside `stl3d.cpp`, `STLobject` carries two different x extents and they must not be confused**: `xloc_db` (the candidate index `trace_ray` looks rays up in) is keyed by element **centre** x, while `xmin`/`xmax` (the ray culling window) come from the **vertices** — and have to, since a centroid sits strictly inside the surface and a centre-based box clips whole regions off a coarse or fan-shaped tessellation. Every ray in the strip between the last centre and `xmax` therefore passes the culling check with nothing at or after it in the index, so `lower_bound()` returns `end()`; dereferencing that (`->second->second`) is what killed a GUI IB run with `[STL3d] exited with code -11`. A **flat 2D profile is the worst case** — an ear-clipped/fan triangulation drags every centroid toward the apex, leaving the far ~20-30% of the x extent centroid-free (measured 5.856 vs 6.070, i.e. the last 41 of 128 slices). `ctr_strip_at_or_after()` clamps instead: a range *start* falls back to the last strip, a range *end* to `ctr_db_.end()`, so the far strip is really traced rather than silently clipped. Gated by `tests/test_stl3d_flat_profile_trace.py`, which compiles `stl3d.cpp` itself (CI does not build STL3d, and a stale binary must not be able to pass it).
 - **`services/contour_render.py`** (Qt-free): renders a Tecplot result to a contour PNG (matplotlib Agg) for headless runs.
