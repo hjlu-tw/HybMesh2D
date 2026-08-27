@@ -217,9 +217,11 @@ def is_run_output(name: str) -> bool:
 
 
 # The communication map bDecompose writes, which the solver then reads from its
-# own cwd under the bare name ``input.in`` quotes. Named once because it is the
-# file BOTH halves of the MPI path are about: :func:`is_decompose_output` has to
-# classify it in grid/ and the stage has to report where it landed.
+# own cwd under the bare name ``input.in`` quotes. Named here rather than spelled
+# at its one consumer (``workers/solver_run`` reporting where the stage put it)
+# because ``case_export`` and the stage are peers about a file of the case, the
+# reason every other name in this module lives here. Note the classifier below
+# does NOT read it — it matches by PATTERN, so this constant carries no rule.
 COMM_MAP_NAME = "mpi_comm_map.dat"
 
 # What bDecompose PRODUCES: the partitioned grid, one bc file per partition, the

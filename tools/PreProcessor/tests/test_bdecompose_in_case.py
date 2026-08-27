@@ -210,7 +210,7 @@ def run_stage(case_name):
     cfg.output_bc_file = os.path.join(grid, f"{case_name}.bc")
 
     seen = {}
-    worker = SolverPipelineWorker(cfg, getpgrid_dir=grid, solver_work_dir=work)
+    worker = SolverPipelineWorker(cfg, grid_dir=grid, solver_work_dir=work)
 
     def fake_stage(binary, para_path, cwd, label):
         seen.update(binary=binary, para_path=para_path, cwd=cwd, label=label)
@@ -405,10 +405,14 @@ def stage_comm_map():
 
 _orig_patterns = case_files._OUTPUT_PATTERNS
 case_files._OUTPUT_PATTERNS = _orig_patterns + (re.compile(r"^mpi_"),)
-check(case_files.is_run_output(case_files.COMM_MAP_NAME),
-      "13. (the mutation really took: is_run_output now matches the comm map)")
-bad_quoted, bad_listing, bad_src = stage_comm_map()
-case_files._OUTPUT_PATTERNS = _orig_patterns
+try:
+    check(case_files.is_run_output(case_files.COMM_MAP_NAME),
+          "13. (the mutation really took: is_run_output now matches the comm map)")
+    bad_quoted, bad_listing, bad_src = stage_comm_map()
+finally:
+    # A live-module mutation must be undone on the failure path too, or every
+    # check after this one is measured against a doctored classifier.
+    case_files._OUTPUT_PATTERNS = _orig_patterns
 check(bad_quoted == bad_src and not bad_listing,
       f"13. widening is_run_output with '^mpi_' stops #29 staging the comm map: "
       f"nothing is copied into work/ and input.in is left quoting the absolute "
@@ -420,6 +424,42 @@ check(ok_quoted == case_files.COMM_MAP_NAME
       and ok_listing == [case_files.COMM_MAP_NAME],
       f"13. (control, module restored) the same call stages the comm map and "
       f"quotes it by bare name ({ok_quoted!r}, {ok_listing})")
+
+# ── 14: the comm map input.in QUOTES still ships ─────────────────────────────
+# The issue is explicit: "case_export must keep shipping the comm map either
+# way." #37's grid-output branch ``continue``d BEFORE ``elif rel in referenced``
+# could be reached, so a comm map the run actually reads stopped travelling and
+# picked up the restart-specific "deliberately NOT exported" warning — prose
+# that is simply false about a comm map. Check 11 cannot see this: build_case's
+# input.in quotes only the grid, so every file it lists is UNREFERENCED, and
+# "does not ship" is the correct answer there. The two checks together are what
+# pin the carve-out: drop ``and rel not in referenced`` from plan_export and
+# this one goes red while 11 stays green. BEHAVIOURAL, verified by reverting
+# that condition by hand — which is not an in-test injection and is not
+# written down as one.
+case14, grid14, work14 = build_case("gamma")
+w(os.path.join(grid14, case_files.COMM_MAP_NAME), "produced")
+w(os.path.join(grid14, "mpi_grid.dat"), "produced")
+w(os.path.join(work14, "input.in"),
+  'grid_fn "../grid/gamma.grid"\n'
+  'mpi_comm_map_fn "../grid/%s"\n' % case_files.COMM_MAP_NAME)
+plan14 = case_export.plan_export(case14)
+dests14 = {i.rel for i in plan14.items}
+skipped14 = {rel for rel, _sz in plan14.skipped_output}
+rel14 = f"grid/{case_files.COMM_MAP_NAME}"
+check(rel14 in dests14 and rel14 not in skipped14,
+      f"14. a comm map input.in quotes SHIPS - the issue's third consequence, "
+      f"'case_export must keep shipping the comm map either way' "
+      f"(grid items={sorted(d for d in dests14 if d.startswith('grid/'))}, "
+      f"skipped={sorted(skipped14)})")
+check(not any("NOT exported" in m for m in plan14.warnings),
+      f"14. ...and no 'deliberately NOT exported' warning is emitted for it: "
+      f"that prose is restart-specific and false about a comm map "
+      f"({plan14.warnings})")
+check("grid/mpi_grid.dat" in skipped14,
+      f"14. (control) an UNreferenced decompose output in the SAME case is "
+      f"still named as a skipped output, so the carve-out is the reference and "
+      f"not the pattern ({sorted(skipped14)})")
 
 shutil.rmtree(tmp, ignore_errors=True)
 

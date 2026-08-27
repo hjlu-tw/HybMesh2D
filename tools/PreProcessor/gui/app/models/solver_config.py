@@ -309,10 +309,7 @@ class SolverConfig(SolverConfigUnitsMixin, SolverConfigIOMixin):
             f.write("\n".join(lines) + "\n")
 
     def generate_bdecompose_para(self, path: str):
-        """Write bDecompose's stdin answer file (optional, D4). Called with
-        ``grid/<case_files.BDECOMPOSE_INPUT>``, NOT a ``para.in`` — getPGrid owns
-        that name there — and the grid/bc are bare basenames because #37 runs the
-        stage in the directory holding them."""
+        """Write bDecompose's stdin answers: BDECOMPOSE_INPUT, not para.in (#37)."""
         lines = [
             os.path.basename(self.output_grid_file),
             os.path.basename(self.output_bc_file),

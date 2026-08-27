@@ -35,7 +35,7 @@ class SolverPipelineWorker(QThread):
     """Runs getPGrid -> (optional bDecompose) -> unicones in a background thread.
 
     Directory layout (prepared by solver_ctrl, D6):
-      - getpgrid_dir: holds the STAR-CD .vrt/.cel/.bnd inputs; getPGrid writes
+      - grid_dir: holds the STAR-CD .vrt/.cel/.bnd inputs; getPGrid writes
         .grid/.bc here.
       - solver_work_dir: the case work dir; unicones runs with this as cwd so
         the relative grid/bc/DLL paths inside input.in resolve.
@@ -54,7 +54,7 @@ class SolverPipelineWorker(QThread):
     # case name when auto-versioning kicked in to preserve prior results.
     prepared_signal = pyqtSignal(str)       # solver_work_dir
 
-    def __init__(self, config: SolverConfig, getpgrid_dir: str | None = None,
+    def __init__(self, config: SolverConfig, grid_dir: str | None = None,
                  solver_work_dir: str | None = None,
                  input_in_path: str | None = None, tag: str = ".gui",
                  prepare: bool = False,
@@ -63,7 +63,7 @@ class SolverPipelineWorker(QThread):
                  clean=None):
         super().__init__()
         self._config = config
-        self._getpgrid_dir = getpgrid_dir
+        self._grid_dir = grid_dir
         self._solver_work_dir = solver_work_dir
         self._input_in_path = input_in_path
         self._tag = tag
@@ -122,7 +122,7 @@ class SolverPipelineWorker(QThread):
                     generated_sources=self._generated_sources,
                     archive_prev=archive_prev, clean=self._clean)
                 self._solver_work_dir = work_dir
-                self._getpgrid_dir = grid_dir
+                self._grid_dir = grid_dir
                 self._input_in_path = input_in
                 self.prepared_signal.emit(work_dir)
 
@@ -145,11 +145,11 @@ class SolverPipelineWorker(QThread):
     def _run_getpgrid(self) -> bool:
         self.stage_signal.emit("getPGrid")
         self.progress_signal.emit(2)
-        para_path = os.path.join(self._getpgrid_dir, "para.in")
+        para_path = os.path.join(self._grid_dir, "para.in")
         self._config.generate_getpgrid_para(para_path)
-        self.log_signal.emit(f"[getPGrid] running in {self._getpgrid_dir}")
+        self.log_signal.emit(f"[getPGrid] running in {self._grid_dir}")
         rc = self._run_stdin_stage(self._config.getpgrid_binary, para_path,
-                                   self._getpgrid_dir, label="getPGrid")
+                                   self._grid_dir, label="getPGrid")
         if rc != 0:
             if self._cancelled:
                 # Cancel mid-stage must still signal completion, or the UI stays
@@ -164,7 +164,7 @@ class SolverPipelineWorker(QThread):
         # dir). Use getPGrid's companion verbatim, unless the user supplied an
         # explicit BC override (solver_ctrl already wrote it into the work dir).
         solver_case.stage_bc_def_companion(
-            self._config, self._getpgrid_dir, self._solver_work_dir,
+            self._config, self._grid_dir, self._solver_work_dir,
             log=self.log_signal.emit)
 
         self.progress_signal.emit(15)
@@ -191,12 +191,11 @@ class SolverPipelineWorker(QThread):
         # concurrent runs would race on. grid/ answers all three — after stage 1
         # it holds every file this stage reads, and the outputs land in the case
         # that needs them.
-        grid_dir = self._getpgrid_dir
-        para_path = os.path.join(grid_dir, case_files.BDECOMPOSE_INPUT)
+        para_path = os.path.join(self._grid_dir, case_files.BDECOMPOSE_INPUT)
         self._config.generate_bdecompose_para(para_path)
-        self.log_signal.emit(f"[bDecompose] running in {grid_dir}")
+        self.log_signal.emit(f"[bDecompose] running in {self._grid_dir}")
         rc = self._run_stdin_stage(self._config.bdecompose_binary, para_path,
-                                   grid_dir, label="bDecompose")
+                                   self._grid_dir, label="bDecompose")
         if rc != 0:
             if self._cancelled:
                 # Cancel mid-stage must still signal completion, or the UI stays
@@ -225,7 +224,16 @@ class SolverPipelineWorker(QThread):
         # rule for them would be the "believable answer for the wrong input" class
         # this repo already has two defences against. It is a question for the
         # Linux acceptance run the issue asks for, not a guess to encode.
-        comm_map = os.path.join(grid_dir, case_files.COMM_MAP_NAME)
+        #
+        # The issue's other consequence — that a decomposition may legitimately be
+        # REUSED across cases, which would argue for producing it once outside and
+        # letting #29 stage a copy in — needs nothing here, and that is the answer
+        # rather than an omission: because this stage only NAMES what it produced
+        # and never fills the field in, a user who points ``mpi_comm_map_fn`` at a
+        # shared decomposition still gets exactly #29's behaviour (staged into
+        # work/, quoted by bare name), and grid/'s own output is simply unread.
+        # Running in the case costs that case nothing it did not already pay.
+        comm_map = os.path.join(self._grid_dir, case_files.COMM_MAP_NAME)
         if os.path.exists(comm_map):
             self.log_signal.emit(f"[bDecompose] comm map -> {comm_map}")
         self.progress_signal.emit(25)

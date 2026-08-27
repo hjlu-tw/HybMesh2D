@@ -245,8 +245,8 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                     f"input (renamed from {os.path.basename(rel)})"
                     if dest != rel else "input"))
             elif (_is_output(name)
-                  or (sub == "grid" and _is_decompose_output(name))
-                  or (sub in archives and name == RUN_NOTE_NAME)):
+                  or (sub in archives and name == RUN_NOTE_NAME)
+                  or (sub == "grid" and _is_decompose_output(name) and rel not in referenced)):
                 # An archive's own RUN.txt (#30) is not an input of anything —
                 # it is what the archiving of a run produced — so it is named
                 # as a skipped output rather than falling through to "not
@@ -262,7 +262,7 @@ def plan_export(case_dir: str, *, dll_src_dirs=(),
                 # it into the next archive as if a run had produced it.
                 #
                 # `sub == "grid"` is the same shape for bDecompose's outputs
-                # (#37); why it is guarded: `case_files.is_decompose_output`.
+                # (#37) — EXCEPT the one input.in quotes; see is_decompose_output.
                 plan.skipped_output.append((rel, _size(src)))
             elif rel in referenced:
                 # ``input.in`` names it and no run produced it, so it is an
