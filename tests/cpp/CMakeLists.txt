@@ -45,6 +45,10 @@ set(HYBMESH_PURE_TESTS
     # "which parameters does the active mode never read?" — the same argument:
     # a mode's applicability is a decision over declarations, not a mesh.
     test_mesh_mode
+    # The whole multi-block path — parse, resolve, fill, split, adapt input —
+    # behind one seam. This executable failing to link is the signal that the
+    # path has reached for the mesh container or for gmsh.
+    test_multiblock
 )
 
 foreach(t IN LISTS HYBMESH_PURE_TESTS)

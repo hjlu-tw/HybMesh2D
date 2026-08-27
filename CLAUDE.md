@@ -90,6 +90,14 @@ Invoked by `cd`-ing in rather than with `--test-dir`, which needs CMake >= 3.20 
 ```
 `run.sh` sets the Gmsh dylib path (`DYLD_LIBRARY_PATH`) before invoking `./build/HybMesh2D`.
 
+**Run the multi-block (topology-driven) path:**
+```bash
+./run.sh -conf config/multiblock_square.dat      # -> examples/topology/square_block.json
+```
+`MESH_MODE 1` fills a DECLARED block topology with structured quads and splits them
+to triangles; it uses Gmsh nowhere. See "The multi-block path is ONE pure entry point"
+under Configuration.
+
 **Run preprocessor GUI:**
 ```bash
 python3 tools/PreProcessor/gui/main.py [geometry.dat | case.hws | pipeline.json | @list.txt ...]
@@ -198,7 +206,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 
 | Group | Key examples |
 |-------|-------------|
-| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE` |
+| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS` |
 | Domain | `DOMAIN_X_MIN/MAX`, `DOMAIN_Y_MIN/MAX` |
 | Surface | `SURFACE_MESH_SIZE`, `AUTO_SURFACE_SIZE` |
 | BL Core | `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS` |
@@ -249,13 +257,17 @@ procedure recorded in `tests/test_mesh_mode_surface.py`'s docstring. Rules:
   silently frozen. Rows the mode does not read are hidden in the mesh panel AND in the
   **Edit-BL dialog**, which is where 17 of them actually live — hidden, never dropped,
   so switching the mode is not a silent edit of 17 values.
-- **`MESH_MODE 1` today refuses with `EXIT_ERR_TOPOLOGY` (8, token `TOPOLOGY`)** and
-  exports nothing; `EXIT_ERR_INVERTED` (9, token `INVERTED`) is declared beside it for
-  a mesh that generates but holds inverted cells, which will EXPORT anyway. Two codes
-  rather than one because the caller's response differs: fix the declaration, versus
-  look at the mesh. An **unknown** mode is refused by `validate()` rather than clamped
-  to 0 — every other repair there has an obviously right fallback and a mode does not,
-  so clamping would mesh the hybrid path for someone who asked for something else.
+- **An invalid topology declaration refuses with `EXIT_ERR_TOPOLOGY` (8, token
+  `TOPOLOGY`)** and exports nothing; `EXIT_ERR_INVERTED` (9, token `INVERTED`) is
+  declared beside it for a mesh that generates but holds inverted cells, which will
+  EXPORT anyway. Two codes rather than one because the caller's response differs: fix
+  the declaration, versus look at the mesh. An **unknown** mode is refused by
+  `validate()` rather than clamped to 0 — every other repair there has an obviously
+  right fallback and a mode does not, so clamping would mesh the hybrid path for
+  someone who asked for something else. (Until #50 that same code meant "the mode is
+  not implemented yet"; `test_mesh_mode_surface.py` check 2 is now the **inverted**
+  version of the one that pinned that sentence, and pins the parts the ticket
+  actually promised — code 8, the machine-readable line, nothing written.)
 - Three departures from #49's acceptance text, all recorded in `MeshMode.hpp`:
   `GMSH_NUM_THREADS` is warned about too (this path uses Gmsh nowhere, so the same
   argument covers it); so are `BL_MERGE_CONCAVE` and `BL_SMOOTHING_ITERS`, which are
@@ -266,6 +278,127 @@ procedure recorded in `tests/test_mesh_mode_surface.py`'s docstring. Rules:
   initialiser is the literal `0` rather than `MESH_MODE_HYBRID` because the parity
   gate resolves that initialiser to compare it with the GUI default and reads a
   literal; an enum name there would make one of the two sides stop being compared.
+
+**The multi-block path is ONE pure entry point, and the adapter deliberately has no
+seam** (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, in `hybmesh_pure`; the adapter
+is `buildMultiBlockMesh` in `src/cli.cpp`; issue #50, the bring-up slice of #48's
+second generation path). `hybmesh::buildMultiBlock(topologyJson, geoms, params)` parses
+the topology document, resolves it, fills every block with structured quads, splits
+them and returns nodes, blocks (with their logical i/j), flat cells, already-resolved
+boundary edges, warnings as data and an optional error. Rules:
+- **Parsing lives INSIDE the seam.** A separate "parse the document" entry point would
+  have made half the behaviour internal; as it is, schema errors, count resolution,
+  node positions, the diagonal split and the resolved BCs are all external behaviour of
+  one function, which `tests/cpp/test_multiblock.cpp` drives with a topology STRING and
+  no mesh at all. That test links `hybmesh_pure` and nothing else — measured with
+  `otool -L`: only libc++ and libSystem — so the moment the module reaches for `Mesh` or
+  gmsh it stops linking.
+- **The adapter gets no seam, because it has no decisions.** Every boundary edge comes
+  back as (node pair, BC name, source segment), and the adapter records each through
+  the existing `recordBoundaryEdge` with a **synthetic carrier `Node`**: that write
+  takes the whole source node because its convention is "an edge belongs to the segment
+  of its starting point", and here the seam already resolved BC and segment per EDGE,
+  so there is no starting point left to consult. Position-based classification is not
+  used in this path at all — the declaration already contains the answer, and
+  re-deriving it by proximity is how a curved inlet came to export partly as wall.
+- **The split is ALTERNATING BY INDEX PARITY and it is the default**, correct from the
+  first mesh rather than a later refinement: a single fixed diagonal imprints its own
+  direction on a uniform structured region, and flipping with `(i + j)` needs no seed,
+  so this path stays comparable run to run. `MB_SPLIT_QUADS 0` exports the quads for
+  diagnosis and **says so**, because the solver's incenter reconstruction is undefined
+  on quad cells and the grid converter's own slicer refuses a mixed mesh. The split
+  happens in the MESHER, not the converter, so the mesh inspected in VTK is the mesh
+  the solver integrates.
+- **Logical i/j is retained rather than flattened**, because the diagonal rules are the
+  only thing that reads it and flattening first would destroy it. `MbCell::block` is
+  carried for the same reason: once the cells are a flat list there is nothing left to
+  ask which block one came from.
+- **Unknown JSON keys are REFUSED, not skipped.** A typo'd `"spacng"` that is ignored
+  produces a mesh with the wrong node distribution and no symptom — the same failure
+  class the inert-parameter warning exists to close. Strict now is relaxable later; the
+  reverse is a breaking change. So is **a declaration that reaches nothing**: an edge in
+  no block and a corner on no edge are refused by name.
+- **What v0 does not do is refused BY NAME, never approximated**: an `on_geometry`
+  corner, an edge `binding`, an `interface`/`cut` edge kind, a `blocks[].orientation`,
+  and a second block. A corner placed *near* a geometry feature instead of on it is a
+  slightly wrong mesh with no error, which is worse than no mesh. Each refusal names
+  the later work it is waiting for.
+- **A block's orientation is the corner order of its own four edges**, declared as
+  `[south, east, north, west]` with south/north running i-min→i-max and west/east
+  running j-min→j-max; a deviation is refused with the edge, what it declares and what
+  the convention needs. Inferring it would turn a mistake into a mirrored block, i.e. a
+  mesh rather than an error. A **clockwise** corner ring is a WARNING and not a repair —
+  silently re-winding would mean the mesh no longer matches the document that declared
+  it. It is **refused** with the topology code, not exported under the inverted-cell
+  one: that code is for a valid declaration whose GEOMETRY came out folded, which is
+  worth looking at, while a backwards-wound ring is worth fixing and nobody wants the
+  mesh either way. #51's gate is unaffected.
+- **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` and
+  `buildDomainBoundary`. Measured, and recorded so nobody re-derives it: the direction
+  does **not** reach the `.bnd` — `exportStarCD` takes a boundary face's node order
+  from the cell that owns it, not from `edges` — so this is consistency for a reader,
+  not a fix. The C++ test pins the CHAINING (each edge starting where the last ended,
+  closing on the first), because a per-side emitter with one direction wrong still
+  emits the right SET of edges and only the chain catches it.
+- **Two departures from the ticket's literal scope, both deliberate and measured.**
+  #50 asks only that the spacing-law header be on the include path; the schema
+  accepts `uniform` / `geometric` / `tanh`, because a header on a path that nothing
+  uses is the dead declaration this repo refuses elsewhere — what #55 owns is the
+  RESOLUTION of wall spacing from `BL_INITIAL_THICKNESS` and friends, which is not
+  here. And `Mesh::addTaggedEdge` touches three call sites on the EXISTING path,
+  which #48 lists as out of scope; it is behaviour-preserving and that is measured
+  rather than asserted (9/9 golden cases SAME at 0.000e+00, `.cel` and `.bnd`
+  included).
+- **The geometries argument is wired up although nothing binds to one yet**, so the
+  geometry-binding work fills a parameter rather than changing the signature.
+- The decision layer gains `tools/PreProcessor/include` on its include path
+  (**PRIVATE**: `MultiBlock.hpp` includes neither, so a test linking `hybmesh_pure`
+  does not inherit it) for the bundled `json.hpp` and the existing `Spacing.hpp` — both
+  pure arithmetic, and sharing the spacing laws avoids a second growth-rate solver.
+  `generateGeometric` at ratio 1 IS the uniform law, so "uniform" is not a special case.
+- **SURVIVING is not the same as READ, and the gap is a whole release long.** #49
+  declares four BL parameters (`BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS`,
+  `BL_USE_ANALYTIC_GEOM`) as surviving into this mode — and v0 reads **none** of them,
+  because every topology edge declares its own count and spacing law. Declared
+  survivors are exempt from the inert warning, so without a second list they would be
+  the exact silent no-op the first list exists to prevent, wearing a declaration that
+  says they work. `hybmesh::blSurvivorsUnread` names them in their **own** sentence
+  (`does not read 'X' yet`), never the inert one (`never reads 'X'`): an inert value
+  should be deleted and one of these should be kept, so a caller must be able to say
+  them differently and the two lists must stay **disjoint** — pinned in
+  `test_mesh_mode.cpp` check 6b and `test_mesh_mode_surface.py` check 4. Delete the
+  function when the clustering law lands; `MeshMode.hpp` says so at the declaration.
+- **The asymmetry #49 shipped is unchanged and is worth knowing**: `inertParamsSet`
+  answers only for the multi-block mode, so `MESH_TOPOLOGY_FILE` and `MB_SPLIT_QUADS`
+  set while `MESH_MODE 0` produce no warning. The GUI hides both rows in hybrid mode,
+  so only a hand-written `.dat` reaches that gap. `SURFACE_MESH_SIZE` /
+  `AUTO_SURFACE_SIZE` sit in a third position, recorded rather than closed: measured
+  unread by this path (an explicit per-edge `count` is required), but whether count
+  propagation seeds from them is #53's answer, so declaring them inert now would write
+  that guess into a gate.
+- **A geometry that will not load is a WARNING here, not a refusal** — the opposite of
+  the hybrid path's answer and right for the same reason: there the geometry IS the
+  mesh, here nothing in a topology can refer to one yet, so refusing would stop a mesh
+  that does not depend on the file. Named, because an edge binding to it changes that.
+- **`Mesh::addTaggedEdge(v1, v2, bc, segKey)` replaced the `addEdge` + two writes to
+  `edges.back()` idiom** at all four call sites (the domain box, `addTaggedLoop`, the
+  BL front, the multi-block adapter). Same argument as `recordBoundaryEdge` one level
+  down: a BC and its source segment are one fact, and an idiom that writes them in two
+  statements is two chances to write half an identity. Behaviour-preserving, measured:
+  9/9 golden cases SAME at 0.000e+00 after the change.
+- Gated by `tests/cpp/test_multiblock.cpp` (the decisions, through the seam),
+  `tests/test_multiblock_surface.py` (the chain, through the real binary — and where
+  the dated acceptance run is recorded), and **three new golden cases**
+  (`mb_square`, `mb_square_quads`, `mb_graded`), whose topology writer
+  `golden_mesh.py` IMPORTS from the surface test for the reason it already imports the
+  duct geometries. Measured 2026-08-27: the nine existing cases **9/9 SAME, worst
+  deviation 0.000e+00** against a baseline captured from the pre-change binary
+  (`HYBMESH_GOLDEN_BIN`, `git archive cd29bb8`-style procedure recorded in
+  `test_mesh_mode_surface.py`). **Acceptance run, same date**: `getPGrid` exit 0 on the
+  21x21 example (441 vertices, 800 elements, 80 boundary faces, 80 BC flags), then
+  `unicones.eqn6.mac -t mbv0 input.in` **exit 0**, last printed
+  `Global Iteration count 90` at interval 10 with `num_half_iter 100` — i.e. 100
+  iterations. Not a shape check written up as one.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
@@ -374,6 +507,7 @@ no geometry writer in the repo produces, so no mesh-level test has ever reached 
 - **`cli.cpp`**: The whole command line (`hybmesh::runCli`); parses config, loads geometries, runs collision checks, orchestrates BL + Gmsh pipeline. **`OUTPUT_FILENAME` may end in the GUI's `.*` all-formats placeholder, which is a wildcard and not an extension** — stripped once, before `validate()`/`print()`, so the banner, the provenance sidecar and every writer share one basename. Taking it literally wrote the VTK into a file *named* `mesh_<case>.*` (the export block's `extPos()` finds that dot, so `.vtk` was never appended), and before `stripExt` it did the same to STAR-CD — which is where the `results/meshes/cartesian/mesh_cartesian.*.vrt` files on disk came from. See "The Output field's `.*`" below.
 - **`BoundaryLayer.cpp`**: Quad layer growth — normals, fan/parallel corner handling, concave merging, transition layers, smoothing. BL/no-BL junctions (a BL edge meeting a `grow=0` neighbour) use the angle-driven cap scheme (`BL_JUNCTION_METHOD=1`, default); **the binning itself is not here** — it is `hybmesh::classifyJunctions` in the decision layer (see `hybmesh_pure` above), and `generate()` only assembles its narrow input, applies the returned decisions and logs the returned warnings. The flow-facing angle θ picks case 1 (slide along the neighbour edge + absorb the no-BL nodes it covers, θ ≤ 95°), case 2/4 (perpendicular cap, 95° < θ ≤ C2 or θ > C3) or case 3 (neighbour-edge extension cap, C2 < θ ≤ C3); every cap leaves a free full-height lateral column whose edges are emitted as far-field constraints so the wedge is triangulated, and the step is scaled by 1/cos(tilt) so the *perpendicular* height is what stays fixed. **The 95° slide bound is geometric, not a knob**: a cap must point into the fluid wedge (which spans θ) while the perpendicular sits at 90°, so at θ ≤ 90° it provably exits through the no-BL wall — θ < 90° self-intersects the front (exit 5) and θ = 90° (a rectangular duct with one wall No-BL) hands Gmsh a doubled-back hole (exit 6). `C1` used to be that bound at 135°, wide enough to slide where an honest cap fit; it now only bins method 0 and round-trips through config. A slide at a **very sharp wedge** (`tan θ × BL_CONCAVE_INFLUENCE_MULTIPLIER < 1`, i.e. the corner squeezes more wall than the concave blend can lean over — 21.8° at the default 2.5, measured break between 22° and 21°) still fails downstream, so it emits `[WARN] Very sharp BL/no-BL wedge at (x, y)` naming the corner; advisory only, nothing is auto-corrected. An **isolated BL corner** (BOTH neighbours No-BL) gets the same treatment for the same reason (issue #2): it grows a full-height column with no lateral one, so the front doubles back and Gmsh triangulates nothing — the run has always ended at `empty far-field mesh … the domain loop likely failed to close`, which names the symptom at the wrong layer. `classifyJunctions` reports the corner's position and the caller emits `[WARN] Isolated BL corner at (x, y)`, pointing at the **`.meta` sidecar** rather than at the geometry — and that is the PERMANENT behaviour, not a placeholder. Issue #4 asked for the two lateral columns such a corner needs and was closed **wontfix** (2026-08-20), because the configuration is not reachable from this toolchain: the resampler flags EVERY segment boundary `corner = 1` (`resCorner.push_back(isBoundaryPt ? 1 : 0)`, where `isBoundaryPt` is "the first or last sample of a task" — NOT "sharp"), `cli.cpp`'s `prevBL || nextBL` rescue then promotes any such corner with a BL neighbour back to BL growth, and the GUI's `meta_io` only rewrites the NSEGMENTS bc / grow columns while copying the POINTS block through verbatim. Only a hand-written or foreign sidecar gets here, so naming THAT is worth more than two columns whose per-wall BC assignment is this repo's most expensive bug class. Advisory rather than a refusal is still right (issue #2): exit 6 is an honest failure. Gated by `tests/test_nobl_junction_acute.py`, which pins the sidecar pointer along with the corner's coordinates. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must carry that wall's BC by construction** (`slideColumns`/`slideWallRun` → `Mesh::recordBoundaryEdge`), matched to the wall edge each replacing edge covers by arc length: the column is a straight ray along the first neighbour chord, so on a *curved* no-BL wall it drifts off the wall polyline by ~a chord sagitta while `classifyBoundaryBc`'s `pointOnSegment` accepts 1e-6 of a chord (measured 6e-8..1.8e-6 vs a 2.0e-8 tolerance) — every column edge past the first fell through to `BC_GEOM`, so a No-BL inlet/outlet exported a `wall` band exactly D_total long at each BL junction and the solver ran a wall across part of the inlet. A straight no-BL wall has no drift, which is why straight-duct coverage missed it. Gated by `tests/test_nobl_junction_acute.py` (`write_curved_duct` — the curvature is the point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc length).
 - **`Mesh.cpp`**: Mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration, VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are private**: write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with `boundaryEdgeInfo(v1, v2)`. They used to be two public parallel maps every caller keyed by hand, so "wrote the BC, forgot the segment key" was a defect the interface could not prevent — and half an identity reaching the exporter is exported as the wall default. The compiler now rejects outside access, which is why nothing tests *that* — a test would be weaker than the type system. Their paired SEMANTICS are tested, in `tests/cpp/test_mesh_boundary_edge.cpp`: a refused overwrite must not half-apply, the key is the unordered node pair, and a BC with no resolvable segment still records. **`FARFIELD_MESH_SIZE` is a `Min()` cap on the size field, not a target**: the field is grown from the wall (`FARFIELD_GROWTH_RATE`, from the BL front or — no BL — the geometry surface) and/or inward from the domain bounding box (`FARFIELD_GROWTH_RATE_OUTER`), so in a domain that is small relative to the growth rate it tops out below the cap and *every* larger cap gives a byte-identical mesh. Every run therefore prints a `[ Mesh Size Field ]` block reporting how high growth actually reaches, the effective ceiling, and whether the cap is dead / marginal / active — computed by re-evaluating the field expressions at the generated mesh nodes, **not** by measuring cell edges (those run ~15% long on stretched triangles and would report a dead cap as live). Gated by `tests/test_size_field_ceiling.py`. Caveat: a custom domain outline is added with `geomId = -1`, so for a pure internal-flow case (`DOMAIN_FILE … nobl`, no `GEOM_FILE`) the wall-distance field is never built and `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` (distance to the *bounding box*) grades the mesh.
+- **`MultiBlock.cpp`**: The whole multi-block path behind one pure entry point — parse, resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges the adapter records. Never throws; a malformed document comes back as an error string. See Configuration above.
 - **`Config.hpp`**: Single-header; parses `.dat` files into ~50 typed parameters
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross products
 

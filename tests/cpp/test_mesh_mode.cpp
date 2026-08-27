@@ -8,7 +8,8 @@
 // What the seam buys, concretely. The answer is DATA, so every claim below is a
 // vector comparison rather than a scrape of a log:
 //
-//   * the four surviving boundary-layer parameters are proven SILENT, which is a
+//   * the four surviving boundary-layer parameters are proven silent on the INERT
+//     list (check 6b covers the second list they ARE on), which is a
 //     negative and is the half a "does it warn?" test through the binary makes
 //     awkward — you have to prove the absence of a line;
 //   * the 18 casualties are DERIVED from include/BLParams.hpp minus the four
@@ -220,6 +221,44 @@ int main() {
         CHECK(tokens.count("UNKNOWN") == 0,
               "...and none of them falls through to UNKNOWN, which is what a code "
               "added to the enum and forgotten in the switch would look like");
+    }
+
+    // ── 6b. SURVIVING is not the same as READ ───────────────────────────────
+    // The four survivors are declared to belong to the multi-block path and are
+    // not read by it yet, so they are reported by a SECOND list rather than
+    // silently doing nothing. The two lists must stay disjoint: a key on both
+    // would be described to the user twice, in contradictory terms.
+    {
+        Config c;
+        c.meshMode = MESH_MODE_MULTIBLOCK;
+        CHECK(hybmesh::blSurvivorsUnread(c).empty(),
+              "an untouched config reports no unread survivor: this list is about "
+              "what the USER set, exactly like the inert one");
+
+        c.bl.blInitialThickness = 2.5e-6;
+        c.bl.blLayers = 17;
+        c.gmshAlgorithm = 5;                       // inert, and must not leak in
+        const std::vector<std::string> unread = hybmesh::blSurvivorsUnread(c);
+        const std::set<std::string> got(unread.begin(), unread.end());
+        CHECK(got == std::set<std::string>({"BL_INITIAL_THICKNESS", "BL_LAYERS"}),
+              "exactly the survivors the user SET are reported — not the two left "
+              "at their defaults, and not the inert key set beside them");
+
+        const std::vector<std::string> inert = hybmesh::inertParamsSet(c);
+        const std::set<std::string> inertSet(inert.begin(), inert.end());
+        std::set<std::string> both;
+        for (const std::string& k : got) if (inertSet.count(k)) both.insert(k);
+        CHECK(both.empty(),
+              "no key is on BOTH lists: 'never read here' and 'not read yet' are "
+              "different claims and a key can only be one of them");
+        CHECK(inertSet.count("GMSH_ALGORITHM") == 1,
+              "...and the inert list is still doing its own job, so the check above "
+              "cannot pass by both lists being empty");
+
+        Config h;
+        h.bl.blInitialThickness = 2.5e-6;
+        CHECK(hybmesh::blSurvivorsUnread(h).empty(),
+              "the hybrid path reports nothing: it reads every one of them");
     }
 
     // ── 7. the topology file is declared, never derived from a name ─────────

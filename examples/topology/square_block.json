@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "se", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "ne", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "nw", "kind": "free", "xy": [0.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "south", "corners": ["sw", "se"], "kind": "wall", "count": 21},
+    {"id": "east",  "corners": ["se", "ne"], "kind": "wall", "count": 21},
+    {"id": "north", "corners": ["nw", "ne"], "kind": "wall", "count": 21},
+    {"id": "west",  "corners": ["sw", "nw"], "kind": "wall", "count": 21}
+  ],
+  "blocks": [
+    {"id": "block0", "edges": ["south", "east", "north", "west"]}
+  ]
+}

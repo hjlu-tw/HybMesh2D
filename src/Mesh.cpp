@@ -277,6 +277,12 @@ void Mesh::addEdge(int v1, int v2) {
     edges.push_back(std::move(e));
 }
 
+void Mesh::addTaggedEdge(int v1, int v2, const std::string& bc, long long segKey) {
+    addEdge(v1, v2);
+    edges.back().bcTag = bc;
+    edges.back().segKey = segKey;
+}
+
 void Mesh::addElement(const std::vector<int>& ids) {
     elements.push_back({ids});
 }

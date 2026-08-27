@@ -16,8 +16,12 @@ What this pins down:
   1. The mode DEFAULTS to the existing behaviour, and a config that never mentions
      it runs the hybrid path exactly as before -- the claim the whole ticket rests
      on.
-  2. Selecting the multi-block mode refuses with the TOPOLOGY exit code and a
-     message saying it is not implemented, and exports nothing.
+  2. An invalid topology declaration refuses with the TOPOLOGY exit code, names
+     what is wrong, and exports nothing. This check is the INVERTED version of the
+     one #49 shipped, which asserted the mode said "not implemented yet": that
+     sentence was true only while the path did not exist, and #50 built it. What
+     the ticket actually promised -- code 8, a machine-readable line, and nothing
+     written -- is unchanged and is still what is pinned here.
   3. Every inert parameter the user actually SET is named, one line each.
   4. The four surviving boundary-layer parameters are NOT named. A negative, and
      the half that a "does it warn?" test is most likely to skip.
@@ -85,8 +89,18 @@ def run(tmp, body: str):
 
 
 def warned_keys(out: str) -> set:
-    """The parameter names the mesher reported as unread by the active mode."""
+    """The parameter names the mesher reported as INERT in the active mode."""
     return set(re.findall(r"never reads '([A-Z][A-Z0-9_]*)'", out))
+
+
+def unread_keys(out: str) -> set:
+    """The parameter names reported as declared for this mode but not read YET.
+
+    A deliberately different sentence from the one above, matched separately: a
+    single regex over both would let one claim be reported as the other, and the
+    two ask the user for different things (delete the setting, versus keep it —
+    the next increment reads it)."""
+    return set(re.findall(r"does not read '([A-Z][A-Z0-9_]*)' yet", out))
 
 
 #: A square duct so the DEFAULT mode has something real to mesh. Written here
@@ -191,12 +205,12 @@ BL_USE_ANALYTIC_GEOM 1
 EXPORT_VTK 1
 OUTPUT_FILENAME {out_name}
 """)
-        check("2. selecting the multi-block mode exits with the TOPOLOGY code (8)",
+        check("2. an invalid topology declaration exits with the TOPOLOGY code (8)",
               rc == 8)
         check("2. ...and prints the machine-readable line a script branches on",
               "HYBMESH_ERROR 8 TOPOLOGY" in out)
-        check("2. ...and says it is not implemented yet, rather than failing "
-              "obscurely", "not implemented yet" in out)
+        check("2. ...and names WHAT is wrong with the document, rather than failing "
+              "obscurely", "'corners' must be a non-empty array" in out)
         check("2. ...and exports NOTHING: the refusal is before any mesh is written",
               not os.path.exists(out_name + ".vtk"))
 
@@ -229,11 +243,22 @@ OUTPUT_FILENAME {out_name}
 
         survivors = {"BL_INITIAL_THICKNESS", "BL_GROWTH_RATE", "BL_LAYERS",
                      "BL_USE_ANALYTIC_GEOM"}
-        check(f"4. the four surviving BL parameters do NOT warn, although all four "
-              f"are set far from their defaults ({sorted(got & survivors)})",
+        check(f"4. the four surviving BL parameters are NOT called inert, although "
+              f"all four are set far from their defaults ({sorted(got & survivors)})",
               not (got & survivors))
         check(f"4. ...and nothing outside the declared inert set is named "
               f"({sorted(got - want)})", not (got - want))
+        # But surviving is not the same as READ. This release fills one block whose
+        # every edge declares its own count and spacing law, so all four are set and
+        # none of them reaches the mesh -- which must be SAID, in its own words,
+        # rather than left to look like a setting that worked.
+        unread = unread_keys(out)
+        check(f"4. ...but each of them is named as not read YET, because this "
+              f"release does not use them ({sorted(survivors - unread)})",
+              unread == survivors)
+        check(f"4. ...and the two sentences stay disjoint, so a key is never both "
+              f"'never read here' and 'not read yet' ({sorted(got & unread)})",
+              not (got & unread))
 
         # ── 5. the topology file is declared, and reported ──────────────────
         check("5. the topology file reaches the banner from its own key",

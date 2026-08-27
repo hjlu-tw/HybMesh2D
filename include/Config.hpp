@@ -39,6 +39,19 @@ struct Config {
     // carries an initialiser, and a member it cannot see is a key it cannot compare.
     std::string topologyFile = "";
 
+    // Split every quad the multi-block path fills into two triangles before the
+    // mesh reaches the exporters. ON by default, and that is not a preference:
+    // the solver's incenter reconstruction is UNDEFINED on quad cells, and the
+    // grid converter's own slicer refuses a mixed mesh — so an all-triangle mesh
+    // is the reason a fully blocked domain is worth having. Switchable off so a
+    // topology can be diagnosed against the quads it actually declared.
+    //
+    // The split happens HERE rather than in the grid converter because the
+    // regression comparator compares exported connectivity and the quality
+    // tooling reads the VTK: letting those show quads while the solver
+    // integrates triangles would manufacture an invisible discrepancy.
+    bool mbSplitQuads = true;
+
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
 
@@ -272,6 +285,7 @@ struct Config {
                 double val; ss >> val; meshMode = static_cast<int>(val);
             }
             else if (key == "MESH_TOPOLOGY_FILE") ss >> topologyFile;
+            else if (key == "MB_SPLIT_QUADS") { double v; ss >> v; mbSplitQuads = (v != 0); }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -462,9 +476,13 @@ struct Config {
         os << "[ Mesh Mode ]\n";
         os << "  - Mesh Mode            : " << meshMode << " ("
            << hybmesh::meshModeName(meshMode) << ")\n";
-        if (meshMode == MESH_MODE_MULTIBLOCK)
+        if (meshMode == MESH_MODE_MULTIBLOCK) {
             os << "  - Topology File        : "
                << (topologyFile.empty() ? "(none declared)" : topologyFile) << "\n";
+            os << "  - Split Quads          : " << (mbSplitQuads ? "Yes" : "No")
+               << (mbSplitQuads ? "" : "  (diagnostic: the solver cannot use quads)")
+               << "\n";
+        }
         os << "\n";
 
         os << "[ Input & Domain ]\n";

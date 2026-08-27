@@ -6,6 +6,7 @@
 #include "Provenance.hpp"
 #include "ExitCodes.hpp"
 #include "MeshMode.hpp"
+#include "MultiBlock.hpp"
 #include "PointTolerance.hpp"
 #include <iostream>
 #include <fstream>
@@ -302,15 +303,119 @@ static std::vector<int> addTaggedLoop(Mesh& mesh, const std::vector<Point2D>& pt
     }
     int n = static_cast<int>(ids.size());
     for (int i = 0; i < n; ++i) {
-        mesh.addEdge(ids[i], ids[(i + 1) % n]);
-        mesh.edges.back().bcTag = edgeBc[i];
-        // Tag the edge with its source segment so the exporter can give each
-        // distinct segment its own patch id (segm_no) even when they share a BC.
-        mesh.edges.back().segKey =
-            Mesh::makeSegKey(geomId, useMeta ? meta.segId[i] : -1);
+        // The edge's source segment travels with its BC, so the exporter can give
+        // each distinct segment its own patch id (segm_no) even when several share
+        // a BC name.
+        mesh.addTaggedEdge(ids[i], ids[(i + 1) % n], edgeBc[i],
+                           Mesh::makeSegKey(geomId, useMeta ? meta.segId[i] : -1));
         mesh.addElement({ids[i], ids[(i + 1) % n]}); // 視覺化用
     }
     return ids;
+}
+
+// The multi-block adapter (MESH_MODE 1): read the topology document, ask the
+// decision layer for a mesh, write what comes back into the container.
+//
+// Deliberately NOT a seam of its own. Every boundary edge comes back already
+// resolved — node pair, BC name and source segment together — so there is no
+// classification, no tolerance and no decision left here; giving this a seam
+// would concede that it has logic. Everything worth testing about this path is
+// external behaviour of hybmesh::buildMultiBlock, which a test drives with a
+// topology document and no mesh at all.
+//
+// Returns EXIT_OK, or the code the caller should exit with (nothing is exported
+// after a non-zero return: an invalid declaration is "fix your JSON", which is
+// what EXIT_ERR_TOPOLOGY exists to say).
+static int buildMultiBlockMesh(Mesh& mesh, const Config& config,
+                               std::vector<std::string>& inputFiles) {
+    if (config.topologyFile.empty()) {
+        LOG_ERROR("MESH_MODE " << MESH_MODE_MULTIBLOCK << " ("
+                  << hybmesh::meshModeName(MESH_MODE_MULTIBLOCK)
+                  << ") fills a DECLARED block topology, and MESH_TOPOLOGY_FILE names "
+                     "no document. Nothing was meshed or exported.");
+        return EXIT_ERR_TOPOLOGY;
+    }
+    std::ifstream tin(config.topologyFile);
+    if (!tin) {
+        LOG_ERROR("Topology file '" << config.topologyFile
+                  << "' could not be opened. Nothing was meshed or exported.");
+        return EXIT_ERR_TOPOLOGY;
+    }
+    std::stringstream buf;
+    buf << tin.rdbuf();
+    // The topology decides this mesh as much as the geometry does, so it is an
+    // INPUT for provenance purposes.
+    inputFiles.push_back(config.topologyFile);
+
+    // The loaded geometries travel into the seam even though nothing binds to
+    // them in this release: the argument exists so that geometry binding fills a
+    // wired-up parameter instead of changing the signature.
+    //
+    // A geometry that will not load is a WARNING here and not a refusal, which is
+    // the opposite of the hybrid path's answer and is right for the same reason:
+    // there, the geometry IS the mesh; here, nothing in the topology can refer to
+    // one yet, so refusing would stop a mesh that does not depend on the file.
+    // It is named, because the moment an edge binds to it that changes.
+    std::vector<hybmesh::MbGeometry> geoms;
+    for (const auto& f : config.geomFiles) {
+        hybmesh::MbGeometry g;
+        g.file = f;
+        LoadStatus st = LoadStatus::Ok;
+        g.points = loadGeometry(f, nullptr, &st);
+        if (g.points.empty())
+            LOG_WARN("Geometry '" << f << "' could not be loaded ("
+                     << (st == LoadStatus::CannotOpen ? "cannot open" : "no usable points")
+                     << "). Nothing in a topology can refer to a geometry in this "
+                        "release, so the mesh is unaffected — but this file would be "
+                        "an error the moment an edge bound to it.");
+        geoms.push_back(std::move(g));
+    }
+
+    hybmesh::MbParams params;
+    params.defaultBc = config.bcGeom;
+    params.splitQuads = config.mbSplitQuads;
+
+    const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
+    // Warnings are DATA on the way out of the seam; saying them is this layer's job.
+    for (const std::string& w : res.warnings)
+        LOG_WARN("Topology '" << config.topologyFile << "': " << w);
+    if (!res.ok) {
+        LOG_ERROR("Topology '" << config.topologyFile << "': " << res.error);
+        return EXIT_ERR_TOPOLOGY;
+    }
+
+    for (const Point2D& p : res.nodes) mesh.addNode(p, NodeType::Interior);
+    for (const auto& c : res.cells) mesh.addElement(c.nodeIds);
+    for (const auto& be : res.boundaryEdges) {
+        // A synthetic carrier node, because recordBoundaryEdge takes the whole
+        // source Node: its convention is "an edge belongs to the segment of its
+        // starting point", and here the seam has already resolved BC and segment
+        // PER EDGE, so there is no starting point left to consult.
+        Node carrier{};
+        carrier.bcTag = be.bc;
+        carrier.geomId = be.geomId;
+        carrier.segId = be.segId;
+        mesh.recordBoundaryEdge(be.v1, be.v2, carrier);
+        // Also as a tagged edge, so the boundary-edge statistic and every reader
+        // of `edges` see the same boundary the exporter classifies. One loop, one
+        // source: the two cannot describe different boundaries.
+        mesh.addTaggedEdge(be.v1, be.v2, be.bc, Mesh::makeSegKey(be.geomId, be.segId));
+        for (int v : {be.v1, be.v2}) mesh.nodes[static_cast<size_t>(v)].type = NodeType::Boundary;
+    }
+
+    std::cout << "\n[ Multi-block Topology ]\n";
+    std::cout << "  - Source               : " << config.topologyFile << "\n";
+    for (const auto& b : res.blocks) {
+        // Pad to the banner's own label column ("  - " + 21 characters), so a
+        // block line reads as one of the report's rows rather than beside them.
+        const std::string label = "  - Block '" + b.id + "'";
+        std::cout << label << std::string(label.size() < 25 ? 25 - label.size() : 0, ' ')
+                  << ": " << b.ni << " x " << b.nj << " nodes\n";
+    }
+    std::cout << "  - Cells                : " << res.cells.size() << " "
+              << (config.mbSplitQuads ? "triangles (alternating diagonal by index parity)"
+                                      : "quads (splitting is OFF)") << "\n";
+    return EXIT_OK;
 }
 
 // Build the outer computational-domain boundary for the cases that do NOT grow a
@@ -363,8 +468,11 @@ static std::vector<Point2D> buildDomainBoundary(Mesh& mesh, Config& config) {
     };
     std::vector<Point2D> rect;
     for (int i = 0; i < 4; ++i) {
-        mesh.addEdge(domainNodeIds[i], domainNodeIds[(i + 1) % 4]);
-        mesh.edges.back().bcTag = domainBcTags[i];
+        // segKey -1: a generated box side has no SOURCE segment, so the exporter
+        // groups it by BC name. Passed explicitly rather than left to a default,
+        // because that is the fact and not an omission.
+        mesh.addTaggedEdge(domainNodeIds[i], domainNodeIds[(i + 1) % 4],
+                           domainBcTags[i], -1);
         mesh.addElement({domainNodeIds[i], domainNodeIds[(i + 1) % 4]}); // 視覺化用
         rect.push_back(mesh.nodes[domainNodeIds[i]].pos);
     }
@@ -570,19 +678,6 @@ int hybmesh::runCli(int argc, char* argv[]) {
                  << key << "'; the value set for it has no effect on this mesh.");
     }
 
-    if (config.meshMode == MESH_MODE_MULTIBLOCK) {
-        // The mode SELECTS a path that does not exist yet. Refused with the
-        // topology code rather than a generic config failure, because that is the
-        // code every later failure of a declaration will carry: a caller that
-        // learns to branch on it now keeps working when the path lands.
-        LOG_ERROR("MESH_MODE " << MESH_MODE_MULTIBLOCK << " ("
-                  << hybmesh::meshModeName(MESH_MODE_MULTIBLOCK)
-                  << ") is not implemented yet. Nothing was meshed or exported. "
-                  << "Use MESH_MODE " << MESH_MODE_HYBRID << " for the existing "
-                  << "boundary-layer + Gmsh path.");
-        return reportError(EXIT_ERR_TOPOLOGY, "not-implemented");
-    }
-
     Mesh mesh;
 
     // Auto output paths are per-case: results/meshes/<case>/mesh_<case>.vtk so
@@ -629,7 +724,31 @@ int hybmesh::runCli(int argc, char* argv[]) {
     std::vector<std::string> inputFiles;    // geometry inputs for provenance
     for (const auto& f : config.geomFiles) inputFiles.push_back(f);
     if (!config.domainFile.empty()) inputFiles.push_back(config.domainFile);
-    if (config.geomFiles.empty() && config.seedFiles.empty() && config.domainFile.empty()) {
+    // Declared to survive into this mode, but not read by it YET. A different
+    // sentence from the one above on purpose: an inert value will never be read
+    // here, while one of these is waiting for the wall-normal clustering law and
+    // is worth keeping. Both exist for one reason — a value the run does not read
+    // must be NAMED rather than silently do nothing.
+    for (const std::string& key : hybmesh::blSurvivorsUnread(config)) {
+        LOG_WARN("MESH_MODE " << config.meshMode << " ("
+                 << hybmesh::meshModeName(config.meshMode) << ") does not read '"
+                 << key << "' yet; every topology edge declares its own point count "
+                    "and spacing law in this release, so the value set for it has no "
+                    "effect on this mesh.");
+    }
+
+    if (config.meshMode == MESH_MODE_MULTIBLOCK) {
+        // The second generation path. It shares this function's export block and
+        // nothing else: no domain box, no boundary layer, no far field, and Gmsh
+        // is used nowhere — the whole domain is blocked by declaration.
+        int rc = buildMultiBlockMesh(mesh, config, inputFiles);
+        // A detail that is never empty: with no MESH_TOPOLOGY_FILE declared the
+        // path is "", and a machine-readable line naming nothing is one a script
+        // cannot act on.
+        if (rc != EXIT_OK)
+            return reportError(rc, config.topologyFile.empty() ? "(no MESH_TOPOLOGY_FILE)"
+                                                               : config.topologyFile);
+    } else if (config.geomFiles.empty() && config.seedFiles.empty() && config.domainFile.empty()) {
         mesh.generateCartesianMesh(config.xMin, config.xMax, config.yMin, config.yMax, config.farFieldSize);
     } else {
         // ---- Domain boundary ----------------------------------------------

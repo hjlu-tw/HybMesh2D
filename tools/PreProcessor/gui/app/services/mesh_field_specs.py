@@ -56,6 +56,16 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               opts=dict(caption="Select block topology file",
                         filter="Topology (*.json);;All Files (*)",
                         placeholder="(required by the multi-block mode)")),
+    FieldSpec("mb_split_quads", "bool", "Split Quads to Triangles",
+              "Split every quad the multi-block path fills into two triangles "
+              "before export, on alternating diagonals by index parity. ON is the "
+              "working setting: the solver's incenter reconstruction is UNDEFINED "
+              "on quad cells and the grid converter refuses a mixed mesh, so an "
+              "all-triangle mesh is what a fully blocked domain buys. Turn it off "
+              "only to inspect the quads a topology actually declared — that mesh "
+              "is for looking at, not for solving.",
+              key="MB_SPLIT_QUADS", group="mode",
+              modes=(MESH_MODE_MULTIBLOCK,)),
 
     # ── Domain & Geometry: the rectangular bounding box ──────────────────────
     # modes: the multi-block domain is bounded by the topology's own outer edges,

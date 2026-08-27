@@ -185,8 +185,15 @@ target_include_directories(HybMeshUtils INTERFACE include)
 add_library(hybmesh_pure STATIC
     src/JunctionScheme.cpp
     src/MeshMode.cpp
+    src/MultiBlock.cpp
 )
 target_include_directories(hybmesh_pure PUBLIC include)
+# 決策層自己用得到的兩個 header-only 相依：前處理器那份 nlohmann json.hpp (拓樸
+# 文件的剖析住在 seam 內部)，以及既有的 Spacing.hpp 分佈律。兩者都是純算術，沒有
+# Qt 也沒有 gmsh，所以純度保證不受影響；共用 Spacing.hpp 則是避免再寫一份成長率
+# 求解器。PRIVATE 是刻意的：MultiBlock.hpp 本身不 include 它們，所以連到
+# hybmesh_pure 的測試不會跟著吃進這條路徑。
+target_include_directories(hybmesh_pure PRIVATE tools/PreProcessor/include)
 
 # 4. 核心實作庫: hybmesh_core
 # 實作全部住在這個 library 裡，執行檔只是 src/main.cpp 那五行 shim。這是刻意的：

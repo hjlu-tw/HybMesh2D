@@ -1318,7 +1318,6 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         for (int i = 0; i < nFinal; ++i) {
             int a = ring[i], b = ring[(i + 1) % nFinal];
             if (a == b) continue;
-            m_mesh.addEdge(a, b);
             // Carry the per-segment BC tag onto the emitted far-field boundary
             // edge so a NO-BL surface run keeps its inlet/outlet/wall label after
             // Gmsh subdivides it. Without this the edge is emitted with an empty
@@ -1329,10 +1328,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             // are present in boundaryEdgeBc; BL outer-front and lateral-cap edges
             // have no entry and stay untagged (they are the BL/triangle interface or
             // a free cap, not a domain boundary). Mirrors addTaggedLoop's edge tag.
-            if (Mesh::EdgeBc rec = m_mesh.boundaryEdgeInfo(a, b)) {
-                m_mesh.edges.back().bcTag = rec.bc;
-                m_mesh.edges.back().segKey = rec.segKey;
-            }
+            if (Mesh::EdgeBc rec = m_mesh.boundaryEdgeInfo(a, b))
+                m_mesh.addTaggedEdge(a, b, rec.bc, rec.segKey);
+            else
+                m_mesh.addEdge(a, b);
         }
     }
     return lastH;

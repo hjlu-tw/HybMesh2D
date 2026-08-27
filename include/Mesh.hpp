@@ -118,6 +118,11 @@ public:
 
     void addNode(Point2D p, NodeType type = NodeType::Interior);
     void addEdge(int v1, int v2);
+    // A domain / far-field boundary edge and the two things it carries, written
+    // together. `addEdge` followed by two assignments to `edges.back()` was the
+    // idiom at every call site, i.e. two chances to write half an identity — the
+    // same defect shape `recordBoundaryEdge` exists to prevent one level down.
+    void addTaggedEdge(int v1, int v2, const std::string& bc, long long segKey);
     void addElement(const std::vector<int>& ids);
 
     // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制

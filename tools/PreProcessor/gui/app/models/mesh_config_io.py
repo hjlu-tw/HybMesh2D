@@ -207,6 +207,7 @@ def config_to_text(cfg, path: str = "") -> str:
     _topo = str(getattr(cfg, "mesh_topology_file", "") or "").strip()
     if _topo:
         lines.append(f"MESH_TOPOLOGY_FILE {_topo}")
+    lines.append(f"MB_SPLIT_QUADS {1 if getattr(cfg, 'mb_split_quads', True) else 0}")
     lines += [
         "",
         "# ==============================================================================",

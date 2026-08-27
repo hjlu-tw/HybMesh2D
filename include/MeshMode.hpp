@@ -39,9 +39,12 @@ enum MeshMode {
 // GMSH_NUM_THREADS is on this list although issue #49's acceptance text names only
 // "the Gmsh algorithm and optimize settings": this path uses Gmsh nowhere, so a
 // thread count for it is inert by exactly the same argument. SURFACE_MESH_SIZE /
-// AUTO_SURFACE_SIZE are deliberately NOT here — #49 does not name them, and
-// whether a surface size seeds default edge counts in this path is a question the
-// later tickets answer. Claiming it inert now would be a guess written into a gate.
+// AUTO_SURFACE_SIZE are deliberately NOT here. Measured 2026-08-27, after the
+// bring-up slice: this path requires an explicit `count` on every topology edge
+// and refuses a document without one, so today a surface size seeds nothing here
+// — but whether COUNT PROPAGATION seeds from it is the propagation ticket's
+// answer to give, and declaring them inert now would write that guess into a
+// gate. Recorded rather than left as an open question with no date on it.
 #define HYBMESH_MULTIBLOCK_INERT_GLOBALS(X)                 \
     X("DOMAIN_X_MIN",              xMin)                    \
     X("DOMAIN_X_MAX",              xMax)                    \
@@ -75,6 +78,16 @@ enum MeshMode {
 // far more likely to be another corner/junction knob than another wall-spacing
 // one — so the derived list (every declared BL key minus these four) gets a new
 // row right by default instead of silently exempting it.
+//
+// SURVIVING IS NOT THE SAME AS READ, and the difference is a whole release long.
+// The bring-up slice (issue #50) fills one rectangular block whose every edge
+// declares its own point count and spacing law, so it reads none of these four
+// yet: they become the wall-normal clustering law when curved projection and
+// wall clustering land. They must therefore NOT be reported as inert — that
+// would be a different, wrong claim, and the GUI would hide four rows the next
+// ticket needs back — but they must not be SILENT either, which is what
+// blSurvivorsUnread() below exists to prevent. Delete that function, and this
+// paragraph, when the path really reads them.
 #define HYBMESH_MULTIBLOCK_BL_SURVIVING(X) \
     X("BL_INITIAL_THICKNESS")              \
     X("BL_GROWTH_RATE")                    \
@@ -99,6 +112,18 @@ bool blParamSurvives(int mode, const std::string& key);
 //
 // In MESH_MODE_HYBRID this is always empty: that path reads everything it parses.
 std::vector<std::string> inertParamsSet(const Config& cfg);
+
+// The BL parameters declared to SURVIVE into `cfg`'s mode which that mode does
+// not read YET, and which `cfg` actually sets. Empty for every mode but the
+// multi-block one, and empty there too once the clustering law lands.
+//
+// A second list rather than more rows in the one above, because the two say
+// different things and a caller must be able to say them differently: an inert
+// parameter will never be read on this path, while one of these will be read by
+// the next increment and its value is worth keeping. What they have in common —
+// and the only reason this exists — is that a value the run does not read must
+// be NAMED rather than silently do nothing.
+std::vector<std::string> blSurvivorsUnread(const Config& cfg);
 
 }  // namespace hybmesh
 

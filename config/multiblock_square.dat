@@ -1,0 +1,30 @@
+# ==============================================================================
+# Multi-block structured meshing (MESH_MODE 1) — the bring-up case.
+#
+# A single rectangular block, filled with structured quads by transfinite
+# interpolation and split into triangles before export. This path uses Gmsh
+# nowhere: the whole domain is blocked by DECLARATION, so there is no far field
+# to triangulate, no boundary layer to grow and no junction to infer.
+#
+#   ./run.sh -conf config/multiblock_square.dat
+#
+# Every parameter the hybrid path reads and this one does not is NAMED in a
+# warning when it is set, so a config carried over from the other path says
+# which of its settings stopped meaning anything.
+# ==============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/square_block.json
+
+# 1 = split each quad into two triangles, on alternating diagonals by index
+# parity (the working setting: the solver's incenter reconstruction is undefined
+# on quad cells). 0 exports the quads, for inspecting a topology under diagnosis.
+MB_SPLIT_QUADS 1
+
+# Every boundary edge in this release takes this one BC; naming the source
+# segment an edge lies on arrives with the geometry-binding work.
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+OUTPUT_FILENAME results/meshes/multiblock_square/mesh_multiblock_square.vtk

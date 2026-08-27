@@ -17,6 +17,16 @@ std::map<std::string, double> blSnapshot(const BLParams& p) {
     return out;
 }
 
+// Did the user set `key` to something other than a default-constructed BLParams'
+// value? One comparison for every row, over the declaration itself, so neither
+// caller below names a field by hand.
+bool blParamDiffersFromDefault(const BLParams& p, const std::string& key) {
+    static const std::map<std::string, double> base = blSnapshot(BLParams{});
+    const std::map<std::string, double> mine = blSnapshot(p);
+    auto a = mine.find(key), b = base.find(key);
+    return a != mine.end() && b != base.end() && a->second != b->second;
+}
+
 }  // namespace
 
 const char* hybmesh::meshModeName(int mode) {
@@ -69,14 +79,25 @@ std::vector<std::string> hybmesh::inertParamsSet(const Config& cfg) {
     // The boundary-layer parameters, in declaration order. Derived from
     // BLParams.hpp rather than listed, so a parameter added there is covered here
     // with no edit — the same property that makes the .dat reader unforgettable.
-    const std::map<std::string, double> mine = blSnapshot(cfg.bl);
-    const std::map<std::string, double> base = blSnapshot(BLParams{});
     forEachBLParam(cfg.bl, [&](const char* key, const auto&) {
         if (blParamSurvives(cfg.meshMode, key)) return;
-        auto a = mine.find(key), b = base.find(key);
-        if (a != mine.end() && b != base.end() && a->second != b->second)
-            out.push_back(key);
+        if (blParamDiffersFromDefault(cfg.bl, key)) out.push_back(key);
     });
 
+    return out;
+}
+
+std::vector<std::string> hybmesh::blSurvivorsUnread(const Config& cfg) {
+    // The other half of "a value this run does not read is NAMED". The mirror of
+    // the loop above — same declaration, same "set" test, opposite membership —
+    // and it goes away entirely when the multi-block path grows its wall-normal
+    // clustering law. See HYBMESH_MULTIBLOCK_BL_SURVIVING for why they are not
+    // simply moved onto the inert list instead.
+    std::vector<std::string> out;
+    if (cfg.meshMode != MESH_MODE_MULTIBLOCK) return out;
+    forEachBLParam(cfg.bl, [&](const char* key, const auto&) {
+        if (!blParamSurvives(cfg.meshMode, key)) return;
+        if (blParamDiffersFromDefault(cfg.bl, key)) out.push_back(key);
+    });
     return out;
 }

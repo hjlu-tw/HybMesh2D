@@ -46,10 +46,11 @@ SAME/DIFF would leave you unable to tell noise from a real change you had just
 happened to make small.
 
 Dependency direction, deliberately: the duct / wedge geometries are IMPORTED
-from tools/PreProcessor/tests/test_nobl_junction_acute.py, not copied. A tool
-reaching into a test directory is unusual, but a second copy of a geometry
-generator is a guaranteed future divergence, and that test file is where those
-shapes are specified, dimensioned and explained.
+from tools/PreProcessor/tests/test_nobl_junction_acute.py, and the multi-block
+TOPOLOGY writer from tools/PreProcessor/tests/test_multiblock_surface.py — not
+copied. A tool reaching into a test directory is unusual, but a second copy of a
+geometry (or topology) generator is a guaranteed future divergence, and those
+test files are where the shapes are specified, dimensioned and explained.
 """
 from __future__ import annotations
 
@@ -78,6 +79,7 @@ sys.path.insert(0, os.path.join(_REPO, "tools", "PreProcessor", "gui"))
 
 import numpy as np                                    # noqa: E402
 import test_nobl_junction_acute as junc               # noqa: E402
+import test_multiblock_surface as mb                  # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -141,6 +143,46 @@ def _external(*geoms):
     return build
 
 
+def _multiblock_example(split=True):
+    """The multi-block case on the topology document this repo SHIPS.
+
+    Deliberately the file itself, not a regenerated copy: examples/topology is
+    documentation a user runs, and a case that rebuilt an equivalent document
+    would leave an edit to the shipped one invisible here."""
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        topo = os.path.join(_REPO, "examples", "topology", "square_block.json")
+        conf = mb.write_config(os.path.join(tmp, name + ".dat"), topo, stem,
+                               split=split)
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
+def _multiblock(ni, nj, split=True, spacing=None):
+    """A case on the multi-block path (MESH_MODE 1).
+
+    Its own family rather than a variant of the others: this path shares nothing
+    with them but the exporters — no domain box, no boundary layer, no far field,
+    and Gmsh nowhere — so what it regression-covers is the topology engine and the
+    adapter into the mesh container. The `split=False` member is here because the
+    quad mesh is a SHIPPED setting, and a switch nothing compares is a switch that
+    can rot; the graded member covers the spacing-law path, which is otherwise
+    exercised only by a unit test on node coordinates.
+    """
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        topo = mb.write_topology(os.path.join(tmp, name + ".json"),
+                                 ni=ni, nj=nj, spacing=spacing)
+        conf = mb.write_config(os.path.join(tmp, name + ".dat"), topo, stem,
+                               split=split)
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
 CASES = {
     # Junction bins reachable through a real mesh. theta <= 95 is the slide
     # (case 1); 120 is a perpendicular cap (case 2). Cases 3 and 4 need
@@ -157,6 +199,11 @@ CASES = {
     "naca0012": _external("naca0012.dat"),
     "multi_30p30n": _external("30p30n_jaxa_main.dat", "30p30n_jaxa_slat.dat",
                               "30p30n_jaxa_flap.dat"),
+    # The multi-block path. Uniform, the same topology left unsplit, and a graded
+    # one — see _multiblock for why the family has three members.
+    "mb_square": _multiblock_example(),
+    "mb_square_quads": _multiblock_example(split=False),
+    "mb_graded": _multiblock(17, 13, spacing={"law": "geometric", "growth": 1.15}),
 }
 
 

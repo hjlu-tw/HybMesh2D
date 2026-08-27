@@ -35,6 +35,13 @@ class MeshConfig:
     # The block topology document the multi-block path reads. Explicit, never
     # guessed from a name beside the geometry.
     mesh_topology_file: str = ""
+    # Split every quad the multi-block path fills into two triangles before
+    # export. ON by default, and not as a preference: the solver's incenter
+    # reconstruction is undefined on quad cells and the grid converter's slicer
+    # refuses a mixed mesh, so an all-triangle mesh is what a fully blocked
+    # domain buys. Off is a diagnostic, for inspecting the quads a topology
+    # actually declared.
+    mb_split_quads: bool = True
 
     # Section 0b: Units
     # The unit EVERY length in this config is expressed in — domain bounds, mesh
