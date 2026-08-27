@@ -33,11 +33,15 @@ platform, and the real ``SolverControllerMixin``:
  2. the newest un-archived dump in ``work/`` is the "latest" row, and its span
     comes from the convergence history beside it — as the count the SOLVER
     PRINTED (``last row + interval``), not the last row it wrote;
- 3. the archives are rows, newest first, each carrying that count and the
-    timestamp from its own ``RUN.txt``, flagged as RECORDED;
- 4. an archive with NO ``RUN.txt`` (one from before #30) still appears — and now
-    reports a REAL count, recomputed from the convergence history inside it,
-    while nothing is fabricated for a field the folder genuinely lacks;
+ 3. the archives are rows, newest first, each carrying that count and the time
+    the run FINISHED — not its ``archived_at``, which is when the NEXT run made
+    the folder (USER-REPORTED 2026-08-27: one run's displayed time changed the
+    moment it was archived, and on this repo's own case two rows ten seconds
+    apart were three minutes apart in truth while a third was six days out);
+ 4. an archive with NO ``RUN.txt`` (one from before #30) still appears — and
+    reports a REAL count AND a real timestamp, both recomputed from what is
+    sitting in its own folder (the convergence history, and the outputs' mtimes,
+    which ``shutil.move`` preserves);
  5. the row the previous run resumed from is marked — by BASENAME, because the
     bare-named hard link that reference pointed at is retired by the next
     archive while the bytes keep that name inside ``prev_<NNN>/``;
@@ -92,6 +96,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -122,6 +127,7 @@ from app.models.solver_config import SolverConfig                   # noqa: E402
 from app.services import restart_points as rp                       # noqa: E402
 from app.services import solver_case                                # noqa: E402
 from app.services.case_files import RUN_NOTE_NAME                   # noqa: E402
+from app.services import case_run_note as crn                       # noqa: E402
 
 tmp = tempfile.mkdtemp(prefix="hybmesh_restart_chooser_")
 repo = os.path.join(tmp, "repo")
@@ -296,15 +302,22 @@ rows = rp.list_restart_points(case_root("alpha"))
 legacy = by_key(rows, "prev_002")
 check(legacy is not None and legacy.selectable,
       "4. an archive from before #30 still appears, and is still pickable")
+legacy_dump_mtime = crn.mtime_stamp(legacy.zdump)
 check(legacy.span.end == 1000 and not legacy.span.recorded,
       f"4. ...and it now reports a REAL count, recomputed from the convergence "
       f"history sitting inside it — #31 refused to read that file ('the note IS "
       f"the record'), which made an archive predating #30 second-class for no "
       f"reason its own folder supports (#43) ({legacy.span})")
-check(legacy.stamp == "",
-      f"4. ...but nothing is fabricated for a field the folder really does not "
-      f"record: WHEN it ran is the archive's own archived_at and there is none "
-      f"({legacy.stamp!r})")
+check(legacy.stamp != "" and legacy.stamp == legacy_dump_mtime,
+      f"4. ...and WHEN it ran is recovered the same way — from the mtime of the "
+      f"outputs in its own folder, which shutil.move preserves — rather than "
+      f"left blank for want of an archived_at. INVERTED (USER-REPORTED "
+      f"2026-08-27): this used to assert a blank, on the reasoning that a "
+      f"folder with no RUN.txt does not record when it ran. It does; the "
+      f"reasoning confused the RECORD with the EVIDENCE, exactly as #43's "
+      f"iteration count did one field over, and the blank was not a refusal to "
+      f"fabricate but a refusal to look ({legacy.stamp!r} vs dump mtime "
+      f"{legacy_dump_mtime!r})")
 
 # ── 6. the marker's three states ──────────────────────────────────────────
 w(os.path.join(work, "input.in"), INPUT_IN)            # cold-started last run
@@ -379,9 +392,14 @@ check(out.restart is True and out.zdump_fn_restart == older.zdump
       and out.convg_fn_restart == older.convg,
       f"8. picking an archived leg sets the Restart flag and BOTH paths together "
       f"— 're-run the same leg' in one click ({out.zdump_fn_restart!r})")
-check(any("started here" in b.text() for b in chooser._buttons),
-      f"8. ...and the row the previous run resumed from is visibly marked "
-      f"({[b.text() for b in chooser._buttons if 'started here' in b.text()]})")
+_marked = [b for b in chooser._buttons if b.font().bold()]
+check(len(_marked) == 1 and "last run" in _marked[0].full_text,
+      f"8. ...and the row the previous run resumed from is visibly marked — in "
+      f"WEIGHT as well as words, because the words sit at the end of the row "
+      f"and are therefore the first thing elided on a narrow sidebar, which "
+      f"would make the fix for the over-wide row (USER-REPORTED 2026-08-27) eat "
+      f"the one signal #31 exists to give "
+      f"({[b.full_text for b in _marked]})")
 
 elsewhere = os.path.join(repo, "other", "work", "binDumpZ.dat.cli")
 w(elsewhere, "a dump in another case")
@@ -521,6 +539,80 @@ check(ctrl.global_solver_config.restart is True
       f"rows are built after the sync traversal has run, so it hands its own "
       f"edits back ({before!r} -> "
       f"{ctrl.global_solver_config.zdump_fn_restart!r})")
+
+# ── 13. the two symptoms as REPORTED (USER-REPORTED 2026-08-27) ───────────
+# Checks 3, 4 and 8 pin facts ADJACENT to these two; neither pins the thing the
+# user actually saw. Both were RED before the fix and are the loop it was built
+# against.
+
+# 13a. one run must not change its displayed time by being archived. The gap is
+# forced to 90 minutes with utime rather than waited for, so the check is
+# deterministic and fast; a same-second seed would pass with the bug present.
+stab = case_root("stability")
+sw = seed_run("stability")
+_ago = time.time() - 90 * 60
+for _n in os.listdir(sw):
+    _p = os.path.join(sw, _n)
+    if os.path.isfile(_p):
+        os.utime(_p, (_ago, _ago))
+_live = by_key(rp.list_restart_points(stab), rp.LATEST)
+prep("stability", restart=False)
+_arch = [p for p in rp.list_restart_points(stab) if p.kind == rp.ARCHIVE]
+check(len(_arch) == 1 and _arch[0].stamp == _live.stamp,
+      f"13. a run's displayed time does NOT change when it is archived — the "
+      f"row reports when the RUN FINISHED, where it used to report the "
+      f"archive's archived_at, i.e. when the NEXT run started. Measured on this "
+      f"repo's own results/solver/case before the fix: 'Latest result "
+      f"(09:35:11)' beside 'prev_005 (09:35:01)' looked like one run ten seconds "
+      f"apart and was two runs three minutes apart, while prev_003 displayed a "
+      f"date six days off ({_live.stamp!r} live -> "
+      f"{_arch[0].stamp if _arch else None!r} archived)")
+
+# 13b. every row has to FIT. SolverConfigPanel caps its content at 430px and
+# turns horizontal scrolling OFF, so a wider row is clipped and unreachable —
+# there is no window size that rescues it. Budget the cap minus the always-on
+# vertical scrollbar and the section margins.
+from PyQt6.QtGui import QFontMetrics                                # noqa: E402
+from app.views.panels.restart_chooser import RestartChooser         # noqa: E402
+
+_BUDGET = 380
+_chooser = RestartChooser()
+_chooser.refresh(case_root("alpha"))
+_fm = QFontMetrics(_chooser.font())
+_over = [(b.full_text, b.sizeHint().width()) for b in _chooser._buttons
+         if b.sizeHint().width() > _BUDGET]
+check(not _over,
+      f"13. every row fits the {_BUDGET}px the Solver panel can actually give it "
+      f"(430px content cap, horizontal scrolling OFF) — before the fix the "
+      f"marked row wanted 494px and was clipped with no way to reach the rest "
+      f"({_over})")
+
+# ...and the elide is a real backstop rather than a consequence of the shorter
+# string. Asked of a row built from the CURRENT text this proves nothing — those
+# now fit the budget anyway, so the assertion passes with the mechanism deleted
+# (measured: removing the minimumSizeHint override left it green). It has to be
+# asked of a row too long for any sidebar.
+from app.views.panels.restart_chooser import _Row                   # noqa: E402
+
+_long = _Row("prev_005   iteration 2000   (2026-08-27 09:35:01)   "
+             "← the last run started here, and then some")
+_long.show()
+check(_long.minimumSizeHint().width() < _BUDGET < _long.sizeHint().width(),
+      f"13. ...and a row does not DEMAND its full width: a label too long for "
+      f"any sidebar still reports a small minimum, so the enclosing QScrollArea "
+      f"is not forced wider than its viewport — which is the state that makes "
+      f"text unreachable in the first place "
+      f"(min {_long.minimumSizeHint().width()}px, wants "
+      f"{_long.sizeHint().width()}px, budget {_BUDGET}px)")
+
+_long.resize(200, _long.sizeHint().height())
+app_ = QApplication.instance()
+if app_ is not None:
+    app_.processEvents()
+check(_long.text() != _long.full_text and _long.text().endswith("…"),
+      f"13. ...and it ELIDES to the width it is given — an ellipsis says there "
+      f"is more, where a clip pretends the row ended, and the full text stays "
+      f"in full_text and in the tooltip ({_long.text()!r})")
 
 print()
 if _FAILS:

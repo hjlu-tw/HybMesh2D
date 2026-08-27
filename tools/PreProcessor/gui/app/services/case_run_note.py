@@ -57,6 +57,7 @@ from app.services.case_files import (
     QUOTED_RE,
     RUN_NOTE_NAME,
     human_size,
+    is_restart_dump,
     size,
 )
 from app.services.logging_setup import get_logger
@@ -220,6 +221,69 @@ def mtime_stamp(path: str) -> str:
         _log.warning("could not read the mtime of %s, so this run is listed "
                      "without a date", path, exc_info=True)
         return ""
+
+
+def finished_stamp(archive_dir: str, note: dict | None = None) -> str:
+    """When the run whose outputs this archive holds FINISHED, or "".
+
+    NOT ``archived_at``, and the difference is a user-visible defect this
+    replaces (USER-REPORTED 2026-08-27). An archive is made by the NEXT run, at
+    the moment it starts — so ``archived_at`` answers "when was this folder
+    made?" while a live leg's stamp answers "when did this run finish?". Both
+    were rendered as a bare parenthesised timestamp in the same list, which is
+    what invited the two to be compared: on this repo's own
+    ``results/solver/case`` the chooser read
+
+        Latest result   iteration 3000   (2026-08-27 09:35:11)
+        prev_005        iteration 2000   (2026-08-27 09:35:01)
+
+    — ten seconds apart, and a reader concludes they are one run. They are not:
+    prev_005 finished at 09:32:31, and the ten seconds are merely how long the
+    latest run took. Worse in the other direction, ``prev_003`` displayed
+    ``2026-08-27 09:29:22`` for a run that finished on 2026-08-21 — six days
+    out.
+
+    The run's own outputs still carry the answer: ``shutil.move`` preserves
+    mtime, and #30's hard link shares the inode, so an archived dump's mtime is
+    still the moment the solver wrote it. Preferring the ZONE DUMP is what makes
+    that "when the run finished" rather than "when some file in here changed" —
+    it is written at the end of a run — with the convergence history next and
+    any other output last. ``RUN.txt`` is excluded because it is written at
+    ARCHIVE time and is the very fact being corrected.
+
+    ``archived_at`` is the last resort rather than the first, and it is not
+    discarded: it is a real fact about the folder, so the caller keeps it and
+    shows it as its own labelled line.
+
+    Here, beside :func:`mtime_stamp`, because THIS module owns the format and
+    because both consumers ask it — ``restart_points`` for the chooser and
+    ``result_legs`` for playback. They had the same defect independently
+    (``stamp=note.get("archived_at", "")`` in each), which is what one owner
+    prevents: two windows must not describe one folder differently.
+    """
+    best = ""
+    try:
+        names = sorted(os.listdir(archive_dir))
+    except OSError:
+        names = []
+
+    def _rank(name: str) -> int:
+        if is_restart_dump(name):
+            return 0
+        if _CONVG_RE.match(name):
+            return 1
+        return 2
+
+    for name in sorted(names, key=_rank):
+        if name == RUN_NOTE_NAME:
+            continue
+        path = os.path.join(archive_dir, name)
+        if not os.path.isfile(path):
+            continue
+        best = mtime_stamp(path)
+        if best:
+            return best
+    return (note or {}).get("archived_at", "") or ""
 
 
 def note_int(note: dict, key: str, default: int = -1) -> int:

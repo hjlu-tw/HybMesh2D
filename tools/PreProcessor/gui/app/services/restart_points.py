@@ -70,6 +70,7 @@ from app.services.case_run_note import (
     UNKNOWN_ITERATION,
     IterationSpan,
     convergence_interval,
+    finished_stamp,
     iteration_span,
     mtime_stamp,
     read_run_note,
@@ -113,7 +114,15 @@ class RestartPoint:
     #: combine for itself. It used to be exactly that pair, and the view combined
     #: them into a bound instead of a count (#43).
     span: IterationSpan = IterationSpan()
-    stamp: str = ""                         #: RUN.txt's archived_at
+    #: When that run FINISHED — from ``case_run_note.finished_stamp``, which is
+    #: the same event a live leg's stamp reports. It used to be the archive's
+    #: ``archived_at``, i.e. when the NEXT run started, so one run changed its
+    #: displayed time the moment it was archived (USER-REPORTED 2026-08-27); see
+    #: that function for the measurement.
+    stamp: str = ""
+    #: When the folder was MADE, kept as its own labelled fact for the tooltip
+    #: rather than discarded — it is true, it is just not what ``stamp`` answers.
+    archived_at: str = ""
     tag: str = ""                           #: ".gui" / ".cli", when known
     resumed_by_last: bool = False
 
@@ -326,7 +335,8 @@ def _archive_points(case_root: str) -> list:
             convg=os.path.abspath(os.path.join(d, convg)) if convg else "",
             span=iteration_span(
                 os.path.join(d, convg) if convg else "", note=note),
-            stamp=note.get("archived_at", ""),
+            stamp=finished_stamp(d, note),
+            archived_at=note.get("archived_at", ""),
             tag=note.get("run_tag", "")))
     return out
 

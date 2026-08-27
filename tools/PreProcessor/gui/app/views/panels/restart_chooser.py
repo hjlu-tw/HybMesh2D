@@ -47,7 +47,8 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFormLayout,
@@ -84,18 +85,54 @@ def _iteration_text(point) -> str:
     return f"iteration {point.span.end}"
 
 
+def _short_stamp(stamp: str) -> str:
+    """``"2026-08-27 09:32:31"`` -> ``"08-27 09:32"``.
+
+    The rows are compared with EACH OTHER, so the year and the seconds are
+    what a row can afford to lose first — both remain in the tooltip, which is
+    where a reader who wants the exact moment goes. This is width the row has
+    to find: see :func:`_row_text`.
+    """
+    parts = stamp.split()
+    if len(parts) != 2:
+        return stamp
+    date, clock = parts
+    return f"{date[5:]} {clock[:5]}" if len(date) >= 10 else stamp
+
+
 def _row_text(point) -> str:
+    """The row, kept SHORT enough to fit the panel it lives in.
+
+    USER-REPORTED (2026-08-27): the text ran past the field with no way to
+    scroll to the rest. That is structural rather than a matter of taste —
+    ``SolverConfigPanel`` caps its content at 430px and sets
+    ``setHorizontalScrollBarPolicy(ScrollBarAlwaysOff)`` with
+    ``setWidgetResizable(True)``, so a row wider than the viewport is CLIPPED and
+    unreachable. Measured before this change, the marked row wanted **494px**
+    against a ceiling of ~390px usable, so it could not fit at any window size.
+
+    Two things buy the width back, and neither drops a fact — the full text
+    lives in the tooltip either way:
+
+    * the timestamp loses its year and seconds (:func:`_short_stamp`);
+    * the marker is ``← last run`` rather than ``← the last run started here``,
+      which alone was ~150px.
+
+    Measured after: 321px for the worst row. :class:`_Row` then elides whatever
+    a genuinely narrow sidebar still cannot fit, so text is never silently cut
+    mid-glyph — an ellipsis at least SAYS there is more.
+    """
     bits = [_TITLES.get(point.kind, point.key)]
     # Cold start has no iteration count to show, and "Other file…" has no row of
     # its own to describe — its numbers, if any, are in a file nobody has read.
     if point.kind in (rp.LATEST, rp.ARCHIVE):
         bits.append(_iteration_text(point))
         if point.stamp:
-            bits.append(f"({point.stamp})")
+            bits.append(_short_stamp(point.stamp))
         if not point.selectable:
-            bits.append("— no zone dump in this archive")
+            bits.append("— no dump")
     if point.resumed_by_last:
-        bits.append("← the last run started here")
+        bits.append("← last run")
     return "   ".join(bits)
 
 
@@ -132,6 +169,16 @@ def _row_tip(point) -> str:
     lines = [point.zdump or "(this archive holds no zone dump)"]
     if point.convg:
         lines.append(point.convg)
+    if point.stamp:
+        # SAY which event the row's time is. The row shows one timestamp and an
+        # archive folder has two candidates; leaving that implicit is what let
+        # "the same run" appear to change its time when it was archived
+        # (USER-REPORTED 2026-08-27).
+        lines.append(f"That run finished {point.stamp}.")
+    if point.archived_at and point.archived_at != point.stamp:
+        lines.append(f"Its outputs were archived into {point.key}/ later, at "
+                     f"{point.archived_at}, by the run that followed it — which "
+                     "is when the FOLDER was made, not when the run ended.")
     lines.append(_span_tip(point.span))
     if point.tag:
         # The run tag is the one thing #30's rename discards and RUN.txt keeps:
@@ -142,6 +189,60 @@ def _row_tip(point) -> str:
         lines.append("The previous run in this case started from here — pick it "
                      "to run the same leg again.")
     return "\n".join(lines)
+
+
+class _Row(QRadioButton):
+    """A chooser row that ELIDES instead of being clipped.
+
+    A ``QRadioButton`` neither wraps nor elides: text past its width simply is
+    not drawn, and the panel that hosts these has horizontal scrolling off
+    (``solver_config_panel.py``), so the remainder is unreachable — the reported
+    defect. :func:`_row_text` buys back enough width for the normal case; this
+    is the backstop for a sidebar dragged narrower still.
+
+    Two overrides, and both are needed for a different reason:
+
+    * ``minimumSizeHint`` stops advertising the full text's width. Without it
+      the row would force the enclosing ``QScrollArea``'s content wider than the
+      viewport, which is the very state that produces unreachable text — the
+      widget must be willing to be narrow before eliding it means anything.
+    * ``resizeEvent`` re-elides to the width actually granted. The FULL text
+      stays in ``full_text`` and in the tooltip, so nothing is lost — an
+      ellipsis says there is more, where a clip pretends the row ended.
+    """
+
+    #: Room for the indicator, its spacing and the focus rect. Measured rather
+    #: than guessed: it is the widget's own hint for empty text.
+    def __init__(self, text: str, parent=None, marked: bool = False):
+        super().__init__("", parent)
+        self.full_text = text
+        self._chrome = super().sizeHint().width()
+        self.setText(text)
+        # The mark is WEIGHT as well as words, and that is not decoration. The
+        # words "← last run" sit at the END of the row, so they are the first
+        # thing elided on a narrow sidebar — i.e. the one signal #31 exists to
+        # give ("re-run the same leg") would be the first casualty of the fix
+        # for the row being too wide. Bold survives any width.
+        if marked:
+            font = self.font()
+            font.setBold(True)
+            self.setFont(font)
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        # Enough for the indicator plus a few characters, so the row stays
+        # recognisable as a row; the rest is the elide's business.
+        fm = QFontMetrics(self.font())
+        hint.setWidth(self._chrome + fm.horizontalAdvance("mmmmmmmm"))
+        return hint
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        fm = QFontMetrics(self.font())
+        room = max(0, self.width() - self._chrome)
+        shown = fm.elidedText(self.full_text, Qt.TextElideMode.ElideRight, room)
+        if shown != self.text():
+            self.setText(shown)
 
 
 class RestartChooser(QWidget):
@@ -270,7 +371,7 @@ class RestartChooser(QWidget):
             btn.deleteLater()
         self._buttons = []
         for point in self._points:
-            btn = QRadioButton(_row_text(point))
+            btn = _Row(_row_text(point), marked=point.resumed_by_last)
             btn.setStyleSheet(_ROW_QSS)
             btn.setToolTip(_row_tip(point))
             btn.setEnabled(point.selectable)

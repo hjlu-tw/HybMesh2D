@@ -107,10 +107,11 @@ from app.services.case_files import (
     strip_run_tag,
 )
 from app.services.case_run_note import (
-    IterationSpan,
     convergence_file,
     convergence_interval,
+    finished_stamp,
     iteration_span,
+    IterationSpan,
     mtime_stamp,
     read_run_note,
 )
@@ -151,7 +152,12 @@ class ResultLeg:
     #: rather than an endpoint, which is what makes an overlap an intersection
     #: instead of a heuristic (#43).
     span: IterationSpan = IterationSpan()
-    stamp: str = ""                         #: RUN.txt's archived_at, or the mtime
+    #: When that run FINISHED — ``case_run_note.finished_stamp`` for an archived
+    #: leg, the file's own mtime for the live one. ONE event for both, which it
+    #: was not: an archived leg reported ``archived_at``, i.e. when the NEXT run
+    #: started (USER-REPORTED 2026-08-27, the same defect independently in
+    #: ``restart_points``).
+    stamp: str = ""
     tag: str = ""                           #: ".gui" / ".cli", when known
     has_note: bool = False                  #: this leg carries a RUN.txt
     #: RUN.txt's ``resumed_from`` verbatim — a basename, "" for a cold start, or
@@ -432,7 +438,7 @@ def _archive_legs(case_root: str, stem: str) -> list:
             path=os.path.abspath(os.path.join(d, name)),
             order=len(out),
             span=iteration_span(_convg_in(d, note), note=note),
-            stamp=note.get("archived_at", ""),
+            stamp=finished_stamp(d, note),
             tag=note.get("run_tag", ""),
             has_note=bool(note),
             resumed_from=_started_at(note)))
