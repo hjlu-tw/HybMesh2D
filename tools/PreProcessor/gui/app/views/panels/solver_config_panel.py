@@ -39,7 +39,21 @@ class SolverConfigPanel(QScrollArea, SolverConfigBuildMixin, SolverConfigBuildMi
         # genuine user interaction.
         self._loading = False
         self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # AsNeeded, not AlwaysOff (USER-REQUESTED 2026-08-27), and this is the
+        # setting `mesh_config_panel` has had since 2026-07-28 — the solver panel
+        # was the inconsistent one. With setWidgetResizable(True) the content is
+        # sized to the viewport whenever it fits, so at any normal width nothing
+        # changes and no bar appears; below the content's own floor (~301px
+        # measured) the bar appears and what used to be simply UNREACHABLE can be
+        # scrolled to.
+        #
+        # It is a safety net for the panel, NOT the mechanism that keeps the
+        # restart rows readable. Those elide (`restart_chooser._Row`) and so never
+        # trigger it, deliberately: a row is the widest thing here, and one that
+        # demanded its full width would put a horizontal bar under the whole panel
+        # permanently — every other field then needing a sideways scroll to reach.
+        # Eliding costs one row its tail and keeps the full text in the tooltip.
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("background: #0c0d16;")

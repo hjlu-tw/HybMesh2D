@@ -614,6 +614,34 @@ check(_long.text() != _long.full_text and _long.text().endswith("…"),
       f"is more, where a clip pretends the row ended, and the full text stays "
       f"in full_text and in the tooltip ({_long.text()!r})")
 
+# 13d. …and the PANEL can scroll sideways as a safety net (USER-REQUESTED
+# 2026-08-27). The rows elide and so never trigger it — that is deliberate, a row
+# demanding its full width would put a bar under the whole panel permanently —
+# but the panel holds other content with a real width floor, and with AlwaysOff
+# that content was simply unreachable at a narrow window. This is also the
+# setting mesh_config_panel has had since 2026-07-28.
+from PyQt6.QtCore import Qt as _Qt                                  # noqa: E402
+from app.views.panels.solver_config_panel import SolverConfigPanel  # noqa: E402
+
+_sp = SolverConfigPanel()
+_sp.show()
+check(_sp.horizontalScrollBarPolicy() != _Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+      f"13. the Solver panel can show a horizontal scrollbar, so content narrower "
+      f"than its own floor is reachable rather than clipped away "
+      f"({_sp.horizontalScrollBarPolicy()})")
+
+_sp.resize(430, 900)
+_app.processEvents()
+_wide_hidden = not _sp.horizontalScrollBar().isVisible()
+_sp.resize(220, 900)
+_app.processEvents()
+_bar = _sp.horizontalScrollBar()
+check(_wide_hidden and _bar.isVisible() and _bar.maximum() > 0,
+      f"13. ...and it costs nothing at a normal width: no bar at 430px, a bar "
+      f"with a real range only once the viewport is under the content's floor "
+      f"(wide hidden={_wide_hidden}, narrow visible={_bar.isVisible()}, "
+      f"range 0..{_bar.maximum()})")
+
 print()
 if _FAILS:
     print(f"{len(_FAILS)} FAILED:")
