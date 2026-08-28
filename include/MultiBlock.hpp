@@ -52,7 +52,9 @@ struct MbGeometry {
     // the NEXT segment (the sidecar assigns a shared joint to the LATER segment,
     // so a segment's own run stops one point short of where it ends). Across a
     // piece break there is no next point to reach for, and taking one anyway
-    // would stretch the segment across the gap between two disjoint pieces.
+    // would stretch the segment across the gap between two disjoint pieces —
+    // there, as on the last segment of an open polyline, t = 1 is the segment's
+    // own final point, which the resampler pins and so does not drift either.
     std::vector<size_t> pieceBreaks;
     // Did the loader weld this polyline into a closed loop? It drops the trailing
     // duplicate of the first point when it does, so the LAST segment's end is not

@@ -526,8 +526,18 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                 && static_cast<size_t>(p.geomId) < geoms.size())
                 from = "segment " + std::to_string(p.segId) + " of '"
                      + geoms[static_cast<size_t>(p.geomId)].file + "'";
-            std::cout << mbRow("Boundary '" + p.bc + "'") << p.faces
-                      << " edge(s), from " << from << "\n";
+            // The name reported is the RESOLVED BC TYPE, the same string the
+            // exporter writes as the patch name — not the sidecar's grouping
+            // label. Reporting the label here named something that appears
+            // nowhere in the exported grid, which is the label/type namespace
+            // confusion that produced this repo's most expensive bug class. The
+            // label is still worth seeing when it differs, because it is what the
+            // geometry actually carries, so it is named beside the type.
+            const std::string type = config.resolveGroupBc(p.bc);
+            std::cout << mbRow("Boundary '" + type + "'") << p.faces
+                      << " edge(s), from " << from
+                      << (type == p.bc ? std::string()
+                                       : " (label '" + p.bc + "')") << "\n";
         }
     }
 

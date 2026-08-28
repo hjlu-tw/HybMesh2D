@@ -413,6 +413,21 @@ std::vector<double> arcLengths(const std::vector<Point2D>& path) {
     return cum;
 }
 
+// The point at ABSOLUTE arc length `s` along `path`, resuming the interval walk
+// from `m` (which advances, so a caller stepping s upwards stays linear).
+//
+// The one place this arithmetic lives. It was written twice — here and in
+// `discretise` — and the two must agree exactly or a bound edge's endpoint stops
+// being the corner it is supposed to BE, which is the one disagreement this path
+// has no tolerance to absorb.
+Point2D lerpAtArc(const std::vector<Point2D>& path, const std::vector<double>& cum,
+                  double s, size_t& m) {
+    while (m + 2 < path.size() && cum[m + 1] < s) ++m;
+    const double span = cum[m + 1] - cum[m];
+    const double f = (span > 0.0) ? (s - cum[m]) / span : 0.0;
+    return path[m] + (path[m + 1] - path[m]) * f;
+}
+
 // Where normalized arc-length position `t` lands on `path`.
 //
 // The two ENDS are returned as the path's own points rather than interpolated
@@ -427,12 +442,8 @@ Point2D pointAtArc(const std::vector<Point2D>& path,
     if (t >= 1.0) return path.back();
     const double L = cum.back();
     if (!(L > 0.0)) return path.front();
-    const double s = t * L;
     size_t m = 0;
-    while (m + 2 < path.size() && cum[m + 1] < s) ++m;
-    const double span = cum[m + 1] - cum[m];
-    const double f = (span > 0.0) ? (s - cum[m]) / span : 0.0;
-    return path[m] + (path[m + 1] - path[m]) * f;
+    return lerpAtArc(path, cum, t * L, m);
 }
 
 // The stretch of `path` between normalized positions t0 and t1, with both ends
@@ -494,10 +505,7 @@ std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& p
         if (k == 0)               { pts.push_back(path.front()); continue; }
         if (k == e.count - 1)     { pts.push_back(path.back());  continue; }
         const double s = (L > 0.0) ? t[static_cast<size_t>(k)] : 0.0;
-        while (m + 2 < path.size() && cum[m + 1] < s) ++m;
-        const double span = cum[m + 1] - cum[m];
-        const double f = (span > 0.0) ? (s - cum[m]) / span : 0.0;
-        pts.push_back(path[m] + (path[m + 1] - path[m]) * f);
+        pts.push_back(lerpAtArc(path, cum, s, m));
     }
     return pts;
 }
@@ -650,9 +658,8 @@ bool segmentRun(const hybmesh::MbGeometry& g, int seg, const std::string& who,
     if (wrapToStart) out.push_back(g.points.front());
     span.first = first;
     span.endIdx = wrapToStart ? 0 : stop;
-    double L = 0.0;
-    for (size_t k = 1; k < out.size(); ++k) L += (out[k] - out[k - 1]).length();
     span.cum = arcLengths(out);
+    const double L = span.cum.empty() ? 0.0 : span.cum.back();
     if (out.size() < 2 || !(L > 0.0)) {
         out.clear();
         err = who + ": segment " + std::to_string(seg) + " of geometry '" + g.file

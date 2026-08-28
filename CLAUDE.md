@@ -327,7 +327,9 @@ boundary edges, warnings as data and an optional error. Rules:
   corner, an edge `binding`, an `interface`/`cut` edge kind, a `blocks[].orientation`,
   and a second block. A corner placed *near* a geometry feature instead of on it is a
   slightly wrong mesh with no error, which is worse than no mesh. Each refusal names
-  the later work it is waiting for.
+  the later work it is waiting for. **SUPERSEDED for the first two**: `on_geometry`
+  and `binding` are implemented by #52 (see "Boundary conditions are DECLARED"), so
+  those two refusals are gone. The other three stand.
 - **A block's orientation is the corner order of its own four edges**, declared as
   `[south, east, north, west]` with south/north running i-min→i-max and west/east
   running j-min→j-max; a deviation is refused with the edge, what it declares and what
@@ -573,11 +575,23 @@ chord exceeded it and an inlet exported a band of wall at every junction. Rules:
   re-mesh, and re-resampling changes the point count — so an index would silently
   relocate every attachment on each resample and produce a slightly wrong mesh
   with no error at all. Measured through the real binaries: one topology meshed
-  against two real resamplings of one geometry (21 and 41 points) gives
-  **byte-identical `.vrt` node sets**, and the negative control is what makes that
-  a measurement rather than a coincidence — the point counts are chosen so
-  **neither** resampling has a sample at the attached position, so no
-  implementation that snapped a corner to a geometry point could have produced it.
+  against two real resamplings of one geometry (21 and 41 points) gives **identical
+  `.vrt` node COORDINATES** (parsed and compared exactly — not bytes, since the file
+  also carries node ids this path is free to number differently), and the negative
+  control is what makes that a measurement rather than a coincidence: the point
+  counts are chosen so **neither** resampling has a sample at **any of the four**
+  attached positions, so no implementation that snapped a corner to a geometry point
+  could have produced them.
+- **`t = 1` means "where this segment ENDS", which is the next segment's first
+  point only when there IS a next one.** On the last segment of an open polyline it
+  is that segment's own final point, and that is stable under resampling for a
+  different reason: the resampler pins every segment's endpoints, so a segment's
+  last sample is a DECLARED endpoint and not a floating one. Measured 2026-08-28
+  through the real binary — an open two-segment polyline resampled at 6 and at 11
+  points per segment ends at `(1.0, 1.0)` both times — because a review read the
+  unextended case as a place that moves with the point count, which would have been
+  the "slightly wrong mesh with no error" this feature exists to refuse. It is not,
+  and the semantics are now pinned rather than argued.
 - **A segment's own points stop ONE POINT SHORT of where it ends, and the run is
   extended by one.** Measured against the real `surface_resampler`, not assumed: a
   joint shared by two segments is assigned to the **later** of them
@@ -650,9 +664,13 @@ chord exceeded it and an inlet exported a band of wall at every junction. Rules:
   mutate the implementation it linked against. Two of them are recorded *because
   the first attempt did not bite*, and in both cases the fault was the injection:
   one picked an index and then interpolated by arc length within that span, which
-  self-corrects to the right answer, and a build race reported an injection that
-  breaks seven checks as inert. The harness now refuses to score a run it cannot
-  see a recompile for — the same lesson as scoring a crash as zero failures.
+  self-corrects to the right answer, and a build race (a rewritten source against a
+  same-second object file) scored an injection that breaks seven checks as inert
+  until the compiler output was checked for a recompile. Both are recorded as what
+  HAPPENED during a hand run; **neither is a standing guard, because there is
+  none** — a scratch script that rewrites `src/` and rebuilds is not something this
+  repo ships, which is the same reason these injections are hand runs at all. Same
+  family as scoring a crash as zero failures.
 - **Two new golden cases, `mb_bound` and `mb_cavity`**, which is where acceptance
   criterion 8 lives: `mb_bound` is a block with three *differing* conditions built
   through the real resampler, and `mb_cavity` is the shipped example on the shipped
@@ -662,6 +680,28 @@ chord exceeded it and an inlet exported a band of wall at every junction. Rules:
   {'wall': 20}` plus the grouping change, and reverting restores SAME. The existing
   **12 golden cases are 12/12 SAME, worst deviation 0.000e+00** against a baseline
   captured from the pre-change binary (`HYBMESH_GOLDEN_BIN`, `git archive 97905a8`).
+- **Four things here are wider than the ticket's literal text, and each is a
+  deliberate call rather than drift.** (1) The `[ Multi-block Topology ]` banner
+  grows a row per boundary patch naming the source segment it was read off — the
+  claim of this whole path is that a condition is declared rather than discovered,
+  and a claim a run cannot show is one nobody can check. (2) `findGeometry` accepts
+  a **unique basename** as well as the full declared path, so a topology need not
+  repeat the config's path string; it fails SAFE, since two geometries sharing a
+  basename make the short form ambiguous and that is refused rather than resolved
+  by order. (3) The shipped example, its config and the `mb_cavity` golden case go
+  beyond criterion 8's one differing-conditions case, because a new schema with no
+  runnable example is not documented — and `examples/topology` being documentation
+  a user runs is exactly why `_multiblock_example` exists. (4) Extra refusals (a
+  `free` corner wearing `geom`/`seg`/`t`, a zero-length bound edge), which are the
+  repo's own refuse-rather-than-approximate rule applied to new keys.
+- **The adapter gained a summary, which is a real if small dent in #50's "the
+  adapter has no decisions".** Grouping the boundary edges by (bc, geometry,
+  segment) for the banner is ~15 lines of presentation in `src/cli.cpp`, reachable
+  only through the Python surface test. It is PRESENTATION, not classification —
+  it computes nothing the seam has not already resolved, and it changes no mesh —
+  but the honest reading is that the adapter is no longer literally decision-free,
+  and if it grows a second such block the grouping belongs on the pure side beside
+  `measureMbQuality`. Recorded rather than argued away.
 - **The blind spot, named rather than papered over**: the end-to-end
   re-resampling check uses a straight-sided geometry, where an arc-length position
   is EXACT under resampling and the node sets can be compared byte for byte. On a

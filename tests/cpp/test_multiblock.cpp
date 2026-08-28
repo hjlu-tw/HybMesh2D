@@ -46,12 +46,16 @@
 //   G  the "both corners on the bound segment" refusal removed    -> 12, 16
 //
 // Two of those are recorded because the FIRST attempt at them did not bite, and
-// both failures were in the injection rather than in the code. A's first form
+// both failures were in the INJECTION rather than in the code. A's first form
 // picked the index and then interpolated by arc length WITHIN that span, which
 // self-corrects to the right answer — an injection that changes no behaviour
-// proves nothing about the check. And a build race (a rewritten source and a
-// same-second object file) reported B as inert when it breaks seven checks; the
-// harness now refuses to score a run it cannot see a recompile for.
+// proves nothing about the check. And a build race (a rewritten source against a
+// same-second object file) scored B as inert when it in fact breaks seven checks,
+// until the run was re-done and the compiler output checked for a recompile.
+// Both are recorded as what HAPPENED during a hand run; neither is a standing
+// guard, because there is none — a scratch script that rewrites src/ and rebuilds
+// is not something this repo ships, which is the same reason these injections are
+// hand runs at all.
 #include "MultiBlock.hpp"
 #include "check.hpp"
 
@@ -714,6 +718,34 @@ int main() {
             CHECK(r.ok && r.nodes[static_cast<size_t>(
                       r.blocks.front().nodeAt(0, 0))].y != 0.0,
                   "16. ...while a real second piece stops the segment at its own end");
+        }
+        // t = 1 means "where this segment ENDS", which is the next segment's first
+        // point only when there IS a next one. On the last segment of an open
+        // polyline it is that segment's own final point — and that is stable under
+        // resampling for a different reason: the resampler pins every segment's
+        // endpoints, so a segment's last sample is a declared endpoint and not a
+        // floating sample. Measured 2026-08-28 through the real binary: an open
+        // two-segment polyline resampled at 6 and 11 points per segment ends at
+        // (1.0, 1.0) both times.
+        {
+            hybmesh::MbGeometry open;
+            open.file = "open.dat";
+            open.points = {{0.0, 1.0}, {0.5, 1.0}, {1.0, 1.0}, {0.5, 0.5}, {0.0, 0.0}};
+            open.segId  = {1, 1, 2, 2, 2};
+            open.segBc  = {{1, "in"}, {2, "out"}};
+            MbResult r = hybmesh::buildMultiBlock(
+                boundSquare(att("sw", 1.0, 2, "open.dat"),
+                            R"({"id": "se", "kind": "free", "xy": [1.0, 0.0]})", ""),
+                {open}, MbParams{});
+            CHECK(r.ok, "16. the last segment of an OPEN polyline is attachable (err: "
+                        + r.error + ")");
+            if (r.ok) {
+                const Point2D p = r.nodes[static_cast<size_t>(
+                    r.blocks.front().nodeAt(0, 0))];
+                CHECK(p.x == 0.0 && p.y == 0.0,
+                      "16. ...and its t = 1 is its own final point, there being no "
+                      "next segment to reach for");
+            }
         }
         // A geometry that would not load is a warning while nothing refers to it,
         // and an error the moment something does.

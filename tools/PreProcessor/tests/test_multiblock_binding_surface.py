@@ -288,6 +288,16 @@ def main() -> int:
         check("2. ...and the run says which segment each condition was read off, so "
               "'declared, not discovered' is visible rather than merely claimed",
               "from segment 1 of" in out and "from segment 3 of" in out)
+        # The banner has to name the same string the .bnd does. It named the LABEL
+        # once, so a report added to make provenance visible was naming something
+        # that appears nowhere in the exported grid — the label/type confusion
+        # again, one layer up. Asking only for "from segment 1 of" was blind to it.
+        banner = [ln for ln in out.splitlines() if "Boundary '" in ln]
+        named = {ln.split("Boundary '")[1].split("'")[0] for ln in banner}
+        check(f"2. ...naming the RESOLVED TYPE, the same string the .bnd carries "
+              f"({sorted(named)})", named == set(patches))
+        check("2. ...while still showing the label the geometry actually carries",
+              any("label 'g_bot'" in ln for ln in banner))
 
         # ── 6. no position-based classification anywhere in this path ───────
         # Every boundary edge is recorded at construction, so the exporter's
@@ -298,6 +308,27 @@ def main() -> int:
         # the segment of. A single mis-set patch would move a face count above.
         check("6. every boundary face is accounted for by a declaration "
               f"({sum(patches.values())} faces)", sum(patches.values()) == 20)
+        # ...and the DISCRIMINATING half. The count above would be satisfied by a
+        # working position-based fallback too, so on its own it says nothing. Here
+        # the north edge's binding is REMOVED while its corners stay attached to
+        # segment 3 — so the edge still lies exactly on that labelled segment (it
+        # is straight, so the chord IS the segment), and a classifier that asked
+        # "which segment is this edge on?" would answer `outlet`. It must come out
+        # on the config default instead, because nothing on this path asks.
+        undeclared = json.load(open(os.path.join(tmp, "topo.json"), encoding="utf-8"))
+        for e in undeclared["edges"]:
+            if e["id"] == "north":
+                del e["binding"]
+        nb = os.path.join(tmp, "nobind.json")
+        with open(nb, "w", encoding="utf-8") as f:
+            json.dump(undeclared, f)
+        nb_stem = os.path.join(tmp, "nobind")
+        rc6, _ = run(tmp, write_config(os.path.join(tmp, "nb.dat"), nb, coarse, nb_stem))
+        nbp = bnd_patches(nb_stem) if rc6 == 0 else {}
+        check(f"6. an edge lying exactly ON a labelled segment but declaring no "
+              f"binding takes the config default, because nothing classifies by "
+              f"position ({nbp})", rc6 == 0 and "outlet" not in nbp
+              and nbp.get("wall") == 14 and nbp.get("inlet") == 6)
 
         # ── 3 & 4. re-resampling does not move an attached corner ───────────
         fine_stem = os.path.join(tmp, "bound_fine")
@@ -308,8 +339,10 @@ def main() -> int:
               rc2 == 0)
         if rc2 == 0:
             a, b = vrt_points(stem), vrt_points(fine_stem)
-            check("3. ...producing the same node set, so nothing moved at all",
-                  a == b)
+            # Parsed coordinates compared exactly — not bytes. The .vrt also
+            # carries node ids, which this path is free to number differently.
+            check("3. ...producing the same node coordinates exactly, so nothing "
+                  "moved at all", a == b)
             corners = {(0.25, 0.0), (0.75, 0.0), (0.75, 1.0), (0.25, 1.0)}
             check(f"3. ...with the attached corners at the arc-length positions they "
                   f"declared ({sorted(corners & set(a))})", corners <= set(a))
@@ -318,13 +351,19 @@ def main() -> int:
         # NEGATIVE CONTROL. Without this, check 3 would pass just as well on an
         # implementation that snapped every corner to the nearest geometry point,
         # or on one that never read the geometry at all.
-        cx = {round(p[0], 9) for p in dat_points(coarse) if abs(p[1]) < 1e-12}
-        fx = {round(p[0], 9) for p in dat_points(fine) if abs(p[1]) < 1e-12}
-        check(f"4. (negative control) NEITHER resampling has a sample at the attached "
-              f"position, so no snapping could have produced it (coarse {sorted(cx)})",
-              0.25 not in cx and 0.25 not in fx)
+        # All FOUR attached corners, not just one: the topology attaches at t = 0.25
+        # and t = 0.75 on segments 1 AND 3, and checking one of them left three
+        # positions unmeasured.
+        def samples(path):
+            return {(round(p[0], 9), round(p[1], 9)) for p in dat_points(path)}
+        cs, fs = samples(coarse), samples(fine)
+        attached = {(0.25, 0.0), (0.75, 0.0), (0.75, 1.0), (0.25, 1.0)}
+        check(f"4. (negative control) NEITHER resampling has a sample at ANY of the "
+              f"four attached positions, so no snapping could have produced them "
+              f"(coarse hits {sorted(attached & cs)}, fine {sorted(attached & fs)})",
+              not (attached & cs) and not (attached & fs))
         check("4. (negative control) ...and the two samplings really do differ along "
-              "the bound segment", cx != fx)
+              "the bound segments", cs != fs)
 
         # ── 5. a corner on a segment that is not there is refused ───────────
         bad_stem = os.path.join(tmp, "bad")
