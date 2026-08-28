@@ -18,9 +18,11 @@
 //   * The refusal checks assert that the message NAMES the offending id and
 //     that nothing was produced. They do not pin the surrounding prose, which
 //     is meant to be edited.
-//   * Only one block can be filled in this release, so nothing here exercises
-//     welding, count propagation across an interface, or a cut edge; those are
-//     refused by name and the refusals ARE checked.
+//   * Welding, count propagation and the three edge kinds arrived with #53 and are
+//     checks 17-23. What is still NOT exercised anywhere: a shared edge that is
+//     also BOUND to a geometry, and a block welded to itself (which `parseBlocks`
+//     refuses, correctly for a transfinite fill over four sides, so an O-grid seam
+//     cannot be declared as one edge).
 //   * The geometry fixtures are BUILT here rather than resampled. What they
 //     reproduce is the two conventions of the real chain that decide where an
 //     attachment lands (a joint belongs to the later segment; a closed loop's
@@ -59,6 +61,7 @@
 #include "MultiBlock.hpp"
 #include "check.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -129,6 +132,160 @@ void refuses(const std::string& doc, const std::string& names, const std::string
                                     + "' (got: " + r.error + ")");
     CHECK(r.nodes.empty() && r.cells.empty() && r.boundaryEdges.empty() && r.blocks.empty(),
           what + ": a refusal must produce nothing");
+}
+
+// ── Two blocks, and the ways they can meet (issue #53) ────────────────────
+//
+//   d ──n0── e ──n1── f          b0 = [s0, m,  n0, w ]
+//   │        │        │          b1 = [s1, ee, n1, m ]
+//   w   b0   m   b1   ee
+//   │        │        │
+//   a ──s0── b ──s1── c
+//
+// Only THREE of the seven edges declare a count, and the choice is deliberate:
+// 's0' fixes b0's i and so 'n0'; 'w' fixes b0's j and so 'm', which is b1's j and
+// so 'ee'; 's1' fixes b1's i and so 'n1'. So one class spans both blocks through
+// the shared edge, which is what makes a conflict report need a CHAIN.
+//
+// `sharedKind` is what the shared line 'm' declares, and `sharedExtra` / `wExtra`
+// append to that edge and to 'w' — so a case differs from the valid document by
+// exactly the thing it is about.
+std::string twoBlocks(const std::string& sharedKind = "interface",
+                      const std::string& sharedExtra = "",
+                      const std::string& wExtra = "",
+                      const std::string& eeExtra = "") {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "a", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "d", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "e", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "f", "kind": "free", "xy": [2.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["a", "b"], "kind": "wall", "count": 3},
+    {"id": "s1", "corners": ["b", "c"], "kind": "wall", "count": 4},
+    {"id": "w", "corners": ["a", "d"], "kind": "wall", "count": 3)") + wExtra + R"(},
+    {"id": "m", "corners": ["b", "e"], "kind": ")" + sharedKind + R"(")" + sharedExtra + R"(},
+    {"id": "n0", "corners": ["d", "e"], "kind": "wall"},
+    {"id": "n1", "corners": ["e", "f"], "kind": "wall"},
+    {"id": "ee", "corners": ["c", "f"], "kind": "wall")" + eeExtra + R"(}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s0", "m", "n0", "w"]},
+    {"id": "b1", "edges": ["s1", "ee", "n1", "m"]}
+  ]
+})";
+}
+
+// The same two blocks, with the RIGHT one turned a quarter turn: its i direction
+// runs DOWN the shared edge 'm', which the left block uses as its own j
+// direction. 'm' is declared once, [e, b], so b1 traverses it forwards and b0
+// backwards — the two blocks genuinely disagree about which way the shared edge
+// runs, which is the case a per-block reversal exists for and one that cannot be
+// reached with both blocks in the same frame.
+std::string rotatedNeighbour() {
+    return R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "a", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "d", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "e", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "f", "kind": "free", "xy": [2.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["a", "b"], "kind": "wall", "count": 3},
+    {"id": "w",  "corners": ["a", "d"], "kind": "wall", "count": 3},
+    {"id": "m",  "corners": ["e", "b"], "kind": "interface"},
+    {"id": "n0", "corners": ["d", "e"], "kind": "wall"},
+    {"id": "n1", "corners": ["e", "f"], "kind": "wall", "count": 4},
+    {"id": "s1", "corners": ["b", "c"], "kind": "wall"},
+    {"id": "ee", "corners": ["c", "f"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s0", "m", "n0", "w"]},
+    {"id": "b1", "edges": ["m", "s1", "ee", "n1"]}
+  ]
+})";
+}
+
+// The same two blocks, with the shared line declared as TWO edges whose corners
+// sit at IDENTICAL coordinates under different ids ('b2' on 'b', 'e2' on 'e').
+// Nothing may weld them: the negative control for "no distance tolerance appears
+// anywhere in the welding path", asked at a separation of exactly zero.
+std::string coincidentButSeparate() {
+    return R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "a",  "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b",  "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "b2", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c",  "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "d",  "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "e",  "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "e2", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "f",  "kind": "free", "xy": [2.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["a", "b"], "kind": "wall", "count": 3},
+    {"id": "w",  "corners": ["a", "d"], "kind": "wall", "count": 3},
+    {"id": "m0", "corners": ["b", "e"], "kind": "wall"},
+    {"id": "n0", "corners": ["d", "e"], "kind": "wall"},
+    {"id": "s1", "corners": ["b2", "c"], "kind": "wall", "count": 4},
+    {"id": "m1", "corners": ["b2", "e2"], "kind": "wall", "count": 3},
+    {"id": "n1", "corners": ["e2", "f"], "kind": "wall"},
+    {"id": "ee", "corners": ["c", "f"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s0", "m0", "n0", "w"]},
+    {"id": "b1", "edges": ["s1", "ee", "n1", "m1"]}
+  ]
+})";
+}
+
+// How many pairs of nodes sit at EXACTLY the same place. Exact equality on
+// purpose: the claim is that welding is topological, so a welded mesh has none of
+// these and an unwelded one has exactly as many as it duplicated. A tolerance
+// here would be the very thing under test.
+size_t coincidentPairs(const std::vector<Point2D>& nodes) {
+    size_t n = 0;
+    for (size_t i = 0; i < nodes.size(); ++i)
+        for (size_t j = i + 1; j < nodes.size(); ++j)
+            if (nodes[i].x == nodes[j].x && nodes[i].y == nodes[j].y) ++n;
+    return n;
+}
+
+size_t invertedCells(const MbResult& r) {
+    size_t bad = 0;
+    for (const auto& c : r.cells) {
+        const size_t k = c.nodeIds.size();
+        for (size_t t = 0; t < k; ++t) {
+            const Point2D& p = r.nodes[static_cast<size_t>(c.nodeIds[(t + k - 1) % k])];
+            const Point2D& q = r.nodes[static_cast<size_t>(c.nodeIds[t])];
+            const Point2D& s = r.nodes[static_cast<size_t>(c.nodeIds[(t + 1) % k])];
+            if ((q - p).cross(s - q) <= 0.0) { ++bad; break; }
+        }
+    }
+    return bad;
+}
+
+// One edge's resolved count, and the ids the document actually SEEDED, read off
+// the result rather than recomputed — the point of publishing them is that a run
+// can show which of the two each count was.
+int countOf(const MbResult& r, const std::string& id) {
+    for (const auto& ec : r.edgeCounts) if (ec.edgeId == id) return ec.count;
+    return -1;
+}
+
+std::vector<std::string> seededSet(const MbResult& r) {
+    std::vector<std::string> out;
+    for (const auto& ec : r.edgeCounts) if (ec.seeded) out.push_back(ec.edgeId);
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 // ── A geometry, as the loader and the sidecar together hand one over ──────
@@ -423,34 +580,41 @@ int main() {
                 "q", "9. a block naming an edge that does not exist");
     }
     {
-        // West declared backwards: the [south, east, north, west] convention
-        // needs it to run j-min -> j-max, i.e. to START at the block's (0,0).
-        refuses(swap1(square(4, 3), R"("id": "w", "corners": ["sw", "nw"])",
-                                    R"("id": "w", "corners": ["nw", "sw"])"),
-                "west", "9. a block side declared in the wrong direction");
+        // INVERTED by #53, deliberately: this used to be a refusal ("a block side
+        // declared in the wrong direction"), and the single-block release named the
+        // edge and the convention. It cannot stay one. A shared edge is ONE edge
+        // with ONE declared direction, named by two blocks whose logical frames need
+        // not agree about which way it runs, so requiring the convention's direction
+        // in every block makes a whole class of topology undeclarable. The block's i
+        // direction is still fixed by its SOUTH edge alone; the other three sides are
+        // traversed as the ring requires, and a set of four that does not CLOSE a
+        // ring is still refused by name (check 22).
+        MbResult r = build(swap1(square(4, 3), R"("id": "w", "corners": ["sw", "nw"])",
+                                               R"("id": "w", "corners": ["nw", "sw"])"));
+        CHECK(r.ok, "9. a block side declared against the convention is accepted and "
+                    "reversed (err: " + r.error + ")");
+        if (r.ok && r.blocks.size() == 1) {
+            // ...and REVERSED rather than merely tolerated: the block's (0, 0) is
+            // still the corner its south and west edges share, so accepting the
+            // backwards declaration must not mirror the block.
+            const auto& b = r.blocks[0];
+            const auto& p00 = r.nodes[static_cast<size_t>(b.nodeAt(0, 0))];
+            const auto& pnj = r.nodes[static_cast<size_t>(b.nodeAt(0, b.nj - 1))];
+            CHECK(p00.x == 0.0 && p00.y == 0.0 && pnj.x == 0.0 && pnj.y == 1.0,
+                  "9. ...with j still running from 'sw' to 'nw', not mirrored");
+        }
     }
 
     // ── 10. what this release does not do yet is refused BY NAME ───────────
     // Not silently approximated: a corner placed near a geometry feature rather
     // than on it, or a BC guessed instead of declared, is a slightly wrong mesh
     // with no error — which is worse than no mesh.
-    {
-        refuses(swap1(square(4, 3), R"("id": "e", "corners": ["se", "ne"], "kind": "wall")",
-                                    R"("id": "e", "corners": ["se", "ne"], "kind": "cut")"),
-                "cut", "10. a cut edge (it needs a second block to be shared with)");
-    }
+    //
+    // Two entries of this list were REMOVED by #53 and are now covered by checks
+    // 17-23 instead: a cut edge, and a topology with more than one block. What
+    // stays is the one refusal that is not a "not yet" at all.
     refuses(square(4, 3, "", R"(, "orientation": [0, 1, 2, 3])"), "orientation",
             "10. a block orientation declared twice over");
-    {
-        // A second block, sharing nothing: still refused, because welding and
-        // count propagation are what a second block needs.
-        const std::string one = R"({"id": "b0", "edges": ["s", "e", "n", "w"]})";
-        MbResult r = build(swap1(square(4, 3), one,
-                                 one + R"(, {"id": "b1", "edges": ["s", "e", "n", "w"]})"));
-        CHECK(!r.ok, "10. a topology with two blocks is refused");
-        CHECK(mentions(r.error, "one block"),
-              "10. ...saying so, rather than meshing the first (got: " + r.error + ")");
-    }
 
     // ── 11. a declaration that reaches nothing is a typo, not a preference ──
     {
@@ -776,6 +940,282 @@ int main() {
             MbResult r = hybmesh::buildMultiBlock(boundSquare(ok0, ok1),
                                                   {squareGeom(4, "geom/square.dat")}, MbParams{});
             CHECK(r.ok, "16. ...while a unique basename resolves (err: " + r.error + ")");
+        }
+    }
+
+
+    // ══ Multi-block welding (issue #53) ═══════════════════════════════════
+    //
+    // Three claims are under test here, and they are one mechanism seen from
+    // three sides. Point counts PROPAGATE, so the user seeds a few edges and the
+    // rest are forced. Blocks are welded TOPOLOGICALLY, so the k-th node on one
+    // side of a shared edge IS the k-th node on the other and no distance is
+    // compared anywhere. And an edge's KIND is declared, never inferred from
+    // whether a binding is present.
+
+    // ── 17. two blocks come back as ONE welded mesh ────────────────────────
+    {
+        MbResult r = build(twoBlocks());
+        CHECK(r.ok, "17. a two-block topology is accepted (err: " + r.error + ")");
+        CHECK(r.blocks.size() == 2, "17. both blocks come back");
+        if (r.ok && r.blocks.size() == 2) {
+            const auto& b0 = r.blocks[0];
+            const auto& b1 = r.blocks[1];
+            CHECK(b0.ni == 3 && b0.nj == 3 && b1.ni == 4 && b1.nj == 3,
+                  "17. each block is filled at its own resolved logical size ("
+                  + std::to_string(b0.ni) + "x" + std::to_string(b0.nj) + ", "
+                  + std::to_string(b1.ni) + "x" + std::to_string(b1.nj) + ")");
+            // THE WELD, as node IDENTITY. Not "the two sides are close": the same
+            // integer, which is the only claim that holds at a wall spacing of
+            // 1e-7 beside a far-field spacing of 1e-1.
+            bool shared = true;
+            for (int j = 0; j < b0.nj; ++j)
+                if (b0.nodeAt(b0.ni - 1, j) != b1.nodeAt(0, j)) shared = false;
+            CHECK(shared, "17. the k-th node of the shared edge IS the k-th node both "
+                          "blocks see — the same id, not a coordinate match");
+            // ...and the saving is real: two unwelded blocks would need 3*3 + 4*3.
+            CHECK(r.nodes.size() == 18,
+                  "17. ...so the mesh holds 18 nodes and not the 21 two separate "
+                  "blocks would need (" + std::to_string(r.nodes.size()) + ")");
+            CHECK(coincidentPairs(r.nodes) == 0,
+                  "17. ...and no two nodes sit at the same place, so it is ONE mesh "
+                  "rather than two meshes touching");
+            CHECK(r.cells.size() == 2u * (2u * 2u + 3u * 2u),
+                  "17. every quad of both blocks is split ("
+                  + std::to_string(r.cells.size()) + ")");
+            CHECK(invertedCells(r) == 0, "17. ...and no cell is inverted");
+            // The interface is an INTERIOR line: both blocks have cells against it,
+            // so emitting it as a boundary face would hand the exporter a face with
+            // two owners and the solver a wall through the middle of the fluid.
+            CHECK(r.boundaryEdges.size() == 14,
+                  "17. only the six WALL sides reach the boundary, not the shared "
+                  "interface (" + std::to_string(r.boundaryEdges.size()) + ")");
+            CHECK(r.sharedEdges.size() == 1
+                  && r.sharedEdges[0].edgeId == "m"
+                  && r.sharedEdges[0].kind == "interface"
+                  && r.sharedEdges[0].nodes == 3,
+                  "17. ...and the interface is reported as data, with the two block "
+                  "sides it welds");
+            if (r.sharedEdges.size() == 1) {
+                const auto& se = r.sharedEdges[0];
+                CHECK((se.blockA == 0 && se.sideA == hybmesh::MB_EAST
+                       && se.blockB == 1 && se.sideB == hybmesh::MB_WEST),
+                      "17. ...naming which side of which block, in declaration order");
+            }
+        }
+    }
+
+    // ── 18. a seeded count propagates; a spacing LAW does not ──────────────
+    {
+        MbResult r = build(twoBlocks());
+        CHECK(r.ok, "18. setup (err: " + r.error + ")");
+        // Three of the seven edges declare a count. Everything else is forced:
+        // 's0' fixes b0's i and so 'n0'; 'w' fixes b0's j and so 'm', which is b1's
+        // j and so 'ee'; 's1' fixes b1's i and so 'n1'.
+        CHECK(countOf(r, "s0") == 3 && countOf(r, "n0") == 3
+              && countOf(r, "w") == 3 && countOf(r, "m") == 3 && countOf(r, "ee") == 3
+              && countOf(r, "s1") == 4 && countOf(r, "n1") == 4,
+              "18. every edge's count is resolved, three seeded and four propagated");
+        CHECK(seededSet(r) == std::vector<std::string>({"s0", "s1", "w"}),
+              "18. ...and which of the two each one was is reported, so a propagation "
+              "defect cannot read as a design choice");
+        // The COUNT propagates and the SPACING LAW does not. They are different
+        // facts: a wall edge legitimately clusters toward the wall while the
+        // interface in its own count class stays uniform, and forcing the law
+        // across a class would silently redistribute an edge nobody edited.
+        MbResult g = build(twoBlocks("interface", "",
+                                     R"(, "spacing": {"law": "geometric", "growth": 3.0})"));
+        CHECK(g.ok, "18. a graded seed edge is accepted (err: " + g.error + ")");
+        if (g.ok && g.blocks.size() == 2) {
+            const auto& b0 = g.blocks[0];
+            const double wy = g.nodes[static_cast<size_t>(b0.nodeAt(0, 1))].y;
+            const double my = g.nodes[static_cast<size_t>(b0.nodeAt(b0.ni - 1, 1))].y;
+            CHECK(wy < 0.3, "18. ...the graded edge 'w' clusters toward its start ("
+                            + std::to_string(wy) + ")");
+            CHECK_NEAR(my, 0.5, 1e-12,
+                       "18. ...while 'm', which took its COUNT from 'w', keeps its own "
+                       "uniform law");
+        }
+    }
+
+    // ── 19. two conflicting seeds name both edges, both counts and the CHAIN ─
+    // A bare "counts disagree" is not enough on a topology with dozens of edges:
+    // what the user has to be told is which two declarations are in conflict and
+    // by what route, since the two need not be anywhere near each other.
+    {
+        // The conflicting seed is deliberately TWO blocks away from the one it
+        // clashes with: 'w' is b0's west, 'ee' is b1's east, and the two are in one
+        // class only through the shared edge 'm'. A one-block conflict would let a
+        // report that names no chain at all pass this check.
+        MbResult r = build(twoBlocks("interface", "", "", R"(, "count": 9)"));
+        CHECK(!r.ok, "19. two conflicting seeds in one class are refused");
+        CHECK(mentions(r.error, "'w'") && mentions(r.error, "'ee'")
+              && mentions(r.error, "3") && mentions(r.error, "9"),
+              "19. ...naming BOTH edges and BOTH counts (got: " + r.error + ")");
+        CHECK(mentions(r.error, "'b0'") && mentions(r.error, "'b1'")
+              && mentions(r.error, "'m'") && mentions(r.error, "west / east"),
+              "19. ...and the chain that propagated between them, block by block, "
+              "naming the edge in between (got: " + r.error + ")");
+        CHECK(r.nodes.empty() && r.blocks.empty(),
+              "19. ...and producing nothing");
+    }
+
+    // ── 20. a class with NO seed is refused naming every edge in it ─────────
+    // Refusing beats picking a default: a silently-chosen count decides the whole
+    // mesh density, and the user cannot see a number nobody wrote down.
+    {
+        MbResult r = build(swap1(twoBlocks(),
+                                 R"("id": "w", "corners": ["a", "d"], "kind": "wall", "count": 3)",
+                                 R"("id": "w", "corners": ["a", "d"], "kind": "wall")"));
+        CHECK(!r.ok, "20. an equivalence class with no seed is refused");
+        CHECK(mentions(r.error, "'w'") && mentions(r.error, "'m'")
+              && mentions(r.error, "'ee'"),
+              "20. ...naming every edge it could not resolve (got: " + r.error + ")");
+        CHECK(mentions(r.error, "count"),
+              "20. ...and what to add to fix it");
+    }
+
+    // ── 21. the three edge kinds are honoured distinctly ───────────────────
+    {
+        // A wall is the OUTSIDE of the mesh, so two blocks cannot share one.
+        MbResult r = build(twoBlocks("wall"));
+        CHECK(!r.ok, "21. a 'wall' named by two blocks is refused");
+        CHECK(mentions(r.error, "'m'") && mentions(r.error, "'b0'")
+              && mentions(r.error, "'b1'"),
+              "21. ...naming the edge and both blocks that claim it (got: "
+              + r.error + ")");
+    }
+    {
+        // ...and the converse: an interface is an INTERIOR boundary, so one block
+        // alone cannot have one. Inferring "only one block has it, so it must be a
+        // wall" is exactly the inference this enum exists to refuse.
+        refuses(swap1(square(4, 3), R"("id": "e", "corners": ["se", "ne"], "kind": "wall")",
+                                    R"("id": "e", "corners": ["se", "ne"], "kind": "interface")"),
+                "'e'", "21. an 'interface' named by only one block");
+    }
+    {
+        // A cut welds by the same rule an interface does — there is nothing left
+        // for a second rule to do once node identity is shared — so what has to
+        // hold is that the DECLARATION survives: the mesh is identical and the
+        // report says "cut". A kind that vanished on the way through would leave
+        // the enum a comment.
+        MbResult i = build(twoBlocks("interface"));
+        MbResult c = build(twoBlocks("cut"));
+        CHECK(c.ok, "21. a 'cut' shared by two blocks is accepted (err: " + c.error + ")");
+        CHECK(c.sharedEdges.size() == 1 && c.sharedEdges[0].kind == "cut",
+              "21. ...and comes back reported as a CUT, not as an ordinary interface");
+        CHECK(i.ok && c.nodes.size() == i.nodes.size()
+              && c.cells.size() == i.cells.size()
+              && c.boundaryEdges.size() == i.boundaryEdges.size(),
+              "21. ...welding the same way an interface does, which is what the two "
+              "kinds share and all they share");
+    }
+    {
+        // A binding says "this edge LIES ON that source segment", which is a
+        // statement about a wall. An interior line in the fluid has no segment to
+        // lie on, and accepting one would make the kind and the binding two
+        // statements of one fact that can only ever disagree.
+        refuses(twoBlocks("interface",
+                          R"(, "binding": {"geom": "square.dat", "seg": 0})"),
+                "binding", "21. a 'binding' on an interface");
+    }
+
+    // ── 22. orientation comes from the DECLARATION, either way round ────────
+    {
+        // The right-hand block turned a quarter turn: its i direction runs DOWN the
+        // shared edge, which the left-hand block uses as its own j direction. One
+        // edge, one declared direction, two blocks that disagree about which way it
+        // runs — the case a per-block reversal exists for, and one that cannot be
+        // reached with both blocks in the same frame.
+        MbResult r = build(rotatedNeighbour());
+        CHECK(r.ok, "22. a neighbour whose shared edge runs the opposite way is "
+                    "accepted (err: " + r.error + ")");
+        if (r.ok && r.blocks.size() == 2) {
+            const auto& b0 = r.blocks[0];
+            const auto& b1 = r.blocks[1];
+            CHECK(b0.ni == 3 && b0.nj == 3 && b1.ni == 3 && b1.nj == 4,
+                  "22. ...each block filled in its own frame ("
+                  + std::to_string(b1.ni) + "x" + std::to_string(b1.nj) + ")");
+            // b0 walks the shared edge as its east, j-min -> j-max; b1 walks the
+            // SAME edge as its south, i-min -> i-max, in the opposite direction. So
+            // the weld is index-reversed, and it is still node IDENTITY.
+            bool welded = true;
+            for (int j = 0; j < b0.nj; ++j)
+                if (b0.nodeAt(b0.ni - 1, j) != b1.nodeAt(b0.nj - 1 - j, 0)) welded = false;
+            CHECK(welded, "22. ...and still welded, with the shared edge's node order "
+                          "reversed for the block that traverses it backwards");
+            CHECK(r.nodes.size() == 18 && coincidentPairs(r.nodes) == 0,
+                  "22. ...into one mesh with no duplicated node ("
+                  + std::to_string(r.nodes.size()) + " nodes, "
+                  + std::to_string(coincidentPairs(r.nodes)) + " coincident pairs)");
+            CHECK(invertedCells(r) == 0,
+                  "22. ...and no cell inverted, so the reversal did not mirror a block");
+        }
+    }
+    {
+        // A block whose four sides do not CLOSE a ring is refused by name. This is
+        // what the retired wrong-direction refusal becomes: the direction of three
+        // of the four sides is free, which corners they touch is not.
+        refuses(swap1(twoBlocks(), R"("id": "w", "corners": ["a", "d"])",
+                                   R"("id": "w", "corners": ["b", "d"])"),
+                "'b0'", "22. a block whose sides do not close a ring");
+        refuses(swap1(twoBlocks(), R"("id": "w", "corners": ["a", "d"])",
+                                   R"("id": "w", "corners": ["b", "d"])"),
+                "'w'", "22. ...naming the edge that does not reach the ring");
+        // ...and the other way a ring can fail: it CLOSES, but onto three corners
+        // instead of four. Two distinct edges over the same corner pair make the
+        // block's j-max corner its own i-max corner, so every match above succeeds
+        // and there is still no interior to fill. Reachable, not hypothetical —
+        // which is why the four corners are checked pairwise distinct after the
+        // ring is matched and not instead of it.
+        refuses(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "a", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "e", "kind": "free", "xy": [1.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s", "corners": ["a", "b"], "kind": "wall", "count": 3},
+    {"id": "w", "corners": ["a", "b"], "kind": "wall", "count": 3},
+    {"id": "e1", "corners": ["b", "e"], "kind": "wall"},
+    {"id": "n", "corners": ["b", "e"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s", "e1", "n", "w"]}
+  ]
+})", "two different corners", "22. a ring that closes onto three corners");
+    }
+
+    // ── 23. NOTHING welds by coordinate — the negative control ─────────────
+    //
+    // The same two blocks, but the shared line declared as TWO edges whose corners
+    // sit at IDENTICAL coordinates under different ids. Nothing welds them, and
+    // that is the point: if any distance comparison existed in this path it would
+    // fire exactly here, at a separation of zero. Wall spacing on a real case is
+    // around 1e-7 while far-field spacing is around 1e-1, so no single tolerance
+    // exists between the two scales — the declaration is the only thing that can
+    // say two nodes are one.
+    {
+        MbResult r = build(coincidentButSeparate());
+        CHECK(r.ok, "23. two blocks that merely TOUCH are accepted (err: "
+                    + r.error + ")");
+        if (r.ok && r.blocks.size() == 2) {
+            const auto& b0 = r.blocks[0];
+            const auto& b1 = r.blocks[1];
+            bool anyShared = false;
+            for (int j = 0; j < b0.nj; ++j)
+                if (b0.nodeAt(b0.ni - 1, j) == b1.nodeAt(0, j)) anyShared = true;
+            CHECK(!anyShared, "23. ...and are NOT welded, though their corners sit at "
+                              "exactly the same coordinates");
+            CHECK(r.nodes.size() == 21,
+                  "23. ...so the mesh holds all 21 nodes, three of them duplicated ("
+                  + std::to_string(r.nodes.size()) + ")");
+            CHECK(coincidentPairs(r.nodes) == 3,
+                  "23. ...which is visible as three coincident pairs ("
+                  + std::to_string(coincidentPairs(r.nodes)) + ")");
+            CHECK(r.sharedEdges.empty(),
+                  "23. ...and nothing is reported as shared, because nothing is");
         }
     }
 

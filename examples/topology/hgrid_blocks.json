@@ -1,0 +1,75 @@
+// A four-block H-grid: the smallest document that exercises everything the
+// multi-block welding work is about. Run it with config/multiblock_hgrid.dat.
+//
+// POINT COUNTS PROPAGATE. Only four of the twelve edges declare a "count"; the
+// other eight are forced by the two structural rules — opposite sides of a block
+// carry equal counts, and a shared edge is ONE edge named by two blocks — so they
+// are resolved rather than declared, and the run prints which of the two each
+// count was. Note what does NOT propagate: the SPACING law is each edge's own,
+// which is why "v00" clusters toward the left wall while "v10" and "v20", in its
+// count class, stay uniform.
+//
+// BLOCKS ARE WELDED TOPOLOGICALLY. An interior line is declared ONCE, as one edge
+// of kind "interface", and both blocks name it — so the k-th node on one side IS
+// the k-th node on the other, and there is no tolerance anywhere in the chain for
+// a near miss to be rescued by.
+//
+// ORIENTATION COMES FROM THE DECLARATION. Block "tr" is turned a quarter turn
+// relative to the other three: its i direction runs DOWN the shared line "v11",
+// which block "tl" meanwhile uses as its own j direction. One edge, one declared
+// direction, two blocks that disagree about which way it runs — exactly the case
+// a per-block reversal exists for. "v11" is also written [c12, c11], against the
+// [south, east, north, west] convention, so both readings appear in one document.
+//
+//        c02 ────h02──── c12 ────h12──── c22
+//         │               │               │
+//        v01     "tl"    v11     "tr"    v21          i of "tr" runs c12 -> c11,
+//         │               │               │           i.e. downwards
+//        c01 ────h01──── c11 ────h11──── c21
+//         │               │               │
+//        v00     "bl"    v10     "br"    v20
+//         │               │               │
+//        c00 ────h00──── c10 ────h10──── c20
+{
+  "format_version": 1,
+
+  "corners": [
+    {"id": "c00", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "c10", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c20", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "c01", "kind": "free", "xy": [0.0, 0.6]},
+    {"id": "c11", "kind": "free", "xy": [1.0, 0.6]},
+    {"id": "c21", "kind": "free", "xy": [2.0, 0.6]},
+    {"id": "c02", "kind": "free", "xy": [0.0, 1.5]},
+    {"id": "c12", "kind": "free", "xy": [1.0, 1.5]},
+    {"id": "c22", "kind": "free", "xy": [2.0, 1.5]}
+  ],
+
+  "edges": [
+    // Seeded: one count per equivalence class, four classes.
+    {"id": "h00", "corners": ["c00", "c10"], "kind": "wall", "count": 7},
+    {"id": "h10", "corners": ["c10", "c20"], "kind": "wall", "count": 5},
+    {"id": "v00", "corners": ["c00", "c01"], "kind": "wall", "count": 4,
+     "spacing": {"law": "geometric", "growth": 1.3}},
+    {"id": "v01", "corners": ["c01", "c02"], "kind": "wall", "count": 6},
+
+    // Propagated: no count declared on any of these.
+    {"id": "h02", "corners": ["c02", "c12"], "kind": "wall"},
+    {"id": "h12", "corners": ["c12", "c22"], "kind": "wall"},
+    {"id": "v20", "corners": ["c20", "c21"], "kind": "wall"},
+    {"id": "v21", "corners": ["c21", "c22"], "kind": "wall"},
+
+    // The four interior lines the blocks are welded along.
+    {"id": "h01", "corners": ["c01", "c11"], "kind": "interface"},
+    {"id": "h11", "corners": ["c11", "c21"], "kind": "interface"},
+    {"id": "v10", "corners": ["c10", "c11"], "kind": "interface"},
+    {"id": "v11", "corners": ["c12", "c11"], "kind": "interface"}
+  ],
+
+  "blocks": [
+    {"id": "bl", "edges": ["h00", "v10", "h01", "v00"]},
+    {"id": "br", "edges": ["h10", "v20", "h11", "v10"]},
+    {"id": "tl", "edges": ["h01", "v11", "h02", "v01"]},
+    {"id": "tr", "edges": ["v11", "h11", "v21", "h12"]}
+  ]
+}

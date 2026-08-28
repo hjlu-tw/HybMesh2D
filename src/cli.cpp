@@ -497,6 +497,42 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     std::cout << "  - Source               : " << config.topologyFile << "\n";
     for (const auto& b : res.blocks)
         std::cout << mbRow("Block '" + b.id + "'") << b.ni << " x " << b.nj << " nodes\n";
+    // WHERE EACH NODE COUNT CAME FROM. Propagation is the one place on this path
+    // where the mesh is decided by something the user did not write down, so a run
+    // that cannot show which counts it derived is a run in which a propagation
+    // defect reads as a design choice. Only the DERIVED ones are named
+    // individually — the seeded ones are already in the document.
+    {
+        size_t seeded = 0;
+        std::string derived;
+        for (const auto& ec : res.edgeCounts) {
+            if (ec.seeded) { ++seeded; continue; }
+            derived += (derived.empty() ? "" : ", ") + std::string("'") + ec.edgeId
+                     + "' = " + std::to_string(ec.count);
+        }
+        std::cout << mbRow("Point counts") << seeded << " declared, "
+                  << (res.edgeCounts.size() - seeded) << " propagated"
+                  << (derived.empty() ? std::string() : " (" + derived + ")") << "\n";
+    }
+    // The interior lines the blocks were welded along, named with their declared
+    // KIND. An interface and a cut weld by the same rule, so this row is where the
+    // difference between the two is visible at all — and "a cut is a cut" is a
+    // claim about the declaration, which means a run has to be able to show it.
+    for (const auto& se : res.sharedEdges) {
+        const std::string a = (se.blockA >= 0 && static_cast<size_t>(se.blockA)
+                                                    < res.blocks.size())
+            ? res.blocks[static_cast<size_t>(se.blockA)].id : std::string("?");
+        const std::string b = (se.blockB >= 0 && static_cast<size_t>(se.blockB)
+                                                    < res.blocks.size())
+            ? res.blocks[static_cast<size_t>(se.blockB)].id : std::string("?");
+        std::cout << mbRow(std::string(se.kind == "cut" ? "Cut '" : "Interface '")
+                           + se.edgeId + "'")
+                  << se.nodes << " shared nodes, the "
+                  << hybmesh::mbSideAxis(static_cast<hybmesh::MbSide>(se.sideA)).name
+                  << " of block '" << a << "' and the "
+                  << hybmesh::mbSideAxis(static_cast<hybmesh::MbSide>(se.sideB)).name
+                  << " of block '" << b << "'\n";
+    }
     std::cout << "  - Cells                : " << res.cells.size() << " "
               << (config.mbSplitQuads ? "triangles (alternating diagonal by index parity)"
                                       : "quads (splitting is OFF)") << "\n";

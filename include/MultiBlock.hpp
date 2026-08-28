@@ -21,6 +21,11 @@
 // gets NO seam of its own (it lives in src/cli.cpp). It is a loop with no
 // decisions in it — every boundary edge comes back already resolved — and
 // giving it a seam would concede that it has logic worth testing separately.
+// Recorded honestly: the adapter has since grown three PRESENTATION blocks (the
+// boundary-patch summary from #52, the propagated-count and shared-edge rows from
+// #53). None of them classifies anything or changes a mesh, but the claim is no
+// longer literally "no decisions", and if a fourth appears the grouping belongs on
+// the pure side beside `measureMbQuality`.
 //
 // Everything here is Gmsh-free and Mesh-free by construction: the module lives
 // in `hybmesh_pure`, whose tests link that library and NOTHING else, so the
@@ -86,6 +91,45 @@ struct MbParams {
     // cells, so triangles are the point of this whole path. Switchable off so
     // the quad mesh can be inspected when a topology is being diagnosed.
     bool splitQuads = true;
+};
+
+// One shared INTERIOR edge, and the two block sides welded along it.
+//
+// Published as data because the kind is a DECLARATION and a run has to be able to
+// show it: an "interface" is an interior boundary between two blocks and a "cut"
+// is a wake or branch line that is likewise shared but is not a boundary of
+// anything. Neither is inferred from whether a binding is present — that
+// inference is precisely what would file a wake cut as an ordinary interface.
+//
+// WHAT IS AND IS NOT DISTINGUISHED, said plainly because the name invites a
+// stronger reading. The kind decides three things today, all of them checkable:
+// how many block sides the edge may be (a wall exactly one, the other two exactly
+// two), whether it may declare a `binding` (a wall only — a cut lies in the fluid
+// and has no source segment to lie on), and whether it is exported as a boundary
+// face carrying a BC (a wall only). What it does NOT yet decide is any arithmetic:
+// an interface and a cut weld by the same rule, because with node identity shared
+// there is nothing left for a second rule to do. The kind is what makes a later
+// divergence — a periodic cut, a non-matching interface — a change rather than a
+// rewrite, and `MbResult::sharedEdges` is what lets a user see which shared lines
+// are which in the meantime.
+struct MbSharedEdge {
+    std::string edgeId;
+    std::string kind;              // "interface" | "cut"
+    int blockA = -1, blockB = -1;  // indices into MbResult::blocks
+    int sideA = 0, sideB = 0;      // MbSide, as declared by each block
+    int nodes = 0;                 // node count along it, ONE number by construction
+};
+
+// One edge's resolved node count, and whether the document said so.
+//
+// Published because point-count propagation is the one place on this path where
+// the mesh is decided by something the user did NOT write down: they seed a few
+// edges and the rest are forced. A run that cannot show which counts it derived
+// is a run in which a propagation defect looks like a design choice.
+struct MbEdgeCount {
+    std::string edgeId;
+    int count = 0;
+    bool seeded = false;   // the document declared this count; else it propagated
 };
 
 // One filled block, with its LOGICAL i/j indexing retained.
@@ -173,13 +217,14 @@ inline MbSideAxis mbSideAxis(MbSide s) {
 // positions that law is gone. `MbQuality.hpp` then measures what the fill
 // achieved against it.
 //
-// Every boundary edge is kind "wall" (interface and cut are refused by name), so
-// all four sides of the one block are reported. Note what did NOT change this:
-// boundary conditions now DO come from the declaration, and a side may carry a
-// segment labelled "inlet" — but that is the flow condition, not the answer to
-// "is this a viscous surface whose first cell height matters". The gate stays
-// `kind`, which is the declaration's own word for it; when a kind distinguishes
-// the two, this list gets shorter and nothing that reads it has to change.
+// The gate is the KIND: a side declared "interface" or "cut" is an interior line
+// and is not listed, so on a multi-block topology this list is exactly the outer
+// walls. Note what did NOT change this: boundary conditions DO come from the
+// declaration, and a side may carry a segment labelled "inlet" — but that is the
+// flow condition, not the answer to "is this a viscous surface whose first cell
+// height matters". The gate stays `kind`, which is the declaration's own word for
+// it; when a kind distinguishes the two, this list gets shorter and nothing that
+// reads it has to change.
 struct MbWallSpec {
     int block = 0;                   // index into MbResult::blocks
     MbSide side = MB_SOUTH;
@@ -202,10 +247,16 @@ struct MbResult {
     std::vector<MbCell> cells;
     std::vector<MbBoundaryEdge> boundaryEdges;
     std::vector<MbWallSpec> wallSpecs;
+    // The interior edges two blocks were welded along, and every edge's resolved
+    // node count. Both are DECLARATION facts a run has to be able to report: see
+    // MbSharedEdge and MbEdgeCount.
+    std::vector<MbSharedEdge> sharedEdges;
+    std::vector<MbEdgeCount> edgeCounts;
 };
 
-// Parse `topologyJson`, resolve it against `geoms` and `params`, fill every
-// block with structured quads, split them and return the flattened result.
+// Parse `topologyJson`, resolve it against `geoms` and `params`, resolve every
+// edge's node count, fill every block with structured quads welded to its
+// neighbours, split them and return the flattened result.
 // Never throws: a malformed document comes back as `ok == false` with `error`
 // naming what is wrong and where.
 MbResult buildMultiBlock(const std::string& topologyJson,

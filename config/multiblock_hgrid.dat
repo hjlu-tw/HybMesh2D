@@ -1,0 +1,17 @@
+# A four-block H-grid on the topology-driven multi-block path.
+#
+#   ./run.sh -conf config/multiblock_hgrid.dat
+#
+# Four blocks welded along four shared 'interface' edges, with only four of the
+# twelve edges declaring a node count -- the rest propagate. Block 'tr' is turned
+# a quarter turn relative to the other three, so the run also covers a shared edge
+# that two blocks traverse in opposite directions. The document itself carries the
+# rest of the explanation.
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/hgrid_blocks.json
+MB_SPLIT_QUADS 1
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+BC_GEOM wall
+OUTPUT_FILENAME results/meshes/hgrid/mesh_hgrid.vtk

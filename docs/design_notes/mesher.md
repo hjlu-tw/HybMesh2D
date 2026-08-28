@@ -129,12 +129,18 @@ boundary edges, warnings as data and an optional error. Rules:
   slightly wrong mesh with no error, which is worse than no mesh. Each refusal names
   the later work it is waiting for. **SUPERSEDED for the first two**: `on_geometry`
   and `binding` are implemented by #52 (see "Boundary conditions are DECLARED"), so
-  those two refusals are gone. The other three stand.
+  those two refusals are gone. **SUPERSEDED for two more**: the `interface`/`cut` kinds
+  and a second block are implemented by #53 (see "Blocks are welded TOPOLOGICALLY").
+  Only `blocks[].orientation` still stands.
 - **A block's orientation is the corner order of its own four edges**, declared as
   `[south, east, north, west]` with south/north running i-min→i-max and west/east
   running j-min→j-max; a deviation is refused with the edge, what it declares and what
   the convention needs. Inferring it would turn a mistake into a mirrored block, i.e. a
-  mesh rather than an error. A **clockwise** corner ring is a WARNING and not a repair —
+  mesh rather than an error. **SUPERSEDED IN PART by #53**: a deviation in DIRECTION is no
+  longer refused, because a shared edge carries one declared direction and serves two
+  blocks whose frames need not agree — the south edge fixes the frame and the other three
+  are traversed as the ring requires. A set of four edges that does not CLOSE a ring is
+  still refused by name, which is the half of this argument that survives. A **clockwise** corner ring is a WARNING and not a repair —
   silently re-winding would mean the mesh no longer matches the document that declared
   it. It is **refused** with the topology code, not exported under the inverted-cell
   one: that code is for a valid declaration whose GEOMETRY came out folded, which is
@@ -183,7 +189,11 @@ boundary edges, warnings as data and an optional error. Rules:
   `AUTO_SURFACE_SIZE` sit in a third position, recorded rather than closed: measured
   unread by this path (an explicit per-edge `count` is required), but whether count
   propagation seeds from them is #53's answer, so declaring them inert now would write
-  that guess into a gate.
+  that guess into a gate. **#53's answer is NO**: a seed is a `count` on an edge, and a
+  class with none is refused by name rather than falling back to a global mesh size. So
+  the two remain read by neither path and declared inert by neither — recorded here
+  rather than closed, because the argument for declaring them inert is now unblocked and
+  is someone's call, not a leftover.
 - **A geometry that will not load is a WARNING here, not a refusal** — the opposite of
   the hybrid path's answer and right for the same reason: there the geometry IS the
   mesh, here nothing in a topology can refer to one yet, so refusing would stop a mesh
@@ -515,6 +525,151 @@ chord exceeded it and an inlet exported a band of wall at every junction. Rules:
   the block's south-west sits on and the west edge is deliberately left unbound
   (a straight chord, geometrically the same wall, carrying `BC_GEOM`). Binding it
   would be claiming something false.
+
+**Blocks are welded TOPOLOGICALLY, counts PROPAGATE, and an edge's kind is an
+ENUM** (still the one pure entry point, `include/MultiBlock.hpp` +
+`src/MultiBlock.cpp`; issue #53). A topology may declare any number of blocks. An
+interior line is declared ONCE, as one edge of kind `interface` or `cut`, and both
+blocks name it — so the k-th node on one side IS the k-th node on the other, and
+node counts partition into equivalence classes the user seeds a few of.
+
+- **Coordinate welding is not merely not preferred, it is UNAVAILABLE.** Wall
+  spacing on a real case is around 1e-7 while far-field spacing is around 1e-1, and
+  no single tolerance exists between those two scales — the same argument the
+  iso-line tracer already rests on, which chains by mesh EDGE IDENTITY and never by
+  welding coordinates. So welding here is allocation, not comparison: a corner gets
+  one node because it is one declared corner, an edge gets its interior nodes once
+  because it is one declared edge, and a block READS the node ids of its four sides
+  instead of generating its own boundary. There is no distance in the chain to
+  drift past, and check 23 of the C++ test is the negative control that says so at
+  a separation of exactly zero: two corners declared at the SAME coordinates under
+  different ids stay two nodes, and the run reports three coincident pairs.
+- **Only the block INTERIOR is interpolated now, and that is a measured behaviour
+  change.** Transfinite interpolation is exact on the boundary in the mathematical
+  sense, but "exact" there means it reproduces the side to within the rounding of
+  one subtraction — `coons` at u = 0 computes `(X + west[j]) - X`. A shared edge has
+  to be ONE curve rather than two curves that agree, so the side's own
+  discretisation is the definitive answer and the blend is asked only about the
+  inside. **Measured**: `mb_graded` (14 of 221 nodes) and `mb_bound` (8 of 35) move
+  by **1.11e-16**, one ULP, on the boundary nodes of their non-uniformly spaced
+  edges; the other ten golden cases are bit-identical. The new value is the exactly
+  discretised one and the old was the ULP off. Recorded because the golden
+  comparator reports that change as `worst 9.167e-01`, which is an ARTEFACT of how
+  it pairs nodes: it sorts both node lists and zips them, so a 1-ULP shift that
+  splits one x-column into two groups offsets the pairing by two and the reported
+  magnitude becomes meaningless. The true figure above was measured by set
+  difference. The comparator was left alone — it correctly said DIFF — but do not
+  read its magnitude on a case whose node set changed membership.
+- **Two edges are forced to carry the same count when they are OPPOSITE SIDES of
+  one block, and there is no second rule for an interface.** A shared edge is one
+  declared edge that two blocks both name, so that single relation propagates
+  across blocks by itself. `count` therefore became a SEED rather than a
+  requirement (a behaviour change to the schema: a document that declares every
+  count still reads identically).
+- **The COUNT propagates and the SPACING LAW does not.** They are different facts:
+  a wall edge legitimately clusters toward the wall while the interface in its own
+  count class stays uniform, and forcing the law across a class would silently
+  redistribute an edge nobody edited. Pinned in C++ check 18, and demonstrated in
+  the shipped example (`v00` is geometric at growth 1.3, `v10` and `v20` in its
+  class are uniform).
+- **A conflict is refused with both edges, both counts, AND the chain**, which is
+  the acceptance criterion and not a nicety: on a topology with dozens of edges the
+  two conflicting declarations need not be anywhere near each other. Each union is
+  recorded as a link, and the report is a BFS path rendered a block at a time
+  (`'w' and 'm' are opposite sides (west / east) of block 'b0'`). The C++ and Python
+  cases both put the two seeds TWO blocks apart on purpose — a one-block conflict
+  would let a report that names no chain at all pass the check.
+- **A class with NO seed is refused naming every edge in it.** Picking a default
+  would decide the whole mesh density from a number nobody wrote down.
+- **The three kinds decide three things, and NOT any arithmetic.** How many block
+  sides the edge may be (`wall` exactly one, `interface`/`cut` exactly two, refused
+  by name with the offending blocks); whether it may declare a `binding` (a `wall`
+  only — an interior line in the fluid has no source segment to lie on, and
+  accepting one would make the kind and the binding two statements of one fact);
+  and whether it is exported as a boundary face carrying a BC (a `wall` only, and
+  it is also the gate on `MbWallSpec`). What the kind does not yet decide is any
+  number: an `interface` and a `cut` weld identically, because with node identity
+  shared there is nothing left for a second rule to do. **Said out loud rather than
+  dressed up**: the distinction lives in the declaration, the validation and the
+  report (`MbResult::sharedEdges`, and a `Cut '<id>'` row in the banner), and that
+  is what makes a later divergence — a periodic cut, a non-matching interface — a
+  change rather than a rewrite. The kind is still never INFERRED from whether a
+  binding is present, which is the inference that would file a wake cut as an
+  ordinary interface.
+- **A block's frame comes from its own declaration, and this REVERSES #50's rule.**
+  #50 refused any side not declared in the convention's direction, arguing that
+  inferring one would produce a mirrored block. That rule cannot survive welding: a
+  shared edge is ONE edge with ONE declared direction, named by two blocks whose
+  logical frames need not agree about which way it runs, so requiring the
+  convention in every block makes a whole class of topology undeclarable. What
+  holds now: the block's i direction is its **SOUTH** edge's own declared
+  direction, and the other three sides are traversed in whichever direction closes
+  the ring. Nothing is inferred by that — the frame is fixed entirely by the south
+  edge plus which corners the other three touch — and a set of four edges that does
+  not CLOSE a ring is refused by name, which is where #50's argument still applies.
+  The clockwise-ring refusal is unchanged. C++ check 9 is the **inverted** version
+  of the one that pinned the old refusal, and it asserts the block is not MIRRORED
+  as well as accepted.
+- **A ring can also close onto three corners**, so the four corners are checked
+  pairwise distinct AFTER the ring is matched and not instead of it. Reachable, not
+  hypothetical: two distinct edges over the same corner pair make the block's j-max
+  corner its own i-max corner and every match above succeeds. The first version of
+  that check was unreachable through the obvious document, which is how the case
+  was found.
+- **The four sides meeting at four SHARED corner NODES is checked, not assumed**,
+  and checked before the boundary writes overwrite one with the other. It looks like
+  a tautology after the ring match and is not: it is the check that caught the
+  injection that dropped the per-block reversal, in both the C++ and the Python
+  gate.
+- **The adapter's banner grew two more presentation rows** — which counts were
+  propagated rather than declared, and one row per shared line naming its kind and
+  the two block sides. Same argument #52's patch summary got: propagation is the one
+  place on this path where the mesh is decided by something the user did not write
+  down, so a run that cannot show it is a run in which a propagation defect reads as
+  a design choice. The dent in #50's "the adapter has no decisions" is unchanged in
+  kind, and is recorded there.
+- **The gates.** `tests/cpp/test_multiblock.cpp` checks 17-23 (the decisions,
+  through the pure seam: welding as node identity, propagation as data, the conflict
+  chain, the three kinds, the rotated neighbour, and the coincident-but-separate
+  negative control) and `tools/PreProcessor/tests/test_multiblock_weld_surface.py`
+  (the chain, through the real binary), plus the `mb_hgrid` golden case on the
+  shipped `examples/topology/hgrid_blocks.json`.
+- **The Python gate measures CONFORMITY on the exported files** rather than arguing
+  it: every interior edge of the triangulation shared by exactly two cells, every
+  boundary edge by exactly one, the boundary set equal to the `.bnd` face for face,
+  and one connected component by shared-node identity. That is the property the grid
+  converter needs and the one a welding defect breaks.
+- **The injections are HAND runs, dated 2026-08-28**, for the reason #51 and #52
+  record — a C++ test cannot mutate the implementation it linked against. Each patch
+  was applied to `src/MultiBlock.cpp` alone, rebuilt, and run against both gates,
+  with a control run confirming a clean tree passes:
+  - A: every side emitted as a boundary (the kind not honoured on export) -> 1 C++
+    check. **The Python gate initially caught NOTHING**, and that is the useful
+    finding: the `.bnd` writer derives its faces from cell connectivity ("used by
+    exactly one cell"), so an interface wrongly RECORDED as a boundary edge never
+    reaches that file. A check on the mesher's own `Boundary Edges (BND)` count —
+    which is `mesh.edges` — was ADDED for it, and then bites. A check was added, not
+    corrected: the gate never covered that side.
+  - B: no welding, every block generating its own boundary nodes -> 5 Python checks
+    (4 components, 187 nodes, 72 faces, coincident nodes, a boundary face on the
+    shared line) and 8 C++ checks.
+  - C: the per-block reversal dropped -> the shipped example REFUSED (10 Python
+    checks) and 2 C++ checks, both through the shared-corner-node invariant.
+  - D: the conflict reported without its chain -> 1 Python and 1 C++ check, i.e.
+    exactly the acceptance criterion and nothing else, which is what a check with
+    one job should do.
+- **THE ACCEPTANCE RUN AGAINST THE SOLVER IS OUTSTANDING and the gate says so.**
+  This checkout carries no solver tree, so neither `getPGrid` nor `unicones` has
+  seen a four-block grid; #50's dated run covers the single-block case only. What
+  the Python gate pins instead is the SHAPE the converter reads, which is not a
+  substitute for the converter accepting the file. #26 is why that distinction is
+  written down rather than softened.
+- **Other blind spots, named**: nothing anywhere welds along a BOUND edge (one that
+  follows a geometry), in either gate; nothing has more than four blocks; and a
+  block welded to ITSELF is still not expressible — `parseBlocks` refuses an edge
+  named twice in one block, which is right for this fill (a transfinite map over
+  four sides has no answer for a self-adjacent block) but means an O-grid seam
+  cannot be declared as one edge.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:

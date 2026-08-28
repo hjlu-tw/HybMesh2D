@@ -50,8 +50,9 @@ binding: every boundary edge then takes the config default BC. That is a
 limitation of the CASE, not of the chain -- the converter and the solver each
 accepted the mesh on its own terms. A topology that DOES name the source segment
 each edge lies on is covered next door, in
-``test_multiblock_binding_surface.py``; the unbound case still has to keep
-working, which is what this file goes on pinning.
+``test_multiblock_binding_surface.py``, and the multi-block chain in
+``test_multiblock_weld_surface.py``; the single-block unbound case still has to
+keep working, which is what this file goes on pinning.
 
 BLIND SPOTS, named rather than papered over:
 

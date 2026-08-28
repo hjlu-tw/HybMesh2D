@@ -161,6 +161,28 @@ def _multiblock_example(split=True):
     return build
 
 
+def _multiblock_hgrid():
+    """The four-block H-grid this repo ships (issue #53).
+
+    Deliberately the file itself, for the reason `_multiblock_example` gives.
+    What it adds to this family is everything a SECOND block brings: node counts
+    propagated across four equivalence classes from four seeds, four interior
+    lines welded by node identity, and one block turned a quarter turn so that two
+    blocks traverse a shared edge in opposite directions. A welding regression
+    moves the node count, and a propagation regression moves a block's dimensions
+    -- both of which this comparator sees, since it reads the `.cel` connectivity
+    and the `.bnd` as well as the nodes.
+    """
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        topo = os.path.join(_REPO, "examples", "topology", "hgrid_blocks.json")
+        conf = mb.write_config(os.path.join(tmp, name + ".dat"), topo, stem)
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
 def _multiblock(ni, nj, split=True, spacing=None):
     """A case on the multi-block path (MESH_MODE 1).
 
@@ -257,6 +279,7 @@ CASES = {
     "mb_graded": _multiblock(17, 13, spacing={"law": "geometric", "growth": 1.15}),
     "mb_bound": _multiblock_bound(),
     "mb_cavity": _multiblock_cavity(),
+    "mb_hgrid": _multiblock_hgrid(),
 }
 
 

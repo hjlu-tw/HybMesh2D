@@ -113,11 +113,16 @@ Invoked by `cd`-ing in rather than with `--test-dir`, which needs CMake >= 3.20 
 ```bash
 ./run.sh -conf config/multiblock_cavity.dat    # -> examples/topology/cavity_block.json
 ```
+```bash
+./run.sh -conf config/multiblock_hgrid.dat     # -> examples/topology/hgrid_blocks.json
+```
 `MESH_MODE 1` fills a DECLARED block topology with structured quads and splits them
 to triangles; it uses Gmsh nowhere. See "The multi-block path is ONE pure entry point"
 under Configuration. The second case attaches its corners to a geometry by arc length
 and reads each wall's boundary condition off that geometry's source segments — see
-"Boundary conditions are DECLARED".
+"Boundary conditions are DECLARED". The third is a four-block H-grid: four seeded counts
+propagate to twelve edges, four interior lines are welded by node identity, and one block is
+turned a quarter turn — see "Blocks are welded TOPOLOGICALLY".
 
 **Run preprocessor GUI:**
 ```bash
@@ -302,13 +307,15 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   node distribution with no symptom. Strict now is relaxable later. So is **a declaration that
   reaches nothing**: an edge in no block, a corner on no edge.
 - **What v0 does not do is refused BY NAME, never approximated**, each refusal naming the work it
-  waits for: an `interface`/`cut` edge kind, a `blocks[].orientation`, a second block.
-  (`on_geometry` and `binding` were on this list and are implemented by #52.)
+  waits for: a `blocks[].orientation`. (`on_geometry` and `binding` were on this list and are
+  implemented by #52; the `interface`/`cut` kinds and a second block by #53.)
 - **A block's orientation is the corner order of its own four edges**, `[south, east, north, west]`,
-  south/north running i-min→i-max and west/east j-min→j-max; a deviation is refused naming the edge,
-  what it declares and what the convention needs — inferring it would produce a mirrored block, i.e.
-  a mesh rather than an error. A **clockwise** corner ring is refused under the TOPOLOGY code, never
-  silently re-wound.
+  south/north running i-min→i-max and west/east j-min→j-max. A **clockwise** corner ring is refused
+  under the TOPOLOGY code, never silently re-wound. **SUPERSEDED IN PART by #53**: a deviation in
+  DIRECTION is no longer refused — the south edge fixes the frame and the other three are traversed
+  as the ring requires, because a shared edge has one declared direction and two blocks. A set of
+  four edges that does not CLOSE a ring is still refused by name, which is the half of the original
+  argument that survives.
 - **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` /
   `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
   face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
@@ -332,7 +339,7 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   `edges.back()` idiom at all four call sites: a BC and its source segment are one fact.
 - Gated by `tests/cpp/test_multiblock.cpp`, `tests/test_multiblock_surface.py` and three golden
   cases (`mb_square`, `mb_square_quads`, `mb_graded`); `golden_mesh.py` IMPORTS the topology writer
-  from the surface test rather than copying it.
+  from the surface test rather than copying it. (#52 added `mb_bound` / `mb_cavity`, #53 `mb_hgrid`.)
 
 **The quality report is the RULER, and it is built before the thing it measures**
 (`include/MbQuality.hpp` + `src/MbQuality.cpp` in `hybmesh_pure`; banner and exit code in
@@ -443,6 +450,58 @@ wall at every junction.
   `examples/geometries/square_cavity.dat` is an OPEN polyline stopping one sample short of the seam,
   so its segment 3 does not reach the block's south-west corner and the west edge is deliberately
   left unbound (a straight chord carrying `BC_GEOM`).
+
+**Blocks are welded TOPOLOGICALLY, counts PROPAGATE, and the edge KIND is an enum** (still the one
+pure entry point; #53). Any number of blocks. An interior line is declared ONCE, as one edge of kind
+`interface` or `cut`, and both blocks name it — so the k-th node on one side IS the k-th node on the
+other. Full rationale, measurements and the dated injection log: `docs/design_notes/mesher.md`.
+- **Coordinate welding is UNAVAILABLE, not just unpreferred**: wall spacing ~1e-7 beside far-field
+  ~1e-1 leaves no tolerance in between (the iso-line tracer's own argument). Welding is ALLOCATION,
+  not comparison — one node per declared corner, an edge's interior nodes once per declared edge, and
+  a block READS its four sides' node ids. There is no `1e-`/tolerance literal in the module at all.
+  Negative control: two corners at the SAME coordinates under different ids stay TWO nodes.
+- **Only the block INTERIOR is interpolated now** — `coons` at u = 0 computes `(X + west[j]) - X`, so
+  a shared edge must be the side's OWN discretisation and not two curves that agree. Measured:
+  `mb_graded` (14/221 nodes) and `mb_bound` (8/35) move by **1.11e-16**, the new value being the
+  exact one. `golden_mesh.py` renders that as `worst 9.167e-01` — an ARTEFACT of zipping two sorted
+  node lists whose x-groups split; **do not read its magnitude on a case whose node SET changed
+  membership**.
+- **The relation is "opposite sides of one block", and there is NO second rule for an interface** — a
+  shared edge is one edge two blocks name, so it propagates across blocks by itself. `count` is now a
+  SEED, not a requirement. The COUNT propagates; the **SPACING LAW does not** (a wall edge may
+  cluster while the interface in its count class stays uniform).
+- **A conflict names both edges, both counts AND the chain**, rendered a block at a time from a BFS
+  over the recorded links. Both gates put the two seeds TWO blocks apart, since a one-block conflict
+  lets a chain-free report pass. A class with **no** seed is refused naming every edge in it —
+  never defaulted, and **not** seeded from `SURFACE_MESH_SIZE` either.
+- **The kind decides three things and NO arithmetic**: how many block sides the edge may be (`wall`
+  1, `interface`/`cut` 2); whether a `binding` is allowed (`wall` only — an interior line has no
+  segment to lie on); and whether it exports as a boundary face (`wall` only, also the `MbWallSpec`
+  gate). An interface and a cut weld identically — **said out loud**: the distinction lives in the
+  declaration, the validation and the report (`MbResult::sharedEdges`, a `Cut '<id>'` banner row),
+  which is what makes a later divergence a change rather than a rewrite. Still never INFERRED from
+  the binding.
+- **A block's frame comes from its SOUTH edge, and this REVERSES #50's rule.** The other three sides
+  may be declared either way and are traversed as the ring requires: a shared edge has ONE declared
+  direction and two blocks whose frames need not agree, so #50's "any deviation is refused" made a
+  whole class of topology undeclarable. Nothing is inferred — four edges that do not CLOSE a ring are
+  still refused by name, and a ring closing onto THREE corners is refused too (reachable: two
+  distinct edges over one corner pair). The clockwise-ring refusal is unchanged. C++ check 9 is the
+  **inverted** version of the one that pinned the old refusal.
+- **"The four sides meet at four shared corner NODES" is checked, before the writes overwrite one
+  with the other.** It looks tautological after the ring match and is not: it is what caught the
+  dropped-reversal injection in both gates.
+- Gated by `tests/cpp/test_multiblock.cpp` 17-23, `tests/test_multiblock_weld_surface.py` (which
+  measures CONFORMITY on the exported files — interior edges shared by exactly two cells, the
+  boundary set equal to the `.bnd`, one connected component) and the `mb_hgrid` golden case on the
+  shipped `examples/topology/hgrid_blocks.json`. Injections are HAND runs dated 2026-08-28; one of
+  them initially caught NOTHING in the Python gate, because the `.bnd` writer derives faces from
+  cell connectivity and so never sees a wrongly RECORDED boundary edge — a check on the mesher's own
+  `Boundary Edges (BND)` count was ADDED for it.
+- **THE SOLVER ACCEPTANCE RUN IS OUTSTANDING and the gate says so**: this checkout carries no solver
+  tree, so no four-block grid has been through `getPGrid` or `unicones`. Other blind spots: nothing
+  welds along a BOUND edge, nothing exceeds four blocks, and a block welded to ITSELF is still
+  inexpressible (right for a transfinite fill, but an O-grid seam cannot be one edge).
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:

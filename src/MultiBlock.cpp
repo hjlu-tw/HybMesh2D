@@ -64,6 +64,15 @@ struct BlockSpec {
     std::vector<std::string> edges;   // exactly 4, in [south, east, north, west]
 };
 
+// The [south, east, north, west] declaration order as PROSE, so a refusal can
+// point at the side the document actually wrote. `mbSideAxis` in the header owns
+// the same convention's geometry (which axis a side runs along, which end it sits
+// at); this array is only its names, and the two are indexed identically.
+const char* const kSideName[4] = {"south", "east", "north", "west"};
+// A block's four corners in logical order: (0,0), (ni-1,0), (ni-1,nj-1), (0,nj-1).
+const char* const kCornerName[4] = {"i-min/j-min", "i-max/j-min",
+                                    "i-max/j-max", "i-min/j-max"};
+
 // ── Schema helpers ────────────────────────────────────────────────────────
 //
 // Unknown keys are REFUSED, not ignored. A typo'd `"spacng"` that is skipped
@@ -284,12 +293,9 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
                 + "'. Accepted: 'wall', 'interface', 'cut'.";
             return false;
         }
-        if (spec.kind != "wall") {
-            err = where + " ('" + spec.id + "'): kind '" + spec.kind + "' needs a second "
-                  "block to be shared with, and this release fills exactly one block. "
-                  "Interfaces and cuts arrive with the multi-block welding work.";
-            return false;
-        }
+        // How many block sides each kind may be is checked once the blocks are
+        // parsed (a wall exactly one, an interface or a cut exactly two), because
+        // that is a fact about the topology and not about this edge's own object.
         // The source segment this edge LIES ON. This is where a boundary condition
         // comes from on this path: the segment's own label, carried into the export
         // with its (geometry, segment) key. Nothing downstream tests whether a node
@@ -298,6 +304,18 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
         // the other path.
         auto bd = e.find("binding");
         if (bd != e.end()) {
+            // A binding says "this edge LIES ON that source segment", which is a
+            // statement about a wall. An interface and a cut are interior lines in
+            // the fluid; there is no segment for them to lie on, and accepting one
+            // would make the kind and the binding two statements of one fact that
+            // can only ever disagree.
+            if (spec.kind != "wall") {
+                err = where + " ('" + spec.id + "'): kind '" + spec.kind + "' declares a "
+                      "'binding', but only a 'wall' lies on a source segment — an "
+                      "interface and a cut are interior lines in the fluid. Drop the "
+                      "binding, or declare the edge a wall.";
+                return false;
+            }
             const std::string bw = where + " ('" + spec.id + "') binding";
             if (!bd->is_object()) {
                 err = bw + ": must be an object, \"binding\": "
@@ -314,22 +332,27 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
             spec.bindSeg = sg->get<int>();
         }
 
-        // No count propagation in this release (that is its own increment), so
-        // every edge must say how many nodes it carries. Refusing beats picking a
-        // default: a silently-chosen count decides the whole mesh density.
+        // 'count' is a SEED, not a requirement: opposite sides of a block carry
+        // equal counts and a shared edge is one edge named by two blocks, so the
+        // counts partition into equivalence classes and one seed decides a whole
+        // class. An edge that declares none keeps 0 here and is resolved later; a
+        // class with no seed at all is refused naming every edge in it, because a
+        // silently-chosen count decides the whole mesh density.
         auto cnt = e.find("count");
-        if (cnt == e.end() || !cnt->is_number_integer()) {
-            err = where + " ('" + spec.id + "'): 'count' (an integer node count >= 2) "
-                  "is required. Seeding a few edges and propagating the rest across "
-                  "the edges that are structurally forced to match arrives with the "
-                  "point-count propagation work.";
-            return false;
-        }
-        spec.count = cnt->get<int>();
-        if (spec.count < 2) {
-            err = where + " ('" + spec.id + "'): 'count' is " + std::to_string(spec.count)
-                + "; an edge needs at least 2 nodes (its two end corners).";
-            return false;
+        if (cnt != e.end()) {
+            if (!cnt->is_number_integer()) {
+                err = where + " ('" + spec.id + "'): 'count' must be an integer node "
+                      "count >= 2. Leave it out to have it propagate from an edge that "
+                      "is structurally forced to match this one.";
+                return false;
+            }
+            spec.count = cnt->get<int>();
+            if (spec.count < 2) {
+                err = where + " ('" + spec.id + "'): 'count' is "
+                    + std::to_string(spec.count)
+                    + "; an edge needs at least 2 nodes (its two end corners).";
+                return false;
+            }
         }
         auto sp = e.find("spacing");
         if (sp != e.end() && !parseSpacing(*sp, where + " ('" + spec.id + "')", spec, err))
@@ -700,6 +723,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         r.ok = false;
         r.error = msg;
         r.nodes.clear(); r.blocks.clear(); r.cells.clear(); r.boundaryEdges.clear();
+        r.wallSpecs.clear(); r.sharedEdges.clear(); r.edgeCounts.clear();
         return r;
     };
 
@@ -733,21 +757,45 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     if (!parseEdges(doc, corners, edges, err)) return fail(err);
     if (!parseBlocks(doc, edges, blocks, err)) return fail(err);
 
-    if (blocks.size() != 1)
-        return fail("this release fills exactly one block and the topology declares "
-                    + std::to_string(blocks.size()) + ". Several blocks need the point "
-                    "counts propagated across shared edges and the two sides welded "
-                    "topologically, which arrives with the multi-block welding work.");
+    // ── Which block sides each edge is, and what its KIND allows ──────────
+    //
+    // Built before anything is resolved, because the kind is a claim about exactly
+    // this. A "wall" is the outside of the mesh, so one block has it. An
+    // "interface" is an interior boundary between two blocks and a "cut" is a wake
+    // or branch line that is likewise shared but is not a boundary of anything, so
+    // each of those is a side of exactly two. The kind is DECLARED and never
+    // inferred from whether a binding is present: inference would file a wake cut
+    // as an ordinary interface, and the two are different statements about one
+    // line. `parseBlocks` has already refused an edge named twice within one
+    // block, so a shared edge is always shared between two DIFFERENT blocks — a
+    // block welded to itself is not fillable by a transfinite map over four sides
+    // and is not silently accepted here.
+    struct Use { int block; int side; };
+    std::map<std::string, std::vector<Use>> uses;
+    for (size_t bi = 0; bi < blocks.size(); ++bi)
+        for (int k = 0; k < 4; ++k)
+            uses[blocks[bi].edges[static_cast<size_t>(k)]]
+                .push_back({static_cast<int>(bi), k});
 
     // A declaration that reaches nothing is a typo, not a preference: an edge in
     // no block and a corner on no edge are both silently absent from the mesh.
     for (const auto& e : edges) {
-        bool used = false;
-        for (const auto& b : blocks)
-            if (std::find(b.edges.begin(), b.edges.end(), e.id) != b.edges.end()) used = true;
-        if (!used)
+        const std::vector<Use>& u = uses[e.id];
+        if (u.empty())
             return fail("edge '" + e.id + "' belongs to no block. Every declared edge "
                         "must be one of some block's four sides.");
+        const size_t want = (e.kind == "wall") ? 1u : 2u;
+        if (u.size() == want) continue;
+        std::ostringstream os;
+        os << "edge '" << e.id << "' is declared kind '" << e.kind << "' but is a side of "
+           << u.size() << " block(s) —";
+        for (const Use& x : u)
+            os << " the " << kSideName[x.side] << " of block '"
+               << blocks[static_cast<size_t>(x.block)].id << "'";
+        os << ". A 'wall' is the outside of the mesh, so exactly one block has it; an "
+              "'interface' (an interior boundary between two blocks) and a 'cut' (a wake "
+              "or branch line) are each a side of exactly two.";
+        return fail(os.str());
     }
     for (const auto& c : corners) {
         bool used = false;
@@ -756,6 +804,196 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             return fail("corner '" + c.id + "' is on no edge. Every declared corner "
                         "must be an end of some edge.");
     }
+
+    auto edgeIndexById = [&edges](const std::string& id) -> int {
+        for (size_t k = 0; k < edges.size(); ++k)
+            if (edges[k].id == id) return static_cast<int>(k);
+        return -1;
+    };
+
+    // ── A block's frame comes from its OWN declaration ────────────────────
+    //
+    // The four edges are declared in [south, east, north, west] order, and the
+    // block's i direction is its SOUTH edge's own declared direction. The other
+    // three sides are then traversed in whichever direction closes the ring:
+    // south and west meet at the block's i-min/j-min corner, south and east at
+    // i-max/j-min, north and west at i-min/j-max, north and east at i-max/j-max.
+    //
+    // Allowing those three to be declared either way is a DEPARTURE from the
+    // single-block release, which refused any side not written in the convention's
+    // direction. The reason is welding: a shared edge is ONE edge with ONE declared
+    // direction, named by two blocks whose logical frames need not agree about it,
+    // so under the old rule a neighbour whose shared edge runs the other way could
+    // not be declared at all. Nothing is INFERRED by the change — the frame is
+    // still fixed entirely by the south edge plus which corners the other three
+    // touch, and a set of four edges that does not close a ring is refused BY NAME
+    // rather than repaired, because a repaired one is a mirrored block, i.e. a mesh
+    // rather than an error.
+    struct Frame {
+        std::string corner[4];   // A (0,0), B (ni-1,0), C (ni-1,nj-1), D (0,nj-1)
+        int edge[4] = {-1, -1, -1, -1};
+        bool rev[4] = {false, false, false, false};
+    };
+    std::vector<Frame> frames(blocks.size());
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+        const BlockSpec& blk = blocks[bi];
+        Frame& f = frames[bi];
+        for (int k = 0; k < 4; ++k) {
+            f.edge[k] = edgeIndexById(blk.edges[static_cast<size_t>(k)]);
+            if (f.edge[k] < 0)
+                return fail("block '" + blk.id + "': edge '"
+                            + blk.edges[static_cast<size_t>(k)] + "' resolved during "
+                              "parsing and not during filling; the topology was not read "
+                              "consistently and no mesh was made.");
+        }
+        const EdgeSpec& S = edges[static_cast<size_t>(f.edge[0])];
+        const EdgeSpec& E = edges[static_cast<size_t>(f.edge[1])];
+        const EdgeSpec& N = edges[static_cast<size_t>(f.edge[2])];
+        const EdgeSpec& W = edges[static_cast<size_t>(f.edge[3])];
+        auto ringFail = [&](const EdgeSpec& e, const char* side,
+                            const std::string& want) -> MbResult& {
+            return fail("block '" + blk.id + "': its four sides do not close a ring. Its "
+                        "south edge '" + S.id + "' runs ['" + S.a + "', '" + S.b
+                      + "'], which fixes the block's i direction, so its "
+                      + std::string(side) + " edge '" + e.id + "' must have an end at "
+                      + want + " — but it runs ['" + e.a + "', '" + e.b + "']. A block's "
+                        "four edges must close a ring: south and west meet at its "
+                        "i-min/j-min corner, south and east at i-max/j-min, north and west "
+                        "at i-min/j-max, north and east at i-max/j-max. Each of the other "
+                        "three may be declared in either direction; which way it is "
+                        "traversed follows from the ring.");
+        };
+        f.corner[0] = S.a;
+        f.corner[1] = S.b;
+        if (W.a == f.corner[0])      { f.corner[3] = W.b; f.rev[3] = false; }
+        else if (W.b == f.corner[0]) { f.corner[3] = W.a; f.rev[3] = true; }
+        else return ringFail(W, "west", "corner '" + f.corner[0] + "'");
+        if (E.a == f.corner[1])      { f.corner[2] = E.b; f.rev[1] = false; }
+        else if (E.b == f.corner[1]) { f.corner[2] = E.a; f.rev[1] = true; }
+        else return ringFail(E, "east", "corner '" + f.corner[1] + "'");
+        if (N.a == f.corner[3] && N.b == f.corner[2])      f.rev[2] = false;
+        else if (N.a == f.corner[2] && N.b == f.corner[3]) f.rev[2] = true;
+        else return ringFail(N, "north", "both corners '" + f.corner[3] + "' and '"
+                                       + f.corner[2] + "'");
+        for (int x = 0; x < 4; ++x)
+            for (int y = x + 1; y < 4; ++y)
+                if (f.corner[x] == f.corner[y])
+                    return fail("block '" + blk.id + "': its four sides do not close a "
+                                "ring — corner '" + f.corner[x] + "' comes out as two "
+                                "different corners of the block (" + kCornerName[x]
+                              + " and " + kCornerName[y] + "), so it has no interior to "
+                                "fill.");
+    }
+
+    // ── Point-count propagation ───────────────────────────────────────────
+    //
+    // Two edges are structurally forced to carry the same node count when they are
+    // OPPOSITE SIDES of one block: a structured block is ni x nj nodes, so its
+    // south and north sides have the same number and so do its west and east.
+    // Because a shared edge is ONE declared edge that two blocks both name, that
+    // single relation propagates ACROSS blocks too — which is why there is no
+    // second rule here for an interface. The relation partitions the edges into
+    // equivalence classes; the user seeds a few and the rest are resolved.
+    std::vector<int> parent(edges.size());
+    for (size_t k = 0; k < edges.size(); ++k) parent[k] = static_cast<int>(k);
+    auto findRoot = [&parent](int x) {
+        while (parent[static_cast<size_t>(x)] != x) {
+            parent[static_cast<size_t>(x)] =
+                parent[static_cast<size_t>(parent[static_cast<size_t>(x)])];
+            x = parent[static_cast<size_t>(x)];
+        }
+        return x;
+    };
+    // Each merge is also recorded as a LINK, because a conflict has to be reported
+    // with the chain that propagated between the two seeds. On a topology with
+    // dozens of edges "counts disagree" does not say which declaration to change.
+    struct Link { int other; size_t block; int sideA; int sideB; };
+    std::vector<std::vector<Link>> adj(edges.size());
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+        const int pairs[2][2] = {{0, 2}, {3, 1}};   // south/north, west/east
+        for (const auto& pr : pairs) {
+            const int a = frames[bi].edge[pr[0]], b = frames[bi].edge[pr[1]];
+            adj[static_cast<size_t>(a)].push_back({b, bi, pr[0], pr[1]});
+            adj[static_cast<size_t>(b)].push_back({a, bi, pr[1], pr[0]});
+            parent[static_cast<size_t>(findRoot(a))] = findRoot(b);
+        }
+    }
+    // `adj` is complete and never touched again, so the Link pointers this walk
+    // keeps cannot dangle.
+    auto chainBetween = [&](int from, int to) {
+        std::vector<int> prevE(edges.size(), -1);
+        std::vector<const Link*> via(edges.size(), nullptr);
+        std::vector<bool> seen(edges.size(), false);
+        std::vector<int> queue;
+        queue.push_back(from);
+        seen[static_cast<size_t>(from)] = true;
+        for (size_t qi = 0; qi < queue.size(); ++qi) {
+            const int cur = queue[qi];
+            if (cur == to) break;
+            for (const Link& l : adj[static_cast<size_t>(cur)]) {
+                if (seen[static_cast<size_t>(l.other)]) continue;
+                seen[static_cast<size_t>(l.other)] = true;
+                prevE[static_cast<size_t>(l.other)] = cur;
+                via[static_cast<size_t>(l.other)] = &l;
+                queue.push_back(l.other);
+            }
+        }
+        std::vector<std::string> lines;
+        for (int at = to; at != from && prevE[static_cast<size_t>(at)] >= 0;
+             at = prevE[static_cast<size_t>(at)]) {
+            const Link* l = via[static_cast<size_t>(at)];
+            lines.push_back(std::string("    '")
+                + edges[static_cast<size_t>(prevE[static_cast<size_t>(at)])].id
+                + "' and '" + edges[static_cast<size_t>(at)].id
+                + "' are opposite sides (" + kSideName[l->sideA] + " / "
+                + kSideName[l->sideB] + ") of block '" + blocks[l->block].id + "'\n");
+        }
+        std::string out;
+        for (size_t k = lines.size(); k-- > 0;) out += lines[k];
+        return out;
+    };
+
+    // The seeds, kept apart from the resolved counts so a run can report which of
+    // the two each edge got.
+    std::vector<int> seeded(edges.size(), 0);
+    for (size_t k = 0; k < edges.size(); ++k) seeded[k] = edges[k].count;
+    std::map<int, std::vector<int>> classes;
+    for (size_t k = 0; k < edges.size(); ++k)
+        classes[findRoot(static_cast<int>(k))].push_back(static_cast<int>(k));
+    for (const auto& kv : classes) {
+        int seed = -1;
+        for (int i : kv.second) {
+            if (seeded[static_cast<size_t>(i)] <= 0) continue;
+            if (seed < 0) { seed = i; continue; }
+            if (seeded[static_cast<size_t>(i)] == seeded[static_cast<size_t>(seed)]) continue;
+            return fail("the topology declares two different node counts for edges that "
+                        "are structurally forced to carry the same one: edge '"
+                      + edges[static_cast<size_t>(seed)].id + "' declares count "
+                      + std::to_string(seeded[static_cast<size_t>(seed)]) + " and edge '"
+                      + edges[static_cast<size_t>(i)].id + "' declares count "
+                      + std::to_string(seeded[static_cast<size_t>(i)])
+                      + ". Opposite sides of a block carry equal counts, and a shared edge "
+                        "is ONE edge named by two blocks, so the count propagates along "
+                        "this chain:\n" + chainBetween(seed, i)
+                      + "  Change one of the two counts, or declare a topology in which "
+                        "those two edges are not linked by such a chain.");
+        }
+        if (seed < 0) {
+            std::ostringstream os;
+            os << "no edge in a group of " << kv.second.size() << " structurally linked "
+                  "edge(s) declares a 'count', so nothing fixes the node count for any of "
+                  "them:";
+            for (int i : kv.second) os << " '" << edges[static_cast<size_t>(i)].id << "'";
+            os << ". Seed ONE of them with \"count\": <n> (an integer >= 2) and the rest "
+                  "follow — opposite sides of a block carry equal counts, and a shared "
+                  "edge is one edge named by two blocks.";
+            return fail(os.str());
+        }
+        for (int i : kv.second)
+            edges[static_cast<size_t>(i)].count = seeded[static_cast<size_t>(seed)];
+    }
+    for (size_t k = 0; k < edges.size(); ++k)
+        r.edgeCounts.push_back({edges[k].id, edges[k].count, seeded[k] > 0});
 
     // ── The fallback boundary condition ───────────────────────────────────
     // Resolved before attachment, because a bound edge whose segment carries no
@@ -912,238 +1150,322 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                              "wall edge to a source segment to have its condition come "
                              "from the declaration instead.");
 
-    // Both lookups return a POINTER and the caller refuses on null, rather than
-    // falling back to the origin or to the first edge. The parse already proved
-    // every id resolves, so these branches should be dead — but a silent fallback
-    // on a broken invariant meshes a block nobody declared, and a wrong mesh is
-    // the one outcome worse than no mesh.
-    auto cornerXy = [&](const std::string& id) -> const Point2D* {
-        for (const auto& c : corners) if (c.id == id) return &c.xy;
-        return nullptr;
-    };
-    auto edgeById = [&](const std::string& id) -> const EdgeSpec* {
-        for (const auto& e : edges) if (e.id == id) return &e;
-        return nullptr;
-    };
-
-    const BlockSpec& blk = blocks.front();
-    const EdgeSpec* sides[4] = {edgeById(blk.edges[0]), edgeById(blk.edges[1]),
-                                edgeById(blk.edges[2]), edgeById(blk.edges[3])};
-    for (int k = 0; k < 4; ++k)
-        if (!sides[k])
-            return fail("block '" + blk.id + "': edge '" + blk.edges[static_cast<size_t>(k)]
-                        + "' resolved during parsing and not during filling; the "
-                          "topology was not read consistently and no mesh was made.");
-    const EdgeSpec& S = *sides[0];
-    const EdgeSpec& E = *sides[1];
-    const EdgeSpec& N = *sides[2];
-    const EdgeSpec& W = *sides[3];
-
-    // The block's four corners, named for their logical position:
-    //   A = (0, 0)   B = (ni-1, 0)   C = (ni-1, nj-1)   D = (0, nj-1)
-    // and the convention every side is checked against is
-    //   south [A,B]   east [B,C]   north [D,C]   west [A,D]
-    // i.e. south and north both run i-min -> i-max, west and east both run
-    // j-min -> j-max. Declaring it and refusing deviations by name beats
-    // inferring the orientation: an inferred one that guesses wrong produces a
-    // mirrored or inside-out block, which is a mesh rather than an error.
-    const std::string A = S.a, B = S.b;
-    auto sideMismatch = [&](const EdgeSpec& e, const char* side,
-                            const std::string& want0, const std::string& want1) {
-        return "block '" + blk.id + "': its " + std::string(side) + " edge '" + e.id
-             + "' runs ['" + e.a + "', '" + e.b + "'] but the [south, east, north, west] "
-               "convention needs ['" + want0 + "', '" + want1 + "'] — south and north both "
-               "run i-min to i-max, west and east both run j-min to j-max, and all four "
-               "meet at the block's corners.";
-    };
-    if (W.a != A) return fail(sideMismatch(W, "west", A, "<the block's j-max corner>"));
-    const std::string D = W.b;
-    if (E.a != B) return fail(sideMismatch(E, "east", B, "<the block's j-max corner>"));
-    const std::string C = E.b;
-    if (N.a != D || N.b != C) return fail(sideMismatch(N, "north", D, C));
-
-    // Opposite sides of a block are structurally forced to carry equal counts.
-    // Until propagation lands, a mismatch is a hard refusal naming both edges and
-    // both requested counts — the same report a conflicting seed will get once
-    // counts propagate, so one mistake reads the same either way.
-    auto countClash = [&](const EdgeSpec& x, const char* sx,
-                          const EdgeSpec& y, const char* sy) {
-        return "block '" + blk.id + "': opposite sides must carry equal node counts, "
-               "but its " + std::string(sx) + " edge '" + x.id + "' declares count "
-             + std::to_string(x.count) + " and its " + std::string(sy) + " edge '"
-             + y.id + "' declares count " + std::to_string(y.count) + ".";
-    };
-    if (S.count != N.count) return fail(countClash(S, "south", N, "north"));
-    if (W.count != E.count) return fail(countClash(W, "west", E, "east"));
-
-    const int ni = S.count;
-    const int nj = W.count;
-
-    const Point2D* pc[4] = {cornerXy(A), cornerXy(B), cornerXy(C), cornerXy(D)};
-    const std::string names[4] = {A, B, C, D};
-    for (int k = 0; k < 4; ++k)
-        if (!pc[k])
-            return fail("block '" + blk.id + "': corner '" + names[k] + "' resolved "
-                        "during parsing and not during filling; the topology was not "
-                        "read consistently and no mesh was made.");
-    const Point2D pa = *pc[0], pb = *pc[1], pcc = *pc[2], pd = *pc[3];
-
-    // The polyline each side runs along. Every one of the four is discretised in
-    // its OWN declared direction (a -> b) — which the convention check above has
-    // just proved is also the block's i/j direction for that side — so one rule
-    // covers all four and a bound edge needs no second orientation argument.
-    auto pathFor = [&](const EdgeSpec& e, Point2D p0, Point2D p1) -> std::vector<Point2D> {
-        const auto it = bound.find(e.id);
-        if (it == bound.end()) return {p0, p1};
-        const SegSpan& sp = spans.at({it->second.geomId, it->second.segId});
-        return subPath(sp.pts, sp.cum, it->second.ta, it->second.tb);
-    };
-    const std::vector<Point2D> south = discretise(S, pathFor(S, pa, pb));
-    const std::vector<Point2D> north = discretise(N, pathFor(N, pd, pcc));
-    const std::vector<Point2D> west  = discretise(W, pathFor(W, pa, pd));
-    const std::vector<Point2D> east  = discretise(E, pathFor(E, pb, pcc));
-
-    // A clockwise corner ring makes EVERY cell in the block inverted, so this is
-    // a bad block orientation: a defect of the DECLARATION, readable before a
-    // single node exists, with an actionable fix. Refused with the topology code
-    // rather than exported under the inverted-cell one, and the difference is not
-    // a technicality — the inverted-cell code is for a valid declaration whose
-    // GEOMETRY came out folded, which is worth looking at; a backwards-wound ring
-    // is worth fixing, and there is nothing to look at because no one wants the
-    // mesh either way. Not repaired silently either: re-winding would mean the
-    // mesh no longer matches the document that declared it.
-    {
-        const double area2 = (pb - pa).cross(pcc - pa) + (pcc - pa).cross(pd - pa);
-        if (area2 <= 0.0)
-            return fail("block '" + blk.id + "': its corners '" + A + "', '" + B
-                + "', '" + C + "', '" + D + "' wind clockwise (signed area "
-                + std::to_string(0.5 * area2) + "), so every cell in it would be "
-                "inverted. Swap the block's south and north edges, or reverse each "
-                "edge's own corner pair.");
+    // Resolved once per edge rather than once per boundary edge, because the answer
+    // is a property of the edge: its bound segment's own BC label and (geometry,
+    // segment) key, or the config default for an edge that declares no binding.
+    std::vector<Attached> edgeBc(edges.size());
+    for (size_t k = 0; k < edges.size(); ++k) {
+        const auto it = bound.find(edges[k].id);
+        if (it == bound.end()) edgeBc[k].bc = bc;
+        else                   edgeBc[k] = it->second;
     }
 
-    MbBlock filled;
-    filled.id = blk.id;
-    filled.ni = ni;
-    filled.nj = nj;
-    filled.nodeIds.resize(static_cast<size_t>(ni) * static_cast<size_t>(nj));
-    r.nodes.reserve(static_cast<size_t>(ni) * static_cast<size_t>(nj));
-    for (int j = 0; j < nj; ++j) {
-        for (int i = 0; i < ni; ++i) {
-            filled.nodeIds[static_cast<size_t>(j) * ni + i] = static_cast<int>(r.nodes.size());
-            r.nodes.push_back(coons(south, north, west, east, i, j, ni, nj));
+    // ── Node allocation: every shared node is allocated ONCE ──────────────
+    //
+    // This is the whole of the welding, and there is no distance anywhere in it. A
+    // corner gets one node because it is one declared corner; an edge gets its
+    // interior nodes once because it is one declared edge; and a block reads the
+    // node IDS of its four sides instead of generating its own boundary. So the
+    // k-th node along a shared edge IS the k-th node both blocks see, and the two
+    // sides cannot be a tolerance apart because there is only one of them.
+    //
+    // Coordinate welding is not merely not preferred here, it is unavailable: wall
+    // spacing on a real case is around 1e-7 while far-field spacing is around
+    // 1e-1, and no single tolerance exists between those two scales. This is the
+    // same rule the iso-line tracer follows, which chains by mesh EDGE IDENTITY
+    // and never by welding coordinates. Two corners declared at the SAME
+    // coordinates under DIFFERENT ids therefore stay two nodes: the declaration is
+    // the only thing that can say they are one.
+    std::map<std::string, int> cornerNode;
+    for (const auto& c : corners) {
+        cornerNode[c.id] = static_cast<int>(r.nodes.size());
+        r.nodes.push_back(c.xy);
+    }
+
+    // One edge's node ids, in its OWN declared direction, and their positions.
+    struct EdgeNodes { std::vector<int> ids; std::vector<Point2D> pts; };
+    std::vector<EdgeNodes> eNodes(edges.size());
+    for (size_t k = 0; k < edges.size(); ++k) {
+        const EdgeSpec& e = edges[k];
+        const Corner* ca = cornerById(e.a);
+        const Corner* cb = cornerById(e.b);
+        // The parse already proved both ends resolve, so this branch should be
+        // dead — but a silent fallback on a broken invariant meshes a block nobody
+        // declared, and a wrong mesh is the one outcome worse than no mesh.
+        if (!ca || !cb)
+            return fail("edge '" + e.id + "': a corner resolved during parsing and not "
+                        "during filling; the topology was not read consistently and no "
+                        "mesh was made.");
+        // The polyline this edge RUNS ALONG. For an unbound edge that is the chord
+        // between its two corners; for a bound one it is the stretch of its source
+        // segment the edge covers, which is what makes "this edge lies on that
+        // segment" true rather than merely declared.
+        std::vector<Point2D> path;
+        const auto bd = bound.find(e.id);
+        if (bd == bound.end()) path = {ca->xy, cb->xy};
+        else {
+            const SegSpan& sp = spans.at({bd->second.geomId, bd->second.segId});
+            path = subPath(sp.pts, sp.cum, bd->second.ta, bd->second.tb);
+        }
+        eNodes[k].pts = discretise(e, path);
+        if (eNodes[k].pts.size() != static_cast<size_t>(e.count))
+            return fail("edge '" + e.id + "': its " + std::to_string(e.count)
+                        + " nodes could not be distributed along it; the topology was not "
+                          "read consistently and no mesh was made.");
+        // The two ends ARE the corner nodes rather than copies of them a tolerance
+        // away. `discretise` pins them onto the path's own first and last point,
+        // and for a bound edge that point is the very geometry point the corner
+        // resolved to — both come out of `pointAtArc` at the same index, so they
+        // are equal bit for bit and the position written here is the corner's.
+        eNodes[k].ids.resize(static_cast<size_t>(e.count));
+        eNodes[k].ids.front() = cornerNode[e.a];
+        eNodes[k].ids.back() = cornerNode[e.b];
+        for (int t = 1; t + 1 < e.count; ++t) {
+            eNodes[k].ids[static_cast<size_t>(t)] = static_cast<int>(r.nodes.size());
+            r.nodes.push_back(eNodes[k].pts[static_cast<size_t>(t)]);
         }
     }
-    r.blocks.push_back(filled);
-    const MbBlock& b0 = r.blocks.front();
-    const int blockIdx = 0;
 
-    // Publish what the DECLARATION asks the first cell height off each wall to
-    // be, for the quality report to measure the fill against (include/MbQuality.hpp).
-    //
-    // It has to be published from here because only this scope still knows the
-    // spacing laws: the request off a side is the FIRST INTERVAL of the edge
-    // running away from it, taken from the perpendicular edge at each of the
-    // side's two corners, and once the block is a grid of positions those laws
-    // are gone. Which edge that is comes from `mbSideAxis`, so the [south, east,
-    // north, west] convention is read here rather than restated.
-    //
-    // WHAT THIS IS NOT, stated here because it is easy to over-read: in this
-    // release nothing declares a wall-normal first-cell height independently of
-    // the edge distribution, so the request is DERIVED FROM THE SAME LAW the fill
-    // reproduces. The transfinite blend is exact on the boundary, so the number
-    // the report computes from it is zero at the side's two end columns BY
-    // CONSTRUCTION, and what it really measures in between is interior
-    // distortion. An independent target arrives with the wall-spacing resolution
-    // work (BL_INITIAL_THICKNESS and friends); when it does, only these two lines
-    // change source and nothing that reads the report has to change.
-    {
-        auto firstInterval = [](const std::vector<Point2D>& e, bool fromEnd) {
-            if (e.size() < 2) return 0.0;
-            return fromEnd ? (e[e.size() - 1] - e[e.size() - 2]).length()
-                           : (e[1] - e[0]).length();
-        };
+    // ── Fill every block ──────────────────────────────────────────────────
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+        const BlockSpec& blk = blocks[bi];
+        const Frame& f = frames[bi];
+        const int blockIdx = static_cast<int>(bi);
+
+        // The four sides in the BLOCK's own i/j direction: the declared edge, run
+        // forwards or backwards as the ring requires. That one reversal is what
+        // lets a single declared edge serve two blocks whose frames disagree about
+        // which way it runs — and it is the only place orientation is applied, so
+        // the ids and the positions cannot come out reversed with respect to each
+        // other.
+        std::vector<Point2D> sPts[4];
+        std::vector<int> sIds[4];
         for (int k = 0; k < 4; ++k) {
-            const MbSide side = static_cast<MbSide>(k);   // sides[] is in this order
-            const MbSideAxis ax = mbSideAxis(side);
-            const EdgeSpec& e = *sides[k];
-            // Gated on the KIND rather than on "v0 has only walls": interface and
-            // cut edges are refused by name today, so this is dead by construction
-            // now and correct the day they are not.
-            if (e.kind != "wall") continue;
-            const std::vector<Point2D>& perpLo = ax.alongI ? west : south;
-            const std::vector<Point2D>& perpHi = ax.alongI ? east : north;
-            MbWallSpec ws;
-            ws.block = blockIdx;
-            ws.side = side;
-            ws.edgeId = e.id;
-            ws.requestedLo = firstInterval(perpLo, ax.atFarEnd);
-            ws.requestedHi = firstInterval(perpHi, ax.atFarEnd);
-            r.wallSpecs.push_back(ws);
+            const EdgeNodes& en = eNodes[static_cast<size_t>(f.edge[k])];
+            sPts[k] = en.pts;
+            sIds[k] = en.ids;
+            if (f.rev[k]) {
+                std::reverse(sPts[k].begin(), sPts[k].end());
+                std::reverse(sIds[k].begin(), sIds[k].end());
+            }
         }
+        const int ni = static_cast<int>(sPts[MB_SOUTH].size());
+        const int nj = static_cast<int>(sPts[MB_WEST].size());
+        if (static_cast<int>(sPts[MB_NORTH].size()) != ni
+            || static_cast<int>(sPts[MB_EAST].size()) != nj)
+            return fail("block '" + blk.id + "': its opposite sides came out with "
+                        "different node counts after propagation; the topology was not "
+                        "read consistently and no mesh was made.");
+
+        // A clockwise corner ring makes EVERY cell in the block inverted, so this
+        // is a bad block orientation: a defect of the DECLARATION, readable before
+        // a single node exists, with an actionable fix. Refused with the topology
+        // code rather than exported under the inverted-cell one, and the difference
+        // is not a technicality — the inverted-cell code is for a valid declaration
+        // whose GEOMETRY came out folded, which is worth looking at; a backwards
+        // ring is worth fixing, and there is nothing to look at because no one
+        // wants the mesh either way. Not repaired silently either: re-winding would
+        // mean the mesh no longer matches the document that declared it.
+        const Point2D pa = sPts[MB_SOUTH].front(), pb = sPts[MB_SOUTH].back();
+        const Point2D pcc = sPts[MB_EAST].back(), pd = sPts[MB_WEST].back();
+        {
+            const double area2 = (pb - pa).cross(pcc - pa) + (pcc - pa).cross(pd - pa);
+            if (area2 <= 0.0)
+                return fail("block '" + blk.id + "': its corners '" + f.corner[0] + "', '"
+                    + f.corner[1] + "', '" + f.corner[2] + "', '" + f.corner[3]
+                    + "' wind clockwise (signed area " + std::to_string(0.5 * area2)
+                    + "), so every cell in it would be inverted. Reverse its south edge's "
+                      "own corner pair, or swap the block's south and north edges.");
+        }
+
+        // The four sides meet at four SHARED corner nodes, which the ring match
+        // already proved as ids. Checked rather than assumed, and checked BEFORE
+        // the writes below overwrite one with the other: a mismatch here would be a
+        // block stitched to itself wrongly, which is a wrong mesh and not an error.
+        if (sIds[MB_SOUTH].front() != sIds[MB_WEST].front()
+            || sIds[MB_SOUTH].back() != sIds[MB_EAST].front()
+            || sIds[MB_NORTH].front() != sIds[MB_WEST].back()
+            || sIds[MB_NORTH].back() != sIds[MB_EAST].back())
+            return fail("block '" + blk.id + "': its four sides do not meet at four shared "
+                        "corner nodes; the topology was not read consistently and no mesh "
+                        "was made.");
+
+        MbBlock filled;
+        filled.id = blk.id;
+        filled.ni = ni;
+        filled.nj = nj;
+        filled.nodeIds.assign(static_cast<size_t>(ni) * static_cast<size_t>(nj), -1);
+        auto at = [&filled, ni](int i, int j) -> int& {
+            return filled.nodeIds[static_cast<size_t>(j) * static_cast<size_t>(ni)
+                                  + static_cast<size_t>(i)];
+        };
+        // The boundary is READ from the sides, never regenerated. That is the
+        // welding: a node on a shared edge is written once, by the edge.
+        for (int i = 0; i < ni; ++i) {
+            at(i, 0) = sIds[MB_SOUTH][static_cast<size_t>(i)];
+            at(i, nj - 1) = sIds[MB_NORTH][static_cast<size_t>(i)];
+        }
+        for (int j = 0; j < nj; ++j) {
+            at(0, j) = sIds[MB_WEST][static_cast<size_t>(j)];
+            at(ni - 1, j) = sIds[MB_EAST][static_cast<size_t>(j)];
+        }
+        // Only the INTERIOR is interpolated. Transfinite (Coons) interpolation is
+        // exact on the boundary, but "exact" there means it reproduces the side to
+        // within the rounding of one subtraction, and a shared edge must be one
+        // curve rather than two agreeing ones — so the side's own discretisation is
+        // the definitive answer and the blend is asked only about the inside.
+        for (int j = 1; j + 1 < nj; ++j) {
+            for (int i = 1; i + 1 < ni; ++i) {
+                at(i, j) = static_cast<int>(r.nodes.size());
+                r.nodes.push_back(coons(sPts[MB_SOUTH], sPts[MB_NORTH],
+                                        sPts[MB_WEST], sPts[MB_EAST], i, j, ni, nj));
+            }
+        }
+        r.blocks.push_back(filled);
+        const MbBlock& b0 = r.blocks.back();
+
+        // Publish what the DECLARATION asks the first cell height off each wall to
+        // be, for the quality report to measure the fill against
+        // (include/MbQuality.hpp).
+        //
+        // It has to be published from here because only this scope still knows the
+        // spacing laws: the request off a side is the FIRST INTERVAL of the edge
+        // running away from it, taken from the perpendicular edge at each of the
+        // side's two corners, and once the block is a grid of positions those laws
+        // are gone. Which edge that is comes from `mbSideAxis`, so the [south,
+        // east, north, west] convention is read here rather than restated.
+        //
+        // WHAT THIS IS NOT, stated here because it is easy to over-read: in this
+        // release nothing declares a wall-normal first-cell height independently of
+        // the edge distribution, so the request is DERIVED FROM THE SAME LAW the
+        // fill reproduces. The transfinite blend is exact on the boundary, so the
+        // number the report computes from it is zero at the side's two end columns
+        // BY CONSTRUCTION, and what it really measures in between is interior
+        // distortion. An independent target arrives with the wall-spacing
+        // resolution work (BL_INITIAL_THICKNESS and friends); when it does, only
+        // these two lines change source and nothing that reads the report has to
+        // change.
+        {
+            auto firstInterval = [](const std::vector<Point2D>& e, bool fromEnd) {
+                if (e.size() < 2) return 0.0;
+                return fromEnd ? (e[e.size() - 1] - e[e.size() - 2]).length()
+                               : (e[1] - e[0]).length();
+            };
+            for (int k = 0; k < 4; ++k) {
+                const MbSide side = static_cast<MbSide>(k);   // sIds[] is in this order
+                const MbSideAxis ax = mbSideAxis(side);
+                const EdgeSpec& e = edges[static_cast<size_t>(f.edge[k])];
+                // Gated on the KIND: an interface or a cut is an interior line, and
+                // "how tall is the first cell off it" is not a question about one.
+                if (e.kind != "wall") continue;
+                const std::vector<Point2D>& perpLo = ax.alongI ? sPts[MB_WEST]
+                                                               : sPts[MB_SOUTH];
+                const std::vector<Point2D>& perpHi = ax.alongI ? sPts[MB_EAST]
+                                                               : sPts[MB_NORTH];
+                MbWallSpec ws;
+                ws.block = blockIdx;
+                ws.side = side;
+                ws.edgeId = e.id;
+                ws.requestedLo = firstInterval(perpLo, ax.atFarEnd);
+                ws.requestedHi = firstInterval(perpHi, ax.atFarEnd);
+                r.wallSpecs.push_back(ws);
+            }
+        }
+
+        for (int j = 0; j + 1 < nj; ++j) {
+            for (int i = 0; i + 1 < ni; ++i) {
+                const int n00 = b0.nodeAt(i, j),         n10 = b0.nodeAt(i + 1, j);
+                const int n11 = b0.nodeAt(i + 1, j + 1), n01 = b0.nodeAt(i, j + 1);
+                if (!params.splitQuads) {
+                    r.cells.push_back(MbCell{{n00, n10, n11, n01}, blockIdx});
+                    continue;
+                }
+                // ALTERNATING BY INDEX PARITY — the default, and correct from the
+                // first mesh rather than a later refinement. A single consistent
+                // diagonal imprints its own direction on a uniform structured
+                // region; flipping with (i + j) does not, needs no seed, and stays
+                // deterministic, so this path remains comparable run to run.
+                if (((i + j) % 2) == 0) {
+                    r.cells.push_back(MbCell{{n00, n10, n11}, blockIdx});
+                    r.cells.push_back(MbCell{{n00, n11, n01}, blockIdx});
+                } else {
+                    r.cells.push_back(MbCell{{n00, n10, n01}, blockIdx});
+                    r.cells.push_back(MbCell{{n10, n11, n01}, blockIdx});
+                }
+            }
+        }
+
+        // ONE counter-clockwise walk of the block's perimeter — south left to
+        // right, east up, north right to left, west down — matching the direction
+        // every other emitter in this repo uses (addTaggedLoop, buildDomainBoundary).
+        // Measured, and worth recording so nobody re-derives it: the direction does
+        // NOT reach the `.bnd`, because exportStarCD takes a boundary face's node
+        // ORDER from the cell that owns it and not from `edges`. It is consistency
+        // for a reader, not a fix.
+        //
+        // Only a WALL side is emitted. An interface or a cut is an INTERIOR line:
+        // both blocks have cells against it, so emitting it as a boundary face
+        // would hand the exporter a face with two owners and the solver a wall
+        // through the middle of the fluid.
+        auto isWall = [&](int k) {
+            return edges[static_cast<size_t>(f.edge[k])].kind == "wall";
+        };
+        auto addBoundary = [&](int k, int v1, int v2) {
+            const Attached& a = edgeBc[static_cast<size_t>(f.edge[k])];
+            MbBoundaryEdge be;
+            be.v1 = v1;
+            be.v2 = v2;
+            be.bc = a.bc;
+            be.geomId = a.geomId;
+            be.segId = a.segId;
+            r.boundaryEdges.push_back(be);
+        };
+        if (isWall(MB_SOUTH))
+            for (int i = 0; i + 1 < ni; ++i)
+                addBoundary(MB_SOUTH, b0.nodeAt(i, 0), b0.nodeAt(i + 1, 0));
+        if (isWall(MB_EAST))
+            for (int j = 0; j + 1 < nj; ++j)
+                addBoundary(MB_EAST, b0.nodeAt(ni - 1, j), b0.nodeAt(ni - 1, j + 1));
+        if (isWall(MB_NORTH))
+            for (int i = ni - 1; i > 0; --i)
+                addBoundary(MB_NORTH, b0.nodeAt(i, nj - 1), b0.nodeAt(i - 1, nj - 1));
+        if (isWall(MB_WEST))
+            for (int j = nj - 1; j > 0; --j)
+                addBoundary(MB_WEST, b0.nodeAt(0, j), b0.nodeAt(0, j - 1));
     }
 
-    for (int j = 0; j + 1 < nj; ++j) {
-        for (int i = 0; i + 1 < ni; ++i) {
-            const int n00 = b0.nodeAt(i, j),     n10 = b0.nodeAt(i + 1, j);
-            const int n11 = b0.nodeAt(i + 1, j + 1), n01 = b0.nodeAt(i, j + 1);
-            if (!params.splitQuads) {
-                r.cells.push_back(MbCell{{n00, n10, n11, n01}, blockIdx});
-                continue;
-            }
-            // ALTERNATING BY INDEX PARITY — the default, and correct from the
-            // first mesh rather than a later refinement. A single consistent
-            // diagonal imprints its own direction on a uniform structured
-            // region; flipping with (i + j) does not, needs no seed, and stays
-            // deterministic, so this path remains comparable run to run.
-            if (((i + j) % 2) == 0) {
-                r.cells.push_back(MbCell{{n00, n10, n11}, blockIdx});
-                r.cells.push_back(MbCell{{n00, n11, n01}, blockIdx});
-            } else {
-                r.cells.push_back(MbCell{{n00, n10, n01}, blockIdx});
-                r.cells.push_back(MbCell{{n10, n11, n01}, blockIdx});
-            }
-        }
+    // The interior lines two blocks were welded along, as data. Reported rather
+    // than left implicit because the KIND is a declaration and a claim a run
+    // cannot show is one nobody can check: an interface and a cut weld by the same
+    // rule today, so the report is what tells a user which shared lines the
+    // document says are wake cuts. See MbSharedEdge.
+    for (size_t k = 0; k < edges.size(); ++k) {
+        if (edges[k].kind == "wall") continue;
+        const std::vector<Use>& u = uses[edges[k].id];
+        // The arity check above already refused anything but exactly two, so this
+        // branch should be dead — but reading past the end of a vector on a broken
+        // invariant is the one failure that would not announce itself.
+        if (u.size() != 2)
+            return fail("edge '" + edges[k].id + "': it is shared by "
+                        + std::to_string(u.size()) + " block sides during reporting and "
+                          "by two during checking; the topology was not read "
+                          "consistently and no mesh was made.");
+        MbSharedEdge se;
+        se.edgeId = edges[k].id;
+        se.kind = edges[k].kind;
+        se.nodes = edges[k].count;
+        se.blockA = u[0].block;
+        se.sideA = u[0].side;
+        se.blockB = u[1].block;
+        se.sideB = u[1].side;
+        r.sharedEdges.push_back(se);
     }
+
     if (!params.splitQuads)
         r.warnings.push_back("quad splitting is OFF, so this mesh is exported as quads. "
                              "That is a diagnostic setting: the solver's incenter "
                              "reconstruction is undefined on quad cells, and the grid "
                              "converter's own slicer refuses a mixed mesh.");
-
-    // Every boundary edge of a side carries THAT SIDE'S declaration: its bound
-    // segment's own BC label and (geometry, segment) key, or the config default
-    // for a side that declares no binding. Resolved once per side rather than
-    // once per edge, because the answer is a property of the side.
-    Attached sideOf[4];
-    for (int k = 0; k < 4; ++k) {
-        const auto it = bound.find(sides[k]->id);
-        if (it == bound.end()) sideOf[k].bc = bc;
-        else                   sideOf[k] = it->second;
-    }
-    auto addBoundary = [&](const Attached& a, int v1, int v2) {
-        MbBoundaryEdge be;
-        be.v1 = v1;
-        be.v2 = v2;
-        be.bc = a.bc;
-        be.geomId = a.geomId;
-        be.segId = a.segId;
-        r.boundaryEdges.push_back(be);
-    };
-    // ONE counter-clockwise walk of the perimeter — south left to right, east up,
-    // north right to left, west down — matching the direction every other emitter
-    // in this repo uses (addTaggedLoop, buildDomainBoundary). Measured, and worth
-    // recording so nobody re-derives it: the direction does NOT reach the `.bnd`,
-    // because exportStarCD takes a boundary face's node ORDER from the cell that
-    // owns it and not from `edges`. It is consistency for a reader, not a fix.
-    for (int i = 0; i + 1 < ni; ++i)
-        addBoundary(sideOf[MB_SOUTH], b0.nodeAt(i, 0), b0.nodeAt(i + 1, 0));
-    for (int j = 0; j + 1 < nj; ++j)
-        addBoundary(sideOf[MB_EAST], b0.nodeAt(ni - 1, j), b0.nodeAt(ni - 1, j + 1));
-    for (int i = ni - 1; i > 0; --i)
-        addBoundary(sideOf[MB_NORTH], b0.nodeAt(i, nj - 1), b0.nodeAt(i - 1, nj - 1));
-    for (int j = nj - 1; j > 0; --j)
-        addBoundary(sideOf[MB_WEST], b0.nodeAt(0, j), b0.nodeAt(0, j - 1));
 
     r.ok = true;
     return r;
