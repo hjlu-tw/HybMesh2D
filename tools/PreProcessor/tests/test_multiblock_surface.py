@@ -45,11 +45,13 @@ square, one block):
            arithmetic services/case_run_note.iteration_span uses.
            Wrote binDumpZmbv0.dat, xtecp_sol_allzmbv0.dat, uniconesmbv0.enorm.
 
-The case is a closed all-``wall`` box, which is what v0 can express: every
-boundary edge takes the config default BC, and naming the source segment an edge
-lies on arrives with the geometry-binding work. That is a limitation of the
-CASE, not of the chain -- the converter and the solver each accepted the mesh on
-its own terms.
+The case is a closed all-``wall`` box, because its topology declares no geometry
+binding: every boundary edge then takes the config default BC. That is a
+limitation of the CASE, not of the chain -- the converter and the solver each
+accepted the mesh on its own terms. A topology that DOES name the source segment
+each edge lies on is covered next door, in
+``test_multiblock_binding_surface.py``; the unbound case still has to keep
+working, which is what this file goes on pinning.
 
 BLIND SPOTS, named rather than papered over:
 

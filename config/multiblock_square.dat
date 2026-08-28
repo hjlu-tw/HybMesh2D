@@ -21,8 +21,9 @@ MESH_TOPOLOGY_FILE examples/topology/square_block.json
 # on quad cells). 0 exports the quads, for inspecting a topology under diagnosis.
 MB_SPLIT_QUADS 1
 
-# Every boundary edge in this release takes this one BC; naming the source
-# segment an edge lies on arrives with the geometry-binding work.
+# Every boundary edge in this case takes this one BC, because its topology
+# declares no geometry binding. config/multiblock_cavity.dat is the same path
+# with its conditions read off the geometry's own source segments instead.
 BC_GEOM wall
 
 EXPORT_VTK 1

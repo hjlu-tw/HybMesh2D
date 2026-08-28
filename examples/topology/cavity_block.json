@@ -1,0 +1,58 @@
+// One block filling examples/geometries/square_cavity.dat, with its boundary
+// conditions taken FROM THAT GEOMETRY rather than from the config default.
+//
+//   ./run.sh -conf config/multiblock_cavity.dat
+//
+// Two things are declared here that a free-coordinate topology cannot say.
+//
+// A corner of kind "on_geometry" is attached to a source segment at a NORMALIZED
+// ARC LENGTH ("t", 0 at the segment's first point, 1 where the next segment
+// begins). Arc length rather than a point index, because the workflow is edit
+// CAD, re-resample, re-mesh: re-resampling changes the point count, so an index
+// would move every attached corner on each resample and produce a slightly wrong
+// mesh with no error at all.
+//
+// An edge's "binding" names the source segment it LIES ON. Every boundary edge
+// generated along it then carries that segment's own boundary condition and its
+// source-segment key into the export — read out of the declaration here, before
+// a single node exists, so nothing downstream has to re-derive it from a
+// coordinate. (This document is parsed with comments allowed; the mesher's own
+// schema is otherwise strict, and an unknown key is refused rather than skipped.)
+{
+  "format_version": 1,
+
+  // Every corner here is a JOINT — the point where one source segment ends and
+  // the next begins — so it may be named from either side, and each is declared
+  // once as the t = 0 of the segment that starts there.
+  "corners": [
+    {"id": "sw", "kind": "on_geometry", "geom": "square_cavity.dat", "seg": 0, "t": 0.0},
+    {"id": "se", "kind": "on_geometry", "geom": "square_cavity.dat", "seg": 1, "t": 0.0},
+    {"id": "ne", "kind": "on_geometry", "geom": "square_cavity.dat", "seg": 2, "t": 0.0},
+    {"id": "nw", "kind": "on_geometry", "geom": "square_cavity.dat", "seg": 3, "t": 0.0}
+  ],
+
+  "edges": [
+    // South and east run WITH their segments; north runs against its own, since
+    // a block's north edge goes i-min to i-max while segment 2 walks the loop the
+    // other way. A bound edge follows the geometry either way.
+    {"id": "south", "corners": ["sw", "se"], "kind": "wall", "count": 17,
+     "binding": {"geom": "square_cavity.dat", "seg": 0}},
+    {"id": "east",  "corners": ["se", "ne"], "kind": "wall", "count": 17,
+     "binding": {"geom": "square_cavity.dat", "seg": 1}},
+    {"id": "north", "corners": ["nw", "ne"], "kind": "wall", "count": 17,
+     "binding": {"geom": "square_cavity.dat", "seg": 2}},
+
+    // West declares NO binding, and that is deliberate rather than an oversight:
+    // this .dat is an OPEN polyline whose last point stops one sample short of
+    // the seam, so segment 3 does not reach the corner "sw" sits on and an edge
+    // claiming to lie on it would be claiming something false. Unbound, it is the
+    // straight chord between its two attached corners — geometrically the same
+    // left wall, since it is straight — and it carries BC_GEOM. Re-export this
+    // geometry as a CLOSED loop and this edge can bind to segment 3 like the rest.
+    {"id": "west",  "corners": ["sw", "nw"], "kind": "wall", "count": 17}
+  ],
+
+  "blocks": [
+    {"id": "cavity", "edges": ["south", "east", "north", "west"]}
+  ]
+}

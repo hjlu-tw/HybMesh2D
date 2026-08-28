@@ -3,6 +3,7 @@
 
 #include "GeomUtils.hpp"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -27,28 +28,56 @@
 // See tools/PreProcessor/tests/test_cpp_pure_layer.py.
 namespace hybmesh {
 
-// One loaded geometry, as this seam sees it.
+// One loaded geometry, as this seam sees it: the resampled polyline plus the two
+// facts its `.meta` sidecar carries about where one segment ends and the next
+// begins, and what boundary condition each carries.
 //
-// v0 (issue #50) binds NO geometry: every topology corner is a free coordinate
-// and every boundary condition comes from the config default. The parameter is
-// here anyway because the seam is declared once — issue #52 fills these in for
-// arc-length corner attachment and per-segment BC labels, and it should not
-// have to change the signature to do it. A topology document that DOES declare
-// a geometry binding is refused by name rather than silently ignored.
-// Deliberately only what the CALLER fills today. The per-point source segment
-// and BC label a geometry sidecar carries are not declared here yet: a field
-// nothing writes reads as a field somebody forgot to write, and the ticket that
-// needs them is the one that should add them.
+// A topology attaches to a geometry BY NAME (`file`, matched exactly or by
+// basename) and never by position in this vector — for the reason the ticket
+// gives about point indices one level down: a list that can be reordered is a
+// binding that can silently relocate.
 struct MbGeometry {
     std::string file;
     std::vector<Point2D> points;
+    // Parallel to `points`: which source segment each point belongs to, from the
+    // sidecar's POINTS block. EMPTY when the geometry has no readable sidecar,
+    // and a document that attaches to such a geometry is refused by name rather
+    // than falling back to "the whole polyline is segment 0" — a corner that
+    // lands somewhere plausible on the wrong segment is the slightly-wrong-mesh-
+    // with-no-error outcome this whole path exists to avoid.
+    std::vector<int> segId;
+    // Indices in `points` at which a new disconnected PIECE starts, from the
+    // sidecar's NPIECES block. Read for one reason, and it is not cosmetic: a
+    // segment's arc length runs from its own first point to the first point of
+    // the NEXT segment (the sidecar assigns a shared joint to the LATER segment,
+    // so a segment's own run stops one point short of where it ends). Across a
+    // piece break there is no next point to reach for, and taking one anyway
+    // would stretch the segment across the gap between two disjoint pieces.
+    std::vector<size_t> pieceBreaks;
+    // Did the loader weld this polyline into a closed loop? It drops the trailing
+    // duplicate of the first point when it does, so the LAST segment's end is not
+    // one past the end of `points` but index 0 — and without knowing that, t = 1 on
+    // the last segment of a closed body lands one resampling interval short of the
+    // seam, which is the very drift arc length is used to avoid.
+    bool closed = false;
+    // seg id -> the per-segment boundary condition LABEL the sidecar carries.
+    //
+    // A LABEL, not a physical BC type: the GUI groups segments under a label and
+    // maps label -> type separately (the sidecar's GROUP_BC trailer), and the
+    // exporter resolves it through `Config::resolveGroupBc`. Resolving it here
+    // would put a second resolver in the chain, which is how the two came to
+    // disagree the last time. A segment with no label falls back to
+    // `MbParams::defaultBc`.
+    std::map<int, std::string> segBc;
 };
 
 // The resolved parameters this path reads. Deliberately a handful of values
 // rather than a `Config&`: Config.hpp is a header-only .dat parser and pulling
 // it in would tie the decision layer to the file format it is a decision about.
 struct MbParams {
-    // The BC every boundary edge carries in v0. Comes from BC_GEOM.
+    // The FALLBACK boundary condition, from BC_GEOM. An edge that declares a
+    // binding takes its source segment's own label instead; this is what an
+    // unbound edge — or a bound one whose segment carries no label — gets.
     std::string defaultBc = "wall";
     // Split every quad into two triangles before the mesh leaves this seam.
     // ON by default: the solver's incenter reconstruction is undefined on quad
@@ -90,8 +119,14 @@ struct MbCell {
 // inlet came to export partly as wall.
 struct MbBoundaryEdge {
     int v1 = -1, v2 = -1;
+    // The BC LABEL this edge carries: the bound segment's own label, else
+    // `MbParams::defaultBc`. Resolved to a physical type by the exporter.
     std::string bc;
-    int geomId = -1;             // -1 in v0: nothing binds geometry yet (#52)
+    // The SOURCE SEGMENT this edge lies on, as (index into `geoms`, sidecar seg
+    // id). Both stay -1 for an edge that declares no binding — which is not a
+    // failure but the ordinary case for a block face in open fluid, and is what
+    // makes the pre-binding topologies mesh unchanged.
+    int geomId = -1;
     int segId = -1;
 };
 
@@ -136,11 +171,13 @@ inline MbSideAxis mbSideAxis(MbSide s) {
 // positions that law is gone. `MbQuality.hpp` then measures what the fill
 // achieved against it.
 //
-// In v0 every boundary edge is kind "wall" (interface and cut are refused by
-// name), so all four sides of the one block are reported. A body surface is not
-// distinguishable from a far-field boundary until boundary conditions come from
-// the declaration; when that lands, this list gets shorter and nothing that reads
-// it has to change.
+// Every boundary edge is kind "wall" (interface and cut are refused by name), so
+// all four sides of the one block are reported. Note what did NOT change this:
+// boundary conditions now DO come from the declaration, and a side may carry a
+// segment labelled "inlet" — but that is the flow condition, not the answer to
+// "is this a viscous surface whose first cell height matters". The gate stays
+// `kind`, which is the declaration's own word for it; when a kind distinguishes
+// the two, this list gets shorter and nothing that reads it has to change.
 struct MbWallSpec {
     int block = 0;                   // index into MbResult::blocks
     MbSide side = MB_SOUTH;

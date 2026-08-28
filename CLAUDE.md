@@ -94,9 +94,14 @@ Invoked by `cd`-ing in rather than with `--test-dir`, which needs CMake >= 3.20 
 ```bash
 ./run.sh -conf config/multiblock_square.dat      # -> examples/topology/square_block.json
 ```
+```bash
+./run.sh -conf config/multiblock_cavity.dat    # -> examples/topology/cavity_block.json
+```
 `MESH_MODE 1` fills a DECLARED block topology with structured quads and splits them
 to triangles; it uses Gmsh nowhere. See "The multi-block path is ONE pure entry point"
-under Configuration.
+under Configuration. The second case attaches its corners to a geometry by arc length
+and reads each wall's boundary condition off that geometry's source segments — see
+"Boundary conditions are DECLARED".
 
 **Run preprocessor GUI:**
 ```bash
@@ -350,7 +355,8 @@ boundary edges, warnings as data and an optional error. Rules:
   rather than asserted (9/9 golden cases SAME at 0.000e+00, `.cel` and `.bnd`
   included).
 - **The geometries argument is wired up although nothing binds to one yet**, so the
-  geometry-binding work fills a parameter rather than changing the signature.
+  geometry-binding work fills a parameter rather than changing the signature. (It
+  did: #52 added fields to `MbGeometry` and changed no signature.)
 - The decision layer gains `tools/PreProcessor/include` on its include path
   (**PRIVATE**: `MultiBlock.hpp` includes neither, so a test linking `hybmesh_pure`
   does not inherit it) for the bundled `json.hpp` and the existing `Spacing.hpp` — both
@@ -551,6 +557,124 @@ for is a grep and not a prose parse. Rules:
   named in each file's docstring; the sharpest is that nothing runs the solver or
   the grid converter on the folded mesh — that it is written is the claim, that
   anything downstream accepts it is not.
+
+**Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
+(`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;
+issue #52). A topology corner attaches to a source segment at a normalized
+arc-length position (`kind: "on_geometry"`, `geom` / `seg` / `t`), a wall edge
+declares the segment it lies on (`binding`), and every boundary edge generated
+along that edge carries that segment's own condition and its (geometry, segment)
+key into the export. The answer is in the declaration before a single node
+exists, so **there is no tolerance anywhere in this chain** — which is the whole
+point: the hybrid path resolves a boundary edge's condition by testing whether it
+lies on a reference segment within one, and on a curved wall the drift off the
+chord exceeded it and an inlet exported a band of wall at every junction. Rules:
+- **Arc length, NEVER a point index.** The workflow is edit CAD, re-resample,
+  re-mesh, and re-resampling changes the point count — so an index would silently
+  relocate every attachment on each resample and produce a slightly wrong mesh
+  with no error at all. Measured through the real binaries: one topology meshed
+  against two real resamplings of one geometry (21 and 41 points) gives
+  **byte-identical `.vrt` node sets**, and the negative control is what makes that
+  a measurement rather than a coincidence — the point counts are chosen so
+  **neither** resampling has a sample at the attached position, so no
+  implementation that snapped a corner to a geometry point could have produced it.
+- **A segment's own points stop ONE POINT SHORT of where it ends, and the run is
+  extended by one.** Measured against the real `surface_resampler`, not assumed: a
+  joint shared by two segments is assigned to the **later** of them
+  (`resSegId.back() = segId` in `tools/PreProcessor/src/main.cpp`). Without the
+  extension, `t = 1` lands one resampling interval short of the segment's real
+  end — i.e. at a place that MOVES under exactly the re-resampling this feature
+  exists to survive. For the LAST segment of a **closed** loop the point to reach
+  for is index 0, because `loadGeometry` has already dropped the duplicate closing
+  point. Both are pinned, and injecting either breaks 12/13/15.
+- **A trivial piece break at index 0 is not a second piece**, and reading it as
+  one silently switched the closed-loop wrap off. Found by pointing the feature at
+  a shipped geometry rather than only at fixtures: sidecars in this repo disagree
+  about whether to record the break every polyline has at its first point (a
+  resampled square writes `NPIECES 0`; `examples/geometries/square_cavity.dat.meta`
+  writes `NPIECES 1 0`), so `pieceBreaks.empty()` was the wrong question and
+  `multiPiece()` asks whether any break falls strictly inside.
+- **A corner at `t = 0` or `t = 1` sits on a JOINT, which two segments both own,
+  so a bound edge accepts it from either side** (`tOnSegment`). This is not a
+  nicety and it was not in the first design: on a closed body **every** block
+  corner is a joint whose two edges bind to *different* segments, so without it
+  the canonical declaration — one block side per source segment — cannot be
+  written at all, which the shipped cavity example is what surfaced. The
+  equivalence compares the sidecar's own point INDICES, never two coordinates, so
+  this is not a tolerance creeping back in through the corner; a position strictly
+  inside a neighbouring segment is still refused.
+- **A bound edge FOLLOWS the segment's polyline; it does not cut the chord.** Wider
+  than the ticket's literal wording, and deliberate: "this edge lies on that
+  segment" is false for a chord across a curved wall, which sits a sagitta off the
+  body everywhere between its ends — the same drift, one layer up. One code path
+  serves both, because an unbound edge's "polyline" is just its two corners, and
+  that reduction is **bit-identical** rather than merely equivalent (the golden set
+  measures it).
+- **A geometry is named BY NAME** — exact match on the declared path, then a
+  *unique* basename — and never by position in the loaded list. Same argument as
+  the point index one level down: a binding that moves when `GEOM_FILE` lines are
+  reordered is a silent relocation. An ambiguous basename is refused rather than
+  resolved by order.
+- **A label stays a LABEL.** The seam emits the sidecar's per-segment grouping
+  label and `Config::resolveGroupBc` turns it into the physical BC type, exactly as
+  on the hybrid path; the adapter merges the sidecar's `GROUP_BC` trailer into the
+  config for it. Resolving inside the seam would put a second resolver in the
+  chain, which is how the two came to disagree the last time. Gated end to end: the
+  `.bnd` patch names are `inlet`/`outlet`/`wall` and never `g_bot`.
+- **Position-based classification is still not used, and that is structural rather
+  than asserted.** The adapter records every boundary edge through
+  `recordBoundaryEdge` (unchanged from #50), and `classifyBoundaryBc` returns at
+  its step 0 per-edge lookup, so `pointOnSegment` is never reached on this path.
+- **A geometry that will not load is still a WARNING, and a declaration REFERRING
+  to one is now an error** — the change #50 predicted at the exact line it
+  predicted it. Same for a geometry with no readable `.meta`: it has no segments to
+  attach to and is refused by name rather than falling back to "the whole polyline
+  is segment 0".
+- **Two warnings, both about getting the fallback when you asked for something
+  else**: a document where no edge declares a binding (so every edge is on
+  `BC_GEOM`), and a bound edge whose segment carries no label in its sidecar. The
+  banner then prints one row per patch naming the segment it was read off, so
+  "declared, not discovered" is visible in a run rather than only claimed.
+- **`MbWallSpec` still reports all four sides, and the #51 note predicting it would
+  shrink is NOT yet due.** Conditions do now come from the declaration, but "this
+  side is labelled inlet" and "this side is a viscous surface whose first-cell
+  height matters" are different questions; the gate stays `kind`, which is the
+  declaration's own word for it.
+- Gated by `tests/cpp/test_multiblock.cpp` checks 12-16 (through the pure seam,
+  with geometry fixtures reproducing both sidecar conventions) and
+  `tools/PreProcessor/tests/test_multiblock_binding_surface.py` (through the real
+  `surface_resampler` AND the real mesher, which is where the sidecar format and
+  the label resolution are really proven). **The seven injections are HAND runs,
+  dated 2026-08-28 and recorded in the C++ test's own docstring with the checks
+  each one broke** — the same split #51 established, because a C++ test cannot
+  mutate the implementation it linked against. Two of them are recorded *because
+  the first attempt did not bite*, and in both cases the fault was the injection:
+  one picked an index and then interpolated by arc length within that span, which
+  self-corrects to the right answer, and a build race reported an injection that
+  breaks seven checks as inert. The harness now refuses to score a run it cannot
+  see a recompile for — the same lesson as scoring a crash as zero failures.
+- **Two new golden cases, `mb_bound` and `mb_cavity`**, which is where acceptance
+  criterion 8 lives: `mb_bound` is a block with three *differing* conditions built
+  through the real resampler, and `mb_cavity` is the shipped example on the shipped
+  geometry (documentation a user runs must be covered, per `_multiblock_example`'s
+  own reasoning). Proven to bite rather than assumed: injecting "every boundary
+  edge takes the config default" reports `{'inlet': 6, 'wall': 8, 'outlet': 6} ->
+  {'wall': 20}` plus the grouping change, and reverting restores SAME. The existing
+  **12 golden cases are 12/12 SAME, worst deviation 0.000e+00** against a baseline
+  captured from the pre-change binary (`HYBMESH_GOLDEN_BIN`, `git archive 97905a8`).
+- **The blind spot, named rather than papered over**: the end-to-end
+  re-resampling check uses a straight-sided geometry, where an arc-length position
+  is EXACT under resampling and the node sets can be compared byte for byte. On a
+  *curved* segment the polyline itself changes with the point count, so an attached
+  corner moves by a chord sagitta — a discretisation limit of the geometry, not of
+  the binding, and no check here claims otherwise. The curve-following half is
+  pinned in the C++ test, where the geometry can be stated exactly.
+- **What the shipped example cannot do, said out loud in the example itself**:
+  `examples/geometries/square_cavity.dat` is an OPEN polyline whose last point
+  stops one sample short of the seam, so its segment 3 does not reach the corner
+  the block's south-west sits on and the west edge is deliberately left unbound
+  (a straight chord, geometrically the same wall, carrying `BC_GEOM`). Binding it
+  would be claiming something false.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:

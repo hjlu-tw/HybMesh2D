@@ -1,0 +1,33 @@
+# ==============================================================================
+# Multi-block structured meshing (MESH_MODE 1) — boundary conditions BY
+# CONSTRUCTION.
+#
+# The same single-block path as config/multiblock_square.dat, but the topology
+# is ATTACHED TO A GEOMETRY: its corners sit at declared arc-length positions
+# along the source segments, and three of its four sides declare the segment
+# they lie on. Each of those sides carries that segment's own boundary condition
+# and source-segment key into the export, so the .bnd describes the conditions
+# the geometry was given rather than one default applied to everything.
+#
+#   ./run.sh -conf config/multiblock_cavity.dat
+#
+# Nothing in this chain classifies a boundary edge by position, so there is no
+# tolerance in it for a curved wall to drift past.
+# ==============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/cavity_block.json
+
+# The geometry the topology attaches to. Its '.meta' sidecar is what carries the
+# per-segment conditions; a geometry without one has no segments to attach to,
+# and a declaration naming it is refused rather than approximated.
+GEOM_FILE examples/geometries/square_cavity.dat
+
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, for a boundary edge whose side declares no binding (here, west).
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+OUTPUT_FILENAME results/meshes/multiblock_cavity/mesh_multiblock_cavity.vtk

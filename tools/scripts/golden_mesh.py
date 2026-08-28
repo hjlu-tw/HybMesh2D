@@ -80,6 +80,7 @@ sys.path.insert(0, os.path.join(_REPO, "tools", "PreProcessor", "gui"))
 import numpy as np                                    # noqa: E402
 import test_nobl_junction_acute as junc               # noqa: E402
 import test_multiblock_surface as mb                  # noqa: E402
+import test_multiblock_binding_surface as mbb         # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -183,6 +184,56 @@ def _multiblock(ni, nj, split=True, spacing=None):
     return build
 
 
+def _multiblock_cavity():
+    """The multi-block case on the BOUND topology document this repo ships.
+
+    Deliberately the file itself and the geometry it names, not a regenerated
+    copy — the same reason `_multiblock_example` gives: examples/topology is
+    documentation a user runs, and a case that rebuilt an equivalent document
+    would leave an edit to the shipped one invisible here. This one also covers
+    the shipped geometry's own `.meta`, since that is where its conditions and
+    its segment boundaries come from.
+    """
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        conf = os.path.join(tmp, name + ".dat")
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write("MESH_MODE 1\n"
+                    "MESH_TOPOLOGY_FILE "
+                    + os.path.join(_REPO, "examples", "topology", "cavity_block.json")
+                    + "\nGEOM_FILE "
+                    + os.path.join(_REPO, "examples", "geometries", "square_cavity.dat")
+                    + "\nMB_SPLIT_QUADS 1\nEXPORT_VTK 1\nEXPORT_STARCD 1\n"
+                      "BC_GEOM wall\nOUTPUT_FILENAME " + stem + ".vtk\n")
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
+def _multiblock_bound():
+    """A multi-block case whose walls carry DIFFERING boundary conditions.
+
+    The only case in this set whose boundary conditions come from a GEOMETRY
+    rather than from the config default, which is what makes the `.bnd` half of
+    this comparator say anything here: two of the block's four sides are bound to
+    source segments and carry those segments' own conditions, the other two carry
+    the default, so a defect that smeared one patch across another — the shape of
+    the two most expensive bugs this repo has had — moves a per-patch face count
+    or a face's coordinates.
+
+    It runs the real `surface_resampler` as well as the mesher, so it is the one
+    case here that regression-covers the sidecar the mesher reads.
+    """
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        conf = mbb.build_bound_case(tmp, stem)
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
 CASES = {
     # Junction bins reachable through a real mesh. theta <= 95 is the slide
     # (case 1); 120 is a perpendicular cap (case 2). Cases 3 and 4 need
@@ -204,6 +255,8 @@ CASES = {
     "mb_square": _multiblock_example(),
     "mb_square_quads": _multiblock_example(split=False),
     "mb_graded": _multiblock(17, 13, spacing={"law": "geometric", "growth": 1.15}),
+    "mb_bound": _multiblock_bound(),
+    "mb_cavity": _multiblock_cavity(),
 }
 
 

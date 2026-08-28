@@ -395,7 +395,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q) {
     std::cout << mr.str() << std::endl;
 }
 
-static int buildMultiBlockMesh(Mesh& mesh, const Config& config,
+static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                                std::vector<std::string>& inputFiles) {
     if (config.topologyFile.empty()) {
         LOG_ERROR("MESH_MODE " << MESH_MODE_MULTIBLOCK << " ("
@@ -416,27 +416,48 @@ static int buildMultiBlockMesh(Mesh& mesh, const Config& config,
     // INPUT for provenance purposes.
     inputFiles.push_back(config.topologyFile);
 
-    // The loaded geometries travel into the seam even though nothing binds to
-    // them in this release: the argument exists so that geometry binding fills a
-    // wired-up parameter instead of changing the signature.
+    // The loaded geometries, each with the two facts its '.meta' sidecar carries
+    // that a topology attaches to: which source segment every point belongs to,
+    // and what boundary condition label each segment holds.
     //
-    // A geometry that will not load is a WARNING here and not a refusal, which is
-    // the opposite of the hybrid path's answer and is right for the same reason:
-    // there, the geometry IS the mesh; here, nothing in the topology can refer to
-    // one yet, so refusing would stop a mesh that does not depend on the file.
-    // It is named, because the moment an edge binds to it that changes.
+    // A geometry that will not load is still a WARNING here and not a refusal —
+    // the opposite of the hybrid path's answer, and right for the same reason:
+    // there the geometry IS the mesh, here a topology may legitimately refer to
+    // none of them, so refusing would stop a mesh that does not depend on the
+    // file. What changed with geometry binding is that a declaration REFERRING to
+    // such a file is now refused by name, inside the seam, where the reference is
+    // visible.
     std::vector<hybmesh::MbGeometry> geoms;
     for (const auto& f : config.geomFiles) {
         hybmesh::MbGeometry g;
         g.file = f;
         LoadStatus st = LoadStatus::Ok;
-        g.points = loadGeometry(f, nullptr, &st);
-        if (g.points.empty())
+        bool closed = false;
+        g.points = loadGeometry(f, &closed, &st);
+        g.closed = closed;
+        if (g.points.empty()) {
             LOG_WARN("Geometry '" << f << "' could not be loaded ("
                      << (st == LoadStatus::CannotOpen ? "cannot open" : "no usable points")
-                     << "). Nothing in a topology can refer to a geometry in this "
-                        "release, so the mesh is unaffected — but this file would be "
-                        "an error the moment an edge bound to it.");
+                     << "). A topology need not refer to any geometry, so the mesh is "
+                        "unaffected unless a corner or an edge names this file — and "
+                        "then it is refused by name.");
+        } else {
+            SurfaceMeta meta = loadSurfaceMeta(f);
+            reconcileMeta(meta, g.points.size(), f);
+            if (meta.valid) {
+                g.segId = meta.segId;
+                g.pieceBreaks = meta.pieceBreaks;
+                g.segBc = meta.segBc;
+                // The label -> physical BC type map the GUI persists in the sidecar
+                // trailer. Merged into the config exactly as the hybrid path does it,
+                // and for the same reason: the seam emits a grouping LABEL, and
+                // `Config::resolveGroupBc` is the ONE place that turns one into the BC
+                // type the exporter writes. Resolving it inside the seam instead would
+                // put a second resolver in the chain, which is how the two came to
+                // disagree the last time. emplace() keeps an explicit config mapping.
+                for (const auto& kv : meta.groupBc) config.groupBc.emplace(kv.first, kv.second);
+            }
+        }
         geoms.push_back(std::move(g));
     }
 
@@ -479,6 +500,36 @@ static int buildMultiBlockMesh(Mesh& mesh, const Config& config,
     std::cout << "  - Cells                : " << res.cells.size() << " "
               << (config.mbSplitQuads ? "triangles (alternating diagonal by index parity)"
                                       : "quads (splitting is OFF)") << "\n";
+
+    // WHERE EACH BOUNDARY CONDITION CAME FROM. The whole claim of this path is
+    // that a condition is declared rather than discovered, and a claim a run
+    // cannot show is one nobody can check: each row names the BC and the source
+    // segment it was read off, or says plainly that it is the config default.
+    // Grouped in first-seen order, which is the counter-clockwise perimeter walk,
+    // so the rows read around the block.
+    {
+        struct Patch { std::string bc; int geomId; int segId; size_t faces; };
+        std::vector<Patch> patches;
+        for (const auto& be : res.boundaryEdges) {
+            bool merged = false;
+            for (auto& p : patches) {
+                if (p.bc != be.bc || p.geomId != be.geomId || p.segId != be.segId) continue;
+                ++p.faces;
+                merged = true;
+                break;
+            }
+            if (!merged) patches.push_back({be.bc, be.geomId, be.segId, 1});
+        }
+        for (const auto& p : patches) {
+            std::string from = "the config default (no source segment declared)";
+            if (p.segId >= 0 && p.geomId >= 0
+                && static_cast<size_t>(p.geomId) < geoms.size())
+                from = "segment " + std::to_string(p.segId) + " of '"
+                     + geoms[static_cast<size_t>(p.geomId)].file + "'";
+            std::cout << mbRow("Boundary '" + p.bc + "'") << p.faces
+                      << " edge(s), from " << from << "\n";
+        }
+    }
 
     // ── The mesh-quality report (issue #51) ─────────────────────────────────
     // Printed on EVERY run of this path, not only on a bad one: three of the four

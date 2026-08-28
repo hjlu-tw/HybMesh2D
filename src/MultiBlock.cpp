@@ -28,6 +28,18 @@ constexpr int kFormatVersion = 1;
 struct Corner {
     std::string id;
     Point2D xy{0.0, 0.0};
+    // Geometry attachment (kind "on_geometry"); `geom` empty for a free corner,
+    // whose declared `xy` IS its position.
+    //
+    // The position is a NORMALIZED ARC LENGTH along one source segment and never
+    // a point index. The workflow this tool is built for is edit CAD, re-resample,
+    // re-mesh — and re-resampling changes the point count, so an index binding
+    // would silently relocate every attached corner on each resample and produce a
+    // slightly wrong mesh with no error at all.
+    std::string geom;
+    int seg = -1;
+    double t = 0.0;
+    int geomIdx = -1;        // filled once `geom` is resolved against the loaded list
 };
 
 struct EdgeSpec {
@@ -38,6 +50,13 @@ struct EdgeSpec {
     std::string law = "uniform";
     double growth = 1.0;     // "geometric"
     double delta = 0.0;      // "tanh"
+    // The source segment this edge LIES ON ("binding"); `bindGeom` empty for an
+    // unbound edge. Every boundary edge generated along a bound edge carries that
+    // segment's own BC label and its (geometry, segment) key, so the condition is
+    // in the declaration before a single node exists and nothing downstream has to
+    // re-derive it from a position.
+    std::string bindGeom;
+    int bindSeg = -1;
 };
 
 struct BlockSpec {
@@ -107,29 +126,66 @@ bool parseCorners(const json& doc, std::vector<Corner>& out, std::string& err) {
         if (!requireString(c, "kind", where.c_str(), kind, err)) return false;
 
         if (kind == "on_geometry") {
-            // Refused rather than approximated. The whole point of an
-            // arc-length attachment is that a block boundary lands EXACTLY on a
-            // geometry feature; guessing one would produce a slightly wrong mesh
-            // with no error, which is worse than no mesh at all.
-            err = where + " ('" + corner.id + "'): kind 'on_geometry' is not read in "
-                  "this release. Geometry-attached corners (normalized arc length "
-                  "along a source segment) arrive with the geometry-binding work; "
-                  "until then every corner must be kind 'free' with an explicit 'xy'.";
-            return false;
-        }
-        if (kind != "free") {
+            // Attached, not approximated: the position is resolved from the
+            // geometry before a single node exists. A corner placed NEAR a feature
+            // instead of on it is a slightly wrong mesh with no error, which is the
+            // outcome this whole path is built to make impossible.
+            //
+            // A second declaration of the same position is refused rather than
+            // reconciled, on the argument `blocks[].orientation` already gets: two
+            // statements of one fact can only ever disagree.
+            if (c.contains("xy")) {
+                err = where + " ('" + corner.id + "'): an 'on_geometry' corner takes its "
+                      "position FROM the geometry, so it must not also declare 'xy'.";
+                return false;
+            }
+            if (!requireString(c, "geom", where.c_str(), corner.geom, err)) return false;
+            auto sg = c.find("seg");
+            if (sg == c.end() || !sg->is_number_integer() || sg->get<int>() < 0) {
+                err = where + " ('" + corner.id + "'): an 'on_geometry' corner needs "
+                      "\"seg\": <id>, the source segment it attaches to — one of the ids "
+                      "the geometry's '.meta' sidecar lists.";
+                return false;
+            }
+            corner.seg = sg->get<int>();
+            auto tt = c.find("t");
+            if (tt == c.end() || !tt->is_number()) {
+                err = where + " ('" + corner.id + "'): an 'on_geometry' corner needs "
+                      "\"t\": <0..1>, its NORMALIZED ARC LENGTH along that segment "
+                      "(0 at the segment's own first point, 1 where the next segment "
+                      "begins). Arc length rather than a point index, so re-resampling "
+                      "the geometry leaves the corner where it was.";
+                return false;
+            }
+            corner.t = tt->get<double>();
+            // Written as a positive range so a NaN 't' is refused here too rather
+            // than travelling on to produce a NaN node position.
+            if (!(corner.t >= 0.0 && corner.t <= 1.0)) {
+                err = where + " ('" + corner.id + "'): 't' is " + std::to_string(corner.t)
+                    + "; a normalized arc-length position must lie between 0 and 1.";
+                return false;
+            }
+        } else if (kind == "free") {
+            for (const char* k : {"geom", "seg", "t"}) {
+                if (!c.contains(k)) continue;
+                err = where + " ('" + corner.id + "'): a 'free' corner declares '"
+                    + std::string(k) + "', which only an 'on_geometry' corner reads. "
+                      "Set \"kind\": \"on_geometry\" to attach it, or drop the key.";
+                return false;
+            }
+            auto xy = c.find("xy");
+            if (xy == c.end() || !xy->is_array() || xy->size() != 2
+                || !(*xy)[0].is_number() || !(*xy)[1].is_number()) {
+                err = where + " ('" + corner.id + "'): a 'free' corner needs "
+                      "\"xy\": [x, y] with two numbers.";
+                return false;
+            }
+            corner.xy = {(*xy)[0].get<double>(), (*xy)[1].get<double>()};
+        } else {
             err = where + " ('" + corner.id + "'): unknown kind '" + kind
                 + "'. Accepted: 'free', 'on_geometry'.";
             return false;
         }
-        auto xy = c.find("xy");
-        if (xy == c.end() || !xy->is_array() || xy->size() != 2
-            || !(*xy)[0].is_number() || !(*xy)[1].is_number()) {
-            err = where + " ('" + corner.id + "'): a 'free' corner needs "
-                  "\"xy\": [x, y] with two numbers.";
-            return false;
-        }
-        corner.xy = {(*xy)[0].get<double>(), (*xy)[1].get<double>()};
         for (const auto& prev : out) {
             if (prev.id == corner.id) {
                 err = where + ": duplicate corner id '" + corner.id
@@ -234,12 +290,28 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
                   "Interfaces and cuts arrive with the multi-block welding work.";
             return false;
         }
-        if (e.contains("binding")) {
-            err = where + " ('" + spec.id + "'): 'binding' (the source segment this "
-                  "edge lies on) is not read in this release; every boundary edge "
-                  "takes the config default BC. Geometry binding arrives with the "
-                  "boundary-conditions-by-construction work.";
-            return false;
+        // The source segment this edge LIES ON. This is where a boundary condition
+        // comes from on this path: the segment's own label, carried into the export
+        // with its (geometry, segment) key. Nothing downstream tests whether a node
+        // is near a reference segment, so there is no tolerance in the chain to
+        // drift past — which is how a curved inlet came to export a band of wall on
+        // the other path.
+        auto bd = e.find("binding");
+        if (bd != e.end()) {
+            const std::string bw = where + " ('" + spec.id + "') binding";
+            if (!bd->is_object()) {
+                err = bw + ": must be an object, \"binding\": "
+                           "{\"geom\": \"<file>\", \"seg\": <id>}.";
+                return false;
+            }
+            if (!rejectUnknownKeys(*bd, bw.c_str(), {"geom", "seg"}, err)) return false;
+            if (!requireString(*bd, "geom", bw.c_str(), spec.bindGeom, err)) return false;
+            auto sg = bd->find("seg");
+            if (sg == bd->end() || !sg->is_number_integer() || sg->get<int>() < 0) {
+                err = bw + ": needs \"seg\": <id>, the source segment this edge lies on.";
+                return false;
+            }
+            spec.bindSeg = sg->get<int>();
         }
 
         // No count propagation in this release (that is its own increment), so
@@ -326,33 +398,269 @@ bool parseBlocks(const json& doc, const std::vector<EdgeSpec>& edges,
 
 // ── Discretisation ────────────────────────────────────────────────────────
 
-// The points along one straight edge, including both end corners.
+// ── Arc length ────────────────────────────────────────────────────────────
+//
+// Every position on this path is an ARC LENGTH along a polyline, never a point
+// index. That is the ticket's central rule and it is not a preference: the
+// workflow is edit CAD, re-resample, re-mesh, and re-resampling changes the
+// point count — so an index would silently relocate every attachment on each
+// resample and produce a slightly wrong mesh with no error at all.
+
+std::vector<double> arcLengths(const std::vector<Point2D>& path) {
+    std::vector<double> cum(path.size(), 0.0);
+    for (size_t k = 1; k < path.size(); ++k)
+        cum[k] = cum[k - 1] + (path[k] - path[k - 1]).length();
+    return cum;
+}
+
+// Where normalized arc-length position `t` lands on `path`.
+//
+// The two ENDS are returned as the path's own points rather than interpolated
+// onto them, so a corner declared at t = 0 or t = 1 IS a geometry point and not
+// a value 1e-16 away from one. Same reasoning as the end pinning in
+// `discretise`: welding here is topological precisely so that no tolerance ever
+// has to rescue a near miss.
+Point2D pointAtArc(const std::vector<Point2D>& path,
+                   const std::vector<double>& cum, double t) {
+    if (path.empty()) return Point2D{0.0, 0.0};
+    if (path.size() < 2 || t <= 0.0) return path.front();
+    if (t >= 1.0) return path.back();
+    const double L = cum.back();
+    if (!(L > 0.0)) return path.front();
+    const double s = t * L;
+    size_t m = 0;
+    while (m + 2 < path.size() && cum[m + 1] < s) ++m;
+    const double span = cum[m + 1] - cum[m];
+    const double f = (span > 0.0) ? (s - cum[m]) / span : 0.0;
+    return path[m] + (path[m + 1] - path[m]) * f;
+}
+
+// The stretch of `path` between normalized positions t0 and t1, with both ends
+// landing exactly where `pointAtArc` puts them — so a bound edge begins and ends
+// on its own corners by construction rather than to within a tolerance.
+//
+// Walks BACKWARDS when t1 < t0, so an edge declared against its segment's own
+// direction follows the geometry rather than being refused over bookkeeping.
+std::vector<Point2D> subPath(const std::vector<Point2D>& path,
+                             const std::vector<double>& cum, double t0, double t1) {
+    const double L = cum.back();
+    const double s0 = t0 * L, s1 = t1 * L;
+    std::vector<Point2D> out;
+    out.push_back(pointAtArc(path, cum, t0));
+    if (s1 >= s0) {
+        for (size_t k = 0; k < path.size(); ++k)
+            if (cum[k] > s0 && cum[k] < s1) out.push_back(path[k]);
+    } else {
+        for (size_t k = path.size(); k-- > 0;)
+            if (cum[k] < s0 && cum[k] > s1) out.push_back(path[k]);
+    }
+    out.push_back(pointAtArc(path, cum, t1));
+    return out;
+}
+
+// The points along one edge, including both end corners.
+//
+// `path` is the polyline the edge RUNS ALONG. For an unbound edge that is just
+// its two corners, so this is a straight chord and every expression below
+// reduces to exactly the arithmetic this function had before geometry binding —
+// measured rather than assumed, by the golden set's pre-binding cases.
+//
+// For a BOUND edge the path is the source segment's own points between its two
+// corners, which is what makes "this edge lies on that segment" true instead of
+// merely declared: a straight chord across a curved wall sits a sagitta off the
+// body everywhere in between, and that drift is precisely what made a curved
+// inlet export a band of wall on the other path.
 //
 // Goes through the existing spacing laws rather than re-deriving them: they are
 // pure arithmetic already used by the preprocessor, and a second implementation
 // of a growth-rate solver is a guaranteed future divergence. `generateGeometric`
 // at ratio 1 IS the uniform law, so "uniform" is not a special case here either.
-std::vector<Point2D> discretise(const EdgeSpec& e, Point2D p0, Point2D p1) {
-    const Vector2D d = p1 - p0;
-    const double L = d.length();
+std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& path) {
+    std::vector<Point2D> pts;
+    if (path.size() < 2) return pts;
+    const std::vector<double> cum = arcLengths(path);
+    const double L = cum.back();
     std::vector<double> t;
     if (e.law == "tanh")            t = HybMesh::Spacing::generateTanh(L, e.count, e.delta);
     else if (e.law == "geometric")  t = HybMesh::Spacing::generateGeometric(L, e.count, e.growth);
     else                            t = HybMesh::Spacing::generateGeometric(L, e.count, 1.0);
 
-    std::vector<Point2D> pts;
     pts.reserve(static_cast<size_t>(e.count));
+    size_t m = 0;
     for (int k = 0; k < e.count; ++k) {
-        // Parametrise by arc-length fraction, and pin both ends onto the corners
-        // exactly. A t/L that lands 1e-16 short of 1 would leave the last node
-        // off the corner it is supposed to BE, and welding in this path is
-        // topological precisely so that no tolerance has to rescue that.
-        if (k == 0)               { pts.push_back(p0); continue; }
-        if (k == e.count - 1)     { pts.push_back(p1); continue; }
-        double s = (L > 0.0) ? t[static_cast<size_t>(k)] / L : 0.0;
-        pts.push_back(p0 + d * s);
+        // Parametrise by arc length, and pin both ends onto the corners exactly.
+        // A t/L that lands 1e-16 short of 1 would leave the last node off the
+        // corner it is supposed to BE.
+        if (k == 0)               { pts.push_back(path.front()); continue; }
+        if (k == e.count - 1)     { pts.push_back(path.back());  continue; }
+        const double s = (L > 0.0) ? t[static_cast<size_t>(k)] : 0.0;
+        while (m + 2 < path.size() && cum[m + 1] < s) ++m;
+        const double span = cum[m + 1] - cum[m];
+        const double f = (span > 0.0) ? (s - cum[m]) / span : 0.0;
+        pts.push_back(path[m] + (path[m + 1] - path[m]) * f);
     }
     return pts;
+}
+
+// ── Geometry lookup ───────────────────────────────────────────────────────
+
+std::string basenameOf(const std::string& path) {
+    const size_t at = path.find_last_of("/\\");
+    return at == std::string::npos ? path : path.substr(at + 1);
+}
+
+// Which loaded geometry a topology names. BY NAME — exact match on the path the
+// config declared, then a UNIQUE basename match so a topology may say
+// "naca0012.dat" for a run that loaded "examples/geometries/naca0012.dat".
+//
+// Never by position in the list: a binding that moves when GEOM_FILE lines are
+// reordered is the same silent relocation an index-based point attachment would
+// be, one level up. Two geometries sharing a basename make the short form
+// AMBIGUOUS, and that is refused rather than resolved by order.
+int findGeometry(const std::vector<hybmesh::MbGeometry>& geoms,
+                 const std::string& name, const std::string& who, std::string& err) {
+    if (geoms.empty()) {
+        err = who + ": names geometry '" + name + "', but this run loaded no geometry "
+              "at all (no GEOM_FILE in the config).";
+        return -1;
+    }
+    for (size_t k = 0; k < geoms.size(); ++k)
+        if (geoms[k].file == name) return static_cast<int>(k);
+
+    std::vector<int> byBase;
+    const std::string want = basenameOf(name);
+    for (size_t k = 0; k < geoms.size(); ++k)
+        if (basenameOf(geoms[k].file) == want) byBase.push_back(static_cast<int>(k));
+    if (byBase.size() == 1) return byBase.front();
+
+    std::ostringstream os;
+    os << who << ": ";
+    if (byBase.size() > 1) {
+        os << "geometry '" << name << "' is ambiguous — ";
+        for (size_t k = 0; k < byBase.size(); ++k)
+            os << (k ? " and " : "") << "'" << geoms[static_cast<size_t>(byBase[k])].file << "'";
+        os << " share that name. Name one of them in full.";
+    } else {
+        os << "no geometry named '" << name << "' was loaded. This run loaded";
+        for (const auto& g : geoms) os << " '" << g.file << "'";
+        os << ".";
+    }
+    err = os.str();
+    return -1;
+}
+
+// The polyline of one source segment of one geometry, and the refusals that make
+// an arc length along it mean something.
+//
+// A segment's own points stop ONE POINT SHORT of where it ends: the preprocessor
+// assigns a joint shared by two segments to the LATER of them (`resSegId` in
+// tools/PreProcessor/src/main.cpp). The run is therefore extended by the next
+// point in the file, which makes t = 1 of a segment and t = 0 of its successor
+// the same physical point — and, more to the point, makes t = 1 mean where the
+// segment really ends instead of one resampling interval short of it, which is a
+// place that MOVES under exactly the re-resampling this attachment exists to
+// survive. Across a piece break there is no next point to reach for, and taking
+// one anyway would stretch the segment over the gap between two disjoint pieces.
+// One source segment, resolved: its polyline, its cumulative arc length, and the
+// INDICES in the geometry where it begins and ends.
+//
+// The indices are what make a joint expressible. A segment end is a point SHARED
+// with the neighbouring segment, so two attachments can name it from either side;
+// everything strictly between is interior to its own segment and equal only to
+// itself. Comparing those indices is a fact about the sidecar's own numbering —
+// no two coordinates are ever compared, so this is not a tolerance creeping back
+// in through the corner.
+struct SegSpan {
+    std::vector<Point2D> pts;
+    std::vector<double> cum;
+    size_t first = 0;      // index of the t = 0 point
+    size_t endIdx = 0;     // index of the t = 1 point (0 on a closed loop's last segment)
+};
+
+// Does this geometry really hold more than one disconnected piece?
+//
+// Asked rather than testing `pieceBreaks.empty()`, because a break at index 0
+// carries no information — every polyline starts a piece at its first point, and
+// sidecars in this repo disagree about whether to record that one (a resampled
+// square writes NPIECES 0, while examples/geometries/square_cavity.dat.meta
+// writes NPIECES 1 with a break at 0). Reading the trivial entry as "multi-piece"
+// would silently switch off the closed-loop wrap below and put the last segment's
+// t = 1 one resampling interval short of the seam.
+bool multiPiece(const hybmesh::MbGeometry& g) {
+    for (size_t b : g.pieceBreaks)
+        if (b > 0 && b < g.points.size()) return true;
+    return false;
+}
+
+bool segmentRun(const hybmesh::MbGeometry& g, int seg, const std::string& who,
+                SegSpan& span, std::string& err) {
+    std::vector<Point2D>& out = span.pts;
+    if (g.points.empty()) {
+        err = who + ": geometry '" + g.file + "' carries no points, so there is nothing "
+              "to attach to. An unloadable geometry is only a warning on this path while "
+              "nothing refers to it — this declaration refers to it.";
+        return false;
+    }
+    if (g.segId.size() != g.points.size()) {
+        err = who + ": geometry '" + g.file + "' carries no per-point source-segment "
+              "data, so it has no segments to attach to. That comes from the '.meta' "
+              "sidecar the PreProcessor writes beside the .dat; re-export the geometry "
+              "to get one.";
+        return false;
+    }
+    const size_t n = g.points.size();
+    size_t first = n, last = 0;
+    std::set<int> present;
+    for (size_t k = 0; k < n; ++k) {
+        present.insert(g.segId[k]);
+        if (g.segId[k] != seg) continue;
+        if (first == n) first = k;
+        last = k;
+    }
+    if (first == n) {
+        std::ostringstream os;
+        os << who << ": geometry '" << g.file << "' has no segment " << seg
+           << ". It carries segment(s)";
+        for (int id : present) os << " " << id;
+        os << ".";
+        err = os.str();
+        return false;
+    }
+    for (size_t k = first; k <= last; ++k) {
+        if (g.segId[k] == seg) continue;
+        err = who + ": segment " + std::to_string(seg) + " of geometry '" + g.file
+            + "' is not one contiguous run of points, so an arc length along it is not "
+              "a length of anything.";
+        return false;
+    }
+    size_t stop = last;
+    bool wrapToStart = false;
+    const bool breakAfter = std::find(g.pieceBreaks.begin(), g.pieceBreaks.end(),
+                                      last + 1) != g.pieceBreaks.end();
+    if (last + 1 < n && !breakAfter) {
+        stop = last + 1;
+    } else if (last + 1 == n && g.closed && !multiPiece(g)) {
+        // The last segment of a CLOSED loop ends where the first one begins, and
+        // the loader has already dropped the duplicate closing point — so the point
+        // to reach for is index 0, not one past the end.
+        wrapToStart = true;
+    }
+    out.assign(g.points.begin() + static_cast<std::ptrdiff_t>(first),
+               g.points.begin() + static_cast<std::ptrdiff_t>(stop) + 1);
+    if (wrapToStart) out.push_back(g.points.front());
+    span.first = first;
+    span.endIdx = wrapToStart ? 0 : stop;
+    double L = 0.0;
+    for (size_t k = 1; k < out.size(); ++k) L += (out[k] - out[k - 1]).length();
+    span.cum = arcLengths(out);
+    if (out.size() < 2 || !(L > 0.0)) {
+        out.clear();
+        err = who + ": segment " + std::to_string(seg) + " of geometry '" + g.file
+            + "' has no arc length (it is a single point, or every point on it "
+              "coincides), so there is no position along it to attach to.";
+        return false;
+    }
+    return true;
 }
 
 // Transfinite (Coons) interpolation of a block interior from its four
@@ -378,7 +686,7 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
 }  // namespace
 
 hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
-                                           [[maybe_unused]] const std::vector<MbGeometry>& geoms,
+                                           const std::vector<MbGeometry>& geoms,
                                            const MbParams& params) {
     MbResult r;
     auto fail = [&r](const std::string& msg) -> MbResult& {
@@ -441,6 +749,161 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             return fail("corner '" + c.id + "' is on no edge. Every declared corner "
                         "must be an end of some edge.");
     }
+
+    // ── The fallback boundary condition ───────────────────────────────────
+    // Resolved before attachment, because a bound edge whose segment carries no
+    // label falls back to it and has to be able to say so.
+    std::string bc = params.defaultBc;
+    if (bc.empty()) {
+        bc = "wall";
+        r.warnings.push_back("no default boundary condition was resolved (BC_GEOM is "
+                             "empty); every boundary edge with no source segment of "
+                             "its own is exported as 'wall'.");
+    }
+
+    // ── Geometry attachment, resolved before a single node exists ─────────
+    //
+    // This is what "declared, not discovered" means concretely. A corner's
+    // position and a boundary edge's condition are both read out of the
+    // declaration HERE, and nothing downstream re-derives either from a
+    // coordinate: there is no tolerance anywhere in this chain, so there is
+    // nothing for a curved wall to drift past.
+
+    // A bound edge carries its source segment AND the stretch of it the edge
+    // covers, in that segment's OWN parametrisation — which is not always the
+    // parametrisation its corners were declared in, see `tOnSegment` below.
+    struct Attached {
+        int geomId = -1;
+        int segId = -1;
+        std::string bc;
+        double ta = 0.0, tb = 1.0;
+    };
+    std::map<std::string, Attached> bound;              // edge id -> its source segment
+    std::map<std::pair<int, int>, SegSpan> spans;       // (geom, seg) -> resolved segment
+
+    auto spanFor = [&](int gi, int seg, const std::string& who,
+                       const SegSpan*& out) -> bool {
+        const auto key = std::make_pair(gi, seg);
+        auto it = spans.find(key);
+        if (it == spans.end()) {
+            SegSpan sp;
+            if (!segmentRun(geoms[static_cast<size_t>(gi)], seg, who, sp, err))
+                return false;
+            it = spans.emplace(key, std::move(sp)).first;
+        }
+        out = &it->second;
+        return true;
+    };
+
+    // Corners first: an edge's binding is checked against its two corners'
+    // attachments, so those have to be resolved before it can be.
+    for (auto& c : corners) {
+        if (c.geom.empty()) continue;
+        const std::string who = "corner '" + c.id + "'";
+        const int gi = findGeometry(geoms, c.geom, who, err);
+        if (gi < 0) return fail(err);
+        const SegSpan* sp = nullptr;
+        if (!spanFor(gi, c.seg, who, sp)) return fail(err);
+        c.geomIdx = gi;
+        c.xy = pointAtArc(sp->pts, sp->cum, c.t);
+    }
+
+    auto cornerById = [&](const std::string& id) -> const Corner* {
+        for (const auto& c : corners) if (c.id == id) return &c;
+        return nullptr;
+    };
+
+    // A corner's position IN A GIVEN SEGMENT'S parametrisation.
+    //
+    // A corner attached to that segment answers directly. A corner attached to a
+    // NEIGHBOUR answers when it sits on the joint the two share — t = 0 and t = 1
+    // are segment ends, and a segment end is one point that both segments own.
+    // That case is not a nicety: on a closed body every block corner IS a joint,
+    // and its two edges bind to different segments, so without it the canonical
+    // declaration — one block side per source segment — could not be written at
+    // all. Anything strictly inside a segment answers only for that segment.
+    auto tOnSegment = [&](const Corner& c, int gi, int seg, double& t) -> bool {
+        if (c.geomIdx != gi) return false;
+        if (c.seg == seg) { t = c.t; return true; }
+        const auto own = spans.find({gi, c.seg});
+        const auto want = spans.find({gi, seg});
+        if (own == spans.end() || want == spans.end()) return false;
+        size_t at;
+        if (c.t == 0.0)      at = own->second.first;
+        else if (c.t == 1.0) at = own->second.endIdx;
+        else                 return false;
+        if (at == want->second.first)  { t = 0.0; return true; }
+        if (at == want->second.endIdx) { t = 1.0; return true; }
+        return false;
+    };
+
+    for (const auto& e : edges) {
+        if (e.bindGeom.empty()) continue;
+        const std::string who = "edge '" + e.id + "'";
+        const int gi = findGeometry(geoms, e.bindGeom, who, err);
+        if (gi < 0) return fail(err);
+        const SegSpan* sp = nullptr;
+        if (!spanFor(gi, e.bindSeg, who, sp)) return fail(err);
+
+        // A bound edge LIES ON its segment, so both of its corners must be ON it.
+        // Without that there is no stretch of geometry for the edge to follow, and
+        // a straight chord drawn between two free corners and then CALLED a piece
+        // of that wall is exactly the slightly-wrong-mesh-with-no-error this path
+        // exists to refuse.
+        Attached at;
+        const Corner* ends[2] = {cornerById(e.a), cornerById(e.b)};
+        double ts[2] = {0.0, 0.0};
+        for (int k = 0; k < 2; ++k) {
+            const Corner* c = ends[k];
+            if (!c)
+                return fail(who + ": corner '" + (k ? e.b : e.a) + "' resolved during "
+                            "parsing and not during binding; the topology was not read "
+                            "consistently and no mesh was made.");
+            if (tOnSegment(*c, gi, e.bindSeg, ts[k])) continue;
+            return fail(who + " binds to segment " + std::to_string(e.bindSeg) + " of '"
+                        + geoms[static_cast<size_t>(gi)].file + "', so both of its "
+                          "corners must lie on that segment — but corner '"
+                        + c->id + "' is "
+                        + (c->geom.empty()
+                               ? std::string("a free coordinate")
+                               : "attached to segment " + std::to_string(c->seg)
+                                     + " of '" + c->geom + "' at t = "
+                                     + std::to_string(c->t))
+                        + ". An edge that lies on a segment has to start and end on it "
+                          "— at a position on it, or on a joint it shares with the "
+                          "segment next to it.");
+        }
+        if (ts[0] == ts[1])
+            return fail(who + ": both of its corners lie at t = " + std::to_string(ts[0])
+                        + " on segment " + std::to_string(e.bindSeg)
+                        + ", so the edge has no length.");
+        at.ta = ts[0];
+        at.tb = ts[1];
+        at.geomId = gi;
+        at.segId = e.bindSeg;
+        const auto& labels = geoms[static_cast<size_t>(gi)].segBc;
+        const auto lb = labels.find(e.bindSeg);
+        at.bc = (lb != labels.end()) ? lb->second : std::string();
+        if (at.bc.empty()) {
+            // Bound, and still on the fallback. Worth saying out loud: the user
+            // named a segment precisely so the condition would follow from the
+            // declaration, and here it did not.
+            at.bc = bc;
+            r.warnings.push_back("edge '" + e.id + "' binds to segment "
+                + std::to_string(e.bindSeg) + " of '"
+                + geoms[static_cast<size_t>(gi)].file + "', which carries no boundary "
+                  "condition label in its '.meta' sidecar, so the edge takes the config "
+                  "default '" + bc + "'. Assign that segment a condition in the "
+                  "PreProcessor to have it follow from the declaration.");
+        }
+        bound[e.id] = at;
+    }
+
+    if (bound.empty())
+        r.warnings.push_back("no topology edge declares a 'binding', so every boundary "
+                             "edge carries the config default BC '" + bc + "'. Bind a "
+                             "wall edge to a source segment to have its condition come "
+                             "from the declaration instead.");
 
     // Both lookups return a POINTER and the caller refuses on null, rather than
     // falling back to the origin or to the first edge. The parse already proved
@@ -518,10 +981,20 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                         "read consistently and no mesh was made.");
     const Point2D pa = *pc[0], pb = *pc[1], pcc = *pc[2], pd = *pc[3];
 
-    const std::vector<Point2D> south = discretise(S, pa, pb);
-    const std::vector<Point2D> north = discretise(N, pd, pcc);
-    const std::vector<Point2D> west  = discretise(W, pa, pd);
-    const std::vector<Point2D> east  = discretise(E, pb, pcc);
+    // The polyline each side runs along. Every one of the four is discretised in
+    // its OWN declared direction (a -> b) — which the convention check above has
+    // just proved is also the block's i/j direction for that side — so one rule
+    // covers all four and a bound edge needs no second orientation argument.
+    auto pathFor = [&](const EdgeSpec& e, Point2D p0, Point2D p1) -> std::vector<Point2D> {
+        const auto it = bound.find(e.id);
+        if (it == bound.end()) return {p0, p1};
+        const SegSpan& sp = spans.at({it->second.geomId, it->second.segId});
+        return subPath(sp.pts, sp.cum, it->second.ta, it->second.tb);
+    };
+    const std::vector<Point2D> south = discretise(S, pathFor(S, pa, pb));
+    const std::vector<Point2D> north = discretise(N, pathFor(N, pd, pcc));
+    const std::vector<Point2D> west  = discretise(W, pathFor(W, pa, pd));
+    const std::vector<Point2D> east  = discretise(E, pathFor(E, pb, pcc));
 
     // A clockwise corner ring makes EVERY cell in the block inverted, so this is
     // a bad block orientation: a defect of the DECLARATION, readable before a
@@ -631,22 +1104,23 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                              "reconstruction is undefined on quad cells, and the grid "
                              "converter's own slicer refuses a mixed mesh.");
 
-    std::string bc = params.defaultBc;
-    if (bc.empty()) {
-        bc = "wall";
-        r.warnings.push_back("no default boundary condition was resolved (BC_GEOM is "
-                             "empty); every boundary edge is exported as 'wall'.");
+    // Every boundary edge of a side carries THAT SIDE'S declaration: its bound
+    // segment's own BC label and (geometry, segment) key, or the config default
+    // for a side that declares no binding. Resolved once per side rather than
+    // once per edge, because the answer is a property of the side.
+    Attached sideOf[4];
+    for (int k = 0; k < 4; ++k) {
+        const auto it = bound.find(sides[k]->id);
+        if (it == bound.end()) sideOf[k].bc = bc;
+        else                   sideOf[k] = it->second;
     }
-    r.warnings.push_back("every boundary edge carries the config default BC '" + bc
-                         + "'. Naming the source segment an edge lies on, so its BC "
-                           "follows from the declaration, arrives with the "
-                           "boundary-conditions-by-construction work.");
-
-    auto addBoundary = [&](int v1, int v2) {
+    auto addBoundary = [&](const Attached& a, int v1, int v2) {
         MbBoundaryEdge be;
         be.v1 = v1;
         be.v2 = v2;
-        be.bc = bc;                 // geomId/segId stay -1: nothing binds geometry yet
+        be.bc = a.bc;
+        be.geomId = a.geomId;
+        be.segId = a.segId;
         r.boundaryEdges.push_back(be);
     };
     // ONE counter-clockwise walk of the perimeter — south left to right, east up,
@@ -655,10 +1129,14 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // recording so nobody re-derives it: the direction does NOT reach the `.bnd`,
     // because exportStarCD takes a boundary face's node ORDER from the cell that
     // owns it and not from `edges`. It is consistency for a reader, not a fix.
-    for (int i = 0; i + 1 < ni; ++i) addBoundary(b0.nodeAt(i, 0), b0.nodeAt(i + 1, 0));
-    for (int j = 0; j + 1 < nj; ++j) addBoundary(b0.nodeAt(ni - 1, j), b0.nodeAt(ni - 1, j + 1));
-    for (int i = ni - 1; i > 0; --i) addBoundary(b0.nodeAt(i, nj - 1), b0.nodeAt(i - 1, nj - 1));
-    for (int j = nj - 1; j > 0; --j) addBoundary(b0.nodeAt(0, j), b0.nodeAt(0, j - 1));
+    for (int i = 0; i + 1 < ni; ++i)
+        addBoundary(sideOf[MB_SOUTH], b0.nodeAt(i, 0), b0.nodeAt(i + 1, 0));
+    for (int j = 0; j + 1 < nj; ++j)
+        addBoundary(sideOf[MB_EAST], b0.nodeAt(ni - 1, j), b0.nodeAt(ni - 1, j + 1));
+    for (int i = ni - 1; i > 0; --i)
+        addBoundary(sideOf[MB_NORTH], b0.nodeAt(i, nj - 1), b0.nodeAt(i - 1, nj - 1));
+    for (int j = nj - 1; j > 0; --j)
+        addBoundary(sideOf[MB_WEST], b0.nodeAt(0, j), b0.nodeAt(0, j - 1));
 
     r.ok = true;
     return r;
