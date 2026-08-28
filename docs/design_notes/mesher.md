@@ -1,8 +1,10 @@
 # Mesher design notes (C++ core)
 
 Long-form rationale extracted verbatim from `CLAUDE.md` on 2026-08-28, when that
-file passed the 150k-char context limit and was condensed to its rules. Nothing
-here was rewritten: this is the original prose, with its measurements, dated
+file was condensed to its rules. (The reason this line used to give — a 150k-char
+context limit — is false; `CLAUDE.md`'s header block carries the measured behaviour
+and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
+this is the original prose, with its measurements, dated
 acceptance runs, injections and named blind spots. `CLAUDE.md` carries the rule;
 this file carries why it is the rule.
 

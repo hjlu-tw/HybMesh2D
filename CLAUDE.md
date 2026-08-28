@@ -4,8 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Where the reasoning lives.** This file carries the RULES. The long-form rationale behind
 them — the measurements, the dated acceptance runs, the injections, the reversals and the
-named blind spots — was extracted verbatim on 2026-08-28, when this file passed the 150k-char
-context limit, into `docs/design_notes/`:
+named blind spots — was extracted verbatim on 2026-08-28 into `docs/design_notes/`:
 
 | File | Covers |
 |------|--------|
@@ -17,6 +16,23 @@ Nothing was rewritten in the move. **Read the matching design note before overru
 here**: most of these rules were bought by shipping the opposite first, and the rule alone
 does not carry the argument for itself. When a rule changes, update BOTH — the rule here, and
 its entry there.
+
+**What that split cost, and what it did not.** There is no truncation threshold anywhere near
+this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
+one, and this file is under 4% of that. The cost is therefore not truncation but **always-loaded
+context** — **149,968 bytes (`wc -c`, 2026-08-28) ≈ 37k tokens**, paid by every session before it
+reads a line of source; that number decays on the next commit, so re-measure before quoting it. Two
+figures here are NOT re-derived from this tree and are named rather than implied: the 4 MiB
+threshold is documented loader behaviour (what this tree does show is that the file arrives
+verbatim at its current size), and the token count is bytes/4. `MEMORY.md`'s far smaller budget
+(24.4KB, measured 2026-08-27) is a different loader's and is not this file's.
+
+> **Superseded claim, KEPT AS A SPECIMEN (#60).** `3a2e096` wrote "passed the 150k-char context
+> limit" into this block and into all three design notes: `.agents/skills/ask-matt`'s **smart zone,
+> ~150k _tokens_** (`SKILL.md:32`, `PHASE-BOUNDARIES.md:21`) — a reasoning-quality heuristic, not a
+> limit — restated as a character hard limit that nothing ever measured. Kept rather than deleted,
+> like #43's iteration-count reversal: a number carried in from a neighbouring document is not
+> evidence until something here re-derives it.
 
 ## Important: Git and Commit Policy
 
