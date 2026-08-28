@@ -992,7 +992,7 @@ int main() {
                   "interface (" + std::to_string(r.boundaryEdges.size()) + ")");
             CHECK(r.sharedEdges.size() == 1
                   && r.sharedEdges[0].edgeId == "m"
-                  && r.sharedEdges[0].kind == "interface"
+                  && r.sharedEdges[0].kind == hybmesh::MB_EDGE_INTERFACE
                   && r.sharedEdges[0].nodes == 3,
                   "17. ...and the interface is reported as data, with the two block "
                   "sides it welds");
@@ -1102,7 +1102,8 @@ int main() {
         MbResult i = build(twoBlocks("interface"));
         MbResult c = build(twoBlocks("cut"));
         CHECK(c.ok, "21. a 'cut' shared by two blocks is accepted (err: " + c.error + ")");
-        CHECK(c.sharedEdges.size() == 1 && c.sharedEdges[0].kind == "cut",
+        CHECK(c.sharedEdges.size() == 1
+              && c.sharedEdges[0].kind == hybmesh::MB_EDGE_CUT,
               "21. ...and comes back reported as a CUT, not as an ordinary interface");
         CHECK(i.ok && c.nodes.size() == i.nodes.size()
               && c.cells.size() == i.cells.size()

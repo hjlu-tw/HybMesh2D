@@ -93,6 +93,61 @@ struct MbParams {
     bool splitQuads = true;
 };
 
+// A block's four sides, in the [south, east, north, west] order the topology
+// document declares them and every check in this module is written against.
+enum MbSide { MB_SOUTH = 0, MB_EAST = 1, MB_NORTH = 2, MB_WEST = 3 };
+
+// WHERE a side sits in the block's logical grid. This is the [south, east,
+// north, west] convention as DATA, in one place, because it was on its way to
+// being encoded three times: once to pick the perpendicular edge whose spacing
+// law a wall's first-cell height is asked of (src/MultiBlock.cpp), once to walk
+// that side and step one grid line inward (src/MbQuality.cpp), and once to name
+// it in a report. Two of those were `switch (side)` cascades over the same four
+// values, which is the shape that lets one of them disagree with the others.
+//
+// The two facts are enough to derive all three: south and north run along i and
+// the other two along j, and north and east sit at the transverse index MAXIMUM.
+// So the perpendicular edges are (alongI ? west/east : south/north), read from
+// (atFarEnd ? the far end : the near end).
+struct MbSideAxis {
+    const char* name;   // "south" | "east" | "north" | "west"
+    bool alongI;        // the side runs along i (south, north) rather than along j
+    bool atFarEnd;      // it sits at the transverse index maximum (north, east)
+};
+
+inline MbSideAxis mbSideAxis(MbSide s) {
+    switch (s) {
+        case MB_EAST:  return {"east",  false, true};
+        case MB_NORTH: return {"north", true,  true};
+        case MB_WEST:  return {"west",  false, false};
+        case MB_SOUTH: break;
+    }
+    return {"south", true, false};
+}
+
+// What an edge IS: a CLOSED SET, in one place, with its declared names beside it.
+//
+// An enum rather than a validated string, and the difference is not cosmetic —
+// the kind was compared against a literal at six sites, which is six chances for
+// one of them to disagree with the others, and it travelled out of the seam as a
+// string a reader had to match by hand. The names live here too, so the parser,
+// every refusal message and the banner read the same four words. Same shape as
+// `mbSideAxis` below and for the same reason.
+//
+// The kind is DECLARED and never inferred from whether a `binding` is present: a
+// wake cut is two blocks sharing one line that is NOT a boundary, and inference
+// would file it as an ordinary interface.
+enum MbEdgeKind { MB_EDGE_WALL = 0, MB_EDGE_INTERFACE = 1, MB_EDGE_CUT = 2 };
+
+inline const char* mbEdgeKindName(MbEdgeKind k) {
+    switch (k) {
+        case MB_EDGE_INTERFACE: return "interface";
+        case MB_EDGE_CUT:       return "cut";
+        case MB_EDGE_WALL:      break;
+    }
+    return "wall";
+}
+
 // One shared INTERIOR edge, and the two block sides welded along it.
 //
 // Published as data because the kind is a DECLARATION and a run has to be able to
@@ -114,9 +169,10 @@ struct MbParams {
 // are which in the meantime.
 struct MbSharedEdge {
     std::string edgeId;
-    std::string kind;              // "interface" | "cut"
+    MbEdgeKind kind = MB_EDGE_INTERFACE;
     int blockA = -1, blockB = -1;  // indices into MbResult::blocks
-    int sideA = 0, sideB = 0;      // MbSide, as declared by each block
+    MbSide sideA = MB_SOUTH;       // ...and which of its sides, as each declared it
+    MbSide sideB = MB_SOUTH;
     int nodes = 0;                 // node count along it, ONE number by construction
 };
 
@@ -175,38 +231,6 @@ struct MbBoundaryEdge {
     int geomId = -1;
     int segId = -1;
 };
-
-// A block's four sides, in the [south, east, north, west] order the topology
-// document declares them and every check in this module is written against.
-enum MbSide { MB_SOUTH = 0, MB_EAST = 1, MB_NORTH = 2, MB_WEST = 3 };
-
-// WHERE a side sits in the block's logical grid. This is the [south, east,
-// north, west] convention as DATA, in one place, because it was on its way to
-// being encoded three times: once to pick the perpendicular edge whose spacing
-// law a wall's first-cell height is asked of (src/MultiBlock.cpp), once to walk
-// that side and step one grid line inward (src/MbQuality.cpp), and once to name
-// it in a report. Two of those were `switch (side)` cascades over the same four
-// values, which is the shape that lets one of them disagree with the others.
-//
-// The two facts are enough to derive all three: south and north run along i and
-// the other two along j, and north and east sit at the transverse index MAXIMUM.
-// So the perpendicular edges are (alongI ? west/east : south/north), read from
-// (atFarEnd ? the far end : the near end).
-struct MbSideAxis {
-    const char* name;   // "south" | "east" | "north" | "west"
-    bool alongI;        // the side runs along i (south, north) rather than along j
-    bool atFarEnd;      // it sits at the transverse index maximum (north, east)
-};
-
-inline MbSideAxis mbSideAxis(MbSide s) {
-    switch (s) {
-        case MB_EAST:  return {"east",  false, true};
-        case MB_NORTH: return {"north", true,  true};
-        case MB_WEST:  return {"west",  false, false};
-        case MB_SOUTH: break;
-    }
-    return {"south", true, false};
-}
 
 // One side of one block that was declared kind "wall", carrying the first-cell
 // height the DECLARATION asks for off it.

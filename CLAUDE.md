@@ -383,6 +383,8 @@ acceptance gate is a grep.
   dart `(0,0) (1,0) (0.1,0.1) (0,1)` winds counter-clockwise (+0.1), so the ring refusal does not
   fire and the fill folds anyway. The gate checks no topology refusal prints on that run.
 - **All four sides are reported**, because v0 cannot say which boundary is a viscous wall.
+  **SUPERSEDED by #53**: the gate is the KIND, so an `interface`/`cut` side is not reported and a
+  multi-block topology lists exactly its outer walls.
 - **The `[south, east, north, west]` convention is DATA, in one place** (`mbSideAxis`). A dedup of
   `MbWallSpec`/`MbWallHeight` was considered and DECLINED: they face opposite directions and the
   shared part cannot be written HALF.
@@ -434,7 +436,9 @@ wall at every junction.
   (everything on `BC_GEOM`), and a bound edge whose segment carries no label. The banner prints one
   row per patch naming the segment it was read off, so "declared, not discovered" is visible in a run.
 - **`MbWallSpec` still reports all four sides**; the gate stays `kind`, since "labelled inlet" and
-  "viscous surface whose first-cell height matters" are different questions.
+  "viscous surface whose first-cell height matters" are different questions. **SUPERSEDED by #53**:
+  the `kind` gate now bites — an interior side is not a wall — so the list is the outer walls. Why it
+  stays `kind` rather than the BC label is unchanged.
 - The adapter gained a ~15-line boundary-patch summary for the banner — PRESENTATION, not
   classification, but it is no longer literally decision-free; a second such block belongs on the
   pure side beside `measureMbQuality`.
@@ -452,54 +456,55 @@ wall at every junction.
   left unbound (a straight chord carrying `BC_GEOM`).
 
 **Blocks are welded TOPOLOGICALLY, counts PROPAGATE, and the edge KIND is an enum** (still the one
-pure entry point; #53). Any number of blocks. An interior line is declared ONCE, as one edge of kind
-`interface` or `cut`, and both blocks name it — so the k-th node on one side IS the k-th node on the
-other. Full rationale, measurements and the dated injection log: `docs/design_notes/mesher.md`.
+pure entry point; #53). Any number of blocks; an interior line is declared ONCE, as one edge of kind
+`interface` or `cut`, and both blocks name it. **Full rationale, measurements, the declined review
+findings and the dated injection log: `docs/design_notes/mesher.md`.**
 - **Coordinate welding is UNAVAILABLE, not just unpreferred**: wall spacing ~1e-7 beside far-field
   ~1e-1 leaves no tolerance in between (the iso-line tracer's own argument). Welding is ALLOCATION,
   not comparison — one node per declared corner, an edge's interior nodes once per declared edge, and
-  a block READS its four sides' node ids. There is no `1e-`/tolerance literal in the module at all.
-  Negative control: two corners at the SAME coordinates under different ids stay TWO nodes.
+  a block READS its four sides' node ids. There is no tolerance literal in the module. Negative
+  control: two corners at the SAME coordinates under different ids stay TWO nodes.
 - **Only the block INTERIOR is interpolated now** — `coons` at u = 0 computes `(X + west[j]) - X`, so
-  a shared edge must be the side's OWN discretisation and not two curves that agree. Measured:
-  `mb_graded` (14/221 nodes) and `mb_bound` (8/35) move by **1.11e-16**, the new value being the
-  exact one. `golden_mesh.py` renders that as `worst 9.167e-01` — an ARTEFACT of zipping two sorted
-  node lists whose x-groups split; **do not read its magnitude on a case whose node SET changed
-  membership**.
+  a shared edge must be the side's OWN discretisation, not two curves that agree. Measured: 14/221
+  and 8/35 golden nodes move by **1.11e-16**, the new value being the exact one. `golden_mesh.py`
+  renders that as `worst 9.167e-01` — an ARTEFACT of zipping two sorted node lists whose x-groups
+  split; **do not read its magnitude on a case whose node SET changed membership**.
 - **The relation is "opposite sides of one block", and there is NO second rule for an interface** — a
   shared edge is one edge two blocks name, so it propagates across blocks by itself. `count` is now a
-  SEED, not a requirement. The COUNT propagates; the **SPACING LAW does not** (a wall edge may
-  cluster while the interface in its count class stays uniform).
-- **A conflict names both edges, both counts AND the chain**, rendered a block at a time from a BFS
-  over the recorded links. Both gates put the two seeds TWO blocks apart, since a one-block conflict
-  lets a chain-free report pass. A class with **no** seed is refused naming every edge in it —
-  never defaulted, and **not** seeded from `SURFACE_MESH_SIZE` either.
-- **The kind decides three things and NO arithmetic**: how many block sides the edge may be (`wall`
-  1, `interface`/`cut` 2); whether a `binding` is allowed (`wall` only — an interior line has no
-  segment to lie on); and whether it exports as a boundary face (`wall` only, also the `MbWallSpec`
-  gate). An interface and a cut weld identically — **said out loud**: the distinction lives in the
-  declaration, the validation and the report (`MbResult::sharedEdges`, a `Cut '<id>'` banner row),
-  which is what makes a later divergence a change rather than a rewrite. Still never INFERRED from
-  the binding.
+  SEED. The COUNT propagates; the **SPACING LAW does not**.
+- **A conflict names both edges, both counts AND the chain**, a block at a time from a BFS over the
+  recorded links; both gates put the two seeds TWO blocks apart, since a one-block conflict lets a
+  chain-free report pass. A class with **no** seed is refused naming every edge in it — never
+  defaulted, and **not** seeded from `SURFACE_MESH_SIZE`.
+- **The kind is a real `MbEdgeKind` with its names beside it** (`mbEdgeKindName`, the `mbSideAxis`
+  shape), not a string compared at six sites — it was the latter for one commit, and the review that
+  caught it also caught a second copy of the four SIDE names in the `.cpp`.
+- **It decides three things and NO arithmetic**: how many block sides the edge may be (`wall` 1,
+  `interface`/`cut` 2); whether a `binding` is allowed (`wall` only); and whether it exports as a
+  boundary face (`wall` only, also the `MbWallSpec` gate). An interface and a cut weld identically —
+  **said out loud**: the distinction lives in the declaration, the validation and the report
+  (`MbResult::sharedEdges`, a `Cut '<id>'` banner row), which is what makes a later divergence a
+  change rather than a rewrite. Still never INFERRED from the binding.
+- **Refusing a `binding` on an interface/cut costs a CURVED interface, and the refusal says so.** A
+  binding both makes the edge FOLLOW the geometry and supplies the BC; only the second is meaningless
+  on an interior line. So an interior line is a straight CHORD and the BL/far-field seam #55 wants is
+  undeclarable. Refused rather than half-honoured — a binding whose BC half is silently ignored is a
+  setting that does nothing — and it needs its OWN key, not a reused one.
 - **A block's frame comes from its SOUTH edge, and this REVERSES #50's rule.** The other three sides
-  may be declared either way and are traversed as the ring requires: a shared edge has ONE declared
-  direction and two blocks whose frames need not agree, so #50's "any deviation is refused" made a
-  whole class of topology undeclarable. Nothing is inferred — four edges that do not CLOSE a ring are
-  still refused by name, and a ring closing onto THREE corners is refused too (reachable: two
-  distinct edges over one corner pair). The clockwise-ring refusal is unchanged. C++ check 9 is the
-  **inverted** version of the one that pinned the old refusal.
+  may be declared either way and are traversed as the ring requires: a shared edge has ONE direction
+  and two blocks whose frames need not agree. Nothing is inferred — four edges that do not CLOSE a
+  ring are still refused by name, and a ring closing onto THREE corners is refused too (reachable:
+  two distinct edges over one corner pair). The clockwise-ring refusal is unchanged. C++ check 9 is
+  the **inverted** version of the one that pinned the old refusal.
 - **"The four sides meet at four shared corner NODES" is checked, before the writes overwrite one
-  with the other.** It looks tautological after the ring match and is not: it is what caught the
+  with the other.** It looks tautological after the ring match and is not: it caught the
   dropped-reversal injection in both gates.
 - Gated by `tests/cpp/test_multiblock.cpp` 17-23, `tests/test_multiblock_weld_surface.py` (which
   measures CONFORMITY on the exported files — interior edges shared by exactly two cells, the
   boundary set equal to the `.bnd`, one connected component) and the `mb_hgrid` golden case on the
-  shipped `examples/topology/hgrid_blocks.json`. Injections are HAND runs dated 2026-08-28; one of
-  them initially caught NOTHING in the Python gate, because the `.bnd` writer derives faces from
-  cell connectivity and so never sees a wrongly RECORDED boundary edge — a check on the mesher's own
-  `Boundary Edges (BND)` count was ADDED for it.
-- **THE SOLVER ACCEPTANCE RUN IS OUTSTANDING and the gate says so**: this checkout carries no solver
-  tree, so no four-block grid has been through `getPGrid` or `unicones`. Other blind spots: nothing
+  shipped `examples/topology/hgrid_blocks.json`.
+- **THE SOLVER ACCEPTANCE RUN IS OUTSTANDING and the gate says so**: no four-block grid has been
+  through `getPGrid` or `unicones` (this checkout has no solver tree). Other blind spots: nothing
   welds along a BOUND edge, nothing exceeds four blocks, and a block welded to ITSELF is still
   inexpressible (right for a transfinite fill, but an O-grid seam cannot be one edge).
 
@@ -1718,7 +1723,7 @@ same schema and stage logic.
 - **`visualize_dat.py`**: Matplotlib visualization for `.dat` files; `--quality` flag adds expansion-ratio heatmap
 - **`generate_letters.py`**: Generates letter-shaped geometry files
 - **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
-- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 9 mesher cases (~5 s), for proving that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not byte-reproducible, and node NUMBERING varies run to run — so it canonicalises by COORDINATE (nodes lexicographically sorted; each cell its node ranks, rotated to a fixed start and direction so winding cannot disagree; the cell list sorted) and reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits the tolerance. **That distinction is load bearing, and measuring it corrected a belief recorded here**: the nondeterminism is not confined to numbering — `wedge_45` returns a coordinate differing by ~1.2e-13 in roughly 1 run in 12 (worst seen 2.5e-13 over ~20 runs, when two wobbles compound), while the other eight cases were bit-identical every time. Exact equality would therefore flake, and the 1e-10 tolerance is set ~400× above that measured floor. It also compares **both** STAR-CD files: the `.bnd` patch names, their face counts and each face's own coordinates, and the `.cel` connectivity — which is the grid the SOLVER reads and is not the `.vtk`, since the `.cel` writer owns a winding normalisation, a degenerate-cell skip and a duplicate-cell dedupe that exist nowhere else (a review found the comparator could report SAME while that file had changed). A `.cel` triangle is written `v1 v2 v3 v3` and which vertex repeats follows the element's node order, so the duplicate is collapsed before comparing while the winding deliberately is not. Comparing the `.bnd` matters because because the two most expensive junction bugs this repo has had (see the `BoundaryLayer.cpp` notes above) produced a geometrically perfect mesh with the BCs on the wrong patches. Boundary faces are keyed by coordinate, not vertex id — `.bnd` ids index the `.vrt` numbering while cells index the `.vtk` numbering, and those are precisely the numbers free to move. Duct/wedge geometries are **imported** from `tools/PreProcessor/tests/test_nobl_junction_acute.py` rather than copied (a tool reaching into a test dir is unusual; a second copy of a geometry generator is guaranteed divergence). Two junction bins are NOT reachable this way — case 3/4 need θ > 270°, which no geometry writer produces — and `list` says so. **`HYBMESH_GOLDEN_BIN` points the capture at a different build**, which is what makes a behaviour-preserving claim checkable at all: `git archive <start-commit> | tar -x -C <dir>` (no git state touched), build there, capture the baseline from THAT binary, then compare with the working tree. Without it a baseline can only be captured from the tree that already contains the change it is meant to be evidence about.
+- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 15 mesher cases (~10 s), for proving that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not byte-reproducible, and node NUMBERING varies run to run — so it canonicalises by COORDINATE (nodes lexicographically sorted; each cell its node ranks, rotated to a fixed start and direction so winding cannot disagree; the cell list sorted) and reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits the tolerance. **That distinction is load bearing, and measuring it corrected a belief recorded here**: the nondeterminism is not confined to numbering — `wedge_45` returns a coordinate differing by ~1.2e-13 in roughly 1 run in 12 (worst seen 2.5e-13 over ~20 runs, when two wobbles compound), while the other eight cases *of the nine that existed when this was measured* were bit-identical every time. Exact equality would therefore flake, and the 1e-10 tolerance is set ~400× above that measured floor. It also compares **both** STAR-CD files: the `.bnd` patch names, their face counts and each face's own coordinates, and the `.cel` connectivity — which is the grid the SOLVER reads and is not the `.vtk`, since the `.cel` writer owns a winding normalisation, a degenerate-cell skip and a duplicate-cell dedupe that exist nowhere else (a review found the comparator could report SAME while that file had changed). A `.cel` triangle is written `v1 v2 v3 v3` and which vertex repeats follows the element's node order, so the duplicate is collapsed before comparing while the winding deliberately is not. Comparing the `.bnd` matters because because the two most expensive junction bugs this repo has had (see the `BoundaryLayer.cpp` notes above) produced a geometrically perfect mesh with the BCs on the wrong patches. Boundary faces are keyed by coordinate, not vertex id — `.bnd` ids index the `.vrt` numbering while cells index the `.vtk` numbering, and those are precisely the numbers free to move. Duct/wedge geometries are **imported** from `tools/PreProcessor/tests/test_nobl_junction_acute.py` rather than copied (a tool reaching into a test dir is unusual; a second copy of a geometry generator is guaranteed divergence). Two junction bins are NOT reachable this way — case 3/4 need θ > 270°, which no geometry writer produces — and `list` says so. **`HYBMESH_GOLDEN_BIN` points the capture at a different build**, which is what makes a behaviour-preserving claim checkable at all: `git archive <start-commit> | tar -x -C <dir>` (no git state touched), build there, capture the baseline from THAT binary, then compare with the working tree. Without it a baseline can only be captured from the tree that already contains the change it is meant to be evidence about.
 
 ## Common Tasks
 

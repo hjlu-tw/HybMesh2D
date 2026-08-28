@@ -327,6 +327,9 @@ for is a grep and not a prose parse. Rules:
   interior came out folded and there is something worth looking at. The gate checks
   that no topology refusal is printed on that run, or its check 4 would be pinning
   a refusal wearing a second code.
+- **SUPERSEDED IN PART by #53**: the gate is the KIND, so an `interface`/`cut` side
+  is not listed and a multi-block topology reports exactly its outer walls. Why the
+  gate is `kind` rather than the BC label is unchanged.
 - **All four sides are reported, because v0 cannot say which boundary is a viscous
   wall.** Every boundary edge is kind `wall` (interface and cut are refused by
   name), so a body surface is not distinguishable from a far field until boundary
@@ -459,6 +462,8 @@ chord exceeded it and an inlet exported a band of wall at every junction. Rules:
   `BC_GEOM`), and a bound edge whose segment carries no label in its sidecar. The
   banner then prints one row per patch naming the segment it was read off, so
   "declared, not discovered" is visible in a run rather than only claimed.
+- **SUPERSEDED IN PART by #53**, same as #51's version of this rule: the `kind` gate
+  now bites, because an interior side is not a wall.
 - **`MbWallSpec` still reports all four sides, and the #51 note predicting it would
   shrink is NOT yet due.** Conditions do now come from the declaration, but "this
   side is labelled inlet" and "this side is a viscous surface whose first-cell
@@ -552,7 +557,7 @@ node counts partition into equivalence classes the user seeds a few of.
   discretisation is the definitive answer and the blend is asked only about the
   inside. **Measured**: `mb_graded` (14 of 221 nodes) and `mb_bound` (8 of 35) move
   by **1.11e-16**, one ULP, on the boundary nodes of their non-uniformly spaced
-  edges; the other ten golden cases are bit-identical. The new value is the exactly
+  edges; the other twelve golden cases are bit-identical. The new value is the exactly
   discretised one and the old was the ULP off. Recorded because the golden
   comparator reports that change as `worst 9.167e-01`, which is an ARTEFACT of how
   it pairs nodes: it sorts both node lists and zips them, so a 1-ULP shift that
@@ -581,6 +586,12 @@ node counts partition into equivalence classes the user seeds a few of.
   would let a report that names no chain at all pass the check.
 - **A class with NO seed is refused naming every edge in it.** Picking a default
   would decide the whole mesh density from a number nobody wrote down.
+- **The kind is a real `MbEdgeKind`, declared with its names beside it.** It shipped
+  as a validated `std::string` for one commit — compared against a literal at six
+  sites, and published out of the seam as a string a reader had to match by hand —
+  which the code review caught against this note's own "enum" wording.
+  `mbEdgeKindName` sits beside it in the same shape `mbSideAxis` already uses, so
+  the parser, every refusal message and the banner read one set of four words.
 - **The three kinds decide three things, and NOT any arithmetic.** How many block
   sides the edge may be (`wall` exactly one, `interface`/`cut` exactly two, refused
   by name with the offending blocks); whether it may declare a `binding` (a `wall`
@@ -670,6 +681,46 @@ node counts partition into equivalence classes the user seeds a few of.
   named twice in one block, which is right for this fill (a transfinite map over
   four sides has no answer for a self-adjacent block) but means an O-grid seam
   cannot be declared as one edge.
+- **THE CODE REVIEW ROUND, 2026-08-28, recorded because three of its findings were
+  real and one of them was about a rule this very note quotes.** Standards found a
+  second copy of the four side names (`kSideName[4]` in `MultiBlock.cpp`) while
+  #51's rule — restated a few hundred lines above — is *"the `[south, east, north,
+  west]` convention is DATA, in one place (`mbSideAxis`)"*. The comment above the
+  array ADMITTED the split ("the two are indexed identically"), which is the shape
+  of a rule being talked around rather than followed; it is now a one-line
+  `sideName(k)` reading `mbSideAxis`. It also found that "the edge kind is an ENUM"
+  was false of the type — a `std::string` compared against a literal at six sites,
+  and published out of the seam as a string a reader had to match by hand. Rather
+  than weaken the prose, `MbEdgeKind` + `mbEdgeKindName` now exist in the header in
+  the `mbSideAxis` shape, `MbSharedEdge::sideA/sideB` became `MbSide` (which
+  removed a cast in `cli.cpp`), and the parse maps the four words once. Behaviour
+  preserving, measured: 15/15 golden SAME at 0.000e+00. And it found four rules
+  this change left stale in CLAUDE.md and here (*"All four sides are reported"*,
+  *"`MbWallSpec` still reports all four sides"*, *"the other ten golden cases"* —
+  it is twelve — and `golden_mesh.py`'s *"over 9 mesher cases"*, now 15) while the
+  same diff correctly marked the orientation rule SUPERSEDED, so the omission was
+  inconsistent with its own practice. All four are fixed.
+- **The Spec axis's most valuable finding was a CONSEQUENCE, not a defect**:
+  refusing a `binding` on an interface/cut makes an interior line a straight chord,
+  so *"a curved interface — the natural BL/far-field seam for #55 — is
+  undeclarable"*. Kept, because the alternative is a binding whose condition half is
+  silently ignored, and the refusal message now names the cost and the work it waits
+  for. Its other two scope notes (the two banner blocks, and `MbWallSpec` narrowing)
+  are recorded as deliberate above.
+- **Structural findings acted on and DECLINED, both stated so neither reads as an
+  oversight.** Acted on: `buildMultiBlock` had grown to six inline phases over ~700
+  lines, and the two that RESOLVE the parse are now file-local functions in the
+  module's own idiom (`resolveBlockFrames`, `resolveEdgeCounts`), taking it to 571.
+  Declined: cutting the per-block fill out too would mean handing it `r`, `edges`,
+  `frames`, `eNodes`, `params` and `bc` — the wide-signature-over-a-narrow-dependency
+  shape `classifyJunctions` was extracted to escape, so the length is recorded rather
+  than traded for a worse interface. Also declined: `(block, side)` travelling as
+  four fields on `MbSharedEdge` is a Data Clump whose type is already born privately
+  as `Use`, and `MbWallSpec` carries the same pair — one shared `MbBlockSide` would
+  ripple into `MbQuality.cpp` and its 53-check test for a naming win, and #51 already
+  declined a related dedup on grounds of its own. And three id-to-thing linear scans
+  coexist (`edgeIndexById`, `cornerById`, the string-keyed `uses`); they answer
+  different questions and the topologies are small, so this is noted, not merged.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:

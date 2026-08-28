@@ -525,12 +525,13 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         const std::string b = (se.blockB >= 0 && static_cast<size_t>(se.blockB)
                                                     < res.blocks.size())
             ? res.blocks[static_cast<size_t>(se.blockB)].id : std::string("?");
-        std::cout << mbRow(std::string(se.kind == "cut" ? "Cut '" : "Interface '")
+        std::cout << mbRow(std::string(se.kind == hybmesh::MB_EDGE_CUT
+                                           ? "Cut '" : "Interface '")
                            + se.edgeId + "'")
                   << se.nodes << " shared nodes, the "
-                  << hybmesh::mbSideAxis(static_cast<hybmesh::MbSide>(se.sideA)).name
+                  << hybmesh::mbSideAxis(se.sideA).name
                   << " of block '" << a << "' and the "
-                  << hybmesh::mbSideAxis(static_cast<hybmesh::MbSide>(se.sideB)).name
+                  << hybmesh::mbSideAxis(se.sideB).name
                   << " of block '" << b << "'\n";
     }
     std::cout << "  - Cells                : " << res.cells.size() << " "
