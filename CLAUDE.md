@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Where the reasoning lives.** This file carries the RULES. The long-form rationale behind
+them — the measurements, the dated acceptance runs, the injections, the reversals and the
+named blind spots — was extracted verbatim on 2026-08-28, when this file passed the 150k-char
+context limit, into `docs/design_notes/`:
+
+| File | Covers |
+|------|--------|
+| `docs/design_notes/mesher.md` | Configuration (`.dat`, BL params, MESH_MODE, multi-block, quality, BC binding) + Core C++ |
+| `docs/design_notes/gui.md` | The whole PreProcessor GUI section |
+| `docs/design_notes/pipeline.md` | Full pipeline, solver case, archive/clean/restart, bDecompose, STL3d |
+
+Nothing was rewritten in the move. **Read the matching design note before overruling a rule
+here**: most of these rules were bought by shipping the opposite first, and the rule alone
+does not carry the argument for itself. When a rule changes, update BOTH — the rule here, and
+its entry there.
+
 ## Important: Git and Commit Policy
 
 **Commit freely; everything else waits for an explicit instruction.** `add` and
@@ -223,521 +239,223 @@ Key-value text file, command-line args override file values. Parameters grouped 
 | Output | `EXPORT_VTK`, `EXPORT_STARCD`, `BC_XMIN/XMAX/YMIN/YMAX/GEOM` |
 | Units | `LENGTH_UNIT` (m/cm/mm/um/in/ft/custom), `LENGTH_UNIT_METRES`, `LENGTH_UNIT_NAME` |
 
+> **Full rationale for everything below — measurements, dated acceptance runs, injections and named
+> blind spots — is `docs/design_notes/mesher.md`.** Read it before overruling a rule; the rule alone
+> does not carry the argument for itself.
+
 **The 22 boundary-layer parameters are declared ONCE, in `include/BLParams.hpp`**
-(`X(KEY, type, field, default)` per row). The struct, the `.dat` reader, the
-per-geometry override parser and `isBLParam` are all GENERATED from that list, so
-there is no parse branch left to forget; `Config` holds one `BLParams` rather than a
-second copy with a second set of defaults. `Config::print()` is deliberately NOT
-generated — the banner is a grouped report reused verbatim as the provenance sidecar —
-so `tests/cpp/test_bl_params_decl.cpp` check 6 gates it instead: every parameter must
-be reachable from the banner AND (where the banner renders it as a number) its own
-value must appear there. That check's blind spot is named in its own docstring: it
-cannot see a SWAPPED PAIR, because the pairing of a value to its meaning IS the label
-prose.
+(`X(KEY, type, field, default)` per row). The struct, the `.dat` reader, the per-geometry override
+parser and `isBLParam` are GENERATED from it; `Config` holds one `BLParams`, not a second copy with
+a second set of defaults. `Config::print()` is deliberately NOT generated (the banner is a grouped
+report reused verbatim as the provenance sidecar), so `tests/cpp/test_bl_params_decl.cpp` check 6
+gates it: every parameter must be reachable from the banner, and where the banner renders it as a
+number its own value must appear there. Named blind spot: a SWAPPED PAIR is invisible, because the
+pairing of value to meaning IS the label prose.
 
-**`MESH_MODE` selects the generation path, and a parameter the active mode never
-reads is NAMED** (`include/MeshMode.hpp` + `src/MeshMode.cpp`, in `hybmesh_pure`;
-issue #49, the configuration surface of #48's multi-block path). Mode 0 is the
-existing hybrid path and the DEFAULT, so the correct effect of the whole feature on
-an existing case is zero — measured, not asserted: the nine golden cases were
-captured from the pre-change binary (`git archive 25bd1cf` → build → capture with
-`HYBMESH_GOLDEN_BIN`) and compare **9/9 SAME, worst deviation 0.000e+00**, with the
-procedure recorded in `tests/test_mesh_mode_surface.py`'s docstring. Rules:
-- **"Which parameters does this mode read?" is DATA, in one place.** Two macros
-  declare it — the inert non-BL keys as `(KEY, Config member)` rows, and the four BL
-  parameters that SURVIVE — and the 18 casualties are the declaration in
-  `BLParams.hpp` minus those four, so a parameter added there is covered with no edit.
-  Declaring the survivors rather than the casualties is deliberate: the next BL
-  parameter is far likelier to be another corner knob than another wall-spacing one,
-  so a new row gets the right answer by default.
-- **"Set" means "differs from a default-constructed Config", never "the key appeared
-  in the file".** The GUI writes nearly every key on every save, so the file-based
-  reading would warn about all of them at once and mean nothing.
-- **The GUI's half is `modes=` on each field's own spec**, not a second table — the
-  same argument the `.dat` KEY already carries — and `test_field_spec_tables.py`
-  check 14 compares the two **in both directions**, reading the C++ macros as text so
-  its five injections can mutate them. One direction alone has a hole each way: a key
-  the mesher warns about but the panel still shows is a control the user can set and
-  watch do nothing, and a field the panel hides but the mesher still reads is a value
-  silently frozen. Rows the mode does not read are hidden in the mesh panel AND in the
-  **Edit-BL dialog**, which is where 17 of them actually live — hidden, never dropped,
-  so switching the mode is not a silent edit of 17 values.
-- **An invalid topology declaration refuses with `EXIT_ERR_TOPOLOGY` (8, token
-  `TOPOLOGY`)** and exports nothing; `EXIT_ERR_INVERTED` (9, token `INVERTED`) is
-  declared beside it for a mesh that generates but holds inverted cells, which will
-  EXPORT anyway. Two codes rather than one because the caller's response differs: fix
-  the declaration, versus look at the mesh. An **unknown** mode is refused by
-  `validate()` rather than clamped to 0 — every other repair there has an obviously
-  right fallback and a mode does not, so clamping would mesh the hybrid path for
-  someone who asked for something else. (Until #50 that same code meant "the mode is
-  not implemented yet"; `test_mesh_mode_surface.py` check 2 is now the **inverted**
-  version of the one that pinned that sentence, and pins the parts the ticket
-  actually promised — code 8, the machine-readable line, nothing written.)
-- Three departures from #49's acceptance text, all recorded in `MeshMode.hpp`:
-  `GMSH_NUM_THREADS` is warned about too (this path uses Gmsh nowhere, so the same
-  argument covers it); so are `BL_MERGE_CONCAVE` and `BL_SMOOTHING_ITERS`, which are
-  global-only settings outside the 22-row declaration and inert for the same reason,
-  making **20** BL-ish names against the ticket's 18; and `SURFACE_MESH_SIZE` /
-  `AUTO_SURFACE_SIZE` are deliberately NOT declared inert — #49 does not name them, and whether a surface size seeds
-  default edge counts is a question the later tickets answer. `Config::meshMode`'s
-  initialiser is the literal `0` rather than `MESH_MODE_HYBRID` because the parity
-  gate resolves that initialiser to compare it with the GUI default and reads a
-  literal; an enum name there would make one of the two sides stop being compared.
+**`MESH_MODE` selects the generation path, and a parameter the active mode never reads is NAMED**
+(`include/MeshMode.hpp` + `src/MeshMode.cpp`, in `hybmesh_pure`; #49). Mode 0 is the hybrid path and
+the DEFAULT, so the feature's effect on an existing case is zero — measured, 9/9 golden SAME.
+- **"Which parameters does this mode read?" is DATA, in one place.** Two macros declare the inert
+  non-BL keys and the four BL parameters that SURVIVE; the 18 casualties are `BLParams.hpp` minus
+  those four, so a new BL parameter is covered with no edit. Survivors rather than casualties, so a
+  new corner knob gets the right answer by default.
+- **"Set" means "differs from a default-constructed Config"**, never "the key appeared in the file"
+  — the GUI writes nearly every key on every save.
+- **The GUI's half is `modes=` on each field's own spec**, not a second table, compared **in both
+  directions** by `test_field_spec_tables.py` check 14. Each direction alone has a hole: a
+  warned-about key the panel still shows is a control that does nothing; a hidden field the mesher
+  still reads is a value silently frozen. Rows the mode does not read are hidden in the mesh panel
+  AND the Edit-BL dialog (where 17 of them live) — hidden, never dropped, so switching modes is not
+  a silent edit of 17 values.
+- **Exit codes**: `EXIT_ERR_TOPOLOGY` (8, token `TOPOLOGY`) — invalid declaration, exports nothing;
+  `EXIT_ERR_INVERTED` (9, token `INVERTED`) — generates with inverted cells and EXPORTS anyway. Two
+  codes because the response differs: fix the declaration vs look at the mesh. An **unknown** mode
+  is refused by `validate()`, never clamped to 0.
+- Departures from #49's text, recorded in `MeshMode.hpp`: `GMSH_NUM_THREADS`, `BL_MERGE_CONCAVE` and
+  `BL_SMOOTHING_ITERS` are warned about too (**20** BL-ish names vs the ticket's 18);
+  `SURFACE_MESH_SIZE` / `AUTO_SURFACE_SIZE` are deliberately NOT declared inert.
+  **`Config::meshMode`'s initialiser must stay the literal `0`**, not `MESH_MODE_HYBRID` — the
+  parity gate reads that initialiser as a literal, and an enum name drops the key out of the
+  comparison.
 
-**The multi-block path is ONE pure entry point, and the adapter deliberately has no
-seam** (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, in `hybmesh_pure`; the adapter
-is `buildMultiBlockMesh` in `src/cli.cpp`; issue #50, the bring-up slice of #48's
-second generation path). `hybmesh::buildMultiBlock(topologyJson, geoms, params)` parses
-the topology document, resolves it, fills every block with structured quads, splits
-them and returns nodes, blocks (with their logical i/j), flat cells, already-resolved
-boundary edges, warnings as data and an optional error. Rules:
-- **Parsing lives INSIDE the seam.** A separate "parse the document" entry point would
-  have made half the behaviour internal; as it is, schema errors, count resolution,
-  node positions, the diagonal split and the resolved BCs are all external behaviour of
-  one function, which `tests/cpp/test_multiblock.cpp` drives with a topology STRING and
-  no mesh at all. That test links `hybmesh_pure` and nothing else — measured with
-  `otool -L`: only libc++ and libSystem — so the moment the module reaches for `Mesh` or
-  gmsh it stops linking.
-- **The adapter gets no seam, because it has no decisions.** Every boundary edge comes
-  back as (node pair, BC name, source segment), and the adapter records each through
-  the existing `recordBoundaryEdge` with a **synthetic carrier `Node`**: that write
-  takes the whole source node because its convention is "an edge belongs to the segment
-  of its starting point", and here the seam already resolved BC and segment per EDGE,
-  so there is no starting point left to consult. Position-based classification is not
-  used in this path at all — the declaration already contains the answer, and
-  re-deriving it by proximity is how a curved inlet came to export partly as wall.
-- **The split is ALTERNATING BY INDEX PARITY and it is the default**, correct from the
-  first mesh rather than a later refinement: a single fixed diagonal imprints its own
-  direction on a uniform structured region, and flipping with `(i + j)` needs no seed,
-  so this path stays comparable run to run. `MB_SPLIT_QUADS 0` exports the quads for
-  diagnosis and **says so**, because the solver's incenter reconstruction is undefined
-  on quad cells and the grid converter's own slicer refuses a mixed mesh. The split
-  happens in the MESHER, not the converter, so the mesh inspected in VTK is the mesh
+**The multi-block path is ONE pure entry point, and the adapter deliberately has no seam**
+(`include/MultiBlock.hpp` + `src/MultiBlock.cpp` in `hybmesh_pure`; adapter `buildMultiBlockMesh` in
+`src/cli.cpp`; #50). `hybmesh::buildMultiBlock(topologyJson, geoms, params)` parses, resolves, fills
+every block with structured quads, splits them, and returns nodes, blocks (with logical i/j), flat
+cells, already-resolved boundary edges, warnings as data and an optional error. It never throws.
+- **Parsing lives INSIDE the seam**, so schema errors, count resolution, node positions, the split
+  and the resolved BCs are all external behaviour of one function. `tests/cpp/test_multiblock.cpp`
+  drives it with a topology STRING and no mesh, linking `hybmesh_pure` alone (measured with
+  `otool -L`) — reach for `Mesh` or gmsh and it stops linking.
+- **The adapter gets no seam, because it has no decisions.** Each boundary edge returns as (node
+  pair, BC name, source segment) and is recorded through `recordBoundaryEdge` with a **synthetic
+  carrier `Node`**. Position-based classification is not used on this path at all — re-deriving by
+  proximity is how a curved inlet exported partly as wall.
+- **The split is ALTERNATING BY INDEX PARITY `(i + j)` and it is the default** — a fixed diagonal
+  imprints its direction on a uniform region, and parity needs no seed. `MB_SPLIT_QUADS 0` exports
+  quads for diagnosis and **says so** (the solver's incenter reconstruction is undefined on quads;
+  the grid converter refuses a mixed mesh). The split happens in the MESHER, so VTK shows the mesh
   the solver integrates.
-- **Logical i/j is retained rather than flattened**, because the diagonal rules are the
-  only thing that reads it and flattening first would destroy it. `MbCell::block` is
-  carried for the same reason: once the cells are a flat list there is nothing left to
-  ask which block one came from.
-- **Unknown JSON keys are REFUSED, not skipped.** A typo'd `"spacng"` that is ignored
-  produces a mesh with the wrong node distribution and no symptom — the same failure
-  class the inert-parameter warning exists to close. Strict now is relaxable later; the
-  reverse is a breaking change. So is **a declaration that reaches nothing**: an edge in
-  no block and a corner on no edge are refused by name.
-- **What v0 does not do is refused BY NAME, never approximated**: an `on_geometry`
-  corner, an edge `binding`, an `interface`/`cut` edge kind, a `blocks[].orientation`,
-  and a second block. A corner placed *near* a geometry feature instead of on it is a
-  slightly wrong mesh with no error, which is worse than no mesh. Each refusal names
-  the later work it is waiting for. **SUPERSEDED for the first two**: `on_geometry`
-  and `binding` are implemented by #52 (see "Boundary conditions are DECLARED"), so
-  those two refusals are gone. The other three stand.
-- **A block's orientation is the corner order of its own four edges**, declared as
-  `[south, east, north, west]` with south/north running i-min→i-max and west/east
-  running j-min→j-max; a deviation is refused with the edge, what it declares and what
-  the convention needs. Inferring it would turn a mistake into a mirrored block, i.e. a
-  mesh rather than an error. A **clockwise** corner ring is a WARNING and not a repair —
-  silently re-winding would mean the mesh no longer matches the document that declared
-  it. It is **refused** with the topology code, not exported under the inverted-cell
-  one: that code is for a valid declaration whose GEOMETRY came out folded, which is
-  worth looking at, while a backwards-wound ring is worth fixing and nobody wants the
-  mesh either way. #51's gate is unaffected.
-- **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` and
-  `buildDomainBoundary`. Measured, and recorded so nobody re-derives it: the direction
-  does **not** reach the `.bnd` — `exportStarCD` takes a boundary face's node order
-  from the cell that owns it, not from `edges` — so this is consistency for a reader,
-  not a fix. The C++ test pins the CHAINING (each edge starting where the last ended,
-  closing on the first), because a per-side emitter with one direction wrong still
-  emits the right SET of edges and only the chain catches it.
-- **Two departures from the ticket's literal scope, both deliberate and measured.**
-  #50 asks only that the spacing-law header be on the include path; the schema
-  accepts `uniform` / `geometric` / `tanh`, because a header on a path that nothing
-  uses is the dead declaration this repo refuses elsewhere — what #55 owns is the
-  RESOLUTION of wall spacing from `BL_INITIAL_THICKNESS` and friends, which is not
-  here. And `Mesh::addTaggedEdge` touches three call sites on the EXISTING path,
-  which #48 lists as out of scope; it is behaviour-preserving and that is measured
-  rather than asserted (9/9 golden cases SAME at 0.000e+00, `.cel` and `.bnd`
-  included).
-- **The geometries argument is wired up although nothing binds to one yet**, so the
-  geometry-binding work fills a parameter rather than changing the signature. (It
-  did: #52 added fields to `MbGeometry` and changed no signature.)
-- The decision layer gains `tools/PreProcessor/include` on its include path
-  (**PRIVATE**: `MultiBlock.hpp` includes neither, so a test linking `hybmesh_pure`
-  does not inherit it) for the bundled `json.hpp` and the existing `Spacing.hpp` — both
-  pure arithmetic, and sharing the spacing laws avoids a second growth-rate solver.
-  `generateGeometric` at ratio 1 IS the uniform law, so "uniform" is not a special case.
-- **SURVIVING is not the same as READ, and the gap is a whole release long.** #49
-  declares four BL parameters (`BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS`,
-  `BL_USE_ANALYTIC_GEOM`) as surviving into this mode — and v0 reads **none** of them,
-  because every topology edge declares its own count and spacing law. Declared
-  survivors are exempt from the inert warning, so without a second list they would be
-  the exact silent no-op the first list exists to prevent, wearing a declaration that
-  says they work. `hybmesh::blSurvivorsUnread` names them in their **own** sentence
-  (`does not read 'X' yet`), never the inert one (`never reads 'X'`): an inert value
-  should be deleted and one of these should be kept, so a caller must be able to say
-  them differently and the two lists must stay **disjoint** — pinned in
-  `test_mesh_mode.cpp` check 6b and `test_mesh_mode_surface.py` check 4. Delete the
-  function when the clustering law lands; `MeshMode.hpp` says so at the declaration.
-- **The asymmetry #49 shipped is unchanged and is worth knowing**: `inertParamsSet`
-  answers only for the multi-block mode, so `MESH_TOPOLOGY_FILE` and `MB_SPLIT_QUADS`
-  set while `MESH_MODE 0` produce no warning. The GUI hides both rows in hybrid mode,
-  so only a hand-written `.dat` reaches that gap. `SURFACE_MESH_SIZE` /
-  `AUTO_SURFACE_SIZE` sit in a third position, recorded rather than closed: measured
-  unread by this path (an explicit per-edge `count` is required), but whether count
-  propagation seeds from them is #53's answer, so declaring them inert now would write
-  that guess into a gate.
-- **A geometry that will not load is a WARNING here, not a refusal** — the opposite of
-  the hybrid path's answer and right for the same reason: there the geometry IS the
-  mesh, here nothing in a topology can refer to one yet, so refusing would stop a mesh
-  that does not depend on the file. Named, because an edge binding to it changes that.
-- **`Mesh::addTaggedEdge(v1, v2, bc, segKey)` replaced the `addEdge` + two writes to
-  `edges.back()` idiom** at all four call sites (the domain box, `addTaggedLoop`, the
-  BL front, the multi-block adapter). Same argument as `recordBoundaryEdge` one level
-  down: a BC and its source segment are one fact, and an idiom that writes them in two
-  statements is two chances to write half an identity. Behaviour-preserving, measured:
-  9/9 golden cases SAME at 0.000e+00 after the change.
-- Gated by `tests/cpp/test_multiblock.cpp` (the decisions, through the seam),
-  `tests/test_multiblock_surface.py` (the chain, through the real binary — and where
-  the dated acceptance run is recorded), and **three new golden cases**
-  (`mb_square`, `mb_square_quads`, `mb_graded`), whose topology writer
-  `golden_mesh.py` IMPORTS from the surface test for the reason it already imports the
-  duct geometries. Measured 2026-08-27: the nine existing cases **9/9 SAME, worst
-  deviation 0.000e+00** against a baseline captured from the pre-change binary
-  (`HYBMESH_GOLDEN_BIN`, `git archive cd29bb8`-style procedure recorded in
-  `test_mesh_mode_surface.py`). **Acceptance run, same date**: `getPGrid` exit 0 on the
-  21x21 example (441 vertices, 800 elements, 80 boundary faces, 80 BC flags), then
-  `unicones.eqn6.mac -t mbv0 input.in` **exit 0**, last printed
-  `Global Iteration count 90` at interval 10 with `num_half_iter 100` — i.e. 100
-  iterations. Not a shape check written up as one.
+- **Logical i/j is retained rather than flattened** (only the diagonal rule reads it);
+  `MbCell::block` is carried for the same reason.
+- **Unknown JSON keys are REFUSED, not skipped** — a typo'd `"spacng"` silently ignored is a wrong
+  node distribution with no symptom. Strict now is relaxable later. So is **a declaration that
+  reaches nothing**: an edge in no block, a corner on no edge.
+- **What v0 does not do is refused BY NAME, never approximated**, each refusal naming the work it
+  waits for: an `interface`/`cut` edge kind, a `blocks[].orientation`, a second block.
+  (`on_geometry` and `binding` were on this list and are implemented by #52.)
+- **A block's orientation is the corner order of its own four edges**, `[south, east, north, west]`,
+  south/north running i-min→i-max and west/east j-min→j-max; a deviation is refused naming the edge,
+  what it declares and what the convention needs — inferring it would produce a mirrored block, i.e.
+  a mesh rather than an error. A **clockwise** corner ring is refused under the TOPOLOGY code, never
+  silently re-wound.
+- **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` /
+  `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
+  face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
+  CHAINING, since a per-side emitter with one direction wrong still emits the right SET of edges.
+- The spacing schema accepts `uniform` / `geometric` / `tanh` (`generateGeometric` at ratio 1 IS
+  uniform); #55 owns resolving wall spacing from `BL_INITIAL_THICKNESS`. The decision layer gains
+  `tools/PreProcessor/include` **PRIVATE** on its include path, so a test linking `hybmesh_pure`
+  does not inherit it.
+- **SURVIVING is not the same as READ.** #49 declares four BL parameters as surviving into this mode
+  and v0 reads **none** of them. `hybmesh::blSurvivorsUnread` names them in their **own** sentence
+  (`does not read 'X' yet`), never the inert one (`never reads 'X'`) — an inert value should be
+  deleted and one of these should be kept, so the two lists must stay **disjoint** (pinned in
+  `test_mesh_mode.cpp` 6b, `test_mesh_mode_surface.py` 4). Delete the function when the clustering
+  law lands.
+- Known asymmetry: `inertParamsSet` answers only for multi-block, so `MESH_TOPOLOGY_FILE` /
+  `MB_SPLIT_QUADS` set under `MESH_MODE 0` warn about nothing (the GUI hides both rows, so only a
+  hand-written `.dat` reaches it).
+- **A geometry that will not load is a WARNING here, not a refusal** — the opposite of the hybrid
+  path's answer, and right because nothing in a topology had to refer to one.
+- **`Mesh::addTaggedEdge(v1, v2, bc, segKey)`** replaced the `addEdge` + two writes to
+  `edges.back()` idiom at all four call sites: a BC and its source segment are one fact.
+- Gated by `tests/cpp/test_multiblock.cpp`, `tests/test_multiblock_surface.py` and three golden
+  cases (`mb_square`, `mb_square_quads`, `mb_graded`); `golden_mesh.py` IMPORTS the topology writer
+  from the surface test rather than copying it.
 
 **The quality report is the RULER, and it is built before the thing it measures**
-(`include/MbQuality.hpp` + `src/MbQuality.cpp`, in `hybmesh_pure`; the banner and
-the exit code are in `src/cli.cpp`; issue #51). Every multi-block run prints the
-inverted cell count, maximum and mean non-orthogonality, the wall first-cell height
-accuracy and the cell count, plus ONE machine-readable `HYBMESH_MB_QUALITY
-cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=…
-wall_first_cell_worst_rel=…` line — so the acceptance gate this instrument exists
-for is a grep and not a prose parse. Rules:
-- **Printed on every run, including a good one.** Three of the four numbers are the
-  baseline the later elliptic-smoothing increment is judged against, and a baseline
-  recorded only when something went wrong is not a baseline.
-- **Its own module rather than more of `MultiBlock.cpp`.** It answers a different
-  question — "is this mesh usable?" against "what does this document declare?" —
-  and it is a pure function of a finished mesh, so half its checks hand
-  `measureMbQuality` a mesh nobody parsed. Measuring a mesh must not require the
-  mesh container, which is why it is on the pure side of the line.
-- **Inverted is counted over the EXPORTED cells, and the test is PER CORNER, not
-  the signed area.** A bow-tie quad can self-intersect with a POSITIVE shoelace
-  area — measured: `(0,0) (3,0) (0,1) (2,1)` has area +0.5 and crosses itself, and
-  the obvious area-based implementation calls it fine (injected, and it fails
-  exactly that one check). For a triangle the per-corner rule REDUCES to the signed
-  area, so it is one rule for both cell kinds. Counted over the exported cells
-  because those are what the solver reads: the same folded topology reports 16 of
-  32 triangles or 10 of 16 quads.
-- **Non-orthogonality is measured on the STRUCTURED grid cells — each corner
-  angle's deviation from 90° — and NOT on the split triangles.** Three reasons, the
-  first being the ticket's own criterion. It comes from the corner positions
-  directly, so a block that is strongly stretched but axis-aligned measures
-  *exactly* zero, which no size-or-edge-length proxy can report — measured, through
-  the real binary: a square graded geometrically at 1.5 asks for a first cell of
-  2.030e-02 against a uniform 1.25e-01 and reports `0.000 deg` (the same trap the
-  `[ Mesh Size Field ]` report had to avoid, where cell edges run ~15% long on
-  stretched triangles). Second, it is the quantity elliptic smoothing moves;
-  measuring the triangles instead would let the fixed diagonal — an artefact of the
-  split that no smoother touches — dominate the number, so a grid that got worse in
-  the way that matters could report an unchanged figure. Third, it is therefore
-  independent of `MB_SPLIT_QUADS`, so the quads-for-diagnosis mode and the shipped
-  triangles report the same grid quality. It is an ANGLE with a closed form, not a
-  badness score: a parallelogram sheared by 1/2 reports atan(1/2) = 26.565° with
-  max == mean. The blind spot is named rather than papered over — it says nothing
-  about the shape of the split triangles, and a solver-facing skewness metric for
-  those is a different instrument, not this one wearing another name.
-- **A folded mesh is EXPORTED and exits 9; an invalid declaration exports nothing
-  and exits 8.** It goes through the same `failExit` mechanism a failed boundary
-  layer uses, so the difference between the two failure kinds is *where the code is
-  set* and not a second way of stopping. `blSuccess` is deliberately left TRUE, so
-  the VTK keeps its ordinary name: the `_er` suffix marks a PARTIAL mesh, and this
-  one is complete — it is the cell shapes that are wrong, which is the thing the
-  export exists to let you look at.
-- **The wall request is published from the SEAM, never re-derived downstream**
-  (`MbWallSpec` on `MbResult`). Only `buildMultiBlock` still knows the spacing
-  laws: the requested first-cell height off a side is the FIRST INTERVAL of the
-  edge running away from it, taken from the perpendicular edge at each of that
-  side's two corners, and once the block is a grid of positions those laws are
-  gone. Between the corners the request is the same linear blend in the logical
-  coordinate that the transfinite fill itself uses. The height is a distance ALONG
-  the grid line, not perpendicular to the wall; the two differ by
-  cos(non-orthogonality), which is why this number and the angle are always
-  reported together.
-- **"ASKED FOR" IS NOT AN INDEPENDENT TARGET YET, and the figure must not be
-  over-read** — the same class of gap #50 wrote down as "SURVIVING is not the same
-  as READ", and it is recorded here for the same reason. #51's criterion asks "how
-  closely the wall first-cell height matched what was asked for", and nothing in a
-  v0 topology asks for a wall-normal height independently of the edge counts: the
-  request is DERIVED from the same spacing law the fill reproduces, and the
-  transfinite blend is exact on the boundary, so at a side's two END COLUMNS the
-  achieved height IS the requested one identically. **A rectangle's 0.00% is
-  therefore a tautology, not evidence the instrument works** — the first write-up
-  of this entry presented it as evidence, and the test asserted it as "the first
-  cell off each of them is what was asked for", which is the overclaim habit this
-  file records against #25/#29/#37. What the number honestly measures is how far
-  the INTERIOR drifted from what the two ends declare, which is exactly the
-  quantity elliptic smoothing moves — so it is the right baseline under a narrower
-  claim. The discriminating evidence is a block the blend distorts: a trapezoid
-  measures 7.38%, the folded dart 25.41%. The independent target (a wall spacing
-  asked for by `BL_INITIAL_THICKNESS` and friends) arrives with the wall-spacing
-  resolution work; when it does, only the PUBLISHER in `buildMultiBlock` changes
-  source and no reader of the report changes at all. Both halves are pinned rather
-  than described: the test names the rectangle's zero AS a tautology, and check 7
-  asserts that the trapezoid's two end columns reproduce their request exactly, so
-  the whole deviation is interior.
-- **"We did not measure" must not read as "it came out perfect", and that holds
-  for ALL THREE measured figures.** `maxNonOrthoDeg`, `meanNonOrthoDeg` and every
-  `worstRelError` (per wall, and the headline) are NEGATIVE when they could not be
-  measured, never 0.0 — the same distinction `case_run_note` keeps between an
-  unreadable convergence history and a genuine cold start, and the banner prints
-  `not measured` rather than a percentage or `0.000 deg`. Two things worth knowing.
-  The first version got this **right at the report level and wrong at the row
-  level**: a wall whose request was not a positive length anywhere on it (a
-  degenerate perpendicular edge) was still pushed with `worstRelError == 0.0` and
-  dragged the headline to a flawless-looking 0.00% — found independently by BOTH
-  review axes, which is the strongest signal either gives. And the row-level rule
-  was then still **unguarded**, because the only test with no measurable wall
-  declares no wall at all and so exercised the report's default instead: injecting
-  the 0.0 default broke NOTHING until check 6b was written for it. Whether
-  `buildMultiBlock` can currently reach a zero request is a separate question
-  (a fully collapsed side is refused by the ring check), and the answer does not
-  matter — `measureMbQuality` is a public pure function that accepts any
-  `MbResult`, so a guarantee its header states must hold for every input it
-  accepts.
-- **The detector is proven to bite by a topology that folds, and that topology is
-  ACCEPTED.** A dart — corners `(0,0) (1,0) (0.1,0.1) (0,1)` — winds
-  counter-clockwise (signed area +0.1), so the clockwise-ring refusal does not
-  fire; the ring is strongly non-convex at `ne` and the fill folds anyway. That is
-  the whole reason there are two codes: a backwards-wound ring is a defect of the
-  DOCUMENT and is refused, while this is a valid document whose interpolated
-  interior came out folded and there is something worth looking at. The gate checks
-  that no topology refusal is printed on that run, or its check 4 would be pinning
-  a refusal wearing a second code.
-- **All four sides are reported, because v0 cannot say which boundary is a viscous
-  wall.** Every boundary edge is kind `wall` (interface and cut are refused by
-  name), so a body surface is not distinguishable from a far field until boundary
-  conditions come from the declaration. The publisher is gated on `kind` anyway, so
-  that list gets shorter and no reader has to change.
-- **The `[south, east, north, west]` convention is DATA, in one place**
-  (`mbSideAxis` in `MultiBlock.hpp`). It was on its way to three encodings — which
-  perpendicular edge a wall's request comes from, how to walk a side and step one
-  line inward, and what to call it in a report — two of them `switch (side)`
-  cascades over the same four values, which is the shape that lets one disagree
-  with the others. Two facts derive all three: south and north run along i, and
-  north and east sit at the transverse index maximum. One dedup was considered and
-  DECLINED: `MbWallSpec` and `MbWallHeight` share `edgeId`/`requestedLo`/
-  `requestedHi`, but they face opposite directions (one is the seam's declaration,
-  the other a report row), the shared part is three fields copied adjacently rather
-  than a fact that can be written HALF — which is what made `recordBoundaryEdge`
-  and `JunctionDecision` worth merging — and nesting them would make a printed row
-  read `w.asked.lo`.
-- The folded topology is written by #50's OWN `write_topology`, extended with a
-  `corners=` argument, rather than by a second writer — the reason that helper
-  already gives for `golden_mesh.py` importing it. Its default is the `x1`/`y1`
-  rectangle, so every existing caller is byte-identical.
-- Measured behaviour preservation: the **12 golden cases 12/12 SAME, worst
-  deviation 0.000e+00**, against a baseline captured from the pre-change binary
-  (`HYBMESH_GOLDEN_BIN`, `git archive 050f2af` → build → capture there). No mesh
-  moved; what is new is a report and an exit code.
-- Gated by `tests/cpp/test_mb_quality.cpp` (9 groups, 53 checks, through the pure
-  seam) and `tools/PreProcessor/tests/test_multiblock_quality_surface.py`
-  (8 properties, 29 assertions, through the real binary, where the export-anyway
-  and the two exit codes live). **The six injections are HAND runs, dated and recorded
-  in the C++ test's own docstring with the checks each one broke — deliberately NOT
-  written up as in-test injections**, because a C++ test cannot mutate the
-  implementation it linked against the way the Python gates next door do; #37's
-  entry above says that distinction must not be blurred, and the first write-up of
-  this entry blurred it. What IS permanent is two **negative controls** that
-  measure an injection's own premise inside the test: check 6 computes its
-  bow-tie's shoelace area (`+0.5`, so an area test really would pass it) and check
-  2 computes its own stretch ratio (~17x, so the zero angle really is a
-  measurement). An argument in a comment decays; those two do not. Blind spots are
-  named in each file's docstring; the sharpest is that nothing runs the solver or
-  the grid converter on the folded mesh — that it is written is the claim, that
-  anything downstream accepts it is not.
+(`include/MbQuality.hpp` + `src/MbQuality.cpp` in `hybmesh_pure`; banner and exit code in
+`src/cli.cpp`; #51). Every multi-block run prints inverted cell count, max/mean non-orthogonality,
+wall first-cell height accuracy and cell count, plus one machine-readable `HYBMESH_MB_QUALITY
+cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=… wall_first_cell_worst_rel=…` line, so the
+acceptance gate is a grep.
+- **Printed on every run, including a good one** — three of the four numbers are the baseline
+  elliptic smoothing will be judged against.
+- **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
+  usable?" vs "what does this document declare?"), and a pure function of a finished mesh — half its
+  checks hand `measureMbQuality` a mesh nobody parsed. Pure, total, never throws.
+- **Inverted is counted over the EXPORTED cells, and the test is PER CORNER, not the signed area.**
+  A bow-tie quad can self-intersect with a POSITIVE shoelace area — `(0,0) (3,0) (0,1) (2,1)` is
+  +0.5 and crosses itself. For a triangle the per-corner rule reduces to the signed area, so it is
+  one rule for both cell kinds.
+- **Non-orthogonality is measured on the STRUCTURED grid cells** — each corner angle's deviation
+  from 90° — **and NOT on the split triangles.** It comes from corner positions, so a strongly
+  stretched but axis-aligned block measures *exactly* zero (no edge-length proxy can report that);
+  it is the quantity elliptic smoothing moves; and it is independent of `MB_SPLIT_QUADS`. An ANGLE
+  with a closed form, not a badness score. Named blind spot: it says nothing about the shape of the
+  split triangles.
+- **A folded mesh is EXPORTED and exits 9; an invalid declaration exports nothing and exits 8**,
+  both through the same `failExit` mechanism. `blSuccess` stays TRUE so the VTK keeps its ordinary
+  name — `_er` marks a PARTIAL mesh and this one is complete.
+- **The wall request is published from the SEAM, never re-derived downstream** (`MbWallSpec` on
+  `MbResult`): only `buildMultiBlock` knows the spacing laws. The height is a distance ALONG the
+  grid line, not perpendicular to the wall — they differ by cos(non-orthogonality), which is why the
+  two figures are always reported together.
+- **"ASKED FOR" IS NOT AN INDEPENDENT TARGET YET; do not over-read the figure.** The request is
+  DERIVED from the same law the fill reproduces and the blend is exact on the boundary, so **a
+  rectangle's 0.00% is a tautology, not evidence.** What it honestly measures is interior drift from
+  what the two ends declare (trapezoid 7.38%, folded dart 25.41%). When the independent target
+  arrives only the PUBLISHER changes.
+- **"We did not measure" must not read as "it came out perfect", for ALL THREE figures.**
+  `maxNonOrthoDeg`, `meanNonOrthoDeg` and every `worstRelError` (per wall AND headline) are NEGATIVE
+  when unmeasurable, never 0.0, and the banner prints `not measured`. The rule holds at the ROW
+  level too (check 6b) — `measureMbQuality` is a public pure function accepting any `MbResult`, so
+  its header's guarantee must hold for every input.
+- **The detector is proven to bite by a topology that folds, and that topology is ACCEPTED**: the
+  dart `(0,0) (1,0) (0.1,0.1) (0,1)` winds counter-clockwise (+0.1), so the ring refusal does not
+  fire and the fill folds anyway. The gate checks no topology refusal prints on that run.
+- **All four sides are reported**, because v0 cannot say which boundary is a viscous wall.
+- **The `[south, east, north, west]` convention is DATA, in one place** (`mbSideAxis`). A dedup of
+  `MbWallSpec`/`MbWallHeight` was considered and DECLINED: they face opposite directions and the
+  shared part cannot be written HALF.
+- Gated by `tests/cpp/test_mb_quality.cpp` (9 groups, 53 checks) and
+  `tests/test_multiblock_quality_surface.py`. **Its injections are HAND runs, dated in the C++
+  test's docstring** — a C++ test cannot mutate the implementation it linked against, and that
+  distinction must not be blurred. What IS permanent is two **negative controls** computing an
+  injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its ~17x stretch). Sharpest
+  blind spot: nothing runs the solver or grid converter on the folded mesh.
 
-**Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
-(`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;
-issue #52). A topology corner attaches to a source segment at a normalized
-arc-length position (`kind: "on_geometry"`, `geom` / `seg` / `t`), a wall edge
-declares the segment it lies on (`binding`), and every boundary edge generated
-along that edge carries that segment's own condition and its (geometry, segment)
-key into the export. The answer is in the declaration before a single node
-exists, so **there is no tolerance anywhere in this chain** — which is the whole
-point: the hybrid path resolves a boundary edge's condition by testing whether it
-lies on a reference segment within one, and on a curved wall the drift off the
-chord exceeded it and an inlet exported a band of wall at every junction. Rules:
-- **Arc length, NEVER a point index.** The workflow is edit CAD, re-resample,
-  re-mesh, and re-resampling changes the point count — so an index would silently
-  relocate every attachment on each resample and produce a slightly wrong mesh
-  with no error at all. Measured through the real binaries: one topology meshed
-  against two real resamplings of one geometry (21 and 41 points) gives **identical
-  `.vrt` node COORDINATES** (parsed and compared exactly — not bytes, since the file
-  also carries node ids this path is free to number differently), and the negative
-  control is what makes that a measurement rather than a coincidence: the point
-  counts are chosen so **neither** resampling has a sample at **any of the four**
-  attached positions, so no implementation that snapped a corner to a geometry point
-  could have produced them.
-- **`t = 1` means "where this segment ENDS", which is the next segment's first
-  point only when there IS a next one.** On the last segment of an open polyline it
-  is that segment's own final point, and that is stable under resampling for a
-  different reason: the resampler pins every segment's endpoints, so a segment's
-  last sample is a DECLARED endpoint and not a floating one. Measured 2026-08-28
-  through the real binary — an open two-segment polyline resampled at 6 and at 11
-  points per segment ends at `(1.0, 1.0)` both times — because a review read the
-  unextended case as a place that moves with the point count, which would have been
-  the "slightly wrong mesh with no error" this feature exists to refuse. It is not,
-  and the semantics are now pinned rather than argued.
-- **A segment's own points stop ONE POINT SHORT of where it ends, and the run is
-  extended by one.** Measured against the real `surface_resampler`, not assumed: a
-  joint shared by two segments is assigned to the **later** of them
-  (`resSegId.back() = segId` in `tools/PreProcessor/src/main.cpp`). Without the
-  extension, `t = 1` lands one resampling interval short of the segment's real
-  end — i.e. at a place that MOVES under exactly the re-resampling this feature
-  exists to survive. For the LAST segment of a **closed** loop the point to reach
-  for is index 0, because `loadGeometry` has already dropped the duplicate closing
-  point. Both are pinned, and injecting either breaks 12/13/15.
-- **A trivial piece break at index 0 is not a second piece**, and reading it as
-  one silently switched the closed-loop wrap off. Found by pointing the feature at
-  a shipped geometry rather than only at fixtures: sidecars in this repo disagree
-  about whether to record the break every polyline has at its first point (a
-  resampled square writes `NPIECES 0`; `examples/geometries/square_cavity.dat.meta`
-  writes `NPIECES 1 0`), so `pieceBreaks.empty()` was the wrong question and
-  `multiPiece()` asks whether any break falls strictly inside.
-- **A corner at `t = 0` or `t = 1` sits on a JOINT, which two segments both own,
-  so a bound edge accepts it from either side** (`tOnSegment`). This is not a
-  nicety and it was not in the first design: on a closed body **every** block
-  corner is a joint whose two edges bind to *different* segments, so without it
-  the canonical declaration — one block side per source segment — cannot be
-  written at all, which the shipped cavity example is what surfaced. The
-  equivalence compares the sidecar's own point INDICES, never two coordinates, so
-  this is not a tolerance creeping back in through the corner; a position strictly
-  inside a neighbouring segment is still refused.
-- **A bound edge FOLLOWS the segment's polyline; it does not cut the chord.** Wider
-  than the ticket's literal wording, and deliberate: "this edge lies on that
-  segment" is false for a chord across a curved wall, which sits a sagitta off the
-  body everywhere between its ends — the same drift, one layer up. One code path
-  serves both, because an unbound edge's "polyline" is just its two corners, and
-  that reduction is **bit-identical** rather than merely equivalent (the golden set
-  measures it).
-- **A geometry is named BY NAME** — exact match on the declared path, then a
-  *unique* basename — and never by position in the loaded list. Same argument as
-  the point index one level down: a binding that moves when `GEOM_FILE` lines are
-  reordered is a silent relocation. An ambiguous basename is refused rather than
-  resolved by order.
-- **A label stays a LABEL.** The seam emits the sidecar's per-segment grouping
-  label and `Config::resolveGroupBc` turns it into the physical BC type, exactly as
-  on the hybrid path; the adapter merges the sidecar's `GROUP_BC` trailer into the
-  config for it. Resolving inside the seam would put a second resolver in the
-  chain, which is how the two came to disagree the last time. Gated end to end: the
-  `.bnd` patch names are `inlet`/`outlet`/`wall` and never `g_bot`.
-- **Position-based classification is still not used, and that is structural rather
-  than asserted.** The adapter records every boundary edge through
-  `recordBoundaryEdge` (unchanged from #50), and `classifyBoundaryBc` returns at
-  its step 0 per-edge lookup, so `pointOnSegment` is never reached on this path.
-- **A geometry that will not load is still a WARNING, and a declaration REFERRING
-  to one is now an error** — the change #50 predicted at the exact line it
-  predicted it. Same for a geometry with no readable `.meta`: it has no segments to
-  attach to and is refused by name rather than falling back to "the whole polyline
-  is segment 0".
-- **Two warnings, both about getting the fallback when you asked for something
-  else**: a document where no edge declares a binding (so every edge is on
-  `BC_GEOM`), and a bound edge whose segment carries no label in its sidecar. The
-  banner then prints one row per patch naming the segment it was read off, so
-  "declared, not discovered" is visible in a run rather than only claimed.
-- **`MbWallSpec` still reports all four sides, and the #51 note predicting it would
-  shrink is NOT yet due.** Conditions do now come from the declaration, but "this
-  side is labelled inlet" and "this side is a viscous surface whose first-cell
-  height matters" are different questions; the gate stays `kind`, which is the
-  declaration's own word for it.
-- Gated by `tests/cpp/test_multiblock.cpp` checks 12-16 (through the pure seam,
-  with geometry fixtures reproducing both sidecar conventions) and
-  `tools/PreProcessor/tests/test_multiblock_binding_surface.py` (through the real
-  `surface_resampler` AND the real mesher, which is where the sidecar format and
-  the label resolution are really proven). **The seven injections are HAND runs,
-  dated 2026-08-28 and recorded in the C++ test's own docstring with the checks
-  each one broke** — the same split #51 established, because a C++ test cannot
-  mutate the implementation it linked against. Two of them are recorded *because
-  the first attempt did not bite*, and in both cases the fault was the injection:
-  one picked an index and then interpolated by arc length within that span, which
-  self-corrects to the right answer, and a build race (a rewritten source against a
-  same-second object file) scored an injection that breaks seven checks as inert
-  until the compiler output was checked for a recompile. Both are recorded as what
-  HAPPENED during a hand run; **neither is a standing guard, because there is
-  none** — a scratch script that rewrites `src/` and rebuilds is not something this
-  repo ships, which is the same reason these injections are hand runs at all. Same
-  family as scoring a crash as zero failures.
-- **Two new golden cases, `mb_bound` and `mb_cavity`**, which is where acceptance
-  criterion 8 lives: `mb_bound` is a block with three *differing* conditions built
-  through the real resampler, and `mb_cavity` is the shipped example on the shipped
-  geometry (documentation a user runs must be covered, per `_multiblock_example`'s
-  own reasoning). Proven to bite rather than assumed: injecting "every boundary
-  edge takes the config default" reports `{'inlet': 6, 'wall': 8, 'outlet': 6} ->
-  {'wall': 20}` plus the grouping change, and reverting restores SAME. The existing
-  **12 golden cases are 12/12 SAME, worst deviation 0.000e+00** against a baseline
-  captured from the pre-change binary (`HYBMESH_GOLDEN_BIN`, `git archive 97905a8`).
-- **Four things here are wider than the ticket's literal text, and each is a
-  deliberate call rather than drift.** (1) The `[ Multi-block Topology ]` banner
-  grows a row per boundary patch naming the source segment it was read off — the
-  claim of this whole path is that a condition is declared rather than discovered,
-  and a claim a run cannot show is one nobody can check. (2) `findGeometry` accepts
-  a **unique basename** as well as the full declared path, so a topology need not
-  repeat the config's path string; it fails SAFE, since two geometries sharing a
-  basename make the short form ambiguous and that is refused rather than resolved
-  by order. (3) The shipped example, its config and the `mb_cavity` golden case go
-  beyond criterion 8's one differing-conditions case, because a new schema with no
-  runnable example is not documented — and `examples/topology` being documentation
-  a user runs is exactly why `_multiblock_example` exists. (4) Extra refusals (a
-  `free` corner wearing `geom`/`seg`/`t`, a zero-length bound edge), which are the
-  repo's own refuse-rather-than-approximate rule applied to new keys.
-- **The adapter gained a summary, which is a real if small dent in #50's "the
-  adapter has no decisions".** Grouping the boundary edges by (bc, geometry,
-  segment) for the banner is ~15 lines of presentation in `src/cli.cpp`, reachable
-  only through the Python surface test. It is PRESENTATION, not classification —
-  it computes nothing the seam has not already resolved, and it changes no mesh —
-  but the honest reading is that the adapter is no longer literally decision-free,
-  and if it grows a second such block the grouping belongs on the pure side beside
-  `measureMbQuality`. Recorded rather than argued away.
-- **The blind spot, named rather than papered over**: the end-to-end
-  re-resampling check uses a straight-sided geometry, where an arc-length position
-  is EXACT under resampling and the node sets can be compared byte for byte. On a
-  *curved* segment the polyline itself changes with the point count, so an attached
-  corner moves by a chord sagitta — a discretisation limit of the geometry, not of
-  the binding, and no check here claims otherwise. The curve-following half is
-  pinned in the C++ test, where the geometry can be stated exactly.
-- **What the shipped example cannot do, said out loud in the example itself**:
-  `examples/geometries/square_cavity.dat` is an OPEN polyline whose last point
-  stops one sample short of the seam, so its segment 3 does not reach the corner
-  the block's south-west sits on and the west edge is deliberately left unbound
-  (a straight chord, geometrically the same wall, carrying `BC_GEOM`). Binding it
-  would be claiming something false.
+**Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH** (still the one pure
+entry point; #52). A corner attaches to a source segment at a normalized arc-length position
+(`kind: "on_geometry"`, `geom` / `seg` / `t`), a wall edge declares the segment it lies on
+(`binding`), and every generated boundary edge carries that segment's condition and its (geometry,
+segment) key into the export. The answer is in the declaration before a node exists, so **there is
+no tolerance anywhere in this chain** — the hybrid path resolves by testing proximity to a reference
+segment, and on a curved wall the drift off the chord exceeded it and an inlet exported a band of
+wall at every junction.
+- **Arc length, NEVER a point index.** Re-resampling changes the point count, so an index would
+  silently relocate every attachment. Measured through the real binaries: one topology against two
+  resamplings (21 and 41 points) gives identical `.vrt` node COORDINATES, with the negative control
+  that **neither** resampling has a sample at **any of the four** attached positions.
+- **`t = 1` means "where this segment ENDS"**, which is the next segment's first point only when
+  there IS a next one; on the last segment of an open polyline it is that segment's own final point,
+  stable because the resampler pins every segment's endpoints.
+- **A segment's own points stop ONE POINT SHORT of where it ends, and the run is extended by one.**
+  Measured against the real resampler: a shared joint is assigned to the **later** segment
+  (`resSegId.back() = segId`). For the LAST segment of a **closed** loop the point to reach for is
+  index 0 (`loadGeometry` dropped the duplicate closing point).
+- **A trivial piece break at index 0 is not a second piece** — sidecars in this repo disagree about
+  recording it (`NPIECES 0` vs `NPIECES 1 0`), so `multiPiece()` asks whether any break falls
+  strictly inside, never `pieceBreaks.empty()`.
+- **A corner at `t = 0` or `t = 1` sits on a JOINT that two segments both own, so a bound edge
+  accepts it from either side** (`tOnSegment`). Without it the canonical declaration — one block
+  side per source segment on a closed body — cannot be written at all. The equivalence compares the
+  sidecar's own point INDICES, never coordinates.
+- **A bound edge FOLLOWS the segment's polyline; it does not cut the chord.** One code path serves
+  both (an unbound edge's "polyline" is its two corners), and that reduction is **bit-identical**.
+- **A geometry is named BY NAME** — exact declared path, then a *unique* basename — never by
+  position in the loaded list. An ambiguous basename is refused, not resolved by order.
+- **A label stays a LABEL.** The seam emits the sidecar's grouping label and `Config::resolveGroupBc`
+  turns it into the physical BC type, exactly as on the hybrid path; the adapter merges the
+  sidecar's `GROUP_BC` trailer into the config for it. A second resolver in the chain is how the two
+  came to disagree last time.
+- **A geometry that will not load is still a WARNING; a declaration REFERRING to one is an error.**
+  Same for a geometry with no readable `.meta` — refused by name rather than falling back to "the
+  whole polyline is segment 0".
+- **Two warnings, both about getting the fallback you did not ask for**: no edge declares a binding
+  (everything on `BC_GEOM`), and a bound edge whose segment carries no label. The banner prints one
+  row per patch naming the segment it was read off, so "declared, not discovered" is visible in a run.
+- **`MbWallSpec` still reports all four sides**; the gate stays `kind`, since "labelled inlet" and
+  "viscous surface whose first-cell height matters" are different questions.
+- The adapter gained a ~15-line boundary-patch summary for the banner — PRESENTATION, not
+  classification, but it is no longer literally decision-free; a second such block belongs on the
+  pure side beside `measureMbQuality`.
+- Gated by `tests/cpp/test_multiblock.cpp` checks 12-16 and
+  `tests/test_multiblock_binding_surface.py` (real resampler AND real mesher), plus golden cases
+  `mb_bound` and `mb_cavity` (the shipped example on the shipped geometry — documentation a user
+  runs must be covered). Injections are HAND runs, dated 2026-08-28.
+- **Named blind spot**: the end-to-end re-resampling check uses a straight-sided geometry, where an
+  arc-length position is EXACT under resampling. On a *curved* segment an attached corner moves by a
+  chord sagitta — a limit of the geometry, not the binding. The curve-following half is pinned in
+  the C++ test.
+- **What the shipped example cannot do, said out loud in the example**:
+  `examples/geometries/square_cavity.dat` is an OPEN polyline stopping one sample short of the seam,
+  so its segment 3 does not reach the block's south-west corner and the west edge is deliberately
+  left unbound (a straight chord carrying `BC_GEOM`).
 
-**Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
-measured on the old and new trees:
-- **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /
-  2 Local Avg and `BoundaryLayer.cpp` really branches on 2, but the `.dat` reader used
-  to collapse it with `(val != 0)`, so a global `BL_AUTO_FAN_NODES 2` ran as 1 while
-  the same token on a `GEOM_FILE` line reached 2. It now means Local Avg everywhere.
-  No config in this repo sets 2, so no existing mesh moved (golden 9/9 SAME).
-  **The GUI could not express it until 2026-08-19**: `MeshConfig.bl_auto_fan_nodes` was
-  a `bool` while a three-item combo (OFF/GLOBAL/LOCAL) edited it, so its LOCAL item was
-  squashed to `1` on the way into the `.dat` and had *always* run GLOBAL. The parity
-  gate's type check is what found it; the field is now an `int`, matching `Config.hpp`,
-  and picking LOCAL really runs Local Avg. **That is a behaviour change golden meshes
-  cannot cover** — none of the 9 cases picks LOCAL — so it is recorded here instead.
-- **A `bool` key is read through a double**, so `BL_USE_ANALYTIC_GEOM 0.5` is now true
-  where it used to read 0 and be false. Integral values — everything the GUI or any
-  config here writes — are unaffected. Kept, because reinstating a per-row parse rule
-  to preserve it would put back exactly what let the two parsers disagree.
+**Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
+the old and new trees:
+- **`BL_AUTO_FAN_NODES` is an int on both paths** (0 OFF / 1 Global Avg / 2 Local Avg). The `.dat`
+  reader used to collapse it with `(val != 0)`, so a global `2` ran as 1 while the same token on a
+  `GEOM_FILE` line reached 2. The GUI could not express it either — the model field was a `bool`
+  behind a three-item combo, so LOCAL had *always* run GLOBAL; found by the parity gate's type
+  check. **A behaviour change golden meshes cannot cover.**
+- **A `bool` key is read through a double**, so `BL_USE_ANALYTIC_GEOM 0.5` is now true. Integral
+  values are unaffected; kept, because a per-row parse rule is what let the two parsers disagree.
 
-**An unrecognised per-geometry `KEY=VALUE` override is now NAMED, not dropped.**
-`parseBLOverrideToken` asks `isBLParam` and warns; it used to store the token and let
-the applier silently skip it, which is the same "the setting does nothing" failure
-class as the above.
+**An unrecognised per-geometry `KEY=VALUE` override is NAMED, not dropped**
+(`parseBLOverrideToken` asks `isBLParam` and warns) — same "the setting does nothing" failure class.
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
@@ -746,1200 +464,810 @@ JSON format; supports multi-element definitions with transforms (scale/rotate/tr
 
 ### Core C++ (`src/`, `include/`)
 
+> Full rationale: `docs/design_notes/mesher.md`.
+
 **The implementation is a LIBRARY and the executable is a shim.** `hybmesh_core`
 (STATIC) holds `cli.cpp` + `Mesh.cpp` + `BoundaryLayer.cpp`; `add_executable(HybMesh2D
-src/main.cpp)` compiles **only** the twelve-line shim that calls `hybmesh::runCli`
-(`include/Cli.hpp`). Before this, the three `.cpp` files were compiled straight into
-the executable and there was no library target at all, so **no test could link them**
-— the process boundary was the mesher's only seam, and `classifyJunctions`, extracted
-specifically so the junction binning could be reasoned about and tested, sat private
-and unreachable for exactly that reason. The shim is what keeps the seam honest: the
-executable compiles no implementation, so there is nowhere to add logic a test cannot
-reach. Two consequences worth knowing: **the provenance macros are defined on the
-LIBRARY, not the executable** (`cli.cpp` reads them via `Provenance.hpp`, so a
-definition left on `HybMesh2D` would apply to the shim alone and silently degrade
-every banner and sidecar to `git unknown`), and the **CGNS-before-Gmsh link order**
-is `PUBLIC` on the library so it propagates unchanged to everything that links it —
-that ordering is load bearing (see the `cgsize_t` note in `CMakeLists.txt`).
+src/main.cpp)` compiles **only** the twelve-line shim calling `hybmesh::runCli`
+(`include/Cli.hpp`). Before this the three `.cpp` files compiled straight into the
+executable with no library target, so **no test could link them** — the process boundary
+was the mesher's only seam, and `classifyJunctions`, extracted specifically to be
+testable, sat private and unreachable. The shim keeps the seam honest: the executable
+compiles no implementation, so there is nowhere to put logic a test cannot reach. Two
+consequences: **the provenance macros are defined on the LIBRARY, not the executable**
+(a definition left on `HybMesh2D` would apply to the shim alone and degrade every banner
+and sidecar to `git unknown`), and the **CGNS-before-Gmsh link order** is `PUBLIC` on the
+library so it propagates (that ordering is load bearing — see the `cgsize_t` note in
+`CMakeLists.txt`).
 
 **The tests live in `tests/cpp/`** — one executable per file, registered with ctest,
-`check.hpp` for assertions (**record-and-continue**, not abort-on-first: ctest runs one
-executable per file, so seeing every failing case from a single CI run beats bisecting
-them, and `report()` reprints the FIRST failure last so the cause is not buried under
-its consequences). A test **links a library target, never a list of sources** —
-compiling `src/*.cpp` into a test executable works and quietly reintroduces what the
-seam removed: a second build of the implementation, testable but not the one the binary
-runs. `tests/test_cpp_linkable_seam.py` gates it, because this property decays
-in silence — adding a `.cpp` to `add_executable` builds and runs perfectly well, and
-the loss surfaces only as a test nobody can write. Its seven checks (the decision-layer rule is four more, in `test_cpp_pure_layer.py`; they were one file until a review pointed out they are two invariants with disjoint machinery) go past "the shim
-is the only source", because that alone has holes and each hole *looks* satisfied:
-`#include "cli.cpp"` links fine and puts the implementation where no library holds it;
-a test listing `../../src/Mesh.cpp` recompiles the implementation; a new
-`add_executable` becomes a second home for logic; a `tests/cpp/test_*.cpp` that CMake
-never registered passes by never running. All four were verified by injection, and the
-two blind spots that remain are named in the test's own docstring rather than papered
-over. One caveat on the neighbouring instrument: `golden_mesh.py` does **not** compare
-the `.bnd` `segm_no` column, so a defect confined to a boundary edge's source-segment
-key is still invisible to it (`segm_no` is a `.bnd` column and the `.cel` carries no BC at all) — measured, by mutating `recordBoundaryEdge` to write the
-segment key before the overwrite refusal: the C++ unit test caught it in 0.5 s while
-all 68 other tests and the 9-case golden set passed.
+`check.hpp` for assertions (**record-and-continue**, not abort-on-first; `report()`
+reprints the FIRST failure last so the cause is not buried under its consequences). A test
+**links a library target, never a list of sources** — compiling `src/*.cpp` into a test
+executable works and quietly reintroduces a second build of the implementation, testable
+but not the one the binary runs. `tests/test_cpp_linkable_seam.py` gates it (7 checks),
+because this property decays in silence. Four holes it covers past "the shim is the only
+source", each of which *looks* satisfied: `#include "cli.cpp"`; a test listing
+`../../src/Mesh.cpp`; a new `add_executable`; a `tests/cpp/test_*.cpp` CMake never
+registered. All verified by injection; two remaining blind spots named in its docstring.
+Caveat on the neighbouring instrument: `golden_mesh.py` does **not** compare the `.bnd`
+`segm_no` column, so a defect confined to a boundary edge's source-segment key is
+invisible to it — measured, and the C++ unit test caught it in 0.5 s while all 68 other
+tests and the 9-case golden set passed.
 
-**`hybmesh_pure` is the decision layer, and the BUILD is what keeps it honest.** It is
-the C++ analogue of the GUI's "`services/*.py` must be Qt-free" rule, for the same
-reason: testing a decision should not require a heavy environment. What makes it more
-than a slogan is that **the pure tests link `hybmesh_pure` alone and are not linked
-against libgmsh at all** (verified with `otool -L`: only libc++ and libSystem), so the
-moment such a module *uses* `Mesh` or gmsh those executables stop linking — measured, by
-making `JunctionScheme.cpp` construct a `Mesh`: `Undefined symbols for architecture
-arm64`. The grep and the linker cover different halves — an *include* that is not yet
-used is invisible to the linker, a *use* is invisible to a grep — so
-`test_cpp_pure_layer.py` also computes each file's **transitive** include closure.
-Transitive matters concretely: `BoundaryLayer.cpp` includes only `BoundaryLayer.hpp` and
-reaches `Mesh.hpp` through it, so a direct-include check would call it pure and would let
-any new module launder its dependency the same way. The list is a **deny**-list
-(`HEAVY_SOURCES` / `HEAVY_HEADERS`, each entry carrying its reason): a new `src/*.cpp` is
-assumed pure and making it heavy costs an entry, because an allow-list would have the
-failure mode backwards — forgetting to enrol a new pure module would silently exempt it.
+**`hybmesh_pure` is the decision layer, and the BUILD is what keeps it honest** — the C++
+analogue of the GUI's "`services/*.py` must be Qt-free" rule. **The pure tests link
+`hybmesh_pure` alone and are not linked against libgmsh at all** (verified with `otool -L`),
+so the moment such a module *uses* `Mesh` or gmsh those executables stop linking (measured:
+making `JunctionScheme.cpp` construct a `Mesh` gives `Undefined symbols for architecture
+arm64`). The grep and the linker cover different halves — an *include* not yet used is
+invisible to the linker, a *use* invisible to a grep — so `test_cpp_pure_layer.py` also
+computes each file's **transitive** include closure (`BoundaryLayer.cpp` reaches `Mesh.hpp`
+only through its own header, so a direct-include check would call it pure). The list is a
+**deny**-list (`HEAVY_SOURCES` / `HEAVY_HEADERS`, each entry carrying its reason): a new
+`src/*.cpp` is assumed pure, because an allow-list would silently exempt whatever nobody
+enrolled.
 
-`hybmesh::classifyJunctions` (`include/JunctionScheme.hpp`, `src/JunctionScheme.cpp`) is
-its first member, and its history is the argument for the layer. `hybmesh::inertParamsSet` (`include/MeshMode.hpp`) joined it for the same reason: "which parameters does this mode never read?" is a decision over declarations, so `tests/cpp/test_mesh_mode.cpp` can prove the four surviving BL parameters SILENT — a negative that a test scraping the mesher's log would have to establish by absence. It was extracted from
-`generate()` specifically so the junction binning could be reasoned about and tested, and
-then could not be tested at all: it was private, and it took a 22-field mutable
-`FrontState` plus `Mesh&` while actually reading three positions/normals per node, one
-`skipBL` bool per node, and three config scalars. The wide signature hid how narrow the
-dependency was. It now takes `vector<JunctionNode>` + `JunctionParams` (AoS, not six
-parallel arrays — the same reasoning that made `JunctionDecision` one struct) and returns
-decisions **and warnings as data**: the very-sharp-wedge message is user-facing prose
-about config keys and stays at the call site, while the threshold
-(`tan θ × influence < 1.15`) becomes testable — `tests/cpp/test_junction_scheme.cpp` pins
-it at three different influence values without generating a mesh. The computed `thetaDeg`
-travels in the decision because `HYBMESH_JUNC_DEBUG`'s trace format is parsed by
-`test_nobl_junction_acute.py`; a negative value means no angle was measured (an isolated
-BL corner), which is how the caller reproduces the old trace exactly. **This covered
-junction cases 3 and 4 for the first time** — θ > 270°, a strongly convex junction, which
-no geometry writer in the repo produces, so no mesh-level test has ever reached them.
+`hybmesh::classifyJunctions` (`include/JunctionScheme.hpp`, `src/JunctionScheme.cpp`) is its
+first member and the argument for the layer: extracted from `generate()` to be testable, it
+then took a 22-field mutable `FrontState` plus `Mesh&` while actually reading three
+positions/normals per node, one `skipBL` bool, and three config scalars — the wide signature
+hid how narrow the dependency was. It now takes `vector<JunctionNode>` + `JunctionParams`
+(AoS, not six parallel arrays) and returns decisions **and warnings as data**: the
+very-sharp-wedge message is user-facing prose about config keys and stays at the call site,
+while the threshold (`tan θ × influence < 1.15`) becomes testable — `tests/cpp/test_junction_scheme.cpp`
+pins it at three different influence values without generating a mesh. `thetaDeg` travels in the
+decision because `HYBMESH_JUNC_DEBUG`'s trace format is parsed by
+`test_nobl_junction_acute.py`; a negative value means no angle was measured. **This covered
+junction cases 3 and 4 for the first time** (θ > 270°, which no geometry writer in the repo
+produces). `hybmesh::inertParamsSet` (`include/MeshMode.hpp`) joined it for the same reason:
+`tests/cpp/test_mesh_mode.cpp` can prove the four surviving BL parameters SILENT, a negative
+a log-scraping test would have to establish by absence.
 
-- **`main.cpp`**: HybMesh2D's entry point and deliberately nothing else — see above.
-- **`cli.cpp`**: The whole command line (`hybmesh::runCli`); parses config, loads geometries, runs collision checks, orchestrates BL + Gmsh pipeline. **`OUTPUT_FILENAME` may end in the GUI's `.*` all-formats placeholder, which is a wildcard and not an extension** — stripped once, before `validate()`/`print()`, so the banner, the provenance sidecar and every writer share one basename. Taking it literally wrote the VTK into a file *named* `mesh_<case>.*` (the export block's `extPos()` finds that dot, so `.vtk` was never appended), and before `stripExt` it did the same to STAR-CD — which is where the `results/meshes/cartesian/mesh_cartesian.*.vrt` files on disk came from. See "The Output field's `.*`" below.
-- **`BoundaryLayer.cpp`**: Quad layer growth — normals, fan/parallel corner handling, concave merging, transition layers, smoothing. BL/no-BL junctions (a BL edge meeting a `grow=0` neighbour) use the angle-driven cap scheme (`BL_JUNCTION_METHOD=1`, default); **the binning itself is not here** — it is `hybmesh::classifyJunctions` in the decision layer (see `hybmesh_pure` above), and `generate()` only assembles its narrow input, applies the returned decisions and logs the returned warnings. The flow-facing angle θ picks case 1 (slide along the neighbour edge + absorb the no-BL nodes it covers, θ ≤ 95°), case 2/4 (perpendicular cap, 95° < θ ≤ C2 or θ > C3) or case 3 (neighbour-edge extension cap, C2 < θ ≤ C3); every cap leaves a free full-height lateral column whose edges are emitted as far-field constraints so the wedge is triangulated, and the step is scaled by 1/cos(tilt) so the *perpendicular* height is what stays fixed. **The 95° slide bound is geometric, not a knob**: a cap must point into the fluid wedge (which spans θ) while the perpendicular sits at 90°, so at θ ≤ 90° it provably exits through the no-BL wall — θ < 90° self-intersects the front (exit 5) and θ = 90° (a rectangular duct with one wall No-BL) hands Gmsh a doubled-back hole (exit 6). `C1` used to be that bound at 135°, wide enough to slide where an honest cap fit; it now only bins method 0 and round-trips through config. A slide at a **very sharp wedge** (`tan θ × BL_CONCAVE_INFLUENCE_MULTIPLIER < 1`, i.e. the corner squeezes more wall than the concave blend can lean over — 21.8° at the default 2.5, measured break between 22° and 21°) still fails downstream, so it emits `[WARN] Very sharp BL/no-BL wedge at (x, y)` naming the corner; advisory only, nothing is auto-corrected. An **isolated BL corner** (BOTH neighbours No-BL) gets the same treatment for the same reason (issue #2): it grows a full-height column with no lateral one, so the front doubles back and Gmsh triangulates nothing — the run has always ended at `empty far-field mesh … the domain loop likely failed to close`, which names the symptom at the wrong layer. `classifyJunctions` reports the corner's position and the caller emits `[WARN] Isolated BL corner at (x, y)`, pointing at the **`.meta` sidecar** rather than at the geometry — and that is the PERMANENT behaviour, not a placeholder. Issue #4 asked for the two lateral columns such a corner needs and was closed **wontfix** (2026-08-20), because the configuration is not reachable from this toolchain: the resampler flags EVERY segment boundary `corner = 1` (`resCorner.push_back(isBoundaryPt ? 1 : 0)`, where `isBoundaryPt` is "the first or last sample of a task" — NOT "sharp"), `cli.cpp`'s `prevBL || nextBL` rescue then promotes any such corner with a BL neighbour back to BL growth, and the GUI's `meta_io` only rewrites the NSEGMENTS bc / grow columns while copying the POINTS block through verbatim. Only a hand-written or foreign sidecar gets here, so naming THAT is worth more than two columns whose per-wall BC assignment is this repo's most expensive bug class. Advisory rather than a refusal is still right (issue #2): exit 6 is an honest failure. Gated by `tests/test_nobl_junction_acute.py`, which pins the sidecar pointer along with the corner's coordinates. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must carry that wall's BC by construction** (`slideColumns`/`slideWallRun` → `Mesh::recordBoundaryEdge`), matched to the wall edge each replacing edge covers by arc length: the column is a straight ray along the first neighbour chord, so on a *curved* no-BL wall it drifts off the wall polyline by ~a chord sagitta while `classifyBoundaryBc`'s `pointOnSegment` accepts 1e-6 of a chord (measured 6e-8..1.8e-6 vs a 2.0e-8 tolerance) — every column edge past the first fell through to `BC_GEOM`, so a No-BL inlet/outlet exported a `wall` band exactly D_total long at each BL junction and the solver ran a wall across part of the inlet. A straight no-BL wall has no drift, which is why straight-duct coverage missed it. Gated by `tests/test_nobl_junction_acute.py` (`write_curved_duct` — the curvature is the point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc length).
-- **`Mesh.cpp`**: Mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration, VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are private**: write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with `boundaryEdgeInfo(v1, v2)`. They used to be two public parallel maps every caller keyed by hand, so "wrote the BC, forgot the segment key" was a defect the interface could not prevent — and half an identity reaching the exporter is exported as the wall default. The compiler now rejects outside access, which is why nothing tests *that* — a test would be weaker than the type system. Their paired SEMANTICS are tested, in `tests/cpp/test_mesh_boundary_edge.cpp`: a refused overwrite must not half-apply, the key is the unordered node pair, and a BC with no resolvable segment still records. **`FARFIELD_MESH_SIZE` is a `Min()` cap on the size field, not a target**: the field is grown from the wall (`FARFIELD_GROWTH_RATE`, from the BL front or — no BL — the geometry surface) and/or inward from the domain bounding box (`FARFIELD_GROWTH_RATE_OUTER`), so in a domain that is small relative to the growth rate it tops out below the cap and *every* larger cap gives a byte-identical mesh. Every run therefore prints a `[ Mesh Size Field ]` block reporting how high growth actually reaches, the effective ceiling, and whether the cap is dead / marginal / active — computed by re-evaluating the field expressions at the generated mesh nodes, **not** by measuring cell edges (those run ~15% long on stretched triangles and would report a dead cap as live). Gated by `tests/test_size_field_ceiling.py`. Caveat: a custom domain outline is added with `geomId = -1`, so for a pure internal-flow case (`DOMAIN_FILE … nobl`, no `GEOM_FILE`) the wall-distance field is never built and `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` (distance to the *bounding box*) grades the mesh.
-- **`MultiBlock.cpp`**: The whole multi-block path behind one pure entry point — parse, resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges the adapter records. Never throws; a malformed document comes back as an error string. See Configuration above.
-- **`MbQuality.cpp`**: The multi-block quality instrument — inverted cells (per corner, over the exported cells), non-orthogonality (the corner angles of the structured cells), and the wall first-cell height against what the declaration asked for. Pure, total, never throws: an empty or half-built result is measured as what it is rather than refused. See Configuration above.
-- **`Config.hpp`**: Single-header; parses `.dat` files into ~50 typed parameters
-- **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross products
+- **`main.cpp`**: the entry point and deliberately nothing else.
+- **`cli.cpp`**: the whole command line (`hybmesh::runCli`) — parses config, loads
+  geometries, runs collision checks, orchestrates BL + Gmsh. **`OUTPUT_FILENAME` may end in
+  the GUI's `.*` all-formats placeholder, which is a wildcard and not an extension** —
+  stripped once, before `validate()`/`print()`, so the banner, the sidecar and every writer
+  share one basename. Taken literally it wrote the VTK into a file *named* `mesh_<case>.*`
+  (`extPos()` finds that dot, so `.vtk` was never appended). See "The Output field's `.*`".
+- **`BoundaryLayer.cpp`**: quad layer growth — normals, fan/parallel corners, concave
+  merging, transition layers, smoothing. **The junction binning is NOT here** — it is
+  `hybmesh::classifyJunctions` in the decision layer, and `generate()` only assembles its
+  narrow input, applies the decisions and logs the warnings. BL/no-BL junctions (a BL edge
+  meeting a `grow=0` neighbour) use the angle-driven cap scheme (`BL_JUNCTION_METHOD=1`,
+  default): the flow-facing angle θ picks case 1 (slide along the neighbour edge + absorb
+  the no-BL nodes it covers, θ ≤ 95°), case 2/4 (perpendicular cap, 95° < θ ≤ C2 or θ > C3)
+  or case 3 (neighbour-edge extension cap, C2 < θ ≤ C3); every cap leaves a free full-height
+  lateral column emitted as far-field constraints, and the step is scaled by 1/cos(tilt) so
+  the *perpendicular* height stays fixed. **The 95° slide bound is geometric, not a knob**:
+  a cap must point into the fluid wedge while the perpendicular sits at 90°, so at θ ≤ 90°
+  it provably exits through the no-BL wall (θ < 90° self-intersects the front, exit 5;
+  θ = 90° hands Gmsh a doubled-back hole, exit 6). `C1` now only bins method 0. A slide at a
+  **very sharp wedge** (`tan θ × BL_CONCAVE_INFLUENCE_MULTIPLIER < 1`, i.e. 21.8° at the
+  default 2.5) still fails downstream, so it emits `[WARN] Very sharp BL/no-BL wedge at
+  (x, y)` — advisory only, nothing auto-corrected. An **isolated BL corner** (BOTH neighbours
+  No-BL, issue #2) gets `[WARN] Isolated BL corner at (x, y)` pointing at the **`.meta`
+  sidecar**, and that is PERMANENT, not a placeholder: issue #4 (the two lateral columns such
+  a corner needs) was closed **wontfix** 2026-08-20 because the configuration is unreachable
+  from this toolchain — the resampler flags every segment boundary `corner = 1`, `cli.cpp`'s
+  `prevBL || nextBL` rescue promotes any such corner back to BL growth, and the GUI's
+  `meta_io` copies the POINTS block through verbatim. Only a hand-written or foreign sidecar
+  gets there. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must
+  carry that wall's BC by construction** (`slideColumns`/`slideWallRun` →
+  `Mesh::recordBoundaryEdge`), matched to the wall edge each replacing edge covers by arc
+  length: the column is a straight ray, so on a *curved* no-BL wall it drifts off the
+  polyline by ~a chord sagitta while `pointOnSegment` accepts 1e-6 of a chord (measured
+  6e-8..1.8e-6 vs a 2.0e-8 tolerance) — so every column edge past the first fell through to
+  `BC_GEOM` and a No-BL inlet/outlet exported a `wall` band exactly D_total long at each
+  junction. A straight wall has no drift, which is why straight-duct coverage missed it.
+  Gated by `tests/test_nobl_junction_acute.py` (`write_curved_duct` — the curvature is the
+  point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc length).
+- **`Mesh.cpp`**: mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration,
+  VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are
+  private**: write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with
+  `boundaryEdgeInfo(v1, v2)`. They used to be two public parallel maps every caller keyed by
+  hand, so "wrote the BC, forgot the segment key" was a defect the interface could not
+  prevent — and half an identity reaching the exporter exports as the wall default. The
+  compiler now rejects outside access, which is why nothing tests *that*; their paired
+  SEMANTICS are tested in `tests/cpp/test_mesh_boundary_edge.cpp` (a refused overwrite must
+  not half-apply; the key is the unordered node pair; a BC with no resolvable segment still
+  records). **`FARFIELD_MESH_SIZE` is a `Min()` cap on the size field, not a target**: the
+  field grows from the wall (`FARFIELD_GROWTH_RATE`) and/or inward from the bounding box
+  (`FARFIELD_GROWTH_RATE_OUTER`), so in a small domain it tops out below the cap and every
+  larger cap gives a byte-identical mesh. Every run prints a `[ Mesh Size Field ]` block
+  reporting how high growth reaches, the effective ceiling and whether the cap is
+  dead/marginal/active — computed by re-evaluating the field expressions at the generated
+  nodes, **not** by measuring cell edges (those run ~15% long on stretched triangles and
+  would report a dead cap as live). Gated by `tests/test_size_field_ceiling.py`. Caveat: a
+  custom domain outline is added with `geomId = -1`, so for a pure internal-flow case
+  (`DOMAIN_FILE … nobl`, no `GEOM_FILE`) the wall-distance field is never built and
+  `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` grades the mesh.
+- **`MultiBlock.cpp`**: the whole multi-block path behind one pure entry point — parse,
+  resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
+  the adapter records. Never throws; a malformed document comes back as an error string.
+- **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
+- **`Config.hpp`**: single-header; parses `.dat` files into ~50 typed parameters.
+- **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross.
 
 ### PreProcessor GUI (`tools/PreProcessor/gui/app/`)
-Layered PyQt6 application:
+Layered PyQt6 application.
 
-- **`controller.py`**: Top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
-- **`controllers/`**: Business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
-- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing` for distance-based resampling, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`, see "A re-save of the geometry" below; serialized via `to_dict()`/`from_dict()`, which is the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py` — see "The Output field's `.*`"), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py` (see "Transient results" below). Note: auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by the C++ backend (`src/cli.cpp`) for hand-written/CLI configs but are not emitted by the GUI. Exported JSON carries a `format_version` field (`CONFIG_FORMAT_VERSION`).
-- **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py` (mesh visualization), `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
-- **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd` — snapshot of the Mesh/Solver/IB configuration)
+> **Full rationale for this whole section — measurements, dated user reports,
+> injections, named blind spots — is `docs/design_notes/gui.md`.** A rule here is the
+> conclusion; that file carries the evidence and the failure it was bought with.
+
+- **`controller.py`**: top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
+- **`controllers/`**: business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
+- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing`, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`; serialized via `to_dict()`/`from_dict()`, the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py`), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py`. Auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by `src/cli.cpp` for hand-written configs but are not emitted by the GUI. Exported JSON carries `format_version` (`CONFIG_FORMAT_VERSION`).
+- **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py`, `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
+- **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd`)
 
 **Stage config data flow is one-directional** (`controllers/panel_sync_ctrl.py`): the
 **model is the truth, the panel is a view**.
 - **panel → model**: `sync_panel_to_model(panel_attr)` runs on *every* user edit (the
-  widget-introspection traversal in `undo_ctrl._wire_widget_edits` calls
-  `on_panel_edited`, which syncs first and then schedules the undo snapshot). So
-  `global_mesh_config` / `global_solver_config` / `global_stl3d_config` are never stale;
-  nothing should read a panel widget to get a config value.
-- **model → panel**: `push_panel_config(panel, cfg)` (undo-suppressed), as before.
+  widget-introspection traversal in `undo_ctrl._wire_widget_edits` calls `on_panel_edited`,
+  which syncs first and then schedules the undo snapshot). So `global_mesh_config` /
+  `global_solver_config` / `global_stl3d_config` are never stale; nothing should read a
+  panel widget to get a config value.
+- **model → panel**: `push_panel_config(panel, cfg)` (undo-suppressed).
 - `PRESERVED_FIELDS` lists what each panel does **not** author and must never overwrite
-  (e.g. the solver panel has no widget for `length_unit`, so a wholesale copy would wipe
-  it and take `Linf` with it). `tests/test_panel_model_sync.py` proves each set equals
-  what that panel's `get_config` actually assigns, **by AST** — so a model field added
-  without a widget fails the build instead of silently going stale or being wiped.
-- A model may define `normalize()` to restore its own invariants after a sync (SolverConfig
-  re-derives `linf` from the preserved unit).
+  (the solver panel has no widget for `length_unit`, so a wholesale copy would wipe it and
+  take `Linf` with it). `tests/test_panel_model_sync.py` proves each set equals what that
+  panel's `get_config` actually assigns, **by AST**, so a model field added without a widget
+  fails the build instead of silently going stale.
+- A model may define `normalize()` to restore its own invariants after a sync.
 - **`set_config` sets the panel's own `_loading` flag under try/finally**, and the sync
   checks *that*, not the caller's discipline: a direct `set_config` that forgets
-  `push_panel_config` must cost at most a spurious undo step, never a corrupted model.
-  New panels must follow the same `set_config` / `_set_config_body` split.
+  `push_panel_config` must cost at most a spurious undo step, never a corrupted model. New
+  panels must follow the same `set_config` / `_set_config_body` split.
 
 **A config field is declared ONCE, in its panel's field-spec table**
-(`app/services/field_spec.py` is the Qt-free record + the pure questions asked of a
-table; `views/panels/field_widgets.py` is the one kind→widget mapping and the three
-traversals; the tables are `services/mesh_field_specs.py` +
-`services/mesh_bl_field_specs.py` and `views/panels/solver_field_specs.py`,
-`views/panels/stl3d_field_specs.py` — the two MESH tables live in `services/` because
-the `.dat` key map derives from them, see "The GUI's `.dat` key map is derived" below;
-their old `views/panels/` paths survive as re-export shims so the ~11 Qt-side call
-sites are unchanged). Each panel used to be cut in half —
-one half BUILT widgets, the other read and wrote them against a model — with the whole
-widget set as the implicit interface: **176 attributes across five build mixins, named
-back by hand in 246 read/write lines**, agreeing only because both halves spelled the
-same name. One BL knob (`BL_TRANSITION_BUFFER`) was named 16 times across 7 GUI files,
-four of which were parallel lists over the same 21 fields. A spec carries `attr` ·
-`kind` · `label` · `tip` · `model` · `key` · `group` · `opts`; the table is walked once
-to build (`add_spec_rows`), once to write (`write_specs`) and once to read
-(`read_specs`). Rules that are load bearing:
-- **`get_config` / `set_config` / `_set_config_body` were NOT touched as verbs**, nor
-  was `panel_sync_ctrl` — the frozen review lists both under *"Genuinely deep — leave
-  these alone"*. The table sits BEHIND those three, and the panel-owned `_loading` flag
-  and its `try/finally` are unchanged.
-- **`PRESERVED_FIELDS` is a subtraction, not a list**: model fields − table − the
-  residue each panel declares beside its table (`*_EXTRA_AUTHORED`, for facts one
-  widget holds for many things — the geometry list, the BC-definition table). What is
-  left to prove is that the declared residue equals the code still written by hand.
-- **`LENGTH_FIELDS` is derived from `kind == "sci"`**, which IS the physical-length rule
-  (`SciDoubleSpinBox`, no floor, decade steps), so the list and the widgets cannot
-  disagree.
-- **Widgets are seeded from the model's defaults**, not from literals repeated in build
-  code. Measured: a fresh panel used to report BL layers 0, growth 1.001, Gmsh
-  MeshAdapt, CFL 0, all-`inlet` outer BCs and a 0..0 STL3d domain; it now reports the
-  dataclass values. That is the `_STARTUP_OK` bug class closed at its source.
-- **A choice is matched by VALUE in Python, never `findData`** (QVariant comparison
-  makes a bool `False` against an int `0` datum a coin toss), and a value the combo does
-  not offer falls back to a *declared* one instead of landing on index 0.
+(`app/services/field_spec.py` is the Qt-free record + the pure questions asked of a table;
+`views/panels/field_widgets.py` is the one kind→widget mapping and the three traversals;
+the tables are `services/mesh_field_specs.py` + `services/mesh_bl_field_specs.py` and
+`views/panels/solver_field_specs.py`, `views/panels/stl3d_field_specs.py` — the two MESH
+tables live in `services/` because the `.dat` key map derives from them; their old
+`views/panels/` paths survive as re-export shims). Each panel used to be cut in half — one
+half BUILT widgets, the other read and wrote them — with the whole widget set as the
+implicit interface: **176 attributes across five build mixins, named back by hand in 246
+read/write lines**. A spec carries `attr` · `kind` · `label` · `tip` · `model` · `key` ·
+`group` · `opts`; the table is walked once to build (`add_spec_rows`), once to write
+(`write_specs`) and once to read (`read_specs`). Load-bearing rules:
+- **`get_config` / `set_config` / `_set_config_body` were NOT touched as verbs**, nor was
+  `panel_sync_ctrl` — the frozen review lists both under *"genuinely deep — leave alone"*.
+  The table sits BEHIND those three; the panel-owned `_loading` flag is unchanged.
+- **`PRESERVED_FIELDS` is a subtraction, not a list**: model fields − table − the residue
+  each panel declares beside its table (`*_EXTRA_AUTHORED`, for facts one widget holds for
+  many things).
+- **`LENGTH_FIELDS` is derived from `kind == "sci"`**, which IS the physical-length rule, so
+  the list and the widgets cannot disagree.
+- **Widgets are seeded from the model's defaults**, not literals repeated in build code.
+- **A choice is matched by VALUE in Python, never `findData`** (QVariant comparison makes a
+  bool `False` against an int `0` a coin toss), and an unavailable value falls back to a
+  *declared* one instead of index 0.
 - **Numeric and combo rows go into the form DIRECTLY, never wrapped**:
-  `QFormLayout.labelForField` only finds a label for the widget that IS the field cell,
-  and four visibility helpers use it to hide a row's label with its field.
-- Three escape hatches exist and each is used by exactly one field, named with its
-  reason in the gate: `read`/`write` on a spec (`ascii_combo` — three items behind a
-  bool), `panel_choices` (`bl_concave_method` — the panel's backing combo offers only
-  method 5 because method 0 is CLI-side), `host_writes` (`output_filename` — population
-  is a heuristic that reads the widget's own text).
-- **One spec means one tooltip**, so a form label's '?' now shows the field's full
-  explanation rather than a shorter summary (~40 rows). The alternative — a second
-  `label_tip` on every spec — is the duplication the candidate removes. The Edit-BL
-  dialog's '?' shows that prose **plus the `.dat`/`Config.hpp` KEY**: the KEY used to be
-  the ONLY help 20 of the 21 fields had, and giving every spec a tip silently killed the
-  `spec.tip or key` fallback (found in review, now gate check 12).
-- **`services/field_spec.py` is Qt-free and gated; `config_ownership` is Qt-free at
-  IMPORT only.** The MESH tables are now genuinely reachable headlessly (they had to
-  be — see below), but the SOLVER and IB tables still live under `views/panels/`,
-  whose package `__init__` eagerly imports eight Qt panels, so a `preserved_fields()`
-  call naming those two still loads PyQt6. Do not read the deferral as "answerable
-  headlessly" for every panel; it keeps the `services/` sweep honest, and for the
-  mesh panel it is now more than that.
-Gated by `tests/test_field_spec_tables.py` (twelve properties, every static one verified
-by injection, each injection asserting the mutated source still PARSES and really
-changed).
-Behaviour preservation was measured against `f97213a` via `git archive`: the solver and
-IB panels' form structure is row-for-row identical (70/70 and 7/7), all 25 differing mesh
-rows are inside the four `setVisible(False)` BL backing sections, and every panel's
-`set_config` → `get_config` round-trip is byte-identical. `test_panel_model_sync.py`
-stayed green throughout and lost only its check 1, which became a tautology once both
-sides of that equality were the same declaration.
+  `QFormLayout.labelForField` only finds a label for the widget that IS the field cell.
+- Three escape hatches exist, each used by exactly one field and named with its reason in
+  the gate: `read`/`write` on a spec (`ascii_combo`), `panel_choices` (`bl_concave_method`),
+  `host_writes` (`output_filename`).
+- **One spec means one tooltip**; the Edit-BL dialog's '?' shows that prose **plus the
+  `.dat`/`Config.hpp` KEY** (the KEY used to be the only help 20 of 21 fields had, and
+  giving every spec a tip silently killed the `spec.tip or key` fallback — gate check 12).
+- **`services/field_spec.py` is Qt-free and gated; `config_ownership` is Qt-free at IMPORT
+  only.** The SOLVER and IB tables still live under `views/panels/`, whose package
+  `__init__` eagerly imports eight Qt panels, so `preserved_fields()` naming those two still
+  loads PyQt6.
+Gated by `tests/test_field_spec_tables.py` (twelve properties, every static one verified by
+injection, each injection asserting the mutated source still PARSES and really changed).
 
 **The GUI's `.dat` key map is DERIVED from the field-spec tables**
-(`models/mesh_config_keys.py`): 45 of its 49 `KEY -> (attribute, converter)` entries
-come from the tables (`spec.key` + `spec.model`), the converter comes from the model
-field's own dataclass type via `field_spec.model_types()`, and the 4-entry residue is
-declared with a reason each. It used to be 49 hand-written entries restating both
-facts, in a file with no way of knowing when a table changed.
-- **The two mesh tables MOVED to `services/` for this, and the reason is the seam.**
-  They are intrinsically Qt-free (they import only `dataclasses`, `MeshConfig` and
-  `field_spec`), but any module under `views/panels/` drags in that package's
-  `__init__` and its eight Qt panels — measured: importing either table with PyQt6
-  blocked raised ImportError — while `mesh_config_keys` is on the HEADLESS path
-  (`mesh_config_io.config_to_text` ← `run_pipeline.sh` / `run_batch.sh`). A spec
-  import without the move would have made PyQt6 a requirement of a compute node that
-  never draws a window.
-- **The cost is recorded rather than hidden**: ~250 lines of UI text (labels,
-  tooltips, one `_HINT_STYLE` CSS string) now sit in `services/`, which weakens the
-  "the tables carry UI text so they live under `views/`" reasoning this file used to
-  give for their location. The Qt-free RULE is unaffected and still gated; what
-  changed is the rationale, and the trade was taken deliberately — deriving the map
-  is worth more than the tidiness of where UI copy lives. The solver and IB tables
-  did NOT move: nothing headless derives from them.
-- **`_KEY_MAP` is anchored to the WRITER, not just to the tables** (gate check 13f,
-  both directions, with the four structural keys — `GEOM_FILE` / `DOMAIN_FILE` /
-  `SEED_FILE` / `GROUP_BC` — declared). Checking only "map agrees with tables" was
-  measured BLIND: removing a spec's `key=` left both sides agreeing with the
-  parameter gone from each, while the writer kept emitting the line and the reader
-  could no longer read it back. `test_gui_cpp_config_parity.py` cannot see that
-  either, since the writer's f-strings are independent of the map.
-- Deriving the map made `mesh_config_keys` depend on `MeshConfig`, i.e. the cycle the
-  module was split out to avoid, pointing the other way. `mesh_config.py` therefore
-  imports the map inside the two methods that use it.
+(`models/mesh_config_keys.py`): 45 of its 49 `KEY -> (attribute, converter)` entries come
+from the tables (`spec.key` + `spec.model`), the converter from the model field's own
+dataclass type via `field_spec.model_types()`, and the 4-entry residue is declared with a
+reason each.
+- **The two mesh tables live in `services/` for this, and the reason is the seam.** Any
+  module under `views/panels/` drags in that package's eight Qt panels, while
+  `mesh_config_keys` is on the HEADLESS path (`mesh_config_io.config_to_text` ←
+  `run_pipeline.sh` / `run_batch.sh`). The cost is recorded rather than hidden: ~250 lines
+  of UI text now sit in `services/`. The solver and IB tables did NOT move — nothing
+  headless derives from them.
+- **`_KEY_MAP` is anchored to the WRITER, not just to the tables** (gate check 13f, both
+  directions, with `GEOM_FILE` / `DOMAIN_FILE` / `SEED_FILE` / `GROUP_BC` declared).
+  Checking only "map agrees with tables" was measured BLIND: removing a spec's `key=` left
+  both sides agreeing while the writer kept emitting the line.
+- `mesh_config.py` imports the map inside the two methods that use it, since deriving it
+  made `mesh_config_keys` depend on `MeshConfig`.
 
 **The edge being edited has an OWNER, and there are TWO edit kinds in it**
-(`services/edge_edit.py`, Qt-free — `EdgeEditSession` + `EditOutcome` +
-`ShapeOutcome`). Drawing a new **analytic** edge or double-clicking an existing one,
-and double-clicking an **imported (discrete)** edge to reshape its whole outline by
-the corner vertices, both open a *modeless* session: a numeric dialog and draggable
-canvas handles bound live to one segment, committed by **Create Edge** / **Apply**
-and reverted by **Cancel**. Between them that was **twelve attributes on
-`AppController`** — declared in `controller.py`, begun in `curve_draw_ctrl` /
-`file_edit_ctrl`, committed or cancelled in `pending_edit_ctrl` / `file_edit_ctrl` —
-with "an edit is live" enforced only by every reader remembering to test for `None`,
-and the whole lifecycle unreachable without a canvas, a dialog and a QApplication.
-**Both kinds live in one owner because they are alternatives**: at most one may be
-live, so `_edit_in_progress()` is now one question with one answer instead of an
-`or` repeated at every call site. Three rules:
-- **The dialog is held OPAQUELY.** The owner stores it and hands it back; it never
-  calls a method on it. What has to be *asked* of the dialog — a polygon's
-  open/closed toggle, which is not part of the form's `params` — is read by the
-  caller and passed into `update()` as a value. That is what keeps the module free
-  of Qt without a wrapper interface.
-- **`commit()` / `cancel()` end the session and return an `EditOutcome`; they do not
-  decide what it becomes.** Whether that is an `AddCurveSegmentCmd` or a recorded
-  `UpdateSegmentStateCmd` stays with the controller, which owns the undo stack. The
-  *revert* does live in the owner, because it is the other half of the snapshot it
-  took.
+(`services/edge_edit.py`, Qt-free — `EdgeEditSession` + `EditOutcome` + `ShapeOutcome`).
+Drawing/double-clicking an **analytic** edge, and double-clicking an **imported (discrete)**
+edge to reshape its outline by corner vertices, both open a *modeless* session committed by
+**Create Edge** / **Apply** and reverted by **Cancel**. Between them that was **twelve
+attributes on `AppController`**, with "an edit is live" enforced only by every reader
+remembering to test for `None`. **Both kinds live in one owner because they are
+alternatives**: at most one may be live, so `_edit_in_progress()` is one question with one
+answer.
+- **The dialog is held OPAQUELY** — stored and handed back, never called into. What must be
+  *asked* of it (a polygon's open/closed toggle) is read by the caller and passed into
+  `update()` as a value.
+- **`commit()` / `cancel()` end the session and return an `EditOutcome`; they do not decide
+  what it becomes.** The *revert* does live in the owner, being the other half of its snapshot.
 - **An edit BELONGS to the CAD session it began in, and leaving that session is a
-  transition.** This is the half that was a *defect*, not a shape: nothing cancelled
-  a live edit when a tab was switched or closed, while the commit path resolved its
-  target through `active_session()` — the tab in front *now*. So committing an edit
-  looked the segment up in the wrong session, failed, and fell back to matching by
-  segment **id** (the fallback that exists to survive an intervening undo) — and ids
-  are per-session, so it landed on **another tab's edge**, recording an undo entry
-  whose before-state came from one geometry and whose after-state came from another;
-  committing a *new* edge added it to whichever tab was in front. Measured, the id
-  collision is worse than "possible": `ProjectModel.renumber_segments` assigns
-  contiguous 1..N across both edge kinds, so every tab's Nth edge has id N. Every
-  outcome now carries its session and the caller acts on **that** one, and the list /
-  selection / window title — which describe the tab in FRONT — are only touched when
-  the edit's session *is* that tab. Switching or closing away from a live edit
-  **asks**, defaulting to cancelling it (`headless_default=True`, so a batch run
-  never blocks and never comes out with an edit pointing at a tab that is gone); on
-  close the edit question comes **first**, and declining it aborts the close so the
-  unsaved-changes question is never reached. Declining a switch has to **put the tab
-  bar back** — Qt moves it and then tells us. And **at most one edit is live** stopped
-  being convention: `begin`/`begin_shape` REFUSE while another is live, so the Qt side
-  must ask and end the first one deliberately. Refusing is the backstop, not the
-  interaction — a module with no Qt cannot put up a prompt and should not decide to.
-  `commit`/`cancel` with nothing live is a silent no-op (a dialog signal arriving
-  after the state was cleared is a timing artefact, not something the user did):
-  `get_logger(__name__).debug`, never a pop-up or a user-log line.
-- **An ending the DIALOG did not initiate must close the dialog.** It tears itself
-  down through `finished → deleteLater`, which fires only when it closes *itself*;
-  a cancel driven by a tab switch, a tab close or a second edit beginning used to
-  leave the window on screen with its Apply and Cancel pointing at an owner that had
-  forgotten the edit. The dialog therefore travels back on the outcome (the owner
-  holds it opaquely and may not call a method on it) and the caller closes it. That
-  `close()` **re-emits `rejected`**, so the cancel handler runs again against an idle
-  owner — which is exactly the silent-no-op case above, and is why the two rules have
-  to land together. And **the canvas clear takes the EDIT's session**: the live
-  preview is a canvas item keyed by `session_id`, so aiming it at the front tab
-  leaves the preview drawn on the tab the edit belonged to.
-- **Not every route out of a session is a prompt.** Switching and closing a tab ask,
-  because both are cleanly abortable. Opening a new tab, `reset_all_state` and
-  loading a workspace **end the edit unconditionally and say so in the log**: the
-  first moves focus as an unavoidable consequence of an action already taken (making
-  it abortable would mean `_new_session` — which four call sites dereference straight
-  away — growing a failure mode), and the last two have already asked their own
-  whole-session question. What the requirement actually demands is that no live edit
-  survives pointing at a background or discarded session, which is what these
-  guarantee.
-- **The committed-edge DRAG is a transition, not a nullable field.** Dragging a
-  handle of an already-committed edge (no dialog open — a third modality the other
-  two deliberately route drags away from) must collapse one gesture into one undo
-  step. That used to be `AppController._drag_orig_state`, filled by the drag handler
-  and retired by the *selection/refresh chokepoint* as a side effect, because a
-  snapshot left over from a gesture that ended abnormally would otherwise be recorded
-  against whichever segment was selected next — and undoing THAT writes one edge's
-  shape onto another. It is now `begin_drag` / `finish_drag`, and the rule is a
-  property: **a drag belongs to the segment it began on and cannot be finished
-  against another**. Two consequences worth knowing: the handler must not
-  `begin_drag` on the `finished` event (a gesture cannot begin and end in one event;
-  letting it would make a stray finish snapshot the *new* segment and record a
-  one-event edit on it — the old code did exactly that), and **a drag is NOT
-  `is_active()`**, because the callers that guard on that predicate must keep working
-  during one.
-- **A corner drag is a value in, an outline out.** The shape session holds the
-  pristine points plus the corner POSITIONS, and `move_corner` returns a freshly
-  re-fitted array instead of mutating the live one — so every re-fit recomputes from
-  the same basis, dragging never accumulates transform onto transform, and Cancel
-  restores the points *byte-for-byte* rather than to within a tolerance.
-  Its one departure from symmetry is deliberate: the shape side has **`end_shape()`,
-  not a commit/cancel pair**, because both endings need the same thing from the owner
-  (the snapshot) and differ only in what the caller does with it.
-The SHAPE of all this is gated by `tests/test_edge_edit_owner_seam.py` — five
-properties, each a function over source so the nine in-test injections run the real
-check against mutated text, and each injection asserting the mutation still PARSES
-and really differed (a mutation that breaks the parse looks exactly like the check
-working). It watches: no modal-edit attribute back on `AppController`; nobody
-reaching past the verbs (resolving `self.edge_edit` **and** one-line aliases of it);
-the owner Qt-free, proved by DRIVING the whole lifecycle in a **subprocess** with
-PyQt6 blocked — in-process the answer is always "Qt is loaded" once another test
-imported it — plus an AST read for a *deferred* import at any nesting depth; one
-predicate; and both commit paths resolving their session from the outcome. Its blind
-spots are named in its own docstring, the sharpest being that check 1 matches
-attribute NAMES, so state smuggled back as `self._live` is invisible: it defends
-against the cheap regression, not a determined one.
-
-The BEHAVIOUR is gated by `tests/test_edge_edit_owner.py` (the owner's verbs, Qt-free),
-`tests/test_committed_drag_undo.py` (the drag wiring) and
-`tests/test_edit_session_binding.py` (the cross-tab defect and both prompts) — the
-last two on the offscreen Qt platform with the real `AppController`, which is where
-the old bugs lived. The session-binding test reaches the wrong-tab state by moving
-`active_idx` **directly** rather than through `switch_tab`, on purpose: `switch_tab`
-now ends the edit, so going through it would test the prompt instead of the binding,
-and the binding is the half that must still hold when some other route changes the
-front tab. The first refuses PyQt6 through a meta-path hook (so a *deferred* `import PyQt6` fails too) and then drives the REAL
-`PendingEditControllerMixin` / `FileEditControllerMixin` — re-implementing the commit
-branch in the test would prove only that a test can add a segment. (It loads both by
-file path: `app/controllers/__init__.py` eagerly re-exports eight Qt mixins, the same
-hazard `test_qt_free_seam.py` records for `models/` and `views/panels/`, and that is a
-property of the package rather than of the module under test.) Every check is verified
-by injection. One claim is deliberately narrowed rather than overstated: the params
-snapshot is a deep copy, but **no shipped caller mutates a nested parameter in place**
-(a polygon carries `vertices_str`, a *string*), so a shallow copy would pass every
-live path — the test mutates one directly and says so, pinning the contract rather
-than a reproducible bug.
+  transition.** Nothing used to cancel a live edit on a tab switch or close, while commit
+  resolved its target through `active_session()` — the tab in front *now* — then fell back
+  to matching by segment **id**, and ids are per-session (`renumber_segments` assigns
+  contiguous 1..N across both edge kinds, so every tab's Nth edge has id N), so it landed on
+  **another tab's edge**. Every outcome now carries its session and the caller acts on
+  **that** one; the list / selection / window title are touched only when the edit's session
+  *is* the front tab. Switching or closing away **asks**, defaulting to cancelling
+  (`headless_default=True`); on close the edit question comes **first**, and declining
+  aborts the close. Declining a switch must **put the tab bar back**. `begin`/`begin_shape`
+  REFUSE while another edit is live — the backstop, not the interaction, since a Qt-free
+  module cannot prompt. `commit`/`cancel` with nothing live is a silent no-op
+  (`get_logger(__name__).debug`, never a pop-up).
+- **An ending the DIALOG did not initiate must close the dialog** — it tears itself down
+  through `finished → deleteLater`, which fires only on a self-close. The dialog travels
+  back on the outcome and the caller closes it; that `close()` **re-emits `rejected`**, so
+  the cancel handler runs again against an idle owner, which is why the silent-no-op rule
+  and this one had to land together. **The canvas clear takes the EDIT's session**, since
+  the preview is keyed by `session_id`.
+- **Not every route out is a prompt.** Switching and closing a tab ask (both cleanly
+  abortable). Opening a new tab, `reset_all_state` and loading a workspace end the edit
+  unconditionally and say so in the log.
+- **The committed-edge DRAG is a transition, not a nullable field**: `begin_drag` /
+  `finish_drag`, and **a drag belongs to the segment it began on and cannot be finished
+  against another**. The handler must not `begin_drag` on the `finished` event, and **a drag
+  is NOT `is_active()`** — callers guarding on that predicate must keep working during one.
+- **A corner drag is a value in, an outline out**: `move_corner` returns a freshly re-fitted
+  array instead of mutating the live one, so dragging never accumulates transform onto
+  transform and Cancel restores points *byte-for-byte*. The shape side has **`end_shape()`,
+  not a commit/cancel pair**, because both endings need the same thing from the owner.
+Gated by `tests/test_edge_edit_owner_seam.py` (five properties, nine in-test injections),
+`tests/test_edge_edit_owner.py` (the verbs, Qt-free, PyQt6 refused through a meta-path hook
+so a *deferred* import fails too), `tests/test_committed_drag_undo.py` and
+`tests/test_edit_session_binding.py` (offscreen Qt with the real `AppController`). The
+binding test moves `active_idx` **directly** rather than through `switch_tab`, on purpose:
+`switch_tab` now ends the edit, and the binding is the half that must hold when some other
+route changes the front tab.
 
 **The outline re-fit is pure arithmetic and has its own module**
-(`services/shape_refit.py`, Qt-free — `build_edge_specs` + `refit_shape`). Each edge
-of an imported outline re-fits between its own two corners by the similarity transform
-carrying its ORIGINAL corner pair onto the current one, so dragging a corner two edges
-share redistributes both. It lived inside `FileEditControllerMixin._refit_geom`, read
-three `self.` attributes and **had no test at all**; extracting it first is what made
-moving the state around it small. Two behaviours it is careful about and which are now
-pinned: a **zero-length edge** falls back to a pure translation (the transform's
-divisor is the squared length, so without it the interior points divide by ~zero and
-leave the canvas), and the **closing edge wraps to index 0** rather than being read as
-out-of-range and skipped — a gap that only opens on a *closed* outline, which is most
-of them. The extraction was measured, not asserted: 2000 randomised outlines through
-both the new function and the pre-change in-place body recovered from git came out
-**byte-identical, worst |Δ| = 0**. Gated by `tests/test_shape_refit.py`, whose sort-
-order check needed searching for: a CPython set of small corner indices iterates
-sorted anyway, *and* the order depends on insertion history rather than the values, so
-neither a small outline nor a set literal is a usable oracle — the check uses a layout
-found by search over 200k random cuts where the builder's own set really is unsorted.
+(`services/shape_refit.py`, Qt-free — `build_edge_specs` + `refit_shape`). Each edge re-fits
+between its own two corners by the similarity transform carrying its ORIGINAL corner pair
+onto the current one, so dragging a shared corner redistributes both. Two behaviours it is
+careful about: a **zero-length edge** falls back to a pure translation (the transform's
+divisor is the squared length), and the **closing edge wraps to index 0** rather than being
+read as out-of-range and skipped. The extraction was measured: 2000 randomised outlines
+through both the new function and the pre-change in-place body came out **byte-identical,
+worst |Δ| = 0**. Gated by `tests/test_shape_refit.py`.
 
-**Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`). Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab drops exactly its own commands; ordering across them is by the monotonic `seq` that `CommandHistory._push` stamps — undo takes the highest, redo the lowest waiting on a redo stack. Undo raises the tab owning the command before applying it. Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one step. **Any code pushing config into those panels must go through `controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is recorded as a user edit.
-- **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process group — every worker `cancel()` must route through these, never a bare `terminate()`)
+**Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`).
+Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab
+drops exactly its own commands; ordering across them is by the monotonic `seq` that
+`CommandHistory._push` stamps. Undo raises the tab owning the command before applying it.
+Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one
+step. **Any code pushing config into those panels must go through
+`controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is
+recorded as a user edit.
 
-**Subprocess environment**: `services/env_setup.py::mesher_env()` resolves the libgmsh directory (override: `HYBMESH_GMSH_LIB_DIR`) and must be passed as `env=` when launching `HybMesh2D`/`surface_resampler`. Inheriting it from a shell wrapper does **not** work — macOS SIP strips every `DYLD_*` variable when a protected `python3` starts, so `run.sh`'s export never reaches a Python-launched child. `tools/scripts/gmsh_lib_dir.sh` is the shell-side equivalent, sourced by `run.sh`/`run_pipeline.sh`. **Where Gmsh actually is has ONE answer: `tools/scripts/gmsh_sdk_dirs.py`** — the shell helper and `CMakeLists.txt` (which also needs `gmsh.h` at configure time) both resolve through it by asking the installed wheel. The CMake side used to carry a fixed HINTS list naming one developer's macOS pip prefix, and a pip prefix is per-machine: **CI installed gmsh and then failed at configure with "Gmsh SDK not found", and because the test job is `needs: build` the entire regression suite was SKIPPED rather than run — the workflow had never once been green.** A hardcoded absolute path in a discovery hint is worth treating as a defect on sight. The second half of the same bug was the LIBRARY name: the Linux wheel ships `lib/libgmsh.so.4.15` with no unversioned `libgmsh.so` symlink, so `find_library`'s `NAMES gmsh gmsh.4.15` (which become `libgmsh.so` / `libgmsh.4.15.so`) match nothing, while macOS's `libgmsh.4.15.dylib` matches — the build worked on the developer's machine and nowhere else. The resolver therefore reports `LIBFILE=` (the file it globbed) and CMake falls back to it, rather than teaching NAMES another platform's spelling and baking the version into a second place. The workflow first went green on 2026-08-17 (`4254c5d`), and what that covers is worth knowing: **69 Python tests + `ctest` 2/2 in the build job + the end-to-end `run_pipeline.sh`, none of which had ever executed in CI before**. Getting there took four unrelated environment defects and one flaky runner, and not one of them was a defect in the code under test — the lesson is that a workflow's *history* is the only evidence it gates anything.
+- **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI
+  subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus
+  `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process
+  group — every worker `cancel()` must route through these, never a bare `terminate()`)
 
-**`app/utils.py` is the Qt side of a seam, and the pure helpers now live on the
-other side** (`services/paths.py`, Qt-free — `repo_root`, `find_binary_executable`,
+**Subprocess environment**: `services/env_setup.py::mesher_env()` resolves the libgmsh
+directory (override: `HYBMESH_GMSH_LIB_DIR`) and must be passed as `env=` when launching
+`HybMesh2D`/`surface_resampler`. Inheriting it from a shell wrapper does **not** work —
+macOS SIP strips every `DYLD_*` variable when a protected `python3` starts.
+`tools/scripts/gmsh_lib_dir.sh` is the shell-side equivalent. **Where Gmsh actually is has
+ONE answer: `tools/scripts/gmsh_sdk_dirs.py`** — the shell helper and `CMakeLists.txt` both
+resolve through it by asking the installed wheel. The CMake side used to carry a fixed HINTS
+list naming one developer's macOS pip prefix: **CI installed gmsh, failed at configure with
+"Gmsh SDK not found", and because the test job is `needs: build` the entire regression suite
+was SKIPPED rather than run — the workflow had never once been green.** A hardcoded absolute
+path in a discovery hint is worth treating as a defect on sight. The second half was the
+LIBRARY name: the Linux wheel ships `lib/libgmsh.so.4.15` with no unversioned symlink, so
+`find_library`'s NAMES matched nothing there while macOS's `libgmsh.4.15.dylib` matched. The
+resolver therefore reports `LIBFILE=` (the file it globbed) and CMake falls back to it. The
+workflow first went green 2026-08-17 (`4254c5d`), covering **69 Python tests + `ctest` 2/2 +
+the end-to-end `run_pipeline.sh`, none of which had ever executed in CI before**; four
+unrelated environment defects and one flaky runner stood in the way, and not one was a defect
+in the code under test. **A workflow's *history* is the only evidence it gates anything.**
+
+**`app/utils.py` is the Qt side of a seam, and the pure helpers live on the other side**
+(`services/paths.py`, Qt-free — `repo_root`, `find_binary_executable`,
 `find_solver_executables`, `find_stl3d_binary`, `find_mpi_launcher`, `is_mpi_binary`).
-`app/utils.py` was a namespace rather than a module: message boxes, signal guards,
-pop-up stacking and form builders, then a third of pure `os`/`shutil` path resolution,
-one name, and that name sits on the Qt side. So **every headless module that needed a
-path imported the whole GUI toolkit** — `import app.services.pipeline_runner` loaded five
-`PyQt6` modules four lines below its own comment reading "no PyQt import, so this module
-stays headless-safe", and `run_pipeline.sh` / `run_batch.sh` required PyQt6 on a compute
-node that will never draw a window. `app/utils.py` **re-exports** the moved names, so the
-~16 Qt-side call sites are untouched; only the Qt-free layers were migrated.
-`is_headless` deliberately **stayed** with the Qt helpers — it asks which Qt platform
-plugin is running, so it belongs there even though its own `QApplication` import is
-deferred into the function body. Two things the gate
+`app/utils.py` re-exports the moved names, so the ~16 Qt-side call sites are untouched.
+`is_headless` deliberately **stayed** with the Qt helpers. Two things the gate
 (`tests/test_qt_free_seam.py`) had to learn the hard way:
-- **The check must be a subprocess.** In-process the answer is always "yes, PyQt6 is
-  loaded" once any other test has imported it, so the assertion would pass for the wrong
-  reason exactly when it matters.
-- **A deferred import is still a dependency, and an import-time sweep cannot see it.**
-  With the sweep green, `run_pipeline.sh` on a PyQt6-less machine still died in stage 2:
-  `mesh_config_io.config_to_text` did `from app.utils import repo_root` *inside a function
-  body*, loading no Qt at import time and needing the toolkit the moment a mesh config was
-  written. Three such sites existed (`models/mesh_config_io.py` ×2,
-  `models/solver_config.py`, `workers/solver_run.py`). The gate therefore reads the AST for
-  a moved name imported from `app.utils` at **any** nesting depth, and separately refuses
-  PyQt6 outright in a subprocess and drives the writers that failed.
-The `services/` sweep is a **deny**-list (`QT_SERVICES`, each entry carrying its reason —
-`i18n` wraps QTranslator, `ui_state` wraps QSettings): a new service is assumed Qt-free and
-making one Qt-dependent costs an entry, since an allow-list would silently exempt whatever
-nobody remembered to enrol. Stale entries fail too. One incidental correction: the moved
-block held a **second, disagreeing depth count** — `find_binary_executable` walked five
-levels from `gui/app` and so resolved to `<repo>/../build`, outside the repo, which is the
-off-by-one `repo_root`'s own docstring warns about; it now goes through `repo_root()`, and
-the gate pins the **resolved path** rather than the number of `..` segments. A separate
-pre-existing defect the sweep surfaced and did *not* fix is recorded in the gate's
-`CANNOT_IMPORT_STANDALONE`: `services/index_helpers.py` cannot be imported first
-(`index_helpers` → `models/__init__` → `models.session` → `commands/__init__` →
-`commands.segment_structure_cmds` → back), enabled by the eager re-exports in those two
-`__init__.py` files.
+- **The check must be a subprocess** — in-process the answer is always "PyQt6 is loaded"
+  once any other test imported it.
+- **A deferred import is still a dependency.** With the import-time sweep green,
+  `run_pipeline.sh` on a PyQt6-less machine still died in stage 2: three call sites did
+  `from app.utils import repo_root` *inside a function body*. The gate reads the AST for a
+  moved name at **any** nesting depth, and separately refuses PyQt6 in a subprocess and
+  drives the writers that failed.
+The `services/` sweep is a **deny**-list (`QT_SERVICES`, each entry carrying its reason);
+stale entries fail too. One pre-existing defect the sweep surfaced and did *not* fix is
+recorded in `CANNOT_IMPORT_STANDALONE`: `services/index_helpers.py` cannot be imported first
+(a cycle enabled by eager re-exports in two `__init__.py` files).
 
 Scroll-wheel on QSpinBox/QDoubleSpinBox is intentionally disabled (overridden in `main.py`).
 
-**Numeric fields**: any field holding a *physical length* (BL initial thickness, mesh sizes, domain coordinates, resampling spacing, seed size/radius) must use `views/clean_double_spin_box.py::SciDoubleSpinBox`, not `CleanDoubleSpinBox`. It accepts/displays scientific notation, steps by decade, and has no hardcoded floor — a fixed-notation box silently clamps the 1e-7..1e-8 first-cell heights real CFD needs. Range lower bounds stay at 0 and invalid values are rejected by `MeshConfig.validate()` with a message, never by UI clamping.
+**Numeric fields**: any field holding a *physical length* (BL initial thickness, mesh sizes,
+domain coordinates, resampling spacing, seed size/radius) must use
+`views/clean_double_spin_box.py::SciDoubleSpinBox`, not `CleanDoubleSpinBox`. It
+accepts/displays scientific notation, steps by decade, and has no hardcoded floor — a
+fixed-notation box silently clamps the 1e-7..1e-8 first-cell heights real CFD needs. Range
+lower bounds stay at 0 and invalid values are rejected by `MeshConfig.validate()` with a
+message, never by UI clamping.
 
 **Length units** (`app/services/units.py`, Qt-free): the model declares ONE length unit
 (Mesh panel, top row). It is **not cosmetic** — the solver is dimensional. Per the UNICONES
-manual `fs_UnitRe` is *per metre* and `Linf` is *metres per grid unit* ("input 1 if
-dimensional in meters"; its own sample uses `Linf 0.0254` for an inch grid), so
+manual `fs_UnitRe` is *per metre* and `Linf` is *metres per grid unit*, so
 **Re = fs_UnitRe × Linf**. A mm mesh left at `Linf = 1` runs at 1000× the intended Reynolds
 number with a mesh that looks perfect.
-
-Rules:
-- **`Linf` is derived from the declared unit**, not typed. `SolverConfig.linf_from_unit`
-  is True for anything new; `load_from_dict` turns it **off** for a config that has a
-  hand-set `linf` and no `length_unit`, so a pre-units case keeps its Reynolds number.
-  `unit_check()` then reports the discrepancy naming the unit that `linf` implies.
-- **Changing the unit relabels; it never rescales.** Only two things convert numbers:
-  `Linf`, and coordinates at *import* (`views/import_unit_dialog.py`, asked once per
-  import action, defaulting to no conversion, silent + no-op when headless).
-- **Units are shown as the spin box's own `setSuffix`**, never baked into label text —
-  the suffix rides on the widget owning the number and cannot be forgotten. Only
+- **`Linf` is derived from the declared unit**, not typed. `SolverConfig.linf_from_unit` is
+  True for anything new; `load_from_dict` turns it **off** for a config with a hand-set
+  `linf` and no `length_unit`, so a pre-units case keeps its Reynolds number. `unit_check()`
+  reports the discrepancy naming the unit that `linf` implies.
+- **Changing the unit relabels; it never rescales.** Only two things convert numbers: `Linf`,
+  and coordinates at *import* (`views/import_unit_dialog.py`, asked once per import action,
+  defaulting to no conversion, silent + no-op when headless).
+- **Units are shown as the spin box's own `setSuffix`**, never baked into label text. Only
   physical lengths get one; growth rates, angles and counts must not.
-  `views/panels/mesh_units_mixin.py::LENGTH_FIELDS` must equal the panel's
-  `SciDoubleSpinBox` set — `tests/test_units.py` fails the build otherwise, which is how
-  a field added later cannot silently lose its unit.
-- The visible defence against a *plausible* wrong unit is the **reference Reynolds
-  number** read-out on the Solver panel (`views/panels/solver_units_mixin.py`) and the
-  `[INFO] reference Reynolds number` line in `run_pipeline.py`. The size-plausibility
-  check only catches gross errors and says so.
-- The mesher **records but never converts** `LENGTH_UNIT` (it only compares lengths with
-  each other); it prints it in the banner, so it also lands in the provenance sidecar.
+  `views/panels/mesh_units_mixin.py::LENGTH_FIELDS` must equal the panel's `SciDoubleSpinBox`
+  set — `tests/test_units.py` fails the build otherwise.
+- The visible defence against a *plausible* wrong unit is the **reference Reynolds number**
+  read-out on the Solver panel (`views/panels/solver_units_mixin.py`) and the
+`[INFO] reference Reynolds number` line in
+  `run_pipeline.py`. The size-plausibility check only catches gross errors and says so.
+- The mesher **records but never converts** `LENGTH_UNIT`; it prints it in the banner, so it
+  lands in the provenance sidecar.
 
-**The user-facing log is a service, not a widget**: say things with `AppController.log()` (controllers) or `app/services/user_log.py` (views) — never `main_window.log_panel.log(...)`, which is how 255 reach-throughs accumulated. `LogPanel` is a registered sink; sinks get the RAW message and classify for themselves, and the durable file mirror happens in the service ONLY (a second one in the panel writes every line twice). `user_log.log()` attaches the file handler itself, so a process that never ran the GUI's `main()` still leaves its log on disk. Gated by `tests/test_user_log_seam.py`, which fails the build on a new reach-through. This is a different log from `get_logger(__name__)`, which is developer diagnostics.
+**The user-facing log is a service, not a widget**: say things with `AppController.log()`
+(controllers) or `app/services/user_log.py` (views) — never `main_window.log_panel.log(...)`,
+which is how 255 reach-throughs accumulated. `LogPanel` is a registered sink; sinks get the
+RAW message and classify for themselves, and the durable file mirror happens in the service
+ONLY (a second one in the panel writes every line twice). `user_log.log()` attaches the file
+handler itself, so a process that never ran the GUI's `main()` still leaves its log on disk.
+Gated by `tests/test_user_log_seam.py`. This is a different log from `get_logger(__name__)`,
+which is developer diagnostics.
 
-**User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` call — with **two recorded exemptions, and no third without a helper**: `views/case_dir_dialog.py` (the case-dir question, now **four** mutually exclusive dispositions — #33 restored `CASE_ARCHIVE`, see below) and `controllers/curve_join_ctrl.py` (keep / merge). The graded set is `report_*`, a two-way `confirm`, and `confirm_destructive`; none of the two exempted prompts is a yes/no, and both still make the headless early-return themselves, which is the part the helpers exist to centralise. A third multi-way prompt is the point at which `app/utils.py` grows a `choose()` rather than the list growing again — `report_error` (failed write, data at risk → Critical), `report_warning` (failed read → Warning), `report_info` (a precondition, nothing broke → Information), `confirm(..., headless_default=)` (Yes/No), `confirm_destructive(..., action_label=, option_label=)` (an irreversible action: a **named** button, Cancel as the default, an optional extra tick, and **no `headless_default` at all** — a destructive prompt has no safe default to proceed with, and making it an argument would let a caller opt an unattended path into deleting files; it returns `None` when declined and the tick's state otherwise). **`confirm_destructive` is the rule working rather than an exception to it**: #33's clean confirmation IS a yes/no, so the file exemption above did not cover it — what it needed beyond `confirm` was a details pane and one checkbox, i.e. a helper, and it was caught in review arguing from the wrong half of this paragraph. All of them no-op or return the default on a headless platform, which is what keeps tests, CI and the headless pipeline from hanging on a modal. Any new dock widget needs `setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
+**User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` — with
+**two recorded exemptions, and no third without a helper**: `views/case_dir_dialog.py` (the
+case-dir question, four mutually exclusive dispositions) and `controllers/curve_join_ctrl.py`
+(keep / merge). Neither is a yes/no, and both make the headless early-return themselves. The
+graded set is `report_error` (failed write, data at risk → Critical), `report_warning`
+(failed read → Warning), `report_info` (a precondition, nothing broke → Information),
+`confirm(..., headless_default=)` (Yes/No), and `confirm_destructive(..., action_label=,
+option_label=)` (an irreversible action: a **named** button, Cancel as the default, an
+optional extra tick, and **no `headless_default` at all** — a destructive prompt has no safe
+default, and making it an argument would let an unattended path opt into deleting files; it
+returns `None` when declined and the tick's state otherwise). A third multi-way prompt is the
+point at which `app/utils.py` grows a `choose()` rather than the exemption list growing again.
+All of them no-op or return the default on a headless platform. Any new dock widget needs
+`setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
 
-**Pop-up stacking** (`app/popup_stack.py`, re-exported from `app/utils.py`): every
-modeless pop-up goes through `keep_on_top(w)` **before** `show()`, which re-parents it to
-the **top-level** window, leaves it an ordinary normal-level `Qt.Dialog`, and installs the
-three filters that put it back on top — `_PopupRaiser` (on the main window, for every
-activation), `_ClickRaiser` (on the **QApplication**, for every mouse RELEASE) and
-`_ShowRaiser` (on the pop-up, so a call site that only `show()`s is covered).
-Activation alone is not enough and that is not a detail: it fires on the FIRST click of
-the main window only, so every click after it reorders the window in front of the pop-up
-with no Qt event to hear, and a raise deferred into the middle of a canvas *drag* is
-undone when the drag ends. Releasing is the moment the platform has finished reordering.
-The app-wide filter returns on its first line for anything that is not a release, and
-`raise_later` keeps at most one raise in flight per widget. Both shortcuts on the window LEVEL are wrong and were each shipped once:
-`WindowStaysOnTopHint` floats the pop-up above **every** application (intrusive), and
-`Qt.Tool` — an NSPanel with `hidesOnDeactivate` — makes the pop-up **disappear** the
-moment the user clicks another app while the main window stays visible (measured on
-Qt 6.10: `isExposed()` → False). Disabling the auto-hide is not an escape: Qt6 ignores
-`WA_MacAlwaysShowToolWindow` (the cocoa plugin reads the `_q_macAlwaysShowToolWindow`
-*window property*) and a Tool window sits at NSFloatingWindowLevel, i.e. back to floating
-over the other app. **Every raise goes through `raise_later()`** — a raise issued from
-inside the event that reorders the windows is undone when the platform finishes that
-event, which is why the arc/line editor (shown from the canvas press that completes the
-shape) opened *underneath* the main window once the Tool level was gone. Re-parenting is
-load bearing twice over — the raiser finds pop-ups in the top-level's direct child list,
-and a pop-up parented to a panel is hidden with that panel. Gated by
-`tests/test_popup_stacking.py`. `BatchDialog` opts out on purpose (it runs for minutes and
-must be free to sit behind the main window).
+**Pop-up stacking** (`app/popup_stack.py`, re-exported from `app/utils.py`): every modeless
+pop-up goes through `keep_on_top(w)` **before** `show()`, which re-parents it to the
+**top-level** window, leaves it an ordinary normal-level `Qt.Dialog`, and installs three
+filters — `_PopupRaiser` (on the main window, per activation), `_ClickRaiser` (on the
+**QApplication**, per mouse RELEASE) and `_ShowRaiser` (on the pop-up). Activation alone is
+not enough: it fires on the FIRST click of the main window only, so every later click
+reorders the window in front with no Qt event to hear, and a raise deferred into the middle
+of a canvas *drag* is undone when the drag ends. Releasing is when the platform has finished
+reordering. Both window-LEVEL shortcuts are wrong and were each shipped once:
+`WindowStaysOnTopHint` floats above **every** application, and `Qt.Tool` — an NSPanel with
+`hidesOnDeactivate` — makes the pop-up **disappear** when the user clicks another app
+(measured on Qt 6.10: `isExposed()` → False); disabling the auto-hide is not an escape (Qt6
+ignores `WA_MacAlwaysShowToolWindow`, and a Tool window sits at NSFloatingWindowLevel).
+**Every raise goes through `raise_later()`** — a raise issued from inside the event that
+reorders the windows is undone when the platform finishes that event. Re-parenting is load
+bearing twice: the raiser finds pop-ups in the top-level's direct child list, and a pop-up
+parented to a panel is hidden with that panel. Gated by `tests/test_popup_stacking.py`.
+`BatchDialog` opts out on purpose (it runs for minutes and must be free to sit behind).
 
-**Duplicate/transform closure**: `transform_apply_ctrl` is type-preserving (a line stays a
-line, an **arc stays an arc**…), and the copy inherits the source's `closed` flag — except
-in the polygon-bake fallback (formula curves, discrete file edges, and a circle/arc under
-a NON-uniform scale, which is an ellipse the model cannot hold), where the flag is
-*re-derived from the points* by `_baked_edge_is_closed`. The arc's image is read off three
-TRANSFORMED POINTS — centre, arc start, quarter-sweep point — so one code path serves
-every similarity transform and a mirror's reversed sweep (`theta1 < theta0`, which both
-samplers walk) comes out of the geometry rather than a per-transform sign rule; the
-quarter point rather than the midpoint, because `sin(sweep/2)` vanishes at exactly
-|sweep| = 2π. Whatever still bakes is NAMED in the log with the reason. `SegmentModel.closed` defaults True and is only
-ever read for `curve_type == "polygon"`, so every other kind of edge carries True while
-drawing open; copying that flag onto a baked polygon is what silently closed a duplicated
-arc. Discrete edges must not take the PROJECT's closure either — one segment of a closed
-imported outline is itself an open polyline. Gated by `tests/test_transform_closure.py`.
+**Duplicate/transform closure**: `transform_apply_ctrl` is type-preserving (a line stays a line, an
+**arc stays an arc**…), and the copy inherits the source's `closed` flag — except in the
+polygon-bake fallback (formula curves, discrete file edges, and a circle/arc under a NON-uniform
+scale, which is an ellipse the model cannot hold), where the flag is *re-derived from the points*
+by `_baked_edge_is_closed`. The arc's image is read off three TRANSFORMED POINTS — centre, arc
+start, quarter-sweep point — so one code path serves every similarity transform and a mirror's
+reversed sweep comes out of the geometry rather than a per-transform sign rule; the quarter point
+rather than the midpoint, because `sin(sweep/2)` vanishes at |sweep| = 2π. Whatever still bakes is
+NAMED in the log with the reason. `SegmentModel.closed` defaults True and is only ever read for
+`curve_type == "polygon"`, so every other edge carries True while drawing open — copying that flag
+onto a baked polygon is what silently closed a duplicated arc. Discrete edges must not take the
+PROJECT's closure either: one segment of a closed imported outline is itself an open polyline.
+Gated by `tests/test_transform_closure.py`.
 
-**The discrete geometry is ONE polyline, and both ends of that have to be handled.**
-A session stores every discrete point in `original_points`, indexed by `split_indices`
-into file segments, and the canvas draws it as a single pyqtgraph item.
-- **Baking order matters.** `BakeCurveToGeometryCmd` welds a converted edge onto
-  whichever END of the polyline it touches, so an edge touching neither lands as a
-  separate piece. `bake_selected_curve` therefore chains a multi-edge selection with
-  `_chain_edges` (the same one Join uses) and bakes head-to-tail as ONE undo step
-  (`BakeCurvesToGeometryCmd`) — the selection is index-sorted, so the DRAWING order,
-  which the user cannot fix by clicking differently, was deciding the result.
-- **Where the polyline must NOT join comes from the model.** `_geometry_connect`
-  (in `segment_canvas_ctrl`) breaks it at any index interval covered by no file
-  segment — `update_file_segments_from_indices` already drops the bridging pair —
-  and passes that as pyqtgraph's `connect` array. Without it two disjoint pieces are
-  drawn joined: a "diagonal" that belongs to no edge and cannot be selected away.
-  Deliberately not a spacing heuristic, which would also break a long straight edge
-  beside a finely sampled arc.
-- **An empty model still has to be drawn.** `_apply_geometry_update` returns early
-  when `original_points is None`, so `_clear_geometry_canvas` does the wiping —
-  layer, hit-test points, split markers, closing edge, stats — but never the
-  analytic (curve) items, which a session can legitimately have on their own.
+**The discrete geometry is ONE polyline, and both ends of that have to be handled.** A session
+stores every discrete point in `original_points`, indexed by `split_indices` into file segments,
+drawn as a single pyqtgraph item.
+- **Baking order matters.** `BakeCurveToGeometryCmd` welds a converted edge onto whichever END of
+  the polyline it touches, so an edge touching neither lands as a separate piece.
+  `bake_selected_curve` chains a multi-edge selection with `_chain_edges` (the same one Join uses)
+  and bakes head-to-tail as ONE undo step, index-sorted — otherwise the DRAWING order, which the
+  user cannot fix by clicking differently, decides the result.
+- **Where the polyline must NOT join comes from the model.** `_geometry_connect` (in
+  `segment_canvas_ctrl`) breaks it at any index interval covered by no file segment and passes that
+  as pyqtgraph's `connect` array; without it two disjoint pieces are drawn joined by a "diagonal"
+  belonging to no edge that cannot be selected away. Deliberately not a spacing heuristic, which
+  would also break a long straight edge beside a finely sampled arc.
+- **An empty model still has to be drawn**: `_apply_geometry_update` returns early when
+  `original_points is None`, so `_clear_geometry_canvas` wipes layer, hit-test points, split
+  markers, closing edge and stats — but never the analytic items, which a session can have alone.
 
-**Window layout** is persisted by `app/services/ui_state.py` — **window geometry and
-dock state, and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when
-the layout changes so stale state is ignored rather than restored). It never touches
-`QSettings` when headless. **The active stage and the sidebar sections are
-deliberately NOT persisted, and that is a reversal, not an omission** (issue #27,
-USER-REQUESTED): both used to be saved and restored here on the same
-resume-where-you-stopped argument, and the user weighed that against landing
-somewhere unpredictable — with no way to reset it — and chose predictability. Every
-launch therefore starts on **CAD** with **every** sidebar section collapsed, and both
-defaults come from code that was already there rather than from a new constant:
-`mode_combo`'s own index 0 (`main_window.py`) and
-`CollapsibleSection`'s own `start_collapsed=True` default — measured: of the 39
-`start_collapsed` mentions under `app/`, **zero** pass `False`, so the default is the
-guarantee and no call site overrides it. **The `LAYOUT_VERSION` bump orphans more than the keys this removed**, and
-that is worth stating rather than discovering: `_section_key` is built from `_PREFIX`,
-so moving to `ui/v2` drops every existing user's saved geometry, dock state and
-*dialog*-accordion flags along with the stage and section keys. The bump was requested
-in the issue and the one-time loss accepted there; what it buys is that no v1 key can
-ever come back as a live value. `restore_active_stage` and the private `_sections` walker are **gone** —
-the save half went with the restore half, because a value written and never read
-reads as a working feature. The convenience removed was real; do not reinstate it as
-a bug fix. `tests/test_ui_state_and_dialogs.py` checks 1/2/4 are the **inverted**
-versions of the checks that used to pin the old behaviour (seeded with a previous
-version's `ui/v1` stage + section keys, rebuilt in the old key format from the live
-sidebar so the stale state is really the kind the deleted restore consumed), so
-bringing either restore back fails the gate. A **dialog's** accordion is a separate,
-still-wanted feature and its *code path* is untouched: it persists itself through
-`save_section_states(scope, sections)` / `restore_section_states(...)` with an
-explicit scope string, which never walked `sidebar_stack` — the Edit-BL dialog still
-opens all-closed and reopens the groups the user left open. Its *stored* flags are
-not exempt from the version bump, per the paragraph above.
+**Window layout** is persisted by `app/services/ui_state.py` — **window geometry and dock state,
+and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when the layout changes so
+stale state is ignored rather than restored). It never touches `QSettings` when headless. **The
+active stage and the sidebar sections are deliberately NOT persisted, and that is a reversal, not
+an omission** (#27, USER-REQUESTED): the user weighed resume-where-you-stopped against landing
+somewhere unpredictable with no way to reset it, and chose predictability. Every launch starts on
+**CAD** with **every** sidebar section collapsed, both from defaults already in the code
+(`mode_combo` index 0; `CollapsibleSection`'s `start_collapsed=True`, which no call site
+overrides). The version bump also orphans saved geometry, dock state and *dialog* accordion flags,
+accepted in the issue; what it buys is that no v1 key can come back as a live value.
+`restore_active_stage` and the private `_sections` walker are **gone**, save half with restore half.
+**Do not reinstate the convenience as a bug fix** — `tests/test_ui_state_and_dialogs.py` checks
+1/2/4 are the **inverted** versions of the ones that pinned the old behaviour. A **dialog's**
+accordion is a separate, still-wanted feature with an untouched code path
+(`save/restore_section_states(scope, sections)`, which never walked `sidebar_stack`).
 
 **"⟳ Restart" closes THIS window first and spawns only if the close happened**
 (`services/gui_restart.py`, Qt-free — `restart_command` / `preflight` / `launch`;
-`lifecycle_ctrl.restart_gui`; the button sits beside `Run All` in the persistent tab
-row, so it is present in every stage). USER-REQUESTED (2026-08-20, issue #28):
-`Clear All` resets the model but leaves the process — its view state, temp dir, log
-and worker threads — in place, so a truly fresh instance meant quitting and
-relaunching by hand. Four rules:
-- **The order IS the feature.** Spawning first and *then* asking "discard unsaved
-  changes?" leaves **two** GUIs running when the answer is No, which is the opposite
-  of the request. So `main_window.close()` goes first and the child is launched only
-  if it returned True.
-- **The outcome comes from `close()`'s return value, not from `isVisible()`.**
-  Measured under the offscreen platform: a *cancelled* close on a window that was
-  never shown reports `isVisible() == False` and `isHidden() == True` — identical to
-  a successful one — while `close()` returns False exactly when the close event was
-  ignored, shown or not. The issue's own text suggests `isVisible()`; it would have
-  made the gate pass for the wrong reason.
-- **There is no second copy of the unsaved-work prompt.** The close routes through
-  `MainWindow.closeEvent` → `handle_close_event`, which already covers modified
-  geometry sessions *and* a dirty Mesh/Solver/IB configuration, saves the layout
-  before teardown, joins every worker within its bounded budget, and removes the
-  autosave file — so the new instance does not offer to recover the session the user
-  just chose to leave. A second prompt would be a second place to forget a
-  dirty-state source.
-- **`proc_util.popen_kwargs()` must NOT be reused here.** It sets `stdout=PIPE`
-  (with `stderr` folded in) for the streaming workers; with the parent gone nobody
-  drains that pipe and the child stalls once the buffer fills. The restart builds its
-  own kwargs — `start_new_session=True` repeated deliberately rather than inherited,
-  `stdin`/`stdout`/`stderr` all `DEVNULL` — and passes **no arguments**, because the
-  request is a brand-new session and carrying the case over would be a different
-  feature. The entry point resolves through `paths.repo_root()`, never by counting
-  `..` segments.
-`preflight()` exists because of that ordering: a bad interpreter or a missing
-`main.py` has to be caught while there is still a window to report it in. The
-residue is named rather than hidden — a `Popen` that fails *after* the window is
-gone can only reach `user_log`'s file mirror, since there is no parent window left
-to put a modal on and the app is already quitting; the gate pins that it is at
-least *said*. The button's **caption is a measurement, and the measurement lives in
-the gate rather than in a comment**: at the 900px minimum window the tab row is
-540px, "⟳ Restart" (88px) leaves 31px of slack in the tightest stage and
-"⟳ New Session" (119px) leaves 0 — but those numbers are re-derived per run by
-`tests/test_gui_restart.py`, which sums what each visible widget asked for across
-**every** stage, because a tab bar is visible in some stages and hidden in others
-(measuring in the IB stage reports 171px of slack where CAD has 31). The two
-tab-row buttons also share one QSS builder (`_tab_row_btn_qss`) for exactly that
-reason: the fit is measured against padding and font size, so two copies of them
-could drift apart. Gated by `tests/test_gui_restart.py` — 9 properties, the
-source-reading ones AST-based and injection-verified, with a negative control on
-`popen_kwargs` and its blind spots named in its own docstring — plus a one-off
-acceptance run: the real spawn was reparented to init in its own session and
-outlived the parent.
+`lifecycle_ctrl.restart_gui`; the button sits beside `Run All` in the persistent tab row). #28,
+USER-REQUESTED. Four rules:
+- **The order IS the feature** — spawning first and *then* asking "discard unsaved changes?" leaves
+  **two** GUIs running when the answer is No.
+- **The outcome comes from `close()`'s return value, not from `isVisible()`.** Measured offscreen:
+  a *cancelled* close on a never-shown window reports `isVisible() == False` / `isHidden() == True`,
+  identical to a successful one, while `close()` returns False exactly when the event was ignored.
+  The issue's own text suggests `isVisible()`; it would have made the gate pass for the wrong reason.
+- **There is no second copy of the unsaved-work prompt** — the close routes through
+  `MainWindow.closeEvent` → `handle_close_event`, which already covers modified sessions *and* a
+  dirty Mesh/Solver/IB config, saves the layout, joins every worker, and removes the autosave file.
+- **`proc_util.popen_kwargs()` must NOT be reused here** — it sets `stdout=PIPE`, and with the
+  parent gone nobody drains that pipe, so the child stalls once the buffer fills. The restart builds
+  its own kwargs (`start_new_session=True`, all three streams `DEVNULL`) and passes **no arguments**.
+  The entry point resolves through `paths.repo_root()`, never by counting `..` segments.
+`preflight()` exists because of that ordering: a bad interpreter or missing `main.py` must be caught
+while there is still a window to report it in (a `Popen` failing after that can only reach
+`user_log`'s file mirror). The button's **caption is a measurement living in the gate rather than a
+comment** — at the 900px minimum "⟳ Restart" leaves 31px of slack in the tightest stage and
+"⟳ New Session" leaves 0 — re-derived per run across **every** stage, because a tab bar is visible
+in some and hidden in others. The two tab-row buttons share one QSS builder (`_tab_row_btn_qss`) for
+that reason. Gated by `tests/test_gui_restart.py` (9 properties, AST-based, injection-verified).
 
 **Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
-`mesh_bl_field_specs.py`, accordion + window fitting in `mesh_bl_dialog_layout.py`):
-the 21 BL parameters are collapsible groups (`_BL_FIELD_GROUPS`, mirroring the `.dat`
-parameter groups), **all closed to start** (USER-REQUESTED — the dialog opens as a list
-of headers and the window is only as tall as what was opened), plus Expand all /
-Collapse all. Only two things open a group and neither is a default: the state the user
-left it in (`ui_state.save/restore_section_states`), and an override (below).
-**`_BL_FIELD_GROUPS` must partition
-`_BL_FIELD_SPECS` exactly** — a key in no group is a parameter the user cannot reach
-that is still written back on OK — gated by `tests/test_bl_dialog_sections.py`, with
-stray keys falling into a trailing "Other" group as a backstop. A group holding a value
-that differs from the global default expands itself, so a per-geometry override never
-hides behind a collapsed header. The window follows the open groups
-(`_relayout` → `_autofit_height`), bounded by the screen and never below a height the
-user set by dragging. Two Qt facts that fit depends on, both learned the hard way:
-`QScrollArea::sizeHint()` is **clamped to 24 font heights**, so the dialog's own
-`sizeHint()` stops growing after a group or two (the fit measures the scroll's shortfall
-against its cap and the leftover slack instead); and hiding a widget only *posts* the
-layout request, so `CollapsibleSection._on_toggle` invalidates its own layout — without
-that, every reader (including the sidebar) sizes itself from the state the section just
-left. The leftover-space absorber (trailing spacer / per-segment list) is
-**stretch 0 + Expanding**, never a stretched item, which would compete proportionally
-with the capped scroll area and leave the groups short of their own cap.
+`mesh_bl_field_specs.py`, accordion + fitting in `mesh_bl_dialog_layout.py`): the 21 BL parameters
+are collapsible groups (`_BL_FIELD_GROUPS`, mirroring the `.dat` groups), **all closed to start**
+(USER-REQUESTED), plus Expand all / Collapse all. Only two things open a group and neither is a
+default: the state the user left it in (`ui_state`), and a group holding a value differing from the
+global default, so a per-geometry override never hides behind a collapsed header.
+**`_BL_FIELD_GROUPS` must partition `_BL_FIELD_SPECS` exactly** — a key in no group is a parameter
+the user cannot reach that is still written back on OK — gated by
+`tests/test_bl_dialog_sections.py`, with stray keys falling into a trailing "Other" group as a
+backstop. The window follows the open groups (`_relayout` → `_autofit_height`), bounded by the
+screen and never below a height the user set by dragging. Two Qt facts the fit depends on:
+`QScrollArea::sizeHint()` is **clamped to 24 font heights**, so the dialog's own `sizeHint()` stops
+growing after a group or two (the fit measures the scroll's shortfall against its cap instead); and
+hiding a widget only *posts* the layout request, so `CollapsibleSection._on_toggle` invalidates its
+own layout. The leftover-space absorber is **stretch 0 + Expanding**, never a stretched item, which
+would compete proportionally with the capped scroll area.
 
-**Transient results (Results tab playback)**: a transient run appends one Tecplot
-zone per dumped step, so the Results view is a movie. `models/tecplot_index.py`
-scans the file ONCE for the byte offset of every `zone` header and caches that
-index by (path, mtime, size); `TecplotResult.from_file` then seeks to one zone's
-byte range instead of `readlines()`-ing the whole file and rescanning it — 0.35 s
-→ 0.07 s per frame on a 113 MB / 10-zone run, which is what makes playback
-affordable at all. `models/result_series.py` adds the bounded (by BYTES, not
-frame count) LRU frame cache and the per-variable global range.
-`views/result_playback_mixin.py` owns the transport (First, Prev, Play/Pause,
-Next, Last, speed, Loop, Lock scale). **Looping is opt-in**: by default a run plays
-through once and stops on the last frame (the converged solution), and the same
-checkbox governs the step buttons, which clamp at the ends — and grey themselves
-out there — instead of wrapping to the far end of the run. Play at the end of a
-finished non-looping run rewinds first. First/Last are jumps rather than steps, so
-Loop does not apply to them; they grey out only on the frame they lead to. Two
-further rules decide whether the animation is readable:
-- **The colour scale can be pinned across the whole run** ("Lock scale", shown only
-  for a multi-zone result), because auto-scaling each frame to its own min/max
-  repaints the same colours onto a changing range — a vorticity field decaying
-  0.089 → 0.019 looks *identical* frame to frame. Ticking it scans all frames for
-  the current variable (cached, so it is paid once) and pins that range.
-  **It is OFF by default (USER-REQUESTED)**: "Auto (fit to data)" has to mean the
-  data on screen, i.e. the frame being shown. A **manual** clim always wins over
-  both: the lock fixes auto-scaling, it does not overrule an explicit choice, and
-  it is dropped when the displayed variable changes.
-- **A colour range — pinned OR typed — belongs to ONE variable.** The lock always
-  carried `_range_lock_var` beside `_range_lock`; the manual clim was one unkeyed
-  tuple, so Auto off → Min/Max → Apply coloured *every* variable, and a pressure
-  range rendered vorticity as one flat colour or one saturated blob with the
-  Min/Max boxes still showing the old numbers as if they belonged to it —
-  USER-REPORTED (2026-08-20, issue #24). It is now `_clim_by_var`
-  (`dict[str, tuple]`), written by `set_clim` under the displayed variable and
-  read by `render` for the variable it is about to draw; the same fact got the
-  same shape rather than a second pattern. Four rules: **the MODE stays global**
-  (one Auto/Custom checkbox with one meaning — making it per-variable would be a
-  second hidden mode), so switching to Auto does not forget the numbers; **a
-  variable with no remembered pair is SEEDED from its own data range on first
-  render and remembered**, which is both what stops it inheriting another
-  variable's numbers and what stops playback re-seeding (and so drifting) every
-  frame; **precedence is untouched** — manual > lock > auto data range, enforced
-  where it always was, in `playback_clim` returning None unless `_clim_auto`;
-  and **the store is view state for the loaded result**, cleared by
-  `load_result_path` / `clear` (a new run must not wear the old one's numbers)
-  but deliberately kept across frames of one run. It is written ONLY through
-  `remember_clim` / `set_clim` and read through `manual_clim`, `render`'s seed
-  path included — the same reason `recordBoundaryEdge` is the only way to write
-  a boundary edge's BC.
-  The panel's Min/Max boxes follow the range in force through the existing
-  `result_rendered` signal — never by reading canvas privates — and in Custom
-  mode they are refreshed on exactly two events, because there they are an input
-  the user may be halfway through typing: the variable MOVED, or the canvas
-  reports `clim_seeded`, i.e. the range on screen is not one the user typed.
-  **The seed flag is why the refresh is not keyed on the variable NAME**: a
-  newly loaded run clears the store and re-seeds under the *same* variable name,
-  so a name-keyed refresh left the boxes showing the previous run's numbers —
-  verbatim the reported symptom, found in review of the first version of this
-  fix and now its own check.
-  And **the Auto checkbox IS the mode, in both directions**: unticking it used to
-  tell the canvas nothing until Apply, so the panel showed the Custom box while
-  the canvas kept auto-scaling every frame to its own min/max and the Min/Max
-  boxes — no longer refreshed by the Auto branch — froze on the frame the untick
-  happened on. That is the same "the boxes describe a range that is not on
-  screen" symptom reached by the other route, and it needs a multi-frame run to
-  see, which is why it is its own section in the gate. Unticking now seeds from
-  the frame on screen, so nothing jumps at that moment.
-  Gated by `tests/test_result_clim_per_variable.py` (8 properties, every one
-  verified by injection — including both wrong versions found in review — with
-  the one blind spot named in its docstring).
-- **`set_result` reuses the triangulation when the incoming frame has the same
-  nodes**, which also keeps probes/line/extrema alive across a step (they mark
-  geometry, and the geometry did not move). Field caches are always dropped.
-Frames are labelled by POSITION (`Frame 4 / 10`): the solver writes `t = "time 0"`
-for *every* zone, so the file carries no real timestamp to show. Gated by
-`tests/test_result_playback.py`, which pins the byte-range parse to be identical
-to a whole-file scan, and `tests/test_result_clim_per_variable.py` for the
-per-variable colour range.
+**Transient results (Results tab playback)**: a transient run appends one Tecplot zone per dumped
+step, so the Results view is a movie. `models/tecplot_index.py` scans the file ONCE for the byte
+offset of every `zone` header and caches that index by (path, mtime, size);
+`TecplotResult.from_file` then seeks to one zone's byte range instead of reading the whole file —
+0.35 s → 0.07 s per frame on a 113 MB / 10-zone run, which is what makes playback affordable.
+`models/result_series.py` adds the bounded (by BYTES, not frame count) LRU frame cache and the
+per-variable global range; `views/result_playback_mixin.py` owns the transport. **Looping is
+opt-in**: a run plays through once and stops on the last frame (the converged solution), and the
+same checkbox governs the step buttons, which clamp at the ends — greying out there — instead of
+wrapping. Play at the end of a finished non-looping run rewinds first; First/Last are jumps, so Loop
+does not apply.
+- **The colour scale can be pinned across the whole run** ("Lock scale", shown only for a
+  multi-zone result), because auto-scaling each frame to its own min/max repaints the same colours
+  onto a changing range — a vorticity field decaying 0.089 → 0.019 looks *identical* frame to frame.
+  **OFF by default (USER-REQUESTED)**: "Auto (fit to data)" has to mean the frame on screen. A
+  **manual** clim always wins, and the lock is dropped when the displayed variable changes.
+- **A colour range — pinned OR typed — belongs to ONE variable** (`_clim_by_var`; #24,
+  USER-REPORTED). Four rules: **the MODE stays global** (one Auto/Custom checkbox with one meaning),
+  so switching to Auto does not forget the numbers; **a variable with no remembered pair is SEEDED
+  from its own data range on first render and remembered**, which stops both inheritance and
+  per-frame re-seeding drift; **precedence is manual > lock > auto**, enforced in `playback_clim`
+  returning None unless `_clim_auto`; and **the store is view state for the loaded result**, cleared
+  by `load_result_path` / `clear` but kept across frames. Written ONLY through `remember_clim` /
+  `set_clim`, read through `manual_clim` / `render`'s seed path. The panel's Min/Max boxes follow the
+  range in force through the `result_rendered` signal, never by reading canvas privates, and in
+  Custom mode refresh on exactly two events: the variable MOVED, or the canvas reports
+  `clim_seeded`. **The seed flag is why the refresh is not keyed on the variable NAME** — a newly
+  loaded run re-seeds under the *same* name, so a name-keyed refresh left the previous run's numbers
+  on screen, verbatim the reported symptom. **The Auto checkbox IS the mode, in both directions**:
+  unticking seeds from the frame on screen, so nothing jumps and the boxes cannot freeze while the
+  canvas keeps auto-scaling. Gated by `tests/test_result_clim_per_variable.py` (8 properties, all
+  injection-verified).
+- **`set_result` reuses the triangulation when the incoming frame has the same nodes**, keeping
+  probes/line/extrema alive across a step. Field caches are always dropped.
+Frames are labelled by POSITION (`Frame 4 / 10`): the solver writes `t = "time 0"` for *every* zone.
+Gated by `tests/test_result_playback.py`, which pins the byte-range parse against a whole-file scan.
 
-**A restarted solve is ONE run split across several files, and it plays as one
-animation** (`services/result_legs.py`, Qt-free — `list_result_legs` → a
-`LegSeries` of `ResultLeg`s in playback order plus its warnings as data;
-`ResultSeries` takes a LIST of paths). #32, USER-REQUESTED (2026-08-21), blocked
-by #30 because it reads the `RUN.txt` #30 writes. #26 moves a finished run's
-outputs into `work/prev_<NNN>/`, so the field output of a twice-restarted solve
-is three files and the transport could only ever animate one of them — watching
-the solve evolve meant opening each leg by hand and losing the animation at every
-boundary. Rules that are load bearing:
-- **A list, never a concatenated temp file.** The byte-offset index exists so a
-  frame costs 0.07 s instead of 0.35 s; merging hundreds of MB would throw that
-  away. So the per-file `tecplot_index` is untouched and a FLAT frame index sits
-  above it — global frame *k* → `(file, zone)`. Three things become global with
-  it: the numbering, the LRU **byte** budget (a solve restarted ten times must
-  not hold ten caches) and every range `global_range` reports. A change in ANY
-  file therefore drops EVERY cached frame and range, because the numbering shifts
-  and a frame kept under its old global number would serve another leg's zone.
-- **A leg is found by its STEM.** #30 renames an archived file's run tag to
-  `.prev_<NNN>`, so one solver output is `xtecp_sol_allz.dat.gui` live and
-  `xtecp_sol_allz.dat.prev_001` archived; `strip_archive_suffix` +
-  `strip_run_tag` (the inverse of `archive_name`, and the reason `strip_run_tag`
-  now exists in `case_files`) recovers the one name both carry. That also makes
-  it work on **pre-#30 archives**, which kept `.gui` — measured on this repo's
-  own `results/solver/case`.
-- **Order by ITERATION COUNT; lineage answers a different question.** The first
-  version of this said lineage was NOT recoverable and that was simply FALSE —
-  found by the Spec axis. `case_archive.bare_link_for_archived_dump` links an
-  archived dump into `work/` under its ARCHIVED name, so a `resumed_from` reading
-  `binDumpZ.dat.prev_001` names that leg exactly, and #31's own
-  `_last_resumed_basename` already relies on it. What lineage really gives is a
-  PREDECESSOR relation, never a position: it says where a leg started, not how
-  far it went, and two legs resumed from the same point are indistinguishable by
-  it — which is exactly the re-run case. So the corrected `end` orders (creation
-  order breaking ties) and lineage DETECTS the overlap where a span cannot.
-- **How far a leg got is NOT computed here** (#43): every leg's span comes from
-  `case_run_note.iteration_span`, which the restart chooser reads too, so the two
-  windows cannot describe one archive differently. #32 shipped the note as the
-  only source, so an archive predating #30 played with no count while `_live_leg`
-  eight lines below computed its own from a convergence history with that same
-  reader — on `results/solver/case` that was every archive it has. Ordering is by
-  the CORRECTED `end`, not the raw last row: two legs printing at different
-  intervals sort correctly only after the correction.
-- **A leg that can be measured NEITHER way is played WHERE IT RAN, not last** — a
-  deliberate departure from the issue's "offered last", because that phrasing is
-  right for a chooser LIST and wrong for a playback ORDER. Not academic: the
-  FIRST version shipped the literal rule and the acceptance run against
-  `results/solver/case` played the solve **backwards** — newest leg first, the
-  two oldest after it. Such a leg inherits the last count recorded before it,
-  which is creation order except where a measured count says otherwise. #43
-  demotes this from the first line of defence to the **third**: it was written
-  when a `RUN.txt` was the only source, and it now only applies once both the
-  record and the convergence history have failed.
-- **An overlap is a MEASUREMENT** (#43), reported and never interleaved. A leg
-  reports a half-open **span** `(start, end]`, so the test is interval
-  intersection and the message names the iterations that repeat. Half-open is
-  load bearing: consecutive legs of a restart chain MEET at a boundary iteration,
-  and a closed range would report every ordinary restart as an overlap.
-  **Lineage** stays as the fallback for a pair whose spans cannot both be
-  measured — two legs whose notes record the same start really did re-run one
-  segment, and that holds when neither reports a count; a blank start is
-  deliberately not a key, since "cold start" and "we have no record" must not
-  match each other. **Non-monotonicity is gone**: "ran later, got no higher a
-  count" false-positives on a later leg covering an earlier, DISJOINT range, and
-  intersection strictly dominates it wherever both spans are known. Measured on
-  `results/solver/case`: `prev_001` and `prev_002` both ran 0-1000, an overlap
-  that was silent under #32 and is now named.
-- **The legs are the legs of ONE run.** A case run by both hosts holds
-  `…dat.gui` and `…dat.cli` side by side and those are two solves; the live
-  lookup always picked the file the user opened, and #43 extends the rule to the
-  archives. The anchor is the opened file's run tag — from its name, or from its
-  own `RUN.txt` when #30's rename took the tag off it — a leg whose tag differs
-  is excluded and NAMED, and a leg whose tag cannot be determined is included
-  rather than dropped. Note the direction that is evidence: opening the `.gui`
-  leg passes with or without the filter, so only the headless-leg direction
-  proves anything.
-- **Opening any leg opens the SOLVE. #43 asked nothing; since 2026-08-27 an
-  INTERACTIVE load asks, and a headless one still does not** (USER-REQUESTED —
-  see "Which legs play" below, which reverses half of this bullet and keeps the
-  other half exactly). What follows is #43's reasoning, unedited, because the
-  half that survives is the half it was really protecting: an unattended run must
-  not behave differently from what CI records.
-  #32 shipped "ask, do not assume": a `confirm` with `headless_default=False` on
-  every result load, plus `load_result_path(..., ask_legs=False)` for a caller
-  that must not open a modal (`postprocess_ctrl`, reaching into `pipeline_ctrl`'s
-  private `_pipeline_running`). That made the common case cost a click and made an
-  unattended run behave differently from an interactive one, so a CI screenshot
-  showed something the user never sees. The modal is gone, the permission flag is
-  gone with it, and so is that reach. **The residue is named rather than claimed
-  away**: `postprocess_ctrl` still reads `_pipeline_running` once, guarding the
-  load-FAILED modal — a *different* modal, predating #32, and one an unattended
-  run genuinely must not stop on. #43's story 45 asks for "no controller left
-  reaching into another mixin's private state"; what landed is the reach #32
-  added, not every reach. **`This leg only`** is the escape and it follows
-  `Lock scale`'s rules: shown only when the solve HAS more than one leg, never
-  persisted, unticked on every load. Restricting yields a ONE-leg series rather
-  than a second code path, so the cache, the labels and the ranges behave
-  identically either way. **Its visibility asks how many LEGS the solve has and
-  nothing else** — not the `multi` (frame-count) flag the rest of the transport
-  row uses. One zone per leg is an ordinary restarted solve, so ticking the box
-  can leave a single-frame series, and keying on `multi` hid the whole row
-  *including the box that had just been ticked*: the escape closed behind the
-  user. Found in review, measured at 3 legs x 1 zone.
-- **Which legs play is a CHOICE, and it is the user's** (`views/result_leg_picker.py`
-  + `views/result_leg_select_mixin.py`, gated by `tests/test_result_leg_picker.py`).
-  USER-REQUESTED 2026-08-27. The choice used to be binary — every leg, or `This
-  leg only` — with no way to say "these three, not that one", which is what
-  comparing a re-run leg against the one it replaced needs; #43's own measurement
-  of `results/solver/case` found `prev_001` and `prev_002` both running iterations
-  0-1000, one segment solved twice, played in sequence with no way to drop either.
-  A tick-list is offered on load and reopenable from `Legs…` in the transport row.
-  **`ask_legs` returns `None` — "every leg" — when headless, and `None` is also
-  what a CANCEL and an empty tick-list return**: one meaning, the state the view
-  already has for "no restriction", so batch and CI are byte-for-byte #43 and a
-  cancel leaves the animation as it would have been. **Precedence is stated, not
-  raced** (the rule `Lock scale`/manual-clim already follows): `This leg only`
-  wins while ticked, then the subset, then every leg — and unticking restores the
-  SUBSET, so the override does not destroy the answer it overrode. A subset is an
-  ordinary `LegSeries`, never a second code path. **Both controls key on the LEG
-  count and never on the frame count**, for the reason recorded above: restricting
-  to one one-frame leg leaves a one-frame series, so a control keyed on frames
-  hides itself the moment it is used. Asking that of a fixture with three frames
-  proves nothing — measured, the injection came back green — and two of the gate's
-  other three checks were weak in the same way on the first attempt (the reset
-  check could not see its own mechanism, since a multi-leg load reassigns the
-  selection regardless; the handler check surfaces as a CRASH, which an injection
-  harness that counts FAIL lines scores as zero). Blind spot named in the test:
-  offscreen the dialog is never shown, so what is gated is its verbs, the filter
-  its answer drives and the controls' visibility.
-- **The landing frame is the last frame of the leg that was OPENED**, not of the
-  series (`ResultSeries.last_frame_of`). The two differ only when an archived leg
-  was named deliberately, and then the file the user asked for is the one they
-  should be looking at. A `This leg only` toggle lands there too, so the control
-  moves the animation around the picture instead of moving the picture.
-- **`load_result_path`'s second argument is a `frame`, not a `zone`.** It was a
-  zone index within one file until #32 made a load cover several, and the
-  single-file fallback (no readable series at all) no longer reuses that value as
-  a file-local zone — a series index has no meaning there.
-- **The variable selector is the INTERSECTION**, and the subtraction is logged
-  naming the short leg. The derived quantities are recomputed from that
-  intersection through the new `TecplotResult.derived_from_names` — a pure
-  function of the variable NAMES, which is all the old availability test ever was
-  — so a derived field cannot outlive its inputs either. Asking this from the leg
-  with FEWER variables proves nothing (its own list is already the intersection),
-  which is a hole the gate's own injections found.
-- **The leg name prefixes a label only when the series has more than one file**
-  (`prev_002 · Frame 3 / 10`), so a case that was never restarted reads exactly as
-  it did. The transport's own read-out appends the SERIES position on top
-  (`… (7 / 30)`) because every button here moves through the series; that is
-  added in `_read_out`, not in `frame_label`, since the zone selector uses the
-  label as a list entry where a second pair of numbers on every row is noise.
-- **The per-variable seeded range is COMPUTED over the series, not just carried
-  across it.** #24 seeds an untouched variable from the frame on screen so
-  nothing jumps when Auto is unticked; across legs that basis is wrong — one
-  leg's band saturates every other leg and the Min/Max boxes then describe a
-  range that is not on screen, #24's own symptom one level up. So a MULTI-leg
-  series seeds from the series and a single file keeps #24 exactly. The scan is
-  the one "Lock scale" already pays (`scan_series_range`, now shared). **It no
-  longer runs inside a paint** (#43): #32 called it from `render`, which is a
-  place that cannot pump the event loop — it would re-enter the paint in progress
-  — so switching variables in Custom mode froze the application for as long as
-  reading every frame takes, with no way to say why. It now runs in
-  `seed_range_from_series()`, called by the handler that unticks Auto, where the
-  "this will take a moment" line is painted first; switching variables afterwards
-  seeds from the frame on screen, and where the whole-series range is available is
-  stated in the Min/Max tooltip (`series_range_hint`) rather than logged on every
-  change. **A failed scan is not remembered** — `_series_seeded` records the
-  variables whose range came from a scan that actually SUCCEEDED, so a transient
-  read error does not pin a variable to one frame's numbers for the session. **A
-  range the user TYPED is tracked separately (`_clim_typed`, written only by
-  `set_clim`) and is never scanned away.** "Already scanned" does not imply it,
-  and assuming it did was a real defect: the first version guarded on the scan
-  set alone, so typing numbers for a variable that had never been scanned and
-  then toggling Auto off and on replaced them with the series band (found in
-  review, measured -999..999 -> 1.0..134.33). #24's manual-over-lock-over-auto
-  precedence is out of scope for #43 and this is what keeps it that way. The
-  whole colour-scale concern (lock, seed, precedence) moved into
-  `views/result_scale_lock_mixin.py` when `result_playback_mixin.py` passed the
-  GUI length budget; the two only ever shared a toolbar row.
-- **Each leg's iteration count is where the leg is NAMED** — the tooltips of the
-  frame read-out and the frame selector, which already say which leg a frame
-  belongs to — rather than in a log line the user scrolls back to. It carries
-  the SAME two caveats the restart chooser's tooltip does (recorded vs
-  recomputed, and that an interrupted run makes the figure an upper bound):
-  unifying the arithmetic so the two windows cannot disagree about a number, and
-  then reporting that number with different confidence in each, would put the
-  disagreement back one level up. A load emits ONE summary line naming the legs
-  opened; each warning (overlap, tag exclusion, a variable gap) stays a full line
-  of its own, because each changes how the picture should be read.
-- `set_result`'s triangulation reuse and #24's clim precedence
-  (manual > lock > auto) are unchanged and both are pinned across a leg boundary.
+**A restarted solve is ONE run split across several files, and it plays as one animation**
+(`services/result_legs.py`, Qt-free — `list_result_legs` → a `LegSeries` of `ResultLeg`s in playback
+order plus warnings as data; `ResultSeries` takes a LIST of paths). #32, blocked by #30 because it
+reads the `RUN.txt` #30 writes.
+- **A list, never a concatenated temp file** — the byte-offset index exists so a frame costs 0.07 s.
+  A FLAT frame index sits above the per-file `tecplot_index`: global frame *k* → (file, zone). Three
+  things become global with it — the numbering, the LRU **byte** budget and every range
+  `global_range` reports — so a change in ANY file drops EVERY cached frame and range.
+- **A leg is found by its STEM** (`strip_archive_suffix` + `strip_run_tag`, the inverse of
+  `archive_name`), which also works on **pre-#30 archives** that kept `.gui`.
+- **Order by ITERATION COUNT; lineage answers a different question** — it gives a PREDECESSOR
+  relation, never a position, and two legs resumed from the same point are indistinguishable by it,
+  which is exactly the re-run case. Ordering is by the CORRECTED `end` (creation order breaking
+  ties); lineage DETECTS the overlap a span cannot.
+- **How far a leg got is NOT computed here** (#43): every span comes from
+  `case_run_note.iteration_span`, which the restart chooser reads too, so the two windows cannot
+  describe one archive differently.
+- **A leg measurable NEITHER way is played WHERE IT RAN, not last** — a deliberate departure from
+  the issue's "offered last", which is right for a chooser LIST and wrong for a playback ORDER; the
+  literal rule shipped first and played this repo's real case **backwards**. Such a leg inherits the
+  last count recorded before it.
+- **An overlap is a MEASUREMENT** (#43), reported and never interleaved: a half-open span
+  `(start, end]`, so the test is interval intersection and the message names the repeating
+  iterations. Half-open is load bearing — consecutive legs MEET at a boundary iteration, and a
+  closed range would report every ordinary restart as an overlap. **Lineage** is the fallback when
+  both spans cannot be measured; a blank start is deliberately not a key, since "cold start" and
+  "no record" must not match.
+- **The legs are the legs of ONE run**: `…dat.gui` and `…dat.cli` side by side are two solves. The
+  anchor is the opened file's run tag — from its name, or from its own `RUN.txt` — a differing leg
+  is excluded and NAMED, an undeterminable one included.
+- **Opening any leg opens the SOLVE. An INTERACTIVE load asks; a headless one does not**
+  (USER-REQUESTED 2026-08-27, replacing #32's modal on every load, which made an unattended run
+  behave differently from an interactive one). **`This leg only`** is the escape: shown only when
+  the solve HAS more than one leg, never persisted, unticked on every load, and yielding a ONE-leg
+  series rather than a second code path. **Its visibility asks how many LEGS the solve has and
+  nothing else** — keying it on the `multi` frame-count flag hid the whole row *including the box
+  that had just been ticked*. Residue named: `postprocess_ctrl` still reads `_pipeline_running`
+  once, guarding the load-FAILED modal, which predates #32.
+- **Which legs play is a CHOICE, and it is the user's** (`views/result_leg_picker.py` +
+  `views/result_leg_select_mixin.py`): a tick-list offered on load and reopenable from `Legs…`.
+  **`ask_legs` returns `None` — "every leg" — when headless, and `None` is also what a CANCEL and an
+  empty tick-list return**, so batch and CI are byte-for-byte #43. **Precedence is stated, not
+  raced**: `This leg only` wins while ticked, then the subset, then every leg — and unticking
+  restores the SUBSET. **Both controls key on the LEG count, never the frame count.** Gated by
+  `tests/test_result_leg_picker.py`; blind spot — offscreen the dialog is never shown, so what is
+  gated is its verbs, the filter and the controls' visibility.
+- **The landing frame is the last frame of the leg that was OPENED** (`last_frame_of`), not of the
+  series. **`load_result_path`'s second argument is a `frame`, not a `zone`.**
+- **The variable selector is the INTERSECTION**, the subtraction logged naming the short leg, with
+  derived quantities recomputed from that intersection through `TecplotResult.derived_from_names`,
+  so a derived field cannot outlive its inputs.
+- **The leg name prefixes a label only when the series has more than one file** (`prev_002 · Frame
+  3 / 10`); the transport's read-out appends the SERIES position in `_read_out`, not in
+  `frame_label`, since the zone selector uses the label as a list entry.
+- **The per-variable seeded range is COMPUTED over the series, not just carried across it** — one
+  leg's band saturates every other, which is #24's symptom one level up. A MULTI-leg series seeds
+  from the series; a single file keeps #24 exactly. **It no longer runs inside a paint** (#43):
+  calling `scan_series_range` from `render` cannot pump the event loop, so switching variables in
+  Custom mode froze the app with no way to say why. It runs in `seed_range_from_series()`, called by
+  the handler that unticks Auto, where the "this will take a moment" line is painted first; where
+  the whole-series range is available is stated in the Min/Max tooltip (`series_range_hint`). **A
+  failed scan is not remembered** (`_series_seeded` records only successful scans). **A range the
+  user TYPED is tracked separately (`_clim_typed`, written only by `set_clim`) and is never scanned
+  away** — "already scanned" does not imply it. The colour-scale concern lives in
+  `views/result_scale_lock_mixin.py`.
+- **Each leg's iteration count is where the leg is NAMED** — the tooltips of the frame read-out and
+  frame selector — carrying the SAME two caveats the restart chooser's tooltip does (recorded vs
+  recomputed; an interrupted run makes it an upper bound). A load emits ONE summary line naming the
+  legs opened; each warning stays a full line of its own.
 - **A leg's timestamp is when its run FINISHED, never its `archived_at`**
-  (`case_run_note.finished_stamp`; USER-REPORTED 2026-08-27). An archive is made
-  by the NEXT run at the moment it starts, so `archived_at` answers "when was this
-  folder made?" while a live leg's stamp answers "when did this run finish?" —
-  and both were rendered as a bare parenthesised time in one list, which is what
-  invited them to be compared. On this repo's own `results/solver/case` the
-  restart chooser read `Latest result (09:35:11)` beside `prev_005 (09:35:01)`:
-  ten seconds apart, and they are two runs three minutes apart — the ten seconds
-  are merely how long the latest run took. `prev_003` displayed a date **six days**
-  out, and the two pre-#30 archives displayed nothing at all. The run's own
-  outputs still carry the answer (`shutil.move` preserves mtime, and #30's hard
-  link shares the inode), so the stamp is recovered from them, preferring the
-  ZONE DUMP because it is written at the end of a run and `RUN.txt` because it is
-  written at archive time. **`restart_points` and `result_legs` had the defect
-  independently** — `stamp=note.get("archived_at", "")` in each — so the answer has
-  ONE owner, the same rule #43 applied to the iteration count; `archived_at` is
-  kept as its own labelled tooltip line rather than discarded. The gate's checks 3,
-  4 and 8 are the INVERTED versions of the ones that pinned the old behaviour, and
-  check 4's blank stamp for a pre-#30 archive was not a refusal to fabricate but a
-  refusal to look.
-
-Three duplications this created were pushed to their owners rather than left:
-`case_files.strip_run_tag` / `newest_first` and `case_run_note.mtime_stamp` /
-`iteration_span` are each now read by both `restart_points` and `result_legs`.
-Gated by `tests/test_result_legs_playback.py` — injection-verified properties over
-3 groups, with its two blind spots and the acceptance run in its own docstring.
-**Two of those injections are PERMANENT**, because the obvious construction of
-each passes with the code removed: the convergence fallback is injected on legs
-that HAVE a note (their ends still come from those notes, so what is removed is
-the START, and with it the overlap), and the run-tag filter in the direction that
-FAILS (an older headless leg opened in a case whose archives are interactive) —
-opening the `.gui` leg gets the `.gui` archive either way. Both carry a negative
-control so they cannot pass because the patch was inert. Acceptance, on
-`results/solver/case`: `prev_001 (0, 1000]`, `prev_002 (0, 1000]`,
-`latest (1000, 2000]`, all recomputed, and the overlap on iterations 1-1000 —
-silent under #32 — is named; the restart chooser reports the same three numbers
-for the same folders, which is the point of there being one `iteration_span`.
+  (`case_run_note.finished_stamp`; USER-REPORTED 2026-08-27) — an archive is made by the NEXT run at
+  the moment it starts, so the two answer different questions and were rendered as one parenthesised
+  time in one list. Recovered from the run's own outputs (`shutil.move` preserves mtime; #30's hard
+  link shares the inode), preferring the ZONE DUMP then `RUN.txt`. **`restart_points` and
+  `result_legs` had the defect independently**, so the answer has ONE owner; `archived_at` is kept
+  as its own tooltip line.
+Three duplications this created were pushed to their owners: `case_files.strip_run_tag` /
+`newest_first` and `case_run_note.mtime_stamp` / `iteration_span`, read by both `restart_points` and
+`result_legs`. Gated by `tests/test_result_legs_playback.py`, **two of whose injections are
+PERMANENT** because the obvious construction of each passes with the code removed (the convergence
+fallback injected on legs that HAVE a note; the run-tag filter in the direction that FAILS), each
+with a negative control.
 
 **"The surface" of a surface plot is a CHOICE, and so is where s = 0 is**
 (`services/surface_source.py` + `services/surface_sample.py`, both Qt-free;
-`controllers/surface_source_ctrl.py` decides availability; `views/surface_source_dialog.py`
-+ `views/result_canvas_surface_mixin.py` are the UI). Results ▸ **Surface…** used to
-mean exactly one curve — the inner boundary loops of the solved triangulation —
-which is the only honest answer for a body-fitted mesh and **no answer at all for
-an immersed-boundary run**, where the solid never touches a mesh boundary. Six
-sources are now offered, all listed even when unusable, each with the reason on the
-row ("no STL3d φ field loaded (run the IB stage)"): `mesh` (unchanged, and the only
-one whose points ARE mesh nodes, so it keeps `node_ids` and reads **exact** nodal
-values), `field_iso` (φ = 0.5 on the solved mesh), `grid_iso` (the same on the
-STL3d structured φ), `interface_cells` (**the Fit Δ points**, i.e.
-`phi_quality.interface_points` — now public precisely so the plotted surface is the
-one the fit report measured), `analytic` (the analytic φ shape itself, read through
-`services/analytic_shape.py`, which the φ-DLL generator now shares so the plotted
-body cannot drift from the solved one) and `cad`. Rules that are not cosmetic:
-- **Iso-lines are chained by mesh EDGE identity, never by welding coordinates**:
-  one crossing point per crossed edge, computed from the canonically sorted node
-  pair so both owning triangles get the identical coordinate, then a walk
-  triangle→triangle through shared edge keys. There is no distance tolerance
-  anywhere — a tolerance on a fine mesh either fragments one contour or fuses two
-  that merely pass close. Every crossing triangle has degree exactly 2, so a
-  component is a cycle (closed) or a path (the iso-line left through the boundary),
-  and `closed` is reported from *arriving back at the entry edge*, not guessed.
-- **s = 0 is required, not defaulted (USER-REQUESTED)**: the old path inherited the
-  origin from `next(iter(set))` inside the boundary tracer — reproducible for one
-  file, but two runs of the same body could start their arc length in different
-  places, which is exactly when you want to overlay the curves. Show/Plot stay
-  disabled until a rule (x min / x max / y min / y max) is picked, traversal
-  handedness is forced from the polygon's signed area, and the canvas marks the
-  origin + direction while the plot's axis label repeats the coordinate.
-- **Arc length of a closed curve now reaches the full perimeter.** The removed
-  `TecplotResult.perimeter_series` computed the closing chord and then sliced it
-  off, so its last sample was one chord short of where it started.
-- **Off-node samples are interpolated, and δ = 0 by default.** For an immersed
-  solid the interface holds the SOLID state, so an outward-normal offset δ (one
-  cell is typical) is offered — but nothing is moved silently, and the title states
-  `exact nodal` vs `interpolated, δ=…`. Outward comes from the polygon's own signed
-  area, not from the requested handedness, or the offset would point *into* the
-  body on exactly the curves that were reversed. Samples outside the mesh come back
-  NaN (a visible gap), never a fabricated value.
-- **The Fit Δ cloud is cell CENTRES with no connectivity**, so it is ordered by a
-  greedy nearest-neighbour walk that can jump a thin waist or take the wrong
-  branch; when a hop is >5× the typical one the curve says so in `note` instead of
-  returning a plausible-looking arc length. Prefer the iso-line for measurement.
-Nothing is extracted while the dialog is being edited — the widgets only build a
-`SurfaceSpec`. Gated by `tests/test_surface_source.py` (geometry) and
-`tests/test_surface_source_gui.py` (the dialog, the overlay and both result kinds).
+`controllers/surface_source_ctrl.py` decides availability; `views/surface_source_dialog.py` +
+`views/result_canvas_surface_mixin.py` are the UI). Surface… used to mean the inner boundary loops
+of the solved triangulation — the only honest answer for a body-fitted mesh and **no answer at all
+for an immersed-boundary run**. Six sources are offered, all listed even when unusable with the
+reason on the row: `mesh` (the only one whose points ARE mesh nodes, so it keeps `node_ids` and
+reads **exact** nodal values), `field_iso` (φ = 0.5 on the solved mesh), `grid_iso` (the same on the
+STL3d structured φ), `interface_cells` (the Fit Δ points, i.e. `phi_quality.interface_points` —
+public precisely so the plotted surface is the one the fit report measured), `analytic` (through
+`services/analytic_shape.py`, shared with the φ-DLL generator so the plotted body cannot drift from
+the solved one) and `cad`. Rules that are not cosmetic:
+- **Iso-lines are chained by mesh EDGE identity, never by welding coordinates**: one crossing point
+  per crossed edge, computed from the canonically sorted node pair so both owning triangles get the
+  identical coordinate, then a walk triangle→triangle through shared edge keys. No distance
+  tolerance anywhere — on a fine mesh one either fragments a contour or fuses two that pass close.
+  Every crossing triangle has degree exactly 2, so a component is a cycle or a path, and `closed` is
+  reported from *arriving back at the entry edge*, not guessed.
+- **s = 0 is required, not defaulted (USER-REQUESTED)**: the old path inherited the origin from
+  `next(iter(set))` inside the boundary tracer, so two runs of the same body could start their arc
+  length in different places — exactly when you want to overlay the curves. Show/Plot stay disabled
+  until a rule (x min / x max / y min / y max) is picked, traversal handedness is forced from the
+  polygon's signed area, and the canvas marks the origin + direction.
+- **Arc length of a closed curve reaches the full perimeter** (the removed `perimeter_series`
+  computed the closing chord and then sliced it off).
+- **Off-node samples are interpolated, and δ = 0 by default.** For an immersed solid the interface
+  holds the SOLID state, so an outward-normal offset δ is offered — but nothing is moved silently,
+  and the title states `exact nodal` vs `interpolated, δ=…`. Outward comes from the polygon's own
+  signed area, not the requested handedness, or it would point *into* the body on exactly the
+  reversed curves. Samples outside the mesh come back NaN, never a fabricated value.
+- **The Fit Δ cloud is cell CENTRES with no connectivity**, so it is ordered by a greedy
+  nearest-neighbour walk that can jump a thin waist; a hop >5× the typical one is reported in `note`
+  instead of returning a plausible-looking arc length. Prefer the iso-line for measurement.
+Nothing is extracted while the dialog is being edited — the widgets only build a `SurfaceSpec`.
+Gated by `tests/test_surface_source.py` and `tests/test_surface_source_gui.py`.
 
-**The grid must carry the BCs before it leaves the Mesh stage**
-(`services/mesh_bc_audit.py`, Qt-free): a mesh generated BEFORE the per-segment
-BCs were applied exports **every** patch as the wall default, and the solve then
-looks exactly like a converged, unchanged answer — the reported "I updated the
-STAR-CD boundary conditions and got the same result". The mesher's own
-`NO boundary segment carries any of the GROUP_BC label(s)` warning fires at MESH
-time, several clicks before the grid is exported, sent and run, so
-`audit_mesh_bc()` re-checks the actual file at each of those three points
-(`mesh_export_ctrl.mesh_bc_problems` / `warn_if_mesh_bc_stale`, and
-`solver_ctrl._confirm_mesh_bc_state`, which *asks* rather than deciding —
-`headless_default=True` so batch/CI, which regenerate in the same pass, are not
-blocked). Two independent signals: an assigned BC **type** with no patch of that
-name in the `.bnd`, and a geometry `.meta` **newer** than the mesh (the per-segment
-BC and No-BL flags are projected there from the model on every edit, so its mtime
-still moves when one changes — and changing one segment from inlet to outlet
-leaves both names in the file, so content alone cannot see it). Note the two
-namespaces this replaced a bug in: a `group_bc` key is a segment **label**, a
-`.bnd` patch name is the **BC type** the mesher resolved it to — comparing them
-directly (the old warning) marks every assignment missing on every run. Also:
-BC detection resolves the .bnd the RUN will use (auto-link wins in
-`_locate_mesh_bnd`, and `resync_solver_bc_from_group` runs *after* the auto-link),
-or the table describes one grid while the solver reads another. Gated by
-`tests/test_mesh_bc_audit.py`.
+**The grid must carry the BCs before it leaves the Mesh stage** (`services/mesh_bc_audit.py`,
+Qt-free): a mesh generated BEFORE the per-segment BCs were applied exports **every** patch as the
+wall default, and the solve then looks exactly like a converged, unchanged answer — the reported "I
+updated the STAR-CD boundary conditions and got the same result". The mesher's own warning fires at
+MESH time, several clicks before the grid is exported, sent and run, so `audit_mesh_bc()` re-checks
+the actual file at each of those three points (`mesh_export_ctrl.mesh_bc_problems` /
+`warn_if_mesh_bc_stale`, and `solver_ctrl._confirm_mesh_bc_state`, which *asks* rather than deciding
+— `headless_default=True`, since batch/CI regenerate in the same pass). Two independent signals: an
+assigned BC **type** with no patch of that name in the `.bnd`, and a geometry `.meta` **newer** than
+the mesh (changing one segment from inlet to outlet leaves both names in the file, so content alone
+cannot see it). Note the two namespaces this replaced a bug in: a `group_bc` key is a segment
+**label**, a `.bnd` patch name is the **BC type** the mesher resolved it to — comparing them
+directly (the old warning) marks every assignment missing on every run. BC detection resolves the
+`.bnd` the RUN will use (auto-link wins in `_locate_mesh_bnd`, and `resync_solver_bc_from_group`
+runs *after* the auto-link), or the table describes one grid while the solver reads another. Gated
+by `tests/test_mesh_bc_audit.py`.
 
 **A path is not a kind: project files are recognised by CONTENT**
-(`services/project_file_kind.py`, Qt-free — `classify_project_file` → `"workspace"` /
-`"pipeline"` / `""`; `PipelineConfig.classify_file` / `is_workspace_file` delegate to
-it, so the extension never has to be right). `main.py` handed every positional
-argument to the geometry loader, so `main.py case.hws` ran `np.loadtxt` over JSON and
-reported `could not convert string '{' to float64` — a message naming neither the file
-nor the problem. USER-REPORTED (2026-08-13). Every "open this path" entry point now
-dispatches through the one classifier: the CLI's positional args,
-`_load_geometry_file` (which the recent-files menu and the STL stager also reach), and
-Pipeline ▸ Load, whose dialog accepts `*.hws` too. Rules: a **workspace opened in the
-GUI goes to the workspace loader**, never through `PipelineConfig.from_workspace_dict`
-— that conversion exists so the headless runner can *run* a `.hws` and deliberately
-drops working state (cached resampled points, generated mesh/result paths, the active
-tab); the CLI loads the **project first and geometry after**, because either project
-load resets all state and closes every tab (geometry used to load at 100 ms and the
-pipeline at 200 ms, so `--pipeline x.json geom.dat` silently discarded the geometry);
-and only ONE project file is accepted per launch, the rest named and refused. The
-"this will close all current tabs" prompt is gated on `has_unsaved_work()` — the GUI
-always opens with one pristine blank session, so otherwise opening a workspace from
-the command line put a modal in front of an empty canvas.
+(`services/project_file_kind.py`, Qt-free — `classify_project_file` → `"workspace"` / `"pipeline"` /
+`""`; `PipelineConfig.classify_file` / `is_workspace_file` delegate to it). `main.py` handed every
+positional argument to the geometry loader, so `main.py case.hws` ran `np.loadtxt` over JSON and
+reported `could not convert string '{' to float64` (USER-REPORTED 2026-08-13). Every "open this
+path" entry point dispatches through the one classifier: the CLI's positional args,
+`_load_geometry_file` (which the recent-files menu and STL stager reach), and Pipeline ▸ Load, whose
+dialog accepts `*.hws` too. Rules: a **workspace opened in the GUI goes to the workspace loader**,
+never through `PipelineConfig.from_workspace_dict` (that conversion exists so the headless runner
+can *run* a `.hws` and deliberately drops working state); the CLI loads the **project first and
+geometry after**, because either project load resets all state and closes every tab; and only ONE
+project file is accepted per launch, the rest named and refused. The "this will close all current
+tabs" prompt is gated on `has_unsaved_work()`, since the GUI always opens with one blank session.
 
 **The Output field's `.*` is a placeholder, and only one module may read it**
-(`models/mesh_output_names.py`, Qt-free — `output_base` / `output_path_for` /
-`FORMAT_PLACEHOLDER`, re-exported as `MeshConfig.*` so every existing call site is
-unchanged; that module also owns `auto_case_name` / `auto_output_name` /
-`is_auto_output_name`, whose `<case>` naming is mirrored in `src/cli.cpp`). The Mesh
-panel's Output field holds ONE name for however many formats are enabled, so it is
-filled in as `results/meshes/<case>/mesh_<case>.*` — and because the panel→model sync
-runs on every edit, that string IS the model value and travels verbatim into the
-workspace, the pipeline script and the mesher's config. Only the export dialog
-understood it, in a private `endswith(".*")` branch, so: the **mesher** wrote a VTK
-into a file literally named `mesh_<case>.*` (see `cli.cpp` above), and
-**`pipeline_runner`** handed that name straight through and then `os.path.exists`-ed
-it — which the glob-named file satisfied, so the run reported success and passed a
-glob to the contour stage. Note the coupling: a C++-only fix turns that silent pass
-into a hard failure, so both halves move together, and `_mesh_output_path` is split
-out of `_run_mesh` to be testable without a mesh run. `tests/test_output_format_placeholder.py`
-gates the resolver, the end-to-end `-out_name <dir>/probe.*` run (no file with a `*`
-in its name, banner reports the resolved basename), and **statically fails the build
-if any other GUI file grows its own `endswith(".*")`** — a second private copy is how
-this diverged in the first place.
+(`models/mesh_output_names.py`, Qt-free — `output_base` / `output_path_for` / `FORMAT_PLACEHOLDER`,
+re-exported as `MeshConfig.*`; it also owns `auto_case_name` / `auto_output_name` /
+`is_auto_output_name`, whose `<case>` naming is mirrored in `src/cli.cpp`). The Mesh panel's Output
+field holds ONE name for however many formats are enabled, filled in as
+`results/meshes/<case>/mesh_<case>.*` — and because the panel→model sync runs on every edit, that
+string IS the model value and travels verbatim into the workspace, the pipeline script and the
+mesher's config. Only the export dialog understood it, so the **mesher** wrote a VTK into a file
+literally named `mesh_<case>.*` and **`pipeline_runner`** handed that name through and then
+`os.path.exists`-ed it — which the glob-named file satisfied, so the run reported success and passed
+a glob to the contour stage. A C++-only fix turns that silent pass into a hard failure, so both
+halves move together. `tests/test_output_format_placeholder.py` gates the resolver, the end-to-end
+`-out_name <dir>/probe.*` run, and **statically fails the build if any other GUI file grows its own
+`endswith(".*")`**.
 
 **The last generated mesh is not where a reopened case left it**
-(`services/mesh_grid_lookup.py::resolve_case_grid`, Qt-free): Generate Mesh writes its
-output into the GUI's **temp dir** on purpose (`<temp>/global_mesh.*`, so generating
-does not litter the repo — the stable per-case files appear on Export / Send to
-Solver), and that directory is removed on exit, so `global_vtk_path` is **always**
-empty or dangling in a reopened workspace. Auto-link read only that and answered
-`No mesh generated yet` for a case whose grid was on disk and whose own Grid
-Conversion fields still pointed at it — USER-REPORTED (2026-08-13) together with the
-`.hws` failure above. The resolver tries this session's mesh, then the triple the case
-is **already wired to** (what the workspace restored, i.e. what the user last actually
-sent to the solver — trusted over any guess), then the per-case exported mesh, and
-takes the first whose `.vrt` + `.cel` + `.bnd` all exist; it names which one and why in
-the log, and names every candidate when none works. `_locate_mesh_bnd` asks the SAME
-resolver, or the BC table describes one grid while the run reads another. Whether that
-grid is STALE stays the mesh-BC audit's job (`_confirm_mesh_bc_state`), not a refusal
-to run. Both blocks gated by `tests/test_open_project_by_path.py`.
+(`services/mesh_grid_lookup.py::resolve_case_grid`, Qt-free): Generate Mesh writes into the GUI's
+**temp dir** on purpose (`<temp>/global_mesh.*`; the stable per-case files appear on Export / Send
+to Solver), and that directory is removed on exit, so `global_vtk_path` is **always** empty or
+dangling in a reopened workspace — and auto-link, reading only that, answered `No mesh generated
+yet` for a case whose grid was on disk (USER-REPORTED 2026-08-13). The resolver tries this session's
+mesh, then the triple the case is **already wired to** (what the user last actually sent to the
+solver — trusted over any guess), then the per-case exported mesh, and takes the first whose `.vrt`
++ `.cel` + `.bnd` all exist; it names which one and why in the log, and names every candidate when
+none works. `_locate_mesh_bnd` asks the SAME resolver. Whether that grid is STALE stays the mesh-BC
+audit's job, not a refusal to run. Gated by `tests/test_open_project_by_path.py`.
 
-**A re-save of the geometry must not throw the Mesh-stage edits away, and the fix
-is a MODEL FIELD rather than a wrapper around the subprocess.** Both halves of a
-per-segment BC live in the `.meta` — the **label** in the NSEGMENTS bc column, the
-label→type map in the trailer — and the resampler REWRITES that sidecar from the CAD
-config on every save. It carries the trailer through verbatim but the bc column comes
-back `-` and the v3 grow column comes back 1, so a CAD tweak + Save left the map
-pointing at labels nothing carries: the mesher warns
-(`NO boundary segment carries any of the … GROUP_BC label(s)`), every patch
-exports as `wall`, and the GUI still shows the BCs it holds in memory. USER-REPORTED
-(2026-08-12) as "I set the BCs in Edit Seg BC, why `no boundary patch named inlet,
-outlet`?".
+**A re-save of the geometry must not throw the Mesh-stage edits away, and the fix is a MODEL FIELD
+rather than a wrapper around the subprocess.** Both halves of a per-segment BC live in the `.meta` —
+the **label** in the NSEGMENTS bc column, the label→type map in the trailer — and the resampler
+REWRITES that sidecar from the CAD config on every save, carrying the trailer through verbatim while
+the bc column comes back `-` and the v3 grow column comes back 1. So a CAD tweak + Save left the map
+pointing at labels nothing carries: the mesher warns, every patch exports as `wall`, and the GUI
+still shows the BCs it holds in memory (USER-REPORTED 2026-08-12). The fix is **not** in the
+resampler, which stopped preserving the prior sidecar on purpose (a NEW geometry written over an
+existing output name inherited the old geometry's flags), and it is **no longer a caller-side
+snapshot/restore around the subprocess**. Both facts are `SegmentModel` **fields**: `bc` already was
+one, and **`grow_bl` is new** (default True; `to_dict()` emits it only when False, so every
+pre-existing config, workspace and script stays byte-identical). The resampler has always read
+`sj["bc"]` and `sj["grow_bl"]` from its own config, so `to_dict()` — the single serialiser behind
+the resample config, the `.hws` and the pipeline script — makes the sidecar come back **correct the
+first time**. The fact moved **up**, not down.
+- **The `.meta` is now a PROJECTION of the model, not a second home** —
+  `mesh_layers_ctrl._write_sidecar_from_model` rewrites both columns after every edit as the
+  command's `refresh_cb`, so an **undo rewrites the file too**.
+- **But a projection must be SEEDED first, and forgetting that broke the very thing this work exists
+  to fix.** Nothing seeded `bc`/`grow_bl` from an existing `.meta`, and the BC dialog reports only
+  NEWLY MINTED labels — so on any geometry whose setup lived only in its sidecar, one Mesh-stage BC
+  edit reset every *other* segment's label to `-` and re-enabled a No-BL wall.
+  `_adopt_sidecar_facts` takes the sidecar's values into the model first, **fill-in only** (a fact
+  the model holds wins), and runs **BEFORE the undo snapshot** — adopting after it still fixes the
+  wipe but makes undo restore the *empty* value, re-wiping the sidecar it just protected. Presence
+  and ordering are pinned separately. Adoption is a migration rather than the user's edit, so it is
+  not undoable and is **named in the log**. Caveat: the rule cannot distinguish "the model holds
+  `grow_bl = True`" from "the model is at its default", so a sidecar `grow=0` is always adopted —
+  right for the migration, wrong only if the file were allowed to lag the model.
+- **The id-set-changed refusal disappeared as a concept**: the old restore re-applied by id after a
+  subprocess had rewritten the file, and a label bound to a segment object cannot be shifted onto
+  its neighbour.
+- The Mesh-stage dialogs **emit** (`seg_grow_bl_changed` / `seg_bc_labels_changed`) instead of
+  writing the sidecar — a view writing that file is how the fact came to live only there. A geometry
+  with **no CAD session behind it** has no model to hold the fact, so the handler falls back to
+  writing the sidecar directly; `_session_for_geom_path` returning None is a normal outcome.
+- The label→BC-**type** map (`GROUP_BC`) deliberately did **not** move: it is keyed by label rather
+  than by segment, so there is no segment field for it to be a field of.
+- Knock-on: a Mesh-stage No-BL toggle now sets `is_geometry_modified`.
+Gated by `tests/test_seg_edit_carryover.py`, which drives the real `surface_resampler` (so the wipe
+cannot quietly stop happening) and the real controller handler.
 
-The fix is **not** in the resampler, which stopped preserving the prior sidecar
-itself on purpose, because a NEW geometry written over an existing output name then
-inherited the old geometry's flags (`tools/PreProcessor/src/main.cpp` says so in a
-comment). It is also **no longer a caller-side snapshot/restore around the
-subprocess** — that shipped first (`meta_io.snapshot_seg_edits` /
-`restore_seg_edits`, three call sites) and is now **gone**, along with its
-`describe_seg_edit_restore`. Both facts are `SegmentModel` **fields** instead: `bc`
-already was one, and **`grow_bl` is new** (default True; `to_dict()` emits it only
-when False, so every pre-existing config, workspace and script stays
-byte-identical). The resampler has always read `sj["bc"]` and `sj["grow_bl"]` from
-its own config, so `to_dict()` — the single serialiser behind the resample config
-(`models/project.py`), the `.hws` workspace (`session_io_ctrl`) and the pipeline
-script (`pipeline_config.cad_section`) — makes the sidecar come back **correct the
-first time**. Measured against the real binary: `grow_bl: False` + `bc: "inlet"` in
-the config survive a resample; the same config without them still comes back wiped
-(so the mechanism is not redundant); and a *different* geometry over the same output
-name inherits nothing, which is the reverted failure mode staying dead. The fact
-moved **up**, not back down: the model knows which geometry it describes and the
-resampler does not.
+**Portable case export** (`services/case_export.py` + `case_export_docs.py`, both Qt-free; Solver
+toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into a folder that reruns on another
+machine — `grid/` (mesh + `.def` + the getPGrid sources, whose `para.in` travels as
+**`getPGrid.in`**: `_RENAMES` owns that mapping so `run_case.sh --regrid` and the manifest cannot
+disagree), `work/` (`input.in`, `.def`, `phi.dat`, and the restart dump **only when `input.in`
+restarts from it** — `include_restart="auto"`), `dll/` (`.so` **and** the `.cc` it was compiled from,
+pulled from `results/solver/dll_src` by basename), plus `run_case.sh` and `MANIFEST.txt`.
+`run_case.sh` **suggests** a compiler rather than choosing one (`CXX=${CXX:-g++}`) — the package is
+for someone else's machine. Selection is an **allow-list**, so a new output file can never sneak in,
+and everything rejected is NAMED in the manifest (known-output / not-used-by-this-run /
+unrecognised). **The allow-list matches on NAME, so `work/phi.dat` and `dll/*` also have to ask
+whether the RUN uses them** (`_unused_reason`): `prepare_case_dir` reuses a case directory in place,
+so a case that once ran an immersed solid still holds both — USER-REPORTED as "I didn't configure
+IBM, why is there a phi.dat and a dll/?". `input.in` decides, being the file the far machine runs:
+it declares `immersed_solid` and names every DLL it dlopens by quoted path (plus a type-11 BC row in
+`work/*.def`, the one DLL `input.in` never mentions). A `.so` that no longer travels also stops
+pulling its `.cc` out of `dll_src`. `solver_case.report_stale_ibm_artifacts` names the same leftover
+at case-prep time and never deletes it. **Every quoted value in `input.in` is a file path**, and the
+GUI writes absolute ones for browsed files; those are staged into `work/` and rewritten to
+`./<name>`. The solver binary is deliberately excluded. Gated by `tests/test_case_export.py`;
+verified end-to-end by regenerating the grid with getPGrid from the exported folder and running
+unicones on it. What the export *writes* rather than copies lives in `case_export_docs.py`; the "is
+this file an input of THIS run or a fossil of the last one?" reading of `input.in` lives in
+`case_export_usage.py`.
 
-Three consequences worth knowing. **The `.meta` is now a PROJECTION of the model,
-not a second home** — `mesh_layers_ctrl._write_sidecar_from_model` rewrites both
-columns after every edit, and it is the command's `refresh_cb`, so an **undo rewrites
-the file too**; reverting the model while the file kept the old column would leave the
-mesher reading the un-undone value. Every existing reader (the BL dialog's seeding,
-the mesher) therefore needs no change — the file still says what it always said, it
-just no longer decides it.
+**The package also reopens in the GUI, not just in a shell** (`services/case_workspace.py`,
+Qt-free). `run_case.sh` reruns the SOLVER; there was no importer for an exported case
+(USER-REQUESTED 2026-08-13). Export Case now *asks* (a third prompt, after the restart dump and the
+tarball) and writes `<folder>.hws` into the package via `export_case(..., extra_files=...)`. Three
+rules: **(1) re-point by file IDENTITY, never by string** — keyed by `(st_dev, st_ino)`, so
+`results/` vs `Results/` on a case-insensitive volume or a symlinked scratch dir is still the same
+file, and a path the package does NOT carry is left alone and REPORTED rather than rewritten to a
+name that resolves to nothing; **(2) the caller's plan is the authority** — `export_case` accepts
+`plan=`, because a second plan built with different arguments would describe a different package
+than the one on disk; **(3) the stamp survives a move** — the workspace records
+`exported_case_root`, and `rebase_case_workspace` (called from `_read_workspace_file` on **every**
+load) swaps that prefix for wherever the `.hws` is being opened from. What does NOT travel: CAD/mesh
+sources are no part of a solver case, so the geometry rides *inside* the `.hws` (`original_points`
+verbatim) and still draws, but re-resampling or re-meshing needs those files — the export log and
+the manifest both say so. `Save Workspace` and the export share one builder
+(`session_io_ctrl.workspace_dict()`), so an exported workspace can never describe less than a saved
+one. Gated by `tests/test_case_workspace_export.py`, which drives the real slot, moves the folder,
+and loads it back.
 
-**But a projection must be SEEDED first, and forgetting that broke the very thing
-this work exists to fix.** The projection is total (every segment the model holds),
-nothing ever seeded `SegmentModel.bc`/`grow_bl` from an existing `.meta`, and the BC
-dialog reports only NEWLY MINTED labels — so on any geometry whose setup lived only in
-its sidecar (i.e. every case predating the model field) one Mesh-stage BC edit reset
-every *other* segment's label to `-` **and** re-enabled a No-BL wall it had never read.
-Measured: four labels and one flag became one label and none — the same all-`wall`
-export the model field exists to prevent. `_adopt_sidecar_facts` now takes the
-sidecar's values into the model first, **fill-in only** (a fact the model holds wins; a
-fact only the file holds is adopted — the same rule `ib_handoff` applies to a scripted
-phi path), and it runs **BEFORE the undo snapshot**: adopting after it still fixes the
-wipe but makes undo restore the *empty* value, re-wiping the sidecar it just protected.
-Both the presence and the ordering are pinned separately in the gate, each verified by
-injection. Adoption is a migration of the user's existing setup rather than an edit of
-theirs, so it is not undoable and is **named in the log** instead — it also means
-legacy labels start travelling in the workspace and the pipeline script, which is the
-point of the candidate. A caveat that follows: the fill-in rule cannot distinguish
-"the model holds `grow_bl = True`" from "the model is at its default", so a sidecar
-`grow=0` is always adopted; that is right for the migration and would be wrong if the
-file were ever allowed to lag the model, which the projection is what prevents. And **the id-set-changed refusal disappeared as a
-concept**: the old restore had to drop everything when the segment id set moved,
-because it re-applied by id after a subprocess had rewritten the file, and a label
-bound to a segment object cannot be shifted onto its neighbour by inserting an edge.
-The Mesh-stage dialogs consequently **emit** (`seg_grow_bl_changed` /
-`seg_bc_labels_changed`) instead of writing the sidecar themselves — a view writing
-that file is how the fact came to live only there. A geometry with **no CAD session
-behind it** (an external `.dat` browsed in, or one left by a closed tab) has no model
-to hold the fact, so the handler falls back to writing the sidecar directly; that is
-correct for a geometry this app does not resample, and
-`_session_for_geom_path` returning None is a normal outcome rather than an error. The
-label→BC-**type** map (`GROUP_BC`) deliberately did **not** move: it is keyed by label
-rather than by segment (one label covers many segments), so there is no segment field
-for it to be a field of, and the resampler carries the trailer through verbatim, so it
-never needed the rescue the label column did. Two knock-on effects of reusing
-`UpdateMultipleSegmentsStateCmd`: a Mesh-stage No-BL toggle now sets
-`is_geometry_modified`, so the CAD tab shows `*` and prompts on close — defensible,
-since the flag is genuinely model state that must be saved to persist, and reverting it
-would stop undo restoring the dirty flag.
-Gated by `tests/test_seg_edit_carryover.py`, which drives the real
-`surface_resampler` (so the wipe cannot quietly stop happening) and the real
-controller handler (so undo, redo and the projection are proven, not asserted).
+**Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception
+between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)`
+(`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, a
+re-entrant depth counter (a bare bool let a nested populate clear the outer guard).
+`tests/test_signal_guards.py` statically fails the build on either.
 
-**Portable case export** (`services/case_export.py` + `case_export_docs.py`, both
-Qt-free; Solver toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into
-a folder that reruns on another machine — `grid/` (mesh + `.def` + the getPGrid
-sources, whose `para.in` travels as **`getPGrid.in`**: `_RENAMES` owns that mapping
-so `run_case.sh --regrid` and the manifest cannot disagree), `work/` (`input.in`,
-`.def`, `phi.dat`, and the restart dump **only when `input.in` restarts from it** —
-`include_restart="auto"`, since `binDump*` is an output that only a restart run
-reads back and is the largest file in the case), `dll/` (`.so` **and** the `.cc` it
-was compiled from, pulled from `results/solver/dll_src` by basename), plus
-`run_case.sh` and `MANIFEST.txt`. `run_case.sh` **suggests** a compiler rather than
-choosing one (`CXX=${CXX:-g++}`, `CXXFLAGS`) — the package is for someone else's
-machine, which may build with icpc. Selection is an **allow-list**, so a new output
-file can never sneak in, and everything rejected is NAMED in the manifest (split
-into known-output, not-used-by-this-run and unrecognised) — a skipped input is a
-visible line, not a surprise on the far machine. **The allow-list matches on NAME,
-so `work/phi.dat` and `dll/*` also have to ask whether the RUN uses them**
-(`_unused_reason`): `prepare_case_dir` reuses a case directory in place, so a case
-that once ran an immersed solid still holds both after being re-run without one —
-USER-REPORTED (2026-08-12) as "I didn't configure IBM, why is there a phi.dat and a
-dll/?". `input.in` decides, being the file the far machine actually runs: it
-declares `immersed_solid` and it names every DLL it dlopens by quoted path (plus a
-type-11 BC row in `work/*.def`, which is the one DLL `input.in` never mentions).
-A `.so` that no longer travels also stops pulling its `.cc` out of `dll_src`.
-`solver_case.report_stale_ibm_artifacts` names the same leftover at case-prep time
-and never deletes it — with immersed solid ON but no phi field chosen, the init DLL
-reads `phi.dat` by that fixed name, so the previous geometry's solid would converge
-to a believable answer for the wrong shape. **Every quoted value in `input.in` is a file path**
-(see `SolverConfig.generate_input_in`), and the GUI writes absolute ones for any
-file the user browsed to; those are staged into `work/` and rewritten to
-`./<name>`, which is the other half of portability. The solver binary is
-deliberately excluded. Gated by `tests/test_case_export.py`; verified end-to-end
-by regenerating the grid with getPGrid from the exported folder and running
-unicones on it. Everything the export *writes* rather than copies lives in
-`case_export_docs.py` (`run_case.sh`, `MANIFEST.txt`, the rewritten `input.in`,
-and `write_extras`); the "is this file an input of THIS run or a fossil of the
-last one?" reading of `input.in` lives in `case_export_usage.py`. Both splits
-are the file-size budget, not new concepts.
-
-**The package also reopens in the GUI, not just in a shell**
-(`services/case_workspace.py`, Qt-free). `run_case.sh` reruns the SOLVER; there
-is no importer for an exported case, so "load the case I exported" had no answer
-— USER-REQUESTED (2026-08-13). Export Case now *asks* (a third prompt, after the
-restart dump and the tarball) and writes `<folder>.hws` into the package via
-`export_case(..., extra_files=...)`, so the manifest names it under its own
-heading like everything else. Three rules decide whether the workspace is worth
-shipping: **(1) re-point by file IDENTITY, never by string** — the map is keyed
-by `(st_dev, st_ino)`, so `results/` vs `Results/` on a case-insensitive volume
-or a symlinked scratch dir is still the same file, and a path the package does
-NOT carry (the CAD `.dat`, the mesh, a declined restart dump) is left alone and
-REPORTED in the log rather than rewritten to a name that resolves to nothing;
-**(2) the caller's plan is the authority** — `export_case` now accepts `plan=`
-because the workspace is derived from the plan, and a second plan built with
-different arguments would describe a different package than the one on disk
-(decline the restart dump and its path must stay put); **(3) the stamp survives
-a move** — a package exists to be copied elsewhere, which strands absolute paths
-a second time, so the exported workspace records `exported_case_root` and
-`rebase_case_workspace` (called from `_read_workspace_file` on **every** load)
-swaps that prefix for wherever the `.hws` is actually being opened from. Note
-what does NOT travel: CAD/mesh sources are no part of a solver case, so the
-geometry rides *inside* the `.hws` (`original_points` are stored verbatim) and
-still draws, but re-resampling or re-meshing needs those files — the export log
-and the manifest both say so. `Save Workspace` and the export share one builder
-(`session_io_ctrl.workspace_dict()`), so an exported workspace can never
-describe less than a saved one. Gated by `tests/test_case_workspace_export.py`,
-which drives the real Export Case slot, moves the folder, and loads it back.
-
-**Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)` (`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, which is a re-entrant depth counter (a bare bool let a nested populate clear the outer guard). `tests/test_signal_guards.py` statically fails the build on either.
-
-**Error handling**: never `except Exception: pass`. Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step allowed to fail, or `warning` when the failure silently degrades what the user asked for. `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build if a new undocumented silent handler appears.
+**Error handling**: never `except Exception: pass`. Use
+`services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step
+allowed to fail, or `warning` when the failure silently degrades what the user asked for.
+`HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build
+if a new undocumented silent handler appears.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
@@ -1948,77 +1276,384 @@ which drives the real Export Case slot, moves the folder, and loads it back.
 - Supporting headers in `tools/PreProcessor/include/`: `Spline.hpp` (cubic spline), `Spacing.hpp`, `Quality.hpp`
 
 ### Full Pipeline (CAD → mesh → solver → results, one action)
-A single unified JSON script drives the whole chain; the GUI and the headless CLI share the same schema and stage logic.
-- **`models/pipeline_config.py`** (`PipelineConfig`, Qt-free): the unified schema (`cads`/`mesh`/`solver`/`stl3d`/`results`, each mapping 1:1 onto `ProjectModel`/`MeshConfig`/`SolverConfig`/`Stl3dConfig`) + converters. `PIPELINE_FORMAT_VERSION` (v2). `cads` is a **list** — one entry per geometry, so a multi-body case round-trips; the singular `cad` key is still read and exposed as a property (first entry) for pre-v2 scripts. `from_workspace_dict()` turns a `.hws` workspace into a runnable script, so `run_pipeline.sh` accepts either. Examples: `config/pipeline/naca_demo.json` (single), `multi_element_demo.json` (multi-body).
-- **`services/pipeline_stages.py`** (Qt-free, imports only the stdlib): **the stage set is declared once, and the two hosts are adapters.** The four stages — resample · immersed solid · mesh · solver — are implemented twice (`pipeline_runner` blocking and linear, `pipeline_ctrl` chained on QThread `finished_signal`), and until this module nothing knew the SET, so each host named, ordered and connected its own and the only thing comparing them was a reader. Two things followed. **An artefact could be produced for nobody** — the runner carried the comment *"before meshing, because the solver stage links the phi field it produces"* while `_run_solver` took no phi argument at all; that was candidate 6a, and the gate it left behind watches one artefact crossing one seam. **And the stage count was hand-written and already wrong**: `Stage 1/3`…`Stage 3/3` at 8 sites across the two hosts while four stages existed, because the immersed solid was logged outside the numbering in both — a literal denominator where the plan is a variable. Nobody typed a wrong number; there was no number to derive. It is deliberately **data, not a base class**: the one thing that legitimately differs between the hosts is how they WAIT, and a hierarchy would have to host that difference. It is **load-bearing rather than decorative** — both hosts build their run plan and their `Stage i/N` labels from it (`plan()` / `label()`), measured on the shipped scripts: `ib_demo.json --no-solver` now reports `Stage 1/2: immersed solid` / `Stage 2/2: mesh generation` where the IB stage used to be unnumbered and the mesh claimed `Stage 2/3`, and `naca_demo.json --no-solver` reports `Stage 1/1` for the one stage it runs; a table nobody reads goes stale exactly the way the prose comments did. `PipelineConfig.stl3d_skip()` joins `cad_skip`/`solver_skip` so "will this stage run?" has one shape for all four. Gated by `tests/test_pipeline_stages.py`, whose checks are shaped by two lessons: **both directions or it is not a gate** (checking only that every declared stage is implemented lets a `_pipe_foo` added to the GUI alone pass), and **order is recovered, not assumed** — the GUI's chain is read as a reachability graph over `self._pipe*` **references**, not calls, because `_pipe_chain("_mesh_worker", self._pipe_after_mesh, …)` hands the continuation over as an attribute and a call-only walk misses every second link. All ten failure modes are verified by injection in the test itself, permanently, rather than by hand at review time — and a review of the first version is why three of them exist: **"both hosts read the declaration" was a SUBSTRING check** (`"pipeline_stages" in src`), which was broken in one line by keeping the import and replacing the label calls with plain strings — all 27 checks passed while a host derived nothing, so 2a/2b now assert each host passes **every declared stage key** to its label adapter; **4d measured against the wrong "first stage"**, because `run_full_pipeline` never names the CAD stage (it goes through `_pipe_resample_next`), so the plan could be fixed *after* that stage started with 4d still green; and **`plan()` silently ignored an unknown key** — measured, `plan({"resamlpe": True, …})` dropped the resample stage and mis-numbered every label, this candidate's own defect returning without a wrong number being typed. Two smaller lessons from the same review: an injection that makes the source **fail to parse** looks exactly like the check working (every mutation now compiles its result or asserts the text changed), and a check with an **exemption marker** is an escape hatch for whoever next trips it.
-- **`services/pipeline_runner.py`** (Qt-free, blocking): runs the 3 CLI stages via subprocess (surface_resampler → HybMesh2D → getPGrid→unicones); `run_pipeline()` returns the produced artifact paths.
-- **`services/ib_handoff.py`** (Qt-free): **producing a phi field is not the same as wiring one up**, and the gap between them is where a whole immersed-solid run used to disappear. STL3d writes a *Tecplot* field (3 header lines, then `x y z phi`); the solver's init DLL reads a *headerless* `phi.dat` with the STL3d grid spec baked into the DLL source. That conversion existed only inside `stl3d_ctrl.send_stl3d_to_solver`, a Qt method no headless runner can call — so `run_pipeline` collected the stage's output into `out["phi"]` and passed it **nowhere** (`_run_solver` built its SolverConfig from the script alone), and GUI **Run All had no IB stage at all**. Either way the solve fell back to whatever `work/phi.dat` the reused case dir still held: the PREVIOUS geometry's solid, converging to a believable answer for the wrong shape — the same failure `solver_case.report_stale_ibm_artifacts` warns about from the other end. `link_phi_to_solver()` is now the one owner, called by all three hosts. Three rules, none of them cosmetic. **`PHI_HEADER_LINES` is checked against the `skiprows=` its own reader uses** — one number, not two guesses. **The phi field and the init DLL are ONE fact, so it takes over both or neither**: the DLL has this stage's origin/spacing/counts compiled in and can therefore only read the field this stage traced, so pairing a caller's phi with our DLL (or ours with theirs) hands the solve a field read on the wrong grid — a wrong answer rather than an error. A real case in `config/pipeline/` does exactly the thing that would have broken: an analytic-shape `init_cond_dll` with `ibm_phi_file` blank. Only when both are blank does the stage supply both; naming one keeps both and warns, because a phi with no DLL is never read. **`replace` is the difference between the callers** — the GUI hands over a field computed *now* so it overwrites, while the headless runner auto-links a *scripted* case so explicit wins and only blanks are filled, exactly the rule `_run_solver` already applies to `.vrt`/`.cel`/`.bnd`. What the hand-off deliberately does **not** decide is whether the solve has an immersed solid at all: `immersed_solid` stays the CALLER's declaration, for the same reason the motion preset is left alone — a script saying `immersed_solid: false` has as much standing as one that configured a moving body, and a stage may not overrule it. It is `send_stl3d_to_solver` that turns it on, because a button is allowed an opinion a pipeline stage is not; Run All and the headless runner obey what the Solver stage declares and log the field as traced-but-unused otherwise. Gated by `tests/test_pipeline_ib_handoff.py`, which drives the real conversion, proves the chain by AST, **compiles the generated DLL** (`stage_dll` returns `""` with a mere WARNING on a compile failure, so a source that does not build degrades silently to "no init DLL"), and loads `config/pipeline/ib_demo.json` — the first script to carry both an `stl3d` and a `solver` section, whose absence had left the section→config converter untested. Writing it found that a **relative `stl_path` was never resolved** (every other section takes a repo-relative path, but the IB stage validated this one against the process cwd), so `build_stl3d_config(repo)` now resolves it like a CAD input.
-- **`services/solver_case.py`** (Qt-free): case-dir orchestration (`results/solver/<name>/{work,grid,dll}`), extracted so the GUI's solver worker and the headless runner share one source of truth. It also answers **where a case lives** (`case_root_for` / `work_dir_of`), which three callers used to join by hand. (`solver_ctrl._prepare_case_dir`, a synchronous wrapper this sentence used to name, was deleted in #31: the interactive Run path stopped calling it when the worker took over, and nothing else ever did.) **The grid stem is the RESOLVED case name, not the requested one**: auto-versioning renames the *directory* (`case` → `case_002`), and a stem left on the pre-version name writes `case.grid` into `case_002/`. That runs — `input.in` names the file it just wrote — so it stays invisible until the user later types the versioned name by hand and the same directory ends up holding `case.grid` *and* `case_002.grid`, two 1.3 MB grids distinguishable only by which one `input.in` references. USER-REPORTED (2026-08-13). **`prepare_case_dir` is the ONE place that makes a path in `input.in` relative to the work dir** — the grid/bc as `../grid/<case>.*` (`grid_rel`/`bc_rel`), the IBM DLLs as `../dll/*.so`, a BC type-11 DLL as `./x.so`, the phi field staged into `work/` under a fixed name. Of the paths it *knows about*, the **two restart references were the only ones nothing touched**, so `_autofill_restart_from_last_run`'s deliberately absolute path (it is what makes the field browsable) reached the solver verbatim and a GUI restart errored out — while an *exported* case ran, because `case_export` already relativises exactly these references. USER-REPORTED (2026-08-20, issue #25). `restart_refs_for_work_dir` rewrites an **absolute path to an existing file** — inside `work/` → its bare basename, elsewhere → a relative path out and back — and passes a blank, an already-relative or a non-resolving value straight through (`solver_ctrl._validate` already refuses a restart with no dump, and a wrong path must surface as the solver's own error rather than be rewritten into something that looks valid). Three things are load bearing. The dump is **referenced, never copied** — it is the largest file in a case, which is why `case_export` treats it specially, and a copy would leave two dumps whose relationship nothing records. The relative path really is **out and back** rather than a basename: the panel computes the dump's path from the case *name*, **before** `resolve_case_root` may auto-version the directory, so a run landing in `<case>_002/` genuinely restarts from `<case>/work/`. And the result is **returned into `generate_input_in` (`zdump_rel`/`convg_rel`, exactly like `grid_rel`) rather than written back onto `cfg`** — the one place this departs from the staging around it, because it is the one value `prepare_case_dir` cannot RE-derive (`output_grid_file` is rebuilt from `case_name` every run): `cfg` is the model the `.hws` and the pipeline script are saved from, and a work-dir-relative value stored there resolves to nothing from the next, auto-versioned work dir. Gated by `tests/test_restart_paths_relative.py`, which also pins that `case_export` still recognises the now-relative reference and that the package's own `input.in` resolves — the plan decides by which file a reference RESOLVES to, so the dump must not start looking like an unreferenced output and get dropped. **The last three of the nine quoted paths got the OPPOSITE answer, and the difference is SIZE** (#29, found in review of #25 rather than reported): `mpi_comm_map_fn`, `cfl_schedule_fn` and `probe_points_def_fn` were emitted with `.strip()` and nothing else, and two of the three are `"path"` field specs with a file dialog behind them, so the GUI routinely put an absolute path on this machine into them. `table_refs_for_work_dir` **copies** the file into `work/` and quotes the bare name, where the restart dump is referenced and never copied — a table is small, and a case that does not hold its own inputs is the problem; the dump is the largest file in a case. Three shapes, one of which copies: a **bare name** is emitted unchanged (already relative to the solver's cwd, and the intended form for a CFL schedule) but still **reserves its basename**, or a later field's absolute path with the same basename lands on the file it quotes and the run is handed one table twice; a **path to an existing file** is staged under a collision-safe basename; anything that does **not** resolve is emitted unchanged (#25's rule 4). Copy, never move and never hard-link, per `case_sources`. `cfg` is not mutated, for `restart_refs_for_work_dir`'s reason. The claim to make is narrower than the tempting one, and the tempting one is what created this ticket: **every quoted path that RESOLVES is now work-dir relative.** A value naming nothing is still emitted verbatim and absolute — deliberately, so it surfaces as the solver's own error — and so is a table named like a run output (`^binDump`, `.plt`), because numbering cannot escape a rule anchored to the name and a copy under that name would be archived aside or skipped as an output. Do not upgrade this sentence to "every quoted path" without re-reading `_stage_table`. Two neighbours had to keep up, because staging made a user-named file appear in `work/` for the first time: `case_export`'s planner would have listed the two with no allow-listed suffix under INCLUDED (via `_resolve_input_in`) *and* under a SKIPPED heading in one manifest, so a file `input.in` REFERENCES is no longer also reported as an unrecognised skip — the allow-list is deliberately **not** widened (a reference is a fact about this run; a suffix would be a glob over every future one); and `case_archive` would have called it "not a recognised solver input or output", a false statement about a file this toolchain staged, so `_staged_by_name` reads the previous `input.in` for the names no list can hold. The two facts about what a work dir already means live in `case_files` (`WORK_STAGED`, `staged_bare_names`) rather than being restated at each call site, because the restated version had **already drifted**: a type-11 BC `.so` was in the archive's list and not in the stager's. And the reservation asks whether the file EXISTS — which is both more precise (only `<case>.bc.def` is at risk, not every `.def`) and what makes the counter TERMINATE, `input.in` excepted because it is the one file written *after* staging. The resolvers moved to their own module, `services/case_input_paths.py`, when `solver_case.py` passed the size budget — the same split `case_archive` got, and for a concept rather than only a file: "what should `input.in` say here?" is one question with nine instances. Gated by `tests/test_input_in_staged_paths.py` (10 properties over 42 assertions, every one verified by injection). Four of them exist because a review or an injection found a real defect in the first version, which is the honest record of how this landed: a bare name did not reserve its basename; two checks would have passed on an absolute path because `os.path.join` with one returns it unchanged; the reservation missed the `.so` and every run output; and `case_export`'s new "a reference is an input" branch sat **ahead of** the output test, so a restart's convergence file — referenced by `input.in` and produced by a run — was silently packaged as an input and the "deliberately NOT exported" warning vanished with the `skipped_output` entry it is built from. That last one is a regression this change introduced in code the ticket only asked to leave working. Where bDecompose runs was out of scope here and is **#37**, now done: the stage runs in the case's `grid/`, so staging fixes the reference and #37 fixes the production. And no acceptance claim here is stronger than the evidence: `unicones` ships as a binary with no source and no case in this repo sets any of the three keys, so unlike #25/#26 nothing was measured on the solver — the justification is self-containment and one rule for all nine, and the target shape is already proven runnable by `case_export`'s own acceptance run.
-- **`services/case_archive.py`** (Qt-free): **a restart continues in the SAME case dir, and must not write over what it resumed from.** The case-dir prompt had two answers and neither fit a restart (USER-REPORTED 2026-08-20, issue #26): *Overwrite* reused the directory and then wrote over the previous run's dumps and convergence history as the new run produced its own — **including the dump being resumed from**, so a crash part-way through a dump write could leave no usable restart point at all — while *New Versioned Dir* preserved them by splitting one continued solution across `<case>/` and `<case>_002/`. The destructive option was the only one that did what the user asked, and the dialog said nothing about restart. `archive_previous_outputs()` now puts the previous run's outputs beyond this run's reach before it writes anything. **Two facts about the solver decide the shape, and both were measured on the real binary rather than inferred** — the first version of this fix shipped without an acceptance run and was wrong. **(1) The restart reference must be a BARE name in the work dir.** Point `zdump_fn_restart` at `prev_001/binDumpZ.dat.gui` and the solver derives a per-zone path out of it — `binDumpZ.dat.prev_001/binDumpZ.0` — into a directory that does not exist, and the run dies with `Can't open file` (USER-REPORTED against the first fix). **(2) It must DIFFER from the solver's own output dump name**, which is `binDumpZ.dat` + the `-t` tag — i.e. exactly the file a GUI restart resumes from, so *every* same-folder restart was already rewriting its own restart point in place (measured: the source's checksum changes). The issue framed that as a crash-window risk; it was in fact happening on every run. So: every output moves into a fresh `work/prev_<NNN>/`, **the zone dump included, and `work/` keeps a bare-named HARD LINK to it** — bare, so no derivation happens, and differently named from the solver's own output dump, so this run cannot land on it. The convergence file has no such constraint (measured: a subdirectory path there runs clean) and just goes into the archive. **The link, not a rename in place, is #30's correction of #26** (2026-08-25): #26 had to leave the dump itself out in `work/`, so the archive was never complete and on the *next* restart that file was just another output — prev_001's dump filed inside `prev_002/`, a wart `tests/test_restart_archive.py` check 4 pinned as behaviour. One inode satisfies both halves at once: the archive holds the file, `work/` holds the name the solver requires, and the case grows by ~0 bytes (measured on the reported case: 24352 KB -> 24356 KB across an archive whose dump is 1597 KB). **This is the ONE place this repo's "a hard link is not the cheap version of a copy" rule (`case_sources`) flips, and for that rule's own reason** — there the hazard is that editing one path rewrites what the case holds, and a zone dump is never edited. A stale link is retired by INODE (`_archived_inodes`): a work-dir output whose bytes are already inside an archive is unlinked, never moved, so the archive it belongs to is never added to by a later run. A file that is already `.prev_NNN` and is *not* a link (a copied tree, or #26's own rename left on disk) is filed into the archive it is already named for — which is how a case that predates #30 upgrades, measured on the real `binDumpZ.dat.gui.prev_002` this repo still carried. **And every archived file ends in `.prev_<NNN>`** (`case_files.archive_name`): a trailing run tag is replaced (`unicones.enorm.gui` -> `unicones.enorm.prev_001`), a name without one is appended to (`fort.11` -> `fort.11.prev_001`), and a name that already carries a suffix is left alone rather than re-tagged onto a run it did not come from. Two consequences. The run tag is the information that rename discards, so **`RUN.txt` is where it survives** (below). And `is_run_output` now **strips the suffix before matching**, because two output patterns anchor on the END of the name (`\.plt$`, `^fort\.\d+$`) — without it an archived `fort.11.prev_001` would be reported as "not a recognised solver input or output", a false statement about a file this toolchain named itself; widening the patterns instead would loosen them for every future name, and seeing through a suffix this repo creates does not. Rules: **an allow-list decides, not a glob** — only what `case_files.is_run_output()` classifies as produced-by-a-run moves — **that list, and `ARCHIVE_DIR_PREFIX`, live in `services/case_files.py`**, a module both this and `case_export` import as peers, because they are facts about a case rather than about an export (putting them in `case_export` made the exporter the owner of a name the archiver creates, and forced a one-way import that then had to be apologised for in a comment), the inputs `prepare_case_dir` stages (`input.in`, `*.def`, `phi.dat`, a type-11 BC `*.so`) **stay** or the resumed run restarts into nothing, and a file **neither** list recognises stays put and is **named in the log**; **move, never copy** (the dump is the largest file in a case); **nothing is created when nothing moves**, which is what lets a caller pass `archive_prev` without first asking whether there is anything there; and `prev_<NNN>` **never clobbers either** — but where `resolve_case_root` gives up by overwriting the default dir (costing a re-run), an exhausted counter here archives **nothing** and says so, because giving up the other way would be the exact destruction the archive exists to prevent. **That refusal has a second instance, and the archiver used to commit the destruction it names** (#42): the rename REPLACES a run tag, so `xtecp_sol_allz.dat.cli` and `xtecp_sol_allz.dat.gui` — one output of one case run by the two hosts — both want `xtecp_sol_allz.dat.prev_001`, and the second `shutil.move` landed on the first with no warning, an entire run's field output and convergence history gone and the survivor decided by directory listing order. Reachable without misuse: the headless pipeline auto-versions and never lands on an occupied case dir, so the one route is headless first (`.cli`), then a GUI run answering *Overwrite* (`.gui` joins it), then a restart — every step an answer the toolchain offers. `case_files.archive_name_collisions` asks it ONCE over the set about to move, in the module that owns the mapping (a per-move check can only see a collision from one side, and by then the other file has moved), and it is asked **before the retire loop**, i.e. before ANY move, so a refusal is a no-op the user can retry rather than a half-archive. Refused wholesale, not pair-by-pair, and the message names both files, the name they both wanted and the *reason* — that archiving drops the run tag, which is invisible from the file names alone. Two details of that message are load bearing. It reports the **concrete** `prev_<NNN>`, which costs the counter a directory scan, so the counter is asked only once a refusal is certain — detection itself is a dict build, since a pair collides under every suffix or none (`ARCHIVE_SUFFIX_PLACEHOLDER` is the fallback when the counter is exhausted, and the same constant `archive_notice` uses). And it does **not** say the run continues "beside" the files it declined to move: the refusing run carries one of the two tags itself, so it writes over the half of every pair that shares it — the dump it resumes from included — which is #26's hazard returning through the door the Overwrite disposition leaves open (out of scope in #42, said out loud here rather than softened, the same rule that keeps `resumed_from`'s `None` and `""` apart). Renaming around it was rejected twice over: keeping the tag breaks #30's one-archive-one-scheme rule exactly where a reader most needs it, and numbering the second file invents a name that says nothing about which run it came from. **The restart reference follows the file** — `restart_refs_for_work_dir(..., moved=)` consults the move map *before* the existence check, since at its old path the dump is now gone and "does not resolve" would send the run's own restart point through the pass-through branch. The map is also the **one** thing that rewrites an already-*relative* reference: #25's rule 3 passes those through untouched, but a bare `binDumpZ.dat.gui` (hand-written, or reloaded from a `.hws` / pipeline script — the autofilled absolute path is not the only way that field is filled) names nothing once the file is in `prev_001/`, so the rule is narrowed by exactly the one file this run moved and by nothing else. That is why #26 was blocked by #25: the re-pointed reference is only usable because it is emitted work-dir relative (`prev_001/binDumpZ.dat.gui`). `cfg` still keeps its absolute path to `work/`, unchanged and right — the panel's field means "the dump in this case's work dir", which the *next* restart archives in its turn. The choice is one value, not a pair of booleans: `solver_case.CASE_ARCHIVE` / `CASE_IN_PLACE` / `CASE_NEW_VERSION`, mapped to `prepare_case_dir`'s two mechanical flags in one place (`case_dir_flags`), which **raises on an unknown value** rather than resolving it — `(False, False)` is a real disposition (auto-version), so a typo would otherwise run silently in a directory nobody chose. The prompt is `views/case_dir_dialog.py::ask_case_disposition` (extracted so `solver_ctrl` stays inside the file-size budget, and testable without a controller), and **a restart no longer reaches it** — #31 took that branch away, because once the start point is picked from the case's own history there is nothing left to ask, so `_resolve_case_disposition` returns `CASE_ARCHIVE` and says so in the log instead. What is left is the non-restart question, unchanged; headless returns `CASE_NEW_VERSION` without showing anything. `CASE_ARCHIVE` is deliberately not an answer the dialog can give any more: a branch nothing can reach reads as a working feature. **`case_export` had to learn to see the archive**: `plan_export` skipped every non-file entry silently, so a nested `work/prev_001/` was neither shipped nor named — the same bug class as `plan_export` once walking only one level deep. Each archive is now walked as its own subdirectory with **nothing** allow-listed (every file in it is an output by construction), so its contents are named as skipped except the dump `input.in` quotes, which ships for the same reason the one in `work/` does. That also forced the reference match from BASENAME to the resolved path: an archived restart legitimately leaves two files called `binDumpZ.dat.gui` in one case, and basename matching shipped both. **Each archive carries a `RUN.txt`** (`services/case_run_note.py`, Qt-free — writer *and* reader, so the format round-trips instead of being prose only a human can parse): the timestamp, the run tag, what that run itself resumed from, the zone dump's archived name, and how far it got. Two of those have to be RECOVERED rather than remembered, because the run is over: the tag is read off the file names *before* they are renamed, and the iteration count comes from the LAST ROW of the run's own convergence history — the solver prints `Global Iteration count` to stdout and by archive time that is gone. It is recorded as `last_iteration` with the print interval beside it (`convergence_interval`, read from the same `input.in`), and **the two together recover the count the solver printed**: it writes one row every `print_convg_per_niter` iterations and none for the final one, so `1990 + 10` is exactly the 2000 the acceptance run measured. **That arithmetic is a REVERSAL of what #30 and #31 recorded** (#43): both wrote down the argument that naming 2000 would be a *fabrication* and rendered the figure as the bound `1990+`, which overruled #31's own specification (a bare `iteration 2000`). The argument's own evidence contradicted it — the archive gate stated the bound as `[1990, 2000)`, a half-open interval that **excludes the value it claims to contain**, and that sentence sat in a gate for two issues. What survives of the caveat is that an *interrupted* run got no further than the printed count, i.e. the sum is an **upper** bound, and that belongs in a tooltip rather than in a refusal to name the number. The arithmetic now has exactly one home, `case_run_note.iteration_span` (below); the wrong reasoning is a useful specimen, because it was not a typo but a considered argument written down with its evidence, and it survived because the evidence was never checked against itself. An unreadable history reports **-1, never 0**, since 0 is a real answer the solver prints for a cold start — and `resumed_from` has the same three states for a sharper version of the same reason: a work dir with no `input.in` never ran a restart (`""` → "cold start"), while an `input.in` that exists and cannot be READ returns **None**, because "we could not tell" rendered as "cold start" would be a positive false claim in the one field #30 exists to provide, on a case whose history the reader cannot check any other way. `RUN_NOTE_NAME` lives in `case_files` beside `ARCHIVE_DIR_PREFIX` for that constant's own reason — the export has to know the name, and the module that writes it must not become the owner of a name the export reads. `RUN.txt` is the one file in an archive that does not end in `.prev_<NNN>` — deliberately: it is the archive's own record rather than something the run produced, and #30 asks for it by that name. `case_export` names it as a skipped OUTPUT rather than letting it fall through to "not recognised as a solver input"; it does not ship, because the package carries a case's inputs. The **run tags themselves are declared once**, in `case_files.RUN_TAGS` — `solver_ctrl.SOLVER_TAG` and `pipeline_runner.SOLVER_TAG` are now that constant and `restart_points` reads the same tuple, because a rename rule that strips a tag nobody writes silently does nothing. Gated by `tests/test_restart_archive.py` (10 properties against the real `prepare_case_dir`, the real export planner and the real dialog — property 9 is #42's, with the guard's absence INJECTED to measure the destruction it prevents and a negative control that a one-host work dir still archives unchanged; property 10 is #43's, and is where `iteration_span`'s own arithmetic lives, every check verified by mutating the module and re-running) **and by `tests/test_case_export.py` check 16**, which is where the exporter's own gate has to see an archive — the archive's behaviour proven in the archive's test says nothing about a planner nobody re-pointed at it, with a negative control pinning that the move map is load bearing rather than redundant, plus the acceptance evidence the design was derived from, recorded in the test's own docstring: the real `prepare_case_dir` over the reported case and then the real `unicones` binary on its output — **exit 0, `Global Iteration count 1000`** (a cold start reports 0), restart source byte-identical afterwards, archive intact. #30 was accepted the same way and on the same case, twice in a row (`Global Iteration count 2000` then `4020`, source sha256-identical both times, `prev_003/` byte-for-byte untouched by the second restart and its dump back down to one link). One measured residue is named and left alone: #25's cross-case reference (`../../own/work/binDumpZ.dat.gui`, which auto-versioning produces) does resume correctly, but the same derivation leaves an empty `binDumpZ.dat.0` in the work dir.
-- **bDecompose runs IN THE CASE** (`workers/solver_run.py::_run_bdecompose`, name and output classification in `services/case_files.py`): #37, split out of #29 §5, which refused to conflate a path shape with where a stage runs. The stage ran with `cwd = os.path.dirname(cfg.bdecompose_binary)` — the binary's own install dir — and triage found that this was worse than "the output lands outside the case" in three ways at once. **The stage could not find its inputs, by construction**: `generate_bdecompose_para` writes the grid and bc as BARE BASENAMES, those two files are written by getPGrid into the case's `grid/`, and nothing ever copied them across. **The install dir made that silent**, because it still holds the `mesh_cartesian.grid` / `.bc` from the one hand run — so a case NAMED `mesh_cartesian` found a grid, decomposed the STALE one, and the solver ran MPI on a decomposition of a different mesh, the same class as the stale `work/phi.dat` this repo has two defences against. And the answer file was written into a **shared, possibly read-only** location two concurrent runs would race on. It now runs in `grid/`, exactly where getPGrid ran, and the inputs are what decide that: after stage 1 that directory holds all three files bDecompose reads by bare name (`<case>.grid`, `<case>.bc`, and the `<case>.bc.def` companion getPGrid leaves beside them). Three rules.
-  - **The answer file is NOT `para.in`, which is a deliberate departure from the issue's own proposed scope** ("writes its `para.in` there, exactly as `_run_getpgrid` already does"). getPGrid already owns `grid/para.in`, `case_export` ships that file as `grid/getPGrid.in` and `run_case.sh --regrid` feeds it back — so sharing the name would replace getPGrid's answers with bDecompose's in every exported package, silently. It is fed on **stdin**, so the name is ours: `case_files.BDECOMPOSE_INPUT` = `bDecompose.in`, named after the program whose stdin it is, which is the reason `case_export._RENAMES` gives for the other one. In `case_files` because the writer and the export planner are peers and a second spelling is how the file written and the file shipped drift apart.
-  - **`is_run_output` must NOT learn `mpi_*`, and this is measured rather than argued.** For the comm map, the file bDecompose PRODUCES and the file the solver READS are the *same name*, and `case_input_paths._stage_table` asks `is_run_output` whether to stage a user-named table — so widening it emits the "reads as a file a solver run produces" warning, copies nothing into `work/`, and leaves `input.in` quoting the absolute source path, i.e. it silently undoes #29 for exactly the field #37 is about. The question is therefore asked **per DIRECTORY**: `is_decompose_output` for `grid/` (its only consumer is the export planner, so a file this toolchain produced is not reported as "not a recognised solver input or output" — the false statement `RUN.txt` already had to be spared), `is_run_output` for `work/`, which is what `case_archive` and `case_clean` act on. The comm map's own name is `case_files.COMM_MAP_NAME`, and the reason is the usual one for this module rather than a second consumer: `case_export` and the stage are peers about a file of the case, so neither owns the spelling. The first version of this sentence claimed the classifier needed it too — it does **not**, it matches by PATTERN (`^mpi_`, `\.mpi$`) and never reads the constant, whose only production consumer is `solver_run` reporting where the stage put it. Caught by the Standards axis; it is the same every/all/only overclaim habit recorded against #25 and #29, and it had been copied into two files at once.
-  - **Filling `mpi_comm_map_fn` in is still the caller's**, not the stage's: the produced path is named in the log and nothing more (`services/ib_handoff`'s rule — a stage may not overrule what the caller declared), and #29's staging then carries it. **`case_export` keeps shipping the comm map, per the issue — and the first version of #37 BROKE exactly that**, which is the sharpest thing review found here. The issue's third consequence is one line ("`case_export` must keep shipping the comm map either way"), and the new `grid/` output branch `continue`d *ahead of* `plan_export`'s existing `elif rel in referenced`, the branch whose own comment states the rule it was jumping: a file `input.in` quotes is an input of this run by definition. So the map stopped travelling AND collected the restart-specific "deliberately NOT exported" warning, prose that is simply false about a comm map. Measured, with a negative control: reverting only `_is_decompose_output` restored the shipping, so it was a regression rather than a pre-existing gap. The fix is one condition — the branch fires only when `rel not in referenced` — which leaves `_is_output`'s precedence untouched, so the restart convergence file that long comment protects behaves exactly as before. **The gate did not pin the wrong side, it never covered this side**: `build_case`'s `input.in` quotes only the grid, so every file check 11 lists is UNREFERENCED and "does not ship" is correct there. That distinction decides the remedy — a check was ADDED, not corrected.
-  Validation grew the other half of finding 3: `_validate_solver_config` never checked `bdecompose_binary` at all, so enabling decomposition on a machine the prebuilt binary cannot run on passed validation and died in stage 2 as a bare `[bDecompose] exited with code …` naming neither the field nor the file. It now refuses a blank, a missing file, and a **wrong executable format** (`services/paths.wrong_executable_format`) — the shipped bDecompose is an x86-64 **ELF** binary and a dev machine here is arm64 macOS. That test is narrow on purpose: an unrecognised format (a `#!` wrapper) answers False, because "we cannot judge this" must not be reported as broken, and the MACHINE word is not compared, since macOS runs x86-64 Mach-O on arm64 under Rosetta. Gated by `tests/test_bdecompose_in_case.py` (14 properties). **The issue's remaining consequence — that a decomposition may legitimately be REUSED across cases, arguing for producing it once outside and letting #29 stage a copy in — is answered by needing nothing**, and saying so is the point: because the stage only NAMES what it produced and never fills the field in, a user pointing `mpi_comm_map_fn` at a shared decomposition gets precisely #29's behaviour and `grid/`'s own output is simply unread. The first pass argued two of the three consequences at length and left this one silent, which reads as an oversight rather than as a decision. The claim to make about its evidence is narrower than the one this entry first made, and the narrowing was a review finding: checks 1-11 are BEHAVIOURAL — they drive the real worker method, the real validator and the real export planner, so they bite by construction — and each was verified to bite by injecting the defect back by hand at review time, which is not the same as an in-test injection and must not be written down as one. Exactly ONE injection is permanent, and it is the one carrying an argument rather than a behaviour: check 13 mutates `_OUTPUT_PATTERNS` in the live module, re-runs `_stage_table` and asserts the CONSEQUENCE (nothing staged, `input.in` left absolute) before restoring it and asserting the control. That is the split worth copying — an argument in a docstring decays, a behavioural check does not. Two residues are named rather than guessed at, both from the Spec review. **The comm map is produced inside the case but staged into `work/` only on the NEXT run**: `prepare_case_dir` writes `input.in` before stage 1, so on the run that first produces the file there is nothing to stage — it still resolves, because a relative `../grid/mpi_comm_map.dat` is passed through untouched (#25's rule 3) and the solver's cwd is `work/`. And **bDecompose's other outputs (`mpi_grid.dat`, `mpi_bc<N>.dat`, `<bc>.def.mpi`) get no home in `work/`**, deliberately: whether the solver wants them there is not knowable from this machine, and `stage_bc_def_companion` is a precedent for staging a file whose consumer is *known*. Encoding a guess would be the "believable answer for the wrong input" class. And **a stale `grid/bDecompose.in` is allow-listed by name, so a case re-run with decomposition OFF still ships it as an input**: nothing cleans `grid/` (`case_clean` is the top level of `work/`), and `case_export_usage.unused_reason` judges only `work/phi.dat` and `dll/*`. getPGrid's own `para.in` has had the identical property since before #37, which is why this is recorded as accepted rather than fixed here — but it is the same fossil class as "I didn't configure IBM, why is there a phi.dat?", so it is named instead of left silent. **The acceptance run is OUTSTANDING and the gate says so**: the binary ships prebuilt with no source and cannot execute on this machine, so the tests pin the SHAPE of the run (cwd, stdin file, inputs present) and not the binary's acceptance of it. #26 is why that distinction is written down — it shipped broken with 85 green tests that pinned strings and never ran the solver.
-- **`services/case_clean.py`** (Qt-free) + the second half of `views/case_dir_dialog.py`: **"Overwrite" and "empty this folder first" are two different answers, and the destructive one shows its work.** #33, DECIDED 2026-08-21. `resolve_case_root(..., overwrite=True)` reuses the directory and the run writes over files as it produces them, so a case ends up a mixture of this run's output and whatever the last one left — a recurring defect class with **two separate defences and no fix**: `report_stale_ibm_artifacts` (a leftover `work/phi.dat` is read by the init DLL, so "immersed solid ON with no phi chosen" converges to a believable answer for the PREVIOUS geometry's solid) and `case_export_usage.unused_reason` (USER-REPORTED: "I didn't configure IBM, why is there a phi.dat and a dll/?"). `Clean and Run` retires the class at its source. Rules:
-  - **A separate button, never a redefinition.** Someone who picks `Overwrite in Place` means "reuse this folder", so folding a deletion into it would break them. The non-restart prompt is now `Overwrite in Place` / `Clean and Run…` / `Archive Previous` / `New Versioned Dir` + Cancel — **four plus Cancel, exactly #33's stated ceiling**, so the next answer to want a button is where this stops being a message box. **The restart path still reaches none of it** (#31), which also makes `CASE_CLEAN` unreachable for a restart; see the guard below for why that matters.
-  - **`Archive Previous` is a REVERSAL of #31, on a ground #31 did not rule on.** #31 removed `CASE_ARCHIVE` from this prompt because a restart stopped reaching the prompt at all and nothing could then select the answer — *"a branch nothing can reach reads as a working feature"* — **not** because archiving is wrong for a run that is not resuming. #33 asks for it back on a different ground ("#26 already makes a non-destructive same-folder run possible, so the honest framing may be 'archive these, or delete these?'"), and once `Clean and Run` exists the alternative is needed: without it, a user who wants to keep the previous results *in this folder* has no answer but `New Versioned Dir`, which splits one case across two directories. The branch is reachable again, so it is a feature again. `test_restart_archive.py` check 7's second half is the **inverted** version of the one that pinned its absence, with the reasoning recorded beside it — the first write-up of #33 skipped this as "would re-add a branch #31 removed", which is false: #31's removal was restart-specific, and the omission was a choice, not a constraint.
-  - **Measure, show, then delete — three steps, and the deletion is not one of them.** `plan_case_clean(work_dir)` builds a `CleanPlan` and touches nothing; the prompt renders THAT plan (counts, per-file sizes, total); `apply_case_clean` acts on the approved list and never re-reads the directory. This repo has the scar the separation is for — an `ls` and an `rm -rf` in one command destroyed ~40 gitignored resampler artifacts — and the split also puts the (possibly hundreds of MB) deletion on the worker thread, where `prepare_case_dir(clean_plan=…)` applies it before staging anything.
-  - **Reuse the classification, do not glob.** `case_files.is_run_output` decides what a run PRODUCES and `WORK_STAGED` / `staged_bare_names` what `prepare_case_dir` stages INTO the work dir, so the loop is deliberately the same shape as `archive_previous_outputs`'. A file neither recognises is **kept and named in the log**, and so is a directory that is not an archive — an `isfile` guard that silently passes over a folder is the bug `plan_export` had. Scope is the TOP LEVEL of `work/`: `grid/` and `dll/` are re-staged from the model every run and `grid/cad/` holds copies of the user's own geometry.
-  - **But the classification alone KEEPS the file #33 exists to remove**, and that is the sharpest thing review found here. The problem statement is the stale `work/phi.dat` the init DLL reads by a fixed name — and `phi.dat` is in `WORK_STAGED`, so a plan that only reuses the allow-list buckets it as an input and a `Clean and Run` retires nothing. The fix is **not** to delete `WORK_STAGED`: `stage_phi_file` skips the copy when source and destination are the same file, so a config whose `ibm_phi_file` resolves to `work/phi.dat` itself (an exported case reopened in place) has no second copy, and the literal reading destroys it. The question asked is therefore **"is it stale?"**, which gets both directions right for free — `solver_case.stale_phi_name` returns the name only when this run stages no phi at all, which is exactly the condition `report_stale_ibm_artifacts` already warns about, so the warning and the deletion have ONE owner and cannot disagree. `plan_case_clean(work_dir, stale=…)` takes those names from the caller because whether a staged input is a leftover is a question about the *config*, which this module deliberately knows nothing about; the empty default keeps the safe direction the default. What is NOT retired is named rather than implied: `dll/` is out of scope by point 4, so `case_export_usage`'s other half ("why is there a dll/?") stands.
-  - **`work/prev_*/` is NOT deleted by default**, and the tick that includes it is off every time the dialog opens — a fresh `QCheckBox` per call, never read back from `ui_state`. It is the largest thing in a restarted case and also the only record of the earlier legs, which #32 exists to play back, so removing it is a second deliberate act.
-  - **Two guards in `apply_case_clean`, and only one of them stops a deletion.** The plan's `work_dir` is compared with the run's (a plan is approved on the GUI thread and applied after `resolve_case_root` has had its say, so the folder the user was SHOWN and the folder this run USES are two facts) and refused as a whole with one message naming both. Every entry is then re-checked to be `is_inside` that dir. Measured by injection: remove the first and every entry is still refused individually — what is lost is the single legible refusal; the per-entry check is the protection, and it is gated with a doctored plan because a nested guard cannot be reached while the outer one holds.
-  - **A restart is refused even if handed a plan — and the guard CORRECTS the flags it invalidates.** The restart source sits in `work/` under a name `is_run_output` classifies as an output — it IS one — so a clean would delete the file the run is about to resume from. The GUI cannot reach that state, but `prepare_case_dir` is the one place where `cfg.restart` and the plan are both in scope, which is what makes the guard statable at all. Merely *skipping* the deletion was wrong and shipped first: a clean's flags are `(overwrite, no-archive)`, so declining to delete left the run overwriting the previous outputs in place as it produced its own — #26's hazard, and worse than either answer the user could have picked. It now sets `archive_prev` and says so. A guard that invalidates its caller's flags has to fix them, not just decline.
-  - **Never unattended.** Run All / batch answers `CASE_NEW_VERSION` before any prompt is reached, and `confirm_case_clean` returns cancel when headless. An **empty** work dir degrades to `CASE_IN_PLACE` with a log line rather than prompting about nothing.
-  - **`_resolve_case_disposition` moved to `controllers/case_disposition_ctrl.py`** when the question grew its second step and `solver_ctrl` hit the GUI file-length budget — a concept split, not just a line count: nothing there knows how to run a solver and everything there is about a directory.
-  - **One approved value, not a pair.** `ApprovedClean(plan, include_archives)` travels from the prompt through the controller, `SolverPipelineWorker` and `prepare_case_dir`; the confirmation returns it or `None`, which is what keeps the prompt's three endings out of a `bool | None`. The controller exposes it as `pending_clean()` — a verb, because `solver_ctrl` reaching it as `getattr(self, "_case_clean_plan", None)` was the cross-mixin private reach #43's story 45 asks to be rid of, and the `getattr` default would have made an uncomposed mixin degrade silently instead of failing.
-  Gated by `tests/test_case_clean.py` (12 properties + 6 injections, each asserting the mutation still parses and really differs, with its blind spots named in its own docstring). It imports **no Qt at all**, which the acceptance list asks for in as many words — the first version built a `QApplication` so `is_headless()` would answer True, making the deliverable literally false; the prompt's headless refusal is now asserted structurally (it delegates to `confirm_destructive`, which has no `headless_default` to pass). Four of its checks exist because an injection or a review axis found a real defect: the `kept_inputs` bucket decides the **report**, not survival (an unclassified file is kept too); the work-dir equality test is legibility, while `is_inside` is the protection (measured, and the per-entry guard is gated with a doctored plan because a nested guard is unreachable while the outer one holds); the restart-guard injection first passed for the wrong reason, because the fixture seeds two archives that already hold a `binDump*`, so the discriminator is the archive COUNT; and the stale-phi rule is pinned in **both** directions. Acceptance, on a copy of this repo's real `results/solver/case`: 8 items / 5.8 MB planned and removed — the stale 664 KB `phi.dat` among them — `prev_001` + `prev_002` (14.6 MB) kept, `case.bc.def` / `input.in` kept as this run's inputs, `grid/` untouched, and a stray `.DS_Store` kept and named, which is the unclassified rule working and the reason a macOS user sees that line on every clean.
-- **`services/restart_points.py`** (Qt-free) + **`views/panels/restart_chooser.py`**: **the restart point is PICKED from the case's own history, not typed as a path.** USER-REQUESTED (2026-08-21, issue #31), blocked by #30 because it reads the `RUN.txt` #30 writes. After restarting once the next run is one of two intentions — **continue further** from the newest dump, or **re-run the same leg** from the dump the *last* run resumed from, having looked at the results and wanted that segment redone — and a `Restart` tick plus a free-text `zdump_fn_restart` expressed neither. The autofill (`_autofill_restart_from_last_run`, now gone) looked for a fixed `binDumpZ.dat` + `.gui`/`.cli` **in `work/` only**, so it knew nothing about the `work/prev_<NNN>/` archives #26 creates: "re-run the same leg" meant the user remembering which file that was and browsing to it, while the thing actually being decided is an **iteration count**. `list_restart_points(case_root)` now returns the rows — cold start, the newest un-archived dump in `work/`, then each archived leg newest-first with the iteration count, timestamp and run tag from its own `RUN.txt` — and the chooser is one column of radio buttons over them plus an "Other file…" escape. Rules that are load bearing:
-  - **The MODEL still holds a path**, and an absolute one (#25): `SolverConfig.restart` / `zdump_fn_restart` / `convg_fn_restart` are unchanged, so `.hws`, pipeline scripts, `case_export` and `prepare_case_dir` are untouched and "Other file…" stays honest. What changed is that **one control authors all three** — the three `FieldSpec` rows are gone and the names are declared in `SOLVER_EXTRA_AUTHORED` with their reason, because three widgets for one decision is the duplication the field-spec tables removed, and a tick in a different place from the thing it restarts FROM is the interface the issue is about.
-  - **Radio buttons, not a list widget, and the control reports its own edits.** `undo_ctrl._wire_widget_edits` is the ONE traversal that knows "the user touched this panel" (and therefore refreshes the model), and it connects spin boxes, combos, line edits and *checkable buttons* — a `QListWidget` selection is none of those. The rows are also **rebuilt whenever the case changes**, i.e. long after that one-shot traversal ran, so a composite control declares **`panel_edited`** and the traversal connects that. Measured: deleting that one loop leaves every panel-level check green and fails only `test_restart_chooser.py` check 12, which is why that check drives the real `AppController` instead of reading the panel.
-  - **The list is derived on every call and cached nowhere** — the case dir is the truth, a `.hws` reopened after the case moved on must not offer rows that are gone, and it is re-listed on a case-name edit and after every run. The cost is stated rather than optimised away (one small `RUN.txt` per archived leg per keystroke); a cache is the thing this rule forbids.
-  - **The marker is matched by BASENAME.** The last run's reference comes out of `work/input.in`, and for an archived dump it is the bare name of a hard link (#30) that the *next* archive retires — so the file that reference named is gone while the bytes keep that basename inside `prev_<NNN>/`. Matching by path or inode would lose the mark on exactly the row #31 exists to highlight. `resumed_from`'s three states are kept apart for its own reason: "we could not tell" must not render as the claim "cold start", which here would MARK the cold row.
-  - **Every leg's count comes from one function, `case_run_note.iteration_span`** (#43), which prefers an archive's `RUN.txt` and falls back to the convergence history the archive holds. #31 shipped the opposite rule — an archive with no note got a row with the count "unknown", its history *deliberately not re-read*, on the argument that a second computation would be a second answer — and that rule cost exactly the legs it was meant to protect: an archive predating #30 read `iteration unknown` with every number needed sitting inside it, while `_latest_point` two functions below computed the live row's count from that same kind of file with that same reader. One module was applying a computation to one leg and refusing it for its siblings. There is still one answer; it is just no longer read from one place. A leg whose span cannot be computed at all still gets a row, unlabelled — hiding a restart point that exists is worse than showing it without a number. The count reads `iteration 1000`, not the bound `990+`; see the reversal recorded under `case_archive` above, and note that the *chooser* and the *Results leg list* now consume the same answer, so the two windows cannot describe one folder differently.
-  - **A restart source inside an archive gets a bare-named hard link in `work/` on demand** (`case_archive.bare_link_for_archived_dump`, called by `prepare_case_dir` *before* the archive step and independently of `archive_prev`, feeding the same `moved` map). Without it the chooser's headline click produces `prev_001/binDumpZ.dat.prev_001` — the exact reference #26 measured the solver dying on — so offering older legs is not a view-only change. It refuses rather than guesses in two places: a name already taken by a different file is not overwritten, and a filesystem that cannot make the link gets a warning instead of a silent second copy of the largest file in the case.
-  - **A restart whose source is not there is refused in the GUI.** `_validate_solver_config` used to check only that the field was non-empty, so a stale path reached the solver and died there with a message naming neither the field nor the file. Both references are now resolved (a relative one against this case's work dir) and named with their missing path. The chooser closes most routes to that state — it can only list files that exist — but "Other file…" and a restored workspace still reach it.
-  - **The case-dir modal is dropped on the restart path** (CONFIRMED 2026-08-21) and Run All is untouched: `_pipeline_running` is still checked first, so batch keeps auto-versioning without a modal. One confirmation step fewer is the point, so the archive step has to be legible in the log on its own — `_resolve_case_disposition` names the concrete `work/prev_<NNN>/` and what happens to the dump. An explicit overwrite-in-place escape belongs somewhere non-default (#33).
-  - **`case_root_for` / `work_dir_of` live in `solver_case`**, which already owns a case's layout, and `restart_points` re-exports them — the panel, the validator and `_resolve_case_disposition` all ask one function instead of joining `results/solver/<case>` themselves. The claim to make is exactly that narrow: the first write-up of this said "where a case lives has one spelling" and it was **false** — 11 `results/solver` joins exist and one full case-root construction was replaced. `resolve_case_root` takes its root as an argument (so a test can move a whole run) and builds the versioned siblings inline; `case_export_ctrl` asks the same question for its dialog's starting guess and is the one remaining candidate; `postprocess_ctrl`, `solver_tools_ctrl` and `dll_builder_dialog` ask for the PARENT dir or for `dll_src`, which are different questions. Found by the Standards axis, which enumerated the call sites the sentence claimed to cover — the same overclaim #25/#29 record.
-  - **One departure from the issue's own text, and one REVERSED.** The rows first showed the count as a **bound** (`1990+`) where the issue's mock showed a bare `iteration 2000`, on the argument that printing the spec's number would be a fabrication. **#43 reverses that**: `1990 + 10` recovers 2000 exactly, the rows read `iteration 2000`, and the tooltip carries both surviving caveats (recorded vs recomputed, and that an interrupted run makes it an upper bound). The departure is recorded here rather than deleted, so "we deliberately departed from the spec" is not left standing as a validated precedent — it was overruled, and the spec was right. The remaining departure stands: the issue says this keeps "`prepare_case_dir` untouched", which it does not: `bare_link_for_archived_dump` is called from it, because without the link the chooser's headline click is unrunnable (test check 11 was RED before it existed).
-  - One residue, named rather than fixed: **a case-name change keeps the previously picked absolute path**, so it can land on "Other file…" as a cross-case restart the user did not deliberately choose. It is visible in the row's own field, it is a configuration #25 supports, and `_validate` refuses it if the file is gone — no worse than the retired autofill, which pointed at whatever `work/` held.
-  - **A row has to FIT, and that is structural rather than cosmetic**
-    (USER-REPORTED 2026-08-27). `SolverConfigPanel` caps its content at 430px and
-    sets `setHorizontalScrollBarPolicy(ScrollBarAlwaysOff)` with
-    `setWidgetResizable(True)`, so a row wider than the viewport is CLIPPED and
-    the rest is unreachable — there is no window size that rescues it. Measured:
-    the marked row wanted **494px** against ~380px usable. The timestamp drops its
-    year and seconds and the marker became `← last run` (321px), and `_Row` elides
-    whatever a narrower sidebar still cannot fit — an ellipsis says there is more,
-    where a clip pretends the row ended. Two consequences worth knowing:
-    `minimumSizeHint` must stop advertising the full width, or the row forces the
-    scroll area's content wider than its viewport and re-creates the very state
-    being fixed; and **the marker is BOLD as well as worded**, because the words
-    sit at the END of the row and are therefore the first thing elided, which
-    would have made the fix for the over-wide row eat the one signal #31 exists to
-    give. A check asked of a row built from the CURRENT (now short) text proves
-    nothing about the elide — measured, it passed with the mechanism deleted — so
-    the gate asks it of a deliberately over-long row. **The panel itself now
-    scrolls sideways** (`ScrollBarAsNeeded`, USER-REQUESTED 2026-08-27 — and the
-    setting `mesh_config_panel` has had since 2026-07-28, so the solver panel was
-    the inconsistent one). Measured: no bar at 430px or 360px, a bar with a real
-    range once the viewport drops under the content's own ~301px floor, where
-    that content used to be simply unreachable. It is a safety net for the PANEL
-    and deliberately not the mechanism for the rows — those elide and so never
-    trigger it, because a row is the widest thing here and one demanding its full
-    width would put a horizontal bar under the whole panel permanently, making
-    every other field need a sideways scroll. `stl3d_panel`, `result_panel` and
-    `sidebar` still carry `AlwaysOff` and have the same latent gap; left alone
-    rather than swept, since nobody has reported one.
-  Gated by `tests/test_restart_chooser.py` (12 properties against the real `prepare_case_dir`, the real widget offscreen, the real `SolverControllerMixin` and the real `AppController`; its checks 2-4 and 8 are now the **inverted** versions of the ones that asserted the raw last row, a blank count and a blank TIMESTAMP for a pre-#30 archive, and the old marker wording, so neither #43's reversal nor the 2026-08-27 stamp correction can quietly come undone; check 13 pins both reported symptoms, all four of its assertions verified by injection), and `test_restart_archive.py` check 7 is now the **inverted** version of the one that pinned the dialog's restart branch, so bringing that modal back fails the gate. Blind spot named in the test: nothing here runs `unicones`, so the bare-name reference is pinned against the SHAPE #30's acceptance run measured, not against the solver's acceptance of it.
-- **`services/case_sources.py`** (Qt-free): copies the CAD/STL a case was cut from into **`grid/cad/`**, so the case describes its own geometry instead of only the mesh (the source otherwise lives in `examples/geometries/` or a Desktop, free to be edited or deleted while the case looks complete). Fed by `solver_ctrl._case_source_files` / `_case_generated_files` and `pipeline_runner._case_sources` — the imported source, the resampled `.dat` the mesher read, the immersed STL, the mesh `.provenance.json`, and the **mesh parameter file**, which is *generated* rather than copied because the GUI only ever materialises one in `temp_dir` and deletes it on exit (`mesh_config_io.config_to_text`, split out of `save_config_to_file` so the staged config is byte-identical to a hand-saved one; it takes the destination path because a geometry outside the repo is emitted relative to the config file). Rules: **copy, never move** (the mesher, the GUI session and other cases still point at the original — and a *move* is unimplementable anyway, since one resampled `.dat` legitimately feeds several cases and the pipeline is not one-directional); **a hard link is not the cheap version of a copy** — one inode means editing the CAD afterwards silently rewrites what the case holds, which is the property the copy exists to deny; **sidecars follow their file** (`<name>.dat.meta` carries the per-segment BC labels and No-BL flags, so the `.dat` without it is a different geometry); **collisions are renamed, not overwritten** (two bodies can both be `profile.dat`); generated files are staged **last** and marked `(generated)` in the index, because a reconstruction must not read as evidence. `SOURCES.txt` maps every staged name back to its absolute origin, rewritten in full each run so a body no longer in the case leaves no line — and it is the *only* index there is, so **`tools/scripts/case_sources_index.py`** reads them back to answer the question the case dir cannot ("if I change this CAD, which cases go stale?"), matching by `(st_dev, st_ino)` then path then substring, exit 1 on no match. `case_export` descends into `grid/cad/` with its own allow-list — a nested folder the exporter cannot see is neither shipped *nor named as skipped*.
-- **`services/stl3d_case.py`** (Qt-free): the same for the immersed-solid stage — `validate()`, `work_dir_for()`, `prepare_case_dir()` (stages the STL under a whitespace-safe name + writes `para.in`). Both `stl3d_ctrl.run_stl3d` and the headless runner's IB stage go through it. **`Stl3dConfig.para_in_text()` must match `solver/preprocess/STL3d/src/stl3d.cpp`'s `cin >>` sequence line for line** — there are five reads and deliberately no ascii y/n line (the binary auto-detects); an extra line is consumed as the case name and the run silently produces an empty phi field with exit code 0. `tests/test_stl3d_case_parity.py` parses the C++ and gates this. **Inside `stl3d.cpp`, `STLobject` carries two different x extents and they must not be confused**: `xloc_db` (the candidate index `trace_ray` looks rays up in) is keyed by element **centre** x, while `xmin`/`xmax` (the ray culling window) come from the **vertices** — and have to, since a centroid sits strictly inside the surface and a centre-based box clips whole regions off a coarse or fan-shaped tessellation. Every ray in the strip between the last centre and `xmax` therefore passes the culling check with nothing at or after it in the index, so `lower_bound()` returns `end()`; dereferencing that (`->second->second`) is what killed a GUI IB run with `[STL3d] exited with code -11`. A **flat 2D profile is the worst case** — an ear-clipped/fan triangulation drags every centroid toward the apex, leaving the far ~20-30% of the x extent centroid-free (measured 5.856 vs 6.070, i.e. the last 41 of 128 slices). `ctr_strip_at_or_after()` clamps instead: a range *start* falls back to the last strip, a range *end* to `ctr_db_.end()`, so the far strip is really traced rather than silently clipped. Gated by `tests/test_stl3d_flat_profile_trace.py`, which compiles `stl3d.cpp` itself (CI does not build STL3d, and a stale binary must not be able to pass it).
-- **`services/contour_render.py`** (Qt-free): renders a Tecplot result to a contour PNG (matplotlib Agg) for headless runs.
-- **`controllers/pipeline_ctrl.py`** (`PipelineControllerMixin`): GUI **Run All** — chains the existing per-stage QThread workers on their `finished_signal` (batch mode: no per-stage dialogs), ending on the auto-loaded Results contour. The **immersed-solid stage sits where the headless runner puts it, before the mesh**, so a script and the button build the same case; it is optional and skipped *out loud* when no STL is configured. Save/Load of the script is **`controllers/pipeline_io_ctrl.py`** (`PipelineIoControllerMixin`) — running the pipeline and reading/writing the script that describes it share nothing but the config classes, and the split is what kept the file inside the GUI length budget.
-- **`tools/PreProcessor/run_pipeline.py`** + **`run_pipeline.sh`**: headless entry point (`--no-solver`, `--no-contour`, `--png`).
+A single unified JSON script drives the whole chain; the GUI and the headless CLI share the
+same schema and stage logic.
+
+> **Full rationale for this section — the dated acceptance runs against the real `unicones`
+> binary, the injections, the reversals and the named residues — is
+> `docs/design_notes/pipeline.md`.** Several rules here were bought by shipping the opposite
+> first; that file is where the evidence lives, and it is worth reading before overruling one.
+
+- **`models/pipeline_config.py`** (`PipelineConfig`, Qt-free): the unified schema
+  (`cads`/`mesh`/`solver`/`stl3d`/`results`, each mapping 1:1 onto
+  `ProjectModel`/`MeshConfig`/`SolverConfig`/`Stl3dConfig`) + converters.
+  `PIPELINE_FORMAT_VERSION` (v2). **`cads` is a list** — one entry per geometry, so a multi-body
+  case round-trips; the singular `cad` key is still read and exposed as a property for pre-v2
+  scripts. `from_workspace_dict()` turns a `.hws` into a runnable script, so `run_pipeline.sh`
+  accepts either. Examples: `config/pipeline/naca_demo.json`, `multi_element_demo.json`.
+- **`services/pipeline_stages.py`** (Qt-free, stdlib only): **the stage set is declared once,
+  and the two hosts are adapters.** The four stages — resample · immersed solid · mesh · solver
+  — are implemented twice (`pipeline_runner` blocking, `pipeline_ctrl` chained on QThread
+  `finished_signal`), and until this module nothing knew the SET: an artefact could be produced
+  for nobody (candidate 6a), and `Stage 1/3`…`3/3` was hand-written at 8 sites while four stages
+  existed. Nobody typed a wrong number; there was no number to derive. Deliberately **data, not
+  a base class** (the one thing that legitimately differs is how the hosts WAIT), and
+  load-bearing: both hosts build their plan and their `Stage i/N` labels from `plan()` /
+  `label()`. `PipelineConfig.stl3d_skip()` joins `cad_skip`/`solver_skip`, so "will this stage
+  run?" has one shape for all four. Gated by `tests/test_pipeline_stages.py` (ten failure modes,
+  all injection-verified in-test), shaped by two lessons: **both directions or it is not a gate**,
+  and **order is recovered, not assumed** — the GUI's chain is read as a reachability graph over
+  `self._pipe*` **references**, since a continuation handed over as an attribute is invisible to
+  a call-only walk. Smaller lessons worth keeping: an injection that makes the source **fail to
+  parse** looks exactly like the check working, and a check with an **exemption marker** is an
+  escape hatch for whoever next trips it.
+- **`services/pipeline_runner.py`** (Qt-free, blocking): runs the 3 CLI stages via subprocess
+  (surface_resampler → HybMesh2D → getPGrid→unicones); `run_pipeline()` returns the artifact paths.
+- **`services/ib_handoff.py`** (Qt-free): **producing a phi field is not the same as wiring one
+  up.** STL3d writes a *Tecplot* field; the init DLL reads a *headerless* `phi.dat` with the
+  STL3d grid spec compiled into it. That conversion lived in a Qt method no headless runner could
+  call, so the runner collected the phi into `out["phi"]` and passed it **nowhere**, and Run All
+  had no IB stage at all — both fell back to whatever `work/phi.dat` the reused case dir held,
+  i.e. the previous geometry's solid converging to a believable answer for the wrong shape.
+  `link_phi_to_solver()` is the one owner, called by all three hosts. Three rules:
+  **`PHI_HEADER_LINES` is checked against the `skiprows=` its own reader uses** (one number, not
+  two guesses); **the phi field and the init DLL are ONE fact, so it takes over both or neither**
+  (the DLL can only read the field this stage traced, so a mixed pair is a wrong answer rather
+  than an error — only when both are blank does the stage supply both, and naming one keeps both
+  and warns); **`replace` is the difference between the callers** (the GUI overwrites a field
+  computed *now*; the headless runner fills blanks only, as `_run_solver` already does for
+  `.vrt`/`.cel`/`.bnd`). It deliberately does **not** decide whether the solve has an immersed
+  solid: `immersed_solid` is the CALLER's declaration and a stage may not overrule it —
+  `send_stl3d_to_solver` turns it on because a button is allowed an opinion a stage is not. Gated
+  by `tests/test_pipeline_ib_handoff.py`, which drives the real conversion, proves the chain by
+  AST, and **compiles the generated DLL** (`stage_dll` returns `""` with a mere WARNING on a
+  compile failure, so a source that does not build degrades silently to "no init DLL").
+- **`services/solver_case.py`** (Qt-free): case-dir orchestration
+  (`results/solver/<name>/{work,grid,dll}`) shared by the GUI worker and the headless runner, and
+  the answer to **where a case lives** (`case_root_for` / `work_dir_of`). **The grid stem is the
+  RESOLVED case name, not the requested one** — auto-versioning renames the *directory*, and a
+  stem left on the old name writes `case.grid` into `case_002/`, which runs, so it stays invisible
+  until one directory holds two 1.3 MB grids distinguishable only by what `input.in` references
+  (USER-REPORTED 2026-08-13). **`prepare_case_dir` is the ONE place that makes a path in
+  `input.in` relative to the work dir**: grid/bc as `../grid/<case>.*`, IBM DLLs as `../dll/*.so`,
+  a BC type-11 DLL as `./x.so`, the phi field staged under a fixed name.
+  - **Restart references** (#25, USER-REPORTED 2026-08-20) were the only paths nothing touched, so
+    the deliberately absolute autofilled path reached the solver verbatim and a GUI restart errored
+    out while an *exported* case ran. `restart_refs_for_work_dir` rewrites an **absolute path to an
+    existing file** (inside `work/` → bare basename; elsewhere → out and back) and passes a blank,
+    an already-relative or a non-resolving value **straight through** — a wrong path must surface
+    as the solver's own error. Three load-bearing details: the dump is **referenced, never copied**
+    (largest file in a case); the relative form is **out and back**, because the panel computes it
+    from the case *name* before auto-versioning may rename the directory; and the result is
+    **returned into `generate_input_in` (`zdump_rel`/`convg_rel`), never written back onto `cfg`**,
+    since `cfg` is what the `.hws` and pipeline script are saved from and a work-dir-relative value
+    there resolves to nothing from the next work dir. Gated by `test_restart_paths_relative.py`.
+  - **The last three of the nine quoted paths got the OPPOSITE answer, and the difference is SIZE**
+    (#29): `mpi_comm_map_fn`, `cfl_schedule_fn`, `probe_points_def_fn`. `table_refs_for_work_dir`
+    **copies** the file into `work/` and quotes the bare name — a table is small, and a case that
+    does not hold its own inputs is the problem. Three shapes: a **bare name** is emitted unchanged
+    but still **reserves its basename** (or a later field's absolute path with the same basename
+    lands on the file it quotes); an **existing file** is staged under a collision-safe basename;
+    anything that does **not** resolve is emitted unchanged. Copy, never move, never hard-link.
+    **The claim is narrower than the tempting one, and the tempting one created this ticket: every
+    quoted path that RESOLVES is work-dir relative.** A value naming nothing stays absolute
+    deliberately, as does a table named like a run output (`^binDump`, `.plt`). Do not upgrade this
+    to "every quoted path" without re-reading `_stage_table`. Two neighbours had to keep up:
+    `case_export` no longer reports a file `input.in` REFERENCES as an unrecognised skip (the
+    allow-list is deliberately **not** widened — a reference is a fact about this run, a suffix a
+    glob over every future one), and `case_archive` reads the previous `input.in` for names no list
+    can hold. What a work dir already means lives in `case_files` (`WORK_STAGED`,
+    `staged_bare_names`), because the restated version had **already drifted**. The reservation
+    asks whether the file EXISTS, which is both more precise and what makes the counter TERMINATE
+    (`input.in` excepted, being written *after* staging). Resolvers live in
+    `services/case_input_paths.py`; gated by `test_input_in_staged_paths.py` (10 properties, 42
+    assertions, all injection-verified). **Nothing was measured on the solver here** — no case in
+    this repo sets any of the three keys — so the justification is self-containment, not evidence.
+- **`services/case_archive.py`** (Qt-free): **a restart continues in the SAME case dir, and must
+  not write over what it resumed from** (#26, USER-REPORTED 2026-08-20). `archive_previous_outputs()`
+  moves the previous run's outputs into a fresh `work/prev_<NNN>/` before this run writes anything.
+  **Two facts about the solver decide the shape, both measured on the real binary — the first
+  version shipped without an acceptance run and was wrong.** (1) The restart reference must be a
+  **BARE name in the work dir**, or the solver derives a per-zone path into a directory that does
+  not exist and dies with `Can't open file`. (2) It must **DIFFER from the solver's own output dump
+  name** (`binDumpZ.dat` + the `-t` tag) — i.e. exactly the file a GUI restart resumes from, so
+  *every* same-folder restart was already rewriting its own restart point in place.
+  - **The zone dump moves too, and `work/` keeps a bare-named HARD LINK to it** — #30's correction
+    of #26, which had to leave the dump out in `work/` so the archive was never complete. One inode
+    satisfies both halves at ~0 bytes (measured 24352 → 24356 KB across a 1597 KB dump). **This is
+    the ONE place this repo's "a hard link is not the cheap version of a copy" rule flips, and for
+    that rule's own reason**: the hazard there is that editing one path rewrites what the case
+    holds, and a zone dump is never edited. A stale link is retired **by INODE**
+    (`_archived_inodes`) — unlinked, never moved. A file already named `.prev_NNN` that is *not* a
+    link is filed into the archive it is named for, which is how a pre-#30 case upgrades.
+  - **Every archived file ends in `.prev_<NNN>`** (`case_files.archive_name`): a trailing run tag is
+    replaced, a name without one is appended to, a name already carrying a suffix is left alone. The
+    tag is what the rename discards, so **`RUN.txt` is where it survives**. `is_run_output` **strips
+    the suffix before matching**, because two patterns anchor on the END of the name (`\.plt$`,
+    `^fort\.\d+$`); widening them would loosen them for every future name, seeing through our own
+    suffix does not.
+  - Rules: **an allow-list decides, not a glob**; that list and `ARCHIVE_DIR_PREFIX` live in
+    `services/case_files.py`, which `case_archive` and `case_export` import **as peers** (facts
+    about a case, not about an export); the inputs `prepare_case_dir` stages **stay**, or the
+    resumed run restarts into nothing; a file **neither** list recognises stays put and is **named
+    in the log**; **move, never copy**; **nothing is created when nothing moves**; and an exhausted
+    counter archives **nothing** and says so, because giving up the other way is the exact
+    destruction the archive exists to prevent.
+  - **That refusal has a second instance, and the archiver used to commit the destruction it names**
+    (#42): `…dat.cli` and `…dat.gui` — one output of one case run by the two hosts — both want
+    `….prev_001`, and the second `shutil.move` landed on the first silently. Reachable without
+    misuse (headless, then a GUI run answering *Overwrite*, then a restart).
+    `case_files.archive_name_collisions` asks it ONCE over the set about to move, in the module that
+    owns the mapping, and **before the retire loop** — before ANY move — so a refusal is a no-op the
+    user can retry. Refused wholesale, naming both files, the name they both wanted and the *reason*
+    (that archiving drops the run tag, which the file names alone do not show). It does **not** claim
+    the run continues "beside" the files it declined to move: the refusing run carries one of the two
+    tags itself, so it overwrites the half of every pair sharing it — out of scope in #42, said out
+    loud rather than softened.
+  - **The restart reference follows the file**: `restart_refs_for_work_dir(..., moved=)` consults the
+    move map *before* the existence check, and it is the **one** thing that rewrites an
+    already-*relative* reference. That is why #26 was blocked by #25.
+  - The disposition is **one value, not a pair of booleans**: `solver_case.CASE_ARCHIVE` /
+    `CASE_IN_PLACE` / `CASE_NEW_VERSION`, mapped to the two mechanical flags in one place
+    (`case_dir_flags`), which **raises on an unknown value** — `(False, False)` is a real disposition,
+    so a typo would otherwise run silently in a directory nobody chose.
+  - **`case_export` had to learn to see the archive**: `plan_export` skipped every non-file entry
+    silently. Each archive is walked as its own subdirectory with **nothing** allow-listed (every
+    file in it is an output by construction), except the dump `input.in` quotes — which forced the
+    reference match from BASENAME to the resolved path.
+  - **Each archive carries a `RUN.txt`** (`services/case_run_note.py`, Qt-free — writer *and* reader,
+    so the format round-trips): timestamp, run tag, what that run resumed from, the dump's archived
+    name, and how far it got. Two must be RECOVERED rather than remembered — the tag is read off the
+    file names *before* the rename, and the iteration count from the LAST ROW of the convergence
+    history (the solver prints `Global Iteration count` to stdout, gone by archive time). Stored as
+    `last_iteration` + `convergence_interval`, and **the two together recover the printed count**
+    (`1990 + 10` = the 2000 the acceptance run measured). **That arithmetic REVERSES what #30 and
+    #31 recorded** (#43): both argued naming 2000 would be a fabrication and printed the bound
+    `1990+`, overruling #31's own spec — while the gate stated that bound as `[1990, 2000)`, a
+    half-open interval **excluding the value it claims to contain**. What survives is that an
+    *interrupted* run makes the sum an **upper** bound, which belongs in a tooltip, not in a refusal
+    to name the number. One home: `case_run_note.iteration_span`. **Keep the specimen: it was not a
+    typo but a considered argument written down with its evidence, and it survived two issues because
+    the evidence was never checked against itself.** An unreadable history reports **-1, never 0** (0
+    is a real cold-start answer), and `resumed_from` has three states for a sharper version of the
+    same reason: `""` = cold start, **None** = "we could not tell", because rendering that as "cold
+    start" would be a positive false claim. `RUN.txt` is the one archived file not ending in
+    `.prev_<NNN>` (the archive's own record, not something a run produced); `case_export` names it as
+    a skipped OUTPUT and does not ship it.
+  - **The run tags are declared once**, in `case_files.RUN_TAGS` — a rename rule stripping a tag
+    nobody writes silently does nothing.
+  Gated by `tests/test_restart_archive.py` (10 properties against the real `prepare_case_dir`, export
+  planner and dialog; #42's guard has its absence INJECTED with a negative control) **and by
+  `test_case_export.py` check 16**, because the archive's behaviour proven in the archive's test says
+  nothing about a planner nobody re-pointed at it. Acceptance: the real `prepare_case_dir` over the
+  reported case, then the real `unicones` on its output — **exit 0, `Global Iteration count 1000`**
+  (a cold start reports 0), restart source byte-identical afterwards, archive intact. Residue named:
+  #25's cross-case reference resumes correctly but leaves an empty `binDumpZ.dat.0` in the work dir.
+- **bDecompose runs IN THE CASE** (`workers/solver_run.py::_run_bdecompose`; classification in
+  `services/case_files.py`; #37). It ran in the binary's own install dir, which was worse than "the
+  output lands outside the case" in three ways: **the stage could not find its inputs, by
+  construction** (the para file names the grid and bc as BARE BASENAMES, and getPGrid writes those
+  into the case's `grid/`); **the install dir made that silent**, since it held a
+  `mesh_cartesian.grid` from one hand run — so a case NAMED `mesh_cartesian` decomposed the STALE
+  one and the solver ran MPI on a decomposition of a different mesh; and the answer file went into a
+  **shared, possibly read-only** location two runs would race on. It now runs in `grid/`. Three rules:
+  - **The answer file is NOT `para.in`** — a deliberate departure from the issue's proposed scope,
+    because getPGrid owns `grid/para.in`, `case_export` ships it as `grid/getPGrid.in` and
+    `run_case.sh --regrid` feeds it back, so sharing the name would silently replace getPGrid's
+    answers. It is fed on **stdin**, so the name is ours: `case_files.BDECOMPOSE_INPUT`.
+  - **`is_run_output` must NOT learn `mpi_*`, and this is measured rather than argued**: for the comm
+    map the file bDecompose PRODUCES and the file the solver READS are the *same name*, and
+    `case_input_paths._stage_table` asks `is_run_output` whether to stage a user-named table — so
+    widening it silently undoes #29 for exactly the field #37 is about. The question is asked **per
+    DIRECTORY**: `is_decompose_output` for `grid/`, `is_run_output` for `work/`. (An earlier write-up
+    claimed the classifier reads `COMM_MAP_NAME`; it does **not**, it matches by pattern — the same
+    every/all/only overclaim habit recorded against #25 and #29, copied into two files at once.)
+  - **Filling `mpi_comm_map_fn` in is still the caller's**: the produced path is named in the log and
+    nothing more, and #29's staging carries it. **`case_export` keeps shipping the comm map — and the
+    first version of #37 BROKE exactly that**: the new `grid/` branch `continue`d *ahead of*
+    `plan_export`'s `elif rel in referenced`, the branch whose own comment states the rule it was
+    jumping. One condition fixed it (`rel not in referenced`), leaving `_is_output`'s precedence
+    untouched. **The gate did not pin the wrong side, it never covered this side** — which decides
+    the remedy: a check was ADDED, not corrected.
+  Validation grew the other half: `_validate_solver_config` never checked `bdecompose_binary` at all.
+  It now refuses a blank, a missing file, and a **wrong executable format**
+  (`services/paths.wrong_executable_format`; the shipped binary is x86-64 **ELF**, this dev machine
+  arm64 macOS). That test is narrow on purpose: an unrecognised format answers False, because "we
+  cannot judge this" must not be reported as broken, and the MACHINE word is not compared (Rosetta).
+  Gated by `tests/test_bdecompose_in_case.py` (14 properties). **A shared decomposition needs
+  nothing**: because the stage only NAMES what it produced, pointing `mpi_comm_map_fn` at one gets
+  precisely #29's behaviour. Evidence claim, narrowed in review: checks 1-11 are BEHAVIOURAL and were
+  verified by injecting the defect **by hand**, which is not an in-test injection; exactly ONE
+  injection is permanent (check 13 mutates `_OUTPUT_PATTERNS` live and asserts the CONSEQUENCE).
+  Residues: the comm map is staged into `work/` only on the NEXT run (it still resolves, being
+  relative); bDecompose's other outputs get no home in `work/`, because whether the solver wants them
+  there is not knowable here; and a stale `grid/bDecompose.in` still ships as an input, the same
+  fossil class as getPGrid's own `para.in`, recorded rather than fixed. **The acceptance run is
+  OUTSTANDING and the gate says so** — the prebuilt binary cannot execute here, so the tests pin the
+  SHAPE of the run, not the binary's acceptance of it. #26 is why that distinction is written down.
+- **`services/case_clean.py`** (Qt-free) + the second half of `views/case_dir_dialog.py`:
+  **"Overwrite" and "empty this folder first" are two different answers, and the destructive one
+  shows its work** (#33, DECIDED 2026-08-21). Reuse-in-place leaves a case a mixture of this run's
+  output and the last one's — a defect class with **two defences and no fix**
+  (`report_stale_ibm_artifacts`, `case_export_usage.unused_reason`). Rules:
+  - **A separate button, never a redefinition.** The non-restart prompt is `Overwrite in Place` /
+    `Clean and Run…` / `Archive Previous` / `New Versioned Dir` + Cancel — **four plus Cancel, #33's
+    stated ceiling**, so the next answer to want a button is where this stops being a message box.
+    The restart path reaches none of it (#31).
+  - **`Archive Previous` is a REVERSAL of #31, on a ground #31 did not rule on.** #31 removed it
+    because a restart stopped reaching the prompt (*"a branch nothing can reach reads as a working
+    feature"*), **not** because archiving is wrong for a non-resuming run. Once `Clean and Run`
+    exists the alternative is needed, or keeping previous results *in this folder* has no answer but
+    splitting the case across two directories.
+  - **Measure, show, then delete — three steps, and the deletion is not one of them.**
+    `plan_case_clean(work_dir)` builds a `CleanPlan` and touches nothing; the prompt renders THAT
+    plan; `apply_case_clean` acts on the approved list and never re-reads the directory. This repo
+    has the scar the separation is for — an `ls` and an `rm -rf` in one command destroyed ~40
+    gitignored artifacts — and it also puts a possibly huge deletion on the worker thread.
+  - **Reuse the classification, do not glob.** A file neither `is_run_output` nor `WORK_STAGED`
+    recognises is **kept and named in the log**, and so is a directory that is not an archive (an
+    `isfile` guard that silently passes over a folder is the bug `plan_export` had). Scope is the TOP
+    LEVEL of `work/`.
+  - **But the classification alone KEEPS the file #33 exists to remove**: `phi.dat` is in
+    `WORK_STAGED`. The fix is **not** to delete that entry (a config whose `ibm_phi_file` resolves to
+    `work/phi.dat` itself has no second copy, and the literal reading destroys it). The question
+    asked is **"is it stale?"** — `solver_case.stale_phi_name` returns the name only when this run
+    stages no phi at all, which is exactly what `report_stale_ibm_artifacts` warns about, so the
+    warning and the deletion have ONE owner. `plan_case_clean(work_dir, stale=…)` takes those names
+    from the caller, because whether a staged input is a leftover is a question about the *config*.
+    `dll/` is out of scope, named rather than implied.
+  - **`work/prev_*/` is NOT deleted by default**, and the tick that includes it is off every time the
+    dialog opens (a fresh `QCheckBox` per call, never read back from `ui_state`).
+  - **Two guards in `apply_case_clean`, and only one stops a deletion**: the plan's `work_dir` vs the
+    run's, refused wholesale with one message naming both; then every entry re-checked to be
+    `is_inside` that dir. Measured — remove the first and every entry is still refused individually;
+    what is lost is the single legible refusal.
+  - **A restart is refused even if handed a plan — and the guard CORRECTS the flags it invalidates.**
+    Merely *skipping* the deletion shipped first and was wrong: a clean's flags are `(overwrite,
+    no-archive)`, so declining left the run overwriting the previous outputs as it produced its own —
+    #26's hazard, worse than either answer the user could have picked. It now sets `archive_prev`.
+  - **Never unattended**: Run All / batch answers `CASE_NEW_VERSION` before any prompt;
+    `confirm_case_clean` returns cancel when headless; an **empty** work dir degrades to
+    `CASE_IN_PLACE` with a log line rather than prompting about nothing.
+  - **One approved value, not a pair**: `ApprovedClean(plan, include_archives)`, exposed as
+    `pending_clean()` — a verb, because a `getattr(self, "_case_clean_plan", None)` reach would make
+    an uncomposed mixin degrade silently instead of failing.
+  - **`_resolve_case_disposition` lives in `controllers/case_disposition_ctrl.py`** — moved there when
+    the question grew its second step; a concept split, not just a line count.
+  Gated by `tests/test_case_clean.py` (12 properties + 6 injections), which imports **no Qt at all**
+  — the acceptance list asks for that in as many words, and the first version built a `QApplication`
+  so `is_headless()` would answer True, making the deliverable literally false.
+- **`services/restart_points.py`** (Qt-free) + **`views/panels/restart_chooser.py`**: **the restart
+  point is PICKED from the case's own history, not typed as a path** (#31, USER-REQUESTED
+  2026-08-21). The retired autofill looked for a fixed name **in `work/` only**, knowing nothing
+  about #26's archives, while the thing being decided is an **iteration count**.
+  `list_restart_points(case_root)` returns cold start, the newest un-archived dump, then each
+  archived leg newest-first with its count, timestamp and run tag; the chooser is one column of
+  radio buttons plus an "Other file…" escape.
+  - **The MODEL still holds a path**, absolute (#25), so `.hws`, pipeline scripts, `case_export` and
+    `prepare_case_dir` are untouched — but **one control authors all three** fields; the three
+    `FieldSpec` rows are gone and the names are declared in `SOLVER_EXTRA_AUTHORED` with a reason.
+  - **Radio buttons, not a list widget, and the control reports its own edits.**
+    `undo_ctrl._wire_widget_edits` is the ONE traversal that knows "the user touched this panel", and
+    it connects spin boxes, combos, line edits and *checkable buttons* — a `QListWidget` selection is
+    none of those — and the rows are **rebuilt whenever the case changes**, long after that one-shot
+    traversal ran, so a composite control declares **`panel_edited`**.
+  - **The list is derived on every call and cached nowhere** — the case dir is the truth. The cost is
+    stated rather than optimised away; a cache is the thing this rule forbids.
+  - **The marker is matched by BASENAME**: for an archived dump the reference names a hard link (#30)
+    that the *next* archive retires, so matching by path or inode would lose the mark on exactly the
+    row #31 exists to highlight.
+  - **Every leg's count comes from one function, `case_run_note.iteration_span`** (#43). #31 shipped
+    the opposite — an archive with no note got "unknown", its history *deliberately not re-read* —
+    which cost exactly the legs it meant to protect, while `_latest_point` two functions below
+    computed the live row's count from that same kind of file with that same reader. A leg whose span
+    cannot be computed still gets a row, unlabelled: hiding a restart point that exists is worse.
+  - **A restart source inside an archive gets a bare-named hard link in `work/` on demand**
+    (`case_archive.bare_link_for_archived_dump`, called by `prepare_case_dir` *before* the archive
+    step and independently of `archive_prev`). Without it the chooser's headline click produces the
+    exact reference #26 measured the solver dying on. It refuses rather than guesses twice: a name
+    taken by a different file is not overwritten, and a filesystem that cannot link warns instead of
+    silently copying the largest file in the case.
+  - **A restart whose source is not there is refused in the GUI**, both references resolved (a
+    relative one against this case's work dir) and named with their missing path.
+  - **The case-dir modal is dropped on the restart path** (CONFIRMED 2026-08-21); Run All untouched.
+    One confirmation fewer means the archive step must be legible in the log on its own.
+  - **`case_root_for` / `work_dir_of` live in `solver_case`**; `restart_points` re-exports them. The
+    claim is exactly that narrow — the first write-up said "where a case lives has one spelling" and
+    it was **false**: 11 `results/solver` joins exist and one full construction was replaced.
+  - **One departure from the issue's text, and one REVERSED**: the rows first showed the count as a
+    bound (`1990+`); #43 reverses that to `iteration 2000` with both surviving caveats in the
+    tooltip. The departure is recorded rather than deleted, so "we deliberately departed from the
+    spec" is not left standing as a validated precedent. The remaining one: the issue says this keeps
+    "`prepare_case_dir` untouched", which it does not.
+  - Residue, named rather than fixed: **a case-name change keeps the previously picked absolute
+    path**, so it can land on "Other file…" as a cross-case restart — visible in the row's own field,
+    refused by `_validate` if the file is gone, and no worse than the retired autofill.
+  - **A row has to FIT, and that is structural rather than cosmetic** (USER-REPORTED 2026-08-27).
+    `SolverConfigPanel` caps content at 430px with `ScrollBarAlwaysOff` + `setWidgetResizable(True)`,
+    so a row wider than the viewport is CLIPPED with no window size that rescues it (measured: 494px
+    wanted against ~380px usable). The timestamp drops its year and seconds, the marker became
+    `← last run` (321px), and `_Row` elides what a narrower sidebar cannot fit — an ellipsis says
+    there is more, a clip pretends the row ended. Two consequences: `minimumSizeHint` must stop
+    advertising the full width, or the row forces the content wider than the viewport again; and
+    **the marker is BOLD as well as worded**, because the words sit at the END and are elided first.
+    A check asked of a row built from the CURRENT (short) text proves nothing — measured, it passed
+    with the mechanism deleted — so the gate uses a deliberately over-long row. **The panel itself
+    now scrolls sideways** (`ScrollBarAsNeeded`, USER-REQUESTED 2026-08-27; the setting
+    `mesh_config_panel` has had since 2026-07-28) — a safety net for the PANEL, deliberately not the
+    mechanism for the rows. `stl3d_panel`, `result_panel` and `sidebar` still carry `AlwaysOff` and
+    have the same latent gap.
+  Gated by `tests/test_restart_chooser.py` (12 properties against the real `prepare_case_dir`, the
+  real widget offscreen, the real `SolverControllerMixin` and the real `AppController`; checks 2-4
+  and 8 are **inverted** versions of ones that asserted the raw last row, a blank count, a blank
+  TIMESTAMP and the old marker wording), and `test_restart_archive.py` check 7 is the **inverted**
+  version of the one that pinned the dialog's restart branch. Blind spot: nothing here runs
+  `unicones`, so the bare-name reference is pinned against the SHAPE #30's acceptance run measured.
+- **`services/case_sources.py`** (Qt-free): copies the CAD/STL a case was cut from into
+  **`grid/cad/`**, so the case describes its own geometry and not only the mesh. Fed by
+  `solver_ctrl._case_source_files` / `_case_generated_files` and `pipeline_runner._case_sources` —
+  the imported source, the resampled `.dat` the mesher read, the immersed STL, the mesh
+  `.provenance.json`, and the **mesh parameter file**, which is *generated* rather than copied
+  because the GUI only materialises one in `temp_dir` and deletes it on exit
+  (`mesh_config_io.config_to_text`, split out of `save_config_to_file` so the staged config is
+  byte-identical to a hand-saved one; it takes the destination path because a geometry outside the
+  repo is emitted relative to the config file). Rules: **copy, never move** (a *move* is
+  unimplementable anyway — one resampled `.dat` legitimately feeds several cases); **a hard link is
+  not the cheap version of a copy**, since one inode means editing the CAD afterwards silently
+  rewrites what the case holds; **sidecars follow their file** (`<name>.dat.meta` carries the
+  per-segment BC labels and No-BL flags); **collisions are renamed, not overwritten**; generated
+  files are staged **last** and marked `(generated)`, because a reconstruction must not read as
+  evidence. `SOURCES.txt` maps every staged name back to its absolute origin, rewritten in full each
+  run — and it is the *only* index there is, so **`tools/scripts/case_sources_index.py`** reads them
+  back to answer "if I change this CAD, which cases go stale?" (matching by `(st_dev, st_ino)`, then
+  path, then substring; exit 1 on no match). `case_export` descends into `grid/cad/` with its own
+  allow-list.
+- **`services/stl3d_case.py`** (Qt-free): the same for the immersed-solid stage — `validate()`,
+  `work_dir_for()`, `prepare_case_dir()`. Both `stl3d_ctrl.run_stl3d` and the headless IB stage go
+  through it. **`Stl3dConfig.para_in_text()` must match `solver/preprocess/STL3d/src/stl3d.cpp`'s
+  `cin >>` sequence line for line** — five reads and deliberately no ascii y/n line (the binary
+  auto-detects); an extra line is consumed as the case name and the run silently produces an empty
+  phi field with exit code 0. `tests/test_stl3d_case_parity.py` parses the C++ and gates it.
+  **Inside `stl3d.cpp`, `STLobject` carries two different x extents and they must not be confused**:
+  `xloc_db` (the index `trace_ray` looks rays up in) is keyed by element **centre** x, while the ray
+  culling window `xmin`/`xmax` comes from the **vertices** — and has to, since a centroid sits
+  strictly inside the surface. Every ray in the strip between the last centre and `xmax` passes the
+  culling check with nothing at or after it in the index, so `lower_bound()` returns `end()` and
+  dereferencing it killed a GUI IB run with `[STL3d] exited with code -11`. A **flat 2D profile is
+  the worst case** — a fan triangulation drags every centroid toward the apex, leaving the far
+  ~20-30% of the x extent centroid-free (measured 5.856 vs 6.070, the last 41 of 128 slices).
+  `ctr_strip_at_or_after()` clamps instead. Gated by `tests/test_stl3d_flat_profile_trace.py`, which
+  compiles `stl3d.cpp` itself (CI does not build STL3d, and a stale binary must not pass it).
+- **`services/contour_render.py`** (Qt-free): renders a Tecplot result to a contour PNG
+  (matplotlib Agg) for headless runs.
+- **`controllers/pipeline_ctrl.py`** (`PipelineControllerMixin`): GUI **Run All** — chains the
+  per-stage QThread workers on their `finished_signal` (batch mode: no per-stage dialogs), ending on
+  the auto-loaded Results contour. The **immersed-solid stage sits where the headless runner puts
+  it, before the mesh**, so a script and the button build the same case; it is optional and skipped
+  *out loud*. Save/Load of the script is **`controllers/pipeline_io_ctrl.py`** — the two share
+  nothing but the config classes, and the split kept the file inside the GUI length budget.
+- **`tools/PreProcessor/run_pipeline.py`** + **`run_pipeline.sh`**: headless entry point
+  (`--no-solver`, `--no-contour`, `--png`).
 
 ### Visualization (`tools/scripts/`)
 - **`visualize_dat.py`**: Matplotlib visualization for `.dat` files; `--quality` flag adds expansion-ratio heatmap
