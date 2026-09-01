@@ -37,7 +37,7 @@ Checks:
     well-formed, and that it really differs from the original.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has about 650 more of because this repo's own prose
+bytes, which the root file has about 470 more of because this repo's own prose
 contains CJK. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
 never fewer than one byte.
@@ -60,11 +60,13 @@ Known remaining blind spots, stated rather than pretended away:
     is the point rather than the remedy: nothing here caught them and nothing here
     will catch the next one. A check would have to resolve prose section titles
     across files, which is the kind of substring matching this repo has twice
-    measured blind.
+    measured blind. #63's move was swept by hand the same way and found two —
+    `CLAUDE.md`'s own "See the 'Full Pipeline' section under Architecture" and
+    `docs/design_notes/pipeline.md:8` — both repointed in the same commit.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    With one 35.6k rule file that leaves ~24k of headroom, so "moving text into
-    another rule file is not a legal evasion" only bites for a move larger than
-    that. It tightens on its own as the other five rule files land.
+    The two rule files that exist are 35.6k and 36.1k characters, so "moving text into another
+    rule file is not a legal evasion" only bites for a move larger than the ~24k of
+    headroom each has left. It tightens on its own as the other four land.
 
 Needs no Qt, no build tree and no network.
 
@@ -86,7 +88,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 116_960
+ROOT_BUDGET = 82_874
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

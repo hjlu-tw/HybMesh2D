@@ -5,8 +5,10 @@ file was condensed to its rules. (The reason this line used to give — a 150k-c
 context limit — is false; `CLAUDE.md`'s header block carries the measured behaviour
 and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
 this is the original prose, with its measurements, dated
-acceptance runs, injections and named blind spots. `CLAUDE.md` carries the rule;
-this file carries why it is the rule.
+acceptance runs, injections and named blind spots. `.claude/rules/pipeline-case.md`
+carries the rule (moved there from `CLAUDE.md` by #63, loaded on demand when a
+case / solver-case / pipeline / STL3d service, the pipeline schema, or the
+headless pipeline entry point is read); this file carries why it is the rule.
 
 ### Full Pipeline (CAD → mesh → solver → results, one action)
 A single unified JSON script drives the whole chain; the GUI and the headless CLI share the same schema and stage logic.
