@@ -22,13 +22,18 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **116,171 chars
-(2026-09-01, after #62 moved the mesher rules out to `.claude/rules/mesher.md`) ≈ 29k
-tokens**, paid by every session before it reads a line of source. That number decays on the next
-commit, so re-measure before quoting it; what stops it decaying *silently* is
-`tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is set to exactly this
-size. The token count is chars/4 and is named rather than implied. `MEMORY.md`'s far smaller budget
-(24.4KB, measured 2026-08-27) is a different loader's and is not this file's.
+observed. The cost is therefore not truncation but **always-loaded context** — **116,960
+characters (117,607 bytes, 2026-09-01, after #62 moved the mesher rules out to
+`.claude/rules/mesher.md`) ≈ 29k tokens**, paid by every session before it reads a line of
+source. That number decays on the next commit, so re-measure before quoting it; what stops it
+decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
+set to exactly this size. **The unit is CHARACTERS, and it changed here**: the figure this block
+used to carry was `wc -c` bytes, while the budget #59 states is in characters — the two differ by
+647 today because of the CJK in this repo's own prose, so the two numbers are both given rather
+than one of them silently replacing the other. The 4 MiB loader limit above is in BYTES; a
+character budget is conservative against it either way, since a character is never fewer than one
+byte. The token count is characters/4 and is named rather than implied. `MEMORY.md`'s far smaller
+budget (24.4KB, measured 2026-08-27) is a different loader's and is not this file's.
 
 > **Superseded claim, KEPT AS A SPECIMEN (#60).** `3a2e096` wrote "passed the 150k-char context
 > limit" into this block and into all three design notes: `.agents/skills/ask-matt`'s **smart zone,
@@ -45,6 +50,10 @@ session editing a GUI file does not pay for the mesher's. Three layers, one ques
 file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `docs/design_notes/`
 = **why, and what was measured**. These three are written for agents; humans start at `README.md`,
 `docs/architecture_overview.md` and `docs/design_notes/`.
+
+<!-- TRIPWIRE TABLE: the rows below are parsed by tools/PreProcessor/tests/test_instruction_budget.py.
+     Keep this marker directly above the table; the gate fails without it rather than falling back to
+     scanning every table in this file, which would let a mention anywhere satisfy the check. -->
 
 | Area | Read this rule file first | Before touching |
 |------|---------------------------|-----------------|

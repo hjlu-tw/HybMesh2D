@@ -40,19 +40,20 @@ solver/
 # does, and `docs/agents/` is referenced by CLAUDE.md. This directory otherwise
 # holds per-machine runtime state (scheduled_tasks.lock, skills/).
 #
-# Two entries are exceptions and must be tracked. `settings.json` carries the
+# `settings.json` is one exception and must be tracked: it carries the
 # SessionStart hook that measures the architecture backlog, which is a property
 # of THIS REPO rather than of one developer's machine — an ignored copy would
-# fire for whoever happened to create it and for nobody else. `rules/` holds the
-# path-scoped instruction files (#59/#62): they govern the repo, are named by
-# CLAUDE.md's tripwire table, and are gated by
-# tools/PreProcessor/tests/test_instruction_budget.py — an untracked copy would
-# mean every clone but one had no rules at all. Note the pattern has to exclude
-# the directory's CONTENTS (`.claude/*`), not the directory: git does not descend
-# into an excluded directory, so `!` cannot re-include a file underneath one —
-# which is also why `rules/` is re-included as a DIRECTORY rather than as
-# `!.claude/rules/*.md`. Per-machine overrides belong in `settings.local.json`,
+# fire for whoever happened to create it and for nobody else. Note the pattern
+# has to exclude the directory's CONTENTS (`.claude/*`), not the directory:
+# git does not descend into an excluded directory, so `!` cannot re-include a
+# file underneath one. Per-machine overrides belong in `settings.local.json`,
 # which stays ignored.
+#
+# `rules/` is the second exception (#59/#62): the path-scoped instruction files
+# govern this repo, are named by CLAUDE.md's tripwire table and gated by
+# tools/PreProcessor/tests/test_instruction_budget.py, so an untracked copy would
+# leave every clone but one with no rules at all. It is re-included as a
+# DIRECTORY, for the reason the paragraph above gives.
 .claude/*
 !.claude/settings.json
 !.claude/rules/
