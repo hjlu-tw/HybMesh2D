@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""The instruction files have a per-file budget, and no rule file can go missing.
+
+There is no production code behind this gate: the thing under test is the
+instruction set itself. `CLAUDE.md` is loaded in full on every session before a
+line of source is read, so its size is a per-session cost paid by everyone; the
+`.claude/rules/*.md` files are loaded on demand when a file matching their
+`paths:` globs is READ (measured on Claude Code 2.1.250, #61 — not at launch,
+and not at all for a non-matching file). Three properties keep that arrangement
+from decaying, and each is external behaviour rather than wording: how many
+characters each file costs, whether every rule file is reachable from the root
+file's tripwire table, and whether every gate a rule names still exists.
+
+Nothing here asserts on prose. The relocation tickets (#59) rewrite all of it on
+purpose, and a gate that pinned sentences would have to be edited by the very
+change it exists to guard.
+
+Checks:
+ 1. Per-file size. The root file and each rule file are measured against their
+    OWN budget — never a total, so moving text from one rule file into another is
+    not a legal evasion. The failure names the file, its size, its budget and the
+    design note the detail belongs in.
+ 2. The tripwire table against the rule files, BOTH directions. A rule file that
+    no row names fails (it looks perfectly healthy from inside itself), and a row
+    naming a rule file that does not exist fails too.
+ 3. Every gate-test filename named inside a rule file — or in the root file, which
+    still carries most of the rules while the move is staged — exists on disk. This
+    is the check that makes compression honest: dropping a gate name severs a rule
+    from its only means of verification and changes nothing a reader would notice.
+ 4. Every rule file declares a `paths:` list that is present, non-empty, and not
+    only `**`. Measured in #61: the loader DISCARDS such a list and the file then
+    loads at `session_start` with no globs at all — silently becoming an
+    always-loaded file, which is the exact inversion of the point of the split,
+    one character away from a legitimate glob.
+ 5-8. Each of the four is verified by an in-test injection over a mutated COPY of
+    the inputs, asserting the check then fails, that the mutated input is still
+    well-formed, and that it really differs from the original.
+
+Needs no Qt, no build tree and no network.
+
+Run:  python3 tools/PreProcessor/tests/test_instruction_budget.py
+"""
+import os
+import re
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+_ROOT_NAME = "CLAUDE.md"
+_RULES_DIR = os.path.join(".claude", "rules")
+
+# --- budgets -----------------------------------------------------------------
+# ROOT_BUDGET is a RATCHET, set to the root file's actual size after each
+# relocation ticket in #59 and lowered by the next one; the final value is locked
+# by the last ticket. It is exact rather than rounded up on purpose — the point is
+# that the next feature which tries to add 3k to the always-loaded budget trips
+# the gate on its first attempt, which is what the previous split (93k moved out,
+# 5,752 chars back within two feature commits) had no way to do.
+ROOT_BUDGET = 116_171
+# Per rule file. Well inside the tooling's own 4 MiB per-file limit (confirmed on
+# this build in #61): this is repo policy, not a loader constraint, which is the
+# right way round.
+RULE_BUDGET = 60_000
+
+_FAILS = []
+
+
+def check(cond, msg):
+    print(("PASS " if cond else "FAIL ") + msg, flush=True)
+    if not cond:
+        _FAILS.append(msg)
+
+
+# --- the inputs, as one value -------------------------------------------------
+# Every check is a pure function of this dict, which is what makes the injections
+# below cheap: mutate a copy, ask the same function.
+def read_world():
+    root_path = os.path.join(_REPO, _ROOT_NAME)
+    with open(root_path, encoding="utf-8") as fh:
+        root_text = fh.read()
+    rules = {}
+    rules_dir = os.path.join(_REPO, _RULES_DIR)
+    if os.path.isdir(rules_dir):
+        for name in sorted(os.listdir(rules_dir)):
+            if name.endswith(".md"):
+                with open(os.path.join(rules_dir, name), encoding="utf-8") as fh:
+                    rules[name] = fh.read()
+    return {"root": root_text, "rules": rules, "tests": collect_test_files()}
+
+
+def collect_test_files():
+    """Basenames of every test_*.py / test_*.cpp in the tree.
+
+    Matched by BASENAME rather than by the path a rule file happens to spell:
+    `tests/cpp/test_multiblock.cpp` and `test_multiblock.cpp` name the same gate,
+    and pinning the spelling would fail on a rule file that is correct.
+    """
+    skip = {".git", "build", "__pycache__", "results", ".venv", "node_modules"}
+    found = set()
+    for dirpath, dirnames, filenames in os.walk(_REPO):
+        dirnames[:] = [d for d in dirnames if d not in skip]
+        for fn in filenames:
+            if fn.startswith("test_") and fn.endswith((".py", ".cpp")):
+                found.add(fn)
+    return found
+
+
+# --- shared parsing -----------------------------------------------------------
+_RULE_REF = re.compile(r"\.claude/rules/([A-Za-z0-9_.-]+\.md)")
+
+
+def tripwire_rows(root_text):
+    """Rule-file names appearing in a markdown table row of the root file.
+
+    A table ROW (a line starting with `|`) rather than a named section, so the
+    table can be retitled or moved without editing this gate.
+    """
+    named = []
+    for line in root_text.splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        for m in _RULE_REF.finditer(line):
+            named.append(m.group(1))
+    return named
+
+
+def frontmatter_paths(text):
+    """The `paths:` list of a rule file, or None when there is no frontmatter.
+
+    Returns [] for a `paths:` key that is present but empty, so "absent" and
+    "empty" stay distinguishable — the loader treats them the same, but the
+    failure message should not.
+    """
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---", 3)
+    if end < 0:
+        return None
+    body = text[4:end + 1]
+    paths = None
+    in_list = False
+    for line in body.splitlines():
+        if re.match(r"^paths:\s*\[", line):
+            inline = line.split("[", 1)[1].rsplit("]", 1)[0]
+            return [p.strip().strip("'\"") for p in inline.split(",") if p.strip()]
+        if re.match(r"^paths:\s*$", line):
+            paths, in_list = [], True
+            continue
+        if in_list:
+            m = re.match(r"^\s+-\s*(.+?)\s*$", line)
+            if m:
+                paths.append(m.group(1).strip().strip("'\""))
+                continue
+            if line.strip() and not line.startswith(" "):
+                in_list = False
+    return paths
+
+
+_DESIGN_NOTE = {"mesher": "mesher", "gui": "gui", "pipeline": "pipeline"}
+
+
+def design_note_for(fname):
+    """Which design note a detail trimmed out of this file belongs in.
+
+    The pressure has to push rationale DOWN a layer rather than out of the repo,
+    so the failure message names a destination instead of just a number.
+    """
+    stem = fname[:-3] if fname.endswith(".md") else fname
+    area = stem.split("-", 1)[0].lower()
+    note = _DESIGN_NOTE.get(area)
+    if note:
+        return "docs/design_notes/%s.md" % note
+    return "the matching docs/design_notes/*.md"
+
+
+# --- check 1 ------------------------------------------------------------------
+def check_sizes(world):
+    fails = []
+    root_size = len(world["root"])
+    if root_size > ROOT_BUDGET:
+        fails.append(
+            "%s is %d chars, over its %d budget by %d. It is loaded in FULL on "
+            "every session, so this is a per-session context cost. Move the "
+            "detail into %s, or into the rule file for its area, rather than "
+            "trimming it out of the repo."
+            % (_ROOT_NAME, root_size, ROOT_BUDGET, root_size - ROOT_BUDGET,
+               design_note_for(_ROOT_NAME)))
+    for name, text in sorted(world["rules"].items()):
+        size = len(text)
+        if size > RULE_BUDGET:
+            fails.append(
+                "%s/%s is %d chars, over its %d budget by %d. Move the detail "
+                "into %s — not into another rule file, which the per-file budget "
+                "exists to refuse."
+                % (_RULES_DIR, name, size, RULE_BUDGET, size - RULE_BUDGET,
+                   design_note_for(name)))
+    return fails
+
+
+# --- check 2 ------------------------------------------------------------------
+def check_tripwire(world):
+    fails = []
+    named = set(tripwire_rows(world["root"]))
+    on_disk = set(world["rules"])
+    for name in sorted(on_disk - named):
+        fails.append(
+            "%s/%s exists but NO tripwire row in %s names it. A rule file no row "
+            "names is invisible: an agent that creates or edits a matching file "
+            "without READING one first is never handed it (measured, #61), so the "
+            "table is what makes 'I did not know there was a rule' unreachable."
+            % (_RULES_DIR, name, _ROOT_NAME))
+    for name in sorted(named - on_disk):
+        fails.append(
+            "a tripwire row in %s names %s/%s, which does not exist. Either the "
+            "rule file was renamed and the row was not, or the row was written "
+            "for a move that never landed."
+            % (_ROOT_NAME, _RULES_DIR, name))
+    return fails
+
+
+# --- check 3 ------------------------------------------------------------------
+_GATE_REF = re.compile(r"\btest_[A-Za-z0-9_]+\.(?:py|cpp)\b")
+
+
+def check_gate_names(world):
+    """Applied to the ROOT file as well as the rule files.
+
+    The acceptance criterion asks only for the rule files, but the root still
+    carries most of the rules while the move is staged, and the relocation tickets
+    are precisely when a gate name can be dropped in transit. Same property, one
+    superset — and it is measured, not assumed: all 44 gates the root names today
+    resolve.
+    """
+    fails = []
+    sources = [(_ROOT_NAME, world["root"])]
+    sources += [("%s/%s" % (_RULES_DIR, n), tx)
+                for n, tx in sorted(world["rules"].items())]
+    for where, text in sources:
+        for gate in sorted(set(_GATE_REF.findall(text))):
+            if gate not in world["tests"]:
+                fails.append(
+                    "%s names the gate test %s, which is on no path in this tree. "
+                    "A rule whose gate cannot be found is a rule nobody can verify "
+                    "they have not broken."
+                    % (where, gate))
+    return fails
+
+
+# --- check 4 ------------------------------------------------------------------
+def check_paths_frontmatter(world):
+    fails = []
+    for name, text in sorted(world["rules"].items()):
+        paths = frontmatter_paths(text)
+        if paths is None:
+            fails.append(
+                "%s/%s declares no `paths:` frontmatter list. The loader then "
+                "loads it at session_start with no globs — an always-loaded file, "
+                "the exact inversion of the split (measured, #61)."
+                % (_RULES_DIR, name))
+            continue
+        if not paths:
+            fails.append(
+                "%s/%s declares an EMPTY `paths:` list, which the loader discards, "
+                "making the file always-loaded (measured, #61)."
+                % (_RULES_DIR, name))
+            continue
+        if all(p.strip() in ("**", "**/*") for p in paths):
+            fails.append(
+                "%s/%s declares `paths:` of only %r. The loader discards a list "
+                "that is entirely `**` and loads the file at session_start with no "
+                "globs (measured, #61) — one character away from a legitimate glob "
+                "and silent."
+                % (_RULES_DIR, name, paths))
+    return fails
+
+
+# =============================================================================
+world = read_world()
+
+check(bool(world["rules"]),
+      "0. .claude/rules/ holds at least one rule file (nothing below can bite on "
+      "an empty rule set)")
+
+for fail in check_sizes(world):
+    print("     -> " + fail, flush=True)
+check(not check_sizes(world),
+      "1. every instruction file is within its OWN per-file budget (root %d, each "
+      "rule file %d)" % (ROOT_BUDGET, RULE_BUDGET))
+
+for fail in check_tripwire(world):
+    print("     -> " + fail, flush=True)
+check(not check_tripwire(world),
+      "2. the tripwire table and the rule files agree in BOTH directions")
+
+for fail in check_gate_names(world):
+    print("     -> " + fail, flush=True)
+check(not check_gate_names(world),
+      "3. every gate-test filename named inside a rule file exists on disk")
+
+for fail in check_paths_frontmatter(world):
+    print("     -> " + fail, flush=True)
+check(not check_paths_frontmatter(world),
+      "4. every rule file's `paths:` is present, non-empty and not only `**`")
+
+
+# --- injections ---------------------------------------------------------------
+# Each mutates a COPY of the inputs, asserts the check then fails, and asserts
+# the mutation is still well-formed and really differs — an injection that merely
+# corrupts its input looks identical to the check working.
+def copy_world(w):
+    return {"root": w["root"], "rules": dict(w["rules"]), "tests": set(w["tests"])}
+
+
+# 5. an oversized file
+inj = copy_world(world)
+pad = ROOT_BUDGET - len(inj["root"]) + 1
+inj["root"] = inj["root"] + "\n" + ("padding. " * ((pad // 9) + 2))
+check(inj["root"] != world["root"] and inj["root"].startswith("# " + _ROOT_NAME)
+      and len(inj["root"]) > ROOT_BUDGET,
+      "5. injection is well-formed: the padded root still opens with its own "
+      "heading, really differs, and is genuinely over budget")
+sz = check_sizes(inj)
+check(len(sz) == 1 and _ROOT_NAME in sz[0] and str(ROOT_BUDGET) in sz[0]
+      and "docs/design_notes" in sz[0],
+      "5. check 1 fails on it, naming the file, its size, its budget and the "
+      "design note the detail belongs in")
+
+# A rule file over budget is the other half of check 1, and it must NOT be
+# excusable by the root being small: the budget is per file, never a total.
+inj = copy_world(world)
+victim = sorted(inj["rules"])[0]
+inj["rules"][victim] = inj["rules"][victim] + ("x" * (RULE_BUDGET + 1))
+check(frontmatter_paths(inj["rules"][victim]) == frontmatter_paths(world["rules"][victim])
+      and len(inj["rules"][victim]) > RULE_BUDGET,
+      "5b. injection is well-formed: the padded rule file keeps its frontmatter "
+      "and really is over budget")
+sz = check_sizes(inj)
+check(len(sz) == 1 and victim in sz[0],
+      "5b. check 1 fails on the RULE file even though the root is inside its own "
+      "budget — per-file, never a total")
+
+# 6. a rule file that no tripwire row names
+inj = copy_world(world)
+phantom = "zz-phantom-area.md"
+inj["rules"][phantom] = "---\npaths:\n  - src/Phantom.cpp\n---\n\nA rule.\n"
+check(phantom not in tripwire_rows(inj["root"])
+      and frontmatter_paths(inj["rules"][phantom]) == ["src/Phantom.cpp"]
+      and set(inj["rules"]) != set(world["rules"]),
+      "6. injection is well-formed: the phantom rule file has a valid, narrow "
+      "`paths:` glob — it looks perfectly healthy from inside itself")
+tw = check_tripwire(inj)
+check(len(tw) == 1 and phantom in tw[0] and "NO tripwire row" in tw[0],
+      "6. check 2 fails in the on-disk-but-unnamed direction")
+
+# 7. a tripwire row naming a rule file that does not exist
+inj = copy_world(world)
+before = len(tripwire_rows(inj["root"]))
+inj["root"] = inj["root"] + (
+    "\n| Nonexistent area | `.claude/rules/nope.md` | `src/**` |\n")
+after = tripwire_rows(inj["root"])
+check(len(after) == before + 1 and "nope.md" in after
+      and inj["root"] != world["root"],
+      "7. injection is well-formed: the added line really parses as one more "
+      "tripwire row")
+tw = check_tripwire(inj)
+check(len(tw) == 1 and "nope.md" in tw[0] and "does not exist" in tw[0],
+      "7. check 2 fails in the named-but-absent direction too — one direction "
+      "alone is blind")
+
+# 8. a renamed gate filename
+inj = copy_world(world)
+victim = None
+for name, text in sorted(inj["rules"].items()):
+    hits = sorted(set(_GATE_REF.findall(text)))
+    if hits:
+        victim, gate = name, hits[0]
+        break
+check(victim is not None, "8. at least one rule file names a gate test to rename")
+if victim is not None:
+    renamed = gate.replace("test_", "test_renamed_", 1)
+    inj["rules"][victim] = inj["rules"][victim].replace(gate, renamed)
+    check(inj["rules"][victim] != world["rules"][victim]
+          and renamed not in inj["tests"]
+          and frontmatter_paths(inj["rules"][victim]) is not None,
+          "8. injection is well-formed: the rule file keeps its frontmatter, "
+          "really differs, and the new name is on no path in the tree")
+    gn = check_gate_names(inj)
+    check(any(renamed in f for f in gn),
+          "8. check 3 fails on it — a compression pass that drops or mistypes a "
+          "gate name cannot pass silently")
+
+# ...and the same in the ROOT file, which is where most rules still are.
+inj = copy_world(world)
+root_gates = sorted(set(_GATE_REF.findall(inj["root"])))
+check(bool(root_gates), "8b. the root file names at least one gate test")
+if root_gates:
+    renamed = root_gates[0].replace("test_", "test_renamed_", 1)
+    inj["root"] = inj["root"].replace(root_gates[0], renamed)
+    check(inj["root"] != world["root"] and renamed not in inj["tests"]
+          and inj["root"].startswith("# " + _ROOT_NAME),
+          "8b. injection is well-formed: the root really differs, still opens with "
+          "its own heading, and the new name is on no path in the tree")
+    gn = check_gate_names(inj)
+    check(any(renamed in f and _ROOT_NAME in f for f in gn),
+          "8b. check 3 covers the root file too, so a gate name cannot be lost in "
+          "transit while the relocation is staged")
+
+# 9. `paths:` absent, empty, and only `**`
+base = "---\npaths:\n  - src/**\n---\n\nA rule naming no gate.\n"
+for label, fm in (
+        ("absent", "A rule with no frontmatter at all.\n"),
+        ("empty", "---\npaths:\n---\n\nA rule.\n"),
+        ("only **", "---\npaths:\n  - **\n---\n\nA rule.\n")):
+    inj = copy_world(world)
+    inj["rules"] = {"zz-probe.md": fm}
+    check(fm != base and not check_paths_frontmatter({"rules": {"zz-probe.md": base}}),
+          "9. injection is well-formed: the %r probe differs from a valid rule "
+          "file, and that valid one passes the check" % label)
+    pf = check_paths_frontmatter(inj)
+    check(len(pf) == 1 and "zz-probe.md" in pf[0],
+          "9. check 4 refuses `paths:` %r, which the loader would silently turn "
+          "into an always-loaded file" % label)
+
+print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
+sys.exit(1 if _FAILS else 0)
