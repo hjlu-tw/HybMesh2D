@@ -24,7 +24,8 @@ Checks:
     no row names fails (it looks perfectly healthy from inside itself), and a row
     naming a rule file that does not exist fails too.
  3. Every gate-test filename named inside a rule file — or in the root file, which
-    still carries most of the rules while the move is staged — exists on disk. This
+    still carries the rules for every area the move has not reached yet — exists on
+    disk. This
     is the check that makes compression honest: dropping a gate name severs a rule
     from its only means of verification and changes nothing a reader would notice.
  4. Every rule file declares a `paths:` list that is present, non-empty, and not
@@ -63,14 +64,21 @@ Known remaining blind spots, stated rather than pretended away:
     measured blind. #63's move was swept by hand the same way and found two —
     `CLAUDE.md`'s own "See the 'Full Pipeline' section under Architecture" and
     `docs/design_notes/pipeline.md:8` — both repointed in the same commit. #64's
-    sweep found five, all outside this gate's reach: `edge_props_dist_mixin.py:31`
-    and `:217`, `pipeline_io_ctrl.py:47`, `docs/design_notes/gui.md:8` and
-    `docs/agents/domain.md:11`.
+    sweep found six: `edge_props_dist_mixin.py:31` and `:217`,
+    `pipeline_io_ctrl.py:47`, `docs/design_notes/gui.md:8`,
+    `docs/agents/domain.md:11` — and, review found, `CLAUDE.md:235`, where "the
+    derived key map" was left with its defining block one screen below it and that
+    block gone. The last one matters most: it is in the always-loaded file, the one
+    place a sweep is cheap, and the first version of this entry claimed all five
+    were "outside this gate's reach".
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    The three rule files that exist are 35.6k, 36.1k and 11.2k characters, so "moving
+    The three rule files that exist are 35.6k, 36.6k and 11.7k characters, so "moving
     text into another rule file is not a legal evasion" only bites for a move larger than
-    the ~24k of headroom the two large ones have left, and not at all for a move into the
-    new small one, which has 48.8k. It tightens on its own as the other three land.
+    the 24.4k / 23.4k of headroom the two large ones have left, and not at all for a move
+    into the new small one, which has 48.3k. It tightens on its own as the other three
+    land. That 36.6k read 36.1k here from #63 until #64's review measured it: this
+    blind-spot list is not exempt from the rule the root file states two screens up, that
+    a number carried in from a neighbouring document is not evidence.
 
 Needs no Qt, no build tree and no network.
 
@@ -92,7 +100,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 74_122
+ROOT_BUDGET = 74_256
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

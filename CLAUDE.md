@@ -22,13 +22,13 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **74,122
-characters (74,549 bytes, 2026-09-01, after #64 moved the GUI panel-configuration rules out to
+observed. The cost is therefore not truncation but **always-loaded context** — **74,256
+characters (74,685 bytes, 2026-09-01, after #64 moved the GUI panel-configuration rules out to
 `.claude/rules/gui-panels-config.md`) ≈ 19k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 427 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 429 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -59,7 +59,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 |------|---------------------------|-----------------|
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`, multi-block, quality, BC binding) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
 | Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. NOT there yet: the portable case export (`services/case_export*.py`, `case_workspace.py`), whose rules are still in this file. |
-| GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. That `views/panels/**` is WIDER than the area: a results panel's rules are still in this file and `views/panels/restart_chooser.py`'s are in `pipeline-case.md`. |
+| GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are still in this file, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
@@ -232,7 +232,8 @@ is blind to the two divergences that produce a wrong mesh instead of an error. B
 sides are read as declarations: the C++ from `include/BLParams.hpp`'s rows plus
 `Config.hpp`'s `key == "..."` branch → member → struct initialiser (a key that stops
 resolving fails check 0, so a blind extractor cannot turn the comparison into a no-op),
-the GUI from the derived key map + `field_spec.model_types` + `MeshConfig()`. New
+the GUI from the derived key map + `field_spec.model_types` + `MeshConfig()` — whose own
+rules moved to `.claude/rules/gui-panels-config.md` in #64. New
 C++-only keys must be justified in `KNOWN_CPP_ONLY`; structural multi-token lines in
 `_STRUCTURAL`. Two things about the divergence lists are load bearing:
 - **`PINNED_TYPE_DIVERGENCE` is empty and must stay empty.** A type mismatch means one

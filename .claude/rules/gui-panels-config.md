@@ -22,16 +22,22 @@ These rules also govern files OUTSIDE the globs above, which cannot hand a reade
 the text: `controllers/panel_sync_ctrl.py` — the module the one-directional flow
 is named after — plus `controllers/undo_ctrl.py` (`_wire_widget_edits`, the
 traversal that makes the panel→model sync run on every edit),
-`controllers/pipeline_io_ctrl.py` and `controllers/project_state_ctrl.py`. The
-tripwire table in `CLAUDE.md` is what makes them reachable; the globs are the
-convenience.
+`controllers/pipeline_io_ctrl.py`, `controllers/project_state_ctrl.py` and
+`tools/PreProcessor/run_pipeline.py`, whose `[INFO] reference Reynolds number`
+line the length-unit rules name as one of the two visible defences against a
+plausible wrong unit. That last one is matched by `.claude/rules/pipeline-case.md`'s
+globs instead, and that file carries no unit rule, so the tripwire table is its
+only route here. The table in `CLAUDE.md` is what makes all six reachable; the
+globs are the convenience.
 
-**And `views/panels/**` reaches panels whose rules are NOT here.** It is the glob
-#59 assigns to this area, and it is wider than the area: the results panels and
-mixins are governed by the root file's Results blocks (until #66), and
-`views/panels/restart_chooser.py` by `.claude/rules/pipeline-case.md`. Being
-handed this file for one of those is the glob being generous, not this file
-claiming them.
+**And two of the globs reach files whose rules are NOT here.** `views/panels/**`
+is the glob #59 assigns to this area and is wider than the area: the results
+panels and mixins are governed by the root file's Results blocks (until #66), and
+`views/panels/restart_chooser.py` by `.claude/rules/pipeline-case.md`. And
+`models/mesh_config*` reaches `MeshConfig.output_base` / `output_path_for`, whose
+rule — the Output field's `.*` placeholder and the one module allowed to read it —
+is still in `CLAUDE.md`. Being handed this file for one of those is the glob being
+generous, not this file claiming them; read the root's own block as well.
 
 **Stage config data flow is one-directional** (`controllers/panel_sync_ctrl.py`): the
 **model is the truth, the panel is a view**.
