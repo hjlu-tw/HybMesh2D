@@ -75,14 +75,18 @@ Known remaining blind spots, stated rather than pretended away:
     `docs/agents/domain.md:11`, each of which ENUMERATES which rules have moved and so
     goes stale on every one of these tickets. Nothing here noticed either time.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    The four rule files that exist are 35.6k, 36.6k, 11.7k and 12.0k characters, so
+    The four rule files that exist are 35,615 / 36,615 / 11,718 / 12,611 characters, so
     "moving text into another rule file is not a legal evasion" only bites for a move
-    larger than the 24.4k / 23.4k of headroom the two large ones have left, and not at
-    all for a move into either small one, which have 48.3k and 48.0k of headroom. It
-    tightens on its own as the other two land. That 36.6k read 36.1k here from #63
-    until #64's review measured it: this blind-spot list is not exempt from the rule the
-    root file states two screens up, that a number carried in from a neighbouring
-    document is not evidence.
+    larger than the 24,385 / 23,385 of headroom the two large ones have left, and not at
+    all for a move into either small one, which have 48,282 and 47,389. It tightens on
+    its own as the other two land. Exact figures rather than rounded ones, because
+    rounding is what went wrong twice: that 36,615 read "36.1k" here from #63 until #64's
+    review measured it, and #65 first wrote its own new file as "12.0k" when it was
+    12,611 — measured before a later edit to the same file and never re-derived. This
+    blind-spot list is not exempt from the rule the root file states two screens up, that
+    a number carried in from a neighbouring document is not evidence; nor from the
+    stronger one #65's review supplies, that a number re-derived BEFORE the last edit is
+    a carried-in number too.
 
 Needs no Qt, no build tree and no network.
 
@@ -104,7 +108,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 65_156
+ROOT_BUDGET = 65_242
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

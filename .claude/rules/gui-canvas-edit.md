@@ -27,15 +27,18 @@ whole of duplicate/transform closure), and `controllers/segment_canvas_ctrl.py`
 (`_geometry_connect`, `_apply_geometry_update`, `_clear_geometry_canvas` — the
 one-polyline rules). Pop-up stacking reaches furthest of all: `app/utils.py`
 re-exports `keep_on_top`, and **every** modeless pop-up must go through it, so the
-rule binds any view or controller that shows one — measured today, **16 calls to
-`keep_on_top` across 10 modules, and no glob of this file reaches any of them**
-(`controllers/batch_ctrl.py`, `views/settings_dialog.py`, the three result-canvas
-mixins, the Edit-BL and mesh-sizing panel mixins, and the two edit controllers
-above). Three of those ten are under `views/panels/**`, which is
-`.claude/rules/gui-panels-config.md`'s glob, and that file carries no pop-up rule —
-so a reader of `views/panels/mesh_bl_mixin.py` is handed rules for that file and
-NOT this one. The table in `CLAUDE.md` is what makes all of them reachable; the
-globs are the convenience.
+rule binds any view or controller that shows one — measured today, **11 calls to
+`keep_on_top` in 9 modules, and no glob of this file reaches any of them**: the two
+edit controllers above, `views/settings_dialog.py`, four calls across the three
+result-canvas mixins, and `views/panels/`'s `edge_props_dialogs_mixin.py`,
+`mesh_bl_mixin.py` and `mesh_sizing_mixin.py`. `controllers/batch_ctrl.py` is NOT
+among them and its absence is not an omission — it carries the comment recording
+that `BatchDialog` deliberately opts out, which the rule below states. Three of the
+nine ARE under `views/panels/**`, which is `.claude/rules/gui-panels-config.md`'s
+glob, and that file carries no pop-up rule — so a reader of
+`views/panels/mesh_bl_mixin.py` is handed rules for that file and NOT this one. The
+table in `CLAUDE.md` is what makes all of them reachable; the globs are the
+convenience.
 
 **And one glob is WIDER than the area.** `commands/**` is the glob #59 assigns
 here, and `commands/config_cmds.py`'s `UpdateProjectStateCmd` is the other half of

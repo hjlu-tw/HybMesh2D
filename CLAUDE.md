@@ -22,13 +22,13 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **65,156
-characters (65,543 bytes, 2026-09-01, after #65 moved the GUI canvas and editing rules out to
+observed. The cost is therefore not truncation but **always-loaded context** — **65,242
+characters (65,631 bytes, 2026-09-02, after #65 moved the GUI canvas and editing rules out to
 `.claude/rules/gui-canvas-edit.md`) ≈ 16k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 387 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 389 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -60,7 +60,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`, multi-block, quality, BC binding) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
 | Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. NOT there yet: the portable case export (`services/case_export*.py`, `case_workspace.py`), whose rules are still in this file. |
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are still in this file, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
-| GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them, pop-up stacking reaching 16 `keep_on_top` calls across 10 modules that no glob here covers. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
+| GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
