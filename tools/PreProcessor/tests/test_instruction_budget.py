@@ -38,7 +38,7 @@ Checks:
     well-formed, and that it really differs from the original.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has about 430 more of because this repo's own prose
+bytes, which the root file has about 390 more of because this repo's own prose
 contains CJK. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
 never fewer than one byte.
@@ -70,15 +70,19 @@ Known remaining blind spots, stated rather than pretended away:
     derived key map" was left with its defining block one screen below it and that
     block gone. The last one matters most: it is in the always-loaded file, the one
     place a sweep is cheap, and the first version of this entry claimed all five
-    were "outside this gate's reach".
+    were "outside this gate's reach". #65's sweep found two, and both are files
+    #64 already repointed once — `docs/design_notes/gui.md:8` and
+    `docs/agents/domain.md:11`, each of which ENUMERATES which rules have moved and so
+    goes stale on every one of these tickets. Nothing here noticed either time.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    The three rule files that exist are 35.6k, 36.6k and 11.7k characters, so "moving
-    text into another rule file is not a legal evasion" only bites for a move larger than
-    the 24.4k / 23.4k of headroom the two large ones have left, and not at all for a move
-    into the new small one, which has 48.3k. It tightens on its own as the other three
-    land. That 36.6k read 36.1k here from #63 until #64's review measured it: this
-    blind-spot list is not exempt from the rule the root file states two screens up, that
-    a number carried in from a neighbouring document is not evidence.
+    The four rule files that exist are 35.6k, 36.6k, 11.7k and 12.0k characters, so
+    "moving text into another rule file is not a legal evasion" only bites for a move
+    larger than the 24.4k / 23.4k of headroom the two large ones have left, and not at
+    all for a move into either small one, which have 48.3k and 48.0k of headroom. It
+    tightens on its own as the other two land. That 36.6k read 36.1k here from #63
+    until #64's review measured it: this blind-spot list is not exempt from the rule the
+    root file states two screens up, that a number carried in from a neighbouring
+    document is not evidence.
 
 Needs no Qt, no build tree and no network.
 
@@ -100,7 +104,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 74_256
+ROOT_BUDGET = 65_156
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

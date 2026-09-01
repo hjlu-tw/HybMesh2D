@@ -8,7 +8,7 @@ How the engineering skills should consume this repo's domain documentation when 
 
 - **`CONTEXT.md`** at the repo root — the glossary of domain terms.
 - **`docs/adr/`** — read ADRs that touch the area you're about to work in.
-- **`CLAUDE.md`** at the repo root, plus the on-demand rule files its tripwire table names (`.claude/rules/*.md`) — this repo keeps an unusually dense body of hard-won invariants across the two (the BL/no-BL junction rules in `.claude/rules/mesher.md`, the panel↔model data-flow contract and the length-unit/`Linf` relationship in `.claude/rules/gui-panels-config.md`, the pop-up stacking rules still in `CLAUDE.md`). Treat them as required reading alongside `CONTEXT.md`, not as an alternative to it.
+- **`CLAUDE.md`** at the repo root, plus the on-demand rule files its tripwire table names (`.claude/rules/*.md`) — this repo keeps an unusually dense body of hard-won invariants across the two (the BL/no-BL junction rules in `.claude/rules/mesher.md`, the panel↔model data-flow contract and the length-unit/`Linf` relationship in `.claude/rules/gui-panels-config.md`, the pop-up stacking rules in `.claude/rules/gui-canvas-edit.md`). Treat them as required reading alongside `CONTEXT.md`, not as an alternative to it.
 
 If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
 

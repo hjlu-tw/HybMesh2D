@@ -6,11 +6,15 @@ context limit — is false; `CLAUDE.md`'s header block carries the measured beha
 and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
 this is the original prose, with its measurements, dated
 acceptance runs, injections and named blind spots. `CLAUDE.md` carries the rule —
-except for the panel-configuration rules (the field-spec tables, the
-panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog, length
-units and `SciDoubleSpinBox`), which moved to `.claude/rules/gui-panels-config.md`
-by #64 and are loaded on demand when a panel view, a field-spec service or a
-mesh-config model is read. This file carries why it is the rule.
+except for the two areas #59 has moved out to on-demand rule files, both loaded when
+a matching file is READ. The panel-configuration rules (the field-spec tables, the
+panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog, length units
+and `SciDoubleSpinBox`) are in `.claude/rules/gui-panels-config.md` (#64); the canvas
+and editing rules (the owner of the edge being edited, the outline re-fit, global
+undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up
+stacking) are in `.claude/rules/gui-canvas-edit.md` (#65). `CLAUDE.md`'s tripwire
+table is the authority on which rules live where — this list enumerates, so it goes
+stale on the next ticket. This file carries why it is the rule.
 
 ### PreProcessor GUI (`tools/PreProcessor/gui/app/`)
 Layered PyQt6 application:

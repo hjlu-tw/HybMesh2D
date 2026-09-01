@@ -22,13 +22,13 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **74,256
-characters (74,685 bytes, 2026-09-01, after #64 moved the GUI panel-configuration rules out to
-`.claude/rules/gui-panels-config.md`) ≈ 19k tokens**, paid by every session before it reads a line
+observed. The cost is therefore not truncation but **always-loaded context** — **65,156
+characters (65,543 bytes, 2026-09-01, after #65 moved the GUI canvas and editing rules out to
+`.claude/rules/gui-canvas-edit.md`) ≈ 16k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 429 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 387 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -60,6 +60,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`, multi-block, quality, BC binding) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
 | Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. NOT there yet: the portable case export (`services/case_export*.py`, `case_workspace.py`), whose rules are still in this file. |
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are still in this file, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
+| GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them, pop-up stacking reaching 16 `keep_on_top` calls across 10 modules that no glob here covers. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
@@ -296,78 +297,6 @@ Layered PyQt6 application.
 - **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing`, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`; serialized via `to_dict()`/`from_dict()`, the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py`), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py`. Auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by `src/cli.cpp` for hand-written configs but are not emitted by the GUI. Exported JSON carries `format_version` (`CONFIG_FORMAT_VERSION`).
 - **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py`, `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
 - **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd`)
-
-**The edge being edited has an OWNER, and there are TWO edit kinds in it**
-(`services/edge_edit.py`, Qt-free — `EdgeEditSession` + `EditOutcome` + `ShapeOutcome`).
-Drawing/double-clicking an **analytic** edge, and double-clicking an **imported (discrete)**
-edge to reshape its outline by corner vertices, both open a *modeless* session committed by
-**Create Edge** / **Apply** and reverted by **Cancel**. Between them that was **twelve
-attributes on `AppController`**, with "an edit is live" enforced only by every reader
-remembering to test for `None`. **Both kinds live in one owner because they are
-alternatives**: at most one may be live, so `_edit_in_progress()` is one question with one
-answer.
-- **The dialog is held OPAQUELY** — stored and handed back, never called into. What must be
-  *asked* of it (a polygon's open/closed toggle) is read by the caller and passed into
-  `update()` as a value.
-- **`commit()` / `cancel()` end the session and return an `EditOutcome`; they do not decide
-  what it becomes.** The *revert* does live in the owner, being the other half of its snapshot.
-- **An edit BELONGS to the CAD session it began in, and leaving that session is a
-  transition.** Nothing used to cancel a live edit on a tab switch or close, while commit
-  resolved its target through `active_session()` — the tab in front *now* — then fell back
-  to matching by segment **id**, and ids are per-session (`renumber_segments` assigns
-  contiguous 1..N across both edge kinds, so every tab's Nth edge has id N), so it landed on
-  **another tab's edge**. Every outcome now carries its session and the caller acts on
-  **that** one; the list / selection / window title are touched only when the edit's session
-  *is* the front tab. Switching or closing away **asks**, defaulting to cancelling
-  (`headless_default=True`); on close the edit question comes **first**, and declining
-  aborts the close. Declining a switch must **put the tab bar back**. `begin`/`begin_shape`
-  REFUSE while another edit is live — the backstop, not the interaction, since a Qt-free
-  module cannot prompt. `commit`/`cancel` with nothing live is a silent no-op
-  (`get_logger(__name__).debug`, never a pop-up).
-- **An ending the DIALOG did not initiate must close the dialog** — it tears itself down
-  through `finished → deleteLater`, which fires only on a self-close. The dialog travels
-  back on the outcome and the caller closes it; that `close()` **re-emits `rejected`**, so
-  the cancel handler runs again against an idle owner, which is why the silent-no-op rule
-  and this one had to land together. **The canvas clear takes the EDIT's session**, since
-  the preview is keyed by `session_id`.
-- **Not every route out is a prompt.** Switching and closing a tab ask (both cleanly
-  abortable). Opening a new tab, `reset_all_state` and loading a workspace end the edit
-  unconditionally and say so in the log.
-- **The committed-edge DRAG is a transition, not a nullable field**: `begin_drag` /
-  `finish_drag`, and **a drag belongs to the segment it began on and cannot be finished
-  against another**. The handler must not `begin_drag` on the `finished` event, and **a drag
-  is NOT `is_active()`** — callers guarding on that predicate must keep working during one.
-- **A corner drag is a value in, an outline out**: `move_corner` returns a freshly re-fitted
-  array instead of mutating the live one, so dragging never accumulates transform onto
-  transform and Cancel restores points *byte-for-byte*. The shape side has **`end_shape()`,
-  not a commit/cancel pair**, because both endings need the same thing from the owner.
-Gated by `tests/test_edge_edit_owner_seam.py` (five properties, nine in-test injections),
-`tests/test_edge_edit_owner.py` (the verbs, Qt-free, PyQt6 refused through a meta-path hook
-so a *deferred* import fails too), `tests/test_committed_drag_undo.py` and
-`tests/test_edit_session_binding.py` (offscreen Qt with the real `AppController`). The
-binding test moves `active_idx` **directly** rather than through `switch_tab`, on purpose:
-`switch_tab` now ends the edit, and the binding is the half that must hold when some other
-route changes the front tab.
-
-**The outline re-fit is pure arithmetic and has its own module**
-(`services/shape_refit.py`, Qt-free — `build_edge_specs` + `refit_shape`). Each edge re-fits
-between its own two corners by the similarity transform carrying its ORIGINAL corner pair
-onto the current one, so dragging a shared corner redistributes both. Two behaviours it is
-careful about: a **zero-length edge** falls back to a pure translation (the transform's
-divisor is the squared length), and the **closing edge wraps to index 0** rather than being
-read as out-of-range and skipped. The extraction was measured: 2000 randomised outlines
-through both the new function and the pre-change in-place body came out **byte-identical,
-worst |Δ| = 0**. Gated by `tests/test_shape_refit.py`.
-
-**Undo is global, across every CAD session AND project settings** (`controllers/undo_ctrl.py`).
-Histories stay per-`GeometrySession` (plus `controller.project_history`) so closing a tab
-drops exactly its own commands; ordering across them is by the monotonic `seq` that
-`CommandHistory._push` stamps. Undo raises the tab owning the command before applying it.
-Mesh/Solver/IB edits are recorded by debounced snapshot diffing, so a burst of typing is one
-step. **Any code pushing config into those panels must go through
-`controller.push_panel_config(panel, cfg)`** (or `suppress_project_undo()`), or the push is
-recorded as a user edit.
-
 - **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI
   subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus
   `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process
@@ -435,56 +364,6 @@ returns `None` when declined and the tick's state otherwise). A third multi-way 
 point at which `app/utils.py` grows a `choose()` rather than the exemption list growing again.
 All of them no-op or return the default on a headless platform. Any new dock widget needs
 `setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
-
-**Pop-up stacking** (`app/popup_stack.py`, re-exported from `app/utils.py`): every modeless
-pop-up goes through `keep_on_top(w)` **before** `show()`, which re-parents it to the
-**top-level** window, leaves it an ordinary normal-level `Qt.Dialog`, and installs three
-filters — `_PopupRaiser` (on the main window, per activation), `_ClickRaiser` (on the
-**QApplication**, per mouse RELEASE) and `_ShowRaiser` (on the pop-up). Activation alone is
-not enough: it fires on the FIRST click of the main window only, so every later click
-reorders the window in front with no Qt event to hear, and a raise deferred into the middle
-of a canvas *drag* is undone when the drag ends. Releasing is when the platform has finished
-reordering. Both window-LEVEL shortcuts are wrong and were each shipped once:
-`WindowStaysOnTopHint` floats above **every** application, and `Qt.Tool` — an NSPanel with
-`hidesOnDeactivate` — makes the pop-up **disappear** when the user clicks another app
-(measured on Qt 6.10: `isExposed()` → False); disabling the auto-hide is not an escape (Qt6
-ignores `WA_MacAlwaysShowToolWindow`, and a Tool window sits at NSFloatingWindowLevel).
-**Every raise goes through `raise_later()`** — a raise issued from inside the event that
-reorders the windows is undone when the platform finishes that event. Re-parenting is load
-bearing twice: the raiser finds pop-ups in the top-level's direct child list, and a pop-up
-parented to a panel is hidden with that panel. Gated by `tests/test_popup_stacking.py`.
-`BatchDialog` opts out on purpose (it runs for minutes and must be free to sit behind).
-
-**Duplicate/transform closure**: `transform_apply_ctrl` is type-preserving (a line stays a line, an
-**arc stays an arc**…), and the copy inherits the source's `closed` flag — except in the
-polygon-bake fallback (formula curves, discrete file edges, and a circle/arc under a NON-uniform
-scale, which is an ellipse the model cannot hold), where the flag is *re-derived from the points*
-by `_baked_edge_is_closed`. The arc's image is read off three TRANSFORMED POINTS — centre, arc
-start, quarter-sweep point — so one code path serves every similarity transform and a mirror's
-reversed sweep comes out of the geometry rather than a per-transform sign rule; the quarter point
-rather than the midpoint, because `sin(sweep/2)` vanishes at |sweep| = 2π. Whatever still bakes is
-NAMED in the log with the reason. `SegmentModel.closed` defaults True and is only ever read for
-`curve_type == "polygon"`, so every other edge carries True while drawing open — copying that flag
-onto a baked polygon is what silently closed a duplicated arc. Discrete edges must not take the
-PROJECT's closure either: one segment of a closed imported outline is itself an open polyline.
-Gated by `tests/test_transform_closure.py`.
-
-**The discrete geometry is ONE polyline, and both ends of that have to be handled.** A session
-stores every discrete point in `original_points`, indexed by `split_indices` into file segments,
-drawn as a single pyqtgraph item.
-- **Baking order matters.** `BakeCurveToGeometryCmd` welds a converted edge onto whichever END of
-  the polyline it touches, so an edge touching neither lands as a separate piece.
-  `bake_selected_curve` chains a multi-edge selection with `_chain_edges` (the same one Join uses)
-  and bakes head-to-tail as ONE undo step, index-sorted — otherwise the DRAWING order, which the
-  user cannot fix by clicking differently, decides the result.
-- **Where the polyline must NOT join comes from the model.** `_geometry_connect` (in
-  `segment_canvas_ctrl`) breaks it at any index interval covered by no file segment and passes that
-  as pyqtgraph's `connect` array; without it two disjoint pieces are drawn joined by a "diagonal"
-  belonging to no edge that cannot be selected away. Deliberately not a spacing heuristic, which
-  would also break a long straight edge beside a finely sampled arc.
-- **An empty model still has to be drawn**: `_apply_geometry_update` returns early when
-  `original_points is None`, so `_clear_geometry_canvas` wipes layer, hit-test points, split
-  markers, closing edge and stats — but never the analytic items, which a session can have alone.
 
 **Window layout** is persisted by `app/services/ui_state.py` — **window geometry and dock state,
 and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when the layout changes so
