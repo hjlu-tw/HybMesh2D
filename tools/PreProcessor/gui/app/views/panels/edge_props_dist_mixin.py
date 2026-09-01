@@ -28,7 +28,8 @@ class EdgePropsDistMixin:
 
         def mk_sci_spin(tip: str):
             """A physical-length field (see the SciDoubleSpinBox rule in
-            CLAUDE.md): scientific notation, no floor. 0 means "not set", which is
+            .claude/rules/gui-panels-config.md): scientific notation, no floor.
+            0 means "not set", which is
             how the resampler distinguishes a one-sided from a two-sided spec."""
             s = SciDoubleSpinBox()
             s.setRange(0.0, 1e6)
@@ -214,7 +215,8 @@ class EdgePropsDistMixin:
                 lambda *_: self.distribution_edited.emit())
 
     #: Distribution fields holding a PHYSICAL LENGTH, so they carry the model's
-    #: unit as a suffix (see the SciDoubleSpinBox / units rules in CLAUDE.md).
+    #: unit as a suffix (see the SciDoubleSpinBox / units rules in
+    #: .claude/rules/gui-panels-config.md).
     #: Growth ratios, intensities and node counts are dimensionless and must not.
     _LENGTH_FIELDS = ("uniform_spacing", "tanh_spacing_ends",
                       "geo_spacing_start", "geo_spacing_end")

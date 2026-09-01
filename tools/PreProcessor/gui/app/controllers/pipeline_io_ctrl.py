@@ -44,8 +44,9 @@ class PipelineIoControllerMixin:
                 "[Pipeline] [WARNING] could not read the latest on-screen CAD "
                 f"edits ({e}); the saved script may not match the canvas.")
 
-        # The MODEL is the truth and the panel is a view of it (CLAUDE.md,
-        # "Stage config data flow is one-directional"): panel_sync_ctrl runs on
+        # The MODEL is the truth and the panel is a view of it
+        # (.claude/rules/gui-panels-config.md, "Stage config data flow is
+        # one-directional"): panel_sync_ctrl runs on
         # every user edit, so these are never stale, and reading the widgets back
         # would be the one direction the data flow does not have. Note the stl3d
         # section below has always read its model.
