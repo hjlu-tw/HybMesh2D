@@ -103,7 +103,8 @@ class MeshConfig:
     # BL / no-BL junction: how a BL edge meeting a grow=0 neighbour is capped.
     # method 1 (default) = 4-case angle-driven scheme; the flow-facing angle θ is
     # binned by the three thresholds C1 < C2 < C3 (degrees) to pick the case.
-    # method 0 = legacy taper-to-zero. See CLAUDE.md "BL/no-BL Junction".
+    # method 0 = legacy taper-to-zero. See the "BL/no-BL Junction" group in
+    # .claude/rules/mesher.md (moved out of CLAUDE.md by #62).
     bl_junction_method: int = 1
     bl_junction_angle_c1: float = 135.0
     bl_junction_angle_c2: float = 270.0

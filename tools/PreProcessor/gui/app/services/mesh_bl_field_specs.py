@@ -210,8 +210,9 @@ _BL_FIELD_SPECS = [_legacy_spec(s) for s in BL_SPECS]
 # it in last time (ui_state), and a group holding a per-geometry OVERRIDE — that one is
 # a safety property, not a preference, since a value that differs from the global must
 # not hide behind a collapsed header. Groups follow the .dat parameter groups (see
-# CLAUDE.md / include/Config.hpp) so a user reading a config file finds the same
-# partition here.
+# .claude/rules/mesher.md, or include/Config.hpp) so a user reading a config file
+# finds the same partition here. That rule file is scoped to src/ include/ config/
+# tests/cpp/, which this file is in none of, so nothing hands it to you on a read.
 # INVARIANT: these keys must partition BL_SPECS exactly — a key listed in no group
 # would be an unreachable parameter, i.e. a setting that silently keeps whatever value
 # it had. Gated by tests/test_bl_dialog_sections.py, and any stray key still gets built

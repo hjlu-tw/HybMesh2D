@@ -5,8 +5,10 @@ file was condensed to its rules. (The reason this line used to give — a 150k-c
 context limit — is false; `CLAUDE.md`'s header block carries the measured behaviour
 and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
 this is the original prose, with its measurements, dated
-acceptance runs, injections and named blind spots. `CLAUDE.md` carries the rule;
-this file carries why it is the rule.
+acceptance runs, injections and named blind spots. `.claude/rules/mesher.md` carries
+the rule (moved there from `CLAUDE.md` by #62, loaded on demand when a file under
+`src/`, `include/`, `config/` or `tests/cpp/` is read); this file carries why it is
+the rule.
 
 ### .dat Config Format (`config/Background_para.dat`)
 Key-value text file, command-line args override file values. Parameters grouped by function:

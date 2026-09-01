@@ -52,13 +52,15 @@ Known remaining blind spots, stated rather than pretended away:
     ever received it: that is the tooling's behaviour, not this repo's, and it is
     covered by #61's manual probe instead. A version bump can invalidate that probe
     without anything here going red.
- c. Nothing checks that a pointer INTO the moved text still resolves. Three source
-    comments went stale in #62's own move and this gate saw none of them:
-    `models/mesh_config.py:106` and `services/mesh_bl_field_specs.py:213` (both GUI
-    files, so no mesher glob hands the reader the moved text) and
-    `src/MultiBlock.cpp:69`, plus `docs/design_notes/mesher.md:8`. A check would
-    have to resolve prose section titles across files, which is the kind of
-    substring matching this repo has twice measured blind.
+ c. Nothing checks that a pointer INTO a rule file still resolves. FOUR went stale
+    in #62's own move and this gate saw none of them — `models/mesh_config.py:106`
+    and `services/mesh_bl_field_specs.py:213` (both GUI files, so no mesher glob
+    hands their reader the moved text), `src/MultiBlock.cpp:69`, and
+    `docs/design_notes/mesher.md:8`. They were repointed by hand afterwards, which
+    is the point rather than the remedy: nothing here caught them and nothing here
+    will catch the next one. A check would have to resolve prose section titles
+    across files, which is the kind of substring matching this repo has twice
+    measured blind.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
     With one 35.6k rule file that leaves ~24k of headroom, so "moving text into
     another rule file is not a legal evasion" only bites for a move larger than

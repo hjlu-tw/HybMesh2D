@@ -66,8 +66,9 @@ struct BlockSpec {
 
 // The name of one side of a block, from the ONE place the [south, east, north,
 // west] convention lives (`mbSideAxis` in the header). There was a second copy of
-// these four words here for one commit, which is exactly the shape CLAUDE.md's
-// "the convention is DATA, in one place" rule exists to refuse.
+// these four words here for one commit, which is exactly the shape
+// .claude/rules/mesher.md's "the convention is DATA, in one place" rule exists to
+// refuse.
 const char* sideName(int k) {
     return hybmesh::mbSideAxis(static_cast<hybmesh::MbSide>(k)).name;
 }
