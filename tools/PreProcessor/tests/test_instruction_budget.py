@@ -38,8 +38,9 @@ Checks:
     well-formed, and that it really differs from the original.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has about 390 more of because this repo's own prose
-contains CJK. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
+bytes, which the root file has 297 more of today because this repo's own prose
+contains CJK. That figure moves with every relocation ticket — it was 389 before
+#66 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
 never fewer than one byte.
 
@@ -74,19 +75,33 @@ Known remaining blind spots, stated rather than pretended away:
     #64 already repointed once — `docs/design_notes/gui.md:8` and
     `docs/agents/domain.md:11`, each of which ENUMERATES which rules have moved and so
     goes stale on every one of these tickets. Nothing here noticed either time.
+    #66's sweep found `docs/design_notes/gui.md:8` a THIRD time, for the same reason,
+    and nothing else: the six results gate tests carry no pointer at `CLAUDE.md` at
+    all, and `docs/agents/domain.md:11` survived because #65 replaced its enumeration
+    with a pointer at the tripwire table — which is the only fix that has held. What
+    #66 also found is a defect this entry cannot see from either end: the moved rules
+    discuss `services/phi_quality.py`, which NO glob in ANY rule file reaches, so the
+    pointer resolved while the file it points at was unreachable. It is named in
+    `gui-results.md`'s header instead. Reachability of a NAMED file is a third thing
+    nothing here checks.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    The four rule files that exist are 35,615 / 36,615 / 11,718 / 12,611 characters, so
-    "moving text into another rule file is not a legal evasion" only bites for a move
-    larger than the 24,385 / 23,385 of headroom the two large ones have left, and not at
-    all for a move into either small one, which have 48,282 and 47,389. It tightens on
-    its own as the other two land. Exact figures rather than rounded ones, because
-    rounding is what went wrong twice: that 36,615 read "36.1k" here from #63 until #64's
-    review measured it, and #65 first wrote its own new file as "12.0k" when it was
-    12,611 — measured before a later edit to the same file and never re-derived. This
-    blind-spot list is not exempt from the rule the root file states two screens up, that
-    a number carried in from a neighbouring document is not evidence; nor from the
-    stronger one #65's review supplies, that a number re-derived BEFORE the last edit is
-    a carried-in number too.
+    The five rule files that exist are 35,615 / 36,615 / 17,085 / 11,799 / 12,847
+    characters, so "moving text into another rule file is not a legal evasion" only bites
+    for a move larger than the 24,385 / 23,385 of headroom the two large ones have left,
+    and not at all for a move into any of the other three, which have 42,915 / 48,201 / 47,153.
+    It tightens on its own as the last area lands. Exact figures rather than
+    rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
+    here from #63 until #64's review measured it, and #65 first wrote its own new file as
+    "12.0k" when it was 12,611 — measured before a later edit to the same file and never
+    re-derived. This blind-spot list is not exempt from the rule the root file states two
+    screens up, that a number carried in from a neighbouring document is not evidence; nor
+    from the stronger one #65's review supplies, that a number re-derived BEFORE the last
+    edit is a carried-in number too. #66 broke that rule on its first attempt and BOTH
+    review axes caught it independently: the two figures for the files #66 itself edits
+    were this list's own HEAD values, stale the moment the ticket touched them, sitting
+    beside a freshly added sentence claiming every figure was re-derived. The claim is
+    kept, because it is the right rule; what it now describes is a measurement taken after
+    the last content edit of the ticket rather than during it.
 
 Needs no Qt, no build tree and no network.
 
@@ -108,7 +123,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 65_242
+ROOT_BUDGET = 52_453
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -318,8 +333,10 @@ def check_gate_names(world):
     The acceptance criterion asks only for the rule files, but the root still
     carries most of the rules while the move is staged, and the relocation tickets
     are precisely when a gate name can be dropped in transit. Same property, one
-    superset — and it is measured, not assumed: all 44 gates the root names today
-    resolve.
+    superset — and it is measured, not assumed: all 17 gates the root names today
+    resolve. That count falls with each relocation (44 before #63 moved the pipeline
+    rules out) and is re-derived here rather than carried; it stood at 44 through three
+    tickets that each lowered it, which is the failure this whole file is about.
     """
     fails = []
     sources = [(_ROOT_NAME, world["root"])]

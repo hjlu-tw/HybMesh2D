@@ -29,15 +29,18 @@ one-polyline rules). Pop-up stacking reaches furthest of all: `app/utils.py`
 re-exports `keep_on_top`, and **every** modeless pop-up must go through it, so the
 rule binds any view or controller that shows one — measured today, **11 calls to
 `keep_on_top` in 9 modules, and no glob of this file reaches any of them**: the two
-edit controllers above, `views/settings_dialog.py`, four calls across the three
-result-canvas mixins, and `views/panels/`'s `edge_props_dialogs_mixin.py`,
-`mesh_bl_mixin.py` and `mesh_sizing_mixin.py`. `controllers/batch_ctrl.py` is NOT
-among them and its absence is not an omission — it carries the comment recording
-that `BatchDialog` deliberately opts out, which the rule below states. Three of the
-nine ARE under `views/panels/**`, which is `.claude/rules/gui-panels-config.md`'s
-glob, and that file carries no pop-up rule — so a reader of
-`views/panels/mesh_bl_mixin.py` is handed rules for that file and NOT this one. The
-table in `CLAUDE.md` is what makes all of them reachable; the globs are the
+edit controllers above, `views/settings_dialog.py`, FIVE calls across the three
+result-canvas mixins (1 + 2 + 2 — this read "four" until #66 re-counted it, and
+2 + 1 + 4 + 3 has never summed to the 11 the same sentence claims), and
+`views/panels/`'s `edge_props_dialogs_mixin.py`, `mesh_bl_mixin.py` and
+`mesh_sizing_mixin.py`. `controllers/batch_ctrl.py` is NOT among them and its
+absence is not an omission — it carries the comment recording that `BatchDialog`
+deliberately opts out, which the rule below states. Three of the nine ARE under
+`views/panels/**`, which is `.claude/rules/gui-panels-config.md`'s glob, and three
+more are under `.claude/rules/gui-results.md`'s; neither of those files carries a
+pop-up rule — so a reader of `views/panels/mesh_bl_mixin.py` or of
+`views/result_canvas_plots_mixin.py` is handed rules for that file and NOT this one.
+The table in `CLAUDE.md` is what makes all of them reachable; the globs are the
 convenience.
 
 **And one glob is WIDER than the area.** `commands/**` is the glob #59 assigns
