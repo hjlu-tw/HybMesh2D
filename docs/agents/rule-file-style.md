@@ -24,8 +24,12 @@ narrative, a gate filename, and a named blind spot.
    same way an anchor does**: #70 found `USER-REQUESTED` and its `2026-08-21` on two different
    lines, so count marker-with-date, not the bare word, or a preserved marker reads as a lost one
    and a lost date as a preserved marker.
-4. **Reversal narrative → one line plus an anchored pointer.** `SUPERSEDED by #NN:` or
-   `REVERSES #NN:`, the new answer in one clause, then `Why: docs/design_notes/<area>.md, "<anchor>"`.
+4. **Reversal narrative → one line plus an anchored pointer.** `SUPERSEDED by #NN:`,
+   `SUPERSEDES #NN:` or `REVERSES #NN:`, the new answer in one clause, then
+   `Why: docs/design_notes/<area>.md, "<anchor>"`. The ACTIVE forms exist because rule 1 forces
+   them: when the surviving claim is the NEW answer, the old one cannot be the sentence's subject
+   (#70). **The marker itself must not wrap either** — `grep -c -F "REVERSES #31"` printed 0 on
+   #70's first pass, with `REVERSES` and `#31` on different lines.
    **Grep-verify every anchor** (`grep -c -F "<anchor>" <target>` must print exactly `1`) and keep
    **the anchor AND its `Why:` pointer on ONE LINE** — an extractor keyed on the whole construct
    breaks when the prefix wraps, which #69's first pass did in 2 of 4. Four ways an anchor fails,
@@ -56,13 +60,18 @@ is why rule 2 is the only mechanical evidence available:
 
 ```python
 import re
-tok = lambda s: set(re.findall(r"`([^`]+)`", s))
+norm = lambda x: re.sub(r"\s+", " ", x).strip()          # a token WRAPS; #69 added this
+tok = lambda s: {norm(x) for x in re.findall(r"`([^`]+)`", s)}
 lost = tok(open("before.md").read()) - tok(open("after.md").read())
 ```
 
 Run it per block and require `lost == set()`. On #73 it caught two real losses whose rules had
 survived as prose with the identifier gone (`scan_series_range`, and the named wrong key `multi`).
-It does **not** catch a dropped *constraint* whose identifier appears elsewhere — read the diff too.
+**`norm` is not cosmetic**: without it #69 got two false positives and #70's review re-derived
+295 → 296 with `(overwrite, no-archive)` "invented", because that token wrapped across two lines
+in the BEFORE file. Same trap as rules 3 and 4 — it costs the ruler its only claim to be
+mechanical, since a false positive and a real loss look identical. It does **not** catch a dropped
+*constraint* whose identifier appears elsewhere — read the diff too.
 
 ## What the reference block measured
 
@@ -74,11 +83,12 @@ It does **not** catch a dropped *constraint* whose identifier appears elsewhere 
 | reversal | `SUPERSEDED by #53` + a grep-verified anchor (count 1) |
 | blind spot | moved to `mesher.md`'s new `## Named blind spots` |
 
-**−12% is the honest expectation, not −50%.** #73's whole-file pass was −7.7%, #69's −1.6% and
-#70's −0.8%. The last two are the shape to expect wherever a file's blind spots consolidate into a
-list that did not exist before: #69's prose fell 4.8% and #70's 5.1%, while the new list (1,123
-and 1,202 chars) and the anchor lines took most of that back. **A compression ticket pays for the
-structure it adds**, and the headline number is the wrong thing to optimise. These files are
+**−12% is the honest expectation, not −50%**, and where a file's blind spots consolidate into a
+list that did not exist before, the headline is smaller still: #73's whole-file pass was −7.7%,
+while #69 (−1.6%) and #70 (−0.7%) each spent a ~5% fall in rule text on a new list and its
+anchors. **A compression ticket pays for the structure it adds**, so the headline is the wrong
+number to optimise — report the decomposition and let the two numbers disagree in public. These
+files are
 already dense; the style's value is structural — claim first, identifiers intact, reversals
 pointing rather than retelling, blind spots in one list — and **not** byte savings. No rule file is
 anywhere near its 60,000 budget, so a ticket that trades an identifier for characters has the

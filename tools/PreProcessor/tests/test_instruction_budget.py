@@ -210,13 +210,13 @@ Known remaining blind spots, stated rather than pretended away:
     keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
     member.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 39,726 / 35,012 / 15,762 / 13,238 / 12,847 / 11,876 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 20,274 / 24,988 of
+    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,238 / 12,847 / 11,876 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 20,202 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
     six, which have 44,238 / 46,762 / 47,153 / 48,124 / 48,652 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
-    compression of that same file gave 335 of it back, which is the shape of the trade: a
+    compression of that same file gave 263 of it back, which is the shape of the trade: a
     relocation costs thousands and a compression returns hundreds. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.

@@ -124,9 +124,9 @@ the schema and the stage logic.
   `Can't open file`. (2) It must **DIFFER from the solver's own output dump name**
   (`binDumpZ.dat` + the `-t` tag), which is exactly the file a GUI restart resumes from — so
   *every* same-folder restart used to rewrite its own restart point in place.
-  - **The zone dump moves too, and `work/` keeps a bare-named HARD LINK to it** (#30, which
-    SUPERSEDED #26's rule that it stays out in `work/` — leaving the archive incomplete). One
-    inode satisfies both halves at ~0 bytes (measured 24352 → 24356 KB across a 1597 KB dump).
+  - **The zone dump moves too, and `work/` keeps a bare-named HARD LINK to it.**
+    SUPERSEDES #26: the dump used to stay out in `work/`, so the archive was never complete (#30).
+    One inode satisfies both halves at ~0 bytes (measured 24352 → 24356 KB across a 1597 KB dump).
     **This is the ONE place this repo's "a hard link is not the cheap version of a copy" rule
     flips, and for that rule's own reason** — a zone dump is never edited.
     Why: `docs/design_notes/pipeline.md`, "flips, and for that rule's own reason".
@@ -174,11 +174,12 @@ the schema and the stage logic.
     tag is read off the file names *before* the rename, and the iteration count from the LAST ROW
     of the convergence history (the solver prints `Global Iteration count` to stdout, gone by
     archive time). Stored as `last_iteration` + `convergence_interval`, and **the two together
-    recover the printed count** (`1990 + 10` = the 2000 the acceptance run measured). REVERSES
-    #30/#31 (#43): both printed the bound `1990+`, stated in the gate as `[1990, 2000)` —
-    a half-open interval excluding the value it claims to contain. What survives is that an
-    *interrupted* run makes the sum an **upper** bound, which belongs in a tooltip rather than in
-    a refusal to name the number; one home, `case_run_note.iteration_span`.
+    recover the printed count** (`1990 + 10` = the 2000 the acceptance run measured).
+    REVERSES #30/#31 (#43): both printed the bound `1990+`, stated in the gate as
+    `[1990, 2000)` — a half-open interval excluding the value it claims to contain. What
+    survives is that an *interrupted* run makes the sum an **upper** bound, which belongs in a
+    tooltip rather than in a refusal to name the number; one home,
+    `case_run_note.iteration_span`.
     Why: `docs/design_notes/pipeline.md`, "That arithmetic is a REVERSAL of what #30 and #31".
     **Keep the specimen** — a considered argument that survived two issues because its own
     evidence was never checked against it.
@@ -310,12 +311,12 @@ the schema and the stage logic.
   - **The marker is matched by BASENAME**: for an archived dump the reference names a hard link
     (#30) that the *next* archive retires, so matching by path or inode would lose the mark on
     exactly the row #31 exists to highlight.
-  - **Every leg's count comes from one function, `case_run_note.iteration_span`** (#43). REVERSES
-    #31, which gave an archive with no note the count "unknown" and *deliberately did not re-read*
-    its history — costing exactly the legs it meant to protect, while `_latest_point` two
-    functions below computed the live row's count from that same kind of file with that same
-    reader. A leg whose span cannot be computed still gets a row, unlabelled: hiding a restart
-    point that exists is worse.
+  - **Every leg's count comes from one function, `case_run_note.iteration_span`** (#43).
+    REVERSES #31, which gave an archive with no note the count "unknown" and *deliberately did
+    not re-read* its history — costing exactly the legs it meant to protect, while
+    `_latest_point` two functions below computed the live row's count from that same kind of file
+    with that same reader. A leg whose span cannot be computed still gets a row, unlabelled:
+    hiding a restart point that exists is worse.
     Why: `docs/design_notes/pipeline.md`, "#31 shipped the opposite rule".
   - **A restart source inside an archive gets a bare-named hard link in `work/` on demand**
     (`case_archive.bare_link_for_archived_dump`, called by `prepare_case_dir` *before* the archive
@@ -344,14 +345,16 @@ the schema and the stage logic.
     `setWidgetResizable(True)`, so a row wider than the viewport is CLIPPED with no window size
     that rescues it (measured: 494px wanted against ~380px usable). The timestamp drops its year
     and seconds, the marker became `← last run` (321px), and `_Row` elides what a narrower
-    sidebar cannot fit. Two consequences: `minimumSizeHint` must stop advertising the full
-    width, or the row forces the content wider than the viewport again; and **the marker is BOLD
-    as well as worded**, because
+    sidebar cannot fit — an ellipsis says there is more, a clip pretends the row ended. Two
+    consequences: `minimumSizeHint` must stop advertising the full width, or the row forces the
+    content wider than the viewport again; and **the marker is BOLD as well as worded**, because
     the words sit at the END and are elided first. A check asked of a row built from the CURRENT
     (short) text proves nothing — measured, it passed with the mechanism deleted — so the gate
     uses a deliberately over-long row. **The panel itself now scrolls sideways**
     (`ScrollBarAsNeeded`, USER-REQUESTED 2026-08-27; the setting `mesh_config_panel` has had
     since 2026-07-28) — a safety net for the PANEL, deliberately not the mechanism for the rows.
+    `stl3d_panel`, `result_panel` and `sidebar` still carry `AlwaysOff` and have the same latent
+    gap, recorded rather than fixed.
   Gated by `tests/test_restart_chooser.py` (12 properties against the real `prepare_case_dir`,
   the real widget offscreen, the real `SolverControllerMixin` and the real `AppController`; checks
   2-4 and 8 are **inverted** versions of ones that asserted the raw last row, a blank count, a
@@ -455,7 +458,7 @@ folder, and loads it back.
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against one
-list. #70 moved all five.
+list. #70 moved all four.
 
 - **Nothing was measured on the solver for the three staged tables** — no case in this repo sets
   `mpi_comm_map_fn`, `cfl_schedule_fn` or `probe_points_def_fn`, so the justification for
@@ -463,10 +466,8 @@ list. #70 moved all five.
 - **bDecompose's acceptance run is OUTSTANDING and the gate says so**: the prebuilt binary cannot
   execute here, so `tests/test_bdecompose_in_case.py` pins the SHAPE of the run, not the binary's
   acceptance of it. #26 is why that distinction is written down.
-- **That gate's checks 1-11 are BEHAVIOURAL but their injections were HAND runs**, which is not
-  an in-test injection; exactly ONE injection is permanent (check 13 mutates `_OUTPUT_PATTERNS`
-  live and asserts the CONSEQUENCE).
+- **`tests/test_bdecompose_in_case.py`'s checks 1-11 are BEHAVIOURAL but their injections were
+  HAND runs**, which is not an in-test injection; exactly ONE injection is permanent (check 13
+  mutates `_OUTPUT_PATTERNS` live and asserts the CONSEQUENCE).
 - **Nothing in `tests/test_restart_chooser.py` runs `unicones`**, so the bare-name restart
   reference is pinned against the SHAPE #30's acceptance run measured.
-- **`stl3d_panel`, `result_panel` and `sidebar` still carry `AlwaysOff`** and have the same latent
-  row-clipping gap `SolverConfigPanel` was fixed for.
