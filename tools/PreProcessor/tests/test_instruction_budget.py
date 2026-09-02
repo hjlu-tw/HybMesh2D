@@ -41,9 +41,17 @@ Checks:
     from the globs, not from a coverage list: a glob whose last component is `**` or `*`
     claims a directory rather than a file and is deliberately NOT ownership, because
     `views/panels/**` reaches `restart_chooser.py` and `tools/PreProcessor/gui/**`
-    reaches everything — counting those would fail 8 legitimate cross-area pointers
-    today, measured. It fires only when the module IS named in another note, so the
-    check reports a misfiled rationale rather than an undocumented module.
+    reaches everything. It fires only when the module IS named in another note, so the
+    check reports a misfiled rationale rather than an undocumented module. Both
+    narrowings are measured rather than assumed, and the whole ladder is stated because
+    the first version of this entry attached the LAST number to the FIRST rung: as
+    shipped 0 failures today; counting a directory glob as ownership too, 3 (all
+    legitimate cross-area pointers — `restart_chooser.py` under `views/panels/**`,
+    `pipeline_config.py` and `case_run_note.py` under the whole-GUI glob); dropping
+    ownership entirely, as #76 specifies the check, 8; and dropping the
+    named-in-another-note filter as well, which is that ticket's literal wording, 27.
+    #76 measured 20/20 with zero false positives when only two rule files existed; the
+    six wide-glob GUI files that #64-#67 and #77 added since are what these rungs are.
  6. No rule in the ROOT names a GUI module that some rule file's globs already
     reach. That state splits one rule across two layers: the glob hands a session a
     rule file which is silent about the file it just opened, and nothing says so. It
@@ -116,15 +124,21 @@ Known remaining blind spots, stated rather than pretended away:
     paragraph, that #67 had made nothing else stale, and review measured that false in the
     place with the least excuse: the `CLAUDE.md:235` reference SIX LINES UP is a pointer at
     a block #67 itself moved. A sweep that does not sweep its own file is the shape this
-    blind spot keeps taking. #76's sweep found ZERO — the first ticket in this series where nothing went stale, and
-    the reason is measurable rather than lucky: the export rules were the only block left
+    blind spot keeps taking. #76's sweep found NOTHING it had made stale — the export rules were the only block left
     in the root's GUI section, nothing outside `CLAUDE.md` pointed INTO it (the two gate
     tests it names, `test_case_export.py` and `test_case_workspace_export.py`, carry no
     pointer at the root file at all), and `docs/design_notes/gui.md:8` held for the second
-    time since #67 replaced its enumeration with a pointer at the tripwire table. What #76
+    time since #67 replaced its enumeration with a pointer at the tripwire table. What it
     did have to repoint is in the destination rather than the source: `pipeline.md`'s own
     header said its rules were moved by #63, which stopped being the whole story the moment
-    a second ticket moved rules in.
+    a second ticket moved rules in. The first draft of this entry claimed the sweep found
+    ZERO, and BOTH review axes measured that false against a pointer #77 left behind and
+    #76 was about to contradict: the root's own tripwire row and
+    `.claude/rules/gui-panels-config.md` both said `MeshConfig.output_base`'s Output-`.*`
+    rule was "still in `CLAUDE.md`" while #77 had moved it to `gui-handoff.md`, one screen
+    from this ticket's new sentence that NO residue is left. Both are repointed here rather
+    than named, because a file that contradicts itself is worse than a stale pointer to
+    another file — which is the same reason #67's review gave for its own `CLAUDE.md:235`.
     Two pointers the sweep found stale from EARLIER tickets are left alone and
     named here instead, because #67 did not make them stale and its ticket forbids
     editing tests: `arch_probes.py:171` and `test_field_spec_tables.py:515` each say
@@ -194,10 +208,10 @@ Known remaining blind spots, stated rather than pretended away:
     keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
     member.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 40,060 / 35,012 / 15,762 / 13,238 / 12,847 / 11,799 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Eight rule files now — 40,060 / 35,012 / 15,762 / 13,238 / 12,847 / 11,876 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 19,940 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,762 / 47,153 / 48,201 / 48,652 / 51,031. #76 spent 3,445 of
+    six, which have 44,238 / 46,762 / 47,153 / 48,124 / 48,652 / 51,031. #76 spent 3,445 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
@@ -239,7 +253,7 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 31_338
+ROOT_BUDGET = 31_457
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -520,6 +534,26 @@ def check_paths_frontmatter(world):
     return fails
 
 
+# --- shared by checks 5 and 6 ------------------------------------------------------------------
+_GUI_PKG = "(?:services|models|views|controllers|commands|workers)"
+# The SHORT form a rule uses when speaking about its own area — `services/foo.py`,
+# `app/services/foo.py`, `views/panels/foo.py`. Deliberately NOT the full repo-relative
+# path, which is the form `## Common Tasks` uses for wayfinding ("Edit
+# tools/PreProcessor/gui/app/views/canvas.py") rather than for ruling on a file.
+_GUI_MODULE = re.compile(r"`(?:app/)?(" + _GUI_PKG + r"/[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*\.py)`")
+_GUI_ROOT = os.path.join("tools", "PreProcessor", "gui", "app")
+
+def _glob_matches(path, pattern):
+    """Does one `paths:` entry match a repo-relative path?
+
+    `fnmatch` has no `**`, so `a/**` is normalised to `a/*` and `*` is allowed to cross
+    `/`. That is LOOSER than the loader for a pattern like `a/*/b`, and named as a blind
+    spot rather than papered over: every pattern in this repo is a prefix glob or a
+    literal, where the two agree.
+    """
+    return fnmatch.fnmatch(path, pattern.replace("**", "*"))
+
+
 # --- check 5 ------------------------------------------------------------------
 # The inverse of check 6, and the defect #76 was: the RULES arrive in a rule file
 # while their RATIONALE stays in the design note of the area they came from. The rule
@@ -534,8 +568,19 @@ _NOTE_PTR = re.compile(r"docs/design_notes/([A-Za-z0-9_.-]+\.md)")
 _BARE_MODULE = re.compile(r"`([A-Za-z0-9_]+\.py)`")
 
 
+_BASENAME_INDEX = None
+
+
 def _gui_basename_index():
-    """basename -> repo-relative-in-package path, for basenames that are unique."""
+    """basename -> repo-relative-in-package path, for basenames that are unique.
+
+    Walked once and cached: `rule_owned_modules` is called per rule file, and the first
+    version re-walked all 258 GUI modules eight times per run for an answer that cannot
+    change inside one run.
+    """
+    global _BASENAME_INDEX
+    if _BASENAME_INDEX is not None:
+        return _BASENAME_INDEX
     seen = {}
     root = os.path.join(_REPO, _GUI_ROOT)
     for dirpath, _dirnames, filenames in os.walk(root):
@@ -543,7 +588,8 @@ def _gui_basename_index():
             if fn.endswith(".py"):
                 rel = os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, "/")
                 seen.setdefault(fn, []).append(rel)
-    return {k: v[0] for k, v in seen.items() if len(v) == 1}
+    _BASENAME_INDEX = {k: v[0] for k, v in seen.items() if len(v) == 1}
+    return _BASENAME_INDEX
 
 
 def note_pointer(text):
@@ -563,8 +609,9 @@ def rule_owned_modules(world, name, text):
     A glob whose last component is `**` or `*` claims a whole directory rather than a
     file, and rule files use those to reach an area they then hand off — `views/panels/**`
     reaches `restart_chooser.py`, whose rules are in `pipeline-case.md`, and
-    `tools/PreProcessor/gui/**` reaches everything. Counting those as ownership makes
-    every legitimate cross-area pointer a failure: 8 of them today, measured. A glob that
+    `tools/PreProcessor/gui/**` reaches everything. Counting those as ownership fails 3
+    legitimate cross-area pointers today, measured, and 8 if ownership is dropped
+    altogether (the ladder is in the check list above). A glob that
     constrains the FILENAME (`services/case_*`, `views/canvas*`) is the rule file saying
     the file is its own, and that is what this check reads.
     """
@@ -618,31 +665,12 @@ def check_note_coverage(world):
 
 
 # --- check 6 ------------------------------------------------------------------
-_GUI_PKG = "(?:services|models|views|controllers|commands|workers)"
-# The SHORT form a rule uses when speaking about its own area — `services/foo.py`,
-# `app/services/foo.py`, `views/panels/foo.py`. Deliberately NOT the full repo-relative
-# path, which is the form `## Common Tasks` uses for wayfinding ("Edit
-# tools/PreProcessor/gui/app/views/canvas.py") rather than for ruling on a file.
-_GUI_MODULE = re.compile(r"`(?:app/)?(" + _GUI_PKG + r"/[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*\.py)`")
-_GUI_ROOT = os.path.join("tools", "PreProcessor", "gui", "app")
-
 # EMPTY, and that is the point: it held `services/case_export.py` and
 # `services/case_workspace.py` until #76 moved the export rules into
 # `pipeline-case.md`, and the staleness half below is what made the pins fail the moment
 # they stopped being violations rather than quietly outliving the defect. A new entry
 # belongs here only with the ticket that owns it, and only until that ticket lands.
 KNOWN_RESIDUE = {}
-
-
-def _glob_matches(path, pattern):
-    """Does one `paths:` entry match a repo-relative path?
-
-    `fnmatch` has no `**`, so `a/**` is normalised to `a/*` and `*` is allowed to cross
-    `/`. That is LOOSER than the loader for a pattern like `a/*/b`, and named as a blind
-    spot rather than papered over: every pattern in this repo is a prefix glob or a
-    literal, where the two agree.
-    """
-    return fnmatch.fnmatch(path, pattern.replace("**", "*"))
 
 
 def rule_files_reaching(world, path):
@@ -741,7 +769,7 @@ run(check_paths_frontmatter,
     "check 4. every rule file's `paths:` is present, non-empty and not only `**`")
 run(check_note_coverage,
     "check 5. every rule file's design-note pointer resolves, and names every module the "
-    "rule file's own globs claim by filename")
+    "rule file's own globs claim by filename that some other design note discusses")
 
 run(check_root_rule_coverage,
     "check 6. no rule in the root names a GUI module some rule file's globs already reach, "
@@ -1021,7 +1049,6 @@ check(not check_root_rule_coverage(world),
 # it, so the mutated world is the real pre-#76 document pair and not a damaged one.
 inj = copy_world(world)
 _ptr = "**Portable case export**"
-_end = "which drives the real Export Case slot, moves the folder, and loads it back."
 _pipe = inj["notes"]["pipeline.md"]
 # From the SECTION HEADING, not from the first paragraph: the heading #76 added names
 # `services/case_workspace.py` itself, so leaving it behind would keep that module named
@@ -1029,12 +1056,15 @@ _pipe = inj["notes"]["pipeline.md"]
 # like the check missing one.
 _head_i = _pipe.find("### Portable case export")
 _start_i = _pipe.find(_ptr, _head_i if _head_i >= 0 else 0)
-_end_i = _pipe.find(_end)
+# The section ends at the NEXT heading, not at a sentence: pinning its closing words here
+# would make this injection a second place that has to be edited when the note is
+# reworded, which is the wording-dependence the whole file refuses.
+_end_i = _pipe.find("\n### ", _start_i)
 check(_head_i > 0 and _start_i > _head_i and _end_i > _start_i,
       "injection 12. fixture: pipeline.md carries the export rationale as one contiguous "
-      "section, heading included")
-_block = _pipe[_start_i:_end_i + len(_end)]
-inj["notes"]["pipeline.md"] = _pipe[:_head_i] + _pipe[_end_i + len(_end):]
+      "section, heading included, ending at the next heading")
+_block = _pipe[_start_i:_end_i]
+inj["notes"]["pipeline.md"] = _pipe[:_head_i] + _pipe[_end_i + 1:]
 inj["notes"]["gui.md"] = inj["notes"]["gui.md"].rstrip("\n") + "\n\n" + _block + "\n"
 _moved = ["case_export_docs.py", "case_export_usage.py", "case_workspace.py"]
 check(inj["notes"]["pipeline.md"] != world["notes"]["pipeline.md"]
@@ -1042,7 +1072,8 @@ check(inj["notes"]["pipeline.md"] != world["notes"]["pipeline.md"]
       and inj["rules"] == world["rules"]
       and all(m not in inj["notes"]["pipeline.md"] and m in inj["notes"]["gui.md"]
               for m in _moved)
-      and inj["notes"]["pipeline.md"].startswith("# Full-pipeline"),
+      and (inj["notes"]["pipeline.md"].splitlines()[0]
+           == world["notes"]["pipeline.md"].splitlines()[0]),
       "injection 12. injection is well-formed: both notes really differ, the RULE files are "
       "untouched, each moved module is now named in gui.md and in NEITHER of pipeline.md's "
       "remaining text, and the emptied note still opens as itself")

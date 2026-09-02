@@ -37,8 +37,9 @@ name `views/panels/result_panel*`, so a reader of one is handed both files), and
 `views/panels/restart_chooser.py` by `.claude/rules/pipeline-case.md`. And
 `models/mesh_config*` reaches `MeshConfig.output_base` / `output_path_for`, whose
 rule — the Output field's `.*` placeholder and the one module allowed to read it —
-is still in `CLAUDE.md`. Being handed this file for one of those is the glob being
-generous, not this file claiming them; read the root's own block as well.
+is in `.claude/rules/gui-handoff.md`, with `models/mesh_output_names.py`, where #77
+moved it out of `CLAUDE.md`. Being handed this file for one of those is the glob
+being generous, not this file claiming them; read that file as well.
 
 **Stage config data flow is one-directional** (`controllers/panel_sync_ctrl.py`): the
 **model is the truth, the panel is a view**.

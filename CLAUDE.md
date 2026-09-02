@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **31,338
-characters (31,519 bytes, 2026-09-02, after #76 moved the portable case export into
+observed. The cost is therefore not truncation but **always-loaded context** — **31,457
+characters (31,638 bytes, 2026-09-02, after #76 moved the portable case export into
 `.claude/rules/pipeline-case.md` — the last block of rules this file held for an area
 some rule file's globs already reached) ≈ 8k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
@@ -60,7 +60,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 |------|---------------------------|-----------------|
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`, multi-block, quality, BC binding) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
 | Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set, the portable case export and its `.hws` re-import) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. |
-| GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
+| GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is in `gui-handoff.md` with `models/mesh_output_names.py`, where #77 moved it. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
 | GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the eight, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
@@ -78,15 +78,16 @@ a file in its area.**
 file's section HEADINGS; deriving them from the text instead needed eight, and the two extra
 (#77's `gui-lifecycle.md` and `gui-handoff.md`) hold 13,894 characters this file used to carry
 for areas the original partition assigned to nobody. The last residue went with #76: the two
-portable case-export blocks, 3,879 characters, into `pipeline-case.md` — the rule file whose
+portable case-export blocks, 3,878 characters, into `pipeline-case.md` — the rule file whose
 globs ALREADY reached their four modules, which is what made them a defect rather than a gap —
 and their rationale from `docs/design_notes/gui.md` into `pipeline.md`, so that rule file's one
 rationale pointer is true for every rule in it. Two checks in
 `tools/PreProcessor/tests/test_instruction_budget.py` keep that shape from recurring: check 6
 fires when a rule in THIS file names a module some rule file's globs already reach (its
 `KNOWN_RESIDUE` pin list is empty, and a pin that stops being a violation fails too), and check 5
-fires in the other direction — when a rule file names a module its own design-note pointer does
-not discuss, which is what "the rules moved but the rationale did not" looks like from inside.
+fires in the other direction — when a rule file's own globs claim a module BY FILENAME and the
+design note that rule file points at never names it while another note does, which is what "the
+rules moved but the rationale did not" looks like from inside.
 That gate also enforces: a per-file size budget (the root file and each rule file measured
 against their own, never a total, so moving text between rule files is not a legal evasion),
 the table against the rule files in **both** directions, the existence of every gate test a
