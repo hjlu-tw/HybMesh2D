@@ -407,7 +407,7 @@ same schema and stage logic.
 - **`tools/PreProcessor/run_pipeline.py`** + **`run_pipeline.sh`**: headless entry point
   (`--no-solver`, `--no-contour`, `--png`).
 
-### Portable case export (`services/case_export*`, `services/case_workspace.py`)
+### The case as a package (`services/case_export*`, `services/case_workspace.py`)
 
 **Portable case export** (`services/case_export.py` + `case_export_docs.py`, both Qt-free; Solver
 toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into a folder that reruns on another

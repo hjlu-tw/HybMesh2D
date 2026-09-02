@@ -50,8 +50,10 @@ Checks:
     `pipeline_config.py` and `case_run_note.py` under the whole-GUI glob); dropping
     ownership entirely, as #76 specifies the check, 8; and dropping the
     named-in-another-note filter as well, which is that ticket's literal wording, 27.
-    #76 measured 20/20 with zero false positives when only two rule files existed; the
-    six wide-glob GUI files that #64-#67 and #77 added since are what these rungs are.
+    #76 measured 20/20 with zero false positives when only two rule files existed, and
+    specified that it should land BEFORE #64-#67; it did not, so the six wide-glob GUI
+    rule files those tickets and #77 added were already in the tree. The narrowing is a
+    consequence of that ordering, not an improvement on the ticket.
  6. No rule in the ROOT names a GUI module that some rule file's globs already
     reach. That state splits one rule across two layers: the glob hands a session a
     rule file which is silent about the file it just opened, and nothing says so. It
@@ -208,10 +210,10 @@ Known remaining blind spots, stated rather than pretended away:
     keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
     member.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 40,060 / 35,012 / 15,762 / 13,238 / 12,847 / 11,876 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 19,940 / 24,988 of
+    Eight rule files now — 40,061 / 35,012 / 15,762 / 13,238 / 12,847 / 11,876 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 19,939 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,762 / 47,153 / 48,124 / 48,652 / 51,031. #76 spent 3,445 of
+    six, which have 44,238 / 46,762 / 47,153 / 48,124 / 48,652 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
@@ -261,6 +263,17 @@ ROOT_BUDGET = 31_457
 # CHARACTERS, and a character is never fewer than one byte.
 RULE_BUDGET = 60_000
 
+# Check 6's pins: modules whose rule is in the root while a rule file's globs already
+# reach them, spelled with the ticket that owns the residue. EMPTY, and that is the
+# point — it held `services/case_export.py` and `services/case_workspace.py` until #76
+# moved the export rules into `pipeline-case.md`, and the staleness half of check 6 is
+# what made those pins fail the moment they stopped being violations rather than
+# quietly outliving the defect. A new entry belongs here only with the ticket that owns
+# it, and only until that ticket lands. It enters through `read_world()` rather than
+# being read from the check, so a pin is an INPUT like every other and the injection
+# mutates a copy of the world instead of passing an argument past it.
+KNOWN_RESIDUE = {}
+
 _FAILS = []
 
 
@@ -292,7 +305,7 @@ def read_world():
                 with open(os.path.join(notes_dir, name), encoding="utf-8") as fh:
                     notes[name] = fh.read()
     return {"root": root_text, "rules": rules, "notes": notes,
-            "tests": collect_test_files()}
+            "pins": dict(KNOWN_RESIDUE), "tests": collect_test_files()}
 
 
 def collect_test_files():
@@ -665,14 +678,6 @@ def check_note_coverage(world):
 
 
 # --- check 6 ------------------------------------------------------------------
-# EMPTY, and that is the point: it held `services/case_export.py` and
-# `services/case_workspace.py` until #76 moved the export rules into
-# `pipeline-case.md`, and the staleness half below is what made the pins fail the moment
-# they stopped being violations rather than quietly outliving the defect. A new entry
-# belongs here only with the ticket that owns it, and only until that ticket lands.
-KNOWN_RESIDUE = {}
-
-
 def rule_files_reaching(world, path):
     hit = []
     for name, text in sorted(world["rules"].items()):
@@ -702,14 +707,8 @@ def root_ruled_modules(world):
     return found
 
 
-def check_root_rule_coverage(world, pins=None):
-    """`pins` is a seam for injection 11c, which needs a pin that is NOT a violation.
-
-    It defaults to the real KNOWN_RESIDUE, so every caller outside that injection reads
-    the real one; the injection cannot demonstrate the staleness half by mutating the
-    world any more, because the pin list is empty and there is nothing left to unpin.
-    """
-    pins = KNOWN_RESIDUE if pins is None else pins
+def check_root_rule_coverage(world):
+    pins = world["pins"]
     fails = []
     found = root_ruled_modules(world)
     live = set()
@@ -782,7 +781,7 @@ run(check_root_rule_coverage,
 # corrupts its input looks identical to the check working.
 def copy_world(w):
     return {"root": w["root"], "rules": dict(w["rules"]), "notes": dict(w["notes"]),
-            "tests": set(w["tests"])}
+            "pins": dict(w["pins"]), "tests": set(w["tests"])}
 
 
 # 5. an oversized file
@@ -1013,28 +1012,33 @@ check(len(cov) == 1 and moved_mod in cov[0] and "gui-handoff.md" in cov[0],
 
 # --- injection 11c: a pin suppresses, and a stale pin fails ---------------------
 # KNOWN_RESIDUE is empty since #76 landed, so the mutation can no longer be "unpin a real
-# violation": there is nothing pinned to unpin. The `pins` argument is the seam instead,
-# and both halves are exercised on the same injected world — a pin that is a real
-# violation SUPPRESSES, and a pin that is not one FAILS. Without the second half a pin
-# would be the skip list this check was written instead of.
-check(KNOWN_RESIDUE == {},
-      "injection 11c. fixture: KNOWN_RESIDUE is empty, so the pin seam is what carries this "
-      "injection (#76 moved the two entries' rules into pipeline-case.md)")
+# violation": there is nothing pinned to unpin. The pins arrive in the world instead, so
+# this injection adds them to a COPY like every other injection here — a pin that IS a
+# real violation must suppress, and a pin that is not one must fail. Without the second
+# half a pin would be the skip list this check was written instead of.
 inj = copy_world(world)
+check(inj["pins"] == {} and world["pins"] == {},
+      "injection 11c. fixture: the world carries no pins, so both halves below are this "
+      "injection's own doing (#76 moved the two entries' rules into pipeline-case.md)")
+pinned_mod = "services/ui_state.py"
 inj["root"] = inj["root"].replace(
     "## Mesh Generation Pipeline",
     "**Window layout** is persisted by `app/%s` and nothing else.\n\n## Mesh Generation Pipeline"
-    % victim_mod, 1)
-check(victim_mod in root_ruled_modules(inj) and rule_files_reaching(inj, "%s/%s" % (_GUI_ROOT, victim_mod)),
-      "injection 11c. injection is well-formed: the module is really ruled on in the root and "
-      "really reached by a rule file's globs, so it is a violation to pin")
-check(not check_root_rule_coverage(inj, pins={victim_mod: "#0000"}),
+    % pinned_mod, 1)
+check(pinned_mod in root_ruled_modules(inj)
+      and rule_files_reaching(inj, "%s/%s" % (_GUI_ROOT, pinned_mod))
+      and len(check_root_rule_coverage(inj)) == 1,
+      "injection 11c. injection is well-formed: the module is really ruled on in the root, "
+      "really reached by a rule file's globs, and fails check 6 while unpinned")
+inj["pins"] = {pinned_mod: "#0000"}
+check(not check_root_rule_coverage(inj),
       "injection 11c. a pin on a REAL violation suppresses it, which is what a pin is for")
-stale = "services/env_setup.py"
-check(stale not in root_ruled_modules(inj),
+stale_mod = "services/env_setup.py"
+check(stale_mod not in root_ruled_modules(inj),
       "injection 11c. fixture: the second pin names a module the root does NOT rule on")
-cov = check_root_rule_coverage(inj, pins={victim_mod: "#0000", stale: "#0001"})
-check(len(cov) == 1 and stale in cov[0] and "no longer a violation" in cov[0],
+inj["pins"] = {pinned_mod: "#0000", stale_mod: "#0001"}
+cov = check_root_rule_coverage(inj)
+check(len(cov) == 1 and stale_mod in cov[0] and "no longer a violation" in cov[0],
       "injection 11c. check 6 fails on the pin that is no longer a violation, so a pin cannot "
       "outlive the defect it records")
 
@@ -1049,12 +1053,16 @@ check(not check_root_rule_coverage(world),
 # it, so the mutated world is the real pre-#76 document pair and not a damaged one.
 inj = copy_world(world)
 _ptr = "**Portable case export**"
+# The section heading is #76's own addition to the note (the two blocks are contiguous
+# prose in `gui.md`), so it is a fixture on this ticket's structure rather than on the
+# note's wording — rename it in `pipeline.md` and this string moves with it.
+_SECTION = "### The case as a package"
 _pipe = inj["notes"]["pipeline.md"]
 # From the SECTION HEADING, not from the first paragraph: the heading #76 added names
 # `services/case_workspace.py` itself, so leaving it behind would keep that module named
 # in pipeline.md and the injection would bite on two of the three modules while looking
 # like the check missing one.
-_head_i = _pipe.find("### Portable case export")
+_head_i = _pipe.find(_SECTION)
 _start_i = _pipe.find(_ptr, _head_i if _head_i >= 0 else 0)
 # The section ends at the NEXT heading, not at a sentence: pinning its closing words here
 # would make this injection a second place that has to be edited when the note is

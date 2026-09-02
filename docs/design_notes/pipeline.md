@@ -85,7 +85,7 @@ A single unified JSON script drives the whole chain; the GUI and the headless CL
 - **`controllers/pipeline_ctrl.py`** (`PipelineControllerMixin`): GUI **Run All** — chains the existing per-stage QThread workers on their `finished_signal` (batch mode: no per-stage dialogs), ending on the auto-loaded Results contour. The **immersed-solid stage sits where the headless runner puts it, before the mesh**, so a script and the button build the same case; it is optional and skipped *out loud* when no STL is configured. Save/Load of the script is **`controllers/pipeline_io_ctrl.py`** (`PipelineIoControllerMixin`) — running the pipeline and reading/writing the script that describes it share nothing but the config classes, and the split is what kept the file inside the GUI length budget.
 - **`tools/PreProcessor/run_pipeline.py`** + **`run_pipeline.sh`**: headless entry point (`--no-solver`, `--no-contour`, `--png`).
 
-### Portable case export (`services/case_export*`, `services/case_workspace.py`)
+### The case as a package (`services/case_export*`, `services/case_workspace.py`)
 
 **Portable case export** (`services/case_export.py` + `case_export_docs.py`, both
 Qt-free; Solver toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into
