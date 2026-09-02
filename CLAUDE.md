@@ -22,14 +22,14 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **49,284
-characters (49,561 bytes, 2026-09-02, after #67 moved the GUI seam rules out to
+observed. The cost is therefore not truncation but **always-loaded context** — **49,704
+characters (49,983 bytes, 2026-09-02, after #67 moved the GUI seam rules out to
 `.claude/rules/gui-seams.md` and pinned the four repo-wide standards one line each above)
 ≈ 12k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 277 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 279 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -78,10 +78,14 @@ file's section headings, and 20,253 characters of the `### PreProcessor GUI` sec
 partition assigns to no area at all: the layered module list and the subprocess environment, then
 window layout, the restart button, the mesh-BC audit, "a path is not a kind", the Output-`.*`
 placeholder, the case-grid lookup, the Mesh-stage carryover, and the two portable-case-export blocks
-(3,880 of the 20,253) that #76 is open to move into `pipeline-case.md`. Every one of them still has
-its rules in this file, which is why the root is 49k rather than the ~25k #59 projected. The same
-shape has now been found three times — #63 (three services with no glob), #76 (case export), here —
-so expect it once more rather than treating it as closed.
+(3,880 of the 20,253) that #76 is open to move into `pipeline-case.md`. That residue is most of the
+gap between this file and the ~25k #59 projected for relocation alone, but **not all of it, and the
+difference is worth having straight**: homing all 20,253 lands the root at 29,451, and the rest is
+the split's OWN apparatus, which a 2026-08-28 estimate could not have counted — the tripwire section
+is 7,250 characters and the four-standards section 1,259, and without those two the same file is
+20,942. #75's 40,000 lock is therefore reachable on the residue alone, with no compression needed to
+get there. The same shape has now been found three times — #63 (three services with no glob), #76
+(case export), here — so expect it once more rather than treating it as closed.
 `tools/PreProcessor/tests/test_instruction_budget.py` gates the arrangement: a per-file size budget
 (the root file and each rule file measured against their own, never a total, so moving text between
 rule files is not a legal evasion), the table against the rule files in **both** directions, the
