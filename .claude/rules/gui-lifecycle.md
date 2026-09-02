@@ -24,8 +24,11 @@ inherit, what state survives a launch, and how it restarts. It is not the GUI's 
 what a panel, a canvas or a results view does belongs to the four other GUI rule files.
 
 **Two globs go BEYOND #77's list, and nothing is narrowed.** `tools/scripts/gmsh_*` is the
-first glob in any rule file outside `tools/PreProcessor/` — the subprocess-environment rule
-has TWO halves and the shell-side one (`gmsh_lib_dir.sh`, `gmsh_sdk_dirs.py`) is where the
+first glob pointing into `tools/scripts/`, and the first in a **GUI** rule file that leaves the
+GUI tree — not, as this sentence first claimed, the first outside `tools/PreProcessor/` at all:
+enumerated, `mesher.md` carries `src/**`, `include/**`, `config/**` and `tests/cpp/**`, and
+`pipeline-case.md` carries `run_pipeline.sh`. The glob exists because the subprocess-environment
+rule has TWO halves and the shell-side one (`gmsh_lib_dir.sh`, `gmsh_sdk_dirs.py`) is where the
 "hardcoded absolute path in a discovery hint is a defect on sight" rule actually bites. And
 `workers/**` is widened from #77's per-file spelling, because the SIGTERM→SIGKILL routing
 rule applies to every worker's `cancel()`, not to the two the prose names.

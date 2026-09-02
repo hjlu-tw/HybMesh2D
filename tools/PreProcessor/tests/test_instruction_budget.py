@@ -128,6 +128,17 @@ Known remaining blind spots, stated rather than pretended away:
     other modules live in. Check 6 is the inverse-direction check and does not see this
     one: it asks whether a glob reaches a file whose rule is elsewhere, never whether a
     named file is reached at all.
+    #77's sweep found THREE, all in test files and all REPOINTED rather than named, because
+    #77 is what made them stale: `test_sidebar_seam.py:396` ("CI had never been green") and
+    `mesher_bin.py:18` and `:31` (the hardcoded-path smell, and `env_setup` as the single
+    answer to "where is Gmsh") — every one of them a block that moved to `gui-lifecycle.md`.
+    A fourth, `docs/architecture_overview.md:932`, names the GUI layering description this
+    ticket moved to `gui-seams.md`; it sits inside that document's §7, whose whole subject is
+    where `CLAUDE.md` is stale, so it gained a parenthetical pointer instead of a rewrite.
+    `docs/design_notes/gui.md:8` held for the FIRST time in five tickets, because #67
+    replaced its enumeration with a pointer at the tripwire table. Review of #77 found this
+    ledger entry missing while (d) and (e) had both been updated in the same pass — the
+    ledger is the point of the entry, so a ticket skipped is the entry failing at its job.
  e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
     area — `services/foo.py`, `app/services/foo.py`, `views/panels/foo.py`. Three
     escapes, measured rather than supposed:
@@ -138,6 +149,9 @@ Known remaining blind spots, stated rather than pretended away:
       - The **full repo-relative path**, which is the form `## Common Tasks` uses for
         wayfinding. That is the distinction the short form buys, and a rule that spells
         the long path escapes.
+      - A module that no longer EXISTS on disk: `root_ruled_modules` drops it, so a rule
+        left pointing at a renamed module is invisible here (blind spot (c)'s territory,
+        and this check does not cover it either).
       - Only the six GUI packages. A rule naming `src/` or `tools/scripts/` is not
         checked, so `gui-lifecycle.md`'s `tools/scripts/gmsh_*` glob is outside it.
     And `_glob_matches` normalises `**` to `*` for `fnmatch`, which is LOOSER than the
@@ -146,11 +160,11 @@ Known remaining blind spots, stated rather than pretended away:
     more eagerly here than by the tooling.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
     Eight rule files now — 35,615 / 36,615 / 15,762 / 13,212 / 12,847 / 11,799 / 11,348 /
-    8,278 characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
+    8,572 characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
     gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 24,385 / 23,385 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,788 / 47,153 / 48,201 / 48,652 / 51,722. The flat budget did
+    six, which have 44,238 / 46,788 / 47,153 / 48,201 / 48,652 / 51,428. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.
     Only a per-file ratchet like `ROOT_BUDGET`'s would change that, and #59 fixes the number.
@@ -189,7 +203,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 34_791
+ROOT_BUDGET = 34_793
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -779,7 +793,9 @@ check(len(tw) == 1 and TRIPWIRE_ANCHOR in tw[0],
 # state this check refuses.
 inj = copy_world(world)
 victim_mod = "services/ui_state.py"
-assert victim_mod not in root_ruled_modules(world), "fixture: the root must not already rule on it"
+check(victim_mod not in root_ruled_modules(world),
+      "injection 11. fixture: the root does not already rule on the module, so the "
+      "mutation is what makes check 6 fire")
 inj["root"] = inj["root"].replace(
     "## Mesh Generation Pipeline",
     "**Window layout** is persisted by `app/%s` and nothing else.\n\n## Mesh Generation Pipeline"
@@ -804,15 +820,17 @@ check(len(cov) == 1 and victim_mod in cov[0]
 inj = copy_world(world)
 lines = inj["root"].splitlines(keepends=True)
 span = tripwire_span(inj["root"])
-row = next((i for i in range(span[0], span[1] + 1)
-            if "`services/mesh_bc_audit*`" in lines[i]), None)
-check(row is not None, "injection 11b. a tripwire row names a module glob to move out of the table")
+inside = "".join(lines[span[0]:span[1] + 1])
+check("services/mesh_bc_audit" in inside,
+      "injection 11b. the module this injection moves is really named INSIDE the anchored "
+      "region already, so the two placements differ only in where the path sits")
 inj["root"] = "".join(lines) + "\nThe audit lives in `services/mesh_bc_audit.py`.\n"
 check(inj["root"] != world["root"]
       and tripwire_rows(inj["root"]) == tripwire_rows(world["root"])
+      and tripwire_span(inj["root"]) == span
       and "services/mesh_bc_audit.py" not in root_ruled_modules(world),
-      "injection 11b. injection is well-formed: the table is untouched and the module was not "
-      "already ruled on outside it")
+      "injection 11b. injection is well-formed: the anchored region is byte-for-byte where it "
+      "was and the module was not already ruled on outside it")
 cov = check_root_rule_coverage(inj)
 check(len(cov) == 1 and "mesh_bc_audit.py" in cov[0] and "gui-handoff.md" in cov[0],
       "injection 11b. check 6 reads the ANCHORED REGION, not the whole file: the identical path "
