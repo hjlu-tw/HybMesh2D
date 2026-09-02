@@ -11,7 +11,7 @@ named blind spots — was extracted verbatim on 2026-08-28 into `docs/design_not
 |------|--------|
 | `docs/design_notes/mesher.md` | Configuration (`.dat`, BL params, MESH_MODE, multi-block, quality, BC binding) + Core C++ |
 | `docs/design_notes/gui.md` | The whole PreProcessor GUI section |
-| `docs/design_notes/pipeline.md` | Full pipeline, solver case, archive/clean/restart, bDecompose, STL3d |
+| `docs/design_notes/pipeline.md` | Full pipeline, solver case, archive/clean/restart, bDecompose, STL3d, portable case export |
 
 Nothing was rewritten in the move. **Read the matching design note before overruling a rule
 here**: most of these rules were bought by shipping the opposite first, and the rule alone
@@ -22,14 +22,14 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **35,123
-characters (35,320 bytes, 2026-09-02, after #77 moved the GUI lifecycle and file-hand-off
-rules out to two more rule files, leaving only #76's export residue)
-≈ 9k tokens**, paid by every session before it reads a line
+observed. The cost is therefore not truncation but **always-loaded context** — **31,338
+characters (31,519 bytes, 2026-09-02, after #76 moved the portable case export into
+`.claude/rules/pipeline-case.md` — the last block of rules this file held for an area
+some rule file's globs already reached) ≈ 8k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 197 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 181 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -59,7 +59,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | Area | Read this rule file first | Before touching |
 |------|---------------------------|-----------------|
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`, multi-block, quality, BC binding) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
-| Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. NOT there yet: the portable case export (`services/case_export*.py`, `case_workspace.py`), whose rules are still in this file. |
+| Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set, the portable case export and its `.hws` re-import) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. |
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
@@ -74,18 +74,19 @@ went through with the rule unloaded. The glob alone therefore cannot make "I did
 a rule" unreachable; this table is what does. **Read the row's rule file before editing or creating
 a file in its area.**
 
-**Eight rule files now, and ONE area of residue is left.** #59 planned six, derived from this
+**Eight rule files now, and NO area of residue is left.** #59 planned six, derived from this
 file's section HEADINGS; deriving them from the text instead needed eight, and the two extra
 (#77's `gui-lifecycle.md` and `gui-handoff.md`) hold 13,894 characters this file used to carry
-for areas the original partition assigned to nobody. What is still here: the two portable
-case-export blocks, 3,880 characters, which #76 is open to move into `pipeline-case.md` — the
-rule file whose globs ALREADY reach their four modules, which is what makes them a defect
-rather than a gap. Check 6 in
-`tools/PreProcessor/tests/test_instruction_budget.py` fires on exactly that shape — a rule in
-this file naming a module some rule file's globs already reach — and pins **two** of those four
-modules with #76's number, failing if a pin goes stale. Two and not four: the other two are named
-here by bare basename, which that check cannot resolve, and the gate says so rather than pinning
-what it cannot see.
+for areas the original partition assigned to nobody. The last residue went with #76: the two
+portable case-export blocks, 3,879 characters, into `pipeline-case.md` — the rule file whose
+globs ALREADY reached their four modules, which is what made them a defect rather than a gap —
+and their rationale from `docs/design_notes/gui.md` into `pipeline.md`, so that rule file's one
+rationale pointer is true for every rule in it. Two checks in
+`tools/PreProcessor/tests/test_instruction_budget.py` keep that shape from recurring: check 6
+fires when a rule in THIS file names a module some rule file's globs already reach (its
+`KNOWN_RESIDUE` pin list is empty, and a pin that stops being a violation fails too), and check 5
+fires in the other direction — when a rule file names a module its own design-note pointer does
+not discuss, which is what "the rules moved but the rationale did not" looks like from inside.
 That gate also enforces: a per-file size budget (the root file and each rule file measured
 against their own, never a total, so moving text between rule files is not a legal evasion),
 the table against the rule files in **both** directions, the existence of every gate test a
@@ -296,57 +297,10 @@ Export: VTK (.vtk) and/or STAR-CD (.vrt / .cel / .bnd)
 
 ### PreProcessor GUI (`tools/PreProcessor/gui/app/`)
 The module map and every GUI rule have moved to the six `gui-*` rule files the tripwire table
-names (#77 was the last). What remains below is the portable case export, which #76 is open to
-move into `.claude/rules/pipeline-case.md`, the rule file whose globs already reach its four
-modules.
-
-> **Full rationale for this whole section — measurements, dated user reports,
-> injections, named blind spots — is `docs/design_notes/gui.md`.** A rule here is the
-> conclusion; that file carries the evidence and the failure it was bought with.
-
-**Portable case export** (`services/case_export.py` + `case_export_docs.py`, both Qt-free; Solver
-toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into a folder that reruns on another
-machine — `grid/` (mesh + `.def` + the getPGrid sources, whose `para.in` travels as
-**`getPGrid.in`**: `_RENAMES` owns that mapping so `run_case.sh --regrid` and the manifest cannot
-disagree), `work/` (`input.in`, `.def`, `phi.dat`, and the restart dump **only when `input.in`
-restarts from it** — `include_restart="auto"`), `dll/` (`.so` **and** the `.cc` it was compiled from,
-pulled from `results/solver/dll_src` by basename), plus `run_case.sh` and `MANIFEST.txt`.
-`run_case.sh` **suggests** a compiler rather than choosing one (`CXX=${CXX:-g++}`) — the package is
-for someone else's machine. Selection is an **allow-list**, so a new output file can never sneak in,
-and everything rejected is NAMED in the manifest (known-output / not-used-by-this-run /
-unrecognised). **The allow-list matches on NAME, so `work/phi.dat` and `dll/*` also have to ask
-whether the RUN uses them** (`_unused_reason`): `prepare_case_dir` reuses a case directory in place,
-so a case that once ran an immersed solid still holds both — USER-REPORTED as "I didn't configure
-IBM, why is there a phi.dat and a dll/?". `input.in` decides, being the file the far machine runs:
-it declares `immersed_solid` and names every DLL it dlopens by quoted path (plus a type-11 BC row in
-`work/*.def`, the one DLL `input.in` never mentions). A `.so` that no longer travels also stops
-pulling its `.cc` out of `dll_src`. `solver_case.report_stale_ibm_artifacts` names the same leftover
-at case-prep time and never deletes it. **Every quoted value in `input.in` is a file path**, and the
-GUI writes absolute ones for browsed files; those are staged into `work/` and rewritten to
-`./<name>`. The solver binary is deliberately excluded. Gated by `tests/test_case_export.py`;
-verified end-to-end by regenerating the grid with getPGrid from the exported folder and running
-unicones on it. What the export *writes* rather than copies lives in `case_export_docs.py`; the "is
-this file an input of THIS run or a fossil of the last one?" reading of `input.in` lives in
-`case_export_usage.py`.
-
-**The package also reopens in the GUI, not just in a shell** (`services/case_workspace.py`,
-Qt-free). `run_case.sh` reruns the SOLVER; there was no importer for an exported case
-(USER-REQUESTED 2026-08-13). Export Case now *asks* (a third prompt, after the restart dump and the
-tarball) and writes `<folder>.hws` into the package via `export_case(..., extra_files=...)`. Three
-rules: **(1) re-point by file IDENTITY, never by string** — keyed by `(st_dev, st_ino)`, so
-`results/` vs `Results/` on a case-insensitive volume or a symlinked scratch dir is still the same
-file, and a path the package does NOT carry is left alone and REPORTED rather than rewritten to a
-name that resolves to nothing; **(2) the caller's plan is the authority** — `export_case` accepts
-`plan=`, because a second plan built with different arguments would describe a different package
-than the one on disk; **(3) the stamp survives a move** — the workspace records
-`exported_case_root`, and `rebase_case_workspace` (called from `_read_workspace_file` on **every**
-load) swaps that prefix for wherever the `.hws` is being opened from. What does NOT travel: CAD/mesh
-sources are no part of a solver case, so the geometry rides *inside* the `.hws` (`original_points`
-verbatim) and still draws, but re-resampling or re-meshing needs those files — the export log and
-the manifest both say so. `Save Workspace` and the export share one builder
-(`session_io_ctrl.workspace_dict()`), so an exported workspace can never describe less than a saved
-one. Gated by `tests/test_case_workspace_export.py`, which drives the real slot, moves the folder,
-and loads it back.
+names; the portable case export — the last block this section held — moved to
+`.claude/rules/pipeline-case.md` (#76), the rule file whose globs already reach its four modules,
+and its rationale with it. Nothing is ruled on here. The rationale for the GUI areas is
+`docs/design_notes/gui.md`; for the export, `docs/design_notes/pipeline.md`.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

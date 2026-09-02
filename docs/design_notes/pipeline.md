@@ -6,9 +6,11 @@ context limit — is false; `CLAUDE.md`'s header block carries the measured beha
 and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
 this is the original prose, with its measurements, dated
 acceptance runs, injections and named blind spots. `.claude/rules/pipeline-case.md`
-carries the rule (moved there from `CLAUDE.md` by #63, loaded on demand when a
-case / solver-case / pipeline / STL3d service, the pipeline schema, or the
-headless pipeline entry point is read); this file carries why it is the rule.
+carries the rule (moved there from `CLAUDE.md` by #63, and the portable case
+export by #76, whose rationale came here from `gui.md` in the same move; loaded
+on demand when a case / solver-case / pipeline / STL3d service, the pipeline
+schema, or the headless pipeline entry point is read); this file carries why it
+is the rule.
 
 ### Full Pipeline (CAD → mesh → solver → results, one action)
 A single unified JSON script drives the whole chain; the GUI and the headless CLI share the same schema and stage logic.
@@ -82,6 +84,74 @@ A single unified JSON script drives the whole chain; the GUI and the headless CL
 - **`services/contour_render.py`** (Qt-free): renders a Tecplot result to a contour PNG (matplotlib Agg) for headless runs.
 - **`controllers/pipeline_ctrl.py`** (`PipelineControllerMixin`): GUI **Run All** — chains the existing per-stage QThread workers on their `finished_signal` (batch mode: no per-stage dialogs), ending on the auto-loaded Results contour. The **immersed-solid stage sits where the headless runner puts it, before the mesh**, so a script and the button build the same case; it is optional and skipped *out loud* when no STL is configured. Save/Load of the script is **`controllers/pipeline_io_ctrl.py`** (`PipelineIoControllerMixin`) — running the pipeline and reading/writing the script that describes it share nothing but the config classes, and the split is what kept the file inside the GUI length budget.
 - **`tools/PreProcessor/run_pipeline.py`** + **`run_pipeline.sh`**: headless entry point (`--no-solver`, `--no-contour`, `--png`).
+
+### Portable case export (`services/case_export*`, `services/case_workspace.py`)
+
+**Portable case export** (`services/case_export.py` + `case_export_docs.py`, both
+Qt-free; Solver toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into
+a folder that reruns on another machine — `grid/` (mesh + `.def` + the getPGrid
+sources, whose `para.in` travels as **`getPGrid.in`**: `_RENAMES` owns that mapping
+so `run_case.sh --regrid` and the manifest cannot disagree), `work/` (`input.in`,
+`.def`, `phi.dat`, and the restart dump **only when `input.in` restarts from it** —
+`include_restart="auto"`, since `binDump*` is an output that only a restart run
+reads back and is the largest file in the case), `dll/` (`.so` **and** the `.cc` it
+was compiled from, pulled from `results/solver/dll_src` by basename), plus
+`run_case.sh` and `MANIFEST.txt`. `run_case.sh` **suggests** a compiler rather than
+choosing one (`CXX=${CXX:-g++}`, `CXXFLAGS`) — the package is for someone else's
+machine, which may build with icpc. Selection is an **allow-list**, so a new output
+file can never sneak in, and everything rejected is NAMED in the manifest (split
+into known-output, not-used-by-this-run and unrecognised) — a skipped input is a
+visible line, not a surprise on the far machine. **The allow-list matches on NAME,
+so `work/phi.dat` and `dll/*` also have to ask whether the RUN uses them**
+(`_unused_reason`): `prepare_case_dir` reuses a case directory in place, so a case
+that once ran an immersed solid still holds both after being re-run without one —
+USER-REPORTED (2026-08-12) as "I didn't configure IBM, why is there a phi.dat and a
+dll/?". `input.in` decides, being the file the far machine actually runs: it
+declares `immersed_solid` and it names every DLL it dlopens by quoted path (plus a
+type-11 BC row in `work/*.def`, which is the one DLL `input.in` never mentions).
+A `.so` that no longer travels also stops pulling its `.cc` out of `dll_src`.
+`solver_case.report_stale_ibm_artifacts` names the same leftover at case-prep time
+and never deletes it — with immersed solid ON but no phi field chosen, the init DLL
+reads `phi.dat` by that fixed name, so the previous geometry's solid would converge
+to a believable answer for the wrong shape. **Every quoted value in `input.in` is a file path**
+(see `SolverConfig.generate_input_in`), and the GUI writes absolute ones for any
+file the user browsed to; those are staged into `work/` and rewritten to
+`./<name>`, which is the other half of portability. The solver binary is
+deliberately excluded. Gated by `tests/test_case_export.py`; verified end-to-end
+by regenerating the grid with getPGrid from the exported folder and running
+unicones on it. Everything the export *writes* rather than copies lives in
+`case_export_docs.py` (`run_case.sh`, `MANIFEST.txt`, the rewritten `input.in`,
+and `write_extras`); the "is this file an input of THIS run or a fossil of the
+last one?" reading of `input.in` lives in `case_export_usage.py`. Both splits
+are the file-size budget, not new concepts.
+
+**The package also reopens in the GUI, not just in a shell**
+(`services/case_workspace.py`, Qt-free). `run_case.sh` reruns the SOLVER; there
+is no importer for an exported case, so "load the case I exported" had no answer
+— USER-REQUESTED (2026-08-13). Export Case now *asks* (a third prompt, after the
+restart dump and the tarball) and writes `<folder>.hws` into the package via
+`export_case(..., extra_files=...)`, so the manifest names it under its own
+heading like everything else. Three rules decide whether the workspace is worth
+shipping: **(1) re-point by file IDENTITY, never by string** — the map is keyed
+by `(st_dev, st_ino)`, so `results/` vs `Results/` on a case-insensitive volume
+or a symlinked scratch dir is still the same file, and a path the package does
+NOT carry (the CAD `.dat`, the mesh, a declined restart dump) is left alone and
+REPORTED in the log rather than rewritten to a name that resolves to nothing;
+**(2) the caller's plan is the authority** — `export_case` now accepts `plan=`
+because the workspace is derived from the plan, and a second plan built with
+different arguments would describe a different package than the one on disk
+(decline the restart dump and its path must stay put); **(3) the stamp survives
+a move** — a package exists to be copied elsewhere, which strands absolute paths
+a second time, so the exported workspace records `exported_case_root` and
+`rebase_case_workspace` (called from `_read_workspace_file` on **every** load)
+swaps that prefix for wherever the `.hws` is actually being opened from. Note
+what does NOT travel: CAD/mesh sources are no part of a solver case, so the
+geometry rides *inside* the `.hws` (`original_points` are stored verbatim) and
+still draws, but re-resampling or re-meshing needs those files — the export log
+and the manifest both say so. `Save Workspace` and the export share one builder
+(`session_io_ctrl.workspace_dict()`), so an exported workspace can never
+describe less than a saved one. Gated by `tests/test_case_workspace_export.py`,
+which drives the real Export Case slot, moves the folder, and loads it back.
 
 ### Visualization (`tools/scripts/`)
 - **`visualize_dat.py`**: Matplotlib visualization for `.dat` files; `--quality` flag adds expansion-ratio heatmap
