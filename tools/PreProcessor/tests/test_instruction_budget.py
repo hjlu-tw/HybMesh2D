@@ -38,9 +38,9 @@ Checks:
     well-formed, and that it really differs from the original.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 297 more of today because this repo's own prose
-contains CJK. That figure moves with every relocation ticket — it was 389 before
-#66 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
+bytes, which the root file has 275 more of today because this repo's own prose
+contains CJK. That figure moves with every relocation ticket — it was 297 before
+#67 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
 never fewer than one byte.
 
@@ -84,12 +84,30 @@ Known remaining blind spots, stated rather than pretended away:
     pointer resolved while the file it points at was unreachable. It is named in
     `gui-results.md`'s header instead. Reachability of a NAMED file is a third thing
     nothing here checks.
+    #67's sweep found `docs/design_notes/gui.md:8` a FOURTH time and nothing else it
+    made stale — so its enumeration was finally replaced with a pointer at the tripwire
+    table, the same fix #65 applied to `docs/agents/domain.md:11`, which has held ever
+    since. Two pointers the sweep found stale from EARLIER tickets are left alone and
+    named here instead, because #67 did not make them stale and its ticket forbids
+    editing tests: `arch_probes.py:171` and `test_field_spec_tables.py:515` each say
+    "CLAUDE.md records ..." about text that #63 and #64 moved into a rule file. That is
+    this blind spot's own shape — a pointer at a MOVED section, resolving to a file that
+    no longer holds it — surviving three tickets in a test file nobody swept.
+    #67 also lands the inverse of the reachability gap: `include/BLParams.hpp` and
+    `Config.hpp` are the C++ half of the parity rule, they ARE reached by `mesher.md`'s
+    globs, and `mesher.md` does not carry that rule. A glob reaching a file whose rules
+    are in ANOTHER rule file is what #76's check 5 exists to catch; until it lands, the
+    root file's one-line pinning of the four repo-wide standards is what covers it.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    The five rule files that exist are 35,615 / 36,615 / 15,762 / 11,799 / 12,847
-    characters, so "moving text into another rule file is not a legal evasion" only bites
-    for a move larger than the 24,385 / 23,385 of headroom the two large ones have left,
-    and not at all for a move into any of the other three, which have 44,238 / 48,201 / 47,153.
-    It tightens on its own as the last area lands. Exact figures rather than
+    All six rule files now exist and are 35,615 / 36,615 / 15,762 / 12,847 / 11,799 /
+    10,346 characters (mesher, pipeline-case, gui-results, gui-canvas-edit,
+    gui-panels-config, gui-seams), so "moving text into another rule file is not a legal
+    evasion" only bites for a move larger than the 24,385 / 23,385 of headroom the two
+    large ones have left, and not at all for a move into any of the other four, which have
+    44,238 / 47,153 / 48,201 / 49,654. It did NOT tighten on its own as the last area
+    landed, which is what the previous version of this sentence predicted: #67's area is
+    the SMALLEST of the six, so the flat 60,000 is looser after the split than before it,
+    and only a per-file ratchet like `ROOT_BUDGET`'s would change that. Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
     "12.0k" when it was 12,611 — measured before a later edit to the same file and never
@@ -123,7 +141,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 52_453
+ROOT_BUDGET = 49_187
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

@@ -22,13 +22,14 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **52,453
-characters (52,750 bytes, 2026-09-02, after #66 moved the GUI results rules out to
-`.claude/rules/gui-results.md`) ≈ 13k tokens**, paid by every session before it reads a line
+observed. The cost is therefore not truncation but **always-loaded context** — **49,187
+characters (49,462 bytes, 2026-09-02, after #67 moved the GUI seam rules out to
+`.claude/rules/gui-seams.md` and pinned the four repo-wide standards one line each above)
+≈ 12k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 297 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 275 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -62,6 +63,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
+| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the six, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py` and `run_batch.py`, matched by `pipeline-case.md`, which carries no seam rule. |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
@@ -70,11 +72,40 @@ went through with the rule unloaded. The glob alone therefore cannot make "I did
 a rule" unreachable; this table is what does. **Read the row's rule file before editing or creating
 a file in its area.**
 
-**The move is staged (#59), so this table is deliberately incomplete.** Every area with no row
-above still has its rules in this file. `tools/PreProcessor/tests/test_instruction_budget.py` gates
-the arrangement: a per-file size budget (the root file and each rule file measured against their
-own, never a total, so moving text between rule files is not a legal evasion), the table against
-the rule files in **both** directions, and the existence of every gate test a rule file names.
+**All six of #59's areas have now moved (#67 was the last), and this table is STILL incomplete —
+because the partition was, not because a step is missing.** #59 derived its six areas from the root
+file's section headings, and 20,253 characters of the `### PreProcessor GUI` section are rules the
+partition assigns to no area at all: the layered module list and the subprocess environment, then
+window layout, the restart button, the mesh-BC audit, "a path is not a kind", the Output-`.*`
+placeholder, the case-grid lookup, the Mesh-stage carryover, and the two portable-case-export blocks
+(3,880 of the 20,253) that #76 is open to move into `pipeline-case.md`. Every one of them still has
+its rules in this file, which is why the root is 49k rather than the ~25k #59 projected. The same
+shape has now been found three times — #63 (three services with no glob), #76 (case export), here —
+so expect it once more rather than treating it as closed.
+`tools/PreProcessor/tests/test_instruction_budget.py` gates the arrangement: a per-file size budget
+(the root file and each rule file measured against their own, never a total, so moving text between
+rule files is not a legal evasion), the table against the rule files in **both** directions, the
+existence of every gate test a rule file names, and a `paths:` list that is present, non-empty and
+not only `**`.
+
+## Important: four standards that bind BEFORE any file is opened
+
+These four belong to no area, so no glob can carry them: a rule file does not arrive for an
+`Edit` without a prior `Read`, nor for a `Write` creating a new file (measured, #61). Rule and
+gate here; the full text of all four is `.claude/rules/gui-seams.md`.
+
+- **GUI↔C++ config parity.** Every mesh key must agree in **key, TYPE and DEFAULT, in both
+  directions**; a type divergence is never pinned, a default divergence pins both values plus a
+  reason. Gate: `tests/test_gui_cpp_config_parity.py`.
+- **GUI file length.** Keep each file under `tools/PreProcessor/gui/` at **~500 lines**; split it
+  when it grows past. The only one of the four with **no gate** — measured 2026-09-02, 5 of 258
+  files exceed it (worst 523).
+- **Never `except Exception: pass`.** Use `services/logging_setup.py::get_logger(__name__)` and
+  log at `debug(..., exc_info=True)`, or `warning` when the failure silently degrades what the
+  user asked for. Gate: `tests/test_silent_exceptions.py`.
+- **Never a raw `blockSignals(True)`/`blockSignals(False)` pair, and never an `_is_populating`
+  assignment.** Use `with block_signals(...)` and `with controller.populating():`. Gate:
+  `tests/test_signal_guards.py`.
 
 ## Important: Git and Commit Policy
 
@@ -228,32 +259,6 @@ cd tools/PreProcessor/gui && ruff check --config ruff.toml ../tests
 ```
 `ruff.toml` enforces only real-defect rules (`E9`, `F`); style rules are off with the reason stated in the file. Fix violations before adding a rule to `select` — a permanently-red gate is worse than none. CI (`.github/workflows/gui-tests.yml`) has three jobs: **lint**, **build C++ with `-Werror`** (which then runs `ctest` — the **test** job downloads two binaries and has no build tree, so there is no `CTestTestfile.cmake` for ctest to read there, and a failing unit test is a build-gate concern anyway; the loader path comes from `tools/scripts/gmsh_lib_dir.sh` rather than a hardcoded pip prefix, because the baked rpath is only reliably right on the machine that built the binary), and **test** (which `needs: build`, so the binary-dependent tests actually run instead of self-skipping, plus an end-to-end `run_pipeline.sh`).
 
-**GUI↔C++ config parity** is gated by `tests/test_gui_cpp_config_parity.py`, and it
-compares **key, TYPE and DEFAULT, in both directions** — not just key presence, which
-is blind to the two divergences that produce a wrong mesh instead of an error. Both
-sides are read as declarations: the C++ from `include/BLParams.hpp`'s rows plus
-`Config.hpp`'s `key == "..."` branch → member → struct initialiser (a key that stops
-resolving fails check 0, so a blind extractor cannot turn the comparison into a no-op),
-the GUI from the derived key map + `field_spec.model_types` + `MeshConfig()` — whose own
-rules moved to `.claude/rules/gui-panels-config.md` in #64. New
-C++-only keys must be justified in `KNOWN_CPP_ONLY`; structural multi-token lines in
-`_STRUCTURAL`. Two things about the divergence lists are load bearing:
-- **`PINNED_TYPE_DIVERGENCE` is empty and must stay empty.** A type mismatch means one
-  side cannot represent what the other stores, so there is no intended version of it.
-  The gate found one — `BL_AUTO_FAN_NODES` — and it was FIXED, not pinned.
-- **`PINNED_DEFAULT_DIVERGENCE` pins BOTH values and a reason**, because the two
-  defaults answer *different questions*: the C++ one is what an unspecified key in a
-  hand-written `.dat` means (neutral and safe), the GUI one is what a fresh editing
-  session suggests before the user changes it. Forcing them equal would be wrong in
-  both directions — it would make a new GUI case default to an all-`wall` box with no
-  inlet, or make the mesher stop writing a VTK for a CLI user who asked for nothing.
-  Measured: 8 of the 49 shared keys diverge, and all 8 are correct. Pinning both values
-  means a *change* to either side fails the gate again, so an entry cannot absorb a new
-  drift. And check 6 makes the pinning honest by machine-checking its precondition —
-  the GUI must write that key **unconditionally**, so the mesher's differing default is
-  never the one in force for a GUI run. That is not a formality: 7 of the writer's keys
-  really are conditional.
-
 **Example backend test configs:**
 - `tools/PreProcessor/config/test_triangle_backend.json` — vertex snap verification
 - `tools/PreProcessor/config/test_auto_split.json` — feature split verification
@@ -321,50 +326,6 @@ workflow first went green 2026-08-17 (`4254c5d`), covering **69 Python tests + `
 the end-to-end `run_pipeline.sh`, none of which had ever executed in CI before**; four
 unrelated environment defects and one flaky runner stood in the way, and not one was a defect
 in the code under test. **A workflow's *history* is the only evidence it gates anything.**
-
-**`app/utils.py` is the Qt side of a seam, and the pure helpers live on the other side**
-(`services/paths.py`, Qt-free — `repo_root`, `find_binary_executable`,
-`find_solver_executables`, `find_stl3d_binary`, `find_mpi_launcher`, `is_mpi_binary`).
-`app/utils.py` re-exports the moved names, so the ~16 Qt-side call sites are untouched.
-`is_headless` deliberately **stayed** with the Qt helpers. Two things the gate
-(`tests/test_qt_free_seam.py`) had to learn the hard way:
-- **The check must be a subprocess** — in-process the answer is always "PyQt6 is loaded"
-  once any other test imported it.
-- **A deferred import is still a dependency.** With the import-time sweep green,
-  `run_pipeline.sh` on a PyQt6-less machine still died in stage 2: three call sites did
-  `from app.utils import repo_root` *inside a function body*. The gate reads the AST for a
-  moved name at **any** nesting depth, and separately refuses PyQt6 in a subprocess and
-  drives the writers that failed.
-The `services/` sweep is a **deny**-list (`QT_SERVICES`, each entry carrying its reason);
-stale entries fail too. One pre-existing defect the sweep surfaced and did *not* fix is
-recorded in `CANNOT_IMPORT_STANDALONE`: `services/index_helpers.py` cannot be imported first
-(a cycle enabled by eager re-exports in two `__init__.py` files).
-
-Scroll-wheel on QSpinBox/QDoubleSpinBox is intentionally disabled (overridden in `main.py`).
-
-**The user-facing log is a service, not a widget**: say things with `AppController.log()`
-(controllers) or `app/services/user_log.py` (views) — never `main_window.log_panel.log(...)`,
-which is how 255 reach-throughs accumulated. `LogPanel` is a registered sink; sinks get the
-RAW message and classify for themselves, and the durable file mirror happens in the service
-ONLY (a second one in the panel writes every line twice). `user_log.log()` attaches the file
-handler itself, so a process that never ran the GUI's `main()` still leaves its log on disk.
-Gated by `tests/test_user_log_seam.py`. This is a different log from `get_logger(__name__)`,
-which is developer diagnostics.
-
-**User messages**: use `app/utils.py`'s graded helpers, never a raw `QMessageBox` — with
-**two recorded exemptions, and no third without a helper**: `views/case_dir_dialog.py` (the
-case-dir question, four mutually exclusive dispositions) and `controllers/curve_join_ctrl.py`
-(keep / merge). Neither is a yes/no, and both make the headless early-return themselves. The
-graded set is `report_error` (failed write, data at risk → Critical), `report_warning`
-(failed read → Warning), `report_info` (a precondition, nothing broke → Information),
-`confirm(..., headless_default=)` (Yes/No), and `confirm_destructive(..., action_label=,
-option_label=)` (an irreversible action: a **named** button, Cancel as the default, an
-optional extra tick, and **no `headless_default` at all** — a destructive prompt has no safe
-default, and making it an argument would let an unattended path opt into deleting files; it
-returns `None` when declined and the tick's state otherwise). A third multi-way prompt is the
-point at which `app/utils.py` grows a `choose()` rather than the exemption list growing again.
-All of them no-op or return the default on a headless platform. Any new dock widget needs
-`setObjectName()`, or `QMainWindow.restoreState()` silently skips it.
 
 **Window layout** is persisted by `app/services/ui_state.py` — **window geometry and dock state,
 and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when the layout changes so
@@ -550,18 +511,6 @@ the manifest both say so. `Save Workspace` and the export share one builder
 (`session_io_ctrl.workspace_dict()`), so an exported workspace can never describe less than a saved
 one. Gated by `tests/test_case_workspace_export.py`, which drives the real slot, moves the folder,
 and loads it back.
-
-**Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception
-between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)`
-(`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, a
-re-entrant depth counter (a bare bool let a nested populate clear the outer guard).
-`tests/test_signal_guards.py` statically fails the build on either.
-
-**Error handling**: never `except Exception: pass`. Use
-`services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step
-allowed to fail, or `warning` when the failure silently degrades what the user asked for.
-`HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build
-if a new undocumented silent handler appears.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

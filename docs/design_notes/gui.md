@@ -6,18 +6,13 @@ context limit — is false; `CLAUDE.md`'s header block carries the measured beha
 and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
 this is the original prose, with its measurements, dated
 acceptance runs, injections and named blind spots. `CLAUDE.md` carries the rule —
-except for the three areas #59 has moved out to on-demand rule files, each loaded when
-a matching file is READ. The panel-configuration rules (the field-spec tables, the
-panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog, length units
-and `SciDoubleSpinBox`) are in `.claude/rules/gui-panels-config.md` (#64); the canvas
-and editing rules (the owner of the edge being edited, the outline re-fit, global
-undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up
-stacking) are in `.claude/rules/gui-canvas-edit.md` (#65); the results rules
-(transient playback and the byte-offset zone index, the per-variable colour range,
-the legs of a restarted solve, the surface source) are in
-`.claude/rules/gui-results.md` (#66). `CLAUDE.md`'s tripwire
-table is the authority on which rules live where — this list enumerates, so it goes
-stale on the next ticket. This file carries why it is the rule.
+except where #59 has moved an area's rules out to an on-demand `.claude/rules/*.md`
+file, loaded when a matching file is READ. **Which rules live where is `CLAUDE.md`'s
+tripwire table, and only that table.** This paragraph used to enumerate the areas and
+their tickets, and it went stale on #64, #65, #66 and #67 in turn — once per ticket,
+every time for the same reason: it was a second copy of a list that already exists.
+Replaced by the pointer, which is the only version of this that has held (the same fix
+#65 applied to `docs/agents/domain.md`). This file carries why it is the rule.
 
 ### PreProcessor GUI (`tools/PreProcessor/gui/app/`)
 Layered PyQt6 application:
