@@ -15,7 +15,8 @@ paths:
 Loaded on demand when a result view or one of its mixins, the surface-source dialog, a
 Results panel mixin, the result / Tecplot models, or the result-legs, surface-source,
 surface-sample or analytic-shape service is read. **Rules only** — the rationale (the
-timings, the measurements, the injections, the reversals) is `docs/design_notes/gui.md`.
+timings, the measurements, the injections, the reversals and the named blind spots) is
+`docs/design_notes/gui.md`.
 Read that note before overruling a rule here; when a rule changes, update BOTH.
 
 **Also governed from OUTSIDE these globs**, which cannot hand a reader the text:
@@ -34,11 +35,12 @@ and `views/panels/result_panel*`, a deliberate overlap with
 reader is handed both files.
 
 **Boundaries run BOTH ways.**
-- **Outward.** A leg's span (`iteration_span`, `finished_stamp`) is owned by
-  `services/case_run_note.py`, a leg's stem (`strip_run_tag`, `newest_first`) by
-  `services/case_files.py` — both matched by `.claude/rules/pipeline-case.md`'s
-  `services/case_*`, as is `views/panels/restart_chooser.py`, the OTHER window that must
-  not describe one archive differently. Read that file when changing what a span or a
+- **Outward.** TWO facts, neither owner under a glob here: a leg's span
+  (`iteration_span`, `finished_stamp`) is owned by `services/case_run_note.py`, a leg's
+  stem (`strip_run_tag`, `newest_first`) by `services/case_files.py` — both matched by
+  `.claude/rules/pipeline-case.md`'s `services/case_*`, as is
+  `views/panels/restart_chooser.py`, the OTHER window that must not describe one archive
+  differently. Read that file when changing what a span or a
   stem means.
 - **Inward.** Three files these globs reach show modeless pop-ups through `keep_on_top` —
   `views/result_canvas_interaction_mixin.py`, `result_canvas_plots_mixin.py`,
@@ -109,8 +111,8 @@ by #30 because it reads the `RUN.txt` #30 writes.
   cannot describe one archive differently.
 - **A leg measurable NEITHER way is played WHERE IT RAN, not last**, inheriting the last
   count recorded before it. REVERSES #32's "offered last", which is right for a chooser
-  LIST and wrong for a playback ORDER — see `docs/design_notes/gui.md`, "A restarted solve
-  is ONE run split across several files".
+  LIST and wrong for a playback ORDER — see `docs/design_notes/gui.md`, "A leg that can be
+  measured NEITHER way is played WHERE IT RAN, not last".
 - **An overlap is a MEASUREMENT** (#43), reported and never interleaved: a half-open span
   `(start, end]`, so the test is interval intersection and the message names the repeating
   iterations. Half-open is load bearing — consecutive legs MEET at a boundary iteration,
@@ -122,10 +124,11 @@ by #30 because it reads the `RUN.txt` #30 writes.
   `RUN.txt` — a differing leg is excluded and NAMED, an undeterminable one included.
 - **Opening any leg opens the SOLVE. An INTERACTIVE load asks; a headless one does not**
   (USER-REQUESTED 2026-08-27). REVERSES #32's modal on every load — see
-  `docs/design_notes/gui.md`. **`This leg only`** is the escape: shown only when the solve
-  HAS more than one leg, never persisted, unticked on every load, and yielding a ONE-leg
-  series rather than a second code path. **Its visibility asks how many LEGS the solve has
-  and nothing else.**
+  `docs/design_notes/gui.md`, "Opening any leg opens the SOLVE". **`This leg only`** is
+  the escape: shown only when the solve HAS more than one leg, never persisted, unticked
+  on every load, and yielding a ONE-leg series rather than a second code path. **Its
+  visibility asks how many LEGS the solve has and nothing else** — never the `multi`
+  frame-count flag.
 - **Which legs play is a CHOICE, and it is the user's** (`views/result_leg_picker.py` +
   `views/result_leg_select_mixin.py`): a tick-list offered on load and reopenable from
   `Legs…`. **`ask_legs` returns `None` — "every leg" — when headless, and `None` is also
@@ -142,14 +145,16 @@ by #30 because it reads the `RUN.txt` #30 writes.
   (`prev_002 · Frame 3 / 10`); the transport's read-out appends the SERIES position in
   `_read_out`, not in `frame_label`, since the zone selector uses the label as a list
   entry.
-- **The per-variable seeded range is COMPUTED over the series, not carried across it** —
+- **The per-variable seeded range is COMPUTED over the series, not just carried across
+  it** —
   one leg's band saturates every other. A MULTI-leg series seeds from the series; a single
   file keeps #24 exactly. **It runs in `seed_range_from_series()`, never inside a paint**
   (#43; REVERSES the original `scan_series_range` call from `render`, which cannot pump
-  the event loop — see `docs/design_notes/gui.md`), called by the handler that unticks
-  Auto, where the "this
-  will take a moment" line is painted first; `series_range_hint` states in the Min/Max
-  tooltip where the whole-series range is available. **A failed scan is not remembered**
+  the event loop — see `docs/design_notes/gui.md`, "A restarted solve is ONE run split
+  across several files"),
+  called by the handler that unticks Auto, where the "this will take a moment" line is
+  painted first; `series_range_hint` states in the Min/Max tooltip where the whole-series
+  range is available. **A failed scan is not remembered**
   (`_series_seeded` records only successful scans). **A range the user TYPED is tracked
   separately (`_clim_typed`, written only by `set_clim`) and is never scanned away.** The
   colour-scale concern lives in `views/result_scale_lock_mixin.py`.
@@ -177,7 +182,7 @@ Three duplications this created were pushed to their owners: `case_files.strip_r
 `controllers/surface_source_ctrl.py` decides availability; `views/surface_source_dialog.py`
 + `views/result_canvas_surface_mixin.py` are the UI. REVERSES the older single meaning —
 the inner boundary loops of the solved triangulation, which is no answer at all for an
-immersed-boundary run — see `docs/design_notes/gui.md`.
+immersed-boundary run — see the block of the same name in `docs/design_notes/gui.md`.
 
 Six sources are offered, all listed even when unusable with the reason on the row: `mesh`
 (the only one whose points ARE mesh nodes, so it keeps `node_ids` and reads **exact**
@@ -197,7 +202,7 @@ cannot drift from the solved one) and `cad`.
   rule (x min / x max / y min / y max) is picked, traversal handedness is forced from the
   polygon's signed area, and the canvas marks the origin + direction. REVERSES the old
   origin inherited from `next(iter(set))` inside the boundary tracer — see
-  `docs/design_notes/gui.md`.
+  `docs/design_notes/gui.md`, the surface block.
 - **Arc length of a closed curve reaches the full perimeter** (the removed
   `perimeter_series` computed the closing chord and then sliced it off).
 - **Off-node samples are interpolated, and δ = 0 by default.** For an immersed solid the
