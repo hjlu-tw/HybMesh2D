@@ -20,7 +20,10 @@ narrative, a gate filename, and a named blind spot.
    *measured* against — see the ruler below.
 3. **Two red lines, verbatim** (#59): a **gate test filename**, and every **`USER-REQUESTED` /
    `USER-REPORTED`** marker. The first is the reader's only route to verifying the rule; the second
-   is what stops an agent "improving" a decision the user made deliberately.
+   is what stops an agent "improving" a decision the user made deliberately. **A marker WRAPS the
+   same way an anchor does**: #70 found `USER-REQUESTED` and its `2026-08-21` on two different
+   lines, so count marker-with-date, not the bare word, or a preserved marker reads as a lost one
+   and a lost date as a preserved marker.
 4. **Reversal narrative → one line plus an anchored pointer.** `SUPERSEDED by #NN:` or
    `REVERSES #NN:`, the new answer in one clause, then `Why: docs/design_notes/<area>.md, "<anchor>"`.
    **Grep-verify every anchor** (`grep -c -F "<anchor>" <target>` must print exactly `1`) and keep
@@ -71,7 +74,11 @@ It does **not** catch a dropped *constraint* whose identifier appears elsewhere 
 | reversal | `SUPERSEDED by #53` + a grep-verified anchor (count 1) |
 | blind spot | moved to `mesher.md`'s new `## Named blind spots` |
 
-**−12% is the honest expectation, not −50%.** #73's whole-file pass was −7.7%. These files are
+**−12% is the honest expectation, not −50%.** #73's whole-file pass was −7.7%, #69's −1.6% and
+#70's −0.8%. The last two are the shape to expect wherever a file's blind spots consolidate into a
+list that did not exist before: #69's prose fell 4.8% and #70's 5.1%, while the new list (1,123
+and 1,202 chars) and the anchor lines took most of that back. **A compression ticket pays for the
+structure it adds**, and the headline number is the wrong thing to optimise. These files are
 already dense; the style's value is structural — claim first, identifiers intact, reversals
 pointing rather than retelling, blind spots in one list — and **not** byte savings. No rule file is
 anywhere near its 60,000 budget, so a ticket that trades an identifier for characters has the
