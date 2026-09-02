@@ -33,26 +33,20 @@ Key-value text file, command-line args override file values. Parameters grouped 
 | Output | `EXPORT_VTK`, `EXPORT_STARCD`, `BC_XMIN/XMAX/YMIN/YMAX/GEOM` |
 | Units | `LENGTH_UNIT` (m/cm/mm/um/in/ft/custom), `LENGTH_UNIT_METRES`, `LENGTH_UNIT_NAME` |
 
-> **Full rationale for everything below — measurements, dated acceptance runs, injections and named
-> blind spots — is `docs/design_notes/mesher.md`.** Read it before overruling a rule; the rule alone
-> does not carry the argument for itself.
-
 **The 22 boundary-layer parameters are declared ONCE, in `include/BLParams.hpp`**
 (`X(KEY, type, field, default)` per row). The struct, the `.dat` reader, the per-geometry override
 parser and `isBLParam` are GENERATED from it; `Config` holds one `BLParams`, not a second copy with
 a second set of defaults. `Config::print()` is deliberately NOT generated (the banner is a grouped
 report reused verbatim as the provenance sidecar), so `tests/cpp/test_bl_params_decl.cpp` check 6
 gates it: every parameter must be reachable from the banner, and where the banner renders it as a
-number its own value must appear there. Named blind spot: a SWAPPED PAIR is invisible, because the
-pairing of value to meaning IS the label prose.
+number its own value must appear there.
 
 **`MESH_MODE` selects the generation path, and a parameter the active mode never reads is NAMED**
 (`include/MeshMode.hpp` + `src/MeshMode.cpp`, in `hybmesh_pure`; #49). Mode 0 is the hybrid path and
 the DEFAULT, so the feature's effect on an existing case is zero — measured, 9/9 golden SAME.
 - **"Which parameters does this mode read?" is DATA, in one place.** Two macros declare the inert
   non-BL keys and the four BL parameters that SURVIVE; the 18 casualties are `BLParams.hpp` minus
-  those four, so a new BL parameter is covered with no edit. Survivors rather than casualties, so a
-  new corner knob gets the right answer by default.
+  those four, so a new BL parameter is covered with no edit and gets the right answer by default.
 - **"Set" means "differs from a default-constructed Config"**, never "the key appeared in the file"
   — the GUI writes nearly every key on every save.
 - **The GUI's half is `modes=` on each field's own spec**, not a second table, compared **in both
@@ -78,9 +72,9 @@ the DEFAULT, so the feature's effect on an existing case is zero — measured, 9
 every block with structured quads, splits them, and returns nodes, blocks (with logical i/j), flat
 cells, already-resolved boundary edges, warnings as data and an optional error. It never throws.
 - **Parsing lives INSIDE the seam**, so schema errors, count resolution, node positions, the split
-  and the resolved BCs are all external behaviour of one function. `tests/cpp/test_multiblock.cpp`
-  drives it with a topology STRING and no mesh, linking `hybmesh_pure` alone (measured with
-  `otool -L`) — reach for `Mesh` or gmsh and it stops linking.
+  and the resolved BCs are external behaviour of one function. `tests/cpp/test_multiblock.cpp` drives
+  it with a topology STRING and no mesh, linking `hybmesh_pure` alone (`otool -L`) — reach for `Mesh`
+  or gmsh and it stops linking.
 - **The adapter gets no seam, because it has no decisions.** Each boundary edge returns as (node
   pair, BC name, source segment) and is recorded through `recordBoundaryEdge` with a **synthetic
   carrier `Node`**. Position-based classification is not used on this path at all — re-deriving by
@@ -93,18 +87,16 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
 - **Logical i/j is retained rather than flattened** (only the diagonal rule reads it);
   `MbCell::block` is carried for the same reason.
 - **Unknown JSON keys are REFUSED, not skipped** — a typo'd `"spacng"` silently ignored is a wrong
-  node distribution with no symptom. Strict now is relaxable later. So is **a declaration that
+  node distribution with no symptom, and strict now is relaxable later. So is **a declaration that
   reaches nothing**: an edge in no block, a corner on no edge.
 - **What v0 does not do is refused BY NAME, never approximated**, each refusal naming the work it
   waits for: a `blocks[].orientation`. (`on_geometry` and `binding` were on this list and are
   implemented by #52; the `interface`/`cut` kinds and a second block by #53.)
 - **A block's orientation is the corner order of its own four edges**, `[south, east, north, west]`,
   south/north running i-min→i-max and west/east j-min→j-max. A **clockwise** corner ring is refused
-  under the TOPOLOGY code, never silently re-wound. **SUPERSEDED IN PART by #53**: a deviation in
-  DIRECTION is no longer refused — the south edge fixes the frame and the other three are traversed
-  as the ring requires, because a shared edge has one declared direction and two blocks. A set of
-  four edges that does not CLOSE a ring is still refused by name, which is the half of the original
-  argument that survives.
+  under the TOPOLOGY code, never silently re-wound. SUPERSEDED IN PART by #53: a DIRECTION
+  deviation is no longer refused, only a set of four edges that does not CLOSE a ring. Why:
+  `docs/design_notes/mesher.md`, "A block's orientation is the corner order".
 - **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` /
   `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
   face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
@@ -140,17 +132,16 @@ acceptance gate is a grep.
   elliptic smoothing will be judged against.
 - **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
   usable?" vs "what does this document declare?"), and a pure function of a finished mesh — half its
-  checks hand `measureMbQuality` a mesh nobody parsed. Pure, total, never throws.
-- **Inverted is counted over the EXPORTED cells, and the test is PER CORNER, not the signed area.**
-  A bow-tie quad can self-intersect with a POSITIVE shoelace area — `(0,0) (3,0) (0,1) (2,1)` is
-  +0.5 and crosses itself. For a triangle the per-corner rule reduces to the signed area, so it is
-  one rule for both cell kinds.
+  checks hand `measureMbQuality` a mesh nobody parsed.
+- **Inverted is counted over the EXPORTED cells, and the test is PER CORNER, not the signed area**:
+  a bow-tie quad can self-intersect with a POSITIVE shoelace area (`(0,0) (3,0) (0,1) (2,1)` is +0.5
+  and crosses itself). For a triangle the per-corner rule reduces to the signed area, so it is one
+  rule for both cell kinds.
 - **Non-orthogonality is measured on the STRUCTURED grid cells** — each corner angle's deviation
-  from 90° — **and NOT on the split triangles.** It comes from corner positions, so a strongly
-  stretched but axis-aligned block measures *exactly* zero (no edge-length proxy can report that);
-  it is the quantity elliptic smoothing moves; and it is independent of `MB_SPLIT_QUADS`. An ANGLE
-  with a closed form, not a badness score. Named blind spot: it says nothing about the shape of the
-  split triangles.
+  from 90° — **and NOT on the split triangles.** From corner positions, so a strongly stretched but
+  axis-aligned block measures *exactly* zero (no edge-length proxy can), it is the quantity elliptic
+  smoothing moves, and it is independent of `MB_SPLIT_QUADS`. An ANGLE with a closed form, not a
+  badness score.
 - **A folded mesh is EXPORTED and exits 9; an invalid declaration exports nothing and exits 8**,
   both through the same `failExit` mechanism. `blSuccess` stays TRUE so the VTK keeps its ordinary
   name — `_er` marks a PARTIAL mesh and this one is complete.
@@ -160,20 +151,21 @@ acceptance gate is a grep.
   two figures are always reported together.
 - **"ASKED FOR" IS NOT AN INDEPENDENT TARGET YET; do not over-read the figure.** The request is
   DERIVED from the same law the fill reproduces and the blend is exact on the boundary, so **a
-  rectangle's 0.00% is a tautology, not evidence.** What it honestly measures is interior drift from
-  what the two ends declare (trapezoid 7.38%, folded dart 25.41%). When the independent target
-  arrives only the PUBLISHER changes.
+  rectangle's 0.00% is a tautology, not evidence**; what it measures is interior drift from what the
+  two ends declare (trapezoid 7.38%, folded dart 25.41%). When the independent target arrives only
+  the PUBLISHER changes.
 - **"We did not measure" must not read as "it came out perfect", for ALL THREE figures.**
   `maxNonOrthoDeg`, `meanNonOrthoDeg` and every `worstRelError` (per wall AND headline) are NEGATIVE
   when unmeasurable, never 0.0, and the banner prints `not measured`. The rule holds at the ROW
   level too (check 6b) — `measureMbQuality` is a public pure function accepting any `MbResult`, so
   its header's guarantee must hold for every input.
-- **The detector is proven to bite by a topology that folds, and that topology is ACCEPTED**: the
-  dart `(0,0) (1,0) (0.1,0.1) (0,1)` winds counter-clockwise (+0.1), so the ring refusal does not
-  fire and the fill folds anyway. The gate checks no topology refusal prints on that run.
+- **The detector is proven to bite by a topology that folds and is ACCEPTED**: the dart
+  `(0,0) (1,0) (0.1,0.1) (0,1)` winds counter-clockwise (+0.1), so the ring refusal does not fire and
+  the fill folds anyway. The gate checks no topology refusal prints on that run.
 - **All four sides are reported**, because v0 cannot say which boundary is a viscous wall.
-  **SUPERSEDED by #53**: the gate is the KIND, so an `interface`/`cut` side is not reported and a
-  multi-block topology lists exactly its outer walls.
+  SUPERSEDED by #53: the gate is the KIND, so an `interface`/`cut` side is not reported and the list
+  is exactly the outer walls. Why: `docs/design_notes/mesher.md`,
+  "All four sides are reported, because v0 cannot".
 - **The `[south, east, north, west]` convention is DATA, in one place** (`mbSideAxis`). A dedup of
   `MbWallSpec`/`MbWallHeight` was considered and DECLINED: they face opposite directions and the
   shared part cannot be written HALF.
@@ -181,8 +173,7 @@ acceptance gate is a grep.
   `tests/test_multiblock_quality_surface.py`. **Its injections are HAND runs, dated in the C++
   test's docstring** — a C++ test cannot mutate the implementation it linked against, and that
   distinction must not be blurred. What IS permanent is two **negative controls** computing an
-  injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its ~17x stretch). Sharpest
-  blind spot: nothing runs the solver or grid converter on the folded mesh.
+  injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its ~17x stretch).
 
 **Boundary conditions are DECLARED; geometry attaches by ARC LENGTH** (#52; still the one pure
 entry point). A corner attaches to a source segment at a normalized arc-length position
@@ -226,7 +217,7 @@ wall that drift exported a band of wall at every junction.)
 - **`MbWallSpec` reports all four sides and the gate stays `kind`**, since "labelled inlet" and
   "viscous surface whose first-cell height matters" are different questions. SUPERSEDED by #53: the
   `kind` gate now bites — an interior side is not a wall — so the list is the outer walls. Why:
-  `docs/design_notes/mesher.md`, "`MbWallSpec` still reports all four sides, and the #51 note".
+  `docs/design_notes/mesher.md`, "still reports all four sides, and the #51 note".
 - The adapter's ~15-line boundary-patch summary is PRESENTATION, not classification, so the pure
   side is no longer literally decision-free; a second such block belongs beside `measureMbQuality`.
 - **The shipped example states its own limit**: `examples/geometries/square_cavity.dat` is an OPEN
@@ -272,12 +263,13 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   on an interior line. So an interior line is a straight CHORD and the BL/far-field seam #55 wants is
   undeclarable. Refused rather than half-honoured — a binding whose BC half is silently ignored is a
   setting that does nothing — and it needs its OWN key, not a reused one.
-- **A block's frame comes from its SOUTH edge, and this REVERSES #50's rule.** The other three sides
-  may be declared either way and are traversed as the ring requires: a shared edge has ONE direction
-  and two blocks whose frames need not agree. Nothing is inferred — four edges that do not CLOSE a
-  ring are still refused by name, and a ring closing onto THREE corners is refused too (reachable:
-  two distinct edges over one corner pair). The clockwise-ring refusal is unchanged. C++ check 9 is
-  the **inverted** version of the one that pinned the old refusal.
+- **A block's frame comes from its SOUTH edge; this REVERSES #50's rule.** The other three sides may
+  be declared either way and are traversed as the ring requires — a shared edge has ONE direction and
+  two blocks whose frames need not agree. Nothing is inferred: four edges that do not CLOSE a ring
+  are refused by name, a ring closing onto THREE corners is refused too (reachable: two distinct
+  edges over one corner pair), and the clockwise-ring refusal is unchanged. C++ check 9 is the
+  **inverted** version of the one that pinned the old refusal. Why: `docs/design_notes/mesher.md`,
+  "The clockwise-ring refusal is unchanged".
 - **"The four sides meet at four shared corner NODES" is checked, before the writes overwrite one
   with the other.** It looks tautological after the ring match and is not: it caught the
   dropped-reversal injection in both gates.
@@ -286,9 +278,7 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   boundary set equal to the `.bnd`, one connected component) and the `mb_hgrid` golden case on the
   shipped `examples/topology/hgrid_blocks.json`.
 - **THE SOLVER ACCEPTANCE RUN IS OUTSTANDING and the gate says so**: no four-block grid has been
-  through `getPGrid` or `unicones` (this checkout has no solver tree). Other blind spots: nothing
-  welds along a BOUND edge, nothing exceeds four blocks, and a block welded to ITSELF is still
-  inexpressible (right for a transfinite fill, but an O-grid seam cannot be one edge).
+  through `getPGrid` or `unicones` (this checkout has no solver tree).
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:
@@ -308,65 +298,50 @@ JSON format; supports multi-element definitions with transforms (scale/rotate/tr
 
 ### Core C++ (`src/`, `include/`)
 
-> Full rationale: `docs/design_notes/mesher.md`.
+**The implementation is a LIBRARY and the executable is a shim.** `hybmesh_core` (STATIC) holds
+`cli.cpp` + `Mesh.cpp` + `BoundaryLayer.cpp`; `add_executable(HybMesh2D src/main.cpp)` compiles
+**only** the twelve-line shim calling `hybmesh::runCli` (`include/Cli.hpp`). The executable compiles
+no implementation, so there is nowhere to put logic a test cannot reach — before this the process
+boundary was the mesher's only seam and `classifyJunctions` sat unreachable. Two consequences: **the provenance macros are defined on the
+LIBRARY, not the executable** (on `HybMesh2D` they would apply to the shim alone and degrade every
+banner and sidecar to `git unknown`), and the **CGNS-before-Gmsh link order** is `PUBLIC` on the
+library so it propagates — load bearing, see the `cgsize_t` note in `CMakeLists.txt`.
 
-**The implementation is a LIBRARY and the executable is a shim.** `hybmesh_core`
-(STATIC) holds `cli.cpp` + `Mesh.cpp` + `BoundaryLayer.cpp`; `add_executable(HybMesh2D
-src/main.cpp)` compiles **only** the twelve-line shim calling `hybmesh::runCli`
-(`include/Cli.hpp`). Before this the three `.cpp` files compiled straight into the
-executable with no library target, so **no test could link them** — the process boundary
-was the mesher's only seam, and `classifyJunctions`, extracted specifically to be
-testable, sat private and unreachable. The shim keeps the seam honest: the executable
-compiles no implementation, so there is nowhere to put logic a test cannot reach. Two
-consequences: **the provenance macros are defined on the LIBRARY, not the executable**
-(a definition left on `HybMesh2D` would apply to the shim alone and degrade every banner
-and sidecar to `git unknown`), and the **CGNS-before-Gmsh link order** is `PUBLIC` on the
-library so it propagates (that ordering is load bearing — see the `cgsize_t` note in
-`CMakeLists.txt`).
+**The tests live in `tests/cpp/`** — one executable per file, registered with ctest, `check.hpp`
+for assertions (**record-and-continue**, not abort-on-first; `report()` reprints the FIRST failure
+last so the cause is not buried under its consequences). A test **links a library target, never a
+list of sources**: compiling `src/*.cpp` into a test executable works and quietly builds a second
+copy of the implementation, testable but not the one the binary runs. Gated by
+`tests/test_cpp_linkable_seam.py` (7 checks), because this property decays in silence — four holes
+past "the shim is the only source", each of which *looks* satisfied: `#include "cli.cpp"`; a test
+listing `../../src/Mesh.cpp`; a new `add_executable`; a `tests/cpp/test_*.cpp` CMake never
+registered. All verified by injection.
 
-**The tests live in `tests/cpp/`** — one executable per file, registered with ctest,
-`check.hpp` for assertions (**record-and-continue**, not abort-on-first; `report()`
-reprints the FIRST failure last so the cause is not buried under its consequences). A test
-**links a library target, never a list of sources** — compiling `src/*.cpp` into a test
-executable works and quietly reintroduces a second build of the implementation, testable
-but not the one the binary runs. `tests/test_cpp_linkable_seam.py` gates it (7 checks),
-because this property decays in silence. Four holes it covers past "the shim is the only
-source", each of which *looks* satisfied: `#include "cli.cpp"`; a test listing
-`../../src/Mesh.cpp`; a new `add_executable`; a `tests/cpp/test_*.cpp` CMake never
-registered. All verified by injection; two remaining blind spots named in its docstring.
-Caveat on the neighbouring instrument: `golden_mesh.py` does **not** compare the `.bnd`
-`segm_no` column, so a defect confined to a boundary edge's source-segment key is
-invisible to it — measured, and the C++ unit test caught it in 0.5 s while all 68 other
-tests and the 9-case golden set passed.
-
-**`hybmesh_pure` is the decision layer, and the BUILD is what keeps it honest** — the C++
-analogue of the GUI's "`services/*.py` must be Qt-free" rule. **The pure tests link
-`hybmesh_pure` alone and are not linked against libgmsh at all** (verified with `otool -L`),
-so the moment such a module *uses* `Mesh` or gmsh those executables stop linking (measured:
-making `JunctionScheme.cpp` construct a `Mesh` gives `Undefined symbols for architecture
-arm64`). The grep and the linker cover different halves — an *include* not yet used is
-invisible to the linker, a *use* invisible to a grep — so `test_cpp_pure_layer.py` also
-computes each file's **transitive** include closure (`BoundaryLayer.cpp` reaches `Mesh.hpp`
-only through its own header, so a direct-include check would call it pure). The list is a
-**deny**-list (`HEAVY_SOURCES` / `HEAVY_HEADERS`, each entry carrying its reason): a new
-`src/*.cpp` is assumed pure, because an allow-list would silently exempt whatever nobody
+**`hybmesh_pure` is the decision layer, and the BUILD is what keeps it honest** — the C++ analogue
+of the GUI's "`services/*.py` must be Qt-free" rule. **The pure tests link `hybmesh_pure` alone and
+are not linked against libgmsh at all** (verified with `otool -L`), so the moment such a module
+*uses* `Mesh` or gmsh those executables stop linking (measured: `JunctionScheme.cpp` constructing a
+`Mesh` gives `Undefined symbols for architecture arm64`). The grep and the linker cover different
+halves — an *include* not yet used is invisible to the linker, a *use* invisible to a grep — so
+`test_cpp_pure_layer.py` also computes each file's **transitive** include closure
+(`BoundaryLayer.cpp` reaches `Mesh.hpp` only through its own header, so a direct-include check would
+call it pure). The list is a **deny**-list (`HEAVY_SOURCES` / `HEAVY_HEADERS`, each entry carrying
+its reason): a new `src/*.cpp` is assumed pure, since an allow-list exempts whatever nobody
 enrolled.
 
-`hybmesh::classifyJunctions` (`include/JunctionScheme.hpp`, `src/JunctionScheme.cpp`) is its
-first member and the argument for the layer: extracted from `generate()` to be testable, it
-then took a 22-field mutable `FrontState` plus `Mesh&` while actually reading three
-positions/normals per node, one `skipBL` bool, and three config scalars — the wide signature
-hid how narrow the dependency was. It now takes `vector<JunctionNode>` + `JunctionParams`
-(AoS, not six parallel arrays) and returns decisions **and warnings as data**: the
-very-sharp-wedge message is user-facing prose about config keys and stays at the call site,
-while the threshold (`tan θ × influence < 1.15`) becomes testable — `tests/cpp/test_junction_scheme.cpp`
-pins it at three different influence values without generating a mesh. `thetaDeg` travels in the
-decision because `HYBMESH_JUNC_DEBUG`'s trace format is parsed by
-`test_nobl_junction_acute.py`; a negative value means no angle was measured. **This covered
-junction cases 3 and 4 for the first time** (θ > 270°, which no geometry writer in the repo
-produces). `hybmesh::inertParamsSet` (`include/MeshMode.hpp`) joined it for the same reason:
-`tests/cpp/test_mesh_mode.cpp` can prove the four surviving BL parameters SILENT, a negative
-a log-scraping test would have to establish by absence.
+`hybmesh::classifyJunctions` (`include/JunctionScheme.hpp`, `src/JunctionScheme.cpp`) is its first
+member and the argument for the layer. It takes `vector<JunctionNode>` + `JunctionParams` (AoS, not
+six parallel arrays) — never the 22-field mutable `FrontState` + `Mesh&` it was extracted with,
+whose width hid how narrow the real dependency is (three positions/normals per node, one `skipBL`
+bool, three config scalars) — and returns decisions **and warnings as data**: the
+very-sharp-wedge message is user-facing prose about config keys and stays at the call site, while
+the threshold (`tan θ × influence < 1.15`) is testable at three influence values without generating
+a mesh (`tests/cpp/test_junction_scheme.cpp`). `thetaDeg` travels in the decision because
+`HYBMESH_JUNC_DEBUG`'s trace format is parsed by `test_nobl_junction_acute.py`; a negative value
+means no angle was measured. **This covered junction cases 3 and 4 for the first time** (θ > 270°,
+which no geometry writer in the repo produces). `hybmesh::inertParamsSet` (`include/MeshMode.hpp`)
+joined for the same reason: `tests/cpp/test_mesh_mode.cpp` can prove the four surviving BL
+parameters SILENT, a negative a log-scraping test would have to establish by absence.
 
 - **`main.cpp`**: the entry point and deliberately nothing else.
 - **`cli.cpp`**: the whole command line (`hybmesh::runCli`) — parses config, loads
@@ -390,40 +365,38 @@ a log-scraping test would have to establish by absence.
   θ = 90° hands Gmsh a doubled-back hole, exit 6). `C1` now only bins method 0. A slide at a
   **very sharp wedge** (`tan θ × BL_CONCAVE_INFLUENCE_MULTIPLIER < 1`, i.e. 21.8° at the
   default 2.5) still fails downstream, so it emits `[WARN] Very sharp BL/no-BL wedge at
-  (x, y)` — advisory only, nothing auto-corrected. An **isolated BL corner** (BOTH neighbours
-  No-BL, issue #2) gets `[WARN] Isolated BL corner at (x, y)` pointing at the **`.meta`
-  sidecar**, and that is PERMANENT, not a placeholder: issue #4 (the two lateral columns such
-  a corner needs) was closed **wontfix** 2026-08-20 because the configuration is unreachable
-  from this toolchain — the resampler flags every segment boundary `corner = 1`, `cli.cpp`'s
-  `prevBL || nextBL` rescue promotes any such corner back to BL growth, and the GUI's
-  `meta_io` copies the POINTS block through verbatim. Only a hand-written or foreign sidecar
-  gets there. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must
-  carry that wall's BC by construction** (`slideColumns`/`slideWallRun` →
-  `Mesh::recordBoundaryEdge`), matched to the wall edge each replacing edge covers by arc
-  length: the column is a straight ray, so on a *curved* no-BL wall it drifts off the
-  polyline by ~a chord sagitta while `pointOnSegment` accepts 1e-6 of a chord (measured
-  6e-8..1.8e-6 vs a 2.0e-8 tolerance) — so every column edge past the first fell through to
-  `BC_GEOM` and a No-BL inlet/outlet exported a `wall` band exactly D_total long at each
-  junction. A straight wall has no drift, which is why straight-duct coverage missed it.
-  Gated by `tests/test_nobl_junction_acute.py` (`write_curved_duct` — the curvature is the
-  point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc length).
+  (x, y)` — advisory only, nothing auto-corrected. An **isolated BL corner** (BOTH neighbours No-BL,
+  issue #2) gets `[WARN] Isolated BL corner at (x, y)` pointing at the **`.meta` sidecar**, and that
+  is PERMANENT: issue #4 (the two lateral columns such a corner needs) was closed **wontfix**
+  2026-08-20 because the configuration is unreachable from this toolchain — the resampler flags every
+  segment boundary `corner = 1`, `cli.cpp`'s `prevBL || nextBL` rescue promotes any such corner back
+  to BL growth, and the GUI's `meta_io` copies the POINTS block through verbatim. Only a hand-written
+  or foreign sidecar reaches it. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must carry
+  that wall's BC by construction** (`slideColumns`/`slideWallRun` → `Mesh::recordBoundaryEdge`),
+  matched to the wall edge each replacing edge covers by arc length — never by proximity: the column
+  is a straight ray, so on a *curved* no-BL wall it drifts off the polyline by ~a chord sagitta while
+  `pointOnSegment` accepts 1e-6 of a chord (measured 6e-8..1.8e-6 vs a 2.0e-8 tolerance), and every
+  column edge past the first fell through to `BC_GEOM` — a No-BL inlet/outlet exporting a `wall` band
+  exactly D_total long at each junction. A straight wall has no drift, which is why straight-duct
+  coverage missed it. Gated by `tests/test_nobl_junction_acute.py` (`write_curved_duct`; the
+  curvature is the point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc
+  length).
 - **`Mesh.cpp`**: mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration,
-  VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are
-  private**: write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with
-  `boundaryEdgeInfo(v1, v2)`. They used to be two public parallel maps every caller keyed by
-  hand, so "wrote the BC, forgot the segment key" was a defect the interface could not
-  prevent — and half an identity reaching the exporter exports as the wall default. The
-  compiler now rejects outside access, which is why nothing tests *that*; their paired
-  SEMANTICS are tested in `tests/cpp/test_mesh_boundary_edge.cpp` (a refused overwrite must
-  not half-apply; the key is the unordered node pair; a BC with no resolvable segment still
-  records). **`FARFIELD_MESH_SIZE` is a `Min()` cap on the size field, not a target**: the
+  VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are private**:
+  write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with
+  `boundaryEdgeInfo(v1, v2)`. Two public parallel maps keyed by hand made "wrote the BC, forgot the
+  segment key" a defect the interface could not prevent, and half an identity reaching the exporter
+  exports as the wall default. The compiler now rejects outside access, which is why nothing tests
+  *that*; the paired SEMANTICS are tested in `tests/cpp/test_mesh_boundary_edge.cpp` (a refused
+  overwrite must not half-apply; the key is the unordered node pair; a BC with no resolvable segment
+  still records). **`FARFIELD_MESH_SIZE` is a `Min()` cap on the size field, not a target**: the
   field grows from the wall (`FARFIELD_GROWTH_RATE`) and/or inward from the bounding box
   (`FARFIELD_GROWTH_RATE_OUTER`), so in a small domain it tops out below the cap and every
-  larger cap gives a byte-identical mesh. Every run prints a `[ Mesh Size Field ]` block
-  reporting how high growth reaches, the effective ceiling and whether the cap is
-  dead/marginal/active — computed by re-evaluating the field expressions at the generated
-  nodes, **not** by measuring cell edges (those run ~15% long on stretched triangles and
-  would report a dead cap as live). Gated by `tests/test_size_field_ceiling.py`. Caveat: a
+  larger cap gives a byte-identical mesh. Every run prints a `[ Mesh Size Field ]` block reporting how high growth
+  reaches, the effective ceiling and whether the cap is dead/marginal/active — computed by
+  re-evaluating the field expressions at the generated nodes, **not** by measuring cell edges (those
+  run ~15% long on stretched triangles and would report a dead cap as live). Gated by
+  `tests/test_size_field_ceiling.py`. Caveat: a
   custom domain outline is added with `geomId = -1`, so for a pure internal-flow case
   (`DOMAIN_FILE … nobl`, no `GEOM_FILE`) the wall-distance field is never built and
   `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` grades the mesh.
@@ -437,9 +410,23 @@ a log-scraping test would have to establish by absence.
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against
-one list. #68 moved the first entry; #69 moves the rest of this file's.
+one list. #68 moved the first; #69 moved the rest.
 
+- **A SWAPPED PAIR in the banner is invisible** to `tests/cpp/test_bl_params_decl.cpp` check 6: it
+  proves every parameter is reachable and that a number's own value appears, but the pairing of
+  value to meaning IS the label prose.
+- **Non-orthogonality says nothing about the shape of the SPLIT TRIANGLES** — it is measured on the
+  structured grid cells only.
+- **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
+- **No four-block grid has been through `getPGrid` or `unicones`** — this checkout has no solver
+  tree, and the multi-block banner says so on every run.
+- **Nothing welds along a BOUND edge, nothing exceeds four blocks, and a block welded to ITSELF is
+  inexpressible** — right for a transfinite fill, but an O-grid seam cannot be one edge.
 - **The end-to-end re-resampling check uses a straight-sided geometry**, where an arc-length
   position is EXACT under resampling. On a *curved* segment an attached corner moves by a chord
   sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in
   the C++ test (`tests/cpp/test_multiblock.cpp`).
+- **`tests/test_cpp_linkable_seam.py` names two of its own** in its docstring.
+- **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
+  boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
+  0.5 s while all 68 other tests and the 9-case golden set passed.

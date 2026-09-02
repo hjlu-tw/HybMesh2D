@@ -23,8 +23,10 @@ narrative, a gate filename, and a named blind spot.
    is what stops an agent "improving" a decision the user made deliberately.
 4. **Reversal narrative → one line plus an anchored pointer.** `SUPERSEDED by #NN:` or
    `REVERSES #NN:`, the new answer in one clause, then `Why: docs/design_notes/<area>.md, "<anchor>"`.
-   **Grep-verify every anchor** (`grep -c -F "<anchor>" <target>` must print exactly `1`) — a phrase
-   that wraps in the TARGET does not resolve, and one that appears twice is not a pointer.
+   **Grep-verify every anchor** (`grep -c -F "<anchor>" <target>` must print exactly `1`) and keep it
+   on ONE LINE. Three ways an anchor fails, one found per ticket: it wraps in the TARGET (#73), it
+   appears twice there (#68), or it wraps in the RULE FILE (#69) — the last still resolves for a
+   human and breaks any check that extracts it, so short enough not to wrap is part of the rule.
 5. **Named blind spots move to one `## Named blind spots` list per rule file**, not trailing the
    rule they belong to. Their purpose is to stop a coverage claim, and one readable list serves that
    better than eight scattered asides. Known cost, reported on #73 and not fixed: a blind spot that
