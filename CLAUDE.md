@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **34,793
-characters (34,990 bytes, 2026-09-02, after #77 moved the GUI lifecycle and file-hand-off
+observed. The cost is therefore not truncation but **always-loaded context** — **35,123
+characters (35,320 bytes, 2026-09-02, after #77 moved the GUI lifecycle and file-hand-off
 rules out to two more rule files, leaving only #76's export residue)
 ≈ 9k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
@@ -378,6 +378,12 @@ Issues live as GitHub issues in `hjlu-tw/HybMesh2D`, driven by the `gh` CLI (`gh
 ### Triage labels
 
 The five canonical roles use their own names as label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` — the last already exists as a GitHub default and must be reused, not duplicated). See `docs/agents/triage-labels.md`.
+
+### Rule-file entry style
+
+The style the `.claude/rules/*.md` files are written in, fixed on one block by #68: claim first,
+every identifier kept, gate filenames and `USER-*` markers verbatim, a reversal reduced to one line
+plus a **grep-verified** anchor, blind spots in one list per file. See `docs/agents/rule-file-style.md`.
 
 ### Domain docs
 

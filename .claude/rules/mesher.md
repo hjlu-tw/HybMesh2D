@@ -184,34 +184,33 @@ acceptance gate is a grep.
   injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its ~17x stretch). Sharpest
   blind spot: nothing runs the solver or grid converter on the folded mesh.
 
-**Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH** (still the one pure
-entry point; #52). A corner attaches to a source segment at a normalized arc-length position
+**Boundary conditions are DECLARED; geometry attaches by ARC LENGTH** (#52; still the one pure
+entry point). A corner attaches to a source segment at a normalized arc-length position
 (`kind: "on_geometry"`, `geom` / `seg` / `t`), a wall edge declares the segment it lies on
 (`binding`), and every generated boundary edge carries that segment's condition and its (geometry,
-segment) key into the export. The answer is in the declaration before a node exists, so **there is
-no tolerance anywhere in this chain** — the hybrid path resolves by testing proximity to a reference
-segment, and on a curved wall the drift off the chord exceeded it and an inlet exported a band of
-wall at every junction.
-- **Arc length, NEVER a point index.** Re-resampling changes the point count, so an index would
-  silently relocate every attachment. Measured through the real binaries: one topology against two
-  resamplings (21 and 41 points) gives identical `.vrt` node COORDINATES, with the negative control
-  that **neither** resampling has a sample at **any of the four** attached positions.
-- **`t = 1` means "where this segment ENDS"**, which is the next segment's first point only when
-  there IS a next one; on the last segment of an open polyline it is that segment's own final point,
-  stable because the resampler pins every segment's endpoints.
+segment) key into the export. **No tolerance anywhere in this chain**, because the answer is in the
+declaration before a node exists. (The hybrid path resolves by proximity instead, and on a curved
+wall that drift exported a band of wall at every junction.)
+- **Arc length, NEVER a point index**: re-resampling changes the point count. Measured through the
+  real binaries — one topology against 21- and 41-point resamplings gives identical `.vrt` node
+  COORDINATES, with the negative control that neither has a sample at any of the four attached
+  positions.
+- **`t = 1` means "where this segment ENDS"** — the next segment's first point only when there IS a
+  next one; on the last segment of an open polyline, that segment's own final point, stable because
+  the resampler pins every segment's endpoints.
 - **A segment's own points stop ONE POINT SHORT of where it ends, and the run is extended by one.**
-  Measured against the real resampler: a shared joint is assigned to the **later** segment
-  (`resSegId.back() = segId`). For the LAST segment of a **closed** loop the point to reach for is
-  index 0 (`loadGeometry` dropped the duplicate closing point).
+  A shared joint is assigned to the LATER segment (`resSegId.back() = segId`). For the last segment
+  of a CLOSED loop the point to reach for is index 0 (`loadGeometry` dropped the duplicate closing
+  point).
 - **A trivial piece break at index 0 is not a second piece** — sidecars in this repo disagree about
   recording it (`NPIECES 0` vs `NPIECES 1 0`), so `multiPiece()` asks whether any break falls
   strictly inside, never `pieceBreaks.empty()`.
 - **A corner at `t = 0` or `t = 1` sits on a JOINT that two segments both own, so a bound edge
-  accepts it from either side** (`tOnSegment`). Without it the canonical declaration — one block
-  side per source segment on a closed body — cannot be written at all. The equivalence compares the
+  accepts it from either side** (`tOnSegment`) — without it the canonical declaration, one block
+  side per source segment on a closed body, cannot be written at all. The equivalence compares the
   sidecar's own point INDICES, never coordinates.
 - **A bound edge FOLLOWS the segment's polyline; it does not cut the chord.** One code path serves
-  both (an unbound edge's "polyline" is its two corners), and that reduction is **bit-identical**.
+  both (an unbound edge's "polyline" is its two corners), and that reduction is bit-identical.
 - **A geometry is named BY NAME** — exact declared path, then a *unique* basename — never by
   position in the loaded list. An ambiguous basename is refused, not resolved by order.
 - **A label stays a LABEL.** The seam emits the sidecar's grouping label and `Config::resolveGroupBc`
@@ -223,27 +222,21 @@ wall at every junction.
   whole polyline is segment 0".
 - **Two warnings, both about getting the fallback you did not ask for**: no edge declares a binding
   (everything on `BC_GEOM`), and a bound edge whose segment carries no label. The banner prints one
-  row per patch naming the segment it was read off, so "declared, not discovered" is visible in a run.
-- **`MbWallSpec` still reports all four sides**; the gate stays `kind`, since "labelled inlet" and
-  "viscous surface whose first-cell height matters" are different questions. **SUPERSEDED by #53**:
-  the `kind` gate now bites — an interior side is not a wall — so the list is the outer walls. Why it
-  stays `kind` rather than the BC label is unchanged.
-- The adapter gained a ~15-line boundary-patch summary for the banner — PRESENTATION, not
-  classification, but it is no longer literally decision-free; a second such block belongs on the
-  pure side beside `measureMbQuality`.
+  row per patch naming the segment it was read off.
+- **`MbWallSpec` reports all four sides and the gate stays `kind`**, since "labelled inlet" and
+  "viscous surface whose first-cell height matters" are different questions. SUPERSEDED by #53: the
+  `kind` gate now bites — an interior side is not a wall — so the list is the outer walls. Why:
+  `docs/design_notes/mesher.md`, "`MbWallSpec` still reports all four sides, and the #51 note".
+- The adapter's ~15-line boundary-patch summary is PRESENTATION, not classification, so the pure
+  side is no longer literally decision-free; a second such block belongs beside `measureMbQuality`.
+- **The shipped example states its own limit**: `examples/geometries/square_cavity.dat` is an OPEN
+  polyline stopping one sample short of the seam, so its segment 3 does not reach the block's
+  south-west corner and the west edge is deliberately left unbound (a straight chord carrying
+  `BC_GEOM`).
 - Gated by `tests/cpp/test_multiblock.cpp` checks 12-16 and
   `tests/test_multiblock_binding_surface.py` (real resampler AND real mesher), plus golden cases
-  `mb_bound` and `mb_cavity` (the shipped example on the shipped geometry — documentation a user
-  runs must be covered). Injections are HAND runs, dated 2026-08-28.
-- **Named blind spot**: the end-to-end re-resampling check uses a straight-sided geometry, where an
-  arc-length position is EXACT under resampling. On a *curved* segment an attached corner moves by a
-  chord sagitta — a limit of the geometry, not the binding. The curve-following half is pinned in
-  the C++ test.
-- **What the shipped example cannot do, said out loud in the example**:
-  `examples/geometries/square_cavity.dat` is an OPEN polyline stopping one sample short of the seam,
-  so its segment 3 does not reach the block's south-west corner and the west edge is deliberately
-  left unbound (a straight chord carrying `BC_GEOM`).
-
+  `mb_bound` and `mb_cavity` — the shipped example on the shipped geometry, since documentation a
+  user runs must be covered. Injections are HAND runs, dated 2026-08-28.
 **Blocks are welded TOPOLOGICALLY, counts PROPAGATE, and the edge KIND is an enum** (still the one
 pure entry point; #53). Any number of blocks; an interior line is declared ONCE, as one edge of kind
 `interface` or `cut`, and both blocks name it. **Full rationale, measurements, the declined review
@@ -441,3 +434,12 @@ a log-scraping test would have to establish by absence.
 - **`Config.hpp`**: single-header; parses `.dat` files into ~50 typed parameters.
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross.
 
+## Named blind spots
+
+Consolidated here rather than trailing each rule, so a coverage claim can be checked against
+one list. #68 moved the first entry; #69 moves the rest of this file's.
+
+- **The end-to-end re-resampling check uses a straight-sided geometry**, where an arc-length
+  position is EXACT under resampling. On a *curved* segment an attached corner moves by a chord
+  sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in
+  the C++ test (`tests/cpp/test_multiblock.cpp`).

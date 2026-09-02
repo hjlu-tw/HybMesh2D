@@ -159,7 +159,7 @@ Known remaining blind spots, stated rather than pretended away:
     literal, where the two agree — but a future middle-wildcard glob would be matched
     more eagerly here than by the tooling.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 35,615 / 36,615 / 15,762 / 13,238 / 12,847 / 11,799 / 11,348 / 8,969  characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
+    Eight rule files now — 35,542 / 36,615 / 15,762 / 13,238 / 12,847 / 11,799 / 11,348 / 8,969  characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
     gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 24,385 / 23,385 of
     headroom the two large ones have left, and not at all for a move into any of the other
@@ -202,7 +202,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 34_793
+ROOT_BUDGET = 35_123
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
