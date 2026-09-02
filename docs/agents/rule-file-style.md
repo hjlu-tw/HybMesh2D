@@ -23,19 +23,26 @@ narrative, a gate filename, and a named blind spot.
    is what stops an agent "improving" a decision the user made deliberately.
 4. **Reversal narrative → one line plus an anchored pointer.** `SUPERSEDED by #NN:` or
    `REVERSES #NN:`, the new answer in one clause, then `Why: docs/design_notes/<area>.md, "<anchor>"`.
-   **Grep-verify every anchor** (`grep -c -F "<anchor>" <target>` must print exactly `1`) and keep it
-   on ONE LINE. Three ways an anchor fails, one found per ticket: it wraps in the TARGET (#73), it
-   appears twice there (#68), or it wraps in the RULE FILE (#69) — the last still resolves for a
-   human and breaks any check that extracts it, so short enough not to wrap is part of the rule.
+   **Grep-verify every anchor** (`grep -c -F "<anchor>" <target>` must print exactly `1`) and keep
+   **the anchor AND its `Why:` pointer on ONE LINE** — an extractor keyed on the whole construct
+   breaks when the prefix wraps, which #69's first pass did in 2 of 4. Four ways an anchor fails,
+   one found per ticket: it wraps in the TARGET (#73); it appears twice there (#68); it wraps in the
+   RULE FILE (#69); or shortening it to fit makes it ambiguous (#69 review — "All four sides are
+   reported" matches twice, "…, because v0" once). Budget about 55 characters for the anchor.
 5. **Named blind spots move to one `## Named blind spots` list per rule file**, not trailing the
    rule they belong to. Their purpose is to stop a coverage claim, and one readable list serves that
-   better than eight scattered asides. Known cost, reported on #73 and not fixed: a blind spot that
-   is really a *directive* ("prefer the iso-line for measurement") ends up away from the rule an
-   agent is reading. Leave the directive with the rule and move only the coverage limit.
+   better than eight scattered asides. **Move only a COVERAGE LIMIT** — what a gate does not check.
+   Two things that look like blind spots and are not: a *directive* ("prefer the iso-line for
+   measurement"), and a **capability refusal** ("nothing welds along a BOUND edge") — the second is
+   what the implementation deliberately does not support, so it belongs with its rule. Both were got
+   wrong once each (#73, #69) and caught in review.
 6. **Keep a measurement that constrains a decision; drop one that only justifies it.**
    `0.35 s → 0.07 s per frame` and `21- and 41-point resamplings` constrain. *"Four unrelated
    environment defects stood in the way"* justifies — design note.
-7. **A `##` heading per rule cluster, bullets inside.** One bolded lead sentence per bullet.
+7. **One bolded lead sentence per rule, bullets under it.** The FILE's existing section structure
+   (`##` / `###`) is not part of this style and is not restructured — `mesher.md` keeps its
+   `## Configuration` / `### Core C++` split and states its rules as bolded lead paragraphs. What is
+   fixed is `## Named blind spots` (rule 5), the one section a compression adds.
 8. **Do not touch the rule.** A compression that changes what a rule says is a behaviour change
    hidden in a docs diff. If a rule looks wrong, report it on the ticket.
 

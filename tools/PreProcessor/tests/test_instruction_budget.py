@@ -159,8 +159,8 @@ Known remaining blind spots, stated rather than pretended away:
     literal, where the two agree — but a future middle-wildcard glob would be matched
     more eagerly here than by the tooling.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 36,615 / 34,975 / 15,762 / 13,238 / 12,847 / 11,799 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 24,385 / 23,385 of
+    Eight rule files now — 36,615 / 35,012 / 15,762 / 13,238 / 12,847 / 11,799 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 23,385 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
     six, which have 44,238 / 46,762 / 47,153 / 48,201 / 48,652 / 51,031. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,

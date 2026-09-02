@@ -95,8 +95,8 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
 - **A block's orientation is the corner order of its own four edges**, `[south, east, north, west]`,
   south/north running i-min→i-max and west/east j-min→j-max. A **clockwise** corner ring is refused
   under the TOPOLOGY code, never silently re-wound. SUPERSEDED IN PART by #53: a DIRECTION
-  deviation is no longer refused, only a set of four edges that does not CLOSE a ring. Why:
-  `docs/design_notes/mesher.md`, "A block's orientation is the corner order".
+  deviation is no longer refused, only a set of four edges that does not CLOSE a ring.
+  Why: `docs/design_notes/mesher.md`, "A block's orientation is the corner order".
 - **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` /
   `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
   face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
@@ -164,8 +164,8 @@ acceptance gate is a grep.
   the fill folds anyway. The gate checks no topology refusal prints on that run.
 - **All four sides are reported**, because v0 cannot say which boundary is a viscous wall.
   SUPERSEDED by #53: the gate is the KIND, so an `interface`/`cut` side is not reported and the list
-  is exactly the outer walls. Why: `docs/design_notes/mesher.md`,
-  "All four sides are reported, because v0 cannot".
+  is exactly the outer walls.
+  Why: `docs/design_notes/mesher.md`, "All four sides are reported, because v0".
 - **The `[south, east, north, west]` convention is DATA, in one place** (`mbSideAxis`). A dedup of
   `MbWallSpec`/`MbWallHeight` was considered and DECLINED: they face opposite directions and the
   shared part cannot be written HALF.
@@ -216,8 +216,8 @@ wall that drift exported a band of wall at every junction.)
   row per patch naming the segment it was read off.
 - **`MbWallSpec` reports all four sides and the gate stays `kind`**, since "labelled inlet" and
   "viscous surface whose first-cell height matters" are different questions. SUPERSEDED by #53: the
-  `kind` gate now bites — an interior side is not a wall — so the list is the outer walls. Why:
-  `docs/design_notes/mesher.md`, "still reports all four sides, and the #51 note".
+  `kind` gate now bites — an interior side is not a wall — so the list is the outer walls.
+  Why: `docs/design_notes/mesher.md`, "still reports all four sides, and the #51 note".
 - The adapter's ~15-line boundary-patch summary is PRESENTATION, not classification, so the pure
   side is no longer literally decision-free; a second such block belongs beside `measureMbQuality`.
 - **The shipped example states its own limit**: `examples/geometries/square_cavity.dat` is an OPEN
@@ -268,8 +268,8 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   two blocks whose frames need not agree. Nothing is inferred: four edges that do not CLOSE a ring
   are refused by name, a ring closing onto THREE corners is refused too (reachable: two distinct
   edges over one corner pair), and the clockwise-ring refusal is unchanged. C++ check 9 is the
-  **inverted** version of the one that pinned the old refusal. Why: `docs/design_notes/mesher.md`,
-  "The clockwise-ring refusal is unchanged".
+  **inverted** version of the one that pinned the old refusal.
+  Why: `docs/design_notes/mesher.md`, "The clockwise-ring refusal is unchanged".
 - **"The four sides meet at four shared corner NODES" is checked, before the writes overwrite one
   with the other.** It looks tautological after the ring match and is not: it caught the
   dropped-reversal injection in both gates.
@@ -279,6 +279,9 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   shipped `examples/topology/hgrid_blocks.json`.
 - **THE SOLVER ACCEPTANCE RUN IS OUTSTANDING and the gate says so**: no four-block grid has been
   through `getPGrid` or `unicones` (this checkout has no solver tree).
+- **What welding cannot express, refused rather than approximated**: nothing welds along a BOUND
+  edge, nothing exceeds four blocks, and a block welded to ITSELF is inexpressible — right for a
+  transfinite fill, but an O-grid seam cannot be one edge.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:
@@ -373,7 +376,7 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   to BL growth, and the GUI's `meta_io` copies the POINTS block through verbatim. Only a hand-written
   or foreign sidecar reaches it. **A case-1 slide REPLACES a stretch of the no-BL wall, so its own edges must carry
   that wall's BC by construction** (`slideColumns`/`slideWallRun` → `Mesh::recordBoundaryEdge`),
-  matched to the wall edge each replacing edge covers by arc length — never by proximity: the column
+  matched to the wall edge each replacing edge covers by arc length: the column
   is a straight ray, so on a *curved* no-BL wall it drifts off the polyline by ~a chord sagitta while
   `pointOnSegment` accepts 1e-6 of a chord (measured 6e-8..1.8e-6 vs a 2.0e-8 tolerance), and every
   column edge past the first fell through to `BC_GEOM` — a No-BL inlet/outlet exporting a `wall` band
@@ -420,8 +423,6 @@ one list. #68 moved the first; #69 moved the rest.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
 - **No four-block grid has been through `getPGrid` or `unicones`** — this checkout has no solver
   tree, and the multi-block banner says so on every run.
-- **Nothing welds along a BOUND edge, nothing exceeds four blocks, and a block welded to ITSELF is
-  inexpressible** — right for a transfinite fill, but an O-grid seam cannot be one edge.
 - **The end-to-end re-resampling check uses a straight-sided geometry**, where an arc-length
   position is EXACT under resampling. On a *curved* segment an attached corner moves by a chord
   sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in
