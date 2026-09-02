@@ -85,10 +85,10 @@ Known remaining blind spots, stated rather than pretended away:
     `gui-results.md`'s header instead. Reachability of a NAMED file is a third thing
     nothing here checks.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    The five rule files that exist are 35,615 / 36,615 / 17,085 / 11,799 / 12,847
+    The five rule files that exist are 35,615 / 36,615 / 15,483 / 11,799 / 12,847
     characters, so "moving text into another rule file is not a legal evasion" only bites
     for a move larger than the 24,385 / 23,385 of headroom the two large ones have left,
-    and not at all for a move into any of the other three, which have 42,915 / 48,201 / 47,153.
+    and not at all for a move into any of the other three, which have 44,517 / 48,201 / 47,153.
     It tightens on its own as the last area lands. Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
