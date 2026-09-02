@@ -31,9 +31,12 @@ pinned in the root:
 
 **The Qt-free seam also governs two files OUTSIDE this glob**, which cannot hand a reader the
 text: `tools/PreProcessor/run_pipeline.py` and `run_batch.py` — the headless entry points, and
-the ones the deferred-import defect actually killed. `run_pipeline.py` is matched by
-`.claude/rules/pipeline-case.md`, which carries the stage rules and not this one. The tripwire
-table in `CLAUDE.md` is what makes them reachable; the glob is the convenience.
+the ones the deferred-import defect actually killed. The two are NOT equally reachable, and the
+difference is measured rather than assumed: `run_pipeline.py` is matched by
+`.claude/rules/pipeline-case.md` (which carries the stage rules and not this one), while
+`run_batch.py` is matched by **no glob in any rule file** — the same reachability gap #66
+recorded for `services/phi_quality.py`. For that one file the tripwire table in `CLAUDE.md` is
+not a convenience on top of a glob; it is the only thing that reaches its reader.
 
 **One block travels here that #59 does not assign to any area**: the one-line scroll-wheel rule
 (`main.py` disables the wheel on every spin box). Its only file is `main.py`, which no other
@@ -51,8 +54,9 @@ Stated here rather than fixed by moving text into a note, which #59 puts out of 
 **The GUI file-length limit is an ADDITION, not a relocation, and it has no gate.** #59 and #67
 both name it among the four repo-wide standards, and it is a standing instruction from the
 user — but it has never appeared in `CLAUDE.md` in this repo's git history (measured with
-`git log -S`, all the way back past `854f53e`). `docs/architecture_overview.md:928` asserts
-that it does, which is how the belief survived. It is the only one of the four with no gate,
+`git log -S`, all the way back past `854f53e`). `docs/architecture_overview.md:928` asserted
+that it did, which is how the belief survived unmeasured — and as of #67 that sentence is true,
+which is the fix, not the evidence. It is the only one of the four with no gate,
 so the number is a habit rather than a check: **measured 2026-09-02, 258 GUI `.py` files, of
 which 5 exceed 500 lines** — `models/pipeline_config.py` 523, `services/case_run_note.py` 508,
 `controllers/session_io_ctrl.py` 508, `services/result_legs.py` 501, `models/solver_config.py`

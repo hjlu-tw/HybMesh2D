@@ -38,7 +38,7 @@ Checks:
     well-formed, and that it really differs from the original.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 275 more of today because this repo's own prose
+bytes, which the root file has 277 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 297 before
 #67 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -69,7 +69,8 @@ Known remaining blind spots, stated rather than pretended away:
     `pipeline_io_ctrl.py:47`, `docs/design_notes/gui.md:8`,
     `docs/agents/domain.md:11` — and, review found, `CLAUDE.md:235`, where "the
     derived key map" was left with its defining block one screen below it and that
-    block gone. The last one matters most: it is in the always-loaded file, the one
+    block gone (that sentence has itself since moved: #67 took it to
+    `.claude/rules/gui-seams.md`, so the line number here is history, not a pointer). The last one matters most: it is in the always-loaded file, the one
     place a sweep is cheap, and the first version of this entry claimed all five
     were "outside this gate's reach". #65's sweep found two, and both are files
     #64 already repointed once — `docs/design_notes/gui.md:8` and
@@ -83,11 +84,17 @@ Known remaining blind spots, stated rather than pretended away:
     discuss `services/phi_quality.py`, which NO glob in ANY rule file reaches, so the
     pointer resolved while the file it points at was unreachable. It is named in
     `gui-results.md`'s header instead. Reachability of a NAMED file is a third thing
-    nothing here checks.
-    #67's sweep found `docs/design_notes/gui.md:8` a FOURTH time and nothing else it
-    made stale — so its enumeration was finally replaced with a pointer at the tripwire
-    table, the same fix #65 applied to `docs/agents/domain.md:11`, which has held ever
-    since. Two pointers the sweep found stale from EARLIER tickets are left alone and
+    nothing here checks — and #67 found the second instance, `tools/PreProcessor/run_batch.py`,
+    reached by no glob in any rule file while the Qt-free seam rules on it. Its first draft
+    of the tripwire row asserted the opposite (that `pipeline-case.md` matched it), which is
+    what this repo's own "enumerate before every/only/all" rule exists to stop.
+    #67's sweep found `docs/design_notes/gui.md:8` a FOURTH time — so its enumeration was
+    finally replaced with a pointer at the tripwire table, the same fix #65 applied to
+    `docs/agents/domain.md:11`, which has held ever since. It also claimed, in this very
+    paragraph, that #67 had made nothing else stale, and review measured that false in the
+    place with the least excuse: the `CLAUDE.md:235` reference SIX LINES UP is a pointer at
+    a block #67 itself moved. A sweep that does not sweep its own file is the shape this
+    blind spot keeps taking. Two pointers the sweep found stale from EARLIER tickets are left alone and
     named here instead, because #67 did not make them stale and its ticket forbids
     editing tests: `arch_probes.py:171` and `test_field_spec_tables.py:515` each say
     "CLAUDE.md records ..." about text that #63 and #64 moved into a rule file. That is
@@ -100,11 +107,11 @@ Known remaining blind spots, stated rather than pretended away:
     root file's one-line pinning of the four repo-wide standards is what covers it.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
     All six rule files now exist and are 35,615 / 36,615 / 15,762 / 12,847 / 11,799 /
-    10,346 characters (mesher, pipeline-case, gui-results, gui-canvas-edit,
+    10,699 characters (mesher, pipeline-case, gui-results, gui-canvas-edit,
     gui-panels-config, gui-seams), so "moving text into another rule file is not a legal
     evasion" only bites for a move larger than the 24,385 / 23,385 of headroom the two
     large ones have left, and not at all for a move into any of the other four, which have
-    44,238 / 47,153 / 48,201 / 49,654. It did NOT tighten on its own as the last area
+    44,238 / 47,153 / 48,201 / 49,301. It did NOT tighten on its own as the last area
     landed, which is what the previous version of this sentence predicted: #67's area is
     the SMALLEST of the six, so the flat 60,000 is looser after the split than before it,
     and only a per-file ratchet like `ROOT_BUDGET`'s would change that. Exact figures rather than
@@ -141,7 +148,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 49_187
+ROOT_BUDGET = 49_284
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
