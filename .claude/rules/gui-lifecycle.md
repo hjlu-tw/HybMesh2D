@@ -30,8 +30,13 @@ enumerated, `mesher.md` carries `src/**`, `include/**`, `config/**` and `tests/c
 `pipeline-case.md` carries `run_pipeline.sh`. The glob exists because the subprocess-environment
 rule has TWO halves and the shell-side one (`gmsh_lib_dir.sh`, `gmsh_sdk_dirs.py`) is where the
 "hardcoded absolute path in a discovery hint is a defect on sight" rule actually bites. And
-`workers/**` is widened from #77's per-file spelling, because the SIGTERM→SIGKILL routing
-rule applies to every worker's `cancel()`, not to the two the prose names.
+`workers/**` is widened from #77's per-file spelling. The reason is the RESTART rule below,
+which rules directly on `workers/proc_util.py` — `popen_kwargs()` is the wrong helper there —
+and on nothing else in that package; the glob is per-package rather than per-file because a
+second worker helper would inherit the same constraint. It is NOT justified by the
+SIGTERM→SIGKILL routing rule, which an earlier draft cited: that rule lives in `gui-seams.md`,
+whose `gui/**` already reaches every worker, so citing it would have argued for a glob that
+buys nothing.
 
 **Also governed from OUTSIDE these globs**, which cannot hand a reader the text:
 `CMakeLists.txt`, which the subprocess-environment rule rules on directly (its HINTS list is

@@ -6,7 +6,8 @@ paths:
 # GUI seam rules, and the four repo-wide standards in full
 
 Loaded on demand when **any** file under `tools/PreProcessor/gui/` is read — deliberately the
-widest glob of #59's six, because these rules bind every GUI file rather than one area's, so
+widest glob of the eight (six when #59 planned it), because these rules bind every GUI file
+rather than one area's, so
 there is no narrower glob that would not lose most of their reach. **Rules only** — the
 rationale (the measurements, the dated user reports, the injections and the named blind spots)
 is `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule

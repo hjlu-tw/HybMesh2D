@@ -159,12 +159,11 @@ Known remaining blind spots, stated rather than pretended away:
     literal, where the two agree — but a future middle-wildcard glob would be matched
     more eagerly here than by the tooling.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 35,615 / 36,615 / 15,762 / 13,212 / 12,847 / 11,799 / 11,348 /
-    8,572 characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
+    Eight rule files now — 35,615 / 36,615 / 15,762 / 13,238 / 12,847 / 11,799 / 11,348 / 8,969  characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
     gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 24,385 / 23,385 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,788 / 47,153 / 48,201 / 48,652 / 51,428. The flat budget did
+    six, which have 44,238 / 46,762 / 47,153 / 48,201 / 48,652 / 51,031. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.
     Only a per-file ratchet like `ROOT_BUDGET`'s would change that, and #59 fixes the number.
@@ -814,27 +813,32 @@ check(len(cov) == 1 and victim_mod in cov[0]
       "split across two layers cannot pass silently")
 
 # --- injection 11b: the ANCHORED REGION is what excludes the table -------------
-# The same module path, this time moved from a table cell into ordinary prose. If the
-# check read the whole file it could not tell these two apart, and the tripwire table —
-# whose whole job is to name each area's files — would be a permanent failure.
+# The mutation #77 specifies: take a module path OUT of a tripwire cell and put the
+# identical string in ordinary prose. If the check read the whole file it could not tell
+# the two placements apart, and the tripwire table — whose whole job is naming each area's
+# files — would be a permanent failure.
 inj = copy_world(world)
-lines = inj["root"].splitlines(keepends=True)
+moved_mod = "models/segment.py"
 span = tripwire_span(inj["root"])
+lines = inj["root"].splitlines(keepends=True)
 inside = "".join(lines[span[0]:span[1] + 1])
-check("services/mesh_bc_audit" in inside,
-      "injection 11b. the module this injection moves is really named INSIDE the anchored "
-      "region already, so the two placements differ only in where the path sits")
-inj["root"] = "".join(lines) + "\nThe audit lives in `services/mesh_bc_audit.py`.\n"
+check(("`%s`" % moved_mod) in inside and moved_mod not in root_ruled_modules(world),
+      "injection 11b. fixture: the path is named INSIDE the anchored region and check 6 "
+      "does not see it there — which is the behaviour under test")
+lines[span[0]:span[1] + 1] = [ln.replace("`%s`" % moved_mod, "the segment model")
+                              for ln in lines[span[0]:span[1] + 1]]
+inj["root"] = "".join(lines) + "\nThe hand-off rules on `%s`.\n" % moved_mod
 check(inj["root"] != world["root"]
+      and ("`%s`" % moved_mod) not in "".join(inj["root"].splitlines(keepends=True)
+                                              [span[0]:span[1] + 1])
       and tripwire_rows(inj["root"]) == tripwire_rows(world["root"])
-      and tripwire_span(inj["root"]) == span
-      and "services/mesh_bc_audit.py" not in root_ruled_modules(world),
-      "injection 11b. injection is well-formed: the anchored region is byte-for-byte where it "
-      "was and the module was not already ruled on outside it")
+      and tripwire_span(inj["root"]) == span,
+      "injection 11b. injection is well-formed: the path really left the region, every row "
+      "still names the same rule files, and the region is the same span")
 cov = check_root_rule_coverage(inj)
-check(len(cov) == 1 and "mesh_bc_audit.py" in cov[0] and "gui-handoff.md" in cov[0],
-      "injection 11b. check 6 reads the ANCHORED REGION, not the whole file: the identical path "
-      "passes inside the table and fails outside it")
+check(len(cov) == 1 and moved_mod in cov[0] and "gui-handoff.md" in cov[0],
+      "injection 11b. check 6 reads the ANCHORED REGION, not the whole file: one identical "
+      "path passes inside the table and fails outside it")
 
 # --- injection 11c: a stale pin fails too --------------------------------------
 # KNOWN_RESIDUE is not a skip list, and this is what makes that true: when #76 moves the
