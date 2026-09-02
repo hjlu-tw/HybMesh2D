@@ -33,14 +33,28 @@ Checks:
     loads at `session_start` with no globs at all — silently becoming an
     always-loaded file, which is the exact inversion of the point of the split,
     one character away from a legitimate glob.
- 5-9. Each of the four is verified by an in-test injection over a mutated COPY of
+ 6. No rule in the ROOT names a GUI module that some rule file's globs already
+    reach. That state splits one rule across two layers: the glob hands a session a
+    rule file which is silent about the file it just opened, and nothing says so. It
+    had recurred four times before anything measured it (#63, #76, #67's
+    `run_batch.py`, and the 13,894 chars #77 moved). Mentions INSIDE the anchored
+    tripwire region are excluded by region rather than by an exemption list — there,
+    naming an area's files is the table's job. `KNOWN_RESIDUE` pins the one live
+    violation with the ticket that owns it (#76), and a pin that stops being a
+    violation FAILS TOO, so it cannot outlive the defect the way a skip list would.
+    (Check 5 is reserved for #76's design-note coverage check, specified on that
+    ticket. The hole is deliberate: both tickets name their check by number, and
+    renumbering one to close it makes the other wrong.)
+ injections. Every check is verified by an in-test injection over a mutated COPY of
     the inputs, asserting the check then fails, that the mutated input is still
-    well-formed, and that it really differs from the original.
+    well-formed, and that it really differs from the original. Printed labels say
+    `check N` or `injection N`: the two used to share one integer space, and #77's
+    check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 279 more of today because this repo's own prose
-contains CJK. That figure moves with every relocation ticket — it was 297 before
-#67 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
+bytes, which the root file has 197 more of today because this repo's own prose
+contains CJK. That figure moves with every relocation ticket — it was 279 before
+#77 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
 never fewer than one byte.
 
@@ -105,16 +119,42 @@ Known remaining blind spots, stated rather than pretended away:
     globs, and `mesher.md` does not carry that rule. A glob reaching a file whose rules
     are in ANOTHER rule file is what #76's check 5 exists to catch; until it lands, the
     root file's one-line pinning of the four repo-wide standards is what covers it.
+    #77's sweep found the THIRD unreachable named file — `CMakeLists.txt`, which the
+    subprocess-environment rule rules on directly (its HINTS list is the defect that kept
+    CI red) and which no glob in any rule file matches; `.github/workflows/gui-tests.yml`
+    is the same shape. Both are named in `gui-lifecycle.md`'s header and in its tripwire
+    row. Three instances now (`phi_quality.py`, `run_batch.py`, `CMakeLists.txt`), and the
+    pattern is that the unreachable file is always the one OUTSIDE the package the rule's
+    other modules live in. Check 6 is the inverse-direction check and does not see this
+    one: it asks whether a glob reaches a file whose rule is elsewhere, never whether a
+    named file is reached at all.
+ e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
+    area — `services/foo.py`, `app/services/foo.py`, `views/panels/foo.py`. Three
+    escapes, measured rather than supposed:
+      - A **bare basename**. The root names `case_export_docs.py` and
+        `case_export_usage.py` exactly that way, so two of #76's four modules are
+        invisible here and are NOT in `KNOWN_RESIDUE` (pinning them would fail the
+        staleness half, since they are not violations this check can see).
+      - The **full repo-relative path**, which is the form `## Common Tasks` uses for
+        wayfinding. That is the distinction the short form buys, and a rule that spells
+        the long path escapes.
+      - Only the six GUI packages. A rule naming `src/` or `tools/scripts/` is not
+        checked, so `gui-lifecycle.md`'s `tools/scripts/gmsh_*` glob is outside it.
+    And `_glob_matches` normalises `**` to `*` for `fnmatch`, which is LOOSER than the
+    loader for a pattern like `a/*/b`. Every pattern in this repo is a prefix glob or a
+    literal, where the two agree — but a future middle-wildcard glob would be matched
+    more eagerly here than by the tooling.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    All six rule files now exist and are 35,615 / 36,615 / 15,762 / 12,847 / 11,799 /
-    10,699 characters (mesher, pipeline-case, gui-results, gui-canvas-edit,
-    gui-panels-config, gui-seams), so "moving text into another rule file is not a legal
-    evasion" only bites for a move larger than the 24,385 / 23,385 of headroom the two
-    large ones have left, and not at all for a move into any of the other four, which have
-    44,238 / 47,153 / 48,201 / 49,301. It did NOT tighten on its own as the last area
-    landed, which is what the previous version of this sentence predicted: #67's area is
-    the SMALLEST of the six, so the flat 60,000 is looser after the split than before it,
-    and only a per-file ratchet like `ROOT_BUDGET`'s would change that. Exact figures rather than
+    Eight rule files now — 35,615 / 36,615 / 15,762 / 13,212 / 12,847 / 11,799 / 11,348 /
+    8,278 characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit,
+    gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 24,385 / 23,385 of
+    headroom the two large ones have left, and not at all for a move into any of the other
+    six, which have 44,238 / 46,788 / 47,153 / 48,201 / 48,652 / 51,722. The flat budget did
+    not tighten as the split finished and never will: #59's own two areas were the biggest,
+    every file added since is small, and the mean headroom has gone UP with each ticket.
+    Only a per-file ratchet like `ROOT_BUDGET`'s would change that, and #59 fixes the number.
+    Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
     "12.0k" when it was 12,611 — measured before a later edit to the same file and never
@@ -132,6 +172,7 @@ Needs no Qt, no build tree and no network.
 
 Run:  python3 tools/PreProcessor/tests/test_instruction_budget.py
 """
+import fnmatch
 import os
 import re
 import sys
@@ -148,7 +189,7 @@ _RULES_DIR = os.path.join(".claude", "rules")
 # that the next feature which tries to add 3k to the always-loaded budget trips
 # the gate on its first attempt, which is what the previous split (93k moved out,
 # 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 49_704
+ROOT_BUDGET = 34_791
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -212,11 +253,12 @@ _RULE_REF = re.compile(r"\.claude/rules/([A-Za-z0-9_.-]+\.md)")
 TRIPWIRE_ANCHOR = "<!-- TRIPWIRE TABLE"
 
 
-def tripwire_rows(root_text):
-    """Rule-file names named by a row of the tripwire table.
+def tripwire_span(root_text):
+    """(first, last) line indices of the anchored tripwire region, or None.
 
-    Returns None when the anchor is missing — distinct from "the table names
-    nothing", so the caller can report the two differently.
+    One walk, two callers: check 2 reads the rows, check 6 excludes them. The region
+    runs from the anchor to the first non-row line AFTER the table has begun, so the
+    anchor's own remaining comment lines and the blank line between are inside it.
     """
     lines = root_text.splitlines()
     start = None
@@ -226,17 +268,31 @@ def tripwire_rows(root_text):
             break
     if start is None:
         return None
-    named, seen_table = [], False
-    for line in lines[start + 1:]:
-        if line.lstrip().startswith("|"):
+    seen_table = False
+    for j in range(start + 1, len(lines)):
+        if lines[j].lstrip().startswith("|"):
             seen_table = True
+            continue
+        if seen_table:
+            return (start, j - 1)
+    return (start, len(lines) - 1)
+
+
+def tripwire_rows(root_text):
+    """Rule-file names named by a row of the tripwire table.
+
+    Returns None when the anchor is missing — distinct from "the table names
+    nothing", so the caller can report the two differently.
+    """
+    span = tripwire_span(root_text)
+    if span is None:
+        return None
+    lines = root_text.splitlines()
+    named = []
+    for line in lines[span[0]:span[1] + 1]:
+        if line.lstrip().startswith("|"):
             for m in _RULE_REF.finditer(line):
                 named.append(m.group(1))
-            continue
-        # The table ends at the first non-row line AFTER it has begun; the anchor's
-        # own remaining comment lines and the blank line between are skipped.
-        if seen_table:
-            break
     return named
 
 
@@ -406,11 +462,107 @@ def check_paths_frontmatter(world):
     return fails
 
 
+# --- check 6 ------------------------------------------------------------------
+# (5 is reserved for #76's design-note coverage check, which is specified on that
+# ticket and lands with it. The hole is deliberate: #76 and #77 name their checks by
+# number, and renumbering one to close a gap makes the other ticket wrong.)
+_GUI_PKG = "(?:services|models|views|controllers|commands|workers)"
+# The SHORT form a rule uses when speaking about its own area — `services/foo.py`,
+# `app/services/foo.py`, `views/panels/foo.py`. Deliberately NOT the full repo-relative
+# path, which is the form `## Common Tasks` uses for wayfinding ("Edit
+# tools/PreProcessor/gui/app/views/canvas.py") rather than for ruling on a file.
+_GUI_MODULE = re.compile(r"`(?:app/)?(" + _GUI_PKG + r"/[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*\.py)`")
+_GUI_ROOT = os.path.join("tools", "PreProcessor", "gui", "app")
+
+# The ONE pinned residue, spelled with the ticket that owns it. These four modules'
+# rules are still in the root file while `pipeline-case.md`'s `services/case_*` glob
+# already reaches them — the defect this check exists to find, currently true, and
+# #76 is open to fix it. A pin that STOPS being a violation fails too (below), so it
+# cannot outlive #76 the way a skip list would.
+KNOWN_RESIDUE = {
+    "services/case_export.py": "#76",
+    "services/case_workspace.py": "#76",
+}
+# Two of #76's four modules are NOT here, and the reason is a blind spot rather than a
+# judgement: the root names `case_export_docs.py` and `case_export_usage.py` by BARE
+# BASENAME, which this check does not resolve (see blind spot (e)). Pinning them would
+# fail the staleness half below, since they are not violations this check can see.
+
+
+def _glob_matches(path, pattern):
+    """Does one `paths:` entry match a repo-relative path?
+
+    `fnmatch` has no `**`, so `a/**` is normalised to `a/*` and `*` is allowed to cross
+    `/`. That is LOOSER than the loader for a pattern like `a/*/b`, and named as a blind
+    spot rather than papered over: every pattern in this repo is a prefix glob or a
+    literal, where the two agree.
+    """
+    return fnmatch.fnmatch(path, pattern.replace("**", "*"))
+
+
+def rule_files_reaching(world, path):
+    hit = []
+    for name, text in sorted(world["rules"].items()):
+        for pat in frontmatter_paths(text) or []:
+            if _glob_matches(path, pat):
+                hit.append(name)
+                break
+    return hit
+
+
+def root_ruled_modules(world):
+    """GUI modules the ROOT names OUTSIDE the anchored tripwire region.
+
+    Inside that region a module path is the table doing its job — telling a reader which
+    files a rule file covers — so those are not rules and are excluded by region, not by
+    an exemption list.
+    """
+    span = tripwire_span(world["root"])
+    lines = world["root"].splitlines()
+    if span is not None:
+        lines = lines[:span[0]] + lines[span[1] + 1:]
+    found = {}
+    for m in _GUI_MODULE.finditer("\n".join(lines)):
+        rel = m.group(1)
+        if os.path.exists(os.path.join(_REPO, _GUI_ROOT, rel)):
+            found.setdefault(rel, os.path.join(_GUI_ROOT, rel).replace(os.sep, "/"))
+    return found
+
+
+def check_root_rule_coverage(world):
+    fails = []
+    found = root_ruled_modules(world)
+    live = set()
+    for rel, path in sorted(found.items()):
+        reaching = rule_files_reaching(world, path)
+        if not reaching:
+            continue
+        live.add(rel)
+        if rel in KNOWN_RESIDUE:
+            continue
+        fails.append(
+            "%s rules on `%s`, but %s already reach that file by their globs. The rule "
+            "and the glob then point at different layers: a session that READS it is "
+            "handed a rule file that is silent about it, and nothing says so. Move the "
+            "rule into %s, or — if the mention is wayfinding rather than a rule — put it "
+            "inside the tripwire table."
+            % (_ROOT_NAME, rel, ", ".join("%s/%s" % (_RULES_DIR, r) for r in reaching),
+               reaching[0]))
+    for rel, ticket in sorted(KNOWN_RESIDUE.items()):
+        if rel not in live:
+            fails.append(
+                "KNOWN_RESIDUE pins `%s` (%s), but that is no longer a violation — either "
+                "the rule left %s or no rule file's globs reach the module any more. Delete "
+                "the entry; a pin that outlives its defect is the skip list this check was "
+                "written instead of." % (rel, ticket, _ROOT_NAME))
+    return fails
+
+
 # =============================================================================
 world = read_world()
 
 check(bool(world["rules"]),
-      "0. .claude/rules/ holds at least one rule file (nothing below can bite on "
+      "check 0. .claude/rules/ holds at least one rule file (nothing below can bite on "
       "an empty rule set)")
 
 def run(fn, msg):
@@ -427,14 +579,18 @@ def run(fn, msg):
 
 
 run(check_sizes,
-    "1. every instruction file is within its OWN per-file budget (root %d, each rule "
+    "check 1. every instruction file is within its OWN per-file budget (root %d, each rule "
     "file %d, in characters)" % (ROOT_BUDGET, RULE_BUDGET))
 run(check_tripwire,
-    "2. the tripwire table and the rule files agree in BOTH directions")
+    "check 2. the tripwire table and the rule files agree in BOTH directions")
 run(check_gate_names,
-    "3. every gate-test filename named in a rule file — or in the root — exists on disk")
+    "check 3. every gate-test filename named in a rule file — or in the root — exists on disk")
 run(check_paths_frontmatter,
-    "4. every rule file's `paths:` is present, non-empty and not only `**`")
+    "check 4. every rule file's `paths:` is present, non-empty and not only `**`")
+
+run(check_root_rule_coverage,
+    "check 6. no rule in the root names a GUI module some rule file's globs already reach, "
+    "and every KNOWN_RESIDUE pin is still a real violation")
 
 
 # --- injections ---------------------------------------------------------------
@@ -451,13 +607,13 @@ pad = ROOT_BUDGET - len(inj["root"]) + 1
 inj["root"] = inj["root"] + "\n" + ("padding. " * ((pad // 9) + 2))
 check(inj["root"] != world["root"] and inj["root"].startswith("# " + _ROOT_NAME)
       and len(inj["root"]) > ROOT_BUDGET,
-      "5. injection is well-formed: the padded root still opens with its own "
+      "injection 5. injection is well-formed: the padded root still opens with its own "
       "heading, really differs, and is genuinely over budget")
 sz = check_sizes(inj)
 check(len(sz) == 1 and _ROOT_NAME in sz[0] and str(ROOT_BUDGET) in sz[0]
       and str(len(inj["root"])) in sz[0]
       and "docs/design_notes/mesher.md" in sz[0],
-      "5. check 1 fails on it, naming the file, its size, its budget and a CONCRETE "
+      "injection 5. check 1 fails on it, naming the file, its size, its budget and a CONCRETE "
       "destination — a `docs/design_notes/*.md` glob passed this assertion once and "
       "is not a place anything can be put")
 
@@ -468,13 +624,13 @@ victim = sorted(inj["rules"])[0]
 inj["rules"][victim] = inj["rules"][victim] + ("x" * (RULE_BUDGET + 1))
 check(frontmatter_paths(inj["rules"][victim]) == frontmatter_paths(world["rules"][victim])
       and len(inj["rules"][victim]) > RULE_BUDGET,
-      "5b. injection is well-formed: the padded rule file keeps its frontmatter "
+      "injection 5b. injection is well-formed: the padded rule file keeps its frontmatter "
       "and really is over budget")
 sz = check_sizes(inj)
 check(len(sz) == 1 and victim in sz[0]
       and design_note_for(victim) in sz[0]
       and design_note_for(victim) != design_note_for(_ROOT_NAME),
-      "5b. check 1 fails on the RULE file even though the root is inside its own "
+      "injection 5b. check 1 fails on the RULE file even though the root is inside its own "
       "budget — per-file, never a total — and names that AREA's own design note "
       "rather than the root's fallback")
 
@@ -485,11 +641,11 @@ inj["rules"][phantom] = "---\npaths:\n  - src/Phantom.cpp\n---\n\nA rule.\n"
 check(phantom not in tripwire_rows(inj["root"])
       and frontmatter_paths(inj["rules"][phantom]) == ["src/Phantom.cpp"]
       and set(inj["rules"]) != set(world["rules"]),
-      "6. injection is well-formed: the phantom rule file has a valid, narrow "
+      "injection 6. injection is well-formed: the phantom rule file has a valid, narrow "
       "`paths:` glob — it looks perfectly healthy from inside itself")
 tw = check_tripwire(inj)
 check(len(tw) == 1 and phantom in tw[0] and "NO tripwire row" in tw[0],
-      "6. check 2 fails in the on-disk-but-unnamed direction")
+      "injection 6. check 2 fails in the on-disk-but-unnamed direction")
 
 # 7. a tripwire row naming a rule file that does not exist.
 #
@@ -501,18 +657,18 @@ inj = copy_world(world)
 before = len(tripwire_rows(inj["root"]))
 rows = [ln for ln in inj["root"].splitlines() if _RULE_REF.search(ln)
         and ln.lstrip().startswith("|")]
-check(len(rows) >= 1, "7. the tripwire table has a row to insert after")
+check(len(rows) >= 1, "injection 7. the tripwire table has a row to insert after")
 inj["root"] = inj["root"].replace(
     rows[0] + "\n",
     rows[0] + "\n| Nonexistent area | `.claude/rules/nope.md` | `src/**` |\n")
 after = tripwire_rows(inj["root"])
 check(len(after) == before + 1 and "nope.md" in after
       and inj["root"] != world["root"],
-      "7. injection is well-formed: the added line really parses as one more "
+      "injection 7. injection is well-formed: the added line really parses as one more "
       "tripwire row")
 tw = check_tripwire(inj)
 check(len(tw) == 1 and "nope.md" in tw[0] and "does not exist" in tw[0],
-      "7. check 2 fails in the named-but-absent direction too — one direction "
+      "injection 7. check 2 fails in the named-but-absent direction too — one direction "
       "alone is blind")
 
 # 8. a renamed gate filename
@@ -523,34 +679,34 @@ for name, text in sorted(inj["rules"].items()):
     if hits:
         victim, gate = name, hits[0]
         break
-check(victim is not None, "8. at least one rule file names a gate test to rename")
+check(victim is not None, "injection 8. at least one rule file names a gate test to rename")
 if victim is not None:
     renamed = gate.replace("test_", "test_renamed_", 1)
     inj["rules"][victim] = inj["rules"][victim].replace(gate, renamed)
     check(inj["rules"][victim] != world["rules"][victim]
           and renamed not in inj["tests"]
           and frontmatter_paths(inj["rules"][victim]) is not None,
-          "8. injection is well-formed: the rule file keeps its frontmatter, "
+          "injection 8. injection is well-formed: the rule file keeps its frontmatter, "
           "really differs, and the new name is on no path in the tree")
     gn = check_gate_names(inj)
     check(any(renamed in f for f in gn),
-          "8. check 3 fails on it — a compression pass that drops or mistypes a "
+          "injection 8. check 3 fails on it — a compression pass that drops or mistypes a "
           "gate name cannot pass silently")
 
 # ...and the same in the ROOT file, which is where most rules still are.
 inj = copy_world(world)
 root_gates = sorted(set(_GATE_REF.findall(inj["root"])))
-check(bool(root_gates), "8b. the root file names at least one gate test")
+check(bool(root_gates), "injection 8b. the root file names at least one gate test")
 if root_gates:
     renamed = root_gates[0].replace("test_", "test_renamed_", 1)
     inj["root"] = inj["root"].replace(root_gates[0], renamed)
     check(inj["root"] != world["root"] and renamed not in inj["tests"]
           and inj["root"].startswith("# " + _ROOT_NAME),
-          "8b. injection is well-formed: the root really differs, still opens with "
+          "injection 8b. injection is well-formed: the root really differs, still opens with "
           "its own heading, and the new name is on no path in the tree")
     gn = check_gate_names(inj)
     check(any(renamed in f and _ROOT_NAME in f for f in gn),
-          "8b. check 3 covers the root file too, so a gate name cannot be lost in "
+          "injection 8b. check 3 covers the root file too, so a gate name cannot be lost in "
           "transit while the relocation is staged")
 
 # 9. `paths:` absent, empty, and only `**`
@@ -565,7 +721,7 @@ real = world["rules"][victim]
 real_paths = frontmatter_paths(real)
 body = real[real.find("\n---", 3) + 4:]
 check(real_paths and len(real_paths) > 1 and body,
-      "9. the real rule file being mutated has a multi-entry `paths:` list and a "
+      "injection 9. the real rule file being mutated has a multi-entry `paths:` list and a "
       "body, so the mutations below have something to damage")
 for label, head in (
         ("absent", ""),
@@ -579,15 +735,15 @@ for label, head in (
           and inj["rules"][victim].endswith(body)
           and got != real_paths
           and (head == "" or inj["rules"][victim].startswith("---\npaths:")),
-          "9. injection is well-formed: the %r mutation keeps the real rule file's "
+          "injection 9. injection is well-formed: the %r mutation keeps the real rule file's "
           "whole body, really differs from it, and changes only the `paths:` list"
           % label)
     pf = check_paths_frontmatter(inj)
     check(len(pf) == 1 and victim in pf[0],
-          "9. check 4 refuses `paths:` %r, which the loader would silently turn "
+          "injection 9. check 4 refuses `paths:` %r, which the loader would silently turn "
           "into an always-loaded file" % label)
 check(not check_paths_frontmatter(world),
-      "9. negative control: the real, unmutated rule set passes check 4, so the "
+      "injection 9. negative control: the real, unmutated rule set passes check 4, so the "
       "four failures above are the mutation and not the checker")
 
 # 10. the tripwire anchor removed. A missing anchor must FAIL rather than fall back
@@ -596,7 +752,7 @@ check(not check_paths_frontmatter(world),
 inj = copy_world(world)
 lines = inj["root"].splitlines(keepends=True)
 at = [i for i, ln in enumerate(lines) if ln.lstrip().startswith(TRIPWIRE_ANCHOR)]
-check(len(at) == 1, "10. the root file carries exactly one tripwire anchor")
+check(len(at) == 1, "injection 10. the root file carries exactly one tripwire anchor")
 # The WHOLE comment block, not just its first line: leaving a dangling `-->` behind
 # would make the injection an ill-formed document as well as an unanchored one, and
 # then it could not distinguish the two.
@@ -609,13 +765,81 @@ check(inj["root"] != world["root"]
       and tripwire_rows(inj["root"]) is None
       and _RULE_REF.search(inj["root"])
       and "-->" not in inj["root"][:inj["root"].find("| Area")],
-      "10. injection is well-formed: the whole anchor comment is gone with no "
+      "injection 10. injection is well-formed: the whole anchor comment is gone with no "
       "dangling delimiter, the table and every rule-file mention are untouched, and "
       "the rows really stop resolving")
 tw = check_tripwire(inj)
 check(len(tw) == 1 and TRIPWIRE_ANCHOR in tw[0],
-      "10. check 2 fails naming the anchor, instead of quietly accepting a "
+      "injection 10. check 2 fails naming the anchor, instead of quietly accepting a "
       "rule-file mention from any table in the file")
+
+# --- injection 11: check 6, the defect it exists to find -----------------------
+# Put one of #77's moved rules back into the root. The module is reached by two rule
+# files' globs and neither carries the rule any more, which is precisely the split-layer
+# state this check refuses.
+inj = copy_world(world)
+victim_mod = "services/ui_state.py"
+assert victim_mod not in root_ruled_modules(world), "fixture: the root must not already rule on it"
+inj["root"] = inj["root"].replace(
+    "## Mesh Generation Pipeline",
+    "**Window layout** is persisted by `app/%s` and nothing else.\n\n## Mesh Generation Pipeline"
+    % victim_mod, 1)
+check(inj["root"] != world["root"]
+      and tripwire_rows(inj["root"]) == tripwire_rows(world["root"])
+      and tripwire_span(inj["root"]) == tripwire_span(world["root"])
+      and victim_mod in root_ruled_modules(inj)
+      and victim_mod not in root_ruled_modules(world),
+      "injection 11. injection is well-formed: the root really differs, its anchored table is "
+      "byte-for-byte where it was, and the module is newly ruled on OUTSIDE it")
+cov = check_root_rule_coverage(inj)
+check(len(cov) == 1 and victim_mod in cov[0]
+      and "gui-lifecycle.md" in cov[0] and _ROOT_NAME in cov[0],
+      "injection 11. check 6 fails naming the module and the rule files that reach it — a rule "
+      "split across two layers cannot pass silently")
+
+# --- injection 11b: the ANCHORED REGION is what excludes the table -------------
+# The same module path, this time moved from a table cell into ordinary prose. If the
+# check read the whole file it could not tell these two apart, and the tripwire table —
+# whose whole job is to name each area's files — would be a permanent failure.
+inj = copy_world(world)
+lines = inj["root"].splitlines(keepends=True)
+span = tripwire_span(inj["root"])
+row = next((i for i in range(span[0], span[1] + 1)
+            if "`services/mesh_bc_audit*`" in lines[i]), None)
+check(row is not None, "injection 11b. a tripwire row names a module glob to move out of the table")
+inj["root"] = "".join(lines) + "\nThe audit lives in `services/mesh_bc_audit.py`.\n"
+check(inj["root"] != world["root"]
+      and tripwire_rows(inj["root"]) == tripwire_rows(world["root"])
+      and "services/mesh_bc_audit.py" not in root_ruled_modules(world),
+      "injection 11b. injection is well-formed: the table is untouched and the module was not "
+      "already ruled on outside it")
+cov = check_root_rule_coverage(inj)
+check(len(cov) == 1 and "mesh_bc_audit.py" in cov[0] and "gui-handoff.md" in cov[0],
+      "injection 11b. check 6 reads the ANCHORED REGION, not the whole file: the identical path "
+      "passes inside the table and fails outside it")
+
+# --- injection 11c: a stale pin fails too --------------------------------------
+# KNOWN_RESIDUE is not a skip list, and this is what makes that true: when #76 moves the
+# export rules out, every entry stops being a violation and the gate says so.
+inj = copy_world(world)
+for mod in KNOWN_RESIDUE:
+    inj["root"] = inj["root"].replace("`%s`" % mod, "`services/gone_%s`" % mod.split("/")[-1])
+check(inj["root"] != world["root"]
+      and not (set(KNOWN_RESIDUE) & set(root_ruled_modules(inj)))
+      and set(KNOWN_RESIDUE) <= set(root_ruled_modules(world)),
+      "injection 11c. injection is well-formed: every pinned module really stops being named in "
+      "the root, and every one of them was named there before")
+cov = check_root_rule_coverage(inj)
+check(len(cov) == len(KNOWN_RESIDUE)
+      and all("no longer a violation" in c for c in cov)
+      and all(any(m in c for c in cov) for m in KNOWN_RESIDUE),
+      "injection 11c. check 6 fails on every stale pin, so a pin cannot outlive the defect it "
+      "records (#76)")
+
+# --- injection 11d: negative control -------------------------------------------
+check(not check_root_rule_coverage(world),
+      "injection 11d. negative control: the real, unmutated world passes check 6, so the three "
+      "failures above are the mutation and not the checker")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

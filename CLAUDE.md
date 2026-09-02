@@ -22,14 +22,14 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **49,704
-characters (49,983 bytes, 2026-09-02, after #67 moved the GUI seam rules out to
-`.claude/rules/gui-seams.md` and pinned the four repo-wide standards one line each above)
-≈ 12k tokens**, paid by every session before it reads a line
+observed. The cost is therefore not truncation but **always-loaded context** — **34,791
+characters (34,988 bytes, 2026-09-02, after #77 moved the GUI lifecycle and file-hand-off
+rules out to two more rule files, leaving only #76's export residue)
+≈ 9k tokens**, paid by every session before it reads a line
 of source. That number decays on the next commit, so re-measure before quoting it; what stops it
 decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
 set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 279 today because of the CJK in this repo's own
+`wc -c` reports bytes, and the two differ by 197 today because of the CJK in this repo's own
 prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -63,7 +63,9 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is still in this file. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
-| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the six, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
+| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the six, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
+| GUI lifecycle (the app as a PROCESS: subprocess environment and the Gmsh loader path, window-layout persistence and the startup-state reversal, the ⟳ Restart ordering) | `.claude/rules/gui-lifecycle.md` | `services/env_setup*`, `services/ui_state*`, `services/gui_restart*`, `controllers/lifecycle_ctrl*`, `views/main_window*`, `gui/main.py`, `workers/**`, `tools/scripts/gmsh_*` — 24 files, verified. Two globs go beyond #77's list, recorded in that file's header. It rules directly on `CMakeLists.txt`, which NO glob in any rule file reaches, so this row is the only thing that reaches its reader. |
+| GUI file hand-off (is the file this session leaves on disk still correct when the NEXT stage reads it: the `.bnd` BCs, the project file's kind, the mesh output name, which grid a reopened case uses, the `.meta` sidecar) | `.claude/rules/gui-handoff.md` | `services/mesh_bc_audit*`, `services/project_file_kind*`, `services/mesh_grid_lookup*`, `models/mesh_output_names*`, `controllers/mesh_export_ctrl*`, `controllers/mesh_layers_ctrl*`, `controllers/solver_ctrl*`, `models/segment.py` — 8 files, verified. Three owners sit under OTHER rule files' globs (`models/mesh_config.py`, `services/pipeline_runner.py`, and the rest of what `solver_ctrl.py` does); its header names them. |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
@@ -72,25 +74,22 @@ went through with the rule unloaded. The glob alone therefore cannot make "I did
 a rule" unreachable; this table is what does. **Read the row's rule file before editing or creating
 a file in its area.**
 
-**All six of #59's areas have now moved (#67 was the last), and this table is STILL incomplete —
-because the partition was, not because a step is missing.** #59 derived its six areas from the root
-file's section headings, and 20,253 characters of the `### PreProcessor GUI` section are rules the
-partition assigns to no area at all: the layered module list and the subprocess environment, then
-window layout, the restart button, the mesh-BC audit, "a path is not a kind", the Output-`.*`
-placeholder, the case-grid lookup, the Mesh-stage carryover, and the two portable-case-export blocks
-(3,880 of the 20,253) that #76 is open to move into `pipeline-case.md`. That residue is most of the
-gap between this file and the ~25k #59 projected for relocation alone, but **not all of it, and the
-difference is worth having straight**: homing all 20,253 lands the root at 29,451, and the rest is
-the split's OWN apparatus, which a 2026-08-28 estimate could not have counted — the tripwire section
-is 7,250 characters and the four-standards section 1,259, and without those two the same file is
-20,942. #75's 40,000 lock is therefore reachable on the residue alone, with no compression needed to
-get there. The same shape has now been found three times — #63 (three services with no glob), #76
-(case export), here — so expect it once more rather than treating it as closed.
-`tools/PreProcessor/tests/test_instruction_budget.py` gates the arrangement: a per-file size budget
-(the root file and each rule file measured against their own, never a total, so moving text between
-rule files is not a legal evasion), the table against the rule files in **both** directions, the
-existence of every gate test a rule file names, and a `paths:` list that is present, non-empty and
-not only `**`.
+**Eight rule files now, and ONE area of residue is left.** #59 planned six, derived from this
+file's section HEADINGS; deriving them from the text instead needed eight, and the two extra
+(#77's `gui-lifecycle.md` and `gui-handoff.md`) hold 13,894 characters this file used to carry
+for areas the original partition assigned to nobody. What is still here: the two portable
+case-export blocks, 3,880 characters, which #76 is open to move into `pipeline-case.md` — the
+rule file whose globs ALREADY reach their four modules, which is what makes them a defect
+rather than a gap. Check 6 in
+`tools/PreProcessor/tests/test_instruction_budget.py` fires on exactly that shape — a rule in
+this file naming a module some rule file's globs already reach — and pins **two** of those four
+modules with #76's number, failing if a pin goes stale. Two and not four: the other two are named
+here by bare basename, which that check cannot resolve, and the gate says so rather than pinning
+what it cannot see.
+That gate also enforces: a per-file size budget (the root file and each rule file measured
+against their own, never a total, so moving text between rule files is not a legal evasion),
+the table against the rule files in **both** directions, the existence of every gate test a
+rule file names, and a `paths:` list that is present, non-empty and not only `**`.
 
 ## Important: four standards that bind BEFORE any file is opened
 
@@ -296,181 +295,14 @@ Export: VTK (.vtk) and/or STAR-CD (.vrt / .cel / .bnd)
 ## Architecture
 
 ### PreProcessor GUI (`tools/PreProcessor/gui/app/`)
-Layered PyQt6 application.
+The module map and every GUI rule have moved to the six `gui-*` rule files the tripwire table
+names (#77 was the last). What remains below is the portable case export, which #76 is open to
+move into `.claude/rules/pipeline-case.md`, the rule file whose globs already reach its four
+modules.
 
 > **Full rationale for this whole section — measurements, dated user reports,
 > injections, named blind spots — is `docs/design_notes/gui.md`.** A rule here is the
 > conclusion; that file carries the evidence and the failure it was bought with.
-
-- **`controller.py`**: top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
-- **`controllers/`**: business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
-- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing`, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`; serialized via `to_dict()`/`from_dict()`, the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py`), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py`. Auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by `src/cli.cpp` for hand-written configs but are not emitted by the GUI. Exported JSON carries `format_version` (`CONFIG_FORMAT_VERSION`).
-- **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py`, `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
-- **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd`)
-- **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI
-  subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus
-  `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process
-  group — every worker `cancel()` must route through these, never a bare `terminate()`)
-
-**Subprocess environment**: `services/env_setup.py::mesher_env()` resolves the libgmsh
-directory (override: `HYBMESH_GMSH_LIB_DIR`) and must be passed as `env=` when launching
-`HybMesh2D`/`surface_resampler`. Inheriting it from a shell wrapper does **not** work —
-macOS SIP strips every `DYLD_*` variable when a protected `python3` starts.
-`tools/scripts/gmsh_lib_dir.sh` is the shell-side equivalent. **Where Gmsh actually is has
-ONE answer: `tools/scripts/gmsh_sdk_dirs.py`** — the shell helper and `CMakeLists.txt` both
-resolve through it by asking the installed wheel. The CMake side used to carry a fixed HINTS
-list naming one developer's macOS pip prefix: **CI installed gmsh, failed at configure with
-"Gmsh SDK not found", and because the test job is `needs: build` the entire regression suite
-was SKIPPED rather than run — the workflow had never once been green.** A hardcoded absolute
-path in a discovery hint is worth treating as a defect on sight. The second half was the
-LIBRARY name: the Linux wheel ships `lib/libgmsh.so.4.15` with no unversioned symlink, so
-`find_library`'s NAMES matched nothing there while macOS's `libgmsh.4.15.dylib` matched. The
-resolver therefore reports `LIBFILE=` (the file it globbed) and CMake falls back to it. The
-workflow first went green 2026-08-17 (`4254c5d`), covering **69 Python tests + `ctest` 2/2 +
-the end-to-end `run_pipeline.sh`, none of which had ever executed in CI before**; four
-unrelated environment defects and one flaky runner stood in the way, and not one was a defect
-in the code under test. **A workflow's *history* is the only evidence it gates anything.**
-
-**Window layout** is persisted by `app/services/ui_state.py` — **window geometry and dock state,
-and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when the layout changes so
-stale state is ignored rather than restored). It never touches `QSettings` when headless. **The
-active stage and the sidebar sections are deliberately NOT persisted, and that is a reversal, not
-an omission** (#27, USER-REQUESTED): the user weighed resume-where-you-stopped against landing
-somewhere unpredictable with no way to reset it, and chose predictability. Every launch starts on
-**CAD** with **every** sidebar section collapsed, both from defaults already in the code
-(`mode_combo` index 0; `CollapsibleSection`'s `start_collapsed=True`, which no call site
-overrides). The version bump also orphans saved geometry, dock state and *dialog* accordion flags,
-accepted in the issue; what it buys is that no v1 key can come back as a live value.
-`restore_active_stage` and the private `_sections` walker are **gone**, save half with restore half.
-**Do not reinstate the convenience as a bug fix** — `tests/test_ui_state_and_dialogs.py` checks
-1/2/4 are the **inverted** versions of the ones that pinned the old behaviour. A **dialog's**
-accordion is a separate, still-wanted feature with an untouched code path
-(`save/restore_section_states(scope, sections)`, which never walked `sidebar_stack`).
-
-**"⟳ Restart" closes THIS window first and spawns only if the close happened**
-(`services/gui_restart.py`, Qt-free — `restart_command` / `preflight` / `launch`;
-`lifecycle_ctrl.restart_gui`; the button sits beside `Run All` in the persistent tab row). #28,
-USER-REQUESTED. Four rules:
-- **The order IS the feature** — spawning first and *then* asking "discard unsaved changes?" leaves
-  **two** GUIs running when the answer is No.
-- **The outcome comes from `close()`'s return value, not from `isVisible()`.** Measured offscreen:
-  a *cancelled* close on a never-shown window reports `isVisible() == False` / `isHidden() == True`,
-  identical to a successful one, while `close()` returns False exactly when the event was ignored.
-  The issue's own text suggests `isVisible()`; it would have made the gate pass for the wrong reason.
-- **There is no second copy of the unsaved-work prompt** — the close routes through
-  `MainWindow.closeEvent` → `handle_close_event`, which already covers modified sessions *and* a
-  dirty Mesh/Solver/IB config, saves the layout, joins every worker, and removes the autosave file.
-- **`proc_util.popen_kwargs()` must NOT be reused here** — it sets `stdout=PIPE`, and with the
-  parent gone nobody drains that pipe, so the child stalls once the buffer fills. The restart builds
-  its own kwargs (`start_new_session=True`, all three streams `DEVNULL`) and passes **no arguments**.
-  The entry point resolves through `paths.repo_root()`, never by counting `..` segments.
-`preflight()` exists because of that ordering: a bad interpreter or missing `main.py` must be caught
-while there is still a window to report it in (a `Popen` failing after that can only reach
-`user_log`'s file mirror). The button's **caption is a measurement living in the gate rather than a
-comment** — at the 900px minimum "⟳ Restart" leaves 31px of slack in the tightest stage and
-"⟳ New Session" leaves 0 — re-derived per run across **every** stage, because a tab bar is visible
-in some and hidden in others. The two tab-row buttons share one QSS builder (`_tab_row_btn_qss`) for
-that reason. Gated by `tests/test_gui_restart.py` (9 properties, AST-based, injection-verified).
-
-**The grid must carry the BCs before it leaves the Mesh stage** (`services/mesh_bc_audit.py`,
-Qt-free): a mesh generated BEFORE the per-segment BCs were applied exports **every** patch as the
-wall default, and the solve then looks exactly like a converged, unchanged answer — the reported "I
-updated the STAR-CD boundary conditions and got the same result". The mesher's own warning fires at
-MESH time, several clicks before the grid is exported, sent and run, so `audit_mesh_bc()` re-checks
-the actual file at each of those three points (`mesh_export_ctrl.mesh_bc_problems` /
-`warn_if_mesh_bc_stale`, and `solver_ctrl._confirm_mesh_bc_state`, which *asks* rather than deciding
-— `headless_default=True`, since batch/CI regenerate in the same pass). Two independent signals: an
-assigned BC **type** with no patch of that name in the `.bnd`, and a geometry `.meta` **newer** than
-the mesh (changing one segment from inlet to outlet leaves both names in the file, so content alone
-cannot see it). Note the two namespaces this replaced a bug in: a `group_bc` key is a segment
-**label**, a `.bnd` patch name is the **BC type** the mesher resolved it to — comparing them
-directly (the old warning) marks every assignment missing on every run. BC detection resolves the
-`.bnd` the RUN will use (auto-link wins in `_locate_mesh_bnd`, and `resync_solver_bc_from_group`
-runs *after* the auto-link), or the table describes one grid while the solver reads another. Gated
-by `tests/test_mesh_bc_audit.py`.
-
-**A path is not a kind: project files are recognised by CONTENT**
-(`services/project_file_kind.py`, Qt-free — `classify_project_file` → `"workspace"` / `"pipeline"` /
-`""`; `PipelineConfig.classify_file` / `is_workspace_file` delegate to it). `main.py` handed every
-positional argument to the geometry loader, so `main.py case.hws` ran `np.loadtxt` over JSON and
-reported `could not convert string '{' to float64` (USER-REPORTED 2026-08-13). Every "open this
-path" entry point dispatches through the one classifier: the CLI's positional args,
-`_load_geometry_file` (which the recent-files menu and STL stager reach), and Pipeline ▸ Load, whose
-dialog accepts `*.hws` too. Rules: a **workspace opened in the GUI goes to the workspace loader**,
-never through `PipelineConfig.from_workspace_dict` (that conversion exists so the headless runner
-can *run* a `.hws` and deliberately drops working state); the CLI loads the **project first and
-geometry after**, because either project load resets all state and closes every tab; and only ONE
-project file is accepted per launch, the rest named and refused. The "this will close all current
-tabs" prompt is gated on `has_unsaved_work()`, since the GUI always opens with one blank session.
-
-**The Output field's `.*` is a placeholder, and only one module may read it**
-(`models/mesh_output_names.py`, Qt-free — `output_base` / `output_path_for` / `FORMAT_PLACEHOLDER`,
-re-exported as `MeshConfig.*`; it also owns `auto_case_name` / `auto_output_name` /
-`is_auto_output_name`, whose `<case>` naming is mirrored in `src/cli.cpp`). The Mesh panel's Output
-field holds ONE name for however many formats are enabled, filled in as
-`results/meshes/<case>/mesh_<case>.*` — and because the panel→model sync runs on every edit, that
-string IS the model value and travels verbatim into the workspace, the pipeline script and the
-mesher's config. Only the export dialog understood it, so the **mesher** wrote a VTK into a file
-literally named `mesh_<case>.*` and **`pipeline_runner`** handed that name through and then
-`os.path.exists`-ed it — which the glob-named file satisfied, so the run reported success and passed
-a glob to the contour stage. A C++-only fix turns that silent pass into a hard failure, so both
-halves move together. `tests/test_output_format_placeholder.py` gates the resolver, the end-to-end
-`-out_name <dir>/probe.*` run, and **statically fails the build if any other GUI file grows its own
-`endswith(".*")`**.
-
-**The last generated mesh is not where a reopened case left it**
-(`services/mesh_grid_lookup.py::resolve_case_grid`, Qt-free): Generate Mesh writes into the GUI's
-**temp dir** on purpose (`<temp>/global_mesh.*`; the stable per-case files appear on Export / Send
-to Solver), and that directory is removed on exit, so `global_vtk_path` is **always** empty or
-dangling in a reopened workspace — and auto-link, reading only that, answered `No mesh generated
-yet` for a case whose grid was on disk (USER-REPORTED 2026-08-13). The resolver tries this session's
-mesh, then the triple the case is **already wired to** (what the user last actually sent to the
-solver — trusted over any guess), then the per-case exported mesh, and takes the first whose `.vrt`
-+ `.cel` + `.bnd` all exist; it names which one and why in the log, and names every candidate when
-none works. `_locate_mesh_bnd` asks the SAME resolver. Whether that grid is STALE stays the mesh-BC
-audit's job, not a refusal to run. Gated by `tests/test_open_project_by_path.py`.
-
-**A re-save of the geometry must not throw the Mesh-stage edits away, and the fix is a MODEL FIELD
-rather than a wrapper around the subprocess.** Both halves of a per-segment BC live in the `.meta` —
-the **label** in the NSEGMENTS bc column, the label→type map in the trailer — and the resampler
-REWRITES that sidecar from the CAD config on every save, carrying the trailer through verbatim while
-the bc column comes back `-` and the v3 grow column comes back 1. So a CAD tweak + Save left the map
-pointing at labels nothing carries: the mesher warns, every patch exports as `wall`, and the GUI
-still shows the BCs it holds in memory (USER-REPORTED 2026-08-12). The fix is **not** in the
-resampler, which stopped preserving the prior sidecar on purpose (a NEW geometry written over an
-existing output name inherited the old geometry's flags), and it is **no longer a caller-side
-snapshot/restore around the subprocess**. Both facts are `SegmentModel` **fields**: `bc` already was
-one, and **`grow_bl` is new** (default True; `to_dict()` emits it only when False, so every
-pre-existing config, workspace and script stays byte-identical). The resampler has always read
-`sj["bc"]` and `sj["grow_bl"]` from its own config, so `to_dict()` — the single serialiser behind
-the resample config, the `.hws` and the pipeline script — makes the sidecar come back **correct the
-first time**. The fact moved **up**, not down.
-- **The `.meta` is now a PROJECTION of the model, not a second home** —
-  `mesh_layers_ctrl._write_sidecar_from_model` rewrites both columns after every edit as the
-  command's `refresh_cb`, so an **undo rewrites the file too**.
-- **But a projection must be SEEDED first, and forgetting that broke the very thing this work exists
-  to fix.** Nothing seeded `bc`/`grow_bl` from an existing `.meta`, and the BC dialog reports only
-  NEWLY MINTED labels — so on any geometry whose setup lived only in its sidecar, one Mesh-stage BC
-  edit reset every *other* segment's label to `-` and re-enabled a No-BL wall.
-  `_adopt_sidecar_facts` takes the sidecar's values into the model first, **fill-in only** (a fact
-  the model holds wins), and runs **BEFORE the undo snapshot** — adopting after it still fixes the
-  wipe but makes undo restore the *empty* value, re-wiping the sidecar it just protected. Presence
-  and ordering are pinned separately. Adoption is a migration rather than the user's edit, so it is
-  not undoable and is **named in the log**. Caveat: the rule cannot distinguish "the model holds
-  `grow_bl = True`" from "the model is at its default", so a sidecar `grow=0` is always adopted —
-  right for the migration, wrong only if the file were allowed to lag the model.
-- **The id-set-changed refusal disappeared as a concept**: the old restore re-applied by id after a
-  subprocess had rewritten the file, and a label bound to a segment object cannot be shifted onto
-  its neighbour.
-- The Mesh-stage dialogs **emit** (`seg_grow_bl_changed` / `seg_bc_labels_changed`) instead of
-  writing the sidecar — a view writing that file is how the fact came to live only there. A geometry
-  with **no CAD session behind it** has no model to hold the fact, so the handler falls back to
-  writing the sidecar directly; `_session_for_geom_path` returning None is a normal outcome.
-- The label→BC-**type** map (`GROUP_BC`) deliberately did **not** move: it is keyed by label rather
-  than by segment, so there is no segment field for it to be a field of.
-- Knock-on: a Mesh-stage No-BL toggle now sets `is_geometry_modified`.
-Gated by `tests/test_seg_edit_carryover.py`, which drives the real `surface_resampler` (so the wipe
-cannot quietly stop happening) and the real controller handler.
 
 **Portable case export** (`services/case_export.py` + `case_export_docs.py`, both Qt-free; Solver
 toolbar "Export Case ⇪" + Solver menu): copies a case's INPUTS into a folder that reruns on another

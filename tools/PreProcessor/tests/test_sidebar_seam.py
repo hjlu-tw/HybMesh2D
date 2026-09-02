@@ -393,7 +393,8 @@ if failures:
 # builds Qt widgets, and a Qt teardown during interpreter shutdown is what
 # turned a fully passing run into exit 139 on Linux. It skips stdout flushing,
 # so flush first. The same substitution was one of the five environment fixes
-# that first got this workflow green (see CLAUDE.md, "CI had never been green").
+# that first got this workflow green (see .claude/rules/gui-lifecycle.md,
+# "CI had never been green" — moved out of CLAUDE.md by #77).
 if not failures:
     print(f"All sidebar seam checks passed ({live_total} leaks remaining).")
 sys.stdout.flush()

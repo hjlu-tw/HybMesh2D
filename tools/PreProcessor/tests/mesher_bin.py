@@ -15,7 +15,8 @@ that built it".
 
 On a developer machine that rpath is a personal pip prefix
 (``/Users/<name>/Library/Python/3.9/lib``), which is the hardcoded-absolute-path
-smell CLAUDE.md says to treat as a defect on sight. On CI the build job and the
+smell ``.claude/rules/gui-lifecycle.md`` says to treat as a defect on sight
+(moved out of ``CLAUDE.md`` by #77). On CI the build job and the
 test job are separate runners: the rpath points at the BUILD runner's Python
 prefix, so the mesher starts only while both runners happen to resolve the same
 ``3.11.x`` directory. When they diverge every mesher test fails at once with
@@ -28,8 +29,8 @@ together while the run ten minutes earlier had passed with the same gmsh 4.15.2
 and an identical binary.
 
 This module routes them through the ONE resolver the GUI already uses
-(``services/env_setup``), which is what CLAUDE.md names as the single answer to
-"where is Gmsh". Qt-free: ``env_setup`` imports only the stdlib and ``gmsh``.
+(``services/env_setup``), which is what ``.claude/rules/gui-lifecycle.md`` names as
+the single answer to "where is Gmsh". Qt-free: ``env_setup`` imports only the stdlib and ``gmsh``.
 """
 from __future__ import annotations   # local python3 is 3.9; CI is 3.11
 

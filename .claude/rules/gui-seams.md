@@ -147,3 +147,20 @@ allowed to fail, or `warning` when the failure silently degrades what the user a
 `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build
 if a new undocumented silent handler appears.
 
+---
+
+**The GUI module map** (#77). It lives behind the widest glob because it is a map rather than
+a rule: every GUI reader is served by it, and the one hard rule inside it — every worker
+`cancel()` routes through `stop_process` / `stop_process_async`, never a bare `terminate()` —
+binds every worker. Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
+
+- **`controller.py`**: top-level orchestrator; command pattern for undo/redo, delegates to specialized controllers
+- **`controllers/`**: business logic split by concern — `segment_ctrl.py` (CRUD, properties), `session_ctrl.py` (save/load), `session_io_ctrl.py` (`.hws` workspace read/write + `WORKSPACE_FORMAT_VERSION` migration), `project_state_ctrl.py` (the workspace's `project` section: Mesh/Solver/IB config + baseline-snapshot dirty detection), `backend_ctrl.py` (runs `surface_resampler` in QThread), `mesh_gen_ctrl.py` (runs `HybMesh2D` in QThread), `lifecycle_ctrl.py` (autosave, crash recovery, bounded worker shutdown), `curve_ctrl.py`, `transform_ctrl.py`
+- **`models/`**: `segment.py` (`type`, `strategy`, `parameters` incl. `spacing`, curve fields, plus the two per-segment facts the MESH stage edits — `bc` and `grow_bl`; serialized via `to_dict()`/`from_dict()`, the ONE serialiser behind the resample config, the workspace and the pipeline script), `project.py`, `mesh_config.py` (+ `mesh_config_keys.py`, `mesh_config_io.py`, `mesh_output_names.py`), `session.py`, `vtk_mesh.py`, `result_data.py` / `tecplot_index.py` / `result_series.py`. Auto-split is computed in the GUI (producing explicit `split_indices`); the per-segment `auto_split`/`split_threshold` keys are read by `src/cli.cpp` for hand-written configs but are not emitted by the GUI. Exported JSON carries `format_version` (`CONFIG_FORMAT_VERSION`).
+- **`views/`**: `canvas.py` (pyqtgraph interactive geometry canvas, dark theme), `mesh_canvas.py`, `main_window.py` (tab layout), `sidebar.py` (segment property editor), `panels/` (tab panels per workflow)
+- **`commands/`**: `segment_cmds.py` (`UpdateSegmentStateCmd` snapshots full state dict), `split_cmds.py`, `vertex_cmds.py`, `config_cmds.py` (`UpdateProjectStateCmd`)
+- **`workers/`**: `backend_run.py`, `mesh_gen_run.py` (QThread wrappers for CLI
+  subprocesses), `proc_util.py` (shared `popen_kwargs()` with `start_new_session`, plus
+  `stop_process`/`stop_process_async` SIGTERM→SIGKILL escalation over the child's process
+  group — every worker `cancel()` must route through these, never a bare `terminate()`)
+
