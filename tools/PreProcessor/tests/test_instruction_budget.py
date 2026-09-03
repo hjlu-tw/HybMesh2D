@@ -188,6 +188,19 @@ Known remaining blind spots, stated rather than pretended away:
     immunised two tickets earlier, by the fix this entry keeps recommending. The two
     pointers named above from EARLIER tickets (`arch_probes.py:171`,
     `test_field_spec_tables.py:515`) are still there and still not #75's to fix.
+    #78's sweep found NOTHING newly stale for the same structural reason as #75's — it
+    changes a constant and two prose blocks, moving no rule — but it shifts `CLAUDE.md`'s
+    line numbering again, and the running total since the split is what a line-number
+    pointer would have to survive. The three `CLAUDE.md:235` mentions in this docstring
+    are still the only ones in the repo and are still history rather than pointers.
+ c2. `ROOT_BUDGET`'s DERIVATION is not checked, only its value. Nothing here recomputes
+    "the root's size floored to 500 plus 1,000" and fails when the constant stops
+    matching that rule — a budget left at 33,000 while the root falls to 20,000 is
+    loose by 13,000 and every check still passes. Deliberate: a gate that recomputed it
+    would be an exact ratchet wearing a rounding, and #78 rejected exactness because a
+    self-describing number goes stale (blind spot (d)'s own history, six times). The
+    rounding is a convention for whoever next edits the constant, and injection 5c is
+    what keeps the loose direction honest — it fails the moment the slack reaches 3k.
     Its other mention of a note is the header's bare `docs/design_notes/gui.md`, which names a
     file rather than a place in one and so has nothing to go stale.
  e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
@@ -238,8 +251,9 @@ Known remaining blind spots, stated rather than pretended away:
     relocation costs thousands and a compression returns hundreds. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.
-    A per-file ratchet would change that, but `ROOT_BUDGET` is no longer one either: #75
-    locked it at 40,000, so neither budget ratchets now and #59 fixes both numbers.
+    `ROOT_BUDGET` is not a flat number: #75 locked it at 40,000 and #78 re-derived it as
+    the root's size floored to a 500 boundary plus 1,000, so it moves when the root
+    crosses a 500 boundary and not otherwise. `RULE_BUDGET` stays flat; #59 fixes that one.
     Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
@@ -270,24 +284,35 @@ _RULES_DIR = os.path.join(".claude", "rules")
 _NOTES_DIR = os.path.join("docs", "design_notes")
 
 # --- budgets -----------------------------------------------------------------
-# ROOT_BUDGET WAS a ratchet that TRACKED the root file's actual size — not one that only
-# descended, which this comment used to imply and the history refutes: measured over every
-# commit touching this file it fell 7 times and ROSE 8 before this one — largest +789 in #62's
-# own review, then +420, +330, +134, +119, +97, +86, +2 — and this lock is a 9th rise, of
-# +8,543. An earlier draft named #68's +330 as the largest, which is the fourth. #75 LOCKS it at the
-# value #59 fixes: 40,000. The ratchet is over, and what that costs is stated rather
-# than glossed — the justification for the number was that the next feature which
-# tries to add 3k to the always-loaded budget trips the gate on its FIRST attempt
-# (which the previous split, 93k moved out and 5,752 chars back within two feature
-# commits, had no way to do). That mechanism needs the budget to TRACK the actual
-# size, and a locked 40,000 does not: the root is 32,043 today, so 7,957 characters
-# of slack sit under the ceiling and a 3k addition now passes silently. Two of those
-# and the gate still says nothing. #59 fixes the number, so the number ships and the
-# gap is recorded here, in the root file's own header, and on #75 (posted after this text
-# was written, which review caught as a claim running ahead of its fact) — not closed by
-# quietly re-tightening it, which would be this gate's author overruling the ticket
-# that specifies it. Re-tightening is a decision for whoever wants the mechanism back.
-ROOT_BUDGET = 40_000
+# ROOT_BUDGET is the root file's size taken DOWN to a 500 boundary with 1,000 added --
+# slack always in (500, 1000] -- and that BAND is the design (#78), not the arithmetic.
+# The first draft of this ticket said "rounded up to the next 500" and implementing it
+# refuted it: the root landed at 31,992, which rounds to 32,000 and leaves EIGHT
+# characters of headroom, so the next typo fix would have edited this file too. Slack
+# under that rule is uniform in [0, 500) and is ~0 whenever the file sits just under a
+# boundary. The band gets both properties by construction instead of by luck: > 500 so
+# a small edit never reaches here, < 3000 so a feature never adds 3k in silence.
+# Three shapes were possible and the trade is measured, not assumed:
+#   - An EXACT ratchet (what #62-#76 ran) is strictly tighter, and its friction is
+#     affordable — all 20 commits that touched CLAUDE.md since the split also touched
+#     this file, so nobody ever edited the root and forgot the constant. But it makes
+#     the budget a RESTATEMENT of the file's size, and a self-describing number in this
+#     repo has gone stale six times; CLAUDE.md already needs a joint fixed-point
+#     iteration over its own four figures, and an exact budget makes this file a fifth
+#     participant in it.
+#   - A LOCKED ceiling (what #75 ran, 40,000) removes that entirely and removes the
+#     mechanism with it: the root was 32,043, so 7,957 of slack sat under the ceiling
+#     and TWO 3k additions passed in silence. That is #59's user story 12 unmet, and
+#     the previous split's exact failure — 142,874 grew back to 148,626 in two feature
+#     commits at ~+3k each, with nothing to notice.
+#   - The BAND (this) keeps the mechanism and drops the staleness: a 3k addition trips
+#     on its FIRST attempt, while a typo fix or a re-measured figure changes nothing
+#     here. The number is wrong only when actually exceeded, which is when the
+#     gate is supposed to speak, rather than wrong whenever it is merely old.
+# The property is a RELATIONSHIP between this number and the file's actual size, so it
+# is held by injection 5c below and not by this comment. RULE_BUDGET is untouched: #59
+# fixes that one, and nothing here reaches a rule file.
+ROOT_BUDGET = 33_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -848,6 +873,27 @@ check(len(sz) == 1 and victim in sz[0]
       "injection 5b. check 1 fails on the RULE file even though the root is inside its own "
       "budget — per-file, never a total — and names that AREA's own design note "
       "rather than the root's fallback")
+
+# 5c. #59's user story 12 as a TEST rather than an argument: "the next feature
+# cannot silently add 3k to the always-loaded budget". That story is not about the
+# budget's value, it is about the RELATIONSHIP between the budget and the file's
+# actual size — which is why prose could not hold it and did not: #75 locked the
+# budget at 40,000 while the root was 32,043, and two 3k additions passed in
+# silence until #78 re-tightened it. Nothing else here would notice that again.
+STORY_12_ADDITION = 3_000
+inj = copy_world(world)
+inj["root"] = inj["root"] + "\n" + ("padding. " * ((STORY_12_ADDITION // 9) + 1))
+check(len(inj["root"]) - len(world["root"]) >= STORY_12_ADDITION
+      and inj["root"].startswith("# " + _ROOT_NAME),
+      "injection 5c. injection is well-formed: it really adds at least 3,000 characters and "
+      "the root still opens as itself")
+sz = check_sizes(inj)
+check(len(sz) == 1 and _ROOT_NAME in sz[0],
+      "injection 5c. check 1 fails on a 3k addition to the ALWAYS-LOADED file, on its first "
+      "attempt — #59's user story 12, which #75's lock had left unmet by 7,957 chars of slack")
+check(not check_sizes(world),
+      "injection 5c. negative control: the real, unmutated root passes, so the failure above is "
+      "the 3k addition and not a budget set below the file's own size")
 
 # 6. a rule file that no tripwire row names
 inj = copy_world(world)

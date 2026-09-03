@@ -22,20 +22,19 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **32,043
-characters (32,228 bytes, 2026-09-03, after #75 closed #59's family and locked the budget below)
-≈ 8k tokens**, paid by every session before it reads a line of source, down from **149,141
-characters (≈37k tokens)** before #62, the first relocation. That number decays on the next commit,
-so re-measure before quoting it; what stops it decaying *silently* is
-`tools/PreProcessor/tests/test_instruction_budget.py`, whose `ROOT_BUDGET` **#75 LOCKED at
-40,000**, ending a ratchet that TRACKED this file rather than only descending: measured over
-every commit touching the gate, it fell 7 times and ROSE 8 — the largest rise **+789**, in #62's
-own review, and this lock is a 9th of +8,543.
-**The ceiling therefore sits 7,957 characters above this line, and that slack is deliberate but
-NOT free**: the gate justifies 40,000 by a 3k addition tripping it on the first attempt, which holds
-only while the budget tracks the actual size — it no longer does,
-so a 3k addition now passes. #59 fixes the number, so the number is what shipped and the gap is
-recorded here rather than closed. **The unit is CHARACTERS**: the budget #59 states is in
+observed. The cost is therefore not truncation but **always-loaded context** — **32,039
+characters (32,224 bytes, 2026-09-03) ≈ 8k tokens**, paid by every session before it reads a line of
+source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
+number decays on the next commit, so re-measure before quoting it; what stops it decaying
+*silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose `ROOT_BUDGET` is
+**33,000** — this file's size taken DOWN to a 500 boundary with 1,000 added, so the slack is always
+between 500 and 1,000 (961 today) (#78). **That shape is the rule, not the number**: never so
+tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
+silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
+this sentence. #75 had locked it at 40,000 while this
+file was 32,043, and two 3k additions passed unnoticed; #78 closed that. Before #75 it was a
+ratchet that TRACKED this file rather than only descending — over every commit touching the gate
+it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
 characters while `wc -c` reports bytes, and the two differ by 185 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
