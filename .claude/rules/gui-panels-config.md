@@ -24,7 +24,8 @@ on every edit), `controllers/pipeline_io_ctrl.py`, `controllers/project_state_ct
 `tools/PreProcessor/run_pipeline.py`, whose `[INFO] reference Reynolds number` line the length-unit
 rules name as one of the two visible defences against a plausible wrong unit. That last one is
 matched by `.claude/rules/pipeline-case.md`'s globs instead, and that file carries no unit rule, so
-the tripwire table in `CLAUDE.md` is its only route here; the globs are the convenience.
+the tripwire table is its only route here. The table in `CLAUDE.md` is what makes every one of
+these reachable; the globs are the convenience.
 
 **Two of the globs reach files whose rules are NOT here — read that file as well.**
 `views/panels/**` is the glob #59 assigns to this area and is wider than the area: the results
@@ -33,8 +34,7 @@ panels and mixins are governed by `.claude/rules/gui-results.md` (whose own glob
 `views/panels/restart_chooser.py` by `.claude/rules/pipeline-case.md`. And `models/mesh_config*`
 reaches `MeshConfig.output_base` / `output_path_for`, whose rule — the Output field's `.*`
 placeholder and the one module allowed to read it — is in `.claude/rules/gui-handoff.md` with
-`models/mesh_output_names.py`, where #77 moved it. That is the glob being generous, not this file
-claiming them.
+`models/mesh_output_names.py`, where #77 moved it.
 
 **Stage config data flow is one-directional** (`controllers/panel_sync_ctrl.py`): the **model is
 the truth, the panel is a view**.
@@ -96,9 +96,6 @@ tables (`spec.key` + `spec.model`), the converter from the model field's own dat
   HEADLESS path (`mesh_config_io.config_to_text` ← `run_pipeline.sh` / `run_batch.sh`). The cost is
   recorded rather than hidden: ~250 lines of UI text now sit in `services/`. The solver and IB
   tables did NOT move — nothing headless derives from them.
-  SUPERSEDES the older reason for that location — the tables carry UI text, so they belong
-  under `views/panels/`; the RULE is unchanged, only its reason.
-  Why: `docs/design_notes/gui.md`, "the tables carry UI text so they live under".
 - **`_KEY_MAP` is anchored to the WRITER, not just to the tables** (gate check 13f, both
   directions, with `GEOM_FILE` / `DOMAIN_FILE` / `SEED_FILE` / `GROUP_BC` declared). Checking only
   "map agrees with tables" was measured BLIND: removing a spec's `key=` left both sides agreeing
@@ -113,8 +110,8 @@ floor: a fixed-notation box silently clamps the 1e-7..1e-8 first-cell heights re
 lower bounds stay at 0, and invalid values are rejected by `MeshConfig.validate()` with a message,
 never by UI clamping.
 
-**Length units** (`app/services/units.py`, Qt-free): the model declares ONE length unit (Mesh
-panel, top row), and it is **not cosmetic** — the solver is dimensional. Per the UNICONES manual
+**The model declares ONE length unit, and it is not cosmetic — the solver is dimensional**
+(`app/services/units.py`, Qt-free; Mesh panel, top row). Per the UNICONES manual
 `fs_UnitRe` is *per metre* and `Linf` is *metres per grid unit*, so **Re = fs_UnitRe × Linf**: a mm
 mesh left at `Linf = 1` runs at 1000× the intended Reynolds number with a mesh that looks perfect.
 - **`Linf` is derived from the declared unit**, not typed. `SolverConfig.linf_from_unit` is True
@@ -134,10 +131,10 @@ mesh left at `Linf = 1` runs at 1000× the intended Reynolds number with a mesh 
 - **The mesher records but never converts `LENGTH_UNIT`**; it prints it in the banner, so it lands
   in the provenance sidecar.
 
-**Edit Boundary Layer dialog** (`views/panels/mesh_dialogs_bl.py`, tables in
-`mesh_bl_field_specs.py`, accordion + fitting in `mesh_bl_dialog_layout.py`): the 21 BL parameters
-are collapsible groups (`_BL_FIELD_GROUPS`, mirroring the `.dat` groups), **all closed to start**
-(USER-REQUESTED), plus Expand all / Collapse all. Only two things open a group and neither is a
+**The Edit Boundary Layer dialog's 21 BL parameters are collapsible groups, all closed to start
+(USER-REQUESTED)**, plus Expand all / Collapse all — `views/panels/mesh_dialogs_bl.py`, tables in
+`mesh_bl_field_specs.py`, accordion + fitting in `mesh_bl_dialog_layout.py`, the groups themselves
+`_BL_FIELD_GROUPS` mirroring the `.dat` groups. Only two things open a group and neither is a
 default: the state the user left it in (`ui_state`), and a group holding a value differing from the
 global default, so a per-geometry override never hides behind a collapsed header.
 - **`_BL_FIELD_GROUPS` must partition `_BL_FIELD_SPECS` exactly** — a key in no group is a
@@ -160,7 +157,7 @@ against one list. #71 moved both.
 
 - **`config_ownership` is Qt-free at IMPORT only.** The SOLVER and IB tables still live under
   `views/panels/`, whose package `__init__` eagerly imports eight Qt panels, so a
-  `preserved_fields()` call naming those two still loads PyQt6. What the Qt-free gate covers is
-  `services/field_spec.py`.
+  `preserved_fields()` call naming those two still loads PyQt6 — the Qt-free gate reaches
+  `services/field_spec.py` only.
 - **The unit size-plausibility check only catches gross errors, and says so.** A *plausible* wrong
-  unit is caught by nothing but a human reading the reference Reynolds number.
+  unit is left to the two visible defences above, which do nothing but print the number.
