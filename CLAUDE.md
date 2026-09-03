@@ -22,16 +22,17 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **31,933
-characters (32,116 bytes, 2026-09-03, after #75 closed #59's family and locked the budget below)
+observed. The cost is therefore not truncation but **always-loaded context** — **31,998
+characters (32,181 bytes, 2026-09-03, after #75 closed #59's family and locked the budget below)
 ≈ 8k tokens**, paid by every session before it reads a line of source, down from **149,141
 characters (≈37k tokens)** before #62, the first relocation. That number decays on the next commit,
 so re-measure before quoting it; what stops it decaying *silently* is
 `tools/PreProcessor/tests/test_instruction_budget.py`, whose `ROOT_BUDGET` **#75 LOCKED at
-40,000**, ending the ratchet that had been re-set to the actual size by every ticket before it.
-**The ceiling therefore sits 8,067 characters above this line, and that slack is deliberate but
-NOT free**: the gate justifies 40,000 by "the next feature which tries to add 3k trips the gate on
-its first attempt", which holds only while the budget tracks the actual size — it no longer does,
+40,000**, ending a ratchet that TRACKED this file rather than only descending: measured over
+every commit touching the gate, it fell 7 times and ROSE 8, once by 330 when #68 added text here.
+**The ceiling therefore sits 8,002 characters above this line, and that slack is deliberate but
+NOT free**: the gate justifies 40,000 by a 3k addition tripping it on the first attempt, which holds
+only while the budget tracks the actual size — it no longer does,
 so a 3k addition now passes. #59 fixes the number, so the number is what shipped and the gap is
 recorded here rather than closed. **The unit is CHARACTERS**: the budget #59 states is in
 characters while `wc -c` reports bytes, and the two differ by 183 today because of the CJK in this

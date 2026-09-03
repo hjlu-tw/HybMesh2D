@@ -180,6 +180,14 @@ Known remaining blind spots, stated rather than pretended away:
     mandates precisely because a line number cannot say when it has gone wrong. Nothing here
     caught it and nothing here will catch the next one; what changes is that the file's one
     remaining pointer to a LOCATION in a note is an anchor, which a `grep -c -F` can check.
+    #75's sweep found NOTHING newly stale, and the reason is worth keeping: it moves no rules,
+    so the only thing it can break is a LINE NUMBER, and it shifts every line of `CLAUDE.md`
+    after the header by +5. The only `CLAUDE.md:<line>` pointers anywhere are the three
+    `CLAUDE.md:235` mentions in this very docstring, which #67's review already demoted to
+    history rather than a pointer — so the one file a line shift could hurt had been
+    immunised two tickets earlier, by the fix this entry keeps recommending. The two
+    pointers named above from EARLIER tickets (`arch_probes.py:171`,
+    `test_field_spec_tables.py:515`) are still there and still not #75's to fix.
     Its other mention of a note is the header's bare `docs/design_notes/gui.md`, which names a
     file rather than a place in one and so has nothing to go stale.
  e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
@@ -262,17 +270,20 @@ _RULES_DIR = os.path.join(".claude", "rules")
 _NOTES_DIR = os.path.join("docs", "design_notes")
 
 # --- budgets -----------------------------------------------------------------
-# ROOT_BUDGET WAS a ratchet, re-set to the root file's actual size by each relocation
-# ticket in #59 and lowered by the next. #75 is the last ticket and LOCKS it at the
+# ROOT_BUDGET WAS a ratchet that TRACKED the root file's actual size — not one that only
+# descended, which this comment used to imply and the history refutes: measured over every
+# commit touching this file it fell 7 times and ROSE 8, the largest rise #68's +330 for text
+# added to the root. #75 is the last ticket and LOCKS it at the
 # value #59 fixes: 40,000. The ratchet is over, and what that costs is stated rather
 # than glossed — the justification for the number was that the next feature which
 # tries to add 3k to the always-loaded budget trips the gate on its FIRST attempt
 # (which the previous split, 93k moved out and 5,752 chars back within two feature
 # commits, had no way to do). That mechanism needs the budget to TRACK the actual
-# size, and a locked 40,000 does not: the root is 31,933 today, so 8,067 characters
+# size, and a locked 40,000 does not: the root is 31,998 today, so 8,002 characters
 # of slack sit under the ceiling and a 3k addition now passes silently. Two of those
 # and the gate still says nothing. #59 fixes the number, so the number ships and the
-# gap is recorded here, in the root file's own header, and on #75 — not closed by
+# gap is recorded here, in the root file's own header, and on #75 (posted after this text
+# was written, which review caught as a claim running ahead of its fact) — not closed by
 # quietly re-tightening it, which would be this gate's author overruling the ticket
 # that specifies it. Re-tightening is a decision for whoever wants the mechanism back.
 ROOT_BUDGET = 40_000
