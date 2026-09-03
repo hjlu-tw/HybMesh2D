@@ -22,12 +22,17 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **32,519
-characters (32,706 bytes, 2026-09-03) ≈ 8k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **32,956
+characters (33,145 bytes, 2026-09-03) ≈ 8k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
-number decays on the next commit, so re-measure before quoting it; what stops it decaying
-*silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose `ROOT_BUDGET` is
-**33,000**, leaving 481 characters of slack — derived by a rule the gate states at that
+number decays on the next commit, and since #79 it and the other figures this file states about
+ITSELF are re-derived rather than trusted: `python3
+tools/PreProcessor/tests/test_instruction_budget.py --sync` rewrites them from disk, and that gate
+FAILS on a stale one instead of shipping it — which until #79 took a human or a review agent
+every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
+deliberately left alone. What stops the size itself
+decaying *silently* is that file, whose `ROOT_BUDGET` is
+**33,500**, leaving 544 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -38,7 +43,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 187 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 189 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -100,7 +105,8 @@ rules moved but the rationale did not" looks like from inside.
 That gate also enforces: a per-file size budget (the root file and each rule file measured
 against their own, never a total, so moving text between rule files is not a legal evasion),
 the table against the rule files in **both** directions, the existence of every gate test a
-rule file names, and a `paths:` list that is present, non-empty and not only `**`.
+rule file names, a `paths:` list that is present, non-empty and not only `**`, and every
+figure these files state about THEMSELVES measured against disk.
 
 ## Important: four standards that bind BEFORE any file is opened
 

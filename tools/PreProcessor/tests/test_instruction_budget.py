@@ -63,6 +63,19 @@ Checks:
     naming an area's files is the table's job. `KNOWN_RESIDUE` pins the one live
     violation with the ticket that owns it (#76), and a pin that stops being a
     violation FAILS TOO, so it cannot outlive the defect the way a skip list would.
+ 7. Every figure the instruction files state ABOUT THEMSELVES agrees with disk: the
+    root's character count, its byte count, its token estimate, its budget and its slack;
+    the byte-char delta, stated in BOTH this file and the root; the rule-file count, also
+    stated in both; and blind spot (d)'s eight rule-file sizes with their descending order,
+    both headroom lists and `RULE_BUDGET`'s own value beside them. Every one of those was maintained BY HAND, and writing any of
+    them changes the file being measured, so keeping them true is a joint fixed-point
+    iteration rather than a measurement — which is why it had failed eleven times in eight
+    tickets by the time this landed, every instance caught by a human or a review agent
+    rather than by the build, two of them still live in the tree while the check was being
+    written. An anchor must resolve EXACTLY once, and the number of figures compared is
+    asserted against the number the registry declares, so a reword that removes an anchor
+    goes RED rather than quietly inert. `--sync` performs the iteration and rewrites every
+    figure from disk, which removes the manual step all eleven defects happened in.
  injections. Every check is verified by an in-test injection over a mutated COPY of
     the inputs, asserting the check then fails, that the mutated input is still
     well-formed, and that it really differs from the original. Printed labels say
@@ -70,7 +83,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 185 more of today because this repo's own prose
+bytes, which the root file has 189 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -195,10 +208,17 @@ Known remaining blind spots, stated rather than pretended away:
     line numbering again, and the running total since the split is what a line-number
     pointer would have to survive. The three `CLAUDE.md:235` mentions in this docstring
     are still the only ones in the repo and are still history rather than pointers.
- c2. `ROOT_BUDGET`'s DERIVATION is not checked, only its value. Nothing here recomputes
+ c2. `ROOT_BUDGET`'s DERIVATION is not checked, only its VALUE — and since #79 those are
+    two claims rather than one. Check 7 holds the value: the root file's stated
+    budget must equal this constant and its stated slack must equal that constant minus
+    the file's real size, so the budget can no longer be MISREPORTED, which is a thing
+    that happened. What is still unchecked is the derivation itself. Nothing here recomputes
     the derivation stated at `ROOT_BUDGET`'s definition, and nothing fails when the
     constant stops matching it, so the budget can drift
-    LOOSE if the root shrinks and nobody lowers it. The drift is BOUNDED, and the first
+    LOOSE if the root shrinks and nobody lowers it — and it drifted the other way in the
+    commit before #79, to 481 of slack against a floor of 500, which is the shape that
+    makes a typo fix edit this file too. #79 re-derived it by hand, as the rule at the
+    constant asks of whoever edits the root; nothing made it. The drift is BOUNDED, and the first
     draft of this entry got that wrong in the direction that flatters it: it claimed a
     budget left at 33,000 while the root fell to 20,000 would leave "every check still
     passing", and review measured the opposite — injection 5c goes RED once the slack
@@ -209,7 +229,8 @@ Known remaining blind spots, stated rather than pretended away:
     (1,000, 3,000)", which rounded in the direction that flatters the entry. Deliberate: a gate
     that recomputed the derivation
     would be an exact ratchet wearing a rounding, and #78 rejected exactness because a
-    self-describing number goes stale (blind spot (d)'s own history, six times). The
+    self-describing number goes stale (six times when #78 counted, eleven when #79
+    re-derived it). The
     rounding is a convention for whoever next edits the constant, and injection 5c is
     what keeps the loose direction honest — it fails the moment the slack reaches 3k.
  e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
@@ -249,11 +270,35 @@ Known remaining blind spots, stated rather than pretended away:
     is vacuously true, which is `mesher.md` (zero, its rules being about C++ and `.dat`
     keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
     member.
+ g. Check 7 covers figures the instruction files state about THEMSELVES. Four
+    neighbouring families of hand-maintained figure are outside it, named here rather
+    than left ambiguous — and a fifth thing that is not a family but a single third copy:
+    `docs/agents/rule-file-style.md` mentions the 60,000 rule budget in passing prose
+    ("anywhere near its 60,000 budget"), which check 7 does not read because that file is
+    not an instruction file and states the number as an aside rather than as a figure:
+      - The root's GUI-file-length figures ("5 of 258 files exceed it (worst 523)") and
+        the two tripwire rows that count their own globs' files. All derivable, and all
+        left out for one reason: their INPUTS are GUI source files, so a stale figure
+        there is left by a commit that never opens an instruction file, and gating it
+        would put a red gate in front of an author who changed nothing self-describing.
+        That is `ruff.toml`'s permanently-red gate arriving through a different door.
+      - This docstring's own behavioural counts — check 5's `0 / 3 / 8 / 27` ladder, and
+        blind spot (f)'s reach — which describe what the checks would report under
+        narrowings that were REJECTED, so re-deriving them means keeping three discarded
+        variants of check 5 alive in here.
+      - Git-history counts, such as the 22-of-23 measured at `ROOT_BUDGET`'s definition.
+        Those decay on every commit rather than on every edit to the file, so gating one
+        would make each commit touching the root re-measure `git log` — and unlike the
+        figures above there is no fixed point to converge on.
+      - Every figure that is HISTORY rather than a measurement: the 149,141 before #62,
+        #75's 40,000 lock against a 32,043 file, the 110-character drift, the +789 rise,
+        #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
+        rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,315 / 12,672 / 11,861 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,315 / 12,672 / 12,643 / 11,861 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 20,202 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,685 / 47,328 / 48,139 / 48,652 / 51,031. #76 spent 3,446 of
+    six, which have 44,238 / 46,685 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -264,7 +309,16 @@ Known remaining blind spots, stated rather than pretended away:
     derivation stated at its definition below, which is the one place that spells it out;
     this entry deliberately does not restate it, since a second copy is what "stated there
     only" would stop being true of. `RULE_BUDGET` stays flat; #59 fixes that one.
-    Exact figures rather than
+    Since #79 the MEASUREMENTS in this entry are GATED by check 7 — the eight sizes, their
+    descending order, the file names beside them, both headroom lists and `RULE_BUDGET`'s
+    own value, all derived from one reading of the tree — so what follows is the argument
+    for the shape, no longer a request for discipline. The entry's other figures (#76's
+    3,446, #70's 263, #65's 12,611, the 11,348 below) are dated history and are NOT gated,
+    per blind spot (g). It was the last of these figures to be maintained by hand and
+    the last to go stale: `gui-handoff.md` read 11,348 against a real 12,643, left by the
+    commit BEFORE #79 — a feature commit that re-measured the root's three figures in the
+    same pass — and wrong in ORDER as well as in value, since at 12,643 that file belongs
+    two places further up this list. Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
     "12.0k" when it was 12,611 — measured before a later edit to the same file and never
@@ -282,6 +336,8 @@ Needs no Qt, no build tree and no network.
 
 Run:  python3 tools/PreProcessor/tests/test_instruction_budget.py
 """
+import collections
+import datetime
 import fnmatch
 import os
 import re
@@ -303,13 +359,21 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # boundary. The band gets both properties by construction instead of by luck: > 500 so
 # a small edit never reaches here, < 3000 so a feature never adds 3k in silence.
 # Three shapes were possible and the trade is measured, not assumed:
-#   - An EXACT ratchet (what #62-#76 ran) is strictly tighter, and its friction is
-#     affordable — all 20 commits that touched CLAUDE.md since the split also touched
-#     this file, so nobody ever edited the root and forgot the constant. But it makes
-#     the budget a RESTATEMENT of the file's size, and a self-describing number in this
-#     repo has gone stale six times; CLAUDE.md already needs a joint fixed-point
-#     iteration over its own four figures, and an exact budget makes this file a fifth
-#     participant in it.
+#   - An EXACT ratchet (what #62-#76 ran) is strictly tighter, and its friction looked
+#     affordable — when #78 measured it, all 20 commits that had touched CLAUDE.md since
+#     the split also touched this file, so nobody had ever edited the root and forgot the
+#     constant. #79 re-measured and the premise no longer holds: 22 of 23 now, and the
+#     exception is `00255a0` — the last commit to touch the root before #79, and the only
+#     one since the split to edit it without editing this file. It re-measured the root's
+#     own three figures and left the byte-char delta here and blind spot (d)'s sizes
+#     stale, which is the half a per-file ratchet would not have caught either. The
+#     conclusion survives the premise, for a better reason than the one #78 gave: an
+#     exact ratchet makes the budget a RESTATEMENT of the file's size, and a
+#     self-describing number in this repo had gone stale eleven times by #79 — CLAUDE.md
+#     needs a joint fixed-point iteration over its own figures, and an exact budget makes
+#     this file another participant in it. What #79 changes is that the iteration is now
+#     mechanical (`--sync`) and gated (check 7), so the argument is about the budget's
+#     SHAPE rather than about who remembers to re-measure.
 #   - A LOCKED ceiling (what #75 ran, 40,000) removes that entirely and removes the
 #     mechanism with it: the root was 32,043, so 7,957 of slack sat under the ceiling
 #     and TWO such additions COULD have landed in silence. None did, and the honest
@@ -326,7 +390,7 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # The property is a RELATIONSHIP between this number and the file's actual size, so it
 # is held by injection 5c below and not by this comment. RULE_BUDGET is untouched: #59
 # fixes that one, and nothing here reaches a rule file.
-ROOT_BUDGET = 33_000
+ROOT_BUDGET = 33_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -375,7 +439,9 @@ def read_world():
             if name.endswith(".md"):
                 with open(os.path.join(notes_dir, name), encoding="utf-8") as fh:
                     notes[name] = fh.read()
-    return {"root": root_text, "rules": rules, "notes": notes,
+    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
+        gate_text = fh.read()
+    return {"root": root_text, "rules": rules, "notes": notes, "gate": gate_text,
             "pins": dict(KNOWN_RESIDUE), "tests": collect_test_files()}
 
 
@@ -808,8 +874,347 @@ def check_root_rule_coverage(world):
     return fails
 
 
+# --- check 7 ------------------------------------------------------------------
+# The instruction files state figures ABOUT THEMSELVES -- the root's character count,
+# its byte count, the byte-char delta, its budget and its slack; this file's own eight
+# rule-file sizes and their headroom. Every one was maintained by hand, and writing any
+# of them changes the file being measured, so keeping them true needs a joint
+# fixed-point iteration rather than a measurement. That had failed ELEVEN times in eight
+# tickets when #79 was implemented, every instance caught by a human or a review agent
+# rather than by the build.
+#
+# Eleven, re-derived rather than carried from the ticket -- which is #79's own acceptance
+# item, since a ticket's rule about measurement applies to the ticket. #79 tables nine
+# commits; all nine exist and each message admits a figure the build let through, though
+# one needs reading past its headline (`7a71a4e`'s table row says its grep evidence was
+# false, and its stale figure is in blind spot (d) two paragraphs below: "12,646/47,354
+# was correct only for the intermediate state `5725733` left"). Two more were live in the
+# tree while this check was being written -- the delta at 185 against a real 187, and
+# `gui-handoff.md` at 11,348 against a real 12,643. Both were left by `00255a0`, the last
+# commit to touch the root before #79 — a FEATURE commit, which re-measured the root's own
+# three figures in the same pass and neither of these. #78 had argued for the band partly
+# on the grounds that no feature commit had yet run against the gate; one now has, it
+# stayed inside check 1, and it still left two figures stale. That is the gap check 7
+# closes, and it is not the gap the band closes.
+#
+# The arithmetic is trivial; the ANCHORING is the whole problem. The figures live in
+# prose that other tickets rewrite on purpose, and this repo has twice measured prose
+# substring matching blind (blind spot (c), and check 5's basename resolution). Two
+# properties decide whether the check is worth having, and both are held below rather
+# than argued for here:
+#   - A figure that cannot be FOUND must FAIL. An anchor is required to resolve EXACTLY
+#     once, and the number of figures actually compared is asserted against the number
+#     the registry declares -- so a legitimate reword that removes an anchor goes red
+#     instead of quietly finding nothing to compare. That green-but-inert family has hit
+#     this repo three times (#62's injection 7, #77's injection B, and an injection sized
+#     from the constant it tested); injection 13b is what keeps it out of this one.
+#   - It must not become a permanently-red gate, which `ruff.toml`'s stated policy says is
+#     worse than none. A reword is a ONE-LINE fix to the entry's pattern, the failure
+#     names the anchor and prints the pattern that stopped resolving, and `--sync`
+#     rewrites every figure from disk so the hand-patching step where all eleven defects
+#     happened stops existing.
+# Option A of #79's three (regexes on stable phrases plus an expected-count assertion) is
+# what this is. B (`<!-- selfreport:chars -->` markers) was rejected because it spends
+# characters in the file whose size is the thing being measured and puts scaffolding in
+# prose written for agents; C (one canonical sentence asserted as a template) constrains
+# how that paragraph may ever be written, and the paragraph is the argument, not a field.
+#
+# `~` in a pattern is a whitespace RUN, which does two jobs. It makes every anchor
+# survive re-wrapping -- the figures sit mid-paragraph and their own width decides where
+# the line breaks, so `32,519\ncharacters` and `32,519 characters` are the same sentence.
+# And it keeps a pattern from matching its own source: these patterns live in the file
+# some of them measure, and a literal-space pattern for "the root file has ... more of
+# today" would resolve TWICE -- once in the docstring, once in this registry -- which
+# fails the exactly-once rule for a reason that has nothing to do with the figure.
+def _rx(pattern):
+    return re.compile(pattern.replace("~", r"\s+"))
+
+
+# A run of comma-grouped integers separated by ` / `, which is how this file writes the
+# eight rule-file sizes and both headroom lists.
+_NUM_LIST = r"((?:[\d,]+~/~)*[\d,]+)"
+
+_NUM_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+              "nine", "ten", "eleven", "twelve")
+
+
+def _parse_nums(text):
+    return tuple(int(p.strip().replace(",", "")) for p in text.split("/"))
+
+
+def _fmt_nums(values):
+    return " / ".join("{:,}".format(v) for v in values)
+
+
+def _parse_word(text):
+    """A spelled-out count, or digits once the prose outgrows the word list.
+
+    Falls back to -1 rather than raising, so an unrecognised word FAILS the comparison
+    with both values printed instead of aborting the run before the other figures are
+    read.
+    """
+    low = text.strip().lower()
+    if low in _NUM_WORDS:
+        return (_NUM_WORDS.index(low),)
+    return (int(low.replace(",", "")),) if low.replace(",", "").isdigit() else (-1,)
+
+
+def _fmt_word(values):
+    """The count as the word the prose uses, falling back to digits.
+
+    A `_NUM_WORDS[13]` would be an IndexError rather than a named failure, and a gate
+    whose job is to say WHICH figure is wrong must not answer with a traceback (this
+    repo has scored an injection's crash as a pass before). Thirteen rule files is a
+    reachable state: #59 planned six and there are eight.
+    """
+    n = values[0]
+    return _NUM_WORDS[n].capitalize() if 0 <= n < len(_NUM_WORDS) else str(n)
+
+
+def _parse_names(text):
+    return tuple(p.strip() for p in text.split(","))
+
+
+def _fmt_names(values):
+    return ", ".join(values)
+
+
+def _rules_by_size(world):
+    """(stem, chars) per rule file, largest first, ties by name.
+
+    The ORDER is derived here rather than read from the prose it checks, so a rule file
+    that grows past another fails the name list as its own figure instead of silently
+    re-pointing every size beside it. That is not hypothetical: `gui-handoff.md` grew
+    1,295 characters in the commit before #79 and belonged two places further up the
+    list, which no amount of re-deriving the SIZES alone would have said.
+    """
+    pairs = [(n[:-3], len(t)) for n, t in world["rules"].items()]
+    return sorted(pairs, key=lambda p: (-p[1], p[0]))
+
+
+def _root_chars(world):
+    return (len(world["root"]),)
+
+
+def _root_bytes(world):
+    return (len(world["root"].encode("utf-8")),)
+
+
+# The registry. Each entry declares WHERE the figure is, the pattern that anchors it, and
+# one field per capture group. A field named "date" is deliberately not compared: gating
+# it would go red with the calendar rather than with the file, which is the
+# permanently-red shape this check refuses -- `--sync` rewrites it, and only when a
+# figure beside it actually moved.
+_Figure = collections.namedtuple("_Figure", "parse fmt derive")
+
+_FIGURES = {
+    "root_chars": _Figure(_parse_nums, _fmt_nums, _root_chars),
+    "root_bytes": _Figure(_parse_nums, _fmt_nums, _root_bytes),
+    # characters/4, in thousands, which is the derivation the root file states one
+    # sentence below the figure. Rounded, and safely so: it cannot leave `8k` without
+    # check 1 failing first, since the whole band [30,000, 34,000) rounds to 8.
+    "root_tokens_k": _Figure(
+        _parse_nums, _fmt_nums, lambda w: (round(len(w["root"]) / 4000),)),
+    "root_budget": _Figure(_parse_nums, _fmt_nums, lambda w: (ROOT_BUDGET,)),
+    "root_slack": _Figure(
+        _parse_nums, _fmt_nums, lambda w: (ROOT_BUDGET - len(w["root"]),)),
+    "root_delta": _Figure(
+        _parse_nums, _fmt_nums,
+        lambda w: (len(w["root"].encode("utf-8")) - len(w["root"]),)),
+    # The flat rule-file budget, stated in this file's own blind spot (d) beside the two
+    # headroom lists that are DERIVED from it. Ungated, that sentence could read 60,000
+    # while `--sync` rewrote every headroom beside it from a different constant.
+    "rule_budget": _Figure(_parse_nums, _fmt_nums, lambda w: (RULE_BUDGET,)),
+    "rule_count": _Figure(_parse_word, _fmt_word, lambda w: (len(w["rules"]),)),
+    "rule_sizes": _Figure(
+        _parse_nums, _fmt_nums, lambda w: tuple(c for _, c in _rules_by_size(w))),
+    "rule_names": _Figure(
+        _parse_names, _fmt_names, lambda w: tuple(n for n, _ in _rules_by_size(w))),
+    "rule_headroom_large": _Figure(
+        _parse_nums, _fmt_nums,
+        lambda w: tuple(RULE_BUDGET - c for _, c in _rules_by_size(w)[:2])),
+    "rule_headroom_rest": _Figure(
+        _parse_nums, _fmt_nums,
+        lambda w: tuple(RULE_BUDGET - c for _, c in _rules_by_size(w)[2:])),
+}
+
+SELF_REPORT = (
+    {"label": "the root's always-loaded cost", "target": "root",
+     "pattern": r"\*\*always-loaded~context\*\*~—~\*\*([\d,]+)~characters~"
+                r"\(([\d,]+)~bytes,~(\d{4}-\d\d-\d\d)\)~≈~([\d,]+)k~tokens\*\*",
+     "fields": ("root_chars", "root_bytes", "date", "root_tokens_k")},
+    {"label": "the root's budget and its slack", "target": "root",
+     "pattern": r"whose~`ROOT_BUDGET`~is~\*\*([\d,]+)\*\*,~leaving~([\d,]+)~"
+                r"characters~of~slack",
+     "fields": ("root_budget", "root_slack")},
+    {"label": "the root's byte-char delta", "target": "root",
+     "pattern": r"the~two~differ~by~([\d,]+)~today",
+     "fields": ("root_delta",)},
+    {"label": "the root's rule-file count", "target": "root",
+     "pattern": r"\*\*([A-Za-z]+)~rule~files~now,~and~NO~area~of~residue~is~left\.\*\*",
+     "fields": ("rule_count",)},
+    # Story 5: the byte-char delta is stated in BOTH files and drifted in BOTH during
+    # #78, then drifted here AGAIN in the commit before #79 while the root's copy was
+    # re-measured. One derivation, two anchors, one check.
+    {"label": "this gate's own byte-char delta", "target": "gate",
+     "pattern": r"the~root~file~has~([\d,]+)~more~of~today",
+     "fields": ("root_delta",)},
+    # Blind spot (d)'s eight sizes, their descending ORDER, and the count word that
+    # introduces them. #79 asks whether these are in scope; they are, because the
+    # anchoring allows it -- the entry names the files beside their sizes, so the
+    # mapping is in the prose rather than assumed here.
+    {"label": "blind spot (d)'s eight rule-file sizes", "target": "gate",
+     "pattern": r"([A-Za-z]+)~rule~files~now~—~" + _NUM_LIST +
+                r"~characters~\(([a-z0-9-]+(?:,~[a-z0-9-]+)*)\)",
+     "fields": ("rule_count", "rule_sizes", "rule_names")},
+    {"label": "blind spot (d)'s statement of the flat rule budget", "target": "gate",
+     "pattern": r"`RULE_BUDGET`~is~a~flat~([\d,]+)~with~no~ratchet",
+     "fields": ("rule_budget",)},
+    {"label": "blind spot (d)'s headroom, the two largest", "target": "gate",
+     "pattern": r"a~move~larger~than~the~" + _NUM_LIST +
+                r"~of~headroom~the~two~large~ones~have~left",
+     "fields": ("rule_headroom_large",)},
+    {"label": "blind spot (d)'s headroom, the other six", "target": "gate",
+     "pattern": r"a~move~into~any~of~the~other~six,~which~have~" + _NUM_LIST + r"\.",
+     "fields": ("rule_headroom_rest",)},
+)
+
+# Derived from the registry, never stated: a figure count written here by hand would be
+# the twelfth instance of the defect this check exists to catch.
+_EXPECTED_FIGURES = sum(len([f for f in e["fields"] if f != "date"])
+                        for e in SELF_REPORT)
+
+_TARGET_PATH = {"root": _ROOT_NAME,
+                "gate": "tools/PreProcessor/tests/" + os.path.basename(__file__)}
+_TARGET_ABS = {"root": os.path.join(_REPO, _ROOT_NAME),
+               "gate": os.path.abspath(__file__)}
+
+
+def _resolve(world, entry):
+    """(match, error). Exactly one match, or an error naming the anchor and the pattern."""
+    rx = _rx(entry["pattern"])
+    if rx.groups != len(entry["fields"]):
+        return None, ("self-report entry %r is malformed: its pattern has %d capture "
+                      "groups and it declares %d fields."
+                      % (entry["label"], rx.groups, len(entry["fields"])))
+    ms = list(rx.finditer(world[entry["target"]]))
+    if len(ms) != 1:
+        return None, (
+            "the anchor for %s in %s resolved %d times, and exactly 1 is required. A "
+            "figure that cannot be FOUND must FAIL rather than be skipped, or this check "
+            "goes green-but-inert. If a reword moved it, fix this ONE pattern in "
+            "SELF_REPORT: %s"
+            % (entry["label"], _TARGET_PATH[entry["target"]], len(ms), entry["pattern"]))
+    return ms[0], None
+
+
+def check_self_report(world):
+    fails = []
+    compared = 0
+    for entry in SELF_REPORT:
+        m, err = _resolve(world, entry)
+        if err:
+            fails.append(err)
+            continue
+        for i, field in enumerate(entry["fields"], start=1):
+            if field == "date":
+                continue
+            spec = _FIGURES[field]
+            stated, derived = spec.parse(m.group(i)), spec.derive(world)
+            compared += 1
+            if stated != derived:
+                fails.append(
+                    "%s states %s (%s) as %r, and disk says %r. Run `python3 %s "
+                    "--sync` "
+                    "rather than patching it by hand: every stale figure in this series "
+                    "was hand-patched, and some were left BY the commit that fixed "
+                    "another one."
+                    % (_TARGET_PATH[entry["target"]], entry["label"], field,
+                       m.group(i), spec.fmt(derived), _TARGET_PATH["gate"]))
+    if compared != _EXPECTED_FIGURES:
+        fails.append(
+            "only %d of the %d figures SELF_REPORT declares were compared; the rest "
+            "belong to an anchor that stopped resolving (named above). The count comes "
+            "from the registry, so this cannot be satisfied by deleting an entry's "
+            "field." % (compared, _EXPECTED_FIGURES))
+    return fails
+
+
+# --- --sync: the other half ---------------------------------------------------
+def sync_world(world, today=None):
+    """Rewrite every self-report figure from disk. Returns (new_world, changes, converged).
+
+    A joint fixed point, not a measurement: five of these figures are inside the file
+    they measure, so writing one changes the next. The loop re-derives from the MUTATED
+    text each round and stops when a round changes nothing, which is also what makes it
+    idempotent -- running it on an already-correct world returns no changes at all.
+    """
+    cur = dict(world)
+    changes = []
+    for _ in range(12):
+        round_changes = []
+        for entry in SELF_REPORT:
+            m, err = _resolve(cur, entry)
+            if err:
+                # An unresolvable anchor is check 7's failure to report, not sync's to
+                # paper over: rewriting nothing here leaves it red rather than green.
+                continue
+            text = cur[entry["target"]]
+            edits, touched = [], False
+            for i, field in enumerate(entry["fields"], start=1):
+                if field == "date":
+                    continue
+                spec = _FIGURES[field]
+                want = spec.fmt(spec.derive(cur))
+                if spec.parse(m.group(i)) != spec.derive(cur):
+                    edits.append((m.span(i), want))
+                    round_changes.append("%s: %s %r -> %r"
+                                         % (_TARGET_PATH[entry["target"]], entry["label"],
+                                            m.group(i), want))
+                    touched = True
+            if touched and today:
+                for i, field in enumerate(entry["fields"], start=1):
+                    if field == "date" and m.group(i) != today:
+                        edits.append((m.span(i), today))
+            if not edits:
+                continue
+            for (lo, hi), want in sorted(edits, reverse=True):
+                text = text[:lo] + want + text[hi:]
+            cur[entry["target"]] = text
+        if not round_changes:
+            return cur, changes, True
+        changes.extend(round_changes)
+    return cur, changes, False
+
 # =============================================================================
 world = read_world()
+
+# `--sync` performs the joint fixed-point iteration check 7 verifies, so the hand-patching
+# step where every one of these defects happened stops existing (#79's story 2, and the
+# half its ticket suspected was worth more than the check). It writes and exits rather
+# than going on to run the checks: the figures it just rewrote are the gate's own input,
+# and a verdict from the process that did the writing is not evidence.
+if "--sync" in sys.argv[1:]:
+    synced, sync_changes, sync_ok = sync_world(
+        world, today=datetime.date.today().isoformat())
+    for line in sync_changes:
+        print("SYNC " + line, flush=True)
+    for _target in ("root", "gate"):
+        if synced[_target] != world[_target]:
+            with open(_TARGET_ABS[_target], "w", encoding="utf-8") as fh:
+                fh.write(synced[_target])
+            print("WROTE " + _TARGET_PATH[_target], flush=True)
+    if not sync_ok:
+        print("\nRESULT: --sync did NOT converge in 12 rounds. The figures above are "
+              "oscillating -- a width change that moves the file across a boundary it "
+              "then re-states -- and need a hand.", flush=True)
+        sys.exit(1)
+    if sync_changes:
+        print("\nRESULT: %d figure(s) synced. Re-run without --sync to verify."
+              % len(sync_changes), flush=True)
+    else:
+        print("\nRESULT: every self-report figure already matches disk.", flush=True)
+    sys.exit(0)
 
 check(bool(world["rules"]),
       "check 0. .claude/rules/ holds at least one rule file (nothing below can bite on "
@@ -844,6 +1249,9 @@ run(check_note_coverage,
 run(check_root_rule_coverage,
     "check 6. no rule in the root names a GUI module some rule file's globs already reach, "
     "and every KNOWN_RESIDUE pin is still a real violation")
+run(check_self_report,
+    "check 7. every figure the instruction files state ABOUT THEMSELVES agrees with disk, "
+    "and all %d of them were found (`--sync` rewrites them)" % _EXPECTED_FIGURES)
 
 
 # --- injections ---------------------------------------------------------------
@@ -852,7 +1260,7 @@ run(check_root_rule_coverage,
 # corrupts its input looks identical to the check working.
 def copy_world(w):
     return {"root": w["root"], "rules": dict(w["rules"]), "notes": dict(w["notes"]),
-            "pins": dict(w["pins"]), "tests": set(w["tests"])}
+            "gate": w["gate"], "pins": dict(w["pins"]), "tests": set(w["tests"])}
 
 
 # 5. an oversized file
@@ -1219,6 +1627,189 @@ check(len(nc) == 1 and "nope.md" in nc[0] and victim in nc[0],
 check(not check_note_coverage(world),
       "injection 12d. negative control: the real, unmutated world passes check 5, so the five "
       "failures above are the mutation and not the checker")
+
+
+# --- injection 13: check 7, a stated figure that disagrees with disk ------------
+# Bent through the anchor itself rather than by a literal search-and-replace: the figures
+# these injections damage live in THIS file, so a hardcoded old value would have to be
+# re-edited every time `--sync` moved one — the maintenance burden the check exists to
+# remove, reintroduced in its own test.
+def _entry_by_label(label):
+    for e in SELF_REPORT:
+        if e["label"] == label:
+            return e
+    raise AssertionError("no SELF_REPORT entry labelled %r" % label)
+
+
+def bend_figure(w, label, group, replacement):
+    """Rewrite ONE capture group of one self-report anchor in a copy of the world.
+
+    Returns (world, stated_before). The span comes from the live match, so the mutation
+    lands on whatever the figure currently says.
+    """
+    inj = copy_world(w)
+    entry = _entry_by_label(label)
+    m, err = _resolve(inj, entry)
+    # A fixture precondition, not a check: if the REAL world cannot resolve the anchor
+    # this injection bends, check 7 above has already reported it by name and there is
+    # nothing here left to prove. Aborting keeps the run's exit code non-zero and stops
+    # it from printing verdicts about a world it could not build.
+    assert err is None, "injection fixture: " + err
+    lo, hi = m.span(group)
+    was = m.group(group)
+    text = inj[entry["target"]]
+    inj[entry["target"]] = text[:lo] + replacement + text[hi:]
+    return inj, was
+
+
+inj, was = bend_figure(world, "the root's always-loaded cost", 1, "1")
+check(inj["root"] != world["root"]
+      and inj["root"].startswith("# " + _ROOT_NAME)
+      and _resolve(inj, _entry_by_label("the root's always-loaded cost"))[1] is None
+      and was != "1",
+      "injection 13. injection is well-formed: the root really differs, still opens with "
+      "its own heading, and its anchor still resolves — so what changed is the FIGURE "
+      "and not the sentence around it")
+sr = check_self_report(inj)
+check(any("root_chars" in f and "'1'" in f and _ROOT_NAME in f for f in sr),
+      "injection 13. check 7 fails on a stated character count that disagrees with disk, "
+      "naming the file, the anchor, the field and BOTH values")
+
+# 13b. the INERT direction, which is the one this repo has been bitten by three times
+# (#62's injection 7, #77's injection B, and an injection sized from the constant it
+# tested). The reword leaves the figure CORRECT and removes only the anchor, so a check
+# that merely searched for a number would pass while measuring nothing.
+inj = copy_world(world)
+inj["root"] = inj["root"].replace("the two differ by", "the two differ, by", 1)
+check(inj["root"] != world["root"]
+      and _resolve(inj, _entry_by_label("the root's byte-char delta"))[1] is not None
+      and str(len(world["root"].encode("utf-8")) - len(world["root"])) in inj["root"],
+      "injection 13b. injection is well-formed: the anchor really stopped resolving while "
+      "the figure itself is still the CORRECT one, which is what makes a substring check "
+      "pass here")
+sr = check_self_report(inj)
+check(any("resolved 0 times" in f and "byte-char delta" in f and "differ" in f
+          for f in sr)
+      and any("of the %d figures" % _EXPECTED_FIGURES in f for f in sr),
+      "injection 13b. check 7 FAILS on a missing anchor rather than skipping it, names the "
+      "anchor and prints the pattern that stopped resolving, and reports how many figures "
+      "went uncompared — a count derived from the registry, so deleting the entry cannot "
+      "satisfy it")
+synced, _changes, _ok = sync_world(inj)
+check(check_self_report(synced),
+      "injection 13b. --sync does not paper over an unresolvable anchor: it rewrites what "
+      "it can find and leaves the check RED, rather than reporting success for a figure "
+      "nothing measured")
+
+# 13c. story 5: the byte-char delta is stated in BOTH files and drifted in BOTH during
+# #78. This is the copy in this gate's own docstring — one derivation, two anchors.
+inj, was = bend_figure(world, "this gate's own byte-char delta", 1, "9,999")
+check(inj["gate"] != world["gate"] and inj["root"] == world["root"] and was != "9,999",
+      "injection 13c. injection is well-formed: only the GATE's copy of the figure moved, "
+      "and the root's copy of the same derivation is untouched")
+sr = check_self_report(inj)
+# Filtered to this field rather than asserting the TOTAL failure count: a `len(sr) == 1`
+# here would couple the injection to an otherwise-clean world, so one genuinely stale
+# figure on disk would light up several injections instead of one check.
+hits = [f for f in sr if "root_delta" in f]
+check(len(hits) == 1 and "9,999" in hits[0] and _TARGET_PATH["gate"] in hits[0]
+      and _ROOT_NAME not in hits[0],
+      "injection 13c. check 7 covers the gate's own docstring figure, and reports the file "
+      "that is wrong rather than the derivation's other, correct anchor")
+
+# 13c2. `RULE_BUDGET`'s value as blind spot (d) states it. The two headroom lists in that
+# same sentence are DERIVED from the constant, so without this anchor `--sync` would
+# rewrite every headroom beside a stated budget it no longer matched -- the divergence
+# check 7 exists to refuse, arriving from inside the check's own output.
+inj, was = bend_figure(world, "blind spot (d)'s statement of the flat rule budget", 1,
+                       "70,000")
+check(inj["gate"] != world["gate"] and was != "70,000"
+      and _fmt_nums((RULE_BUDGET,)) == was,
+      "injection 13c2. injection is well-formed: the stated budget really moved, and what "
+      "it moved away from was the constant's own value")
+sr = check_self_report(inj)
+hits = [f for f in sr if "rule_budget" in f]
+check(len(hits) == 1 and "70,000" in hits[0] and _fmt_nums((RULE_BUDGET,)) in hits[0],
+      "injection 13c2. check 7 fails when the prose and the constant disagree, so the "
+      "budget the headroom lists are computed FROM cannot drift away from them")
+
+# 13d. blind spot (d)'s eight rule-file sizes. #79 asks whether they are in scope; they
+# are, and this is why it was answerable: the entry names each file beside its size, so
+# the size list, the descending ORDER and the two headroom lists all derive from the same
+# on-disk measurement.
+inj, was = bend_figure(world, "blind spot (d)'s eight rule-file sizes", 2,
+                       "1 / 2 / 3 / 4 / 5 / 6 / 7 / 8")
+check(inj["gate"] != world["gate"] and _parse_nums(was) != (1, 2, 3, 4, 5, 6, 7, 8)
+      and _resolve(inj, _entry_by_label("blind spot (d)'s eight rule-file sizes"))[1] is None,
+      "injection 13d. injection is well-formed: the size list really differs and the entry "
+      "still parses as one anchor with three fields")
+sr = check_self_report(inj)
+hits = [f for f in sr if "rule_sizes" in f]
+check(len(hits) == 1
+      and _fmt_nums(tuple(c for _, c in _rules_by_size(world))) in hits[0],
+      "injection 13d. check 7 fails on blind spot (d)'s hand-maintained sizes, printing "
+      "the whole derived list so the fix is a paste rather than eight measurements")
+
+# 13e. a NEW rule file. The count word, the name list and both size lists all go stale at
+# once, and every one of them is a figure a future ticket would otherwise have to
+# remember — #77 added two rule files and #59 planned six.
+inj = copy_world(world)
+inj["rules"]["zz-phantom-area.md"] = "---\npaths:\n  - src/Phantom.cpp\n---\n\nA rule.\n"
+check(len(inj["rules"]) == len(world["rules"]) + 1
+      and _rules_by_size(inj) != _rules_by_size(world),
+      "injection 13e. injection is well-formed: the rule set really gained a file")
+sr = check_self_report(inj)
+check(any("rule_count" in f and _ROOT_NAME in f for f in sr)
+      and any("rule_count" in f and _TARGET_PATH["gate"] in f for f in sr)
+      and any("rule_names" in f for f in sr)
+      and any("rule_headroom_rest" in f for f in sr),
+      "injection 13e. check 7 fails on the rule-file COUNT in both files, on the name list "
+      "and on the headroom list — a ninth rule file cannot land while two files still say "
+      "eight")
+
+# 13f. `--sync` is the half #79 suspected was worth more than the check, so it is tested
+# as a property rather than shipped as a convenience: from an ARBITRARILY bent world it
+# must reach one check 7 passes, and a second pass must change nothing. Both figures bent
+# here are inside the file they measure, so this is the joint fixed point and not a
+# substitution — the character count moves when the character count is written.
+inj, _was = bend_figure(world, "the root's always-loaded cost", 1, "7")
+inj, _was = bend_figure(inj, "the root's budget and its slack", 2, "123,456")
+inj, _was = bend_figure(inj, "blind spot (d)'s headroom, the other six", 1, "0 / 0 / 0 / 0 / 0 / 0")
+check(len(check_self_report(inj)) >= 3 and len(inj["root"]) != len(world["root"]),
+      "injection 13f. injection is well-formed: three figures across both files disagree, "
+      "and bending them CHANGED the root's length — so the correct values are not the ones "
+      "the unmutated file states")
+synced, changes, converged = sync_world(inj)
+check(converged and changes and not check_self_report(synced),
+      "injection 13f. --sync converges and the synced world passes check 7, which is the "
+      "manual step where all eleven of these defects happened, removed")
+again, changes2, ok2 = sync_world(synced)
+check(ok2 and not changes2 and again["root"] == synced["root"]
+      and again["gate"] == synced["gate"],
+      "injection 13f. --sync is idempotent: a second pass over its own output reports no "
+      "change, so it is a fixed point rather than a value that keeps moving")
+
+# 13f2. the measurement DATE, which check 7 deliberately never compares — gating it would
+# go red with the calendar rather than with the file, which is the permanently-red shape
+# `ruff.toml`'s policy refuses. `--sync` still rewrites it, and only where a figure beside
+# it actually moved, so the date says when the numbers around it were last measured
+# instead of when the tool last ran.
+_STALE_DAY = "1999-12-31"
+dated, _c, _o = sync_world(inj, today=_STALE_DAY)
+check(_STALE_DAY in dated["root"] and _STALE_DAY not in world["root"]
+      and not check_self_report(dated),
+      "injection 13f2. --sync stamps the measurement date on the block whose figures it "
+      "rewrote, and the result still passes check 7 — the date is synced, never compared")
+untouched, _c2, _o2 = sync_world(synced, today=_STALE_DAY)
+check(_STALE_DAY not in untouched["root"] and untouched["root"] == synced["root"],
+      "injection 13f2. ...and does NOT stamp it when every figure in the block already "
+      "matched disk, so a run that changes nothing leaves the date alone")
+
+# 13g. negative control
+check(not check_self_report(world),
+      "injection 13g. negative control: the real, unmutated world passes check 7, so the "
+      "failures above are the mutations and not the checker — and every figure the "
+      "instruction files state about themselves is true as committed")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)
