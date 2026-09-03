@@ -70,7 +70,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 187 more of today because this repo's own prose
+bytes, which the root file has 185 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -203,8 +203,10 @@ Known remaining blind spots, stated rather than pretended away:
     budget left at 33,000 while the root fell to 20,000 would leave "every check still
     passing", and review measured the opposite — injection 5c goes RED once the slack
     reaches about 3,000, which is the whole point of expressing story 12 as a 3k addition
-    rather than as a budget value. So the unguarded band is roughly (1,000, 3,000) of
-    slack: wider than intended, never wide enough to re-open story 12. Deliberate: a gate
+    rather than as a budget value. Measured, not estimated: 5c still passes at 3,006 of
+    slack and goes RED at 3,007, so the unguarded band is (1,000, 3,006] — wider than
+    intended, never wide enough to re-open story 12. An earlier draft wrote "roughly
+    (1,000, 3,000)", which rounded in the direction that flatters the entry. Deliberate: a gate
     that recomputed the derivation
     would be an exact ratchet wearing a rounding, and #78 rejected exactness because a
     self-describing number goes stale (blind spot (d)'s own history, six times). The
@@ -259,8 +261,9 @@ Known remaining blind spots, stated rather than pretended away:
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.
     `ROOT_BUDGET` is not a flat number: #75 locked it at 40,000 and #78 gave it the
-    derivation stated at its definition below — the one place that spells it out — so it
-    moves when the root crosses a 500 boundary and not otherwise. `RULE_BUDGET` stays flat; #59 fixes that one.
+    derivation stated at its definition below, which is the one place that spells it out;
+    this entry deliberately does not restate it, since a second copy is what "stated there
+    only" would stop being true of. `RULE_BUDGET` stays flat; #59 fixes that one.
     Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
@@ -309,9 +312,10 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 #     participant in it.
 #   - A LOCKED ceiling (what #75 ran, 40,000) removes that entirely and removes the
 #     mechanism with it: the root was 32,043, so 7,957 of slack sat under the ceiling
-#     and TWO such additions COULD have landed in silence. None did — the root moved by
-#     at most 65 chars while the lock was in force — so what was broken is the GUARD, not
-#     the file. Stating it as an event is how the previous commit's own title happened
+#     and TWO such additions COULD have landed in silence. None did, and the honest
+#     reason is not that the drift was small (110 chars total, largest single move 65) but
+#     that every commit under the lock was #75's OWN — no feature commit ever ran against
+#     it, so the lock was never actually tested. What was broken is the GUARD, not the file. Stating it as an event is how the previous commit's own title happened
 #     ("two claims outran their facts"). That is #59's user story 12 unmet, and
 #     the previous split's exact failure — 142,874 grew back to 148,626 in two feature
 #     commits at ~+3k each, with nothing to notice.
