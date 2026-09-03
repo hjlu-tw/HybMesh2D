@@ -937,6 +937,55 @@ and only ONE project file is accepted per launch, the rest named and refused. Th
 always opens with one pristine blank session, so otherwise opening a workspace from
 the command line put a modal in front of an empty canvas.
 
+**The same failure had a SECOND instance, outside the GUI, for three weeks (#58).**
+`tools/scripts/visualize_dat.py` still handed every path it was given to
+`np.loadtxt`, so `visualize_dat.py mesh_multiblock_square.vtk` ended in an unhandled
+traceback reading `could not convert string 'HybMesh2D' to float64 at row 0,
+column 1` — `HybMesh2D` being the provenance banner on line 2 of a legacy-VTK header.
+Same shape as the `'{'` message above, and found the same way: by pointing the tool
+at a file this repo had just produced. The rule had been applied to the GUI's "open
+this path" entry points and to nothing else, which is what makes a *fixed* bug class
+worth a second ticket even when the instance is cheap. Three decisions, and two of
+them are refusals. **It does NOT import `project_file_kind`**: that module is Qt-free
+but lives inside the GUI package, and this script's whole dependency set is numpy and
+matplotlib — so the ONE kind this tool is actually handed (legacy VTK, identifiable
+from its first line) is recognised locally, in a `looks_like_legacy_vtk` that reads
+256 bytes and carries the reasoning and the cross-reference in a comment. Note what
+is and is not shared here, because the first draft of this note got it wrong and the
+#58 review caught it: `project_file_kind` classifies JSON PROJECT files and has no VTK
+notion at all, so this is not a second spelling of an existing check but a second
+instance of the same RULE. What would belong beside the classifier is a SECOND caller
+of the VTK question; there is one caller, and user story 3 pre-authorised keeping it
+local ("a five-line local check that carries its reasoning is also an acceptable
+answer for a tool this size, and is the cheaper one"). **It does
+not delegate the drawing** either: naming `tools/scripts/view_mesh_vtk.py` in the
+message is smaller than importing it and cannot be wrong, and the suggested command
+was run rather than assumed. And numpy's own `at row R, column C` is kept verbatim
+for a genuinely malformed geometry — it is the one useful thing the old message
+carried, so a fix that dropped it would trade a blind error for another blind error.
+`plot_element`'s two loads got the same treatment: both were bare `except:` bodies,
+so a mesh named as an element's `output_file` or `input_file` drew an empty figure
+and said nothing at all. Gated by `tests/test_visualize_dat_kind.py`, whose group 1
+meshes `examples/topology/square_block.json` with the real binary rather than writing
+a fixture (no `.vtk` is tracked — `results/` is ignored) and then checks the SAME
+bytes under a `.dat` name, because that is the half an `endswith(".vtk")` would fake.
+Its six injections are recorded in the file, and two of them earned their keep — one
+showed that `"mesh" in out.lower()` was satisfied by the banner `HybMesh2D` inside
+numpy's own message, so a check passed while the feature was deleted; the other that a
+group-4 check did not name the field it was about, and passed on the other element's
+warning. **What no injection could find, and the review did**: the first fix guarded the
+PARSE and not the SHAPE. `np.loadtxt` collapses a one-column file AND a one-point
+geometry to the same 1-D array, so `visualize_dat.py one_column.dat` parsed fine and
+then died in `ax.plot` with an `IndexError` naming no file — this ticket's own
+complaint, moved three lines later. Every injection mutates the new code, so none of
+them reaches a path the new code never touched; that is the standing limit of injection
+as evidence. `load_geometry` now returns an `(N, >=2)` array or raises, `ndmin=2` being
+what makes the one-column file and the one-point geometry distinguishable at all.
+**Blind spot**:
+only legacy VTK is recognised. A `.vrt`/`.cel`/`.bnd` handed to this tool is columns
+of numbers, so it parses, and the failure is a wrong picture rather than a wrong
+message. #58 scopes every other kind out.
+
 **The Output field's `.*` is a placeholder, and only one module may read it**
 (`models/mesh_output_names.py`, Qt-free — `output_base` / `output_path_for` /
 `FORMAT_PLACEHOLDER`, re-exported as `MeshConfig.*` so every existing call site is

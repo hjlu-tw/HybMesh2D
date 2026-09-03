@@ -10,6 +10,81 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 import argparse
+import warnings
+
+# --- A path is not a kind (issue #58) --------------------------------------
+# Everything below used to go straight to np.loadtxt, so pointing this tool at a
+# mesh ended in a traceback reading `could not convert string 'HybMesh2D' to
+# float64 at row 0, column 1` -- `HybMesh2D` being the provenance banner on line
+# 2 of a legacy-VTK header. That names neither the file, nor that it is a mesh,
+# nor the tool that draws one.
+#
+# The repo has fixed this failure class once already, in
+# tools/PreProcessor/gui/app/services/project_file_kind.py: classify by CONTENT,
+# never by extension, because the extension is exactly what a caller holding a
+# path cannot trust. That module is the canonical home of the question and any
+# THIRD caller belongs there -- but it lives inside the GUI package, and this
+# script must keep running with only numpy and matplotlib installed, so the one
+# kind this tool is actually handed is recognised here instead.
+
+VTK_MAGIC = "# vtk DataFile Version"
+GEOMETRY_SHAPE = "a geometry .dat is 'x y' per line"
+
+
+class GeometryLoadError(Exception):
+    """Why a path could not be read as a geometry, in words a user can act on."""
+
+
+def looks_like_legacy_vtk(path):
+    """True when `path` opens with a legacy-VTK header.
+
+    Only the first line is read, and only 256 bytes of it: classifying a 200 MB
+    mesh must not cost loading one. Bytes rather than text, because a binary file
+    handed to this tool is a wrong answer, not a UnicodeDecodeError.
+    """
+    try:
+        with open(path, "rb") as f:
+            first = f.readline(256)
+    except OSError:
+        return False
+    return first.decode("utf-8", "replace").startswith(VTK_MAGIC)
+
+
+def load_geometry(path):
+    """`np.loadtxt(path)`, or raise GeometryLoadError naming the file and why.
+
+    Always an (N, >=2) array, so every caller can index `[:, 0]` and `[:, 1]`.
+    `ndmin=2` is what makes that reachable: bare `np.loadtxt` collapses BOTH a
+    one-column file and a one-POINT geometry to the same 1-D array, so the two
+    could not be told apart, and the callers below died on `pts[:, 1]` with an
+    `IndexError` naming no file -- the same blind failure at one remove.
+
+    numpy's own `at row R, column C` is kept verbatim for a genuinely malformed
+    geometry: it is the one useful thing the old message carried, and a fix that
+    dropped it would trade a blind error for another blind error.
+    """
+    if looks_like_legacy_vtk(path):
+        raise GeometryLoadError(
+            f"{path} is a legacy-VTK MESH, not a geometry ({GEOMETRY_SHAPE}).\n"
+            f"    Draw it with:  python3 tools/scripts/view_mesh_vtk.py "
+            f"{path} out.png")
+    try:
+        with warnings.catch_warnings():
+            # An empty file is a UserWarning and an empty array; it is an error
+            # here, and the shape check below is the one place that says so.
+            warnings.simplefilter("ignore")
+            pts = np.loadtxt(path, ndmin=2)
+    except ValueError as e:
+        raise GeometryLoadError(
+            f"{path} does not parse as a geometry ({GEOMETRY_SHAPE}): {e}")
+    except OSError as e:
+        raise GeometryLoadError(f"{path} could not be read: {e}")
+    if pts.shape[0] < 1 or pts.shape[1] < 2:
+        raise GeometryLoadError(
+            f"{path} parses, but as {pts.shape[0]} row(s) of {pts.shape[1]} "
+            f"column(s) -- not a geometry ({GEOMETRY_SHAPE})")
+    return pts
+
 
 def get_seg_endpoints(seg, global_points):
     """預測線段的理論起點與終點座標"""
@@ -93,8 +168,9 @@ def plot_element(ax, element_config, element_id, quality_mode=False):
         return None
 
     try:
-        points = np.loadtxt(output_file)
-    except:
+        points = load_geometry(output_file)
+    except GeometryLoadError as e:
+        print(f"[WARN] element {element_id}: output_file {e}", file=sys.stderr)
         return None
 
     if len(points) < 2: return points
@@ -108,11 +184,19 @@ def plot_element(ax, element_config, element_id, quality_mode=False):
         global_points = None
         if "input_file" in element_config and os.path.exists(element_config["input_file"]):
             try:
-                global_points = np.loadtxt(element_config["input_file"])
+                global_points = load_geometry(element_config["input_file"])
                 if element_config.get("is_closed", False):
                     if np.linalg.norm(global_points[0] - global_points[-1]) > 1e-9:
                         global_points = np.vstack([global_points, global_points[0]])
-            except: pass
+            except GeometryLoadError as e:
+                print(f"[WARN] element {element_id}: input_file {e}",
+                      file=sys.stderr)
+                global_points = None
+            except (IndexError, ValueError) as e:
+                # An empty or 1-D file: the closure step above, not the parse.
+                print(f"[WARN] element {element_id}: input_file "
+                      f"{element_config['input_file']}: {e}", file=sys.stderr)
+                global_points = None
 
         for i, seg in enumerate(segments):
             seg_id = seg.get("id", "?")
@@ -223,7 +307,11 @@ def main():
         elif not args.quality:
             ax.legend(loc='upper right', fontsize='x-small')
     elif args.dat_file:
-        pts = np.loadtxt(args.dat_file)
+        try:
+            pts = load_geometry(args.dat_file)
+        except GeometryLoadError as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            return 1
         ax.plot(pts[:, 0], pts[:, 1], 'k.-', alpha=0.5)
 
     ax.set_aspect('equal')
@@ -231,6 +319,7 @@ def main():
     ax.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
     plt.show()
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -35,7 +35,9 @@ whose labels nothing carries. That is the family resemblance, and it is why they
   `services/pipeline_runner.py` is the module that handed the unresolved `.*` name through
   and then `os.path.exists`-ed it; it belongs to `.claude/rules/pipeline-case.md`, as does the
   rest of what `controllers/solver_ctrl.py` does once the grid is accepted. Read those two
-  before changing what an output name or a solver run means.
+  before changing what an output name or a solver run means. A fourth, `tools/scripts/visualize_dat.py`,
+  sits under NO rule file's globs at all — so this file and its own header comment are the only
+  things that reach its reader.
 - **Inward.** `models/segment.py` is matched here for its `bc` / `grow_bl` fields, but the
   rule that `to_dict()` / `from_dict()` is the ONE serialiser behind the resample config, the
   workspace and the pipeline script is stated in the GUI module map, in
@@ -73,6 +75,18 @@ can *run* a `.hws` and deliberately drops working state); the CLI loads the **pr
 geometry after**, because either project load resets all state and closes every tab; and only ONE
 project file is accepted per launch, the rest named and refused. The "this will close all current
 tabs" prompt is gated on `has_unsaved_work()`, since the GUI always opens with one blank session.
+**The same RULE binds one file outside this package, though not the same classifier**:
+`tools/scripts/visualize_dat.py` had the same defect (`np.loadtxt` over a `.vtk`, reported as
+`could not convert string 'HybMesh2D' to float64`, #58). It asks a DIFFERENT question —
+`project_file_kind` classifies JSON project files and has no VTK notion — so it owns
+`looks_like_legacy_vtk`, refuses by name and points at `tools/scripts/view_mesh_vtk.py`. It must
+NOT import `project_file_kind` to get there: that script's dependency set is numpy and matplotlib,
+and this package is neither. A SECOND caller of the VTK question is what would belong beside the
+classifier, in a module both can reach — not on this script's import line. It recognises legacy
+VTK and nothing else, deliberately: a `.vrt`/`.cel`/`.bnd` is columns of numbers, so it parses,
+and #58 scopes every other kind out. `load_geometry` returns an `(N, >=2)` array or raises, since
+guarding the parse alone left the same blind traceback three lines later in `ax.plot`. Gated by
+`tests/test_visualize_dat_kind.py`, which proves it still imports with PyQt6 unavailable.
 
 **The Output field's `.*` is a placeholder, and only one module may read it**
 (`models/mesh_output_names.py`, Qt-free — `output_base` / `output_path_for` / `FORMAT_PLACEHOLDER`,
