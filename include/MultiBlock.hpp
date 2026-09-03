@@ -78,6 +78,57 @@ struct MbGeometry {
     std::map<int, std::string> segBc;
 };
 
+// HOW each quad is cut into two triangles: a CLOSED SET, in one place, with its
+// declared numbers beside it. Same shape as `MbEdgeKind` and for the same reason
+// — a rule compared against a bare literal at the split site and again in a
+// banner is two chances for the two to disagree.
+//
+// The numbers are the `.dat` file's (`MB_SPLIT_RULE`) and the GUI's combo offers
+// exactly these four. ALTERNATING is 0 because it is the default and shipped
+// first: a case written before this ticket, which names no rule at all, must
+// produce the mesh it produced before.
+//
+// Why four and not two: a single fixed diagonal imprints its own direction on a
+// uniform structured region, which is why it is not the default — but it is the
+// right answer when a region's flow direction is known, and BOTH directions have
+// to be reachable or "fixed" means "whichever one we happened to hard-code".
+enum MbSplitRule {
+    // Flip with (i + j) parity. The default: no seed, no bias, deterministic.
+    MB_SPLIT_ALTERNATING = 0,
+    // Always the (i,j)-(i+1,j+1) diagonal.
+    MB_SPLIT_FORWARD     = 1,
+    // Always the (i+1,j)-(i,j+1) diagonal.
+    MB_SPLIT_BACKWARD    = 2,
+    // Chosen by a HASH of the cell's own identity — block id, i, j and the seed.
+    // Hash-based rather than drawn from a sequential generator, and that is the
+    // one property of this rule that is not negotiable: a sequential stream makes
+    // every cell's diagonal a function of traversal order, so adding one block
+    // anywhere in the topology would reshuffle the diagonals of the entire mesh.
+    // "I moved one corner and the whole mesh changed" would become the normal
+    // experience, and the regression comparator — which compares exported
+    // connectivity, exactly what a diagonal decides — would have nothing left to
+    // compare. Pinned by check 26 in tests/cpp/test_multiblock.cpp.
+    MB_SPLIT_RANDOM      = 3,
+};
+
+inline const char* mbSplitRuleName(int r) {
+    switch (r) {
+        case MB_SPLIT_FORWARD:  return "fixed forward diagonal";
+        case MB_SPLIT_BACKWARD: return "fixed backward diagonal";
+        case MB_SPLIT_RANDOM:   return "randomized, hashed from block, i, j and seed";
+        case MB_SPLIT_ALTERNATING: break;
+    }
+    return "alternating by index parity";
+}
+
+// Is this a rule the tool has? An unknown value is REFUSED — by
+// `Config::validate()` on the `.dat` path and by `buildMultiBlock` itself for any
+// other caller — and never clamped to the default, for the reason MESH_MODE
+// records: silently meshing with a rule nobody asked for has no symptom.
+inline bool isKnownMbSplitRule(int r) {
+    return r >= MB_SPLIT_ALTERNATING && r <= MB_SPLIT_RANDOM;
+}
+
 // The resolved parameters this path reads. Deliberately a handful of values
 // rather than a `Config&`: Config.hpp is a header-only .dat parser and pulling
 // it in would tie the decision layer to the file format it is a decision about.
@@ -91,6 +142,15 @@ struct MbParams {
     // cells, so triangles are the point of this whole path. Switchable off so
     // the quad mesh can be inspected when a topology is being diagnosed.
     bool splitQuads = true;
+    // WHICH diagonal each quad is cut on. An `int` rather than an `MbSplitRule`
+    // deliberately: the value arrives from a config file, an out-of-range one has
+    // to be REFUSABLE, and casting an unknown number to an enum to then range-check
+    // it is the one shape that makes the refusal itself undefined behaviour.
+    int splitRule = MB_SPLIT_ALTERNATING;
+    // The seed MB_SPLIT_RANDOM hashes. Read by that rule and by nothing else —
+    // set alongside any other rule it is inert, and this seam SAYS so in a warning
+    // rather than letting a recorded seed imply a reproducibility it does not have.
+    unsigned splitSeed = 0;
 };
 
 // A block's four sides, in the [south, east, north, west] order the topology
@@ -191,9 +251,9 @@ struct MbEdgeCount {
 // One filled block, with its LOGICAL i/j indexing retained.
 //
 // Retained rather than flattened because the diagonal rules depend on it: the
-// alternating split is a function of (i + j) parity, and issue #54's randomized
-// rule hashes (block, i, j, seed). Flattening before the split would destroy
-// the only information the split reads.
+// alternating split is a function of (i + j) parity and the randomized one hashes
+// (block id, i, j, seed). Flattening before the split would destroy the only
+// information the split reads.
 struct MbBlock {
     std::string id;
     int ni = 0;                  // node count along i
@@ -207,10 +267,14 @@ struct MbBlock {
 struct MbCell {
     std::vector<int> nodeIds;
     // Which block this cell came from. Carried because flattening is otherwise
-    // one-way: once the cells are a flat list there is nothing left to ask. The
-    // split rules are functions of it (issue #54's randomized diagonal hashes
-    // block, i, j and a seed), and issue #48 wants it as a VTK cell field for
-    // debugging — which nothing writes yet, since #50 changes no exporter.
+    // one-way: once the cells are a flat list there is nothing left to ask.
+    // Issue #48 wants it as a VTK cell field for debugging — which nothing writes
+    // yet, since no exporter has changed.
+    //
+    // NOT what the randomized diagonal hashes, and the difference is the whole
+    // point of that rule: this is a POSITION in `MbResult::blocks`, so declaring a
+    // new block ahead of an existing one renumbers it. The hash takes the block's
+    // declared `id` instead, which nothing but renaming that block can move.
     int block = -1;
 };
 

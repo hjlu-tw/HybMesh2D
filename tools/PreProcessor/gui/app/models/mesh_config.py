@@ -42,6 +42,21 @@ class MeshConfig:
     # domain buys. Off is a diagnostic, for inspecting the quads a topology
     # actually declared.
     mb_split_quads: bool = True
+    # WHICH diagonal each of those quads is cut on. The four rules and their
+    # numbers are the mesher's (`MbSplitRule` in include/MultiBlock.hpp):
+    # 0 = alternating by index parity, 1 = fixed forward, 2 = fixed backward,
+    # 3 = randomized from a hash of (block id, i, j, seed). 0 is the default
+    # because it shipped first, so a case saved before this field existed meshes
+    # exactly as it did.
+    mb_split_rule: int = 0
+    # The seed the RANDOMIZED rule hashes, and the whole of what makes that rule
+    # reproducible: the same topology and seed give byte-identical connectivity,
+    # which is what keeps a randomized mesh inside the regression comparator.
+    #
+    # `mb_split_*` and not `seed_*`: the seed_ fields below are REFINEMENT seeds,
+    # a local far-field sizing source with nothing to do with a random number.
+    # Two unrelated concepts under one prefix is how a user sets the wrong one.
+    mb_split_seed: int = 0
 
     # Section 0b: Units
     # The unit EVERY length in this config is expressed in — domain bounds, mesh

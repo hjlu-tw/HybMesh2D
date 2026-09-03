@@ -11,6 +11,7 @@
 #include "Logger.hpp"
 #include "BLParams.hpp"
 #include "MeshMode.hpp"
+#include "MultiBlock.hpp"   // MbSplitRule: the split rule's numbers and names
 
 struct Config {
     // Which GENERATION PATH runs. 0 = the existing hybrid path (boundary-layer
@@ -51,6 +52,32 @@ struct Config {
     // tooling reads the VTK: letting those show quads while the solver
     // integrates triangles would manufacture an invisible discrepancy.
     bool mbSplitQuads = true;
+
+    // WHICH DIAGONAL each of those quads is cut on. The four rules and their
+    // numbers are declared once, in include/MultiBlock.hpp (`MbSplitRule`):
+    // 0 = alternating by index parity, 1 = fixed forward, 2 = fixed backward,
+    // 3 = randomized from a hash of (block id, i, j, seed).
+    //
+    // 0 is the default because it is what shipped first, so a case written before
+    // this key existed meshes exactly as it did. Spelled `0` rather than
+    // `hybmesh::MB_SPLIT_ALTERNATING` for the reason meshMode records above: the
+    // GUI/C++ parity gate resolves this member's INITIALISER as a literal, and an
+    // enum name here would drop the key out of the comparison entirely.
+    int mbSplitRule = 0;
+
+    // The seed the RANDOMIZED rule hashes. Read by that rule and by nothing else,
+    // and the multi-block seam warns when it is set beside a rule that ignores it.
+    //
+    // Named MB_SPLIT_SEED and not SEED_*: the SEED_ prefix in this file is the
+    // REFINEMENT-seed namespace (SEED_FILE / SEED_SIZE / SEED_RADIUS / SEED_MODE),
+    // which drives local far-field sizing and has nothing to do with a random
+    // number. Two unrelated concepts under one prefix is how a user comes to set
+    // the wrong one.
+    //
+    // An `int` rather than an `unsigned`: the .dat reader, the GUI's spin box and
+    // the parity gate all speak int, and the seam casts once. A negative value is
+    // not refused — it is a bit pattern like any other, and hashing it is defined.
+    int mbSplitSeed = 0;
 
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
@@ -286,6 +313,8 @@ struct Config {
             }
             else if (key == "MESH_TOPOLOGY_FILE") ss >> topologyFile;
             else if (key == "MB_SPLIT_QUADS") { double v; ss >> v; mbSplitQuads = (v != 0); }
+            else if (key == "MB_SPLIT_RULE") { double v; ss >> v; mbSplitRule = static_cast<int>(v); }
+            else if (key == "MB_SPLIT_SEED") { double v; ss >> v; mbSplitSeed = static_cast<int>(v); }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -374,6 +403,18 @@ struct Config {
             LOG_ERROR("MESH_MODE " << meshMode << " is not a known mode ("
                       << MESH_MODE_HYBRID << " = hybrid BL + Gmsh, "
                       << MESH_MODE_MULTIBLOCK << " = multi-block structured).");
+            ok = false;
+        }
+        // Same answer as MESH_MODE above and for the same reason: there is no
+        // obviously right rule to fall back on, and splitting on a diagonal nobody
+        // asked for is a wrong mesh with no error attached to it.
+        if (!hybmesh::isKnownMbSplitRule(mbSplitRule)) {
+            LOG_ERROR("MB_SPLIT_RULE " << mbSplitRule << " is not a known rule ("
+                      << hybmesh::MB_SPLIT_ALTERNATING << " = alternating by index "
+                      << "parity, " << hybmesh::MB_SPLIT_FORWARD << " = fixed forward "
+                      << "diagonal, " << hybmesh::MB_SPLIT_BACKWARD << " = fixed "
+                      << "backward diagonal, " << hybmesh::MB_SPLIT_RANDOM
+                      << " = randomized).");
             ok = false;
         }
         if (bl.blLayers < 0) {
@@ -482,6 +523,17 @@ struct Config {
             os << "  - Split Quads          : " << (mbSplitQuads ? "Yes" : "No")
                << (mbSplitQuads ? "" : "  (diagnostic: the solver cannot use quads)")
                << "\n";
+            // The rule and its seed go into the run's provenance record by being
+            // ordinary config values: this is the one writer, shared by the console
+            // banner and the sidecar, so a randomized mesh carries the number that
+            // reproduces it without any wiring of its own. The seed is printed only
+            // for the rule that reads it — see the seam's own warning for a seed
+            // set beside a rule that does not.
+            os << "  - Split Rule           : " << mbSplitRule << " ("
+               << hybmesh::mbSplitRuleName(mbSplitRule) << ")\n";
+            if (mbSplitRule == hybmesh::MB_SPLIT_RANDOM)
+                os << "  - Split Seed           : " << mbSplitSeed
+                   << "  (re-run with this seed to reproduce this mesh)\n";
         }
         os << "\n";
 

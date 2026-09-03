@@ -122,6 +122,61 @@ boundary edges, warnings as data and an optional error. Rules:
   only thing that reads it and flattening first would destroy it. `MbCell::block` is
   carried for the same reason: once the cells are a flat list there is nothing left to
   ask which block one came from.
+
+**Four diagonal rules, and why the randomized one is hash-based (#54).**
+`MB_SPLIT_RULE` selects between alternating by `(i + j)` parity (0, the default and
+what shipped first, so a case predating this key meshes exactly as it did), a fixed
+forward diagonal (1), a fixed backward one (2) and a randomized rule (3) seeded by
+`MB_SPLIT_SEED`. Both fixed directions exist rather than one, because "fixed" otherwise
+means "whichever direction we happened to hard-code"; a region whose flow direction is
+known has a right answer and it is not always the same one.
+
+- **The randomized rule hashes the cell's OWN IDENTITY — block ID string, i, j, seed —
+  and this is the property that is not optional.** A sequential generator makes every
+  cell's diagonal a function of traversal order, so declaring one extra block anywhere
+  reshuffles the diagonals of the entire mesh: "I moved one corner and the whole mesh
+  changed" becomes the normal experience, and the golden comparator, which compares
+  exported connectivity and therefore exactly what a diagonal decides, loses its
+  baseline on every topology edit.
+- **The block's declared ID, not its index in `MbResult::blocks`.** The ticket says
+  "(block, i, j, seed)" and `MbCell::block` was already carried, which made the index
+  the obvious reading — and the wrong one. An index moves when a block is declared
+  AHEAD of an existing one, which is the same failure the sequential generator has, one
+  step removed. `test_multiblock.cpp` check 26 therefore declares the extra block FIRST:
+  an appended block leaves every existing index alone and so cannot tell the two hashes
+  apart. Measured (injection H, 2026-09-03): hashing the index breaks that check and
+  nothing else.
+- **Written out rather than taken from `<random>`.** `std::mt19937` is specified bit for
+  bit, but every DISTRIBUTION in `<random>` is implementation-defined, so
+  `uniform_int_distribution<>(0,1)` may return different bits on libc++ and libstdc++
+  from the same seed. A recorded seed that reproduces a mesh only on the machine that
+  made it is worse than no seed, because it reproduces most of the time. The
+  implementation is fixed-width unsigned arithmetic (FNV-1a over the id, then the
+  lowbias32 finalizer), whose overflow is defined, so the answer is a function of the
+  four inputs and of nothing else. Neither hash is cryptographic and neither needs to
+  be: what is asked of them is that neighbouring cells do not correlate.
+- **An unknown rule is refused twice, with different exit codes on purpose.**
+  `Config::validate()` refuses it as a CONFIG error (fix the `.dat`), and
+  `buildMultiBlock` refuses it for any other caller — never clamped, for the reason
+  `MESH_MODE` records. That second door was very nearly the only one: injection N found
+  that disabling the `.dat`-level refusal broke NOTHING, because every other gate for
+  the rule went through the pure seam. `test_mesh_mode.cpp` check 5b exists because of
+  that run.
+- **A seed no rule reads is NAMED.** The seed is an ordinary config value, which is what
+  carries it into the provenance sidecar with no wiring of its own — and is also why a
+  seed set beside a rule that ignores it is a problem rather than a harmless spare: it
+  lands in the record implying a reproducibility it had no part in. The seam warns.
+- **`MB_SPLIT_*` and never `SEED_*`.** That prefix is already the refinement-seed
+  namespace (`SEED_FILE`, `SEED_SIZE`, `SEED_RADIUS`, `SEED_MODE`), a local far-field
+  sizing source with nothing to do with a random number. Two unrelated concepts under
+  one prefix is how a user sets the wrong one.
+- **What is NOT checked, named rather than implied**: the quality of the bit stream.
+  Nothing asserts that the diagonals are well distributed — only that both appear, that
+  the pattern is not parity's under another name, and that it is a function of the four
+  declared inputs. A hash with a visible period would pass every check. That is
+  deliberate: a distribution test over 12 cells asserts noise, and the property that
+  actually matters — no direction imprinted on a uniform region — is what `MbQuality`
+  measures on a real case.
 - **Unknown JSON keys are REFUSED, not skipped.** A typo'd `"spacng"` that is ignored
   produces a mesh with the wrong node distribution and no symptom — the same failure
   class the inert-parameter warning exists to close. Strict now is relaxable later; the

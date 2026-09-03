@@ -208,6 +208,11 @@ def config_to_text(cfg, path: str = "") -> str:
     if _topo:
         lines.append(f"MESH_TOPOLOGY_FILE {_topo}")
     lines.append(f"MB_SPLIT_QUADS {1 if getattr(cfg, 'mb_split_quads', True) else 0}")
+    # Both written unconditionally, like every other mode key: the mesher's own
+    # default is then never the one in force for a GUI-driven run, which is the
+    # precondition the parity gate's check 6 rests on.
+    lines.append(f"MB_SPLIT_RULE {int(getattr(cfg, 'mb_split_rule', 0))}")
+    lines.append(f"MB_SPLIT_SEED {int(getattr(cfg, 'mb_split_seed', 0))}")
     lines += [
         "",
         "# ==============================================================================",

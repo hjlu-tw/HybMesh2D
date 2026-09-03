@@ -23,6 +23,20 @@
 //     also BOUND to a geometry, and a block welded to itself (which `parseBlocks`
 //     refuses, correctly for a transfinite fill over four sides, so an O-grid seam
 //     cannot be declared as one edge).
+//   * The diagonal split RULES are checks 24-28 (#54). What they do NOT check is
+//     the QUALITY of the randomized rule's bit stream: nothing here asks whether
+//     the diagonals are well distributed, only that both appear, that the pattern
+//     is not parity's, and that it is a function of the four declared inputs. A
+//     hash with a visible period would pass everything here. That is deliberate —
+//     a distribution test on 12 cells asserts noise — and the property that
+//     actually matters (no direction imprinted on a uniform region) is what
+//     MbQuality measures on a real case.
+//   * Nor does anything here reach the `.dat` keys. That MB_SPLIT_RULE and
+//     MB_SPLIT_SEED arrive at these parameters at all, that an unknown rule is a
+//     CONFIG refusal rather than a topology one, and that the seed survives into
+//     the EXPORT are check 6 of
+//     tools/PreProcessor/tests/test_multiblock_surface.py, plus check 5b of
+//     tests/cpp/test_mesh_mode.cpp for Config::validate().
 //   * The geometry fixtures are BUILT here rather than resampled. What they
 //     reproduce is the two conventions of the real chain that decide where an
 //     attachment lands (a joint belongs to the later segment; a closed loop's
@@ -58,6 +72,31 @@
 // guard, because there is none — a scratch script that rewrites src/ and rebuilds
 // is not something this repo ships, which is the same reason these injections are
 // hand runs at all.
+//
+// SEVEN MORE for the split rules, measured 2026-09-03 the same way (each patch
+// applied alone, rebuilt, ctest run, control run clean). N is against
+// include/Config.hpp; the rest against src/MultiBlock.cpp:
+//
+//   H  the randomized rule hashes the block INDEX, not its declared id -> 26
+//   I  the randomized rule drawn from a sequential stream              -> 25, 26
+//   J  the two fixed directions swapped                                -> 24
+//   K  the seed never mixed into the hash                              -> 25
+//   L  an unknown rule clamped to the default instead of refused       -> 27
+//   M  the inert-seed warning removed                                  -> 28
+//   N  Config::validate() no longer refuses an unknown rule
+//                                                 -> test_mesh_mode check 5b
+//
+// Three of those are recorded for what the FIRST run showed rather than the
+// second. H would not COMPILE in its first form: dropping the only call to
+// mbHashId made it an unused static function, which this build treats as an
+// error, so the injection had to keep the call and discard its value. With the
+// original 4-and-6-quad fixture H then broke only ONE of the two blocks, because
+// the six-quad block's renumbered pattern collided with its own by chance —
+// check 26's fixture was enlarged to 16 and 20 quads for that reason, and it
+// asserts its own sizes before comparing, since two unreadable blocks compare
+// equal. And N is the one that found something rather than confirming it: before
+// check 5b existed, disabling the `.dat`-level refusal broke NOTHING, because
+// every other gate for the rule goes through the pure seam.
 #include "MultiBlock.hpp"
 #include "check.hpp"
 
@@ -175,6 +214,111 @@ std::string twoBlocks(const std::string& sharedKind = "interface",
   ],
   "blocks": [
     {"id": "b0", "edges": ["s0", "m", "n0", "w"]},
+    {"id": "b1", "edges": ["s1", "ee", "n1", "m"]}
+  ]
+})";
+}
+
+// ── The diagonal each quad actually took (issue #54) ──────────────────────
+//
+// Read BACK from the emitted cells rather than recomputed from the rule, so what
+// it reports is what the mesh holds. `true` = the forward (i,j)-(i+1,j+1)
+// diagonal, in the (j, i) order the fill emits.
+//
+// Keyed by the block's declared ID and not by its index, because that is exactly
+// the difference the invariance check below is about: the same block sits at a
+// different index once another block is declared ahead of it.
+std::vector<bool> diagonals(const MbResult& r, const std::string& id) {
+    int bi = -1;
+    for (size_t k = 0; k < r.blocks.size(); ++k)
+        if (r.blocks[k].id == id) bi = static_cast<int>(k);
+    if (bi < 0) return {};
+    const hybmesh::MbBlock& b = r.blocks[static_cast<size_t>(bi)];
+
+    std::vector<const hybmesh::MbCell*> mine;
+    for (const auto& c : r.cells) if (c.block == bi) mine.push_back(&c);
+
+    std::vector<bool> out;
+    size_t q = 0;
+    for (int j = 0; j + 1 < b.nj; ++j) {
+        for (int i = 0; i + 1 < b.ni; ++i, ++q) {
+            if (2 * q + 1 >= mine.size() || mine[2 * q]->nodeIds.size() != 3) return {};
+            out.push_back(mine[2 * q]->nodeIds[2] == b.nodeAt(i + 1, j + 1));
+        }
+    }
+    return out;
+}
+
+MbParams splitRule(int rule, unsigned seed = 0) {
+    MbParams p;
+    p.splitRule = rule;
+    p.splitSeed = seed;
+    return p;
+}
+
+// The whole mesh's connectivity as one comparable string: every cell's node ids
+// in order. What "byte-identical connectivity" means for this seam, and what a
+// diagonal decides -- so two runs that agree here produce the same export.
+std::string connectivity(const MbResult& r) {
+    std::string out;
+    for (const auto& c : r.cells) {
+        for (int v : c.nodeIds) out += std::to_string(v) + ",";
+        out += ";";
+    }
+    return out;
+}
+
+// Two welded blocks, and OPTIONALLY a third, entirely unrelated one declared
+// AHEAD of them: its own four corners, its own four edges, off to the right and
+// touching nothing. One builder for both documents, so the pair differs by
+// exactly the extra block and by nothing else.
+//
+// Declared FIRST rather than appended, and that is the point of the fixture. An
+// appended block cannot tell an index-based hash from an id-based one -- every
+// existing block keeps its index. Inserting one ahead of them renumbers both, so
+// a rule that hashed the index would move every diagonal in the mesh, which is
+// the failure this fixture exists to catch.
+//
+// The counts are larger than `twoBlocks()`'s (16 and 20 quads rather than 4 and
+// 6) for a reason measured during the injection runs: at 6 quads a renumbered
+// block's pattern collided with its own by chance, so half the check went quiet
+// while the other half caught the injection. A block of 16 quads makes that
+// coincidence 2^-16.
+std::string weldedPair(bool withUnrelated) {
+    const std::string unrelatedCorners = withUnrelated ? R"(,
+    {"id": "p", "kind": "free", "xy": [5.0, 0.0]},
+    {"id": "q", "kind": "free", "xy": [6.0, 0.0]},
+    {"id": "r", "kind": "free", "xy": [6.0, 1.0]},
+    {"id": "t", "kind": "free", "xy": [5.0, 1.0]})" : "";
+    const std::string unrelatedEdges = withUnrelated ? R"(,
+    {"id": "xs", "corners": ["p", "q"], "kind": "wall", "count": 5},
+    {"id": "xe", "corners": ["q", "r"], "kind": "wall", "count": 4},
+    {"id": "xn", "corners": ["t", "r"], "kind": "wall", "count": 5},
+    {"id": "xw", "corners": ["p", "t"], "kind": "wall", "count": 4})" : "";
+    const std::string unrelatedBlock = withUnrelated
+        ? R"(    {"id": "bx", "edges": ["xs", "xe", "xn", "xw"]},
+)" : "";
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "a", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "d", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "e", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "f", "kind": "free", "xy": [2.0, 1.0]})") + unrelatedCorners + R"(
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["a", "b"], "kind": "wall", "count": 5},
+    {"id": "s1", "corners": ["b", "c"], "kind": "wall", "count": 6},
+    {"id": "w", "corners": ["a", "d"], "kind": "wall", "count": 5},
+    {"id": "m", "corners": ["b", "e"], "kind": "interface"},
+    {"id": "n0", "corners": ["d", "e"], "kind": "wall"},
+    {"id": "n1", "corners": ["e", "f"], "kind": "wall"},
+    {"id": "ee", "corners": ["c", "f"], "kind": "wall"})" + unrelatedEdges + R"(
+  ],
+  "blocks": [
+)" + unrelatedBlock + R"(    {"id": "b0", "edges": ["s0", "m", "n0", "w"]},
     {"id": "b1", "edges": ["s1", "ee", "n1", "m"]}
   ]
 })";
@@ -1218,6 +1362,174 @@ int main() {
             CHECK(r.sharedEdges.empty(),
                   "23. ...and nothing is reported as shared, because nothing is");
         }
+    }
+
+    // ── 24. all four diagonal rules, each on a known block ─────────────────
+    //
+    // Through the seam and read off the cells, never off an export: what a rule
+    // does is which of two triangles a quad becomes, and that is a fact about
+    // `MbResult`. Check 3 already pins the default; this pins the other three
+    // against it, which is the only way "selectable" means anything.
+    {
+        const std::string doc = square(5, 4);   // 4x3 = 12 quads
+        const MbResult alt = build(doc);
+        const MbResult fwd = build(doc, splitRule(hybmesh::MB_SPLIT_FORWARD));
+        const MbResult bwd = build(doc, splitRule(hybmesh::MB_SPLIT_BACKWARD));
+        const MbResult rnd = build(doc, splitRule(hybmesh::MB_SPLIT_RANDOM, 7));
+        CHECK(alt.ok && fwd.ok && bwd.ok && rnd.ok, "24. setup: all four rules build");
+
+        const std::vector<bool> dA = diagonals(alt, "b0");
+        const std::vector<bool> dF = diagonals(fwd, "b0");
+        const std::vector<bool> dB = diagonals(bwd, "b0");
+        const std::vector<bool> dR = diagonals(rnd, "b0");
+        CHECK(dA.size() == 12 && dF.size() == 12 && dB.size() == 12 && dR.size() == 12,
+              "24. every rule fills the same 12 quads ("
+              + std::to_string(dA.size()) + "/" + std::to_string(dF.size()) + "/"
+              + std::to_string(dB.size()) + "/" + std::to_string(dR.size()) + ")");
+
+        CHECK(std::all_of(dF.begin(), dF.end(), [](bool d) { return d; }),
+              "24. rule 1 takes the FORWARD diagonal in every quad");
+        CHECK(std::none_of(dB.begin(), dB.end(), [](bool d) { return d; }),
+              "24. rule 2 takes the BACKWARD diagonal in every quad");
+
+        // The default is neither fixed rule: that it ALTERNATES is check 3's job,
+        // and this only has to establish that "fixed" is a different mesh from it.
+        CHECK(dA != dF && dA != dB, "24. rule 0 is neither of the two fixed rules");
+
+        // The randomized rule uses BOTH diagonals -- a hash that always returned
+        // the same bit would pass every count-based check above -- and lays them
+        // down in a pattern that is not the parity one.
+        const size_t fwdCount = static_cast<size_t>(
+            std::count(dR.begin(), dR.end(), true));
+        CHECK(fwdCount > 0 && fwdCount < dR.size(),
+              "24. rule 3 uses both diagonals (" + std::to_string(fwdCount)
+              + " of " + std::to_string(dR.size()) + " forward)");
+        CHECK(dR != dA, "24. ...and is not the alternating pattern under another name");
+
+        // Whatever the rule, the mesh must still be a mesh.
+        for (const MbResult* res : {&alt, &fwd, &bwd, &rnd}) {
+            CHECK(res->cells.size() == 24u, "24. ...and every rule emits two triangles "
+                                            "per quad");
+            CHECK(invertedCells(*res) == 0,
+                  "24. ...wound counter-clockwise, so no rule inverts a cell");
+        }
+    }
+
+    // ── 25. the randomized rule is REPRODUCIBLE from its seed ──────────────
+    //
+    // The comparator compares exported connectivity and a diagonal changes exactly
+    // that, so without this property the randomized rule would take this path out
+    // of regression testing altogether. Same topology, same seed, byte-identical
+    // connectivity; a different seed, a different mesh.
+    {
+        const std::string doc = square(6, 5);
+        const MbResult a = build(doc, splitRule(hybmesh::MB_SPLIT_RANDOM, 12345));
+        const MbResult b = build(doc, splitRule(hybmesh::MB_SPLIT_RANDOM, 12345));
+        const MbResult c = build(doc, splitRule(hybmesh::MB_SPLIT_RANDOM, 12346));
+        CHECK(a.ok && b.ok && c.ok, "25. setup");
+        CHECK(connectivity(a) == connectivity(b),
+              "25. the same topology and seed give byte-identical connectivity");
+        CHECK(connectivity(a) != connectivity(c),
+              "25. ...and a different seed gives a different mesh, so the seed is "
+              "read rather than ignored");
+        // The seed changes the DIAGONALS and nothing else: same nodes, same
+        // positions, same boundary. A seed that moved a node would not be a split
+        // rule.
+        CHECK(a.nodes.size() == c.nodes.size()
+                  && a.boundaryEdges.size() == c.boundaryEdges.size()
+                  && a.cells.size() == c.cells.size(),
+              "25. ...and changes only which diagonal, never the node set");
+    }
+
+    // ── 26. an unrelated block does not disturb anyone else's diagonals ─────
+    //
+    // THE property a sequential generator violates, and the reason this rule is
+    // hash-based. The extra block is declared FIRST, so both existing blocks are
+    // renumbered: a hash of the block INDEX would move every diagonal in the mesh,
+    // and a draw from a stream would move them all as soon as the extra block's
+    // cells were drawn first. Tested directly rather than argued for.
+    {
+        const MbParams p = splitRule(hybmesh::MB_SPLIT_RANDOM, 99);
+        const MbResult two   = build(weldedPair(false), p);
+        const MbResult three = build(weldedPair(true), p);
+        CHECK(two.ok && three.ok, "26. setup (err: " + two.error + " / "
+                                  + three.error + ")");
+        CHECK(two.blocks.size() == 2 && three.blocks.size() == 3,
+              "26. ...the third block really is in the second document");
+
+        // The renumbering the fixture exists to cause, asserted so the check
+        // cannot quietly stop testing what it says it tests.
+        CHECK(three.blocks[0].id == "bx",
+              "26. ...and is declared AHEAD of them, so 'b0' and 'b1' move index");
+
+        const std::vector<bool> b0two = diagonals(two, "b0");
+        const std::vector<bool> b1two = diagonals(two, "b1");
+        const std::vector<bool> b0three = diagonals(three, "b0");
+        const std::vector<bool> b1three = diagonals(three, "b1");
+        // Non-empty on BOTH sides before they are compared. `diagonals` returns an
+        // empty vector for a block it cannot read, and two empty vectors compare
+        // equal — so without this line the two checks below would pass loudest
+        // exactly when the helper had stopped working.
+        CHECK(b0two.size() == 16 && b1two.size() == 20
+                  && b0three.size() == 16 && b1three.size() == 20,
+              "26. ...setup: both blocks' quads are readable in both documents ("
+              + std::to_string(b0two.size()) + "/" + std::to_string(b1two.size())
+              + " vs " + std::to_string(b0three.size()) + "/"
+              + std::to_string(b1three.size()) + ")");
+        CHECK(b0two == b0three, "26. block 'b0' keeps every one of its diagonals");
+        CHECK(b1two == b1three, "26. block 'b1' keeps every one of its diagonals");
+
+        // ...and the new block is not simply a copy of one of them, which is what
+        // "unchanged" would degenerate to if the hash ignored the block entirely.
+        CHECK(diagonals(three, "bx") != b1three,
+              "26. ...while the new block gets its own pattern, so the block's "
+              "identity is in the hash at all");
+    }
+
+    // ── 27. an unknown split rule is REFUSED, never clamped ────────────────
+    //
+    // Same answer as an unknown MESH_MODE and for the same reason: there is no
+    // obviously right rule to fall back on, and meshing with one nobody asked for
+    // leaves no symptom. The refusal is the seam's, so a caller that is not the
+    // .dat reader gets it too.
+    {
+        for (int bad : {-1, 4, 99}) {
+            MbResult r = build(square(4, 3), splitRule(bad));
+            CHECK(!r.ok, "27. split rule " + std::to_string(bad) + " is refused");
+            CHECK(mentions(r.error, std::to_string(bad)),
+                  "27. ...and the message names it (got: " + r.error + ")");
+            CHECK(r.cells.empty() && r.nodes.empty(),
+                  "27. ...and nothing is produced");
+        }
+    }
+
+    // ── 28. a seed nothing reads is SAID, not silently kept ────────────────
+    //
+    // A seed set beside a rule that does not hash it decides nothing, but it still
+    // reaches the run's provenance record -- where it implies that the mesh can be
+    // reproduced from it. That is the silent-wrong-value failure this repo keeps
+    // closing, so the seam names it.
+    {
+        auto seedWarned = [](const MbResult& r) {
+            for (const auto& w : r.warnings) if (mentions(w, "split seed")) return true;
+            return false;
+        };
+        CHECK(seedWarned(build(square(4, 3),
+                               splitRule(hybmesh::MB_SPLIT_ALTERNATING, 5))),
+              "28. a seed set beside the alternating rule is named");
+        CHECK(seedWarned(build(square(4, 3), splitRule(hybmesh::MB_SPLIT_FORWARD, 5))),
+              "28. ...and beside a fixed rule");
+        {
+            MbParams p = splitRule(hybmesh::MB_SPLIT_RANDOM, 5);
+            p.splitQuads = false;
+            CHECK(seedWarned(build(square(4, 3), p)),
+                  "28. ...and with the randomized rule chosen but splitting OFF, "
+                  "where it likewise decides nothing");
+        }
+        CHECK(!seedWarned(build(square(4, 3), splitRule(hybmesh::MB_SPLIT_RANDOM, 5))),
+              "28. ...and NOT when the randomized rule is actually the one running");
+        CHECK(!seedWarned(build(square(4, 3), splitRule(hybmesh::MB_SPLIT_ALTERNATING, 0))),
+              "28. ...nor when no seed was set at all");
     }
 
     return hybmesh::test::report("test_multiblock");

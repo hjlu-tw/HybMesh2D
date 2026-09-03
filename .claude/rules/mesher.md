@@ -21,7 +21,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 
 | Group | Key examples |
 |-------|-------------|
-| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS` |
+| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS`, `MB_SPLIT_RULE`, `MB_SPLIT_SEED` |
 | Domain | `DOMAIN_X_MIN/MAX`, `DOMAIN_Y_MIN/MAX` |
 | Surface | `SURFACE_MESH_SIZE`, `AUTO_SURFACE_SIZE` |
 | BL Core | `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS` |
@@ -84,6 +84,27 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   quads for diagnosis and **says so** (the solver's incenter reconstruction is undefined on quads;
   the grid converter refuses a mixed mesh). The split happens in the MESHER, so VTK shows the mesh
   the solver integrates.
+- **Four split rules, and the randomized one hashes the cell's OWN IDENTITY** (`MbSplitRule` in
+  `include/MultiBlock.hpp`; `MB_SPLIT_RULE` 0=alternating, the default and what shipped first,
+  1=fixed forward, 2=fixed backward, 3=randomized; `MB_SPLIT_SEED`; #54). Rule 3 is
+  `hash(block ID string, i, j, seed)` — **never a sequential generator and never the block INDEX**.
+  A stream makes a diagonal a function of traversal order and an index moves when a block is
+  declared ahead of it, so either would reshuffle the whole mesh when one block is added, and the
+  golden comparator (which compares exported connectivity, exactly what a diagonal decides) would
+  lose its baseline on every topology edit. Pinned by `test_multiblock.cpp` check 26, whose fixture
+  declares the extra block **FIRST** — appending one cannot tell an index hash from an id hash.
+  - **Written out, not taken from `<random>`**: `std::mt19937` is specified bit for bit but every
+    `<random>` DISTRIBUTION is implementation-defined, so a seed that reproduces a mesh only on the
+    machine that made it is worse than no seed. Fixed-width unsigned arithmetic only.
+  - **An unknown rule is REFUSED twice**: by `Config::validate()` with `EXIT_ERR_CONFIG` (fix the
+    `.dat`) and by `buildMultiBlock` for any other caller — never clamped, as with `MESH_MODE`.
+  - **A seed no rule reads is NAMED**, in a seam warning: it still reaches the provenance record,
+    where it implies a reproducibility it had no part in.
+  - **`MB_SPLIT_*`, never `SEED_*`** — that prefix is the refinement-seed namespace, an unrelated
+    concept. The GUI's `mb_split_rule` / `mb_split_seed` sit beside its `seed_size` / `seed_radius`
+    for the same reason.
+  - Gated by `tests/cpp/test_multiblock.cpp` 24-28 (7 hand injections, dated in that file),
+    `tests/cpp/test_mesh_mode.cpp` 5b and `tests/test_multiblock_surface.py` check 6.
 - **Logical i/j is retained rather than flattened** (only the diagonal rule reads it);
   `MbCell::block` is carried for the same reason.
 - **Unknown JSON keys are REFUSED, not skipped** — a typo'd `"spacng"` silently ignored is a wrong

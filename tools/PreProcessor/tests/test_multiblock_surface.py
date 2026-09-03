@@ -19,6 +19,14 @@ What this pins down:
      rather than falling through to an empty mesh.
   5. Every boundary edge reaches the ``.bnd`` carrying its BC, so the grid the
      solver reads is not the all-``wall`` default arrived at by accident.
+  6. All four diagonal split rules reach the mesher from the ``.dat``, the four
+     produce four different meshes of the same 40 triangles, and the randomized
+     one is REPRODUCIBLE from its seed in the exported ``.cel`` -- which is the
+     file the comparator and the solver's converter both read, so the claim is
+     about the export and not about the seam's return value. Its seed reaches
+     the run's own provenance record, an unknown rule is a CONFIG refusal that
+     exports nothing, and a seed no rule reads is named rather than kept
+     silently (issue #54).
 
 THE ACCEPTANCE RUN, dated and quoted rather than replaced by a shape check.
 CI has no solver binary, so this is recorded here in the convention this repo
@@ -237,6 +245,81 @@ def main() -> int:
         check("5. ...naming the file it could not open", "nope.json" in out)
         check("5. ...and exporting NOTHING",
               not os.path.exists(gone_stem + ".vtk"))
+
+        # ── 6. the four diagonal rules, and the seed that reproduces one ────
+        #
+        # What the rules DO is pinned next door on the pure seam, where a
+        # diagonal is a fact about `MbResult`. What can only be checked out here
+        # is that the two `.dat` keys reach it and that reproducibility survives
+        # the whole chain: the comparator compares the EXPORTED connectivity, so
+        # the claim "the same seed gives the same mesh" is a claim about this
+        # file, not about the seam's return value.
+        #
+        # The `.cel` is the grid the solver's converter reads and the file the
+        # golden comparator treats as authoritative, which is why it is the one
+        # compared here rather than the `.vtk`.
+        def mesh_with(tag, extra):
+            stem = os.path.join(tmp, tag)
+            rc, out = run(tmp, write_config(os.path.join(tmp, tag + ".dat"),
+                                            topo, stem, extra=extra))
+            cel = open(stem + ".cel", encoding="utf-8").read() \
+                if os.path.exists(stem + ".cel") else ""
+            return rc, out, cel
+
+        rc_a, out_a, cel_a = mesh_with("rand_a", "MB_SPLIT_RULE 3\nMB_SPLIT_SEED 4242\n")
+        rc_b, _,     cel_b = mesh_with("rand_b", "MB_SPLIT_RULE 3\nMB_SPLIT_SEED 4242\n")
+        rc_c, _,     cel_c = mesh_with("rand_c", "MB_SPLIT_RULE 3\nMB_SPLIT_SEED 4243\n")
+        rc_0, _,     cel_0 = mesh_with("rule_0", "MB_SPLIT_RULE 0\n")
+        rc_1, _,     cel_1 = mesh_with("rule_1", "MB_SPLIT_RULE 1\n")
+        rc_2, _,     cel_2 = mesh_with("rule_2", "MB_SPLIT_RULE 2\n")
+        check("6. every declared split rule meshes (rc=0)",
+              [rc_a, rc_b, rc_c, rc_0, rc_1, rc_2] == [0] * 6)
+        check("6. ...and each wrote a .cel", all(c for c in
+              (cel_a, cel_b, cel_c, cel_0, cel_1, cel_2)))
+        check("6. the same topology and seed give byte-identical connectivity, "
+              "which is what keeps a randomized mesh inside the comparator",
+              cel_a == cel_b)
+        check("6. ...and a different seed gives a different mesh, so the seed "
+              "really reaches the split", cel_a != cel_c)
+        check("6. the four rules are four different meshes",
+              len({cel_0, cel_1, cel_2, cel_a}) == 4)
+        # Every rule still produces the same MESH, only cut differently: same
+        # cell count, all triangles. A rule that changed the node set would not
+        # be a split rule.
+        for tag, cel in (("0", cel_0), ("1", cel_1), ("2", cel_2), ("3", cel_a)):
+            rows = [len(set(ln.split()[1:5])) for ln in cel.splitlines()
+                    if len(ln.split()) >= 5]
+            check(f"6. ...rule {tag} emits the same 40 triangles ({len(rows)})",
+                  len(rows) == 40 and set(rows) == {3})
+
+        # The seed is in the run's own record, which is the whole of what makes a
+        # randomized mesh askable-for a second time.
+        check("6. the banner names the rule and the seed",
+              "Split Rule" in out_a and "4242" in out_a)
+        prov = os.path.join(tmp, "rand_a.provenance.json")
+        check("6. ...and so does the provenance sidecar, by the rule being an "
+              "ordinary config value rather than by wiring of its own",
+              os.path.exists(prov)
+              and "4242" in open(prov, encoding="utf-8").read())
+
+        # A seed nothing reads is SAID, rather than recorded as if it decided
+        # something.
+        _, out_inert, _ = mesh_with("inert", "MB_SPLIT_RULE 0\nMB_SPLIT_SEED 77\n")
+        check("6. a seed set beside a rule that ignores it is named in a warning",
+              "split seed" in out_inert and "77" in out_inert)
+
+        # An unknown rule is a CONFIG error (exit 2), not a topology one: the
+        # response is to fix the .dat, and nothing is exported.
+        bad_rule_stem = os.path.join(tmp, "bad_rule")
+        rc, out = run(tmp, write_config(os.path.join(tmp, "bad_rule.dat"),
+                                        topo, bad_rule_stem,
+                                        extra="MB_SPLIT_RULE 9\n"))
+        check("6. an unknown MB_SPLIT_RULE exits with the CONFIG code (2), not "
+              "the topology one -- the file to fix is the .dat", rc == 2)
+        check("6. ...naming the value it refused", "9" in out and "MB_SPLIT_RULE" in out)
+        check("6. ...and exporting NOTHING",
+              not any(os.path.exists(bad_rule_stem + e)
+                      for e in (".vtk", ".vrt", ".cel")))
 
     print("\nRESULT: " + ("ALL PASS" if not failures
                           else f"{len(failures)} FAILURE(S)"))

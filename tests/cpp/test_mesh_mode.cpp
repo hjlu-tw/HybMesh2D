@@ -201,6 +201,44 @@ int main() {
         CHECK(good.validate(), "...and accepts a known one");
     }
 
+    // ── 5b. the QUAD SPLIT RULE gets the same answer (issue #54) ────────────
+    //
+    // A second door onto the same failure: `buildMultiBlock` refuses an unknown
+    // rule too, but a `.dat` carrying one must be refused BEFORE a topology is
+    // ever read, with the CONFIG exit code rather than the topology one — the
+    // response differs (fix the config vs fix the declaration). Measured by
+    // injection, 2026-09-03: disabling the refusal in `Config::validate()` alone
+    // broke nothing at all until this check existed, because every other gate for
+    // the rule goes through the pure seam.
+    {
+        Config c;
+        CHECK(c.mbSplitRule == hybmesh::MB_SPLIT_ALTERNATING && c.mbSplitSeed == 0,
+              "the DEFAULT rule is the one that shipped first, so a case written "
+              "before this key existed meshes exactly as it did");
+        CHECK(hybmesh::isKnownMbSplitRule(hybmesh::MB_SPLIT_ALTERNATING)
+              && hybmesh::isKnownMbSplitRule(hybmesh::MB_SPLIT_FORWARD)
+              && hybmesh::isKnownMbSplitRule(hybmesh::MB_SPLIT_BACKWARD)
+              && hybmesh::isKnownMbSplitRule(hybmesh::MB_SPLIT_RANDOM),
+              "all four declared rules are known");
+        CHECK(!hybmesh::isKnownMbSplitRule(-1) && !hybmesh::isKnownMbSplitRule(4),
+              "...and nothing either side of them is");
+        for (int bad : {-1, 4}) {
+            Config c2; c2.mbSplitRule = bad;
+            CHECK(!c2.validate(), "validate() refuses MB_SPLIT_RULE "
+                                  + std::to_string(bad));
+        }
+        Config c3; c3.mbSplitRule = hybmesh::MB_SPLIT_RANDOM; c3.mbSplitSeed = 42;
+        CHECK(c3.validate(), "...and accepts a known one with its seed");
+        // The four rules are DISTINCT numbers with distinct names — a name shared
+        // by two rules would make the banner and the provenance record ambiguous
+        // about which mesh was built.
+        std::set<std::string> names;
+        for (int k = hybmesh::MB_SPLIT_ALTERNATING; k <= hybmesh::MB_SPLIT_RANDOM; ++k)
+            names.insert(hybmesh::mbSplitRuleName(k));
+        CHECK(names.size() == 4, "each rule has its own name ("
+              + std::to_string(names.size()) + " distinct)");
+    }
+
     // ── 6. the two new exit codes have stable tokens ────────────────────────
     {
         CHECK(EXIT_ERR_TOPOLOGY == 8 && EXIT_ERR_INVERTED == 9,

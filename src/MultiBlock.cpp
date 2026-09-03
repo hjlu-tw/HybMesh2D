@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <sstream>
@@ -19,6 +20,58 @@ namespace {
 // the two evolve at unrelated rates, so coupling them would force a bump of one
 // every time the other moved.
 constexpr int kFormatVersion = 1;
+
+// ── The randomized diagonal's hash ────────────────────────────────────────
+//
+// A HASH of the cell's own identity, never a draw from a sequential generator.
+// The distinction is the reason MB_SPLIT_RANDOM is usable at all: a stream makes
+// each cell's diagonal a function of how many cells were visited before it, so
+// declaring one extra block reshuffles every diagonal in the mesh and the
+// regression comparator — which compares exactly this connectivity — loses its
+// baseline on every topology edit.
+//
+// Written out here rather than taken from <random>, and that is not a preference.
+// std::mt19937 is specified bit for bit but every DISTRIBUTION in <random> is
+// implementation-defined, so `std::uniform_int_distribution<>(0,1)(gen)` is free to
+// return different bits on libc++ and libstdc++ from the same seed. A recorded
+// seed that reproduces a mesh only on the machine that made it is worse than no
+// seed at all, because it reproduces most of the time. Everything below is
+// fixed-width unsigned arithmetic, whose overflow is defined, so the answer is a
+// function of the four inputs and of nothing else.
+//
+// The mixer is the widely used "lowbias32" finalizer; the string hash is FNV-1a.
+// Neither is cryptographic and neither needs to be — what is asked of them is that
+// neighbouring cells do not correlate, which is what makes the result look like a
+// broken bias rather than a second regular pattern.
+std::uint32_t mbMix32(std::uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+// The block's DECLARED id, hashed. Deliberately not its index in `blocks`:
+// an index moves when a block is declared ahead of it, which is precisely the
+// "add an unrelated block and the whole mesh changes" outcome this rule exists to
+// avoid. Renaming a block does change its diagonals, and that is the honest
+// trade — a rename is an edit to the identity itself.
+std::uint32_t mbHashId(const std::string& id) {
+    std::uint32_t h = 2166136261U;             // FNV-1a offset basis
+    for (unsigned char c : id) { h ^= c; h *= 16777619U; }
+    return h;
+}
+
+// Does cell (i, j) of the block whose id hashes to `blockHash` take the forward
+// diagonal? One bit out of the mix of all four inputs.
+bool mbRandomForward(std::uint32_t blockHash, int i, int j, std::uint32_t seed) {
+    std::uint32_t h = mbMix32(blockHash ^ 0x9e3779b9U);
+    h = mbMix32(h ^ static_cast<std::uint32_t>(i));
+    h = mbMix32(h ^ (static_cast<std::uint32_t>(j) + 0x85ebca6bU));
+    h = mbMix32(h ^ seed);
+    return (h & 1U) != 0U;
+}
 
 // ── The parsed document ───────────────────────────────────────────────────
 // Kept as a corner/edge/block hierarchy rather than as fixed-size arrays of 2D
@@ -964,6 +1017,19 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         return r;
     };
 
+    // The PARAMETERS are checked before the document, because an unknown split rule
+    // is wrong whatever the topology says and reporting a JSON error first would
+    // send the reader to the wrong file. Refused rather than clamped to the
+    // default, for the reason MESH_MODE records: a run that silently substitutes a
+    // rule nobody asked for produces a mesh with no symptom.
+    if (!isKnownMbSplitRule(params.splitRule))
+        return fail("split rule " + std::to_string(params.splitRule)
+                    + " is not a known rule (" + std::to_string(MB_SPLIT_ALTERNATING)
+                    + " = alternating by index parity, "
+                    + std::to_string(MB_SPLIT_FORWARD) + " = fixed forward diagonal, "
+                    + std::to_string(MB_SPLIT_BACKWARD) + " = fixed backward diagonal, "
+                    + std::to_string(MB_SPLIT_RANDOM) + " = randomized).");
+
     // Never throws: a malformed document is an ordinary outcome of this seam,
     // not an exception the caller has to remember to catch.
     json doc = json::parse(topologyJson, nullptr, /*allow_exceptions*/ false,
@@ -1424,6 +1490,12 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             }
         }
 
+        // The block's identity as the randomized rule sees it — its DECLARED id,
+        // hashed once here rather than per cell. Computed for every rule because
+        // it costs one pass over a short string and keeps the loop below a single
+        // switch with no setup hanging off one of its arms.
+        const std::uint32_t blockHash = mbHashId(b0.id);
+
         for (int j = 0; j + 1 < nj; ++j) {
             for (int i = 0; i + 1 < ni; ++i) {
                 const int n00 = b0.nodeAt(i, j),         n10 = b0.nodeAt(i + 1, j);
@@ -1432,12 +1504,29 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                     r.cells.push_back(MbCell{{n00, n10, n11, n01}, blockIdx});
                     continue;
                 }
-                // ALTERNATING BY INDEX PARITY — the default, and correct from the
-                // first mesh rather than a later refinement. A single consistent
-                // diagonal imprints its own direction on a uniform structured
-                // region; flipping with (i + j) does not, needs no seed, and stays
-                // deterministic, so this path remains comparable run to run.
-                if (((i + j) % 2) == 0) {
+                // WHICH DIAGONAL. Forward is (i,j)-(i+1,j+1), backward the other.
+                //
+                // ALTERNATING BY INDEX PARITY is the default and stays it: a single
+                // consistent diagonal imprints its own direction on a uniform
+                // structured region, while flipping with (i + j) does not, needs no
+                // seed, and is deterministic, so that path remains comparable run to
+                // run. The two FIXED rules exist because a region whose flow
+                // direction is known has a right answer, and the randomized one
+                // breaks the same directional bias without laying down the regular
+                // checkerboard parity leaves behind.
+                //
+                // The rule was RANGE-CHECKED on the way in, so the default arm here
+                // is the alternating rule and not a silent fallback for junk.
+                bool forward;
+                switch (params.splitRule) {
+                    case hybmesh::MB_SPLIT_FORWARD:  forward = true;  break;
+                    case hybmesh::MB_SPLIT_BACKWARD: forward = false; break;
+                    case hybmesh::MB_SPLIT_RANDOM:
+                        forward = mbRandomForward(blockHash, i, j, params.splitSeed);
+                        break;
+                    default: forward = ((i + j) % 2) == 0; break;
+                }
+                if (forward) {
                     r.cells.push_back(MbCell{{n00, n10, n11}, blockIdx});
                     r.cells.push_back(MbCell{{n00, n11, n01}, blockIdx});
                 } else {
@@ -1519,6 +1608,24 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                              "That is a diagnostic setting: the solver's incenter "
                              "reconstruction is undefined on quad cells, and the grid "
                              "converter's own slicer refuses a mixed mesh.");
+
+    // A SEED THAT NOTHING READS. Only the randomized rule hashes it, so a seed set
+    // beside any other rule — or with splitting off entirely — decides nothing,
+    // and a recorded seed that decided nothing is the worse half of the failure:
+    // it goes into the provenance record and implies a reproducibility claim about
+    // a mesh it had no part in. Named rather than left silent, which is the same
+    // rule `inertParamsSet` applies one level up.
+    if (params.splitSeed != 0
+        && !(params.splitQuads && params.splitRule == MB_SPLIT_RANDOM))
+        r.warnings.push_back("a split seed is set (" + std::to_string(params.splitSeed)
+                             + ") but nothing reads it: only the randomized split rule ("
+                             + std::to_string(MB_SPLIT_RANDOM) + ") hashes a seed, and "
+                             "this run "
+                             + (params.splitQuads
+                                    ? std::string("uses rule ")
+                                          + std::to_string(params.splitRule) + " ("
+                                          + mbSplitRuleName(params.splitRule) + ")."
+                                    : std::string("does not split at all.")));
 
     r.ok = true;
     return r;

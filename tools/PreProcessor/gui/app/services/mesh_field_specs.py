@@ -35,6 +35,17 @@ _GMSH_ALGOS = [(1, "1: MeshAdapt"), (2, "2: Automatic"), (5, "5: Delaunay"),
                (6, "6: Frontal-Delaunay"), (7, "7: BAMG"),
                (8, "8: Frontal-Delaunay Quads")]
 
+#: The quad-split diagonal rules. The numbers are the mesher's (``MbSplitRule`` in
+#: ``include/MultiBlock.hpp``), spelled here the way ``_GMSH_ALGOS`` above spells
+#: Gmsh's algorithm numbers — inline, because this combo is the only widget that
+#: offers them and a second module would be one more place for the list to drift.
+#: An unknown number is refused by ``Config::validate()``, never clamped, so a
+#: divergence here is a loud config error rather than a mesh nobody asked for.
+_MB_SPLIT_RULES = [(0, "0: Alternating by index parity"),
+                   (1, "1: Fixed forward diagonal"),
+                   (2, "2: Fixed backward diagonal"),
+                   (3, "3: Randomized (hashed, reproducible from the seed)")]
+
 MESH_SPECS: tuple[FieldSpec, ...] = (
     # ── Which generation path runs ───────────────────────────────────────────
     FieldSpec("mesh_mode", "choice", "Mesh Mode",
@@ -66,6 +77,28 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               "is for looking at, not for solving.",
               key="MB_SPLIT_QUADS", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,)),
+    FieldSpec("mb_split_rule", "choice", "Split Rule",
+              "WHICH diagonal each quad is cut on. Alternating flips with (i + j) "
+              "parity and is the default: a single fixed diagonal imprints its own "
+              "direction on a uniform region, and this needs no seed. The two fixed "
+              "rules are for a region whose flow direction is known. Randomized "
+              "breaks the same directional bias without laying down parity's regular "
+              "checkerboard — it is hashed from each cell's own identity (block, i, "
+              "j, seed), so adding a block elsewhere leaves every other block's "
+              "diagonals alone, and the seed below reproduces the mesh exactly.",
+              key="MB_SPLIT_RULE", group="mode",
+              modes=(MESH_MODE_MULTIBLOCK,),
+              opts=dict(choices=list(_MB_SPLIT_RULES), fallback=0)),
+    FieldSpec("mb_split_seed", "int", "Split Seed",
+              "The seed the randomized rule hashes. The same topology and the same "
+              "seed give byte-identical connectivity, so a randomized mesh can be "
+              "reproduced later — it is written into the run's configuration record "
+              "for that reason. Read by the randomized rule only; set beside any "
+              "other rule the mesher says so rather than letting it imply a "
+              "reproducibility it had no part in.",
+              key="MB_SPLIT_SEED", group="mode",
+              modes=(MESH_MODE_MULTIBLOCK,),
+              opts=dict(lo=0, hi=2147483647)),
 
     # ── Domain & Geometry: the rectangular bounding box ──────────────────────
     # modes: the multi-block domain is bounded by the topology's own outer edges,

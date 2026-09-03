@@ -464,6 +464,10 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     hybmesh::MbParams params;
     params.defaultBc = config.bcGeom;
     params.splitQuads = config.mbSplitQuads;
+    params.splitRule = config.mbSplitRule;
+    // Cast once, here. The .dat and the GUI speak int; the hash wants a bit
+    // pattern, and the conversion of a negative int to unsigned is defined.
+    params.splitSeed = static_cast<unsigned>(config.mbSplitSeed);
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
     // Warnings are DATA on the way out of the seam; saying them is this layer's job.
@@ -534,9 +538,21 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << hybmesh::mbSideAxis(se.sideB).name
                   << " of block '" << b << "'\n";
     }
-    std::cout << "  - Cells                : " << res.cells.size() << " "
-              << (config.mbSplitQuads ? "triangles (alternating diagonal by index parity)"
-                                      : "quads (splitting is OFF)") << "\n";
+    // The RULE is named, not assumed. It used to read "alternating diagonal by
+    // index parity" unconditionally, which was true of the only rule there was;
+    // with four of them a fixed sentence would be a banner that lies about the
+    // mesh below it. The seed rides along for the rule that reads it, because a
+    // randomized mesh whose seed is not in the run's own output is a mesh nobody
+    // can ask for a second time.
+    std::cout << "  - Cells                : " << res.cells.size() << " ";
+    if (!config.mbSplitQuads) {
+        std::cout << "quads (splitting is OFF)\n";
+    } else {
+        std::cout << "triangles, " << hybmesh::mbSplitRuleName(config.mbSplitRule);
+        if (config.mbSplitRule == hybmesh::MB_SPLIT_RANDOM)
+            std::cout << ", seed " << config.mbSplitSeed;
+        std::cout << "\n";
+    }
 
     // WHERE EACH BOUNDARY CONDITION CAME FROM. The whole claim of this path is
     // that a condition is declared rather than discovered, and a claim a run

@@ -183,7 +183,7 @@ def _multiblock_hgrid():
     return build
 
 
-def _multiblock(ni, nj, split=True, spacing=None):
+def _multiblock(ni, nj, split=True, spacing=None, extra=""):
     """A case on the multi-block path (MESH_MODE 1).
 
     Its own family rather than a variant of the others: this path shares nothing
@@ -193,13 +193,20 @@ def _multiblock(ni, nj, split=True, spacing=None):
     quad mesh is a SHIPPED setting, and a switch nothing compares is a switch that
     can rot; the graded member covers the spacing-law path, which is otherwise
     exercised only by a unit test on node coordinates.
+
+    The randomized-diagonal member (`extra`) is here for a reason the other members
+    do not have: that rule's whole claim is that a recorded seed reproduces a mesh,
+    and everything else that checks it does so within ONE build. This comparator is
+    the only thing in the repo that compares a mesh against one produced by a
+    DIFFERENT binary (`HYBMESH_GOLDEN_BIN`), which is where a hash that had quietly
+    become compiler-dependent would show up.
     """
     def build(tmp, name):
         stem = os.path.join(tmp, name)
         topo = mb.write_topology(os.path.join(tmp, name + ".json"),
                                  ni=ni, nj=nj, spacing=spacing)
         conf = mb.write_config(os.path.join(tmp, name + ".dat"), topo, stem,
-                               split=split)
+                               split=split, extra=extra)
         p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
                            capture_output=True, text=True, timeout=600)
         return p.returncode, stem
@@ -272,14 +279,17 @@ CASES = {
     "naca0012": _external("naca0012.dat"),
     "multi_30p30n": _external("30p30n_jaxa_main.dat", "30p30n_jaxa_slat.dat",
                               "30p30n_jaxa_flap.dat"),
-    # The multi-block path. Uniform, the same topology left unsplit, and a graded
-    # one — see _multiblock for why the family has three members.
+    # The multi-block path. Uniform, the same topology left unsplit, a graded one
+    # and a randomized-diagonal one — see _multiblock for why the family has four
+    # members of its own.
     "mb_square": _multiblock_example(),
     "mb_square_quads": _multiblock_example(split=False),
     "mb_graded": _multiblock(17, 13, spacing={"law": "geometric", "growth": 1.15}),
     "mb_bound": _multiblock_bound(),
     "mb_cavity": _multiblock_cavity(),
     "mb_hgrid": _multiblock_hgrid(),
+    "mb_random": _multiblock(17, 13,
+                             extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }
 
 
