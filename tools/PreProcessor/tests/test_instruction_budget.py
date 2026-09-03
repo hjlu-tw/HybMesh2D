@@ -70,7 +70,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 181 more of today because this repo's own prose
+bytes, which the root file has 187 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -180,6 +180,8 @@ Known remaining blind spots, stated rather than pretended away:
     mandates precisely because a line number cannot say when it has gone wrong. Nothing here
     caught it and nothing here will catch the next one; what changes is that the file's one
     remaining pointer to a LOCATION in a note is an anchor, which a `grep -c -F` can check.
+    Its other mention of a note is the header's bare `docs/design_notes/gui.md`, which names a
+    file rather than a place in one and so has nothing to go stale.
     #75's sweep found NOTHING newly stale, and the reason is worth keeping: it moves no rules,
     so the only thing it can break is a LINE NUMBER, and it shifts every line of `CLAUDE.md`
     after the header by +7. The only `CLAUDE.md:<line>` pointers anywhere are the three
@@ -194,15 +196,20 @@ Known remaining blind spots, stated rather than pretended away:
     pointer would have to survive. The three `CLAUDE.md:235` mentions in this docstring
     are still the only ones in the repo and are still history rather than pointers.
  c2. `ROOT_BUDGET`'s DERIVATION is not checked, only its value. Nothing here recomputes
-    "the root's size floored to 500 plus 1,000" and fails when the constant stops
-    matching that rule — a budget left at 33,000 while the root falls to 20,000 is
-    loose by 13,000 and every check still passes. Deliberate: a gate that recomputed it
+    the derivation stated at `ROOT_BUDGET`'s definition, and nothing fails when the
+    constant stops matching it, so the budget can drift
+    LOOSE if the root shrinks and nobody lowers it. The drift is BOUNDED, and the first
+    draft of this entry got that wrong in the direction that flatters it: it claimed a
+    budget left at 33,000 while the root fell to 20,000 would leave "every check still
+    passing", and review measured the opposite — injection 5c goes RED once the slack
+    reaches about 3,000, which is the whole point of expressing story 12 as a 3k addition
+    rather than as a budget value. So the unguarded band is roughly (1,000, 3,000) of
+    slack: wider than intended, never wide enough to re-open story 12. Deliberate: a gate
+    that recomputed the derivation
     would be an exact ratchet wearing a rounding, and #78 rejected exactness because a
     self-describing number goes stale (blind spot (d)'s own history, six times). The
     rounding is a convention for whoever next edits the constant, and injection 5c is
     what keeps the loose direction honest — it fails the moment the slack reaches 3k.
-    Its other mention of a note is the header's bare `docs/design_notes/gui.md`, which names a
-    file rather than a place in one and so has nothing to go stale.
  e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
     area — `services/foo.py`, `app/services/foo.py`, `views/panels/foo.py`. Three
     escapes, measured rather than supposed:
@@ -251,9 +258,9 @@ Known remaining blind spots, stated rather than pretended away:
     relocation costs thousands and a compression returns hundreds. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.
-    `ROOT_BUDGET` is not a flat number: #75 locked it at 40,000 and #78 re-derived it as
-    the root's size floored to a 500 boundary plus 1,000, so it moves when the root
-    crosses a 500 boundary and not otherwise. `RULE_BUDGET` stays flat; #59 fixes that one.
+    `ROOT_BUDGET` is not a flat number: #75 locked it at 40,000 and #78 gave it the
+    derivation stated at its definition below — the one place that spells it out — so it
+    moves when the root crosses a 500 boundary and not otherwise. `RULE_BUDGET` stays flat; #59 fixes that one.
     Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
@@ -302,7 +309,10 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 #     participant in it.
 #   - A LOCKED ceiling (what #75 ran, 40,000) removes that entirely and removes the
 #     mechanism with it: the root was 32,043, so 7,957 of slack sat under the ceiling
-#     and TWO 3k additions passed in silence. That is #59's user story 12 unmet, and
+#     and TWO such additions COULD have landed in silence. None did — the root moved by
+#     at most 65 chars while the lock was in force — so what was broken is the GUARD, not
+#     the file. Stating it as an event is how the previous commit's own title happened
+#     ("two claims outran their facts"). That is #59's user story 12 unmet, and
 #     the previous split's exact failure — 142,874 grew back to 148,626 in two feature
 #     commits at ~+3k each, with nothing to notice.
 #   - The BAND (this) keeps the mechanism and drops the staleness: a 3k addition trips
@@ -882,7 +892,8 @@ check(len(sz) == 1 and victim in sz[0]
 # silence until #78 re-tightened it. Nothing else here would notice that again.
 STORY_12_ADDITION = 3_000
 inj = copy_world(world)
-inj["root"] = inj["root"] + "\n" + ("padding. " * ((STORY_12_ADDITION // 9) + 1))
+_PAD = "padding. "
+inj["root"] = inj["root"] + "\n" + (_PAD * ((STORY_12_ADDITION // len(_PAD)) + 1))
 check(len(inj["root"]) - len(world["root"]) >= STORY_12_ADDITION
       and inj["root"].startswith("# " + _ROOT_NAME),
       "injection 5c. injection is well-formed: it really adds at least 3,000 characters and "
