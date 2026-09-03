@@ -23,7 +23,8 @@
 //     also BOUND to a geometry, and a block welded to itself (which `parseBlocks`
 //     refuses, correctly for a transfinite fill over four sides, so an O-grid seam
 //     cannot be declared as one edge).
-//   * The diagonal split RULES are checks 24-28 (#54). What they do NOT check is
+//   * The diagonal split RULES are checks 24-28 and the id-uniqueness refusals
+//     29 (#54). What they do NOT check is
 //     the QUALITY of the randomized rule's bit stream: nothing here asks whether
 //     the diagonals are well distributed, only that both appear, that the pattern
 //     is not parity's, and that it is a function of the four declared inputs. A
@@ -85,6 +86,8 @@
 //   M  the inert-seed warning removed                                  -> 28
 //   N  Config::validate() no longer refuses an unknown rule
 //                                                 -> test_mesh_mode check 5b
+//   O  a duplicate block id no longer refused                          -> 29
+//   P  a duplicate EDGE id no longer refused                           -> 29
 //
 // Three of those are recorded for what the FIRST run showed rather than the
 // second. H would not COMPILE in its first form: dropping the only call to
@@ -97,6 +100,16 @@
 // equal. And N is the one that found something rather than confirming it: before
 // check 5b existed, disabling the `.dat`-level refusal broke NOTHING, because
 // every other gate for the rule goes through the pure seam.
+//
+// O and P both come from the SPEC review of #54, and P from a mis-aimed
+// injection. The review found that `parseBlocks` refused a duplicate corner id
+// and a duplicate edge id but not a duplicate BLOCK id — harmless while nothing
+// read a block id, and a correlated diagonal pattern the moment the randomized
+// rule hashed it, since two blocks under one id are then cut identically. O is
+// that refusal. P is what O's first attempt hit instead: the three duplicate-id
+// loops are textually identical, the anchor matched the EDGE one, and disabling
+// it left the whole suite green — a refusal that had been unguarded since #50.
+// Check 29 covers both.
 #include "MultiBlock.hpp"
 #include "check.hpp"
 
@@ -1530,6 +1543,30 @@ int main() {
               "28. ...and NOT when the randomized rule is actually the one running");
         CHECK(!seedWarned(build(square(4, 3), splitRule(hybmesh::MB_SPLIT_ALTERNATING, 0))),
               "28. ...nor when no seed was set at all");
+    }
+
+    // ── 29. two blocks may not share an id ─────────────────────────────────
+    //
+    // Refused like a duplicate corner or edge id, and found by the SPEC review of
+    // #54 rather than by symmetry: nothing read a block id until the randomized
+    // rule hashed it, so two blocks under one id were accepted and cut IDENTICALLY
+    // — a correlated pattern, which is the bias that rule exists to break.
+    {
+        refuses(swap1(weldedPair(false), R"("id": "b1", "edges")",
+                                         R"("id": "b0", "edges")"),
+                "duplicate block id", "29. two blocks declared under one id");
+        refuses(swap1(weldedPair(false), R"("id": "b1", "edges")",
+                                         R"("id": "b0", "edges")"),
+                "'b0'", "29. ...naming the id that repeats");
+        // The duplicate EDGE id refusal, which has existed since #50 and which
+        // nothing covered: injection O was first aimed at the wrong one of the
+        // three identical-looking `prev.id == spec.id` loops, disabled THIS one,
+        // and the whole suite stayed green. Added here rather than left as a known
+        // hole — it is three lines, and the refusal it guards is the same family as
+        // the one above.
+        refuses(swap1(weldedPair(false), R"("id": "n0", "corners")",
+                                         R"("id": "s0", "corners")"),
+                "duplicate edge id", "29. two edges declared under one id");
     }
 
     return hybmesh::test::report("test_multiblock");

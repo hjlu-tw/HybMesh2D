@@ -482,6 +482,21 @@ bool parseBlocks(const json& doc, const std::vector<EdgeSpec>& edges,
             }
             spec.edges.push_back(id);
         }
+        // A DUPLICATE BLOCK ID IS REFUSED, like a duplicate corner or edge id, and
+        // for one reason more than symmetry: the randomized diagonal rule hashes
+        // the block's declared id, so two blocks sharing one id are given the same
+        // diagonal layout cell for cell — a visible correlated pattern, which is
+        // precisely the bias that rule exists to break. Nothing else in this
+        // release reads a block id, which is why the check was missing; #54 is what
+        // made the id an IDENTITY rather than a label.
+        for (const auto& prev : out) {
+            if (prev.id == spec.id) {
+                err = where + ": duplicate block id '" + spec.id
+                    + "'; every block id must be unique (the randomized split rule "
+                      "hashes it, so two blocks sharing one would be cut identically).";
+                return false;
+            }
+        }
         out.push_back(spec);
     }
     return true;
@@ -1024,11 +1039,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // rule nobody asked for produces a mesh with no symptom.
     if (!isKnownMbSplitRule(params.splitRule))
         return fail("split rule " + std::to_string(params.splitRule)
-                    + " is not a known rule (" + std::to_string(MB_SPLIT_ALTERNATING)
-                    + " = alternating by index parity, "
-                    + std::to_string(MB_SPLIT_FORWARD) + " = fixed forward diagonal, "
-                    + std::to_string(MB_SPLIT_BACKWARD) + " = fixed backward diagonal, "
-                    + std::to_string(MB_SPLIT_RANDOM) + " = randomized).");
+                    + " is not a known rule (" + mbSplitRuleList() + ").");
 
     // Never throws: a malformed document is an ordinary outcome of this seam,
     // not an exception the caller has to remember to catch.
@@ -1616,7 +1627,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // a mesh it had no part in. Named rather than left silent, which is the same
     // rule `inertParamsSet` applies one level up.
     if (params.splitSeed != 0
-        && !(params.splitQuads && params.splitRule == MB_SPLIT_RANDOM))
+        && !(params.splitQuads && mbSplitRuleReadsSeed(params.splitRule)))
         r.warnings.push_back("a split seed is set (" + std::to_string(params.splitSeed)
                              + ") but nothing reads it: only the randomized split rule ("
                              + std::to_string(MB_SPLIT_RANDOM) + ") hashes a seed, and "

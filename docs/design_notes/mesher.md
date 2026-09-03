@@ -170,6 +170,25 @@ known has a right answer and it is not always the same one.
   namespace (`SEED_FILE`, `SEED_SIZE`, `SEED_RADIUS`, `SEED_MODE`), a local far-field
   sizing source with nothing to do with a random number. Two unrelated concepts under
   one prefix is how a user sets the wrong one.
+- **The block's id had to BECOME unique.** `parseBlocks` refused a duplicate corner id and a
+  duplicate edge id and had no check for a duplicate BLOCK id, which was harmless while nothing
+  read one — and the moment the randomized rule hashed it, two blocks under one id were cut
+  identically, a visible correlated pattern and exactly the bias the rule exists to break. Found by
+  the SPEC review of this change, not by the implementation. Its injection (O) was first aimed at
+  the wrong one of the three textually identical `prev.id == spec.id` loops, disabled the EDGE
+  refusal instead, and the whole suite stayed green: that refusal had been unguarded since #50.
+  Check 29 covers both, and the second one is a hole this ticket did not open and closed anyway,
+  because three lines of test cost less than a ticket to remember it by.
+- **The enum lives in `include/MbSplitRule.hpp`, not in `MultiBlock.hpp`.** The first version put it
+  in the seam header and had `Config.hpp` include that — which the STANDARDS review flagged, rightly:
+  `Config.hpp` is a header-only `.dat` parser included by `Mesh.hpp` and `BoundaryLayer.hpp`, so
+  every one of those translation units would have gained `MbResult`, `MbBlock` and `GeomUtils.hpp`
+  to reach four integers, and it inverts the coupling `MultiBlock.hpp` states as a rule two
+  declarations further down (its parameters are a handful of values rather than a `Config&`,
+  precisely so the decision layer does not know the file format). `MeshMode.hpp` already existed as
+  that shape for `MESH_MODE` and is the precedent. The same review found the four-rule list written
+  out by hand in BOTH refusal messages and the "is this the seeded rule" question asked at four
+  sites; `mbSplitRuleList()` and `mbSplitRuleReadsSeed()` are one writer each.
 - **What is NOT checked, named rather than implied**: the quality of the bit stream.
   Nothing asserts that the diagonals are well distributed — only that both appear, that
   the pattern is not parity's under another name, and that it is a function of the four

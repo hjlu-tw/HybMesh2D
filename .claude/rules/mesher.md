@@ -103,10 +103,22 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   - **`MB_SPLIT_*`, never `SEED_*`** — that prefix is the refinement-seed namespace, an unrelated
     concept. The GUI's `mb_split_rule` / `mb_split_seed` sit beside its `seed_size` / `seed_radius`
     for the same reason.
-  - Gated by `tests/cpp/test_multiblock.cpp` 24-28 (7 hand injections, dated in that file),
-    `tests/cpp/test_mesh_mode.cpp` 5b and `tests/test_multiblock_surface.py` check 6.
+  - **The enum lives in its own header** (`include/MbSplitRule.hpp`), not in `MultiBlock.hpp`:
+    `Config.hpp` must refuse an unknown rule and is itself included by `Mesh.hpp` and
+    `BoundaryLayer.hpp`, so reaching the enum through the seam header would drag `MbResult` and
+    `GeomUtils.hpp` into all of them and invert the coupling that header states as a rule.
+    `MeshMode.hpp` is the precedent. One `mbSplitRuleList()` builds BOTH refusal messages, and one
+    `mbSplitRuleReadsSeed()` answers the seed question at all four sites.
+  - Gated by `tests/cpp/test_multiblock.cpp` 24-29 (9 hand injections, dated in that file),
+    `tests/cpp/test_mesh_mode.cpp` 5b, `tests/test_multiblock_surface.py` check 6 and the
+    `mb_random` golden case — the only one that compares across two BUILDS.
 - **Logical i/j is retained rather than flattened** (only the diagonal rule reads it);
   `MbCell::block` is carried for the same reason.
+- **Every declared id is UNIQUE — corner, edge and block.** The block half arrived with #54 and is
+  not symmetry: the randomized rule hashes the block's declared id, so two blocks sharing one are
+  cut identically, which is the correlated pattern that rule exists to break. The edge half had been
+  unguarded since #50 and was found by a mis-aimed injection (the three loops are textually
+  identical); both are check 29.
 - **Unknown JSON keys are REFUSED, not skipped** — a typo'd `"spacng"` silently ignored is a wrong
   node distribution with no symptom, and strict now is relaxable later. So is **a declaration that
   reaches nothing**: an edge in no block, a corner on no edge.
@@ -132,9 +144,11 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   deleted and one of these should be kept, so the two lists must stay **disjoint** (pinned in
   `test_mesh_mode.cpp` 6b, `test_mesh_mode_surface.py` 4). Delete the function when the clustering
   law lands.
-- Known asymmetry: `inertParamsSet` answers only for multi-block, so `MESH_TOPOLOGY_FILE` /
-  `MB_SPLIT_QUADS` set under `MESH_MODE 0` warn about nothing (the GUI hides both rows, so only a
-  hand-written `.dat` reaches it).
+- Known asymmetry: `inertParamsSet` answers only for multi-block, so `MESH_TOPOLOGY_FILE`,
+  `MB_SPLIT_QUADS`, `MB_SPLIT_RULE` and `MB_SPLIT_SEED` set under `MESH_MODE 0` warn about nothing
+  (the GUI hides all four rows, so only a hand-written `.dat` reaches it). #54 widened this from two
+  keys to four without widening the machinery; an unknown `MB_SPLIT_RULE` is still refused there,
+  because `validate()` is mode-blind.
 - **A geometry that will not load is a WARNING here, not a refusal** — the opposite of the hybrid
   path's answer, and right because nothing in a topology had to refer to one.
 - **`Mesh::addTaggedEdge(v1, v2, bc, segKey)`** replaced the `addEdge` + two writes to
@@ -449,6 +463,11 @@ one list. #68 moved the first; #69 moved the rest.
   sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in
   the C++ test (`tests/cpp/test_multiblock.cpp`).
 - **`tests/test_cpp_linkable_seam.py` names two of its own** in its docstring.
+- **Nothing measures the QUALITY of the randomized rule's bit stream.** Checks 24-26 assert that
+  both diagonals appear, that the pattern is not parity's, and that it is a function of the four
+  declared inputs — a hash with a visible period would pass all of them. Deliberate: a distribution
+  test over 12 cells asserts noise, and the property that matters (no direction imprinted on a
+  uniform region) is what `MbQuality` measures on a real case.
 - **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
   boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
   0.5 s while all 68 other tests and the 9-case golden set passed.

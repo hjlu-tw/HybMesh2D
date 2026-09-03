@@ -11,7 +11,7 @@
 #include "Logger.hpp"
 #include "BLParams.hpp"
 #include "MeshMode.hpp"
-#include "MultiBlock.hpp"   // MbSplitRule: the split rule's numbers and names
+#include "MbSplitRule.hpp"  // the four diagonal rules, shared with the seam
 
 struct Config {
     // Which GENERATION PATH runs. 0 = the existing hybrid path (boundary-layer
@@ -75,8 +75,11 @@ struct Config {
     // the wrong one.
     //
     // An `int` rather than an `unsigned`: the .dat reader, the GUI's spin box and
-    // the parity gate all speak int, and the seam casts once. A negative value is
-    // not refused — it is a bit pattern like any other, and hashing it is defined.
+    // the parity gate all speak int, and the seam widens it once. The panel offers
+    // 0..2147483647 because a seed has no natural sign; a NEGATIVE one written by
+    // hand into a .dat is not refused either, since the seam hashes a bit pattern
+    // and the conversion is defined — so the two records agree that the domain is
+    // every int and that only half of it is worth a widget.
     int mbSplitSeed = 0;
 
     // 預設參數值 (若檔案中未指定則使用)
@@ -410,11 +413,7 @@ struct Config {
         // asked for is a wrong mesh with no error attached to it.
         if (!hybmesh::isKnownMbSplitRule(mbSplitRule)) {
             LOG_ERROR("MB_SPLIT_RULE " << mbSplitRule << " is not a known rule ("
-                      << hybmesh::MB_SPLIT_ALTERNATING << " = alternating by index "
-                      << "parity, " << hybmesh::MB_SPLIT_FORWARD << " = fixed forward "
-                      << "diagonal, " << hybmesh::MB_SPLIT_BACKWARD << " = fixed "
-                      << "backward diagonal, " << hybmesh::MB_SPLIT_RANDOM
-                      << " = randomized).");
+                      << hybmesh::mbSplitRuleList() << ").");
             ok = false;
         }
         if (bl.blLayers < 0) {
@@ -531,7 +530,7 @@ struct Config {
             // set beside a rule that does not.
             os << "  - Split Rule           : " << mbSplitRule << " ("
                << hybmesh::mbSplitRuleName(mbSplitRule) << ")\n";
-            if (mbSplitRule == hybmesh::MB_SPLIT_RANDOM)
+            if (hybmesh::mbSplitRuleReadsSeed(mbSplitRule))
                 os << "  - Split Seed           : " << mbSplitSeed
                    << "  (re-run with this seed to reproduce this mesh)\n";
         }

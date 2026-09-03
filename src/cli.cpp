@@ -467,7 +467,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     params.splitRule = config.mbSplitRule;
     // Cast once, here. The .dat and the GUI speak int; the hash wants a bit
     // pattern, and the conversion of a negative int to unsigned is defined.
-    params.splitSeed = static_cast<unsigned>(config.mbSplitSeed);
+    params.splitSeed = static_cast<std::uint32_t>(config.mbSplitSeed);
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
     // Warnings are DATA on the way out of the seam; saying them is this layer's job.
@@ -549,7 +549,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         std::cout << "quads (splitting is OFF)\n";
     } else {
         std::cout << "triangles, " << hybmesh::mbSplitRuleName(config.mbSplitRule);
-        if (config.mbSplitRule == hybmesh::MB_SPLIT_RANDOM)
+        if (hybmesh::mbSplitRuleReadsSeed(config.mbSplitRule))
             std::cout << ", seed " << config.mbSplitSeed;
         std::cout << "\n";
     }
