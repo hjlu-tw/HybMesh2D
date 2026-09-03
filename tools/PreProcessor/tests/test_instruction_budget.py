@@ -172,6 +172,14 @@ Known remaining blind spots, stated rather than pretended away:
     replaced its enumeration with a pointer at the tripwire table. Review of #77 found this
     ledger entry missing while (d) and (e) had both been updated in the same pass — the
     ledger is the point of the entry, so a ticket skipped is the entry failing at its job.
+    #74's sweep is the first to run the ledger BACKWARDS and find a hit: a compression moves
+    no rules, so it can make no pointer stale, but it reads every pointer the file carries —
+    and `gui-seams.md`'s own `docs/design_notes/gui.md:143` resolved to a BLANK LINE, its
+    parity blind spot having drifted to :133-139 under some earlier edit nobody swept. It is
+    now a grep-verified anchor instead of a line number, which is the form the entry style
+    mandates precisely because a line number cannot say when it has gone wrong. Nothing here
+    caught it and nothing here will catch the next one; what changes is that this file's
+    remaining pointers into a note are anchors, which a `grep -c -F` can check.
  e. Check 6 sees a module only in the SHORT backticked form a rule uses about its own
     area — `services/foo.py`, `app/services/foo.py`, `views/panels/foo.py`. Three
     escapes, measured rather than supposed:
@@ -210,10 +218,10 @@ Known remaining blind spots, stated rather than pretended away:
     keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
     member.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,238 / 12,672 / 11,861 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,191 / 12,672 / 11,861 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 20,202 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,762 / 47,328 / 48,139 / 48,652 / 51,031. #76 spent 3,446 of
+    six, which have 44,238 / 46,809 / 47,328 / 48,139 / 48,652 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
