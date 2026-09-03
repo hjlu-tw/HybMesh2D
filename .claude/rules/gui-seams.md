@@ -12,7 +12,8 @@ reports, the injections and the named blind spots) is `docs/design_notes/gui.md`
 before overruling a rule here; when a rule changes, update BOTH. **One rule's rationale is here
 instead, so that pointer is true only in part**: the parity block came out of the root file's
 `## Build & Run` section, which the 2026-08-28 extraction (`3a2e096`) never touched, so these
-lines ARE its whole story and the note carries only its blind spot.
+lines ARE its whole story and the note carries only its blind spot. Stated here rather than fixed
+by moving text into a note, which #59 puts out of scope.
 
 **Four of these rules are ALSO pinned in `CLAUDE.md`, one line each, and that duplication is the
 point.** The GUI↔C++ config parity gate, the GUI file-length limit, `never except Exception: pass`
@@ -90,8 +91,8 @@ Qt helpers. Two things the gate (`tests/test_qt_free_seam.py`) had to learn the 
   name at **any** nesting depth, and separately refuses PyQt6 in a subprocess and drives the
   writers that failed.
 
-The `services/` sweep is a **deny**-list (`QT_SERVICES`, each entry carrying its reason); stale
-entries fail too.
+**A new service is assumed Qt-free, so the `services/` sweep is a DENY-list** (`QT_SERVICES`, each
+entry carrying its reason); stale entries fail too.
 
 **Scroll-wheel on QSpinBox/QDoubleSpinBox is intentionally disabled** (overridden in `main.py`).
 

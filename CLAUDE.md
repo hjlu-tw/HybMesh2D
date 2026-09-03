@@ -103,7 +103,7 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   directions**; a type divergence is never pinned, a default divergence pins both values plus a
   reason. Gate: `tests/test_gui_cpp_config_parity.py`.
 - **GUI file length.** Keep each file under `tools/PreProcessor/gui/` at **~500 lines**; split it
-  when it grows past. The only one of the four with **no gate** — measured 2026-09-02, 5 of 258
+  when it grows past. The only one of the four with **no gate** — measured 2026-09-03, 5 of 258
   files exceed it (worst 523).
 - **Never `except Exception: pass`.** Use `services/logging_setup.py::get_logger(__name__)` and
   log at `debug(..., exc_info=True)`, or `warning` when the failure silently degrades what the
