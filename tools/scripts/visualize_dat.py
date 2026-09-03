@@ -86,53 +86,6 @@ def load_geometry(path):
     return pts
 
 
-def get_seg_endpoints(seg, global_points):
-    """預測線段的理論起點與終點座標"""
-    seg_type = seg.get("type", "file")
-    params = seg.get("parameters", {})
-    rng = params.get("range", [0.0, 1.0])
-    
-    if seg_type == "file":
-        if global_points is None: return None, None
-        start_idx = seg.get("start_index", 0)
-        end_idx = seg.get("end_index", 0)
-        if end_idx == -1: end_idx = len(global_points) - 1
-        if start_idx < len(global_points) and end_idx < len(global_points):
-            return global_points[start_idx], global_points[end_idx]
-        return None, None
-    
-    # 支援參數化 x_formula, y_formula
-    if "x_formula" in seg and "y_formula" in seg:
-        try:
-            xf = seg["x_formula"].replace("^", "**").replace("sin", "np.sin").replace("cos", "np.cos").replace("pi", "np.pi")
-            yf = seg["y_formula"].replace("^", "**").replace("sin", "np.sin").replace("cos", "np.cos").replace("pi", "np.pi")
-            eval_x = lambda t: eval(xf, {"np": np, "t": t})
-            eval_y = lambda t: eval(yf, {"np": np, "t": t})
-            p0 = np.array([eval_x(rng[0]), eval_y(rng[0])])
-            p1 = np.array([eval_x(rng[1]), eval_y(rng[1])])
-            return p0, p1
-        except: return None, None
-
-    formula = seg.get("formula", "line")
-    if formula == "sin":
-        amp, freq, phase, off_y = params.get("amplitude", 1.0), params.get("frequency", 1.0), params.get("phase", 0.0), params.get("offset_y", 0.0)
-        f = lambda x: amp * np.sin(freq * x + phase) + off_y
-        return np.array([rng[0], f(rng[0])]), np.array([rng[1], f(rng[1])])
-    elif formula == "polynomial":
-        coeffs = params.get("coeffs", [0.0, 1.0])
-        f = lambda x: sum(c * (x**i) for i, c in enumerate(coeffs))
-        return np.array([rng[0], f(rng[0])]), np.array([rng[1], f(rng[1])])
-    elif formula == "line":
-        p0 = np.array([params.get("x0", 0.0), params.get("y0", 0.0)])
-        p1 = np.array([params.get("x1", 1.0), params.get("y1", 1.0)])
-        return p0, p1
-    else:
-        try:
-            py_f = formula.replace("^", "**").replace("sin", "np.sin").replace("cos", "np.cos").replace("pi", "np.pi")
-            f = lambda x: eval(py_f, {"np": np, "x": x})
-            return np.array([rng[0], f(rng[0])]), np.array([rng[1], f(rng[1])])
-        except: return None, None
-
 def detect_feature_points(points, threshold_degrees):
     """與 C++ detectFeaturePoints 邏輯一致"""
     if len(points) < 3:

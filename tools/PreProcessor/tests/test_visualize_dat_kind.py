@@ -40,6 +40,14 @@ What this pins down:
   5. The tool still imports with PyQt6 unavailable. The fix must not reach into
      ``app.services`` for the classifier: this script's dependencies are numpy
      and matplotlib, and #58 rules the GUI package out by name.
+  6. No bare ``except:`` survives in the file. Two did, inside
+     ``get_seg_endpoints`` — a function whose last caller was deleted on
+     2026-05-19 (``f4abc5a``) and which then sat dead for three and a half
+     months, carrying the file's only three ``eval()`` calls over
+     config-supplied strings. Deleted rather than repaired: fixing the exception
+     handling of dead code implies the code is live. The repo-wide standard that
+     would have caught it is gated by ``test_silent_exceptions.py``, which walks
+     the GUI package only, so nothing reached this file; check 6 is that reach.
 
 Check 1 uses a mesh **produced here**, per the ticket's own acceptance ("a real
 VTK file this repo produces, not a constructed fixture"): ``MESH_MODE 1`` on
@@ -47,7 +55,7 @@ VTK file this repo produces, not a constructed fixture"): ``MESH_MODE 1`` on
 a second. No ``.vtk`` is tracked in git (``results/`` is ignored), so there is
 nothing to point at instead.
 
-INJECTIONS (A-F on the first pass, G-H after the review), run 2026-09-03
+INJECTIONS (A-F on the first pass, G-I after the review), run 2026-09-03
 against this file, each reverted after. They are
 recorded rather than executed: every one needs the tool patched and re-run in a
 subprocess with the mesher behind it, which is minutes in ``run_all.sh`` to
@@ -74,6 +82,8 @@ re-prove something that does not change on its own.
           ``ndmin`` the one-column file and the one-point geometry are the same
           1-D array, so no shape check can separate them and refusing one
           refuses the other.
+  I. one ``except OSError:`` turned back into a bare ``except:``
+       -> FAILS check 6, naming the line number.
 
 Two checks were WEAKER than they read, and only the injections showed it. "saying
 it is a mesh" was ``"mesh" in out.lower()`` — satisfied by the banner ``HybMesh2D``
@@ -296,6 +306,20 @@ def main():
               p.returncode == 0 and "IMPORT OK" in (p.stdout or ""))
         if p.returncode != 0:
             print("    | " + (p.stderr or "").strip().replace("\n", "\n    | "))
+
+        # ── 6. the residue cannot come back ────────────────────────────────
+        # `never except Exception: pass` is a repo-wide standard, but its gate
+        # (test_silent_exceptions.py) walks the GUI package only, so this script
+        # is outside it -- which is how two bare `except:` survived here inside
+        # a function whose last caller was deleted on 2026-05-19 (f4abc5a). The
+        # function is gone; this is the cheap check that neither comes back.
+        src = open(_VIS, encoding="utf-8").read()
+        bare = [i + 1 for i, ln in enumerate(src.splitlines())
+                if ln.strip().startswith("except:")]
+        check("6. no bare `except:` in visualize_dat.py — the repo standard's "
+              "own gate does not reach tools/scripts/, so this is the only "
+              "thing that does" + (f" — found at lines {bare}" if bare else ""),
+              not bare)
 
     for s in skipped:
         print("SKIP " + s)
