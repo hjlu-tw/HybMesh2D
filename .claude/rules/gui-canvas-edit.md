@@ -11,8 +11,9 @@ paths:
 
 Loaded on demand when the geometry canvas or one of its mixins, the edge-edit or shape-refit
 service, a command class, or the pop-up stacking module is read. Rules only — the rationale (the
-counted attributes, the measurements, the injections, the reversals) is `docs/design_notes/gui.md`.
-Read that note before overruling a rule here, and when a rule changes update BOTH.
+counted attributes, the measurements, the injections, the reversals and the named blind spots) is
+`docs/design_notes/gui.md`. Read that note before overruling a rule here, and when a rule changes
+update BOTH.
 
 **These rules also govern files OUTSIDE the globs above, which cannot hand a reader the text.** For
 the edit itself: `controller.py` — where the twelve attributes the owner replaced used to live, and

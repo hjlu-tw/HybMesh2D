@@ -210,10 +210,10 @@ Known remaining blind spots, stated rather than pretended away:
     keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
     member.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,238 / 12,646 / 11,861 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Eight rule files now — 39,798 / 35,012 / 15,762 / 13,238 / 12,672 / 11,861 / 11,348 / 8,969  characters (pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-panels-config, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 20,202 / 24,988 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,762 / 47,354 / 48,139 / 48,652 / 51,031. #76 spent 3,446 of
+    six, which have 44,238 / 46,762 / 47,328 / 48,139 / 48,652 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
