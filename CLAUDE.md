@@ -22,15 +22,20 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **31,457
-characters (31,638 bytes, 2026-09-02, after #76 moved the portable case export into
-`.claude/rules/pipeline-case.md` — the last block of rules this file held for an area
-some rule file's globs already reached) ≈ 8k tokens**, paid by every session before it reads a line
-of source. That number decays on the next commit, so re-measure before quoting it; what stops it
-decaying *silently* is `tools/PreProcessor/tests/test_instruction_budget.py`, whose root budget is
-set to exactly this size. **The unit is CHARACTERS**: the budget #59 states is in characters while
-`wc -c` reports bytes, and the two differ by 181 today because of the CJK in this repo's own
-prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
+observed. The cost is therefore not truncation but **always-loaded context** — **31,933
+characters (32,116 bytes, 2026-09-03, after #75 closed #59's family and locked the budget below)
+≈ 8k tokens**, paid by every session before it reads a line of source, down from **149,141
+characters (≈37k tokens)** before #62, the first relocation. That number decays on the next commit,
+so re-measure before quoting it; what stops it decaying *silently* is
+`tools/PreProcessor/tests/test_instruction_budget.py`, whose `ROOT_BUDGET` **#75 LOCKED at
+40,000**, ending the ratchet that had been re-set to the actual size by every ticket before it.
+**The ceiling therefore sits 8,067 characters above this line, and that slack is deliberate but
+NOT free**: the gate justifies 40,000 by "the next feature which tries to add 3k trips the gate on
+its first attempt", which holds only while the budget tracks the actual size — it no longer does,
+so a 3k addition now passes. #59 fixes the number, so the number is what shipped and the gap is
+recorded here rather than closed. **The unit is CHARACTERS**: the budget #59 states is in
+characters while `wc -c` reports bytes, and the two differ by 183 today because of the CJK in this
+repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
 implied. `MEMORY.md`'s far smaller budget (24.4KB, measured 2026-08-27) is a different loader's

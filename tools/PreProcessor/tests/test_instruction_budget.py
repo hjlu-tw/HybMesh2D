@@ -230,7 +230,8 @@ Known remaining blind spots, stated rather than pretended away:
     relocation costs thousands and a compression returns hundreds. The flat budget did
     not tighten as the split finished and never will: #59's own two areas were the biggest,
     every file added since is small, and the mean headroom has gone UP with each ticket.
-    Only a per-file ratchet like `ROOT_BUDGET`'s would change that, and #59 fixes the number.
+    A per-file ratchet would change that, but `ROOT_BUDGET` is no longer one either: #75
+    locked it at 40,000, so neither budget ratchets now and #59 fixes both numbers.
     Exact figures rather than
     rounded ones, because rounding is what went wrong twice: that 36,615 read "36.1k"
     here from #63 until #64's review measured it, and #65 first wrote its own new file as
@@ -261,13 +262,20 @@ _RULES_DIR = os.path.join(".claude", "rules")
 _NOTES_DIR = os.path.join("docs", "design_notes")
 
 # --- budgets -----------------------------------------------------------------
-# ROOT_BUDGET is a RATCHET, set to the root file's actual size after each
-# relocation ticket in #59 and lowered by the next one; the final value is locked
-# by the last ticket. It is exact rather than rounded up on purpose — the point is
-# that the next feature which tries to add 3k to the always-loaded budget trips
-# the gate on its first attempt, which is what the previous split (93k moved out,
-# 5,752 chars back within two feature commits) had no way to do.
-ROOT_BUDGET = 31_457
+# ROOT_BUDGET WAS a ratchet, re-set to the root file's actual size by each relocation
+# ticket in #59 and lowered by the next. #75 is the last ticket and LOCKS it at the
+# value #59 fixes: 40,000. The ratchet is over, and what that costs is stated rather
+# than glossed — the justification for the number was that the next feature which
+# tries to add 3k to the always-loaded budget trips the gate on its FIRST attempt
+# (which the previous split, 93k moved out and 5,752 chars back within two feature
+# commits, had no way to do). That mechanism needs the budget to TRACK the actual
+# size, and a locked 40,000 does not: the root is 31,933 today, so 8,067 characters
+# of slack sit under the ceiling and a 3k addition now passes silently. Two of those
+# and the gate still says nothing. #59 fixes the number, so the number ships and the
+# gap is recorded here, in the root file's own header, and on #75 — not closed by
+# quietly re-tightening it, which would be this gate's author overruling the ticket
+# that specifies it. Re-tightening is a decision for whoever wants the mechanism back.
+ROOT_BUDGET = 40_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
