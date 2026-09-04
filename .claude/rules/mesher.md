@@ -378,6 +378,49 @@ the measurements that forced the blending change, the acceptance run and the bli
   on the SHIPPED files, reusing #53's conformity measure) and the `mb_ogrid` golden case. The
   dated solver acceptance run is in that file's docstring.
 
+**A four-block C-GRID around a NACA 0012, and the gate that bit was the SOLVER** (still the one
+pure entry point; `examples/topology/cgrid_naca0012.json` + `config/multiblock_cgrid.dat`; #57).
+**NOT ONE LINE OF `src/` OR `include/` CHANGED for this ticket** — the C-grid was already
+expressible by #50-#55, and what #57 adds is a declaration, two geometries, three C++ checks and
+one acceptance run. **Full rationale, the diagnosis, what was tried and rejected, and the
+acceptance run: `docs/design_notes/mesher.md`.**
+- **The wake is ONE edge of kind `cut`, and it is the WEST of BOTH wake blocks.** Every earlier
+  shared edge was one block's east and another's west; here the two frames are mirror images and
+  the edge is traversed in OPPOSITE senses from the same side index. No face of it reaches the
+  `.bnd` — that is the whole difference between a cut and a wall, and `test_multiblock.cpp` 37 is
+  the second thing that looks (the kind gate is the first).
+- **The trailing edge is ONE declared corner, on FIVE edges, where FOUR blocks meet.** One node, by
+  declaration. 60 node slots resolve to 47 nodes; three of the thirteen identifications are the
+  trailing edge's own, which is what it takes to bring four occurrences down to one
+  (`test_multiblock.cpp` 38). The C's five radials are one equivalence class with ONE seed
+  (check 39) — the O-grid's ring closes on itself, this chain does not, and its open ends are the
+  two halves the cut splits the outlet plane into.
+- **The gate that bit was GATE 2, not gate 1, and the fix was in the DOCUMENT.** Zero inverted
+  cells came on the first run of the shipped declaration, so **none of #57's three escalation steps
+  (Laplacian smoothing, shipping the O-grid instead, pulling elliptic smoothing forward) was
+  reached**. The solver then went to NaN in 40 iterations.
+- **The far field's two nose sides cluster at their TRAILING-EDGE end to the AIRFOIL's own
+  `ds_start`.** Over the chordwise surface the body's normals are nearly vertical and that boundary
+  is horizontal, so the outer point opposite a body point sits at very nearly the same x and the
+  outer distribution must TRACK the body's. Left uniform: max non-orthogonality 59.52°, mean
+  16.0°, wall first cell 3.46%, and the blow-up was on the surface just aft of the **LEADING** edge
+  — #57 predicted the trailing edge. With it: **32.04° / 4.56° / 0.44%**, and the solver runs at
+  the same `cfl 0.6` the O-grid used. **It is derived, not tuned, and nothing enforces the
+  relation**: change the airfoil edges' spacing and this must follow by hand.
+- **Lowering `cfl` to 0.3 also makes the BAD mesh run**, so "the solver runs" is quotable without
+  improving the grid at all — which is why the recorded run states its CFL. And the wake's 3144:1
+  worst edge ratio is **measured NOT to be the cause**: cutting it to 211 left the solver diverging
+  at the same iteration.
+- **A second airfoil file, not a sidecar beside `examples/geometries/naca0012.dat`.** That one is
+  the hybrid path's geometry and has a golden baseline; a `.meta` beside it would change what that
+  path reads. `naca0012_cgrid.dat` (two segments, split at the leading edge) and
+  `cgrid_farfield.dat` (six, one per outer block side) are both checked against their ONE generator
+  in the surface gate, never trusted.
+- Gated by `tests/cpp/test_multiblock.cpp` 37-39 (4 hand injections, dated in that file),
+  `tests/test_multiblock_cgrid_surface.py` (9 groups on the SHIPPED files, reusing #53's conformity
+  measure) and the `mb_cgrid` golden case. The dated solver acceptance run is in that file's
+  docstring.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths** (0 OFF / 1 Global Avg / 2 Local Avg). The `.dat`
@@ -535,6 +578,13 @@ one list. #68 moved the first; #69 moved the rest.
   declared inputs — a hash with a visible period would pass all of them. Deliberate: a distribution
   test over 12 cells asserts noise, and the property that matters (no direction imprinted on a
   uniform region) is what `MbQuality` measures on a real case.
+- **GATE 2 IS ONE OPERATING POINT, AND NOTHING RE-RUNS IT.** #57's acceptance run is M 0.2, Re 200,
+  zero incidence, 100 iterations, `cfl 0.6`, every non-wall patch flag 1. "The solver runs" is all
+  it claims — not convergence, not accuracy, and no pressure distribution is compared with
+  anything. CI has no solver binary, so both recorded runs are dated quotations.
+- **Non-orthogonality is a BASELINE here, never a gate.** #57 made that explicit, and the C-grid's
+  32.04° max is still the first cell off the wall just aft of the leading edge — the quantity the
+  elliptic-smoothing increment exists to move.
 - **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
   boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
   0.5 s while all 68 other tests and the 9-case golden set passed.

@@ -1006,6 +1006,122 @@ reach the solver.
   with different heights at each end does not exist. And the arc-length blending's
   magnitude was measured out of tree: no gate re-measures the 6927%, only its consequence.
 
+**A four-block C-GRID around a NACA 0012: a cut, a four-way corner, and a gate that bit
+where nobody was looking** (`examples/topology/cgrid_naca0012.json` +
+`config/multiblock_cgrid.dat`, still the one pure entry point; issue #57). The v1 target of
+the multi-block feature: the first mesh from this path that is a CFD grid rather than a
+demonstration of one.
+
+- **NOT ONE LINE OF `src/` OR `include/` CHANGED.** `git diff --stat src/ include/` was
+  empty when this landed, and that is the strongest thing #57 has to say about #50-#55:
+  the C-grid was already expressible. What it adds is a declaration, two geometries, three
+  C++ checks, one surface gate, one golden case and one acceptance run. #55's rule that
+  "a block welded to ITSELF is inexpressible" is why the wake is TWO blocks sharing one
+  cut rather than one block wrapping onto itself, and that constraint turned out to cost
+  nothing — a C-grid is four blocks either way.
+
+- **The wake cut is one edge that is the WEST of BOTH blocks, which no earlier fixture
+  produces.** Every shared edge before it (#53's H-grid, #55's ring) was one block's east
+  and another's west, so the two frames ran the SAME way along it. Two blocks on opposite
+  sides of a wake are mirror images: both declare it as their west, and the edge is
+  traversed in opposite senses from the same side index. The reversal machinery #53 built
+  ("the other three sides may be declared either way and are traversed as the ring
+  requires") already covered it; injection Q, which drops the reversal for the west side
+  only, is refused by the four-shared-corner check. What checks 37-39 add is not a new
+  guard but a topology that REACHES the existing ones.
+
+- **The four-way corner needed nothing either, and the arithmetic is worth writing down.**
+  Corner `te` is one declaration and therefore one node; five edges end on it and all four
+  blocks hold it. The four blocks own 3*4 + 3*6 + 3*6 + 3*4 = 60 node SLOTS in the C++
+  fixture; the cut identifies 4 of them and each of the three radials 3, so 13
+  identifications leave 47 nodes. Three of those 13 are the trailing edge's own — exactly
+  what it takes to bring four occurrences of one point down to one — and they form a
+  spanning tree over the four blocks, which is why the count does not need
+  inclusion-exclusion.
+
+- **GATE 1 PASSED ON THE FIRST RUN; GATE 2 IS THE ONE THAT BIT.** #57 agreed an escalation
+  ladder for the case where transfinite interpolation could not clear zero inverted cells
+  — Laplacian smoothing of block interiors, then shipping the O-grid as the release
+  geometry, then pulling elliptic smoothing forward — and asked for a record of which step
+  was needed. **None was reached.** The shipped declaration meshed with 0 inverted cells
+  out of 11520 the first time it ran. The solver then went to NaN in 40 iterations, which
+  is a failure mode the ladder does not have a rung for, because the ladder was written
+  against the wrong gate.
+
+- **The diagnosis, and where the ticket's own prediction was wrong.** #57 expected TFI to
+  struggle "near the trailing edge" and made non-orthogonality a recorded baseline rather
+  than a gate for that reason. Dumping the solution at iteration 30
+  (`print_sol_per_niter 10`) and reading off the cells with `|rho| = inf` put the blow-up
+  on the upper and lower surfaces from x = 0.01 to x = 0.28 — just aft of the **LEADING**
+  edge, and the same place the worst angle was: 59.52°, in the FIRST CELL OFF THE WALL.
+  The cause is a parametrisation mismatch, not the corner: the far field's two nose sides
+  were left uniform, so the outer point lying opposite a body point sat nowhere near that
+  body point's normal. At mid-chord the body's normal is nearly vertical and reaches the
+  D's horizontal top at almost the same x; on a uniform 16.7-long outer side the point at
+  the same normalized arc length is most of the way round the nose semicircle instead.
+
+- **The fix is one number and it is DERIVED, not tuned.** Both nose sides now cluster at
+  their trailing-edge end to 0.005, which is the airfoil edges' own `ds_start`. The
+  chordwise part of the outer boundary then tracks the body's own spacing, and the whole
+  nose semicircle belongs to the last few percent of the body, where the normals fan
+  through 180°. Measured on the shipped files: max non-orthogonality 59.52° -> **32.04°**,
+  mean 16.0° -> **4.56°**, wall first cell 3.46% -> **0.44%**, cell count unchanged at
+  11520, inverted still 0 — and the solver runs to completion at the same `cfl 0.6` the
+  O-grid acceptance run used. **Nothing enforces the relation between the two numbers**:
+  they are two values in one document that happen to agree, and changing the airfoil's
+  spacing means changing this by hand. Named as a blind spot in the surface gate.
+
+- **TWO THINGS THAT WERE TRIED AND ARE RECORDED SO THEY ARE NOT RE-TRIED.** (1) Lowering
+  `cfl` from 0.6 to 0.3 or 0.1 makes the ORIGINAL, bad mesh run to exit 0 as well. A "the
+  solver runs" line was therefore available without improving the grid at all, which is
+  why the recorded run states its CFL and why this paragraph exists. (2) The wake's
+  3144:1 worst edge ratio was the obvious first suspect and is **measured not to be the
+  cause**: giving the two outlet radials a coarser first cell (physically right — the wake
+  spreads) cut it to 211:1 and left the solver diverging at the same iteration. It also
+  pushed the reported wall first-cell figure to 47%, because the two ends of one
+  equivalence class then ask for heights 50x apart; that variant was dropped.
+
+- **A second airfoil file rather than a sidecar beside the shipped one.**
+  `examples/geometries/naca0012.dat` is the hybrid path's airfoil, has no `.meta`, and has
+  a golden baseline; giving it one would change what that path reads for a case #57
+  requires to stay identical. `naca0012_cgrid.dat` is generated from the NACA 4-digit law
+  in the closed-trailing-edge variant (-0.1036, so y(1) is exactly 0 — an open trailing
+  edge would need a fifth block across it), cosine-spaced, in two segments split at the
+  leading edge because that is where a block corner sits. `cgrid_farfield.dat` is the
+  D-shape in six segments, one per outer block side, walked counter-clockwise from the
+  wake's own outlet point so the two outlet halves are segments 0 and 5. Both are checked
+  against their ONE generator in the surface gate, for the reason #55 gives.
+
+- **The outlet plane is split by the wake, and that is what makes the far field six
+  segments and not five.** The C is open at the outlet; its two open ends are ordinary
+  bound boundary edges carrying `outlet`, and getPGrid knows that name (it does not know
+  `farfield`). So the six far-field segments are exactly the six outer block sides and
+  nothing falls back to `BC_GEOM`.
+
+- **The gates.** `tests/cpp/test_multiblock.cpp` 37-39 (the cut as both blocks' west with
+  its reversal and a palindrome control, no boundary face on it, the four-way corner as
+  one id in four blocks with the 60-slots-to-47-nodes count, and the five-radial chain);
+  `tools/PreProcessor/tests/test_multiblock_cgrid_surface.py` (9 groups on the SHIPPED
+  files, reusing #53's conformity measure, with the wake-as-`wall` refusal as check 4's
+  negative control); and the `mb_cgrid` golden case. Four hand injections, dated
+  2026-09-04 in the C++ test's docstring.
+
+- **An injection scored ZERO TWICE before it was scored at all.** Injection S (the
+  four-way corner welding its first two users only) exited 139 in both of its first two
+  forms — the first pushed onto `r.nodes` while holding a reference into it, the second
+  de-welded every corner with three or more users, so an O-grid fixture refused and an
+  older check indexed `r.blocks[0]` on an empty vector. A run scored by counting FAIL
+  lines reads a SIGSEGV as "no effect". Read the exit code first; this repo has recorded
+  that lesson before and it still cost two rounds here.
+
+- **Blind spots, named.** Gate 2 is ONE operating point (M 0.2, Re 200, zero incidence,
+  100 iterations, `cfl 0.6`, every non-wall patch flag 1) and nothing re-runs it — CI has
+  no solver binary, so it is a dated quotation like #55's. Non-orthogonality remains a
+  baseline and not a gate, and 32.04° in the first wall cell is still what the
+  elliptic-smoothing increment exists to move. The 0.005 relation is unenforced. And the
+  surface gate measures conformity on the EXPORTED files, so it cannot separate "welded
+  correctly" from "welded correctly and then exported correctly".
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /

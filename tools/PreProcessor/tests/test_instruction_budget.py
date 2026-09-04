@@ -83,7 +83,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 189 more of today because this repo's own prose
+bytes, which the root file has 191 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -295,8 +295,8 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 44,587 / 39,798 / 15,762 / 13,315 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 15,413 / 20,202 of
+    Eight rule files now — 48,815 / 39,798 / 15,762 / 13,315 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 11,185 / 20,202 of
     headroom the two large ones have left, and not at all for a move into any of the other
     six, which have 44,238 / 46,685 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
@@ -390,7 +390,7 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # The property is a RELATIONSHIP between this number and the file's actual size, so it
 # is held by injection 5c below and not by this comment. RULE_BUDGET is untouched: #59
 # fixes that one, and nothing here reaches a rule file.
-ROOT_BUDGET = 34_000
+ROOT_BUDGET = 34_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

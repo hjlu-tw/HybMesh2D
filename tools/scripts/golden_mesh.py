@@ -82,6 +82,7 @@ import test_nobl_junction_acute as junc               # noqa: E402
 import test_multiblock_surface as mb                  # noqa: E402
 import test_multiblock_binding_surface as mbb         # noqa: E402
 import test_multiblock_ogrid_surface as mbo          # noqa: E402
+import test_multiblock_cgrid_surface as mbc          # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -289,6 +290,30 @@ def _multiblock_ogrid():
     return build
 
 
+def _multiblock_cgrid():
+    """The four-block NACA 0012 C-GRID this repo ships (issue #57).
+
+    The shipped topology, the shipped config and the two shipped geometries, for
+    the reason `_multiblock_example` gives. What it adds to this family is the two
+    things no earlier member has: a CUT edge -- one declared line that is the same
+    side of two blocks and is exported as no boundary face at all -- and a
+    FOUR-WAY corner where all four blocks meet on one node. A regression in either
+    is exactly the kind this comparator was built to catch: a lost cut doubles the
+    wake's nodes and puts a wall through the middle of the fluid, which moves the
+    `.bnd` patch face counts, and a lost corner weld tears the mesh into pieces
+    that a `.vtk` still renders.
+    """
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        conf = os.path.join(tmp, name + ".dat")
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write(mbc.base_config().replace("@STEM@", stem))
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
 CASES = {
     # Junction bins reachable through a real mesh. theta <= 95 is the slide
     # (case 1); 120 is a perpendicular cap (case 2). Cases 3 and 4 need
@@ -315,6 +340,7 @@ CASES = {
     "mb_cavity": _multiblock_cavity(),
     "mb_hgrid": _multiblock_hgrid(),
     "mb_ogrid": _multiblock_ogrid(),
+    "mb_cgrid": _multiblock_cgrid(),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }

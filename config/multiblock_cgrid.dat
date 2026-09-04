@@ -1,0 +1,46 @@
+# ==============================================================================
+# Multi-block structured meshing (MESH_MODE 1) — a four-block C-GRID around a
+# NACA 0012, with the wake cut declared as a CUT edge and a four-way corner at
+# the trailing edge.
+#
+#   ./run.sh -conf config/multiblock_cgrid.dat
+#
+# What this case adds to the multi-block family:
+#   * a CUT edge — one declared line that is the west side of BOTH wake blocks
+#     and is not a boundary of anything, so no face of it reaches the .bnd;
+#   * a FOUR-WAY corner, where all four blocks meet on one declared node at the
+#     trailing edge, welded by identity and with no tolerance anywhere;
+#   * a D-shaped far field whose six segments are the six outer block sides,
+#     carrying two different conditions read off its own sidecar.
+#
+# The one thing to know before editing the topology: the far field's two nose
+# sides cluster at their trailing-edge end to the airfoil's own surface spacing,
+# and that is what makes the grid line leaving the wall normal to it. Left
+# uniform, this case meshes with zero inverted cells and then drives the solver
+# to NaN. See the topology's own comment, and the acceptance run recorded in
+# tools/PreProcessor/tests/test_multiblock_cgrid_surface.py.
+# ==============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/cgrid_naca0012.json
+
+# The airfoil (two segments, upper and lower, split at the leading edge because
+# that is where a block corner sits) and the D-shaped far field (six segments).
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+GEOM_FILE examples/geometries/cgrid_farfield.dat
+
+# The wall-normal spacing, under the name it already has. Every radial edge in
+# the topology declares its body end a wall end and takes this height for its
+# first cell — including the two on the outlet plane, whose body end is the wake
+# cut rather than a surface.
+BL_INITIAL_THICKNESS 0.001
+
+MB_SPLIT_QUADS 1
+
+# The FALLBACK. Every edge here binds, so nothing should reach it — and the run
+# says so, one row per patch, naming the segment each was read off.
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+OUTPUT_FILENAME results/meshes/multiblock_cgrid/mesh_multiblock_cgrid.vtk

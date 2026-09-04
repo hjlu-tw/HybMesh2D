@@ -125,12 +125,36 @@
 // loops are textually identical, the anchor matched the EDGE one, and disabling
 // it left the whole suite green — a refusal that had been unguarded since #50.
 // Check 29 covers both.
+//
+// FOUR MORE for the C-grid, measured 2026-09-04 the same way (each patch applied
+// to src/MultiBlock.cpp alone, rebuilt, run, control run clean):
+//
+//   Q  a side's traversal reversal dropped for the WEST side       -> 37, 38, 39
+//                                                       (and, first, check 9)
+//   R  a CUT exported as a boundary face, like a wall              -> 21, 37
+//   S  the four-way corner welds its first TWO users only          -> 37, 38, 39
+//   T  a CUT does not join its two blocks' count classes           -> 21, 37, 38, 39
+//
+// Q, S and T are all caught by invariants that ALREADY existed — the four-shared-
+// corner refusal and the no-seed refusal — so what checks 37-39 add is not a new
+// guard but a topology that REACHES those guards: no earlier fixture puts one
+// edge on the same side of two blocks, or four blocks on one corner. R is the one
+// with nothing behind it: only the kind gate stops a wake cut becoming a wall
+// through the middle of the fluid, and check 37 is the second thing that looks.
+//
+// S was scored ZERO twice before it was scored at all. Its first two forms exited
+// 139 (SIGSEGV), which a run scored by counting FAIL lines reads as "no effect":
+// the first pushed a node while holding a reference into the same vector, and the
+// second de-welded EVERY corner with three or more users, so an ogrid fixture
+// refused and an older check indexed r.blocks[0] on an empty vector. Read the
+// EXIT CODE before the FAIL count.
 #include "MultiBlock.hpp"
 #include "check.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -535,18 +559,23 @@ std::string att(const std::string& id, double t, int seg = 1,
 // Curved is the point: on a straight side an arc-length attachment is exact and a
 // chord IS the geometry, so nothing a square can express distinguishes an edge
 // that follows its segment from one that cuts across it.
-hybmesh::MbGeometry circleGeom(int perQuarter, double radius,
-                               const std::string& file, const std::string& bc) {
+// `nseg` is how many source segments the circle is cut into, and it is a
+// parameter rather than a constant because a C-grid body is cut in TWO (an upper
+// surface and a lower one, joined at the two points a block corner has to sit on)
+// while an O-grid body is cut in four.
+hybmesh::MbGeometry circleGeom(int perSeg, double radius,
+                               const std::string& file, const std::string& bc,
+                               int nseg = 4) {
     hybmesh::MbGeometry g;
     g.file = file;
     g.closed = true;
-    const int n = 4 * perQuarter;
+    const int n = nseg * perSeg;
     for (int k = 0; k < n; ++k) {
         const double a = 2.0 * M_PI * k / n;
         g.points.push_back({radius * std::cos(a), radius * std::sin(a)});
-        g.segId.push_back((k / perQuarter) % 4);
+        g.segId.push_back((k / perSeg) % nseg);
     }
-    for (int s = 0; s < 4; ++s) g.segBc[s] = bc;
+    for (int s = 0; s < nseg; ++s) g.segBc[s] = bc;
     return g;
 }
 
@@ -616,6 +645,79 @@ Point2D nodeOf(const MbResult& r, const hybmesh::MbBlock& b, int i, int j) {
 std::vector<hybmesh::MbGeometry> ogridGeoms(int perQuarter = 40) {
     return {circleGeom(perQuarter, 0.5, "body.dat", "wall"),
             circleGeom(perQuarter / 2, 10.0, "far.dat", "farfield")};
+}
+
+
+// ── A four-block C-GRID: a cut, and a four-way corner (issue #57) ─────────
+//
+//                fu ────e_ff_up──── f1 ───e_ff_nose_up─── f2
+//                 │                  │                     │
+//              e_out_up  b_wake_up  r_te_up    b_upper    r_le
+//                 │                  │                     │
+//                wk ─────wake────── te ──────af_up──────── le
+//                 │                  │                     │
+//              e_out_lo  b_wake_lo  r_te_lo    b_lower    r_le
+//                 │                  │                     │
+//                fl ────e_ff_lo──── f3 ───e_ff_nose_lo─── f2
+//
+// (the two halves are drawn apart; `te`, `le`, `wake` and `r_le` are ONE
+// declaration each, which is the whole point.)
+//
+// The body is a CIRCLE in two segments so that `af_up` and `af_lo` are distinct
+// curves with the joints exactly where the block corners are — a straight chord
+// from `te` to `le` would make the two surface edges the same line and the two
+// airfoil blocks degenerate. The far field is free corners and straight chords:
+// nothing here is about geometry binding, which #52 and #55 already pin.
+//
+// TWO STRUCTURAL FACTS NO EARLIER FIXTURE HAS.
+//
+//   * `wake` is the WEST of BOTH wake blocks. Every shared edge before this one
+//     was one block's east and another's west, so the two frames ran the same
+//     way along it; here they are mirror images and the edge is traversed in
+//     OPPOSITE senses from the same side index.
+//   * `te` is on FIVE edges and all FOUR blocks meet on it. Nothing else in this
+//     file puts more than two blocks on one corner.
+std::string cgrid() {
+    return R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "te", "kind": "on_geometry", "geom": "body.dat", "seg": 0, "t": 0.0},
+    {"id": "le", "kind": "on_geometry", "geom": "body.dat", "seg": 1, "t": 0.0},
+    {"id": "wk", "kind": "free", "xy": [10.0,  0.0]},
+    {"id": "fu", "kind": "free", "xy": [10.0,  5.0]},
+    {"id": "f1", "kind": "free", "xy": [ 0.5,  5.0]},
+    {"id": "f2", "kind": "free", "xy": [-5.0,  0.0]},
+    {"id": "f3", "kind": "free", "xy": [ 0.5, -5.0]},
+    {"id": "fl", "kind": "free", "xy": [10.0, -5.0]}
+  ],
+  "edges": [
+    {"id": "wake",    "corners": ["te", "wk"], "kind": "cut", "count": 4},
+    {"id": "r_te_up", "corners": ["te", "f1"], "kind": "interface", "count": 3},
+    {"id": "r_le",    "corners": ["le", "f2"], "kind": "interface"},
+    {"id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface"},
+    {"id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 6,
+     "binding": {"geom": "body.dat", "seg": 0}},
+    {"id": "af_lo", "corners": ["le", "te"], "kind": "wall", "count": 6,
+     "binding": {"geom": "body.dat", "seg": 1}},
+    {"id": "e_out_up",     "corners": ["wk", "fu"], "kind": "wall"},
+    {"id": "e_ff_up",      "corners": ["fu", "f1"], "kind": "wall"},
+    {"id": "e_ff_nose_up", "corners": ["f1", "f2"], "kind": "wall"},
+    {"id": "e_ff_nose_lo", "corners": ["f2", "f3"], "kind": "wall"},
+    {"id": "e_ff_lo",      "corners": ["f3", "fl"], "kind": "wall"},
+    {"id": "e_out_lo",     "corners": ["wk", "fl"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "b_wake_up", "edges": ["e_out_up", "e_ff_up", "r_te_up", "wake"]},
+    {"id": "b_upper",   "edges": ["r_te_up", "e_ff_nose_up", "r_le", "af_up"]},
+    {"id": "b_lower",   "edges": ["r_le", "e_ff_nose_lo", "r_te_lo", "af_lo"]},
+    {"id": "b_wake_lo", "edges": ["r_te_lo", "e_ff_lo", "e_out_lo", "wake"]}
+  ]
+})";
+}
+
+// The C-grid's one geometry: the body, cut into an upper and a lower surface.
+std::vector<hybmesh::MbGeometry> cgridGeoms(int perSeg = 40) {
+    return {circleGeom(perSeg, 0.5, "body.dat", "wall", 2)};
 }
 
 }  // namespace
@@ -1987,6 +2089,147 @@ int main() {
         CHECK(c.ok && warned,
               "36. a request COARSER than the edge's own uniform spacing is still "
               "reported, so the check above is not passing on a dead warning");
+    }
+
+    // ── 37. a four-block C-GRID welds along a CUT that is BOTH blocks' west ──
+    //
+    // Every shared edge before this one was one block's east and another's west,
+    // so the two frames ran the same way along it. A wake cut is the case that
+    // breaks that assumption: the two blocks sit on OPPOSITE sides of one line,
+    // so both declare it as the same side and traverse it in opposite senses.
+    {
+        MbResult r = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), MbParams{});
+        CHECK(r.ok, "37. a four-block C-grid is accepted (err: " + r.error + ")");
+        CHECK(r.blocks.size() == 4, "37. four blocks come back");
+        const hybmesh::MbSharedEdge* cut = nullptr;
+        for (const auto& se : r.sharedEdges) if (se.edgeId == "wake") cut = &se;
+        CHECK(cut != nullptr, "37. 'wake' comes back as a SHARED edge");
+        if (cut) {
+            CHECK(cut->kind == hybmesh::MB_EDGE_CUT,
+                  "37. ...declared a CUT, not inferred to be an interface");
+            CHECK(cut->sideA == hybmesh::MB_WEST && cut->sideB == hybmesh::MB_WEST,
+                  "37. ...and it is the WEST of BOTH blocks, which no earlier "
+                  "fixture in this file produces");
+        }
+        if (r.blocks.size() == 4) {
+            const auto& up = r.blocks[0];   // b_wake_up
+            const auto& lo = r.blocks[3];   // b_wake_lo
+            bool mirrored = up.nj == lo.nj;
+            for (int j = 0; mirrored && j < up.nj; ++j)
+                mirrored = up.nodeAt(0, j) == lo.nodeAt(0, lo.nj - 1 - j);
+            CHECK(mirrored,
+                  "37. the two wake blocks share the cut node for node, in "
+                  "OPPOSITE j order — one line, two frames, no tolerance");
+            // THE NEGATIVE CONTROL for the reversal: a straight-through match
+            // must NOT also hold, or the check above would pass on a palindrome.
+            bool forward = true;
+            for (int j = 0; forward && j < up.nj; ++j)
+                forward = up.nodeAt(0, j) == lo.nodeAt(0, j);
+            CHECK(!forward,
+                  "37. ...and the same-order match does NOT hold, so the "
+                  "reversal above is real and not a palindrome");
+        }
+        // A cut is NOT a boundary of anything: no face of it is exported. Its
+        // nodes are the ones the two wake blocks share, and no boundary edge may
+        // have both ends among them.
+        if (r.blocks.size() == 4) {
+            std::set<int> cutNodes;
+            for (int j = 0; j < r.blocks[0].nj; ++j)
+                cutNodes.insert(r.blocks[0].nodeAt(0, j));
+            int onCut = 0;
+            for (const auto& be : r.boundaryEdges)
+                if (cutNodes.count(be.v1) && cutNodes.count(be.v2)) ++onCut;
+            CHECK(onCut == 0,
+                  "37. ...and NO boundary face lies on it (" + std::to_string(onCut)
+                  + ") — that is the whole difference between a cut and a wall");
+        }
+    }
+
+    // ── 38. the FOUR-WAY corner is ONE node, and all four blocks hold it ─────
+    //
+    // The highest-risk single point in a C-grid, and the one a proximity weld
+    // would have to guess at: five edges end on 'te' and four blocks meet there.
+    // It is one declaration, so it is one node, and each block finds it at the
+    // logical corner its own frame puts it at.
+    {
+        MbResult r = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), MbParams{});
+        CHECK(r.ok, "38. the C-grid is accepted (err: " + r.error + ")");
+        if (r.ok && r.blocks.size() == 4) {
+            const auto& up = r.blocks[0], &b1 = r.blocks[1];
+            const auto& b2 = r.blocks[2], &lo = r.blocks[3];
+            const int id = up.nodeAt(0, up.nj - 1);
+            const bool one = id == b1.nodeAt(0, 0)
+                          && id == b2.nodeAt(0, b2.nj - 1)
+                          && id == lo.nodeAt(0, 0);
+            CHECK(one, "38. all FOUR blocks hold the trailing edge as the SAME "
+                       "node id — welded by declaration, not by coordinate");
+            CHECK(std::abs(r.nodes[static_cast<size_t>(id)].x - 0.5) < 1e-12
+                  && std::abs(r.nodes[static_cast<size_t>(id)].y) < 1e-12,
+                  "38. ...and it is where the geometry attachment puts it, (0.5, 0)");
+            // Exactly ONE node is there. The negative control for the whole
+            // corner: four blocks that failed to identify it would leave up to
+            // four coincident nodes, which is a mesh no conformity check on
+            // coordinates could tell from a correct one.
+            int coincident = 0;
+            for (const auto& n : r.nodes)
+                if (std::abs(n.x - 0.5) < 1e-12 && std::abs(n.y) < 1e-12) ++coincident;
+            CHECK(coincident == 1,
+                  "38. ...and it is the ONLY node at that point (found "
+                  + std::to_string(coincident) + ")");
+        }
+        // The count, derived rather than observed. The four blocks own
+        // 3*4 + 3*6 + 3*6 + 3*4 = 60 node SLOTS; the cut identifies 4 of them
+        // and each of the three radials 3, so 13 identifications leave 47 nodes.
+        // Three of those 13 are the trailing edge's own, which is exactly what it
+        // takes to bring four occurrences of it down to one.
+        {
+            size_t slots = 0;
+            for (const auto& b : r.blocks)
+                slots += static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
+            CHECK(slots == 60 && r.nodes.size() == 47,
+                  "38. 60 node slots resolve to 47 nodes — 4 identified along the "
+                  "cut and 3 along each radial (got " + std::to_string(slots)
+                  + " slots, " + std::to_string(r.nodes.size()) + " nodes)");
+        }
+    }
+
+    // ── 39. the count propagates the LENGTH of the C, through the cut ────────
+    //
+    // The C is a chain of four blocks and its five radials are ONE equivalence
+    // class: 'r_te_up' is the only one that declares a count, and it reaches the
+    // two outlet edges at the far ends by passing through blocks that are linked
+    // only by the cut and by each other's radials. The O-grid's ring closes on
+    // itself; this one does not, and the open ends are where a chain-walking
+    // defect would stop early.
+    {
+        MbResult r = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), MbParams{});
+        CHECK(r.ok, "39. the C-grid is accepted (err: " + r.error + ")");
+        int seeded = 0, radials = 0;
+        for (const auto& ec : r.edgeCounts) {
+            const bool isRadial = ec.edgeId == "r_te_up" || ec.edgeId == "r_le"
+                               || ec.edgeId == "r_te_lo" || ec.edgeId == "e_out_up"
+                               || ec.edgeId == "e_out_lo";
+            if (!isRadial) continue;
+            ++radials;
+            if (ec.seeded) ++seeded;
+            CHECK(ec.count == 3, "39. radial '" + ec.edgeId + "' carries the C's one "
+                                 "seeded count (got " + std::to_string(ec.count) + ")");
+        }
+        CHECK(radials == 5 && seeded == 1,
+              "39. one of the FIVE radials is seeded and four propagate down the "
+              "chain (seeded " + std::to_string(seeded) + " of "
+              + std::to_string(radials) + ")");
+        // The j class the CUT spans: 'wake' seeds it and both far-field sides of
+        // the two wake blocks take it, which they can only do THROUGH the cut.
+        int wakeClass = 0;
+        for (const auto& ec : r.edgeCounts)
+            if (ec.edgeId == "wake" || ec.edgeId == "e_ff_up" || ec.edgeId == "e_ff_lo") {
+                ++wakeClass;
+                CHECK(ec.count == 4, "39. '" + ec.edgeId + "' is in the cut's own "
+                                     "count class (got " + std::to_string(ec.count) + ")");
+            }
+        CHECK(wakeClass == 3,
+              "39. ...and that class has all three of its members");
     }
 
     return hybmesh::test::report("test_multiblock");

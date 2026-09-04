@@ -1,0 +1,146 @@
+// A four-block C-GRID around a NACA 0012, with the wake cut declared as a CUT
+// edge and a FOUR-WAY corner at the trailing edge (issue #57).
+//
+//   ./run.sh -conf config/multiblock_cgrid.dat
+//
+// This is the v1 target of the multi-block feature: the first mesh from this path
+// that is a CFD grid rather than a demonstration of one.
+//
+// WHAT IS NEW HERE, over the O-grid this is topologically a cut-open version of.
+//
+// 1. A CUT EDGE. 'wake' is ONE declared edge, from the trailing edge downstream to
+//    the outlet, and it is the WEST side of BOTH wake blocks -- 'b_wake_up' above
+//    it and 'b_wake_lo' below it. It is not a boundary of anything: no face of it
+//    reaches the .bnd, and the two blocks share its nodes by identity, so the wake
+//    is continuous rather than two surfaces that happen to coincide. That is the
+//    whole difference between a cut and a wall, and it is DECLARED here rather
+//    than inferred from the absence of a binding.
+//
+// 2. A FOUR-WAY CORNER. Corner 'te' is one declaration and therefore one node, and
+//    FIVE edges end on it: the wake cut, the two trailing-edge radials and the two
+//    airfoil surfaces. All four blocks meet there. Nothing is welded by proximity,
+//    so the highest-risk single point in the grid needs no tolerance at all.
+//
+// 3. THE C IS OPEN AT THE OUTLET, and its two open ends are ORDINARY BOUNDARY
+//    EDGES. 'e_out_up' and 'e_out_lo' are the two halves of the outlet plane,
+//    split by the wake cut where it reaches it, so the far field is one closed
+//    polyline of six segments and every one of them is one block side.
+//
+// THE FRAME, per block: i runs OUTWARD from the body to the far field (its south
+// and north are the two radials) and j runs ANTICLOCKWISE around the body (its
+// west is the body side, its east the far-field side). Anticlockwise around this
+// body is: outlet -> trailing edge along the wake, trailing edge -> leading edge
+// along the UPPER surface, leading edge -> trailing edge along the LOWER surface,
+// then trailing edge -> outlet along the wake again. That is the order the four
+// blocks are declared in, and it is what makes every corner ring wind
+// counter-clockwise.
+//
+// WHY THE GEOMETRY IS TWO FILES OF ITS OWN. examples/geometries/naca0012.dat is
+// the hybrid path's shipped airfoil and has no .meta sidecar; giving it one would
+// change what that path reads for a case with a golden baseline. The C-grid's
+// airfoil is a second file with its own two-segment sidecar (upper, lower), split
+// at the leading edge because that is where a block corner has to sit.
+{
+  "format_version": 1,
+
+  // Every corner is a JOINT between two segments of its geometry, so it is
+  // declared as the t = 0 of the segment that STARTS there and both edges meeting
+  // on it may name it.
+  "corners": [
+    // On the airfoil: the trailing edge (where the upper surface starts) and the
+    // leading edge (where the lower surface starts).
+    {"id": "te", "kind": "on_geometry", "geom": "naca0012_cgrid.dat", "seg": 0, "t": 0.0},
+    {"id": "le", "kind": "on_geometry", "geom": "naca0012_cgrid.dat", "seg": 1, "t": 0.0},
+
+    // On the far field, walking it counter-clockwise from the wake's own outlet
+    // point: wk (on the outlet plane, level with the wake) -> fu (outlet top) ->
+    // f1 (directly above the trailing edge) -> f2 (dead ahead of the nose) ->
+    // f3 (directly below the trailing edge) -> fl (outlet bottom).
+    {"id": "wk", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 0, "t": 0.0},
+    {"id": "fu", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "f2", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 3, "t": 0.0},
+    {"id": "f3", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 4, "t": 0.0},
+    {"id": "fl", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 5, "t": 0.0}
+  ],
+
+  "edges": [
+    // ── The wake cut ──────────────────────────────────────────────────────
+    // ONE edge, both wake blocks' west side. It carries no binding (an interior
+    // line has no boundary condition to read and the wake is straight anyway) and
+    // no face of it is exported. Its clustering at the trailing-edge end matches
+    // the airfoil surface's, because the wake shear layer is the continuation of
+    // the boundary layer that fed it.
+    {"id": "wake", "corners": ["te", "wk"], "kind": "cut", "count": 25,
+     "spacing": {"ds_start": 0.005}},
+
+    // ── The radials, one equivalence class of five ────────────────────────
+    // b_wake_up forces e_out_up and r_te_up to carry the same count (they are its
+    // south and north), b_upper forces r_te_up and r_le, b_lower r_le and
+    // r_te_lo, and b_wake_lo r_te_lo and e_out_lo. Only r_te_up declares a count;
+    // the other four are propagated. Every one of them clusters at its BODY end
+    // to the run's BL_INITIAL_THICKNESS -- including the two on the outlet plane,
+    // whose body end is the wake cut.
+    {"id": "r_te_up", "corners": ["te", "f1"], "kind": "interface", "count": 41,
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r_le", "corners": ["le", "f2"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+
+    // ── The airfoil surface ───────────────────────────────────────────────
+    // One block side per source segment, each bound so that it FOLLOWS the
+    // airfoil instead of cutting the chord between its two corners, and each
+    // clustered at BOTH ends: the leading edge because that is where the surface
+    // turns, the trailing edge because that is where the wake starts.
+    {"id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 49,
+     "binding": {"geom": "naca0012_cgrid.dat", "seg": 0},
+     "spacing": {"ds_start": 0.005, "ds_end": 0.005}},
+    {"id": "af_lo", "corners": ["le", "te"], "kind": "wall", "count": 49,
+     "binding": {"geom": "naca0012_cgrid.dat", "seg": 1},
+     "spacing": {"ds_start": 0.005, "ds_end": 0.005}},
+
+    // ── The far field, all six segments ───────────────────────────────────
+    // The two outlet halves carry 'outlet' and the D's own boundary 'farfield',
+    // both read off this geometry's sidecar rather than from the config default.
+    {"id": "e_out_up", "corners": ["wk", "fu"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 0},
+     "spacing": {"wall_ends": "start"}},
+    {"id": "e_ff_up", "corners": ["fu", "f1"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 1},
+     "spacing": {"ds_end": 0.005}},
+    // THE TWO NOSE SIDES CLUSTER AT THEIR TRAILING-EDGE END, to 0.005 — the
+    // airfoil edges' own spacing, and not a tuned number. Over the chordwise
+    // surface the body's normals are nearly vertical and this boundary's top is
+    // horizontal, so the outer point that belongs opposite a body point sits at
+    // very nearly the same x: the outer distribution over that stretch has to
+    // track the body's own or the grid line leaving the wall is not normal to
+    // it. The whole nose semicircle then belongs to the last few percent of the
+    // body, where the normals fan through 180 degrees, and the tanh law's stretch
+    // is what covers it. Left uniform (which is what shipped first), the first
+    // cell off the wall just aft of the LEADING edge came out 59.5 degrees from
+    // orthogonal and the solver went to NaN in 40 iterations; with this, 32.0
+    // degrees and it runs. Gate 2, not gate 1, is what this declaration is for.
+    {"id": "e_ff_nose_up", "corners": ["f1", "f2"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 2},
+     "spacing": {"ds_start": 0.005}},
+    {"id": "e_ff_nose_lo", "corners": ["f2", "f3"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 3},
+     "spacing": {"ds_end": 0.005}},
+    {"id": "e_ff_lo", "corners": ["f3", "fl"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 4},
+     "spacing": {"ds_start": 0.005}},
+    {"id": "e_out_lo", "corners": ["wk", "fl"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 5},
+     "spacing": {"wall_ends": "start"}}
+  ],
+
+  // [south, east, north, west] = [radial in, far-field side, radial out, body
+  // side]. The wake cut is the WEST of both wake blocks: that is the C's cut.
+  "blocks": [
+    {"id": "b_wake_up", "edges": ["e_out_up", "e_ff_up", "r_te_up", "wake"]},
+    {"id": "b_upper",   "edges": ["r_te_up", "e_ff_nose_up", "r_le", "af_up"]},
+    {"id": "b_lower",   "edges": ["r_le", "e_ff_nose_lo", "r_te_lo", "af_lo"]},
+    {"id": "b_wake_lo", "edges": ["r_te_lo", "e_ff_lo", "e_out_lo", "wake"]}
+  ]
+}
