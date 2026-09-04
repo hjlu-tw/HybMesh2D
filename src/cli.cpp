@@ -342,7 +342,16 @@ static std::string mbSub(const std::string& text) { return mbLabel("      ", tex
 // Print the quality report. Split out of the adapter because the adapter's whole
 // character is "a loop with no decisions in it", and eleven lines of formatting
 // was on its way to obscuring the one decision it does now make (the exit code).
-static void printMbQuality(const hybmesh::MbQualityReport& q) {
+// `stage` labels the banner heading and suffixes the machine-readable token, and
+// BOTH are empty on a run that did not smooth — so that run's output is byte for
+// byte what it was before this parameter existed. When smoothing did run there are
+// two blocks: the BEFORE one wears the suffix, and the unsuffixed
+// `HYBMESH_MB_QUALITY` line always describes the mesh AS EXPORTED. That way a gate
+// grepping for it keeps getting the answer about the file on disk, smoothed or not,
+// and never has to know which run it is reading.
+static void printMbQuality(const hybmesh::MbQualityReport& q,
+                           const std::string& heading = std::string(),
+                           const std::string& token = std::string()) {
     std::ostringstream sci;
     sci << std::scientific << std::setprecision(3);
     auto num = [&sci](double v) { sci.str(""); sci << v; return sci.str(); };
@@ -356,7 +365,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q) {
         return os.str();
     };
 
-    std::cout << "\n[ Multi-block Mesh Quality ]\n";
+    std::cout << "\n[ Multi-block Mesh Quality" << heading << " ]\n";
     std::cout << mbRow("Inverted cells") << q.invertedCells << " of " << q.cells
               << " cells\n";
     if (q.nonOrthoSamples == 0) {
@@ -387,7 +396,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q) {
     // measured, never 0 — see MbQualityReport.
     std::ostringstream mr;
     mr << std::setprecision(6) << std::fixed;
-    mr << "HYBMESH_MB_QUALITY cells=" << q.cells
+    mr << "HYBMESH_MB_QUALITY" << token << " cells=" << q.cells
        << " inverted=" << q.invertedCells
        << " nonortho_max_deg=" << q.maxNonOrthoDeg
        << " nonortho_mean_deg=" << q.meanNonOrthoDeg
@@ -475,6 +484,9 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // include/MeshMode.hpp.
     params.wallSpacing = config.bl.blInitialThickness;
     params.wallGrowth = config.bl.blGrowthRate;
+    // How many Laplacian sweeps run over the block interiors. 0 by default, and at
+    // 0 the seam returns what it returned before the smoother existed.
+    params.smoothIters = config.mbSmoothIters;
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
     // Warnings are DATA on the way out of the seam; saying them is this layer's job.
@@ -607,8 +619,28 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // against, and a baseline that is only recorded when something went wrong is
     // not a baseline. The measuring itself is the pure instrument next door; this
     // layer only says what came back and decides the exit code.
+    //
+    // BEFORE AND AFTER, when a sweep ran (issue #81). The seam hands back the node
+    // positions it had the instant before the first sweep, so the two reports are
+    // the same cells and the same blocks over two coordinate sets — the difference
+    // between them is the smoother and nothing else. Measuring by running the build
+    // twice would have proved nothing of the sort.
+    //
+    // The kernel this increment ships is the cheap one and is KNOWN to be wrong on
+    // the metric that matters: a plain Laplacian equalises spacing, so the wall
+    // first-cell figure gets WORSE. Printing both halves is what makes that a
+    // measurement rather than a claim.
+    if (!res.preSmoothNodes.empty()) {
+        hybmesh::MbResult before = res;
+        before.nodes = res.preSmoothNodes;
+        printMbQuality(hybmesh::measureMbQuality(before),
+                       " — before smoothing", "_BEFORE");
+    }
     const hybmesh::MbQualityReport q = hybmesh::measureMbQuality(res);
-    printMbQuality(q);
+    printMbQuality(q, res.preSmoothNodes.empty()
+                          ? std::string()
+                          : " — after " + std::to_string(config.mbSmoothIters)
+                                + " Laplacian sweep(s)");
 
     if (q.invertedCells > 0) {
         LOG_ERROR(q.invertedCells << " of " << q.cells << " cells are INVERTED (a corner "

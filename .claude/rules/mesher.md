@@ -21,7 +21,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 
 | Group | Key examples |
 |-------|-------------|
-| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS`, `MB_SPLIT_RULE`, `MB_SPLIT_SEED` |
+| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS`, `MB_SPLIT_RULE`, `MB_SPLIT_SEED`, `MB_SMOOTH_ITERS` |
 | Domain | `DOMAIN_X_MIN/MAX`, `DOMAIN_Y_MIN/MAX` |
 | Surface | `SURFACE_MESH_SIZE`, `AUTO_SURFACE_SIZE` |
 | BL Core | `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS` |
@@ -149,10 +149,11 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   bound edge follows the resampled polyline. A **second** macro rather than a shorter survivor list:
   the GUI shows a row when a parameter SURVIVES. Delete both when the list empties.
 - Known asymmetry: `inertParamsSet` answers only for multi-block, so `MESH_TOPOLOGY_FILE`,
-  `MB_SPLIT_QUADS`, `MB_SPLIT_RULE` and `MB_SPLIT_SEED` set under `MESH_MODE 0` warn about nothing
-  (the GUI hides all four rows, so only a hand-written `.dat` reaches it). #54 widened this from two
-  keys to four without widening the machinery; an unknown `MB_SPLIT_RULE` is still refused there,
-  because `validate()` is mode-blind.
+  `MB_SPLIT_QUADS`, `MB_SPLIT_RULE`, `MB_SPLIT_SEED` and `MB_SMOOTH_ITERS` set under `MESH_MODE 0`
+  warn about nothing (the GUI hides all five rows, so only a hand-written `.dat` reaches it). #54
+  widened this from two keys to four and #81 to five, without widening the machinery; an unknown
+  `MB_SPLIT_RULE` and a negative `MB_SMOOTH_ITERS` are still refused there, because `validate()` is
+  mode-blind.
 - **A geometry that will not load is a WARNING here, not a refusal** — the opposite of the hybrid
   path's answer, and right because nothing in a topology had to refer to one.
 - **`Mesh::addTaggedEdge(v1, v2, bc, segKey)`** replaced the `addEdge` + two writes to
@@ -421,6 +422,51 @@ acceptance run: `docs/design_notes/mesher.md`.**
   measure) and the `mb_cgrid` golden case. The dated solver acceptance run is in that file's
   docstring.
 
+**SMOOTHING is a STAGE inside the seam, and the first kernel is DELIBERATELY the wrong one**
+(`MB_SMOOTH_ITERS`, default 0; `src/MultiBlock.cpp` between the fill and the split; #81, ticket 1
+of #80). N Jacobi sweeps of a plain Laplacian over each block's interior nodes; at the default
+nothing runs and all eighteen pre-existing golden cases are unchanged (measured, 18/18 SAME at
+0.000e+00). **Full rationale and the before/after tables:
+`docs/design_notes/mesher.md`.**
+- **WHICH NODES MOVE, stated here rather than read off the loop: exactly the nodes strictly
+  interior to a block** (`0 < i < ni-1`, `0 < j < nj-1`). **Every node on ANY block boundary is
+  FROZEN — outer walls, bound edges, interfaces and cuts alike** — because such a node is written
+  by the EDGE, and an edge is SHARED: moving it would move it in two blocks at once, and a node on
+  a bound edge would leave the geometry it was attached to by arc length. So one block's interior
+  never neighbours another's, which is why the sweep needs no ordering rule between blocks.
+  Smoothing ACROSS a shared edge is #80's ticket 4.
+- **Node identity is untouched**: the sweep writes coordinates and allocates nothing, so a welded
+  node stays ONE node. No comparison, therefore no tolerance.
+- **JACOBI, not Gauss-Seidel** — every sweep reads what the previous one left, so the answer is not
+  a function of a traversal nobody declared. Same objection the randomized split rule raises
+  against a sequential stream.
+- **Between the FILL and the SPLIT.** Both readers below are id-only today, so the sweeps would
+  give the same answer after them — measured: injection Y (the block moved past the split) is
+  INERT. The ordering is what keeps that from having to be re-checked every time a reader is added.
+- **`MB_SMOOTH_ITERS`, never `BL_SMOOTHING_ITERS`-with-a-prefix and never `SEED_*`.** The BL key is
+  the OTHER path's collision remedy (it relaxes nodes around a frozen boundary-layer front and
+  returns immediately when nothing is frozen); these two share a verb and nothing else.
+- **A NEGATIVE count is refused BY NAME through both doors** — `Config::validate()` with
+  `EXIT_ERR_CONFIG` and `buildMultiBlock` for any other caller — never clamped. The parameter is a
+  signed `int` precisely so the refusal is writable: widening -1 to an unsigned count is four
+  billion sweeps, a hang rather than a mesh.
+- **THE REPORT IS BEFORE AND AFTER, and the kernel is known to LOSE on the metric that matters.**
+  `MbResult::preSmoothNodes` publishes the mesh as it stood before the first sweep, so the two
+  reports are the same cells and blocks over two coordinate sets and their difference is the
+  smoother alone. On the shipped C-grid, ONE sweep: wall first cell **0.44% -> 36.61%**, max
+  non-orthogonality **32.04° -> 89.40°**, mean **4.56° -> 6.23°**. A plain Laplacian equalises
+  spacing and cannot trade interior positions for orthogonality at a wall it does not know about;
+  showing that on the ruler is this ticket's deliverable and the argument for #80's tickets 2-3.
+  **Do not paper it over.**
+- **The `HYBMESH_MB_QUALITY` line always describes the mesh AS EXPORTED**; the before half is
+  `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's output is
+  byte for byte what it was. Match the prefix WITH its trailing space.
+- **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
+  9. No new code. (The shipped C-grid folds 4 cells at 5 sweeps, 26 at 20.)
+- Gated by `tests/cpp/test_multiblock.cpp` 40-46 (7 hand injections, dated in that file),
+  `tests/test_multiblock_smooth_surface.py` (6 groups on the SHIPPED C-grid) and the
+  `mb_cgrid_smooth` golden case.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths** (0 OFF / 1 Global Avg / 2 Local Avg). The `.dat`
@@ -592,6 +638,16 @@ one list. #68 moved the first; #69 moved the rest.
 - **Non-orthogonality is a BASELINE here, never a gate.** #57 made that explicit, and the C-grid's
   32.04° max is still the first cell off the wall just aft of the leading edge — the quantity the
   elliptic-smoothing increment exists to move.
+- **NOTHING CAN SEE THE SMOOTHING STAGE'S POSITION.** Injection Y — the whole sweep block moved
+  past the split — is INERT, because every reader downstream of it is id-only today. The
+  fill-then-smooth-then-split ordering is a design rule held by a comment, not by a gate.
+- **The smoothed mesh is never given to the solver or the grid converter.** At this kernel that
+  would be a strange thing to want — 36.61% off the requested wall height is not a boundary layer
+  worth integrating — but it means "smoothing produces a mesh a solver accepts" is unproven, and
+  belongs to the #80 ticket that makes the numbers better.
+- **The before/after tables are dated quotations**, not re-measured. The gates assert a DIRECTION
+  with a floor, so a kernel that quietly stopped moving anything is caught while one that moves
+  things differently is free to.
 - **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
   boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
   0.5 s while all 68 other tests and the 9-case golden set passed.

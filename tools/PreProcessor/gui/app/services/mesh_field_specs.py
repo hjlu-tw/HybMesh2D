@@ -99,6 +99,20 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               key="MB_SPLIT_SEED", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,),
               opts=dict(lo=0, hi=2147483647)),
+    FieldSpec("mb_smooth_iters", "int", "Smoothing Sweeps",
+              "How many Laplacian sweeps relax each block's INTERIOR nodes after "
+              "the fill. Every node on a block boundary is frozen — outer walls, "
+              "bound edges, interfaces and cuts alike — so the blocking and the "
+              "geometry a corner is attached to cannot move. 0, the default, runs "
+              "none. This kernel EQUALISES spacing, so on a wall-clustered block "
+              "it pulls the first interior line away from the wall and makes the "
+              "first-cell height worse: the run reports the mesh quality before "
+              "and after so the trade is a number you can read rather than a "
+              "claim. Enough sweeps will fold a cell, and that run exits with the "
+              "inverted-cell code like any other fold.",
+              key="MB_SMOOTH_ITERS", group="mode",
+              modes=(MESH_MODE_MULTIBLOCK,),
+              opts=dict(lo=0, hi=100000)),
 
     # ── Domain & Geometry: the rectangular bounding box ──────────────────────
     # modes: the multi-block domain is bounded by the topology's own outer edges,

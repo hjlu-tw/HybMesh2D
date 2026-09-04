@@ -1306,6 +1306,17 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     if (!isKnownMbSplitRule(params.splitRule))
         return fail("split rule " + std::to_string(params.splitRule)
                     + " is not a known rule (" + mbSplitRuleList() + ").");
+    // The same answer for the same reason, and the same two doors: `Config::validate`
+    // refuses this on the `.dat` path with the CONFIG code, and this refuses it for
+    // every other caller. Never clamped to 0 — "we ran no sweeps because your number
+    // was strange" is a mesh nobody asked for with no symptom, and a NEGATIVE count
+    // silently widened to an unsigned one is worse than either: four billion sweeps
+    // is a hang, not a mesh.
+    if (params.smoothIters < 0)
+        return fail("smoothing sweeps " + std::to_string(params.smoothIters)
+                    + " is negative; MB_SMOOTH_ITERS counts Laplacian sweeps over "
+                      "each block's interior nodes, so it must be 0 (no smoothing, "
+                      "the default) or more.");
 
     // Never throws: a malformed document is an ordinary outcome of this seam,
     // not an exception the caller has to remember to catch.
@@ -1793,7 +1804,6 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             }
         }
         r.blocks.push_back(filled);
-        const MbBlock& b0 = r.blocks.back();
 
         // Publish what the DECLARATION asks the first cell height off each wall to
         // be, for the quality report to measure the fill against
@@ -1867,6 +1877,78 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                 r.wallSpecs.push_back(ws);
             }
         }
+    }
+
+    // ── Smoothing: N Laplacian sweeps over each block's INTERIOR ──────────
+    //
+    // BETWEEN THE FILL AND THE SPLIT, which is why the per-block loop above stops
+    // here and a second one below resumes. Nothing downstream may be able to tell
+    // a smoothed result from an unsmoothed one by its SHAPE: the cells, the
+    // boundary edges and the wall specs are all emitted from node IDS and from the
+    // sides' own positions, so putting the sweeps here means every one of them is
+    // written once, by one loop, whether smoothing ran or not. (Both readers below
+    // happen to be id-only today, so the sweeps would give the same answer after
+    // them as well. That is a property of this release, not of the design, and the
+    // ordering is what keeps it from having to be re-checked every time a reader
+    // is added.)
+    //
+    // WHICH NODES MOVE: exactly the nodes STRICTLY INTERIOR to a block, i.e.
+    // 0 < i < ni-1 and 0 < j < nj-1. Everything on any block boundary is FROZEN —
+    // outer walls, bound edges, interfaces and cuts alike — because a block
+    // boundary node is written by the EDGE, and an edge is shared: moving one
+    // would move it in two blocks at once, and a node on a bound edge would leave
+    // the geometry it was attached to by arc length. So the interior nodes of one
+    // block never neighbour the interior nodes of another, which is also why the
+    // sweep needs no ordering rule between blocks.
+    //
+    // NODE IDENTITY IS UNTOUCHED. This writes coordinates and allocates nothing:
+    // a welded node stays ONE node with one id, which is the property `welding is
+    // by allocation, not by comparison` rests on. Nothing here compares positions,
+    // so there is no tolerance in it either.
+    //
+    // THE KERNEL IS THE CHEAP ONE, DELIBERATELY (issue #81). A plain Laplacian
+    // moves a node to the average of its four logical neighbours, which EQUALISES
+    // spacing — so on a wall-clustered block it pulls the first interior line away
+    // from the wall and makes the first-cell height WORSE. That is not a defect to
+    // be papered over; it is the measurement this increment exists to produce, and
+    // it is what the before/after report puts in front of a reader.
+    //
+    // JACOBI, not Gauss-Seidel: every sweep reads the positions the previous sweep
+    // left and writes a fresh set, so the answer does not depend on the order the
+    // blocks or the (i, j) pairs are visited. Gauss-Seidel converges faster and
+    // would make the result a function of a traversal nobody declared, which is the
+    // same objection the randomized split rule raises against a sequential stream.
+    if (params.smoothIters > 0) {
+        r.preSmoothNodes = r.nodes;
+        for (int sweep = 0; sweep < params.smoothIters; ++sweep) {
+            std::vector<Point2D> next = r.nodes;
+            for (const MbBlock& b : r.blocks) {
+                for (int j = 1; j + 1 < b.nj; ++j) {
+                    for (int i = 1; i + 1 < b.ni; ++i) {
+                        const Point2D sum =
+                            r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j))]
+                            + r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j))]
+                            + r.nodes[static_cast<size_t>(b.nodeAt(i, j - 1))]
+                            + r.nodes[static_cast<size_t>(b.nodeAt(i, j + 1))];
+                        next[static_cast<size_t>(b.nodeAt(i, j))] = sum * 0.25;
+                    }
+                }
+            }
+            r.nodes.swap(next);
+        }
+    }
+
+    // ── Split every block, and emit its boundary faces ────────────────────
+    //
+    // A second pass over the same blocks, in the same order, so the cell list and
+    // the boundary-edge list come out exactly as they did when this was the tail
+    // of the fill loop. Both read node IDS and the frame's declared kinds; the
+    // positions above are not consulted here at all.
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+        const Frame& f = frames[bi];
+        const int blockIdx = static_cast<int>(bi);
+        const MbBlock& b0 = r.blocks[bi];
+        const int ni = b0.ni, nj = b0.nj;
 
         // The block's identity as the randomized rule sees it — its DECLARED id,
         // hashed once here rather than per cell. Computed for every rule because

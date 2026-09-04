@@ -1135,6 +1135,116 @@ demonstration of one.
   surface gate measures conformity on the EXPORTED files, so it cannot separate "welded
   correctly" from "welded correctly and then exported correctly".
 
+**A SMOOTHING STAGE in the seam, with a kernel chosen because it is WRONG**
+(`MB_SMOOTH_ITERS`, default 0; #81, ticket 1 of #80's five). The rules are
+`.claude/rules/mesher.md`, "SMOOTHING is a STAGE inside the seam".
+
+- **Why ship a kernel that loses.** #48 already agreed Laplacian smoothing of block
+  interiors as the FIRST escalation step if transfinite interpolation could not clear the
+  inverted-cell gate; #57 cleared that gate on the first run of the shipped C-grid, so it
+  was never built. Building it now buys three things a better kernel would have had to
+  buy anyway — the STAGE, the before/after REPORTING, and one honest measurement — and it
+  buys them against a kernel whose failure mode is known in advance. A plain Laplacian
+  equalises spacing. It has no way to know where a wall is, so it cannot trade an interior
+  node's position for orthogonality at one; what it does instead is drag the first interior
+  line away from the wall and spend the clustering the whole declaration exists to deliver.
+  Ticket 3 of #80 is what fixes that, and the argument for it is now a table rather than a
+  prediction.
+
+- **THE TABLE, measured 2026-09-04 on the SHIPPED files** (the C-grid, 11520 cells, and
+  the O-grid, 9216 — #80's own negative control, a case already good enough that smoothing
+  "must not make it worse"):
+
+  | case | sweeps | inverted | non-ortho max | non-ortho mean | wall first cell |
+  |------|--------|----------|---------------|----------------|-----------------|
+  | C-grid | 0 | 0 | 32.044° | 4.562° | 0.44% |
+  | C-grid | 1 | 0 | 89.399° | 6.230° | **36.61%** |
+  | C-grid | 5 | **4** | 89.786° | 10.004° | 126.45% |
+  | C-grid | 20 | **26** | 89.864° | 16.288° | 372.84% |
+  | O-grid | 0 | 0 | 2.250° | 1.875° | 0.08% |
+  | O-grid | 1 | 0 | 4.344° | 1.882° | 53.36% |
+  | O-grid | 5 | **184** | 17.443° | 2.111° | 87.36% |
+
+  **Every column gets worse, including the two this arc exists to improve.** The wall
+  figure was the predicted casualty and it is an 84x regression at one sweep; the
+  non-orthogonality regression was NOT predicted by the ticket and is the more interesting
+  half — a kernel aimed at the metric #80 names makes that metric worse, because equalising
+  spacing across a boundary-layer-scale grading shears the cells next to the frozen wall
+  line. The negative control fails on the same terms, so "turn it on where the mesh is
+  already good" is not a workaround either. Nothing here is papered over: the run PRINTS
+  both halves, and the ticket's whole value is that this is a measurement.
+
+- **The stage sits between the FILL and the SPLIT, and that ordering is currently
+  unfalsifiable.** Injection Y moved the entire sweep block past the split loop and
+  NOTHING failed — every reader downstream (the split, the boundary-edge walk) reads node
+  IDS and the sides' own positions, never the interior coordinates. The ordering is
+  therefore a design rule held by a comment rather than by a gate, and it is recorded as a
+  named blind spot rather than as a claim the tests support. It is still the right
+  ordering: it is what makes "no downstream reader can tell a smoothed result from an
+  unsmoothed one by its shape" true by construction instead of by inspection of each
+  reader, one at a time, forever.
+
+- **Which nodes move was a decision, not an implementation detail.** #80 says so, and the
+  three candidate answers — interior only, shared-edge nodes too, bound wall nodes too —
+  are three different tickets. Ticket 1 takes the first, and the reason it is the first is
+  not caution: a block-boundary node is written by the EDGE, an edge is SHARED by
+  construction, and welding on this path is by ALLOCATION rather than by comparison. Moving
+  such a node means moving it in two blocks at once, and moving a node on a BOUND edge
+  takes it off the geometry it was attached to by arc length — the one chain in this module
+  that has no tolerance in it anywhere. So interior-only is the answer that needs no new
+  machinery, and it has the useful side effect that one block's interior never neighbours
+  another's, which is why the sweep needs no ordering rule between blocks at all.
+
+- **Jacobi rather than Gauss-Seidel.** Gauss-Seidel converges faster and is what most
+  descriptions of "Laplacian smoothing" mean, but it makes the answer a function of the
+  order the blocks and the (i, j) pairs are visited — an order nobody declared. That is the
+  same objection this module already raises against a sequential generator for the
+  randomized diagonal, and the answer is the same. Cost: more sweeps for the same
+  relaxation, which does not matter for a kernel this arc is going to replace.
+
+- **`preSmoothNodes` rather than running the build twice.** The seam publishes the node
+  positions as they stood the instant before the first sweep, so the two quality reports
+  are the same cells, the same blocks and the same node ids over two coordinate sets, and
+  the difference between them is the smoother and nothing else. Two runs compared against
+  each other would have proved nothing of the sort. It is EMPTY when no sweep ran — not a
+  copy — because a run that did not smooth has no "before" distinct from what it returned,
+  and printing two identical blocks in front of a reader who asked for no smoothing is a
+  worse answer than printing one.
+
+- **The machine-readable line keeps its meaning.** `HYBMESH_MB_QUALITY` always describes
+  the mesh AS EXPORTED; the before half is `HYBMESH_MB_QUALITY_BEFORE` and exists only on a
+  smoothed run. So a gate that greps the token keeps getting the answer about the file on
+  disk and never has to know which kind of run it is reading. Two existing readers matched
+  the prefix WITHOUT its trailing space and would have parsed the before line as the real
+  one; both were tightened in the same commit. The alternative — a `stage=` field on the
+  existing line — was rejected because it changes the unsmoothed run's output, which is the
+  one thing this ticket promised not to do.
+
+- **A fold from smoothing is an ORDINARY inverted mesh.** Counted after the sweeps,
+  exported, exit 9, no new code and no second exit code: the declaration is valid and its
+  interpolated-then-relaxed interior came out folded, which is exactly what
+  `EXIT_ERR_INVERTED` already means. The shipped C-grid reaches it at 5 sweeps and the
+  O-grid at 5 as well, so this is not a theoretical branch.
+
+- **The golden case is ONE sweep, and that is a measurement rather than a taste.**
+  `mb_cgrid_smooth` runs the shipped C-grid config with `MB_SMOOTH_ITERS 1`. At 5 it exits
+  9, and `golden_mesh.py` records a non-zero run as "no mesh produced" and compares
+  nothing — so a heavier case would have been a baseline of one line. One sweep still moves
+  every interior node, which is what a kernel change (every remaining ticket of #80) has to
+  move past a 1e-10 tolerance.
+
+- **The gates, and seven hand injections dated 2026-09-04** in
+  `tests/cpp/test_multiblock.cpp`'s docstring. Two are worth repeating here. **X (the
+  before list never published) exited 139 with ZERO FAIL lines** — checks 42 and 43 indexed
+  an empty vector — which a run scored by counting FAIL lines reads as "the injection did
+  nothing". This repo has recorded that lesson twice before (#54's H, #57's S) and it still
+  cost a round; the two checks are now guarded so the same injection reports 7 failures
+  instead of a segfault. **AA (the `.dat`-level refusal of a negative count removed) left
+  the C++ suite entirely green** and was caught only by the surface gate, and only by the
+  line that asserts WHICH exit code the refusal carries — the seam's own door still refused
+  it, with the topology code instead of the config one. That is exactly what the
+  two-doors-two-codes convention is for, and it is the same shape as #54's injection N.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /

@@ -38,6 +38,15 @@
 //     34's request/achieved pair). Its magnitude — 6927% wall-height error under
 //     the logical-index blend, 0 under this one — was measured out of tree and is
 //     recorded in docs/design_notes/mesher.md, not re-measured by any gate.
+//   * The SMOOTHING pass is checks 40-46 (#81). What they do NOT cover: the
+//     STAGE'S POSITION, which injection Y shows nothing can see (above); anything
+//     downstream of the seam — that MB_SMOOTH_ITERS reaches these parameters from
+//     a `.dat`, that the run reports before AND after, and that a negative count
+//     is a CONFIG refusal are
+//     tools/PreProcessor/tests/test_multiblock_smooth_surface.py; and the QUALITY
+//     figures themselves, which are that gate's dated table, not a number
+//     re-measured here. Check 45 asserts the wall-height regression as a DIRECTION
+//     with a floor on a fixture, not as the shipped case's 0.44% -> 36.61%.
 //   * The diagonal split RULES are checks 24-28 and the id-uniqueness refusals
 //     29 (#54). What they do NOT check is
 //     the QUALITY of the randomized rule's bit stream: nothing here asks whether
@@ -148,6 +157,45 @@
 // second de-welded EVERY corner with three or more users, so an ogrid fixture
 // refused and an older check indexed r.blocks[0] on an empty vector. Read the
 // EXIT CODE before the FAIL count.
+//
+// SEVEN MORE for the smoothing pass, measured 2026-09-04 the same way (each patch
+// applied alone, rebuilt, BOTH this executable and
+// tools/PreProcessor/tests/test_multiblock_smooth_surface.py run, exit codes read
+// BEFORE the FAIL counts, control run clean). AA is against include/Config.hpp;
+// the rest against src/MultiBlock.cpp:
+//
+//   U  the freeze lost: block-boundary nodes swept too    -> 41, 43; surface 5
+//   V  Gauss-Seidel — the sweep reads what it just wrote  -> 42, 43
+//   W  the seam's negative-count refusal removed          -> 44
+//   X  the 'before' list never published                  -> 41, 42, 43, 46;
+//                                                            surface 2, 5
+//   Y  the whole sweep block moved PAST the split         -> NOTHING (see below)
+//   Z  the kernel averages the two i-neighbours only      -> 42, 43, 45; surface 5
+//   AA Config::validate() no longer refuses a negative    -> surface 6 only
+//
+// FOUR OF THOSE ARE RECORDED FOR WHAT THEY SHOWED, not for confirming a check.
+//
+// X exited 139 with ZERO FAIL lines in its first run — checks 42 and 43 indexed an
+// empty `preSmoothNodes` — which is the third time this repo has scored a SIGSEGV
+// as "the injection did nothing" (see S above, and H under the split rules). Both
+// checks are now guarded, and the same patch re-run reports 7 failures.
+//
+// Y IS INERT, and that is recorded rather than fixed. Every reader downstream of
+// the smoothing stage — the split and the boundary-edge walk — reads node IDS and
+// the sides' own positions, never the interior coordinates, so moving the sweeps
+// past them changes nothing today. The fill-then-smooth-then-split ordering is a
+// design rule held by a comment, not by a gate; it is what makes "no downstream
+// reader can tell a smoothed result from an unsmoothed one by its shape" true by
+// construction rather than by re-inspecting each reader whenever one is added.
+//
+// AA left this whole executable GREEN. The seam's own door still refused the value
+// — with the TOPOLOGY code instead of the CONFIG one — so only the surface gate's
+// "which exit code" line caught it. Same shape as N above, and the same lesson: a
+// refusal that exists twice needs a check on each door, not one on the outcome.
+//
+// V passed the SURFACE gate cleanly. That is the division of labour working: the
+// surface gate asserts a direction with a floor, so a different-but-still-degrading
+// kernel satisfies it, and the kernel's arithmetic belongs to check 42 alone.
 #include "MultiBlock.hpp"
 #include "check.hpp"
 
@@ -718,6 +766,77 @@ std::string cgrid() {
 // The C-grid's one geometry: the body, cut into an upper and a lower surface.
 std::vector<hybmesh::MbGeometry> cgridGeoms(int perSeg = 40) {
     return {circleGeom(perSeg, 0.5, "body.dat", "wall", 2)};
+}
+
+// ── A wall block, graded off its SOUTH side (issue #81) ───────────────────
+//
+// The unit square again, but with both j-running sides declaring the same
+// first-cell height at their START, so every column's first cell off the south
+// side is `ds` and the block is graded in j and uniform in i. That is the shape a
+// wall block on this path really has, and it is the one a plain Laplacian sweep is
+// known to spoil: the kernel equalises spacing, so it pulls the first interior
+// line AWAY from the wall.
+//
+// Uniform in i and graded in j on purpose: the fill then puts node (i, j) at
+// (i/(ni-1), g(j)) exactly, so a sweep's effect on each coordinate is separately
+// predictable and check 45's "the first cell got taller" cannot be an artefact of
+// the two directions interacting.
+std::string wallSquare(int ni, int nj, const std::string& ds) {
+    const std::string sp = R"(, "spacing": {"ds_start": )" + ds + "}";
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "se", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "ne", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "nw", "kind": "free", "xy": [0.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s", "corners": ["sw", "se"], "kind": "wall", "count": )") + std::to_string(ni)
+        + R"(},
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": )" + std::to_string(nj)
+        + sp + R"(},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall", "count": )" + std::to_string(ni)
+        + R"(},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )" + std::to_string(nj)
+        + sp + R"(}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s", "e", "n", "w"]}
+  ]
+})";
+}
+
+// One Laplacian sweep, computed HERE from `src` and returned, so a check can
+// compare the seam's answer against an independent one rather than against
+// itself. Deliberately Jacobi (every node reads `src`), which is the property
+// check 43 is about.
+std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& src) {
+    std::vector<Point2D> out = src;
+    for (const hybmesh::MbBlock& b : r.blocks)
+        for (int j = 1; j + 1 < b.nj; ++j)
+            for (int i = 1; i + 1 < b.ni; ++i) {
+                const Point2D sum = src[static_cast<size_t>(b.nodeAt(i - 1, j))]
+                                  + src[static_cast<size_t>(b.nodeAt(i + 1, j))]
+                                  + src[static_cast<size_t>(b.nodeAt(i, j - 1))]
+                                  + src[static_cast<size_t>(b.nodeAt(i, j + 1))];
+                out[static_cast<size_t>(b.nodeAt(i, j))] = sum * 0.25;
+            }
+    return out;
+}
+
+// The worst distance between two parallel node lists, or -1 when they are not
+// parallel at all. NEGATIVE for "not comparable", the same convention MbQuality
+// uses, so "they agree perfectly" and "there was nothing to compare" cannot print
+// as the same number.
+double worstMove(const std::vector<Point2D>& a, const std::vector<Point2D>& b) {
+    if (a.size() != b.size()) return -1.0;
+    double worst = 0.0;
+    for (size_t k = 0; k < a.size(); ++k) {
+        const double d = (a[k] - b[k]).length();
+        if (d > worst) worst = d;
+    }
+    return worst;
 }
 
 }  // namespace
@@ -2230,6 +2349,250 @@ int main() {
             }
         CHECK(wakeClass == 3,
               "39. ...and that class has all three of its members");
+    }
+
+    // ── 40. at its default the smoother is NOT THERE, not merely quiet ──────
+    //
+    // The whole increment is built behind a parameter whose default is "do
+    // nothing", so the claim that has to hold first is that a run at the default
+    // returns what it returned before the smoother existed — including the absence
+    // of a "before" list, since a run that did not smooth has no before distinct
+    // from what it returned. Asserted as BIT equality: an "approximately the same"
+    // default is a default that has already changed the eighteen golden meshes.
+    {
+        MbParams zero;
+        zero.smoothIters = 0;
+        MbResult a = build(wallSquare(9, 7, "0.02"));            // MbParams{}
+        MbResult b = build(wallSquare(9, 7, "0.02"), zero);      // said out loud
+        CHECK(a.ok && b.ok, "40. the graded wall block is accepted (err: " + a.error
+                            + " / " + b.error + ")");
+        CHECK(a.preSmoothNodes.empty() && b.preSmoothNodes.empty(),
+              "40. a run that does not smooth publishes NO 'before' list");
+        CHECK(worstMove(a.nodes, b.nodes) == 0.0,
+              "40. ...and the default IS zero sweeps, bit for bit");
+        CHECK(a.cells.size() == b.cells.size() && a.blocks.size() == b.blocks.size(),
+              "40. ...over the same cells and blocks");
+    }
+
+    // ── 41. only STRICTLY INTERIOR nodes move; every block boundary is frozen ─
+    //
+    // The decision this ticket had to make rather than defer, checked as data:
+    // outer walls, bound edges, interfaces and cuts are all block boundaries, and
+    // a node on any of them is written by the EDGE — which is SHARED, so moving
+    // one would move it in two blocks at once and would take a bound node off the
+    // geometry it was attached to by arc length. Driven on the four-block C-grid
+    // because that is the only fixture here whose boundaries include all four
+    // kinds at once.
+    {
+        MbParams p;
+        p.smoothIters = 3;
+        MbResult u = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), MbParams{});
+        MbResult r = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), p);
+        CHECK(u.ok && r.ok, "41. the C-grid is accepted with and without smoothing "
+                            "(err: " + u.error + " / " + r.error + ")");
+        CHECK(r.preSmoothNodes.size() == r.nodes.size(),
+              "41. a smoothed run publishes a 'before' list parallel to its nodes");
+        CHECK(worstMove(r.preSmoothNodes, u.nodes) == 0.0,
+              "41. ...and that list IS the unsmoothed mesh, bit for bit — so the two "
+              "quality reports differ by the smoother and by nothing else");
+        // Frozen, and MOVED, counted separately: "nothing moved" would satisfy the
+        // frozen half on its own.
+        std::vector<bool> boundary(r.nodes.size(), false);
+        for (const auto& b : r.blocks)
+            for (int j = 0; j < b.nj; ++j)
+                for (int i = 0; i < b.ni; ++i)
+                    if (i == 0 || j == 0 || i == b.ni - 1 || j == b.nj - 1)
+                        boundary[static_cast<size_t>(b.nodeAt(i, j))] = true;
+        size_t frozen = 0, movedInterior = 0, movedBoundary = 0;
+        for (size_t k = 0; k < r.nodes.size(); ++k) {
+            const bool same = r.nodes[k].x == u.nodes[k].x
+                           && r.nodes[k].y == u.nodes[k].y;
+            if (boundary[k]) { if (same) ++frozen; else ++movedBoundary; }
+            else if (!same) ++movedInterior;
+        }
+        CHECK(movedBoundary == 0,
+              "41. every node on ANY block boundary is frozen — walls, bound edges, "
+              "interfaces and the wake cut alike (" + std::to_string(movedBoundary)
+              + " moved of " + std::to_string(frozen + movedBoundary) + ")");
+        CHECK(movedInterior > 0,
+              "41. ...and interior nodes really did move, so the check above is not "
+              "passing on a mesh nothing touched (" + std::to_string(movedInterior)
+              + " moved)");
+        // Node IDENTITY is what welding rests on: the smoother writes coordinates
+        // and allocates nothing, so a shared node is still ONE node.
+        CHECK(r.nodes.size() == u.nodes.size(),
+              "41. smoothing allocates no node and drops none");
+        bool cellsSame = r.cells.size() == u.cells.size();
+        for (size_t k = 0; cellsSame && k < r.cells.size(); ++k)
+            cellsSame = r.cells[k].nodeIds == u.cells[k].nodeIds
+                     && r.cells[k].block == u.cells[k].block;
+        CHECK(cellsSame,
+              "41. ...and no downstream reader can tell the two apart by SHAPE: the "
+              "cells are the same ids in the same order, smoothed or not");
+        bool edgesSame = r.boundaryEdges.size() == u.boundaryEdges.size();
+        for (size_t k = 0; edgesSame && k < r.boundaryEdges.size(); ++k)
+            edgesSame = r.boundaryEdges[k].v1 == u.boundaryEdges[k].v1
+                     && r.boundaryEdges[k].v2 == u.boundaryEdges[k].v2
+                     && r.boundaryEdges[k].bc == u.boundaryEdges[k].bc
+                     && r.boundaryEdges[k].segId == u.boundaryEdges[k].segId;
+        CHECK(edgesSame, "41. ...nor by the boundary edges, which carry the same "
+                         "conditions off the same source segments");
+    }
+
+    // ── 42. the kernel IS the average of the four logical neighbours ─────────
+    //
+    // Pinned as arithmetic rather than as "something moved", because every later
+    // ticket in this arc replaces exactly this expression: a check that only knew
+    // the nodes had shifted could not tell a Winslow kernel from a broken
+    // Laplacian one. Computed against `preSmoothNodes`, which is also the Jacobi
+    // claim — a Gauss-Seidel sweep would read neighbours this sweep had already
+    // written.
+    {
+        MbParams p;
+        p.smoothIters = 1;
+        MbResult r = build(wallSquare(9, 7, "0.02"), p);
+        CHECK(r.ok, "42. the graded wall block smooths (err: " + r.error + ")");
+        // GUARDED, and the guard is not defensive habit: an injection that stopped
+        // publishing `preSmoothNodes` made this loop index an EMPTY vector, and the
+        // run died with SIGSEGV and printed no FAIL line at all — which a score
+        // taken from the FAIL count reads as "the injection did nothing". Check 41
+        // has already reported the missing list; this must report too, not crash.
+        CHECK(r.preSmoothNodes.size() == r.nodes.size(),
+              "42. ...publishing a 'before' list to compare the kernel against");
+        double worst = -1.0;
+        size_t interior = 0;
+        if (r.preSmoothNodes.size() == r.nodes.size()) {
+            for (const auto& b : r.blocks)
+                for (int j = 1; j + 1 < b.nj; ++j)
+                    for (int i = 1; i + 1 < b.ni; ++i) {
+                        const Point2D want =
+                            (r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i - 1, j))]
+                             + r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i + 1, j))]
+                             + r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i, j - 1))]
+                             + r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i, j + 1))])
+                            * 0.25;
+                        const double d =
+                            (r.nodes[static_cast<size_t>(b.nodeAt(i, j))] - want).length();
+                        if (d > worst) worst = d;
+                        ++interior;
+                    }
+        }
+        CHECK(interior == 35,
+              "42. the 9 x 7 block has 7 x 5 interior nodes to check (got "
+              + std::to_string(interior) + ")");
+        // 1e-15 absolute on a unit square: the kernel is three additions and one
+        // multiplication, so the two ways of writing it differ by rounding alone.
+        CHECK(worst >= 0.0 && worst < 1e-15,
+              "42. every interior node lands on the mean of its four logical "
+              "neighbours' PRE-SWEEP positions (worst " + std::to_string(worst) + ")");
+    }
+
+    // ── 43. N sweeps are N applications of that kernel, in Jacobi order ──────
+    //
+    // The property that makes the answer independent of the order the blocks and
+    // the (i, j) pairs are visited, which a Gauss-Seidel loop would quietly take
+    // away. Two sweeps are compared against the kernel applied twice by hand from
+    // the same start, and the one-sweep result is checked to DIFFER from it, so
+    // the comparison cannot pass by both sides doing nothing.
+    {
+        MbParams one, two;
+        one.smoothIters = 1;
+        two.smoothIters = 2;
+        MbResult r1 = build(wallSquare(9, 7, "0.02"), one);
+        MbResult r2 = build(wallSquare(9, 7, "0.02"), two);
+        CHECK(r1.ok && r2.ok, "43. one and two sweeps are both accepted");
+        CHECK(worstMove(r2.preSmoothNodes, r1.preSmoothNodes) == 0.0,
+              "43. both runs start from the same unsmoothed mesh");
+        // Guarded for the reason check 42 records: `sweepByHand` indexes by node id,
+        // and a missing 'before' list must be a FAIL line rather than a segfault.
+        const std::vector<Point2D> byHand =
+            r2.preSmoothNodes.size() == r2.nodes.size()
+                ? sweepByHand(r2, sweepByHand(r2, r2.preSmoothNodes))
+                : std::vector<Point2D>();
+        const double gap = worstMove(r2.nodes, byHand);
+        CHECK(gap >= 0.0 && gap < 1e-15,
+              "43. two sweeps ARE the Jacobi kernel applied twice (worst "
+              + std::to_string(gap) + ")");
+        CHECK(worstMove(r2.nodes, r1.nodes) > 1e-9,
+              "43. ...and the second sweep really moved something, so the comparison "
+              "above is not two identity operations agreeing");
+    }
+
+    // ── 44. a NEGATIVE sweep count is refused BY NAME, never clamped ─────────
+    //
+    // The refuse-never-clamp convention MESH_MODE and MB_SPLIT_RULE already state,
+    // and here it is also what keeps the parameter's type honest: `smoothIters` is
+    // a signed int precisely so this refusal can be written, since widening -1 to
+    // an unsigned count is four billion sweeps — a hang, not a mesh.
+    {
+        MbParams bad;
+        bad.smoothIters = -1;
+        MbResult r = build(square(4, 3), bad);
+        CHECK(!r.ok, "44. a negative sweep count is refused");
+        CHECK(mentions(r.error, "MB_SMOOTH_ITERS"),
+              "44. ...naming the key the user has to fix (got: " + r.error + ")");
+        CHECK(r.nodes.empty() && r.cells.empty() && r.blocks.empty(),
+              "44. ...and producing nothing");
+    }
+
+    // ── 45. THIS KERNEL MAKES THE WALL FIRST CELL WORSE, measured ────────────
+    //
+    // The point of shipping a Laplacian at all. It equalises spacing, so on a
+    // wall-clustered block it drags the first interior line away from the wall and
+    // spends the resolution the whole declaration exists to deliver. Asserted as a
+    // DIRECTION with a floor, not as a fixed number: the number belongs to the
+    // shipped C-grid and is recorded in the surface gate and the design note. What
+    // is pinned here is that the regression is real and is not a rounding wobble —
+    // and that the seam's own `wallSpecs` still asks for the declared height, so
+    // the quality report will SEE the miss rather than move the target with it.
+    {
+        MbParams p;
+        p.smoothIters = 4;
+        MbResult u = build(wallSquare(9, 7, "0.02"));
+        MbResult r = build(wallSquare(9, 7, "0.02"), p);
+        CHECK(u.ok && r.ok, "45. the graded wall block is accepted both ways");
+        const auto& bu = u.blocks[0];
+        const auto& br = r.blocks[0];
+        // The first interval off the SOUTH side, one grid line in from the corner
+        // so the node above it is an interior node the sweep may move.
+        const double before = (nodeOf(u, bu, 4, 1) - nodeOf(u, bu, 4, 0)).length();
+        const double after  = (nodeOf(r, br, 4, 1) - nodeOf(r, br, 4, 0)).length();
+        CHECK(after > before * 1.5,
+              "45. the first cell off the wall gets TALLER under this kernel — the "
+              "known cost this increment exists to measure (" + std::to_string(before)
+              + " -> " + std::to_string(after) + ")");
+        bool sameRequest = u.wallSpecs.size() == r.wallSpecs.size();
+        for (size_t k = 0; sameRequest && k < r.wallSpecs.size(); ++k)
+            sameRequest = r.wallSpecs[k].edgeId == u.wallSpecs[k].edgeId
+                       && r.wallSpecs[k].side == u.wallSpecs[k].side
+                       && r.wallSpecs[k].requestedLo == u.wallSpecs[k].requestedLo
+                       && r.wallSpecs[k].requestedHi == u.wallSpecs[k].requestedHi;
+        CHECK(sameRequest,
+              "45. ...while the published REQUEST is unchanged, so the miss is "
+              "measured against the declaration rather than against the mesh that "
+              "drifted away from it");
+    }
+
+    // ── 46. enough sweeps FOLD a cell, and that is an ordinary inverted mesh ──
+    //
+    // Not a new failure mode and deliberately not a new exit code: a smoothing
+    // pass that folds a cell is a valid declaration whose interpolated interior
+    // came out folded, which is exactly what the inverted-cell code already means.
+    // What this pins is that the fold is REACHABLE from this parameter and that the
+    // seam still returns `ok` — the counting and the exit code are one level up, in
+    // `measureMbQuality` and the adapter, and the surface gate next door drives
+    // that on the shipped C-grid.
+    //
+    // The dart from tests/cpp/test_mb_quality.cpp's own fixture is not reused: this
+    // one starts SOUND, so the fold is the smoother's doing and not the fill's.
+    {
+        MbParams p;
+        p.smoothIters = 60;
+        MbResult r = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), p);
+        CHECK(r.ok, "46. a heavily smoothed C-grid is still a valid declaration and "
+                    "still returns a mesh (err: " + r.error + ")");
+        CHECK(r.preSmoothNodes.size() == r.nodes.size(),
+              "46. ...with its before/after pair intact, so the damage is reportable");
     }
 
     return hybmesh::test::report("test_multiblock");

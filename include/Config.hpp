@@ -82,6 +82,22 @@ struct Config {
     // every int and that only half of it is worth a widget.
     int mbSplitSeed = 0;
 
+    // HOW MANY SWEEPS of Laplacian smoothing the multi-block path runs over each
+    // block's INTERIOR nodes, between the fill and the split. 0 — the default —
+    // runs none, so every case that exists today meshes exactly as it did.
+    //
+    // MB_SMOOTH_ITERS, and deliberately not a name that reads as a sibling of
+    // BL_SMOOTHING_ITERS: that key is the OTHER path's collision remedy, which
+    // moves nodes around a frozen boundary-layer front and does nothing at all
+    // when no node is frozen. These two share a verb and nothing else. SEED_* was
+    // not available either — that prefix is the refinement-seed namespace, for the
+    // reason mbSplitSeed above records.
+    //
+    // NEGATIVE IS REFUSED, not clamped, by validate() below and again by
+    // buildMultiBlock for any other caller — the two doors MB_SPLIT_RULE already
+    // has, and for the same reason.
+    int mbSmoothIters = 0;
+
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
 
@@ -318,6 +334,7 @@ struct Config {
             else if (key == "MB_SPLIT_QUADS") { double v; ss >> v; mbSplitQuads = (v != 0); }
             else if (key == "MB_SPLIT_RULE") { double v; ss >> v; mbSplitRule = static_cast<int>(v); }
             else if (key == "MB_SPLIT_SEED") { double v; ss >> v; mbSplitSeed = static_cast<int>(v); }
+            else if (key == "MB_SMOOTH_ITERS") { double v; ss >> v; mbSmoothIters = static_cast<int>(v); }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -414,6 +431,16 @@ struct Config {
         if (!hybmesh::isKnownMbSplitRule(mbSplitRule)) {
             LOG_ERROR("MB_SPLIT_RULE " << mbSplitRule << " is not a known rule ("
                       << hybmesh::mbSplitRuleList() << ").");
+            ok = false;
+        }
+        // Same answer again, and the third key in this file to get it: a sweep count
+        // has no obviously right repair either. Clamping a negative one to 0 would
+        // run no smoothing for someone who asked for some, which is a mesh nobody
+        // asked for with nothing to look at.
+        if (mbSmoothIters < 0) {
+            LOG_ERROR("MB_SMOOTH_ITERS " << mbSmoothIters << " is negative; it counts "
+                      "Laplacian sweeps over each multi-block block's interior nodes, "
+                      "so it must be 0 (no smoothing, the default) or more.");
             ok = false;
         }
         if (bl.blLayers < 0) {
@@ -533,6 +560,15 @@ struct Config {
             if (hybmesh::mbSplitRuleReadsSeed(mbSplitRule))
                 os << "  - Split Seed           : " << mbSplitSeed
                    << "  (re-run with this seed to reproduce this mesh)\n";
+            // Printed on every multi-block run, including the default one that runs
+            // no sweep at all: this number decides whether the run's own quality
+            // report has one half or two, and a provenance record that omits it
+            // cannot tell the two apart afterwards.
+            os << "  - Smoothing Sweeps     : " << mbSmoothIters
+               << (mbSmoothIters > 0
+                       ? "  (Laplacian, block interiors only)"
+                       : "  (none)")
+               << "\n";
         }
         os << "\n";
 

@@ -351,9 +351,15 @@ def run_case(tmp, name, conf_text):
 
 
 def quality(out):
-    """The machine-readable quality line, as a dict of floats."""
+    """The machine-readable quality line for the mesh AS EXPORTED, as floats.
+
+    The prefix is matched WITH its trailing space, so a smoothed run's
+    ``HYBMESH_MB_QUALITY_BEFORE`` line (issue #81) cannot be mistaken for this
+    one — its ``cells=`` token would parse and its numbers describe a mesh that
+    was never exported.
+    """
     for line in out.splitlines():
-        if line.startswith("HYBMESH_MB_QUALITY"):
+        if line.startswith("HYBMESH_MB_QUALITY "):
             return {k: float(v) for k, v in
                     (tok.split("=") for tok in line.split()[1:])}
     return {}

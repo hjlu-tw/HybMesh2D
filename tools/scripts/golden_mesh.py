@@ -265,7 +265,7 @@ def _multiblock_bound():
     return build
 
 
-def _shipped_multiblock(mod):
+def _shipped_multiblock(mod, extra=""):
     """A multi-block case run from the SHIPPED config its own surface gate reads.
 
     `mod` is that gate: it owns `base_config()`, which loads `config/*.dat` from
@@ -279,12 +279,17 @@ def _shipped_multiblock(mod):
     `base_config`, and two copies of a subprocess call is how the two come to
     disagree about `cwd` or `env`. What each case is FOR is a comment beside its
     entry in `CASES`, because nothing here reads a docstring.
+
+    `extra` is appended to that shipped text, so a case can turn ONE parameter on
+    over the real document rather than over a composed lookalike -- which is how
+    `mb_cgrid_smooth` covers the shipped C-grid with smoothing without a second
+    copy of the topology anywhere.
     """
     def build(tmp, name):
         stem = os.path.join(tmp, name)
         conf = os.path.join(tmp, name + ".dat")
         with open(conf, "w", encoding="utf-8") as f:
-            f.write(mod.base_config().replace("@STEM@", stem))
+            f.write(mod.base_config().replace("@STEM@", stem) + extra)
         p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
                            capture_output=True, text=True, timeout=600)
         return p.returncode, stem
@@ -331,6 +336,16 @@ CASES = {
     #     that a `.vtk` still renders.
     "mb_ogrid": _shipped_multiblock(mbo),
     "mb_cgrid": _shipped_multiblock(mbc),
+    #   mb_cgrid_smooth (#81): the same shipped C-grid with MB_SMOOTH_ITERS 1, the
+    #     only case here whose node positions come from the SMOOTHER rather than
+    #     from the fill. ONE sweep, and that is a measurement rather than a taste:
+    #     the same document at 5 sweeps folds 4 cells and exits 9, and a case that
+    #     exits non-zero is recorded as "no mesh produced" and compares nothing.
+    #     Every interior node still moves on the one sweep, so a kernel change --
+    #     which is what every remaining ticket of #80 is -- moves this baseline by
+    #     orders more than the tolerance, while the frozen block boundaries keep
+    #     the `.bnd` patch faces identical to mb_cgrid's.
+    "mb_cgrid_smooth": _shipped_multiblock(mbc, extra="\nMB_SMOOTH_ITERS 1\n"),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }

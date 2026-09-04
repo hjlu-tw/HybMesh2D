@@ -123,6 +123,23 @@ struct MbParams {
     // `growth` beats it; 0 means none was resolved, and then `geometric` must
     // declare one.
     double wallGrowth = 0.0;
+    // HOW MANY SWEEPS of Laplacian smoothing run over each block's INTERIOR nodes,
+    // between the fill and the split. 0 — the default — is "no sweep runs at all",
+    // and at that value this seam returns exactly what it returned before the
+    // smoother existed.
+    //
+    // An `int` rather than a `size_t`, for the reason `splitRule` gives one line
+    // up: the value arrives from a config file, a negative one has to be
+    // REFUSABLE by name, and a type that cannot hold the bad value makes the
+    // refusal itself unwritable — an unsigned conversion turns -1 into four
+    // billion sweeps, which is not a refusal but a hang.
+    //
+    // Named MB_SMOOTH_ITERS on the `.dat` side, and neither BL_* nor SEED_*:
+    // `BL_SMOOTHING_ITERS` is the OTHER path's collision remedy (it moves nodes
+    // around a frozen boundary-layer front and returns immediately when no node is
+    // frozen), and a key that reads as its sibling would claim a kinship these two
+    // do not have. SEED_* is the refinement-seed namespace.
+    int smoothIters = 0;
 };
 
 // A block's four sides, in the [south, east, north, west] order the topology
@@ -312,6 +329,22 @@ struct MbResult {
     // MbSharedEdge and MbEdgeCount.
     std::vector<MbSharedEdge> sharedEdges;
     std::vector<MbEdgeCount> edgeCounts;
+    // THE SAME MESH BEFORE SMOOTHING: `nodes` as it stood the instant before the
+    // first sweep, parallel to `nodes` and empty when no sweep ran.
+    //
+    // Published from the seam for the reason `MbWallSpec` is: only this function
+    // is ever in a position to know it, and a caller that wanted to measure what
+    // smoothing bought would otherwise have to run the whole build twice and
+    // trust that the two runs agree about everything else. With this, "before"
+    // and "after" are the same cells, the same blocks and the same node ids over
+    // two coordinate sets — so a difference between the two reports is the
+    // smoother and nothing else.
+    //
+    // EMPTY IS THE HONEST ANSWER, not a zero-length before/after pair: a run that
+    // did not smooth has no "before" distinct from what it returned, and reporting
+    // one would put two identical quality blocks in front of a reader who asked
+    // for no smoothing.
+    std::vector<Point2D> preSmoothNodes;
 };
 
 // Parse `topologyJson`, resolve it against `geoms` and `params`, resolve every
