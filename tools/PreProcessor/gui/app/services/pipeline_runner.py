@@ -299,14 +299,17 @@ def _case_sources(pcfg: PipelineConfig, repo: str, geoms, vtk: str):
         # The block topology a MESH_MODE 1 run filled: an input of this run and
         # not a preference, so it is staged like the CAD rather than only quoted
         # by the generated parameter file. Repo-relative in a script, hence repo.
-        out.extend(case_sources.mesh_input_files(mc, repo))
+        out.extend(case_sources.mesh_input_paths(mc, repo))
         generated.append((f"Background_para_{pcfg.name or 'case'}.dat",
                           config_to_text(mc)))
     except Exception:
         # Staging the geometry is worth having even when the settings cannot be
-        # re-serialised; failing the solver run over it is not.
-        _log.warning("could not serialise the mesh config for the case's cad/ "
-                     "folder", exc_info=True)
+        # rebuilt; failing the solver run over it is not. Both the topology and
+        # the parameter file are lost together, because both are read off the
+        # MeshConfig this block builds.
+        _log.warning("could not rebuild the mesh config, so neither it nor the "
+                     "block topology reaches the case's cad/ folder",
+                     exc_info=True)
     return [p for p in out if p], generated
 
 

@@ -29,6 +29,29 @@ MESH_MODE_CHOICES: list[tuple[int, str]] = [
 ]
 
 
+def topology_file(mesh_config) -> str:
+    """The block topology document this config's mode actually READS, or ``""``.
+
+    The one place that asks both halves of that question — is the mode
+    multi-block, and is a path declared — so `missing_mesh_input` below and
+    `case_sources.mesh_input_paths` cannot come to different answers about
+    whether the run read a topology at all.
+
+    Blank for the hybrid path even when the field holds a path: the mesher WARNS
+    about a key the active mode never reads, and treating such a file as an input
+    would be the same untruth in the other direction.
+
+    Duck-typed on purpose: the caller has a ``MeshConfig``, but this module is
+    Qt-free and about a CONFIG, not about the class.
+    """
+    if mesh_config is None:
+        return ""
+    mode = int(getattr(mesh_config, "mesh_mode", MESH_MODE_HYBRID) or 0)
+    if mode != MESH_MODE_MULTIBLOCK:
+        return ""
+    return str(getattr(mesh_config, "mesh_topology_file", "") or "").strip()
+
+
 def missing_mesh_input(mesh_config) -> str:
     """Why the mesh stage cannot run for ``mesh_config``, or ``""`` when it can.
 
@@ -46,14 +69,16 @@ def missing_mesh_input(mesh_config) -> str:
     because there are two hosts (the blocking runner and the GUI's mesh
     controller) and a third would be written the same way the first two were.
 
-    Duck-typed on purpose: the caller has a ``MeshConfig``, but this module is
-    Qt-free and about a CONFIG, not about the class.
+    The REASON is the return value, not a bool: a caller that only asks whether
+    the string is empty reports the other mode's problem. The GUI did exactly
+    that in review of #56 — a multi-block config with no topology was told it had
+    no geometry and offered the CAD tab.
     """
     if mesh_config is None:
         return "no mesh configuration"
     mode = int(getattr(mesh_config, "mesh_mode", MESH_MODE_HYBRID) or 0)
     if mode == MESH_MODE_MULTIBLOCK:
-        if not str(getattr(mesh_config, "mesh_topology_file", "") or "").strip():
+        if not topology_file(mesh_config):
             return ("the multi-block path fills a DECLARED block topology and "
                     "MESH_TOPOLOGY_FILE names none")
         return ""

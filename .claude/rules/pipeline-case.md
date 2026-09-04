@@ -22,9 +22,11 @@ when a rule changes update BOTH.
 
 These rules also govern files OUTSIDE the globs above, which cannot hand a reader the text:
 `controllers/pipeline_ctrl.py`, `controllers/pipeline_io_ctrl.py`,
-`controllers/case_disposition_ctrl.py`, `workers/solver_run.py`, `views/case_dir_dialog.py` and
-`views/panels/restart_chooser.py`. The tripwire table in `CLAUDE.md` is what makes them reachable;
-the globs are the convenience.
+`controllers/case_disposition_ctrl.py`, `workers/solver_run.py`, `views/case_dir_dialog.py`,
+`views/panels/restart_chooser.py`, `controllers/mesh_gen_ctrl.py` and `services/mesh_modes.py`.
+The tripwire table in `CLAUDE.md` is what makes them reachable; the globs are the convenience.
+The last two are #56's: a reader of `mesh_modes.py` is handed only `gui-seams.md`, whose globs are
+the whole GUI tree, so nothing else would tell them the mesh stage's precondition is ruled on here.
 
 ### Full Pipeline (CAD → mesh → solver → results, one action)
 
@@ -381,7 +383,7 @@ the schema and the stage logic.
   `(st_dev, st_ino)`, then path, then substring; exit 1 on no match). `case_export` descends into
   `grid/cad/` with its own allow-list.
   **"Source" means every file the run READ, not only the drawn ones** (#56):
-  `case_sources.mesh_input_files()` is the one owner of the non-geometry half, and today that is
+  `case_sources.mesh_input_paths()` is the one owner of the non-geometry half, and today that is
   the topology document a `MESH_MODE 1` run fills — which decides the mesh as much as the
   geometry does, and IS the only input for the two shipped topology cases that name no
   `GEOM_FILE`. It answers **per mode**: the same path in a hybrid config stages nothing, because
@@ -390,14 +392,17 @@ the schema and the stage logic.
   `_case_source_files` and the runner's `_case_sources` — and a relative declaration resolves
   against the RUN's base directory, never the interpreter's cwd. Gated by
   `tests/test_multiblock_case_selfdescribing.py`.
-- **The mesh stage's precondition is per MODE, and `services/mesh_modes.py::missing_mesh_input()`
-  is where it is stated** (#56). `geom_files` empty is fatal on the hybrid path and NORMAL on the
-  multi-block one. `pipeline_runner._run_mesh` applied the hybrid rule to both and refused
-  `square_block` / `hgrid_blocks` outright — so `run.sh` could mesh a case the pipeline and the
-  batch queue could not — while `mesh_gen_ctrl` warned that a topology-only mesh "will have no
-  boundary/BL", naming a boundary layer that path never grows. One function, two hosts, because a
-  third would have been written the way the first two were. A shipped end-to-end example lives at
-  `config/pipeline/multiblock_cgrid_demo.json`.
+- **The mesh stage's precondition is per MODE, stated once in
+  `services/mesh_modes.py::missing_mesh_input()`** (#56). `geom_files` empty is fatal on the hybrid
+  path and NORMAL on the multi-block one, where a topology may declare every corner itself. Both
+  hosts ask it — `pipeline_runner._run_mesh` raises the reason, `mesh_gen_ctrl.mesh_input_warning`
+  logs it — and **the REASON is the return value, so a caller that reads it as a bool reports the
+  other mode's problem**; the GUI's hint is keyed on the MODE, never on the reason's text.
+  `mesh_modes.topology_file()` is the one owner of "did this run read a topology", so the
+  precondition and `case_sources.mesh_input_paths` cannot disagree. A shipped end-to-end example
+  is `config/pipeline/multiblock_cgrid_demo.json`. Gated by
+  `tests/test_multiblock_case_selfdescribing.py`.
+  Why: docs/design_notes/pipeline.md, "#56 widened what "source" means, and the widening is per MODE"
 - **`services/stl3d_case.py`** (Qt-free) is the same for the immersed-solid stage — `validate()`,
   `work_dir_for()`, `prepare_case_dir()` — and both `stl3d_ctrl.run_stl3d` and the headless IB
   stage go through it. **`Stl3dConfig.para_in_text()` must match
@@ -477,8 +482,16 @@ folder, and loads it back.
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against one
-list. #70 moved all four.
+list. #70 moved all four; #56 added the last two.
 
+- **The staged `Background_para_<case>.dat` names the topology at its ORIGINAL path, not the
+  staged copy** — exactly as it already does for `GEOM_FILE`. The case is self-DESCRIBING (you can
+  see which topology it used), not self-CONTAINED (you cannot re-mesh it from the folder alone),
+  and re-pointing one of the two and not the other would be worse than re-pointing neither.
+- **The export ships a staged topology because `_SOURCE_KEEP` already allows `.json`**, which is
+  the topology browse filter's own default and every shipped topology's extension. One named
+  `topo.mbt` is NAMED as a skip rather than shipped — the allow-list working, since widening it to
+  "whatever is in that folder" is the assumption it exists to deny.
 - **Nothing was measured on the solver for the three staged tables** — no case in this repo sets
   `mpi_comm_map_fn`, `cfl_schedule_fn` or `probe_points_def_fn`, so the justification for
   `table_refs_for_work_dir` is self-containment, not evidence.

@@ -11,7 +11,7 @@ So the sources are copied in beside the grid, under ``grid/<SOURCE_DIR_NAME>/``.
 "Source" means every file the run READ, not only the drawn ones: a ``MESH_MODE 1``
 case is shaped by its block topology document as much as by its geometry, and two
 of this repo's five shipped topology cases have no geometry at all — see
-:func:`mesh_input_files`.
+:func:`mesh_input_paths`.
 
 Four rules keep the copy honest:
 
@@ -47,6 +47,8 @@ from __future__ import annotations
 
 import os
 import shutil
+
+from app.services import mesh_modes
 
 # Under grid/, because that is where the mesh this geometry became already sits.
 SOURCE_DIR_NAME = "cad"
@@ -86,7 +88,7 @@ def mesh_provenance_paths(*mesh_outputs) -> list:
     return out
 
 
-def mesh_input_files(mesh_config, base_dir: str = "") -> list:
+def mesh_input_paths(mesh_config, base_dir: str = "") -> list:
     """The mesh stage's input files that are not geometry, for staging.
 
     Today that is exactly one: the **block topology document** a ``MESH_MODE 1``
@@ -94,28 +96,19 @@ def mesh_input_files(mesh_config, base_dir: str = "") -> list:
     decides the mesh *as much as the geometry does*, and two of this repo's five
     shipped topology cases name no geometry at all — so a case staged without it
     is incomplete in precisely the way ``grid/cad/`` exists to prevent (#56). The
-    mesher already agrees: ``src/cli.cpp`` puts it in the run's ``inputFiles``,
-    beside the geometry, for the provenance sidecar.
+    mesher already agrees: ``src/cli.cpp:417`` puts it in the run's
+    ``inputFiles``, beside the geometry, for the provenance sidecar.
 
-    Returns ``[]`` for the hybrid path even when the field holds a path. The
-    mesher WARNS about a key the active mode never reads; staging a file it never
-    read would be the same untruth in the other direction, and a case folder is
-    evidence or it is nothing.
-
-    ``base_dir`` resolves a relative declaration — a pipeline script quotes
-    repo-relative paths and ``run_batch`` is launched from wherever the user
-    happens to be, so the interpreter's cwd is not the answer. Existence is not
-    checked: that is ``stage_case_sources``' single decision, as it already is
-    for :func:`mesh_provenance_paths`.
+    **Whether the run READ a topology is not decided here**:
+    ``mesh_modes.topology_file`` owns that, so this and the mesh stage's own
+    precondition cannot disagree about it. What is decided here is where the file
+    IS — ``base_dir`` resolves a relative declaration, because a pipeline script
+    quotes repo-relative paths and ``run_batch`` is launched from wherever the
+    user happens to be, so the interpreter's cwd is not the answer. Existence is
+    not checked: that is ``stage_case_sources``' single decision, as it already
+    is for :func:`mesh_provenance_paths`.
     """
-    from app.services.mesh_modes import MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK
-
-    if mesh_config is None:
-        return []
-    mode = int(getattr(mesh_config, "mesh_mode", MESH_MODE_HYBRID) or 0)
-    if mode != MESH_MODE_MULTIBLOCK:
-        return []
-    topo = str(getattr(mesh_config, "mesh_topology_file", "") or "").strip()
+    topo = mesh_modes.topology_file(mesh_config)
     if not topo:
         return []
     if not os.path.isabs(topo) and base_dir:

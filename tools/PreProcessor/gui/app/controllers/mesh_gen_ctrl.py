@@ -6,12 +6,41 @@ from PyQt6.QtWidgets import QFileDialog
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
-from app.services.mesh_modes import missing_mesh_input
+from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import find_binary_executable, repo_root, confirm
 
 if TYPE_CHECKING:
     from app.models.mesh_config import MeshConfig
+
+
+def mesh_input_warning(cfg) -> str:
+    """The pre-flight warning for a config the mesh stage cannot fully run, or "".
+
+    A module function rather than a method so a gate can ask it what the user
+    would be TOLD without launching a worker — which is where the defect it
+    exists to hold actually lived.
+
+    What the stage is missing is answered per mode by ``missing_mesh_input``, and
+    the REASON is used, not just its truth value: the first cut of #56 wrote
+    ``if not cfg.geom_files and missing_mesh_input(cfg)`` and so told a
+    multi-block config with no topology that it had no geometry, sending the user
+    to the CAD tab for the other path's problem. Non-blocking, as it has always
+    been — the mesher gives the authoritative error.
+    """
+    why = missing_mesh_input(cfg)
+    if not why:
+        return ""
+    hint = ""
+    # Keyed on the MODE, never on the reason's TEXT: this repo has already had to
+    # reverse one law that was compared as a string at eight sites.
+    if int(getattr(cfg, "mesh_mode", MESH_MODE_HYBRID) or 0) == MESH_MODE_HYBRID:
+        hint = (" The mesh will have no boundary/BL. If you drew with 'Add "
+                "analytic edge', run 'Save & Export' in CAD mode (or 'Add "
+                "Active'/check it in Geometry Layers) so it is written to a "
+                ".dat first.")
+    return f"[WARNING] {why}.{hint}"
+
 
 class MeshGenControllerMixin:
     """Mixin containing HybMesh2D mesh generator execution, config editor mapping, and results visualization logic."""
@@ -167,17 +196,10 @@ class MeshGenControllerMixin:
         # usual cause of "mesh generates but shows no boundary/BL".)
         geom_bbox = None    # (xmin, ymin, xmax, ymax) of the boundary geometry
         domain_bbox = None  # ditto for the custom outer-domain outline, if any
-        # No geometry is a defect on the hybrid path and NORMAL on the
-        # multi-block one, where a topology may declare every corner itself
-        # (square_block, hgrid_blocks). missing_mesh_input answers per mode, so
-        # this warning stops naming a boundary layer that path never grows (#56).
-        if not cfg.geom_files and missing_mesh_input(cfg):
-            self.log(
-                "[WARNING] No geometry files in the mesh config — the mesh will "
-                "have no boundary/BL. If you drew with 'Add analytic edge', run "
-                "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
-                "Layers) so it is written to a .dat first.")
-        elif cfg.geom_files:
+        warning = mesh_input_warning(cfg)
+        if warning:
+            self.log(warning)
+        if cfg.geom_files:
             geom_bbox, domain_bbox = self._scan_geometry_files(cfg)
 
         # Pre-flight parameter validation: block on errors (invalid domain,

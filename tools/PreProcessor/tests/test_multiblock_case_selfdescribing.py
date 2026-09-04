@@ -94,7 +94,7 @@ from app.models.mesh_config import MeshConfig            # noqa: E402
 from app.models.pipeline_config import PipelineConfig    # noqa: E402
 from app.services import case_export, case_sources       # noqa: E402
 from app.services.mesh_modes import (                    # noqa: E402
-    MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK, missing_mesh_input,
+    MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK, missing_mesh_input, topology_file,
 )
 import test_multiblock_surface as mb                     # noqa: E402
 
@@ -119,29 +119,29 @@ def mbcfg(topology, mode=MESH_MODE_MULTIBLOCK):
 os.makedirs(os.path.join(tmp, "topo"), exist_ok=True)
 topo = mb.write_topology(os.path.join(tmp, "topo", "square_block.json"))
 
-check(case_sources.mesh_input_files(mbcfg(topo)) == [topo],
+check(case_sources.mesh_input_paths(mbcfg(topo)) == [topo],
       "1. a multi-block config's topology file is one of the mesh stage's input "
       "files — the thing that decides the grid, listed beside the geometry")
 
-check(case_sources.mesh_input_files(mbcfg(topo, MESH_MODE_HYBRID)) == [],
+check(case_sources.mesh_input_paths(mbcfg(topo, MESH_MODE_HYBRID)) == [],
       "1. the SAME path in a HYBRID config is not an input: the mesher warns "
       "about a key the active mode never reads, and staging a file it never "
       "read would be that same lie told the other way round")
 
-check(case_sources.mesh_input_files(mbcfg("")) == []
-      and case_sources.mesh_input_files(mbcfg("   ")) == []
-      and case_sources.mesh_input_files(None) == [],
+check(case_sources.mesh_input_paths(mbcfg("")) == []
+      and case_sources.mesh_input_paths(mbcfg("   ")) == []
+      and case_sources.mesh_input_paths(None) == [],
       "1. no topology declared (or no config at all) contributes nothing, "
       "rather than a blank path the staging service has to recognise")
 
-_rel = case_sources.mesh_input_files(
+_rel = case_sources.mesh_input_paths(
     mbcfg("examples/topology/square_block.json"), base_dir=_REPO)
 check(_rel == [os.path.join(_REPO, "examples", "topology", "square_block.json")],
       "1. a relative topology resolves against the RUN's base directory, not "
       "the interpreter's cwd — a pipeline script quotes repo-relative paths and "
       "run_batch is launched from wherever the user happens to be")
 
-check(case_sources.mesh_input_files(mbcfg(os.path.join(tmp, "nope.json"))) ==
+check(case_sources.mesh_input_paths(mbcfg(os.path.join(tmp, "nope.json"))) ==
       [os.path.join(tmp, "nope.json")],
       "1. a declared-but-absent topology is still RETURNED: existence is "
       "stage_case_sources' single decision, exactly as for mesh_provenance_paths")
@@ -156,7 +156,7 @@ clash = w(os.path.join(tmp, "geom", "square_block.json"), '{"not": "a topology"}
 
 logged = []
 staged = case_sources.stage_case_sources(
-    [geom, clash] + case_sources.mesh_input_files(mbcfg(topo)),
+    [geom, clash] + case_sources.mesh_input_paths(mbcfg(topo)),
     grid_dir, log=logged.append)
 cad_dir = os.path.join(grid_dir, case_sources.SOURCE_DIR_NAME)
 names = sorted(os.listdir(cad_dir))
@@ -213,6 +213,13 @@ _both.geom_files = [geom]
 check(not missing_mesh_input(_both),
       "5. geometry in multi-block mode is allowed, not required — the O-grid "
       "and C-grid cases bind their edges to a real body")
+
+check(topology_file(mbcfg(topo)) == topo
+      and topology_file(mbcfg(topo, MESH_MODE_HYBRID)) == ""
+      and topology_file(None) == "",
+      "5. one owner answers 'did the run read a topology' — the precondition and "
+      "the staging list both call it, so they cannot come to different answers "
+      "about the same config")
 
 # ── E. both hosts stage it, from one rule ─────────────────────────────────
 from app.services import pipeline_runner                 # noqa: E402
@@ -285,6 +292,24 @@ ctl2.sync_panels_to_models()
 check(ctl2.global_mesh_config.mesh_topology_file == topo,
       "9. ...and survive the panel->model sync that runs on every edit — a "
       "field the panel does not own reads back blank on the first keystroke")
+
+# The pre-flight message the USER is shown, not just the service behind it: the
+# first cut of #56 wrote `if not geom_files and missing_mesh_input(cfg)` and so
+# told a multi-block config with no topology that it had no geometry.
+from app.controllers.mesh_gen_ctrl import mesh_input_warning   # noqa: E402
+
+_no_topo_msg = mesh_input_warning(mbcfg(""))
+check("MESH_TOPOLOGY_FILE" in _no_topo_msg
+      and "CAD mode" not in _no_topo_msg and "boundary/BL" not in _no_topo_msg,
+      f"9b. a multi-block config with no topology is told about "
+      f"MESH_TOPOLOGY_FILE, and is NOT sent to the CAD tab to draw a geometry "
+      f"the multi-block path would not read anyway ({_no_topo_msg!r})")
+check("CAD mode" in mesh_input_warning(MeshConfig()),
+      "9b. ...while the hybrid path with no geometry still gets the guidance it "
+      "always had — the message is keyed on the MODE, not on the reason's text")
+check(mesh_input_warning(mbcfg(topo)) == "",
+      "9b. ...and a runnable topology-only config is warned about NOTHING, "
+      "which is the whole reason square_block stopped being a defect")
 
 _gui_src = ctl2._case_source_files()
 check(topo in _gui_src,
