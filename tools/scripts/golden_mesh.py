@@ -265,49 +265,26 @@ def _multiblock_bound():
     return build
 
 
-def _multiblock_ogrid():
-    """The four-block O-GRID this repo ships (issue #55).
+def _shipped_multiblock(mod):
+    """A multi-block case run from the SHIPPED config its own surface gate reads.
 
-    Deliberately the shipped topology, the shipped config and the two shipped
-    circle geometries, for the reason `_multiblock_example` gives. What it adds to
-    this family is the three things no earlier member has: an edge that FOLLOWS a
-    curved geometry rather than cutting its chord, an equivalence class that WRAPS
-    AROUND and closes (the last block welded back to the first), and a wall
-    spacing SOLVED for from BL_INITIAL_THICKNESS rather than implied by a node
-    count. A regression in any of the three moves node coordinates by orders more
-    than this comparator's tolerance -- a lost binding puts a quarter of the wall
-    on a chord, a lost weld doubles the seam nodes, and a lost clustering moves
-    the first interior ring from 1e-3 to 4e-1.
+    `mod` is that gate: it owns `base_config()`, which loads `config/*.dat` from
+    disk and retargets its output stem. Reading the config from disk rather than
+    composing an equivalent one is the point `_multiblock_example` makes -- these
+    are documentation a user runs, and an edit to the shipped file has to be
+    visible here.
+
+    One factory rather than one function per case, from the second such case on:
+    the O-grid's builder and the C-grid's differed only in which module supplied
+    `base_config`, and two copies of a subprocess call is how the two come to
+    disagree about `cwd` or `env`. What each case is FOR is a comment beside its
+    entry in `CASES`, because nothing here reads a docstring.
     """
     def build(tmp, name):
         stem = os.path.join(tmp, name)
         conf = os.path.join(tmp, name + ".dat")
         with open(conf, "w", encoding="utf-8") as f:
-            f.write(mbo.base_config().replace("@STEM@", stem))
-        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
-                           capture_output=True, text=True, timeout=600)
-        return p.returncode, stem
-    return build
-
-
-def _multiblock_cgrid():
-    """The four-block NACA 0012 C-GRID this repo ships (issue #57).
-
-    The shipped topology, the shipped config and the two shipped geometries, for
-    the reason `_multiblock_example` gives. What it adds to this family is the two
-    things no earlier member has: a CUT edge -- one declared line that is the same
-    side of two blocks and is exported as no boundary face at all -- and a
-    FOUR-WAY corner where all four blocks meet on one node. A regression in either
-    is exactly the kind this comparator was built to catch: a lost cut doubles the
-    wake's nodes and puts a wall through the middle of the fluid, which moves the
-    `.bnd` patch face counts, and a lost corner weld tears the mesh into pieces
-    that a `.vtk` still renders.
-    """
-    def build(tmp, name):
-        stem = os.path.join(tmp, name)
-        conf = os.path.join(tmp, name + ".dat")
-        with open(conf, "w", encoding="utf-8") as f:
-            f.write(mbc.base_config().replace("@STEM@", stem))
+            f.write(mod.base_config().replace("@STEM@", stem))
         p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
                            capture_output=True, text=True, timeout=600)
         return p.returncode, stem
@@ -339,8 +316,21 @@ CASES = {
     "mb_bound": _multiblock_bound(),
     "mb_cavity": _multiblock_cavity(),
     "mb_hgrid": _multiblock_hgrid(),
-    "mb_ogrid": _multiblock_ogrid(),
-    "mb_cgrid": _multiblock_cgrid(),
+    # The two SHIPPED four-block cases, and what a regression in each would move
+    # by orders more than this comparator's tolerance.
+    #   mb_ogrid (#55): an edge that FOLLOWS a curved geometry instead of cutting
+    #     its chord, an equivalence class that WRAPS AROUND and closes, and a wall
+    #     spacing SOLVED for from BL_INITIAL_THICKNESS. A lost binding puts a
+    #     quarter of the wall on a chord, a lost weld doubles the seam nodes, and a
+    #     lost clustering moves the first interior ring from 1e-3 to 4e-1.
+    #   mb_cgrid (#57): a CUT edge -- one declared line that is the same side of
+    #     two blocks and is exported as no boundary face at all -- and a FOUR-WAY
+    #     corner where all four blocks meet on one node. A lost cut doubles the
+    #     wake's nodes and puts a wall through the middle of the fluid, moving the
+    #     `.bnd` patch face counts; a lost corner weld tears the mesh into pieces
+    #     that a `.vtk` still renders.
+    "mb_ogrid": _shipped_multiblock(mbo),
+    "mb_cgrid": _shipped_multiblock(mbc),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }

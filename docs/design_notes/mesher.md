@@ -1114,9 +1114,22 @@ demonstration of one.
   lines reads a SIGSEGV as "no effect". Read the exit code first; this repo has recorded
   that lesson before and it still cost two rounds here.
 
+- **"The nine original cases remain identical" — the honest argument is STRUCTURAL.**
+  `git diff --stat src/ include/` against `02ed550` is empty, so no code the mesher runs
+  changed and nothing could have moved. The measurement agrees rather than carries the
+  claim: a baseline captured from this tree before the work and compared after gives
+  17/17 SAME at worst coordinate deviation 0.000e+00 (2026-09-04; 18/18 once `mb_cgrid`
+  was captured). The word is "SAME" and not "bit-identical": `golden_mesh.py`'s own
+  docstring records `wedge_45` returning a coordinate ~1.2e-13 different in roughly 1 run
+  in 12, which is why the comparator has a 1e-10 tolerance at all, and a commit message
+  that said "bit-identical" was claiming more than the comparator can promise on a rerun.
+
 - **Blind spots, named.** Gate 2 is ONE operating point (M 0.2, Re 200, zero incidence,
   100 iterations, `cfl 0.6`, every non-wall patch flag 1) and nothing re-runs it — CI has
-  no solver binary, so it is a dated quotation like #55's. Non-orthogonality remains a
+  no solver binary, so it is a dated quotation like #55's — and nothing from it is
+  committed, so re-doing it means rebuilding the case by hand. It also does NOT exercise
+  the `.bnd` name -> solver flag mapping: getPGrid does not know `farfield`, so the flag
+  the run used was written into `cgrid.bc.def` by hand, exactly as #55's was. Non-orthogonality remains a
   baseline and not a gate, and 32.04° in the first wall cell is still what the
   elliptic-smoothing increment exists to move. The 0.005 relation is unenforced. And the
   surface gate measures conformity on the EXPORTED files, so it cannot separate "welded

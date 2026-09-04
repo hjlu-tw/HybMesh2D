@@ -81,6 +81,16 @@ PASS CONDITION (measured 2026-09-04 on the shipped files):
   measured NOT to be what the solver minded; the next reader should not spend the
   afternoon on it that this one did.
 
+THE NINE ORIGINAL CASES -- now seventeen -- REMAIN IDENTICAL, and the load-bearing
+argument is structural rather than statistical: ``git diff --stat src/ include/``
+against 02ed550 is EMPTY, so no code the mesher runs changed. The measurement
+agrees: a baseline captured from this same tree before the work and compared after
+gives 17/17 SAME at worst coordinate deviation 0.000e+00 (2026-09-04, 18/18 once
+mb_cgrid was captured). "SAME" and not "bit-identical" is the claim that survives
+repetition -- ``golden_mesh.py``'s own docstring records that ``wedge_45`` returns
+a coordinate differing by ~1.2e-13 in roughly 1 run in 12, which is why the
+comparator has a 1e-10 tolerance at all.
+
 THE ACCEPTANCE RUN, dated and quoted rather than replaced by a shape check. CI has
 no solver binary, so it is recorded here in the convention this repo adopted after
 a change shipped broken behind 85 green tests that pinned strings and never
@@ -143,12 +153,23 @@ BLIND SPOTS, named rather than papered over:
     iterations, cfl 0.6, all non-wall patches flag 1). "The solver runs" is what
     #57 asked for and all this claims; it is not a convergence or accuracy result,
     and nothing here compares a pressure distribution against anything.
+  * NOTHING FROM THE ACCEPTANCE RUN IS ON DISK -- no para.in, no cgrid.bc.def, no
+    solver output is committed, following #55. So the run is a quotation and not a
+    reproduction, and re-doing it means rebuilding the case by hand from the
+    procedure above.
+  * THE SOLVER RAN ON THE MESH, NOT ON THE MESH'S OWN DECLARED BC NAMES. getPGrid
+    does not know 'farfield' and defaulted those 288 faces to a no-slip wall; the
+    flag-1 they actually ran with was written into cgrid.bc.def BY HAND. That is
+    what the GUI does automatically and what #55's run did too, but it means the
+    .bnd -> solver name mapping is NOT part of what gate 2 exercises. Check 6 is
+    where the names themselves are measured.
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_cgrid_surface.py
       python3 tools/PreProcessor/tests/test_multiblock_cgrid_surface.py --write
           rewrites the two shipped geometries from the generators below.
 Skips cleanly if ./build/HybMesh2D has not been built.
 """
+import json
 import math
 import os
 import subprocess
@@ -191,8 +212,15 @@ def check(msg, cond):
 # hand-edited `.dat` whose `.meta` still describes the old point set is a mesh
 # with corners on the wrong segments and no error at all.
 
-def _closed_polyline(segs, bcs):
+def closed_polyline_meta(segs, bcs):
     """``(dat_text, meta_text)`` for a CLOSED polyline in numbered segments.
+
+    THE ONE writer of this convention in this repo -- #55's ``write_circle`` next
+    door is one call to it, and that is deliberate: a second copy of a geometry
+    generator is guaranteed divergence (CLAUDE.md says so about ``golden_mesh.py``
+    for the same reason), and the thing that would diverge here is the two
+    conventions below, whose failure mode is a mesh with corners on the wrong
+    segments and no error at all.
 
     Two conventions of the real chain are reproduced exactly, because getting
     either wrong moves a corner by one sample and produces a slightly wrong mesh
@@ -250,7 +278,7 @@ def write_naca0012(per_side=NACA_PER_SIDE):
     up[0] = (1.0, 0.0)          # the trailing edge, exactly
     up[-1] = (0.0, 0.0)         # the leading edge, exactly
     lo = [(x, -y) for x, y in reversed(up)]
-    return _closed_polyline([up, lo], ["wall", "wall"])
+    return closed_polyline_meta([up, lo], ["wall", "wall"])
 
 
 def _line(p, q, n):
@@ -286,7 +314,7 @@ def write_farfield():
             _arc(FAR_R, math.pi, 1.5 * math.pi, 40)[:-1] + _line(bot, f3, 4),
             _line(f3, fl, 40),
             _line(fl, wk, 20)]
-    return _closed_polyline(segs, ["outlet", "farfield", "farfield",
+    return closed_polyline_meta(segs, ["outlet", "farfield", "farfield",
                                    "farfield", "farfield", "outlet"])
 
 
@@ -325,7 +353,7 @@ def quality(out):
     return {}
 
 
-def base_config(topo=_TOPO, geom_dir=_GEOM):
+def base_config(topo=_TOPO, bc_geom=None):
     """The shipped config, retargeted at a temp output stem.
 
     Read from disk rather than rebuilt: config/multiblock_cgrid.dat is
@@ -339,9 +367,9 @@ def base_config(topo=_TOPO, geom_dir=_GEOM):
     for needle, repl in (
             ("examples/topology/cgrid_naca0012.json", topo),
             ("examples/geometries/naca0012_cgrid.dat",
-             os.path.join(geom_dir, "naca0012_cgrid.dat")),
+             os.path.join(_GEOM, "naca0012_cgrid.dat")),
             ("examples/geometries/cgrid_farfield.dat",
-             os.path.join(geom_dir, "cgrid_farfield.dat")),
+             os.path.join(_GEOM, "cgrid_farfield.dat")),
             ("results/meshes/multiblock_cgrid/mesh_multiblock_cgrid.vtk",
              "@STEM@.vtk")):
         if needle not in text:
@@ -349,7 +377,37 @@ def base_config(topo=_TOPO, geom_dir=_GEOM):
                 "%s no longer contains %r, so this test cannot retarget it away "
                 "from the repo. Update base_config()." % (_CONF, needle))
         text = text.replace(needle, repl)
+    if bc_geom is not None:
+        text = "\n".join(("BC_GEOM " + bc_geom if line.startswith("BC_GEOM") else line)
+                          for line in text.splitlines()) + "\n"
     return text
+
+
+def topology(text=None):
+    """The shipped topology document, PARSED.
+
+    Its `//` line comments are the mesher's own extension to JSON (nlohmann parses
+    them; `json` does not), so they are stripped here. The strip is line-oriented
+    and would also cut a `//` inside a string value; nothing in this schema has
+    one, and a `raise` beats a silent mis-parse if that ever changes.
+
+    Parsed rather than string-counted, because check 5's claim is about the
+    DOCUMENT: a reformat, or the word appearing in a comment, must not be able to
+    change the answer.
+    """
+    if text is None:
+        text = open(_TOPO, encoding="utf-8").read()
+    lines = []
+    for ln in text.splitlines():
+        cut = ln.find("//")
+        if cut >= 0:
+            if ln.count('"', 0, cut) % 2:
+                raise AssertionError(
+                    "%s has a '//' inside a string; this comment stripper cannot "
+                    "handle that. Parse it properly or move the value." % _TOPO)
+            ln = ln[:cut]
+        lines.append(ln)
+    return json.loads("\n".join(lines))
 
 
 def dist_to_polyline(p, poly):
@@ -385,6 +443,8 @@ def main() -> int:
                   got == want)
 
     topo_text = open(_TOPO, encoding="utf-8").read()
+    topology(topo_text)          # it parses, so check 9's edit below is on a
+                                 # document and not on an unread blob
 
     with tempfile.TemporaryDirectory() as tmp:
         # ── 2. GATE 1: the shipped C-grid meshes with ZERO inverted cells ───
@@ -462,9 +522,10 @@ def main() -> int:
                   "wake blocks downstream, the two airfoil blocks upstream"
                   % len(quad),
                   len(quad) == 4)
-        check("5. the declaration puts FIVE edges on corner 'te' (the cut, two "
-              "radials, two surfaces)",
-              topo_text.count('"te"') - topo_text.count('{"id": "te"') == 5)
+        on_te = [e["id"] for e in topology()["edges"] if "te" in e["corners"]]
+        check("5. the declaration puts FIVE edges on corner 'te' — the cut, two "
+              "radials and two surfaces (%r)" % on_te,
+              len(on_te) == 5)
 
         # ── 6. both geometries' own conditions reach the .bnd ───────────────
         counts = {}
@@ -479,6 +540,19 @@ def main() -> int:
         check("6. the outlet is the two halves the wake cut splits it into (%s)"
               % counts.get("outlet"),
               counts.get("outlet") == 80)
+        # THE NEGATIVE CONTROL, and it is needed: the airfoil's condition is
+        # 'wall', which is ALSO what the shipped config's BC_GEOM fallback says,
+        # so the patch counts above cannot on their own tell a sidecar read from a
+        # fallback. Re-run with a fallback nothing should reach. Every patch must
+        # come out unchanged — which is also the shipped config's own claim ("every
+        # edge here binds, so nothing should reach it") measured rather than
+        # asserted.
+        p6, stem6 = run_case(tmp, "fallback", base_config(bc_geom="inlet"))
+        check("6. a run with BC_GEOM 'inlet' exits 0 (rc=%d)" % p6.returncode,
+              p6.returncode == 0)
+        check("6. ...and produces the SAME .bnd, patch names and all — so every "
+              "condition came off a sidecar and NOTHING reached the fallback",
+              p6.returncode == 0 and set(bnd_faces(stem6)) == set(faces))
 
         # ── 7. the whole grid is CONFORMAL across cut and four-way corner ───
         boundary = {k for k, n in use.items() if n == 1}

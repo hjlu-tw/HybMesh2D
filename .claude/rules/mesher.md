@@ -390,9 +390,9 @@ acceptance run: `docs/design_notes/mesher.md`.**
   `.bnd` — that is the whole difference between a cut and a wall, and `test_multiblock.cpp` 37 is
   the second thing that looks (the kind gate is the first).
 - **The trailing edge is ONE declared corner, on FIVE edges, where FOUR blocks meet.** One node, by
-  declaration. 60 node slots resolve to 47 nodes; three of the thirteen identifications are the
-  trailing edge's own, which is what it takes to bring four occurrences down to one
-  (`test_multiblock.cpp` 38). The C's five radials are one equivalence class with ONE seed
+  declaration. In `test_multiblock.cpp` 38's own fixture 60 node slots resolve to 47 nodes (the
+  shipped grid is 5920 nodes / 11520 cells); three of the thirteen identifications are the
+  trailing edge's own, which is what it takes to bring four occurrences down to one. The C's five radials are one equivalence class with ONE seed
   (check 39) — the O-grid's ring closes on itself, this chain does not, and its open ends are the
   two halves the cut splits the outlet plane into.
 - **The gate that bit was GATE 2, not gate 1, and the fix was in the DOCUMENT.** Zero inverted
@@ -405,8 +405,8 @@ acceptance run: `docs/design_notes/mesher.md`.**
   outer distribution must TRACK the body's. Left uniform: max non-orthogonality 59.52°, mean
   16.0°, wall first cell 3.46%, and the blow-up was on the surface just aft of the **LEADING** edge
   — #57 predicted the trailing edge. With it: **32.04° / 4.56° / 0.44%**, and the solver runs at
-  the same `cfl 0.6` the O-grid used. **It is derived, not tuned, and nothing enforces the
-  relation**: change the airfoil edges' spacing and this must follow by hand.
+  the same `cfl 0.6` the O-grid used. **It is DERIVED, not tuned**: change the airfoil edges'
+  spacing and this must follow.
 - **Lowering `cfl` to 0.3 also makes the BAD mesh run**, so "the solver runs" is quotable without
   improving the grid at all — which is why the recorded run states its CFL. And the wake's 3144:1
   worst edge ratio is **measured NOT to be the cause**: cutting it to 211 left the solver diverging
@@ -578,6 +578,13 @@ one list. #68 moved the first; #69 moved the rest.
   declared inputs — a hash with a visible period would pass all of them. Deliberate: a distribution
   test over 12 cells asserts noise, and the property that matters (no direction imprinted on a
   uniform region) is what `MbQuality` measures on a real case.
+- **The C-grid's 0.005 far-field clustering is UNENFORCED.** It is derived from the airfoil
+  edges' own `ds_start`, but they are two numbers in one document that happen to agree; only the
+  acceptance run would notice them diverging.
+- **GATE 2 DOES NOT EXERCISE THE `.bnd` NAME -> SOLVER FLAG MAPPING.** `getPGrid` does not know
+  `farfield` and defaults those faces to a no-slip wall, so both recorded runs wrote the flag into
+  a `.bc.def` BY HAND — what the GUI's `services/bnd_io._NAME_TO_FLAG` does automatically. Nothing
+  from either run is committed, so each is a quotation and not a reproduction.
 - **GATE 2 IS ONE OPERATING POINT, AND NOTHING RE-RUNS IT.** #57's acceptance run is M 0.2, Re 200,
   zero incidence, 100 iterations, `cfl 0.6`, every non-wall patch flag 1. "The solver runs" is all
   it claims — not convergence, not accuracy, and no pressure distribution is compared with

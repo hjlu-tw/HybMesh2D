@@ -114,6 +114,9 @@ sys.path.insert(0, _HERE)
 from mesher_bin import mesher_env as _mesher_env          # noqa: E402
 from test_multiblock_weld_surface import (                # noqa: E402
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
+# The ONE writer of this repo's `.meta` sidecar convention. It lives next door
+# because #57 needed it for a two- and a six-segment body; there is no second copy.
+from test_multiblock_cgrid_surface import closed_polyline_meta   # noqa: E402
 
 # The two shipped circles, as (basename, radius, points per quarter, BC label).
 # The body is twice as finely stored as the far field because it is the surface
@@ -133,28 +136,28 @@ def check(msg, cond):
 def write_circle(radius, per_quarter, bc):
     """``(dat_text, meta_text)`` for a CLOSED circle in four quarter segments.
 
-    THE ONE generator for the shipped geometries, so check 1 can compare the
-    committed files against it instead of trusting them. Two conventions of the
-    real chain are reproduced exactly, because getting either wrong moves a corner
-    by one sample and produces a slightly wrong mesh with no error:
+    THE ONE generator for the shipped circles, so check 1 can compare the
+    committed files against it instead of trusting them.
 
-      * the file carries the CLOSING DUPLICATE of its first point, which
-        ``loadGeometry`` drops (and ``reconcileMeta`` drops the matching sidecar
-        row), so the last segment's end is index 0 rather than one past the end;
-      * a joint belongs to the LATER segment, so point k is in segment
-        ``k // per_quarter`` and every joint is flagged a corner.
+    The `.meta` conventions it has to reproduce -- the closing duplicate the
+    loader drops, and a joint belonging to the LATER segment -- are not written
+    out here: they live in ``closed_polyline_meta``, which is the ONE writer of
+    them, and this function is one call to it. Two copies of that convention is
+    how the two come to disagree, and the failure mode is a mesh with corners on
+    the wrong segments and no error at all.
     """
     n = 4 * per_quarter
-    pts = [(radius * math.cos(2.0 * math.pi * k / n),
-            radius * math.sin(2.0 * math.pi * k / n)) for k in range(n)]
-    pts.append(pts[0])
-    dat = "".join(f"{x:.12f} {y:.12f}\n" for x, y in pts)
-    meta = ["HYBMESH_META 2", f"COUNT {len(pts)}", "NPIECES 0", "NSEGMENTS 4"]
-    meta += [f"{s} {bc} line" for s in range(4)]
-    meta += [f"POINTS {len(pts)}"]
-    meta += [f"{(k // per_quarter) % 4} {1 if k % per_quarter == 0 else 0}"
-             for k in range(len(pts))]
-    return dat, "\n".join(meta) + "\n"
+
+    def at(k):
+        a = 2.0 * math.pi * k / n
+        return (radius * math.cos(a), radius * math.sin(a))
+
+    # Segments overlap by one point, which is what closed_polyline_meta expects:
+    # quarter `s` runs from its own first sample to the NEXT quarter's, and that
+    # shared joint belongs to the later of the two.
+    segs = [[at(k) for k in range(s * per_quarter, (s + 1) * per_quarter + 1)]
+            for s in range(4)]
+    return closed_polyline_meta(segs, [bc] * 4)
 
 
 def _write_shipped():
