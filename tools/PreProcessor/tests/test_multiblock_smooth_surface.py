@@ -95,6 +95,11 @@ sys.path.insert(0, _HERE)
 # Imported, not copied: the shipped C-grid config is retargeted by the gate that
 # owns it, which also fails loudly if the file stops containing what it rewrites.
 from test_multiblock_cgrid_surface import base_config  # noqa: E402
+# The ONE parser for the machine-readable quality line, in the gate that owns it.
+# The token is matched WITH its trailing space, which is what keeps the unsuffixed
+# line and the `_BEFORE` one apart — the whole reason the before line wears a
+# suffix rather than an extra field on the existing one.
+from test_multiblock_quality_surface import qlines  # noqa: E402
 from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
 failures = []
@@ -104,22 +109,6 @@ def check(msg, cond):
     print(("PASS " if cond else "FAIL ") + msg)
     if not cond:
         failures.append(msg)
-
-
-def qlines(out, token=""):
-    """Every ``HYBMESH_MB_QUALITY<token>`` line, as dicts of floats.
-
-    The token is matched EXACTLY (with its trailing space), so the unsuffixed
-    line and the ``_BEFORE`` one cannot be mistaken for each other — which is the
-    whole reason the before line wears a suffix instead of an extra field.
-    """
-    want = "HYBMESH_MB_QUALITY" + token + " "
-    got = []
-    for line in out.splitlines():
-        if line.startswith(want):
-            got.append({k: float(v) for k, _, v in
-                        (tok.partition("=") for tok in line.split()[1:])})
-    return got
 
 
 def run(tmp, name, extra=""):

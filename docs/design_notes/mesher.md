@@ -1226,12 +1226,31 @@ demonstration of one.
   `EXIT_ERR_INVERTED` already means. The shipped C-grid reaches it at 5 sweeps and the
   O-grid at 5 as well, so this is not a theoretical branch.
 
+- **"The eighteen are unchanged" is a MEASUREMENT, and here is how to repeat it.**
+  `golden_mesh.py capture <dir>` from the tree at `507881d` (before the work), then
+  `golden_mesh.py compare <dir>` after: 18/18 SAME at worst coordinate deviation 0.000e+00.
+  Nothing is committed, so it is a dated run like the solver acceptance runs — and the
+  structural half of the argument is weaker here than #57's, because this commit DOES change
+  code the mesher runs (the fill loop was split in two). The measurement is what carries it.
+
 - **The golden case is ONE sweep, and that is a measurement rather than a taste.**
   `mb_cgrid_smooth` runs the shipped C-grid config with `MB_SMOOTH_ITERS 1`. At 5 it exits
   9, and `golden_mesh.py` records a non-zero run as "no mesh produced" and compares
   nothing — so a heavier case would have been a baseline of one line. One sweep still moves
   every interior node, which is what a kernel change (every remaining ticket of #80) has to
   move past a 1e-10 tolerance.
+
+- **A FOLD IS NOT REACHABLE WITHOUT CLUSTERING, and that had to be measured.** The spec
+  review found check 46 titled "enough sweeps FOLD a cell" while asserting only that the
+  seam returned `ok`. Made to assert the fold, it FAILED: the C-grid fixture checks 37-39
+  use gives each block ONE interior row, and a Laplacian over one row between frozen
+  boundaries relaxes toward a straight line and folds nothing at any sweep count. Making it
+  denser was still not enough — 60 sweeps on a uniform 25-node version fold nothing either.
+  What makes a fold reachable is the WALL CLUSTERING: 0 folded quads before, 26 after, once
+  the three radials ask for a first cell of 0.002. That is the same mechanism the shipped
+  grid folds by, and it is worth stating because it means "smoothing can fold a cell" is a
+  claim about clustered grids specifically — i.e. about exactly the grids this path exists
+  to make.
 
 - **The gates, and seven hand injections dated 2026-09-04** in
   `tests/cpp/test_multiblock.cpp`'s docstring. Two are worth repeating here. **X (the

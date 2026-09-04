@@ -89,16 +89,31 @@ def check(msg, cond):
         failures.append(msg)
 
 
+def qlines(out, token=""):
+    """Every ``HYBMESH_MB_QUALITY<token>`` line, as dicts of floats.
+
+    THE ONE PARSER for that line, imported by the O-grid, C-grid and smoothing
+    gates rather than copied into them — the same rule ``golden_mesh.py`` follows
+    when it imports the topology writer from a surface test instead of keeping a
+    second copy. It was four copies before #81, and that ticket had to make the
+    identical one-character fix in two of them, which is the evidence.
+
+    THE PREFIX IS MATCHED WITH ITS TRAILING SPACE, and that is the fix: a smoothed
+    run also prints ``HYBMESH_MB_QUALITY_BEFORE`` (#81), whose ``cells=`` tokens
+    parse perfectly well and whose numbers describe a mesh that was never
+    exported. Without the space the two are indistinguishable to a reader that
+    takes the first match.
+    """
+    want = "HYBMESH_MB_QUALITY" + token + " "
+    return [{k: float(v) for k, _, v in
+             (tok.partition("=") for tok in line.split()[1:])}
+            for line in out.splitlines() if line.startswith(want)]
+
+
 def quality(out):
-    """The HYBMESH_MB_QUALITY line as a dict of floats, or None if absent."""
-    for line in out.splitlines():
-        if line.startswith("HYBMESH_MB_QUALITY "):
-            got = {}
-            for tok in line.split()[1:]:
-                k, _, v = tok.partition("=")
-                got[k] = float(v)
-            return got
-    return None
+    """The quality line for the mesh AS EXPORTED, or None if absent."""
+    got = qlines(out)
+    return got[0] if got else None
 
 
 def wrote(stem):

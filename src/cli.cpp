@@ -343,12 +343,17 @@ static std::string mbSub(const std::string& text) { return mbLabel("      ", tex
 // character is "a loop with no decisions in it", and eleven lines of formatting
 // was on its way to obscuring the one decision it does now make (the exit code).
 // `stage` labels the banner heading and suffixes the machine-readable token, and
-// BOTH are empty on a run that did not smooth — so that run's output is byte for
-// byte what it was before this parameter existed. When smoothing did run there are
-// two blocks: the BEFORE one wears the suffix, and the unsuffixed
-// `HYBMESH_MB_QUALITY` line always describes the mesh AS EXPORTED. That way a gate
-// grepping for it keeps getting the answer about the file on disk, smoothed or not,
-// and never has to know which run it is reading.
+// BOTH are empty on a run that did not smooth — so THIS REPORT is byte for byte
+// what it was before the parameter existed. Said precisely, because the whole run's
+// output is NOT: `Config::print` gained an unconditional `Smoothing Sweeps` row,
+// deliberately, so a provenance record says "no sweeps ran" instead of leaving a
+// reader to infer it from a line that is not there. The claim is about the quality
+// half, which is what the gates grep.
+//
+// When smoothing did run there are two blocks: the BEFORE one wears the suffix, and
+// the unsuffixed `HYBMESH_MB_QUALITY` line always describes the mesh AS EXPORTED.
+// That way a gate grepping for it keeps getting the answer about the file on disk,
+// smoothed or not, and never has to know which run it is reading.
 static void printMbQuality(const hybmesh::MbQualityReport& q,
                            const std::string& heading = std::string(),
                            const std::string& token = std::string()) {
@@ -630,17 +635,17 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // the metric that matters: a plain Laplacian equalises spacing, so the wall
     // first-cell figure gets WORSE. Printing both halves is what makes that a
     // measurement rather than a claim.
-    if (!res.preSmoothNodes.empty()) {
+    const bool smoothed = !res.preSmoothNodes.empty();
+    if (smoothed) {
         hybmesh::MbResult before = res;
         before.nodes = res.preSmoothNodes;
         printMbQuality(hybmesh::measureMbQuality(before),
                        " — before smoothing", "_BEFORE");
     }
     const hybmesh::MbQualityReport q = hybmesh::measureMbQuality(res);
-    printMbQuality(q, res.preSmoothNodes.empty()
-                          ? std::string()
-                          : " — after " + std::to_string(config.mbSmoothIters)
-                                + " Laplacian sweep(s)");
+    printMbQuality(q, smoothed ? " — after " + std::to_string(config.mbSmoothIters)
+                                     + " Laplacian sweep(s)"
+                               : std::string());
 
     if (q.invertedCells > 0) {
         LOG_ERROR(q.invertedCells << " of " << q.cells << " cells are INVERTED (a corner "

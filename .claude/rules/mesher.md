@@ -449,7 +449,10 @@ nothing runs and all eighteen pre-existing golden cases are unchanged (measured,
 - **A NEGATIVE count is refused BY NAME through both doors** — `Config::validate()` with
   `EXIT_ERR_CONFIG` and `buildMultiBlock` for any other caller — never clamped. The parameter is a
   signed `int` precisely so the refusal is writable: widening -1 to an unsigned count is four
-  billion sweeps, a hang rather than a mesh.
+  billion sweeps, a hang rather than a mesh. **A FRACTIONAL value TRUNCATES and is not refused**
+  (`MB_SMOOTH_ITERS 1.9` runs one sweep): the `.dat` reader takes every int key through a `double`,
+  and diverging for this one key would put back a per-row parse rule of exactly the kind that let
+  the two parsers disagree. Recorded as a limit, not left silent.
 - **THE REPORT IS BEFORE AND AFTER, and the kernel is known to LOSE on the metric that matters.**
   `MbResult::preSmoothNodes` publishes the mesh as it stood before the first sweep, so the two
   reports are the same cells and blocks over two coordinate sets and their difference is the
@@ -459,8 +462,10 @@ nothing runs and all eighteen pre-existing golden cases are unchanged (measured,
   showing that on the ruler is this ticket's deliverable and the argument for #80's tickets 2-3.
   **Do not paper it over.**
 - **The `HYBMESH_MB_QUALITY` line always describes the mesh AS EXPORTED**; the before half is
-  `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's output is
-  byte for byte what it was. Match the prefix WITH its trailing space.
+  `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's QUALITY
+  REPORT is byte for byte what it was — not its whole output, which gains one unconditional
+  `Smoothing Sweeps` provenance row on purpose. Match the prefix WITH its trailing space, in the ONE
+  parser (`test_multiblock_quality_surface.qlines`) every gate imports.
 - **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
   9. No new code. (The shipped C-grid folds 4 cells at 5 sweeps, 26 at 20.)
 - Gated by `tests/cpp/test_multiblock.cpp` 40-46 (7 hand injections, dated in that file),

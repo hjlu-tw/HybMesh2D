@@ -46,7 +46,14 @@
 //     tools/PreProcessor/tests/test_multiblock_smooth_surface.py; and the QUALITY
 //     figures themselves, which are that gate's dated table, not a number
 //     re-measured here. Check 45 asserts the wall-height regression as a DIRECTION
-//     with a floor on a fixture, not as the shipped case's 0.44% -> 36.61%.
+//     with a floor on a fixture, not as the shipped case's 0.44% -> 36.61%. Check
+//     46 shows a FOLD but never an EXIT CODE — this file cannot reach one — so
+//     "a smoothing fold exits 9 like any other" is the surface gate's claim alone.
+//     Check 46's fixture also records a fact worth keeping: the C-grid fixture
+//     checks 37-39 use CANNOT fold at any sweep count (one interior row per
+//     block), and neither can a merely denser UNIFORM version of it. The
+//     CLUSTERING is what makes a fold reachable, which is the same mechanism the
+//     shipped grid folds by.
 //   * The diagonal split RULES are checks 24-28 and the id-uniqueness refusals
 //     29 (#54). What they do NOT check is
 //     the QUALITY of the randomized rule's bit stream: nothing here asks whether
@@ -766,6 +773,40 @@ std::string cgrid() {
 // The C-grid's one geometry: the body, cut into an upper and a lower surface.
 std::vector<hybmesh::MbGeometry> cgridGeoms(int perSeg = 40) {
     return {circleGeom(perSeg, 0.5, "body.dat", "wall", 2)};
+}
+
+// ── The C-grid made DENSE and WALL-CLUSTERED (issue #81, check 46) ────────
+//
+// Two edits to the fixture above, and both are load bearing — measured, not
+// assumed. At the counts checks 37-39 use, each block has ONE interior row, and a
+// Laplacian over one row between frozen boundaries relaxes toward a straight line
+// and folds NOTHING however many sweeps it runs. Raising the counts alone is still
+// not enough: 60 sweeps on the denser UNIFORM grid also fold nothing.
+//
+// What makes a fold reachable is the CLUSTERING, which is exactly the mechanism at
+// work on the shipped grid: the three radials ask for a first cell of 0.002 off a
+// body of radius 0.5 in a far field of radius 5, the kernel equalises that grading
+// against a frozen wall line, and the near-wall row is dragged out past its
+// neighbours. 0 folded quads before, 26 after. So this is not "the same fixture but
+// bigger" — it is the smallest one here that reproduces what the shipped C-grid
+// does at 5 sweeps.
+std::string cgridClustered() {
+    std::string d = cgrid();
+    d = swap1(d, R"("kind": "cut", "count": 4)", R"("kind": "cut", "count": 12)");
+    d = swap1(d, R"("id": "r_te_up", "corners": ["te", "f1"], "kind": "interface", "count": 3)",
+              R"("id": "r_te_up", "corners": ["te", "f1"], "kind": "interface", "count": 15,
+     "spacing": {"ds_start": 0.002})");
+    d = swap1(d, R"("id": "r_le",    "corners": ["le", "f2"], "kind": "interface")",
+              R"("id": "r_le",    "corners": ["le", "f2"], "kind": "interface",
+     "spacing": {"ds_start": 0.002})");
+    d = swap1(d, R"("id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface")",
+              R"("id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface",
+     "spacing": {"ds_start": 0.002})");
+    d = swap1(d, R"("id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 6)",
+              R"("id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 25)");
+    d = swap1(d, R"("id": "af_lo", "corners": ["le", "te"], "kind": "wall", "count": 6)",
+              R"("id": "af_lo", "corners": ["le", "te"], "kind": "wall", "count": 25)");
+    return d;
 }
 
 // ── A wall block, graded off its SOUTH side (issue #81) ───────────────────
@@ -2573,24 +2614,53 @@ int main() {
               "drifted away from it");
     }
 
-    // ── 46. enough sweeps FOLD a cell, and that is an ordinary inverted mesh ──
+    // ── 46. enough sweeps really do FOLD a cell, on a mesh that started sound ─
     //
-    // Not a new failure mode and deliberately not a new exit code: a smoothing
-    // pass that folds a cell is a valid declaration whose interpolated interior
-    // came out folded, which is exactly what the inverted-cell code already means.
-    // What this pins is that the fold is REACHABLE from this parameter and that the
-    // seam still returns `ok` — the counting and the exit code are one level up, in
-    // `measureMbQuality` and the adapter, and the surface gate next door drives
-    // that on the shipped C-grid.
+    // Not a new failure mode and deliberately not a new exit code: a smoothing pass
+    // that folds a cell is a valid declaration whose interior came out folded, which
+    // is exactly what the inverted-cell code already means. What this pins is that
+    // the fold is REACHABLE from this parameter alone; the counting and the exit
+    // code are one level up, in `measureMbQuality` and the adapter, and the surface
+    // gate next door drives those on the shipped C-grid (4 folds at 5 sweeps).
     //
-    // The dart from tests/cpp/test_mb_quality.cpp's own fixture is not reused: this
-    // one starts SOUND, so the fold is the smoother's doing and not the fill's.
+    // The dart from tests/cpp/test_mb_quality.cpp's fixture is deliberately NOT
+    // reused: this mesh starts SOUND, so the fold is the smoother's doing and not
+    // the fill's — which is the whole claim, and the reason the unsmoothed run is
+    // checked to have no flipped quad at all.
+    //
+    // The winding of a structured quad, computed here rather than by asking
+    // `measureMbQuality`: this file drives `buildMultiBlock` and nothing else, and a
+    // shoelace sign is a weaker statement than the ruler's per-corner rule — a
+    // flipped quad is inverted under both, so the direction of the implication is
+    // the right way round for the claim being made.
     {
+        auto flipped = [](const MbResult& r) {
+            size_t n = 0;
+            for (const auto& b : r.blocks)
+                for (int j = 0; j + 1 < b.nj; ++j)
+                    for (int i = 0; i + 1 < b.ni; ++i) {
+                        const Point2D p00 = nodeOf(r, b, i, j), p10 = nodeOf(r, b, i + 1, j);
+                        const Point2D p11 = nodeOf(r, b, i + 1, j + 1),
+                                      p01 = nodeOf(r, b, i, j + 1);
+                        const double a2 = (p10 - p00).cross(p11 - p00)
+                                        + (p11 - p00).cross(p01 - p00);
+                        if (a2 <= 0.0) ++n;
+                    }
+            return n;
+        };
         MbParams p;
         p.smoothIters = 60;
-        MbResult r = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), p);
-        CHECK(r.ok, "46. a heavily smoothed C-grid is still a valid declaration and "
-                    "still returns a mesh (err: " + r.error + ")");
+        MbResult u = hybmesh::buildMultiBlock(cgridClustered(), cgridGeoms(), MbParams{});
+        MbResult r = hybmesh::buildMultiBlock(cgridClustered(), cgridGeoms(), p);
+        CHECK(u.ok && r.ok, "46. a heavily smoothed C-grid is still a valid "
+                            "declaration and still returns a mesh (err: " + r.error + ")");
+        CHECK(flipped(u) == 0,
+              "46. the unsmoothed C-grid folds NOTHING, so the count below belongs to "
+              "the smoother (got " + std::to_string(flipped(u)) + ")");
+        CHECK(flipped(r) > 0,
+              "46. ...and 60 sweeps DO fold structured cells — reachable from this "
+              "parameter alone, with no help from a bad declaration (got "
+              + std::to_string(flipped(r)) + ")");
         CHECK(r.preSmoothNodes.size() == r.nodes.size(),
               "46. ...with its before/after pair intact, so the damage is reportable");
     }

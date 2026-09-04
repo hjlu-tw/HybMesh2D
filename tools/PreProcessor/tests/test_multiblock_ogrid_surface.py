@@ -117,6 +117,10 @@ from test_multiblock_weld_surface import (                # noqa: E402
 # The ONE writer of this repo's `.meta` sidecar convention. It lives next door
 # because #57 needed it for a two- and a six-segment body; there is no second copy.
 from test_multiblock_cgrid_surface import closed_polyline_meta   # noqa: E402
+# The ONE parser for the machine-readable quality line, in the gate that owns
+# that line. Imported rather than copied: this file and the O-grid's each held a
+# byte-identical copy until #81, which had to fix the same character in both.
+from test_multiblock_quality_surface import qlines as _qlines   # noqa: E402
 
 # The two shipped circles, as (basename, radius, points per quarter, BC label).
 # The body is twice as finely stored as the far field because it is the surface
@@ -181,18 +185,15 @@ def run_case(tmp, name, conf_text):
 
 
 def quality(out):
-    """The machine-readable quality line for the mesh AS EXPORTED, as floats.
+    """The quality line for the mesh AS EXPORTED, or ``{}`` when there is none.
 
-    The prefix is matched WITH its trailing space, so a smoothed run's
-    ``HYBMESH_MB_QUALITY_BEFORE`` line (issue #81) cannot be mistaken for this
-    one — its ``cells=`` token would parse and its numbers describe a mesh that
-    was never exported.
+    Delegates to the ONE parser, in the gate that owns that line
+    (``test_multiblock_quality_surface.qlines``). It was a byte-identical copy in
+    this file and in the O-grid's until #81, which had to make the same
+    one-character fix in both — the trailing space that keeps a smoothed run's
+    ``HYBMESH_MB_QUALITY_BEFORE`` from being read as this one.
     """
-    for line in out.splitlines():
-        if line.startswith("HYBMESH_MB_QUALITY "):
-            return {k: float(v) for k, v in
-                    (tok.split("=") for tok in line.split()[1:])}
-    return {}
+    return _qlines(out)[0] if _qlines(out) else {}
 
 
 def base_config(topo=_TOPO, thickness=None, geom_dir=_GEOM):
