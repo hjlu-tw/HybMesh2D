@@ -82,9 +82,13 @@ struct Config {
     // every int and that only half of it is worth a widget.
     int mbSplitSeed = 0;
 
-    // HOW MANY SWEEPS of Laplacian smoothing the multi-block path runs over each
-    // block's INTERIOR nodes, between the fill and the split. 0 — the default —
-    // runs none, so every case that exists today meshes exactly as it did.
+    // THE ITERATION CAP on the multi-block path's elliptic (Winslow) smoother over
+    // each block's INTERIOR nodes, between the fill and the split. 0 — the default
+    // — runs none, so every case that exists today meshes exactly as it did.
+    //
+    // A CAP and not a sweep count since #82: the solve stops early once it has
+    // converged, and a run that reaches this number still moving says so rather
+    // than handing back a truncated solve that reads as finished.
     //
     // MB_SMOOTH_ITERS, and deliberately not a name that reads as a sibling of
     // BL_SMOOTHING_ITERS: that key is the OTHER path's collision remedy, which
@@ -438,9 +442,10 @@ struct Config {
         // run no smoothing for someone who asked for some, which is a mesh nobody
         // asked for with nothing to look at.
         if (mbSmoothIters < 0) {
-            LOG_ERROR("MB_SMOOTH_ITERS " << mbSmoothIters << " is negative; it counts "
-                      "Laplacian sweeps over each multi-block block's interior nodes, "
-                      "so it must be 0 (no smoothing, the default) or more.");
+            LOG_ERROR("MB_SMOOTH_ITERS " << mbSmoothIters << " is negative; it caps "
+                      "the elliptic smoother's sweeps over each multi-block block's "
+                      "interior nodes, so it must be 0 (no smoothing, the default) "
+                      "or more.");
             ok = false;
         }
         if (bl.blLayers < 0) {
@@ -566,7 +571,7 @@ struct Config {
             // cannot tell the two apart afterwards.
             os << "  - Smoothing Sweeps     : " << mbSmoothIters
                << (mbSmoothIters > 0
-                       ? "  (Laplacian, block interiors only)"
+                       ? "  (Winslow elliptic, block interiors only; a CAP)"
                        : "  (none)")
                << "\n";
         }

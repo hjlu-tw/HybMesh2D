@@ -1286,6 +1286,41 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
 
 }  // namespace
 
+// ── The Winslow kernel ────────────────────────────────────────────────────
+//
+// One node, nine positions in, one position out. See MultiBlock.hpp for the
+// system this discretises, why it is exposed from the header and how it differs
+// from the plain Laplacian it replaced.
+//
+// Unit spacing in the computational coordinates, so the derivatives ARE the
+// central differences: first derivatives are half the neighbour difference,
+// second derivatives the ordinary three-point stencil, and the cross derivative
+// a quarter of the four diagonals' alternating sum. Nothing here divides by a
+// grid step, because in (i, j) there is not one.
+//
+// The three second derivatives are never formed. Substituting them into
+//
+//     a * x_ii - 2b * x_ij + g * x_jj = 0
+//
+// and solving for the centre node collapses the -2a-2g that the two ordinary
+// stencils contribute into the denominator below, which is why the expression is
+// a weighted mean of the neighbours rather than a residual added to `c`.
+Point2D hybmesh::mbWinslowUpdate(const MbWinslowStencil& s) {
+    const Point2D di = (s.iPlus - s.iMinus) * 0.5;   // x_i, y_i
+    const Point2D dj = (s.jPlus - s.jMinus) * 0.5;   // x_j, y_j
+    const double a = dj.lengthSq();                  // x_j^2 + y_j^2
+    const double b = di.dot(dj);                     // x_i x_j + y_i y_j
+    const double g = di.lengthSq();                  // x_i^2 + y_i^2
+    const double denom = 2.0 * (a + g);
+    // See the header: the only input that reaches here is a stencil whose four
+    // logical neighbours all coincide, which is not a grid. Returning the node
+    // unmoved keeps a NaN out of every later sweep and out of the exported file.
+    if (!(denom > 0.0)) return s.c;
+    const Point2D cross = (s.pp - s.mp - s.pm + s.mm) * 0.25;  // x_ij, y_ij
+    return ((s.iPlus + s.iMinus) * a + (s.jPlus + s.jMinus) * g - cross * (2.0 * b))
+           * (1.0 / denom);
+}
+
 hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                                            const std::vector<MbGeometry>& geoms,
                                            const MbParams& params) {
@@ -1314,9 +1349,9 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // is a hang, not a mesh.
     if (params.smoothIters < 0)
         return fail("smoothing sweeps " + std::to_string(params.smoothIters)
-                    + " is negative; MB_SMOOTH_ITERS counts Laplacian sweeps over "
-                      "each block's interior nodes, so it must be 0 (no smoothing, "
-                      "the default) or more.");
+                    + " is negative; MB_SMOOTH_ITERS caps the elliptic smoother's "
+                      "sweeps over each block's interior nodes, so it must be 0 (no "
+                      "smoothing, the default) or more.");
 
     // Never throws: a malformed document is an ordinary outcome of this seam,
     // not an exception the caller has to remember to catch.
@@ -1879,7 +1914,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         }
     }
 
-    // ── Smoothing: N Laplacian sweeps over each block's INTERIOR ──────────
+    // ── Smoothing: an ELLIPTIC solve over each block's INTERIOR ───────────
     //
     // BETWEEN THE FILL AND THE SPLIT, which is why the per-block loop above stops
     // here and a second one below resumes. Nothing downstream may be able to tell
@@ -1904,38 +1939,133 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // NODE IDENTITY IS UNTOUCHED. This writes coordinates and allocates nothing:
     // a welded node stays ONE node with one id, which is the property `welding is
     // by allocation, not by comparison` rests on. Nothing here compares positions,
-    // so there is no tolerance in it either.
+    // so there is no tolerance in it either — `MB_SMOOTH_TOL` is a STOPPING rule
+    // on how far a node moved, not a rule about two nodes being the same node.
     //
-    // THE KERNEL IS THE CHEAP ONE, DELIBERATELY (issue #81). A plain Laplacian
-    // moves a node to the average of its four logical neighbours, which EQUALISES
-    // spacing — so on a wall-clustered block it pulls the first interior line away
-    // from the wall and makes the first-cell height WORSE. That is not a defect to
-    // be papered over; it is the measurement this increment exists to produce, and
-    // it is what the before/after report puts in front of a reader.
+    // THE KERNEL IS WINSLOW (issue #82), and the Laplacian #81 shipped is GONE
+    // rather than kept beside it. #81's own table is the argument: on the shipped
+    // C-grid one Laplacian sweep took the wall first cell from 0.44% to 36.61% and
+    // max non-orthogonality from 32.04 deg to 89.40 deg — every column worse,
+    // including the two this arc exists to improve. Nothing read it, an inert
+    // alternative kept "for completeness" is the mechanism this repo has a rule
+    // against, and a kernel-selection enum over one surviving kernel is the
+    // abstraction that rule exists to prevent. `mbWinslowUpdate` in the header
+    // carries the arithmetic and the reason it is exposed.
     //
     // JACOBI, not Gauss-Seidel: every sweep reads the positions the previous sweep
     // left and writes a fresh set, so the answer does not depend on the order the
     // blocks or the (i, j) pairs are visited. Gauss-Seidel converges faster and
     // would make the result a function of a traversal nobody declared, which is the
     // same objection the randomized split rule raises against a sequential stream.
+    // The metric coefficients are LAGGED with it — recomputed from the sweep's own
+    // starting positions — which is what makes each sweep a linear operation and
+    // the whole solve a fixed-point iteration rather than a Newton step.
+    //
+    // BOUNDED AND REPORTED. `smoothIters` is a CAP: the solve stops the moment the
+    // largest node move in a sweep falls under `MB_SMOOTH_TOL` of the starting
+    // mesh's bounding-box diagonal, and a solve still moving at the cap comes back
+    // with `smoothConverged == false`, its residual, and a WARNING naming the
+    // number to raise. What must not happen is the third thing: a truncated solve
+    // handed back as though it had finished.
+    //
+    // AND IT CAN DIVERGE, which is the third outcome and the one a cap alone hides.
+    // Measured on the shipped C-grid: the residual falls monotonically to 2.8e-07
+    // by sweep 5000 and then GROWS, reaching 1.3e-03 by sweep 10000 with 88 folded
+    // cells — the lagged-coefficient point iteration is conditionally stable, and by
+    // then the grid is skewed enough for the condition to fail. So the solve watches
+    // its own residual, stops when it has climbed to MB_SMOOTH_DIVERGE_FACTOR times
+    // the smallest it reached, and returns THE BEST ITERATE rather than the last
+    // one. That is not a cover-up: `smoothDiverged` and the sweep number of the
+    // iterate returned are both published, and the seam pushes a warning saying so.
+    // Handing back a mesh that got worse the longer it was asked to work is the
+    // thing that would be.
     if (params.smoothIters > 0) {
         r.preSmoothNodes = r.nodes;
+        // The length the residual is expressed in. Taken from the mesh the solve
+        // STARTS from, once, so a converging solve is not chasing a moving ruler.
+        double xLo = r.nodes[0].x, xHi = r.nodes[0].x;
+        double yLo = r.nodes[0].y, yHi = r.nodes[0].y;
+        for (const Point2D& p : r.nodes) {
+            xLo = std::min(xLo, p.x); xHi = std::max(xHi, p.x);
+            yLo = std::min(yLo, p.y); yHi = std::max(yHi, p.y);
+        }
+        const double diag = std::sqrt((xHi - xLo) * (xHi - xLo)
+                                    + (yHi - yLo) * (yHi - yLo));
+        // A degenerate mesh (every node in one place) has no scale to be relative
+        // to. It cannot reach here — an edge with two identical endpoints is
+        // refused long before — but dividing by it would turn a residual into a
+        // NaN that compares false against every tolerance and so never converges.
+        const double ref = (diag > 0.0) ? diag : 1.0;
+
+        // The best iterate seen, kept so a diverging solve can be rolled back to it.
+        // One extra node vector, allocated once — the same order of memory the
+        // before/after report already costs, and the same order of work per sweep
+        // as the sweep itself.
+        std::vector<Point2D> bestNodes;
+        double bestResidual = 0.0;
+        int bestSweep = 0;
+
         for (int sweep = 0; sweep < params.smoothIters; ++sweep) {
             std::vector<Point2D> next = r.nodes;
+            double worst = 0.0;
             for (const MbBlock& b : r.blocks) {
                 for (int j = 1; j + 1 < b.nj; ++j) {
                     for (int i = 1; i + 1 < b.ni; ++i) {
-                        const Point2D sum =
-                            r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j))]
-                            + r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j))]
-                            + r.nodes[static_cast<size_t>(b.nodeAt(i, j - 1))]
-                            + r.nodes[static_cast<size_t>(b.nodeAt(i, j + 1))];
-                        next[static_cast<size_t>(b.nodeAt(i, j))] = sum * 0.25;
+                        MbWinslowStencil st;
+                        st.c      = r.nodes[static_cast<size_t>(b.nodeAt(i,     j    ))];
+                        st.iPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j    ))];
+                        st.iMinus = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j    ))];
+                        st.jPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i,     j + 1))];
+                        st.jMinus = r.nodes[static_cast<size_t>(b.nodeAt(i,     j - 1))];
+                        st.pp     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j + 1))];
+                        st.mp     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j + 1))];
+                        st.pm     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j - 1))];
+                        st.mm     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j - 1))];
+                        const Point2D moved = mbWinslowUpdate(st);
+                        next[static_cast<size_t>(b.nodeAt(i, j))] = moved;
+                        const double d = (moved - st.c).length();
+                        if (d > worst) worst = d;
                     }
                 }
             }
             r.nodes.swap(next);
+            r.smoothSweeps = sweep + 1;
+            r.smoothResidual = worst / ref;
+            if (r.smoothResidual <= MB_SMOOTH_TOL) { r.smoothConverged = true; break; }
+            if (bestNodes.empty() || r.smoothResidual < bestResidual) {
+                bestNodes = r.nodes;
+                bestResidual = r.smoothResidual;
+                bestSweep = r.smoothSweeps;
+                continue;
+            }
+            if (r.smoothResidual > bestResidual * MB_SMOOTH_DIVERGE_FACTOR) {
+                r.nodes = bestNodes;
+                r.smoothDiverged = true;
+                r.warnings.push_back(
+                    "the elliptic smoother DIVERGED: its residual fell to "
+                    + std::to_string(bestResidual) + " after "
+                    + std::to_string(bestSweep) + " sweep(s) and then grew to "
+                    + std::to_string(r.smoothResidual) + " by sweep "
+                    + std::to_string(r.smoothSweeps)
+                    + ". The mesh returned is the BEST iterate, from sweep "
+                    + std::to_string(bestSweep) + " — the later ones are worse, not "
+                      "more converged. Lower MB_SMOOTH_ITERS to at most that number; "
+                      "a grid this far from its declared spacing is what the "
+                      "iteration goes unstable on.");
+                r.smoothSweeps = bestSweep;
+                r.smoothResidual = bestResidual;
+                break;
+            }
         }
+        if (!r.smoothConverged && !r.smoothDiverged)
+            r.warnings.push_back(
+                "the elliptic smoother stopped at its cap of "
+                + std::to_string(params.smoothIters)
+                + " sweep(s) while still moving nodes (residual "
+                + std::to_string(r.smoothResidual) + ", converged below "
+                + std::to_string(MB_SMOOTH_TOL) + "). The mesh is the "
+                "PARTLY-SOLVED one, not a converged elliptic grid; raise "
+                "MB_SMOOTH_ITERS to finish the solve.");
     }
 
     // ── Split every block, and emit its boundary faces ────────────────────

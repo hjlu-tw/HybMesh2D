@@ -57,7 +57,7 @@ class MeshConfig:
     # a local far-field sizing source with nothing to do with a random number.
     # Two unrelated concepts under one prefix is how a user sets the wrong one.
     mb_split_seed: int = 0
-    # HOW MANY SWEEPS of Laplacian smoothing the multi-block path runs over each
+    # THE CAP on the multi-block path's elliptic (Winslow) smoother over each
     # block's INTERIOR nodes, between the fill and the split. 0 runs none.
     # `mb_smooth_iters` and not a `bl_smoothing_iters` lookalike: that key is the
     # OTHER path's collision remedy, and the two share a verb and nothing else.

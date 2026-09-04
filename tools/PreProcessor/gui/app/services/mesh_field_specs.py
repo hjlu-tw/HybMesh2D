@@ -100,16 +100,17 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               modes=(MESH_MODE_MULTIBLOCK,),
               opts=dict(lo=0, hi=2147483647)),
     FieldSpec("mb_smooth_iters", "int", "Smoothing Sweeps",
-              "How many Laplacian sweeps relax each block's INTERIOR nodes after "
-              "the fill. Every node on a block boundary is frozen — outer walls, "
-              "bound edges, interfaces and cuts alike — so the blocking and the "
-              "geometry a corner is attached to cannot move. 0, the default, runs "
-              "none. This kernel EQUALISES spacing, so on a wall-clustered block "
-              "it pulls the first interior line away from the wall and makes the "
-              "first-cell height worse: the run reports the mesh quality before "
-              "and after so the trade is a number you can read rather than a "
-              "claim. Enough sweeps will fold a cell, and that run exits with the "
-              "inverted-cell code like any other fold.",
+              "The MOST elliptic (Winslow) sweeps that may relax each block's "
+              "INTERIOR nodes after the fill — a cap, not a count: the solve stops "
+              "as soon as it has converged, and a run that reaches this number "
+              "still moving says so rather than handing back a half-solved grid "
+              "that looks finished. Every node on a block boundary is frozen — "
+              "outer walls, bound edges, interfaces and cuts alike — so the "
+              "blocking and the geometry a corner is attached to cannot move. 0, "
+              "the default, runs none. It improves the worst cell angle and it "
+              "does NOT hold the wall first-cell height you asked for: the run "
+              "reports the mesh quality before and after so the trade is a number "
+              "you can read rather than a claim.",
               key="MB_SMOOTH_ITERS", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,),
               opts=dict(lo=0, hi=100000)),

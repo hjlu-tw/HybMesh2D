@@ -1139,6 +1139,17 @@ demonstration of one.
 (`MB_SMOOTH_ITERS`, default 0; #81, ticket 1 of #80's five). The rules are
 `.claude/rules/mesher.md`, "SMOOTHING is a STAGE inside the seam".
 
+> **THE KERNEL THIS BLOCK DESCRIBES WAS DELETED BY #82**, which is what the block was
+> written to make possible. Everything below is about the LAPLACIAN and is kept as
+> history and as the baseline #82 is measured against — its numbers are quoted, never
+> re-measured, because there is nothing left to measure them on. The stage, the freeze,
+> the Jacobi rule, `preSmoothNodes`, the two machine-readable lines and the golden case
+> all survive unchanged; the arithmetic in the middle of them does not. **The current
+> kernel is the next block, "THE WINSLOW KERNEL".** Where a claim below is now false of
+> the shipped code — that five sweeps fold four cells on the C-grid, that a fold is
+> reachable at all on a shipped file — it is false because the kernel changed, and that
+> is the finding rather than a stale sentence.
+
 - **Why ship a kernel that loses.** #48 already agreed Laplacian smoothing of block
   interiors as the FIRST escalation step if transfinite interpolation could not clear the
   inverted-cell gate; #57 cleared that gate on the first run of the shipped C-grid, so it
@@ -1263,6 +1274,149 @@ demonstration of one.
   line that asserts WHICH exit code the refusal carries — the seam's own door still refused
   it, with the topology code instead of the config one. That is exactly what the
   two-doors-two-codes convention is for, and it is the same shape as #54's injection N.
+
+**THE WINSLOW KERNEL, and the Laplacian deleted rather than kept beside it**
+(`MB_SMOOTH_ITERS` unchanged in key, type and default; `hybmesh::mbWinslowUpdate` in
+`include/MultiBlock.hpp` + `src/MultiBlock.cpp`; #82, ticket 2 of #80's five). The rules
+are `.claude/rules/mesher.md`, "SMOOTHING is a STAGE inside the seam, and its kernel is
+WINSLOW".
+
+- **What the kernel is.** The elliptic system for the COMPUTATIONAL coordinates,
+  transformed so the physical ones are the unknowns:
+  `a x_ii - 2b x_ij + g x_jj = 0` with `a = x_j^2 + y_j^2`, `b = x_i x_j + y_i y_j`,
+  `g = x_i^2 + y_i^2`, on unit spacing in (i, j) — which is what makes `MbBlock`'s
+  retained logical indexing arithmetic rather than a parity bit, the second reader #80
+  predicted it would acquire. The node goes to a weighted mean of its four logical
+  neighbours plus a cross term over its four diagonals. The whole of the difference from
+  #81's kernel is that the STRETCHING sits in `a` and `g` instead of in the answer.
+
+- **THE TABLE, measured 2026-09-04 on the SHIPPED files**, beside #81's Laplacian at the
+  same cap (quoted from that ticket; the kernel is deleted):
+
+  | case | cap | kernel | inverted | non-ortho max | non-ortho mean | wall first cell |
+  |------|-----|--------|----------|---------------|----------------|-----------------|
+  | C-grid | 0 | — | 0 | 32.044° | 4.562° | 0.44% |
+  | C-grid | 1 | Laplacian | 0 | 89.399° | 6.230° | 36.61% |
+  | C-grid | 1 | **Winslow** | 0 | **31.438°** | 4.778° | **11.65%** |
+  | C-grid | 5 | Laplacian | 4 | 89.786° | 10.004° | 126.45% |
+  | C-grid | 5 | **Winslow** | **0** | **29.844°** | 5.627° | 39.15% |
+  | C-grid | 20 | Laplacian | 26 | 89.864° | 16.288° | 372.84% |
+  | C-grid | 20 | **Winslow** | **0** | 33.759° | 8.517° | 130.77% |
+  | O-grid | 0 | — | 0 | 2.250° | 1.875° | 0.08% |
+  | O-grid | 1 | Laplacian | 0 | 4.344° | 1.882° | 53.36% |
+  | O-grid | 1 | **Winslow** | 0 | **3.312°** | 1.875° | **9.13%** |
+  | O-grid | 5 | Laplacian | 184 | 17.443° | 2.111° | 87.36% |
+  | O-grid | 5 | **Winslow** | **0** | **8.061°** | 1.978° | 29.13% |
+
+  **Every Winslow row beats the Laplacian row beside it, on every column, on both cases.**
+  Max non-orthogonality on the C-grid also beats the UNSMOOTHED fill — 32.044° -> 31.438°
+  at one sweep, 29.844° at five — which is the metric #80 exists for and the first time in
+  this arc that a number moved the right way.
+
+- **What it does NOT fix, both measured rather than argued.** The WALL FIRST CELL is still
+  worse (0.44% -> 11.65%), because plain Winslow relaxes toward each block's harmonic map
+  and a harmonic map has no memory of a declared first-cell height. #82 says so in advance
+  and #83's control functions are what hold it; what this ticket owes is the number, which
+  is 26x rather than #81's 84x. And **#80's O-GRID NEGATIVE CONTROL IS NOT MET**: a case
+  already at 2.250° comes out at 3.312°.
+
+- **WHY the negative control fails, localised out of the run's own report rather than with a
+  second instrument.** Unsmoothed, the O-grid's wall first cell is 9.992e-04 .. 1.000e-03
+  all the way round — uniform. After one sweep it is 1.000e-03 .. 1.091e-03: the declared
+  height EXACTLY, and only, where a frozen radial interface pins it, drifting 9.13% in the
+  middle of each block. A wall row pinned at four points and lifted between them is a KINK,
+  and the kink is what the max non-orthogonality is reporting. So the regression is the
+  FREEZE, not the kernel — it is #80's ticket 4 (#84, "smoothing across shared edges", also
+  its user story 3) arriving as a measurement instead of as a plan. Recorded as unmet and
+  owned; the surface gate asserts it in that direction, with a note to delete the check and
+  amend #80 if it ever starts passing.
+
+- **The Laplacian was DELETED, which #82 required a decision on.** Nothing read it. It
+  loses on every column above. An inert alternative kept "for completeness" is the mechanism
+  this repo has a rule against, and a kernel-selection enum over one surviving kernel is the
+  abstraction that rule exists to prevent — so there is no `MB_SMOOTH_KERNEL`, no string
+  compared at several sites, and no second entry point. It survives only as
+  `laplacianByHand` inside `tests/cpp/test_multiblock.cpp`, because three checks claim the
+  two kernels give different answers and a claim like that needs both sides written down.
+
+- **THE SOLVE IS BOUNDED, AND HAS THREE ENDINGS, WHICH IS NOT WHAT THE TICKET EXPECTED.**
+  `MB_SMOOTH_ITERS` became a CAP: the solve stops when its residual — the largest node move
+  in a sweep, over the STARTING mesh's bounding-box diagonal — falls under `MB_SMOOTH_TOL`
+  (1e-8). Relative and not absolute so the same topology in mm and in m takes the same
+  number of sweeps; not a config key, because the tolerance a solve is "done" at is not a
+  per-case question while the cap is. The third ending was found by measuring rather than
+  by design: **on the shipped C-grid the residual falls monotonically to 2.7e-08 by sweep
+  3724 and then GROWS**, about 1.0018 per sweep, so that by sweep 10000 it is 1.3e-03 and
+  88 cells have folded. The lagged-coefficient point iteration is only conditionally
+  stable, and a grid equidistributed to 74.8° max non-orthogonality is where the condition
+  fails. Under-relaxation does not repair it (a real eigenvalue above 1 stays above 1 under
+  `(1-w)I + wM`), so the solve WATCHES ITS OWN RESIDUAL: at ten times its best it stops,
+  restores the best iterate and reports `smoothDiverged` with that iterate's own sweep
+  number. Rolling back is the honest answer and not a cover-up — both flags, the sweep
+  count and the residual are published, and the alternative is handing back a mesh that got
+  worse the longer it was asked to work. The factor is TEN and not two because every case
+  measured falls monotonically until it turns, so two would be a tripwire on a wobble.
+
+- **The exactness gate, and the premise it had to correct.** #82 asks for "a C++ check that
+  the kernel reproduces an exactly-known answer on a grid where one exists — a stretched
+  rectangle is smooth already, so the solve must return it unmoved". That is true of a
+  rectangle stretched in ASPECT and false of one GRADED in its spacing: plain Winslow's
+  fixed point is the harmonic map, whose interior spacing is uniform, so a graded rectangle
+  is not returned unmoved and cannot be — which is why #80 has a ticket 3 at all. Check 47
+  therefore does both halves: a UNIFORM grid on a 250:1 rectangle comes back within 2.8e-14
+  (the transfinite fill's own rounding, not the solve's) and converges on its first sweep,
+  and the same rectangle GRADED is measured to move. **And check 47 cannot be the gate the
+  ticket wanted on its own**: every second difference of a bilinear map is zero, so its
+  residual is zero for ANY metric coefficients and a swapped `a`/`g` passes it untouched.
+  That is check 48's job — one stencil worked through on paper, `a = 10`, `b = 5`, `g = 5`,
+  cross `(0.75, 1.5)`, answer `(42.5, 35)/30` — which also computes the four usual ways of
+  getting it wrong and asserts they land somewhere else, because a gate whose passing value
+  is also the wrong answer's value is not a gate.
+
+- **THE KERNEL UNFOLDS WHAT THE FILL FOLDED, and that turned a gate over.** On a block with
+  a re-entrant corner the transfinite fill lays 13 folded quads across the notch on a
+  perfectly valid declaration; the elliptic solve converges to a mesh with none, and #81's
+  Laplacian from the same start and the same sweep count does not (check 50). The other
+  side of the same finding is that #81's fold gate STOPPED FIRING: the shipped C-grid folded
+  4 cells at 5 sweeps and 26 at 20 under the Laplacian and folds NOTHING at any cap under
+  this kernel, so the surface gate's group 5 now asserts the zero and says why it turned
+  over, and the C++ fold check had to make its fixture harder — a declared first cell of
+  0.0005 rather than 0.002. The exit-9 path itself is unchanged code and is still gated, on
+  a folded DECLARATION in `test_multiblock_quality_surface.py` and on that clustered
+  fixture in `test_multiblock.cpp` check 46.
+
+- **The golden move was deliberate and is the reason `mb_cgrid_smooth` exists.** Baseline
+  captured from the tree at `84deaf3` with `HYBMESH_GOLDEN_BIN`, compared after: **18 of 19
+  SAME at 0.000e+00** (`wedge_45` at its usual 2.5e-13 wobble), and the nineteenth —
+  `mb_cgrid_smooth`, the only case whose nodes come from the smoother — moved 1.999 units at
+  its worst node with its connectivity redrawn. #81 wrote that case precisely so a kernel
+  change would show up here as a number, and it did.
+
+- **Ten hand injections dated 2026-09-04** in `tests/cpp/test_multiblock.cpp`'s docstring,
+  each applied alone with both the C++ test and the surface gate run and exit codes read
+  before FAIL counts. Three are worth repeating. **G (the divergence rollback removed) and I
+  (the reverse — the nodes rolled back but not the sweep count) were BOTH inert** against
+  every check that existed, including the one asserting the diverged run exports a mesh with
+  no folded cell, which is true of either iterate; what catches them is a ROUND TRIP that
+  re-runs at the reported sweep count and requires both the same mesh AND that the re-run
+  stop at its cap rather than diverge. Neither half alone is enough. **H (the residual made
+  absolute instead of relative) is caught by the C++ test and by NOTHING in the surface
+  gate**, because that gate's assertions are about which ending each case reaches and
+  neither ending moves — the divergence test is a ratio and cancels the change entirely. A
+  scale-free rule needs a fixture with a scale in it. And **E is INERT because it cannot be
+  anything else**: the two off-diagonals of the cross stencil enter with the same sign, so
+  swapping them changes nothing and no gate can catch it. That is a symmetry of the
+  discretisation, not a hole — recorded rather than fixed, with E' (pp and mp, which have
+  opposite signs) as the injection that does bite.
+
+- **NAMED BLIND SPOTS.** The divergence path and the rollback are gated by the SURFACE gate
+  alone: 26 synthetic fixtures were tried in the C++ test — the clustered C-grid at four
+  wall spacings x two wall resolutions, a non-convex dart at three depths x three gradings x
+  two resolutions — and every one converged. The case that diverges is the shipped C-grid,
+  so a change that broke the rollback while nobody ran the shipped file would go unnoticed.
+  And the smoothed mesh is STILL never given to the solver or the grid converter: 11.65% off
+  the requested wall height is not a boundary layer worth integrating, so the acceptance run
+  remains #80's own (#85), not this ticket's.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:

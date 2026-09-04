@@ -123,10 +123,17 @@ struct MbParams {
     // `growth` beats it; 0 means none was resolved, and then `geometric` must
     // declare one.
     double wallGrowth = 0.0;
-    // HOW MANY SWEEPS of Laplacian smoothing run over each block's INTERIOR nodes,
-    // between the fill and the split. 0 — the default — is "no sweep runs at all",
-    // and at that value this seam returns exactly what it returned before the
-    // smoother existed.
+    // THE ITERATION CAP on the elliptic smoother that runs over each block's
+    // INTERIOR nodes, between the fill and the split. 0 — the default — is "no
+    // sweep runs at all", and at that value this seam returns exactly what it
+    // returned before the smoother existed.
+    //
+    // A CAP, not a sweep count, since #82: the solve stops early the moment its
+    // residual falls under `MB_SMOOTH_TOL`, and a run that reaches this number
+    // still moving SAYS SO (`MbResult::smoothConverged`, plus a warning) rather
+    // than handing back a truncated solve that looks finished. Both halves are
+    // published, so "47 of 200, converged" and "200 of 200, NOT converged" are
+    // different answers a reader can tell apart.
     //
     // An `int` rather than a `size_t`, for the reason `splitRule` gives one line
     // up: the value arrives from a config file, a negative one has to be
@@ -141,6 +148,80 @@ struct MbParams {
     // do not have. SEED_* is the refinement-seed namespace.
     int smoothIters = 0;
 };
+
+// WHEN THE ELLIPTIC SOLVE IS FINISHED: the largest distance any interior node
+// moved in a sweep, divided by the bounding-box diagonal of the mesh the solve
+// started from, has fallen to this.
+//
+// Relative and not absolute, because this module is scale-free everywhere else:
+// a topology in millimetres and the same topology in metres must take the same
+// number of sweeps, and an absolute floor would make one of them converge
+// instantly and the other never.
+//
+// NOT a config key, deliberately. It is the tolerance a solve is "done" at, not a
+// knob with a right answer per case — the knob a user has is the cap. A second
+// key here would be one more number to keep in agreement across the `.dat`
+// reader, the GUI field-spec table and the parity gate, in exchange for a
+// question nobody has asked.
+constexpr double MB_SMOOTH_TOL = 1e-8;
+
+// WHEN THE ELLIPTIC SOLVE IS DECLARED LOST: the sweep residual has climbed back to
+// this many times the smallest it ever reached.
+//
+// It is a real regime and not a defensive nicety — measured 2026-09-04 on the
+// SHIPPED C-grid, where the residual falls monotonically to 2.8e-07 by sweep 5000
+// and then grows by about 1.0018 per sweep, so that by sweep 10000 it is 1.3e-03
+// and 88 cells have folded. The lagged-coefficient point iteration is only
+// conditionally stable, and a grid this equidistributed (max non-orthogonality
+// 74.8 deg by then) is where the condition fails.
+//
+// TEN and not two: the residual of a healthy solve falls monotonically on every
+// case measured here, so a factor of two would be a live tripwire on a wobble,
+// while a factor of ten is a mode that has grown through an order of magnitude and
+// is not coming back.
+constexpr double MB_SMOOTH_DIVERGE_FACTOR = 10.0;
+
+// The nine positions the Winslow update of ONE interior node reads: itself, its
+// four logical neighbours and its four logical diagonals.
+//
+// Named fields rather than a 3x3 array because every one of them is read by name
+// in the kernel, and an off-by-one in an index expression is exactly the defect
+// the exactness gate next door exists to catch.
+struct MbWinslowStencil {
+    Point2D c;                 // (i,   j  ) — the node being moved
+    Point2D iPlus, iMinus;     // (i+1, j  ), (i-1, j  )
+    Point2D jPlus, jMinus;     // (i,   j+1), (i,   j-1)
+    Point2D pp, mp, pm, mm;    // (i+1, j+1), (i-1, j+1), (i+1, j-1), (i-1, j-1)
+};
+
+// WHERE THAT NODE GOES under one Winslow (elliptic) update, with unit spacing in
+// the computational coordinates — which is what makes the i/j indices themselves
+// the coordinate system and is why `MbBlock` retains them.
+//
+// The system solved is the transform of Laplace's equation for the COMPUTATIONAL
+// coordinates, so it is the physical coordinates that come out as the unknowns:
+//
+//     a * x_ii  -  2b * x_ij  +  g * x_jj  =  0        (and the same for y)
+//     a = x_j^2 + y_j^2,   b = x_i x_j + y_i y_j,   g = x_i^2 + y_i^2
+//
+// EXPOSED FROM THE HEADER, unlike every other step of the fill, because the gate
+// #82 asks for is an arithmetic one: a stencil whose answer is known by hand, so
+// that a swapped `a`/`g`, a dropped `b` or a wrong cross-derivative stencil is
+// caught by a number rather than by a mesh looking odd. Driving that through
+// `buildMultiBlock` would test the loop, not the kernel.
+//
+// THE DIFFERENCE FROM A PLAIN LAPLACIAN, which is the whole of #82: the physical
+// Laplacian sends the node to the mean of its four neighbours, so on a grid graded
+// 250:1 from a wall it walks straight down the stretching gradient. Here the
+// grading sits in `a` and `g` — the squared spacings of the OTHER direction — so a
+// direction that is finely spaced is weighted by how finely spaced its neighbour
+// direction is, and strong grading survives that a mean does not.
+//
+// DEGENERATE INPUT returns `c` unchanged: `a + g` is zero only when all four
+// logical neighbours coincide with each other, which is not a grid. Returning the
+// node is the answer that changes nothing, rather than a NaN that propagates into
+// every later sweep and out through the exporter.
+Point2D mbWinslowUpdate(const MbWinslowStencil& s);
 
 // A block's four sides, in the [south, east, north, west] order the topology
 // document declares them and every check in this module is written against.
@@ -345,6 +426,32 @@ struct MbResult {
     // one would put two identical quality blocks in front of a reader who asked
     // for no smoothing.
     std::vector<Point2D> preSmoothNodes;
+    // WHAT THE ELLIPTIC SOLVE ACTUALLY DID (#82). Published as three numbers
+    // rather than one, because "it ran 200 sweeps" and "it finished" are different
+    // claims and a truncated solve that reports only the first reads as finished.
+    //
+    //   smoothSweeps    how many sweeps the RETURNED mesh is the product of,
+    //                   <= MbParams::smoothIters. Less than the cap means the
+    //                   solve stopped early — converged, or diverged.
+    //   smoothConverged the residual reached MB_SMOOTH_TOL. FALSE at the cap is
+    //                   not an error — the mesh may be perfectly usable — but it
+    //                   is a warning in `warnings` and a row in the report, so it
+    //                   is never something a reader has to infer.
+    //   smoothDiverged  the residual climbed back to MB_SMOOTH_DIVERGE_FACTOR
+    //                   times the smallest it had reached, so the iteration is
+    //                   growing a mode rather than settling. The returned mesh is
+    //                   then the BEST iterate, not the last one — see the solve
+    //                   itself in src/MultiBlock.cpp for why rolling back is the
+    //                   honest answer and not a cover-up.
+    //   smoothResidual  the largest node move of the sweep that produced the
+    //                   RETURNED mesh, over the starting mesh's bounding-box
+    //                   diagonal. NEGATIVE means no sweep ran, for the reason
+    //                   `MbQualityReport` gives: 0.0 is a superb result and must
+    //                   not stand in for "not measured".
+    int smoothSweeps = 0;
+    bool smoothConverged = false;
+    bool smoothDiverged = false;
+    double smoothResidual = -1.0;
 };
 
 // Parse `topologyJson`, resolve it against `geoms` and `params`, resolve every

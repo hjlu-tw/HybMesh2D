@@ -38,22 +38,31 @@
 //     34's request/achieved pair). Its magnitude — 6927% wall-height error under
 //     the logical-index blend, 0 under this one — was measured out of tree and is
 //     recorded in docs/design_notes/mesher.md, not re-measured by any gate.
-//   * The SMOOTHING pass is checks 40-46 (#81). What they do NOT cover: the
-//     STAGE'S POSITION, which injection Y shows nothing can see (above); anything
-//     downstream of the seam — that MB_SMOOTH_ITERS reaches these parameters from
-//     a `.dat`, that the run reports before AND after, and that a negative count
-//     is a CONFIG refusal are
+//   * The SMOOTHING pass is checks 40-50 (#81 built the stage, #82 replaced its
+//     kernel with the Winslow one and deleted the Laplacian). What they do NOT
+//     cover: the STAGE'S POSITION, which injection Y shows nothing can see
+//     (above); anything downstream of the seam — that MB_SMOOTH_ITERS reaches
+//     these parameters from a `.dat`, that the run reports before AND after, and
+//     that a negative count is a CONFIG refusal are
 //     tools/PreProcessor/tests/test_multiblock_smooth_surface.py; and the QUALITY
 //     figures themselves, which are that gate's dated table, not a number
 //     re-measured here. Check 45 asserts the wall-height regression as a DIRECTION
-//     with a floor on a fixture, not as the shipped case's 0.44% -> 36.61%. Check
+//     with a floor on a fixture, not as the shipped case's 0.44% -> 11.65%. Check
 //     46 shows a FOLD but never an EXIT CODE — this file cannot reach one — so
 //     "a smoothing fold exits 9 like any other" is the surface gate's claim alone.
-//     Check 46's fixture also records a fact worth keeping: the C-grid fixture
-//     checks 37-39 use CANNOT fold at any sweep count (one interior row per
-//     block), and neither can a merely denser UNIFORM version of it. The
-//     CLUSTERING is what makes a fold reachable, which is the same mechanism the
-//     shipped grid folds by.
+//     THE THIRD ENDING OF THE SOLVE IS NOT HERE EITHER: `smoothDiverged` and the
+//     rollback to the best iterate are gated only by that surface gate's group 7,
+//     because no fixture in this file diverges — 26 were tried on 2026-09-04 (the
+//     clustered C-grid at four wall spacings x two wall resolutions, a non-convex
+//     dart at three depths x three gradings x two resolutions) and every one
+//     CONVERGED. The case that diverges is the shipped C-grid.
+//     Check 46's fixture also records a fact worth keeping, now twice over: the
+//     C-grid fixture checks 37-39 use CANNOT fold at any sweep count (one interior
+//     row per block), and neither can a merely denser UNIFORM version of it — the
+//     CLUSTERING is what makes a fold reachable. #82 then had to go FURTHER,
+//     from a declared first cell of 0.002 to 0.0005, because the Winslow kernel
+//     folds nothing the Laplacian folded; check 50 is that finding from the other
+//     side.
 //   * The diagonal split RULES are checks 24-28 and the id-uniqueness refusals
 //     29 (#54). What they do NOT check is
 //     the QUALITY of the randomized rule's bit stream: nothing here asks whether
@@ -194,6 +203,53 @@
 // design rule held by a comment, not by a gate; it is what makes "no downstream
 // reader can tell a smoothed result from an unsmoothed one by its shape" true by
 // construction rather than by re-inspecting each reader whenever one is added.
+//
+// TEN MORE for #82's Winslow kernel, measured 2026-09-04 the same way (each patch
+// applied alone, rebuilt, BOTH this executable and
+// tools/PreProcessor/tests/test_multiblock_smooth_surface.py run, exit codes read
+// BEFORE the FAIL counts, control run clean). All against src/MultiBlock.cpp:
+//
+//   A  the kernel is the mean of the four neighbours   -> 42, 45, 46, 50 (5);
+//      again (i.e. #81's deleted Laplacian)               surface 4, 5, 8 (11)
+//   B  alpha and gamma swapped                         -> 42, 46, 48, 50 (4);
+//                                                         surface 4, 5, 8 (5)
+//   C  the cross term dropped                          -> 42, 48, 50 (3);
+//                                                         surface 5, 8 (2)
+//   D  the cross term's sign flipped                   -> 42, 48, 50 (3); surface 3
+//   E' pp and mp filled from swapped indices           -> 42 (1); surface 5 (1)
+//   F  the convergence stop removed                    -> 47, 49 (5); surface 7 (1)
+//   G  the divergence rollback removed                 -> surface 7 ONLY (1)
+//   H  the residual not made relative to the diagonal  -> 47 (1); surface NOTHING
+//   I  the rolled-back sweep count not rolled back     -> surface 7 ONLY (1)
+//   J  the sweep also writes into its own source       -> 42, 43 (2);
+//      (Gauss-Seidel by the back door)                    surface 4, 5 (3)
+//
+// AND ONE THAT IS INERT BECAUSE IT CANNOT BE ANYTHING ELSE. E — the two OFF
+// diagonals (mp and pm) filled from swapped indices — changes nothing and no gate
+// can catch it, because the cross-derivative stencil is (pp - mp - pm + mm) and
+// those two enter with the SAME sign. That is a symmetry of the discretisation,
+// not a hole in the tests, and it is the reason E' exists: pp and mp have opposite
+// signs, and swapping THOSE is caught by check 42 immediately.
+//
+// TWO OF THEM ARE THE ONLY REASON GROUP 7's ROLLBACK CHECK EXISTS. G (the rollback
+// removed, so the last iterate is returned under the best iterate's sweep number)
+// and I (the reverse) were BOTH inert against every check in this file and against
+// every check the surface gate had — including the one asserting the diverged run
+// exports a mesh with no folded cell, which is true of either iterate. What
+// catches them is a ROUND TRIP: re-running at the sweep count the diverged run
+// reports must produce that same mesh, and must itself stop at its cap rather than
+// diverge. Neither half alone is enough; G passes the second and fails the first,
+// I the other way round.
+//
+// AND H IS THE OPPOSITE SHAPE. Making the residual absolute instead of relative to
+// the domain diagonal is caught HERE and by NOTHING in the surface gate. Check 47's
+// box is 250 units across, so its residual goes from 1.1e-16 to 2.8e-14 and the
+// solve stops calling itself converged on the first sweep. The surface gate does
+// not notice because its assertions are about WHICH ENDING each case reaches, and
+// neither ending moves: the divergence test is a RATIO of residuals and cancels the
+// change entirely, and the O-grid still converges inside its cap, just later. A
+// scale-free rule needs a fixture with a scale in it, and needs a check that reads
+// the number rather than the verdict.
 //
 // AA left this whole executable GREEN. The seam's own door still refused the value
 // — with the TOPOLOGY code instead of the CONFIG one — so only the surface gate's
@@ -790,18 +846,18 @@ std::vector<hybmesh::MbGeometry> cgridGeoms(int perSeg = 40) {
 // neighbours. 0 folded quads before, 26 after. So this is not "the same fixture but
 // bigger" — it is the smallest one here that reproduces what the shipped C-grid
 // does at 5 sweeps.
-std::string cgridClustered() {
+std::string cgridClustered(const std::string& ds = "0.002") {
     std::string d = cgrid();
     d = swap1(d, R"("kind": "cut", "count": 4)", R"("kind": "cut", "count": 12)");
     d = swap1(d, R"("id": "r_te_up", "corners": ["te", "f1"], "kind": "interface", "count": 3)",
               R"("id": "r_te_up", "corners": ["te", "f1"], "kind": "interface", "count": 15,
-     "spacing": {"ds_start": 0.002})");
+     "spacing": {"ds_start": )" + ds + R"(})");
     d = swap1(d, R"("id": "r_le",    "corners": ["le", "f2"], "kind": "interface")",
               R"("id": "r_le",    "corners": ["le", "f2"], "kind": "interface",
-     "spacing": {"ds_start": 0.002})");
+     "spacing": {"ds_start": )" + ds + R"(})");
     d = swap1(d, R"("id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface")",
               R"("id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface",
-     "spacing": {"ds_start": 0.002})");
+     "spacing": {"ds_start": )" + ds + R"(})");
     d = swap1(d, R"("id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 6)",
               R"("id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 25)");
     d = swap1(d, R"("id": "af_lo", "corners": ["le", "te"], "kind": "wall", "count": 6)",
@@ -848,11 +904,117 @@ std::string wallSquare(int ni, int nj, const std::string& ds) {
 })";
 }
 
-// One Laplacian sweep, computed HERE from `src` and returned, so a check can
-// compare the seam's answer against an independent one rather than against
-// itself. Deliberately Jacobi (every node reads `src`), which is the property
-// check 43 is about.
+// ── A UNIFORM grid on a STRETCHED rectangle (issue #82) ───────────────────
+//
+// `w` by `h` with every edge uniformly spaced, so node (i, j) lands exactly at
+// (i*w/(ni-1), j*h/(nj-1)). This is the grid whose Winslow answer is known in
+// closed form: every second difference of a bilinear-in-(i, j) map is zero, so
+// the elliptic residual is zero whatever the metric coefficients are and the
+// solve must return the grid UNMOVED. Check 47 is that gate, and its docstring
+// says plainly what such a grid can and cannot catch.
+//
+// The aspect ratio is the point of the "stretched" — #80's grids run 250:1 from a
+// wall to the far field, and a kernel that only holds a square is a kernel that
+// holds nothing this path makes.
+std::string stretchedBox(int ni, int nj, const std::string& w, const std::string& h) {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "se", "kind": "free", "xy": [)") + w + R"(, 0.0]},
+    {"id": "ne", "kind": "free", "xy": [)" + w + ", " + h + R"(]},
+    {"id": "nw", "kind": "free", "xy": [0.0, )" + h + R"(]}
+  ],
+  "edges": [
+    {"id": "s", "corners": ["sw", "se"], "kind": "wall", "count": )" + std::to_string(ni) + R"(},
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": )" + std::to_string(nj) + R"(},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall", "count": )" + std::to_string(ni) + R"(},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )" + std::to_string(nj) + R"(}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s", "e", "n", "w"]}
+  ]
+})";
+}
+
+// ── A NON-CONVEX block, which the algebraic fill FOLDS (issue #82) ────────
+//
+// The unit square with its north-east corner pulled back inside the other three,
+// so the block's own boundary is re-entrant there. Transfinite interpolation
+// blends the four sides and has no way to notice: it lays cells straight across
+// the notch and some of them come out folded, on a declaration that is perfectly
+// valid. Check 50 is what that fixture is for.
+//
+// `ne` is BOTH coordinates of that corner, so one number says how deep the notch
+// is. At 0.35 the fill folds 13 quads of the 11x9 grid; at 0.45 it folds 2.
+std::string notchedBox(int ni, int nj, const std::string& ne) {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "se", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "ne", "kind": "free", "xy": [)") + ne + ", " + ne + R"(]},
+    {"id": "nw", "kind": "free", "xy": [0.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s", "corners": ["sw", "se"], "kind": "wall", "count": )" + std::to_string(ni) + R"(},
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": )" + std::to_string(nj) + R"(},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall", "count": )" + std::to_string(ni) + R"(},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )" + std::to_string(nj) + R"(}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s", "e", "n", "w"]}
+  ]
+})";
+}
+
+// One WINSLOW sweep, computed HERE from `src` and returned, so a check can compare
+// the seam's answer against an independent one rather than against itself.
+// Deliberately Jacobi (every node reads `src`), which is the property check 43 is
+// about.
+//
+// The arithmetic is SPELT OUT rather than delegated to `hybmesh::mbWinslowUpdate`,
+// on purpose and against this repo's usual objection to a near-copy: a re-derivation
+// that called the thing it is checking would make check 43 an identity. The kernel
+// itself is pinned against HAND NUMBERS in check 48, which is where a disagreement
+// between these two expressions gets adjudicated.
 std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& src) {
+    std::vector<Point2D> out = src;
+    auto at = [&src](const hybmesh::MbBlock& b, int i, int j) {
+        return src[static_cast<size_t>(b.nodeAt(i, j))];
+    };
+    for (const hybmesh::MbBlock& b : r.blocks)
+        for (int j = 1; j + 1 < b.nj; ++j)
+            for (int i = 1; i + 1 < b.ni; ++i) {
+                const double xi = 0.5 * (at(b, i + 1, j).x - at(b, i - 1, j).x);
+                const double yi = 0.5 * (at(b, i + 1, j).y - at(b, i - 1, j).y);
+                const double xj = 0.5 * (at(b, i, j + 1).x - at(b, i, j - 1).x);
+                const double yj = 0.5 * (at(b, i, j + 1).y - at(b, i, j - 1).y);
+                const double al = xj * xj + yj * yj;
+                const double be = xi * xj + yi * yj;
+                const double ga = xi * xi + yi * yi;
+                const double xij = 0.25 * (at(b, i + 1, j + 1).x - at(b, i - 1, j + 1).x
+                                         - at(b, i + 1, j - 1).x + at(b, i - 1, j - 1).x);
+                const double yij = 0.25 * (at(b, i + 1, j + 1).y - at(b, i - 1, j + 1).y
+                                         - at(b, i + 1, j - 1).y + at(b, i - 1, j - 1).y);
+                const double den = 2.0 * (al + ga);
+                if (!(den > 0.0)) continue;
+                out[static_cast<size_t>(b.nodeAt(i, j))] = Point2D{
+                    (al * (at(b, i + 1, j).x + at(b, i - 1, j).x)
+                     + ga * (at(b, i, j + 1).x + at(b, i, j - 1).x)
+                     - 2.0 * be * xij) / den,
+                    (al * (at(b, i + 1, j).y + at(b, i - 1, j).y)
+                     + ga * (at(b, i, j + 1).y + at(b, i, j - 1).y)
+                     - 2.0 * be * yij) / den};
+            }
+    return out;
+}
+
+// The same sweep with the kernel #81 shipped and #82 deleted: the mean of a node's
+// four logical neighbours in PHYSICAL space. Kept in the test and nowhere else,
+// because several checks below are about the two kernels giving DIFFERENT answers
+// and a claim like that needs both sides written down.
+std::vector<Point2D> laplacianByHand(const MbResult& r, const std::vector<Point2D>& src) {
     std::vector<Point2D> out = src;
     for (const hybmesh::MbBlock& b : r.blocks)
         for (int j = 1; j + 1 < b.nj; ++j)
@@ -863,6 +1025,17 @@ std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& 
                                   + src[static_cast<size_t>(b.nodeAt(i, j + 1))];
                 out[static_cast<size_t>(b.nodeAt(i, j))] = sum * 0.25;
             }
+    return out;
+}
+
+// Only the SMOOTHER's warnings. Every fixture in this file declares no binding and
+// so already carries one warning about the default BC; counting the whole list
+// would make every check below assert on that one too, and a check that has to be
+// re-tuned when an unrelated warning is added is a check nobody will keep true.
+std::vector<std::string> smoothWarnings(const MbResult& r) {
+    std::vector<std::string> out;
+    for (const std::string& w : r.warnings)
+        if (w.find("smoother") != std::string::npos) out.push_back(w);
     return out;
 }
 
@@ -2480,14 +2653,20 @@ int main() {
                          "conditions off the same source segments");
     }
 
-    // ── 42. the kernel IS the average of the four logical neighbours ─────────
+    // ── 42. the kernel IS Winslow, and is NOT the Laplacian it replaced ─────
     //
-    // Pinned as arithmetic rather than as "something moved", because every later
-    // ticket in this arc replaces exactly this expression: a check that only knew
-    // the nodes had shifted could not tell a Winslow kernel from a broken
-    // Laplacian one. Computed against `preSmoothNodes`, which is also the Jacobi
-    // claim — a Gauss-Seidel sweep would read neighbours this sweep had already
-    // written.
+    // Pinned as arithmetic rather than as "something moved", because a check that
+    // only knew the nodes had shifted could not tell a Winslow kernel from a
+    // broken Laplacian one. Computed against `preSmoothNodes`, which is also the
+    // Jacobi claim — a Gauss-Seidel sweep would read neighbours this sweep had
+    // already written.
+    //
+    // BOTH HALVES. The seam's sweep is compared against an independently written
+    // Winslow sweep AND against the mean-of-four kernel #81 shipped, which must
+    // now be WRONG by a wide margin. #82's first acceptance criterion is that the
+    // Laplacian keeps no user; the way that could go quietly wrong is a kernel
+    // that still behaves like one, so the difference is asserted rather than
+    // assumed.
     {
         MbParams p;
         p.smoothIters = 1;
@@ -2500,32 +2679,23 @@ int main() {
         // has already reported the missing list; this must report too, not crash.
         CHECK(r.preSmoothNodes.size() == r.nodes.size(),
               "42. ...publishing a 'before' list to compare the kernel against");
-        double worst = -1.0;
-        size_t interior = 0;
-        if (r.preSmoothNodes.size() == r.nodes.size()) {
-            for (const auto& b : r.blocks)
-                for (int j = 1; j + 1 < b.nj; ++j)
-                    for (int i = 1; i + 1 < b.ni; ++i) {
-                        const Point2D want =
-                            (r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i - 1, j))]
-                             + r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i + 1, j))]
-                             + r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i, j - 1))]
-                             + r.preSmoothNodes[static_cast<size_t>(b.nodeAt(i, j + 1))])
-                            * 0.25;
-                        const double d =
-                            (r.nodes[static_cast<size_t>(b.nodeAt(i, j))] - want).length();
-                        if (d > worst) worst = d;
-                        ++interior;
-                    }
-        }
-        CHECK(interior == 35,
-              "42. the 9 x 7 block has 7 x 5 interior nodes to check (got "
-              + std::to_string(interior) + ")");
-        // 1e-15 absolute on a unit square: the kernel is three additions and one
-        // multiplication, so the two ways of writing it differ by rounding alone.
-        CHECK(worst >= 0.0 && worst < 1e-15,
-              "42. every interior node lands on the mean of its four logical "
-              "neighbours' PRE-SWEEP positions (worst " + std::to_string(worst) + ")");
+        const bool parallel = r.preSmoothNodes.size() == r.nodes.size();
+        const std::vector<Point2D> want =
+            parallel ? sweepByHand(r, r.preSmoothNodes) : std::vector<Point2D>();
+        const std::vector<Point2D> lap =
+            parallel ? laplacianByHand(r, r.preSmoothNodes) : std::vector<Point2D>();
+        // 1e-15 absolute on a unit square: the kernel is a dozen additions and one
+        // division, so the two ways of writing it differ by rounding alone.
+        const double gap = worstMove(r.nodes, want);
+        CHECK(gap >= 0.0 && gap < 1e-15,
+              "42. every interior node lands where the WINSLOW update of its nine "
+              "logical neighbours' PRE-SWEEP positions puts it (worst "
+              + std::to_string(gap) + ")");
+        const double vsLap = worstMove(r.nodes, lap);
+        CHECK(vsLap > 1e-6,
+              "42. ...and NOT where the mean of its four neighbours would (worst "
+              + std::to_string(vsLap) + ") — the Laplacian #81 shipped is gone, not "
+              "hiding behind the same parameter");
     }
 
     // ── 43. N sweeps are N applications of that kernel, in Jacobi order ──────
@@ -2552,8 +2722,9 @@ int main() {
                 : std::vector<Point2D>();
         const double gap = worstMove(r2.nodes, byHand);
         CHECK(gap >= 0.0 && gap < 1e-15,
-              "43. two sweeps ARE the Jacobi kernel applied twice (worst "
-              + std::to_string(gap) + ")");
+              "43. two sweeps ARE the Jacobi Winslow kernel applied twice, with its "
+              "metric coefficients re-read from the sweep's OWN starting positions "
+              "(worst " + std::to_string(gap) + ")");
         CHECK(worstMove(r2.nodes, r1.nodes) > 1e-9,
               "43. ...and the second sweep really moved something, so the comparison "
               "above is not two identity operations agreeing");
@@ -2576,16 +2747,19 @@ int main() {
               "44. ...and producing nothing");
     }
 
-    // ── 45. THIS KERNEL MAKES THE WALL FIRST CELL WORSE, measured ────────────
+    // ── 45. THE WALL FIRST CELL IS STILL WORSE, and that is #83's job ───────
     //
-    // The point of shipping a Laplacian at all. It equalises spacing, so on a
-    // wall-clustered block it drags the first interior line away from the wall and
-    // spends the resolution the whole declaration exists to deliver. Asserted as a
-    // DIRECTION with a floor, not as a fixed number: the number belongs to the
-    // shipped C-grid and is recorded in the surface gate and the design note. What
-    // is pinned here is that the regression is real and is not a rounding wobble —
-    // and that the seam's own `wallSpecs` still asks for the declared height, so
-    // the quality report will SEE the miss rather than move the target with it.
+    // Winslow drives the interior toward the harmonic map of the block, which has
+    // no memory of the first-cell height the declaration asked for — so on a
+    // wall-clustered block it still drags the first interior line away from the
+    // wall. #82 says so in as many words: the control functions that hold the wall
+    // spacing are ticket 3, and by how much it misses in the meantime is to be
+    // recorded rather than glossed. Asserted as a DIRECTION with a floor, not as a
+    // fixed number: the numbers belong to the shipped cases and are recorded in the
+    // surface gate and the design note. What is pinned here is that the regression
+    // is real and is not a rounding wobble — and that the seam's own `wallSpecs`
+    // still asks for the declared height, so the quality report will SEE the miss
+    // rather than move the target with it.
     {
         MbParams p;
         p.smoothIters = 4;
@@ -2599,8 +2773,8 @@ int main() {
         const double before = (nodeOf(u, bu, 4, 1) - nodeOf(u, bu, 4, 0)).length();
         const double after  = (nodeOf(r, br, 4, 1) - nodeOf(r, br, 4, 0)).length();
         CHECK(after > before * 1.5,
-              "45. the first cell off the wall gets TALLER under this kernel — the "
-              "known cost this increment exists to measure (" + std::to_string(before)
+              "45. the first cell off the wall gets TALLER under this kernel too — "
+              "the cost #83's control functions are what remove (" + std::to_string(before)
               + " -> " + std::to_string(after) + ")");
         bool sameRequest = u.wallSpecs.size() == r.wallSpecs.size();
         for (size_t k = 0; sameRequest && k < r.wallSpecs.size(); ++k)
@@ -2614,14 +2788,21 @@ int main() {
               "drifted away from it");
     }
 
-    // ── 46. enough sweeps really do FOLD a cell, on a mesh that started sound ─
+    // ── 46. the smoother can STILL fold a cell, on a mesh that started sound ─
     //
     // Not a new failure mode and deliberately not a new exit code: a smoothing pass
     // that folds a cell is a valid declaration whose interior came out folded, which
     // is exactly what the inverted-cell code already means. What this pins is that
     // the fold is REACHABLE from this parameter alone; the counting and the exit
-    // code are one level up, in `measureMbQuality` and the adapter, and the surface
-    // gate next door drives those on the shipped C-grid (4 folds at 5 sweeps).
+    // code are one level up, in `measureMbQuality` and the adapter.
+    //
+    // THE FIXTURE HAD TO GET HARDER, and that is the measurement (#82). Under #81's
+    // Laplacian this same C-grid folded 26 cells at 60 sweeps. Under Winslow it
+    // folds NOTHING at any sweep count — 905 sweeps to convergence, zero flipped —
+    // so the fixture now asks for a wall first cell of 0.0005 rather than 0.002.
+    // Check 50 is the other half of that finding, and the reason it is worth
+    // writing down: the elliptic kernel does not merely avoid folding, it UNFOLDS
+    // what the algebraic fill folded.
     //
     // The dart from tests/cpp/test_mb_quality.cpp's fixture is deliberately NOT
     // reused: this mesh starts SOUND, so the fold is the smoother's doing and not
@@ -2649,20 +2830,270 @@ int main() {
             return n;
         };
         MbParams p;
-        p.smoothIters = 60;
-        MbResult u = hybmesh::buildMultiBlock(cgridClustered(), cgridGeoms(), MbParams{});
-        MbResult r = hybmesh::buildMultiBlock(cgridClustered(), cgridGeoms(), p);
+        p.smoothIters = 100000;
+        const std::string doc = cgridClustered("0.0005");
+        MbResult u = hybmesh::buildMultiBlock(doc, cgridGeoms(), MbParams{});
+        MbResult r = hybmesh::buildMultiBlock(doc, cgridGeoms(), p);
         CHECK(u.ok && r.ok, "46. a heavily smoothed C-grid is still a valid "
                             "declaration and still returns a mesh (err: " + r.error + ")");
         CHECK(flipped(u) == 0,
               "46. the unsmoothed C-grid folds NOTHING, so the count below belongs to "
               "the smoother (got " + std::to_string(flipped(u)) + ")");
         CHECK(flipped(r) > 0,
-              "46. ...and 60 sweeps DO fold structured cells — reachable from this "
-              "parameter alone, with no help from a bad declaration (got "
-              + std::to_string(flipped(r)) + ")");
+              "46. ...and a wall this finely clustered DOES fold structured cells — "
+              "reachable from this parameter alone, with no help from a bad "
+              "declaration (got " + std::to_string(flipped(r)) + ")");
         CHECK(r.preSmoothNodes.size() == r.nodes.size(),
               "46. ...with its before/after pair intact, so the damage is reportable");
+    }
+
+    // ── 47. A GRID THE ANSWER IS KNOWN FOR comes back UNMOVED ───────────────
+    //
+    // #82's exactness gate. A uniformly spaced grid on a stretched rectangle puts
+    // node (i, j) at a map that is LINEAR in i and in j, so every second
+    // difference in the elliptic operator — x_ii, x_jj and the cross term x_ij —
+    // is exactly zero and the grid is a fixed point of the solve. It must come
+    // back not merely close but IDENTICAL, and the solve must SAY it converged
+    // rather than run its cap out on a grid it is not moving.
+    //
+    // WHAT THIS CAN AND CANNOT CATCH, said plainly because the criterion invites
+    // the stronger reading. Because every second difference vanishes, the residual
+    // is zero for ANY values of the metric coefficients: a swapped alpha/gamma or a
+    // dropped beta passes here untouched. This gate catches the denominator, the
+    // neighbour indices and any term that does not cancel — the arithmetic of the
+    // coefficients themselves is check 48's job, against hand numbers. Two gates,
+    // because one of them cannot be both.
+    //
+    // AND THE TICKET'S PREMISE IS CORRECTED HERE, measured rather than argued.
+    // #82 says "a stretched rectangle is smooth already, so the solve must return
+    // it unmoved". That is true of a rectangle STRETCHED IN ASPECT and false of one
+    // GRADED in its spacing: plain Winslow's fixed point is the harmonic map, whose
+    // interior spacing is uniform, so a graded rectangle is NOT returned unmoved and
+    // cannot be. That is not a defect of this kernel — it is exactly why #80 has a
+    // ticket 3 for control functions — but it is the difference between a gate that
+    // holds and a gate that was never true.
+    {
+        // 250:1, the stretching #80 names on the grids this path makes.
+        const std::string doc = stretchedBox(11, 9, "250.0", "1.0");
+        MbParams none, many;
+        many.smoothIters = 500;
+        MbResult u = build(doc, none);
+        MbResult r = build(doc, many);
+        CHECK(u.ok && r.ok, "47. the stretched box meshes both ways (err: "
+                            + u.error + " / " + r.error + ")");
+        // 1e-12 on a domain 250 units across, i.e. 4e-15 relative — measured at
+        // 2.8e-14 absolute, which is the transfinite fill's own rounding and not
+        // the solve's: the fill lands its nodes within an ulp or two of the linear
+        // map, and the solve holds them there. Bit equality is the wrong assertion
+        // for that reason and not because the tolerance is generous.
+        const double held = worstMove(r.nodes, u.nodes);
+        CHECK(held >= 0.0 && held < 1e-12,
+              "47. a uniform grid on a 250:1 rectangle is a FIXED POINT of the "
+              "elliptic solve — returned unmoved to far better than solver "
+              "tolerance (worst " + std::to_string(held) + ")");
+        CHECK(r.smoothConverged && r.smoothSweeps == 1 && r.smoothResidual < 1e-14,
+              "47. ...and the solve SAYS so on its first sweep instead of spending "
+              "its cap (sweeps " + std::to_string(r.smoothSweeps) + ", converged "
+              + std::to_string(r.smoothConverged) + ", residual "
+              + std::to_string(r.smoothResidual) + ")");
+        CHECK(!r.smoothDiverged && smoothWarnings(r).empty(),
+              "47. ...with nothing to warn about");
+        // The premise correction, as a measurement: the same rectangle GRADED is
+        // moved, and the fixed point it is moving toward is not where it started.
+        MbResult g0 = build(wallSquare(11, 9, "0.02"), none);
+        MbResult g1 = build(wallSquare(11, 9, "0.02"), many);
+        CHECK(g0.ok && g1.ok, "47. the graded box meshes both ways");
+        CHECK(worstMove(g1.nodes, g0.nodes) > 1e-6,
+              "47. a GRADED rectangle is NOT a fixed point — plain Winslow relaxes "
+              "toward the harmonic map, whose interior spacing is uniform, so the "
+              "grading moves (worst " + std::to_string(worstMove(g1.nodes, g0.nodes))
+              + "). Holding it is #80's ticket 3, not this kernel.");
+    }
+
+    // ── 48. THE COEFFICIENTS, against numbers derived by hand ───────────────
+    //
+    // The gate a wrong metric term cannot pass, which check 47 by construction
+    // cannot be. One stencil, nine positions chosen so that alpha, beta, gamma and
+    // the cross derivative are all non-zero and all DIFFERENT, worked through on
+    // paper:
+    //
+    //   x_i = (iPlus - iMinus)/2 = ((4,2) - (0,0))/2 = (2, 1)
+    //   x_j = (jPlus - jMinus)/2 = ((2,6) - (0,0))/2 = (1, 3)
+    //   alpha = x_j . x_j = 1 + 9  = 10
+    //   beta  = x_i . x_j = 2 + 3  =  5
+    //   gamma = x_i . x_i = 4 + 1  =  5
+    //   x_ij  = (pp - mp - pm + mm)/4
+    //         = ((5,8) - (-1,5) - (3,-3) + (0,0))/4 = (3, 6)/4 = (0.75, 1.5)
+    //   denom = 2(alpha + gamma) = 30
+    //   answer = [alpha*(iPlus + iMinus) + gamma*(jPlus + jMinus) - 2*beta*x_ij] / denom
+    //          = [10*(4,2) + 5*(2,6) - 10*(0.75,1.5)] / 30
+    //          = [(40,20) + (10,30) - (7.5,15)] / 30 = (42.5, 35)/30
+    //
+    // `c` is (7, 9) — nowhere near the answer — because the update must not read
+    // the node it is moving. A kernel that blended the old position in would land
+    // somewhere else entirely.
+    //
+    // AND THE CHECK IS SHOWN TO DISCRIMINATE, which is the half that makes it worth
+    // having: the four ways this arithmetic is usually got wrong are each computed
+    // beside it and each lands somewhere else. A gate whose passing value is also
+    // the wrong answer's value is not a gate.
+    {
+        hybmesh::MbWinslowStencil st;
+        st.c      = Point2D{7.0, 9.0};
+        st.iPlus  = Point2D{4.0, 2.0};
+        st.iMinus = Point2D{0.0, 0.0};
+        st.jPlus  = Point2D{2.0, 6.0};
+        st.jMinus = Point2D{0.0, 0.0};
+        st.pp     = Point2D{5.0, 8.0};
+        st.mp     = Point2D{-1.0, 5.0};
+        st.pm     = Point2D{3.0, -3.0};
+        st.mm     = Point2D{0.0, 0.0};
+        const Point2D got = hybmesh::mbWinslowUpdate(st);
+        const Point2D want{42.5 / 30.0, 35.0 / 30.0};
+        CHECK((got - want).length() < 1e-15,
+              "48. the Winslow update of a hand-worked stencil is (" 
+              + std::to_string(want.x) + ", " + std::to_string(want.y) + "), got ("
+              + std::to_string(got.x) + ", " + std::to_string(got.y) + ")");
+        // alpha = 10, beta = 5, gamma = 5, cross = (0.75, 1.5), denom = 30.
+        const Point2D sumI{4.0, 2.0}, sumJ{2.0, 6.0}, cross{0.75, 1.5};
+        struct Wrong { const char* how; Point2D at; };
+        const Wrong wrong[] = {
+            {"alpha and gamma swapped",
+             (sumI * 5.0 + sumJ * 10.0 - cross * 10.0) * (1.0 / 30.0)},
+            {"the cross term dropped",
+             (sumI * 10.0 + sumJ * 5.0) * (1.0 / 30.0)},
+            {"the cross term's sign flipped",
+             (sumI * 10.0 + sumJ * 5.0 + cross * 10.0) * (1.0 / 30.0)},
+            {"the mean of the four neighbours (the kernel #81 shipped)",
+             (st.iPlus + st.iMinus + st.jPlus + st.jMinus) * 0.25},
+        };
+        for (const Wrong& w : wrong)
+            CHECK((want - w.at).length() > 0.05,
+                  std::string("48. ...and this stencil TELLS THAT APART from ") + w.how
+                  + " (" + std::to_string((want - w.at).length()) + " away)");
+        // The degenerate branch, so it is a decision rather than an accident: four
+        // coincident neighbours have no metric at all, and the node stays put.
+        hybmesh::MbWinslowStencil flat;
+        flat.c = Point2D{3.0, -4.0};
+        const Point2D held = hybmesh::mbWinslowUpdate(flat);
+        CHECK(held.x == 3.0 && held.y == -4.0,
+              "48. a stencil with no metric at all leaves the node WHERE IT IS "
+              "rather than returning a NaN every later sweep would spread");
+    }
+
+    // ── 49. THE SOLVE IS BOUNDED, AND SAYS WHICH OF THE THREE ENDINGS ───────
+    //
+    // #82: "a solve that does not converge says so and is not silently truncated
+    // into a result that looks finished." There are three endings and they are
+    // three different answers, so the seam publishes both flags rather than one:
+    //
+    //   converged  — the residual reached MB_SMOOTH_TOL and the solve stopped
+    //                early, so `smoothSweeps` is BELOW the cap.
+    //   capped     — still moving at the cap. A warning names the number to raise.
+    //   diverged   — the residual climbed back through
+    //                MB_SMOOTH_DIVERGE_FACTOR times its best, so the mesh returned
+    //                is the BEST iterate and its sweep number, not the last one.
+    //
+    // The graded box converges, and the same box at a cap of one does not.
+    //
+    // THE THIRD ENDING IS NOT DRIVEN HERE, and that is a gap with a reason rather
+    // than an oversight. Divergence was found on the SHIPPED C-grid — the residual
+    // falls to 2.7e-08 by sweep 3724 and then grows — and no synthetic fixture in
+    // this file reproduces it: measured 2026-09-04 over 26 variants (the clustered
+    // C-grid at four wall spacings and two wall resolutions, and a non-convex dart
+    // at three shapes x three gradings x two resolutions), every one of which
+    // CONVERGED. So `tests/test_multiblock_smooth_surface.py` group 7 is the only
+    // gate on `smoothDiverged` and on the rollback, and it drives the real file.
+    {
+        MbParams cap1, big;
+        cap1.smoothIters = 1;
+        big.smoothIters = 100000;
+        MbResult r1 = build(wallSquare(9, 7, "0.02"), cap1);
+        MbResult rc = build(wallSquare(9, 7, "0.02"), big);
+        CHECK(r1.ok && rc.ok, "49. the graded box meshes at both caps");
+        CHECK(!r1.smoothConverged && !r1.smoothDiverged && r1.smoothSweeps == 1
+                  && r1.smoothResidual > 0.0,
+              "49. a cap of one is a solve that has NOT converged, and says so "
+              "(sweeps " + std::to_string(r1.smoothSweeps) + ", residual "
+              + std::to_string(r1.smoothResidual) + ")");
+        const std::vector<std::string> w1 = smoothWarnings(r1);
+        CHECK(w1.size() == 1 && mentions(w1.empty() ? "" : w1[0], "MB_SMOOTH_ITERS"),
+              "49. ...with ONE warning naming the key to raise, so a truncated "
+              "solve cannot read as a finished one");
+        CHECK(rc.smoothConverged && rc.smoothSweeps < big.smoothIters
+                  && rc.smoothResidual <= hybmesh::MB_SMOOTH_TOL,
+              "49. ...while a cap it does not need is left unspent: the solve stops "
+              "the sweep it converges on (sweeps " + std::to_string(rc.smoothSweeps)
+              + " of " + std::to_string(big.smoothIters) + ", residual "
+              + std::to_string(rc.smoothResidual) + ")");
+        CHECK(smoothWarnings(rc).empty(),
+              "49. ...and a converged solve warns about nothing");
+        // A run at exactly the sweep count the converged one used must land on the
+        // same mesh: the early stop is a stop, not a different answer.
+        MbParams exact;
+        exact.smoothIters = rc.smoothSweeps;
+        MbResult re = build(wallSquare(9, 7, "0.02"), exact);
+        CHECK(worstMove(re.nodes, rc.nodes) == 0.0,
+              "49. ...and stopping early returns the SAME mesh the cap would have, "
+              "bit for bit");
+    }
+
+    // ── 50. AND IT UNFOLDS WHAT THE ALGEBRAIC FILL FOLDED ───────────────────
+    //
+    // The other half of check 46's finding, and the one that says what changed
+    // between #81's kernel and this one. A plain Laplacian folds sound meshes; the
+    // elliptic solve REPAIRS folded ones. On a block with a re-entrant corner the
+    // transfinite fill lays 13 folded quads across the notch — a valid declaration
+    // with a broken interior — and the solve converges to a mesh with none.
+    //
+    // Not a claim about all folds: check 46 has a clustered C-grid this same solve
+    // folds. What is pinned here is the direction on a case where the fill is the
+    // thing that is wrong, and that #81's kernel does NOT do it — the Laplacian is
+    // run by hand from the same start for exactly that comparison, because "the new
+    // kernel is better" is otherwise a sentence rather than a measurement.
+    {
+        auto flipped = [](const MbResult& r, const std::vector<Point2D>& at) {
+            size_t n = 0;
+            for (const auto& b : r.blocks)
+                for (int j = 0; j + 1 < b.nj; ++j)
+                    for (int i = 0; i + 1 < b.ni; ++i) {
+                        const Point2D p00 = at[static_cast<size_t>(b.nodeAt(i, j))],
+                                      p10 = at[static_cast<size_t>(b.nodeAt(i + 1, j))],
+                                      p11 = at[static_cast<size_t>(b.nodeAt(i + 1, j + 1))],
+                                      p01 = at[static_cast<size_t>(b.nodeAt(i, j + 1))];
+                        const double a2 = (p10 - p00).cross(p11 - p00)
+                                        + (p11 - p00).cross(p01 - p00);
+                        if (a2 <= 0.0) ++n;
+                    }
+            return n;
+        };
+        MbParams big;
+        big.smoothIters = 100000;
+        const std::string doc = notchedBox(11, 9, "0.35");
+        MbResult u = build(doc, MbParams{});
+        MbResult r = build(doc, big);
+        CHECK(u.ok && r.ok, "50. the notched block is a VALID declaration both ways "
+                            "(err: " + u.error + " / " + r.error + ")");
+        const size_t before = flipped(u, u.nodes);
+        CHECK(before > 0,
+              "50. the transfinite fill FOLDS cells across the notch, with nothing "
+              "wrong with the document (got " + std::to_string(before) + ")");
+        CHECK(r.smoothConverged,
+              "50. ...the elliptic solve converges on it (sweeps "
+              + std::to_string(r.smoothSweeps) + ", residual "
+              + std::to_string(r.smoothResidual) + ")");
+        CHECK(flipped(r, r.nodes) == 0,
+              "50. ...and REPAIRS every one of them (got "
+              + std::to_string(flipped(r, r.nodes)) + " of "
+              + std::to_string(before) + " left)");
+        // The same start, the same sweep count, #81's kernel: it does not.
+        std::vector<Point2D> lap = u.nodes;
+        for (int k = 0; k < r.smoothSweeps; ++k) lap = laplacianByHand(u, lap);
+        CHECK(flipped(u, lap) > 0,
+              "50. ...where the mean-of-four kernel #82 deleted does NOT, from the "
+              "same mesh and the same number of sweeps (got "
+              + std::to_string(flipped(u, lap)) + " left of "
+              + std::to_string(before) + ")");
     }
 
     return hybmesh::test::report("test_multiblock");

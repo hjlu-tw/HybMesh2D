@@ -338,13 +338,19 @@ CASES = {
     "mb_cgrid": _shipped_multiblock(mbc),
     #   mb_cgrid_smooth (#81): the same shipped C-grid with MB_SMOOTH_ITERS 1, the
     #     only case here whose node positions come from the SMOOTHER rather than
-    #     from the fill. ONE sweep, and that is a measurement rather than a taste:
-    #     the same document at 5 sweeps folds 4 cells and exits 9, and a case that
-    #     exits non-zero is recorded as "no mesh produced" and compares nothing.
-    #     Every interior node still moves on the one sweep, so a kernel change --
-    #     which is what every remaining ticket of #80 is -- moves this baseline by
-    #     orders more than the tolerance, while the frozen block boundaries keep
-    #     the `.bnd` patch faces identical to mb_cgrid's.
+    #     from the fill. Every interior node moves on that one sweep, so a kernel
+    #     change -- which is what every remaining ticket of #80 is -- moves this
+    #     baseline by orders more than the tolerance, while the frozen block
+    #     boundaries keep the `.bnd` patch faces identical to mb_cgrid's. It has
+    #     done exactly that once already: #82 replaced the Laplacian with the
+    #     Winslow kernel and this case moved 1.999 units at its worst node while
+    #     the other eighteen stayed at 0.000e+00, which is the whole reason it is
+    #     here. Recaptured deliberately in that commit.
+    #     ONE sweep and not five: under #81's kernel five folded 4 cells and exited
+    #     9, and a case that exits non-zero is recorded as "no mesh produced" and
+    #     compares nothing. Under Winslow five folds nothing -- so the reason to
+    #     stay at one is now runtime and the comparison to that recorded baseline,
+    #     not the fold.
     "mb_cgrid_smooth": _shipped_multiblock(mbc, extra="\nMB_SMOOTH_ITERS 1\n"),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),

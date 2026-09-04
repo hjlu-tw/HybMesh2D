@@ -489,8 +489,9 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // include/MeshMode.hpp.
     params.wallSpacing = config.bl.blInitialThickness;
     params.wallGrowth = config.bl.blGrowthRate;
-    // How many Laplacian sweeps run over the block interiors. 0 by default, and at
-    // 0 the seam returns what it returned before the smoother existed.
+    // The CAP on the elliptic smoother's sweeps over the block interiors. 0 by
+    // default, and at 0 the seam returns what it returned before the smoother
+    // existed.
     params.smoothIters = config.mbSmoothIters;
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
@@ -631,10 +632,10 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // between them is the smoother and nothing else. Measuring by running the build
     // twice would have proved nothing of the sort.
     //
-    // The kernel this increment ships is the cheap one and is KNOWN to be wrong on
-    // the metric that matters: a plain Laplacian equalises spacing, so the wall
-    // first-cell figure gets WORSE. Printing both halves is what makes that a
-    // measurement rather than a claim.
+    // The kernel is Winslow since #82, and the wall first-cell figure is STILL
+    // expected to come out worse than the unsmoothed fill — the control functions
+    // that hold it are #80's ticket 3. Printing both halves is what makes that a
+    // measurement rather than a claim, in either direction.
     const bool smoothed = !res.preSmoothNodes.empty();
     if (smoothed) {
         hybmesh::MbResult before = res;
@@ -643,9 +644,43 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                        " — before smoothing", "_BEFORE");
     }
     const hybmesh::MbQualityReport q = hybmesh::measureMbQuality(res);
-    printMbQuality(q, smoothed ? " — after " + std::to_string(config.mbSmoothIters)
-                                     + " Laplacian sweep(s)"
+    printMbQuality(q, smoothed ? " — after " + std::to_string(res.smoothSweeps)
+                                     + " Winslow sweep(s)"
                                : std::string());
+    // WHETHER THE SOLVE FINISHED, beside what it produced. A cap reached while the
+    // grid is still moving is not an error and does not change the exit code — the
+    // mesh may be perfectly usable — but it must not be readable as a converged
+    // elliptic grid, which is what printing only "200 sweeps" would leave it as.
+    // The seam has already pushed a warning naming the number to raise; this is the
+    // record beside the quality figures, and one machine-readable line in the same
+    // shape as HYBMESH_MB_QUALITY so a gate greps rather than parses prose.
+    if (smoothed) {
+        std::ostringstream res_;
+        res_ << std::scientific << std::setprecision(3) << res.smoothResidual;
+        std::cout << "\n[ Multi-block Elliptic Smoothing ]\n";
+        std::cout << mbRow("Sweeps") << res.smoothSweeps << " of "
+                  << config.mbSmoothIters << " (cap)\n";
+        std::cout << mbRow("Converged")
+                  << (res.smoothConverged
+                          ? "yes"
+                          : res.smoothDiverged
+                                ? "NO — DIVERGED; the mesh is the BEST iterate, not "
+                                  "the last (see the warning above)"
+                                : "NO — the mesh is the partly-solved one; raise "
+                                  "MB_SMOOTH_ITERS to finish it")
+                  << "\n";
+        std::ostringstream tol;
+        tol << std::scientific << std::setprecision(3) << hybmesh::MB_SMOOTH_TOL;
+        std::cout << mbRow("Residual") << res_.str()
+                  << " (last sweep's largest node move / domain diagonal; converges "
+                     "below " << tol.str() << ")\n";
+        std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
+                  << " cap=" << config.mbSmoothIters
+                  << " converged=" << (res.smoothConverged ? 1 : 0)
+                  << " diverged=" << (res.smoothDiverged ? 1 : 0)
+                  << " residual=" << res_.str()
+                  << " tol=" << tol.str() << "\n";
+    }
 
     if (q.invertedCells > 0) {
         LOG_ERROR(q.invertedCells << " of " << q.cells << " cells are INVERTED (a corner "
