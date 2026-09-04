@@ -364,7 +364,8 @@ the schema and the stage logic.
   the CAD/STL a case was cut from is copied into **`grid/cad/`**. Fed by
   `solver_ctrl._case_source_files` / `_case_generated_files` and `pipeline_runner._case_sources` —
   the imported source, the resampled `.dat` the mesher read, the immersed STL, the mesh
-  `.provenance.json`, and the **mesh parameter file**, which is *generated* rather than copied
+  `.provenance.json`, the **block topology document** of a `MESH_MODE 1` run, and the
+  **mesh parameter file**, which is *generated* rather than copied
   because the GUI only materialises one in `temp_dir` and deletes it on exit
   (`mesh_config_io.config_to_text`, split out of `save_config_to_file` so the staged config is
   byte-identical to a hand-saved one; it takes the destination path because a geometry outside the
@@ -379,6 +380,24 @@ the schema and the stage logic.
   reads them back to answer "if I change this CAD, which cases go stale?" (matching by
   `(st_dev, st_ino)`, then path, then substring; exit 1 on no match). `case_export` descends into
   `grid/cad/` with its own allow-list.
+  **"Source" means every file the run READ, not only the drawn ones** (#56):
+  `case_sources.mesh_input_files()` is the one owner of the non-geometry half, and today that is
+  the topology document a `MESH_MODE 1` run fills — which decides the mesh as much as the
+  geometry does, and IS the only input for the two shipped topology cases that name no
+  `GEOM_FILE`. It answers **per mode**: the same path in a hybrid config stages nothing, because
+  the mesher warns about a key the active mode never reads and a staged file the run never read
+  is that same untruth the other way round. Both hosts call it — the GUI's
+  `_case_source_files` and the runner's `_case_sources` — and a relative declaration resolves
+  against the RUN's base directory, never the interpreter's cwd. Gated by
+  `tests/test_multiblock_case_selfdescribing.py`.
+- **The mesh stage's precondition is per MODE, and `services/mesh_modes.py::missing_mesh_input()`
+  is where it is stated** (#56). `geom_files` empty is fatal on the hybrid path and NORMAL on the
+  multi-block one. `pipeline_runner._run_mesh` applied the hybrid rule to both and refused
+  `square_block` / `hgrid_blocks` outright — so `run.sh` could mesh a case the pipeline and the
+  batch queue could not — while `mesh_gen_ctrl` warned that a topology-only mesh "will have no
+  boundary/BL", naming a boundary layer that path never grows. One function, two hosts, because a
+  third would have been written the way the first two were. A shipped end-to-end example lives at
+  `config/pipeline/multiblock_cgrid_demo.json`.
 - **`services/stl3d_case.py`** (Qt-free) is the same for the immersed-solid stage — `validate()`,
   `work_dir_for()`, `prepare_case_dir()` — and both `stl3d_ctrl.run_stl3d` and the headless IB
   stage go through it. **`Stl3dConfig.para_in_text()` must match

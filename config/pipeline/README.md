@@ -61,6 +61,36 @@ In the GUI you can also use **Pipeline ▸ Load Pipeline Script**, then click **
 | `bc_geom` | Body BC: `wall` (external) |
 | `bc_xmin/xmax/ymin/ymax` | Domain-edge BCs: `inlet`, `outlet`, `farfield`, `symmetry`, `wall` |
 
+### Multi-block structured meshing — `mesh.mesh_mode`
+
+`"mesh_mode": 1` fills a **declared block topology** with structured quads and uses Gmsh
+nowhere. The fields above that belong to the hybrid path (`farfield_*`, `gmsh_*`, most of
+the BL corner handling) are then never read, and the mesher says so by name in a warning.
+
+| Field | Meaning |
+|---|---|
+| `mesh_mode` | `0` hybrid BL + Gmsh far field (default), `1` multi-block structured |
+| `mesh_topology_file` | The block topology JSON the multi-block path fills. **Required** in mode 1 |
+| `mb_split_quads` | Split each quad into two triangles before export (keep `true` — the solver's incenter reconstruction is undefined on quads) |
+| `mb_split_rule`, `mb_split_seed` | Which diagonal, and the seed the randomized rule hashes |
+| `bl_initial_thickness` | Still read: it is the wall first-cell height each radial edge is solved for |
+
+`cads` may be **empty**. A topology that declares its own corners is the whole input —
+`examples/topology/square_block.json` and `hgrid_blocks.json` name no geometry at all.
+The other three bind their edges to a body by arc length, and those entries go in `cads`
+with `"skip": true` (the geometry is meshed as-is, not resampled).
+
+Worked example, end to end (CAD → multi-block mesh → solver → contour):
+
+```bash
+./run_pipeline.sh config/pipeline/multiblock_cgrid_demo.json
+./run_batch.sh   config/pipeline/multiblock_cgrid_demo.json --no-solver
+```
+
+The topology file is staged into the case alongside the CAD
+(`results/solver/<name>/grid/cad/`) and listed in `SOURCES.txt` with its original absolute
+path, because in this mode it decides the mesh as much as the geometry does.
+
 ### Geometry — `cads` (a list, one entry per geometry)
 ```json
 "cads": [

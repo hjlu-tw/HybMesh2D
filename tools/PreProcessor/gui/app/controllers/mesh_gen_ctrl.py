@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QFileDialog
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
+from app.services.mesh_modes import missing_mesh_input
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import find_binary_executable, repo_root, confirm
 
@@ -166,13 +167,17 @@ class MeshGenControllerMixin:
         # usual cause of "mesh generates but shows no boundary/BL".)
         geom_bbox = None    # (xmin, ymin, xmax, ymax) of the boundary geometry
         domain_bbox = None  # ditto for the custom outer-domain outline, if any
-        if not cfg.geom_files:
+        # No geometry is a defect on the hybrid path and NORMAL on the
+        # multi-block one, where a topology may declare every corner itself
+        # (square_block, hgrid_blocks). missing_mesh_input answers per mode, so
+        # this warning stops naming a boundary layer that path never grows (#56).
+        if not cfg.geom_files and missing_mesh_input(cfg):
             self.log(
                 "[WARNING] No geometry files in the mesh config — the mesh will "
                 "have no boundary/BL. If you drew with 'Add analytic edge', run "
                 "'Save & Export' in CAD mode (or 'Add Active'/check it in Geometry "
                 "Layers) so it is written to a .dat first.")
-        else:
+        elif cfg.geom_files:
             geom_bbox, domain_bbox = self._scan_geometry_files(cfg)
 
         # Pre-flight parameter validation: block on errors (invalid domain,

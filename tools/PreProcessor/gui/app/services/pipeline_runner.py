@@ -23,6 +23,7 @@ from app.services import (
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
+from app.services.mesh_modes import missing_mesh_input
 from app.services.paths import (
     find_binary_executable, find_solver_executables, repo_root,
 )
@@ -205,8 +206,13 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     mc.output_filename = vtk
     os.makedirs(os.path.dirname(vtk), exist_ok=True)
 
-    if not mc.geom_files:
-        raise PipelineError("mesh stage has no geometry input (geom_files empty)")
+    # Per MODE, not per host: geom_files empty is fatal on the hybrid path and
+    # normal on the multi-block one, where the topology is the input. The literal
+    # geometry check that used to stand here refused square_block / hgrid_blocks
+    # outright, so the CLI could mesh a case the pipeline could not (#56).
+    why = missing_mesh_input(mc)
+    if why:
+        raise PipelineError(why)
 
     # Create the temp config inside the try so its removal is guaranteed even if
     # creation or save raises before we'd otherwise reach a guard.
@@ -290,6 +296,10 @@ def _case_sources(pcfg: PipelineConfig, repo: str, geoms, vtk: str):
     try:
         mc = pcfg.build_mesh_config(geoms)
         mc.output_filename = vtk or mc.output_filename
+        # The block topology a MESH_MODE 1 run filled: an input of this run and
+        # not a preference, so it is staged like the CAD rather than only quoted
+        # by the generated parameter file. Repo-relative in a script, hence repo.
+        out.extend(case_sources.mesh_input_files(mc, repo))
         generated.append((f"Background_para_{pcfg.name or 'case'}.dat",
                           config_to_text(mc)))
     except Exception:

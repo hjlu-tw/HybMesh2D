@@ -153,10 +153,16 @@ BLIND SPOTS, named rather than papered over:
     iterations, cfl 0.6, all non-wall patches flag 1). "The solver runs" is what
     #57 asked for and all this claims; it is not a convergence or accuracy result,
     and nothing here compares a pressure distribution against anything.
-  * NOTHING FROM THE ACCEPTANCE RUN IS ON DISK -- no para.in, no cgrid.bc.def, no
-    solver output is committed, following #55. So the run is a quotation and not a
-    reproduction, and re-doing it means rebuilding the case by hand from the
-    procedure above.
+  * NO OUTPUT FROM THE ACCEPTANCE RUN IS ON DISK -- no para.in, no cgrid.bc.def,
+    no solver output is committed, following #55. So the figures above are a
+    quotation and not a reproduction. Since #56 the case itself no longer has to
+    be rebuilt by hand: `config/pipeline/multiblock_cgrid_demo.json` drives the
+    same chain headless at the same operating point (M 0.2, Re 200, zero
+    incidence, cfl 0.6, num_half_iter 100), and re-running it on 2026-09-04
+    reproduced the record above -- exit 0, last printed "Global Iteration count
+    90" at print_convg_per_niter 10, no NaN. What that script does NOT reproduce
+    is the hand-built getPGrid/unicones invocation quoted above; it goes through
+    the pipeline's own case preparation.
   * THE SOLVER RAN ON THE MESH, NOT ON THE MESH'S OWN DECLARED BC NAMES. getPGrid
     does not know 'farfield' and defaulted those 288 faces to a no-slip wall; the
     flag-1 they actually ran with was written into cgrid.bc.def BY HAND. That is

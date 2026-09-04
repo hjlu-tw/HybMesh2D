@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **33,649
-characters (33,840 bytes, 2026-09-04) ≈ 8k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **33,915
+characters (34,106 bytes, 2026-09-04) ≈ 8k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**34,500**, leaving 851 characters of slack — derived by a rule the gate states at that
+**34,500**, leaving 585 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -275,7 +275,9 @@ each other's mesh) are shown as soon as scripts are queued, not at run time.
 ```bash
 ./run_pipeline.sh config/pipeline/naca_demo.json           # -> results/pipeline/*.png
 ./run_pipeline.sh config/pipeline/naca_demo.json --no-solver   # stop after meshing
+./run_pipeline.sh config/pipeline/multiblock_cgrid_demo.json   # the same chain on a MESH_MODE 1 case
 ```
+An empty `cads` is legal in `MESH_MODE 1`: a topology that declares its own corners is the whole input, and the topology file is staged into the case like the CAD.
 `run_pipeline.sh` sets `DYLD_LIBRARY_PATH` (like `run.sh`) and calls `tools/PreProcessor/run_pipeline.py`. In the GUI, the same end-to-end run is the **Run All** button (top-right, all modes) / **Pipeline** menu (Run / Load / Save script). The rules for the whole chain — case directory, archive, clean, restart, export, bDecompose, STL3d and the immersed-boundary hand-off — are in `.claude/rules/pipeline-case.md`.
 
 **Visualize .dat files:**

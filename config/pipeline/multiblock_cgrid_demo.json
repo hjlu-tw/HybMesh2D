@@ -1,0 +1,45 @@
+{
+  "pipeline_version": 2,
+  "name": "multiblock_cgrid_demo",
+  "cads": [
+    {"input_file": "examples/geometries/naca0012_cgrid.dat", "skip": true},
+    {"input_file": "examples/geometries/cgrid_farfield.dat", "skip": true}
+  ],
+  "mesh": {
+    "mesh_mode": 1,
+    "mesh_topology_file": "examples/topology/cgrid_naca0012.json",
+    "mb_split_quads": true,
+    "mb_split_rule": 0,
+    "mb_split_seed": 0,
+    "bl_initial_thickness": 0.001,
+    "bc_geom": "wall",
+    "export_vtk": true,
+    "export_starcd": true,
+    "output_filename": "results/meshes/multiblock_cgrid_demo/mesh_multiblock_cgrid_demo.vtk"
+  },
+  "solver": {
+    "case_name": "multiblock_cgrid_demo",
+    "preset": "Laminar NS (subsonic, steady)",
+    "flow_solu_type": "ns_sol",
+    "turb_model_option": "laminar",
+    "fs_mach": 0.2,
+    "fs_flow_angle": 0.0,
+    "fs_unit_re": 200.0,
+    "fs_tinf": 288.0,
+    "linf": 1.0,
+    "gamma": 1.4,
+    "prandtl": 0.72,
+    "cfl": 0.6,
+    "constant_cfl": true,
+    "num_half_iter": 100,
+    "print_convg_per_niter": 10,
+    "print_sol_per_niter": 100,
+    "dump_zone_per_niter": 100
+  },
+  "results": {
+    "variable": "M",
+    "cmap": "jet",
+    "save_png": "results/pipeline/multiblock_cgrid_demo_M.png",
+    "mesh_overlay": false
+  }
+}

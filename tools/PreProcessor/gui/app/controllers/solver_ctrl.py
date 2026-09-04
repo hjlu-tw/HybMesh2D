@@ -8,7 +8,7 @@ from app.workers.solver_run import SolverPipelineWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import restart_points
 from app.services.case_files import GUI_RUN_TAG
-from app.services.case_sources import mesh_provenance_paths
+from app.services.case_sources import mesh_input_files, mesh_provenance_paths
 from app.services.mesh_grid_lookup import resolve_case_grid
 from app.services.logging_setup import get_logger
 from app.services.paths import (
@@ -51,6 +51,12 @@ class SolverControllerMixin:
         The mesh run's ``.provenance.json`` joins them: it is written beside the
         mesh output and records the git sha, the gmsh version and the full config
         as text, which is the difference between "which body?" and "which run?".
+
+        And in ``MESH_MODE 1``, the block topology document — which shapes the
+        grid as much as the geometry does and is the whole of the input for a
+        case that declares its own corners. ``mesh_input_files`` decides whether
+        the run actually read it, so switching back to the hybrid path stops
+        staging it (#56).
         """
         out: list = []
         for session in getattr(self, "sessions", []) or []:
@@ -74,6 +80,8 @@ class SolverControllerMixin:
             getattr(self, "global_vtk_path", ""),
             getattr(getattr(self, "global_mesh_config", None),
                     "output_filename", "")))
+        out.extend(mesh_input_files(
+            getattr(self, "global_mesh_config", None), repo_root()))
         return out
 
     def _case_generated_files(self) -> list:
