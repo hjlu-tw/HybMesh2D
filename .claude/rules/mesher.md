@@ -423,111 +423,93 @@ acceptance run: `docs/design_notes/mesher.md`.**
   docstring.
 
 **SMOOTHING is a STAGE inside the seam, and its kernel is WINSLOW** (`MB_SMOOTH_ITERS`, default
-0; `src/MultiBlock.cpp` between the fill and the split; #81 built the stage with a Laplacian,
-#82 replaced the kernel and DELETED that one). An elliptic solve over each block's interior
-nodes, iterated to convergence under a cap; at the default nothing runs and all eighteen
-pre-existing golden cases are unchanged (measured twice: 18/18 SAME at 0.000e+00 for #81, and
-again for #82, where the nineteenth — `mb_cgrid_smooth` — moved 1.999 units and was recaptured
-on purpose). **Full rationale, the before/after tables and the reversals:
-`docs/design_notes/mesher.md`.**
+0; `src/MultiBlock.cpp`'s `mbSmoothBlocks` between the fill and the split; #81 built the stage
+with a Laplacian, #82 replaced the kernel and DELETED that one). An elliptic solve over each
+block's interior nodes, iterated under a cap; at the default nothing runs and all eighteen
+pre-existing golden cases are unchanged (measured for both tickets, 18/18 SAME at 0.000e+00).
+**Every measurement, table and reversal below: `docs/design_notes/mesher.md`.**
 - **WHICH NODES MOVE, stated here rather than read off the loop: exactly the nodes strictly
   interior to a block** (`0 < i < ni-1`, `0 < j < nj-1`). **Every node on ANY block boundary is
   FROZEN — outer walls, bound edges, interfaces and cuts alike** — because such a node is written
   by the EDGE, and an edge is SHARED: moving it would move it in two blocks at once, and a node on
   a bound edge would leave the geometry it was attached to by arc length. So one block's interior
   never neighbours another's, which is why the sweep needs no ordering rule between blocks.
-  Smoothing ACROSS a shared edge is #80's ticket 4 (#84), **and that freeze is now a measured
-  cost, not just a scope line** — see the O-grid entry below.
+  Smoothing ACROSS a shared edge is #84 — **and that freeze is now a measured cost**, see the
+  O-grid entry below.
 - **Node identity is untouched**: the sweep writes coordinates and allocates nothing, so a welded
   node stays ONE node. No comparison, therefore no tolerance — `MB_SMOOTH_TOL` is a STOPPING rule
   on how far a node moved, never a rule about two nodes being the same node.
-- **JACOBI, not Gauss-Seidel** — every sweep reads what the previous one left, so the answer is not
-  a function of a traversal nobody declared. Same objection the randomized split rule raises
-  against a sequential stream. The metric coefficients are LAGGED with it, which is what makes each
-  sweep linear and the solve a fixed-point iteration.
-- **Between the FILL and the SPLIT.** Both readers below are id-only today, so the sweeps would
-  give the same answer after them — measured: injection Y (the block moved past the split) is
-  INERT. The ordering is what keeps that from having to be re-checked every time a reader is added.
+- **JACOBI, not Gauss-Seidel**, with the metric coefficients LAGGED — every sweep reads what the
+  previous one left, so the answer is not a function of a traversal nobody declared. Same objection
+  the randomized split rule raises against a sequential stream.
+- **Between the FILL and the SPLIT.** Both readers below are id-only today, so injection Y (the
+  block moved past the split) is INERT. The ordering keeps that from having to be re-checked every
+  time a reader is added.
 - **`MB_SMOOTH_ITERS`, never `BL_SMOOTHING_ITERS`-with-a-prefix and never `SEED_*`.** The BL key is
-  the OTHER path's collision remedy (it relaxes nodes around a frozen boundary-layer front and
-  returns immediately when nothing is frozen); these two share a verb and nothing else.
+  the OTHER path's collision remedy; these two share a verb and nothing else.
 - **A NEGATIVE count is refused BY NAME through both doors** — `Config::validate()` with
   `EXIT_ERR_CONFIG` and `buildMultiBlock` for any other caller — never clamped. The parameter is a
   signed `int` precisely so the refusal is writable: widening -1 to an unsigned count is four
   billion sweeps, a hang rather than a mesh. **A FRACTIONAL value TRUNCATES and is not refused**
   (`MB_SMOOTH_ITERS 1.9` runs one sweep): the `.dat` reader takes every int key through a `double`,
-  and diverging for this one key would put back a per-row parse rule of exactly the kind that let
-  the two parsers disagree. Recorded as a limit, not left silent.
-- **THE NUMBER IS A CAP, AND THE SOLVE HAS THREE ENDINGS.** It stops the sweep its residual — the
-  largest node move, over the STARTING mesh's bounding-box diagonal — falls under
-  `MB_SMOOTH_TOL` (1e-8, relative so a topology in mm and the same one in m take the same number
-  of sweeps; not a config key, because the knob a user has is the cap). A solve still moving at
-  the cap comes back `smoothConverged == false` with a warning naming the key to raise. **And it
-  can DIVERGE**: measured on the shipped C-grid, the residual falls to 2.7e-08 by sweep 3724 and
-  then GROWS about 1.0018 per sweep, reaching 1.3e-03 by sweep 10000 with 88 folded cells — the
-  lagged-coefficient point iteration is only conditionally stable and a grid that equidistributed
-  is where the condition fails. So the solve stops at `MB_SMOOTH_DIVERGE_FACTOR` (10x) its best
-  residual and **returns the BEST ITERATE, not the last**, with `smoothDiverged` and that
-  iterate's own sweep number published. **Never hand back a truncated solve as though it had
-  finished** — that is the whole of #82's third criterion, and the banner, the warning and the
-  `HYBMESH_MB_SMOOTH` line all say which ending it was.
+  and diverging for one key would put back the per-row parse rule that let the two parsers
+  disagree. Recorded as a limit, not left silent.
+- **THE NUMBER IS A CAP, AND THE SOLVE HAS THREE ENDINGS.** It stops when its residual — the
+  largest node move, over the STARTING mesh's bounding-box diagonal — falls under `MB_SMOOTH_TOL`
+  (1e-8; relative so mm and m take the same sweeps, and NOT a config key, because the knob a user
+  has is the cap). Still moving at the cap comes back `smoothConverged == false` with a warning.
+  **And it can DIVERGE**: the lagged-coefficient point iteration is only conditionally stable, and
+  the shipped C-grid turns at sweep 3724. So the solve stops at `MB_SMOOTH_DIVERGE_FACTOR` (10x)
+  its best residual and **returns the BEST ITERATE, not the last**, publishing `smoothDiverged` and
+  that iterate's sweep. **Never hand back a truncated solve as though it had finished.**
 - **A CAP IS TWO SITUATIONS, AND THE ADVICE MUST TELL THEM APART.** `smoothBestSweep` /
-  `smoothBestResidual` publish the smallest residual the solve reached and when — recorded
-  BEFORE either stop is tested, so a converged solve's best is the sweep it returned. A capped
-  run whose residual is still FALLING has more to give; one already ABOVE its best has TURNED,
-  and telling that user to raise the cap points them at a worse mesh. Both wear
-  `converged == false && diverged == false`, so the flags cannot distinguish them. **And in
-  neither case is "raise it until it converges" the advice**: a converged plain Winslow solve is
-  each block's harmonic map and holds no declared first-cell height at all (3133% off on the
-  shipped C-grid, 1382% on the O-grid), so at this kernel "not converged" is a statement of fact
-  and not a to-do. A small cap is the useful setting until #83 lands. **The mesh returned at a
-  cap is still the LAST iterate, never the best** — N sweeps has to mean N sweeps outside the
-  diverged path — so the difference is SAID, not silently repaired.
+  `smoothBestResidual` publish the smallest residual reached and when, recorded BEFORE either stop
+  is tested (so a converged solve's best is the sweep it returned). Still FALLING has more to give;
+  already ABOVE its best has TURNED, and telling that user to raise the cap points at a worse mesh
+  — both wear `converged == false && diverged == false`, so the flags cannot distinguish them.
+  **And "raise it until it converges" is never the advice**: a converged plain Winslow solve is
+  each block's harmonic map and holds no declared first-cell height (3133% off on the C-grid, 1382%
+  on the O-grid). A small cap is the useful setting until #83. **The mesh at a cap is still the
+  LAST iterate** — N sweeps means N sweeps outside the diverged path — so the difference is SAID,
+  not silently repaired.
+- **EACH MACHINE-READABLE LINE KEEPS ONE MEANING, and the prefix is matched WITH its trailing
+  space.** `HYBMESH_MB_QUALITY` always describes the mesh AS EXPORTED; the before half is
+  `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's QUALITY
+  REPORT is byte for byte what it was — not its whole output, which gains one unconditional
+  `Smoothing Sweeps` provenance row on purpose. The trailing space is what keeps the suffixed line
+  from being read as the real one, in the ONE parser (`test_multiblock_quality_surface.qlines`)
+  every gate imports rather than in four near-copies. `HYBMESH_MB_SMOOTH` is the SECOND such line
+  (#82) and describes the SOLVE, not the mesh: only when a sweep ran, carrying
+  `sweeps cap converged diverged residual best_sweep best_residual tol`, no suffix because it has
+  no before/after half. Its parser is `test_multiblock_smooth_surface.smooth_line`.
 - **THE REPORT IS BEFORE AND AFTER.** `MbResult::preSmoothNodes` publishes the mesh as it stood
-  before the first sweep, so the two reports are the same cells and blocks over two coordinate
-  sets and their difference is the smoother alone. On the shipped C-grid, ONE sweep: max
-  non-orthogonality **32.04° -> 31.44°** (BETTER — the metric #80 exists for), mean **4.56° ->
-  4.78°**, wall first cell **0.44% -> 11.65%**. At five sweeps max reaches **29.84°**.
-- **EACH MACHINE-READABLE LINE KEEPS ONE MEANING, and the prefix is matched WITH its
-  trailing space.** `HYBMESH_MB_QUALITY` always describes the mesh AS EXPORTED; the before half
-  is `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's
-  QUALITY REPORT is byte for byte what it was — not its whole output, which gains one
-  unconditional `Smoothing Sweeps` provenance row on purpose. The trailing space is what keeps
-  the suffixed line from being read as the real one, and it is matched in the ONE parser
-  (`test_multiblock_quality_surface.qlines`) every gate imports rather than in four near-copies.
-  `HYBMESH_MB_SMOOTH` is the SECOND such line (#82) and describes the SOLVE, not the mesh: it
-  appears only when a sweep ran, carries
-  `sweeps cap converged diverged residual best_sweep best_residual tol`, and wears
-  no suffix because it has no before/after half — a run either solved or did not. Its parser is
-  `test_multiblock_smooth_surface.smooth_line`, and it lives beside that gate rather than beside
-  `qlines` because a run can report a mesh without reporting a solve.
+  before the first sweep, so the two reports are the same cells and blocks over two coordinate sets
+  and their difference is the smoother alone. Shipped C-grid, ONE sweep: max non-orthogonality
+  **32.04° -> 31.44°** (BETTER — the metric #80 exists for), mean **4.56° -> 4.78°**, wall first
+  cell **0.44% -> 11.65%**; at five sweeps max reaches **29.84°**.
 - **THE WALL FIRST CELL IS STILL WORSE, and that is #83's, not a defect to paper over.** Plain
-  Winslow relaxes toward each block's harmonic map, which has no memory of the declared first-cell
-  height; the control functions that hold it are #80's ticket 3. Record the miss as a number.
-- **THE LAPLACIAN #81 SHIPPED IS DELETED, not kept behind a selector.** Nothing read it, it loses
-  on every column of both shipped cases at every cap either ticket measured (C-grid at 1 sweep:
-  max 89.40° vs 31.44°, wall 36.61% vs 11.65%; at 5 sweeps it folds 4 cells where Winslow folds
-  0), and a kernel-selection enum over one surviving kernel is the abstraction this repo's
-  no-inert-alternatives rule exists to prevent. It survives ONLY inside
-  `tests/cpp/test_multiblock.cpp` as `laplacianByHand`, so checks that claim the two kernels differ
-  have both sides written down.
+  Winslow has no memory of the declared height. Record the miss as a number.
+- **THE LAPLACIAN #81 SHIPPED IS DELETED, not kept behind a selector.** Nothing read it and it
+  loses on every column of both shipped cases at every cap (C-grid at 1 sweep: max 89.40° vs
+  31.44°, wall 36.61% vs 11.65%; at 5 it folds 4 cells where Winslow folds 0). A kernel-selection
+  enum over one surviving kernel is the abstraction the no-inert-alternatives rule exists to
+  prevent. It survives ONLY as `laplacianByHand` in `tests/cpp/test_multiblock.cpp`, so checks
+  claiming the two kernels differ have both sides written down.
 - **#80's O-GRID NEGATIVE CONTROL IS NOT MET BY THIS TICKET, and the reason is the freeze.** A case
-  already at 2.250° max comes out at **3.312°** after one sweep. The run's own wall table localises
-  it without a second instrument: the first cell is the declared height EXACTLY where a frozen
-  radial interface pins it and 9.13% off in the middle of each block, so what the smoother adds is
-  a KINK AT THE INTERFACE. Unfreezing those is #84. Recorded as unmet and owned, not asserted away.
+  already at 2.250° comes out at **3.312°**. The run's own wall table localises it: the first cell
+  is the declared height EXACTLY where a frozen radial interface pins it and 9.13% off mid-block,
+  so what the smoother adds is a KINK AT THE INTERFACE. Unfreezing those is #84. Recorded as unmet
+  and owned, not asserted away.
 - **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
-  9. No new code. **But it is no longer reachable on the shipped files** — the Winslow kernel folds
-  nothing the Laplacian folded (4 at 5 sweeps, 26 at 20) and REPAIRS folds the algebraic fill makes
-  (13 of 13 on a re-entrant block). Reaching one now needs a wall first cell of 0.0005 on the
-  C-grid fixture.
-- Gated by `tests/cpp/test_multiblock.cpp` 40-50 (7 injections from #81 plus 13 more from #82, all
-  dated in that file — twelve bit, and a thirteenth is recorded INERT because the two off-diagonals
-  of the cross stencil enter with the same sign, which no gate can catch and nothing should try
-  to), 
-  `tests/test_multiblock_smooth_surface.py` (9 groups on the SHIPPED C-grid AND O-grid) and the
-  `mb_cgrid_smooth` golden case. The divergence path and the rollback are gated by that surface
-  gate ALONE: 26 synthetic fixtures were tried in the C++ test and every one converged.
+  9, no new code. **But it is no longer reachable on the shipped files** — Winslow folds nothing
+  the Laplacian folded (4 at 5 sweeps, 26 at 20) and REPAIRS folds the algebraic fill makes (13 of
+  13 on a re-entrant block). Reaching one needs a wall first cell of 0.0005 on the C-grid fixture.
+- Gated by `tests/cpp/test_multiblock.cpp` 40-50 (7 injections from #81 plus 13 from #82, dated in
+  that file — twelve bit, and a thirteenth is INERT because the cross stencil's two off-diagonals
+  enter with the same sign, which no gate can catch), `tests/test_multiblock_smooth_surface.py`
+  (9 groups on the SHIPPED C-grid AND O-grid) and the `mb_cgrid_smooth` golden case. **The
+  divergence path and the rollback are gated by that surface gate ALONE**: 26 synthetic fixtures
+  were tried in the C++ test and every one converged.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:
