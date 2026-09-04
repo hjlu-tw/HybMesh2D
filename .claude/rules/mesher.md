@@ -134,16 +134,20 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
   face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
   CHAINING, since a per-side emitter with one direction wrong still emits the right SET of edges.
-- The spacing schema accepts `uniform` / `geometric` / `tanh` (`generateGeometric` at ratio 1 IS
-  uniform); #55 owns resolving wall spacing from `BL_INITIAL_THICKNESS`. The decision layer gains
+- The spacing schema accepts `uniform` / `geometric` / `tanh`; **`tanh` is the DEFAULT** and #55
+  resolves wall spacing from `BL_INITIAL_THICKNESS`. The decision layer gains
   `tools/PreProcessor/include` **PRIVATE** on its include path, so a test linking `hybmesh_pure`
   does not inherit it.
-- **SURVIVING is not the same as READ.** #49 declares four BL parameters as surviving into this mode
-  and v0 reads **none** of them. `hybmesh::blSurvivorsUnread` names them in their **own** sentence
+- **SURVIVING is not the same as READ.** #49 declares four BL parameters as surviving into this
+  mode. #55 made **two** of them real inputs (`HYBMESH_MULTIBLOCK_BL_READ`:
+  `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`), which must therefore be SILENT.
+  `hybmesh::blSurvivorsUnread` names the other two in their **own** sentence
   (`does not read 'X' yet`), never the inert one (`never reads 'X'`) — an inert value should be
   deleted and one of these should be kept, so the two lists must stay **disjoint** (pinned in
-  `test_mesh_mode.cpp` 6b, `test_mesh_mode_surface.py` 4). Delete the function when the clustering
-  law lands.
+  `test_mesh_mode.cpp` 6b, `test_mesh_mode_surface.py` 4). `BL_LAYERS` stays unread because a count
+  class with no seed is refused BY NAME rather than defaulted, `BL_USE_ANALYTIC_GEOM` because a
+  bound edge follows the resampled polyline. A **second** macro rather than a shorter survivor list:
+  the GUI shows a row when a parameter SURVIVES. Delete both when the list empties.
 - Known asymmetry: `inertParamsSet` answers only for multi-block, so `MESH_TOPOLOGY_FILE`,
   `MB_SPLIT_QUADS`, `MB_SPLIT_RULE` and `MB_SPLIT_SEED` set under `MESH_MODE 0` warn about nothing
   (the GUI hides all four rows, so only a hand-written `.dat` reaches it). #54 widened this from two
@@ -155,7 +159,8 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   `edges.back()` idiom at all four call sites: a BC and its source segment are one fact.
 - Gated by `tests/cpp/test_multiblock.cpp`, `tests/test_multiblock_surface.py` and three golden
   cases (`mb_square`, `mb_square_quads`, `mb_graded`); `golden_mesh.py` IMPORTS the topology writer
-  from the surface test rather than copying it. (#52 added `mb_bound` / `mb_cavity`, #53 `mb_hgrid`.)
+  from the surface test rather than copying it. (#52 added `mb_bound` / `mb_cavity`, #53 `mb_hgrid`,
+  #55 `mb_ogrid`.)
 
 **The quality report is the RULER, and it is built before the thing it measures**
 (`include/MbQuality.hpp` + `src/MbQuality.cpp` in `hybmesh_pure`; banner and exit code in
@@ -188,7 +193,12 @@ acceptance gate is a grep.
   DERIVED from the same law the fill reproduces and the blend is exact on the boundary, so **a
   rectangle's 0.00% is a tautology, not evidence**; what it measures is interior drift from what the
   two ends declare (trapezoid 7.38%, folded dart 25.41%). When the independent target arrives only
-  the PUBLISHER changes.
+  the PUBLISHER changes. **SUPERSEDED by #55, exactly as predicted**: a perpendicular edge that
+  DECLARES a wall height publishes that number, so the figure now compares the mesh against the
+  document. `MbQuality.*` and every reader are untouched. An edge that declares nothing still
+  publishes the produced interval, so the sentence above still holds for such a topology — which is
+  also the negative control in `test_multiblock.cpp` 34.
+  Why: `docs/design_notes/mesher.md`, "`MbWallSpec` NOW PUBLISHES THE DECLARATION".
 - **"We did not measure" must not read as "it came out perfect", for ALL THREE figures.**
   `maxNonOrthoDeg`, `meanNonOrthoDeg` and every `worstRelError` (per wall AND headline) are NEGATIVE
   when unmeasurable, never 0.0, and the banner prints `not measured`. The rule holds at the ROW
@@ -312,11 +322,57 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   measures CONFORMITY on the exported files — interior edges shared by exactly two cells, the
   boundary set equal to the `.bnd`, one connected component) and the `mb_hgrid` golden case on the
   shipped `examples/topology/hgrid_blocks.json`.
-- **THE SOLVER ACCEPTANCE RUN IS OUTSTANDING and the gate says so**: no four-block grid has been
-  through `getPGrid` or `unicones` (this checkout has no solver tree).
+- **THE SOLVER ACCEPTANCE RUN LANDED with #55**, and the claim that blocked it — "this checkout has
+  no solver tree" — was FALSE, not merely stale. The four-block O-grid went through `getPGrid`
+  (exit 0) and `unicones` (exit 0, 100 iterations) on 2026-09-04; quoted in
+  `test_multiblock_ogrid_surface.py`.
+  Why: `docs/design_notes/mesher.md`, "SUPERSEDED 2026-09-04 by #55, and the PREMISE was wrong".
 - **What welding cannot express, refused rather than approximated**: nothing welds along a BOUND
   edge, nothing exceeds four blocks, and a block welded to ITSELF is inexpressible — right for a
-  transfinite fill, but an O-grid seam cannot be one edge.
+  transfinite fill, but an O-grid seam cannot be one edge. (#55's O-grid is four blocks in a RING
+  for that reason; its wrap-around class is `test_multiblock.cpp` 33.)
+
+**A circular O-GRID: curved arcs, a ring that CLOSES, and a wall spacing SOLVED for** (still the
+one pure entry point; the law is `tools/PreProcessor/include/Spacing.hpp`; #55). **Full rationale,
+the measurements that forced the blending change, the acceptance run and the blind spots:
+`docs/design_notes/mesher.md`.**
+- **`tanh` is the DEFAULT distribution law, and the reason is structural**: a count can be decided
+  FOR an edge by propagation, so the law must absorb one it did not choose. Tanh at delta 0 is the
+  SAME EXPRESSION as uniform, which is what let the default change at all — pinned as BIT equality
+  (`test_multiblock.cpp` 30), not as "roughly uniform".
+- **Wall spacing is a LENGTH, solved for by bisection, never approximated.** `wall_ends`
+  (`start`/`end`/`both`) takes the run's `BL_INITIAL_THICKNESS`; `ds_start`/`ds_end` give a number
+  and beat it; `geometric` with no `growth` takes `BL_GROWTH_RATE`. **The existing BL names, never
+  aliases** — the physical quantity is identical. `Spacing::generateTanhStart` /
+  `solveTanhStartDelta` are the ONE-SIDED law, new because the symmetric one spends the far-field
+  end's points at the wall spacing. Accuracy is 1e-12 relative on a 1e-4 first cell and the bound is
+  DERIVED (eps of the EDGE length ÷ the cell's relative size), not picked.
+- **Refused BY NAME, never half-honoured**: two DIFFERENT heights at the two ends (equal ones are
+  accepted, so the refusal is about the difference); a wall spacing on `uniform`/`geometric`; a raw
+  `delta` beside a spacing; a non-positive height; an unknown `wall_ends`; a `growth` on a
+  non-geometric edge; a wall end with no height anywhere, naming `BL_INITIAL_THICKNESS`. A request
+  the edge could not honour (coarser than its count allows) is a WARNING measured on the produced
+  nodes, not re-derived from the law.
+- **`coons` blends by the boundary's own NORMALIZED ARC LENGTH, not by the logical index**, and this
+  is load bearing rather than a refinement: the index blend put an O-grid's first interior ring
+  **6927% above** the requested wall height (806% even at twelve sectors), the arc-length blend
+  reproduces a polar annulus EXACTLY. Facing curves are averaged; a degenerate side falls back to the
+  index; both ends pinned to 0 and 1. **Behaviour-preserving on the existing set, measured against a
+  HEAD binary**: worst node movement 6.7e-16. `golden_mesh.py` still showed 3 DIFFs — the
+  node-SET-membership artefact — so the baseline was re-captured, 17/17 SAME.
+- **The O-grid is FOUR BLOCKS IN A RING** (`examples/topology/ogrid_circle.json`,
+  `config/multiblock_ogrid.dat`): i runs outward, j anticlockwise, so the four radials are ONE
+  equivalence class that WRAPS — one declared count, three propagated, the last block welded back to
+  the first by node identity. Measured on the shipped files: 0 inverted, non-orthogonality max
+  2.25°, wall first cell **0.08%** off. That residue is the stored polyline's FACETING, not the law
+  — the same case on 10× finer circles measures 0.0007%, and the figure is identical at
+  `BL_INITIAL_THICKNESS` 1e-3, 1e-5 and 1e-7. Re-seeding the ring (25 / 49 / 97) does not move it.
+- **The shipped circles are checked against their ONE generator** (`write_circle` in the surface
+  gate), never trusted: a hand-edited `.dat` whose `.meta` still describes the old point set is a
+  mesh with corners on the wrong segments and no error at all.
+- Gated by `tests/cpp/test_multiblock.cpp` 30-35, `tests/test_multiblock_ogrid_surface.py` (8 groups
+  on the SHIPPED files, reusing #53's conformity measure) and the `mb_ogrid` golden case. The
+  dated solver acceptance run is in that file's docstring.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both measured on
 the old and new trees:
@@ -456,8 +512,15 @@ one list. #68 moved the first; #69 moved the rest.
 - **Non-orthogonality says nothing about the shape of the SPLIT TRIANGLES** — it is measured on the
   structured grid cells only.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
-- **No four-block grid has been through `getPGrid` or `unicones`** — this checkout has no solver
-  tree, and the multi-block banner says so on every run.
+- **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
+  "follows the circle" is measured against that polyline's vertices and #55's 0.08% wall-height
+  residue is its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads.
+- **A curved INTERFACE is still undeclarable** (a `binding` is wall-only), so #55's O-grid is a
+  single ring rather than a boundary-layer ring inside a far-field one, and no two-sided stretching
+  function with DIFFERENT heights at each end exists.
+- **The arc-length blending's magnitude is measured OUT OF TREE.** No gate re-measures the 6927%
+  the logical-index blend cost — only its consequence, through `test_multiblock.cpp` 33/34 and the
+  surface gate's quality line.
 - **The end-to-end re-resampling check uses a straight-sided geometry**, where an arc-length
   position is EXACT under resampling. On a *curved* segment an attached corner moves by a chord
   sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in

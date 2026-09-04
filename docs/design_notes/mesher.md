@@ -753,6 +753,13 @@ node counts partition into equivalence classes the user seeds a few of.
   the Python gate pins instead is the SHAPE the converter reads, which is not a
   substitute for the converter accepting the file. #26 is why that distinction is
   written down rather than softened.
+  **SUPERSEDED 2026-09-04 by #55, and the PREMISE was wrong, not just the status.**
+  This checkout does carry a solver tree — `solver/preprocess/getPGrid/work/getPGrid`
+  and `solver/execute/unicones.eqn6.mac` are both present, and #55's four-block O-grid
+  went through both (exit 0 / exit 0, 100 iterations). Kept rather than deleted, as a
+  specimen: the claim was an assertion about the working tree that nothing in it ever
+  checked, and it survived a review round and a rule-file compression in that form. The
+  work it blocked was one `ls`.
 - **Other blind spots, named**: nothing anywhere welds along a BOUND edge (one that
   follows a geometry), in either gate; nothing has more than four blocks; and a
   block welded to ITSELF is still not expressible — `parseBlocks` refuses an edge
@@ -799,6 +806,162 @@ node counts partition into equivalence classes the user seeds a few of.
   declined a related dedup on grounds of its own. And three id-to-thing linear scans
   coexist (`edgeIndexById`, `cornerById`, the string-keyed `uses`); they answer
   different questions and the topologies are small, so this is noted, not merged.
+
+**A circular O-GRID: curved arcs, a ring that closes, and wall clustering SOLVED for**
+(`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;
+`tools/PreProcessor/include/Spacing.hpp` for the law; issue #55). The first mesh from this
+path a CFD engineer would want, and the first multi-block grid of more than one block to
+reach the solver.
+
+- **ONE of the ticket's three capabilities had ALREADY SHIPPED, and saying so was the
+  first thing this work did.** #55 lists curved projection, the wrap-around class and the
+  distribution law as landing together. Curved projection for a WALL edge is #52's
+  `binding` — a bound edge follows its segment's polyline and does not cut the chord —
+  and it had been gated since 2026-08-28. What #55 actually added there is a geometry
+  worth binding to: two circles, shipped with their sidecars. The remaining gap is a
+  curved INTERFACE, which #53 refused by name and which this ticket did NOT need: a
+  single-ring O-grid has no interior line that should be curved. It stays refused, and
+  the refusal still names the work it waits for.
+- **THE DEFAULT DISTRIBUTION LAW IS `tanh`, and the reason is structural rather than
+  aesthetic.** An edge's node count can be decided FOR it by propagation from elsewhere
+  in the topology, so the law must absorb a count it did not choose. `tanh` is written in
+  the normalized parameter and takes the count as an argument, so re-seeding a class
+  re-solves the clustering; a "first N layers geometric, then uniform" formulation
+  changes MEANING when N is externally determined, which is exactly what propagation does
+  to it. **The default could be changed at all because tanh at delta 0 evaluates the same
+  expression as the uniform law** (`L * i / (n - 1)`), which C++ check 30 asserts as BIT
+  equality against an explicitly-`uniform` document rather than as "roughly uniform".
+- **The wall spacing is asked for as a LENGTH and SOLVED for, never approximated.**
+  `wall_ends` names an end of an edge as a wall end and takes the run's
+  `BL_INITIAL_THICKNESS`; `ds_start` / `ds_end` give a number and beat it. The existing
+  boundary-layer parameter names rather than aliases, because the physical quantity is
+  identical and two names for one quantity is worse than one name that reads oddly in a
+  mode with no boundary-layer stage (#48's own decision, user story 13). `geometric` with
+  no `growth` takes `BL_GROWTH_RATE` the same way.
+  - **`Spacing::generateTanhStart` / `solveTanhStartDelta` are NEW; the symmetric pair
+    was the wrong shape.** `generateTanh` clusters BOTH ends equally, and an O-grid
+    radial runs from a viscous wall to the far field — spending the far-field end's
+    points at the wall spacing buys nothing. The one-sided law is
+    `u = 1 + tanh(d(xi - 1))/tanh(d)`, monotone in xi so the map cannot fold, and its
+    delta is found by the same bisection `solveTanhDelta` already used, for the reason
+    that function records: a boundary-layer distribution is specified BY its first cell
+    size.
+  - **HOW EXACT, measured rather than asserted: 1.000e-12 relative on a 1e-4 first cell,
+    and the bound is DERIVED.** A node is placed as `p0 + (p1 - p0) * f` along an edge of
+    length 1, so its rounding is ~eps of the EDGE, not of the first cell; a cell of
+    relative size 1e-4 therefore lands within ~eps/1e-4 = 1e-12. C++ check 31 asserts
+    1e-9, three orders looser so a different libm cannot flake it.
+  - **What is REFUSED rather than half-honoured**, each by name: two DIFFERENT heights at
+    the two ends (the two-sided stretching function this release does not have — refused
+    rather than silently honouring one of the two numbers with the symmetric law); a wall
+    spacing on `uniform` or `geometric`, which cannot solve for one; a raw `delta`
+    beside a spacing, which is two answers to one question; a non-positive height; a
+    `wall_ends` value that is not start/end/both; a `growth` on a non-geometric edge; and
+    a wall end with no height anywhere, which names `BL_INITIAL_THICKNESS` as the config
+    key that would supply it. Equal heights at BOTH ends are accepted, which is what
+    makes the first refusal about the DIFFERENCE and not about declaring two ends.
+  - **A request the edge could not honour is SAID.** The solver returns "uniform" when
+    the requested cell is at or coarser than what the count already gives — right
+    arithmetic, wrong silence — so the seam compares what the edge actually PRODUCED
+    against what it asked for and warns. Measured against the produced nodes rather than
+    re-derived from the law, so a future law that misses its target is caught by the same
+    line.
+- **THE BLENDING COORDINATE HAD TO CHANGE, and nothing asked for it — the acceptance
+  criterion did.** The classic Coons map blends with the LOGICAL index `i/(ni-1)`. On a
+  rectangle that IS the arc-length fraction and the map is exact either way, which is why
+  the straight-sided release never noticed. On an annulus sector it is not: the
+  south-to-north term walks from the wall to the far field linearly in the index while
+  the radial edges cluster their nodes at the wall, so the first interior column sits
+  where a UNIFORM grid would put it.
+  - **Measured, out of tree, before a line was written** (90-degree sector, 41 radial
+    nodes, wall spacing 1e-3, r = 0.5 to 10): achieved first cell **7.03e-2 against a
+    requested 1.0e-3 — 6927% off**. More blocks do not fix it: 3168% at six sectors,
+    1800% at eight, **806% at twelve**. So "declare more blocks" was ruled out by
+    measurement rather than by taste.
+  - **With the boundary's own normalized arc length as the blending coordinate the same
+    sector reproduces the polar grid EXACTLY** (measured 0.000%), and the algebra says
+    why: the two u-terms sum to `r0 + u*(R - r0)`, which is the radius the clustered
+    radial edge has already put there, so the (1-v) and v terms cancel against the corner
+    correction and the answer is `r_i * dir_j`.
+  - **The two facing curves are AVERAGED**, the standard choice and the only one that
+    treats the block symmetrically when its opposite sides carry different laws; a
+    degenerate side falls back to the logical index rather than dividing by zero; and both
+    ends are pinned to exactly 0 and 1 so a block corner blends as a corner.
+  - **What it cost the existing set: nothing, measured.** Five multi-block cases were run
+    against a binary built from HEAD by `git archive`, and the worst node MOVEMENT was
+    **6.7e-16** (`mb_hgrid`), 4.5e-16 (`mb_graded`), 1.1e-16 (`mb_bound`), 0.0 on
+    `mb_square` and `mb_cavity` — last-bit rounding, not behaviour. `golden_mesh.py`
+    nevertheless reported three DIFFs, which is the node-SET-membership artefact this
+    note already records under #53: two nearly-equal coordinates swapped rank in the
+    lexicographic sort and every cell's canonical rank moved with them. The baseline was
+    re-captured, and 17/17 are SAME against it.
+- **`MbWallSpec` NOW PUBLISHES THE DECLARATION, which is the change #51 predicted.** That
+  note said the request was DERIVED from the same law the fill reproduces, so a
+  rectangle's 0.00% was a tautology, and that when an independent target arrived **only
+  the PUBLISHER would change**. It did: the request is the perpendicular edge's own
+  `ds_start`/`ds_end` at the end that touches the wall, read through `f.rev[]` because the
+  block traverses the edge in its own frame. `MbQuality.hpp`, `MbQuality.cpp` and every
+  reader are untouched. An edge that declares nothing still publishes the produced
+  interval, so a topology that never asks for a height keeps the figure #51 defined —
+  which is also C++ check 34's negative control.
+- **The shipped case, and what it measures.** `examples/topology/ogrid_circle.json` +
+  `config/multiblock_ogrid.dat`: four blocks, each 49 x 25, an r = 0.5 body inside an
+  r = 10 far field. Each block's i runs OUTWARD (south and north are two consecutive
+  radials) and its j runs anticlockwise (west the body arc, east the far-field arc) —
+  the frame in which the corner ring winds counter-clockwise, which the orientation rule
+  requires. **The four radials are ONE equivalence class that WRAPS**: q3's north is the
+  edge q0 declares as its south, so one `count` is declared and three are propagated, and
+  the last block welds back to the first by node identity with no tolerance. Measured on
+  the shipped files: **0 inverted cells**, max non-orthogonality **2.25 deg**, mean 1.875,
+  wall first cell **0.08% off** what was asked for.
+  - **That 0.08% is the stored polyline's FACETING, not the law**, and the negative
+    control is the measurement: the same case on a 10x finer pair of circles measures
+    **0.0007%** (and max non-orthogonality falls to 1.881 deg). It is also scale-free —
+    0.0812% at `BL_INITIAL_THICKNESS` 1e-3, 1e-5 AND 1e-7 alike — which is what an
+    angular artefact looks like and a law error would not.
+  - **Re-seeding the ring does not move the spacing**: radial count 25 / 49 / 97 all give
+    0 inverted and the same 0.0812%. That is acceptance criterion 9 and the property the
+    tanh default exists to protect, measured on the one class where three of the four
+    edges never chose their own count.
+- **THE SOLVER ACCEPTANCE RUN, 2026-09-04 — and it CORRECTS a fact this note recorded.**
+  #53's entry says the four-block acceptance run is outstanding *"because this checkout
+  carries no solver tree"*. It carries one: `solver/preprocess/getPGrid/work/getPGrid`
+  and `solver/execute/unicones.eqn6.mac` are both present and both ran. getPGrid exit 0
+  (4704 vertices, 9216 elements, 192 boundary flags); unicones exit 0, last printed
+  `Global Iteration count 90` at `print_convg_per_niter 10` with `num_half_iter 100`,
+  i.e. 100 iterations by the arithmetic `services/case_run_note.iteration_span` uses.
+  Quoted in full in `tools/PreProcessor/tests/test_multiblock_ogrid_surface.py`.
+  - **One finding from that run, recorded rather than fixed here**: getPGrid does not
+    know the patch name `farfield` and defaults those eight patches to a no-slip wall,
+    warning each time. That is getPGrid's own token list — the GUI maps the name in
+    `services/bnd_io._NAME_TO_FLAG` and writes the flag into the `.bc.def`, which is what
+    the acceptance run did by hand — so a GUI-driven run never sees it. Not chased,
+    because the mesher's job ends at the patch NAME and the flag is the solver panel's.
+- **BL_INITIAL_THICKNESS and BL_GROWTH_RATE leave `blSurvivorsUnread`.** #49 declared four
+  survivors and v0 read none; two are now real inputs, so they must be SILENT — warning
+  that a value does nothing while the mesh is being built from it is the one wrong answer
+  that pair of lists can give. The other two stay unread and stay named: **BL_LAYERS**
+  because node counts here are declared and propagated and a class with no seed is
+  refused BY NAME (defaulting one from a BL parameter would undo that deliberately), and
+  **BL_USE_ANALYTIC_GEOM** because a bound edge follows the resampled polyline rather than
+  an analytic curve. A second macro `HYBMESH_MULTIBLOCK_BL_READ` carries the split rather
+  than shortening the survivor list, because the two lists answer different questions: the
+  GUI shows a row when a parameter SURVIVES, and the run stays quiet when it is READ.
+- **The gates.** `tests/cpp/test_multiblock.cpp` 30-35 (the default law as bit equality,
+  the solved height at three counts, the global and its per-edge override, the wrap-around
+  ring, the published request with its negative control, and seven refusals);
+  `tools/PreProcessor/tests/test_multiblock_ogrid_surface.py` (8 groups on the SHIPPED
+  files, including the conformity measure #53's gate defined); and the `mb_ogrid` golden
+  case. The surface gate also checks the two shipped geometries against their ONE
+  generator, `write_circle`, rather than trusting them — a hand-edited `.dat` whose
+  `.meta` still describes the old point set is a mesh with corners on the wrong segments
+  and no error at all.
+- **Blind spots, named.** Nothing projects onto an ANALYTIC curve, so "follows the circle"
+  is measured against the polyline's own vertices and the 0.08% residue is that faceting.
+  A curved INTERFACE is still undeclarable, so the shipped O-grid is a single ring rather
+  than a boundary-layer ring inside a far-field ring. The two-sided stretching function
+  with different heights at each end does not exist. And the arc-length blending's
+  magnitude was measured out of tree: no gate re-measures the 6927%, only its consequence.
 
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:

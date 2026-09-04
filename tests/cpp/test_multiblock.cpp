@@ -14,7 +14,9 @@
 //   * Nothing here exports anything. That the exporters accept these cells is
 //     covered by the golden comparator's multi-block case family, and that the
 //     solver runs on the result is the dated acceptance run recorded in
-//     tools/PreProcessor/tests/test_multiblock_surface.py.
+//     tools/PreProcessor/tests/test_multiblock_surface.py (one block) and
+//     tools/PreProcessor/tests/test_multiblock_ogrid_surface.py (four, the first
+//     multi-block grid to reach getPGrid or unicones).
 //   * The refusal checks assert that the message NAMES the offending id and
 //     that nothing was produced. They do not pin the surrounding prose, which
 //     is meant to be edited.
@@ -22,7 +24,20 @@
 //     checks 17-23. What is still NOT exercised anywhere: a shared edge that is
 //     also BOUND to a geometry, and a block welded to itself (which `parseBlocks`
 //     refuses, correctly for a transfinite fill over four sides, so an O-grid seam
-//     cannot be declared as one edge).
+//     cannot be declared as one edge). The wrap-around class #53 could not reach
+//     is check 33.
+//   * Wall clustering and the O-grid are checks 30-35 (#55). Three limits they do
+//     NOT cover, each refused by name rather than approximated: a two-sided
+//     stretching function with DIFFERENT heights at the two ends; a curved
+//     INTERFACE (a binding is still wall-only, so a block-to-block seam is a
+//     straight chord, which is why the shipped O-grid is a single ring); and
+//     projection onto an analytic curve rather than the stored polyline, which is
+//     why BL_USE_ANALYTIC_GEOM is still a declared survivor that nothing reads.
+//   * The ARC-LENGTH BLENDING that makes the fill reproduce a curved block is
+//     measured HERE only through its consequence (check 33's node count, check
+//     34's request/achieved pair). Its magnitude — 6927% wall-height error under
+//     the logical-index blend, 0 under this one — was measured out of tree and is
+//     recorded in docs/design_notes/mesher.md, not re-measured by any gate.
 //   * The diagonal split RULES are checks 24-28 and the id-uniqueness refusals
 //     29 (#54). What they do NOT check is
 //     the QUALITY of the randomized rule's bit stream: nothing here asks whether
