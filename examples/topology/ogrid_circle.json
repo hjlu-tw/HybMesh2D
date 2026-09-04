@@ -1,0 +1,92 @@
+// A four-block O-GRID around a circular body (issue #55) — the first mesh from
+// this path a CFD engineer would actually want.
+//
+//   ./run.sh -conf config/multiblock_ogrid.dat
+//
+// THREE THINGS ARE DECLARED HERE THAT NO EARLIER EXAMPLE SAYS.
+//
+// 1. CURVED PROJECTION. Every arc edge below binds to a source segment, so it
+//    FOLLOWS that circle's polyline instead of cutting the chord between its two
+//    corners. On a quarter circle the chord sits 0.293 r off the body at its
+//    midpoint, so this is not a refinement — without it the "circle" is a square.
+//
+// 2. A RING THAT WRAPS AROUND AND CLOSES. The four radial edges are one
+//    equivalence class: block 'q0' forces r0 and r1 to carry the same node count
+//    (they are its south and north), q1 forces r1 and r2, q2 forces r2 and r3,
+//    and q3 closes the ring by forcing r3 and r0. Only ONE of the four declares a
+//    count; the other three are propagated. The last block welds back to the
+//    first with node identity — r0 is one declared edge, named by q3 as its north
+//    and by q0 as its south — so there is no tolerance anywhere in the seam.
+//
+// 3. WALL CLUSTERING. Each radial edge declares its 'start' (the corner on the
+//    body) a wall end, so its first cell height is the run's BL_INITIAL_THICKNESS
+//    and the tanh law SOLVES for the clustering that delivers it. Nothing here
+//    restates that number four times: the config owns it, and an edge that wanted
+//    a different one would say "ds_start": <height> instead.
+//
+// Each block's i runs OUTWARD (its south and north are the two radials) and its j
+// runs ANTICLOCKWISE (its west is the body arc, its east the far-field arc). That
+// is the frame in which the corner ring 'body -> outward -> anticlockwise -> in'
+// winds counter-clockwise, which is what the block orientation rule requires.
+{
+  "format_version": 1,
+
+  // Every corner is a JOINT — where one quarter segment ends and the next begins
+  // — so it is declared once, as the t = 0 of the segment that starts there, and
+  // both of the edges meeting on it may name it.
+  "corners": [
+    {"id": "b0", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 0, "t": 0.0},
+    {"id": "b1", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 1, "t": 0.0},
+    {"id": "b2", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 2, "t": 0.0},
+    {"id": "b3", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 3, "t": 0.0},
+    {"id": "f0", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 0, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f2", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "f3", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 3, "t": 0.0}
+  ],
+
+  "edges": [
+    // The four radials. Interior lines, each shared by the two blocks either side
+    // of it, so they are declared ONCE and carry no boundary condition. Only 'r0'
+    // seeds the count; r1, r2 and r3 propagate around the ring.
+    {"id": "r0", "corners": ["b0", "f0"], "kind": "interface", "count": 49,
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r1", "corners": ["b1", "f1"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r2", "corners": ["b2", "f2"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r3", "corners": ["b3", "f3"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+
+    // The body, one block side per source segment. These carry the wall.
+    {"id": "w0", "corners": ["b0", "b1"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 0}},
+    {"id": "w1", "corners": ["b1", "b2"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 1}},
+    {"id": "w2", "corners": ["b2", "b3"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 2}},
+    {"id": "w3", "corners": ["b3", "b0"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 3}},
+
+    // The far field. Bound too, so its condition comes from its own geometry's
+    // sidecar rather than from the config default — the body is 'wall' and this
+    // is 'farfield', which is the whole point of binding both.
+    {"id": "o0", "corners": ["f0", "f1"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 0}},
+    {"id": "o1", "corners": ["f1", "f2"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 1}},
+    {"id": "o2", "corners": ["f2", "f3"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 2}},
+    {"id": "o3", "corners": ["f3", "f0"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 3}}
+  ],
+
+  // [south, east, north, west] = [radial in, far-field arc, radial out, body arc].
+  // q3's north is r0, which is q0's south: that is where the ring closes.
+  "blocks": [
+    {"id": "q0", "edges": ["r0", "o0", "r1", "w0"]},
+    {"id": "q1", "edges": ["r1", "o1", "r2", "w1"]},
+    {"id": "q2", "edges": ["r2", "o2", "r3", "w2"]},
+    {"id": "q3", "edges": ["r3", "o3", "r0", "w3"]}
+  ]
+}

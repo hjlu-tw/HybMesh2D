@@ -1,0 +1,40 @@
+# ==============================================================================
+# Multi-block structured meshing (MESH_MODE 1) — a four-block O-GRID around a
+# circular body, with real wall clustering.
+#
+#   ./run.sh -conf config/multiblock_ogrid.dat
+#
+# What this case adds to the multi-block family:
+#   * every arc edge FOLLOWS its circle instead of cutting the chord;
+#   * the four radial edges are ONE equivalence class that wraps around and
+#     closes — one declared count, three propagated, and the last block welded
+#     back to the first by node identity;
+#   * the wall-normal spacing is asked for as a LENGTH and solved for by the
+#     tanh law, under the boundary-layer parameter name it already had.
+# ==============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/ogrid_circle.json
+
+# Both circles. The body carries 'wall' in its sidecar and the far field carries
+# 'farfield', so each patch's condition comes from the geometry it lies on.
+GEOM_FILE examples/geometries/circle_body.dat
+GEOM_FILE examples/geometries/circle_farfield.dat
+
+# THE WALL SPACING, under the name it already has. Every radial edge in the
+# topology declares its body end a wall end and takes this height for its first
+# cell; an edge that wanted its own would write "ds_start" instead. Reusing the
+# boundary-layer name rather than an alias is deliberate: the physical quantity
+# is identical, and two names for one quantity is worse than one name that reads
+# oddly in a mode with no boundary-layer stage.
+BL_INITIAL_THICKNESS 0.001
+
+MB_SPLIT_QUADS 1
+
+# The FALLBACK. Every edge here binds, so nothing should reach it — and the run
+# says so, one row per patch, naming the segment each was read off.
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+OUTPUT_FILENAME results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk

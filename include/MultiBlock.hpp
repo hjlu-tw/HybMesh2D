@@ -106,6 +106,23 @@ struct MbParams {
     // that the answer is a function of its inputs and of nothing else, and a width
     // the platform chooses is exactly the kind of thing that quietly is not.
     std::uint32_t splitSeed = 0;
+    // THE GLOBAL WALL SPACING, from BL_INITIAL_THICKNESS — the first-cell height a
+    // topology edge gets where it declares that an end of it sits on a wall and
+    // does not say how fine. Reusing the boundary-layer parameter rather than
+    // inventing an alias is deliberate: the physical quantity is identical, and
+    // two names for one quantity is worse than one name that reads oddly in a mode
+    // with no boundary-layer stage. A per-edge `ds_start` / `ds_end` beats it.
+    //
+    // 0 means "no global default was resolved", and an edge that then asks for one
+    // is REFUSED by name rather than quietly left uniform: a wall-normal edge that
+    // silently loses its clustering is a mesh with no boundary layer and no
+    // symptom.
+    double wallSpacing = 0.0;
+    // The global default GROWTH RATIO for the `geometric` law, from BL_GROWTH_RATE,
+    // for the same reason and on the same terms. An edge that declares its own
+    // `growth` beats it; 0 means none was resolved, and then `geometric` must
+    // declare one.
+    double wallGrowth = 0.0;
 };
 
 // A block's four sides, in the [south, east, north, west] order the topology

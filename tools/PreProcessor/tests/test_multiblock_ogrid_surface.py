@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+"""The circular O-GRID, end to end through the real binary (issue #55).
+
+The DECISIONS are pinned next door in ``tests/cpp/test_multiblock.cpp`` checks
+30-35, which link the pure layer alone and assert on blocks, node positions, wall
+specs and refusals as data. What can only be checked out here is the chain on the
+SHIPPED files: two circle geometries with their sidecars, one topology document,
+one config, through the real exporters onto disk.
+
+What this pins down:
+
+  1. The two shipped circle geometries are exactly what ``write_circle`` below
+     produces. There is ONE generator, and the committed files are checked
+     against it rather than trusted -- a hand-edited ``.dat`` whose ``.meta``
+     still describes the old point set is a mesh with corners on the wrong
+     segments and no error at all.
+  2. The shipped O-grid meshes: exit 0, zero inverted cells, and the machine
+     readable ``HYBMESH_MB_QUALITY`` line the acceptance gate greps.
+  3. Every wall node sits ON the circle. The negative control is the CHORD the
+     same edge would cut without its binding, which on a quarter circle is 0.293 r
+     off the body at its midpoint -- three orders larger than what is measured, so
+     this check cannot pass by the two being close.
+  4. The two geometries' own conditions reach the ``.bnd``: the body as ``wall``
+     and the far field as ``farfield``, four patches each.
+  5. The wall first-cell height TRACKS ``BL_INITIAL_THICKNESS``. Three values two
+     orders apart, each reproduced to 0.08% -- and that residue is the polyline
+     FACETING of the stored circle, not the law: the same case on a 10x finer
+     circle measures 0.0007%.
+  6. A per-edge ``ds_start`` beats the global, measured on the same document with
+     one key added.
+  7. Changing the ring's ONE seeded count does not move the wall spacing. This is
+     the property the tanh default exists to protect: the count is decided for
+     three of the four radials by propagation, so the law has to absorb a count it
+     did not choose.
+  8. The ring is CONFORMAL where it closes: every interior edge belongs to exactly
+     two cells, the boundary edge set is exactly the ``.bnd``, and the whole mesh
+     is ONE connected component by node identity. A last block that failed to weld
+     back to the first would leave two components and a doubled seam.
+
+THE ACCEPTANCE RUN, dated and quoted rather than replaced by a shape check. CI has
+no solver binary, so this is recorded here in the convention this repo adopted
+after a change shipped broken behind 85 green tests that pinned strings and never
+executed the solver.
+
+Measured 2026-09-04 on ``examples/topology/ogrid_circle.json`` +
+``config/multiblock_ogrid.dat`` (four blocks, 49 x 25 nodes each, r = 0.5 body in
+an r = 10 far field, BL_INITIAL_THICKNESS 0.001):
+
+    ./run.sh -conf config/multiblock_ogrid.dat
+        -> EXIT 0
+           4704 vertices, 9216 triangles, 192 boundary edges
+           HYBMESH_MB_QUALITY cells=9216 inverted=0
+               nonortho_max_deg=2.250000 nonortho_mean_deg=1.875000
+               wall_first_cell_worst_rel=0.000812
+
+    solver/preprocess/getPGrid/work/getPGrid < para.in        # the grid converter
+        -> EXIT 0
+           "Read in 4704 vertices coordinates"
+           "Read in 9216 elements"
+           "number of boundary elements = 192"
+           "Read in 192 boundary condition flags"
+           It warns 8 times that it does not know the name 'farfield' and
+           defaults those patches to a no-slip wall. That is getPGrid's own
+           token list, not this path's: the four far-field patches were given
+           flag 1 (non-reflect far field) in ``ogrid.bc.def`` for the run below,
+           which is exactly what the GUI's solver Boundary Conditions table
+           writes. The GUI maps the name (services/bnd_io._NAME_TO_FLAG), so a
+           GUI-driven run never sees the warning.
+
+    solver/execute/unicones.eqn6.mac -t ogrid input.in        # the solver
+        -> EXIT 0
+           last printed "Global Iteration count 90", at print_convg_per_niter 10
+           with num_half_iter 100 -- i.e. 100 iterations, by the 90 + 10
+           arithmetic services/case_run_note.iteration_span uses.
+           Wrote binDumpZogrid.dat, xtecp_sol_allzogrid.dat, uniconesogrid.enorm,
+           tWall_valuesogrid.dat, vsurface_qtyogrid.dat.
+
+THIS IS THE FIRST MULTI-BLOCK GRID OF MORE THAN ONE BLOCK TO GO THROUGH EITHER
+BINARY. ``.claude/rules/mesher.md`` recorded that as outstanding for #53 on the
+grounds that "this checkout has no solver tree"; it has one, and the run above is
+it.
+
+BLIND SPOTS, named rather than papered over:
+
+  * Nothing here re-runs the solver. The figures above are a record of one dated
+    run, not something this file measures.
+  * The circles are stored as POLYLINES, so "follows the circle" is measured
+    against the polyline's own vertices and the 0.08% wall-height residue is that
+    faceting. Nothing on this path projects onto an analytic curve --
+    BL_USE_ANALYTIC_GEOM survives into this mode and is still not read.
+  * Check 8 measures conformity on the EXPORTED files, so it cannot distinguish a
+    ring that welded correctly from one that was welded correctly and then
+    exported correctly. That is the same boundary test_multiblock_weld_surface.py
+    works at, and the node-identity half is check 33 next door.
+
+Run:  python3 tools/PreProcessor/tests/test_multiblock_ogrid_surface.py
+      python3 tools/PreProcessor/tests/test_multiblock_ogrid_surface.py --write
+          rewrites the two shipped geometries from the generator below.
+Skips cleanly if ./build/HybMesh2D has not been built.
+"""
+import math
+import os
+import subprocess
+import sys
+import tempfile
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+_BIN = os.path.join(_REPO, "build", "HybMesh2D")
+_GEOM = os.path.join(_REPO, "examples", "geometries")
+_TOPO = os.path.join(_REPO, "examples", "topology", "ogrid_circle.json")
+_CONF = os.path.join(_REPO, "config", "multiblock_ogrid.dat")
+sys.path.insert(0, _HERE)
+from mesher_bin import mesher_env as _mesher_env          # noqa: E402
+from test_multiblock_weld_surface import (                # noqa: E402
+    bnd_faces, cel_cells, components, edge_use, vrt_nodes)
+
+# The two shipped circles, as (basename, radius, points per quarter, BC label).
+# The body is twice as finely stored as the far field because it is the surface
+# whose faceting the wall spacing is measured against.
+SHIPPED = (("circle_body", 0.5, 40, "wall"),
+           ("circle_farfield", 10.0, 20, "farfield"))
+
+failures = []
+
+
+def check(msg, cond):
+    print(("PASS " if cond else "FAIL ") + msg)
+    if not cond:
+        failures.append(msg)
+
+
+def write_circle(radius, per_quarter, bc):
+    """``(dat_text, meta_text)`` for a CLOSED circle in four quarter segments.
+
+    THE ONE generator for the shipped geometries, so check 1 can compare the
+    committed files against it instead of trusting them. Two conventions of the
+    real chain are reproduced exactly, because getting either wrong moves a corner
+    by one sample and produces a slightly wrong mesh with no error:
+
+      * the file carries the CLOSING DUPLICATE of its first point, which
+        ``loadGeometry`` drops (and ``reconcileMeta`` drops the matching sidecar
+        row), so the last segment's end is index 0 rather than one past the end;
+      * a joint belongs to the LATER segment, so point k is in segment
+        ``k // per_quarter`` and every joint is flagged a corner.
+    """
+    n = 4 * per_quarter
+    pts = [(radius * math.cos(2.0 * math.pi * k / n),
+            radius * math.sin(2.0 * math.pi * k / n)) for k in range(n)]
+    pts.append(pts[0])
+    dat = "".join(f"{x:.12f} {y:.12f}\n" for x, y in pts)
+    meta = ["HYBMESH_META 2", f"COUNT {len(pts)}", "NPIECES 0", "NSEGMENTS 4"]
+    meta += [f"{s} {bc} line" for s in range(4)]
+    meta += [f"POINTS {len(pts)}"]
+    meta += [f"{(k // per_quarter) % 4} {1 if k % per_quarter == 0 else 0}"
+             for k in range(len(pts))]
+    return dat, "\n".join(meta) + "\n"
+
+
+def _write_shipped():
+    for name, radius, per_quarter, bc in SHIPPED:
+        dat, meta = write_circle(radius, per_quarter, bc)
+        with open(os.path.join(_GEOM, name + ".dat"), "w", encoding="utf-8") as f:
+            f.write(dat)
+        with open(os.path.join(_GEOM, name + ".dat.meta"), "w", encoding="utf-8") as f:
+            f.write(meta)
+        print("wrote " + name)
+
+
+def run_case(tmp, name, conf_text):
+    stem = os.path.join(tmp, name)
+    conf = os.path.join(tmp, name + ".dat")
+    with open(conf, "w", encoding="utf-8") as f:
+        f.write(conf_text.replace("@STEM@", stem))
+    p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_mesher_env(),
+                       capture_output=True, text=True, timeout=600)
+    return p, stem
+
+
+def quality(out):
+    """The machine-readable quality line, as a dict of floats."""
+    for line in out.splitlines():
+        if line.startswith("HYBMESH_MB_QUALITY"):
+            return {k: float(v) for k, v in
+                    (tok.split("=") for tok in line.split()[1:])}
+    return {}
+
+
+def base_config(topo=_TOPO, thickness=None, geom_dir=_GEOM):
+    """The shipped config, retargeted at a temp output stem.
+
+    Read from disk rather than rebuilt, for the reason the cavity golden case
+    gives: config/multiblock_ogrid.dat is documentation a user runs, and a test
+    that composed an equivalent one would leave an edit to the shipped file
+    invisible here.
+    """
+    with open(_CONF, encoding="utf-8") as f:
+        text = f.read()
+    text = text.replace("examples/topology/ogrid_circle.json", topo)
+    text = text.replace("examples/geometries/circle_", os.path.join(geom_dir, "circle_"))
+    text = text.replace("results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk",
+                        "@STEM@.vtk")
+    if thickness is not None:
+        text = "\n".join(
+            (f"BL_INITIAL_THICKNESS {thickness}"
+             if line.startswith("BL_INITIAL_THICKNESS") else line)
+            for line in text.splitlines()) + "\n"
+    return text
+
+
+def main() -> int:
+    if "--write" in sys.argv:
+        _write_shipped()
+        return 0
+    if not os.path.exists(_BIN):
+        print("SKIP: build/HybMesh2D not found (run ./build.sh first)")
+        return 0
+
+    # ── 1. the shipped geometries ARE what the generator produces ───────────
+    for name, radius, per_quarter, bc in SHIPPED:
+        dat, meta = write_circle(radius, per_quarter, bc)
+        for ext, want in ((".dat", dat), (".dat.meta", meta)):
+            path = os.path.join(_GEOM, name + ext)
+            got = open(path, encoding="utf-8").read() if os.path.exists(path) else None
+            check(f"1. {name}{ext} is exactly what write_circle() produces",
+                  got == want)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # ── 2. the shipped O-grid meshes, with zero inverted cells ──────────
+        p, stem = run_case(tmp, "ogrid", base_config())
+        check("2. the shipped O-grid config exits 0 (rc=%d)" % p.returncode,
+              p.returncode == 0)
+        q = quality(p.stdout)
+        check("2. it prints the machine-readable quality line", bool(q))
+        check("2. ZERO inverted cells (got %s)" % q.get("inverted"),
+              q.get("inverted") == 0.0)
+        check("2. ...over a mesh that is actually there (%s cells)" % q.get("cells"),
+              (q.get("cells") or 0) > 1000)
+
+        nodes = vrt_nodes(stem)
+        cells = cel_cells(stem)
+        faces = bnd_faces(stem)
+
+        # ── 3. the wall FOLLOWS the circle, and the chord is the control ────
+        by_patch = {}
+        for key, name in faces:
+            by_patch.setdefault(name, set()).update(key)
+        wall_ids = by_patch.get("wall", set())
+        radii = [math.hypot(*nodes[i - 1]) for i in sorted(wall_ids)]
+        worst = max(abs(r - 0.5) for r in radii) if radii else 1.0
+        # A 25-node quarter-circle CHORD would put its midpoint at
+        # 0.5*cos(45 deg) = 0.354, i.e. 0.146 off the body. The measured figure
+        # must be orders below that, not merely below it.
+        check("3. every wall node is ON the circle (worst radial deviation %.3e, "
+              "against the 1.46e-01 a chord would give)" % worst,
+              worst < 1.0e-3)
+        # 4 arcs x 25 nodes, the four block corners shared: 96 distinct wall
+        # nodes. Named exactly rather than as "enough of them", so a binding that
+        # silently stopped covering one arc could not pass this by being close.
+        check("3. ...over all 96 distinct wall nodes, not a lucky few (%d)"
+              % len(radii),
+              len(radii) == 96)
+
+        # ── 4. each geometry's own condition reaches the .bnd ───────────────
+        counts = {}
+        for _key, name in faces:
+            counts[name] = counts.get(name, 0) + 1
+        check("4. the .bnd carries BOTH conditions, from the two geometries (%r)"
+              % counts,
+              set(counts) == {"wall", "farfield"})
+        check("4. ...in equal halves, four patches each (%r)" % counts,
+              counts.get("wall") == counts.get("farfield") ==
+              len(faces) // 2 > 0)
+
+        # ── 8. the ring is CONFORMAL where it closes ────────────────────────
+        use = edge_use(cells)
+        boundary = {k for k, n in use.items() if n == 1}
+        check("8. every interior edge belongs to exactly two cells",
+              all(n in (1, 2) for n in use.values()))
+        check("8. the boundary edge set is exactly the .bnd (%d vs %d)"
+              % (len(boundary), len(faces)),
+              boundary == {k for k, _ in faces})
+        check("8. the whole ring is ONE connected component by node identity",
+              components(cells, len(nodes)) == 1)
+
+        # ── 5. the wall height TRACKS BL_INITIAL_THICKNESS ──────────────────
+        for thickness in ("1e-3", "1e-5", "1e-7"):
+            p2, _ = run_case(tmp, "t" + thickness.replace("-", "_"),
+                             base_config(thickness=thickness))
+            q2 = quality(p2.stdout)
+            check("5. BL_INITIAL_THICKNESS %s: exit 0, zero inverted" % thickness,
+                  p2.returncode == 0 and q2.get("inverted") == 0.0)
+            check("5. ...and the wall first cell is within 0.1%% of it (%.4f%%)"
+                  % (100.0 * (q2.get("wall_first_cell_worst_rel") or 1.0)),
+                  (q2.get("wall_first_cell_worst_rel") or 1.0) < 1.0e-3)
+
+        # ── 6. a per-edge ds_start beats the global ─────────────────────────
+        topo = open(_TOPO, encoding="utf-8").read()
+        over = os.path.join(tmp, "ogrid_override.json")
+        with open(over, "w", encoding="utf-8") as f:
+            f.write(topo.replace('"spacing": {"wall_ends": "start"}',
+                                 '"spacing": {"ds_start": 2.5e-06}'))
+        p3, stem3 = run_case(tmp, "ov", base_config(topo=over, thickness="1e-3"))
+        check("6. a per-edge ds_start is accepted (rc=%d)" % p3.returncode,
+              p3.returncode == 0)
+        # Measured on the exported grid, not on the banner: the shortest edge
+        # touching a wall node IS the first cell off the wall.
+        n3 = vrt_nodes(stem3)
+        shortest = min(
+            math.dist(n3[a - 1], n3[b - 1])
+            for a, b in (tuple(k) for k in edge_use(cel_cells(stem3)))
+        )
+        check("6. ...and the EDGE's 2.5e-06 is what the mesh has, not the "
+              "config's 1e-3 (shortest cell edge %.3e)" % shortest,
+              abs(shortest - 2.5e-6) < 0.1 * 2.5e-6)
+
+        # ── 7. the ring's seeded count does not move the wall spacing ───────
+        heights = {}
+        for count in (25, 49, 97):
+            path = os.path.join(tmp, "c%d.json" % count)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(topo.replace('"count": 49', '"count": %d' % count))
+            p4, _ = run_case(tmp, "c%d" % count, base_config(topo=path))
+            q4 = quality(p4.stdout)
+            check("7. the ring at radial count %d: exit 0, zero inverted" % count,
+                  p4.returncode == 0 and q4.get("inverted") == 0.0)
+            heights[count] = q4.get("wall_first_cell_worst_rel")
+        check("7. ...and the wall first-cell accuracy is UNCHANGED across all "
+              "three (%r) — the count is propagated to three of the four radials, "
+              "so the law absorbs one it did not choose" % heights,
+              len(set(heights.values())) == 1 and None not in heights.values())
+
+    print()
+    if failures:
+        print("%d check(s) failed:" % len(failures))
+        for f in failures:
+            print("  - " + f)
+        return 1
+    print("PASS test_multiblock_ogrid_surface")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

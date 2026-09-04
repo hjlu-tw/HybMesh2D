@@ -513,6 +513,96 @@ std::string att(const std::string& id, double t, int seg = 1,
          + std::to_string(t) + "}";
 }
 
+// A CLOSED circle of `perQuarter` points per quarter, in four source segments —
+// the same two conventions `squareGeom` reproduces (a joint belongs to the LATER
+// segment; the loader dropped the closing duplicate), on a body that is CURVED.
+//
+// Curved is the point: on a straight side an arc-length attachment is exact and a
+// chord IS the geometry, so nothing a square can express distinguishes an edge
+// that follows its segment from one that cuts across it.
+hybmesh::MbGeometry circleGeom(int perQuarter, double radius,
+                               const std::string& file, const std::string& bc) {
+    hybmesh::MbGeometry g;
+    g.file = file;
+    g.closed = true;
+    const int n = 4 * perQuarter;
+    for (int k = 0; k < n; ++k) {
+        const double a = 2.0 * M_PI * k / n;
+        g.points.push_back({radius * std::cos(a), radius * std::sin(a)});
+        g.segId.push_back((k / perQuarter) % 4);
+    }
+    for (int s = 0; s < 4; ++s) g.segBc[s] = bc;
+    return g;
+}
+
+// A four-block O-GRID around `circleGeom`: four radial interfaces, four bound
+// body arcs, four bound far-field arcs.
+//
+// The RING is what this fixture exists for. Each block's south and north are two
+// consecutive radials, so the four of them are ONE equivalence class — and the
+// class WRAPS: 'q3' has 'r3' as its south and 'r0' as its north, closing the ring
+// back onto the edge 'q0' declares as ITS south. Only 'r0' carries a count.
+//
+// `radialSpacing` is appended to every radial edge, so a case differs from the
+// plain one by exactly the clustering it declares.
+std::string ogrid(const std::string& radialSpacing = "", int radialCount = 7,
+                  int arcCount = 5) {
+    std::string doc = R"({
+  "format_version": 1,
+  "corners": [)";
+    for (int k = 0; k < 4; ++k) {
+        doc += (k ? ",\n    " : "\n    ");
+        doc += "{\"id\": \"b" + std::to_string(k) + "\", \"kind\": \"on_geometry\", "
+               "\"geom\": \"body.dat\", \"seg\": " + std::to_string(k) + ", \"t\": 0.0}";
+    }
+    for (int k = 0; k < 4; ++k) {
+        doc += ",\n    ";
+        doc += "{\"id\": \"f" + std::to_string(k) + "\", \"kind\": \"on_geometry\", "
+               "\"geom\": \"far.dat\", \"seg\": " + std::to_string(k) + ", \"t\": 0.0}";
+    }
+    doc += "\n  ],\n  \"edges\": [";
+    for (int k = 0; k < 4; ++k) {
+        doc += (k ? ",\n    " : "\n    ");
+        doc += "{\"id\": \"r" + std::to_string(k) + "\", \"corners\": [\"b"
+             + std::to_string(k) + "\", \"f" + std::to_string(k) + "\"], "
+               "\"kind\": \"interface\"";
+        if (k == 0) doc += ", \"count\": " + std::to_string(radialCount);
+        doc += radialSpacing + "}";
+    }
+    for (int k = 0; k < 4; ++k) {
+        const std::string nxt = std::to_string((k + 1) % 4);
+        doc += ",\n    {\"id\": \"w" + std::to_string(k) + "\", \"corners\": [\"b"
+             + std::to_string(k) + "\", \"b" + nxt + "\"], \"kind\": \"wall\", "
+               "\"count\": " + std::to_string(arcCount)
+             + ", \"binding\": {\"geom\": \"body.dat\", \"seg\": "
+             + std::to_string(k) + "}}";
+        doc += ",\n    {\"id\": \"o" + std::to_string(k) + "\", \"corners\": [\"f"
+             + std::to_string(k) + "\", \"f" + nxt + "\"], \"kind\": \"wall\""
+               ", \"binding\": {\"geom\": \"far.dat\", \"seg\": "
+             + std::to_string(k) + "}}";
+    }
+    doc += "\n  ],\n  \"blocks\": [";
+    for (int k = 0; k < 4; ++k) {
+        doc += (k ? ",\n    " : "\n    ");
+        doc += "{\"id\": \"q" + std::to_string(k) + "\", \"edges\": [\"r"
+             + std::to_string(k) + "\", \"o" + std::to_string(k) + "\", \"r"
+             + std::to_string((k + 1) % 4) + "\", \"w" + std::to_string(k) + "\"]}";
+    }
+    doc += "\n  ]\n}";
+    return doc;
+}
+
+// One node of one filled block, by its logical index. A three-line reader, added
+// where four checks below wanted the same two lines each.
+Point2D nodeOf(const MbResult& r, const hybmesh::MbBlock& b, int i, int j) {
+    return r.nodes[static_cast<size_t>(b.nodeAt(i, j))];
+}
+
+std::vector<hybmesh::MbGeometry> ogridGeoms(int perQuarter = 40) {
+    return {circleGeom(perQuarter, 0.5, "body.dat", "wall"),
+            circleGeom(perQuarter / 2, 10.0, "far.dat", "farfield")};
+}
+
 }  // namespace
 
 int main() {
@@ -1567,6 +1657,281 @@ int main() {
         refuses(swap1(weldedPair(false), R"("id": "n0", "corners")",
                                          R"("id": "s0", "corners")"),
                 "duplicate edge id", "29. two edges declared under one id");
+    }
+
+    // ── 30. the default distribution law is TANH, and it is uniform unless
+    //        something asks it to cluster ───────────────────────────────────
+    //
+    // The default is structural: a count can be decided FOR an edge by
+    // propagation, so the law has to absorb one it did not choose. Asserted as
+    // BIT EQUALITY against an explicitly uniform document rather than as
+    // "roughly uniform", because the whole reason the default could be changed
+    // at all is that tanh at delta 0 evaluates the same expression.
+    {
+        MbResult a = build(square(9, 5));
+        MbResult b = build(square(9, 5, R"(, "spacing": {"law": "uniform"})"));
+        CHECK(a.ok && b.ok, "30. both documents are accepted");
+        CHECK(a.nodes.size() == b.nodes.size(), "30. ...with the same node count");
+        bool same = a.nodes.size() == b.nodes.size();
+        for (size_t k = 0; same && k < a.nodes.size(); ++k)
+            same = a.nodes[k].x == b.nodes[k].x && a.nodes[k].y == b.nodes[k].y;
+        CHECK(same, "30. an edge that declares no law is BIT-IDENTICAL to one that "
+                    "declares 'uniform': the default is tanh, and tanh with nothing "
+                    "to cluster IS the uniform law");
+        // ...and the schema really did take 'tanh' as the default rather than
+        // ignoring the key: a raw delta on an edge that declares no law at all
+        // must be accepted and must MOVE the nodes.
+        MbResult c = build(square(9, 5, R"(, "spacing": {"delta": 2.0})"));
+        CHECK(c.ok, "30. a 'delta' with no 'law' is accepted — the law it belongs to "
+                    "is the default (err: " + c.error + ")");
+        bool moved = false;
+        for (size_t k = 0; c.ok && k < a.nodes.size() && k < c.nodes.size(); ++k)
+            if (a.nodes[k].x != c.nodes[k].x) moved = true;
+        CHECK(moved, "30. ...and it clusters, so the default is not merely a name");
+    }
+
+    // ── 31. a declared wall spacing IS the first interval, at any count ─────
+    //
+    // The property the tanh default exists to provide, measured rather than
+    // argued: the same declaration under three different SEEDED counts must put
+    // the first node the same distance off the wall. A "first N layers geometric"
+    // formulation would move it every time.
+    {
+        const double want = 1.0e-4;
+        for (int n : {5, 9, 33}) {
+            MbParams p;
+            // The west edge runs from (0,0) to (0,1) and carries `nj`; clustering
+            // its START puts the fine cell at the block's south-west corner.
+            const std::string doc = swap1(
+                square(4, n),
+                R"({"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )"
+                    + std::to_string(n),
+                R"({"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )"
+                    + std::to_string(n)
+                    + R"(, "spacing": {"ds_start": 0.0001})");
+            MbResult r = build(doc, p);
+            CHECK(r.ok, "31. a wall spacing is accepted at count " + std::to_string(n)
+                        + " (err: " + r.error + ")");
+            if (!r.ok || r.blocks.empty()) continue;
+            const auto& b = r.blocks[0];
+            const double got = (nodeOf(r, b, 0, 1) - nodeOf(r, b, 0, 0)).length();
+            // 1e-9 relative, and the bound is DERIVED rather than picked: a node
+            // is placed as `p0 + (p1 - p0) * f` along an edge of length 1, so its
+            // rounding is ~eps of the EDGE, not of the first cell. A first cell of
+            // relative size 1e-4 therefore lands within ~eps/1e-4 = 1e-12 of what
+            // was asked for, measured at exactly 1.000e-12 here. The bound is three
+            // orders looser than that so a different libm cannot flake it, and it
+            // is still eight orders tighter than the 0.08% a real curved geometry's
+            // own faceting costs (recorded in the surface gate next door).
+            CHECK(std::fabs(got - want) <= 1e-9 * want,
+                  "31. the first interval off the wall IS the declared "
+                  + std::to_string(want) + " at count " + std::to_string(n)
+                  + " (got " + std::to_string(got) + ")");
+        }
+    }
+
+    // ── 32. the global default, and the per-edge override that beats it ─────
+    {
+        MbParams glob;
+        glob.wallSpacing = 2.5e-3;
+        const std::string usesGlobal = swap1(
+            square(4, 9),
+            R"("id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": 9)",
+            R"("id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": 9,
+     "spacing": {"wall_ends": "start"})");
+        MbResult g = build(usesGlobal, glob);
+        CHECK(g.ok, "32. an edge naming a wall end with no number takes the global "
+                    "(err: " + g.error + ")");
+        if (g.ok && !g.blocks.empty()) {
+            const auto& b = g.blocks[0];
+            const double got = (nodeOf(g, b, 0, 1) - nodeOf(g, b, 0, 0)).length();
+            CHECK(std::fabs(got - glob.wallSpacing) <= 1e-12 * glob.wallSpacing,
+                  "32. ...and that global IS the first interval (got "
+                  + std::to_string(got) + ")");
+        }
+        // The override wins, and it wins over a global that is SET — a test
+        // against an unset global could not tell "the override applied" from
+        // "there was nothing else to apply".
+        const std::string overrides = swap1(
+            square(4, 9),
+            R"("id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": 9)",
+            R"("id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": 9,
+     "spacing": {"ds_start": 7.5e-05})");
+        MbResult o = build(overrides, glob);
+        CHECK(o.ok, "32. a per-edge ds_start is accepted beside a global (err: "
+                    + o.error + ")");
+        if (o.ok && !o.blocks.empty()) {
+            const auto& b = o.blocks[0];
+            const double got = (nodeOf(o, b, 0, 1) - nodeOf(o, b, 0, 0)).length();
+            CHECK(std::fabs(got - 7.5e-5) <= 1e-12 * 7.5e-5,
+                  "32. ...and the EDGE's number beats the global (got "
+                  + std::to_string(got) + ")");
+        }
+        // No global, and no number on the edge: refused BY NAME rather than
+        // quietly left uniform. An edge that asked to cluster and silently did
+        // not is a mesh with no boundary layer and no symptom.
+        refuses(usesGlobal, "BL_INITIAL_THICKNESS",
+                "32. a wall end with no spacing anywhere is refused, naming the "
+                "config key that would supply it");
+    }
+
+    // ── 33. the ring's equivalence class WRAPS AROUND and closes ────────────
+    //
+    // The case a linear chain of blocks never reaches, and the one most likely to
+    // hide a defect in propagation or welding: 'q3' names as its north the very
+    // edge 'q0' names as its south. One seed, three propagated, and the seam is
+    // node IDENTITY — the same ids, not two curves a tolerance apart.
+    {
+        const auto geoms = ogridGeoms();
+        MbParams p;
+        p.wallSpacing = 1.0e-3;
+        MbResult r = hybmesh::buildMultiBlock(ogrid(R"(, "spacing": {"wall_ends": "start"})"),
+                                              geoms, p);
+        CHECK(r.ok, "33. a four-block O-grid is accepted (err: " + r.error + ")");
+        CHECK(r.blocks.size() == 4, "33. four blocks come back");
+        // Every radial resolved to the seeded count, and exactly one of the four
+        // says it was seeded.
+        int seeded = 0, radials = 0;
+        for (const auto& ec : r.edgeCounts) {
+            if (ec.edgeId.size() != 2 || ec.edgeId[0] != 'r') continue;
+            ++radials;
+            if (ec.seeded) ++seeded;
+            CHECK(ec.count == 7, "33. radial '" + ec.edgeId + "' carries the ring's "
+                                 "one seeded count (got " + std::to_string(ec.count) + ")");
+        }
+        CHECK(radials == 4 && seeded == 1,
+              "33. one radial is seeded and three propagate AROUND the ring "
+              "(seeded " + std::to_string(seeded) + " of " + std::to_string(radials) + ")");
+        if (r.blocks.size() == 4) {
+            // THE CLOSURE, as node ids. q3's north (j runs the other way in each
+            // block's own frame, so compare the two sides as SETS of ids in order
+            // along the edge) is q0's south.
+            const auto& q0 = r.blocks[0];
+            const auto& q3 = r.blocks[3];
+            bool welded = q0.ni == q3.ni;
+            for (int i = 0; welded && i < q0.ni; ++i)
+                welded = q0.nodeAt(i, 0) == q3.nodeAt(i, q3.nj - 1);
+            CHECK(welded, "33. the LAST block's north edge is the FIRST block's south "
+                          "edge, node for node, by identity — the ring closes");
+        }
+        // ...and nothing was double-allocated where it closed: an O-grid of four
+        // blocks has exactly 4 * (ni * nj) - 4 * ni nodes, the four shared radials
+        // counted once each.
+        {
+            size_t want = 0;
+            for (const auto& b : r.blocks)
+                want += static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
+            for (const auto& b : r.blocks) want -= static_cast<size_t>(b.ni);
+            CHECK(r.nodes.size() == want,
+                  "33. ...and the shared radials are allocated ONCE, so the ring has "
+                  + std::to_string(want) + " nodes (got "
+                  + std::to_string(r.nodes.size()) + ")");
+        }
+        // The body arcs FOLLOW the circle. A chord across a quarter circle sits
+        // 0.293 r off the body at its midpoint, so this is the difference between
+        // a circle and a square, not a refinement.
+        {
+            double worst = 0.0;
+            for (const auto& be : r.boundaryEdges) {
+                if (be.bc != "wall") continue;
+                for (int v : {be.v1, be.v2}) {
+                    const Point2D& q = r.nodes[static_cast<size_t>(v)];
+                    worst = std::max(worst, std::fabs(std::sqrt(q.x * q.x + q.y * q.y) - 0.5));
+                }
+            }
+            CHECK(worst < 1.0e-3,
+                  "33. every wall node sits ON the circle, not on a chord across it "
+                  "(worst radial deviation " + std::to_string(worst) + ")");
+        }
+        // Both geometries' conditions reach the export, from their own sidecars.
+        {
+            size_t wall = 0, far = 0;
+            for (const auto& be : r.boundaryEdges) {
+                if (be.bc == "wall") ++wall;
+                else if (be.bc == "farfield") ++far;
+            }
+            CHECK(wall > 0 && far > 0 && wall + far == r.boundaryEdges.size(),
+                  "33. the body exports as 'wall' and the far field as 'farfield', "
+                  "each from its own geometry (" + std::to_string(wall) + " / "
+                  + std::to_string(far) + " of "
+                  + std::to_string(r.boundaryEdges.size()) + ")");
+        }
+    }
+
+    // ── 34. the wall REQUEST is the declaration, not the mesh's own answer ──
+    //
+    // Until this release `MbWallSpec` published the first interval the fill had
+    // already produced, so a rectangle's 0.00% was a tautology. It now publishes
+    // what the perpendicular edge DECLARED, which is what makes the quality
+    // report a comparison. The negative control is the second half: an edge that
+    // declares nothing still publishes the produced interval, so a topology that
+    // never asks for a height keeps a meaningful figure.
+    {
+        MbParams p;
+        p.wallSpacing = 1.0e-3;
+        MbResult r = hybmesh::buildMultiBlock(ogrid(R"(, "spacing": {"wall_ends": "start"})"),
+                                              ogridGeoms(), p);
+        CHECK(r.ok, "34. the O-grid is accepted (err: " + r.error + ")");
+        size_t body = 0, outer = 0;
+        for (const auto& ws : r.wallSpecs) {
+            if (ws.edgeId.empty()) continue;
+            if (ws.edgeId[0] == 'w') {
+                ++body;
+                CHECK(ws.requestedLo == 1.0e-3 && ws.requestedHi == 1.0e-3,
+                      "34. a body arc's request is the DECLARED 1e-3 at both ends, "
+                      "not the interval the fill produced (got "
+                      + std::to_string(ws.requestedLo) + ")");
+            } else if (ws.edgeId[0] == 'o') {
+                ++outer;
+                // The far-field end of the same radials declares nothing, so the
+                // request there falls back to what was produced — a number far
+                // larger than the wall spacing, which is the whole point.
+                CHECK(ws.requestedLo > 1.0e-2,
+                      "34. the far-field side, whose perpendiculars declare nothing "
+                      "at that end, still publishes the produced interval (got "
+                      + std::to_string(ws.requestedLo) + ")");
+            }
+        }
+        CHECK(body == 4 && outer == 4,
+              "34. all eight outer sides are listed and the four interfaces are not "
+              "(" + std::to_string(body) + " body, " + std::to_string(outer) + " outer)");
+    }
+
+    // ── 35. what this release cannot do is refused BY NAME ──────────────────
+    {
+        MbParams p;
+        p.wallSpacing = 1.0e-3;
+        auto sq = [](const std::string& sp) {
+            return swap1(square(4, 9),
+                         R"("id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": 9)",
+                         R"("id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": 9,
+     "spacing": )" + sp);
+        };
+        auto refusesWith = [&](const std::string& doc, const std::string& names,
+                               const std::string& what) {
+            MbResult r = hybmesh::buildMultiBlock(doc, {}, p);
+            CHECK(!r.ok, what + ": must be refused");
+            CHECK(mentions(r.error, names),
+                  what + ": the message must name '" + names + "' (got: " + r.error + ")");
+        };
+        refusesWith(sq(R"({"ds_start": 1e-4, "ds_end": 5e-4})"), "'w'",
+                    "35. two DIFFERENT heights at the two ends");
+        refusesWith(sq(R"({"law": "geometric", "growth": 1.1, "ds_start": 1e-4})"),
+                    "geometric",
+                    "35. a wall spacing on a law that cannot solve for one");
+        refusesWith(sq(R"({"delta": 2.0, "ds_start": 1e-4})"), "delta",
+                    "35. the raw tanh parameter AND the spacing it would be solved from");
+        refusesWith(sq(R"({"ds_start": -1e-4})"), "ds_start",
+                    "35. a first-cell height that is not a positive length");
+        refusesWith(sq(R"({"wall_ends": "middle"})"), "wall_ends",
+                    "35. an unknown 'wall_ends' value");
+        refusesWith(sq(R"({"law": "tanh", "growth": 1.1})"), "growth",
+                    "35. a geometric ratio on an edge that declares tanh");
+        // ...and equal heights at both ends are ACCEPTED, so the refusal above is
+        // about the DIFFERENCE and not about declaring two ends at all.
+        MbResult ok = hybmesh::buildMultiBlock(
+            sq(R"({"ds_start": 1e-4, "ds_end": 1e-4})"), {}, p);
+        CHECK(ok.ok, "35. equal heights at both ends are accepted (err: " + ok.error + ")");
     }
 
     return hybmesh::test::report("test_multiblock");

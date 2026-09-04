@@ -81,6 +81,7 @@ import numpy as np                                    # noqa: E402
 import test_nobl_junction_acute as junc               # noqa: E402
 import test_multiblock_surface as mb                  # noqa: E402
 import test_multiblock_binding_surface as mbb         # noqa: E402
+import test_multiblock_ogrid_surface as mbo          # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -263,6 +264,31 @@ def _multiblock_bound():
     return build
 
 
+def _multiblock_ogrid():
+    """The four-block O-GRID this repo ships (issue #55).
+
+    Deliberately the shipped topology, the shipped config and the two shipped
+    circle geometries, for the reason `_multiblock_example` gives. What it adds to
+    this family is the three things no earlier member has: an edge that FOLLOWS a
+    curved geometry rather than cutting its chord, an equivalence class that WRAPS
+    AROUND and closes (the last block welded back to the first), and a wall
+    spacing SOLVED for from BL_INITIAL_THICKNESS rather than implied by a node
+    count. A regression in any of the three moves node coordinates by orders more
+    than this comparator's tolerance -- a lost binding puts a quarter of the wall
+    on a chord, a lost weld doubles the seam nodes, and a lost clustering moves
+    the first interior ring from 1e-3 to 4e-1.
+    """
+    def build(tmp, name):
+        stem = os.path.join(tmp, name)
+        conf = os.path.join(tmp, name + ".dat")
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write(mbo.base_config().replace("@STEM@", stem))
+        p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_env(),
+                           capture_output=True, text=True, timeout=600)
+        return p.returncode, stem
+    return build
+
+
 CASES = {
     # Junction bins reachable through a real mesh. theta <= 95 is the slide
     # (case 1); 120 is a perpendicular cap (case 2). Cases 3 and 4 need
@@ -288,6 +314,7 @@ CASES = {
     "mb_bound": _multiblock_bound(),
     "mb_cavity": _multiblock_cavity(),
     "mb_hgrid": _multiblock_hgrid(),
+    "mb_ogrid": _multiblock_ogrid(),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }

@@ -468,6 +468,13 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // Cast once, here. The .dat and the GUI speak int; the hash wants a bit
     // pattern, and the conversion of a negative int to unsigned is defined.
     params.splitSeed = static_cast<std::uint32_t>(config.mbSplitSeed);
+    // The wall-normal clustering law's globals, under the names the user already
+    // sets them by. An edge that declares a wall end without a number gets
+    // BL_INITIAL_THICKNESS; a 'geometric' edge with no ratio gets BL_GROWTH_RATE.
+    // These two are what turns "surviving" into "read" for this mode — see
+    // include/MeshMode.hpp.
+    params.wallSpacing = config.bl.blInitialThickness;
+    params.wallGrowth = config.bl.blGrowthRate;
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
     // Warnings are DATA on the way out of the seam; saying them is this layer's job.

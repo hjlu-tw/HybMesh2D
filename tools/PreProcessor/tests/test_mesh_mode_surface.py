@@ -23,8 +23,11 @@ What this pins down:
      the ticket actually promised -- code 8, a machine-readable line, and nothing
      written -- is unchanged and is still what is pinned here.
   3. Every inert parameter the user actually SET is named, one line each.
-  4. The four surviving boundary-layer parameters are NOT named. A negative, and
-     the half that a "does it warn?" test is most likely to skip.
+  4. The four surviving boundary-layer parameters are NOT named INERT. A negative,
+     and the half that a "does it warn?" test is most likely to skip. Two of the
+     four are also silent in the SECOND sentence, because issue #55's wall
+     clustering genuinely reads them; the other two are still named as not read
+     yet.
   5. The topology file is read from its own declaration and reported in the banner.
   6. An unknown mode is a CONFIG failure, not a silent fall back to mode 0.
 
@@ -196,7 +199,9 @@ BL_TRANSITION_BUFFER 2.5
 BL_FRONT_SMOOTHING_ITERS 2
 
 # The four that SURVIVE into this mode, all set well away from their defaults so
-# a warning about them could not be missed.
+# a warning about them could not be missed -- and, since #55, so that the SILENCE
+# of the two the wall-clustering law reads cannot be mistaken for them sitting at
+# a default nothing reports anyway.
 BL_INITIAL_THICKNESS 2.5e-6
 BL_GROWTH_RATE 1.35
 BL_LAYERS 17
@@ -248,14 +253,25 @@ OUTPUT_FILENAME {out_name}
               not (got & survivors))
         check(f"4. ...and nothing outside the declared inert set is named "
               f"({sorted(got - want)})", not (got - want))
-        # But surviving is not the same as READ. This release fills one block whose
-        # every edge declares its own count and spacing law, so all four are set and
-        # none of them reaches the mesh -- which must be SAID, in its own words,
-        # rather than left to look like a setting that worked.
+        # But surviving is not the same as READ, and the split moved with issue
+        # #55. BL_INITIAL_THICKNESS is now the global wall spacing an edge takes
+        # when it names a wall end, and BL_GROWTH_RATE the global ratio a
+        # 'geometric' edge takes when it names none, so those two are genuinely
+        # read here and must be SILENT -- warning that a value does nothing while
+        # the mesh is being built from it is the one wrong answer this pair of
+        # sentences can give. The other two are still unread and must still be
+        # SAID, in their own words, rather than left to look like a setting that
+        # worked. (BL_LAYERS: node counts on this path are declared and propagated,
+        # and a class with no seed is refused BY NAME rather than defaulted.
+        # BL_USE_ANALYTIC_GEOM: a bound edge follows the resampled polyline.)
+        read = {"BL_INITIAL_THICKNESS", "BL_GROWTH_RATE"}
         unread = unread_keys(out)
-        check(f"4. ...but each of them is named as not read YET, because this "
-              f"release does not use them ({sorted(survivors - unread)})",
-              unread == survivors)
+        check(f"4. ...the two the wall-clustering law READS are silent, although "
+              f"both are set far from their defaults ({sorted(read & unread)})",
+              not (read & unread))
+        check(f"4. ...and each of the other two is named as not read YET "
+              f"({sorted((survivors - read) - unread)})",
+              unread == survivors - read)
         check(f"4. ...and the two sentences stay disjoint, so a key is never both "
               f"'never read here' and 'not read yet' ({sorted(got & unread)})",
               not (got & unread))

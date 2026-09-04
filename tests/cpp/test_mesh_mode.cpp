@@ -262,8 +262,10 @@ int main() {
     }
 
     // ── 6b. SURVIVING is not the same as READ ───────────────────────────────
-    // The four survivors are declared to belong to the multi-block path and are
-    // not read by it yet, so they are reported by a SECOND list rather than
+    // The four survivors are declared to belong to the multi-block path. TWO of
+    // them are now genuinely read by it (issue #55: BL_INITIAL_THICKNESS is the
+    // global wall spacing, BL_GROWTH_RATE the global geometric ratio), and the
+    // other two are not, so they are reported by a SECOND list rather than
     // silently doing nothing. The two lists must stay disjoint: a key on both
     // would be described to the user twice, in contradictory terms.
     {
@@ -273,14 +275,20 @@ int main() {
               "an untouched config reports no unread survivor: this list is about "
               "what the USER set, exactly like the inert one");
 
-        c.bl.blInitialThickness = 2.5e-6;
+        c.bl.blInitialThickness = 2.5e-6;          // survives AND is read: silent
+        c.bl.blGrowthRate = 1.07;                  // ...and so is this one
         c.bl.blLayers = 17;
         c.gmshAlgorithm = 5;                       // inert, and must not leak in
         const std::vector<std::string> unread = hybmesh::blSurvivorsUnread(c);
         const std::set<std::string> got(unread.begin(), unread.end());
-        CHECK(got == std::set<std::string>({"BL_INITIAL_THICKNESS", "BL_LAYERS"}),
-              "exactly the survivors the user SET are reported — not the two left "
-              "at their defaults, and not the inert key set beside them");
+        CHECK(got == std::set<std::string>({"BL_LAYERS"}),
+              "exactly the survivors the user SET AND THE PATH DOES NOT READ are "
+              "reported — not the two the wall-clustering law now reads, not the "
+              "one left at its default, and not the inert key set beside them");
+        CHECK(got.count("BL_INITIAL_THICKNESS") == 0 && got.count("BL_GROWTH_RATE") == 0,
+              "a survivor the path READS is silent: warning that a value does "
+              "nothing while the mesh is being built from it is the one wrong "
+              "answer this pair of lists can give");
 
         const std::vector<std::string> inert = hybmesh::inertParamsSet(c);
         const std::set<std::string> inertSet(inert.begin(), inert.end());

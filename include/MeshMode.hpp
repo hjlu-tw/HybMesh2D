@@ -80,19 +80,35 @@ enum MeshMode {
 // row right by default instead of silently exempting it.
 //
 // SURVIVING IS NOT THE SAME AS READ, and the difference is a whole release long.
-// The bring-up slice (issue #50) fills one rectangular block whose every edge
-// declares its own point count and spacing law, so it reads none of these four
-// yet: they become the wall-normal clustering law when curved projection and
-// wall clustering land. They must therefore NOT be reported as inert — that
-// would be a different, wrong claim, and the GUI would hide four rows the next
-// ticket needs back — but they must not be SILENT either, which is what
-// blSurvivorsUnread() below exists to prevent. Delete that function, and this
-// paragraph, when the path really reads them.
+// The bring-up slice (issue #50) filled one rectangular block whose every edge
+// declared its own point count and spacing law, so it read none of these four.
+// Wall clustering (issue #55) turned two of them into real inputs: an edge that
+// names a wall end without a number takes BL_INITIAL_THICKNESS as its first cell
+// height, and a 'geometric' edge with no ratio takes BL_GROWTH_RATE. The other
+// two are still declared survivors and still unread — BL_LAYERS because node
+// counts on this path are declared and propagated rather than defaulted (a class
+// with no seed is refused BY NAME, deliberately, and defaulting it here would undo
+// that), and BL_USE_ANALYTIC_GEOM because a bound edge follows the resampled
+// polyline rather than an analytic curve.
+//
+// They must NOT be reported as inert — that would be a different, wrong claim, and
+// the GUI would hide two rows a later ticket needs back — but they must not be
+// SILENT either, which is what blSurvivorsUnread() below exists to prevent. Delete
+// that function, and HYBMESH_MULTIBLOCK_BL_READ, when the list below empties.
 #define HYBMESH_MULTIBLOCK_BL_SURVIVING(X) \
     X("BL_INITIAL_THICKNESS")              \
     X("BL_GROWTH_RATE")                    \
     X("BL_LAYERS")                         \
     X("BL_USE_ANALYTIC_GEOM")
+
+// The subset of the survivors this mode now genuinely READS. Declared as its own
+// list rather than by shortening the one above, because the two answer different
+// questions: the GUI shows a row when a parameter SURVIVES, and the run stays
+// quiet about it when it is READ. Shortening the survivor list to say "read" would
+// hide the rows this path is about.
+#define HYBMESH_MULTIBLOCK_BL_READ(X) \
+    X("BL_INITIAL_THICKNESS")         \
+    X("BL_GROWTH_RATE")
 
 namespace hybmesh {
 
@@ -115,7 +131,7 @@ std::vector<std::string> inertParamsSet(const Config& cfg);
 
 // The BL parameters declared to SURVIVE into `cfg`'s mode which that mode does
 // not read YET, and which `cfg` actually sets. Empty for every mode but the
-// multi-block one, and empty there too once the clustering law lands.
+// multi-block one, and empty there too once every survivor is read.
 //
 // A second list rather than more rows in the one above, because the two say
 // different things and a caller must be able to say them differently: an inert

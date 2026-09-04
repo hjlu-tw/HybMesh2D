@@ -97,6 +97,61 @@ public:
         return 0.5 * (lo + hi);
     }
 
+    // ── One-sided hyperbolic tangent (issue #55) ──────────────────────────
+    //
+    // `generateTanh` above clusters BOTH ends equally, which is the wrong shape
+    // for a wall-normal edge: an O-grid radial runs from a viscous wall to the far
+    // field, and spending the far-field end's points at the wall spacing buys
+    // nothing. This one clusters the START only; the caller mirrors it for an edge
+    // clustered at its end instead.
+    //
+    // u(xi) = 1 + tanh(dlt * (xi - 1)) / tanh(dlt), which is 0 at xi = 0, 1 at
+    // xi = 1 and monotonically increasing in between, so the map cannot fold. As
+    // dlt -> 0 it degenerates to uniform, which is why 0 is a legal argument
+    // rather than a special case the caller has to avoid.
+    static std::vector<double> generateTanhStart(double L, int nT, double dlt) {
+        std::vector<double> tS;
+        if (nT < 2) return tS;
+        if (std::abs(dlt) < 1e-9) {
+            for (int i = 0; i < nT; ++i) tS.push_back(L * i / (nT - 1));
+            return tS;
+        }
+        const double td = std::tanh(dlt);
+        for (int i = 0; i < nT; ++i) {
+            const double xi = (double)i / (nT - 1);
+            tS.push_back(L * (1.0 + std::tanh(dlt * (xi - 1.0)) / td));
+        }
+        return tS;
+    }
+
+    // The clustering parameter that makes `generateTanhStart`'s FIRST interval
+    // equal `ds_first`, by bisection — the same shape as `solveTanhDelta` above
+    // and for the same reason: a boundary-layer-like distribution is specified BY
+    // its first cell size, so that has to be solved for rather than approximated
+    // by a heuristic that is off by a factor nobody notices.
+    //
+    // The first interval is monotonically DECREASING in dlt (more clustering ->
+    // finer at the wall), which is what makes plain bisection safe. Returns 0 when
+    // the request is at or coarser than uniform, so the caller falls back to
+    // uniform rather than clamping to a value that misrepresents what it did.
+    static double solveTanhStartDelta(double L, int nT, double ds_first) {
+        if (nT < 3 || L <= 0.0 || ds_first <= 0.0) return 0.0;
+        if (ds_first >= L / (nT - 1)) return 0.0;
+        auto first_interval = [&](double dlt) {
+            const double xi = 1.0 / (nT - 1);
+            return L * (1.0 + std::tanh(dlt * (xi - 1.0)) / std::tanh(dlt));
+        };
+        double lo = 1e-6, hi = 1.0;
+        while (first_interval(hi) > ds_first && hi < 60.0) hi *= 2.0;
+        if (first_interval(hi) > ds_first) return hi;   // the finest we can do
+        for (int it = 0; it < 200; ++it) {
+            const double mid = 0.5 * (lo + hi);
+            if (first_interval(mid) > ds_first) lo = mid;
+            else hi = mid;
+        }
+        return 0.5 * (lo + hi);
+    }
+
     // Task 1: Advanced Curvature-based spacing
     // L / min_ds / max_ds are part of the shared spacing-strategy signature
     // (all generateXxx take the same arguments) but are not needed by the

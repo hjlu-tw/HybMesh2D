@@ -95,8 +95,15 @@ std::vector<std::string> hybmesh::blSurvivorsUnread(const Config& cfg) {
     // simply moved onto the inert list instead.
     std::vector<std::string> out;
     if (cfg.meshMode != MESH_MODE_MULTIBLOCK) return out;
+    auto isRead = [](const std::string& key) {
+#define HYBMESH_MB_READ_CHECK(k) if (key == k) return true;
+        HYBMESH_MULTIBLOCK_BL_READ(HYBMESH_MB_READ_CHECK)
+#undef HYBMESH_MB_READ_CHECK
+        return false;
+    };
     forEachBLParam(cfg.bl, [&](const char* key, const auto&) {
         if (!blParamSurvives(cfg.meshMode, key)) return;
+        if (isRead(key)) return;
         if (blParamDiffersFromDefault(cfg.bl, key)) out.push_back(key);
     });
     return out;
