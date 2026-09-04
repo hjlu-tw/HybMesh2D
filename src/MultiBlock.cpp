@@ -1284,6 +1284,181 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
     return p - corr;
 }
 
+// WHICH NODES MOVE: exactly the nodes STRICTLY INTERIOR to a block, i.e.
+// 0 < i < ni-1 and 0 < j < nj-1. Everything on any block boundary is FROZEN —
+// outer walls, bound edges, interfaces and cuts alike — because a block
+// boundary node is written by the EDGE, and an edge is shared: moving one
+// would move it in two blocks at once, and a node on a bound edge would leave
+// the geometry it was attached to by arc length. So the interior nodes of one
+// block never neighbour the interior nodes of another, which is also why the
+// sweep needs no ordering rule between blocks.
+//
+// NODE IDENTITY IS UNTOUCHED. This writes coordinates and allocates nothing:
+// a welded node stays ONE node with one id, which is the property `welding is
+// by allocation, not by comparison` rests on. Nothing here compares positions,
+// so there is no tolerance in it either — `MB_SMOOTH_TOL` is a STOPPING rule
+// on how far a node moved, not a rule about two nodes being the same node.
+//
+// THE KERNEL IS WINSLOW (issue #82), and the Laplacian #81 shipped is GONE
+// rather than kept beside it. #81's own table is the argument: on the shipped
+// C-grid one Laplacian sweep took the wall first cell from 0.44% to 36.61% and
+// max non-orthogonality from 32.04 deg to 89.40 deg — every column worse,
+// including the two this arc exists to improve. Nothing read it, an inert
+// alternative kept "for completeness" is the mechanism this repo has a rule
+// against, and a kernel-selection enum over one surviving kernel is the
+// abstraction that rule exists to prevent. `mbWinslowUpdate` in the header
+// carries the arithmetic and the reason it is exposed.
+//
+// JACOBI, not Gauss-Seidel: every sweep reads the positions the previous sweep
+// left and writes a fresh set, so the answer does not depend on the order the
+// blocks or the (i, j) pairs are visited. Gauss-Seidel converges faster and
+// would make the result a function of a traversal nobody declared, which is the
+// same objection the randomized split rule raises against a sequential stream.
+// The metric coefficients are LAGGED with it — recomputed from the sweep's own
+// starting positions — which is what makes each sweep a linear operation and
+// the whole solve a fixed-point iteration rather than a Newton step.
+//
+// BOUNDED AND REPORTED. `smoothIters` is a CAP: the solve stops the moment the
+// largest node move in a sweep falls under `MB_SMOOTH_TOL` of the starting
+// mesh's bounding-box diagonal, and a solve still moving at the cap comes back
+// with `smoothConverged == false`, its residual, and a WARNING naming the
+// number to raise. What must not happen is the third thing: a truncated solve
+// handed back as though it had finished.
+//
+// AND IT CAN DIVERGE, which is the third outcome and the one a cap alone hides.
+// Measured on the shipped C-grid: the residual falls monotonically to 2.7e-08
+// by sweep 3724 and then GROWS, reaching 2.8e-07 by sweep 5000 and 1.3e-03 by
+// sweep 10000 with 88 folded cells — the lagged-coefficient point iteration is
+// conditionally stable, and by then the grid is skewed enough for the condition
+// to fail. (That tail is measured with this stop removed; with it in place the
+// solve halts at the best iterate long before sweep 10000.) So the solve watches
+// its own residual, stops when it has climbed to MB_SMOOTH_DIVERGE_FACTOR times
+// the smallest it reached, and returns THE BEST ITERATE rather than the last
+// one. That is not a cover-up: `smoothDiverged` and the sweep number of the
+// iterate returned are both published, and the seam pushes a warning saying so.
+// Handing back a mesh that got worse the longer it was asked to work is the
+// thing that would be.
+void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
+    r.preSmoothNodes = r.nodes;
+    // The length the residual is expressed in. Taken from the mesh the solve
+    // STARTS from, once, so a converging solve is not chasing a moving ruler.
+    double xLo = r.nodes[0].x, xHi = r.nodes[0].x;
+    double yLo = r.nodes[0].y, yHi = r.nodes[0].y;
+    for (const Point2D& p : r.nodes) {
+        xLo = std::min(xLo, p.x); xHi = std::max(xHi, p.x);
+        yLo = std::min(yLo, p.y); yHi = std::max(yHi, p.y);
+    }
+    const double diag = std::sqrt((xHi - xLo) * (xHi - xLo)
+                                + (yHi - yLo) * (yHi - yLo));
+    // A degenerate mesh (every node in one place) has no scale to be relative
+    // to. It cannot reach here — an edge with two identical endpoints is
+    // refused long before — but dividing by it would turn a residual into a
+    // NaN that compares false against every tolerance and so never converges.
+    const double ref = (diag > 0.0) ? diag : 1.0;
+
+    // The best iterate seen, kept so a diverging solve can be rolled back to it.
+    // One extra node vector, allocated once — the same order of memory the
+    // before/after report already costs, and the same order of work per sweep
+    // as the sweep itself.
+    std::vector<Point2D> bestNodes;
+
+    for (int sweep = 0; sweep < maxSweeps; ++sweep) {
+        std::vector<Point2D> next = r.nodes;
+        double worst = 0.0;
+        for (const hybmesh::MbBlock& b : r.blocks) {
+            for (int j = 1; j + 1 < b.nj; ++j) {
+                for (int i = 1; i + 1 < b.ni; ++i) {
+                    hybmesh::MbWinslowStencil st;
+                    st.c      = r.nodes[static_cast<size_t>(b.nodeAt(i,     j    ))];
+                    st.iPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j    ))];
+                    st.iMinus = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j    ))];
+                    st.jPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i,     j + 1))];
+                    st.jMinus = r.nodes[static_cast<size_t>(b.nodeAt(i,     j - 1))];
+                    st.pp     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j + 1))];
+                    st.mp     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j + 1))];
+                    st.pm     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j - 1))];
+                    st.mm     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j - 1))];
+                    const Point2D moved = hybmesh::mbWinslowUpdate(st);
+                    next[static_cast<size_t>(b.nodeAt(i, j))] = moved;
+                    const double d = (moved - st.c).length();
+                    if (d > worst) worst = d;
+                }
+            }
+        }
+        r.nodes.swap(next);
+        r.smoothSweeps = sweep + 1;
+        r.smoothResidual = worst / ref;
+        // THE BEST IS RECORDED BEFORE EITHER STOP IS TESTED, so a converged solve's
+        // best IS the sweep it converged on rather than the one before it — which is
+        // what makes `smoothBestSweep == smoothSweeps` a usable reading of "the mesh
+        // you have is the best this solve found". Having just improved it, the
+        // divergence test below is false by construction, so the improving case needs
+        // no early exit of its own.
+        if (bestNodes.empty() || r.smoothResidual < r.smoothBestResidual) {
+            bestNodes = r.nodes;
+            r.smoothBestResidual = r.smoothResidual;
+            r.smoothBestSweep = r.smoothSweeps;
+        }
+        if (r.smoothResidual <= hybmesh::MB_SMOOTH_TOL) { r.smoothConverged = true; break; }
+        if (r.smoothResidual > r.smoothBestResidual * hybmesh::MB_SMOOTH_DIVERGE_FACTOR) {
+            r.nodes = bestNodes;
+            r.smoothDiverged = true;
+            r.warnings.push_back(
+                "the elliptic smoother DIVERGED: its residual fell to "
+                + std::to_string(r.smoothBestResidual) + " after "
+                + std::to_string(r.smoothBestSweep) + " sweep(s) and then grew to "
+                + std::to_string(r.smoothResidual) + " by sweep "
+                + std::to_string(r.smoothSweeps)
+                + ". The mesh returned is the BEST iterate, from sweep "
+                + std::to_string(r.smoothBestSweep) + " — the later ones are worse, "
+                  "not more converged. Lower MB_SMOOTH_ITERS to at most that number; "
+                  "a grid this far from its declared spacing is what the "
+                  "iteration goes unstable on.");
+            r.smoothSweeps = r.smoothBestSweep;
+            r.smoothResidual = r.smoothBestResidual;
+            break;
+        }
+    }
+    // THE CAP, and what it is honest to advise there. Two different situations wear
+    // one flag, and telling them apart is #82's review finding: a solve still
+    // DESCENDING has more to give, while one whose residual is already above the
+    // best it reached has TURNED, and telling that user to raise the cap points them
+    // at a worse mesh. Note also what the advice must NOT be in either case — "raise
+    // it until it converges" is bad advice at this kernel, because a CONVERGED plain
+    // Winslow solve is each block's harmonic map and has no memory of the declared
+    // first-cell height at all (measured: 3133% off on the shipped C-grid, 1382% on
+    // the O-grid). Converging is worth reaching once #83's control functions hold the
+    // wall; until then "not converged" is a statement of fact and not a to-do.
+    //
+    // The returned mesh at the cap is still the LAST iterate and not the best: the
+    // user asked for N sweeps and N sweeps is what "N sweeps" has to mean, which is
+    // also the property check 43 rests on. The rollback belongs to the DIVERGED path,
+    // where the solve has been declared lost. So the difference is said, not silently
+    // repaired.
+    if (!r.smoothConverged && !r.smoothDiverged) {
+        const bool pastBest = r.smoothResidual > r.smoothBestResidual;
+        r.warnings.push_back(
+            "the elliptic smoother stopped at its cap of "
+            + std::to_string(maxSweeps)
+            + " sweep(s) while still moving nodes (residual "
+            + std::to_string(r.smoothResidual) + ", converged below "
+            + std::to_string(hybmesh::MB_SMOOTH_TOL) + "). The mesh is the "
+            "PARTLY-SOLVED one, not a converged elliptic grid. "
+            + (pastBest
+                   ? "Its residual is ALREADY ABOVE the best this solve reached ("
+                     + std::to_string(r.smoothBestResidual) + " at sweep "
+                     + std::to_string(r.smoothBestSweep) + "), so the iteration has "
+                     "turned: raising MB_SMOOTH_ITERS makes this mesh worse, not more "
+                     "converged. Lower it to at most that sweep."
+                   : std::string(
+                     "Raising MB_SMOOTH_ITERS takes it further, but note that a "
+                     "CONVERGED solve is not the goal at this kernel: it relaxes to "
+                     "each block's harmonic map, which does not hold the first-cell "
+                     "height the declaration asks for. A small cap is the useful "
+                     "setting until wall control functions land.")));
+    }
+}
+
 }  // namespace
 
 // ── The Winslow kernel ────────────────────────────────────────────────────
@@ -1927,146 +2102,10 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // ordering is what keeps it from having to be re-checked every time a reader
     // is added.)
     //
-    // WHICH NODES MOVE: exactly the nodes STRICTLY INTERIOR to a block, i.e.
-    // 0 < i < ni-1 and 0 < j < nj-1. Everything on any block boundary is FROZEN —
-    // outer walls, bound edges, interfaces and cuts alike — because a block
-    // boundary node is written by the EDGE, and an edge is shared: moving one
-    // would move it in two blocks at once, and a node on a bound edge would leave
-    // the geometry it was attached to by arc length. So the interior nodes of one
-    // block never neighbour the interior nodes of another, which is also why the
-    // sweep needs no ordering rule between blocks.
-    //
-    // NODE IDENTITY IS UNTOUCHED. This writes coordinates and allocates nothing:
-    // a welded node stays ONE node with one id, which is the property `welding is
-    // by allocation, not by comparison` rests on. Nothing here compares positions,
-    // so there is no tolerance in it either — `MB_SMOOTH_TOL` is a STOPPING rule
-    // on how far a node moved, not a rule about two nodes being the same node.
-    //
-    // THE KERNEL IS WINSLOW (issue #82), and the Laplacian #81 shipped is GONE
-    // rather than kept beside it. #81's own table is the argument: on the shipped
-    // C-grid one Laplacian sweep took the wall first cell from 0.44% to 36.61% and
-    // max non-orthogonality from 32.04 deg to 89.40 deg — every column worse,
-    // including the two this arc exists to improve. Nothing read it, an inert
-    // alternative kept "for completeness" is the mechanism this repo has a rule
-    // against, and a kernel-selection enum over one surviving kernel is the
-    // abstraction that rule exists to prevent. `mbWinslowUpdate` in the header
-    // carries the arithmetic and the reason it is exposed.
-    //
-    // JACOBI, not Gauss-Seidel: every sweep reads the positions the previous sweep
-    // left and writes a fresh set, so the answer does not depend on the order the
-    // blocks or the (i, j) pairs are visited. Gauss-Seidel converges faster and
-    // would make the result a function of a traversal nobody declared, which is the
-    // same objection the randomized split rule raises against a sequential stream.
-    // The metric coefficients are LAGGED with it — recomputed from the sweep's own
-    // starting positions — which is what makes each sweep a linear operation and
-    // the whole solve a fixed-point iteration rather than a Newton step.
-    //
-    // BOUNDED AND REPORTED. `smoothIters` is a CAP: the solve stops the moment the
-    // largest node move in a sweep falls under `MB_SMOOTH_TOL` of the starting
-    // mesh's bounding-box diagonal, and a solve still moving at the cap comes back
-    // with `smoothConverged == false`, its residual, and a WARNING naming the
-    // number to raise. What must not happen is the third thing: a truncated solve
-    // handed back as though it had finished.
-    //
-    // AND IT CAN DIVERGE, which is the third outcome and the one a cap alone hides.
-    // Measured on the shipped C-grid: the residual falls monotonically to 2.8e-07
-    // by sweep 5000 and then GROWS, reaching 1.3e-03 by sweep 10000 with 88 folded
-    // cells — the lagged-coefficient point iteration is conditionally stable, and by
-    // then the grid is skewed enough for the condition to fail. So the solve watches
-    // its own residual, stops when it has climbed to MB_SMOOTH_DIVERGE_FACTOR times
-    // the smallest it reached, and returns THE BEST ITERATE rather than the last
-    // one. That is not a cover-up: `smoothDiverged` and the sweep number of the
-    // iterate returned are both published, and the seam pushes a warning saying so.
-    // Handing back a mesh that got worse the longer it was asked to work is the
-    // thing that would be.
-    if (params.smoothIters > 0) {
-        r.preSmoothNodes = r.nodes;
-        // The length the residual is expressed in. Taken from the mesh the solve
-        // STARTS from, once, so a converging solve is not chasing a moving ruler.
-        double xLo = r.nodes[0].x, xHi = r.nodes[0].x;
-        double yLo = r.nodes[0].y, yHi = r.nodes[0].y;
-        for (const Point2D& p : r.nodes) {
-            xLo = std::min(xLo, p.x); xHi = std::max(xHi, p.x);
-            yLo = std::min(yLo, p.y); yHi = std::max(yHi, p.y);
-        }
-        const double diag = std::sqrt((xHi - xLo) * (xHi - xLo)
-                                    + (yHi - yLo) * (yHi - yLo));
-        // A degenerate mesh (every node in one place) has no scale to be relative
-        // to. It cannot reach here — an edge with two identical endpoints is
-        // refused long before — but dividing by it would turn a residual into a
-        // NaN that compares false against every tolerance and so never converges.
-        const double ref = (diag > 0.0) ? diag : 1.0;
-
-        // The best iterate seen, kept so a diverging solve can be rolled back to it.
-        // One extra node vector, allocated once — the same order of memory the
-        // before/after report already costs, and the same order of work per sweep
-        // as the sweep itself.
-        std::vector<Point2D> bestNodes;
-        double bestResidual = 0.0;
-        int bestSweep = 0;
-
-        for (int sweep = 0; sweep < params.smoothIters; ++sweep) {
-            std::vector<Point2D> next = r.nodes;
-            double worst = 0.0;
-            for (const MbBlock& b : r.blocks) {
-                for (int j = 1; j + 1 < b.nj; ++j) {
-                    for (int i = 1; i + 1 < b.ni; ++i) {
-                        MbWinslowStencil st;
-                        st.c      = r.nodes[static_cast<size_t>(b.nodeAt(i,     j    ))];
-                        st.iPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j    ))];
-                        st.iMinus = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j    ))];
-                        st.jPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i,     j + 1))];
-                        st.jMinus = r.nodes[static_cast<size_t>(b.nodeAt(i,     j - 1))];
-                        st.pp     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j + 1))];
-                        st.mp     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j + 1))];
-                        st.pm     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j - 1))];
-                        st.mm     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j - 1))];
-                        const Point2D moved = mbWinslowUpdate(st);
-                        next[static_cast<size_t>(b.nodeAt(i, j))] = moved;
-                        const double d = (moved - st.c).length();
-                        if (d > worst) worst = d;
-                    }
-                }
-            }
-            r.nodes.swap(next);
-            r.smoothSweeps = sweep + 1;
-            r.smoothResidual = worst / ref;
-            if (r.smoothResidual <= MB_SMOOTH_TOL) { r.smoothConverged = true; break; }
-            if (bestNodes.empty() || r.smoothResidual < bestResidual) {
-                bestNodes = r.nodes;
-                bestResidual = r.smoothResidual;
-                bestSweep = r.smoothSweeps;
-                continue;
-            }
-            if (r.smoothResidual > bestResidual * MB_SMOOTH_DIVERGE_FACTOR) {
-                r.nodes = bestNodes;
-                r.smoothDiverged = true;
-                r.warnings.push_back(
-                    "the elliptic smoother DIVERGED: its residual fell to "
-                    + std::to_string(bestResidual) + " after "
-                    + std::to_string(bestSweep) + " sweep(s) and then grew to "
-                    + std::to_string(r.smoothResidual) + " by sweep "
-                    + std::to_string(r.smoothSweeps)
-                    + ". The mesh returned is the BEST iterate, from sweep "
-                    + std::to_string(bestSweep) + " — the later ones are worse, not "
-                      "more converged. Lower MB_SMOOTH_ITERS to at most that number; "
-                      "a grid this far from its declared spacing is what the "
-                      "iteration goes unstable on.");
-                r.smoothSweeps = bestSweep;
-                r.smoothResidual = bestResidual;
-                break;
-            }
-        }
-        if (!r.smoothConverged && !r.smoothDiverged)
-            r.warnings.push_back(
-                "the elliptic smoother stopped at its cap of "
-                + std::to_string(params.smoothIters)
-                + " sweep(s) while still moving nodes (residual "
-                + std::to_string(r.smoothResidual) + ", converged below "
-                + std::to_string(MB_SMOOTH_TOL) + "). The mesh is the "
-                "PARTLY-SOLVED one, not a converged elliptic grid; raise "
-                "MB_SMOOTH_ITERS to finish the solve.");
-    }
+    // The solve itself is `mbSmoothBlocks` above, where its own rationale is:
+    // which nodes move, why Jacobi, and what the three endings of a bounded
+    // elliptic solve are. Here is only WHERE it runs.
+    if (params.smoothIters > 0) mbSmoothBlocks(r, params.smoothIters);
 
     // ── Split every block, and emit its boundary faces ────────────────────
     //

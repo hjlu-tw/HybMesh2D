@@ -204,7 +204,9 @@
 // reader can tell a smoothed result from an unsmoothed one by its shape" true by
 // construction rather than by re-inspecting each reader whenever one is added.
 //
-// TEN MORE for #82's Winslow kernel, measured 2026-09-04 the same way (each patch
+// THIRTEEN MORE for #82's Winslow kernel — twelve below that bite and a
+// THIRTEENTH, E, recorded further down as inert because it cannot be anything
+// else. Measured 2026-09-04 the same way (each patch
 // applied alone, rebuilt, BOTH this executable and
 // tools/PreProcessor/tests/test_multiblock_smooth_surface.py run, exit codes read
 // BEFORE the FAIL counts, control run clean). All against src/MultiBlock.cpp:
@@ -223,8 +225,23 @@
 //   I  the rolled-back sweep count not rolled back     -> surface 7 ONLY (1)
 //   J  the sweep also writes into its own source       -> 42, 43 (2);
 //      (Gauss-Seidel by the back door)                    surface 4, 5 (3)
+//   K  the capped advice ignores whether the solve      -> surface 7 ONLY (1)
+//      has turned past its best
+//   L  the best iterate recorded AFTER the convergence  -> 49 ONLY (1)
+//      test again, so a converged solve's "best" is
+//      the sweep before the one it returned
 //
-// AND ONE THAT IS INERT BECAUSE IT CANNOT BE ANYTHING ELSE. E — the two OFF
+// K AND L ARE #82's REVIEW ARRIVING AS CODE. The spec axis found that a capped run
+// was told to "raise MB_SMOOTH_ITERS to finish the solve" when converging is the
+// WORSE outcome at this kernel (the converged O-grid is 1382% off its declared wall
+// height), and that a run whose residual has already turned was given the same
+// advice as one still descending. Both endings still wear
+// `converged == false && diverged == false`, so the flags cannot tell them apart —
+// `smoothBestSweep`/`smoothBestResidual` are what do, and K and L are the two ways
+// that pair goes wrong. Each is caught by exactly one gate, which is why both gates
+// gained a check rather than one.
+//
+// AND THE ELEVENTH IS INERT BECAUSE IT CANNOT BE ANYTHING ELSE. E — the two OFF
 // diagonals (mp and pm) filled from swapped indices — changes nothing and no gate
 // can catch it, because the cross-derivative stencil is (pp - mp - pm + mm) and
 // those two enter with the SAME sign. That is a symmetry of the discretisation,
@@ -3028,6 +3045,29 @@ int main() {
               + std::to_string(rc.smoothResidual) + ")");
         CHECK(smoothWarnings(rc).empty(),
               "49. ...and a converged solve warns about nothing");
+        CHECK(rc.smoothBestSweep == rc.smoothSweeps
+                  && rc.smoothBestResidual == rc.smoothResidual,
+              "49. ...and its BEST iterate is the one it returned, recorded on the "
+              "converging sweep itself rather than on the one before it (best "
+              + std::to_string(rc.smoothBestSweep) + " vs returned "
+              + std::to_string(rc.smoothSweeps) + ")");
+        // A CAP REACHED PAST THE TURN, told apart from a cap reached on the way down
+        // — #82's review finding. Both wear `converged == false && diverged ==
+        // false`, so the flags cannot distinguish them and the best-iterate pair is
+        // what does. The mesh is still the LAST iterate: N sweeps means N sweeps
+        // outside the diverged path, which is also what check 43 rests on.
+        MbParams down;
+        down.smoothIters = 3;
+        MbResult rd = build(wallSquare(9, 7, "0.02"), down);
+        CHECK(rd.smoothBestSweep == rd.smoothSweeps && !rd.smoothConverged,
+              "49. a cap reached while the residual is still FALLING returns its own "
+              "best (sweep " + std::to_string(rd.smoothBestSweep) + " of "
+              + std::to_string(rd.smoothSweeps) + ")");
+        CHECK(!smoothWarnings(rd).empty()
+                  && mentions(smoothWarnings(rd)[0],
+                              "a CONVERGED solve is not the goal at this kernel"),
+              "49. ...and is NOT told to raise the cap until it converges, which at "
+              "this kernel points at the harmonic map and a wall height nothing held");
         // A run at exactly the sweep count the converged one used must land on the
         // same mesh: the early stop is a stop, not a different answer.
         MbParams exact;

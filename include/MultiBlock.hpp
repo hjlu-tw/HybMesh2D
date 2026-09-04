@@ -169,11 +169,13 @@ constexpr double MB_SMOOTH_TOL = 1e-8;
 // this many times the smallest it ever reached.
 //
 // It is a real regime and not a defensive nicety — measured 2026-09-04 on the
-// SHIPPED C-grid, where the residual falls monotonically to 2.8e-07 by sweep 5000
-// and then grows by about 1.0018 per sweep, so that by sweep 10000 it is 1.3e-03
-// and 88 cells have folded. The lagged-coefficient point iteration is only
-// conditionally stable, and a grid this equidistributed (max non-orthogonality
-// 74.8 deg by then) is where the condition fails.
+// SHIPPED C-grid, where the residual falls monotonically to 2.7e-08 by sweep 3724
+// and then GROWS, at about 1.0017 per sweep: 2.8e-07 by sweep 5000, 1.7e-06 by
+// 6000, and 1.3e-03 by sweep 10000 with 88 cells folded (that tail measured with
+// the stop below removed, since with it in place the solve never gets there). The
+// lagged-coefficient point iteration is only conditionally stable, and a grid this
+// equidistributed (max non-orthogonality 74.8 deg by then) is where the condition
+// fails.
 //
 // TEN and not two: the residual of a healthy solve falls monotonically on every
 // case measured here, so a factor of two would be a live tripwire on a wobble,
@@ -448,10 +450,28 @@ struct MbResult {
     //                   diagonal. NEGATIVE means no sweep ran, for the reason
     //                   `MbQualityReport` gives: 0.0 is a superb result and must
     //                   not stand in for "not measured".
+    //   smoothBest*     the SMALLEST residual the solve reached and the sweep that
+    //                   reached it. Equal to the pair above on a converged solve
+    //                   and on a diverged one (which returns that iterate); on a
+    //                   solve stopped by its CAP they can differ, and when they do
+    //                   the returned mesh is past the turn — the iteration is
+    //                   already growing a mode, and raising the cap makes the mesh
+    //                   worse rather than more converged. Published because that
+    //                   is not derivable from the other two and is the difference
+    //                   between "keep going" and "stop, you are past it".
+    //
+    // FLAT, and not bundled into an `MbSmoothReport` the way `MbQualityReport`
+    // bundles the mesh figures — considered and declined in #82's review. The
+    // fifth member of this story is `preSmoothNodes` above, which is #81's
+    // published contract and is read as `res.preSmoothNodes` by the adapter; a
+    // struct holding four of the five would split one concern across two shapes,
+    // which is worse than the clump. Bundle all five or none.
     int smoothSweeps = 0;
     bool smoothConverged = false;
     bool smoothDiverged = false;
     double smoothResidual = -1.0;
+    int smoothBestSweep = 0;
+    double smoothBestResidual = -1.0;
 };
 
 // Parse `topologyJson`, resolve it against `geoms` and `params`, resolve every

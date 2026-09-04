@@ -647,7 +647,15 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     printMbQuality(q, smoothed ? " — after " + std::to_string(res.smoothSweeps)
                                      + " Winslow sweep(s)"
                                : std::string());
-    // WHETHER THE SOLVE FINISHED, beside what it produced. A cap reached while the
+    // WHETHER THE SOLVE FINISHED, beside what it produced.
+    //
+    // The three endings are decided ONCE, in the seam, and are read here as flags —
+    // this layer picks the SENTENCE, never the verdict. That is the same division
+    // the warnings above already follow ("warnings are DATA on the way out of the
+    // seam; saying them is this layer's job"), and it is why the cascade below reads
+    // like a second decision and is not one: move it into the seam and the seam
+    // would be choosing English.
+    // A cap reached while the
     // grid is still moving is not an error and does not change the exit code — the
     // mesh may be perfectly usable — but it must not be readable as a converged
     // elliptic grid, which is what printing only "200 sweeps" would leave it as.
@@ -655,8 +663,8 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // record beside the quality figures, and one machine-readable line in the same
     // shape as HYBMESH_MB_QUALITY so a gate greps rather than parses prose.
     if (smoothed) {
-        std::ostringstream res_;
-        res_ << std::scientific << std::setprecision(3) << res.smoothResidual;
+        std::ostringstream resid;
+        resid << std::scientific << std::setprecision(3) << res.smoothResidual;
         std::cout << "\n[ Multi-block Elliptic Smoothing ]\n";
         std::cout << mbRow("Sweeps") << res.smoothSweeps << " of "
                   << config.mbSmoothIters << " (cap)\n";
@@ -666,19 +674,32 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                           : res.smoothDiverged
                                 ? "NO — DIVERGED; the mesh is the BEST iterate, not "
                                   "the last (see the warning above)"
-                                : "NO — the mesh is the partly-solved one; raise "
-                                  "MB_SMOOTH_ITERS to finish it")
+                          : res.smoothResidual > res.smoothBestResidual
+                                ? "NO — and PAST ITS BEST; the iteration has turned, "
+                                  "so a higher cap is a worse mesh"
+                                : "NO — the mesh is the partly-solved one, and a "
+                                  "converged one is not the goal at this kernel")
+                  << "\n";
+        std::ostringstream best;
+        best << std::scientific << std::setprecision(3) << res.smoothBestResidual;
+        std::cout << mbRow("Best residual") << best.str() << " at sweep "
+                  << res.smoothBestSweep
+                  << (res.smoothBestSweep == res.smoothSweeps
+                          ? " (the mesh exported)"
+                          : " — NOT the mesh exported")
                   << "\n";
         std::ostringstream tol;
         tol << std::scientific << std::setprecision(3) << hybmesh::MB_SMOOTH_TOL;
-        std::cout << mbRow("Residual") << res_.str()
+        std::cout << mbRow("Residual") << resid.str()
                   << " (last sweep's largest node move / domain diagonal; converges "
                      "below " << tol.str() << ")\n";
         std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
                   << " cap=" << config.mbSmoothIters
                   << " converged=" << (res.smoothConverged ? 1 : 0)
                   << " diverged=" << (res.smoothDiverged ? 1 : 0)
-                  << " residual=" << res_.str()
+                  << " residual=" << resid.str()
+                  << " best_sweep=" << res.smoothBestSweep
+                  << " best_residual=" << best.str()
                   << " tol=" << tol.str() << "\n";
     }
 

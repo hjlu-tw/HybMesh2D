@@ -1392,9 +1392,25 @@ WINSLOW".
   its worst node with its connectivity redrawn. #81 wrote that case precisely so a kernel
   change would show up here as a number, and it did.
 
-- **Ten hand injections dated 2026-09-04** in `tests/cpp/test_multiblock.cpp`'s docstring,
-  each applied alone with both the C++ test and the surface gate run and exit codes read
-  before FAIL counts. Three are worth repeating. **G (the divergence rollback removed) and I
+- **A CAP IS TWO SITUATIONS, which the review found and the code now says.** The first
+  form of the capped warning told the reader to "raise MB_SMOOTH_ITERS to finish the
+  solve" — advice this ticket's own tables contradict, since a CONVERGED plain Winslow
+  solve is each block's harmonic map and is 3133% off the declared wall height on the
+  C-grid and 1382% on the O-grid. Converging is the worse outcome at this kernel, and the
+  only useful settings (a cap of 1 to about 5) are exactly the ones that print
+  `Converged: NO`. Worse, that one sentence was given to two different situations: a solve
+  still DESCENDING has more to give, while one whose residual is already above the best it
+  reached has TURNED, and both wear `converged == false && diverged == false`. So
+  `smoothBestSweep` / `smoothBestResidual` are published — recorded before either stop is
+  tested, so a converged solve's best is the sweep it returned rather than the one before
+  — and the advice branches on them. The mesh at a cap is still the LAST iterate: N sweeps
+  has to mean N sweeps outside the diverged path, which is what check 43 rests on, so the
+  difference is said rather than silently repaired.
+
+- **Thirteen hand injections dated 2026-09-04** in `tests/cpp/test_multiblock.cpp`'s
+  docstring — twelve that bite and one recorded inert — each applied alone with both the
+  C++ test and the surface gate run and exit codes read before FAIL counts. Three are worth
+  repeating. **G (the divergence rollback removed) and I
   (the reverse — the nodes rolled back but not the sweep count) were BOTH inert** against
   every check that existed, including the one asserting the diverged run exports a mesh with
   no folded cell, which is true of either iterate; what catches them is a ROUND TRIP that

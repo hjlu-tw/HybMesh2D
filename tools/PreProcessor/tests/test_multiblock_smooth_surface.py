@@ -292,12 +292,41 @@ def main() -> int:
               s1.get("sweeps") == 1 and s1.get("cap") == 1
               and s1.get("residual", 0) > 0)
         check("7. ...and a cap of one has NOT converged, in the line and in a "
-              "warning naming the key to raise",
+              "warning naming the key — WITHOUT telling the reader to raise it "
+              "until it converges, which at this kernel points at the harmonic map "
+              "and a 3133%-off wall",
               s1.get("converged") == 0 and s1.get("diverged") == 0
-              and "MB_SMOOTH_ITERS to finish the solve" in out1)
+              and "MB_SMOOTH_ITERS" in out1
+              and "a CONVERGED solve is not the goal at this kernel" in out1)
+        check(f"7. ...and it names the BEST iterate beside the exported one, which "
+              f"at a small cap is the same sweep ({s1.get('best_sweep')})",
+              s1.get("best_sweep") == s1.get("sweeps")
+              and s1.get("best_residual") == s1.get("residual"))
         check("7. ...with the banner saying so in words, not only in the token",
               "[ Multi-block Elliptic Smoothing ]" in out1
               and re.search(r"Converged\s+: NO", out1) is not None)
+        # A CAP REACHED PAST THE TURN is a different answer from a cap reached on
+        # the way down, and #82's review is the reason it is told apart: the
+        # residual on the shipped C-grid bottoms out at sweep 3724, so a cap of 4000
+        # returns a mesh the solve was already walking away from. Advising that user
+        # to raise the cap would point at a worse mesh, and the flags alone cannot
+        # distinguish the two — both are `converged=0 diverged=0`.
+        _, outt, _ = run(tmp, "turned", "\nMB_SMOOTH_ITERS 4000\n")
+        st = smooth_line(outt)
+        check(f"7. a cap reached PAST the solve's best iterate is reported as such, "
+              f"not as a solve with more to give ({st})",
+              st.get("converged") == 0 and st.get("diverged") == 0
+              and st.get("best_sweep", 0) < st.get("sweeps", 0)
+              and st.get("best_residual", 1) < st.get("residual", 0))
+        check("7. ...and the advice turns over with it: the iteration has TURNED, so "
+              "raising the cap makes the mesh worse rather than more converged",
+              "the iteration has turned" in outt
+              and "PAST ITS BEST" in outt
+              and "a CONVERGED solve is not the goal" not in outt)
+        check("7. ...while the mesh returned is still the LAST iterate, because N "
+              "sweeps has to mean N sweeps outside the diverged path",
+              st.get("sweeps") == 4000)
+
         # The DIVERGING ending, on the case that actually does it.
         rcd, outd, stemd = run(tmp, "diverge", "\nMB_SMOOTH_ITERS 50000\n")
         sd = smooth_line(outd)

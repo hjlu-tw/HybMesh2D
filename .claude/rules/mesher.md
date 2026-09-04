@@ -471,11 +471,36 @@ on purpose). **Full rationale, the before/after tables and the reversals:
   iterate's own sweep number published. **Never hand back a truncated solve as though it had
   finished** — that is the whole of #82's third criterion, and the banner, the warning and the
   `HYBMESH_MB_SMOOTH` line all say which ending it was.
+- **A CAP IS TWO SITUATIONS, AND THE ADVICE MUST TELL THEM APART.** `smoothBestSweep` /
+  `smoothBestResidual` publish the smallest residual the solve reached and when — recorded
+  BEFORE either stop is tested, so a converged solve's best is the sweep it returned. A capped
+  run whose residual is still FALLING has more to give; one already ABOVE its best has TURNED,
+  and telling that user to raise the cap points them at a worse mesh. Both wear
+  `converged == false && diverged == false`, so the flags cannot distinguish them. **And in
+  neither case is "raise it until it converges" the advice**: a converged plain Winslow solve is
+  each block's harmonic map and holds no declared first-cell height at all (3133% off on the
+  shipped C-grid, 1382% on the O-grid), so at this kernel "not converged" is a statement of fact
+  and not a to-do. A small cap is the useful setting until #83 lands. **The mesh returned at a
+  cap is still the LAST iterate, never the best** — N sweeps has to mean N sweeps outside the
+  diverged path — so the difference is SAID, not silently repaired.
 - **THE REPORT IS BEFORE AND AFTER.** `MbResult::preSmoothNodes` publishes the mesh as it stood
   before the first sweep, so the two reports are the same cells and blocks over two coordinate
   sets and their difference is the smoother alone. On the shipped C-grid, ONE sweep: max
   non-orthogonality **32.04° -> 31.44°** (BETTER — the metric #80 exists for), mean **4.56° ->
   4.78°**, wall first cell **0.44% -> 11.65%**. At five sweeps max reaches **29.84°**.
+- **EACH MACHINE-READABLE LINE KEEPS ONE MEANING, and the prefix is matched WITH its
+  trailing space.** `HYBMESH_MB_QUALITY` always describes the mesh AS EXPORTED; the before half
+  is `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's
+  QUALITY REPORT is byte for byte what it was — not its whole output, which gains one
+  unconditional `Smoothing Sweeps` provenance row on purpose. The trailing space is what keeps
+  the suffixed line from being read as the real one, and it is matched in the ONE parser
+  (`test_multiblock_quality_surface.qlines`) every gate imports rather than in four near-copies.
+  `HYBMESH_MB_SMOOTH` is the SECOND such line (#82) and describes the SOLVE, not the mesh: it
+  appears only when a sweep ran, carries
+  `sweeps cap converged diverged residual best_sweep best_residual tol`, and wears
+  no suffix because it has no before/after half — a run either solved or did not. Its parser is
+  `test_multiblock_smooth_surface.smooth_line`, and it lives beside that gate rather than beside
+  `qlines` because a run can report a mesh without reporting a solve.
 - **THE WALL FIRST CELL IS STILL WORSE, and that is #83's, not a defect to paper over.** Plain
   Winslow relaxes toward each block's harmonic map, which has no memory of the declared first-cell
   height; the control functions that hold it are #80's ticket 3. Record the miss as a number.
@@ -496,8 +521,10 @@ on purpose). **Full rationale, the before/after tables and the reversals:
   nothing the Laplacian folded (4 at 5 sweeps, 26 at 20) and REPAIRS folds the algebraic fill makes
   (13 of 13 on a re-entrant block). Reaching one now needs a wall first cell of 0.0005 on the
   C-grid fixture.
-- Gated by `tests/cpp/test_multiblock.cpp` 40-50 (7 injections from #81 plus 10 more from #82, all
-  dated in that file, one of them recorded INERT-by-symmetry), 
+- Gated by `tests/cpp/test_multiblock.cpp` 40-50 (7 injections from #81 plus 13 more from #82, all
+  dated in that file — twelve bit, and a thirteenth is recorded INERT because the two off-diagonals
+  of the cross stencil enter with the same sign, which no gate can catch and nothing should try
+  to), 
   `tests/test_multiblock_smooth_surface.py` (9 groups on the SHIPPED C-grid AND O-grid) and the
   `mb_cgrid_smooth` golden case. The divergence path and the rollback are gated by that surface
   gate ALONE: 26 synthetic fixtures were tried in the C++ test and every one converged.
