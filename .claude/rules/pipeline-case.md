@@ -482,8 +482,13 @@ folder, and loads it back.
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against one
-list. #70 moved all four; #56 added the last two.
+list. #70 moved all four; #56 added the last three.
 
+- **`_case_source_files` describes the config AS IT STANDS, not the run that made the grid.** A
+  grid meshed in `MESH_MODE 1` and sent to the solver after the panel is flipped back to hybrid
+  stages no topology — the same staleness the list already has for the session's geometry and the
+  output name, so it is a property of the whole list rather than of the topology. Nothing tracks
+  which mode produced the grid on disk.
 - **The staged `Background_para_<case>.dat` names the topology at its ORIGINAL path, not the
   staged copy** — exactly as it already does for `GEOM_FILE`. The case is self-DESCRIBING (you can
   see which topology it used), not self-CONTAINED (you cannot re-mesh it from the folder alone),

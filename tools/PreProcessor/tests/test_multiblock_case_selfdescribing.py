@@ -232,6 +232,20 @@ check(topo in _src,
 check(any(n.startswith("Background_para_") for n, _t in _gen),
       "6. ...without disturbing the generated mesh parameter file beside it")
 
+# The two halves JOINED, not each proved alone: checks 2-3 drive the staging
+# service with a hand-built list and check 6 only asks what the host collected.
+# A host that returns the right paths into a service nobody hands them to is two
+# green checks and no staged topology, which is what a real run showed.
+_pipe_grid = os.path.join(tmp, "hostcase", "grid")
+os.makedirs(_pipe_grid, exist_ok=True)
+case_sources.stage_case_sources(_src, _pipe_grid, generated=_gen)
+_pipe_cad = os.path.join(_pipe_grid, case_sources.SOURCE_DIR_NAME)
+_pipe_idx = open(os.path.join(_pipe_cad, case_sources.SOURCES_INDEX)).read()
+check(os.path.basename(topo) in os.listdir(_pipe_cad) and topo in _pipe_idx,
+      f"6. ...and feeding that host's own list to the staging service really "
+      f"lands the topology in grid/cad/ with its absolute origin in "
+      f"{case_sources.SOURCES_INDEX} ({sorted(os.listdir(_pipe_cad))})")
+
 # ── F. the mode and the topology round-trip ───────────────────────────────
 _text = mbcfg(topo).to_dict()
 _back = MeshConfig()
@@ -318,7 +332,12 @@ check(topo in _gui_src,
 
 ctl2.global_mesh_config.mesh_mode = MESH_MODE_HYBRID
 check(topo not in ctl2._case_source_files(),
-      "10. ...and stops staging it the moment the mode stops reading it")
+      "10. ...keyed on the LIVE config's mode, so a hybrid session never stages "
+      "a topology it did not read — and, the same fact read the other way, a "
+      "grid MESHED in mode 1 and sent to the solver after the panel was flipped "
+      "back stages no topology either (blind spot, named in the rule file: this "
+      "list describes the config as it stands, exactly as it already does for "
+      "the session's geometry and the output name)")
 
 # ── H. headless and batch, in a process that CANNOT import Qt ─────────────
 _NO_QT = """
@@ -389,6 +408,41 @@ else:
           "12. and so does the same script through the BATCH queue's engine "
           f"(rc={r2.returncode}; "
           f"{(r2.stdout + r2.stderr).strip().splitlines()[-1:] or ['']})")
+
+    # A topology-only case is the half that was BROKEN, so it is the half the two
+    # runs above use. The other half — a topology bound to real geometry — is the
+    # one this repo actually ships, and "already true" is a claim that decays.
+    geo_vtk = os.path.join(tmp, "out", "mb56_geo.vtk")
+    geo_script = os.path.join(tmp, "script", "mb56_geo.json")
+    gmc = mbcfg(os.path.join(_REPO, "examples", "topology",
+                             "cgrid_naca0012.json"))
+    gmc.bl_initial_thickness = 0.001
+    gmc.bc_geom = "wall"
+    gmc.export_vtk = True
+    gmc.output_filename = geo_vtk
+    w(geo_script, json.dumps({
+        "pipeline_version": 2, "name": "mb56_geo",
+        "cads": [{"input_file": "examples/geometries/naca0012_cgrid.dat",
+                  "skip": True},
+                 {"input_file": "examples/geometries/cgrid_farfield.dat",
+                  "skip": True}],
+        "mesh": gmc.to_dict(), "solver": {"skip": True},
+    }, indent=2))
+    r3 = _run_headless(
+        "from app.services.pipeline_runner import run_pipeline\n"
+        "from app.models.pipeline_config import PipelineConfig\n"
+        "import json, sys\n"
+        "pc = PipelineConfig.from_dict(json.load(open(sys.argv[1])))\n"
+        "run_pipeline(pc, log=lambda m: print(m, flush=True), run_solver=False)\n",
+        geo_script)
+    check(r3.returncode == 0 and os.path.exists(geo_vtk),
+          "13. a multi-block case whose edges BIND to a real geometry meshes "
+          f"headless too, with the same no-PyQt6 finder in place "
+          f"(rc={r3.returncode}; "
+          f"{(r3.stdout + r3.stderr).strip().splitlines()[-1:] or ['']})")
+    check("Inverted cells       : 0 of" in (r3.stdout + r3.stderr),
+          "13. ...and the mesher's own quality report says the blocks filled: "
+          "an empty domain would also produce a .vtk")
 
 shutil.rmtree(tmp, ignore_errors=True)
 _wd.cancel()
