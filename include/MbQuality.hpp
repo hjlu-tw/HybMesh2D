@@ -59,19 +59,31 @@ namespace hybmesh {
 // fill itself uses.
 //
 // WHAT THIS FIGURE IS, said plainly, because its name invites a stronger reading
-// than it can support in this release. Nothing in a v0 topology declares a
-// wall-normal first-cell height independently of the edge distribution, so the
-// request is DERIVED from the same spacing law the fill reproduces — and the
-// transfinite blend is exact on the boundary, so at the side's two END COLUMNS the
-// achieved height IS the requested one identically, by construction. A rectangle
-// therefore reports 0.00% as a tautology, not as evidence that the instrument
-// works; the discriminating evidence is a block the blend distorts (a trapezoid
-// measures 7.4%, a folded dart 25.4%). Read it as "how far the interior drifted
-// from what the two ends declare", which is exactly the figure elliptic smoothing
-// moves. The independent target — a wall spacing asked for by
-// `BL_INITIAL_THICKNESS` and friends rather than by an edge count — arrives with
-// the wall-spacing resolution work, and when it does only the PUBLISHER in
-// `buildMultiBlock` changes; this struct and every reader of it stay as they are.
+// than the weaker of its two cases can support. It now has TWO cases, and which
+// one a wall is in depends on the DOCUMENT, not on this header.
+//
+// * The perpendicular edge DECLARES a wall spacing (`wall_ends` / `ds_start` /
+//   `ds_end`, issue #55). Then the request is an INDEPENDENT TARGET — a length
+//   the topology asked for, resolved from `BL_INITIAL_THICKNESS` or from the
+//   edge's own override — and this figure is a real comparison of the mesh
+//   against the declaration. It is nonzero for two reasons worth telling apart:
+//   interior distortion, and the FACETING of a curved geometry stored as a
+//   polyline (0.08% on the shipped O-grid, 0.0007% on a 10x finer circle).
+//
+// * The perpendicular edge declares nothing. Then the request falls back to the
+//   first interval the fill produced, which is DERIVED from the same spacing law
+//   the fill reproduces — and the transfinite blend is exact on the boundary, so
+//   at the side's two END COLUMNS the achieved height IS the requested one
+//   identically, by construction. A rectangle therefore reports 0.00% as a
+//   tautology, not as evidence that the instrument works; the discriminating
+//   evidence is a block the blend distorts (a trapezoid measures 7.4%, a folded
+//   dart 25.4%). Read it as "how far the interior drifted from what the two ends
+//   declare", which is exactly the figure elliptic smoothing moves.
+//
+// #51 predicted that when the independent target arrived only the PUBLISHER in
+// `buildMultiBlock` would change. It did: this struct and every reader of it are
+// untouched, and the fallback above is what keeps the second case's older reading
+// true for a topology that asks for no height.
 //
 // The height is a distance ALONG the grid line, not the perpendicular distance to
 // the wall; on a non-orthogonal block the two differ by cos(non-orthogonality),

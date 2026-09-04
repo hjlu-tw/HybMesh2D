@@ -352,7 +352,11 @@ the measurements that forced the blending change, the acceptance run and the bli
   `delta` beside a spacing; a non-positive height; an unknown `wall_ends`; a `growth` on a
   non-geometric edge; a wall end with no height anywhere, naming `BL_INITIAL_THICKNESS`. A request
   the edge could not honour (coarser than its count allows) is a WARNING measured on the produced
-  nodes, not re-derived from the law.
+  nodes, not re-derived from the law — and **in ARC LENGTH, never the chord**: a bound edge follows
+  a polyline, so a first interval spanning several facets has a shorter chord, and comparing that
+  fired the warning on a law that had honoured the request exactly (a 0.05 request reported as
+  0.049978) while blaming the node count for the geometry's own faceting. Found by BOTH review axes
+  independently; gated with a negative control by `test_multiblock.cpp` 36.
 - **`coons` blends by the boundary's own NORMALIZED ARC LENGTH, not by the logical index**, and this
   is load bearing rather than a refinement: the index blend put an O-grid's first interior ring
   **6927% above** the requested wall height (806% even at twelve sectors), the arc-length blend
@@ -370,7 +374,7 @@ the measurements that forced the blending change, the acceptance run and the bli
 - **The shipped circles are checked against their ONE generator** (`write_circle` in the surface
   gate), never trusted: a hand-edited `.dat` whose `.meta` still describes the old point set is a
   mesh with corners on the wrong segments and no error at all.
-- Gated by `tests/cpp/test_multiblock.cpp` 30-35, `tests/test_multiblock_ogrid_surface.py` (8 groups
+- Gated by `tests/cpp/test_multiblock.cpp` 30-36, `tests/test_multiblock_ogrid_surface.py` (8 groups
   on the SHIPPED files, reusing #53's conformity measure) and the `mb_ogrid` golden case. The
   dated solver acceptance run is in that file's docstring.
 

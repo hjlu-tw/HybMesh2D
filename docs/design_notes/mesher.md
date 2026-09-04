@@ -947,7 +947,50 @@ reach the solver.
   an analytic curve. A second macro `HYBMESH_MULTIBLOCK_BL_READ` carries the split rather
   than shortening the survivor list, because the two lists answer different questions: the
   GUI shows a row when a parameter SURVIVES, and the run stays quiet when it is READ.
-- **The gates.** `tests/cpp/test_multiblock.cpp` 30-35 (the default law as bit equality,
+- **THE CODE REVIEW ROUND, 2026-09-04, and BOTH AXES FOUND THE SAME DEFECT INDEPENDENTLY.** The
+  "you asked for a spacing you did not get" warning compared the produced CHORD against an
+  ARC-LENGTH request at `1e-9` relative. A bound edge follows a POLYLINE, so a first interval
+  spanning several facets has a chord shorter than the arc: Standards reasoned it out from the two
+  measures, Spec reproduced it (`ds_start: 0.03` on a bound arc reporting 0.029995), and both noted
+  the message then blames the NODE COUNT for the geometry's own faceting — advice that would send a
+  user to re-seed a class that was never the problem. Reproduced here at 0.05 -> 0.049978. Fixed by
+  publishing the achieved end intervals from `discretise`, which is the only scope holding both the
+  positions and the measure they are in, so the two sides of the comparison are the same quantity
+  and the 1e-9 tolerance means something again. **Gated by check 36 WITH a negative control** (a
+  genuinely coarser request must still warn, or the check passes on a dead warning), and the fix
+  verified by re-injecting the chord measurement: check 36 goes red reproducing 0.049978 exactly,
+  and the restore passes.
+- **Three more findings acted on, none of them behaviour.** (1) `EdgeSpec::law` was a
+  `std::string` compared at EIGHT sites — the exact shape `.claude/rules/mesher.md` already refuses
+  for `MbEdgeKind` ("not a string compared at six sites — it was the latter for one commit, and the
+  review that caught it..."), so Standards was citing the repo against the diff. It is now a
+  file-local `SpacingLaw` enum with `spacingLawName` / `spacingLawList` / `parseSpacingLaw` in the
+  `mbSideAxis` shape, and every refusal builds its accepted list from that table. File-local rather
+  than in its own header, which is where `MbSplitRule` had to go: this never leaves the seam.
+  (2) `solveTanhStartDelta` was a verbatim copy of `solveTanhDelta`'s bisection, and each law's
+  expression existed twice (generator and solver) — so a change to one would silently make the
+  solver target a curve the generator does not draw. One `solveClusterDelta` over a position
+  function now, with `tanhBothPos` / `tanhStartPos` as the single home of each expression.
+  (3) The "which end" ternary was at three sites and the third INVERTS it against the block's
+  frame; ends are now indexed by an `EdgeEnd` and the inversion is one XOR against `rev`.
+- **Two findings ANSWERED rather than acted on, recorded so neither reads as an oversight.**
+  Spec called `ROOT_BUDGET` 33,500 -> 34,000 unnecessary because "the gate still passed". It did
+  pass — check 7 holds the VALUE, and blind spot (c2) of that gate says in as many words that the
+  DERIVATION is deliberately unchecked and that the rule at the constant "asks whoever edits the
+  root" to re-derive it. This work edited the root, which fell to 33,304 and left 196 of slack
+  against a documented band of (500, 1000] — the shape where a typo fix must also edit the gate.
+  #79 hit the same thing at 481 and re-derived by hand; this is that precedent, not a loosening.
+  Spec also read "topology edges project onto curved geometry" as partly delivered because nothing
+  projects onto an ANALYTIC curve. The acceptance criterion is "wall-adjacent edges follow the
+  circle, not its chords", which is met at 8.6e-5 against the 1.46e-1 a chord gives; the analytic
+  half is named as a blind spot in three places and is what `BL_USE_ANALYTIC_GEOM` waits for.
+- **Departure from #48's schema sketch, now recorded.** That sketch wrote
+  `"spacing": {"law", "initial", "growth"}`. `initial` does not exist here and is refused as an
+  unknown key: a single `initial` cannot say WHICH end clusters, and one-sided clustering is the
+  point — a wall-normal edge clusters at the wall, not at the far field. Hence `wall_ends` /
+  `ds_start` / `ds_end`. Undeclared until the Spec axis asked for it, which is the same omission
+  #53's review caught (a change that marked one rule superseded and left four others stale).
+- **The gates.** `tests/cpp/test_multiblock.cpp` 30-36 (the default law as bit equality,
   the solved height at three counts, the global and its per-edge override, the wrap-around
   ring, the published request with its negative control, and seven refusals);
   `tools/PreProcessor/tests/test_multiblock_ogrid_surface.py` (8 groups on the SHIPPED

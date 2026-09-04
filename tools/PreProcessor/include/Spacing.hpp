@@ -44,6 +44,17 @@ public:
         return tS;
     }
 
+    // WHERE node `i` lands under the symmetric tanh law, as ONE expression.
+    //
+    // Its own function because the generator and the solver that inverts it both
+    // need it, and they had two copies: a change to one would silently make the
+    // solver target a curve the generator does not draw. Same reason
+    // `tanhStartPos` exists below.
+    static double tanhBothPos(double L, int nT, double dlt, int i) {
+        const double xi = (double)i / (nT - 1);
+        return L * 0.5 * (1.0 + std::tanh(dlt * (2.0 * xi - 1.0)) / std::tanh(dlt));
+    }
+
     static std::vector<double> generateTanh(double L, int nT, double dlt) {
         std::vector<double> tS;
         // dlt == 0 makes tanh(dlt) == 0 -> division by zero (NaN). Degenerate
@@ -52,49 +63,51 @@ public:
             for (int i = 0; i < nT; ++i) tS.push_back(L * i / (nT - 1));
             return tS;
         }
-        for (int i = 0; i < nT; ++i) {
-            double xi = (double)i / (nT - 1);
-            tS.push_back(L * 0.5 * (1.0 + std::tanh(dlt * (2.0 * xi - 1.0)) / std::tanh(dlt)));
-        }
+        for (int i = 0; i < nT; ++i) tS.push_back(tanhBothPos(L, nT, dlt, i));
         return tS;
     }
 
+    // ONE bisection for every clustering law, over that law's own position
+    // function. `at(dlt, 1)` is the first interval, which is monotonically
+    // DECREASING in dlt for both laws below (more clustering -> finer ends), and
+    // that is what makes plain bisection safe here.
+    //
+    // Extracted when the one-sided law arrived and duplicated it verbatim --
+    // same bracket growth, same 200 iterations, same early returns, with only the
+    // position expression differing. Returns 0 when the request is at or coarser
+    // than uniform, so the caller falls back to uniform rather than clamping to a
+    // value that misrepresents what it did.
+    template <typename PosFn>
+    static double solveClusterDelta(const PosFn& at, double L, int nT, double ds_first) {
+        if (nT < 3 || L <= 0.0 || ds_first <= 0.0) return 0.0;
+        // At dlt -> 0 the distribution IS uniform, so nothing coarser than uniform
+        // can be asked for.
+        if (ds_first >= L / (nT - 1)) return 0.0;
+        // Grow the bracket until the finest achievable interval is at or below the
+        // request; 60 is far past the point where tanh saturates in double.
+        double lo = 1e-6, hi = 1.0;
+        while (at(hi, 1) > ds_first && hi < 60.0) hi *= 2.0;
+        if (at(hi, 1) > ds_first) return hi;   // unreachable: finest we can do
+        for (int it = 0; it < 200; ++it) {
+            const double mid = 0.5 * (lo + hi);
+            if (at(mid, 1) > ds_first) lo = mid;
+            else hi = mid;
+        }
+        return 0.5 * (lo + hi);
+    }
+
     // Clustering parameter `dlt` that makes generateTanh's FIRST interval equal
-    // `ds_first`, found by bisection.
+    // `ds_first`.
     //
     // Previously the caller mapped a requested spacing to dlt with the heuristic
     // `log(L / min(s0,s1)) * 0.5`, which does not reproduce the requested spacing
     // (it was off by ~40x for a chord-scale edge) and could only use one of the two
     // ends. A boundary-layer-like distribution is specified BY its first cell size,
     // so that has to be solved for, not approximated.
-    //
-    // generateTanh's first interval is monotonically DECREASING in dlt (more
-    // clustering -> finer ends), which is what makes plain bisection safe here.
-    // Returns 0 when the request is not achievable (>= the uniform spacing), so the
-    // caller can fall back to uniform rather than clamp to a misleading value.
     static double solveTanhDelta(double L, int nT, double ds_first) {
-        if (nT < 3 || L <= 0.0 || ds_first <= 0.0) return 0.0;
-        const double uniform = L / (nT - 1);
-        // At dlt -> 0 the distribution IS uniform, so nothing coarser than uniform
-        // can be asked for.
-        if (ds_first >= uniform) return 0.0;
-
-        auto first_interval = [&](double dlt) {
-            const double xi = 1.0 / (nT - 1);
-            return L * 0.5 * (1.0 + std::tanh(dlt * (2.0 * xi - 1.0)) / std::tanh(dlt));
-        };
-
-        double lo = 1e-6, hi = 1.0;
-        // Grow the bracket until the finest achievable interval is at or below the
-        // request; 60 is far past the point where tanh saturates in double.
-        while (first_interval(hi) > ds_first && hi < 60.0) hi *= 2.0;
-        if (first_interval(hi) > ds_first) return hi;   // unreachable: finest we can do
-        for (int it = 0; it < 200; ++it) {
-            const double mid = 0.5 * (lo + hi);
-            if (first_interval(mid) > ds_first) lo = mid;
-            else hi = mid;
-        }
-        return 0.5 * (lo + hi);
+        return solveClusterDelta(
+            [L, nT](double dlt, int i) { return tanhBothPos(L, nT, dlt, i); },
+            L, nT, ds_first);
     }
 
     // ── One-sided hyperbolic tangent (issue #55) ──────────────────────────
@@ -109,6 +122,11 @@ public:
     // xi = 1 and monotonically increasing in between, so the map cannot fold. As
     // dlt -> 0 it degenerates to uniform, which is why 0 is a legal argument
     // rather than a special case the caller has to avoid.
+    static double tanhStartPos(double L, int nT, double dlt, int i) {
+        const double xi = (double)i / (nT - 1);
+        return L * (1.0 + std::tanh(dlt * (xi - 1.0)) / std::tanh(dlt));
+    }
+
     static std::vector<double> generateTanhStart(double L, int nT, double dlt) {
         std::vector<double> tS;
         if (nT < 2) return tS;
@@ -116,40 +134,16 @@ public:
             for (int i = 0; i < nT; ++i) tS.push_back(L * i / (nT - 1));
             return tS;
         }
-        const double td = std::tanh(dlt);
-        for (int i = 0; i < nT; ++i) {
-            const double xi = (double)i / (nT - 1);
-            tS.push_back(L * (1.0 + std::tanh(dlt * (xi - 1.0)) / td));
-        }
+        for (int i = 0; i < nT; ++i) tS.push_back(tanhStartPos(L, nT, dlt, i));
         return tS;
     }
 
     // The clustering parameter that makes `generateTanhStart`'s FIRST interval
-    // equal `ds_first`, by bisection — the same shape as `solveTanhDelta` above
-    // and for the same reason: a boundary-layer-like distribution is specified BY
-    // its first cell size, so that has to be solved for rather than approximated
-    // by a heuristic that is off by a factor nobody notices.
-    //
-    // The first interval is monotonically DECREASING in dlt (more clustering ->
-    // finer at the wall), which is what makes plain bisection safe. Returns 0 when
-    // the request is at or coarser than uniform, so the caller falls back to
-    // uniform rather than clamping to a value that misrepresents what it did.
+    // equal `ds_first`, through the one bisection above.
     static double solveTanhStartDelta(double L, int nT, double ds_first) {
-        if (nT < 3 || L <= 0.0 || ds_first <= 0.0) return 0.0;
-        if (ds_first >= L / (nT - 1)) return 0.0;
-        auto first_interval = [&](double dlt) {
-            const double xi = 1.0 / (nT - 1);
-            return L * (1.0 + std::tanh(dlt * (xi - 1.0)) / std::tanh(dlt));
-        };
-        double lo = 1e-6, hi = 1.0;
-        while (first_interval(hi) > ds_first && hi < 60.0) hi *= 2.0;
-        if (first_interval(hi) > ds_first) return hi;   // the finest we can do
-        for (int it = 0; it < 200; ++it) {
-            const double mid = 0.5 * (lo + hi);
-            if (first_interval(mid) > ds_first) lo = mid;
-            else hi = mid;
-        }
-        return 0.5 * (lo + hi);
+        return solveClusterDelta(
+            [L, nT](double dlt, int i) { return tanhStartPos(L, nT, dlt, i); },
+            L, nT, ds_first);
     }
 
     // Task 1: Advanced Curvature-based spacing

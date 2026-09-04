@@ -196,10 +196,19 @@ def base_config(topo=_TOPO, thickness=None, geom_dir=_GEOM):
     """
     with open(_CONF, encoding="utf-8") as f:
         text = f.read()
-    text = text.replace("examples/topology/ogrid_circle.json", topo)
-    text = text.replace("examples/geometries/circle_", os.path.join(geom_dir, "circle_"))
-    text = text.replace("results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk",
-                        "@STEM@.vtk")
+    # EVERY retarget must actually land. A replacement that silently no-ops
+    # because the shipped config moved a path would leave the run writing into
+    # the repo's own results/ instead of a temp dir -- and the caller, seeing a
+    # mesh, would report PASS. Loud here rather than mysterious there.
+    for needle, repl in (
+            ("examples/topology/ogrid_circle.json", topo),
+            ("examples/geometries/circle_", os.path.join(geom_dir, "circle_")),
+            ("results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk", "@STEM@.vtk")):
+        if needle not in text:
+            raise AssertionError(
+                "%s no longer contains %r, so this test cannot retarget it away "
+                "from the repo. Update base_config()." % (_CONF, needle))
+        text = text.replace(needle, repl)
     if thickness is not None:
         text = "\n".join(
             (f"BL_INITIAL_THICKNESS {thickness}"

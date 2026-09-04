@@ -95,6 +95,59 @@ struct Corner {
     int geomIdx = -1;        // filled once `geom` is resolved against the loaded list
 };
 
+// WHICH point distribution an edge declares: a CLOSED SET, in one place, with its
+// declared names beside it.
+//
+// An enum rather than a validated string, and the difference is not cosmetic --
+// the law was a `std::string` compared against a literal at eight sites (four
+// refusals in `parseSpacing`, one in the resolution loop, three in
+// `spacingAlong`), which is eight chances for one of them to disagree with the
+// others. `MbEdgeKind` was exactly this for one commit and a review caught it; the
+// shape here is the same one (`mbEdgeKindName`, `mbSideAxis`), and the accepted
+// list every refusal prints is built from this table rather than retyped.
+//
+// File-local rather than in a header of its own, which is where `MbSplitRule` had
+// to go: this never leaves the seam. Nothing on `MbResult` publishes it and
+// `Config.hpp` has no opinion about it, so there is no coupling to invert.
+enum SpacingLaw { LAW_UNIFORM = 0, LAW_GEOMETRIC = 1, LAW_TANH = 2 };
+
+const char* spacingLawName(SpacingLaw l) {
+    switch (l) {
+        case LAW_UNIFORM:   return "uniform";
+        case LAW_GEOMETRIC: return "geometric";
+        case LAW_TANH:      break;
+    }
+    return "tanh";
+}
+
+// The accepted set, as one sentence, built from the table above so a law added
+// there cannot be missing from the refusals that list them.
+std::string spacingLawList() {
+    std::string out;
+    for (int k = 0; k <= LAW_TANH; ++k) {
+        out += (k ? ", '" : "'");
+        out += spacingLawName(static_cast<SpacingLaw>(k));
+        out += "'";
+    }
+    return out;
+}
+
+bool parseSpacingLaw(const std::string& text, SpacingLaw& out) {
+    for (int k = 0; k <= LAW_TANH; ++k) {
+        if (text != spacingLawName(static_cast<SpacingLaw>(k))) continue;
+        out = static_cast<SpacingLaw>(k);
+        return true;
+    }
+    return false;
+}
+
+// Which END of an edge, in its OWN declared direction. An index rather than an A/B
+// pair of fields, because the same "which end" ternary was about to be written at
+// three sites (resolve the global, warn about a miss, publish the wall request) and
+// the third one INVERTS it against the block's frame -- the shape that lets one of
+// three disagree with the others.
+enum EdgeEnd { END_START = 0, END_FINISH = 1 };
+
 struct EdgeSpec {
     std::string id;
     std::string a, b;        // corner ids, in the edge's own direction
@@ -115,19 +168,19 @@ struct EdgeSpec {
     // (same expression, `L * i / (n - 1)`), so this default changes no existing
     // mesh — measured against the golden set, which is why it is a default at all
     // rather than a migration.
-    std::string law = "tanh";
+    SpacingLaw law = LAW_TANH;
     double growth = 0.0;     // "geometric"; 0 -> the global default (BL_GROWTH_RATE)
-    double delta = 0.0;      // "tanh", declared RAW; mutually exclusive with ds*
-    // WALL CLUSTERING, per end, in the edge's OWN declared direction.
+    double delta = 0.0;      // "tanh", declared RAW; mutually exclusive with ds[]
+    // WALL CLUSTERING, per end, indexed by EdgeEnd in the edge's OWN direction.
     //
-    // `clusterA` / `clusterB` say an end sits on a wall and its first interval is
-    // therefore the wall spacing; `dsA` / `dsB` are that spacing once resolved —
-    // the edge's own `ds_start` / `ds_end` if it declared one, else the global
-    // `BL_INITIAL_THICKNESS`. Two fields rather than one signed value because "no
+    // `cluster[e]` says that end sits on a wall and its first interval is therefore
+    // the wall spacing; `ds[e]` is that spacing once resolved — the edge's own
+    // `ds_start` / `ds_end` if it declared one, else the global
+    // `BL_INITIAL_THICKNESS`. Two arrays rather than one signed value because "no
     // clustering here" and "clustering at a spacing that happens to be 0" are
     // different statements, and only the first is legal.
-    bool clusterA = false, clusterB = false;
-    double dsA = 0.0, dsB = 0.0;
+    bool cluster[2] = {false, false};
+    double ds[2] = {0.0, 0.0};
     // The source segment this edge LIES ON ("binding"); `bindGeom` empty for an
     // unbound edge. Every boundary edge generated along a bound edge carries that
     // segment's own BC label and its (geometry, segment) key, so the condition is
@@ -313,46 +366,38 @@ bool parseSpacing(const json& s, const std::string& where, EdgeSpec& e, std::str
     auto lw = s.find("law");
     if (lw != s.end()) {
         if (!lw->is_string()) {
-            err = where + ": 'law' must be a string ('uniform', 'geometric' or 'tanh').";
+            err = where + ": 'law' must be a string (" + spacingLawList() + ").";
             return false;
         }
-        e.law = lw->get<std::string>();
-    }
-    if (e.law != "uniform" && e.law != "geometric" && e.law != "tanh") {
-        err = where + ": unknown spacing law '" + e.law
-            + "'. Accepted: 'uniform', 'geometric', 'tanh'.";
-        return false;
+        if (!parseSpacingLaw(lw->get<std::string>(), e.law)) {
+            err = where + ": unknown spacing law '" + lw->get<std::string>()
+                + "'. Accepted: " + spacingLawList() + ".";
+            return false;
+        }
     }
 
-    // ── The clustering declaration ────────────────────────────────────────
-    auto number = [&](const char* key, double& out, bool& seen) {
-        auto it = s.find(key);
-        seen = false;
-        if (it == s.end()) return true;
+    // ── The clustering declaration, per end ───────────────────────────────
+    static const char* const kDsKey[2] = {"ds_start", "ds_end"};
+    for (int k = END_START; k <= END_FINISH; ++k) {
+        auto it = s.find(kDsKey[k]);
+        if (it == s.end()) continue;
         if (!it->is_number() || it->get<double>() <= 0.0) {
-            err = where + ": '" + key + "' must be a POSITIVE first-cell height (the "
-                  "distance from the wall to the first node off it). Leave it out to "
-                  "take the run's BL_INITIAL_THICKNESS, or drop this end from "
+            err = where + ": '" + kDsKey[k] + "' must be a POSITIVE first-cell height "
+                  "(the distance from the wall to the first node off it). Leave it out "
+                  "to take the run's BL_INITIAL_THICKNESS, or drop this end from "
                   "'wall_ends' to leave it unclustered.";
             return false;
         }
-        out = it->get<double>();
-        seen = true;
-        return true;
-    };
-    bool sawA = false, sawB = false;
-    if (!number("ds_start", e.dsA, sawA)) return false;
-    if (!number("ds_end", e.dsB, sawB)) return false;
-    e.clusterA = sawA;
-    e.clusterB = sawB;
+        e.ds[k] = it->get<double>();
+        e.cluster[k] = true;
+    }
 
-    auto we = s.find("wall_ends");
-    if (we != s.end()) {
+    if (s.find("wall_ends") != s.end()) {
         std::string text;
         if (!requireString(s, "wall_ends", where.c_str(), text, err)) return false;
-        if (text == "start")      e.clusterA = true;
-        else if (text == "end")   e.clusterB = true;
-        else if (text == "both")  e.clusterA = e.clusterB = true;
+        if (text == "start")      e.cluster[END_START] = true;
+        else if (text == "end")   e.cluster[END_FINISH] = true;
+        else if (text == "both")  e.cluster[END_START] = e.cluster[END_FINISH] = true;
         else {
             err = where + ": unknown 'wall_ends' value '" + text
                 + "'. Accepted: 'start' (the edge's first corner sits on a wall), "
@@ -362,20 +407,20 @@ bool parseSpacing(const json& s, const std::string& where, EdgeSpec& e, std::str
         }
     }
 
-    const bool clusters = e.clusterA || e.clusterB;
+    const bool clusters = e.cluster[END_START] || e.cluster[END_FINISH];
     auto dl = s.find("delta");
     if (dl != s.end()) {
         if (clusters) {
-            err = where + ": 'delta' is the tanh parameter itself and '"
-                  "wall_ends'/'ds_start'/'ds_end' are the first-cell height it would be "
+            err = where + ": 'delta' is the tanh parameter itself and "
+                  "'wall_ends'/'ds_start'/'ds_end' are the first-cell height it would be "
                   "SOLVED from, so declaring both is two answers to one question. Keep "
                   "the spacing (it is the physical quantity) or keep 'delta' (it is the "
                   "raw law), not both.";
             return false;
         }
-        if (e.law != "tanh") {
+        if (e.law != LAW_TANH) {
             err = where + ": 'delta' is the clustering strength of the 'tanh' law, but "
-                  "this edge declares law '" + e.law + "'.";
+                  "this edge declares law '" + spacingLawName(e.law) + "'.";
             return false;
         }
         if (!dl->is_number()) {
@@ -388,9 +433,9 @@ bool parseSpacing(const json& s, const std::string& where, EdgeSpec& e, std::str
 
     auto g = s.find("growth");
     if (g != s.end()) {
-        if (e.law != "geometric") {
+        if (e.law != LAW_GEOMETRIC) {
             err = where + ": 'growth' is the ratio of the 'geometric' law, but this edge "
-                  "declares law '" + e.law + "'.";
+                  "declares law '" + spacingLawName(e.law) + "'.";
             return false;
         }
         if (!g->is_number() || g->get<double>() <= 0.0) {
@@ -402,11 +447,11 @@ bool parseSpacing(const json& s, const std::string& where, EdgeSpec& e, std::str
 
     // A wall spacing on a law that cannot honour it is a setting that does
     // nothing, which is the failure class this whole schema is strict about.
-    if (clusters && e.law != "tanh") {
-        err = where + ": law '" + e.law + "' cannot cluster to a requested first-cell "
-              "height — only 'tanh' solves for one, which is why it is the default. "
-              "Drop the law (or set it to 'tanh') to keep the wall spacing, or drop the "
-              "wall spacing to keep this law.";
+    if (clusters && e.law != LAW_TANH) {
+        err = where + ": law '" + spacingLawName(e.law) + "' cannot cluster to a "
+              "requested first-cell height — only 'tanh' solves for one, which is why "
+              "it is the default. Drop the law (or set it to 'tanh') to keep the wall "
+              "spacing, or drop the wall spacing to keep this law.";
         return false;
     }
     return true;
@@ -714,25 +759,24 @@ std::vector<Point2D> subPath(const std::vector<Point2D>& path,
 // A two-sided request with DIFFERENT spacings at the two ends is refused earlier,
 // by name, rather than approximated here — see `buildMultiBlock`.
 std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
-    if (e.law == "geometric")
+    if (e.law == LAW_GEOMETRIC)
         return HybMesh::Spacing::generateGeometric(L, e.count, e.growth);
-    if (e.law == "uniform")
+    if (e.law == LAW_UNIFORM)
         return HybMesh::Spacing::generateGeometric(L, e.count, 1.0);
     // tanh.
-    if (e.clusterA && e.clusterB)
+    if (e.cluster[END_START] && e.cluster[END_FINISH])
         return HybMesh::Spacing::generateTanh(
-            L, e.count, HybMesh::Spacing::solveTanhDelta(L, e.count, e.dsA));
-    if (e.clusterA)
-        return HybMesh::Spacing::generateTanhStart(
-            L, e.count, HybMesh::Spacing::solveTanhStartDelta(L, e.count, e.dsA));
-    if (e.clusterB) {
-        // Clustered at the FAR end: the same one-sided law, mirrored. Built by
+            L, e.count, HybMesh::Spacing::solveTanhDelta(L, e.count, e.ds[END_START]));
+    for (int k = END_START; k <= END_FINISH; ++k) {
+        if (!e.cluster[k]) continue;
+        const std::vector<double> f = HybMesh::Spacing::generateTanhStart(
+            L, e.count, HybMesh::Spacing::solveTanhStartDelta(L, e.count, e.ds[k]));
+        if (k == END_START) return f;
+        // Clustered at the FAR end: the same one-sided law, MIRRORED. Built by
         // reflecting the start-clustered positions rather than by a second
         // formula, so the two ends cannot drift apart.
-        const std::vector<double> f = HybMesh::Spacing::generateTanhStart(
-            L, e.count, HybMesh::Spacing::solveTanhStartDelta(L, e.count, e.dsB));
         std::vector<double> t(f.size());
-        for (size_t k = 0; k < f.size(); ++k) t[k] = L - f[f.size() - 1 - k];
+        for (size_t x = 0; x < f.size(); ++x) t[x] = L - f[f.size() - 1 - x];
         return t;
     }
     return HybMesh::Spacing::generateTanh(L, e.count, e.delta);
@@ -755,12 +799,28 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
 // pure arithmetic already used by the preprocessor, and a second implementation
 // of a growth-rate solver is a guaranteed future divergence. `generateGeometric`
 // at ratio 1 IS the uniform law, so "uniform" is not a special case here either.
-std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& path) {
+std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& path,
+                                double achieved[2] = nullptr) {
     std::vector<Point2D> pts;
     if (path.size() < 2) return pts;
     const std::vector<double> cum = arcLengths(path);
     const double L = cum.back();
     std::vector<double> t = spacingAlong(e, L);
+    // The two END INTERVALS THIS LAW ACTUALLY PRODUCED, IN ARC LENGTH — reported
+    // from here because this is the only scope that holds both the positions and
+    // the measure they are in.
+    //
+    // ARC LENGTH, not the chord between the two nodes, and the difference is a
+    // real defect rather than a nicety: a bound edge follows a POLYLINE, so a
+    // first interval spanning several facets has a chord shorter than the arc by
+    // that faceting. Measured on the shipped circle — a 0.05 request came back as
+    // a 0.049978 chord — which made the caller's "you asked for a spacing you did
+    // not get" warning fire on a law that had honoured the request exactly, and
+    // blame the node count for it.
+    if (achieved && t.size() >= 2) {
+        achieved[END_START] = t[1] - t[0];
+        achieved[END_FINISH] = t[t.size() - 1] - t[t.size() - 2];
+    }
 
     pts.reserve(static_cast<size_t>(e.count));
     size_t m = 0;
@@ -1290,33 +1350,32 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // uniform: an edge that asked to cluster and silently did not is a mesh with no
     // boundary layer and no symptom, which is this path's whole failure class.
     for (auto& e : edges) {
-        for (int k = 0; k < 2; ++k) {
-            const bool wants = k ? e.clusterB : e.clusterA;
-            double& ds = k ? e.dsB : e.dsA;
-            if (!wants) { ds = 0.0; continue; }
-            if (ds > 0.0) continue;
+        for (int k = END_START; k <= END_FINISH; ++k) {
+            if (!e.cluster[k]) { e.ds[k] = 0.0; continue; }
+            if (e.ds[k] > 0.0) continue;
             if (!(params.wallSpacing > 0.0))
                 return fail("edge '" + e.id + "': its "
-                            + std::string(k ? "'end'" : "'start'")
+                            + std::string(k == END_START ? "'start'" : "'end'")
                             + " end is declared a wall end, so its first cell height "
                               "comes from the run's BL_INITIAL_THICKNESS — and that is "
                               "not set to a positive length. Set BL_INITIAL_THICKNESS in "
                               "the config, or give this edge its own \""
-                            + std::string(k ? "ds_end" : "ds_start") + "\".");
-            ds = params.wallSpacing;
+                            + std::string(k == END_START ? "ds_start" : "ds_end") + "\".");
+            e.ds[k] = params.wallSpacing;
         }
         // Both ends clustered to DIFFERENT heights is a two-sided stretching
         // function this release does not have. Refused by name rather than
         // approximated with the symmetric law and one of the two numbers, which
         // would honour half a declaration silently.
-        if (e.clusterA && e.clusterB && e.dsA != e.dsB)
+        if (e.cluster[END_START] && e.cluster[END_FINISH]
+            && e.ds[END_START] != e.ds[END_FINISH])
             return fail("edge '" + e.id + "': it asks for a different first cell height "
-                        "at each end (" + std::to_string(e.dsA) + " and "
-                        + std::to_string(e.dsB) + "). The tanh law here is symmetric "
-                        "when both ends cluster, so it can honour one height at both "
-                        "ends or one end's height on its own — declare equal heights, "
-                        "or cluster a single end.");
-        if (e.law == "geometric" && !(e.growth > 0.0)) {
+                        "at each end (" + std::to_string(e.ds[END_START]) + " and "
+                        + std::to_string(e.ds[END_FINISH]) + "). The tanh law here is "
+                        "symmetric when both ends cluster, so it can honour one height "
+                        "at both ends or one end's height on its own — declare equal "
+                        "heights, or cluster a single end.");
+        if (e.law == LAW_GEOMETRIC && !(e.growth > 0.0)) {
             if (!(params.wallGrowth > 0.0))
                 return fail("edge '" + e.id + "': it declares the 'geometric' law with no "
                             "'growth', so the ratio comes from the run's BL_GROWTH_RATE — "
@@ -1591,33 +1650,32 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             const SegSpan& sp = spans.at({bd->second.geomId, bd->second.segId});
             path = subPath(sp.pts, sp.cum, bd->second.ta, bd->second.tb);
         }
-        eNodes[k].pts = discretise(e, path);
+        // The two end intervals this law really produced, IN ARC LENGTH — the
+        // measure the request is in. See `discretise`: comparing the CHORD
+        // instead made this warning fire on a bound curved edge whose law had
+        // honoured the request exactly.
+        double achieved[2] = {0.0, 0.0};
+        eNodes[k].pts = discretise(e, path, achieved);
         // A CLUSTERING REQUEST THAT THE EDGE COULD NOT HONOUR IS SAID.
         //
         // The tanh solver returns "uniform" when the requested first cell is at or
         // coarser than the uniform spacing this edge's count already gives, which
         // is the right arithmetic and the wrong silence: the user asked for a wall
         // spacing and got whatever the count implies. Measured against what the
-        // edge actually produced rather than re-derived from the law, so a future
+        // edge actually PRODUCED rather than re-derived from the law, so a future
         // law that misses its target is caught by the same line.
-        if (eNodes[k].pts.size() >= 2) {
-            const double got0 = (eNodes[k].pts[1] - eNodes[k].pts[0]).length();
-            const size_t last = eNodes[k].pts.size() - 1;
-            const double got1 = (eNodes[k].pts[last] - eNodes[k].pts[last - 1]).length();
-            for (int side = 0; side < 2; ++side) {
-                const double want = side ? e.dsB : e.dsA;
-                const double got = side ? got1 : got0;
-                if (!(want > 0.0)) continue;
-                if (std::fabs(got - want) <= 1e-9 * want) continue;
-                r.warnings.push_back(
-                    "edge '" + e.id + "': its " + (side ? std::string("'end'")
-                                                        : std::string("'start'"))
-                    + " end asks for a first cell height of " + std::to_string(want)
-                    + " and the distribution produced " + std::to_string(got)
-                    + ". A tanh law cannot cluster COARSER than the uniform spacing its "
-                      "own node count gives, so either lower the count on this edge's "
-                      "equivalence class or ask for a finer height.");
-            }
+        for (int side = END_START; side <= END_FINISH; ++side) {
+            const double want = e.ds[side];
+            if (!(want > 0.0)) continue;
+            if (std::fabs(achieved[side] - want) <= 1e-9 * want) continue;
+            r.warnings.push_back(
+                "edge '" + e.id + "': its "
+                + (side == END_START ? std::string("'start'") : std::string("'end'"))
+                + " end asks for a first cell height of " + std::to_string(want)
+                + " and the distribution produced " + std::to_string(achieved[side])
+                + ". A tanh law cannot cluster COARSER than the uniform spacing its "
+                  "own node count gives, so either lower the count on this edge's "
+                  "equivalence class or ask for a finer height.");
         }
         if (eNodes[k].pts.size() != static_cast<size_t>(e.count))
             return fail("edge '" + e.id + "': its " + std::to_string(e.count)
@@ -1772,9 +1830,12 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             // read once here rather than a second time by eye.
             auto declaredDs = [&](int sideK, bool fromEnd) {
                 const EdgeSpec& pe = edges[static_cast<size_t>(f.edge[sideK])];
-                const bool wantEnd = f.rev[sideK] ? !fromEnd : fromEnd;
-                if (wantEnd) return pe.clusterB ? pe.dsB : 0.0;
-                return pe.clusterA ? pe.dsA : 0.0;
+                // The block reads the edge in its own frame, so the frame's "far
+                // end" is the edge's own start when the edge is traversed
+                // backwards. XOR rather than a second ternary: `rev` is already
+                // the one place that reversal is applied.
+                const int end = (fromEnd != f.rev[sideK]) ? END_FINISH : END_START;
+                return pe.cluster[end] ? pe.ds[end] : 0.0;
             };
             for (int k = 0; k < 4; ++k) {
                 const MbSide side = static_cast<MbSide>(k);   // sIds[] is in this order

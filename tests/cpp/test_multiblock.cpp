@@ -26,7 +26,7 @@
 //     refuses, correctly for a transfinite fill over four sides, so an O-grid seam
 //     cannot be declared as one edge). The wrap-around class #53 could not reach
 //     is check 33.
-//   * Wall clustering and the O-grid are checks 30-35 (#55). Three limits they do
+//   * Wall clustering and the O-grid are checks 30-36 (#55). Three limits they do
 //     NOT cover, each refused by name rather than approximated: a two-sided
 //     stretching function with DIFFERENT heights at the two ends; a curved
 //     INTERFACE (a binding is still wall-only, so a block-to-block seam is a
@@ -561,7 +561,7 @@ hybmesh::MbGeometry circleGeom(int perQuarter, double radius,
 // `radialSpacing` is appended to every radial edge, so a case differs from the
 // plain one by exactly the clustering it declares.
 std::string ogrid(const std::string& radialSpacing = "", int radialCount = 7,
-                  int arcCount = 5) {
+                  int arcCount = 5, const std::string& arcSpacing = "") {
     std::string doc = R"({
   "format_version": 1,
   "corners": [)";
@@ -590,7 +590,7 @@ std::string ogrid(const std::string& radialSpacing = "", int radialCount = 7,
              + std::to_string(k) + "\", \"b" + nxt + "\"], \"kind\": \"wall\", "
                "\"count\": " + std::to_string(arcCount)
              + ", \"binding\": {\"geom\": \"body.dat\", \"seg\": "
-             + std::to_string(k) + "}}";
+             + std::to_string(k) + "}" + arcSpacing + "}";
         doc += ",\n    {\"id\": \"o" + std::to_string(k) + "\", \"corners\": [\"f"
              + std::to_string(k) + "\", \"f" + nxt + "\"], \"kind\": \"wall\""
                ", \"binding\": {\"geom\": \"far.dat\", \"seg\": "
@@ -1947,6 +1947,46 @@ int main() {
         MbResult ok = hybmesh::buildMultiBlock(
             sq(R"({"ds_start": 1e-4, "ds_end": 1e-4})"), {}, p);
         CHECK(ok.ok, "35. equal heights at both ends are accepted (err: " + ok.error + ")");
+    }
+
+    // ── 36. a BOUND, CURVED edge that asks for a wall spacing gets it, and is
+    //        not accused of failing ────────────────────────────────────────
+    //
+    // The defect BOTH review axes found independently, kept as a check because it
+    // is the exact geometry this feature exists for. The "you asked for a spacing
+    // you did not get" warning measured the produced CHORD against an ARC-LENGTH
+    // request: a bound edge follows a polyline, so a first interval spanning
+    // several facets has a chord shorter than the arc, and the warning fired on a
+    // law that had honoured the request exactly — blaming the node count for the
+    // geometry's own faceting. Measured on the shipped circle at the time: a 0.05
+    // request reported as a 0.049978 chord.
+    {
+        MbParams p;
+        // Fine enough to be achievable at this count, coarse enough to span
+        // several of the polyline's facets — the only configuration in which a
+        // chord and an arc differ at all.
+        MbResult r = hybmesh::buildMultiBlock(
+            ogrid("", 7, 5, R"(, "spacing": {"ds_start": 0.05})"), ogridGeoms(), p);
+        CHECK(r.ok, "36. a bound curved edge may declare a wall spacing (err: "
+                    + r.error + ")");
+        std::string spurious;
+        for (const std::string& w : r.warnings)
+            if (mentions(w, "asks for a first cell height")) spurious += w;
+        CHECK(spurious.empty(),
+              "36. ...and nothing accuses it of missing a target it hit: the request "
+              "is an ARC LENGTH along the polyline and so is what it is measured "
+              "against (got: " + spurious + ")");
+        // THE NEGATIVE CONTROL. The warning must still bite on a request the law
+        // genuinely cannot honour — coarser than the uniform spacing the count
+        // already gives — or the check above would pass on a dead warning.
+        MbResult c = hybmesh::buildMultiBlock(
+            ogrid("", 7, 5, R"(, "spacing": {"ds_start": 0.5})"), ogridGeoms(), p);
+        bool warned = false;
+        for (const std::string& w : c.warnings)
+            if (mentions(w, "asks for a first cell height")) warned = true;
+        CHECK(c.ok && warned,
+              "36. a request COARSER than the edge's own uniform spacing is still "
+              "reported, so the check above is not passing on a dead warning");
     }
 
     return hybmesh::test::report("test_multiblock");
