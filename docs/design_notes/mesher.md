@@ -1571,8 +1571,29 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   reproduces the C++ ruler's WHOLE-MESH max and mean off the same code, to 1e-4, before
   reading the region it cannot check.
 
-- **THE O-GRID NEGATIVE CONTROL IS STILL UNMET, and is now LOCALISED rather than
-  attributed.** 2.250° -> 3.632° at one sweep, where #82 got 3.312°. The wall first cell,
+- **THE TWO HALVES ARE NOT DRIVEN EQUALLY, which the review made explicit and the
+  module's name overstates.** The HEIGHT is solved for: one scalar, one equation,
+  exactly. The 90 DEGREES has no term that states it — it enters as the tie-break
+  between the quadratic's two roots, then as the elliptic operator's own tendency,
+  helped by the along-wall source keeping the first interior line from shearing
+  against the wall. The direct condition is the Steger-Sorenson projection onto
+  `r_s` and it is the first rejected row in the table above: it goes as `1/h²`,
+  asks for about -21 here, clips, and destabilises. **The measured consequence is
+  that the angle improves and then TURNS** — 32.04° -> 29.90° at twenty sweeps,
+  31.55° at thirty, 34.78° at forty — while the height does NOT turn with it
+  (0.089% / 0.094% / 0.098%). So the useful cap is set by the angle, and the phrase
+  "control functions drive wall-normal orthogonality" is true only in that indirect
+  sense. Recorded because the alternative is a reader inferring a term that is not
+  there; the header of `src/MbControl.cpp` says the same thing at the arithmetic.
+
+- **THE O-GRID NEGATIVE CONTROL IS STILL UNMET, is WORSE THAN #82's, and NO SINGLE
+  CAP MEETS BOTH OF #80's BULLETS.** All three, because the first alone reads better
+  than the truth. 2.250° -> 3.632° at one sweep, where #82 got 3.312° — so this
+  ticket moved that number the wrong way — and at the cap where the C-grid criterion
+  is met (20) the O-grid sits at 12.036°, 5.3x #55's. There is no one
+  `MB_SMOOTH_ITERS` satisfying #80's C-grid bullet and its O-grid bullet together,
+  and whoever closes #80 has to name the cap its acceptance is claimed at rather
+  than quoting one figure from each case's best setting. The wall first cell,
   though, goes the other way and is now BETTER than #55's: 0.0812% -> 0.0390%. #82
   attributed the regression to the frozen radial interfaces through the run's own wall
   table — the row pinned at the declared height where an interface held it and 9.13% off

@@ -50,15 +50,27 @@
 // nine neighbours. The solve is LAGGED, so each sweep re-solves against the mesh
 // the last one left and the target and the mesh converge on each other.
 //
-// THE TWO UNKNOWNS DO NOT HAVE EQUAL AUTHORITY, and knowing which is which is
-// worth more than the formula. Near a viscous wall a = |r_n|^2 is the SMALL
-// coefficient and g = |r_s|^2 the large one, so |A| << |B|: the update of a
-// near-wall node is dominated by its two OFF-WALL neighbours. That is precisely
-// why a plain Winslow solve destroys wall clustering — p_1 relaxes toward the mean
-// of p_0 and p_2 — and it is why psi, the off-wall source, can hold the height
-// outright while phi has to earn the 90 degrees over several sweeps. A clipped phi
-// still pushes the right way every sweep, and the skew it corrects shrinks the
-// value it asks for as it goes.
+// THE TWO REQUIREMENTS ARE NOT DRIVEN EQUALLY, and saying so plainly matters more
+// than the formula, because the name "control functions" invites a stronger claim
+// than what is here.
+//
+// THE HEIGHT IS SOLVED FOR. One scalar, one equation, exactly: the source term
+// that lands the node at the requested distance from the wall. That is why it is
+// held to 0.09% on the shipped C-grid and why a graded rectangle is a fixed point.
+//
+// THE 90 DEGREES IS DRIVEN INDIRECTLY, by three things and by no term that states
+// it. It enters as the TIE-BREAK between the quadratic's two roots — both put the
+// node at the correct distance, and the one taken is on the perpendicular side —
+// and then as the elliptic operator's own tendency, helped by the along-wall
+// Thomas-Middlecoff source keeping the first interior line's distribution matched
+// to the wall's so the two do not shear. A DIRECT condition on the angle was
+// tried: it is the Steger-Sorenson projection onto r_s, and near a viscous wall
+// a = |r_n|^2 is the SMALL metric coefficient while g = |r_s|^2 is the large one,
+// so the source it asks for goes as 1/h^2 — about -21 on this case. It clips, and
+// the clipped value carried into the interior destabilises the solve. So the angle
+// is not a knob here, and the measured consequence is that it improves and then
+// TURNS: 32.04 deg -> 29.90 at twenty sweeps, back to 31.55 at thirty and 34.78 at
+// forty. Recorded rather than implied by the module's name.
 namespace {
 
 // One boundary line's tangent at station `k`: central where it exists, one-sided
@@ -69,6 +81,55 @@ Point2D wallTangent(int k, int n, const At& at) {
     const int ka = (k > 0) ? k - 1 : k;
     const int kb = (k + 1 < n) ? k + 1 : k;
     return at(kb) - at(ka);
+}
+
+// HOW TO WALK ONE DECLARED WALL SIDE: the indices all three functions below need,
+// derived once from `mbSideAxis` instead of three times by hand.
+//
+// Extracted for the reason `wallTangent` next door gives and this clump did not
+// heed: it was written three times, each with its own copy of
+// `t0 = ax.atFarEnd ? m - 1 : 0`, `t1 = ax.atFarEnd ? m - 2 : 1` and its own
+// bounds-clamped position lambda — which is the shape that lets one of them
+// disagree with the others, and #83's review named it.
+//
+// `ok` is false for a block too thin to walk. Checked by the caller rather than
+// returning an optional: each caller has a different thing to do about it, and two
+// of them still publish part of their answer for such a side.
+struct SideWalk {
+    hybmesh::MbSideAxis ax{"south", true, false};
+    int n = 0;       // stations along the side
+    int m = 0;       // grid lines across it
+    int t0 = 0;      // the on-wall line
+    int t1 = 0;      // one line in from it
+    int tFar = 0;    // the line facing the wall
+    bool ok = false;
+};
+
+SideWalk sideWalk(const hybmesh::MbBlock& b, hybmesh::MbSide side) {
+    SideWalk w;
+    w.ax = hybmesh::mbSideAxis(side);
+    const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
+    if (b.ni < 2 || b.nj < 2 || b.nodeIds.size() != want) return w;
+    w.n = w.ax.alongI ? b.ni : b.nj;
+    w.m = w.ax.alongI ? b.nj : b.ni;
+    w.t0 = w.ax.atFarEnd ? w.m - 1 : 0;
+    w.t1 = w.ax.atFarEnd ? w.m - 2 : 1;
+    w.tFar = w.ax.atFarEnd ? 0 : w.m - 1;
+    w.ok = true;
+    return w;
+}
+
+// The node at station `k`, `tt` grid lines across — in the SIDE's frame, so
+// nothing above has to know which of i and j the side runs along. Out of range
+// returns the origin rather than reading past the end, on the same rule
+// `MbControlField::at` follows: this module promises never to throw.
+Point2D sideNode(const hybmesh::MbBlock& b, const std::vector<Point2D>& nodes,
+                 const SideWalk& w, int k, int tt) {
+    const int i = w.ax.alongI ? k : tt, j = w.ax.alongI ? tt : k;
+    if (i < 0 || j < 0 || i >= b.ni || j >= b.nj) return {0.0, 0.0};
+    const int id = b.nodeAt(i, j);
+    if (id < 0 || static_cast<size_t>(id) >= nodes.size()) return {0.0, 0.0};
+    return nodes[static_cast<size_t>(id)];
 }
 
 // THOMAS-MIDDLECOFF: the source term that reproduces a boundary line's OWN point
@@ -113,17 +174,13 @@ hybmesh::MbControlField hybmesh::mbControlField(
 
     for (const MbWallTarget& t : targets) {
         if (t.block != blockIdx || !t.usable) continue;
-        const MbSideAxis ax = mbSideAxis(t.side);
-        const int n = ax.alongI ? b.ni : b.nj;   // stations along the wall
-        const int m = ax.alongI ? b.nj : b.ni;   // grid lines across it
+        const SideWalk sw = sideWalk(b, t.side);
+        if (!sw.ok) continue;
+        const MbSideAxis& ax = sw.ax;
+        const int n = sw.n, m = sw.m, t0 = sw.t0, t1 = sw.t1, tFar = sw.tFar;
         if (static_cast<int>(t.requested.size()) != n
             || static_cast<int>(t.normal.size()) != n) continue;
-        const int t0 = ax.atFarEnd ? m - 1 : 0;    // the frozen wall line
-        const int t1 = ax.atFarEnd ? m - 2 : 1;    // the first line in from it
-        const int tFar = ax.atFarEnd ? 0 : m - 1;  // the side facing the wall
-        auto pos = [&](int k, int tt) {
-            return node(ax.alongI ? k : tt, ax.alongI ? tt : k);
-        };
+        auto pos = [&](int k, int tt) { return sideNode(b, nodes, sw, k, tt); };
 
         for (int k = 1; k + 1 < n; ++k) {
             const double h = t.requested[static_cast<size_t>(k)];
@@ -307,17 +364,9 @@ std::vector<hybmesh::MbWallTarget> hybmesh::mbWallTargets(const MbResult& mesh) 
             out.push_back(t);
             continue;
         }
-        const MbSideAxis ax = mbSideAxis(ws.side);
-        const int n = ax.alongI ? b.ni : b.nj;   // stations along the side
-        const int m = ax.alongI ? b.nj : b.ni;   // extent across it
-        const int t0 = ax.atFarEnd ? m - 1 : 0;  // the on-wall grid line
-        const int t1 = ax.atFarEnd ? m - 2 : 1;  // one line inward from it
-        auto pos = [&](int k, int tt) -> Point2D {
-            const int i = ax.alongI ? k : tt, j = ax.alongI ? tt : k;
-            const int id = b.nodeAt(i, j);
-            if (id < 0 || static_cast<size_t>(id) >= mesh.nodes.size()) return {0.0, 0.0};
-            return mesh.nodes[static_cast<size_t>(id)];
-        };
+        const SideWalk sw = sideWalk(b, ws.side);
+        const int n = sw.n, t0 = sw.t0, t1 = sw.t1;
+        auto pos = [&](int k, int tt) { return sideNode(b, mesh.nodes, sw, k, tt); };
 
         // THE REQUEST, station by station, and it is the RULER'S BLEND. See the
         // header: aiming the control at any other interpolation of the two
@@ -363,18 +412,11 @@ hybmesh::MbWallResidual hybmesh::mbWallResidual(const MbResult& mesh,
     const MbBlock& b = mesh.blocks[static_cast<size_t>(t.block)];
     const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
     if (b.ni < 2 || b.nj < 2 || b.nodeIds.size() != want) return out;
-    const MbSideAxis ax = mbSideAxis(t.side);
-    const int n = ax.alongI ? b.ni : b.nj;
-    const int m = ax.alongI ? b.nj : b.ni;
+    const SideWalk sw = sideWalk(b, t.side);
+    if (!sw.ok) return out;
+    const int n = sw.n, t0 = sw.t0, t1 = sw.t1;
     if (static_cast<int>(t.requested.size()) != n) return out;
-    const int t0 = ax.atFarEnd ? m - 1 : 0;
-    const int t1 = ax.atFarEnd ? m - 2 : 1;
-    auto pos = [&](int k, int tt) -> Point2D {
-        const int i = ax.alongI ? k : tt, j = ax.alongI ? tt : k;
-        const int id = b.nodeAt(i, j);
-        if (id < 0 || static_cast<size_t>(id) >= mesh.nodes.size()) return {0.0, 0.0};
-        return mesh.nodes[static_cast<size_t>(id)];
-    };
+    auto pos = [&](int k, int tt) { return sideNode(b, mesh.nodes, sw, k, tt); };
 
     bool askedHeight = false, gotAngle = false;
     double worstH = 0.0, worstA = 0.0;

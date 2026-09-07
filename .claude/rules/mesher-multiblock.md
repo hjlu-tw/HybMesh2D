@@ -432,6 +432,15 @@ a cap; at the default nothing runs and all eighteen pre-existing golden cases ar
   (`MB_SMOOTH_ITERS 1.9` runs one sweep): the `.dat` reader takes every int key through a `double`,
   and diverging for one key would put back the per-row parse rule that let the two parsers
   disagree. Recorded as a limit, not left silent.
+- **THE LAPLACIAN #81 SHIPPED IS DELETED, not kept behind a selector.** Nothing read it and it
+  loses on every column of both shipped cases at every cap (C-grid at 1 sweep: max 89.40° vs
+  31.44°, wall 36.61% vs 11.65%). A kernel-selection enum over one surviving kernel is the
+  abstraction the no-inert-alternatives rule exists to prevent. It survives ONLY as
+  `laplacianByHand` in `tests/cpp/test_multiblock.cpp`, so checks claiming the two kernels differ
+  have both sides written down. **#83 restated that rule rather than replacing it**: the control
+  functions likewise add no selector, and #83's own rewrite of this block DELETED this bullet by
+  accident — caught by a review running `docs/agents/rule-file-style.md`'s ruler, not by a gate,
+  because check 3 pins gate FILENAMES and an identifier can vanish from prose unnoticed.
 - **THE CONTROL FUNCTIONS ARE TWO SOURCE TERMS, and their WALL GATE IS `MbResult::wallSpecs`**
   (`include/MbControl.hpp` + `src/MbControl.cpp` in `hybmesh_pure`; #83). The system solved becomes
   `a(x_ii + phi x_i) - 2b x_ij + g(x_jj + psi x_j) = 0`, and **both zero is the plain #82 update,
@@ -453,7 +462,15 @@ a cap; at the default nothing runs and all eighteen pre-existing golden cases ar
   `|update - p_wall| = requested` is one quadratic in one scalar and its two roots are written down;
   the root taken is the one landing nearer `p_wall + requested * inward_normal`, **which is where
   the 90-degree half of the declaration enters** — as the tie-break between two points at the same
-  correct distance on opposite sides. **Three weaker versions were measured and rejected**, all on
+  correct distance on opposite sides.
+- **THE TWO HALVES ARE NOT DRIVEN EQUALLY, and the name "control functions" overstates one of
+  them.** The HEIGHT is solved for exactly, one scalar to one equation. The 90 DEGREES has NO term
+  that states it: it is driven by that tie-break, by the elliptic operator's own tendency, and by
+  the along-wall source keeping the first interior line's distribution matched to the wall's so the
+  two do not shear. A direct condition on the angle is the Steger-Sorenson projection onto `r_s`,
+  and it goes as `1/h²` — the first rejected row above. **So the angle IMPROVES AND THEN TURNS**:
+  32.04° -> 29.90° at twenty sweeps, back to 31.55° at thirty and 34.78° at forty. The height does
+  not turn with it (0.089% -> 0.094% -> 0.098%), so the useful cap is set by the ANGLE. **Three weaker versions were measured and rejected**, all on
   the shipped C-grid at one sweep against this one's 0.12%: the textbook Steger-Sorenson condition
   on the DERIVATIVE at the frozen wall row (it asks for a source of about -21, saturates, and
   destabilises — and it aims at the derivative when the ruler measures the first INTERVAL, which
@@ -465,10 +482,9 @@ a cap; at the default nothing runs and all eighteen pre-existing golden cases ar
   LINEARLY in the normalized logical coordinate. **That second half is what makes all three of
   #80's figures improve at once** and it is a scope rule, not a tuning choice: the declaration asks
   for ONE height and says nothing about the rest of the line, so the first row is the declaration's
-  and the rest is the fill's. Sourcing NOTHING out there lets the grading relax and the MEAN rises
-  with every sweep (4.65 deg at one, 6.14 at twenty, against the fill's 4.56); imposing an ideal
-  GEOMETRIC line fitted to the declared height and the line's length imposes a distribution nobody
-  declared — these radial edges declare a TANH law — and saturated 2120 nodes and folded 432 cells.
+  and the rest is the fill's. Sourcing nothing out there lets the grading relax and the MEAN rises
+  with every sweep; imposing an ideal GEOMETRIC line instead imposes a distribution nobody declared,
+  because these radial edges declare a TANH law. Both were measured and both are in the design note.
   The blend is linear rather than an exponential decay because a decay rate is a constant with no
   derivation behind it.
 - **A SOURCE TERM LARGER THAN `MB_CONTROL_CLIP` (2.0) IS CLIPPED AND COUNTED, and the bound is the
@@ -527,9 +543,14 @@ a cap; at the default nothing runs and all eighteen pre-existing golden cases ar
   **32.04° max / 26.90° mean -> 29.90° / 24.91°** at twenty sweeps. The instrument is a quad reader
   in the surface gate rather than a new metric: the METRIC is the ruler's, and what the gate adds is
   a SELECTION, validated by first reproducing the C++ ruler's whole-mesh figures off the same code.
-- **#80's O-GRID NEGATIVE CONTROL IS STILL NOT MET, and it is now LOCALISED rather than
-  attributed.** A case already at 2.250° comes out at **3.632°** (its wall first cell, though, is now
-  **BETTER** than #55's: 0.0812% -> 0.0390%). The worst corners of the smoothed mesh sit at
+- **#80's O-GRID NEGATIVE CONTROL IS STILL NOT MET, it is WORSE THAN #82's, and NO SINGLE CAP
+  MEETS BOTH OF #80's BULLETS.** All three facts, because the first alone reads better than the
+  truth. A case already at 2.250° comes out at **3.632°** at one sweep — against #82's **3.312°**,
+  so this ticket moved that number the wrong way — and at the cap where the C-grid's criterion is
+  met (20) the O-grid is at **12.036°**, 5.3x #55's. There is therefore no one `MB_SMOOTH_ITERS`
+  that satisfies #80's C-grid bullet and its O-grid bullet together, and whoever closes #80 has to
+  say which cap its acceptance is claimed at. (The wall first cell, meanwhile, goes the other way
+  on both cases and is now **BETTER** than #55's: 0.0812% -> 0.0390%.) The worst corners of the smoothed mesh sit at
   theta = 0, 90, 180 and -90 degrees at radius ~3.43 — mid-block on the four DECLARED RADIAL
   INTERFACES — while the unsmoothed mesh's worst sit at radius 10 on the faceted outer circle. So
   the cost is a KINK ALONG A FROZEN SHARED EDGE, and unfreezing those is #84. #82's own

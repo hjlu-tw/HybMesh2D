@@ -117,8 +117,18 @@ struct MbControlField {
     // the mesh will land somewhere short of the target and the run has to be able
     // to say so.
     size_t clipped = 0;
+    // OUT OF RANGE RETURNS ZERO CONTROL, which is the answer that changes nothing.
+    // `q` is EMPTY on a field this module refused to build — a block thinner than
+    // three nodes either way, or one whose `nodeIds` does not match its own
+    // `ni * nj` — and the sweep loop's own bounds keep the first case away from
+    // here but not the second. Every other accessor in this module clamps, and the
+    // header above promises "pure, total, never throws"; an unchecked index on a
+    // broken invariant is the one way that promise was still breakable.
     MbControl at(int i, int j) const {
-        return q[static_cast<size_t>(j) * static_cast<size_t>(ni) + static_cast<size_t>(i)];
+        if (i < 0 || j < 0 || i >= ni || j >= nj) return MbControl{};
+        const size_t k = static_cast<size_t>(j) * static_cast<size_t>(ni)
+                       + static_cast<size_t>(i);
+        return (k < q.size()) ? q[k] : MbControl{};
     }
 };
 

@@ -277,7 +277,7 @@
 // surface gate asserts a direction with a floor, so a different-but-still-degrading
 // kernel satisfies it, and the kernel's arithmetic belongs to check 42 alone.
 //
-// FOURTEEN MORE for #83's CONTROL FUNCTIONS, all of which bite. Measured
+// FIFTEEN MORE for #83's CONTROL FUNCTIONS, all of which bite. Measured
 // 2026-09-07 the same way — each patch applied alone, rebuilt, BOTH this
 // executable and tools/PreProcessor/tests/test_multiblock_smooth_surface.py run,
 // exit codes read BEFORE the FAIL counts, control run clean — against
@@ -301,10 +301,13 @@
 //      sees every wall's target
 //   K  the residual's step measured from the wrong     -> 54, 55 (5);
 //      wall node                                          surface NOTHING
-//   L  the wall warning's direction flipped, so it     -> 55 ONLY (1);
-//      fires on an IMPROVEMENT (src/MultiBlock.cpp)       surface NOTHING
-//   M  the wall row and the first interior row         -> (12); surface (22)
-//      swapped in the control's own frame
+//   L  the wall warning's HEIGHT direction flipped,    -> 55 ONLY (3);
+//      so it fires on an IMPROVEMENT                      surface NOTHING
+//      (src/MultiBlock.cpp)
+//   L2 the wall warning's ANGLE half never fires       -> 55 ONLY (2);
+//      (src/MultiBlock.cpp)                               surface NOTHING
+//   M  the wall row and the first interior row         -> (22); surface (21)
+//      swapped in `sideWalk`, their one home
 //   N  the wall gate widened: every shared edge gets   -> 51 (3); surface NOTHING
 //      a target too
 //
@@ -340,6 +343,22 @@
 // wrong RESIDUAL measurement (K) never reaches a mesh, a wrong warning DIRECTION
 // (L) only reaches prose, and a widened wall gate (N) produces targets whose extra
 // entries the control's own per-block guard then ignores.
+//
+// L2 IS #83's REVIEW ARRIVING AS CODE, the same way K and L were #82's. The spec
+// axis found that `MbWallResidual::worstAngleDeg` — "the other half of the same
+// target vector" by its own header — was PUBLISHED AND READ BY NOTHING, so a wall
+// whose spacing was held while its 90 degrees was given away said nothing at all.
+// That is both half a requirement unmet ("a control function that cannot honour a
+// request says so") and an inert published surface, which #82's own second
+// criterion forbids. The fix was the reader rather than a deletion, and the
+// fixture that makes it a real check is the one where the two halves DISAGREE: the
+// 0.45 notch at one sweep takes its east wall from 86.44 to 89.68 degrees off
+// perpendicular while improving its height from 9.56% to 4.90%.
+//
+// ALL OF THEM WERE RE-RUN after the review's dedupe (the three copies of the
+// side-walking preamble collapsed into `sideWalk`/`sideNode`), and every one still
+// bites. M bites HARDER for it — 22 checks against 12 — which is what a single
+// home for a convention is supposed to buy.
 //
 // ONE PROCEDURAL LESSON, recorded because it produced a WRONG READING that was
 // believed for a while: restoring an injected source with `mv` from a backup made
@@ -3778,9 +3797,13 @@ int main() {
         p.smoothIters = 100000;
         MbResult bad = build(notchedBox(11, 9, "0.35"), p);
         CHECK(bad.ok, "55. the deep notch meshes (err: " + bad.error + ")");
+        // Matched on "could not hold" and NOT on "control function": the capped
+        // warning now names the saturation count, so it says "control functions"
+        // too, and the looser filter picked it up and made this check assert
+        // against the wrong sentence. Caught by check 55's own angle half.
         std::vector<std::string> ctrl;
         for (const std::string& w : bad.warnings)
-            if (mentions(w, "control function")) ctrl.push_back(w);
+            if (mentions(w, "could not hold")) ctrl.push_back(w);
         CHECK(!ctrl.empty(),
               "55. a wall the smoothed mesh left FURTHER from its declared height "
               "than the fill did is named in a warning");
@@ -3812,15 +3835,56 @@ int main() {
               "55. ...with the AFTER figure larger than the BEFORE one, so 'could "
               "not hold' is a claim the numbers support rather than prose beside "
               "them (" + fmtE(warnWas) + "% -> " + fmtE(warnNow) + "%)");
-        // AND IT IS SILENT WHERE THE REQUEST IS HELD. Without this half the check
-        // above passes on a warning that fires on every smoothed run, which is the
+        // ── THE ANGLE HALF, and it is the half that was SILENT ─────────────
+        //
+        // The request is ONE VECTOR: a first cell of a given height leaving the
+        // wall at 90 degrees. A warning that reported only the height would go
+        // quiet on a wall whose spacing was held while its angle was given away,
+        // and #83's review found exactly that — `MbWallResidual::worstAngleDeg`
+        // was published, called "the other half of the same target vector" by its
+        // own header, and read by nothing. An inert published surface is the shape
+        // #82's second criterion forbids, so it got the reader the ticket asked
+        // for rather than a deletion.
+        //
+        // THE FIXTURE IS THE ONE WHERE THE TWO HALVES DISAGREE, which is what
+        // makes this check about the angle and not about the height again: the
+        // 0.45 notch at a cap of one takes its east wall's angle from 86.44 to
+        // 89.68 degrees off perpendicular while IMPROVING its height from 9.56% to
+        // 4.90%. Under the height-only warning that wall said nothing at all.
+        MbParams one;
+        one.smoothIters = 1;
+        MbResult ang = build(notchedBox(11, 9, "0.45"), one);
+        CHECK(ang.ok, "55. the 0.45 notch at one sweep meshes (err: " + ang.error + ")");
+        std::vector<std::string> angWarn;
+        for (const std::string& w : ang.warnings)
+            if (mentions(w, "could not hold")) angWarn.push_back(w);
+        CHECK(!angWarn.empty(),
+              "55. a wall whose ANGLE the smoothing gave away is named, even though "
+              "its HEIGHT improved — the request is one vector and the warning "
+              "covers both halves of it");
+        const std::string& wa = angWarn.empty() ? ang.error : angWarn[0];
+        CHECK(mentions(wa, "the 90 degrees the grid line should leave it at")
+                  && mentions(wa, "deg off, against"),
+              "55. ...naming the 90 degrees and quoting both angles (got: " + wa + ")");
+        CHECK(!mentions(wa, "first cell height the declaration asks for"),
+              "55. ...and NOT claiming the height was lost, because on this wall it "
+              "was not — a warning that says both every time says neither");
+        // AND THE HEIGHT-ONLY CASE STILL READS AS HEIGHT-ONLY, so the two halves
+        // are told apart in both directions rather than one being a superset.
+        CHECK(mentions(w0, "first cell height the declaration asks for")
+                  && !mentions(w0, "the 90 degrees the grid line should leave it at"),
+              "55. ...while the deep notch's own warning is about the HEIGHT and "
+              "says nothing about the angle, which on that wall was held");
+
+        // AND IT IS SILENT WHERE THE REQUEST IS HELD. Without this half the checks
+        // above pass on a warning that fires on every smoothed run, which is the
         // same thing as no warning at all.
         MbParams ok;
         ok.smoothIters = 50;
         MbResult good = build(wallSquare(9, 7, "0.02"), ok);
         size_t quiet = 0;
         for (const std::string& w : good.warnings)
-            if (mentions(w, "control function")) ++quiet;
+            if (mentions(w, "could not hold")) ++quiet;
         CHECK(quiet == 0,
               "55. ...and a run whose walls ARE held says nothing, so the warning "
               "means something when it appears (got " + std::to_string(quiet) + ")");

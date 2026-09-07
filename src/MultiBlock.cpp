@@ -1542,19 +1542,45 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
         for (const hybmesh::MbWallTarget& t : targets) {
             const hybmesh::MbWallResidual now = hybmesh::mbWallResidual(r, t);
             const hybmesh::MbWallResidual was = hybmesh::mbWallResidual(before, t);
-            if (!(now.worstHeightRel >= 0.0) || !(was.worstHeightRel >= 0.0)) continue;
-            // A relative slack, so a wall that came out a rounding apart from
-            // where it went in is not reported as a regression. Multiplicative
-            // because the quantity is itself relative and spans four orders of
-            // magnitude across the shipped cases.
-            if (now.worstHeightRel <= was.worstHeightRel * 1.01 + 1e-12) continue;
+            // BOTH HALVES OF THE REQUEST, because it is one vector. The
+            // declaration asks for a first cell of a given HEIGHT leaving the wall
+            // at 90 DEGREES, and a warning that reported only the first would go
+            // silent on a wall whose spacing was held while its angle was given
+            // away. `MbWallResidual` publishes both; before #83's review only the
+            // height had a reader, which made the angle an inert published
+            // surface — the shape the no-inert-alternatives rule forbids.
+            //
+            // THE BAR IS THE MESH THE SOLVE STARTED FROM, for both. A relative
+            // slack on the height, so a wall that came out a rounding apart from
+            // where it went in is not a regression — multiplicative because that
+            // quantity is itself relative and spans four orders of magnitude
+            // across the shipped cases. An ABSOLUTE slack on the angle, in
+            // degrees, because a deviation from 90 is already an absolute
+            // quantity and a relative bar on it would fire hardest on the walls
+            // that are nearly perfect.
+            const bool heightLost =
+                now.worstHeightRel >= 0.0 && was.worstHeightRel >= 0.0
+                && now.worstHeightRel > was.worstHeightRel * 1.01 + 1e-12;
+            const bool angleLost =
+                now.worstAngleDeg >= 0.0 && was.worstAngleDeg >= 0.0
+                && now.worstAngleDeg > was.worstAngleDeg + 0.5;
+            if (!heightLost && !angleLost) continue;
+            std::string what;
+            if (heightLost)
+                what += "the first cell height the declaration asks for (worst "
+                      + std::to_string(now.worstHeightRel * 100.0)
+                      + "% off it, against "
+                      + std::to_string(was.worstHeightRel * 100.0)
+                      + "% before the sweeps)";
+            if (heightLost && angleLost) what += " nor ";
+            if (angleLost)
+                what += "the 90 degrees the grid line should leave it at (worst "
+                      + std::to_string(now.worstAngleDeg) + " deg off, against "
+                      + std::to_string(was.worstAngleDeg) + " deg before the sweeps)";
             r.warnings.push_back(
                 "wall edge '" + t.edgeId + "' (" + std::string(hybmesh::mbSideAxis(t.side).name)
                 + " of block " + std::to_string(t.block) + "): the control function "
-                  "could not hold the first cell height the declaration asks for. The "
-                  "smoothed mesh is worst " + std::to_string(now.worstHeightRel * 100.0)
-                + "% off it, against " + std::to_string(was.worstHeightRel * 100.0)
-                + "% before the sweeps"
+                  "could not hold " + what
                 + ((r.smoothClipped > 0)
                        ? ("; the control saturated at "
                           + std::to_string(r.smoothClipped) + " node(s), which is it "
