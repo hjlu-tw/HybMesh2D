@@ -276,12 +276,87 @@
 // V passed the SURFACE gate cleanly. That is the division of labour working: the
 // surface gate asserts a direction with a floor, so a different-but-still-degrading
 // kernel satisfies it, and the kernel's arithmetic belongs to check 42 alone.
+//
+// FOURTEEN MORE for #83's CONTROL FUNCTIONS, all of which bite. Measured
+// 2026-09-07 the same way — each patch applied alone, rebuilt, BOTH this
+// executable and tools/PreProcessor/tests/test_multiblock_smooth_surface.py run,
+// exit codes read BEFORE the FAIL counts, control run clean — against
+// src/MbControl.cpp except where noted:
+//
+//   A  the kernel ignores `q` entirely                 -> 42, 43, 45, 47 (10);
+//      (src/MultiBlock.cpp)                               surface 4, 7 (11)
+//   B  phi and psi swapped in the block frame          -> 45, 47 (10); surface (20)
+//   C  the quadratic's root chosen blindly (always     -> 45, 47 (10); surface (11)
+//      the + root, never the one nearer the target)
+//   D  the request blended by ARC LENGTH along the     -> 51 ONLY (1);
+//      wall instead of the LOGICAL coordinate            surface NOTHING
+//   E  the off-wall source dropped beyond the first    -> (5); surface (13)
+//      row, so the rest of the line relaxes
+//   F  the clip counted but not applied                -> (6); surface (5)
+//   G  the clip count never incremented                -> 53 ONLY (1); surface 7 (2)
+//   H  the along-wall Thomas-Middlecoff source dropped -> (4); surface (9)
+//   I  the control field computed ONCE instead of      -> 42, 43 (13); surface (7)
+//      every sweep (src/MultiBlock.cpp)
+//   J  the per-block gate widened, so every block      -> 53 ONLY (1); surface (27)
+//      sees every wall's target
+//   K  the residual's step measured from the wrong     -> 54, 55 (5);
+//      wall node                                          surface NOTHING
+//   L  the wall warning's direction flipped, so it     -> 55 ONLY (1);
+//      fires on an IMPROVEMENT (src/MultiBlock.cpp)       surface NOTHING
+//   M  the wall row and the first interior row         -> (12); surface (22)
+//      swapped in the control's own frame
+//   N  the wall gate widened: every shared edge gets   -> 51 (3); surface NOTHING
+//      a target too
+//
+// FOUR OF THEM WERE INERT UNTIL A CHECK WAS WRITTEN FOR THEM, and those four are
+// the ones worth reading:
+//
+//   * D was inert against EVERY gate in this repo, and the reason is a gap in the
+//     fixtures rather than in the checks: neither shipped case nor any fixture here
+//     declared DIFFERENT heights at the two ends of a wall — the C-grid and the
+//     O-grid both take BL_INITIAL_THICKNESS at both ends — so `requestedLo ==
+//     requestedHi` and every interpolation of two equal numbers agrees. Closed by
+//     `wallSquareTwoEnds`, which breaks the tie twice over (different `ds_start` at
+//     the two ends, and a wall clustered at one end so its arc length runs away
+//     from its index; the two blends then disagree by 19% at mid-span). Check 51
+//     computes the WRONG blend beside the right one so it is shown to discriminate.
+//   * J was inert here because every other fixture in this file is a SINGLE block.
+//     Closed by a two-block check that builds one block's field twice — once
+//     against every target and once against only its own — and requires them equal
+//     bit for bit.
+//   * G was inert everywhere in this file: the only check that read the clip count
+//     read it on a mesh where it is 0 either way. Closed by asserting it is
+//     NON-zero on a fixture whose control does saturate.
+//   * L survived BOTH gates. Flipping the warning's comparison so it fires on an
+//     improvement still produced a warning on the deep-notch fixture — one of its
+//     walls improves while another gets worse — so "a warning appeared and mentions
+//     the right words" passed in both worlds. Closed by reading the two percentages
+//     back OUT of the message and requiring the after figure to exceed the before
+//     one: the sentence "could not hold" now has to be a claim its own numbers
+//     support.
+//
+// AND K, L AND N ARE INERT IN THE SURFACE GATE, which is the division of labour
+// rather than a hole. That gate reads the mesh and the machine-readable lines; a
+// wrong RESIDUAL measurement (K) never reaches a mesh, a wrong warning DIRECTION
+// (L) only reaches prose, and a widened wall gate (N) produces targets whose extra
+// entries the control's own per-block guard then ignores.
+//
+// ONE PROCEDURAL LESSON, recorded because it produced a WRONG READING that was
+// believed for a while: restoring an injected source with `mv` from a backup made
+// by `cp` BACK-DATES the file, so `make` keeps the injected object and the next run
+// reads a stale binary. D was first scored as biting 10 checks — #82's exact
+// figures, which should have been the tell — and is in fact inert. The harness now
+// touches the file after restoring it. Read the exit code first, and distrust a
+// result that reproduces the previous ticket's numbers exactly.
 #include "MultiBlock.hpp"
+#include "MbControl.hpp"
+#include "MbQuality.hpp"
 #include "check.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <set>
 #include <string>
 #include <vector>
@@ -321,6 +396,14 @@ MbResult build(const std::string& doc, const MbParams& p = MbParams{}) {
     // No geometries: nothing in this release binds to one, and a document that
     // TRIES to is refused by name (check 10) rather than resolved against a list.
     return hybmesh::buildMultiBlock(doc, {}, p);
+}
+
+// A small number as a number, not as std::to_string's six fixed decimals — which
+// renders 3e-9 and 0 identically and made a failing tolerance unreadable.
+std::string fmtE(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.3e", v);
+    return buf;
 }
 
 bool mentions(const std::string& hay, const std::string& needle) {
@@ -921,6 +1004,47 @@ std::string wallSquare(int ni, int nj, const std::string& ds) {
 })";
 }
 
+// ── A wall whose TWO ENDS ASK FOR DIFFERENT HEIGHTS (issue #83) ──────────
+//
+// Written because an INJECTION was inert without it. #83's control aims at the
+// height blended LINEARLY IN THE LOGICAL COORDINATE between a side's two declared
+// corners, because that is the interpolation `measureMbQuality` measures against;
+// bending it to blend by ARC LENGTH along the wall instead changed nothing that
+// any gate could see. The reason is that no fixture and neither shipped case
+// declares DIFFERENT heights at the two ends of a wall — the C-grid and the O-grid
+// both take `BL_INITIAL_THICKNESS` at both ends — so `requestedLo == requestedHi`
+// and every interpolation of two equal numbers agrees.
+//
+// This one breaks that tie twice over: the two perpendicular edges declare
+// different `ds_start`, so the blend has a gradient to get wrong, AND the wall
+// itself is clustered at one end, so its arc-length parameter runs away from its
+// index. Under the arc-length bend the two disagree by 19% at mid-span, measured.
+std::string wallSquareTwoEnds(int ni, int nj, const std::string& dsW,
+                              const std::string& dsE) {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "se", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "ne", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "nw", "kind": "free", "xy": [0.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s", "corners": ["sw", "se"], "kind": "wall", "count": )") + std::to_string(ni)
+        + R"(, "spacing": {"ds_start": 0.01}},
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": )" + std::to_string(nj)
+        + R"(, "spacing": {"ds_start": )" + dsE + R"(}},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall", "count": )" + std::to_string(ni)
+        + R"(},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )" + std::to_string(nj)
+        + R"(, "spacing": {"ds_start": )" + dsW + R"(}}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s", "e", "n", "w"]}
+  ]
+})";
+}
+
 // ── A UNIFORM grid on a STRETCHED rectangle (issue #82) ───────────────────
 //
 // `w` by `h` with every edge uniformly spaced, so node (i, j) lands exactly at
@@ -985,24 +1109,53 @@ std::string notchedBox(int ni, int nj, const std::string& ne) {
 })";
 }
 
-// One WINSLOW sweep, computed HERE from `src` and returned, so a check can compare
-// the seam's answer against an independent one rather than against itself.
-// Deliberately Jacobi (every node reads `src`), which is the property check 43 is
-// about.
+// One CONTROLLED WINSLOW sweep, computed HERE from `src` and returned, so a check
+// can compare the seam's answer against an independent one rather than against
+// itself. Deliberately Jacobi (every node reads `src`), which is the property
+// check 43 is about.
 //
-// The arithmetic is SPELT OUT rather than delegated to `hybmesh::mbWinslowUpdate`,
-// on purpose and against this repo's usual objection to a near-copy: a re-derivation
-// that called the thing it is checking would make check 43 an identity. The kernel
-// itself is pinned against HAND NUMBERS in check 48, which is where a disagreement
+// The KERNEL ARITHMETIC is spelt out rather than delegated to
+// `hybmesh::mbWinslowUpdate`, on purpose and against this repo's usual objection
+// to a near-copy: a re-derivation that called the thing it is checking would make
+// checks 42 and 43 identities. That kernel is pinned against HAND NUMBERS in check
+// 48 (no control) and check 52 (with control), which is where a disagreement
 // between these two expressions gets adjudicated.
-std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& src) {
+//
+// THE CONTROL FIELD IS TAKEN FROM THE MODULE, not re-derived, and the split is
+// deliberate rather than a shortcut. Every topology this file can write declares
+// all four of a block's edges `wall` — an `interface` or a `cut` must be shared by
+// exactly two block sides, so a single-block document CANNOT have a non-wall edge
+// — and #83's control functions are therefore live on every fixture here. There
+// is no wall-free document to compare the plain kernel on. So these checks pin
+// what only they can: the kernel's own expression, the Jacobi order, and that the
+// control REACHES the kernel at the right node in the right direction. The
+// control's own arithmetic is pinned separately against hand numbers in checks 51
+// and 53, and its two source terms differ from each other at nearly every node,
+// so a phi/psi swap inside the kernel still fails here.
+std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& src,
+                                 bool withControl = true) {
     std::vector<Point2D> out = src;
     auto at = [&src](const hybmesh::MbBlock& b, int i, int j) {
         return src[static_cast<size_t>(b.nodeAt(i, j))];
     };
-    for (const hybmesh::MbBlock& b : r.blocks)
+    // `withControl == false` is the PRE-#83 kernel: the same expression with both
+    // source terms zero. Kept as one flag rather than a second near-copy of the
+    // sweep, and it is what several checks below use to show that a property they
+    // assert is the CONTROL functions' doing and not the elliptic operator's.
+    const std::vector<hybmesh::MbWallTarget> tg = withControl
+        ? [&] {
+              MbResult probe = r;
+              probe.nodes = src;
+              return hybmesh::mbWallTargets(probe);
+          }()
+        : std::vector<hybmesh::MbWallTarget>{};
+    for (size_t bi = 0; bi < r.blocks.size(); ++bi) {
+        const hybmesh::MbBlock& b = r.blocks[bi];
+        const hybmesh::MbControlField cf =
+            hybmesh::mbControlField(b, static_cast<int>(bi), src, tg);
         for (int j = 1; j + 1 < b.nj; ++j)
             for (int i = 1; i + 1 < b.ni; ++i) {
+                const double phi = cf.at(i, j).phi, psi = cf.at(i, j).psi;
                 const double xi = 0.5 * (at(b, i + 1, j).x - at(b, i - 1, j).x);
                 const double yi = 0.5 * (at(b, i + 1, j).y - at(b, i - 1, j).y);
                 const double xj = 0.5 * (at(b, i, j + 1).x - at(b, i, j - 1).x);
@@ -1016,14 +1169,19 @@ std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& 
                                          - at(b, i + 1, j - 1).y + at(b, i - 1, j - 1).y);
                 const double den = 2.0 * (al + ga);
                 if (!(den > 0.0)) continue;
+                // The two source terms enter as a reweighting of each direction's
+                // pair of neighbours: al*(1 +/- phi/2) and ga*(1 +/- psi/2).
+                const double ip = al * (1.0 + phi * 0.5), im = al * (1.0 - phi * 0.5);
+                const double jp = ga * (1.0 + psi * 0.5), jm = ga * (1.0 - psi * 0.5);
                 out[static_cast<size_t>(b.nodeAt(i, j))] = Point2D{
-                    (al * (at(b, i + 1, j).x + at(b, i - 1, j).x)
-                     + ga * (at(b, i, j + 1).x + at(b, i, j - 1).x)
+                    (ip * at(b, i + 1, j).x + im * at(b, i - 1, j).x
+                     + jp * at(b, i, j + 1).x + jm * at(b, i, j - 1).x
                      - 2.0 * be * xij) / den,
-                    (al * (at(b, i + 1, j).y + at(b, i - 1, j).y)
-                     + ga * (at(b, i, j + 1).y + at(b, i, j - 1).y)
+                    (ip * at(b, i + 1, j).y + im * at(b, i - 1, j).y
+                     + jp * at(b, i, j + 1).y + jm * at(b, i, j - 1).y
                      - 2.0 * be * yij) / den};
             }
+    }
     return out;
 }
 
@@ -2687,8 +2845,12 @@ int main() {
     {
         MbParams p;
         p.smoothIters = 1;
-        MbResult r = build(wallSquare(9, 7, "0.02"), p);
-        CHECK(r.ok, "42. the graded wall block smooths (err: " + r.error + ")");
+        // THE NOTCHED BOX, and not the graded square #82 used here: since #83 the
+        // graded square is a FIXED POINT of the controlled solve (check 47), so a
+        // comparison on it would be two identity operations agreeing. This one the
+        // solve genuinely moves.
+        MbResult r = build(notchedBox(11, 9, "0.35"), p);
+        CHECK(r.ok, "42. the notched block smooths (err: " + r.error + ")");
         // GUARDED, and the guard is not defensive habit: an injection that stopped
         // publishing `preSmoothNodes` made this loop index an EMPTY vector, and the
         // run died with SIGSEGV and printed no FAIL line at all — which a score
@@ -2726,8 +2888,10 @@ int main() {
         MbParams one, two;
         one.smoothIters = 1;
         two.smoothIters = 2;
-        MbResult r1 = build(wallSquare(9, 7, "0.02"), one);
-        MbResult r2 = build(wallSquare(9, 7, "0.02"), two);
+        // The notched box for the reason check 42 gives: since #83 the graded
+        // square is a fixed point and would make this two identities agreeing.
+        MbResult r1 = build(notchedBox(11, 9, "0.35"), one);
+        MbResult r2 = build(notchedBox(11, 9, "0.35"), two);
         CHECK(r1.ok && r2.ok, "43. one and two sweeps are both accepted");
         CHECK(worstMove(r2.preSmoothNodes, r1.preSmoothNodes) == 0.0,
               "43. both runs start from the same unsmoothed mesh");
@@ -2764,19 +2928,22 @@ int main() {
               "44. ...and producing nothing");
     }
 
-    // ── 45. THE WALL FIRST CELL IS STILL WORSE, and that is #83's job ───────
+    // ── 45. THE WALL FIRST CELL IS HELD, and #82's miss is REVERSED ────────
     //
-    // Winslow drives the interior toward the harmonic map of the block, which has
-    // no memory of the first-cell height the declaration asked for — so on a
-    // wall-clustered block it still drags the first interior line away from the
-    // wall. #82 says so in as many words: the control functions that hold the wall
-    // spacing are ticket 3, and by how much it misses in the meantime is to be
-    // recorded rather than glossed. Asserted as a DIRECTION with a floor, not as a
-    // fixed number: the numbers belong to the shipped cases and are recorded in the
-    // surface gate and the design note. What is pinned here is that the regression
-    // is real and is not a rounding wobble — and that the seam's own `wallSpecs`
-    // still asks for the declared height, so the quality report will SEE the miss
-    // rather than move the target with it.
+    // #82 pinned the opposite here, and said so: plain Winslow drives the interior
+    // toward the harmonic map of the block, which has no memory of the first-cell
+    // height the declaration asked for, so on a wall-clustered block it dragged the
+    // first interior line away from the wall — measured at 1.5x taller within four
+    // sweeps, and the check ASSERTED that direction so the cost could not be
+    // glossed. #83's control functions are what remove it, and this check is
+    // therefore reversed rather than deleted: the same fixture, the same node, the
+    // opposite claim.
+    //
+    // AND IT IS SHOWN TO BE THE CONTROL'S DOING. The same sweeps run by hand with
+    // both source terms ZERO — the pre-#83 kernel, one flag on `sweepByHand` — are
+    // measured beside it and still lose the height. Without that half, "the height
+    // is held" could pass on an elliptic operator that happened not to move this
+    // node at all.
     {
         MbParams p;
         p.smoothIters = 4;
@@ -2789,10 +2956,24 @@ int main() {
         // so the node above it is an interior node the sweep may move.
         const double before = (nodeOf(u, bu, 4, 1) - nodeOf(u, bu, 4, 0)).length();
         const double after  = (nodeOf(r, br, 4, 1) - nodeOf(r, br, 4, 0)).length();
-        CHECK(after > before * 1.5,
-              "45. the first cell off the wall gets TALLER under this kernel too — "
-              "the cost #83's control functions are what remove (" + std::to_string(before)
-              + " -> " + std::to_string(after) + ")");
+        // 1e-9 RELATIVE on a request of 0.02: the control solves for the source
+        // term that lands this node at exactly that distance, so what is left is
+        // the arithmetic's own rounding and not a residual the solve is still
+        // working off. Measured at 1.6e-16 relative.
+        CHECK(before > 0.0 && std::fabs(after - before) <= 1e-9 * before,
+              "45. the first cell off the wall is HELD at the height the "
+              "declaration asks for, where #82's kernel dragged it 1.5x taller ("
+              + std::to_string(before) + " -> " + std::to_string(after) + ")");
+        // The same sweeps with no control functions: the miss #82 recorded.
+        std::vector<Point2D> plain = u.nodes;
+        for (int k = 0; k < p.smoothIters; ++k)
+            plain = sweepByHand(u, plain, /*withControl=*/false);
+        const double lost = (plain[static_cast<size_t>(bu.nodeAt(4, 1))]
+                           - plain[static_cast<size_t>(bu.nodeAt(4, 0))]).length();
+        CHECK(lost > before * 1.5,
+              "45. ...and the SAME sweeps with both source terms zero still lose it, "
+              "so what holds the wall is the control and not the operator ("
+              + std::to_string(before) + " -> " + std::to_string(lost) + ")");
         bool sameRequest = u.wallSpecs.size() == r.wallSpecs.size();
         for (size_t k = 0; sameRequest && k < r.wallSpecs.size(); ++k)
             sameRequest = r.wallSpecs[k].edgeId == u.wallSpecs[k].edgeId
@@ -2800,9 +2981,9 @@ int main() {
                        && r.wallSpecs[k].requestedLo == u.wallSpecs[k].requestedLo
                        && r.wallSpecs[k].requestedHi == u.wallSpecs[k].requestedHi;
         CHECK(sameRequest,
-              "45. ...while the published REQUEST is unchanged, so the miss is "
-              "measured against the declaration rather than against the mesh that "
-              "drifted away from it");
+              "45. ...while the published REQUEST is unchanged, so the height is "
+              "measured against the declaration rather than against a mesh that "
+              "moved the target with it");
     }
 
     // ── 46. the smoother can STILL fold a cell, on a mesh that started sound ─
@@ -2915,16 +3096,36 @@ int main() {
               + std::to_string(r.smoothResidual) + ")");
         CHECK(!r.smoothDiverged && smoothWarnings(r).empty(),
               "47. ...with nothing to warn about");
-        // The premise correction, as a measurement: the same rectangle GRADED is
-        // moved, and the fixed point it is moving toward is not where it started.
+        // A GRADED RECTANGLE IS NOW A FIXED POINT TOO, and this is #83's headline
+        // reversed out of #82's own check. #82 asserted the opposite here and
+        // explained why: plain Winslow's fixed point is the harmonic map, whose
+        // interior spacing is UNIFORM, so a graded rectangle could not be returned
+        // unmoved — "holding it is #80's ticket 3, not this kernel". It is ticket
+        // 3 now, so the claim flips: with the control functions the declared
+        // grading is held to rounding over five hundred sweeps, and the solve says
+        // so on its FIRST one.
         MbResult g0 = build(wallSquare(11, 9, "0.02"), none);
         MbResult g1 = build(wallSquare(11, 9, "0.02"), many);
         CHECK(g0.ok && g1.ok, "47. the graded box meshes both ways");
-        CHECK(worstMove(g1.nodes, g0.nodes) > 1e-6,
-              "47. a GRADED rectangle is NOT a fixed point — plain Winslow relaxes "
-              "toward the harmonic map, whose interior spacing is uniform, so the "
-              "grading moves (worst " + std::to_string(worstMove(g1.nodes, g0.nodes))
-              + "). Holding it is #80's ticket 3, not this kernel.");
+        const double heldG = worstMove(g1.nodes, g0.nodes);
+        CHECK(heldG >= 0.0 && heldG < 1e-12,
+              "47. a GRADED rectangle is a FIXED POINT of the CONTROLLED solve — "
+              "the declared clustering is what the source terms hold, and #82 "
+              "asserted the opposite here because it had none (worst "
+              + std::to_string(heldG) + ")");
+        CHECK(g1.smoothConverged && g1.smoothSweeps == 1,
+              "47. ...and it converges on the first sweep rather than spending its "
+              "cap relaxing toward a mesh nobody asked for (sweeps "
+              + std::to_string(g1.smoothSweeps) + ")");
+        // AND THE CONTROL IS WHAT DOES IT. The same sweeps with both source terms
+        // zero move this grid, which is the measurement #82 made — so this check
+        // cannot pass on an operator that merely leaves everything alone.
+        std::vector<Point2D> plainG = g0.nodes;
+        for (int k = 0; k < 20; ++k) plainG = sweepByHand(g0, plainG, false);
+        CHECK(worstMove(plainG, g0.nodes) > 1e-6,
+              "47. ...where the SAME sweeps with no source terms relax the grading "
+              "away, exactly as #82 measured (worst "
+              + std::to_string(worstMove(plainG, g0.nodes)) + ")");
     }
 
     // ── 48. THE COEFFICIENTS, against numbers derived by hand ───────────────
@@ -2965,7 +3166,7 @@ int main() {
         st.mp     = Point2D{-1.0, 5.0};
         st.pm     = Point2D{3.0, -3.0};
         st.mm     = Point2D{0.0, 0.0};
-        const Point2D got = hybmesh::mbWinslowUpdate(st);
+        const Point2D got = hybmesh::mbWinslowUpdate(st, hybmesh::MbControl{});
         const Point2D want{42.5 / 30.0, 35.0 / 30.0};
         CHECK((got - want).length() < 1e-15,
               "48. the Winslow update of a hand-worked stencil is (" 
@@ -2992,7 +3193,7 @@ int main() {
         // coincident neighbours have no metric at all, and the node stays put.
         hybmesh::MbWinslowStencil flat;
         flat.c = Point2D{3.0, -4.0};
-        const Point2D held = hybmesh::mbWinslowUpdate(flat);
+        const Point2D held = hybmesh::mbWinslowUpdate(flat, hybmesh::MbControl{});
         CHECK(held.x == 3.0 && held.y == -4.0,
               "48. a stencil with no metric at all leaves the node WHERE IT IS "
               "rather than returning a NaN every later sweep would spread");
@@ -3011,23 +3212,25 @@ int main() {
     //                MB_SMOOTH_DIVERGE_FACTOR times its best, so the mesh returned
     //                is the BEST iterate and its sweep number, not the last one.
     //
-    // The graded box converges, and the same box at a cap of one does not.
+    // THE THIRD ENDING IS NOW DRIVEN HERE, which closes a gap #82 named as one.
+    // That ticket could only reach divergence on the SHIPPED C-grid — 26 synthetic
+    // variants were tried and every one converged — so `smoothDiverged` and the
+    // rollback had a single gate, out in the surface test, on a file that takes
+    // seconds to mesh. Since #83 a NOTCHED BOX at 0.35 diverges at sweep 9, in
+    // milliseconds, and the two halves are gated in the same place: the flag here
+    // and the shipped case there.
     //
-    // THE THIRD ENDING IS NOT DRIVEN HERE, and that is a gap with a reason rather
-    // than an oversight. Divergence was found on the SHIPPED C-grid — the residual
-    // falls to 2.7e-08 by sweep 3724 and then grows — and no synthetic fixture in
-    // this file reproduces it: measured 2026-09-04 over 26 variants (the clustered
-    // C-grid at four wall spacings and two wall resolutions, and a non-convex dart
-    // at three shapes x three gradings x two resolutions), every one of which
-    // CONVERGED. So `tests/test_multiblock_smooth_surface.py` group 7 is the only
-    // gate on `smoothDiverged` and on the rollback, and it drives the real file.
+    // The fixtures are the notched box at two depths, and the depth is what picks
+    // the ending: 0.50 converges in 290 sweeps, 0.35 diverges at 9. #82 drove this
+    // on the graded square, which since #83 is a FIXED POINT (check 47) and
+    // converges on its first sweep, so it can no longer show a cap being reached.
     {
         MbParams cap1, big;
         cap1.smoothIters = 1;
         big.smoothIters = 100000;
-        MbResult r1 = build(wallSquare(9, 7, "0.02"), cap1);
-        MbResult rc = build(wallSquare(9, 7, "0.02"), big);
-        CHECK(r1.ok && rc.ok, "49. the graded box meshes at both caps");
+        MbResult r1 = build(notchedBox(11, 9, "0.50"), cap1);
+        MbResult rc = build(notchedBox(11, 9, "0.50"), big);
+        CHECK(r1.ok && rc.ok, "49. the notched box meshes at both caps");
         CHECK(!r1.smoothConverged && !r1.smoothDiverged && r1.smoothSweeps == 1
                   && r1.smoothResidual > 0.0,
               "49. a cap of one is a solve that has NOT converged, and says so "
@@ -3058,24 +3261,71 @@ int main() {
         // outside the diverged path, which is also what check 43 rests on.
         MbParams down;
         down.smoothIters = 3;
-        MbResult rd = build(wallSquare(9, 7, "0.02"), down);
+        MbResult rd = build(notchedBox(11, 9, "0.50"), down);
         CHECK(rd.smoothBestSweep == rd.smoothSweeps && !rd.smoothConverged,
               "49. a cap reached while the residual is still FALLING returns its own "
               "best (sweep " + std::to_string(rd.smoothBestSweep) + " of "
               + std::to_string(rd.smoothSweeps) + ")");
+        // AND THE ADVICE THERE IS #83's, not #82's. Before the control functions
+        // this warning said a converged solve was not the goal, because the limit
+        // was the harmonic map and held no declared height. It now IS the goal, so
+        // the advice names the instrument that says when the PATH to it stops being
+        // stable — the saturation count — and says the wall is held while the cap
+        // rises. The old sentence must be gone, not merely joined.
         CHECK(!smoothWarnings(rd).empty()
-                  && mentions(smoothWarnings(rd)[0],
-                              "a CONVERGED solve is not the goal at this kernel"),
-              "49. ...and is NOT told to raise the cap until it converges, which at "
-              "this kernel points at the harmonic map and a wall height nothing held");
+                  && mentions(smoothWarnings(rd)[0], "the declared wall height is held")
+                  && mentions(smoothWarnings(rd)[0], "inverted-cell count stays 0")
+                  && mentions(smoothWarnings(rd)[0], "a direction rather than a threshold")
+                  && !mentions(smoothWarnings(rd)[0], "CONVERGED solve is not the goal"),
+              "49. ...and the advice there is that raising the cap holds the wall "
+              "while it goes, bounded by STABILITY rather than by the kernel's "
+              "limit, with the clip count given as a direction and not a threshold");
+        // THE CLIP COUNT IS REPORTED IN BOTH BRANCHES and is not a third one. That
+        // was this ticket's own first attempt and the measurement refused it: on
+        // the shipped C-grid the count runs 36, 28, 8, 0 over the first ten sweeps
+        // with a sound mesh throughout, and then climbs back off zero alongside the
+        // folds. A number that means "the solve is catching up" on the way down and
+        // "the iteration is going" on the way up cannot gate an if. What it gets
+        // instead is a sentence saying which way to read it — asserted above — and
+        // the STABILITY limit it stands in for is measured on the shipped file in
+        // tools/PreProcessor/tests/test_multiblock_smooth_surface.py group 7.
         // A run at exactly the sweep count the converged one used must land on the
         // same mesh: the early stop is a stop, not a different answer.
         MbParams exact;
         exact.smoothIters = rc.smoothSweeps;
-        MbResult re = build(wallSquare(9, 7, "0.02"), exact);
+        MbResult re = build(notchedBox(11, 9, "0.50"), exact);
         CHECK(worstMove(re.nodes, rc.nodes) == 0.0,
               "49. ...and stopping early returns the SAME mesh the cap would have, "
               "bit for bit");
+        // ── THE THIRD ENDING, and the rollback it exists for ────────────────
+        MbResult rv = build(notchedBox(11, 9, "0.35"), big);
+        CHECK(rv.ok, "49. the 0.35 notch meshes (err: " + rv.error + ")");
+        CHECK(rv.smoothDiverged && !rv.smoothConverged,
+              "49. ...and its solve DIVERGES rather than spending its cap: the "
+              "lagged-coefficient iteration is only conditionally stable, and this "
+              "is the first SYNTHETIC fixture in this file that reaches it (sweeps "
+              + std::to_string(rv.smoothSweeps) + " of "
+              + std::to_string(big.smoothIters) + ")");
+        CHECK(rv.smoothSweeps == rv.smoothBestSweep
+                  && rv.smoothResidual == rv.smoothBestResidual,
+              "49. ...returning the BEST iterate and SAYING which sweep it came "
+              "from, not the last one it computed (sweep "
+              + std::to_string(rv.smoothSweeps) + ", residual "
+              + std::to_string(rv.smoothResidual) + ")");
+        // The rollback is a real rollback: the mesh handed back is the best sweep's
+        // mesh, so a run capped AT that sweep must land on it bit for bit. Without
+        // this the flags could be published while the nodes stayed the last ones.
+        MbParams atBest;
+        atBest.smoothIters = rv.smoothBestSweep;
+        MbResult rb = build(notchedBox(11, 9, "0.35"), atBest);
+        CHECK(worstMove(rb.nodes, rv.nodes) == 0.0,
+              "49. ...and the ROLLBACK really rolled back: a run capped at that "
+              "sweep is the same mesh, bit for bit");
+        const std::vector<std::string> wv = smoothWarnings(rv);
+        CHECK(!wv.empty() && mentions(wv[0], "DIVERGED")
+                  && mentions(wv[0], "BEST iterate"),
+              "49. ...with a warning that says it diverged and that the mesh is the "
+              "best iterate, so neither is something a reader has to infer");
     }
 
     // ── 50. AND IT UNFOLDS WHAT THE ALGEBRAIC FILL FOLDED ───────────────────
@@ -3109,7 +3359,9 @@ int main() {
         };
         MbParams big;
         big.smoothIters = 100000;
-        const std::string doc = notchedBox(11, 9, "0.35");
+        // 0.45, not the 0.35 #82 drove this on, and the reason is #83's own cost —
+        // recorded below rather than glossed.
+        const std::string doc = notchedBox(11, 9, "0.45");
         MbResult u = build(doc, MbParams{});
         MbResult r = build(doc, big);
         CHECK(u.ok && r.ok, "50. the notched block is a VALID declaration both ways "
@@ -3134,6 +3386,444 @@ int main() {
               "same mesh and the same number of sweeps (got "
               + std::to_string(flipped(u, lap)) + " left of "
               + std::to_string(before) + ")");
+        // ── WHAT #83 COST HERE, measured on the fixture #82 used ────────────
+        //
+        // A DEEPER notch is no longer fully repaired, and this is the one place in
+        // this ticket where a controlled solve does LESS than the uncontrolled one.
+        // At 0.35 the fill folds 8 cells; #82's kernel converged and repaired all
+        // 8, and the controlled solve diverges at sweep 9 with 1 left. The reason
+        // is not mysterious and it is not a bug: the control functions HOLD the
+        // declared boundary distribution, and on a re-entrant notch that
+        // distribution is part of what folds the fill — so the solve has less room
+        // to move. #82 traded a wall height for an angle and said so; this trades
+        // a pathological fold for a wall height and says so here.
+        //
+        // Pinned as a DIRECTION with a floor, not as the number 1: what must stay
+        // true is that the solve still removes most of them and that the mesh is
+        // strictly better than the fill's, because a silent slide from 1 back to 8
+        // would mean the smoother had stopped helping at all.
+        MbResult ud = build(notchedBox(11, 9, "0.35"), MbParams{});
+        MbResult rd2 = build(notchedBox(11, 9, "0.35"), big);
+        const size_t deepBefore = flipped(ud, ud.nodes);
+        const size_t deepAfter = flipped(rd2, rd2.nodes);
+        CHECK(deepBefore >= 8 && deepAfter > 0 && deepAfter * 4 <= deepBefore,
+              "50. a DEEPER notch is no longer fully repaired — the control holds "
+              "the declared distribution that is part of what folds the fill — but "
+              "most of the folds still go (" + std::to_string(deepBefore) + " -> "
+              + std::to_string(deepAfter) + "), which is the cost recorded rather "
+              "than the claim quietly weakened");
+    }
+
+    // ── 51. THE GATE FOR A WALL IS THE DECLARED KIND, and there is ONE ──────
+    //
+    // #83: "the gate for a wall is the declared edge kind, so an interface or a cut
+    // is not treated as a viscous surface. This matches the existing wall-spacing
+    // report and must not become a second answer to the same question."
+    //
+    // So `mbWallTargets` does not classify anything. It walks `MbResult::wallSpecs`
+    // — the list the fill already publishes, gated on the declared kind — and the
+    // check that this is ONE answer rather than two is that the two lists agree
+    // side for side, in order.
+    //
+    // AND THE TARGET IS THE RULER'S OWN BLEND. `MbWallSpec` carries the height at
+    // a side's two corners; `measureMbQuality` blends them LINEARLY IN THE LOGICAL
+    // COORDINATE in between. A control aimed at any other interpolation would drive
+    // the mesh at one number while the acceptance gate measured it against another,
+    // so the blend is re-derived here from the spec and compared station by station.
+    {
+        MbResult tb = build(twoBlocks("interface"));
+        CHECK(tb.ok, "51. the two-block topology meshes (err: " + tb.error + ")");
+        const std::vector<hybmesh::MbWallTarget> tg = hybmesh::mbWallTargets(tb);
+        CHECK(tg.size() == tb.wallSpecs.size(),
+              "51. one target per published wall spec and no more — the wall gate is "
+              "not re-derived here (" + std::to_string(tg.size()) + " vs "
+              + std::to_string(tb.wallSpecs.size()) + ")");
+        bool aligned = tg.size() == tb.wallSpecs.size();
+        for (size_t k = 0; aligned && k < tg.size(); ++k)
+            aligned = tg[k].block == tb.wallSpecs[k].block
+                   && tg[k].side == tb.wallSpecs[k].side
+                   && tg[k].edgeId == tb.wallSpecs[k].edgeId;
+        CHECK(aligned, "51. ...naming the same block, side and edge, in the same order");
+        bool noShared = true;
+        for (const auto& t : tg)
+            for (const auto& se : tb.sharedEdges)
+                if (t.edgeId == se.edgeId) noShared = false;
+        CHECK(noShared && !tb.sharedEdges.empty(),
+              "51. ...and the declared INTERFACE is not among them: an interior line "
+              "is not a viscous surface, whatever its boundary condition says");
+
+        // The blend, on a side whose two ends declare the same height, and on the
+        // spec's own numbers rather than on a literal repeated here.
+        MbResult ws = build(wallSquare(9, 7, "0.02"));
+        CHECK(ws.ok, "51. the graded wall block meshes");
+        const std::vector<hybmesh::MbWallTarget> wt = hybmesh::mbWallTargets(ws);
+        bool blendOk = wt.size() == ws.wallSpecs.size() && !wt.empty();
+        bool unitNormals = blendOk;
+        bool inward = blendOk;
+        for (size_t k = 0; blendOk && k < wt.size(); ++k) {
+            const auto& t = wt[k];
+            const auto& sp = ws.wallSpecs[k];
+            const auto& b = ws.blocks[static_cast<size_t>(t.block)];
+            const hybmesh::MbSideAxis ax = hybmesh::mbSideAxis(t.side);
+            const int n = ax.alongI ? b.ni : b.nj;
+            const int m = ax.alongI ? b.nj : b.ni;
+            const int t0 = ax.atFarEnd ? m - 1 : 0, t1 = ax.atFarEnd ? m - 2 : 1;
+            if (static_cast<int>(t.requested.size()) != n) { blendOk = false; break; }
+            for (int q = 0; q < n; ++q) {
+                const double u = static_cast<double>(q) / (n - 1);
+                const double want = (1.0 - u) * sp.requestedLo + u * sp.requestedHi;
+                if (std::fabs(t.requested[static_cast<size_t>(q)] - want) > 1e-15)
+                    blendOk = false;
+            }
+            if (static_cast<int>(t.normal.size()) != n) { unitNormals = false; continue; }
+            for (int q = 0; q < n; ++q) {
+                const Point2D nrm = t.normal[static_cast<size_t>(q)];
+                if (std::fabs(nrm.length() - 1.0) > 1e-12) unitNormals = false;
+                const int i0 = ax.alongI ? q : t0, j0 = ax.alongI ? t0 : q;
+                const int i1 = ax.alongI ? q : t1, j1 = ax.alongI ? t1 : q;
+                const Point2D step = ws.nodes[static_cast<size_t>(b.nodeAt(i1, j1))]
+                                   - ws.nodes[static_cast<size_t>(b.nodeAt(i0, j0))];
+                if (nrm.dot(step) <= 0.0) inward = false;
+                const int ka = (q > 0) ? q - 1 : q, kb = (q + 1 < n) ? q + 1 : q;
+                const Point2D ta = ws.nodes[static_cast<size_t>(
+                                       b.nodeAt(ax.alongI ? kb : t0, ax.alongI ? t0 : kb))]
+                                 - ws.nodes[static_cast<size_t>(
+                                       b.nodeAt(ax.alongI ? ka : t0, ax.alongI ? t0 : ka))];
+                if (std::fabs(nrm.dot(ta)) > 1e-12 * ta.length()) unitNormals = false;
+            }
+        }
+        CHECK(blendOk,
+              "51. every station's request is the LOGICAL blend of the two corner "
+              "heights the spec published — the same interpolation the ruler "
+              "measures against, not a second one");
+        CHECK(unitNormals,
+              "51. ...and its normal is a UNIT vector perpendicular to the wall's "
+              "own tangent");
+        CHECK(inward,
+              "51. ...pointing INTO the block, read off the mesh rather than off a "
+              "winding convention a turned frame would break");
+
+        // A SIDE WHOSE TWO ENDS ASK FOR DIFFERENT HEIGHTS, which is the only shape
+        // in which "the logical blend" says anything at all. See
+        // `wallSquareTwoEnds`: on the fixtures above and on both shipped cases the
+        // two ends declare the SAME height, so the blend has no gradient and an
+        // injection that bent it to blend by ARC LENGTH along the wall was INERT
+        // against every gate in this repo. Here it is not: the wall is clustered at
+        // one end so its arc length runs away from its index, and the two
+        // interpolations disagree by 19% at mid-span.
+        MbResult te = build(wallSquareTwoEnds(13, 9, "0.004", "0.030"));
+        CHECK(te.ok, "51. the two-ends wall block meshes (err: " + te.error + ")");
+        const std::vector<hybmesh::MbWallTarget> tt = hybmesh::mbWallTargets(te);
+        const hybmesh::MbWallTarget* south = nullptr;
+        for (const auto& t : tt)
+            if (t.side == hybmesh::MB_SOUTH) south = &t;
+        CHECK(south != nullptr && south->requested.size() >= 5,
+              "51. ...with a south wall to read");
+        if (south) {
+            const double lo = south->requested.front();
+            const double hi = south->requested.back();
+            CHECK(std::fabs(hi - lo) > 0.5 * std::fabs(lo),
+                  "51. ...and its two ends really do ask for DIFFERENT heights, so "
+                  "the blend below has a gradient to get wrong ("
+                  + fmtE(lo) + " .. " + fmtE(hi) + ")");
+            // The arc-length blend, computed here as the wrong answer, so this
+            // check is shown to DISCRIMINATE rather than merely to agree with
+            // itself. `measureMbQuality` uses the logical one; a control aimed at
+            // this one would be driving the mesh at a number the gate never reads.
+            const auto& b = te.blocks[static_cast<size_t>(south->block)];
+            const int n = b.ni;
+            std::vector<double> cum(static_cast<size_t>(n), 0.0);
+            for (int q = 1; q < n; ++q)
+                cum[static_cast<size_t>(q)] =
+                    cum[static_cast<size_t>(q - 1)]
+                    + (te.nodes[static_cast<size_t>(b.nodeAt(q, 0))]
+                     - te.nodes[static_cast<size_t>(b.nodeAt(q - 1, 0))]).length();
+            double worstGap = 0.0;
+            bool logicalOk = true;
+            for (int q = 0; q < n; ++q) {
+                const double u = static_cast<double>(q) / (n - 1);
+                const double want = (1.0 - u) * lo + u * hi;
+                if (std::fabs(south->requested[static_cast<size_t>(q)] - want)
+                        > 1e-15 * hi)
+                    logicalOk = false;
+                const double ua = cum[static_cast<size_t>(q)]
+                                  / cum[static_cast<size_t>(n - 1)];
+                worstGap = std::max(worstGap,
+                                    std::fabs(((1.0 - ua) * lo + ua * hi) - want));
+            }
+            CHECK(logicalOk,
+                  "51. ...and the request IS the logical blend of them, station by "
+                  "station");
+            CHECK(worstGap > 0.05 * hi,
+                  "51. ...where the ARC-LENGTH blend of the same two numbers is a "
+                  "DIFFERENT answer on this wall, which is what makes the check "
+                  "above discriminate (worst gap " + fmtE(worstGap) + " on a request "
+                  "of " + fmtE(hi) + ")");
+        }
+    }
+
+    // ── 52. THE KERNEL WITH ITS SOURCE TERMS, against numbers by hand ───────
+    //
+    // Check 48's stencil, driven again with phi = 0.5 and psi = -1.0, because a
+    // gate on the plain kernel says nothing about how the control enters it. The
+    // arithmetic, from check 48's own alpha = 10, beta = 5, gamma = 5,
+    // x_ij = (0.75, 1.5), denom = 30:
+    //
+    //   iP = alpha*(1 + phi/2) = 12.5      iM = alpha*(1 - phi/2) = 7.5
+    //   jP = gamma*(1 + psi/2) = 2.5       jM = gamma*(1 - psi/2) = 7.5
+    //   answer = [12.5*(4,2) + 7.5*(0,0) + 2.5*(2,6) + 7.5*(0,0) - 10*(0.75,1.5)]/30
+    //          = [(50,25) + (5,15) - (7.5,15)] / 30  =  (47.5, 25)/30
+    //
+    // AND BOTH ZERO IS CHECK 48'S ANSWER, term for term. That is the compatibility
+    // property the whole ticket rests on — it is what lets check 47's exactness
+    // gate keep measuring the kernel this file had before #83 — so it is asserted
+    // rather than assumed from the algebra.
+    //
+    // FOUR WAYS TO GET THE CONTROL WRONG are computed beside it and each lands
+    // somewhere else, on check 48's rule that a gate whose passing value is also
+    // the wrong answer's value is not a gate.
+    {
+        hybmesh::MbWinslowStencil st;
+        st.c      = Point2D{7.0, 9.0};
+        st.iPlus  = Point2D{4.0, 2.0};
+        st.iMinus = Point2D{0.0, 0.0};
+        st.jPlus  = Point2D{2.0, 6.0};
+        st.jMinus = Point2D{0.0, 0.0};
+        st.pp     = Point2D{5.0, 8.0};
+        st.mp     = Point2D{-1.0, 5.0};
+        st.pm     = Point2D{3.0, -3.0};
+        st.mm     = Point2D{0.0, 0.0};
+        const hybmesh::MbControl q{0.5, -1.0};
+        const Point2D got = hybmesh::mbWinslowUpdate(st, q);
+        const Point2D want{47.5 / 30.0, 25.0 / 30.0};
+        CHECK((got - want).length() < 1e-15,
+              "52. the CONTROLLED Winslow update of a hand-worked stencil is ("
+              + std::to_string(want.x) + ", " + std::to_string(want.y) + "), got ("
+              + std::to_string(got.x) + ", " + std::to_string(got.y) + ")");
+        const Point2D none = hybmesh::mbWinslowUpdate(st, hybmesh::MbControl{});
+        const Point2D plain{42.5 / 30.0, 35.0 / 30.0};
+        CHECK((none - plain).length() == 0.0,
+              "52. ...and BOTH SOURCE TERMS ZERO is check 48's plain answer, bit for "
+              "bit — the property the exactness gate rests on");
+        struct Wrong { const char* how; Point2D at; };
+        const Wrong wrong[] = {
+            {"the control dropped", plain},
+            {"phi and psi swapped", hybmesh::mbWinslowUpdate(st, {-1.0, 0.5})},
+            {"both signs flipped", hybmesh::mbWinslowUpdate(st, {-0.5, 1.0})},
+            {"the source added to the node instead of reweighting its neighbours",
+             st.c + Point2D{2.0, 1.0} * 0.5 + Point2D{1.0, 3.0} * -1.0},
+        };
+        for (const Wrong& w : wrong)
+            CHECK((want - w.at).length() > 0.05,
+                  std::string("52. ...and this stencil TELLS THAT APART from ") + w.how
+                  + " (" + std::to_string((want - w.at).length()) + " away)");
+    }
+
+    // ── 53. THE CONTROL ASKS FOR NOTHING WHERE THE MESH ALREADY COMPLIES ────
+    //
+    // The property that makes the source terms a statement about the DECLARATION
+    // rather than a nudge of their own: on a grid that already has what the
+    // declaration asks for, every source term is zero and the solve is a fixed
+    // point. On the uniform 250:1 rectangle that is check 47's claim from the
+    // outside; here it is the field itself, node by node, which is the only place
+    // a source term that is zero ON AVERAGE can be told from one that is zero.
+    //
+    // AND THE CONTRAST, so this is not a check on a function that returns zero: the
+    // GRADED square's field is NOT zero, and that square is a fixed point anyway —
+    // which is the whole of #83 in two assertions. A grid that complies by accident
+    // needs no control; a graded one needs a live one, and gets it.
+    {
+        MbParams none;
+        MbResult uni = build(stretchedBox(11, 9, "250.0", "1.0"), none);
+        CHECK(uni.ok, "53. the uniform stretched box meshes (err: " + uni.error + ")");
+        const std::vector<hybmesh::MbWallTarget> ut = hybmesh::mbWallTargets(uni);
+        double worstQ = 0.0;
+        size_t clips = 0;
+        for (size_t bi = 0; bi < uni.blocks.size(); ++bi) {
+            const hybmesh::MbControlField cf = hybmesh::mbControlField(
+                uni.blocks[bi], static_cast<int>(bi), uni.nodes, ut);
+            clips += cf.clipped;
+            for (const hybmesh::MbControl& c : cf.q)
+                worstQ = std::max(worstQ, std::max(std::fabs(c.phi), std::fabs(c.psi)));
+        }
+        // 1e-9 on a source term that is O(1) when it is asking for anything, and
+        // the figure is measured rather than picked: 4.4e-11 on this fixture. The
+        // uniform map's second differences vanish, so nothing here is a demand —
+        // what is left is the root formula's own conditioning on a domain 250 units
+        // across, where the positions carry ~1e-13 relative rounding and the
+        // solve's 1/|dir|^2 lifts it. It reaches the mesh as a neighbour weight
+        // 2e-11 from one, which check 47 independently shows moves nothing.
+        CHECK(worstQ < 1e-9,
+              "53. a grid that already has what the declaration asks for is asked "
+              "for NOTHING: every source term is zero to rounding (worst "
+              + fmtE(worstQ) + ")");
+        CHECK(clips == 0,
+              "53. ...so nothing is clipped, and the saturation count is the count "
+              "of real demands rather than of visits");
+
+        MbResult gr = build(wallSquare(11, 9, "0.02"), none);
+        CHECK(gr.ok, "53. the graded square meshes");
+        const std::vector<hybmesh::MbWallTarget> gt = hybmesh::mbWallTargets(gr);
+        double liveQ = 0.0;
+        for (size_t bi = 0; bi < gr.blocks.size(); ++bi) {
+            const hybmesh::MbControlField cf = hybmesh::mbControlField(
+                gr.blocks[bi], static_cast<int>(bi), gr.nodes, gt);
+            for (const hybmesh::MbControl& c : cf.q)
+                liveQ = std::max(liveQ, std::max(std::fabs(c.phi), std::fabs(c.psi)));
+        }
+        CHECK(liveQ > 1e-3,
+              "53. ...while the GRADED square's field is live (worst "
+              + fmtE(liveQ) + "), so the check above is a property of the "
+              "mesh and not of a function that returns zero");
+
+        // A BLOCK'S CONTROL READS ITS OWN WALLS AND NOBODY ELSE'S. Written because
+        // an injection was inert without it: widening the per-block gate so every
+        // block saw every wall target changed nothing any check in this file could
+        // see, because every other fixture here is a SINGLE block. It moved 27
+        // checks in the surface gate, which is the slow one.
+        MbResult tb2 = build(twoBlocks("interface"));
+        CHECK(tb2.ok, "53. the two-block topology meshes (err: " + tb2.error + ")");
+        const std::vector<hybmesh::MbWallTarget> t2 = hybmesh::mbWallTargets(tb2);
+        bool perBlock = tb2.blocks.size() >= 2;
+        for (size_t bi = 0; perBlock && bi < tb2.blocks.size(); ++bi) {
+            // The same block, once against the whole target list and once against
+            // only its OWN targets. Equal means nothing crossed a block boundary.
+            std::vector<hybmesh::MbWallTarget> mine;
+            for (const auto& t : t2)
+                if (t.block == static_cast<int>(bi)) mine.push_back(t);
+            const hybmesh::MbControlField all = hybmesh::mbControlField(
+                tb2.blocks[bi], static_cast<int>(bi), tb2.nodes, t2);
+            const hybmesh::MbControlField own = hybmesh::mbControlField(
+                tb2.blocks[bi], static_cast<int>(bi), tb2.nodes, mine);
+            if (all.q.size() != own.q.size()) { perBlock = false; break; }
+            for (size_t k = 0; k < all.q.size(); ++k)
+                if (all.q[k].phi != own.q[k].phi || all.q[k].psi != own.q[k].psi)
+                    perBlock = false;
+        }
+        CHECK(perBlock,
+              "53. ...and a block's field is the same whether it is handed every "
+              "wall in the mesh or only its own, bit for bit — one block's "
+              "declaration cannot reach into another's interior");
+
+        // THE SATURATION COUNT IS INCREMENTED, which no other check here reads.
+        // An injection that counted nothing while still clipping was inert in this
+        // whole file: the uniform box above has 0 clips either way, and the count
+        // otherwise only reaches `HYBMESH_MB_SMOOTH`.
+        MbParams sat;
+        sat.smoothIters = 5;
+        MbResult rs2 = build(notchedBox(11, 9, "0.35"), sat);
+        CHECK(rs2.smoothClipped > 0,
+              "53. ...and a solve whose control DOES saturate publishes the count "
+              "rather than clipping in silence (clipped "
+              + std::to_string(rs2.smoothClipped) + ")");
+    }
+
+    // ── 54. THE CONTROL'S RESIDUAL AND THE RULER ARE ONE ANSWER ─────────────
+    //
+    // `mbWallResidual` measures the same wall-height quantity `measureMbQuality`
+    // reports, and it exists twice for a structural reason rather than a sloppy
+    // one: a warning belongs to the SEAM, and `MbQuality.hpp` includes
+    // `MultiBlock.hpp`, so the seam cannot call the ruler. What keeps the two from
+    // drifting is this check and not a comment — the worst wall of a mesh, computed
+    // both ways, on a mesh where the figure is not zero.
+    {
+        MbParams p;
+        p.smoothIters = 6;
+        MbResult r = build(notchedBox(11, 9, "0.50"), p);
+        CHECK(r.ok, "54. the notched box smooths (err: " + r.error + ")");
+        const hybmesh::MbQualityReport q = hybmesh::measureMbQuality(r);
+        double mine = -1.0;
+        for (const hybmesh::MbWallTarget& t : hybmesh::mbWallTargets(r)) {
+            const hybmesh::MbWallResidual res = hybmesh::mbWallResidual(r, t);
+            if (res.worstHeightRel >= 0.0) mine = std::max(mine, res.worstHeightRel);
+        }
+        CHECK(q.worstWallRelError > 1e-6,
+              "54. this mesh's worst wall is not zero, so the comparison below is "
+              "not two zeroes agreeing (" + std::to_string(q.worstWallRelError) + ")");
+        CHECK(mine >= 0.0 && std::fabs(mine - q.worstWallRelError)
+                  <= 1e-12 * q.worstWallRelError,
+              "54. ...and the seam's own measurement IS the ruler's, to rounding "
+              "(control " + std::to_string(mine) + " vs ruler "
+              + std::to_string(q.worstWallRelError) + ")");
+        // The other half of the target vector, which the ruler does not report per
+        // wall: how far from perpendicular the grid line leaving it is. Measured on
+        // the produced nodes, and NEGATIVE when there was nothing to measure — the
+        // report's one rule, which this struct is held to as well.
+        hybmesh::MbWallTarget dead;
+        dead.block = 999;
+        const hybmesh::MbWallResidual nothing = hybmesh::mbWallResidual(r, dead);
+        CHECK(nothing.worstHeightRel < 0.0 && nothing.worstAngleDeg < 0.0,
+              "54. a wall nothing could be measured on reports NEGATIVE, never the "
+              "0.0 that is a perfect result");
+    }
+
+    // ── 55. A CONTROL FUNCTION THAT CANNOT HONOUR ITS REQUEST SAYS SO ───────
+    //
+    // #83: "a control function that cannot honour a request says so as a warning
+    // measured on the produced nodes, in the same shape as the existing 'asks for a
+    // first cell height' warning". Same shape means: named edge, the number asked
+    // for, the number produced, and what to do — and MEASURED, never predicted from
+    // the fact that a clip or a missing root was hit.
+    //
+    // THE BAR IS THE MESH THE SOLVE STARTED FROM, which is why this needs no
+    // tolerance nobody can defend. Being 3% off a faceted curved wall is not a
+    // failure of the control; coming out FURTHER from the declaration than the
+    // algebraic fill already was is, and `preSmoothNodes` makes that a comparison
+    // of two coordinate sets over the same walls.
+    //
+    // The deep notch is where it fires: the solve diverges there, and the wall
+    // whose distribution the fold ate comes out worse than it went in.
+    {
+        MbParams p;
+        p.smoothIters = 100000;
+        MbResult bad = build(notchedBox(11, 9, "0.35"), p);
+        CHECK(bad.ok, "55. the deep notch meshes (err: " + bad.error + ")");
+        std::vector<std::string> ctrl;
+        for (const std::string& w : bad.warnings)
+            if (mentions(w, "control function")) ctrl.push_back(w);
+        CHECK(!ctrl.empty(),
+              "55. a wall the smoothed mesh left FURTHER from its declared height "
+              "than the fill did is named in a warning");
+        const std::string& w0 = ctrl.empty() ? bad.error : ctrl[0];
+        CHECK(mentions(w0, "wall edge '"),
+              "55. ...naming the EDGE the declaration is on (got: " + w0 + ")");
+        CHECK(mentions(w0, "% off it, against") && mentions(w0, "% before the sweeps"),
+              "55. ...quoting BOTH numbers, so the reader can see it got worse "
+              "rather than take it on trust");
+        CHECK(mentions(w0, "MB_SMOOTH_ITERS"),
+              "55. ...and ending in the key that changes it");
+        // AND THE TWO NUMBERS ARE IN THE ORDER THE SENTENCE CLAIMS. Written because
+        // an injection was inert without it: flipping the comparison so the warning
+        // fires on an IMPROVEMENT instead of a regression still produced a warning
+        // on this fixture — one of its walls improves while another gets worse — so
+        // "a warning appeared and mentions the right words" passed in both worlds,
+        // in this file AND in the surface gate. What tells them apart is reading the
+        // figures back out of the message the user is shown.
+        double warnNow = -1.0, warnWas = -1.0;
+        {
+            const size_t p1 = w0.find("worst ");
+            const size_t p2 = w0.find("% off it, against ");
+            if (p1 != std::string::npos && p2 != std::string::npos && p1 < p2) {
+                warnNow = std::atof(w0.c_str() + p1 + 6);
+                warnWas = std::atof(w0.c_str() + p2 + 18);
+            }
+        }
+        CHECK(warnNow > warnWas && warnWas >= 0.0,
+              "55. ...with the AFTER figure larger than the BEFORE one, so 'could "
+              "not hold' is a claim the numbers support rather than prose beside "
+              "them (" + fmtE(warnWas) + "% -> " + fmtE(warnNow) + "%)");
+        // AND IT IS SILENT WHERE THE REQUEST IS HELD. Without this half the check
+        // above passes on a warning that fires on every smoothed run, which is the
+        // same thing as no warning at all.
+        MbParams ok;
+        ok.smoothIters = 50;
+        MbResult good = build(wallSquare(9, 7, "0.02"), ok);
+        size_t quiet = 0;
+        for (const std::string& w : good.warnings)
+            if (mentions(w, "control function")) ++quiet;
+        CHECK(quiet == 0,
+              "55. ...and a run whose walls ARE held says nothing, so the warning "
+              "means something when it appears (got " + std::to_string(quiet) + ")");
     }
 
     return hybmesh::test::report("test_multiblock");

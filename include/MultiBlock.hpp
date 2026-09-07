@@ -183,6 +183,44 @@ constexpr double MB_SMOOTH_TOL = 1e-8;
 // is not coming back.
 constexpr double MB_SMOOTH_DIVERGE_FACTOR = 10.0;
 
+// THE TWO SOURCE TERMS of one interior node's update — the CONTROL FUNCTIONS
+// (issue #83), and what turns an elliptic smoother into one that has been TOLD
+// what the boundary should look like.
+//
+// Without them the solve relaxes toward each block's harmonic map, which is
+// UNIFORM: on a grid graded 250:1 off a viscous wall that is the opposite of what
+// the declaration asked for, and #82 measured the cost — a converged plain
+// Winslow solve on the shipped C-grid is 3133% off its declared first-cell
+// height. `phi` and `psi` are how the wall's two requirements — a grid line
+// leaving it at 90 degrees, and a first cell of the height the document asked
+// for — enter the interior equation.
+//
+// Each is the coefficient of the FIRST derivative in its own logical direction,
+// so the system solved becomes
+//
+//     a * (x_ii + phi * x_i)  -  2b * x_ij  +  g * (x_jj + psi * x_j)  =  0
+//
+// and BOTH ZERO reproduces the plain Winslow update exactly, which is the
+// property the kernel's exactness gate rests on. Where they come from is
+// `include/MbControl.hpp`; this is only their shape.
+struct MbControl {
+    double phi = 0.0;   // the i-direction source
+    double psi = 0.0;   // the j-direction source
+};
+
+// HOW LARGE A SOURCE TERM THE KERNEL WILL ACCEPT, and it is a stability bound
+// rather than a taste: the update below weights `iPlus` by a*(1 + phi/2) and
+// `iMinus` by a*(1 - phi/2), so at |phi| = 2 one of the two coefficients reaches
+// zero and past it the node is no longer a convex combination of its neighbours.
+// The iteration then has no maximum principle, and a node can be pushed OUTSIDE
+// the hull of the nine positions it was computed from — which is a fold, not a
+// smoother.
+//
+// So a raw control value larger than this is CLIPPED, and clipping is a request
+// the solve could not honour in full: `MbControlField::clipped` counts it and the
+// seam warns on it. It is not silently obeyed and not silently dropped.
+constexpr double MB_CONTROL_CLIP = 2.0;
+
 // The nine positions the Winslow update of ONE interior node reads: itself, its
 // four logical neighbours and its four logical diagonals.
 //
@@ -223,7 +261,11 @@ struct MbWinslowStencil {
 // logical neighbours coincide with each other, which is not a grid. Returning the
 // node is the answer that changes nothing, rather than a NaN that propagates into
 // every later sweep and out through the exporter.
-Point2D mbWinslowUpdate(const MbWinslowStencil& s);
+// `q` IS NOT DEFAULTED, deliberately. A caller that wants the plain kernel says
+// so with `{}` at the call site, so every use states which of the two systems it
+// means — and the checks that pin the plain arithmetic keep saying "no control
+// functions" out loud rather than by omission.
+Point2D mbWinslowUpdate(const MbWinslowStencil& s, const MbControl& q);
 
 // A block's four sides, in the [south, east, north, west] order the topology
 // document declares them and every check in this module is written against.
@@ -466,7 +508,15 @@ struct MbResult {
     // published contract and is read as `res.preSmoothNodes` by the adapter; a
     // struct holding four of the five would split one concern across two shapes,
     // which is worse than the clump. Bundle all five or none.
+    //   smoothClipped   how many of the RETURNED mesh's nodes had a control
+    //                   function clipped to MB_CONTROL_CLIP — the count of places
+    //                   the wall condition asked for a push the kernel cannot take
+    //                   without losing its maximum principle (#83). NEGATIVE means
+    //                   no sweep ran, on the same rule as `smoothResidual`: 0 is
+    //                   "every request was honoured in full" and must not stand in
+    //                   for not having looked.
     int smoothSweeps = 0;
+    int smoothClipped = -1;
     bool smoothConverged = false;
     bool smoothDiverged = false;
     double smoothResidual = -1.0;

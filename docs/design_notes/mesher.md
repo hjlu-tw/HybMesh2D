@@ -1439,6 +1439,240 @@ kernel is WINSLOW".
   the requested wall height is not a boundary layer worth integrating, so the acceptance run
   remains #80's own (#85), not this ticket's.
 
+**WALL CONTROL FUNCTIONS: the source terms that tell the solve what a wall is**
+(`include/MbControl.hpp` + `src/MbControl.cpp` in `hybmesh_pure`; `MbControl` and
+`MB_CONTROL_CLIP` in `include/MultiBlock.hpp`; #83, ticket 3 of #80's five). The rules
+are `.claude/rules/mesher-multiblock.md`, "SMOOTHING is a STAGE inside the seam, its
+kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
+
+- **What the increment is for, in #82's own words.** That ticket's honest advice was
+  "use a small cap", because a CONVERGED plain Winslow solve is each block's harmonic
+  map and is 3133% off the declared wall height on the C-grid and 1382% on the O-grid.
+  That is a workaround for a missing input, not a setting. The system gains two source
+  terms — `a(x_ii + phi x_i) - 2b x_ij + g(x_jj + psi x_j) = 0` — and **both zero is
+  #82's update term for term**, which is asserted (check 52) rather than left to the
+  algebra, because it is what lets #82's exactness gate keep measuring the same kernel.
+
+- **THE TARGET IS A POSITION, NOT A DERIVATIVE, and that is worth 8.7%.** The textbook
+  Steger-Sorenson wall condition specifies `r_n`, the derivative of the map at the wall.
+  What the declaration asks for and what `measureMbQuality` measures is `|p_1 - p_0|`,
+  the first INTERVAL. On a geometrically graded line of ratio q the two differ by
+  `(q-1)/ln q`: at the shipped C-grid's q of about 1.18 a control aimed at the derivative
+  converges neatly onto an interval 8.7% larger than anybody asked for. This was found on
+  paper before it was measured, and it is the reason the condition here is stated on the
+  position.
+
+- **AND THE INTERPOLATION IS THE RULER'S, which is the same lesson from the other side.**
+  `MbWallSpec` publishes the height at a side's two corners; `measureMbQuality` blends
+  them LINEARLY IN THE LOGICAL COORDINATE. Arc length along the wall is the answer this
+  repo's habits point at — the arc-length-not-chord rule is elsewhere in this note — and
+  it is wrong here, because it would drive the mesh at one number while the acceptance
+  gate measured it against another. The rule that covers both is that the measure of the
+  request and the measure of the achievement must be the SAME measure; the
+  edge-distribution warning learned it by comparing a CHORD against a request expressed
+  in arc length and firing on an edge that had honoured the request exactly.
+
+- **FOUR FORMULATIONS, MEASURED IN ORDER, on the shipped C-grid at one sweep.** This is
+  the whole of the ticket's engineering and none of it was derivable in advance:
+
+  | attempt | wall first cell | max | mean | clipped | why it failed |
+  |---------|-----------------|-----|------|---------|----------------|
+  | Steger-Sorenson on the DERIVATIVE at the frozen wall row | 19.86% | 32.50° | 3.675° | ~3182 | both projections divide by `a = h²`, so a 32°-skewed first cell asks for a `phi` of about **-21**; it clips, and the clipped value carried outward destabilises |
+  | exact 2x2 solve for the target POSITION at the first interior row | 121.17% | 39.78° | 4.082° | 3182 | the same blow-up: one exact vector equation in two unknowns still asks for a `phi` no kernel can take |
+  | the near-wall 1-D limit, `psi = 4h/span - 2` | 2.96% | 31.86° | 4.651° | 0 | well conditioned at last, but it ignores the along-wall weights and the cross term, and the 2-D miss it leaves never feeds back — so the figure got WORSE with more sweeps (5.9% at five) |
+  | least squares for the target position, projected onto `dir` | 11.75% | 31.84° | 4.650° | 36 | one scalar cannot place a node in a plane; projecting spends it on both components instead of nailing the one that is measured |
+  | **the quadratic solved for the DISTANCE** | **0.29%** | **31.86°** | 4.649° | 36 | — |
+
+  The last one is the ticket. The kernel's update of the first interior node is linear in
+  both sources, so writing it as `base + s * dir` measured from the wall node makes
+  `|base + s * dir| = requested` **one quadratic in one scalar**; both roots are written
+  down and the root taken is the one landing nearer `p_wall + requested * n̂`. **That is
+  where the 90-degree half of the declaration enters** — as the tie-break between two
+  points at the same correct distance on opposite sides — and it is why nothing here
+  trades orthogonality against spacing: they are one vector, not two knobs. NO REAL ROOT
+  is the control meeting a request it cannot honour; it takes the closest approach and the
+  wall-residual warning is what says so.
+
+- **THE SECOND HALF WAS THE ONE THAT MOVED THE MEAN, and it is a SCOPE rule.** With the
+  off-wall source written at the first row and nowhere else, the rest of each radial line
+  relaxes toward uniform and the MEAN non-orthogonality rises with every sweep — 4.65° at
+  one, 6.14° at twenty, against the fill's 4.562° — because equidistributing a graded grid
+  skews every cell it touches a little. Fitting an ideal GEOMETRIC line to the declared
+  height and the line's length instead imposes a distribution nobody declared: these
+  radial edges declare a **TANH** law, so the ideal and the actual diverge with distance,
+  and it saturated 2120 nodes and folded 432 cells. What works is **Thomas-Middlecoff on
+  the line's own current spacing** beyond the first row: it HOLDS whatever the fill
+  produced there and asks for nothing. The declaration owns the first cell, the fill owns
+  the rest of the line, and the solve is left to move the LINES rather than the spacing
+  along them. All three of #80's figures then improve together.
+
+- **THE CLIP IS THE KERNEL'S BOUND, NOT A TASTE.** The update weights a neighbour by
+  `a(1 ± phi/2)`, so at `|phi| = 2` one weight reaches zero and past it the node stops
+  being a convex combination of the nine positions it reads — no maximum principle, and a
+  node can leave their hull, which is a fold rather than a smoother. `MB_CONTROL_CLIP` is
+  that 2, `MbControlField::clipped` counts the nodes that hit it, and `smoothClipped`
+  carries it to `HYBMESH_MB_SMOOTH` as `clipped=`.
+
+- **AND READING THAT COUNT AS A THRESHOLD WAS THIS TICKET'S OWN MISTAKE, caught by its own
+  gate.** The plausible advice — "lower the cap until nothing is clipped" — was written
+  into the capped warning and into a C++ check, and the surface gate refused it: on the
+  shipped C-grid the count is **36 at a cap of one**, on a mesh with 0 inverted cells and
+  every figure better than the fill's. It runs 36, 28, 8, 0 over the first ten sweeps —
+  the control CATCHING UP with a target the algebraic fill starts far from — and only then
+  climbs back off zero, 4 at sweep 100 and 212 at 500, alongside the folds. So it means
+  "the solve is working" on the way down and "the iteration is going" on the way up. A
+  number with two opposite meanings cannot gate an `if`: it is reported with a sentence
+  saying which way to read it, and the advice points at the inverted-cell count, which is
+  machinery that already existed.
+
+- **THE TABLE, measured 2026-09-07 on the SHIPPED files**, beside #82's plain Winslow at
+  the same cap (quoted from that ticket):
+
+  | case | cap | kernel | inverted | max | mean | wall first cell | clipped |
+  |------|-----|--------|----------|-----|------|-----------------|---------|
+  | C-grid | 0 | fill | 0 | 32.044° | 4.562° | 0.4368% | — |
+  | C-grid | 1 | Winslow (#82) | 0 | 31.438° | 4.778° | 11.65% | — |
+  | C-grid | 1 | **+control** | 0 | **31.861°** | **4.527°** | **0.1222%** | 36 |
+  | C-grid | 5 | Winslow (#82) | 0 | 29.844° | 5.627° | 39.15% | — |
+  | C-grid | 5 | **+control** | 0 | **31.382°** | **4.454°** | **0.0805%** | 8 |
+  | C-grid | 20 | Winslow (#82) | 0 | 33.759° | 8.517° | 130.77% | — |
+  | C-grid | 20 | **+control** | **0** | **29.895°** | **4.301°** | **0.0893%** | 0 |
+  | C-grid | 30 | +control | 0 | 31.550° | 4.252° | 0.0943% | 0 |
+  | C-grid | 40 | +control | 0 | 34.784° | 4.214° | 0.0980% | 0 |
+  | C-grid | 100 | +control | **4** | 86.606° | 4.710° | 19.06% | 4 |
+  | C-grid | 500 | +control | **288** | 84.927° | 10.860° | 99.99% | 212 |
+  | O-grid | 0 | fill | 0 | 2.250° | 1.875° | 0.0812% | — |
+  | O-grid | 1 | Winslow (#82) | 0 | 3.312° | 1.875° | 9.13% | — |
+  | O-grid | 1 | **+control** | 0 | 3.632° | 1.875° | **0.0390%** | 0 |
+  | O-grid | 5 | Winslow (#82) | 0 | 8.061° | 1.978° | 29.13% | — |
+  | O-grid | 5 | **+control** | 0 | **6.418°** | 1.980° | **0.0412%** | 0 |
+  | O-grid | 20 | +control | 0 | 12.036° | 2.571° | 0.0442% | 0 |
+
+  **#80's acceptance for this ticket is MET on the C-grid**: at a cap of 20 the max is
+  better than #57's 32.044°, the mean is better than its 4.562° AT THE SAME TIME, the wall
+  first cell is better than its 0.4368% rather than merely no worse, and inverted is still
+  0. "Both improving at once is the whole claim" — that is the row.
+
+- **THE NEAR-LEADING-EDGE REGION, measured on its own because the ticket asks for it.**
+  #57 localised the cells that drove the solver to NaN: the first cell off the wall just
+  aft of the leading edge, worst corner at (0.0134, 0.0196). Over the ten quad cells
+  touching the airfoil between x = 0.005 and 0.030 the region reads **32.044° max /
+  26.895° mean unsmoothed -> 31.861° / 26.734° at one sweep -> 29.895° / 24.909° at
+  twenty**. It improves monotonically, and both figures move — a mesh-wide average could
+  have improved while this did not, which is exactly the criterion's point. On this case
+  the whole-mesh maximum IS this region's maximum, which is worth knowing: the C-grid's
+  headline max number has been a statement about the leading edge all along.
+
+  The instrument is a QUAD READER in the surface gate, not a new metric. #80 says no new
+  metric is invented and `MbQuality` owns the ruler; what the gate adds is a SELECTION of
+  which corners to report, and "which cells are near the leading edge of the shipped NACA
+  0012" is a fact about a shipped FILE that a pure function of any `MbResult` has no
+  business knowing. What keeps it from becoming a second answer is that group 10 first
+  reproduces the C++ ruler's WHOLE-MESH max and mean off the same code, to 1e-4, before
+  reading the region it cannot check.
+
+- **THE O-GRID NEGATIVE CONTROL IS STILL UNMET, and is now LOCALISED rather than
+  attributed.** 2.250° -> 3.632° at one sweep, where #82 got 3.312°. The wall first cell,
+  though, goes the other way and is now BETTER than #55's: 0.0812% -> 0.0390%. #82
+  attributed the regression to the frozen radial interfaces through the run's own wall
+  table — the row pinned at the declared height where an interface held it and 9.13% off
+  mid-block. **That localisation no longer works, because this ticket fixed the thing it
+  was reading**: the wall table now says 0.00% all the way round. So it was measured
+  directly instead, on the exported quads: the worst corners of the smoothed O-grid sit at
+  **theta = 0, 90, 180 and -90 degrees at radius ~3.43**, which is mid-block on the four
+  DECLARED RADIAL INTERFACES (`r0`..`r3`, corners `b0`..`b3` to `f0`..`f3`), while the
+  UNSMOOTHED mesh's worst corners sit at radius 10.0 on the faceted outer circle. The cost
+  is a kink along a frozen shared edge; #84 unfreezes them. Recorded as unmet and owned,
+  on the same terms #82 recorded it.
+
+  Why the control cannot rescue it: for a polar map the controlled equation is not
+  satisfied even with exact 1-D sources. Working it through, `b = 0` and the `psi` term
+  cancels against `R''/R'`, leaving a residual `-a R Δθ²` that would need
+  `psi_extra = R'/R` — a genuine 2-D curvature term that no 1-D Thomas-Middlecoff source
+  carries. That is a property of the formulation, not of the freeze, and it is why the
+  O-grid moves at all before the interfaces get in the way.
+
+- **WHAT #83 COST, in three places, none of them papered over.**
+  1. **A fold from smoothing is REACHABLE on the shipped files again**, reversing #82's
+     blind spot. That kernel folded nothing at any cap either case was driven at; this one
+     folds 4 cells on the C-grid by a cap of 100 and 288 by 500. Holding a graded wall
+     through a conditionally stable iteration is what costs it, the run reports it through
+     the inverted-cell count and exit 9, and the surface gate now asserts that path on a
+     real file rather than only on a folded declaration.
+  2. **A deep re-entrant notch is no longer fully repaired.** `notchedBox(11, 9, "0.35")`
+     folds 8 cells in the fill; #82's kernel converged and repaired all 8, and this one
+     diverges at sweep 9 with 1 left. The control HOLDS the declared boundary distribution,
+     and on a re-entrant notch that distribution is part of what folds the fill — so the
+     solve has less room. Check 50 pins the direction with a floor rather than quietly
+     weakening its claim, and moved its full-repair half to the 0.45 notch, which converges
+     in 347 sweeps and repairs its 1 fold.
+  3. **Neither shipped case converges OR diverges any more** — the residual PLATEAUS
+     (6.8e-05 at a cap of 50000 on the C-grid against a best of 2.5e-05 at sweep 415, a
+     factor of 2.7 and so short of `MB_SMOOTH_DIVERGE_FACTOR`; 1.2e-04 on the O-grid at
+     20000). Both endings therefore moved house, which is a SWAP in coverage rather than a
+     loss: #82 could reach them only on the shipped files, having tried 26 synthetic
+     fixtures that all converged, and #83 found that the notched box's DEPTH picks the
+     ending — 0.50 converges in 290 sweeps, 0.35 diverges at 9 — so check 49 drives both in
+     milliseconds, with the rollback checked the same round-trip way the surface gate
+     checked it. The surface gate keeps the stability limit, which only a real file reaches.
+
+- **THREE #82 CHECKS HAD TO BE REVERSED, and each was written to be.** They pinned the
+  defect this ticket removes, so they are reversed rather than deleted — the same treatment
+  #43's iteration-count reversal got.
+  - **Check 45** asserted the first cell off the wall gets **1.5x taller** within four
+    sweeps. It is now held to 1.6e-16 relative, and the same sweeps run by hand with both
+    sources zero still lose it — so the check proves the CONTROL holds the wall and not the
+    operator.
+  - **Check 47** asserted a GRADED rectangle is NOT a fixed point, and said why: plain
+    Winslow's fixed point is the harmonic map, whose interior spacing is uniform, "holding
+    it is #80's ticket 3, not this kernel". It is ticket 3 now: the graded square is held
+    to rounding over 500 sweeps and the solve **converges on its first sweep**. That is
+    #83's headline, and it came out of #82's own check rather than out of a new one.
+  - **Surface group 4** asserted the wall figure gets at least 10x worse and that the MEAN
+    does not improve. Both flipped.
+
+- **A DUPLICATE WARNING, caught by an existing check.** Rewriting the capped advice left
+  #82's block in place beside the new one, so every capped run pushed the warning TWICE.
+  Nothing about the text was wrong and the mesh was unaffected; what failed was check 49's
+  `w1.size() == 1`, which exists for exactly this and had looked like a formality. Worth
+  recording because the review axis that would have caught it by reading is the one this
+  repo keeps finding things with.
+
+- **THE `.dat` READER, THE GUI AND THE PARITY GATE ARE UNTOUCHED**, because the control
+  functions add no key. #80 requires every mesh key to land in the C++ config and the GUI
+  field-spec table together, and the way to satisfy that requirement is to need no key: a
+  selector over one answer is the abstraction the no-inert-alternatives rule exists to
+  prevent, which is the same call #82 made when it deleted the Laplacian instead of keeping
+  it behind an enum.
+
+- **WALL NODES DO NOT SLIDE, and the ticket required that decision to be taken and stated.**
+  Sliding is the stronger tool and is expressible — a bound edge's polyline is known — and
+  it is refused because on this path the DECLARATION is the authority: a corner attaches at
+  a declared arc-length position and an edge's spacing comes from a declared law, so a
+  smoother that redistributed a wall would overwrite the document it was asked to honour.
+  The concrete contradiction is with this ticket's own deliverable: `MbWallSpec`'s requested
+  height is derived from the perpendicular edge's declared `ds`, so sliding would move the
+  along-wall distribution while the request stayed put, and nothing could then say which of
+  the two was right. **So `BL_USE_ANALYTIC_GEOM` gains NO reader**, the read and unread
+  survivor lists are unchanged and stay disjoint, and it is still a declared survivor
+  nothing reads — kept that way by a decision rather than by omission. #48's "survives as
+  the projection basis" is a claim about a projection this path does not perform.
+
+- **GOLDEN: 18 of 19 SAME at 0.000e+00, and the nineteenth recaptured.** `mb_cgrid_smooth`
+  — the only case whose nodes come from the smoother — moved 2.000 units at its worst node
+  with all 11520 `.cel` cells' connectivity redrawn. #81 wrote that case so a kernel change
+  would show up here as a number; it has now done so twice, and both times it was the only
+  one of the nineteen that moved.
+
+- **NAMED BLIND SPOTS.** The smoothed mesh is STILL never given to the solver or the grid
+  converter — and unlike #82, that is now a GAP rather than a non-question, because 0.09%
+  off the requested wall height is exactly the boundary layer #80's acceptance asks for. It
+  belongs to #85. **Nothing bounds the cap automatically**: the stability limit is reported
+  after the fact by the inverted-cell count, while the DIVERGED path stops at its best
+  residual — two signals, one acted on. And the saturating-AND-descending regime is reached
+  by no synthetic fixture, only by the shipped C-grid at a cap of 100, so that branch of the
+  advice has one gate.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /

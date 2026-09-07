@@ -342,10 +342,13 @@ CASES = {
     #     change -- which is what every remaining ticket of #80 is -- moves this
     #     baseline by orders more than the tolerance, while the frozen block
     #     boundaries keep the `.bnd` patch faces identical to mb_cgrid's. It has
-    #     done exactly that once already: #82 replaced the Laplacian with the
-    #     Winslow kernel and this case moved 1.999 units at its worst node while
-    #     the other eighteen stayed at 0.000e+00, which is the whole reason it is
-    #     here. Recaptured deliberately in that commit.
+    #     done exactly that TWICE now, and both times it was the only case that
+    #     moved. #82 replaced the Laplacian with the Winslow kernel and this case
+    #     moved 1.999 units at its worst node; #83 gave that kernel its wall
+    #     control functions and it moved 2.000, with the connectivity of all 11520
+    #     `.cel` cells differing both times. The other eighteen stayed at
+    #     0.000e+00 through both, which is the whole reason this one is here.
+    #     Recaptured deliberately in each commit.
     #     ONE sweep and not five: under #81's kernel five folded 4 cells and exited
     #     9, and a case that exits non-zero is recorded as "no mesh produced" and
     #     compares nothing. Under Winslow five folds nothing -- so the reason to

@@ -1,4 +1,5 @@
 #include "MultiBlock.hpp"
+#include "MbControl.hpp"
 
 #include "Spacing.hpp"   // the existing spacing laws, shared rather than re-implemented
 #include "json.hpp"      // the repo's bundled header-only parser (nlohmann 3.12)
@@ -1338,6 +1339,16 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
 // iterate returned are both published, and the seam pushes a warning saying so.
 // Handing back a mesh that got worse the longer it was asked to work is the
 // thing that would be.
+// A residual or a tolerance as a NUMBER rather than as `std::to_string`'s six
+// fixed decimals, which renders MB_SMOOTH_TOL as "0.000000" — so #82's cap warning
+// told the reader it would have converged "below 0.000000", which is both wrong and
+// the exact figure they need to judge the run by.
+std::string fmtSci(double v) {
+    std::ostringstream os;
+    os << std::scientific << std::setprecision(3) << v;
+    return os.str();
+}
+
 void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     r.preSmoothNodes = r.nodes;
     // The length the residual is expressed in. Taken from the mesh the solve
@@ -1361,11 +1372,31 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // before/after report already costs, and the same order of work per sweep
     // as the sweep itself.
     std::vector<Point2D> bestNodes;
+    // ...and its saturation count, so a rolled-back solve reports the control
+    // state of the mesh it actually returned rather than of the sweep it abandoned.
+    int bestClipped = 0;
+
+    // THE CONTROL TARGETS, derived ONCE. Every input to them is frozen: the
+    // requested heights come from `wallSpecs`, which the fill published, and the
+    // tangents come from the wall rows, which no sweep moves. The one part that
+    // reads a moving node is the sign that orients a normal INWARD, and that can
+    // only flip if the node one grid line in crosses the wall's own tangent —
+    // which is a fold, not a smoothing step. See `mbControlField` for the half
+    // that genuinely must be recomputed every sweep, and why.
+    const std::vector<hybmesh::MbWallTarget> targets = hybmesh::mbWallTargets(r);
 
     for (int sweep = 0; sweep < maxSweeps; ++sweep) {
         std::vector<Point2D> next = r.nodes;
         double worst = 0.0;
-        for (const hybmesh::MbBlock& b : r.blocks) {
+        size_t clipped = 0;
+        for (size_t bIdx = 0; bIdx < r.blocks.size(); ++bIdx) {
+            const hybmesh::MbBlock& b = r.blocks[bIdx];
+            // Built from THIS sweep's starting positions, like the metric
+            // coefficients and for the same reason: lagging both is what keeps a
+            // sweep a linear operation and the solve a fixed-point iteration.
+            const hybmesh::MbControlField cf = hybmesh::mbControlField(
+                b, static_cast<int>(bIdx), r.nodes, targets);
+            clipped += cf.clipped;
             for (int j = 1; j + 1 < b.nj; ++j) {
                 for (int i = 1; i + 1 < b.ni; ++i) {
                     hybmesh::MbWinslowStencil st;
@@ -1378,7 +1409,8 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
                     st.mp     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j + 1))];
                     st.pm     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j - 1))];
                     st.mm     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j - 1))];
-                    const Point2D moved = hybmesh::mbWinslowUpdate(st);
+                    const Point2D moved =
+                        hybmesh::mbWinslowUpdate(st, cf.at(i, j));
                     next[static_cast<size_t>(b.nodeAt(i, j))] = moved;
                     const double d = (moved - st.c).length();
                     if (d > worst) worst = d;
@@ -1388,6 +1420,7 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
         r.nodes.swap(next);
         r.smoothSweeps = sweep + 1;
         r.smoothResidual = worst / ref;
+        r.smoothClipped = static_cast<int>(clipped);
         // THE BEST IS RECORDED BEFORE EITHER STOP IS TESTED, so a converged solve's
         // best IS the sweep it converged on rather than the one before it — which is
         // what makes `smoothBestSweep == smoothSweeps` a usable reading of "the mesh
@@ -1396,18 +1429,20 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
         // no early exit of its own.
         if (bestNodes.empty() || r.smoothResidual < r.smoothBestResidual) {
             bestNodes = r.nodes;
+            bestClipped = static_cast<int>(clipped);
             r.smoothBestResidual = r.smoothResidual;
             r.smoothBestSweep = r.smoothSweeps;
         }
         if (r.smoothResidual <= hybmesh::MB_SMOOTH_TOL) { r.smoothConverged = true; break; }
         if (r.smoothResidual > r.smoothBestResidual * hybmesh::MB_SMOOTH_DIVERGE_FACTOR) {
             r.nodes = bestNodes;
+            r.smoothClipped = bestClipped;
             r.smoothDiverged = true;
             r.warnings.push_back(
                 "the elliptic smoother DIVERGED: its residual fell to "
-                + std::to_string(r.smoothBestResidual) + " after "
+                + fmtSci(r.smoothBestResidual) + " after "
                 + std::to_string(r.smoothBestSweep) + " sweep(s) and then grew to "
-                + std::to_string(r.smoothResidual) + " by sweep "
+                + fmtSci(r.smoothResidual) + " by sweep "
                 + std::to_string(r.smoothSweeps)
                 + ". The mesh returned is the BEST iterate, from sweep "
                 + std::to_string(r.smoothBestSweep) + " — the later ones are worse, "
@@ -1423,12 +1458,33 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // one flag, and telling them apart is #82's review finding: a solve still
     // DESCENDING has more to give, while one whose residual is already above the
     // best it reached has TURNED, and telling that user to raise the cap points them
-    // at a worse mesh. Note also what the advice must NOT be in either case — "raise
-    // it until it converges" is bad advice at this kernel, because a CONVERGED plain
-    // Winslow solve is each block's harmonic map and has no memory of the declared
-    // first-cell height at all (measured: 3133% off on the shipped C-grid, 1382% on
-    // the O-grid). Converging is worth reaching once #83's control functions hold the
-    // wall; until then "not converged" is a statement of fact and not a to-do.
+    // at a worse mesh.
+    //
+    // WHAT #83 CHANGED IN THIS ADVICE, because the old text is now false. Before the
+    // control functions, "raise it until it converges" was bad advice for a reason
+    // about the LIMIT: a converged plain Winslow solve is each block's harmonic map
+    // and holds no declared first-cell height at all (3133% off on the shipped
+    // C-grid). That is no longer what it converges to — the controlled solve holds
+    // that wall to 0.09% at twenty sweeps and a graded rectangle is a fixed point of
+    // it — so the sentence goes rather than being softened.
+    //
+    // THE LIMIT THAT REPLACES IT IS ABOUT THE PATH, and it is measured. The
+    // lagged-coefficient iteration is only conditionally stable, and on the shipped
+    // C-grid it holds to about thirty sweeps and then loses the condition: 0 folded
+    // cells at every cap through 40, 4 by sweep 100, 288 by sweep 500. What reports
+    // that is the machinery that already exists — the inverted-cell count and exit
+    // 9 — so the advice points at it rather than inventing a second signal.
+    //
+    // AND THE SATURATION COUNT IS A FACT, NOT A THRESHOLD, which is a correction
+    // this ticket had to make to its own first attempt. The obvious reading is
+    // "clipping means trouble, lower the cap until it is zero", and the measurement
+    // says otherwise: on the shipped C-grid `smoothClipped` runs 36, 28, 8, 0 over
+    // the first ten sweeps with a sound mesh throughout — that is the control
+    // CATCHING UP with a target the algebraic fill starts far from — and then climbs
+    // back off zero, 4 at sweep 100 and 212 at 500, alongside the folds. Falling is
+    // the solve working; rising after it has reached zero is the iteration going. A
+    // count with two opposite meanings cannot be advice on its own, so it is
+    // reported as what it is and the reader is told which way to read it.
     //
     // The returned mesh at the cap is still the LAST iterate and not the best: the
     // user asked for N sweeps and N sweeps is what "N sweeps" has to mean, which is
@@ -1441,22 +1497,74 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
             "the elliptic smoother stopped at its cap of "
             + std::to_string(maxSweeps)
             + " sweep(s) while still moving nodes (residual "
-            + std::to_string(r.smoothResidual) + ", converged below "
-            + std::to_string(hybmesh::MB_SMOOTH_TOL) + "). The mesh is the "
+            + fmtSci(r.smoothResidual) + ", converged below "
+            + fmtSci(hybmesh::MB_SMOOTH_TOL) + "). The mesh is the "
             "PARTLY-SOLVED one, not a converged elliptic grid. "
             + (pastBest
                    ? "Its residual is ALREADY ABOVE the best this solve reached ("
-                     + std::to_string(r.smoothBestResidual) + " at sweep "
+                     + fmtSci(r.smoothBestResidual) + " at sweep "
                      + std::to_string(r.smoothBestSweep) + "), so the iteration has "
                      "turned: raising MB_SMOOTH_ITERS makes this mesh worse, not more "
                      "converged. Lower it to at most that sweep."
                    : std::string(
-                     "Raising MB_SMOOTH_ITERS takes it further, but note that a "
-                     "CONVERGED solve is not the goal at this kernel: it relaxes to "
-                     "each block's harmonic map, which does not hold the first-cell "
-                     "height the declaration asks for. A small cap is the useful "
-                     "setting until wall control functions land.")));
+                     "Raising MB_SMOOTH_ITERS takes it further and the declared wall "
+                     "height is held while it does. What bounds it is stability, not "
+                     "the kernel's limit: this point iteration lags its coefficients "
+                     "and is only conditionally stable on a strongly graded grid, so "
+                     "past some cap it begins to FOLD cells — raise it only while the "
+                     "inverted-cell count stays 0."))
+            + " The control functions were clipped at "
+            + std::to_string(r.smoothClipped)
+            + " node(s) on the sweep this mesh came from. Read that count as a "
+              "direction rather than a threshold: it FALLS as the solve catches up "
+              "with the wall it was told to hold, and climbing back off zero is the "
+              "iteration losing its stability condition.");
     }
+
+    // A CONTROL FUNCTION THAT COULD NOT HONOUR ITS REQUEST SAYS SO, and it says it
+    // in the shape the edge-distribution warning next door established: measured
+    // on the nodes that came out, naming the edge, the number asked for and the
+    // number produced, and ending in what to do about it. What is NEVER acceptable
+    // is the applied source term standing in for the achieved mesh — a push that
+    // was made is not evidence that it worked, which is why `mbWallResidual` reads
+    // positions and not control values.
+    //
+    // THE BAR IS THE MESH THE SOLVE STARTED FROM, not a tolerance somebody picked.
+    // "Off by 3%" is not by itself a failure of the control function — a faceted
+    // curved wall has a residue of its own, measured at 0.08% on the shipped
+    // O-grid — but coming out FURTHER from the declared height than the algebraic
+    // fill already was is a smoothing pass that took away the thing it was told to
+    // hold. `preSmoothNodes` makes that a comparison of two coordinate sets over
+    // the same walls, so the difference is the smoother and nothing else.
+    {
+        hybmesh::MbResult before = r;
+        before.nodes = r.preSmoothNodes;
+        for (const hybmesh::MbWallTarget& t : targets) {
+            const hybmesh::MbWallResidual now = hybmesh::mbWallResidual(r, t);
+            const hybmesh::MbWallResidual was = hybmesh::mbWallResidual(before, t);
+            if (!(now.worstHeightRel >= 0.0) || !(was.worstHeightRel >= 0.0)) continue;
+            // A relative slack, so a wall that came out a rounding apart from
+            // where it went in is not reported as a regression. Multiplicative
+            // because the quantity is itself relative and spans four orders of
+            // magnitude across the shipped cases.
+            if (now.worstHeightRel <= was.worstHeightRel * 1.01 + 1e-12) continue;
+            r.warnings.push_back(
+                "wall edge '" + t.edgeId + "' (" + std::string(hybmesh::mbSideAxis(t.side).name)
+                + " of block " + std::to_string(t.block) + "): the control function "
+                  "could not hold the first cell height the declaration asks for. The "
+                  "smoothed mesh is worst " + std::to_string(now.worstHeightRel * 100.0)
+                + "% off it, against " + std::to_string(was.worstHeightRel * 100.0)
+                + "% before the sweeps"
+                + ((r.smoothClipped > 0)
+                       ? ("; the control saturated at "
+                          + std::to_string(r.smoothClipped) + " node(s), which is it "
+                          "asking for a push the kernel cannot take")
+                       : std::string())
+                + ". Lower MB_SMOOTH_ITERS, or declare a wall spacing this block's "
+                  "far side can be reached from.");
+        }
+    }
+
 }
 
 }  // namespace
@@ -1480,7 +1588,7 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
 // and solving for the centre node collapses the -2a-2g that the two ordinary
 // stencils contribute into the denominator below, which is why the expression is
 // a weighted mean of the neighbours rather than a residual added to `c`.
-Point2D hybmesh::mbWinslowUpdate(const MbWinslowStencil& s) {
+Point2D hybmesh::mbWinslowUpdate(const MbWinslowStencil& s, const MbControl& q) {
     const Point2D di = (s.iPlus - s.iMinus) * 0.5;   // x_i, y_i
     const Point2D dj = (s.jPlus - s.jMinus) * 0.5;   // x_j, y_j
     const double a = dj.lengthSq();                  // x_j^2 + y_j^2
@@ -1492,7 +1600,21 @@ Point2D hybmesh::mbWinslowUpdate(const MbWinslowStencil& s) {
     // unmoved keeps a NaN out of every later sweep and out of the exported file.
     if (!(denom > 0.0)) return s.c;
     const Point2D cross = (s.pp - s.mp - s.pm + s.mm) * 0.25;  // x_ij, y_ij
-    return ((s.iPlus + s.iMinus) * a + (s.jPlus + s.jMinus) * g - cross * (2.0 * b))
+    // THE CONTROL FUNCTIONS, and they enter as a REWEIGHTING of the two
+    // neighbours in each direction rather than as a term added on the side.
+    // `phi * x_i` discretises to phi * (iPlus - iMinus) / 2 at unit spacing, and
+    // folding that into the ordinary second-difference stencil moves the whole of
+    // it into the pair of weights below — which is what keeps the answer a
+    // weighted mean of the nine positions and makes MB_CONTROL_CLIP's bound on
+    // the weights' SIGN the exact statement of when that stops being true.
+    //
+    // BOTH ZERO IS THE PLAIN WINSLOW UPDATE, term for term, and that is not a
+    // coincidence to be re-derived: it is what lets the exactness gate keep
+    // measuring the kernel this file had before #83.
+    const double iP = a * (1.0 + q.phi * 0.5), iM = a * (1.0 - q.phi * 0.5);
+    const double jP = g * (1.0 + q.psi * 0.5), jM = g * (1.0 - q.psi * 0.5);
+    return (s.iPlus * iP + s.iMinus * iM + s.jPlus * jP + s.jMinus * jM
+            - cross * (2.0 * b))
            * (1.0 / denom);
 }
 

@@ -700,7 +700,13 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << " residual=" << resid.str()
                   << " best_sweep=" << res.smoothBestSweep
                   << " best_residual=" << best.str()
-                  << " tol=" << tol.str() << "\n";
+                  << " tol=" << tol.str()
+                  // THE CONTROL FUNCTIONS' OWN FACT ON THIS LINE (#83): how many
+                  // of the returned mesh's nodes had a source term clipped, which
+                  // is the count of places the wall condition asked for more than
+                  // the kernel can take. It belongs here rather than on the
+                  // quality line because it describes the SOLVE, not the mesh.
+                  << " clipped=" << res.smoothClipped << "\n";
     }
 
     if (q.invertedCells > 0) {

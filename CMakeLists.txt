@@ -187,6 +187,7 @@ add_library(hybmesh_pure STATIC
     src/MeshMode.cpp
     src/MultiBlock.cpp
     src/MbQuality.cpp
+    src/MbControl.cpp
 )
 target_include_directories(hybmesh_pure PUBLIC include)
 # 決策層自己用得到的兩個 header-only 相依：前處理器那份 nlohmann json.hpp (拓樸

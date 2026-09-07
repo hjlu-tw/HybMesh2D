@@ -197,6 +197,8 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
   the adapter records. Never throws; a malformed document comes back as an error string.
 - **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
+- **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
+  source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
 - **`Config.hpp`**: single-header; parses `.dat` files into ~50 typed parameters.
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross.
 
