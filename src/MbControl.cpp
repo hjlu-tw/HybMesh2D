@@ -1,5 +1,7 @@
 #include "MbControl.hpp"
 
+#include "MbShared.hpp"   // MbGhostFrame: the logical frame CONTINUED across a shared edge
+
 #include <algorithm>
 #include <cmath>
 
@@ -83,49 +85,40 @@ Point2D wallTangent(int k, int n, const At& at) {
     return at(kb) - at(ka);
 }
 
-// HOW TO WALK ONE DECLARED WALL SIDE: the indices all three functions below need,
-// derived once from `mbSideAxis` instead of three times by hand.
+// WHERE ONE NODE OF THE EXTENDED FRAME IS. The frame is the block's own grid plus
+// one ghost layer across every shared side (include/MbShared.hpp), so an index one
+// step OUTSIDE the block is a real node of the neighbour and not a clamp.
 //
-// Extracted for the reason `wallTangent` next door gives and this clump did not
-// heed: it was written three times, each with its own copy of
-// `t0 = ax.atFarEnd ? m - 1 : 0`, `t1 = ax.atFarEnd ? m - 2 : 1` and its own
-// bounds-clamped position lambda — which is the shape that lets one of them
-// disagree with the others, and #83's review named it.
-//
-// `ok` is false for a block too thin to walk. Checked by the caller rather than
-// returning an optional: each caller has a different thing to do about it, and two
-// of them still publish part of their answer for such a side.
-struct SideWalk {
-    hybmesh::MbSideAxis ax{"south", true, false};
-    int n = 0;       // stations along the side
-    int m = 0;       // grid lines across it
-    int t0 = 0;      // the on-wall line
-    int t1 = 0;      // one line in from it
-    int tFar = 0;    // the line facing the wall
-    bool ok = false;
-};
-
-SideWalk sideWalk(const hybmesh::MbBlock& b, hybmesh::MbSide side) {
-    SideWalk w;
-    w.ax = hybmesh::mbSideAxis(side);
-    const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
-    if (b.ni < 2 || b.nj < 2 || b.nodeIds.size() != want) return w;
-    w.n = w.ax.alongI ? b.ni : b.nj;
-    w.m = w.ax.alongI ? b.nj : b.ni;
-    w.t0 = w.ax.atFarEnd ? w.m - 1 : 0;
-    w.t1 = w.ax.atFarEnd ? w.m - 2 : 1;
-    w.tFar = w.ax.atFarEnd ? 0 : w.m - 1;
-    w.ok = true;
-    return w;
+// A MISSING NODE IS {0, 0} AND EVERY CALLER GUARDS FIRST with `frameHas`. Out of
+// range returning the origin rather than reading past the end is the rule this
+// whole module follows — it promises never to throw — but the origin is a POSITION
+// and silently differencing against it is how a plausible wrong mesh gets made, so
+// the guard is not optional and is written at each station below.
+Point2D framePos(const hybmesh::MbGhostFrame& fr,
+                 const std::vector<Point2D>& nodes, int i, int j) {
+    const int id = fr.at(i, j);
+    if (id < 0 || static_cast<size_t>(id) >= nodes.size()) return {0.0, 0.0};
+    return nodes[static_cast<size_t>(id)];
 }
 
-// The node at station `k`, `tt` grid lines across — in the SIDE's frame, so
-// nothing above has to know which of i and j the side runs along. Out of range
-// returns the origin rather than reading past the end, on the same rule
-// `MbControlField::at` follows: this module promises never to throw.
-Point2D sideNode(const hybmesh::MbBlock& b, const std::vector<Point2D>& nodes,
-                 const SideWalk& w, int k, int tt) {
-    const int i = w.ax.alongI ? k : tt, j = w.ax.alongI ? tt : k;
+bool frameHas(const hybmesh::MbGhostFrame& fr,
+              const std::vector<Point2D>& nodes, int i, int j) {
+    const int id = fr.at(i, j);
+    return id >= 0 && static_cast<size_t>(id) < nodes.size();
+}
+
+// THE SAME LOOKUP WITHOUT THE GHOST LAYER, for the two functions below that must
+// stay the RULER'S measure rather than the control's.
+//
+// `mbWallTargets` and `mbWallResidual` take a wall row's tangent ONE-SIDED at its
+// two end stations, exactly as `measureMbQuality` does, and that is not an
+// oversight to be tidied up with a ghost: the request and the achievement have to
+// be the SAME measure, and the achievement is what the ruler reports. The control
+// field's own along-wall difference DOES read the ghost, because there the
+// quantity wanted is the glued line's central difference and there is no gate
+// measuring it. Two different questions, two accessors, said out loud.
+Point2D blockNode(const hybmesh::MbBlock& b, const std::vector<Point2D>& nodes,
+                  int i, int j) {
     if (i < 0 || j < 0 || i >= b.ni || j >= b.nj) return {0.0, 0.0};
     const int id = b.nodeAt(i, j);
     if (id < 0 || static_cast<size_t>(id) >= nodes.size()) return {0.0, 0.0};
@@ -138,8 +131,11 @@ Point2D sideNode(const hybmesh::MbBlock& b, const std::vector<Point2D>& nodes,
 // `geometricSource` for a line that happens to be geometric and is more general:
 // it reproduces a tanh, a cosine or a hand-written distribution equally.
 //
-// Read off FROZEN nodes at every use below — a boundary line of the block — so
-// this is a declaration realised, not a measurement of something the solve moved.
+// READ OFF THE WALL ROW, which is frozen, so the along-wall half is a declaration
+// realised. The OTHER two uses below read lines the solve may move — the row
+// FACING the wall, and (since #84) a row lying on a shared edge — and there it is
+// a measurement of what is there rather than of what was declared. That is the
+// point of it: it HOLDS whatever distribution it finds instead of relaxing it.
 double tmSource(const Point2D& rs, const Point2D& rss) {
     const double g = rs.lengthSq();
     if (!(g > 0.0)) return 0.0;
@@ -151,7 +147,8 @@ double tmSource(const Point2D& rs, const Point2D& rss) {
 hybmesh::MbControlField hybmesh::mbControlField(
         const MbBlock& b, int blockIdx,
         const std::vector<Point2D>& nodes,
-        const std::vector<MbWallTarget>& targets) {
+        const std::vector<MbWallTarget>& targets,
+        const MbGhostFrame& frame) {
     MbControlField f;
     f.ni = b.ni;
     f.nj = b.nj;
@@ -166,23 +163,46 @@ hybmesh::MbControlField hybmesh::mbControlField(
     std::vector<MbControl> acc(want, MbControl{});
     std::vector<double> wI(want, 0.0), wJ(want, 0.0);
 
-    auto node = [&](int i, int j) -> Point2D {
-        const int id = b.nodeAt(i, j);
-        if (id < 0 || static_cast<size_t>(id) >= nodes.size()) return {0.0, 0.0};
-        return nodes[static_cast<size_t>(id)];
-    };
+    // EVERY POSITION IN THIS FUNCTION COMES THROUGH THE EXTENDED FRAME, so a
+    // station at the END of a wall — the block's own perpendicular side — reads
+    // its `k - 1` or `k + 1` out of the neighbour rather than off the end of the
+    // block. That is what lets those two columns be CONTROLLED at all, and since
+    // #84 they are also the columns that MOVE: a shared side's nodes are exactly
+    // the wall's two end stations, and a control that stopped at `k = 1` would
+    // have freed them and then held nothing.
+    auto node = [&](int i, int j) -> Point2D { return framePos(frame, nodes, i, j); };
 
     for (const MbWallTarget& t : targets) {
         if (t.block != blockIdx || !t.usable) continue;
-        const SideWalk sw = sideWalk(b, t.side);
+        const MbSideWalk sw = mbSideWalk(b, t.side);
         if (!sw.ok) continue;
         const MbSideAxis& ax = sw.ax;
         const int n = sw.n, m = sw.m, t0 = sw.t0, t1 = sw.t1, tFar = sw.tFar;
         if (static_cast<int>(t.requested.size()) != n
             || static_cast<int>(t.normal.size()) != n) continue;
-        auto pos = [&](int k, int tt) { return sideNode(b, nodes, sw, k, tt); };
+        auto pos = [&](int k, int tt) {
+            return framePos(frame, nodes, sw.i(k, tt), sw.j(k, tt));
+        };
+        auto have = [&](int k, int tt) {
+            return frameHas(frame, nodes, sw.i(k, tt), sw.j(k, tt));
+        };
 
-        for (int k = 1; k + 1 < n; ++k) {
+        // EVERY STATION, INCLUDING THE TWO ENDS (#84). The ends are the block's
+        // perpendicular sides, and there are exactly two answers there: the side
+        // is declared `wall`, in which case that whole column is FROZEN and no
+        // ghost exists — the guard below skips it and nothing is controlled that
+        // could not move; or the side is SHARED, in which case its nodes move and
+        // the ghost layer supplies the neighbour's own first interior line, so the
+        // differences below are the same central differences as anywhere else.
+        //
+        // THE GUARD IS AVAILABILITY, NOT AN INDEX TEST, deliberately: "is there a
+        // node one step further along?" is the question, and asking it of the frame
+        // keeps this loop from carrying a second copy of the freeze rule that
+        // include/MbShared.hpp owns.
+        for (int k = 0; k < n; ++k) {
+            if (!have(k - 1, t0) || !have(k + 1, t0)) continue;
+            if (!have(k - 1, t1) || !have(k + 1, t1)) continue;
+            if (!have(k - 1, tFar) || !have(k + 1, tFar)) continue;
             const double h = t.requested[static_cast<size_t>(k)];
             const Point2D nhat = t.normal[static_cast<size_t>(k)];
             if (!(h > 0.0) || nhat.lengthSq() <= 0.0) continue;
@@ -364,9 +384,11 @@ std::vector<hybmesh::MbWallTarget> hybmesh::mbWallTargets(const MbResult& mesh) 
             out.push_back(t);
             continue;
         }
-        const SideWalk sw = sideWalk(b, ws.side);
+        const MbSideWalk sw = mbSideWalk(b, ws.side);
         const int n = sw.n, t0 = sw.t0, t1 = sw.t1;
-        auto pos = [&](int k, int tt) { return sideNode(b, mesh.nodes, sw, k, tt); };
+        auto pos = [&](int k, int tt) {
+            return blockNode(b, mesh.nodes, sw.i(k, tt), sw.j(k, tt));
+        };
 
         // THE REQUEST, station by station, and it is the RULER'S BLEND. See the
         // header: aiming the control at any other interpolation of the two
@@ -412,11 +434,13 @@ hybmesh::MbWallResidual hybmesh::mbWallResidual(const MbResult& mesh,
     const MbBlock& b = mesh.blocks[static_cast<size_t>(t.block)];
     const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
     if (b.ni < 2 || b.nj < 2 || b.nodeIds.size() != want) return out;
-    const SideWalk sw = sideWalk(b, t.side);
+    const MbSideWalk sw = mbSideWalk(b, t.side);
     if (!sw.ok) return out;
     const int n = sw.n, t0 = sw.t0, t1 = sw.t1;
     if (static_cast<int>(t.requested.size()) != n) return out;
-    auto pos = [&](int k, int tt) { return sideNode(b, mesh.nodes, sw, k, tt); };
+    auto pos = [&](int k, int tt) {
+        return blockNode(b, mesh.nodes, sw.i(k, tt), sw.j(k, tt));
+    };
 
     bool askedHeight = false, gotAngle = false;
     double worstH = 0.0, worstA = 0.0;

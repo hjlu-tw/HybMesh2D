@@ -56,12 +56,12 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   1=fixed forward, 2=fixed backward, 3=randomized; `MB_SPLIT_SEED`; #54). Rule 3 is
   `hash(block ID string, i, j, seed)` — **never a sequential generator and never the block INDEX**.
   A stream makes a diagonal a function of traversal order and an index moves when a block is
-  declared ahead of it, so either would reshuffle the whole mesh when one block is added, and the
-  golden comparator (which compares exported connectivity, exactly what a diagonal decides) would
-  lose its baseline on every topology edit. Pinned by `test_multiblock.cpp` check 26, whose fixture
-  declares the extra block **FIRST** — appending one cannot tell an index hash from an id hash.
+  declared ahead of it, so either reshuffles the whole mesh when one block is added, and the golden
+  comparator (which compares exported connectivity, exactly what a diagonal decides) loses its
+  baseline on every topology edit. Pinned by `test_multiblock.cpp` check 26, whose fixture declares
+  the extra block **FIRST** — appending one cannot tell an index hash from an id hash.
   - **Written out, not taken from `<random>`**: `std::mt19937` is specified bit for bit but every
-    `<random>` DISTRIBUTION is implementation-defined, so a seed that reproduces a mesh only on the
+    `<random>` DISTRIBUTION is implementation-defined, so a seed reproducing a mesh only on the
     machine that made it is worse than no seed. Fixed-width unsigned arithmetic only.
   - **An unknown rule is REFUSED twice**: by `Config::validate()` with `EXIT_ERR_CONFIG` (fix the
     `.dat`) and by `buildMultiBlock` for any other caller — never clamped, as with `MESH_MODE`.
@@ -87,8 +87,8 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
   unguarded since #50 and was found by a mis-aimed injection (the three loops are textually
   identical); both are check 29.
 - **Unknown JSON keys are REFUSED, not skipped** — a typo'd `"spacng"` silently ignored is a wrong
-  node distribution with no symptom, and strict now is relaxable later. So is **a declaration that
-  reaches nothing**: an edge in no block, a corner on no edge.
+  node distribution with no symptom, and strict now is relaxable later. So is **a declaration
+  reaching nothing**: an edge in no block, a corner on no edge.
 - **What v0 does not do is refused BY NAME, never approximated**, each refusal naming the work it
   waits for: a `blocks[].orientation`. (`on_geometry` and `binding` were on this list and are
   implemented by #52; the `interface`/`cut` kinds and a second block by #53.)
@@ -100,7 +100,7 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
 - **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` /
   `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
   face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
-  CHAINING, since a per-side emitter with one direction wrong still emits the right SET of edges.
+  CHAINING, since a per-side emitter with one direction wrong emits the right SET of edges.
 - The spacing schema accepts `uniform` / `geometric` / `tanh`; **`tanh` is the DEFAULT** and #55
   resolves wall spacing from `BL_INITIAL_THICKNESS`. The decision layer gains
   `tools/PreProcessor/include` **PRIVATE** on its include path, so a test linking `hybmesh_pure`
@@ -137,35 +137,33 @@ wall first-cell height accuracy and cell count, plus one machine-readable `HYBME
 cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=… wall_first_cell_worst_rel=…` line, so the
 acceptance gate is a grep.
 - **Printed on every run, including a good one** — three of the four numbers are the baseline
-  elliptic smoothing will be judged against.
+  elliptic smoothing is judged against.
 - **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
-  usable?" vs "what does this document declare?"), and a pure function of a finished mesh — half its
-  checks hand `measureMbQuality` a mesh nobody parsed.
+  usable?" vs "what does this document declare?"), and a pure function of a finished mesh.
 - **Inverted is counted over the EXPORTED cells, and the test is PER CORNER, not the signed area**:
   a bow-tie quad can self-intersect with a POSITIVE shoelace area (`(0,0) (3,0) (0,1) (2,1)` is +0.5
   and crosses itself). For a triangle the per-corner rule reduces to the signed area, so it is one
   rule for both cell kinds.
 - **Non-orthogonality is measured on the STRUCTURED grid cells** — each corner angle's deviation
   from 90° — **and NOT on the split triangles.** From corner positions, so a strongly stretched but
-  axis-aligned block measures *exactly* zero (no edge-length proxy can), it is the quantity elliptic
-  smoothing moves, and it is independent of `MB_SPLIT_QUADS`. An ANGLE with a closed form, not a
-  badness score.
+  axis-aligned block measures *exactly* zero (no edge-length proxy can), and independent of
+  `MB_SPLIT_QUADS`. An ANGLE with a closed form, not a badness score. **It is BLIND to a fold that
+  preserves angles** — see the O-grid entry under smoothing.
 - **A folded mesh is EXPORTED and exits 9; an invalid declaration exports nothing and exits 8**,
   both through the same `failExit` mechanism. `blSuccess` stays TRUE so the VTK keeps its ordinary
   name — `_er` marks a PARTIAL mesh and this one is complete.
 - **The wall request is published from the SEAM, never re-derived downstream** (`MbWallSpec` on
   `MbResult`): only `buildMultiBlock` knows the spacing laws. The height is a distance ALONG the
   grid line, not perpendicular to the wall — they differ by cos(non-orthogonality), which is why the
-  two figures are always reported together.
+  two figures are reported together.
 - **"ASKED FOR" IS NOT AN INDEPENDENT TARGET YET; do not over-read the figure.** The request is
   DERIVED from the same law the fill reproduces and the blend is exact on the boundary, so **a
   rectangle's 0.00% is a tautology, not evidence**; what it measures is interior drift from what the
-  two ends declare (trapezoid 7.38%, folded dart 25.41%). When the independent target arrives only
-  the PUBLISHER changes. **SUPERSEDED by #55, exactly as predicted**: a perpendicular edge that
-  DECLARES a wall height publishes that number, so the figure now compares the mesh against the
-  document. `MbQuality.*` and every reader are untouched. An edge that declares nothing still
-  publishes the produced interval, so the sentence above still holds for such a topology — which is
-  also the negative control in `test_multiblock.cpp` 34.
+  two ends declare (trapezoid 7.38%, folded dart 25.41%). **SUPERSEDED by #55, exactly as
+  predicted**: a perpendicular edge that DECLARES a wall height publishes that number, so the figure
+  compares the mesh against the document, with `MbQuality.*` and every reader untouched. An edge
+  declaring nothing still publishes the produced interval, so the sentence above still holds for
+  such a topology — the negative control in `test_multiblock.cpp` 34.
   Why: `docs/design_notes/mesher.md`, "`MbWallSpec` NOW PUBLISHES THE DECLARATION".
 - **"We did not measure" must not read as "it came out perfect", for ALL THREE figures.**
   `maxNonOrthoDeg`, `meanNonOrthoDeg` and every `worstRelError` (per wall AND headline) are NEGATIVE
@@ -185,7 +183,7 @@ acceptance gate is a grep.
 - Gated by `tests/cpp/test_mb_quality.cpp` (9 groups, 53 checks) and
   `tests/test_multiblock_quality_surface.py`. **Its injections are HAND runs, dated in the C++
   test's docstring** — a C++ test cannot mutate the implementation it linked against, and that
-  distinction must not be blurred. What IS permanent is two **negative controls** computing an
+  distinction must not be blurred. Permanent instead are two **negative controls** computing an
   injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its ~17x stretch).
 
 **Boundary conditions are DECLARED; geometry attaches by ARC LENGTH** (#52; still the one pure
@@ -352,27 +350,28 @@ expressible by #50-#55, and what #57 adds is a declaration, two geometries, thre
 one acceptance run. **Full rationale, the diagnosis, what was tried and rejected, and the
 acceptance run: `docs/design_notes/mesher.md`.**
 - **The wake is ONE edge of kind `cut`, and it is the WEST of BOTH wake blocks.** Every earlier
-  shared edge was one block's east and another's west; here the two frames are mirror images and
-  the edge is traversed in OPPOSITE senses from the same side index. No face of it reaches the
-  `.bnd` — that is the whole difference between a cut and a wall, and `test_multiblock.cpp` 37 is
-  the second thing that looks (the kind gate is the first).
+  shared edge was one block's east and another's west; here the two frames are mirror images and the
+  edge is traversed in OPPOSITE senses from the same side index. No face of it reaches the `.bnd` —
+  the whole difference between a cut and a wall, and `test_multiblock.cpp` 37 is the second thing
+  that looks (the kind gate is the first). **Its 23 interior nodes MOVE since #84**, and it still
+  exports no face smoothed.
 - **The trailing edge is ONE declared corner, on FIVE edges, where FOUR blocks meet.** One node, by
   declaration. In `test_multiblock.cpp` 38's own fixture 60 node slots resolve to 47 nodes (the
-  shipped grid is 5920 nodes / 11520 cells); three of the thirteen identifications are the
-  trailing edge's own, which is what it takes to bring four occurrences down to one. The C's five radials are one equivalence class with ONE seed
-  (check 39) — the O-grid's ring closes on itself, this chain does not, and its open ends are the
-  two halves the cut splits the outlet plane into.
+  shipped grid is 5920 nodes / 11520 cells); three of the thirteen identifications are the trailing
+  edge's own. **It is FROZEN by the smoother** (#84's declared-corner rule). The C's five radials
+  are one equivalence class with ONE seed (check 39) — the O-grid's ring closes on itself, this
+  chain does not, and its open ends are the two halves the cut splits the outlet plane into.
 - **The gate that bit was GATE 2, not gate 1, and the fix was in the DOCUMENT.** Zero inverted
   cells on the first run of the shipped declaration; the solver then went to NaN in 40 iterations.
 - **The far field's two nose sides cluster at their TRAILING-EDGE end to the AIRFOIL's own
   `ds_start`.** Over the chordwise surface the body's normals are nearly vertical and that boundary
-  is horizontal, so the outer point opposite a body point sits at very nearly the same x and the
-  outer distribution must TRACK the body's. Left uniform: 59.52° / 16.0° / 3.46%, blowing up just
-  aft of the **LEADING** edge. With it: **32.04° / 4.56° / 0.44%**, at the same `cfl 0.6` the
-  O-grid used. **It is DERIVED, not tuned**: change the airfoil edges' spacing and this must follow.
+  is horizontal, so the outer point opposite a body point sits at nearly the same x and the outer
+  distribution must TRACK the body's. Left uniform: 59.52° / 16.0° / 3.46%, blowing up just aft of
+  the **LEADING** edge. With it: **32.04° / 4.56° / 0.44%**, at the same `cfl 0.6` the O-grid used.
+  **DERIVED, not tuned**: change the airfoil edges' spacing and this must follow.
 - **A recorded acceptance run must state its CFL**: lowering `cfl` to 0.3 also makes the BAD mesh
-  run, so "the solver runs" is quotable without improving the grid at all. The wake's 3144:1 worst
-  edge ratio is **measured NOT to be the cause**.
+  run, so "the solver runs" is quotable without improving the grid. The wake's 3144:1 worst edge
+  ratio is **measured NOT to be the cause**.
 - **A second airfoil file, not a sidecar beside `examples/geometries/naca0012.dat`.** That one is
   the hybrid path's geometry and has a golden baseline; a `.meta` beside it would change what that
   path reads. `naca0012_cgrid.dat` (two segments, split at the leading edge) and
@@ -383,199 +382,237 @@ acceptance run: `docs/design_notes/mesher.md`.**
   measure) and the `mb_cgrid` golden case. The dated solver acceptance run is in that file's
   docstring.
 
-**SMOOTHING is a STAGE inside the seam, its kernel is WINSLOW, and since #83 that kernel is
-CONTROLLED** (`MB_SMOOTH_ITERS`, default 0; `src/MultiBlock.cpp`'s `mbSmoothBlocks` between the
-fill and the split; #81 built the stage with a Laplacian, #82 replaced the kernel and DELETED that
-one, #83 gave it source terms). An elliptic solve over each block's interior nodes, iterated under
-a cap; at the default nothing runs and all eighteen pre-existing golden cases are unchanged
-(measured for all three tickets, 18/18 SAME at 0.000e+00).
+**SMOOTHING is a STAGE inside the seam, its kernel is WINSLOW, that kernel is CONTROLLED (#83), and
+since #84 it runs ACROSS the shared edges** (`MB_SMOOTH_ITERS`, default 0; `src/MultiBlock.cpp`'s
+`mbSmoothBlocks` between the fill and the split; #81 built the stage with a Laplacian, #82 replaced
+the kernel and DELETED that one, #83 gave it source terms, #84 unfroze the interfaces and cuts). An
+elliptic solve over each block's movable nodes under a cap; at the default nothing runs and all
+eighteen pre-existing golden cases are unchanged (all four tickets, 18/18 SAME at 0.000e+00,
+`mb_cgrid_smooth` the only one that moved each time).
 **Every measurement, table and reversal below: `docs/design_notes/mesher.md`.**
-- **WHICH NODES MOVE, stated here rather than read off the loop: exactly the nodes strictly
-  interior to a block** (`0 < i < ni-1`, `0 < j < nj-1`). **Every node on ANY block boundary is
-  FROZEN — outer walls, bound edges, interfaces and cuts alike** — because such a node is written
-  by the EDGE, and an edge is SHARED: moving it would move it in two blocks at once, and a node on
-  a bound edge would leave the geometry it was attached to by arc length. So one block's interior
-  never neighbours another's, which is why the sweep needs no ordering rule between blocks.
-  Smoothing ACROSS a shared edge is #84 — **and that freeze is now a measured cost**, see the
-  O-grid entry below.
+- **WHICH NODES MOVE IS `mbSmoothPlan`'s ANSWER, stated rather than read off a loop**
+  (`include/MbShared.hpp` + `src/MbShared.cpp` in `hybmesh_pure`; #84). FROZEN: a node on an edge
+  whose declared KIND is `wall` (the outer boundary is the DOMAIN, not the discretisation, and a
+  bound node would leave the geometry it was attached to by arc length), and every DECLARED CORNER.
+  MOVES: everything else — strictly interior to a block, or interior to an `interface` or a `cut`.
+  The wall gate is `MbResult::wallSpecs`, the list `measureMbQuality` and `mbWallTargets` walk; no
+  kind string is compared and NO POSITION is compared anywhere in that module.
+- **#81's "every block boundary is frozen" IS REVERSED, and its objection is ANSWERED rather than
+  dropped: the node is moved ONCE, in ONE frame, from ONE stencil.** A node on a block's south side
+  has no `j - 1` row inside it; the row that IS its `j - 1` is the NEIGHBOUR's own first interior
+  line, and `MbGhostFrame` is that continuation, matched station for station by node ID and never by
+  distance. Nine real nodes, nothing averaged, no position computed twice, no tolerance needed
+  between a 1e-7 wall spacing and a 1e-1 far-field one. **The four DIAGONAL corners of that frame
+  have no answer and are not given one** (`at()` returns -1, never a clamp).
+- **THE FOUR-WAY CORNER DOES NOT MOVE**: a corner is a declared POSITION, and the one node with no
+  frame to be moved in — up to four blocks and five edges, needing exactly those absent diagonal
+  ghosts. **ONE test, not two**: "on two of this block's sides at once" IS the declared-corner set
+  here (an edge runs corner to corner, and the fill refuses a block whose sides do not meet at four
+  shared corner nodes), so a separate corner-id set was written first and REMOVED — two sufficient
+  conditions for one rule mask each other, and each injection came back inert. `hgrid()` makes it
+  falsifiable: a four-way corner on four interfaces and NO wall, where the C-grid's trailing edge is
+  on the airfoil and the wall half would freeze it anyway.
+- **WHICH BLOCK MOVES A SHARED NODE: the one declaring MORE WALL SIDES PERPENDICULAR to the line**,
+  ties to the lower block index — **not the lower index, which is what #84 wrote first.** The kernel
+  does not care (the Winslow update is INVARIANT under the frame change between two blocks meeting
+  at a shared edge, which check 56 measures rather than assumes); the CONTROL does, because a wall's
+  control reaches a shared line only as the `k = 0` or `k = n - 1` station of that wall's own walk.
+  On the C-grid `r_te_up` is the wake block's north (one such wall) and the upper airfoil block's
+  south (two), and the wake block is the lower index.
+- **THE CONTROL FIELD COVERS A WALL'S TWO END STATIONS, and it had to**: those are the block's
+  perpendicular SIDES, exactly what a shared edge frees, so a field stopping at `k = 1` frees a node
+  and holds nothing on it. Skipped where that side is a `wall`, gated on AVAILABILITY in the ghost
+  frame rather than on an index, so the freeze rule lives in one module.
+- **`MbResult::sharedEdges` IS PUBLISHED BEFORE THE SMOOTHER, not after the split.** One line too
+  late until #84: the freeze rule reads that list, so with it empty every shared node stayed frozen
+  and the ticket was a silent NO-OP behind 106 green tests. A PUBLICATION moved, not a decision —
+  nothing in that loop reads a cell or a position, and fill-then-smooth-then-split is unchanged.
+- **`MbSideWalk` / `mbSideWalk` LIVE IN `include/MultiBlock.hpp`**, beside `mbSideAxis` and for its
+  reason: three readers in two files, having been written out three times inside `MbControl.cpp`
+  alone. Its `tt` may be -1 or `m` — one step OUTSIDE the block — and `MbBlock::nodeAt` is never
+  handed those. `MbControl.cpp` keeps a SECOND, in-block accessor on purpose: the control's
+  differences read the ghost frame, while `mbWallTargets` and `mbWallResidual` stay one-sided at a
+  wall's ends, being the RULER's measure.
 - **WALL NODES DO NOT SLIDE ALONG THEIR BOUND EDGE, and #83 decided that rather than inheriting
   it.** The alternative was live and is the stronger tool — a bound edge's polyline is known, so a
-  node could be moved along it and let the surface distribution answer to the interior. It is
-  refused because on THIS path the declaration is the authority: a corner attaches at a declared
-  arc-length position and an edge's node spacing comes from a declared law, so a smoother that
-  redistributed a wall would be overwriting the document it was asked to honour. The concrete
-  contradiction is with this ticket's own deliverable — `MbWallSpec`'s requested height is derived
-  from the perpendicular edge's declared `ds`, so sliding changes the along-wall distribution while
-  the request stays put, and the two would then disagree with no gate able to say which is right.
-  **The consequence for `BL_USE_ANALYTIC_GEOM` is therefore NONE**: it gains no reader here, the
-  read and unread survivor lists in `.claude/rules/mesher.md` are unchanged, and it is still a
-  declared survivor nothing reads (the blind-spot list below still says so). #48's "survives as the
-  projection basis" is a claim about a projection this path does not do.
+  node could be moved along it and let the surface distribution answer to the interior. Refused
+  because on THIS path the declaration is the authority: a corner attaches at a declared arc-length
+  position and an edge's spacing comes from a declared law, so redistributing a wall overwrites the
+  document. The concrete contradiction is with #83's own deliverable — `MbWallSpec`'s requested
+  height comes from the perpendicular edge's declared `ds`, so sliding moves the along-wall
+  distribution while the request stays put, with no gate able to say which is right.
+  **The consequence for `BL_USE_ANALYTIC_GEOM` is therefore NONE**: no reader here, the read and
+  unread survivor lists in `.claude/rules/mesher.md` unchanged, still a declared survivor nothing
+  reads. #48's "survives as the projection basis" is about a projection this path does not do.
 - **Node identity is untouched**: the sweep writes coordinates and allocates nothing, so a welded
-  node stays ONE node. No comparison, therefore no tolerance — `MB_SMOOTH_TOL` is a STOPPING rule
-  on how far a node moved, never a rule about two nodes being the same node.
+  node stays ONE node. No comparison, therefore no tolerance — `MB_SMOOTH_TOL` is a STOPPING rule on
+  how far a node moved, never a rule about two nodes being one.
 - **JACOBI, not Gauss-Seidel**, with the metric coefficients AND the control field LAGGED — every
   sweep reads what the previous one left, so the answer is not a function of a traversal nobody
-  declared. Same objection the randomized split rule raises against a sequential stream.
-- **Between the FILL and the SPLIT.** Both readers below are id-only today, so injection Y (the
-  block moved past the split) is INERT. The ordering keeps that from having to be re-checked every
-  time a reader is added.
+  declared. Same objection the randomized split rule raises against a sequential stream. **Between
+  the FILL and the SPLIT**; both readers there are id-only today, so injection Y (the block moved
+  past the split) is INERT, and the ordering keeps that from being re-checked per reader.
 - **`MB_SMOOTH_ITERS`, never `BL_SMOOTHING_ITERS`-with-a-prefix and never `SEED_*`.** The BL key is
   the OTHER path's collision remedy; these two share a verb and nothing else. **The control
-  functions add NO KEY**: they are not an alternative kernel behind a switch but the kernel's
-  missing input, and a selector over one answer is the abstraction the no-inert-alternatives rule
-  exists to prevent — the same call #82 made when it deleted the Laplacian instead of keeping it.
+  functions (#83) and the freed seams (#84) add NO KEY**: neither is an alternative behind a switch
+  — one is the kernel's missing input, the other the freeze rule corrected — and a selector over one
+  answer is the abstraction the no-inert-alternatives rule exists to prevent, the same call #82 made
+  when it deleted the Laplacian.
 - **A NEGATIVE count is refused BY NAME through both doors** — `Config::validate()` with
   `EXIT_ERR_CONFIG` and `buildMultiBlock` for any other caller — never clamped. The parameter is a
-  signed `int` precisely so the refusal is writable: widening -1 to an unsigned count is four
-  billion sweeps, a hang rather than a mesh. **A FRACTIONAL value TRUNCATES and is not refused**
+  signed `int` so the refusal is writable: widening -1 to an unsigned count is four billion sweeps,
+  a hang rather than a mesh. **A FRACTIONAL value TRUNCATES and is not refused**
   (`MB_SMOOTH_ITERS 1.9` runs one sweep): the `.dat` reader takes every int key through a `double`,
-  and diverging for one key would put back the per-row parse rule that let the two parsers
-  disagree. Recorded as a limit, not left silent.
+  and diverging for one key would put back the per-row parse rule that let the parsers disagree.
 - **THE LAPLACIAN #81 SHIPPED IS DELETED, not kept behind a selector.** Nothing read it and it
   loses on every column of both shipped cases at every cap (C-grid at 1 sweep: max 89.40° vs
   31.44°, wall 36.61% vs 11.65%). A kernel-selection enum over one surviving kernel is the
   abstraction the no-inert-alternatives rule exists to prevent. It survives ONLY as
   `laplacianByHand` in `tests/cpp/test_multiblock.cpp`, so checks claiming the two kernels differ
-  have both sides written down. **#83 restated that rule rather than replacing it**: the control
-  functions likewise add no selector, and #83's own rewrite of this block DELETED this bullet by
-  accident — caught by a review running `docs/agents/rule-file-style.md`'s ruler, not by a gate,
-  because check 3 pins gate FILENAMES and an identifier can vanish from prose unnoticed.
+  have both sides written down. **#83 and #84 both restated that rule rather than replacing it** —
+  neither adds a selector — and #83's own rewrite of this block DELETED this bullet by accident,
+  caught by a review running `docs/agents/rule-file-style.md`'s ruler rather than by a gate, because
+  check 3 pins gate FILENAMES and an identifier can vanish from prose unnoticed.
 - **THE CONTROL FUNCTIONS ARE TWO SOURCE TERMS, and their WALL GATE IS `MbResult::wallSpecs`**
   (`include/MbControl.hpp` + `src/MbControl.cpp` in `hybmesh_pure`; #83). The system solved becomes
   `a(x_ii + phi x_i) - 2b x_ij + g(x_jj + psi x_j) = 0`, and **both zero is the plain #82 update,
-  term for term** — the property #82's exactness gate keeps measuring. There is NO second answer to
-  "is this a wall": the module walks the seam's own published list, the same list `measureMbQuality`
-  walks, and an `interface` or a `cut` is not in it. `MbControl.cpp`'s module NAME is load bearing
-  too — this file's globs cover `Mb*` as patterns, so a `MultiBlockControl.cpp` would have arrived
-  ruleless.
+  term for term** — the property #82's exactness gate keeps measuring. NO second answer to "is this
+  a wall": the module walks the seam's own published list, the same one `measureMbQuality` walks,
+  and an `interface` or a `cut` is not in it. The module NAMES `MbControl.cpp` and `MbShared.cpp`
+  are load bearing — this file's globs cover `Mb*` as patterns, so a `MultiBlockControl.cpp` or a
+  `MultiBlockShared.cpp` would have arrived ruleless.
 - **THE TARGET IS THE RULER'S OWN BLEND, NOT ARC LENGTH.** `MbWallSpec` carries the height at a
   side's two corners; between them `measureMbQuality` blends LINEARLY IN THE LOGICAL COORDINATE, so
-  the control aims at exactly that. Arc length along the wall is the tempting answer and is WRONG
-  here: it would drive the mesh at one number while the acceptance gate measured it against
-  another, which is the second-answer-to-one-question defect from the other direction — the
-  edge-distribution warning made the mirror-image mistake by comparing a CHORD against a request
-  expressed in arc length. **The rule is that the measure of the request and the measure of the
-  achievement must be the same measure.**
+  the control aims at exactly that. Arc length along the wall is the tempting answer and is WRONG:
+  it drives the mesh at one number while the acceptance gate measures another — the
+  second-answer-to-one-question defect, which the edge-distribution warning made in mirror image by
+  comparing a CHORD against a request in arc length. **The measure of the request and the measure of
+  the achievement must be the SAME measure.**
 - **THE OFF-WALL SOURCE IS SOLVED, EXACTLY, FOR THE DISTANCE THE RULER MEASURES, at the FIRST
-  INTERIOR ROW ONLY.** The kernel's update of that node is linear in both sources, so
-  `|update - p_wall| = requested` is one quadratic in one scalar and its two roots are written down;
-  the root taken is the one landing nearer `p_wall + requested * inward_normal`, **which is where
-  the 90-degree half of the declaration enters** — as the tie-break between two points at the same
-  correct distance on opposite sides.
-- **THE TWO HALVES ARE NOT DRIVEN EQUALLY, and the name "control functions" overstates one of
-  them.** The HEIGHT is solved for exactly, one scalar to one equation. The 90 DEGREES has NO term
-  that states it: it is driven by that tie-break, by the elliptic operator's own tendency, and by
-  the along-wall source keeping the first interior line's distribution matched to the wall's so the
-  two do not shear. A direct condition on the angle is the Steger-Sorenson projection onto `r_s`,
-  and it goes as `1/h²` — the first rejected row above. **So the angle IMPROVES AND THEN TURNS**:
-  32.04° -> 29.90° at twenty sweeps, back to 31.55° at thirty and 34.78° at forty. The height does
-  not turn with it (0.089% -> 0.094% -> 0.098%), so the useful cap is set by the ANGLE. **Three weaker versions were measured and rejected**, all on
-  the shipped C-grid at one sweep against this one's 0.12%: the textbook Steger-Sorenson condition
-  on the DERIVATIVE at the frozen wall row (it asks for a source of about -21, saturates, and
-  destabilises — and it aims at the derivative when the ruler measures the first INTERVAL, which
-  differ by `(q-1)/ln q`, 8.7% at this case's grading); the near-wall 1-D limit (2.96%, and getting
-  WORSE with more sweeps because the 2-D miss never feeds back); and a least-squares solve for the
-  target POSITION (11.75% and 36 saturated nodes — one scalar cannot place a node in a plane).
+  INTERIOR ROW ONLY** — one quadratic in one scalar, the root taken landing nearer
+  `p_wall + requested * inward_normal`, **which is where the 90-degree half of the declaration
+  enters**: the tie-break between two points at the same correct distance. Derivation: the note.
+- **THE TWO HALVES ARE NOT DRIVEN EQUALLY, and the name "control functions" overstates one.** The
+  HEIGHT is solved for exactly. The 90 DEGREES has NO term stating it — that tie-break, the elliptic
+  operator's tendency, and the along-wall source keeping the first interior line matched to the wall
+  so the two do not shear. A DIRECT condition on the angle (Steger-Sorenson projected onto `r_s`)
+  goes as `1/h²`, clips and destabilises, and is one of **three weaker versions measured and
+  rejected** with the near-wall 1-D limit and a least-squares solve for the target POSITION; their
+  figures are the table at `docs/design_notes/mesher.md`'s "least squares for the target position".
+  Under #83 the angle therefore IMPROVED AND THEN TURNED (32.04° -> 29.90° at twenty, 31.55° at
+  thirty, 34.78° at forty). **#84 REMOVED THAT TURN, and it was never the angle condition's doing**
+  — it was the interior shearing against a frozen seam: with the seams free the max falls
+  monotonically to 26.49° at a cap of 100 and turns only past 150.
 - **BEYOND THE FIRST ROW THE OFF-WALL SOURCE IS THOMAS-MIDDLECOFF ON THE LINE'S OWN SPACING**, and
   the along-wall source is Thomas-Middlecoff at BOTH ends of the off-wall direction, blended
-  LINEARLY in the normalized logical coordinate. **That second half is what makes all three of
-  #80's figures improve at once** and it is a scope rule, not a tuning choice: the declaration asks
-  for ONE height and says nothing about the rest of the line, so the first row is the declaration's
-  and the rest is the fill's. Sourcing nothing out there lets the grading relax and the MEAN rises
-  with every sweep; imposing an ideal GEOMETRIC line instead imposes a distribution nobody declared,
-  because these radial edges declare a TANH law. Both were measured and both are in the design note.
-  The blend is linear rather than an exponential decay because a decay rate is a constant with no
+  LINEARLY in the normalized logical coordinate. **That second half is what makes all three of #80's
+  figures improve at once**, and it is a scope rule: the declaration asks for ONE height and says
+  nothing about the rest of the line, so the first row is the declaration's and the rest the fill's.
+  Sourcing nothing out there lets the grading relax and the MEAN rises; an ideal GEOMETRIC line
+  imposes a distribution nobody declared, since these radial edges declare a TANH law. Both
+  measured, both in the note. The blend is LINEAR because a decay rate is a constant with no
   derivation behind it.
 - **A SOURCE TERM LARGER THAN `MB_CONTROL_CLIP` (2.0) IS CLIPPED AND COUNTED, and the bound is the
   KERNEL'S, not a taste.** The update weights a neighbour by `a(1 +/- phi/2)`, so at `|phi| = 2` one
   weight reaches zero and past it the node stops being a convex combination of the nine positions it
-  reads — no maximum principle, and a node can leave their hull, which is a fold rather than a
-  smoother. **`smoothClipped` is published and reaches `HYBMESH_MB_SMOOTH` as `clipped=`.**
-- **THAT COUNT IS A DIRECTION, NOT A THRESHOLD**, and reading it as one was this ticket's own first
-  mistake. On the shipped C-grid it runs **36, 28, 8, 0** over the first ten sweeps with a sound mesh
-  throughout — the control CATCHING UP with a target the algebraic fill starts far from — and then
-  climbs back off zero, 4 at sweep 100 and 212 at 500, alongside the folds. Falling is the solve
-  working; rising after it has reached zero is the iteration going. **A number with two opposite
-  meanings cannot gate an `if`**, so it is reported with a sentence saying which way to read it and
-  the advice points at the inverted-cell count instead.
+  reads — no maximum principle, so a node can leave their hull, which is a fold. **`smoothClipped`
+  is published and reaches `HYBMESH_MB_SMOOTH` as `clipped=`.**
+- **THAT COUNT IS A DIRECTION, NOT A THRESHOLD**, and reading it as one was #83's own first
+  mistake. On the shipped C-grid it runs **40, 28, 22, 8, 0** over the first ten sweeps with a sound
+  mesh throughout — the control CATCHING UP with a target the fill starts far from — then climbs
+  back off zero, 156 at sweep 400 and 428 at 500, alongside the folds. Falling is the solve working;
+  rising after it has reached zero is the iteration going. **A number with two opposite meanings
+  cannot gate an `if`**, so it is reported with a sentence saying which way to read it, and the
+  advice points at the inverted-cell count instead.
 - **THE NUMBER IS A CAP, AND THE SOLVE HAS THREE ENDINGS: converged, capped, DIVERGED.** It stops
   when its residual — the largest node move, over the STARTING mesh's bounding-box diagonal — falls
   under `MB_SMOOTH_TOL` (1e-8; relative so mm and m take the same sweeps, and NOT a config key,
   because the knob a user has is the cap); still moving at the cap comes back
-  `smoothConverged == false` with a warning. The lagged-coefficient point iteration is only
-  conditionally stable, so on divergence the solve stops at `MB_SMOOTH_DIVERGE_FACTOR` (10x) its
-  best residual and **returns the BEST iterate, not the last**, publishing `smoothConverged`,
-  `smoothDiverged` and that iterate's sweep. **Never hand back a truncated solve as though it had finished.**
+  `smoothConverged == false` with a warning. On divergence the solve stops at
+  `MB_SMOOTH_DIVERGE_FACTOR` (10x) its best residual and **returns the BEST iterate, not the last**,
+  publishing `smoothConverged`, `smoothDiverged` and that iterate's sweep. **Never hand back a
+  truncated solve as though it had finished.**
 - **A CAP IS TWO SITUATIONS AND THE ADVICE MUST TELL THEM APART.** `smoothBestSweep` /
   `smoothBestResidual` publish the smallest residual reached and when, recorded BEFORE either stop
-  is tested (so a converged solve's best is the sweep it returned). Still FALLING has more to give;
-  already ABOVE its best has TURNED, and both wear `converged == false && diverged == false`, so
-  the flags alone cannot distinguish them. **The mesh at a cap is still the LAST iterate** — N
-  sweeps means N sweeps outside the diverged path — so the difference is SAID, not silently repaired.
+  is tested. Still FALLING has more to give; already ABOVE its best has TURNED, and both wear
+  `converged == false && diverged == false`. **The mesh at a cap is still the LAST iterate** — N
+  sweeps means N sweeps outside the diverged path — so the difference is SAID, not repaired.
 - **"RAISE IT UNTIL IT CONVERGES" IS NO LONGER BAD ADVICE FOR #82's REASON, AND THE SENTENCE IS
-  GONE.** That kernel's fixed point was each block's harmonic map, which held no declared height at
-  all (3133% off on the C-grid, 1382% on the O-grid); the controlled solve holds the C-grid's wall
-  to 0.09% at twenty sweeps and **a graded rectangle is a fixed point of it**. What bounds the cap
-  now is STABILITY rather than the limit: the shipped C-grid folds 0 cells at every cap through 40,
-  then 4 by sweep 100 and 288 by 500. **Raise it only while the inverted-cell count stays 0**, which
-  is machinery that already exists rather than a second signal.
+  GONE.** That kernel's fixed point was each block's harmonic map, holding no declared height at all
+  (3133% off on the C-grid); the controlled solve holds that wall to 0.10% at twenty sweeps and **a
+  graded rectangle is a fixed point of it**. What bounds the cap now is STABILITY — and **#84 moved
+  that bound out by an order of magnitude**, because a grid whose seams can move has somewhere to go
+  instead of shearing against them: the C-grid folds 0 cells through a cap of **300** (#83 folded 4
+  by 100) and 184 by 400, the O-grid 0 through 150 and 192 by 300. **Raise it only while the
+  inverted-cell count stays 0** — machinery that already exists rather than a second signal.
 - **EACH MACHINE-READABLE LINE KEEPS ONE MEANING, and the prefix is matched WITH its trailing
   space.** `HYBMESH_MB_QUALITY` always describes the mesh AS EXPORTED; the before half is
   `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's QUALITY
   REPORT is byte for byte what it was — not its whole output, which gains one unconditional
-  `Smoothing Sweeps` provenance row on purpose. The trailing space is what keeps the suffixed line
-  from being read as the real one, in the ONE parser (`test_multiblock_quality_surface.qlines`)
-  every gate imports rather than in four near-copies. `HYBMESH_MB_SMOOTH` is the SECOND such line
-  (#82) and describes the SOLVE, not the mesh: only when a sweep ran, carrying
-  `sweeps cap converged diverged residual best_sweep best_residual tol clipped`, no suffix because
+  `Smoothing Sweeps` provenance row on purpose. The trailing space keeps the suffixed line from
+  being read as the real one, in the ONE parser (`test_multiblock_quality_surface.qlines`) every
+  gate imports rather than in four near-copies. `HYBMESH_MB_SMOOTH` is the SECOND such line (#82)
+  and describes the SOLVE: only when a sweep ran, carrying `sweeps cap converged diverged residual
+  best_sweep best_residual tol clipped moved moved_shared` (the last two #84's), no suffix because
   it has no before/after half. Its parser is `test_multiblock_smooth_surface.smooth_line`.
 - **THE REPORT IS BEFORE AND AFTER.** `MbResult::preSmoothNodes` publishes the mesh as it stood
   before the first sweep, so the two reports are the same cells and blocks over two coordinate sets
   and their difference is the smoother alone. **Shipped C-grid, ONE sweep, all three moving the
-  right way: max non-orthogonality 32.04° -> 31.86°, mean 4.562° -> 4.527°, wall first cell
-  0.4368% -> 0.1222%. At twenty sweeps 29.90° / 4.301° / 0.0893%, inverted 0** — which is #80's
-  acceptance for this ticket, met with both metrics improving at once rather than one traded for
-  the other. #82's same-case figures were 31.44° / 4.78° / 11.65%.
+  right way: max non-orthogonality 32.04° -> 31.86°, mean 4.562° -> 4.516°, wall first cell
+  0.4368% -> 0.1222%. At twenty sweeps 29.90° / 3.821° / 0.0968%, inverted 0** — #80's acceptance
+  for the control functions, met with both metrics improving at once rather than one traded for the
+  other. **#84's own contribution is SEPARABLE and is in the MEAN and in the CAP**: at twenty #83
+  was at 29.90° / 4.301° / 0.0893% (max identical to three decimals, mean 0.48° worse), and at forty
+  34.78° / 4.214° / 0.0980% against #84's 28.55° / 3.388° / 0.1111%. #82's were 31.44° / 4.78° /
+  11.65%.
+- **THE RUN REPORTS WHICH NODES IT WAS FREE TO MOVE** (`MbResult::smoothMoved` /
+  `smoothMovedShared`, a `Movable nodes` banner row, `moved=` / `moved_shared=` on
+  `HYBMESH_MB_SMOOTH`; NEGATIVE when no sweep ran, on `smoothResidual`'s rule). The freeze rule is a
+  decision about the DECLARATION, so a run must SHOW it — the argument the propagated counts and the
+  welded shared edges rest on. C-grid 5600 of 5920 with 140 shared, exactly the interior of its four
+  shared edges (23+39+39+39); O-grid 4512 of 4704 with 188.
 - **THE NEAR-LEADING-EDGE CELLS ARE MEASURED ON THEIR OWN, because a mesh-wide average can improve
   while the region the solver diverged in does not.** #57's worst corner is at (0.0134, 0.0196);
   over the ten quad cells touching the airfoil between x = 0.005 and 0.030 the region goes
-  **32.04° max / 26.90° mean -> 29.90° / 24.91°** at twenty sweeps. The instrument is a quad reader
-  in the surface gate rather than a new metric: the METRIC is the ruler's, and what the gate adds is
-  a SELECTION, validated by first reproducing the C++ ruler's whole-mesh figures off the same code.
-- **#80's O-GRID NEGATIVE CONTROL IS STILL NOT MET, it is WORSE THAN #82's, and NO SINGLE CAP
-  MEETS BOTH OF #80's BULLETS.** All three facts, because the first alone reads better than the
-  truth. A case already at 2.250° comes out at **3.632°** at one sweep — against #82's **3.312°**,
-  so this ticket moved that number the wrong way — and at the cap where the C-grid's criterion is
-  met (20) the O-grid is at **12.036°**, 5.3x #55's. There is therefore no one `MB_SMOOTH_ITERS`
-  that satisfies #80's C-grid bullet and its O-grid bullet together, and whoever closes #80 has to
-  say which cap its acceptance is claimed at. (The wall first cell, meanwhile, goes the other way
-  on both cases and is now **BETTER** than #55's: 0.0812% -> 0.0390%.) The worst corners of the smoothed mesh sit at
-  theta = 0, 90, 180 and -90 degrees at radius ~3.43 — mid-block on the four DECLARED RADIAL
-  INTERFACES — while the unsmoothed mesh's worst sit at radius 10 on the faceted outer circle. So
-  the cost is a KINK ALONG A FROZEN SHARED EDGE, and unfreezing those is #84. #82's own
-  localisation, through the run's wall table, no longer works: that table now reads 0.00% all the
-  way round, which is this ticket working.
+  **32.04° / 26.90° -> 29.90° / 24.91°** at twenty sweeps. The instrument is a quad reader in the
+  surface gate, not a new metric: the METRIC is the ruler's and the gate adds a SELECTION, validated
+  by reproducing the ruler's whole-mesh figures off the same code first.
+- **#80's O-GRID NEGATIVE CONTROL IS STILL NOT MET — BY 1.2%, AND THE RESIDUE IS THE FACETED WALL's
+  RATHER THAN THE INTERFACE's.** All three clauses: the first alone reads worse than the truth, and
+  dropping it reads better. A case already at 2.250° comes out at **2.276°** at EVERY cap from 1 to
+  150, against #83's 3.632° at one sweep and **12.036° at twenty**. So #83's "no single
+  `MB_SMOOTH_ITERS` satisfies both of #80's bullets" is **GONE**: the gap no longer grows with the
+  cap, the mean is exactly #55's 1.875°, the wall first cell is still BETTER (0.0390%).
+  **THE 1.875° MEAN IS STRUCTURAL, not a strong result** — a 48-gon's every quad corner deviates by
+  half the sector angle whatever the radial distribution is — but it does say the grid is POLAR
+  again, where #83's 2.571° at twenty was the interior pulled off it by frozen radials.
+  **WHERE THE KINK WENT, measured**: #83's worst corners sat MID-BLOCK on the four declared radials
+  at r ~ 3.43, #84's sit at r = **9.19**, one line in from the faceted outer circle whose own
+  corners are 2.250° at r = 10 — and the mid-block band's cells now come out BETTER than the fill
+  left them (2.2477° -> 1.8794° at twenty). **So the bullet fails on the frozen WALL's faceting, and
+  closing it needs #83's "wall nodes do not slide" revisited rather than more sweeps.**
 - **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
-  9, no new code. **And it is REACHABLE on the shipped files again**, reversing #82's blind spot: the
-  C-grid folds 4 cells by a cap of 100 and 288 by 500, so the surface gate asserts exit 9 on a real
-  file rather than only on a folded declaration. That is the price of holding a graded wall through
-  a conditionally stable iteration.
-- Gated by `tests/cpp/test_multiblock.cpp` 40-55 (7 injections from #81, 13 from #82 and 14 from
-  #83, dated in that file — all of #83's bite, while #82's thirteenth is INERT because the cross
-  stencil's two off-diagonals enter with the same sign, which no gate can catch. **FOUR of #83's
-  were inert until a check was written for them**, and one of those four exposed a FIXTURE gap
-  rather than a check gap: no case in this repo declared DIFFERENT heights at the two ends of a
-  wall, so "the request is the LOGICAL blend" was unfalsifiable — `wallSquareTwoEnds` is the
-  fixture written to make it falsifiable),
-  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py` (10 groups on the SHIPPED C-grid AND
-  O-grid) and the `mb_cgrid_smooth` golden case, recaptured deliberately by #82 and again by #83 —
-  **the only one of the nineteen that moved either time.** **The CONVERGED and DIVERGED endings
-  swapped houses with #83**: #82 could reach them only on the shipped files (26 synthetic fixtures
-  were tried and every one converged) while neither shipped case reaches them now — the residual
-  PLATEAUS instead — and both are driven in the C++ test on a notched box whose depth picks the
-  ending, 0.50 converging in 290 sweeps and 0.35 diverging at 9, with the rollback checked the same
-  way. What only the surface gate can still reach is the stability limit above.
+  9, no new code. **And it is REACHABLE on the shipped files**, reversing #82's blind spot — the
+  C-grid folds 184 cells by a cap of 400, so the surface gate asserts exit 9 on a real file. **The
+  O-GRID's FOLD IS INVISIBLE TO NON-ORTHOGONALITY**, a limit of the RULER recorded as one: at a cap
+  of 300 it folds 192 cells while max non-orthogonality reads 2.274°, because two adjacent radial
+  lines have swapped order and the folded cells stay nearly rectangular. Only the inverted count
+  sees it.
+- Gated by `tests/cpp/test_multiblock.cpp` 40-56 (7 injections from #81, 13 from #82, 14 from #83,
+  11 from #84, dated in that file), `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`
+  (11 groups on the SHIPPED C-grid AND O-grid, importing #53's own conformity measure rather than
+  re-inventing it) and the `mb_cgrid_smooth` golden case, recaptured deliberately by #82, #83 and
+  #84 — **the only one of the nineteen that moved any of the three times.**
+  **AN INERT INJECTION IS ANSWERED WITH A CHECK OR A FIXTURE**: four of #83's needed a check, one
+  needed `wallSquareTwoEnds` (the first case declaring DIFFERENT heights at a wall's two ends), and
+  #84 needed `hgrid()` (a four-way corner on NO wall) and `wallTwoBlocks()` (the only fixture where
+  a wall's END station is a shared edge). Three stay INERT and are named there: #82's thirteenth,
+  #84's station-by-station weld match (unfalsifiable on a correct document) and #84's
+  declared-corner freeze ALONE (held twice).
+  **The DIVERGED ending came BACK to the shipped files with #84** — #82 reached it there, #83's
+  residual plateaued instead, #84's C-grid diverges at sweep 1111 and hands back that iterate. The
+  CONVERGED ending is reachable only on the C++ test's notched box (0.50 converges in 290 sweeps,
+  0.35 diverges at 9); the stability limit only on the shipped files.
 
 ## Named blind spots
 
@@ -598,21 +635,21 @@ otherwise learn the hole exists.
 - **A curved INTERFACE is still undeclarable** (a `binding` is wall-only), so #55's O-grid is a
   single ring rather than a boundary-layer ring inside a far-field one, and no two-sided stretching
   function with DIFFERENT heights at each end exists.
-- **The arc-length blending's magnitude is measured OUT OF TREE.** No gate re-measures the 6927%
-  the logical-index blend cost — only its consequence, through `test_multiblock.cpp` 33/34 and the
+- **The arc-length blending's magnitude is measured OUT OF TREE**: no gate re-measures the 6927%
+  the logical-index blend cost, only its consequence through `test_multiblock.cpp` 33/34 and the
   surface gate's quality line.
 - **The end-to-end re-resampling check uses a straight-sided geometry**, where an arc-length
   position is EXACT under resampling. On a *curved* segment an attached corner moves by a chord
-  sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in
-  the C++ test (`tests/cpp/test_multiblock.cpp`).
+  sagitta — a limit of the geometry, not of the binding. The curve-following half is pinned in the
+  C++ test (`tests/cpp/test_multiblock.cpp`).
 - **Nothing measures the QUALITY of the randomized rule's bit stream.** Checks 24-26 assert that
   both diagonals appear, that the pattern is not parity's, and that it is a function of the four
   declared inputs — a hash with a visible period would pass all of them. Deliberate: a distribution
   test over 12 cells asserts noise, and the property that matters (no direction imprinted on a
   uniform region) is what `MbQuality` measures on a real case.
-- **The C-grid's 0.005 far-field clustering is UNENFORCED.** It is derived from the airfoil
-  edges' own `ds_start`, but they are two numbers in one document that happen to agree; only the
-  acceptance run would notice them diverging.
+- **The C-grid's 0.005 far-field clustering is UNENFORCED**: derived from the airfoil edges' own
+  `ds_start`, but two numbers in one document that happen to agree; only the acceptance run would
+  notice them diverging.
 - **GATE 2 DOES NOT EXERCISE THE `.bnd` NAME -> SOLVER FLAG MAPPING.** `getPGrid` does not know
   `farfield` and defaults those faces to a no-slip wall, so both recorded runs wrote the flag into
   a `.bc.def` BY HAND — what the GUI's `services/bnd_io._NAME_TO_FLAG` does automatically. Nothing
@@ -626,18 +663,28 @@ otherwise learn the hole exists.
   elliptic-smoothing increment exists to move.
 - **NOTHING CAN SEE THE SMOOTHING STAGE'S POSITION.** Injection Y — the whole sweep block moved
   past the split — is INERT, because every reader downstream of it is id-only today. The
-  fill-then-smooth-then-split ordering is a design rule held by a comment, not by a gate.
+  fill-then-smooth-then-split ordering is a design rule held by a comment, not by a gate. **Nor is
+  the position of a PUBLICATION relative to its reader**, which #84 found the hard way — see the
+  `sharedEdges` rule above.
 - **The smoothed mesh is never given to the solver or the grid converter, and since #83 that is a
   GAP rather than a non-question.** Under #82's kernel it would have been a strange thing to want —
-  11.65% off the requested wall height is not a boundary layer worth integrating — but at 0.09% it
+  11.65% off the requested wall height is not a boundary layer worth integrating — but at 0.10% it
   is exactly what #80's own acceptance asks for, and nothing here runs it. It belongs to #85.
+- **NOTHING MEASURES THE C-GRID's FREED INTERFACES ON THEIR OWN TERMS.** The O-grid's four radials
+  lie at four known angles so a surface gate can select the band; the C-grid's three have no such
+  handle from outside a `.vtk`, so what is read there is the WAKE and the whole-mesh figures. The
+  C++ test reaches those lines by node id and pins the MECHANISM, not the quality.
+- **#84's OWN WAKE-CUT CRITERION IS UNREACHABLE ON THE SHIPPED GEOMETRY, and the PREMISE is wrong
+  rather than the mesh**: the fill already leaves all 48 cells against that straight, on-axis line
+  EXACTLY orthogonal, so freeing it COSTS 0.018° mean. The lines that were actually the worst are
+  the radial interfaces, and those improve. Figures: the design note.
 - **NOTHING BOUNDS THE CAP AUTOMATICALLY.** #83's stability limit is real (the shipped C-grid folds
   past about forty sweeps) and is reported after the fact by the inverted-cell count and exit 9;
   nothing stops the solve at the last sound iterate the way the DIVERGED path stops it at the best
   residual. The two are different signals and only one of them is acted on.
-- **The before/after tables are dated quotations**, not re-measured. The gates assert a DIRECTION
-  with a floor, so a kernel that quietly stopped moving anything is caught while one that moves
-  things differently is free to.
+- **The before/after tables are dated quotations**, not re-measured: the gates assert a DIRECTION
+  with a floor, so a kernel that stopped moving anything is caught while one that moves things
+  differently is free to.
 - **NO RULE FILE'S GLOBS REACH `tools/`**, so the O-grid rule's own spacing law —
   `tools/PreProcessor/include/Spacing.hpp`, named in that rule — is unreachable from the tripwire
   table: a session that opens it is handed no rules at all. Pre-existing and NOT created by #89's

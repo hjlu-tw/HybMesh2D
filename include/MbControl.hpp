@@ -1,6 +1,7 @@
 #ifndef MBCONTROL_HPP
 #define MBCONTROL_HPP
 
+#include "MbShared.hpp"     // MbGhostFrame: the block frame CONTINUED across a shared edge
 #include "MultiBlock.hpp"
 
 #include <cstddef>
@@ -143,9 +144,24 @@ struct MbControlField {
 // The targets for OTHER blocks are ignored; passing the whole list rather than
 // pre-filtering keeps the caller from having to build one vector per block per
 // sweep.
+//
+// `frame` IS THE BLOCK'S OWN FRAME EXTENDED BY ITS GHOST LAYER (#84), and it is
+// required rather than optional. Two of the field's stations are the block's
+// perpendicular SIDES — the wall's `k = 0` and `k = n - 1` — and since #84 those
+// are exactly the nodes a shared edge frees. A field that stopped one station
+// short of them would free a node and then hold nothing on it, which is how the
+// declared first cell at a wall's two ends would be lost. Where the perpendicular
+// side is a `wall` there is no ghost, that column does not move, and the station
+// is skipped: the frame answers "may this be read?" and the freeze rule stays in
+// one place (include/MbShared.hpp) rather than being restated as an index test.
+//
+// The field's OWN indices are unchanged — `at(i, j)` is the block's own grid, and
+// nothing outside it has a control value, because nothing outside it is this
+// block's to move.
 MbControlField mbControlField(const MbBlock& b, int blockIdx,
                               const std::vector<Point2D>& nodes,
-                              const std::vector<MbWallTarget>& targets);
+                              const std::vector<MbWallTarget>& targets,
+                              const MbGhostFrame& frame);
 
 // WHAT THE PRODUCED MESH ACTUALLY DID against what one wall asked for.
 //

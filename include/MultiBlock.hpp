@@ -377,6 +377,54 @@ struct MbBlock {
     int nodeAt(int i, int j) const { return nodeIds[static_cast<size_t>(j) * ni + i]; }
 };
 
+// HOW TO WALK ONE SIDE OF ONE BLOCK: every index a reader of that side needs,
+// derived once from `mbSideAxis` instead of once per reader by hand.
+//
+// Here rather than in a module because it has THREE readers in two files now —
+// the control functions (src/MbControl.cpp), the ghost layer and the freeze rule
+// (src/MbShared.cpp) — and it is the same argument `mbSideAxis` itself carries
+// one screen up: this was written out three times inside `MbControl.cpp` alone,
+// each with its own copy of `t0 = atFarEnd ? m - 1 : 0`, which is the shape that
+// lets one of them disagree with the others.
+//
+// `k` is the station ALONG the side and `tt` the grid line ACROSS it, so nothing
+// above has to know which of i and j a given side runs along. `tt` may be -1 or
+// `m` — one step OUTSIDE the block — which is exactly what a ghost layer is
+// addressed by; `MbGhostFrame` in include/MbShared.hpp is what answers there, and
+// `MbBlock::nodeAt` is not to be handed those.
+//
+// `ok` is false for a block too thin to walk. Checked by the caller rather than
+// returned as an optional: each caller has a different thing to do about it, and
+// some still publish part of their answer for such a side.
+struct MbSideWalk {
+    MbSideAxis ax{"south", true, false};
+    int n = 0;       // stations along the side
+    int m = 0;       // grid lines across it
+    int t0 = 0;      // the line ON the side
+    int t1 = 0;      // one line in from it
+    int tFar = 0;    // the line facing it
+    int tOut = 0;    // one line OUTSIDE the block, where a ghost layer sits
+    bool ok = false;
+
+    int i(int k, int tt) const { return ax.alongI ? k : tt; }
+    int j(int k, int tt) const { return ax.alongI ? tt : k; }
+};
+
+inline MbSideWalk mbSideWalk(const MbBlock& b, MbSide side) {
+    MbSideWalk w;
+    w.ax = mbSideAxis(side);
+    const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
+    if (b.ni < 2 || b.nj < 2 || b.nodeIds.size() != want) return w;
+    w.n = w.ax.alongI ? b.ni : b.nj;
+    w.m = w.ax.alongI ? b.nj : b.ni;
+    w.t0 = w.ax.atFarEnd ? w.m - 1 : 0;
+    w.t1 = w.ax.atFarEnd ? w.m - 2 : 1;
+    w.tFar = w.ax.atFarEnd ? 0 : w.m - 1;
+    w.tOut = w.ax.atFarEnd ? w.m : -1;
+    w.ok = true;
+    return w;
+}
+
 // One cell, already split (3 node ids) or still a quad (4), wound CCW.
 struct MbCell {
     std::vector<int> nodeIds;
@@ -515,8 +563,20 @@ struct MbResult {
     //                   no sweep ran, on the same rule as `smoothResidual`: 0 is
     //                   "every request was honoured in full" and must not stand in
     //                   for not having looked.
+    //   smoothMoved     how many NODES the solve was free to move, and
+    //   smoothMovedShared  how many of those lie on a side two blocks SHARE (#84).
+    //                   Published because the freeze rule is otherwise a claim
+    //                   about a loop nobody can see: before #84 the second figure
+    //                   was zero by construction, and a run that cannot show which
+    //                   nodes it was allowed to touch cannot show that an interface
+    //                   is no longer a kink. NEGATIVE means no sweep ran, on the
+    //                   same rule as `smoothResidual` — 0 movable nodes is a real
+    //                   answer (a topology of nothing but 2-node edges) and must
+    //                   not stand in for not having looked.
     int smoothSweeps = 0;
     int smoothClipped = -1;
+    int smoothMoved = -1;
+    int smoothMovedShared = -1;
     bool smoothConverged = false;
     bool smoothDiverged = false;
     double smoothResidual = -1.0;

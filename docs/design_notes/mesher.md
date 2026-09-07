@@ -1694,6 +1694,246 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   by no synthetic fixture, only by the shipped C-grid at a cap of 100, so that branch of the
   advice has one gate.
 
+**SMOOTHING ACROSS SHARED EDGES, so an interface is not a kink** (`include/MbShared.hpp` +
+`src/MbShared.cpp`, plus `MbSideWalk` in `include/MultiBlock.hpp`; #84, ticket 4 of #80's
+five). The rule is `.claude/rules/mesher-multiblock.md`, "SMOOTHING is a STAGE inside the
+seam, its kernel is WINSLOW, that kernel is CONTROLLED (#83), and since #84 it runs ACROSS
+the shared edges".
+
+- **THE PROBLEM THIS TICKET EXISTS FOR, and #83 is the one that measured it.** Smoothing
+  stopped at a block boundary, so every interface and every cut stayed exactly where
+  transfinite interpolation left it while the interiors either side moved away from it. On
+  the shipped O-grid that cost was localised precisely: the worst corners of the smoothed
+  mesh sat at theta = 0, 90, 180 and -90 degrees at radius ~3.43 — mid-block on the four
+  DECLARED RADIAL INTERFACES — where the unsmoothed mesh's worst sat at radius 10 on the
+  faceted outer circle. The worst lines of a smoothed multi-block mesh had become the ones
+  the topology declared as interior.
+
+- **#81's OBJECTION WAS REAL AND IS ANSWERED, NOT DROPPED.** That ticket froze every
+  boundary node because such a node is written by the EDGE and an edge is SHARED: a smoother
+  computing one position from block A and another from block B would have to reconcile two
+  answers, and on a grid with wall spacing near 1e-7 beside far-field spacing near 1e-1
+  there is no tolerance between the scales to reconcile them WITH — nor one wanted, in a
+  module whose whole premise is that welding is by allocation rather than by comparison.
+  **The answer is that the node is moved ONCE, in ONE frame, from ONE stencil.** A node on a
+  block's south side has no `j - 1` row inside that block, and the row that IS its `j - 1`
+  is the NEIGHBOUR's own first interior line. `MbGhostFrame` is that continuation: the
+  block's grid extended by one layer across every side the declaration shares, matched
+  station for station by node ID. So the kernel is handed nine real nodes exactly as it is
+  for an interior node, nothing is averaged, and `src/MbShared.cpp` reads no position at all
+  — grep it for `nodes` and there is nothing to find.
+
+- **THE FOUR DIAGONAL CORNERS OF THE EXTENDED FRAME HAVE NO ANSWER, and they are not given
+  one.** `(-1, -1)` is "one step west and one step south of the block's own corner", and
+  which node that is depends on what meets there — one block, two, or the four of a four-way
+  corner. Absence is reported as `-1`; an injection replacing the range test with a CLAMP
+  bites seven checks including one that reads those four cells directly.
+
+- **THE FOUR-WAY CORNER DOES NOT MOVE, which is the answer the ticket asked for in as many
+  words.** A corner is a declared POSITION — a free coordinate or an arc length along a
+  source segment — so moving it moves the document; and it is the one node with no frame to
+  be moved in, a corner of up to four blocks lying on up to five edges, whose stencil would
+  need exactly those absent diagonal ghosts. **The C-grid's trailing edge is covered twice
+  over** (it is on the airfoil as well, so the wall half of the rule would freeze it anyway),
+  which is why `hgrid()` was written: the 2x2 H-grid's centre node is a four-way corner on
+  four INTERFACES and no wall at all, so there the corner half is the only reason and is
+  falsifiable.
+  **AND IT IS ONE TEST, NOT TWO.** "On two of this block's sides at once" and "is one of the
+  document's declared corners" are the SAME SET on this path — an edge runs corner to corner,
+  so a declared corner always lands at a side's own end, and the fill refuses a block whose
+  four sides do not meet at four shared corner nodes. A separate corner-id set was written
+  first and removed after the injections came back: two sufficient conditions for one rule
+  MASK each other, and disabling either alone left the corner frozen for the other reason
+  with no check failing. What DOES stay doubled is a different pair — the freeze test and the
+  absent diagonal ghost — because those are two mechanisms rather than two copies of one
+  rule, and the injection record says the pair must both be removed to bite.
+
+- **A `claimed` DEDUPE SET WAS WRITTEN AND REMOVED, for the same reason and it is the sharper
+  case.** "Moved once, as one node" is the ticket's hard constraint, so the first draft held
+  it twice: once by the ownership rule picking one of a shared edge's two uses, once by a set
+  refusing a node already in the plan. That made the check asserting the constraint
+  UNFALSIFIABLE — an injection setting BOTH uses came back inert on exactly the check written
+  to catch it. With the belt gone the check fires with five duplicates on the C-grid and
+  fourteen on the H-grid.
+
+- **OWNERSHIP: THE BLOCK WITH MORE OF THE DECLARATION TO HONOUR ALONG THE LINE, and the
+  lower-index rule was wrong.** This ticket wrote "the first block in declaration order"
+  first, on the grounds that either would do. Either DOES do, for the kernel: the Winslow
+  update is invariant under the frame change between two blocks meeting at a shared edge —
+  reflecting a logical axis flips the sign of both `b` and `x_ij` and leaves `a`, `g` and the
+  second derivatives alone; swapping i for j swaps `a` with `g` and leaves the equation term
+  for term. Check 56 measures that rather than asserting it, on every shared node of both
+  fixtures, and the worst disagreement is 0.
+  **The CONTROL is the frame-dependent half, and that is what decides it.** A wall's control
+  reaches a shared line only as the `k = 0` or `k = n - 1` station of that wall's own walk,
+  so the count of WALL sides PERPENDICULAR to the shared line is the count of declarations
+  that can reach it in that frame. On the shipped C-grid the two rules disagree and
+  `r_te_up` is where: it is the wake block's north (one perpendicular wall, the far field)
+  and the upper airfoil block's south (two — the airfoil AND the far field), and the wake
+  block is declared first. Under the lower-index rule the airfoil's declared first cell
+  reached that line's wall end at ZERO WEIGHT, which is the whole reason the rule is what it
+  is. Ties go to the lower index, so the answer is a function of the document alone.
+
+- **THE CONTROL FIELD HAD TO GROW TWO STATIONS, and nothing would have said so.** Those two
+  stations are the block's perpendicular SIDES, which is exactly what a shared edge frees, so
+  a field stopping at `k = 1` frees a node and then holds nothing on it — the declared first
+  cell at a wall's two ends is simply lost. The guard for whether a station can be read is
+  AVAILABILITY in the ghost frame rather than an index test, so the freeze rule stays in one
+  module. **This was inert until a fixture existed for it**: every other multi-wall fixture
+  in the C++ test is a SINGLE block, where a wall's end columns are other walls and stay
+  frozen either way. `wallTwoBlocks()` is the fixture, and its bar is tolerance-free rather
+  than picked — "no worse than the algebraic fill" is unusable there, because that fill holds
+  the request to 1e-14 at every station (the request IS the perpendicular edge's declared
+  `ds` and transfinite interpolation reproduces a straight-sided block exactly), so what is
+  asserted is that the newly freed station is not the WORST station on its own wall.
+
+- **THE DEFECT THAT MADE THE WHOLE TICKET A NO-OP, and what it says about ordering.**
+  `MbResult::sharedEdges` was published AFTER the split. The freeze rule reads that list, and
+  the smoother runs BEFORE the split — so the sweep saw an empty vector, froze every shared
+  node, and produced figures identical to #83's to every printed digit. 106 green tests and
+  the whole C++ suite passed. What found it was running the shipped files and reading
+  `moved_shared=0` off the run's own new report line. The fix is to publish the list before
+  the smoother; nothing in that loop reads a cell or a position, so it is a PUBLICATION that
+  moved and not a decision, and the fill-then-smooth-then-split ordering is unchanged.
+  **The blind spot this widens is named**: the rules already record that nothing gates the
+  smoothing stage's position, because every reader downstream is id-only; this is the same
+  hole from the upstream side, and nothing gates the position of a publication relative to
+  its reader either.
+
+- **WHAT IT BOUGHT, and the improvement is SEPARATED from #83's because both move the same
+  metric.** Measured 2026-09-07, both trees built from source, the #83 column re-measured
+  from the commit before this one rather than quoted.
+
+    shipped C-grid, 11520 cells, unsmoothed 0 / 32.044 deg / 4.562 deg / 0.4368%:
+
+      cap   #83 max/mean/wall/inv       #84 max/mean/wall/inv
+      1     31.861 / 4.527 / 0.1222 / 0  31.861 / 4.516 / 0.1222 / 0
+      5     31.382 / 4.454 / 0.0805 / 0  31.382 / 4.340 / 0.0846 / 0
+      20    29.895 / 4.301 / 0.0893 / 0  29.895 / 3.821 / 0.0968 / 0
+      30    31.550 / 4.252 / 0.0943 / 0  29.106 / 3.582 / 0.1047 / 0
+      40    34.784 / 4.214 / 0.0980 / 0  28.551 / 3.388 / 0.1111 / 0
+      100   86.606 / 4.710 / 19.06  / 4  26.493 / 3.381 / 0.1289 / 0
+
+    shipped O-grid, 9216 cells, unsmoothed 0 / 2.250 / 1.875 / 0.0812%:
+
+      1      3.632 / 1.875 / 0.0390 / 0   2.276 / 1.875 / 0.0390 / 0
+      5      6.418 / 1.980 / 0.0412 / 0   2.276 / 1.875 / 0.0412 / 0
+      20    12.036 / 2.571 / 0.0442 / 0   2.276 / 1.875 / 0.0442 / 0
+      40    16.787 / 3.478 / 0.0474 / 0   2.276 / 1.875 / 0.0475 / 0
+
+  **THE MAX IS IDENTICAL TO THREE DECIMALS AT EVERY CAP THROUGH 20 ON THE C-GRID**, and that
+  is worth stating rather than hiding: this ticket's C-grid gain is in the MEAN (0.48 deg at
+  a cap of 20) and in where the CAP can go, not in the worst cell, whose location is the
+  first cell off the airfoil and is set by the wall row #83 froze. **#83's TURN IS GONE**:
+  its max went 29.90 -> 31.55 -> 34.78 over caps 20, 30, 40 because the interior was shearing
+  against a frozen seam, and #84's falls monotonically to 26.49 at a cap of 100 and turns only
+  past 150. The wall first cell is slightly WORSE at every cap past 5 (0.0968% against
+  0.0893% at 20) and still 4.5x better than the unsmoothed 0.4368%, which is #80's bar.
+
+- **#80's O-GRID NEGATIVE CONTROL: STILL NOT MET, BY 1.2% RATHER THAN BY 5.3x, AND THE
+  RESIDUE IS THE FACETED WALL's.** 2.276 deg against #55's 2.250, at EVERY cap from 1 to 150
+  — so #83's "no single `MB_SMOOTH_ITERS` satisfies #80's C-grid bullet and its O-grid bullet
+  together" is gone: the gap no longer grows with the cap. The mean is exactly 1.875, and
+  **that is structural rather than a strong result**: a 48-gon's every quad corner deviates by
+  half the sector angle whatever the radial distribution is, so the column measures faceting;
+  what it does say is that the grid is POLAR again, where #83's 2.571 at a cap of 20 was the
+  interior pulled off the polar structure.
+  **The localisation is the evidence.** #83's worst corners sat mid-block on the radials at
+  r ~ 3.43; #84's sit at r = 9.19, one grid line in from the faceted outer circle whose own
+  corners are 2.250 deg at r = 10. And the mid-block band's own cells now come out BETTER
+  than the algebraic fill left them: over the 48 interface nodes with 2 < r < 8 and the 416
+  corners touching them, 2.2477 -> 1.9475 at one sweep and 1.8794 at twenty. **So what the
+  bullet still fails on is the frozen WALL's faceting, and closing it needs #83's "wall nodes
+  do not slide" revisited rather than more sweeps.** The band is indexed on the UNSMOOTHED
+  mesh and reused, because a theta filter re-applied to the smoothed mesh silently loses four
+  of its 84 nodes — a freed interface bends.
+
+- **THE WAKE CUT: THE TICKET's OWN CRITERION IS UNREACHABLE, and the premise is what is
+  wrong.** It asks that the cut's own cells "improve rather than staying at their unsmoothed
+  values". They cannot: the wake is a straight line on the symmetry axis, the algebraic fill
+  already leaves all 48 cells against it EXACTLY orthogonal (0.0000 deg over 192 corners),
+  and freeing it therefore COSTS 0.0178 deg mean / 0.6173 deg max at a cap of 20. The
+  criterion assumed the wake was one of the worst lines — #57 made its four-way corner the
+  highest-risk point in the grid — and on this geometry the worst lines are the RADIAL
+  interfaces, which do improve. What IS true of the wake is measured instead: it stays one
+  line both blocks read, exports no boundary face smoothed, 23 of its 24 interior nodes MOVE
+  (the twenty-fourth is the declared corner at the outlet), and it stays on the axis to
+  1.4e-18 — by symmetry, because the node is moved once and there is no second answer to be
+  pulled toward. The displacement is small, 4.6e-06 at its finest station at a cap of 20,
+  which is also why reading it off the `.vrt` failed first: the STAR-CD vertex writer rounds,
+  and 21 of the 24 came back "unmoved" from a file that had not written the digits.
+
+- **THE STABILITY LIMIT MOVED OUT BY AN ORDER OF MAGNITUDE, and the DIVERGED ending came
+  back.** A grid whose seams can move has somewhere to go instead of shearing against them:
+  the C-grid folds 0 cells at every cap through 300 where #83 folded 4 by 100, then 184 by
+  400 and 620 by 500; the O-grid folds 0 through 150 and 192 by 300. And where #83's residual
+  merely PLATEAUED on both shipped files, #84's C-grid DIVERGES at sweep 1111 and hands back
+  that best iterate — so the diverged path is asserted on a real file again, as it was under
+  #82. The CONVERGED ending is still reachable only on the C++ test's notched box.
+  **THE O-GRID's FOLD IS INVISIBLE TO NON-ORTHOGONALITY**, which is a limit of the RULER and
+  is recorded as one: at a cap of 300 it folds 192 cells while max non-orthogonality reads
+  2.274 deg, because two adjacent radial lines have swapped order and the folded cells are
+  still very nearly rectangular. Only the inverted-cell count sees it.
+
+- **`MbSideWalk` MOVED INTO `include/MultiBlock.hpp`**, beside `mbSideAxis` and for that
+  entry's own reason: it now has three readers in two files, and it had already been written
+  out three times inside `MbControl.cpp` alone, each with its own copy of
+  `t0 = atFarEnd ? m - 1 : 0`. Its `tt` may be -1 or `m` — one step OUTSIDE the block, which
+  is what a ghost layer is addressed by — and `MbBlock::nodeAt` is never handed those.
+  `MbControl.cpp` grew a second accessor at the same time and the split is stated there: the
+  control field's differences read the GHOST frame (the glued line's central difference, with
+  no gate measuring it), while `mbWallTargets` and `mbWallResidual` stay IN-BLOCK and
+  one-sided at a wall's ends, because those two must be the RULER's measure — the request and
+  the achievement have to be the same measure, which is #83's own lesson.
+
+- **THE RUN REPORTS THE FREEZE RULE** (`MbResult::smoothMoved` / `smoothMovedShared`, a
+  `Movable nodes` banner row, `moved=` / `moved_shared=` on `HYBMESH_MB_SMOOTH`; NEGATIVE
+  when no sweep ran, on `smoothResidual`'s rule). It is a decision about the DECLARATION, so
+  a run has to be able to show it — the same argument the propagated counts and the welded
+  shared edges rest on, and before #84 the second figure was 0 by construction. Shipped
+  C-grid 5600 of 5920 with 140 shared, which is exactly the interior of its four shared edges
+  (23 + 39 + 39 + 39) and is checked against the run's OWN shared-edge report rather than
+  against a number typed into the gate. Shipped O-grid 4512 of 4704 with 188.
+
+- **NO KEY, NO GUI CHANGE, NO PARITY-GATE CHANGE.** As with #83: this is not an alternative
+  behaviour behind a switch, it is the freeze rule corrected, so there is nothing for a user
+  to set and the two published counts are reporting rather than configuration.
+
+- **CONFORMITY IS #53's MEASURE, IMPORTED.** The ticket asks for it by name and the gate
+  imports `edge_use`, `components`, `bnd_faces`, `cel_cells` and `vrt_nodes` from
+  `test_multiblock_weld_surface.py` rather than re-deriving them: on the SMOOTHED shipped
+  C-grid every interior edge belongs to exactly two cells (17120 of them, 0 with more), the
+  boundary edge set is exactly the 320-face `.bnd`, and the whole mesh is one connected
+  component by node identity. Node count 5920 and cell count 11520 both unchanged, and the
+  `.cel` connectivity identical id for id.
+
+- **GOLDEN: 18 of 19 SAME at 0.000e+00, the nineteenth recaptured deliberately.** Captured
+  from the previous commit's own build through `HYBMESH_GOLDEN_BIN` and compared against the
+  working tree. `mb_cgrid_smooth` — the only case whose nodes come from the smoother — moved,
+  with all 11520 `.cel` cells redrawn. #81 wrote that case so a kernel change would show up
+  here as a number; it has now done so three times, and each time it was the only one of the
+  nineteen that moved.
+
+- **THE RULE FILE IS NOW AT ITS CEILING, and that is a fact about the NEXT ticket.**
+  `.claude/rules/mesher-multiblock.md` came out of this commit at 59,583 characters against
+  `RULE_BUDGET`'s flat 60,000 — 417 of headroom, where #89's split had left 4,618. Getting there
+  took an editorial pass rather than word-shaving: #83's arithmetic DERIVATIONS (the quadratic, the
+  three rejected conditions' figures, the Thomas-Middlecoff alternatives) moved into this note with
+  the RULES and every identifier left behind, which is what `docs/agents/rule-file-style.md` asks
+  for anyway. Recorded because the pressure is now real: the next feature touching this path either
+  moves text out or takes a tenth rule file, and the ceiling is what will say so on its first
+  attempt rather than after 3k has landed in silence.
+
+- **NAMED BLIND SPOTS.** The smoothed mesh is STILL never given to the solver or the grid
+  converter; at 0.10% off the requested wall height that is a GAP and it belongs to #85.
+  **Nothing measures the C-grid's freed interfaces on their own terms** — the O-grid's four
+  radials lie at four known angles so a surface gate can select the band, while the C-grid's
+  three radials have no such handle from outside a `.vtk`, so what is read there is the wake
+  and the whole-mesh figures. **Nothing bounds the cap automatically**, unchanged from #83.
+  And **two of #84's eleven injections are inert**: the station-by-station weld match, which
+  no correct document can falsify, and the declared-corner freeze on its own, held twice by
+  two different mechanisms.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /

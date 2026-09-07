@@ -950,6 +950,69 @@ std::vector<hybmesh::MbGeometry> cgridGeoms(int perSeg = 40) {
     return {circleGeom(perSeg, 0.5, "body.dat", "wall", 2)};
 }
 
+// ── A 2x2 H-GRID: a four-way corner on NO wall (issue #84) ────────────────
+//
+//   c02 ──h02── c12 ──h12── c22        bl = [h00, v10, h01, v00]   y = 1.5
+//    │           │           │         br = [h10, v20, h11, v10]
+//   v01    tl   v11    tr   v21        tl = [h01, v11, h02, v01]
+//    │           │           │         tr = [v11, h11, v21, h12]
+//   c01 ──h01── c11 ──h11── c21                                     y = 0.6
+//    │           │           │
+//   v00    bl   v10    br   v20
+//    │           │           │
+//   c00 ──h00── c10 ──h10── c20
+//
+// The shape of `examples/topology/hgrid_blocks.json`, small enough to reason
+// about. WHY IT IS HERE AND THE C-GRID IS NOT ENOUGH: `c11` is a four-way corner
+// — four blocks and four edges end on it — and NONE of those four edges is a
+// wall. The C-grid's four-way corner (`te`) is on the airfoil, so the wall half
+// of the freeze rule covers it there and the corner half is never the reason. On
+// this document the corner half is the ONLY reason, which is what makes it
+// falsifiable.
+//
+// `tr` is turned a quarter turn, exactly as the shipped file turns it — `v11` is
+// declared ['c12', 'c11'] and is that block's SOUTH — so the two blocks either
+// side of `v11` disagree about which way the line runs, which is the case the
+// ghost layer's station correspondence has to get right. The row heights are the
+// shipped file's (0.6, 1.5) rather than uniform, so the blocks are not congruent
+// and the solve has something to do.
+std::string hgrid() {
+    return R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "c00", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "c10", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c20", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "c01", "kind": "free", "xy": [0.0, 0.6]},
+    {"id": "c11", "kind": "free", "xy": [1.0, 0.6]},
+    {"id": "c21", "kind": "free", "xy": [2.0, 0.6]},
+    {"id": "c02", "kind": "free", "xy": [0.0, 1.5]},
+    {"id": "c12", "kind": "free", "xy": [1.0, 1.5]},
+    {"id": "c22", "kind": "free", "xy": [2.0, 1.5]}
+  ],
+  "edges": [
+    {"id": "h00", "corners": ["c00", "c10"], "kind": "wall", "count": 7},
+    {"id": "h10", "corners": ["c10", "c20"], "kind": "wall", "count": 5},
+    {"id": "v00", "corners": ["c00", "c01"], "kind": "wall", "count": 4},
+    {"id": "v01", "corners": ["c01", "c02"], "kind": "wall", "count": 6},
+    {"id": "h02", "corners": ["c02", "c12"], "kind": "wall"},
+    {"id": "h12", "corners": ["c12", "c22"], "kind": "wall"},
+    {"id": "v20", "corners": ["c20", "c21"], "kind": "wall"},
+    {"id": "v21", "corners": ["c21", "c22"], "kind": "wall"},
+    {"id": "h01", "corners": ["c01", "c11"], "kind": "interface"},
+    {"id": "h11", "corners": ["c11", "c21"], "kind": "interface"},
+    {"id": "v10", "corners": ["c10", "c11"], "kind": "interface"},
+    {"id": "v11", "corners": ["c12", "c11"], "kind": "interface"}
+  ],
+  "blocks": [
+    {"id": "bl", "edges": ["h00", "v10", "h01", "v00"]},
+    {"id": "br", "edges": ["h10", "v20", "h11", "v10"]},
+    {"id": "tl", "edges": ["h01", "v11", "h02", "v01"]},
+    {"id": "tr", "edges": ["v11", "h11", "v21", "h12"]}
+  ]
+})";
+}
+
 // ── The C-grid made DENSE and WALL-CLUSTERED (issue #81, check 46) ────────
 //
 // Two edits to the fixture above, and both are load bearing — measured, not
@@ -1019,6 +1082,51 @@ std::string wallSquare(int ni, int nj, const std::string& ds) {
   ],
   "blocks": [
     {"id": "b0", "edges": ["s", "e", "n", "w"]}
+  ]
+})";
+}
+
+// ── TWO wall blocks sharing an INTERFACE that is the wall's END (issue #84) ─
+//
+//   d ──n0── e ──n1── f     b0 = [s0, m, n0, w]   b1 = [s1, ee, n1, m]
+//   │        │        │
+//   w   b0   m   b1   ee    s0, s1: WALL, graded off by `ds` on all three of
+//   │        │        │     w, m and ee — so every column's first cell off the
+//   a ──s0── b ──s1── c     south is `ds`, in BOTH blocks.
+//
+// WHAT ONLY THIS FIXTURE REACHES. `m` is an INTERFACE and it is also the LAST
+// STATION of b0's south wall and the FIRST of b1's — a wall's end column. Before
+// #84 that column was frozen and the wall's first cell there was exact by
+// construction; #84 frees it, so something has to hold it, and that something is
+// the control field being computed at `k = 0` and `k = n - 1` rather than stopping
+// one station short. Every other multi-wall fixture here is a single block, where
+// a wall's end columns are other WALLS and stay frozen either way — which is why
+// an injection cutting the control's station range back came back inert until this
+// existed.
+std::string wallTwoBlocks(const std::string& ds) {
+    const std::string sp = R"(, "spacing": {"ds_start": )" + ds + "}";
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "a", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "c", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "d", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "e", "kind": "free", "xy": [1.0, 1.2]},
+    {"id": "f", "kind": "free", "xy": [2.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["a", "b"], "kind": "wall", "count": 9},
+    {"id": "s1", "corners": ["b", "c"], "kind": "wall", "count": 9},
+    {"id": "w",  "corners": ["a", "d"], "kind": "wall", "count": 9)") + sp + R"(},
+    {"id": "m",  "corners": ["b", "e"], "kind": "interface")" + sp + R"(},
+    {"id": "n0", "corners": ["d", "e"], "kind": "wall"},
+    {"id": "n1", "corners": ["e", "f"], "kind": "wall"},
+    {"id": "ee", "corners": ["c", "f"], "kind": "wall")" + sp + R"(}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s0", "m", "n0", "w"]},
+    {"id": "b1", "edges": ["s1", "ee", "n1", "m"]}
   ]
 })";
 }
@@ -1154,9 +1262,6 @@ std::string notchedBox(int ni, int nj, const std::string& ne) {
 std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& src,
                                  bool withControl = true) {
     std::vector<Point2D> out = src;
-    auto at = [&src](const hybmesh::MbBlock& b, int i, int j) {
-        return src[static_cast<size_t>(b.nodeAt(i, j))];
-    };
     // `withControl == false` is the PRE-#83 kernel: the same expression with both
     // source terms zero. Kept as one flag rather than a second near-copy of the
     // sweep, and it is what several checks below use to show that a property they
@@ -1168,38 +1273,48 @@ std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& 
               return hybmesh::mbWallTargets(probe);
           }()
         : std::vector<hybmesh::MbWallTarget>{};
+    const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r);
     for (size_t bi = 0; bi < r.blocks.size(); ++bi) {
         const hybmesh::MbBlock& b = r.blocks[bi];
+        const hybmesh::MbGhostFrame& fr = plan.frames[bi];
         const hybmesh::MbControlField cf =
-            hybmesh::mbControlField(b, static_cast<int>(bi), src, tg);
-        for (int j = 1; j + 1 < b.nj; ++j)
-            for (int i = 1; i + 1 < b.ni; ++i) {
-                const double phi = cf.at(i, j).phi, psi = cf.at(i, j).psi;
-                const double xi = 0.5 * (at(b, i + 1, j).x - at(b, i - 1, j).x);
-                const double yi = 0.5 * (at(b, i + 1, j).y - at(b, i - 1, j).y);
-                const double xj = 0.5 * (at(b, i, j + 1).x - at(b, i, j - 1).x);
-                const double yj = 0.5 * (at(b, i, j + 1).y - at(b, i, j - 1).y);
-                const double al = xj * xj + yj * yj;
-                const double be = xi * xj + yi * yj;
-                const double ga = xi * xi + yi * yi;
-                const double xij = 0.25 * (at(b, i + 1, j + 1).x - at(b, i - 1, j + 1).x
-                                         - at(b, i + 1, j - 1).x + at(b, i - 1, j - 1).x);
-                const double yij = 0.25 * (at(b, i + 1, j + 1).y - at(b, i - 1, j + 1).y
-                                         - at(b, i + 1, j - 1).y + at(b, i - 1, j - 1).y);
-                const double den = 2.0 * (al + ga);
-                if (!(den > 0.0)) continue;
-                // The two source terms enter as a reweighting of each direction's
-                // pair of neighbours: al*(1 +/- phi/2) and ga*(1 +/- psi/2).
-                const double ip = al * (1.0 + phi * 0.5), im = al * (1.0 - phi * 0.5);
-                const double jp = ga * (1.0 + psi * 0.5), jm = ga * (1.0 - psi * 0.5);
-                out[static_cast<size_t>(b.nodeAt(i, j))] = Point2D{
-                    (ip * at(b, i + 1, j).x + im * at(b, i - 1, j).x
-                     + jp * at(b, i, j + 1).x + jm * at(b, i, j - 1).x
-                     - 2.0 * be * xij) / den,
-                    (ip * at(b, i + 1, j).y + im * at(b, i - 1, j).y
-                     + jp * at(b, i, j + 1).y + jm * at(b, i, j - 1).y
-                     - 2.0 * be * yij) / den};
-            }
+            hybmesh::mbControlField(b, static_cast<int>(bi), src, tg, fr);
+        // THE NINE POSITIONS COME OUT OF THE EXTENDED FRAME, which is what makes
+        // this expression the hand side of the real sweep for a SHARED-edge node
+        // too (#84) and not only for an interior one. The frame's own contents are
+        // pinned independently in check 56, by node IDENTITY against the welded
+        // neighbour, so this is not the ghost layer checking itself.
+        for (const hybmesh::MbNodeMove& mv : plan.moves[bi]) {
+            auto at = [&](int i, int j) {
+                return src[static_cast<size_t>(fr.at(mv.i + i, mv.j + j))];
+            };
+            const double phi = cf.at(mv.i, mv.j).phi, psi = cf.at(mv.i, mv.j).psi;
+            const double xi = 0.5 * (at(1, 0).x - at(-1, 0).x);
+            const double yi = 0.5 * (at(1, 0).y - at(-1, 0).y);
+            const double xj = 0.5 * (at(0, 1).x - at(0, -1).x);
+            const double yj = 0.5 * (at(0, 1).y - at(0, -1).y);
+            const double al = xj * xj + yj * yj;
+            const double be = xi * xj + yi * yj;
+            const double ga = xi * xi + yi * yi;
+            const double xij = 0.25 * (at(1, 1).x - at(-1, 1).x
+                                     - at(1, -1).x + at(-1, -1).x);
+            const double yij = 0.25 * (at(1, 1).y - at(-1, 1).y
+                                     - at(1, -1).y + at(-1, -1).y);
+            const double den = 2.0 * (al + ga);
+            if (!(den > 0.0)) continue;
+            // The two source terms enter as a reweighting of each direction's
+            // pair of neighbours: al*(1 +/- phi/2) and ga*(1 +/- psi/2).
+            const double ip = al * (1.0 + phi * 0.5), im = al * (1.0 - phi * 0.5);
+            const double jp = ga * (1.0 + psi * 0.5), jm = ga * (1.0 - psi * 0.5);
+            out[static_cast<size_t>(mv.node)] = Point2D{
+                (ip * at(1, 0).x + im * at(-1, 0).x
+                 + jp * at(0, 1).x + jm * at(0, -1).x
+                 - 2.0 * be * xij) / den,
+                (ip * at(1, 0).y + im * at(-1, 0).y
+                 + jp * at(0, 1).y + jm * at(0, -1).y
+                 - 2.0 * be * yij) / den};
+        }
+        (void)b;
     }
     return out;
 }
@@ -2782,15 +2897,22 @@ int main() {
               "40. ...over the same cells and blocks");
     }
 
-    // ── 41. only STRICTLY INTERIOR nodes move; every block boundary is frozen ─
+    // ── 41. WHICH nodes move: walls and declared corners FROZEN, the rest not ─
     //
-    // The decision this ticket had to make rather than defer, checked as data:
-    // outer walls, bound edges, interfaces and cuts are all block boundaries, and
-    // a node on any of them is written by the EDGE — which is SHARED, so moving
-    // one would move it in two blocks at once and would take a bound node off the
-    // geometry it was attached to by arc length. Driven on the four-block C-grid
-    // because that is the only fixture here whose boundaries include all four
-    // kinds at once.
+    // THE FREEZE RULE AS DATA, and #84 reversed half of what #81 wrote here. That
+    // ticket froze every node on every block boundary, walls and interfaces alike,
+    // for a reason that had to be answered rather than dropped: a boundary node is
+    // written by the EDGE, and an edge is SHARED. The answer is that a shared node
+    // is moved ONCE, in one frame, from one stencil completed by the neighbour's
+    // own first interior line — so what stays frozen is what the DECLARATION owns:
+    // a node on an edge declared `wall` (the outer boundary, and a bound node would
+    // leave the geometry it was attached to by arc length) and every declared
+    // CORNER.
+    //
+    // COUNTED IN FOUR BINS, because three of the four ways this can be wrong pass a
+    // two-bin check: nothing moving at all, the walls moving, the corners moving,
+    // and the interfaces still frozen. Driven on the four-block C-grid because it
+    // is the only fixture here whose boundaries include all four kinds at once.
     {
         MbParams p;
         p.smoothIters = 3;
@@ -2803,29 +2925,70 @@ int main() {
         CHECK(worstMove(r.preSmoothNodes, u.nodes) == 0.0,
               "41. ...and that list IS the unsmoothed mesh, bit for bit — so the two "
               "quality reports differ by the smoother and by nothing else");
-        // Frozen, and MOVED, counted separately: "nothing moved" would satisfy the
-        // frozen half on its own.
-        std::vector<bool> boundary(r.nodes.size(), false);
-        for (const auto& b : r.blocks)
-            for (int j = 0; j < b.nj; ++j)
-                for (int i = 0; i < b.ni; ++i)
-                    if (i == 0 || j == 0 || i == b.ni - 1 || j == b.nj - 1)
-                        boundary[static_cast<size_t>(b.nodeAt(i, j))] = true;
-        size_t frozen = 0, movedInterior = 0, movedBoundary = 0;
+        // THE THREE SETS, built from the seam's OWN published declaration lists
+        // rather than from the module under test: `wallSpecs` (which #52 and #55
+        // pin) says which sides are walls, `sharedEdges` (which #53 pins) says
+        // which are shared, and a block's four logical corners are the declared
+        // corners its ring met at.
+        std::vector<bool> onWall(r.nodes.size(), false);
+        std::vector<bool> onShared(r.nodes.size(), false);
+        std::vector<bool> isCorner(r.nodes.size(), false);
+        auto markSide = [&](int blk, hybmesh::MbSide side, std::vector<bool>& into) {
+            const hybmesh::MbBlock& b = r.blocks[static_cast<size_t>(blk)];
+            const hybmesh::MbSideWalk w = hybmesh::mbSideWalk(b, side);
+            for (int k = 0; k < w.n; ++k)
+                into[static_cast<size_t>(b.nodeAt(w.i(k, w.t0), w.j(k, w.t0)))] = true;
+        };
+        for (const auto& ws : r.wallSpecs) markSide(ws.block, ws.side, onWall);
+        for (const auto& se : r.sharedEdges) {
+            markSide(se.blockA, se.sideA, onShared);
+            markSide(se.blockB, se.sideB, onShared);
+        }
+        for (const auto& b : r.blocks) {
+            isCorner[static_cast<size_t>(b.nodeAt(0, 0))] = true;
+            isCorner[static_cast<size_t>(b.nodeAt(b.ni - 1, 0))] = true;
+            isCorner[static_cast<size_t>(b.nodeAt(0, b.nj - 1))] = true;
+            isCorner[static_cast<size_t>(b.nodeAt(b.ni - 1, b.nj - 1))] = true;
+        }
+        size_t movedWall = 0, movedCorner = 0, movedShared = 0, movedInterior = 0;
+        size_t frozenShared = 0;
         for (size_t k = 0; k < r.nodes.size(); ++k) {
             const bool same = r.nodes[k].x == u.nodes[k].x
                            && r.nodes[k].y == u.nodes[k].y;
-            if (boundary[k]) { if (same) ++frozen; else ++movedBoundary; }
-            else if (!same) ++movedInterior;
+            if (isCorner[k])            { if (!same) ++movedCorner; }
+            else if (onWall[k])         { if (!same) ++movedWall; }
+            else if (onShared[k])       { if (!same) ++movedShared; else ++frozenShared; }
+            else if (!same)             { ++movedInterior; }
         }
-        CHECK(movedBoundary == 0,
-              "41. every node on ANY block boundary is frozen — walls, bound edges, "
-              "interfaces and the wake cut alike (" + std::to_string(movedBoundary)
-              + " moved of " + std::to_string(frozen + movedBoundary) + ")");
+        CHECK(movedWall == 0,
+              "41. a node on an edge declared 'wall' is FROZEN — the outer boundary "
+              "is the domain, not the discretisation ("
+              + std::to_string(movedWall) + " moved)");
+        CHECK(movedCorner == 0,
+              "41. ...and so is every DECLARED CORNER, whatever meets there — it is "
+              "a declared position, and the one node with no frame to be moved in ("
+              + std::to_string(movedCorner) + " moved)");
+        CHECK(movedShared > 0 && frozenShared == 0,
+              "41. ...while EVERY node interior to an interface or a cut MOVES, "
+              "which is #84 and reverses #81's rule here ("
+              + std::to_string(movedShared) + " moved, "
+              + std::to_string(frozenShared) + " still frozen)");
         CHECK(movedInterior > 0,
-              "41. ...and interior nodes really did move, so the check above is not "
-              "passing on a mesh nothing touched (" + std::to_string(movedInterior)
+              "41. ...and interior nodes really did move, so the checks above are "
+              "not passing on a mesh nothing touched (" + std::to_string(movedInterior)
               + " moved)");
+        // THE SEAM PUBLISHES BOTH COUNTS, and they are the two the run reports.
+        CHECK(r.smoothMoved == static_cast<int>(movedShared + movedInterior)
+                  && r.smoothMovedShared == static_cast<int>(movedShared),
+              "41. ...and the seam's own published counts ARE those two numbers, so "
+              "the run reports the freeze rule it ran under (moved "
+              + std::to_string(r.smoothMoved) + " / "
+              + std::to_string(movedShared + movedInterior) + ", shared "
+              + std::to_string(r.smoothMovedShared) + " / "
+              + std::to_string(movedShared) + ")");
+        CHECK(u.smoothMoved < 0 && u.smoothMovedShared < 0,
+              "41. ...and a run that did not smooth reports NEGATIVE rather than 0, "
+              "because 0 movable nodes is a real answer");
         // Node IDENTITY is what welding rests on: the smoother writes coordinates
         // and allocates nothing, so a shared node is still ONE node.
         CHECK(r.nodes.size() == u.nodes.size(),
@@ -3656,11 +3819,12 @@ int main() {
         MbResult uni = build(stretchedBox(11, 9, "250.0", "1.0"), none);
         CHECK(uni.ok, "53. the uniform stretched box meshes (err: " + uni.error + ")");
         const std::vector<hybmesh::MbWallTarget> ut = hybmesh::mbWallTargets(uni);
+        const hybmesh::MbSmoothPlan up = hybmesh::mbSmoothPlan(uni);
         double worstQ = 0.0;
         size_t clips = 0;
         for (size_t bi = 0; bi < uni.blocks.size(); ++bi) {
             const hybmesh::MbControlField cf = hybmesh::mbControlField(
-                uni.blocks[bi], static_cast<int>(bi), uni.nodes, ut);
+                uni.blocks[bi], static_cast<int>(bi), uni.nodes, ut, up.frames[bi]);
             clips += cf.clipped;
             for (const hybmesh::MbControl& c : cf.q)
                 worstQ = std::max(worstQ, std::max(std::fabs(c.phi), std::fabs(c.psi)));
@@ -3683,10 +3847,11 @@ int main() {
         MbResult gr = build(wallSquare(11, 9, "0.02"), none);
         CHECK(gr.ok, "53. the graded square meshes");
         const std::vector<hybmesh::MbWallTarget> gt = hybmesh::mbWallTargets(gr);
+        const hybmesh::MbSmoothPlan gp = hybmesh::mbSmoothPlan(gr);
         double liveQ = 0.0;
         for (size_t bi = 0; bi < gr.blocks.size(); ++bi) {
             const hybmesh::MbControlField cf = hybmesh::mbControlField(
-                gr.blocks[bi], static_cast<int>(bi), gr.nodes, gt);
+                gr.blocks[bi], static_cast<int>(bi), gr.nodes, gt, gp.frames[bi]);
             for (const hybmesh::MbControl& c : cf.q)
                 liveQ = std::max(liveQ, std::max(std::fabs(c.phi), std::fabs(c.psi)));
         }
@@ -3703,6 +3868,7 @@ int main() {
         MbResult tb2 = build(twoBlocks("interface"));
         CHECK(tb2.ok, "53. the two-block topology meshes (err: " + tb2.error + ")");
         const std::vector<hybmesh::MbWallTarget> t2 = hybmesh::mbWallTargets(tb2);
+        const hybmesh::MbSmoothPlan p2 = hybmesh::mbSmoothPlan(tb2);
         bool perBlock = tb2.blocks.size() >= 2;
         for (size_t bi = 0; perBlock && bi < tb2.blocks.size(); ++bi) {
             // The same block, once against the whole target list and once against
@@ -3711,9 +3877,9 @@ int main() {
             for (const auto& t : t2)
                 if (t.block == static_cast<int>(bi)) mine.push_back(t);
             const hybmesh::MbControlField all = hybmesh::mbControlField(
-                tb2.blocks[bi], static_cast<int>(bi), tb2.nodes, t2);
+                tb2.blocks[bi], static_cast<int>(bi), tb2.nodes, t2, p2.frames[bi]);
             const hybmesh::MbControlField own = hybmesh::mbControlField(
-                tb2.blocks[bi], static_cast<int>(bi), tb2.nodes, mine);
+                tb2.blocks[bi], static_cast<int>(bi), tb2.nodes, mine, p2.frames[bi]);
             if (all.q.size() != own.q.size()) { perBlock = false; break; }
             for (size_t k = 0; k < all.q.size(); ++k)
                 if (all.q[k].phi != own.q[k].phi || all.q[k].psi != own.q[k].psi)
@@ -3888,6 +4054,340 @@ int main() {
         CHECK(quiet == 0,
               "55. ...and a run whose walls ARE held says nothing, so the warning "
               "means something when it appears (got " + std::to_string(quiet) + ")");
+    }
+
+    // ── 56. THE SHARED EDGES ARE FREE, AND A SHARED NODE MOVES ONCE ─────────
+    //
+    // #84. Five properties, and every one of them is asserted BY IDENTITY — node
+    // ids and list membership — rather than by measuring how far two positions
+    // ended up apart. That is the ticket's own hard constraint: welding is by
+    // allocation and there is no tolerance literal in this module, so a check that
+    // compared two computed positions and called them close enough would be the
+    // very defect it is meant to exclude.
+    //
+    // INJECTIONS, dated 2026-09-07, exit code read before the FAIL count. All bite
+    // except where said otherwise:
+    //   A  ghost layer written on ONE side of a shared edge only        -> 41, 56 (b)
+    //   B  ghost taken from the neighbour's own SIDE row (t0), not its t1   -> 56 (c)
+    //   C  station correspondence never reversed (rev always false)     -> 41, 56 (b,c)
+    //   D  ownership by lower block index, not by perpendicular walls       -> 56 (e)
+    //   E  both blocks claim a shared edge (ownsSide set on A and B)    -> 41, 56 (a,b)
+    //   F  `MbGhostFrame::at` CLAMPS out of range instead of reporting
+    //      absence                                                    -> 53, 56 (c,d,f)
+    //   G  declared corners NOT frozen — and only WITH F, which is the finding
+    //      rather than the injection: the corner freeze is held TWICE, by the
+    //      `on >= 2` test and by the diagonal ghost that does not exist, so
+    //      removing either alone leaves the corner frozen for the other reason.
+    //      The pair bites 26 checks including 41's corner half. Two mechanisms and
+    //      not two copies of one rule, which is why both stay.
+    //   H  `perpWalls` reading the side's own axis instead of the other     -> 56 (e)
+    //   I  the station-by-station match reduced to the two ends             -> INERT:
+    //      every fixture here is welded correctly, so the middle always agrees. Kept
+    //      because it is the guard against smoothing against the WRONG neighbour
+    //      node, a state no correct document can be put into from here.
+    //   J  the sweep skipping the plan's shared moves                       -> 41
+    //   K  the control's stations stopping one short of the wall's ends -> 56 (g), and
+    //      INERT until that fixture existed: every other multi-wall fixture here is
+    //      a single block, where a wall's end columns are other walls.
+    {
+        MbParams p;
+        p.smoothIters = 3;
+        MbResult cg = hybmesh::buildMultiBlock(cgrid(), cgridGeoms(), p);
+        MbResult hg = build(hgrid(), p);
+        CHECK(cg.ok && hg.ok, "56. the C-grid and the 2x2 H-grid both mesh (err: "
+                              + cg.error + " / " + hg.error + ")");
+
+        for (int which = 0; which < 2; ++which) {
+            const MbResult& r = which ? hg : cg;
+            const std::string who = which ? "H-grid" : "C-grid";
+            const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r);
+
+            // (a) A NODE IS IN THE PLAN AT MOST ONCE, across every block. This is
+            // the whole of "moved once, as one node" and it is a property of the
+            // list: no second frame computes a second position, so there is nothing
+            // to reconcile and no tolerance to reconcile it with.
+            std::map<int, int> seen;
+            int total = 0, sharedCount = 0;
+            for (const auto& mvs : plan.moves)
+                for (const auto& mv : mvs) {
+                    ++seen[mv.node];
+                    ++total;
+                    if (mv.shared) ++sharedCount;
+                }
+            int twice = 0;
+            for (const auto& kv : seen) if (kv.second > 1) ++twice;
+            CHECK(twice == 0,
+                  "56. " + who + ": no node appears in the plan twice — a shared "
+                  "node is moved ONCE, as one node, by IDENTITY and not by two "
+                  "positions a tolerance apart (" + std::to_string(twice)
+                  + " duplicated)");
+            CHECK(total == plan.movedNodes && sharedCount == plan.movedShared,
+                  "56. ...and the published counts are that list's own size");
+
+            // (b) EVERY SHARED EDGE GOT A GHOST LAYER ON BOTH SIDES, and every one
+            // of its interior nodes is in the plan. Both directions: the first
+            // catches a freeze that never lifted, the second a plan that moved more
+            // than the declaration allows.
+            CHECK(plan.ghostEdges == static_cast<int>(r.sharedEdges.size())
+                      && !r.sharedEdges.empty(),
+                  "56. " + who + ": every declared shared edge got a ghost layer on "
+                  "BOTH of its sides (" + std::to_string(plan.ghostEdges) + " of "
+                  + std::to_string(r.sharedEdges.size()) + ")");
+            int wantShared = 0;
+            for (const auto& se : r.sharedEdges) wantShared += se.nodes - 2;
+            CHECK(plan.movedShared == wantShared,
+                  "56. ...and the movable shared nodes are EXACTLY the interior "
+                  "nodes of those edges, counted from the declaration's own node "
+                  "counts (" + std::to_string(plan.movedShared) + " vs "
+                  + std::to_string(wantShared) + ")");
+
+            // (c) THE GHOST IS THE NEIGHBOUR'S FIRST INTERIOR LINE, station for
+            // station, checked against the welded ids rather than against a
+            // distance. Written out here from `sharedEdges` alone, so the module's
+            // own correspondence logic is not checking itself.
+            int ghostRight = 0, ghostWrong = 0;
+            for (const auto& se : r.sharedEdges) {
+                const hybmesh::MbBlock& bA = r.blocks[static_cast<size_t>(se.blockA)];
+                const hybmesh::MbBlock& bB = r.blocks[static_cast<size_t>(se.blockB)];
+                const hybmesh::MbSideWalk wA = hybmesh::mbSideWalk(bA, se.sideA);
+                const hybmesh::MbSideWalk wB = hybmesh::mbSideWalk(bB, se.sideB);
+                const hybmesh::MbGhostFrame& fA =
+                    plan.frames[static_cast<size_t>(se.blockA)];
+                for (int k = 0; k < wA.n; ++k) {
+                    const int idA = bA.nodeAt(wA.i(k, wA.t0), wA.j(k, wA.t0));
+                    // Which station of B's side is the SAME node — found by id,
+                    // which is what welding by allocation makes possible.
+                    int kb = -1;
+                    for (int t = 0; t < wB.n; ++t)
+                        if (bB.nodeAt(wB.i(t, wB.t0), wB.j(t, wB.t0)) == idA) kb = t;
+                    const int want = (kb < 0)
+                        ? -1
+                        : bB.nodeAt(wB.i(kb, wB.t1), wB.j(kb, wB.t1));
+                    const int got = fA.at(wA.i(k, wA.tOut), wA.j(k, wA.tOut));
+                    if (kb >= 0 && got == want) ++ghostRight; else ++ghostWrong;
+                }
+            }
+            CHECK(ghostWrong == 0 && ghostRight > 0,
+                  "56. " + who + ": the ghost one step outside a shared side IS the "
+                  "neighbour's own first interior node at the matching station, by "
+                  "node id (" + std::to_string(ghostRight) + " right, "
+                  + std::to_string(ghostWrong) + " wrong)");
+            // ...and NOTHING outside a wall side, nor at the four diagonal corners,
+            // which have no answer and are not given one.
+            bool diagEmpty = true;
+            for (size_t bi = 0; bi < r.blocks.size(); ++bi) {
+                const hybmesh::MbGhostFrame& fr = plan.frames[bi];
+                if (fr.has(-1, -1) || fr.has(fr.ni, -1)
+                    || fr.has(-1, fr.nj) || fr.has(fr.ni, fr.nj)) diagEmpty = false;
+            }
+            CHECK(diagEmpty,
+                  "56. ...while the four DIAGONAL corners of the extended frame have "
+                  "no node and are not guessed one — which is why no movable node's "
+                  "stencil reaches them");
+
+            // (d) THE FOUR-WAY CORNER, explicitly. On the C-grid `te` is on five
+            // edges and all four blocks; on the H-grid `c11` is on four interfaces
+            // and NO wall, so there the corner half of the rule is the only reason
+            // it is frozen.
+            std::map<int, int> cornerBlocks;
+            for (const auto& b : r.blocks) {
+                const int cs[4] = {b.nodeAt(0, 0), b.nodeAt(b.ni - 1, 0),
+                                   b.nodeAt(0, b.nj - 1),
+                                   b.nodeAt(b.ni - 1, b.nj - 1)};
+                for (int c : cs) ++cornerBlocks[c];
+            }
+            int fourWay = -1;
+            for (const auto& kv : cornerBlocks)
+                if (kv.second == 4) fourWay = kv.first;
+            CHECK(fourWay >= 0,
+                  "56. " + who + ": it HAS a node four blocks meet on, so the check "
+                  "below is about a real four-way corner");
+            bool inPlan = false;
+            for (const auto& mvs : plan.moves)
+                for (const auto& mv : mvs) if (mv.node == fourWay) inPlan = true;
+            CHECK(!inPlan,
+                  "56. ...and it is in NO block's move list: a node on three shared "
+                  "edges at once has no single frame, and it is a declared position");
+            CHECK(fourWay < 0
+                      || (r.nodes[static_cast<size_t>(fourWay)].x
+                              == r.preSmoothNodes[static_cast<size_t>(fourWay)].x
+                          && r.nodes[static_cast<size_t>(fourWay)].y
+                              == r.preSmoothNodes[static_cast<size_t>(fourWay)].y),
+                  "56. ...so its position is bit-identical before and after, and it "
+                  "is still ONE node that all four blocks read");
+
+            // (f) EITHER BLOCK WOULD COMPUTE THE SAME POSITION, which is the claim
+            // the ownership rule rests on and the reason ownership is free as far
+            // as the kernel goes: the Winslow update is invariant under the change
+            // of logical frame between two blocks meeting at a shared edge. Checked
+            // on the PLAIN kernel — both source terms zero, said out loud with `{}`
+            // — because the control functions are the half that is frame-dependent.
+            double worstDisagree = 0.0;
+            int compared = 0;
+            for (size_t bi = 0; bi < r.blocks.size(); ++bi) {
+                for (const auto& mv : plan.moves[bi]) {
+                    if (!mv.shared) continue;
+                    // The same node in the OTHER block's frame, found by id.
+                    for (size_t bj = 0; bj < r.blocks.size(); ++bj) {
+                        if (bj == bi) continue;
+                        const hybmesh::MbBlock& b2 = r.blocks[bj];
+                        int i2 = -1, j2 = -1;
+                        for (int j = 0; j < b2.nj && i2 < 0; ++j)
+                            for (int i = 0; i < b2.ni; ++i)
+                                if (b2.nodeAt(i, j) == mv.node) { i2 = i; j2 = j; break; }
+                        if (i2 < 0) continue;
+                        const hybmesh::MbGhostFrame& f2 = plan.frames[bj];
+                        bool full = true;
+                        for (int dj = -1; dj <= 1 && full; ++dj)
+                            for (int di = -1; di <= 1 && full; ++di)
+                                if (!f2.has(i2 + di, j2 + dj)) full = false;
+                        if (!full) continue;
+                        auto st = [&](const hybmesh::MbGhostFrame& f, int i, int j) {
+                            auto q = [&](int di, int dj) {
+                                return r.preSmoothNodes[
+                                    static_cast<size_t>(f.at(i + di, j + dj))];
+                            };
+                            hybmesh::MbWinslowStencil w;
+                            w.c = q(0, 0);      w.iPlus = q(1, 0);  w.iMinus = q(-1, 0);
+                            w.jPlus = q(0, 1);  w.jMinus = q(0, -1);
+                            w.pp = q(1, 1);     w.mp = q(-1, 1);
+                            w.pm = q(1, -1);    w.mm = q(-1, -1);
+                            return w;
+                        };
+                        const Point2D pa = hybmesh::mbWinslowUpdate(
+                            st(plan.frames[bi], mv.i, mv.j), hybmesh::MbControl{});
+                        const Point2D pb = hybmesh::mbWinslowUpdate(
+                            st(f2, i2, j2), hybmesh::MbControl{});
+                        worstDisagree = std::max(worstDisagree, (pa - pb).length());
+                        ++compared;
+                    }
+                }
+            }
+            CHECK(compared > 0 && worstDisagree < 1e-12,
+                  "56. " + who + ": the PLAIN kernel gives the same position from "
+                  "EITHER block's frame, on every shared node, so which block owns "
+                  "one is free as far as the kernel goes — worst disagreement "
+                  + fmtE(worstDisagree) + " over " + std::to_string(compared)
+                  + " comparisons");
+        }
+
+        // (e) OWNERSHIP GOES TO THE BLOCK WITH MORE OF THE DECLARATION TO HONOUR
+        // ALONG THE LINE, not to the lower index — and the shipped C-grid's shape
+        // is where the two differ. `r_te_up` is `b_wake_up`'s north (perpendicular
+        // walls: the far field only) and `b_upper`'s south (the airfoil AND the far
+        // field), and `b_wake_up` is the lower index. Under the lower-index rule
+        // the airfoil's declared first cell reached that line's wall end at zero
+        // weight, which is the whole reason the rule is what it is.
+        const hybmesh::MbSmoothPlan cp = hybmesh::mbSmoothPlan(cg);
+        int wakeUp = -1, upper = -1;
+        for (size_t k = 0; k < cg.blocks.size(); ++k) {
+            if (cg.blocks[k].id == "b_wake_up") wakeUp = static_cast<int>(k);
+            if (cg.blocks[k].id == "b_upper")   upper = static_cast<int>(k);
+        }
+        int owner = -2;
+        for (const auto& se : cg.sharedEdges) {
+            if (se.edgeId != "r_te_up") continue;
+            const hybmesh::MbBlock& bA = cg.blocks[static_cast<size_t>(se.blockA)];
+            const hybmesh::MbSideWalk wA = hybmesh::mbSideWalk(bA, se.sideA);
+            // One interior station of that edge, and which block's list holds it.
+            const int probe = bA.nodeAt(wA.i(1, wA.t0), wA.j(1, wA.t0));
+            for (size_t bi = 0; bi < cp.moves.size(); ++bi)
+                for (const auto& mv : cp.moves[bi])
+                    if (mv.node == probe) owner = static_cast<int>(bi);
+        }
+        CHECK(wakeUp == 0 && upper == 1,
+              "56. the C-grid declares 'b_wake_up' first, so the lower-index rule "
+              "and this one really do disagree here (indices "
+              + std::to_string(wakeUp) + " / " + std::to_string(upper) + ")");
+        CHECK(owner == upper,
+              "56. ...and 'r_te_up' is moved in the AIRFOIL block's frame, the one "
+              "with two perpendicular walls, rather than in the lower-indexed wake "
+              "block's (owner " + std::to_string(owner) + ")");
+
+        // (g) A FREED WALL-END COLUMN IS STILL HELD, which is what makes freeing
+        // it an improvement rather than a trade. `m` is an interface AND the last
+        // station of b0's south wall, so before #84 the declared first cell there
+        // was exact because the node could not move; now it can, and the control
+        // field has to reach `k = 0` and `k = n - 1` to hold it. Measured with
+        // `mbWallResidual` — on the nodes that came out, never predicted from the
+        // source term — against the mesh the solve started from, which is the bar
+        // the seam's own warning uses.
+        {
+            MbParams wp;
+            wp.smoothIters = 40;
+            MbResult w0 = build(wallTwoBlocks("0.02"), MbParams{});
+            MbResult w1 = build(wallTwoBlocks("0.02"), wp);
+            CHECK(w0.ok && w1.ok, "56. the two graded wall blocks mesh (err: "
+                                  + w0.error + " / " + w1.error + ")");
+            // The end column really is freed: without this the check below could
+            // pass on a mesh where nothing moved.
+            const hybmesh::MbSmoothPlan wpl = hybmesh::mbSmoothPlan(w1);
+            CHECK(wpl.movedShared > 0,
+                  "56. ...with the shared column freed ("
+                  + std::to_string(wpl.movedShared) + " nodes)");
+            // PER STATION, and the bar is TOLERANCE-FREE. "No worse than the
+            // algebraic fill" cannot be the bar here: this fixture's fill holds
+            // the request to 1e-14 at every station, because the request IS the
+            // perpendicular edge's declared `ds` and transfinite interpolation
+            // reproduces a straight-sided block exactly. So the property asserted
+            // is a comparison WITHIN the smoothed wall: the newly freed station —
+            // the one on the interface — must not be the WORST station on it. The
+            // interior stations were already free before #84 and carry whatever
+            // the controlled solve costs; if the control did not reach the end
+            // station, that station is left to the plain kernel, which equalises
+            // spacing and makes it the worst by a wide margin.
+            const auto t1v = hybmesh::mbWallTargets(w1);
+            const hybmesh::MbSideWalk s0w =
+                hybmesh::mbSideWalk(w1.blocks[0], hybmesh::MB_SOUTH);
+            double endErr = -1.0, worstInner = -1.0;
+            for (const hybmesh::MbWallTarget& t : t1v) {
+                if (t.block != 0 || t.edgeId != "s0") continue;
+                if (static_cast<int>(t.requested.size()) != s0w.n) continue;
+                for (int k = 0; k < s0w.n; ++k) {
+                    const Point2D a =
+                        w1.nodes[static_cast<size_t>(w1.blocks[0].nodeAt(
+                            s0w.i(k, s0w.t0), s0w.j(k, s0w.t0)))];
+                    const Point2D b =
+                        w1.nodes[static_cast<size_t>(w1.blocks[0].nodeAt(
+                            s0w.i(k, s0w.t1), s0w.j(k, s0w.t1)))];
+                    const double req = t.requested[static_cast<size_t>(k)];
+                    if (!(req > 0.0)) continue;
+                    const double e = std::fabs((b - a).length() - req) / req;
+                    // k = n - 1 is 'm', the interface; k = 0 is 'w', a wall.
+                    if (k == s0w.n - 1) endErr = e;
+                    else if (k > 0) worstInner = std::max(worstInner, e);
+                }
+            }
+            CHECK(endErr >= 0.0 && worstInner > 0.0 && endErr <= worstInner,
+                  "56. ...and the freed station on the interface is NOT the worst "
+                  "one on that wall — the control reaches a wall's end column "
+                  "rather than stopping one station short (end " + fmtE(endErr)
+                  + " vs worst interior " + fmtE(worstInner) + ")");
+            // AND THE CONTROL IS LIVE AT THAT STATION, which is the mechanism the
+            // check above rests on: a zero source term there would leave the
+            // column to the plain kernel, which equalises spacing.
+            const hybmesh::MbSideWalk sw =
+                hybmesh::mbSideWalk(w1.blocks[0], hybmesh::MB_SOUTH);
+            const hybmesh::MbControlField cf = hybmesh::mbControlField(
+                w1.blocks[0], 0, w1.nodes, t1v, wpl.frames[0]);
+            const hybmesh::MbControl q =
+                cf.at(sw.i(sw.n - 1, sw.t1), sw.j(sw.n - 1, sw.t1));
+            CHECK(std::fabs(q.phi) + std::fabs(q.psi) > 1e-6,
+                  "56. ...because the wall's LAST station has a live source term "
+                  "rather than none (phi " + fmtE(q.phi) + ", psi " + fmtE(q.psi)
+                  + ")");
+        }
+
+        // AND A SHARED EDGE WITH NO INTERIOR FREES NOTHING, which is the negative
+        // control on the count above: `twoBlocks` seeds 'w' at 3, so the shared
+        // edge 'm' has 3 nodes and one interior one; at a seed of 2 it has none.
+        MbResult thin = build(twoBlocks("interface", "", ", \"count\": 2"), p);
+        if (thin.ok) {
+            const hybmesh::MbSmoothPlan tp = hybmesh::mbSmoothPlan(thin);
+            CHECK(tp.movedShared == 0,
+                  "56. a shared edge of two nodes is two declared CORNERS and frees "
+                  "nothing (" + std::to_string(tp.movedShared) + ")");
+        }
     }
 
     return hybmesh::test::report("test_multiblock");

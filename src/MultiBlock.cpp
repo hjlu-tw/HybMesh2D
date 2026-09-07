@@ -1,5 +1,6 @@
 #include "MultiBlock.hpp"
 #include "MbControl.hpp"
+#include "MbShared.hpp"
 
 #include "Spacing.hpp"   // the existing spacing laws, shared rather than re-implemented
 #include "json.hpp"      // the repo's bundled header-only parser (nlohmann 3.12)
@@ -1285,14 +1286,25 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
     return p - corr;
 }
 
-// WHICH NODES MOVE: exactly the nodes STRICTLY INTERIOR to a block, i.e.
-// 0 < i < ni-1 and 0 < j < nj-1. Everything on any block boundary is FROZEN —
-// outer walls, bound edges, interfaces and cuts alike — because a block
-// boundary node is written by the EDGE, and an edge is shared: moving one
-// would move it in two blocks at once, and a node on a bound edge would leave
-// the geometry it was attached to by arc length. So the interior nodes of one
-// block never neighbour the interior nodes of another, which is also why the
-// sweep needs no ordering rule between blocks.
+// WHICH NODES MOVE: the answer is `mbSmoothPlan` (include/MbShared.hpp), which
+// owns the freeze rule and states it — nodes strictly interior to a block, plus
+// the nodes interior to every edge declared `interface` or `cut`; frozen are the
+// nodes of every edge declared `wall` (the DOMAIN rather than the discretisation,
+// and a node on a bound edge would leave the geometry it was attached to by arc
+// length) and every DECLARED CORNER, which is the four-way corner's answer.
+//
+// #84 FREED THE SHARED EDGES, and #81-#83 had frozen them for a reason that had
+// to be answered rather than dropped: a boundary node is written by the EDGE, an
+// edge is SHARED, and a smoother computing one position from block A and another
+// from block B would have to reconcile them — with no tolerance available between
+// a wall spacing near 1e-7 and a far-field spacing near 1e-1, and no tolerance
+// wanted in a module whose premise is that welding is by allocation. The answer
+// is that the node is moved ONCE, in ONE frame, from ONE stencil: a shared node's
+// missing `j - 1` row is the NEIGHBOUR's own first interior line, so the kernel is
+// handed nine real nodes exactly as it is for an interior node. Nothing is
+// averaged and no position is computed twice. The cost of the freeze is what made
+// this worth doing: #83 measured the worst corners of the smoothed O-grid
+// mid-block on its four DECLARED radial interfaces.
 //
 // NODE IDENTITY IS UNTOUCHED. This writes coordinates and allocates nothing:
 // a welded node stays ONE node with one id, which is the property `welding is
@@ -1385,36 +1397,50 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // that genuinely must be recomputed every sweep, and why.
     const std::vector<hybmesh::MbWallTarget> targets = hybmesh::mbWallTargets(r);
 
+    // WHO MOVES, AND IN WHOSE FRAME, derived ONCE — it is a function of the
+    // TOPOLOGY, which no sweep changes. `include/MbShared.hpp` owns the freeze
+    // rule, the ghost layer that continues a block's logical frame across a shared
+    // edge, and the ownership rule that makes a shared node move exactly once.
+    const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r);
+    r.smoothMoved = plan.movedNodes;
+    r.smoothMovedShared = plan.movedShared;
+
     for (int sweep = 0; sweep < maxSweeps; ++sweep) {
         std::vector<Point2D> next = r.nodes;
         double worst = 0.0;
         size_t clipped = 0;
         for (size_t bIdx = 0; bIdx < r.blocks.size(); ++bIdx) {
             const hybmesh::MbBlock& b = r.blocks[bIdx];
+            const hybmesh::MbGhostFrame& fr = plan.frames[bIdx];
             // Built from THIS sweep's starting positions, like the metric
             // coefficients and for the same reason: lagging both is what keeps a
             // sweep a linear operation and the solve a fixed-point iteration.
             const hybmesh::MbControlField cf = hybmesh::mbControlField(
-                b, static_cast<int>(bIdx), r.nodes, targets);
+                b, static_cast<int>(bIdx), r.nodes, targets, fr);
             clipped += cf.clipped;
-            for (int j = 1; j + 1 < b.nj; ++j) {
-                for (int i = 1; i + 1 < b.ni; ++i) {
-                    hybmesh::MbWinslowStencil st;
-                    st.c      = r.nodes[static_cast<size_t>(b.nodeAt(i,     j    ))];
-                    st.iPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j    ))];
-                    st.iMinus = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j    ))];
-                    st.jPlus  = r.nodes[static_cast<size_t>(b.nodeAt(i,     j + 1))];
-                    st.jMinus = r.nodes[static_cast<size_t>(b.nodeAt(i,     j - 1))];
-                    st.pp     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j + 1))];
-                    st.mp     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j + 1))];
-                    st.pm     = r.nodes[static_cast<size_t>(b.nodeAt(i + 1, j - 1))];
-                    st.mm     = r.nodes[static_cast<size_t>(b.nodeAt(i - 1, j - 1))];
-                    const Point2D moved =
-                        hybmesh::mbWinslowUpdate(st, cf.at(i, j));
-                    next[static_cast<size_t>(b.nodeAt(i, j))] = moved;
-                    const double d = (moved - st.c).length();
-                    if (d > worst) worst = d;
-                }
+            // THE PLAN'S NODES, not an index range. Every one of the nine
+            // positions below is guaranteed to exist by the plan — that check is
+            // the plan's, so the freeze rule is not restated here as a pair of
+            // loop bounds that could drift from it.
+            for (const hybmesh::MbNodeMove& mv : plan.moves[bIdx]) {
+                const int i = mv.i, j = mv.j;
+                auto at = [&](int di, int dj) {
+                    return r.nodes[static_cast<size_t>(fr.at(i + di, j + dj))];
+                };
+                hybmesh::MbWinslowStencil st;
+                st.c      = at( 0,  0);
+                st.iPlus  = at( 1,  0);
+                st.iMinus = at(-1,  0);
+                st.jPlus  = at( 0,  1);
+                st.jMinus = at( 0, -1);
+                st.pp     = at( 1,  1);
+                st.mp     = at(-1,  1);
+                st.pm     = at( 1, -1);
+                st.mm     = at(-1, -1);
+                const Point2D moved = hybmesh::mbWinslowUpdate(st, cf.at(i, j));
+                next[static_cast<size_t>(mv.node)] = moved;
+                const double d = (moved - st.c).length();
+                if (d > worst) worst = d;
             }
         }
         r.nodes.swap(next);
@@ -2237,6 +2263,43 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         }
     }
 
+    // The interior lines two blocks were welded along, as data. Reported rather
+    // than left implicit because the KIND is a declaration and a claim a run
+    // cannot show is one nobody can check: an interface and a cut weld by the same
+    // rule today, so the report is what tells a user which shared lines the
+    // document says are wake cuts. See MbSharedEdge.
+    //
+    // PUBLISHED BEFORE THE SMOOTHER RATHER THAN AFTER THE SPLIT, which is where it
+    // sat until #84 and where it was one line too late. The smoother's freeze rule
+    // is stated on the DECLARATION — a wall is frozen, an interface or a cut is not
+    // — and this list is the declaration's own answer to "which sides are shared".
+    // Emitted after the split, it was an empty vector at the moment the sweep read
+    // it, so every shared node stayed frozen and the ticket's whole deliverable was
+    // silently a no-op. Nothing here reads a cell or a node position, so this is a
+    // move of a PUBLICATION and not of a decision: the fill-then-smooth-then-split
+    // ordering is unchanged.
+    for (size_t k = 0; k < edges.size(); ++k) {
+        if (edges[k].kind == hybmesh::MB_EDGE_WALL) continue;
+        const std::vector<Use>& u = uses[edges[k].id];
+        // The arity check above already refused anything but exactly two, so this
+        // branch should be dead — but reading past the end of a vector on a broken
+        // invariant is the one failure that would not announce itself.
+        if (u.size() != 2)
+            return fail("edge '" + edges[k].id + "': it is shared by "
+                        + std::to_string(u.size()) + " block sides during reporting and "
+                          "by two during checking; the topology was not read "
+                          "consistently and no mesh was made.");
+        MbSharedEdge se;
+        se.edgeId = edges[k].id;
+        se.kind = edges[k].kind;
+        se.nodes = edges[k].count;
+        se.blockA = u[0].block;
+        se.sideA = static_cast<MbSide>(u[0].side);
+        se.blockB = u[1].block;
+        se.sideB = static_cast<MbSide>(u[1].side);
+        r.sharedEdges.push_back(se);
+    }
+
     // ── Smoothing: an ELLIPTIC solve over each block's INTERIOR ───────────
     //
     // BETWEEN THE FILL AND THE SPLIT, which is why the per-block loop above stops
@@ -2351,33 +2414,6 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         if (isWall(MB_WEST))
             for (int j = nj - 1; j > 0; --j)
                 addBoundary(MB_WEST, b0.nodeAt(0, j), b0.nodeAt(0, j - 1));
-    }
-
-    // The interior lines two blocks were welded along, as data. Reported rather
-    // than left implicit because the KIND is a declaration and a claim a run
-    // cannot show is one nobody can check: an interface and a cut weld by the same
-    // rule today, so the report is what tells a user which shared lines the
-    // document says are wake cuts. See MbSharedEdge.
-    for (size_t k = 0; k < edges.size(); ++k) {
-        if (edges[k].kind == hybmesh::MB_EDGE_WALL) continue;
-        const std::vector<Use>& u = uses[edges[k].id];
-        // The arity check above already refused anything but exactly two, so this
-        // branch should be dead — but reading past the end of a vector on a broken
-        // invariant is the one failure that would not announce itself.
-        if (u.size() != 2)
-            return fail("edge '" + edges[k].id + "': it is shared by "
-                        + std::to_string(u.size()) + " block sides during reporting and "
-                          "by two during checking; the topology was not read "
-                          "consistently and no mesh was made.");
-        MbSharedEdge se;
-        se.edgeId = edges[k].id;
-        se.kind = edges[k].kind;
-        se.nodes = edges[k].count;
-        se.blockA = u[0].block;
-        se.sideA = static_cast<MbSide>(u[0].side);
-        se.blockB = u[1].block;
-        se.sideB = static_cast<MbSide>(u[1].side);
-        r.sharedEdges.push_back(se);
     }
 
     if (!params.splitQuads)

@@ -693,6 +693,14 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         std::cout << mbRow("Residual") << resid.str()
                   << " (last sweep's largest node move / domain diagonal; converges "
                      "below " << tol.str() << ")\n";
+        // WHICH NODES THE SOLVE WAS FREE TO MOVE (#84). The freeze rule is a
+        // decision about the DECLARATION — walls and declared corners are frozen,
+        // interfaces and cuts are not — so a run has to be able to show it, the
+        // same reason the propagated counts and the welded shared edges are
+        // reported. Before #84 the second figure was 0 by construction.
+        std::cout << mbRow("Movable nodes") << res.smoothMoved << " of "
+                  << res.nodes.size() << ", of which " << res.smoothMovedShared
+                  << " on a shared edge (walls and declared corners are frozen)\n";
         std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
                   << " cap=" << config.mbSmoothIters
                   << " converged=" << (res.smoothConverged ? 1 : 0)
@@ -706,7 +714,9 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   // is the count of places the wall condition asked for more than
                   // the kernel can take. It belongs here rather than on the
                   // quality line because it describes the SOLVE, not the mesh.
-                  << " clipped=" << res.smoothClipped << "\n";
+                  << " clipped=" << res.smoothClipped
+                  << " moved=" << res.smoothMoved
+                  << " moved_shared=" << res.smoothMovedShared << "\n";
     }
 
     if (q.invertedCells > 0) {
