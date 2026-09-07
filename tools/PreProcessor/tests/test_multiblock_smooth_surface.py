@@ -162,8 +162,8 @@ and the algebraic fill already leaves all 48 cells against it EXACTLY orthogonal
 so the criterion's premise — that the wake was one of the worst lines — is false on
 this geometry. The worst lines were the RADIAL interfaces, and those improve (group
 9). Group 11 measures the wake on the terms that are true: one line both blocks
-read, no boundary face, its 23 interior nodes moving, staying on the axis to 1e-18,
-and a cost of 0.0178 deg mean where the mesh-wide mean gains 0.74.
+read, no boundary face, its 23 interior nodes moving, staying on the axis to 1.4e-18 (the check's
+own bar is 1e-15), and a cost of 0.0178 deg mean where the mesh-wide mean gains 0.74.
 
 BLIND SPOTS, named rather than papered over:
 
@@ -859,7 +859,7 @@ def main() -> int:
         # improve. What is asserted instead is what is true and what the criterion
         # was reaching for: the cut is one line both blocks read, it exports no
         # boundary face, its 23 interior nodes MOVE rather than being frozen, they
-        # stay on the axis to 1e-17 by symmetry, and the cost of freeing them is
+        # stay on the axis to 1.4e-18 by symmetry, and the cost of freeing them is
         # 0.0178 deg mean / 0.617 deg max at a cap of 20 against a mesh-wide gain of
         # 32.044 -> 29.895 max and 4.562 -> 3.821 mean. The lines that WERE the
         # worst ones — the radial interfaces — are group 9's, and they improve.
@@ -919,28 +919,36 @@ def main() -> int:
         # so 21 of the 24 nodes came back "unmoved" from a file that had simply not
         # written the digits. The `.bnd` half below stays on the STAR-CD files,
         # because there the question is about the patch list the converter reads.
+        #
+        # EACH SET IS INDEXED IN ITS OWN FILE'S NUMBERING. A `.vrt` id and a `.vtk`
+        # id are the two numbers CLAUDE.md's `golden_mesh.py` note calls "precisely
+        # the numbers free to move", so the first draft — a `.vrt`-indexed wake set
+        # applied to the `.vtk` arrays — passed only by today's coincidence. There
+        # are two sets now and they are checked against each other by SIZE.
         vp_u, _ = quad_corners(su84 + ".vtk")
         vp_s, _ = quad_corners(s84 + ".vtk")
+        wake_vtk = [k for k, (x, y) in enumerate(vp_u) if y == 0.0 and x > 1.0]
         wake_u = [k for k, (x, y) in enumerate(nu) if y == 0.0 and x > 1.0]
-        check(f"11. the wake cut is found on the exported mesh "
-              f"({len(wake_u)} nodes on the axis downstream of the trailing edge)",
-              len(wake_u) > 2)
+        check(f"11. the wake cut is found on the exported mesh, in BOTH numberings "
+              f"({len(wake_u)} '.vrt' nodes and {len(wake_vtk)} '.vtk' nodes on the "
+              f"axis downstream of the trailing edge)",
+              len(wake_u) > 2 and len(wake_vtk) == len(wake_u))
         on_axis = [f for f, _ in bnd
                    if all(ns[v - 1][1] == 0.0 and ns[v - 1][0] > 1.0 for v in f)]
         check(f"11. ...and it STILL exports no boundary face, smoothed: it is an "
               f"interior line with cells on both sides ({len(on_axis)} faces on it)",
               not on_axis)
-        movedw = sum(1 for k in wake_u if vp_u[k] != vp_s[k])
+        movedw = sum(1 for k in wake_vtk if vp_u[k] != vp_s[k])
         check(f"11. ...its interior nodes MOVE rather than staying frozen, which is "
               f"this ticket on the line #57 made the highest-risk one in the grid "
-              f"({movedw} of {len(wake_u)} moved; the one that does not is the "
+              f"({movedw} of {len(wake_vtk)} moved; the one that does not is the "
               f"declared corner at the outlet)",
-              movedw == len(wake_u) - 1)
+              movedw == len(wake_vtk) - 1)
         check(f"11. ...and stays ONE line on the symmetry axis, to 1e-15 — the two "
               f"wake blocks are mirror images and the node is moved ONCE, so there "
               f"is no second answer to be pulled toward (worst |y| "
-              f"{max(abs(vp_s[k][1]) for k in wake_u):.2e})",
-              max(abs(vp_s[k][1]) for k in wake_u) < 1e-15)
+              f"{max(abs(vp_s[k][1]) for k in wake_vtk):.2e})",
+              max(abs(vp_s[k][1]) for k in wake_vtk) < 1e-15)
         # AND WHAT FREEING IT COST, measured rather than claimed: the unsmoothed
         # cells against the wake are EXACTLY orthogonal, so the ticket's "its own
         # cells improve" is unreachable on this geometry and the honest figure is

@@ -237,7 +237,6 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
                 if (!full) continue;
                 MbNodeMove mv;
                 mv.node = id;
-                mv.block = static_cast<int>(bi);
                 mv.i = i;
                 mv.j = j;
                 mv.shared = shared;

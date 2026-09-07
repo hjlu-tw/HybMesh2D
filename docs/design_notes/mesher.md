@@ -1485,7 +1485,8 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
 
   The last one is the ticket. The kernel's update of the first interior node is linear in
   both sources, so writing it as `base + s * dir` measured from the wall node makes
-  `|base + s * dir| = requested` **one quadratic in one scalar**; both roots are written
+  `|base + s * dir| = requested` — which is `|update - p_wall| = requested` with the
+  update's own linearity substituted in — **one quadratic in one scalar**; both roots are written
   down and the root taken is the one landing nearer `p_wall + requested * n̂`. **That is
   where the 90-degree half of the declaration enters** — as the tie-break between two
   points at the same correct distance on opposite sides — and it is why nothing here
@@ -1910,19 +1911,44 @@ the shared edges".
 - **GOLDEN: 18 of 19 SAME at 0.000e+00, the nineteenth recaptured deliberately.** Captured
   from the previous commit's own build through `HYBMESH_GOLDEN_BIN` and compared against the
   working tree. `mb_cgrid_smooth` — the only case whose nodes come from the smoother — moved,
-  with all 11520 `.cel` cells redrawn. #81 wrote that case so a kernel change would show up
-  here as a number; it has now done so three times, and each time it was the only one of the
-  nineteen that moved.
+  and the comparator's own figures are 2288 of its 11520 `.vtk` cells and 476 of its `.cel`
+  cells re-drawn, NOT all of them: #83's note said "all 11520 .cel cells' connectivity
+  redrawn" and this ticket copied the phrasing before reading the output. #81 wrote that case
+  so a kernel change would show up here as a number; it has now done so three times, and each
+  time it was the only one of the nineteen that moved.
 
 - **THE RULE FILE IS NOW AT ITS CEILING, and that is a fact about the NEXT ticket.**
-  `.claude/rules/mesher-multiblock.md` came out of this commit at 59,583 characters against
-  `RULE_BUDGET`'s flat 60,000 — 417 of headroom, where #89's split had left 4,618. Getting there
-  took an editorial pass rather than word-shaving: #83's arithmetic DERIVATIONS (the quadratic, the
-  three rejected conditions' figures, the Thomas-Middlecoff alternatives) moved into this note with
-  the RULES and every identifier left behind, which is what `docs/agents/rule-file-style.md` asks
-  for anyway. Recorded because the pressure is now real: the next feature touching this path either
-  moves text out or takes a tenth rule file, and the ceiling is what will say so on its first
-  attempt rather than after 3k has landed in silence.
+  `.claude/rules/mesher-multiblock.md` came out of this commit at 59,879 characters against
+  `RULE_BUDGET`'s flat 60,000 — **121 of headroom**, where #89's split had left 4,618. Getting there
+  took an editorial pass: #83's arithmetic DERIVATIONS (the quadratic, the three rejected
+  conditions' figures, the Thomas-Middlecoff alternatives) and #84's own measurement TABLES moved
+  into this note, with the RULES and every identifier left behind — which is what
+  `docs/agents/rule-file-style.md` asks for anyway. **THE PRESSURE IS NOW REAL AND #85 INHERITS IT**:
+  121 characters is not a working margin, so the next ticket on this path either moves text out
+  first or takes a tenth rule file the way #89 took the ninth. Recorded rather than left for that
+  ticket to discover — and both reviews of this commit flagged the same thing from the other
+  direction, that a feature diff which is ALSO a compression diff cannot be read for "did a rule
+  change".
+  **One clause was deleted with no destination and it is named here rather than left silent**: "When
+  the independent target arrives only the PUBLISHER changes", from the quality block's
+  "ASKED FOR IS NOT AN INDEPENDENT TARGET YET" bullet. It was obsolete — the same bullet's next
+  sentence records that #55 superseded it — but the deletion was a side effect of the trim.
+  **`--sync` HAD ONE FAILURE MODE THAT LOOKS LIKE A REWORD, and #84 hit it.** While the rule file
+  was over budget the tool computed a headroom of -59, wrote it into blind spot (d), and then could
+  not read it back: `_NUM_LIST` accepted no minus sign, so check 7 reported the ANCHOR GONE rather
+  than the figure stale — the one message that sends a reader looking for a reword instead of at the
+  budget. The pattern now accepts a negative, so an over-budget tree hears the truth.
+
+- **THE OWNERSHIP RULE REDUCES A DROPPED WALL DECLARATION, IT DOES NOT ELIMINATE ONE**, and the
+  Spec review found this rather than the ticket. `mbControlField` filters `t.block != blockIdx`, so
+  a freed shared node is controlled by the OWNER's wall targets alone — a wall the loser declares
+  perpendicular to that line reaches it at zero weight, which is the very defect the
+  perpendicular-wall score exists to reduce, now confined to the lesser side and to TIES. On a tie
+  both sides declare two and one pair is dropped; harmless on the shipped cases because every tie
+  there is symmetric (the O-grid's four radials, the C-grid's `r_le`), and the two sides therefore
+  ask for the same height. It is the residue of moving the node ONCE rather than reconciling two
+  answers, which is the constraint the whole approach rests on, so it is recorded as a blind spot
+  rather than fixed by blending the two frames' source terms.
 
 - **NAMED BLIND SPOTS.** The smoothed mesh is STILL never given to the solver or the grid
   converter; at 0.10% off the requested wall height that is a GAP and it belongs to #85.

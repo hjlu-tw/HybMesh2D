@@ -79,16 +79,19 @@ struct MbGhostFrame {
     bool has(int i, int j) const { return at(i, j) >= 0; }
 };
 
-// ONE NODE THE SMOOTHER MOVES, and the frame it is moved in.
+// ONE NODE THE SMOOTHER MOVES, and where in its frame it is moved.
 //
-// `node` is the global id, `block` / `i` / `j` the ONE place it is computed from.
+// `node` is the global id and `i` / `j` the ONE place it is computed from; WHICH
+// frame is the index of the outer vector in `MbSmoothPlan::moves`, and is not
+// repeated here — a `block` field was written first and deleted, because nothing
+// read it and an inert published field is the shape #83's review named.
+//
 // A node appears in a plan AT MOST ONCE, across every block — that is the whole
 // of "moved once, as one node", and it is a property of this list rather than of
 // the loop that walks it, so a check can read it off by IDENTITY without
 // measuring a distance.
 struct MbNodeMove {
     int node = -1;
-    int block = 0;
     int i = 0;
     int j = 0;
     // Does this node lie on a side two blocks share? Carried so a run can report

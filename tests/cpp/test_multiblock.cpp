@@ -1314,7 +1314,6 @@ std::vector<Point2D> sweepByHand(const MbResult& r, const std::vector<Point2D>& 
                  + jp * at(0, 1).y + jm * at(0, -1).y
                  - 2.0 * be * yij) / den};
         }
-        (void)b;
     }
     return out;
 }
@@ -4336,42 +4335,51 @@ int main() {
             // the controlled solve costs; if the control did not reach the end
             // station, that station is left to the plain kernel, which equalises
             // spacing and makes it the worst by a wide margin.
+            // BOTH south walls, because 'm' is b0's LAST station and b1's FIRST:
+            // this fixture is a TIE on the ownership score (each block declares two
+            // perpendicular walls), so only one of the two frames moves that line
+            // and measuring one block would leave the loser's side unread.
             const auto t1v = hybmesh::mbWallTargets(w1);
-            const hybmesh::MbSideWalk s0w =
-                hybmesh::mbSideWalk(w1.blocks[0], hybmesh::MB_SOUTH);
             double endErr = -1.0, worstInner = -1.0;
+            int ends = 0;
             for (const hybmesh::MbWallTarget& t : t1v) {
-                if (t.block != 0 || t.edgeId != "s0") continue;
-                if (static_cast<int>(t.requested.size()) != s0w.n) continue;
-                for (int k = 0; k < s0w.n; ++k) {
-                    const Point2D a =
-                        w1.nodes[static_cast<size_t>(w1.blocks[0].nodeAt(
-                            s0w.i(k, s0w.t0), s0w.j(k, s0w.t0)))];
-                    const Point2D b =
-                        w1.nodes[static_cast<size_t>(w1.blocks[0].nodeAt(
-                            s0w.i(k, s0w.t1), s0w.j(k, s0w.t1)))];
+                if (t.edgeId != "s0" && t.edgeId != "s1") continue;
+                const hybmesh::MbBlock& wb =
+                    w1.blocks[static_cast<size_t>(t.block)];
+                const hybmesh::MbSideWalk sw = hybmesh::mbSideWalk(wb, t.side);
+                if (!sw.ok || static_cast<int>(t.requested.size()) != sw.n) continue;
+                // Which of this wall's two end stations is the shared line 'm':
+                // b0 reads it as its east (k = n - 1), b1 as its west (k = 0).
+                const int shared = (t.edgeId == "s0") ? sw.n - 1 : 0;
+                for (int k = 0; k < sw.n; ++k) {
+                    const Point2D a = w1.nodes[static_cast<size_t>(
+                        wb.nodeAt(sw.i(k, sw.t0), sw.j(k, sw.t0)))];
+                    const Point2D b = w1.nodes[static_cast<size_t>(
+                        wb.nodeAt(sw.i(k, sw.t1), sw.j(k, sw.t1)))];
                     const double req = t.requested[static_cast<size_t>(k)];
                     if (!(req > 0.0)) continue;
                     const double e = std::fabs((b - a).length() - req) / req;
-                    // k = n - 1 is 'm', the interface; k = 0 is 'w', a wall.
-                    if (k == s0w.n - 1) endErr = e;
-                    else if (k > 0) worstInner = std::max(worstInner, e);
+                    if (k == shared) { endErr = std::max(endErr, e); ++ends; }
+                    else if (k > 0 && k + 1 < sw.n)
+                        worstInner = std::max(worstInner, e);
                 }
             }
-            CHECK(endErr >= 0.0 && worstInner > 0.0 && endErr <= worstInner,
+            CHECK(ends == 2 && endErr >= 0.0 && worstInner > 0.0
+                      && endErr <= worstInner,
                   "56. ...and the freed station on the interface is NOT the worst "
-                  "one on that wall — the control reaches a wall's end column "
-                  "rather than stopping one station short (end " + fmtE(endErr)
-                  + " vs worst interior " + fmtE(worstInner) + ")");
+                  "one on EITHER south wall — the control reaches a wall's end "
+                  "column rather than stopping one station short (worst end "
+                  + fmtE(endErr) + " over " + std::to_string(ends)
+                  + " walls vs worst interior " + fmtE(worstInner) + ")");
             // AND THE CONTROL IS LIVE AT THAT STATION, which is the mechanism the
             // check above rests on: a zero source term there would leave the
             // column to the plain kernel, which equalises spacing.
-            const hybmesh::MbSideWalk sw =
+            const hybmesh::MbSideWalk b0w =
                 hybmesh::mbSideWalk(w1.blocks[0], hybmesh::MB_SOUTH);
             const hybmesh::MbControlField cf = hybmesh::mbControlField(
                 w1.blocks[0], 0, w1.nodes, t1v, wpl.frames[0]);
             const hybmesh::MbControl q =
-                cf.at(sw.i(sw.n - 1, sw.t1), sw.j(sw.n - 1, sw.t1));
+                cf.at(b0w.i(b0w.n - 1, b0w.t1), b0w.j(b0w.n - 1, b0w.t1));
             CHECK(std::fabs(q.phi) + std::fabs(q.psi) > 1e-6,
                   "56. ...because the wall's LAST station has a live source term "
                   "rather than none (phi " + fmtE(q.phi) + ", psi " + fmtE(q.psi)

@@ -321,8 +321,8 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Nine rule files now — 59,583 / 43,087 / 16,805 / 15,762 / 13,669 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher-multiblock, pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 417 / 16,913 of
+    Nine rule files now — 59,879 / 43,087 / 16,805 / 15,762 / 13,669 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher-multiblock, pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 121 / 16,913 of
     headroom the two large ones have left, and not at all for a move into any of the other
     seven, which have 43,195 / 44,238 / 46,331 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
@@ -977,7 +977,12 @@ def _rx(pattern):
 
 # A run of comma-grouped integers separated by ` / `, which is how this file writes the
 # rule-file sizes and both headroom lists.
-_NUM_LIST = r"((?:[\d,]+~/~)*[\d,]+)"
+# A `/`-separated list of figures, NEGATIVES INCLUDED. The minus sign was added by #84,
+# which found the one failure mode that looks like a reword: `--sync` computed a
+# headroom of -59 while a rule file was over budget, wrote it, and then could not read
+# it back — so check 7 reported the anchor GONE rather than the figure stale, which is
+# the opposite of what an over-budget tree should hear.
+_NUM_LIST = r"((?:-?[\d,]+~/~)*-?[\d,]+)"
 
 _NUM_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
               "nine", "ten", "eleven", "twelve")

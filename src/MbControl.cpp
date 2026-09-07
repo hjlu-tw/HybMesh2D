@@ -200,9 +200,18 @@ hybmesh::MbControlField hybmesh::mbControlField(
         // keeps this loop from carrying a second copy of the freeze rule that
         // include/MbShared.hpp owns.
         for (int k = 0; k < n; ++k) {
+            // EVERY LINE THIS ITERATION READS, not a subset it can be argued from.
+            // The three rows below are the ones the sources are taken on, and the
+            // last pair is the CROSS term's — which two independent reviews read as
+            // unguarded, because it is safe only via two facts stated elsewhere
+            // (`m >= 3` from the early return above, and a ghost column covering
+            // its side's whole across range). A guard that needs an argument is one
+            // that stops holding when either fact moves, so it is spelled out.
             if (!have(k - 1, t0) || !have(k + 1, t0)) continue;
             if (!have(k - 1, t1) || !have(k + 1, t1)) continue;
             if (!have(k - 1, tFar) || !have(k + 1, tFar)) continue;
+            if (!have(k - 1, t1 - 1) || !have(k + 1, t1 - 1)) continue;
+            if (!have(k - 1, t1 + 1) || !have(k + 1, t1 + 1)) continue;
             const double h = t.requested[static_cast<size_t>(k)];
             const Point2D nhat = t.normal[static_cast<size_t>(k)];
             if (!(h > 0.0) || nhat.lengthSq() <= 0.0) continue;
