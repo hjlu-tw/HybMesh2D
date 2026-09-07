@@ -2891,7 +2891,10 @@ int main() {
         CHECK(a.preSmoothNodes.empty() && b.preSmoothNodes.empty(),
               "40. a run that does not smooth publishes NO 'before' list");
         CHECK(worstMove(a.nodes, b.nodes) == 0.0,
-              "40. ...and the default IS zero sweeps, bit for bit");
+              "40. ...and `MbParams{}` IS zero sweeps, bit for bit — the SEAM's "
+              "default, which since #85 is no longer the PRODUCT's: "
+              "`Config::mbSmoothIters` is 20 and this stays the minimum, for the "
+              "reason MbParams::smoothIters carries");
         CHECK(a.cells.size() == b.cells.size() && a.blocks.size() == b.blocks.size(),
               "40. ...over the same cells and blocks");
     }

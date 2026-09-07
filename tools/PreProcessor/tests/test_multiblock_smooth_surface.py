@@ -232,6 +232,13 @@ from test_multiblock_weld_surface import (  # noqa: E402
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
 from mesher_bin import mesher_env as _mesher_env  # noqa: E402
 
+# "UNSMOOTHED" IS NO LONGER THE DEFAULT, and since #85 every run that means it has
+# to say so. `MB_SMOOTH_ITERS` ships at 20, so a bare run is a SMOOTHED run — the
+# five places below that need the algebraic fill's own mesh (group 1's silence, the
+# O-grid's and the C-grid's before-figures, and group 11's control) pass this
+# explicitly. What the DEFAULT produces is gated in test_multiblock_quality_gate.py.
+OFF = "\nMB_SMOOTH_ITERS 0\n"
+
 # The #81 LAPLACIAN figures, quoted from that ticket rather than re-measured: the
 # kernel is deleted, so there is nothing left to measure them on. Keyed by
 # (case, cap) -> (inverted, nonortho max, nonortho mean, wall first cell fraction).
@@ -396,9 +403,16 @@ def main() -> int:
         return 0
 
     with tempfile.TemporaryDirectory() as tmp:
-        # ── 1. the default is silence ───────────────────────────────────────
-        rc0, out0, _ = run(tmp, "plain")
-        check("1. the shipped C-grid still meshes at the default (rc=0)", rc0 == 0)
+        # ── 1. ZERO SWEEPS is silence, and the DEFAULT is not zero ──────────
+        #
+        # #81 wrote this group as "the default is silence" and #85 took that half
+        # away: the shipped default is 20 sweeps, so what still has to hold is the
+        # narrower and more useful claim — a run that asks for NO smoothing gets
+        # byte for byte the report this path printed before the parameter existed.
+        # The second half is new and is the other direction: the default really
+        # does smooth, so this group cannot pass on a build where the flip was lost.
+        rc0, out0, _ = run(tmp, "plain", OFF)
+        check("1. the shipped C-grid meshes at MB_SMOOTH_ITERS 0 (rc=0)", rc0 == 0)
         check("1. ...printing exactly ONE machine-readable quality line",
               len(qlines(out0)) == 1)
         check("1. ...and NO before/after pair, because nothing was smoothed",
@@ -410,6 +424,12 @@ def main() -> int:
               "'we ran no sweeps' is recorded rather than assumed",
               "Smoothing Sweeps" in out0 and "(none)" in out0)
         base = qlines(out0)[0] if qlines(out0) else {}
+        rcd, outd, _ = run(tmp, "dflt")
+        sd = smooth_line(outd)
+        check(f"1. ...while the DEFAULT is 20 sweeps and not 0 (#85), so none of "
+              f"the above is a property of a bare run any more (rc={rcd}, "
+              f"cap={sd.get('cap')})",
+              rcd == 0 and sd.get("cap") == 20 and "_BEFORE" in outd)
 
         # ── 2/3/4. one sweep: the pair, and what it cost ────────────────────
         rc1, out1, stem1 = run(tmp, "smooth1", "\nMB_SMOOTH_ITERS 1\n")
@@ -606,7 +626,7 @@ def main() -> int:
               and "the BEST iterate" in outd)
 
         # ── 8. the O-grid: #80's negative control, and it is NOT met ────────
-        rco0, outo0, _ = run(tmp, "o0", config=ogrid_config)
+        rco0, outo0, _ = run(tmp, "o0", OFF, config=ogrid_config)
         rco1, outo1, _ = run(tmp, "o1", "\nMB_SMOOTH_ITERS 1\n", config=ogrid_config)
         bo, ao = qlines(outo1, "_BEFORE"), qlines(outo1)
         check(f"8. the shipped O-grid meshes with and without smoothing "
@@ -692,7 +712,7 @@ def main() -> int:
         # merely moved somewhere else worse, and the second alone would not show
         # that the interface improved rather than being left alone.
         oq = "\nMB_SPLIT_QUADS 0\n"
-        _, _, oqs0 = run(tmp, "oq0", oq, config=ogrid_config)
+        _, _, oqs0 = run(tmp, "oq0", oq + OFF, config=ogrid_config)
         _, _, oqs1 = run(tmp, "oq1", oq + "\nMB_SMOOTH_ITERS 20\n",
                          config=ogrid_config)
         wall_tab = [l for l in outo1.splitlines() if "west 'w0'" in l]
@@ -769,7 +789,7 @@ def main() -> int:
         # the region figure is trusted because the same code agrees with the ruler
         # where the ruler looks.
         CAP83 = 20
-        base_q, outq0, qs0 = run(tmp, "q0", "\nMB_SPLIT_QUADS 0\n")
+        base_q, outq0, qs0 = run(tmp, "q0", "\nMB_SPLIT_QUADS 0\n" + OFF)
         _, out83, qs1 = run(tmp, "q83",
                             "\nMB_SPLIT_QUADS 0\nMB_SMOOTH_ITERS %d\n" % CAP83)
         u83 = qlines(out83, "_BEFORE")
@@ -864,7 +884,7 @@ def main() -> int:
         # 32.044 -> 29.895 max and 4.562 -> 3.821 mean. The lines that WERE the
         # worst ones — the radial interfaces — are group 9's, and they improve.
         rc84, out84, s84 = run(tmp, "m84", "\nMB_SMOOTH_ITERS 20\n")
-        _, outu84, su84 = run(tmp, "m84u")
+        _, outu84, su84 = run(tmp, "m84u", OFF)
         a84 = qlines(out84)
         sm84 = smooth_line(out84)
         check(f"11. the shipped C-grid smooths and exports every file (rc={rc84}, "

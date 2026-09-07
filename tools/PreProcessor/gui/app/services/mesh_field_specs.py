@@ -104,13 +104,16 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               "INTERIOR nodes after the fill — a cap, not a count: the solve stops "
               "as soon as it has converged, and a run that reaches this number "
               "still moving says so rather than handing back a half-solved grid "
-              "that looks finished. Every node on a block boundary is frozen — "
-              "outer walls, bound edges, interfaces and cuts alike — so the "
-              "blocking and the geometry a corner is attached to cannot move. 0, "
-              "the default, runs none. It improves the worst cell angle and it "
-              "does NOT hold the wall first-cell height you asked for: the run "
-              "reports the mesh quality before and after so the trade is a number "
-              "you can read rather than a claim.",
+              "that looks finished. Nodes on an INTERFACE or a CUT move and are "
+              "solved from both sides at once; nodes on a declared WALL and every "
+              "declared CORNER are frozen, so the blocking and the geometry a "
+              "corner is attached to cannot move. It improves the worst cell angle "
+              "AND holds the wall first-cell height the declaration asks for — the "
+              "run reports the mesh quality before and after, so both are numbers "
+              "you can read rather than claims. 20 is the default: a cap with an "
+              "order of magnitude of room before this solve can fold a cell, not "
+              "the best value measured. Raise it on a topology you have checked; "
+              "0 turns it off.",
               key="MB_SMOOTH_ITERS", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,),
               opts=dict(lo=0, hi=100000)),

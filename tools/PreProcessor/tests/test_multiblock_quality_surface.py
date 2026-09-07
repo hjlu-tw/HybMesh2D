@@ -80,6 +80,20 @@ from test_multiblock_surface import (  # noqa: E402
 # The dart, in [sw, se, ne, nw] order. Accepted by the declaration checks; folds.
 DART = [(0.0, 0.0), (1.0, 0.0), (0.1, 0.1), (0.0, 1.0)]
 
+# EVERY FIXTURE HERE IS PINNED AT ZERO SWEEPS, and #85 is why it has to be said.
+# This gate's subject is the RULER — what `measureMbQuality` reports and which exit
+# code a folded or invalid declaration leaves — so what it needs to measure is the
+# ALGEBRAIC FILL's own mesh. Since #85 the shipped default is 20 sweeps, and left
+# implicit that would change two things underneath every check: the banner gains a
+# `— before smoothing` / `— after N sweep(s)` suffix, and the dart below comes out
+# with EIGHT folded cells instead of sixteen because the solve repairs half the
+# fold. Neither is a defect and both belong to other gates
+# (test_multiblock_quality_gate.py owns the default, test_multiblock_smooth_surface
+# .py owns the before/after shape); pinning here keeps this file measuring the one
+# thing it names. Check 4b then drives the dart AT the default, so "a fold is not
+# smoothed into a pass" is asserted rather than assumed.
+NO_SMOOTH = "MB_SMOOTH_ITERS 0\n"
+
 failures = []
 
 
@@ -130,7 +144,8 @@ def main() -> int:
         # ── 1/2. the report is on every run, including a good one ───────────
         good = write_topology(os.path.join(tmp, "good.json"), ni=6, nj=5)
         gstem = os.path.join(tmp, "good")
-        rc, out = run(tmp, write_config(os.path.join(tmp, "good.dat"), good, gstem))
+        rc, out = run(tmp, write_config(os.path.join(tmp, "good.dat"), good, gstem,
+                                    extra=NO_SMOOTH))
         check("1. a sound topology still meshes (rc=0)", rc == 0)
         check("1. ...and prints the quality report", "[ Multi-block Mesh Quality ]" in out)
         for label in ("Inverted cells", "Non-orthogonality", "Wall first cell"):
@@ -150,7 +165,8 @@ def main() -> int:
         grad = write_topology(os.path.join(tmp, "grad.json"), ni=9, nj=9,
                               spacing={"law": "geometric", "growth": 1.5})
         sstem = os.path.join(tmp, "grad")
-        rc, out = run(tmp, write_config(os.path.join(tmp, "grad.dat"), grad, sstem))
+        rc, out = run(tmp, write_config(os.path.join(tmp, "grad.dat"), grad, sstem,
+                                    extra=NO_SMOOTH))
         check("3. a strongly graded block meshes (rc=0)", rc == 0)
         q = quality(out)
         check("3. ...and measures EXACTLY zero non-orthogonality, which no "
@@ -167,7 +183,8 @@ def main() -> int:
         # ── 4/5. a folded mesh is exported, and exits 9 ─────────────────────
         dart = write_topology(os.path.join(tmp, "dart.json"), ni=5, nj=5, corners=DART)
         dstem = os.path.join(tmp, "dart")
-        rc, out = run(tmp, write_config(os.path.join(tmp, "dart.dat"), dart, dstem))
+        rc, out = run(tmp, write_config(os.path.join(tmp, "dart.dat"), dart, dstem,
+                                    extra=NO_SMOOTH))
         check(f"4. a folded mesh exits with the INVERTED code (9), got {rc}", rc == 9)
         check("4. ...printing the machine-readable line a script branches on",
               "HYBMESH_ERROR 9 INVERTED" in out)
@@ -182,6 +199,29 @@ def main() -> int:
         check("4. ...with the other two numbers live on the same mesh",
               bool(q) and q.get("nonortho_max_deg") > 45.0
               and q.get("wall_first_cell_worst_rel") > 0.1)
+        # ── 4b. AT THE DEFAULT a fold is not smoothed into a pass (#85) ────
+        #
+        # The shipped default is 20 sweeps and the solve genuinely REPAIRS part of
+        # this dart — 16 folded cells become 8 — which is the one way turning
+        # smoothing on could have hidden a bad declaration. It does not: the count
+        # is still non-zero, the exit code is still 9, and the mesh is still
+        # exported. Measured 2026-09-07; the 8 is quoted so a change in either
+        # direction names itself.
+        # Named apart from check 8's `rc2`/`q2` on purpose: this block was written
+        # with those names first and SHADOWED them, which turned check 8's
+        # "non-orthogonality is identical" into a comparison against the wrong run.
+        dstem_d = os.path.join(tmp, "dart_dflt")
+        rc_d, out_d = run(tmp, write_config(os.path.join(tmp, "dart_dflt.dat"),
+                                            dart, dstem_d))
+        q_d = quality(out_d)
+        check(f"4b. the same dart AT THE DEFAULT still exits 9 (got {rc_d}) with "
+              f"folded cells left ({q_d and q_d.get('inverted')} of 32, against 16 "
+              f"unsmoothed) — the smoother repairs half this fold and does NOT "
+              f"turn a bad declaration into a pass",
+              rc_d == 9 and bool(q_d) and 0 < (q_d.get("inverted") or 0) < 16)
+        check(f"4b. ...and still EXPORTS the mesh ({wrote(dstem_d)})",
+              wrote(dstem_d) == [".vtk", ".vrt", ".cel", ".bnd"])
+
         check("5. and that mesh came from a declaration the mesher ACCEPTED — no "
               "topology refusal, so this is not a refusal wearing a second code",
               "HYBMESH_ERROR 8" not in out and "TOPOLOGY" not in out)
@@ -192,7 +232,8 @@ def main() -> int:
             f.write('{"format_version": 1, "corners": [{"id": "a", "kind": "free", '
                     '"xy": [0, 0]}], "edges": [], "blocks": []}')
         bstem = os.path.join(tmp, "bad")
-        brc, bout = run(tmp, write_config(os.path.join(tmp, "bad.dat"), bad, bstem))
+        brc, bout = run(tmp, write_config(os.path.join(tmp, "bad.dat"), bad, bstem,
+                                      extra=NO_SMOOTH))
         check(f"6. an invalid declaration exits with the TOPOLOGY code (8), got {brc}",
               brc == 8)
         check("6. ...with its own stable token", "HYBMESH_ERROR 8 TOPOLOGY" in bout)
@@ -206,7 +247,7 @@ def main() -> int:
         # ── 8. the count follows the cells that are EXPORTED ────────────────
         qstem = os.path.join(tmp, "dartq")
         rc2, out2 = run(tmp, write_config(os.path.join(tmp, "dartq.dat"), dart,
-                                          qstem, split=False))
+                                          qstem, split=False, extra=NO_SMOOTH))
         check(f"8. the same folded topology as quads exits 9 too, got {rc2}", rc2 == 9)
         q2 = quality(out2)
         check(f"8. ...over 16 quads rather than 32 triangles ({q2 and q2.get('cells')})",

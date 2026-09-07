@@ -130,6 +130,74 @@ with its outlet at x = 20; BL_INITIAL_THICKNESS 1e-3):
            No NaN in the log. Wrote binDumpZcgrid.dat, xtecp_sol_allzcgrid.dat,
            uniconescgrid.enorm, tWall_valuescgrid.dat, vsurface_qtycgrid.dat.
 
+#85's ACCEPTANCE RUN, ON A SMOOTHED MESH, measured 2026-09-07 in the SAME
+convention and at the SAME operating point, because that is the only thing that
+makes the two comparable. #85 asks for it because a smoothed mesh is a different
+mesh and #57's gate 2 is the one that actually bit — better non-orthogonality
+guarantees nothing about the solver surviving it.
+
+FOUR RUNS, not one: the smoothed mesh is the claim, and the unsmoothed CONTROL was
+re-run on the same day through the same hand-built chain so the record is a
+comparison this file measured rather than a quotation against #57's. The O-grid was
+run too, because #80's negative control ought not to break the solver either.
+
+    the chain, per case (cwd shown, since both binaries read relative paths):
+
+      ./run.sh -conf <case>.dat                                    # the mesher
+      cd grid && getPGrid < para.in                                # the converter
+      <edit <case>.bc.def: every NON-WALL segment to flag 1>       # see below
+      cd work && unicones.eqn6.mac -t G input.in                   # the solver
+
+    C-grid, MB_SMOOTH_ITERS 0 (the control, = #57's run)
+        mesher    EXIT 0   32.044106 / 4.561874 / 0.4368%, inverted 0
+        getPGrid  EXIT 0   5920 vertices, 11520 elements, 320 boundary elements,
+                           320 boundary condition flags; 288 warnings that it does
+                           not know the name 'farfield'
+        unicones  EXIT 0   at cfl 0.6, last printed "Global Iteration count 90"
+                           with print_convg_per_niter 10 and num_half_iter 100 —
+                           i.e. 100 iterations. No NaN.
+
+    C-grid, MB_SMOOTH_ITERS 20 (THE DEFAULT since #85 — the claim)
+        mesher    EXIT 0   29.895095 / 3.821201 / 0.0968%, inverted 0
+        getPGrid  EXIT 0   same four counts, same 288 warnings
+        unicones  EXIT 0   at cfl 0.6, last printed "Global Iteration count 90",
+                           100 iterations, no NaN. Wrote binDumpZ, xtecp_sol_allz,
+                           unicones.enorm, tWall_values, vsurface_qty — the same
+                           five files the control wrote. Residuals finite and
+                           O(1e-4) at iteration 90.
+
+    O-grid, MB_SMOOTH_ITERS 0 and 20
+        both      EXIT 0 / 0 / 0, 100 iterations, no NaN, 192 'farfield' warnings.
+        mesher    2.250000 / 1.875000 / 0.0812%  ->  2.276042 / 1.875000 / 0.0442%
+
+THE CFL IS STATED BECAUSE #57 MEASURED THAT IT MATTERS: lowering cfl to 0.3 makes
+a BAD mesh run too, so a recorded run that does not say which one it used proves
+less than it appears to. All four above are cfl 0.6, the value #55 used.
+
+WHAT THIS RUN DOES **NOT** EXERCISE, so it is not read as more than it is:
+
+  * It is ONE operating point — M 0.2, Re 200, zero incidence, 100 iterations,
+    cfl 0.6, every non-wall patch flag 1. "The solver runs on the smoothed mesh"
+    is the whole claim. It is not convergence, not accuracy, and no pressure
+    distribution is compared with anything — not even between the smoothed run and
+    its own control, which is the obvious next question and is not answered here.
+  * THE `.bnd` NAME -> SOLVER FLAG MAPPING IS STILL NOT EXERCISED, and #85 measured
+    why the pipeline route does not close it either. getPGrid writes the
+    `<case>.bc.def` segment table itself and does not know 'farfield', so it
+    defaults those four patches to a NO-SLIP WALL; nothing in the Python re-writes
+    it. Driving the same case through `config/pipeline/multiblock_cgrid_demo.json`
+    therefore ran a body in a closed viscous box — exit 0, 100 iterations, no NaN,
+    but NOT this operating point. The flag-1 above was written into the `.bc.def`
+    by hand, exactly as #55's and #57's runs were. What the GUI does automatically
+    is `services/bnd_io._NAME_TO_FLAG`; check 6 is where the names themselves are
+    measured.
+  * NO OUTPUT IS ON DISK, following #55 — no para.in, no bc.def, no solver output
+    is committed, so these figures are a quotation and not a reproduction.
+  * CI has no solver binary. This checkout does (`solver/execute/unicones.eqn6.mac`
+    and `solver/preprocess/getPGrid/work/getPGrid`), which corrects a claim
+    `test_multiblock_weld_surface.py` still carries in its own docstring — that
+    "this checkout carries no solver tree". It does.
+
 BLIND SPOTS, named rather than papered over:
 
   * Nothing here re-runs the solver. The figures above are a record of one dated
@@ -477,21 +545,52 @@ def main() -> int:
         faces = bnd_faces(stem)
         use = edge_use(cells)
 
-        # ── 3. the BASELINE is recorded, and it is MEASURED, not assumed ────
-        # Deliberately not asserted against a number: #57 makes these a baseline
-        # for the elliptic-smoothing increment and explicitly not pass conditions.
-        # What IS asserted is the report's own rule that a negative means "not
-        # measured", so a regression to that cannot read as "it came out perfect".
-        print("    BASELINE  cells=%s nonortho_max=%.3f deg nonortho_mean=%.3f deg "
-              "wall_first_cell_worst=%.4f%%"
+        # ── 3. #57's BASELINE is still reproducible, and the run above is not it ─
+        #
+        # WHAT #85 CHANGED HERE. The figures printed by the run above used to BE
+        # #57's baseline, because the shipped default ran no sweeps; the default is
+        # now 20, so that run is a SMOOTHED mesh and labelling it "BASELINE" would
+        # have been a stale label on a live number — which it was, for one commit.
+        # So the baseline is measured on its own explicit `MB_SMOOTH_ITERS 0` run
+        # and ASSERTED against #57's recorded figures, because every threshold in
+        # test_multiblock_quality_gate.py is stated relative to them: if this mesh
+        # ever stops being 32.044 / 4.562 / 0.4368%, those bars are measuring
+        # against something else and say so here first.
+        #
+        # #57's "a baseline and explicitly not pass conditions" is SUPERSEDED by
+        # that gate. What stays asserted here is the report's own rule that a
+        # negative means "not measured", so a regression to it cannot read as "it
+        # came out perfect".
+        pb, _ = run_case(tmp, "cgrid_base",
+                         base_config() + "\nMB_SMOOTH_ITERS 0\n")
+        qb = quality(pb.stdout)
+        print("    #57 BASELINE (MB_SMOOTH_ITERS 0)  cells=%s nonortho_max=%.3f deg "
+              "nonortho_mean=%.3f deg wall_first_cell_worst=%.4f%%"
+              % (qb.get("cells"), qb.get("nonortho_max_deg", -1.0),
+                 qb.get("nonortho_mean_deg", -1.0),
+                 100.0 * qb.get("wall_first_cell_worst_rel", -1.0)))
+        print("    AT THE DEFAULT (20 sweeps)        cells=%s nonortho_max=%.3f deg "
+              "nonortho_mean=%.3f deg wall_first_cell_worst=%.4f%%"
               % (q.get("cells"), q.get("nonortho_max_deg", -1.0),
                  q.get("nonortho_mean_deg", -1.0),
                  100.0 * q.get("wall_first_cell_worst_rel", -1.0)))
-        check("3. all three baseline figures were MEASURED (a negative is the "
-              "report's 'not measured', never a perfect score)",
+        check("3. all three figures were MEASURED at the default (a negative is "
+              "the report's 'not measured', never a perfect score)",
               all((q.get(k, -1.0) or 0.0) >= 0.0 for k in
                   ("nonortho_max_deg", "nonortho_mean_deg",
                    "wall_first_cell_worst_rel")))
+        check("3. ...and #57's own baseline still reproduces at zero sweeps, "
+              "32.044 / 4.562 / 0.4368%% — the figures every threshold in "
+              "test_multiblock_quality_gate.py is stated against "
+              "(%.3f / %.3f / %.4f%%)"
+              % (qb.get("nonortho_max_deg", -1.0), qb.get("nonortho_mean_deg", -1.0),
+                 100.0 * qb.get("wall_first_cell_worst_rel", -1.0)),
+              abs(qb.get("nonortho_max_deg", -1.0) - 32.044106) < 1e-3
+              and abs(qb.get("nonortho_mean_deg", -1.0) - 4.561874) < 1e-3
+              and abs(qb.get("wall_first_cell_worst_rel", -1.0) - 0.004368) < 1e-6)
+        check("3. ...and the default really did move it, so this gate's own main "
+              "run is the smoothed mesh a user gets",
+              q.get("nonortho_max_deg", 0.0) < qb.get("nonortho_max_deg", 0.0))
 
         # ── 4. the WAKE CUT: shared, welded, and NOT a boundary ─────────────
         wake_nodes = [i for i, (x, y) in enumerate(nodes)

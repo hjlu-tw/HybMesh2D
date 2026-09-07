@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **34,854
-characters (35,053 bytes, 2026-09-07) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **34,347
+characters (34,539 bytes, 2026-09-07) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**35,500**, leaving 646 characters of slack — derived by a rule the gate states at that
+**35,500**, leaving 1,153 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -43,7 +43,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 199 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 192 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -73,12 +73,13 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | Area | Read this rule file first | Before touching |
 |------|---------------------------|-----------------|
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
-| Mesher — the `MESH_MODE 1` multi-block path (the pure entry point, the split rules, the quality ruler, BC binding by arc length, topological welding, the O-grid, the C-grid, smoothing) | `.claude/rules/mesher-multiblock.md` | `include/MultiBlock.hpp`, `include/Mb*.hpp`, `src/MultiBlock.cpp`, `src/Mb*.cpp`, `src/cli.cpp`, `include/Config.hpp`, `config/multiblock_*.dat`, `tests/cpp/test_multiblock*.cpp`, `tests/cpp/test_mb_*.cpp` — all nine verbatim, not a shorthand, which this row got wrong once. Five are patterns, so a new `Mb*` module is covered with no edit and a differently-named one is not. The last two, `src/cli.cpp` and `include/Config.hpp`, are the row above's as well and are named in that file's header: a multi-block session loads BOTH files, the intended overlap. |
+| Mesher — the `MESH_MODE 1` multi-block path (the pure entry point, the split rules, the quality ruler, BC binding by arc length, topological welding, the O-grid, the C-grid) | `.claude/rules/mesher-multiblock.md` | `include/MultiBlock.hpp`, `include/Mb*.hpp`, `src/MultiBlock.cpp`, `src/Mb*.cpp`, `src/cli.cpp`, `include/Config.hpp`, `config/multiblock_*.dat`, `tests/cpp/test_multiblock*.cpp`, `tests/cpp/test_mb_*.cpp` — all nine verbatim, not a shorthand, which this row got wrong once. Five are patterns, so a new `Mb*` module is covered with no edit and a differently-named one is not. The last two are the row above's as well: a multi-block session loads BOTH, the intended overlap. **Smoothing moved to the row below (#85).** |
+| Mesher — the `MESH_MODE 1` SMOOTHER (`MB_SMOOTH_ITERS`: the stage in the seam, the Winslow kernel, the wall control functions, which nodes move and in whose frame, the two report lines, the DEFAULT and the quality gate) | `.claude/rules/mesher-smoothing.md` | `include/Mb{Control,Shared}.hpp`, `src/Mb{Control,Shared}.cpp`, `include/MultiBlock.hpp`, `src/MultiBlock.cpp`, `include/Config.hpp`, `src/cli.cpp`, `tests/cpp/test_multiblock.cpp` and its two gates — eleven globs, the exact list being that file's own `paths:`. EVERY ONE is also in the row above's: this file OVERLAPS rather than partitions, being the second taken for CONTEXT (#89 took the ninth), and its header says why a budget forced it. A session under `src/MbShared.cpp` loads THREE mesher rule files. |
 | Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set, the portable case export and its `.hws` re-import) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. |
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is in `gui-handoff.md` with `models/mesh_output_names.py`, where #77 moved it. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
-| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the nine, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
+| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the ten, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
 | GUI lifecycle (the app as a PROCESS: subprocess environment and the Gmsh loader path, window-layout persistence and the startup-state reversal, the ⟳ Restart ordering) | `.claude/rules/gui-lifecycle.md` | `services/env_setup*`, `services/ui_state*`, `services/gui_restart*`, `controllers/lifecycle_ctrl*`, `views/main_window*`, `gui/main.py`, `workers/**`, `tools/scripts/gmsh_*` — 24 files, verified. Two globs go beyond #77's list, recorded in that file's header. It rules directly on `CMakeLists.txt`, which NO glob in any rule file reaches, so this row is the only thing that reaches its reader. |
 | GUI file hand-off (is the file this session leaves on disk still correct when the NEXT stage reads it: the `.bnd` BCs, the project file's kind, the mesh output name, which grid a reopened case uses, the `.meta` sidecar) | `.claude/rules/gui-handoff.md` | `services/mesh_bc_audit*`, `services/project_file_kind*`, `services/mesh_grid_lookup*`, `models/mesh_output_names*`, `controllers/mesh_export_ctrl*`, `controllers/mesh_layers_ctrl*`, `controllers/solver_ctrl*`, `models/segment.py` — 8 files, verified. Three owners sit under OTHER rule files' globs (`models/mesh_config.py`, `services/pipeline_runner.py`, and the rest of what `solver_ctrl.py` does); its header names them. |
 
@@ -89,12 +90,14 @@ went through with the rule unloaded. The glob alone therefore cannot make "I did
 a rule" unreachable; this table is what does. **Read the row's rule file before editing or creating
 a file in its area.**
 
-**Nine rule files now, and NO area of residue is left.** #59 planned six, derived from this
+**Ten rule files now, and NO area of residue is left.** #59 planned six, derived from this
 file's section HEADINGS; deriving them from the text instead needed eight, and the two extra
 (#77's `gui-lifecycle.md` and `gui-handoff.md`) hold 13,894 characters this file used to carry
 for areas the original partition assigned to nobody. The ninth (#89) is the first taken for
 CONTEXT rather than coverage — the contiguous 66% of `mesher.md` that was the `MESH_MODE 1`
-path — so it OVERLAPS rather than partitions. The last residue went with #76: the two
+path — so it OVERLAPS rather than partitions. The tenth (#85) is the second, and the first
+taken because a rule file was FULL: `mesher-multiblock.md` left #84 with 121 characters of
+slack, and #85's own rules did not fit. The last residue went with #76: the two
 portable case-export blocks, 3,878 characters, into `pipeline-case.md` — the rule file whose
 globs ALREADY reached their four modules, which is what made them a defect rather than a gap —
 and their rationale from `docs/design_notes/gui.md` into `pipeline.md`, so that rule file's one
@@ -246,7 +249,8 @@ NACA 0012: its wake is ONE `cut` edge that is the west of both wake blocks, and 
 edge is one declared corner where all four meet — and it needed no C++ change at all. The
 rules for all five — "The multi-block path is ONE pure entry point", "Boundary conditions are
 DECLARED", "Blocks are welded TOPOLOGICALLY", "A circular O-GRID", "A four-block C-GRID" —
-are in `.claude/rules/mesher-multiblock.md`.
+are in `.claude/rules/mesher-multiblock.md`; the smoother's are in
+`.claude/rules/mesher-smoothing.md`, and it is ON by default (`MB_SMOOTH_ITERS` 20).
 
 **Run preprocessor GUI:**
 ```bash
@@ -346,7 +350,20 @@ and its rationale with it. Nothing is ruled on here. The rationale for the GUI a
 - **`view_mesh_vtk.py`**: `<mesh.vtk> <out.png> [xmin xmax ymin ymax]` — draws a legacy-VTK mesh
 - **`generate_letters.py`**: Generates letter-shaped geometry files
 - **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
-- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 19 mesher cases (~8 s), for proving that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not byte-reproducible, and node NUMBERING varies run to run — so it canonicalises by COORDINATE (nodes lexicographically sorted; each cell its node ranks, rotated to a fixed start and direction so winding cannot disagree; the cell list sorted) and reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits the tolerance. **That distinction is load bearing, and measuring it corrected a belief recorded here**: the nondeterminism is not confined to numbering — `wedge_45` returns a coordinate differing by ~1.2e-13 in roughly 1 run in 12 (worst seen 2.5e-13 over ~20 runs, when two wobbles compound), while the other eight cases *of the nine that existed when this was measured* were bit-identical every time. Exact equality would therefore flake, and the 1e-10 tolerance is set ~400× above that measured floor. It also compares **both** STAR-CD files: the `.bnd` patch names, their face counts and each face's own coordinates, and the `.cel` connectivity — which is the grid the SOLVER reads and is not the `.vtk`, since the `.cel` writer owns a winding normalisation, a degenerate-cell skip and a duplicate-cell dedupe that exist nowhere else (a review found the comparator could report SAME while that file had changed). A `.cel` triangle is written `v1 v2 v3 v3` and which vertex repeats follows the element's node order, so the duplicate is collapsed before comparing while the winding deliberately is not. Comparing the `.bnd` matters because because the two most expensive junction bugs this repo has had (see the `BoundaryLayer.cpp` notes above) produced a geometrically perfect mesh with the BCs on the wrong patches. Boundary faces are keyed by coordinate, not vertex id — `.bnd` ids index the `.vrt` numbering while cells index the `.vtk` numbering, and those are precisely the numbers free to move. Duct/wedge geometries are **imported** from `tools/PreProcessor/tests/test_nobl_junction_acute.py` rather than copied (a tool reaching into a test dir is unusual; a second copy of a geometry generator is guaranteed divergence). Two junction bins are NOT reachable this way — case 3/4 need θ > 270°, which no geometry writer produces — and `list` says so. **`HYBMESH_GOLDEN_BIN` points the capture at a different build**, which is what makes a behaviour-preserving claim checkable at all: `git archive <start-commit> | tar -x -C <dir>` (no git state touched), build there, capture the baseline from THAT binary, then compare with the working tree. Without it a baseline can only be captured from the tree that already contains the change it is meant to be evidence about.
+- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 19 mesher cases (~8 s), for proving
+  that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not
+  byte-reproducible and node NUMBERING varies run to run — so it canonicalises by COORDINATE and
+  reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits
+  the 1e-10 tolerance. It compares the `.vtk` AND both STAR-CD files, because the `.cel` is the grid
+  the SOLVER reads and its writer owns a winding normalisation, a degenerate-cell skip and a
+  duplicate dedupe that exist nowhere else; the `.bnd` is compared because the two most expensive
+  junction bugs this repo has had produced a geometrically perfect mesh with the BCs on the wrong
+  patches. **`HYBMESH_GOLDEN_BIN` points the capture at a different build**, which is what makes a
+  behaviour-preserving claim checkable at all: `git archive <commit> | tar -x -C <dir>`, build
+  there, capture from THAT binary, then compare with the working tree. Its canonical ORDER is
+  snapped to the tolerance (#85) — before that a last-bit coordinate change reshuffled the ranking
+  and it reported a bogus deviation. **Why, and every measurement: `docs/design_notes/mesher.md`,
+  "THE GOLDEN COMPARATOR".**
 
 ## Common Tasks
 

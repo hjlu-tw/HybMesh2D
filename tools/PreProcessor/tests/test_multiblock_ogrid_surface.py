@@ -334,12 +334,22 @@ def main() -> int:
               abs(shortest - 2.5e-6) < 0.1 * 2.5e-6)
 
         # ── 7. the ring's seeded count does not move the wall spacing ───────
+        #
+        # PINNED AT ZERO SWEEPS SINCE #85, when the shipped default became 20. The
+        # property under test belongs to the SPACING LAW — a radial count this
+        # equivalence class propagated rather than chose still lands the first cell
+        # where `BL_INITIAL_THICKNESS` asks — and the elliptic solve's own
+        # convergence depends on how many lines it has, so at the default the three
+        # counts come out at 0.049% / 0.044% / 0.022% and the law's invariance is no
+        # longer what the check would be reading. The default's own figures are
+        # gated in test_multiblock_quality_gate.py.
         heights = {}
         for count in (25, 49, 97):
             path = os.path.join(tmp, "c%d.json" % count)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(topo.replace('"count": 49', '"count": %d' % count))
-            p4, _ = run_case(tmp, "c%d" % count, base_config(topo=path))
+            p4, _ = run_case(tmp, "c%d" % count,
+                             base_config(topo=path) + "\nMB_SMOOTH_ITERS 0\n")
             q4 = quality(p4.stdout)
             check("7. the ring at radial count %d: exit 0, zero inverted" % count,
                   p4.returncode == 0 and q4.get("inverted") == 0.0)

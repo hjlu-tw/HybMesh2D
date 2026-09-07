@@ -100,7 +100,38 @@ struct Config {
     // NEGATIVE IS REFUSED, not clamped, by validate() below and again by
     // buildMultiBlock for any other caller — the two doors MB_SPLIT_RULE already
     // has, and for the same reason.
-    int mbSmoothIters = 0;
+    //
+    // TWENTY, AND ON BY DEFAULT SINCE #85 — a decision, not the build-time
+    // convenience it was through #81-#84. Those four tickets left it 0 so every
+    // increment landed with the golden family untouched and each kernel change was
+    // attributable; that reason expires once the last thing that moves the numbers
+    // has landed.
+    //
+    // WHY 20 AND NOT THE BEST CAP MEASURED. It is not the optimum on either
+    // shipped case — the C-grid's worst angle keeps improving to a cap of 100
+    // (26.49 deg against 29.90 at twenty). It is the SAFE one: what bounds this
+    // solve is stability, the lagged-coefficient iteration folds cells past about
+    // 300 sweeps on both shipped cases, and that limit is a property of the
+    // TOPOLOGY rather than of the kernel — so a default has to leave room on a
+    // topology nobody has measured. Twenty is an order of magnitude inside the only
+    // two fold limits that exist, and it is where #83's and #84's tables are
+    // densest, so a regression here names a figure the record already holds. An
+    // expert with a known topology should raise it; that is what a cap is for.
+    //
+    // MEASURED AT 20 ON EVERY SHIPPED MULTI-BLOCK CASE (2026-09-07), max /
+    // mean non-orthogonality / wall first cell, against the same case at 0:
+    //   square  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
+    //   cavity  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
+    //   hgrid   3.099 / 0.445 / 0.146%  -> 2.859 / 0.435 / 0.081%
+    //   ogrid   2.250 / 1.875 / 0.081%  -> 2.276 / 1.875 / 0.044%
+    //   cgrid  32.044 / 4.562 / 0.437%  -> 29.895 / 3.821 / 0.097%
+    // Zero inverted cells everywhere, and the two rectangular cases are UNCHANGED
+    // because a graded rectangle is a fixed point of this solve — which is why
+    // flipping the default moves fewer golden cases than it looks like it should.
+    // The one figure that moves the wrong way is the O-grid's worst angle, by
+    // 0.026 deg: #84 localised that to the FROZEN faceted outer wall rather than to
+    // the smoother, and the same case's wall accuracy nearly halves.
+    int mbSmoothIters = 20;
 
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;

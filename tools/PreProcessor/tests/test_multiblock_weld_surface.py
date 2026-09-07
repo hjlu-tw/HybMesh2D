@@ -31,11 +31,19 @@ What this pins down:
      counts and the chain that propagated between them; a class with no seed at
      all is refused the same way. Both export NOTHING.
 
-THE ACCEPTANCE RUN AGAINST THE SOLVER IS OUTSTANDING, and this file says so
-rather than implying otherwise. ``test_multiblock_surface.py`` records a dated
-getPGrid + unicones run on the single-block case; the four-block grid has NOT
-been through either, because this checkout carries no solver tree. What check 2
-does instead is pin the SHAPE the converter reads -- conforming interior edges
+THE ACCEPTANCE RUN AGAINST THE SOLVER IS OUTSTANDING FOR THIS FILE'S OWN CASE, and
+it says so rather than implying otherwise. ``test_multiblock_surface.py`` records a
+dated getPGrid + unicones run on the single-block case, and
+``test_multiblock_cgrid_surface.py`` records four on the shipped C-grid and O-grid
+(#57, #85); the four-block H-GRID here has been through neither.
+**CORRECTED 2026-09-07 (#85): the reason given here used to be "this checkout
+carries no solver tree", and that was FALSE** -- ``solver/execute/unicones.eqn6.mac``
+and ``solver/preprocess/getPGrid/work/getPGrid`` are both present and both were run
+by #85. The real reason is narrower and is a choice: nothing has needed a solver
+answer about the H-grid, which is a synthetic 2x2 box with no flow question behind
+it. Recorded because an unchecked claim about the tree survived a review once.
+What check 2 does instead is pin the SHAPE the converter reads -- conforming
+interior edges
 and a boundary set that matches the ``.bnd`` -- which is the property a welding
 defect would break, not a substitute for the converter accepting the file. #26 is
 why that distinction is written down: a change shipped broken behind 85 green

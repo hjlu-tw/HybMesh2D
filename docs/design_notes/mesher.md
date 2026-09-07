@@ -1960,6 +1960,157 @@ the shared edges".
   no correct document can falsify, and the declared-corner freeze on its own, held twice by
   two different mechanisms.
 
+**THE BASELINE BECOMES A GATE, THE DEFAULT FLIPS, AND GATE 2 RUNS ON A SMOOTHED MESH**
+(`tools/PreProcessor/tests/test_multiblock_quality_gate.py`, `Config::mbSmoothIters`; #85, the
+last of #80's five). The rules are `.claude/rules/mesher-smoothing.md` — the TENTH rule file, taken
+because `mesher-multiblock.md` was full.
+
+- **#57's "a BASELINE here, never a gate" IS SUPERSEDED, marked in place rather than deleted.** Its
+  reason was sound and dated: transfinite interpolation was not expected to beat the
+  boundary-layer path, and a binary gate is what stops "not pretty enough yet" blocking a release.
+  #80's arc exists to move exactly those numbers, so the reason expires with the arc.
+
+- **THE THRESHOLDS HAVE ONE OWNER, and #80's O-GRID BULLET IS NOT MET.** All four C-grid bars are
+  #57's own recorded figures and all four are met (29.895 / 3.821 / 0.0968%, inverted 0, against
+  32.044 / 4.562 / 0.4368%). The O-grid's worst angle is **2.276°** against #55's 2.250 — 1.2%
+  worse — so the bar there is #85's OWN measurement, which is the honest way to hold a number that
+  is not the one the epic asked for: the gate still catches a regression, and the shortfall is
+  recorded rather than rounded away. Check 4 pins the GAP under 2% so it cannot grow in silence,
+  and #84 had already localised the residue to the FROZEN faceted outer wall — the unsmoothed
+  mesh's own worst corner is 2.250° ON that wall. Closing it needs #83's "wall nodes do not slide"
+  revisited, not a tighter threshold.
+
+- **AN UPPER BOUND CANNOT CATCH A SMOOTHER THAT STOPPED WORKING**, which is the trap a threshold
+  gate walks into: a mesh nothing touched sits under three of the four bars. So the gate also runs
+  each case at zero sweeps and asserts a DIRECTION — the wall first cell strictly better on both
+  cases, both angles strictly better on the C-grid — and re-derives #57's baseline at zero sweeps
+  so the bars cannot drift away from the mesh they were written against.
+
+- **THE DEFAULT IS ON, AT 20, AND THE DERIVATION IS STABILITY RATHER THAN QUALITY.** 20 is not the
+  best cap measured — the C-grid's worst angle keeps improving to 100 (26.49° against 29.90°) — it
+  is the safe one. What bounds this solve is the lagged-coefficient iteration's stability, both
+  shipped cases fold past about 300 sweeps, and that limit is a property of the TOPOLOGY, so a
+  default has to leave room on a topology nobody has measured. 20 sits an order of magnitude inside
+  the only two fold limits that exist, and it is where #83's and #84's tables are densest, so a
+  regression names a figure the record already holds. **The runtime cost is nil** (0.26 s either
+  way), so no performance argument bears on the decision in either direction.
+
+- **A RECTANGLE IS A FIXED POINT, WHICH IS WHY THE FLIP MOVED THREE GOLDEN CASES AND NOT NINE.**
+  Measured at 20 on all five shipped multi-block configs — max / mean / wall, against the same case
+  at 0:
+
+      square  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
+      cavity  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
+      hgrid   3.099 / 0.445 / 0.146%  -> 2.859 / 0.435 / 0.081%
+      ogrid   2.250 / 1.875 / 0.081%  -> 2.276 / 1.875 / 0.044%
+      cgrid  32.044 / 4.562 / 0.437%  -> 29.895 / 3.821 / 0.097%
+
+  Zero inverted everywhere. Golden **16 of 19 SAME, 3 DIFF** — `mb_hgrid`, `mb_ogrid`, `mb_cgrid`,
+  recaptured deliberately, with real node movement of 0.8% / 1.3% / 2.1% of each case's extent;
+  `mb_cgrid_smooth` unchanged because its explicit `MB_SMOOTH_ITERS 1` beats the default, and the
+  nine hybrid-path cases are `MESH_MODE 0`. **That count is only trustworthy because the comparator
+  was fixed first** — see "THE GOLDEN COMPARATOR" below, where the same flip first appeared to move
+  eight cases.
+
+- **"WHAT IS THE DEFAULT" NOW HAS TWO ANSWERS AND BOTH ARE NAMED.** `Config::mbSmoothIters` is 20
+  (the product) and `MbParams::smoothIters` stays 0 (the seam). Keeping them apart is deliberate:
+  `MbParams{}` is the contract for a caller that says nothing, and about forty of the pure layer's
+  checks are about parsing, filling, welding, splitting or BCs — a smoother running underneath
+  would move the positions they assert on for reasons unrelated to what they test. Flipping the
+  seam too would have been one default and forty re-baselined checks. Check 40's wording changed
+  from "the default" to "`MbParams{}`", because that check's CLAIM went stale even though its
+  arithmetic did not.
+
+- **A STALE LABEL ON A LIVE NUMBER is the failure mode of a default flip, and this ticket shipped
+  one for a commit.** `test_multiblock_cgrid_surface.py` printed its run's figures under the label
+  `BASELINE`; the run is at the default, so the label silently started describing the SMOOTHED mesh
+  (29.895 where the docstring two screens up says 32.044). Nothing failed — the check beside it
+  only asserts the figures were MEASURED. It is now two labelled lines and an assertion that #57's
+  baseline still reproduces at zero sweeps. **Four gates had to say `MB_SMOOTH_ITERS 0` where they
+  had meant "the default"**, and each is a different kind of subject: the quality RULER on the
+  algebraic fill, the spacing law's invariance across a propagated count, "the default is silence",
+  and that label.
+
+- **A FOLD IS NOT SMOOTHED INTO A PASS**, which is the one way this flip could have hidden
+  something. The quality gate's dart declaration folds 16 cells unsmoothed and **8** at the default
+  — the solve genuinely repairs half of it — and still exits 9 and still exports. Asserted rather
+  than assumed (check 4b), with the 8 quoted so a move in either direction names itself.
+
+- **GATE 2, ON A SMOOTHED MESH, DATED, AND IT PASSES.** Four hand-built
+  mesher -> getPGrid -> unicones runs on 2026-09-07 — C-grid and O-grid at 0 and 20 sweeps — all
+  EXIT 0 / 0 / 0 at `cfl 0.6`, 100 iterations, no NaN, and the smoothed C-grid wrote the same five
+  output files its control did. The full record is
+  `test_multiblock_cgrid_surface.py`'s docstring beside #57's, in that convention. **The control
+  was re-run the same day rather than quoted**, so the comparison is one this repo measured; it
+  reproduced #57's record exactly, which is what validates the chain.
+
+- **THIS CHECKOUT HAS A SOLVER TREE, and the claim that it does not had survived a review.**
+  `solver/execute/unicones.eqn6.mac` and `solver/preprocess/getPGrid/work/getPGrid` are both
+  present and both ran. `test_multiblock_weld_surface.py` said "this checkout carries no solver
+  tree" as its reason for not running one on the H-grid; the reason is corrected in place to the
+  narrower true one — nothing has needed a solver answer about a synthetic 2x2 box.
+
+- **THE PIPELINE ROUTE DOES NOT CLOSE #57's BC-MAPPING BLIND SPOT, and #85 measured why.** getPGrid
+  writes the `<case>.bc.def` segment table ITSELF and does not know `farfield`, so it defaults
+  those patches to a no-slip wall; no Python rewrites it. Driving
+  `config/pipeline/multiblock_cgrid_demo.json` therefore ran a body in a closed viscous box — exit
+  0, 100 iterations, no NaN, but NOT the recorded operating point, so it is not comparable with
+  #55's or #57's runs. Every recorded run's flag-1 was written into the `.bc.def` BY HAND. What the
+  GUI does automatically is `services/bnd_io._NAME_TO_FLAG`. Recorded because the first attempt at
+  this ticket's acceptance run went through the pipeline and would have been quoted as #57's
+  operating point without the bc.def being read.
+
+- **THE GUI's HELP TEXT DESCRIBED THE #81 KERNEL, two tickets after it was gone.**
+  `mesh_field_specs.py`'s `mb_smooth_iters` blurb told the user every node on a block boundary is
+  frozen (reversed by #84) and that it does NOT hold the requested wall first-cell height (reversed
+  by #83). No gate reads prose, and the parity gate compares keys, types and defaults. Corrected
+  with the default; recorded because user-facing text is the one surface in this arc that four
+  tickets of measurement never touched.
+
+- **#80's EPIC ACCEPTANCE, CHECKED AGAINST MEASUREMENTS RATHER THAN AGAINST CLOSED TICKETS:**
+  every ticket closed (#81-#85); the shipped C-grid better than 32.04° / 4.56° with the wall no
+  worse than 0.44% and 0 inverted — **MET** (29.895 / 3.821 / 0.0968%); the shipped O-grid no worse
+  than 2.25° / 1.875° / 0.08% — **NOT MET on the worst angle by 1.2%**, met on the other two; a
+  dated acceptance run through the converter and the solver on a smoothed mesh — **MET**; the
+  eighteen pre-existing golden cases unchanged or deliberately recaptured — **MET**, three
+  recaptured. So the epic closes with one bullet unmet, named, gated at the achieved figure and
+  attributed to a decision (#83's frozen walls) rather than to a defect.
+
+**THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
+which needed the room and had to change the tool anyway; the rule stays there in four lines.
+Verbatim as that file carried it:
+
+  - **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 19 mesher cases (~8 s), for proving that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not byte-reproducible, and node NUMBERING varies run to run — so it canonicalises by COORDINATE (nodes lexicographically sorted; each cell its node ranks, rotated to a fixed start and direction so winding cannot disagree; the cell list sorted) and reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits the tolerance. **That distinction is load bearing, and measuring it corrected a belief recorded here**: the nondeterminism is not confined to numbering — `wedge_45` returns a coordinate differing by ~1.2e-13 in roughly 1 run in 12 (worst seen 2.5e-13 over ~20 runs, when two wobbles compound), while the other eight cases *of the nine that existed when this was measured* were bit-identical every time. Exact equality would therefore flake, and the 1e-10 tolerance is set ~400× above that measured floor. It also compares **both** STAR-CD files: the `.bnd` patch names, their face counts and each face's own coordinates, and the `.cel` connectivity — which is the grid the SOLVER reads and is not the `.vtk`, since the `.cel` writer owns a winding normalisation, a degenerate-cell skip and a duplicate-cell dedupe that exist nowhere else (a review found the comparator could report SAME while that file had changed). A `.cel` triangle is written `v1 v2 v3 v3` and which vertex repeats follows the element's node order, so the duplicate is collapsed before comparing while the winding deliberately is not. Comparing the `.bnd` matters because because the two most expensive junction bugs this repo has had (see the `BoundaryLayer.cpp` notes above) produced a geometrically perfect mesh with the BCs on the wrong patches. Boundary faces are keyed by coordinate, not vertex id — `.bnd` ids index the `.vrt` numbering while cells index the `.vtk` numbering, and those are precisely the numbers free to move. Duct/wedge geometries are **imported** from `tools/PreProcessor/tests/test_nobl_junction_acute.py` rather than copied (a tool reaching into a test dir is unusual; a second copy of a geometry generator is guaranteed divergence). Two junction bins are NOT reachable this way — case 3/4 need θ > 270°, which no geometry writer produces — and `list` says so. **`HYBMESH_GOLDEN_BIN` points the capture at a different build**, which is what makes a behaviour-preserving claim checkable at all: `git archive <start-commit> | tar -x -C <dir>` (no git state touched), build there, capture the baseline from THAT binary, then compare with the working tree. Without it a baseline can only be captured from the tree that already contains the change it is meant to be evidence about.
+
+**AND ITS CANONICAL ORDER WAS NOT AS TOLERANT AS ITS COMPARISON, which #85 found and fixed.**
+`TOL`'s own note says it "deliberately DOES hide pure floating-point reassociation, which is not
+the kind of change this tool exists to detect" — and the COMPARISON did, while the ORDER did not.
+`np.lexsort` read exact floats, so a last-bit change to one coordinate swapped two neighbours in
+the ranking, every cell mentioning either was rewritten, and the deviation reported was the
+distance between two DIFFERENT nodes rather than any node's movement.
+
+Measured 2026-09-07 while #85 turned smoothing on by default: `mb_square` moved 255 of its 441
+nodes by at most **3.5e-16** — six orders below `TOL`, exactly the reassociation the tolerance
+exists to ignore — and the tool reported **"worst 9.500e-01" with 768 cells changed**. Five cases
+were affected the same way (`mb_square`, `mb_square_quads`, `mb_graded`, `mb_bound`, `mb_random`),
+so the default flip looked like it changed EIGHT golden cases when it changed THREE. Without the
+fix #85's own acceptance criterion — "every affected golden case is recaptured and the diff is
+explained" — could not have been met honestly, because the instrument was mis-measuring the diff
+it was being asked to explain.
+
+The fix snaps the sort key to `TOL` before sorting, so the order is as tolerant as the comparison
+already was. **The residual is named rather than proved away**: bucketing cannot be perfectly
+stable, and two DISTINCT nodes straddling a bucket edge could still sort either way. The edge is
+1e-10 wide, the measured run-to-run wobble is 1.2e-13 and the finest real node spacing on any case
+here is ~1e-7, so the window is three orders clear at both ends — a window, not a proof.
+
+**AND THE METHOD ERROR THAT WASTED A ROUND, recorded because it is easy to repeat**: the first
+attempt captured the baseline with the OLD comparator (via `git stash`) and compared it with the
+NEW one, which reported 16 of 19 DIFF including every hybrid-path case. A baseline and a comparison
+must come from the SAME canonicalisation; changing the comparator invalidates every baseline
+captured before it. `HYBMESH_GOLDEN_BIN` is the tool that gets this right — it varies the MESHER
+while holding the comparator fixed — and it is what the second attempt used.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /

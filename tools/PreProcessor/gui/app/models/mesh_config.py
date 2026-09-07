@@ -57,11 +57,17 @@ class MeshConfig:
     # a local far-field sizing source with nothing to do with a random number.
     # Two unrelated concepts under one prefix is how a user sets the wrong one.
     mb_split_seed: int = 0
-    # THE CAP on the multi-block path's elliptic (Winslow) smoother over each
-    # block's INTERIOR nodes, between the fill and the split. 0 runs none.
-    # `mb_smooth_iters` and not a `bl_smoothing_iters` lookalike: that key is the
-    # OTHER path's collision remedy, and the two share a verb and nothing else.
-    mb_smooth_iters: int = 0
+    # THE CAP on the multi-block path's elliptic (Winslow) smoother, between the
+    # fill and the split. 0 runs none. `mb_smooth_iters` and not a
+    # `bl_smoothing_iters` lookalike: that key is the OTHER path's collision
+    # remedy, and the two share a verb and nothing else.
+    #
+    # 20 AND NOT 0 SINCE #85, and it MUST equal `Config::mbSmoothIters` — the
+    # parity gate compares the two defaults in both directions, and a default that
+    # disagrees is a mesher and a GUI producing different meshes from one document.
+    # The derivation is at that C++ declaration; it is the SAFE cap rather than the
+    # best one measured.
+    mb_smooth_iters: int = 20
 
     # Section 0b: Units
     # The unit EVERY length in this config is expressed in — domain bounds, mesh

@@ -123,10 +123,22 @@ struct MbParams {
     // `growth` beats it; 0 means none was resolved, and then `geometric` must
     // declare one.
     double wallGrowth = 0.0;
-    // THE ITERATION CAP on the elliptic smoother that runs over each block's
-    // INTERIOR nodes, between the fill and the split. 0 — the default — is "no
-    // sweep runs at all", and at that value this seam returns exactly what it
-    // returned before the smoother existed.
+    // THE ITERATION CAP on the elliptic smoother that runs between the fill and
+    // the split. 0 is "no sweep runs at all", and at that value this seam returns
+    // exactly what it returned before the smoother existed.
+    //
+    // ZERO HERE AND TWENTY IN `Config` SINCE #85, and the difference is DELIBERATE
+    // rather than a default that got missed. `Config::mbSmoothIters` is the
+    // PRODUCT's default — what a user who writes no `MB_SMOOTH_ITERS` line gets,
+    // passed through by src/cli.cpp — and it is 20. This is the SEAM's answer to a
+    // caller that says nothing, and "say nothing, get the fill and the split and
+    // nothing else" is the contract the pure layer's own checks need: roughly forty
+    // of them are about parsing, filling, welding, splitting or boundary
+    // conditions, and a smoother running underneath would move the positions they
+    // assert on for reasons unrelated to what they test. So `MbParams{}` stays the
+    // MINIMUM rather than the product, and every check about smoothing sets the cap
+    // out loud. Two answers to "what is the default" is a smell, so which one is
+    // meant is named at both declarations rather than inferred.
     //
     // A CAP, not a sweep count, since #82: the solve stops early the moment its
     // residual falls under `MB_SMOOTH_TOL`, and a run that reaches this number

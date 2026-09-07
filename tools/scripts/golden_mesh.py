@@ -493,7 +493,28 @@ def _canonical(rc: int, stem: str) -> dict:
     bad: dict = {}
     mesh = VTKMesh.from_file(stem + ".vtk")
     pts = np.asarray(mesh.points, dtype=float).reshape(-1, 2)
-    order = np.lexsort((pts[:, 1], pts[:, 0]))
+    # THE RANKING IS SNAPPED TO `TOL` BEFORE IT IS SORTED, and without that this
+    # comparator contradicts its own tolerance. `TOL`'s note says it "deliberately
+    # DOES hide pure floating-point reassociation"; the COMPARISON did, but the
+    # canonical ORDER did not — `lexsort` reads exact floats, so a last-bit change
+    # to one coordinate swaps two neighbours in the ranking, every cell that
+    # mentions either is rewritten, and the deviation reported is the distance
+    # between two DIFFERENT nodes rather than any node's movement.
+    #
+    # MEASURED 2026-09-07 on `mb_square` while #85 turned smoothing on by default:
+    # 255 of 441 nodes moved, worst move 3.5e-16 — six orders below `TOL` and
+    # exactly the reassociation the tolerance exists to ignore — and this tool
+    # reported "worst 9.500e-01" with 768 cells changed. Snapping the key makes the
+    # order as tolerant as the comparison already was, so that case now comes back
+    # SAME.
+    #
+    # RESIDUAL, named: bucketing cannot be perfectly stable. Two DISTINCT nodes
+    # straddling a bucket edge could still sort either way. The edge is `TOL` wide
+    # (1e-10), the measured run-to-run wobble is 1.2e-13, and the finest real node
+    # spacing on any case here is ~1e-7 — so the window is three orders clear at
+    # both ends, but it is a window and not a proof.
+    snapped = np.round(pts / TOL)
+    order = np.lexsort((snapped[:, 1], snapped[:, 0]))
     rank = np.empty(len(order), dtype=np.int64)
     rank[order] = np.arange(len(order))
     # Coincident nodes make the ranking itself numbering-dependent: lexsort is
