@@ -315,7 +315,7 @@ Known remaining blind spots, stated rather than pretended away:
     for the shape, no longer a request for discipline. #88 closed the ONE figure #79 left
     behind, and it was a word rather than a number: the count in "any of the other six"
     was English, written into this sentence, into that registry entry's own label and
-    into an injection argument. `--sync` rewrote the six numbers after it and could not
+    into an injection argument. `--sync` rewrote the numbers after it and could not
     reach the noun that counts them, so a ninth rule file would have landed with the gate
     reporting ALL PASS over its own prose saying there were eight — a hand-maintained
     count inside the check that exists so no figure needs a person to remember it. It is
@@ -1082,7 +1082,8 @@ SELF_REPORT = (
      "pattern": r"the~two~differ~by~([\d,]+)~today",
      "fields": ("root_delta",)},
     {"label": "the root's rule-file count", "target": "root",
-     "pattern": r"\*\*([A-Za-z]+)~rule~files~now,~and~NO~area~of~residue~is~left\.\*\*",
+     "pattern": r"\*\*([A-Za-z]+|[\d,]+)~rule~files~now,~and~NO~area~of~residue~is~"
+                r"left\.\*\*",
      "fields": ("rule_count",)},
     # Story 5: the byte-char delta is stated in BOTH files and drifted in BOTH during
     # #78, then drifted here AGAIN in the commit before #79 while the root's copy was
@@ -1095,7 +1096,7 @@ SELF_REPORT = (
     # anchoring allows it -- the entry names the files beside their sizes, so the
     # mapping is in the prose rather than assumed here.
     {"label": "blind spot (d)'s rule-file sizes", "target": "gate",
-     "pattern": r"([A-Za-z]+)~rule~files~now~—~" + _NUM_LIST +
+     "pattern": r"([A-Za-z]+|[\d,]+)~rule~files~now~—~" + _NUM_LIST +
                 r"~characters~\(([a-z0-9-]+(?:,~[a-z0-9-]+)*)\)",
      "fields": ("rule_count", "rule_sizes", "rule_names")},
     {"label": "blind spot (d)'s statement of the flat rule budget", "target": "gate",
@@ -1106,7 +1107,11 @@ SELF_REPORT = (
                 r"~of~headroom~the~two~large~ones~have~left",
      "fields": ("rule_headroom_large",)},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
-     "pattern": r"a~move~into~any~of~the~other~([a-z]+),~which~have~" + _NUM_LIST + r"\.",
+     # Either spelling: `_fmt_word_lower` writes a word up to twelve and DIGITS past it,
+     # and thirteen rule files is a state that docstring calls reachable. A word-only
+     # anchor would stop resolving on the day `--sync` wrote the number it derived.
+     "pattern": r"a~move~into~any~of~the~other~([a-z]+|[\d,]+),~which~have~"
+                + _NUM_LIST + r"\.",
      "fields": ("rule_count_rest", "rule_headroom_rest")},
 )
 
@@ -1790,14 +1795,17 @@ check(len(inj["rules"]) == len(world["rules"]) + 1
       and _rules_by_size(inj) != _rules_by_size(world),
       "injection 13e. injection is well-formed: the rule set really gained a file")
 sr = check_self_report(inj)
-check(any("(rule_count)" in f and _ROOT_NAME in f for f in sr)
-      and any("(rule_count)" in f and _TARGET_PATH["gate"] in f for f in sr)
+# `startswith`, not `in`: every check 7 message ENDS with the gate path, because that is
+# where the `--sync` it tells you to run lives. `_TARGET_PATH["gate"] in f` is therefore
+# true of the ROOT's failure too, and "fails in BOTH files" would be half-untested.
+check(any("(rule_count)" in f and f.startswith(_ROOT_NAME) for f in sr)
+      and any("(rule_count)" in f and f.startswith(_TARGET_PATH["gate"]) for f in sr)
       and any("rule_names" in f for f in sr)
       and any("rule_headroom_rest" in f for f in sr)
       and any("rule_count_rest" in f for f in sr),
       "injection 13e. check 7 fails on the rule-file COUNT in both files, on the name list, "
-      "on the headroom list and on the COUNT INSIDE that headroom sentence — a ninth rule "
-      "file cannot land while two files still say eight")
+      "on the headroom list and on the COUNT INSIDE that headroom sentence — a new rule "
+      "file cannot land while two files still state the old one")
 
 # 13e2. #88: the same phantom file through `--sync`, which is the half that makes the
 # sentence maintainable rather than merely gated. Before #88 `--sync` rewrote the six
@@ -1815,10 +1823,25 @@ def _rest_word(w):
     return _fmt_word_lower((len(_rules_by_size(w)[2:]),))
 
 
-_before = _resolve(world, _rest_entry)[0].group(1)
+def _stated_rest_word(w):
+    """The count word that sentence CURRENTLY carries in world `w`, or None.
+
+    Never `_resolve(...)[0].group(1)`: a reword of the prose this anchor sits in makes
+    that a NoneType AttributeError, which aborts the run before 13f, 13f2 and the 13g
+    NEGATIVE CONTROL ever execute -- and a reader counting FAIL lines sees one failure
+    where check 7 would have named the anchor and printed the pattern that stopped
+    resolving. This file's own `_fmt_word` docstring states the rule: a gate whose job is
+    to say WHICH figure is wrong must not answer with a traceback.
+    """
+    m, _err = _resolve(w, _rest_entry)
+    return None if m is None else m.group(1)
+
+
+_before, _after = _stated_rest_word(world), None
 synced9, changes9, ok9 = sync_world(inj)
-_after = _resolve(synced9, _rest_entry)[0].group(1)
+_after = _stated_rest_word(synced9)
 check(ok9 and not check_self_report(synced9)
+      and _before is not None and _after is not None
       and _before == _rest_word(world) and _after == _rest_word(inj) and _after != _before
       and any("the rest" in c and "%r -> %r" % (_before, _after) in c for c in changes9),
       "injection 13e2. --sync moves the COUNT WORD in blind spot (d)'s prose with the tree "
@@ -1837,7 +1860,7 @@ check(inj["gate"] != world["gate"] and was == _rest_word(world)
 sr = check_self_report(inj)
 hits = [f for f in sr if "rule_count_rest" in f]
 check(len(hits) == 1 and repr(_wrong_word) in hits[0] and repr(was) in hits[0]
-      and _TARGET_PATH["gate"] in hits[0],
+      and hits[0].startswith(_TARGET_PATH["gate"]),
       "injection 13e3. check 7 fails on a hand-bent count word, naming the gate, the field "
       "and BOTH words — the failure that was unreachable while the count was English")
 
@@ -1848,8 +1871,10 @@ check(len(hits) == 1 and repr(_wrong_word) in hits[0] and repr(was) in hits[0]
 # substitution — the character count moves when the character count is written.
 inj, _was = bend_figure(world, "the root's always-loaded cost", 1, "7")
 inj, _was = bend_figure(inj, "the root's budget and its slack", 2, "123,456")
+# The bend is as wide as the list it replaces, derived: a fixed six-entry string would
+# stop being the same SHAPE of figure on the day a ninth rule file lands.
 inj, _was = bend_figure(inj, "blind spot (d)'s headroom, the rest", 2,
-                        "0 / 0 / 0 / 0 / 0 / 0")
+                        _fmt_nums((0,) * len(_rules_by_size(world)[2:])))
 check(len(check_self_report(inj)) >= 3 and len(inj["root"]) != len(world["root"]),
       "injection 13f. injection is well-formed: three figures across both files disagree, "
       "and bending them CHANGED the root's length — so the correct values are not the ones "
