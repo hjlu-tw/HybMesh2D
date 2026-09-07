@@ -110,24 +110,35 @@ struct Config {
     // WHY 20 AND NOT THE BEST CAP MEASURED. It is not the optimum on either
     // shipped case — the C-grid's worst angle keeps improving to a cap of 100
     // (26.49 deg against 29.90 at twenty). It is the SAFE one: what bounds this
-    // solve is stability, the lagged-coefficient iteration folds cells past about
-    // 300 sweeps on both shipped cases, and that limit is a property of the
-    // TOPOLOGY rather than of the kernel — so a default has to leave room on a
-    // topology nobody has measured. Twenty is an order of magnitude inside the only
-    // two fold limits that exist, and it is where #83's and #84's tables are
-    // densest, so a regression here names a figure the record already holds. An
-    // expert with a known topology should raise it; that is what a cap is for.
+    // solve is stability rather than the kernel's limit, and that bound is a
+    // property of the TOPOLOGY, so a default has to leave room on a topology nobody
+    // has measured.
+    //
+    // THE MARGIN IS EXACTLY TEN, BISECTED (2026-09-08) rather than rounded off a
+    // coarse sweep: the O-grid is sound through a cap of 200 and folds 192 cells by
+    // 225, so 20 is 10x inside it; the C-grid is sound through 300 and folds 184 by
+    // 400, so at least 15x. An earlier draft of this comment said "an order of
+    // magnitude inside the only two fold limits" off a 150/300 bracket, which a
+    // review read as 7.5x — the claim survives, but only because it was measured.
+    // 20 is also where #83's and #84's tables are densest, so a regression here
+    // names a figure the record already holds. An expert with a known topology
+    // should raise it; that is what a cap is for.
     //
     // MEASURED AT 20 ON EVERY SHIPPED MULTI-BLOCK CASE (2026-09-07), max /
     // mean non-orthogonality / wall first cell, against the same case at 0:
-    //   square  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
-    //   cavity  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
+    //   square  0.000 / 0.000 / 0.00%   -> unchanged to 3.5e-16 (255 of 441 nodes)
+    //   cavity  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit (0 nodes differ)
     //   hgrid   3.099 / 0.445 / 0.146%  -> 2.859 / 0.435 / 0.081%
     //   ogrid   2.250 / 1.875 / 0.081%  -> 2.276 / 1.875 / 0.044%
     //   cgrid  32.044 / 4.562 / 0.437%  -> 29.895 / 3.821 / 0.097%
     // Zero inverted cells everywhere, and the two rectangular cases are UNCHANGED
     // because a graded rectangle is a fixed point of this solve — which is why
     // flipping the default moves fewer golden cases than it looks like it should.
+    // "UNCHANGED" IS TO ROUNDING AND NOT BIT FOR BIT ON THE SQUARE, which is worth
+    // the extra clause: this comment said "bit for bit" for both and a review
+    // caught it against the same commit's own golden note. `cavity` genuinely is;
+    // `square` moves 255 nodes by at most 3.5e-16, six orders under the golden
+    // comparator's tolerance, which is reassociation and not a mesh change.
     // The one figure that moves the wrong way is the O-grid's worst angle, by
     // 0.026 deg: #84 localised that to the FROZEN faceted outer wall rather than to
     // the smoother, and the same case's wall accuracy nearly halves.

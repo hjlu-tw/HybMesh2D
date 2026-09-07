@@ -257,7 +257,20 @@ _GEOM = os.path.join(_REPO, "examples", "geometries")
 _TOPO = os.path.join(_REPO, "examples", "topology", "cgrid_naca0012.json")
 _CONF = os.path.join(_REPO, "config", "multiblock_cgrid.dat")
 sys.path.insert(0, _HERE)
-from mesher_bin import mesher_env as _mesher_env          # noqa: E402
+from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env
+
+# #57's OWN RECORDED BASELINE for this case, declared ONCE and here rather than in
+# the threshold gate, because the dependency has to run this way round: that gate
+# already imports `base_config` from this file, so this file importing the numbers
+# back would be a cycle. The gate that owns the CASE owns the case's recorded
+# figures, and test_multiblock_quality_gate.py states every C-grid bar as one of
+# them. Check 3 below re-derives them from a zero-sweep run, so a drift shows up
+# here first.
+CGRID_BASELINE = {
+    "nonortho_max_deg": 32.044106,
+    "nonortho_mean_deg": 4.561874,
+    "wall_first_cell_worst_rel": 0.004368,
+}          # noqa: E402
 from test_multiblock_weld_surface import (                # noqa: E402
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
 
@@ -561,8 +574,7 @@ def main() -> int:
         # that gate. What stays asserted here is the report's own rule that a
         # negative means "not measured", so a regression to it cannot read as "it
         # came out perfect".
-        pb, _ = run_case(tmp, "cgrid_base",
-                         base_config() + "\nMB_SMOOTH_ITERS 0\n")
+        pb, _ = run_case(tmp, "cgrid_base", base_config() + NO_SMOOTH)
         qb = quality(pb.stdout)
         print("    #57 BASELINE (MB_SMOOTH_ITERS 0)  cells=%s nonortho_max=%.3f deg "
               "nonortho_mean=%.3f deg wall_first_cell_worst=%.4f%%"
@@ -585,9 +597,8 @@ def main() -> int:
               "(%.3f / %.3f / %.4f%%)"
               % (qb.get("nonortho_max_deg", -1.0), qb.get("nonortho_mean_deg", -1.0),
                  100.0 * qb.get("wall_first_cell_worst_rel", -1.0)),
-              abs(qb.get("nonortho_max_deg", -1.0) - 32.044106) < 1e-3
-              and abs(qb.get("nonortho_mean_deg", -1.0) - 4.561874) < 1e-3
-              and abs(qb.get("wall_first_cell_worst_rel", -1.0) - 0.004368) < 1e-6)
+              all(abs(qb.get(k, -1.0) - v) < (1e-6 if k.endswith("_rel") else 1e-3)
+                  for k, v in CGRID_BASELINE.items()))
         check("3. ...and the default really did move it, so this gate's own main "
               "run is the smoothed mesh a user gets",
               q.get("nonortho_max_deg", 0.0) < qb.get("nonortho_max_deg", 0.0))

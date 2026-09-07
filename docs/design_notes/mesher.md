@@ -1988,29 +1988,38 @@ because `mesher-multiblock.md` was full.
 
 - **THE DEFAULT IS ON, AT 20, AND THE DERIVATION IS STABILITY RATHER THAN QUALITY.** 20 is not the
   best cap measured — the C-grid's worst angle keeps improving to 100 (26.49° against 29.90°) — it
-  is the safe one. What bounds this solve is the lagged-coefficient iteration's stability, both
-  shipped cases fold past about 300 sweeps, and that limit is a property of the TOPOLOGY, so a
-  default has to leave room on a topology nobody has measured. 20 sits an order of magnitude inside
-  the only two fold limits that exist, and it is where #83's and #84's tables are densest, so a
-  regression names a figure the record already holds. **The runtime cost is nil** (0.26 s either
-  way), so no performance argument bears on the decision in either direction.
+  is the safe one. What bounds this solve is the lagged-coefficient iteration's stability, and that
+  limit is a property of the TOPOLOGY, so a default has to leave room on a topology nobody has
+  measured. **THE MARGIN IS EXACTLY TEN, AND IT HAD TO BE BISECTED TO SAY SO** (2026-09-08): the
+  O-grid is sound through a cap of 200 and folds 192 cells by 225 — 10x — and the C-grid sound
+  through 300, folding 184 by 400, so at least 15x. The first draft claimed "an order of magnitude
+  inside the only two fold limits that exist" off a coarse 150/300 bracket, and a review read the
+  conservative end of that bracket as 7.5x and said so. The claim survived the measurement; what it
+  did not survive is being asserted without one. 20 is also where #83's and #84's tables are
+  densest, so a regression names a figure the record already holds. **The runtime cost is nil**
+  (0.26 s either way), so no performance argument bears on the decision in either direction.
 
 - **A RECTANGLE IS A FIXED POINT, WHICH IS WHY THE FLIP MOVED THREE GOLDEN CASES AND NOT NINE.**
   Measured at 20 on all five shipped multi-block configs — max / mean / wall, against the same case
   at 0:
 
-      square  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
-      cavity  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit
+      square  0.000 / 0.000 / 0.00%   -> unchanged to 3.5e-16 (255 of 441 nodes)
+      cavity  0.000 / 0.000 / 0.00%   -> IDENTICAL, bit for bit (0 nodes differ)
       hgrid   3.099 / 0.445 / 0.146%  -> 2.859 / 0.435 / 0.081%
       ogrid   2.250 / 1.875 / 0.081%  -> 2.276 / 1.875 / 0.044%
       cgrid  32.044 / 4.562 / 0.437%  -> 29.895 / 3.821 / 0.097%
 
-  Zero inverted everywhere. Golden **16 of 19 SAME, 3 DIFF** — `mb_hgrid`, `mb_ogrid`, `mb_cgrid`,
+  Zero inverted everywhere. **"UNCHANGED" IS TO ROUNDING ON THE SQUARE AND BIT FOR BIT ONLY ON THE
+  CAVITY**, which the first draft of this block and of `Config::mbSmoothIters` both got wrong by
+  claiming bit-for-bit for both — caught by a review against this same commit's golden note, which
+  had the 255-nodes-by-3.5e-16 figure two screens away. A graded rectangle is a fixed point of the
+  solve; that makes the mesh unchanged to reassociation, not to the bit.
+  Golden **16 of 19 SAME, 3 DIFF** — `mb_hgrid`, `mb_ogrid`, `mb_cgrid`,
   recaptured deliberately, with real node movement of 0.8% / 1.3% / 2.1% of each case's extent;
   `mb_cgrid_smooth` unchanged because its explicit `MB_SMOOTH_ITERS 1` beats the default, and the
   nine hybrid-path cases are `MESH_MODE 0`. **That count is only trustworthy because the comparator
-  was fixed first** — see "THE GOLDEN COMPARATOR" below, where the same flip first appeared to move
-  eight cases.
+  was fixed first** — see the golden comparator's own block below, where the same flip first
+  appeared to move eight cases.
 
 - **"WHAT IS THE DEFAULT" NOW HAS TWO ANSWERS AND BOTH ARE NAMED.** `Config::mbSmoothIters` is 20
   (the product) and `MbParams::smoothIters` stays 0 (the seam). Keeping them apart is deliberate:
@@ -2067,8 +2076,15 @@ because `mesher-multiblock.md` was full.
   with the default; recorded because user-facing text is the one surface in this arc that four
   tickets of measurement never touched.
 
-- **#80's EPIC ACCEPTANCE, CHECKED AGAINST MEASUREMENTS RATHER THAN AGAINST CLOSED TICKETS:**
-  every ticket closed (#81-#85); the shipped C-grid better than 32.04° / 4.56° with the wall no
+- **#80's EPIC ACCEPTANCE, CHECKED AGAINST MEASUREMENTS RATHER THAN AGAINST CLOSED TICKETS**, which
+  is what that criterion asks for and is the only half of it this repo can honestly report on:
+  **the ticket STATES are not what they should be and that is recorded rather than smoothed over.**
+  As of 2026-09-08 #80 itself is CLOSED with every acceptance box unticked and 3 of 5 sub-issues
+  done, while #84 and #85 — both landed and gated — are still OPEN. So the epic was closed ahead of
+  its own arc and the unmet O-grid bullet below lives in this note rather than on the issue. A first
+  draft of this line said "every ticket closed (#81-#85)", which was false in both directions.
+  Now the measurements, which are what the criterion is actually about: the shipped C-grid better
+  than 32.04° / 4.56° with the wall no
   worse than 0.44% and 0 inverted — **MET** (29.895 / 3.821 / 0.0968%); the shipped O-grid no worse
   than 2.25° / 1.875° / 0.08% — **NOT MET on the worst angle by 1.2%**, met on the other two; a
   dated acceptance run through the converter and the solver on a smoothed mesh — **MET**; the
@@ -2103,6 +2119,16 @@ already was. **The residual is named rather than proved away**: bucketing cannot
 stable, and two DISTINCT nodes straddling a bucket edge could still sort either way. The edge is
 1e-10 wide, the measured run-to-run wobble is 1.2e-13 and the finest real node spacing on any case
 here is ~1e-7, so the window is three orders clear at both ends — a window, not a proof.
+
+**THE CONTROL FOR THE FIX ITSELF, because it lands in the same commit as the flip it measures.**
+A tolerance change that made a diff disappear would be indistinguishable from a diff that was never
+there, so both directions were run before the flip's own count was trusted: capture-then-compare
+against the SAME binary with the fixed comparator came back **19 of 19 SAME**, and the flip's own
+comparison came back **3 DIFF** — exactly the three cases whose quality figures moved, and the
+three whose real node movement is 0.8% / 1.3% / 2.1% of their extent. So the fixed comparator still
+detects a real change and no longer reports an unreal one. What is NOT covered is the middle: no
+case here moves by an amount NEAR `TOL`, so nothing exercises the bucket edge the residual above
+names.
 
 **AND THE METHOD ERROR THAT WASTED A ROUND, recorded because it is easy to repeat**: the first
 attempt captured the baseline with the OLD comparator (via `git stash`) and compared it with the

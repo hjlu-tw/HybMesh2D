@@ -230,14 +230,16 @@ from test_multiblock_quality_surface import qlines  # noqa: E402
 # and the three readers give the STAR-CD files the grid converter actually consumes.
 from test_multiblock_weld_surface import (  # noqa: E402
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
-from mesher_bin import mesher_env as _mesher_env  # noqa: E402
+from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env  # noqa: E402
 
 # "UNSMOOTHED" IS NO LONGER THE DEFAULT, and since #85 every run that means it has
 # to say so. `MB_SMOOTH_ITERS` ships at 20, so a bare run is a SMOOTHED run — the
 # five places below that need the algebraic fill's own mesh (group 1's silence, the
-# O-grid's and the C-grid's before-figures, and group 11's control) pass this
-# explicitly. What the DEFAULT produces is gated in test_multiblock_quality_gate.py.
-OFF = "\nMB_SMOOTH_ITERS 0\n"
+# O-grid's and the C-grid's before-figures, and group 11's control) pass
+# `NO_SMOOTH` explicitly. It is imported rather than spelled here: `mesher_bin`
+# owns the one spelling, because this file called it `OFF` while the gate next door
+# called it `NO_SMOOTH` and three more used a raw literal. What the DEFAULT produces
+# is gated in test_multiblock_quality_gate.py.
 
 # The #81 LAPLACIAN figures, quoted from that ticket rather than re-measured: the
 # kernel is deleted, so there is nothing left to measure them on. Keyed by
@@ -411,7 +413,7 @@ def main() -> int:
         # byte for byte the report this path printed before the parameter existed.
         # The second half is new and is the other direction: the default really
         # does smooth, so this group cannot pass on a build where the flip was lost.
-        rc0, out0, _ = run(tmp, "plain", OFF)
+        rc0, out0, _ = run(tmp, "plain", NO_SMOOTH)
         check("1. the shipped C-grid meshes at MB_SMOOTH_ITERS 0 (rc=0)", rc0 == 0)
         check("1. ...printing exactly ONE machine-readable quality line",
               len(qlines(out0)) == 1)
@@ -626,7 +628,7 @@ def main() -> int:
               and "the BEST iterate" in outd)
 
         # ── 8. the O-grid: #80's negative control, and it is NOT met ────────
-        rco0, outo0, _ = run(tmp, "o0", OFF, config=ogrid_config)
+        rco0, outo0, _ = run(tmp, "o0", NO_SMOOTH, config=ogrid_config)
         rco1, outo1, _ = run(tmp, "o1", "\nMB_SMOOTH_ITERS 1\n", config=ogrid_config)
         bo, ao = qlines(outo1, "_BEFORE"), qlines(outo1)
         check(f"8. the shipped O-grid meshes with and without smoothing "
@@ -712,7 +714,7 @@ def main() -> int:
         # merely moved somewhere else worse, and the second alone would not show
         # that the interface improved rather than being left alone.
         oq = "\nMB_SPLIT_QUADS 0\n"
-        _, _, oqs0 = run(tmp, "oq0", oq + OFF, config=ogrid_config)
+        _, _, oqs0 = run(tmp, "oq0", oq + NO_SMOOTH, config=ogrid_config)
         _, _, oqs1 = run(tmp, "oq1", oq + "\nMB_SMOOTH_ITERS 20\n",
                          config=ogrid_config)
         wall_tab = [l for l in outo1.splitlines() if "west 'w0'" in l]
@@ -789,7 +791,7 @@ def main() -> int:
         # the region figure is trusted because the same code agrees with the ruler
         # where the ruler looks.
         CAP83 = 20
-        base_q, outq0, qs0 = run(tmp, "q0", "\nMB_SPLIT_QUADS 0\n" + OFF)
+        base_q, outq0, qs0 = run(tmp, "q0", "\nMB_SPLIT_QUADS 0\n" + NO_SMOOTH)
         _, out83, qs1 = run(tmp, "q83",
                             "\nMB_SPLIT_QUADS 0\nMB_SMOOTH_ITERS %d\n" % CAP83)
         u83 = qlines(out83, "_BEFORE")
@@ -884,7 +886,7 @@ def main() -> int:
         # 32.044 -> 29.895 max and 4.562 -> 3.821 mean. The lines that WERE the
         # worst ones — the radial interfaces — are group 9's, and they improve.
         rc84, out84, s84 = run(tmp, "m84", "\nMB_SMOOTH_ITERS 20\n")
-        _, outu84, su84 = run(tmp, "m84u", OFF)
+        _, outu84, su84 = run(tmp, "m84u", NO_SMOOTH)
         a84 = qlines(out84)
         sm84 = smooth_line(out84)
         check(f"11. the shipped C-grid smooths and exports every file (rc={rc84}, "

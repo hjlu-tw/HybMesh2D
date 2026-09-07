@@ -35,12 +35,14 @@ mesher rule files point at. Read that note before overruling a rule here, and wh
 update BOTH.
 
 **SMOOTHING is a STAGE inside the seam, its kernel is WINSLOW, that kernel is CONTROLLED (#83), and
-since #84 it runs ACROSS the shared edges** (`MB_SMOOTH_ITERS`, default 0; `src/MultiBlock.cpp`'s
-`mbSmoothBlocks` between the fill and the split; #81 built the stage with a Laplacian, #82 replaced
-the kernel and DELETED that one, #83 gave it source terms, #84 unfroze the interfaces and cuts). An
-elliptic solve over each block's movable nodes under a cap; at the default nothing runs and all
-eighteen pre-existing golden cases are unchanged (all four tickets, 18/18 SAME at 0.000e+00,
-`mb_cgrid_smooth` the only one that moved each time).
+since #84 it runs ACROSS the shared edges** (`MB_SMOOTH_ITERS`, **default 20 since #85** —
+`Config::mbSmoothIters`, see the default's own block below; `src/MultiBlock.cpp`'s `mbSmoothBlocks`
+between the fill and the split; #81 built the stage with a Laplacian, #82 replaced the kernel and
+DELETED that one, #83 gave it source terms, #84 unfroze the interfaces and cuts). An elliptic solve
+over each block's movable nodes under a cap. **Through #81-#84 the default was 0 and all eighteen
+pre-existing golden cases were unchanged at every step** (18/18 SAME at 0.000e+00, `mb_cgrid_smooth`
+the only one that moved any of the four times) — the property that made each kernel change
+attributable, and the one #85 deliberately spent.
 **Every measurement, table and reversal below: `docs/design_notes/mesher.md`.**
 - **WHICH NODES MOVE IS `mbSmoothPlan`'s ANSWER, stated rather than read off a loop**
   (`include/MbShared.hpp` + `src/MbShared.cpp` in `hybmesh_pure`; #84). FROZEN: a node on an edge
@@ -280,16 +282,20 @@ has landed.
   inferred. Check 40 says `MbParams{}` and no longer says "the default".
 - **20 IS THE SAFE CAP, NOT THE BEST ONE MEASURED**, and the derivation is stability rather than
   quality: the C-grid's worst angle keeps improving to a cap of 100 (26.49° against 29.90° at
-  twenty), but the lagged-coefficient iteration folds cells past about 300 sweeps on both shipped
-  cases, and that limit is a property of the TOPOLOGY. A default has to leave room on a topology
-  nobody has measured, so it sits an order of magnitude inside the only two fold limits that exist.
-  It is also where #83's and #84's tables are densest, so a regression names a figure the record
-  already holds. **An expert on a known topology should raise it — that is what a cap is for.**
+  twenty), but this iteration eventually folds cells and that limit is a property of the TOPOLOGY,
+  so a default has to leave room on a topology nobody has measured. **THE MARGIN IS EXACTLY TEN AND
+  IT WAS BISECTED** (2026-09-08): the O-grid is sound through a cap of 200 and folds 192 cells by
+  225, the C-grid sound through 300 and 184 by 400. An earlier draft claimed "an order of magnitude"
+  off a 150/300 bracket, which a review read as 7.5× — the claim survives, but only because it was
+  then measured. 20 is also where #83's and #84's tables are densest, so a regression names a figure
+  the record already holds. **An expert on a known topology should raise it — that is what a cap is
+  for.**
 - **A RECTANGLE IS A FIXED POINT, WHICH IS WHY THE FLIP MOVED THREE GOLDEN CASES AND NOT NINE.**
-  Measured at 20 on all five shipped multi-block configs: `square` and `cavity` are IDENTICAL (the
-  solve converges on sweep one and changes nothing), `hgrid` 3.099/0.445/0.146% -> 2.859/0.435/
-  0.081%, `ogrid` 2.250/1.875/0.081% -> 2.276/1.875/0.044%, `cgrid` 32.044/4.562/0.437% ->
-  29.895/3.821/0.097%. Zero inverted everywhere. Golden: **16 of 19 SAME, 3 DIFF** —
+  Measured at 20 on all five shipped multi-block configs: `cavity` is IDENTICAL bit for bit and
+  `square` unchanged to 3.5e-16 over 255 of its 441 nodes — **not the same claim, and this file said
+  "both identical" until a review checked it** — then `hgrid` 3.099/0.445/0.146% ->
+  2.859/0.435/0.081%, `ogrid` 2.250/1.875/0.081% -> 2.276/1.875/0.044%, `cgrid` 32.044/4.562/0.437%
+  -> 29.895/3.821/0.097%. Zero inverted everywhere. Golden: **16 of 19 SAME, 3 DIFF** —
   `mb_hgrid`, `mb_ogrid`, `mb_cgrid`, recaptured deliberately; `mb_cgrid_smooth` unchanged because
   an explicit `MB_SMOOTH_ITERS 1` beats the default, and the nine hybrid-path cases are `MESH_MODE
   0` and untouched. Real node movement 0.8% / 1.3% / 2.1% of each case's extent.
@@ -381,10 +387,13 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
 - **#84's OWN WAKE-CUT CRITERION IS UNREACHABLE HERE and the PREMISE is what is wrong**: the fill
   already leaves all 48 cells against that straight, on-axis line EXACTLY orthogonal, so freeing it
   COSTS 0.018° mean. The worst lines were the radial interfaces, which improve. Figures: the note.
-- **NOTHING BOUNDS THE CAP AUTOMATICALLY.** #83's stability limit is real (the shipped C-grid folds
-  past about forty sweeps) and is reported after the fact by the inverted-cell count and exit 9;
-  nothing stops the solve at the last sound iterate the way the DIVERGED path stops it at the best
-  residual. The two are different signals and only one of them is acted on.
+- **NOTHING BOUNDS THE CAP AUTOMATICALLY.** The stability limit is real — bisected 2026-09-08, the
+  C-grid is sound through a cap of 300 and folds 184 cells by 400, the O-grid sound through 200 and
+  192 by 225 — and it is reported after the fact by the inverted-cell count and exit 9; nothing
+  stops the solve at the last sound iterate the way the DIVERGED path stops it at the best residual.
+  The two are different signals and only one of them is acted on. **This bullet said "folds past
+  about forty sweeps" until #85**, which was #83's figure and had been superseded by #84 two tickets
+  earlier without this line moving — the shape a blind-spot list is supposed to prevent.
 - **The before/after tables are dated quotations**, not re-measured: the gates assert a DIRECTION
   with a floor, so a kernel that stopped moving anything is caught while one that moves things
   differently is free to.

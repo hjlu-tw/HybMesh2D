@@ -76,6 +76,7 @@ sys.path.insert(0, _HERE)
 from test_multiblock_surface import (  # noqa: E402
     run, write_config, write_topology,
 )
+from mesher_bin import NO_SMOOTH  # noqa: E402
 
 # The dart, in [sw, se, ne, nw] order. Accepted by the declaration checks; folds.
 DART = [(0.0, 0.0), (1.0, 0.0), (0.1, 0.1), (0.0, 1.0)]
@@ -92,7 +93,8 @@ DART = [(0.0, 0.0), (1.0, 0.0), (0.1, 0.1), (0.0, 1.0)]
 # .py owns the before/after shape); pinning here keeps this file measuring the one
 # thing it names. Check 4b then drives the dart AT the default, so "a fold is not
 # smoothed into a pass" is asserted rather than assumed.
-NO_SMOOTH = "MB_SMOOTH_ITERS 0\n"
+#
+# `NO_SMOOTH` is imported and not spelled again: `mesher_bin` owns it.
 
 failures = []
 
@@ -214,11 +216,15 @@ def main() -> int:
         rc_d, out_d = run(tmp, write_config(os.path.join(tmp, "dart_dflt.dat"),
                                             dart, dstem_d))
         q_d = quality(out_d)
+        # The 8 is asserted EXACTLY, not as `0 < n < 16`: the comment claims the
+        # figure is quoted "so a change in either direction names itself", and the
+        # loose band would have let 15 through in silence. If the kernel changes
+        # what it repairs, this is the check that should say so.
         check(f"4b. the same dart AT THE DEFAULT still exits 9 (got {rc_d}) with "
-              f"folded cells left ({q_d and q_d.get('inverted')} of 32, against 16 "
-              f"unsmoothed) — the smoother repairs half this fold and does NOT "
-              f"turn a bad declaration into a pass",
-              rc_d == 9 and bool(q_d) and 0 < (q_d.get("inverted") or 0) < 16)
+              f"exactly 8 of its 16 folded cells left "
+              f"({q_d and q_d.get('inverted')}) — the smoother repairs half this "
+              f"fold and does NOT turn a bad declaration into a pass",
+              rc_d == 9 and bool(q_d) and q_d.get("inverted") == 8)
         check(f"4b. ...and still EXPORTS the mesh ({wrote(dstem_d)})",
               wrote(dstem_d) == [".vtk", ".vrt", ".cel", ".bnd"])
 

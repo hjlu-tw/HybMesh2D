@@ -402,6 +402,7 @@ one list. #68 moved the first; #69 moved the rest; #89 split the list with the r
 nineteen cases are multi-block. It is not duplicated here, because a blind spot living in two
 places is one that will only ever be updated in one; a reader of this file alone would not
 otherwise learn the hole exists.
+
 - **Non-orthogonality says nothing about the shape of the SPLIT TRIANGLES** — it is measured on the
   structured grid cells only.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).

@@ -68,9 +68,14 @@ WHAT THIS FILE DOES NOT DO, said plainly:
     here would be a threshold with no run behind it.
   * The bars are absolute figures from one dated run on one machine. The mesher is
     not bit-reproducible (coordinates wobble ~1e-13, see tools/scripts/
-    golden_mesh.py), so each bar carries slack well above that floor — but a bar
-    is not a proof of stability, and the arithmetic that produced these numbers is
-    the C++ ruler's, pinned in tests/cpp/test_mb_quality.cpp.
+    golden_mesh.py), and most bars carry slack far above that floor — but **the
+    O-grid's MEAN bar passes on EXACT EQUALITY** (1.875000 <= 1.875000), so that
+    one has no slack at all. It survives because the figure is structural rather
+    than computed: a 48-gon's every quad corner deviates by half the sector angle
+    whatever the radial distribution is, which is why it reads the same at every
+    cap from 0 to 200. If it ever wobbles, this is the bar that will say so first,
+    and the fix is a tolerance rather than a looser number. The arithmetic behind
+    every figure is the C++ ruler's, pinned in tests/cpp/test_mb_quality.cpp.
   * Nothing here checks the cap is a GOOD one. 20 is the safe cap, not the best
     measured: the C-grid's worst angle keeps improving to a cap of 100. The
     derivation is at ``Config::mbSmoothIters``.
@@ -90,16 +95,37 @@ sys.path.insert(0, _HERE)
 # Each shipped config is retargeted by the gate that owns it, never composed here
 # — the same rule the smoothing gate follows, so an edit to one of those files is
 # visible from every gate that runs it.
-from test_multiblock_cgrid_surface import base_config as cgrid_config  # noqa: E402
-from test_multiblock_ogrid_surface import base_config as ogrid_config  # noqa: E402
-# The ONE parser for the machine-readable quality line, in the gate that owns it.
+from test_multiblock_cgrid_surface import (  # noqa: E402
+    CGRID_BASELINE, base_config as cgrid_config)
+from test_multiblock_ogrid_surface import (  # noqa: E402
+    OGRID_BASELINE, base_config as ogrid_config)
+# The ONE parser for each machine-readable line, each imported from the gate that
+# owns it: `qlines` reports the MESH, `smooth_line` the SOLVE. Hand-rolling the
+# second is what `.claude/rules/mesher-smoothing.md` forbids in as many words —
+# "the ONE parser every gate imports rather than four near-copies" — and this file
+# did exactly that for one commit.
 from test_multiblock_quality_surface import qlines  # noqa: E402
-from mesher_bin import mesher_env as _mesher_env  # noqa: E402
+from test_multiblock_smooth_surface import smooth_line  # noqa: E402
+from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env  # noqa: E402
 
 # The default this gate is written against. Stated here as well as in the C++ so
 # check 1 can fail by NAME when the two drift, rather than every bar below moving
 # for a reason the failure text does not mention.
 DEFAULT_SWEEPS = 20
+
+# THE RECORDED BASELINES ARE IMPORTED, NOT RETYPED: `CGRID_BASELINE` is #57's and
+# `OGRID_BASELINE` is #55's, each declared in the gate that owns its case. That is
+# the direction the dependency has to run — this file already reads `base_config`
+# from both — and it is what makes "the thresholds have one owner" a property of
+# the modules rather than a promise in this docstring. It was three owners for one
+# commit, and a review counted them.
+# The one figure that is NOT a recorded baseline: #80's O-grid bullet is unmet, so
+# its worst-angle bar is #85's own measurement. Kept apart from OGRID_BASELINE so
+# the two cannot be read as the same kind of number.
+OGRID_MAX_ACHIEVED = 2.2761
+# How far past #55's figure the O-grid's worst angle is allowed to sit — the "under
+# 2%" the docstring states, derived from that baseline rather than typed as a float.
+OGRID_MAX_GAP_FRAC = 0.02
 
 # case -> (figure, comparison, bar, origin). "<" is strict where the epic asked
 # for "better than"; "<=" where the bar IS the measured figure or a recorded one
@@ -107,16 +133,21 @@ DEFAULT_SWEEPS = 20
 THRESHOLDS = {
     "cgrid": [
         ("inverted", "==", 0, "#80's acceptance"),
-        ("nonortho_max_deg", "<", 32.044106, "#57's recorded baseline"),
-        ("nonortho_mean_deg", "<", 4.561874, "#57's recorded baseline"),
-        ("wall_first_cell_worst_rel", "<=", 0.004368, "#57's recorded baseline"),
+        ("nonortho_max_deg", "<", CGRID_BASELINE["nonortho_max_deg"],
+         "#57's recorded baseline"),
+        ("nonortho_mean_deg", "<", CGRID_BASELINE["nonortho_mean_deg"],
+         "#57's recorded baseline"),
+        ("wall_first_cell_worst_rel", "<=",
+         CGRID_BASELINE["wall_first_cell_worst_rel"], "#57's recorded baseline"),
     ],
     "ogrid": [
         ("inverted", "==", 0, "#80's acceptance"),
         # NOT #55's 2.250: see the docstring. #80's bullet is unmet by 1.2%.
-        ("nonortho_max_deg", "<=", 2.2761, "#85's own measurement"),
-        ("nonortho_mean_deg", "<=", 1.875000, "#55's recorded baseline"),
-        ("wall_first_cell_worst_rel", "<=", 0.000812, "#55's recorded baseline"),
+        ("nonortho_max_deg", "<=", OGRID_MAX_ACHIEVED, "#85's own measurement"),
+        ("nonortho_mean_deg", "<=", OGRID_BASELINE["nonortho_mean_deg"],
+         "#55's recorded baseline"),
+        ("wall_first_cell_worst_rel", "<=",
+         OGRID_BASELINE["wall_first_cell_worst_rel"], "#55's recorded baseline"),
     ],
 }
 
@@ -142,11 +173,16 @@ def run(tmp, name, config, extra=""):
 
 
 def holds(got, op, bar):
+    # A TYPO IN `THRESHOLDS` MUST NOT SILENTLY WEAKEN A BAR, which a fall-through
+    # to "<=" would do — the loosest of the three, and the one a mistake would land
+    # on. Raising is the only answer that cannot pass.
     if op == "==":
         return got == bar
     if op == "<":
         return got < bar
-    return got <= bar
+    if op == "<=":
+        return got <= bar
+    raise ValueError(f"unknown comparison {op!r} in THRESHOLDS")
 
 
 def main() -> int:
@@ -161,12 +197,7 @@ def main() -> int:
         # what the binary does with a config that says nothing, and a gate that
         # trusted the header could pass against a stale build.
         rc, out = run(tmp, "dflt", CONFIGS["cgrid"])
-        sm = [l for l in out.splitlines() if l.startswith("HYBMESH_MB_SMOOTH ")]
-        cap = None
-        for tok in (sm[0].split()[1:] if sm else []):
-            k, _, v = tok.partition("=")
-            if k == "cap":
-                cap = int(v)
+        cap = smooth_line(out).get("cap")
         check(f"1. smoothing is ON at the default and the cap is "
               f"{DEFAULT_SWEEPS} (rc={rc}, cap={cap}) — so every bar below is "
               f"measured on what a user who writes no MB_SMOOTH_ITERS line gets",
@@ -202,7 +233,7 @@ def main() -> int:
         unsmoothed = {}
         for case in THRESHOLDS:
             rc0, out0 = run(tmp, case + "_off", CONFIGS[case],
-                            "\nMB_SMOOTH_ITERS 0\n")
+                            NO_SMOOTH)
             q0 = qlines(out0)
             check(f"3. the shipped {case} also meshes with smoothing OFF "
                   f"(rc={rc0})", rc0 == 0 and len(q0) == 1)
@@ -238,24 +269,28 @@ def main() -> int:
                   f"baseline, so the bars above are measured against the same "
                   f"mesh that ticket measured "
                   f"({cg_off['nonortho_max_deg']:.3f} vs 32.044)",
-                  abs(cg_off["nonortho_max_deg"] - 32.044106) < 1e-3
-                  and abs(cg_off["nonortho_mean_deg"] - 4.561874) < 1e-3)
+                  all(abs(cg_off[k] - v) < 1e-3
+                      for k, v in CGRID_BASELINE.items()
+                      if not k.endswith("_rel")))
 
         # ── 4. #80's O-grid bullet: unmet, and the gap cannot GROW ──────────
         og = at_default.get("ogrid")
         if og:
-            gap = og["nonortho_max_deg"] - 2.250
+            bar = OGRID_BASELINE["nonortho_max_deg"]
+            gap = og["nonortho_max_deg"] - bar
             check(f"4. #80's O-grid bullet is NOT met and the shortfall is held: "
                   f"the worst angle is {og['nonortho_max_deg']:.4f} deg against "
-                  f"#55's 2.250, a gap of {gap:.4f} deg ({100 * gap / 2.250:.2f}%) "
-                  f"— under 2%, and #84 localised it to the FROZEN faceted outer "
-                  f"wall rather than to the smoother. If this ever reaches 0, "
-                  f"delete the check and close the bullet in #80.",
-                  0.0 < gap < 0.045)
+                  f"#55's {bar:g}, a gap of {gap:.4f} deg "
+                  f"({100 * gap / bar:.2f}%) — under "
+                  f"{100 * OGRID_MAX_GAP_FRAC:g}%, and #84 localised it to the "
+                  f"FROZEN faceted outer wall rather than to the smoother. If this "
+                  f"ever reaches 0, delete the check and close the bullet in #80.",
+                  0.0 < gap < OGRID_MAX_GAP_FRAC * bar)
+            wbar = OGRID_BASELINE["wall_first_cell_worst_rel"]
             check(f"4. ...while the O-grid's WALL accuracy is better than #55's "
-                  f"0.0812%, which is the metric a viscous solve reads "
+                  f"{100 * wbar:.4f}%, which is the metric a viscous solve reads "
                   f"({100 * og['wall_first_cell_worst_rel']:.4f}%)",
-                  og["wall_first_cell_worst_rel"] < 0.000812)
+                  og["wall_first_cell_worst_rel"] < wbar)
 
     print()
     if failures:

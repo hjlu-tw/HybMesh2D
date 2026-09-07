@@ -46,12 +46,23 @@ Measured 2026-09-04 on ``examples/topology/ogrid_circle.json`` +
 ``config/multiblock_ogrid.dat`` (four blocks, 49 x 25 nodes each, r = 0.5 body in
 an r = 10 far field, BL_INITIAL_THICKNESS 0.001):
 
-    ./run.sh -conf config/multiblock_ogrid.dat
+    ./run.sh -conf config/multiblock_ogrid.dat        # see the note below: this
+                                                     # command no longer produces
+                                                     # these figures
         -> EXIT 0
            4704 vertices, 9216 triangles, 192 boundary edges
            HYBMESH_MB_QUALITY cells=9216 inverted=0
                nonortho_max_deg=2.250000 nonortho_mean_deg=1.875000
                wall_first_cell_worst_rel=0.000812
+
+    THE COMMAND ABOVE IS #55's AND IS NOW SHORT ONE LINE. Since #85 the shipped
+    default is `MB_SMOOTH_ITERS 20`, so that invocation produces the SMOOTHED mesh
+    (2.276042 / 1.875000 / 0.000442) and reproducing the record above needs
+    `MB_SMOOTH_ITERS 0` appended. The figures are not restated here: a dated
+    quotation is a record of what ran on the day and is not edited afterwards
+    (#43's rule), so what is added is the missing line rather than new numbers.
+    #85's own runs on this case, at both 0 and 20 sweeps, are in
+    test_multiblock_cgrid_surface.py's docstring with the rest of that gate-2 set.
 
     solver/preprocess/getPGrid/work/getPGrid < para.in        # the grid converter
         -> EXIT 0
@@ -111,7 +122,16 @@ _GEOM = os.path.join(_REPO, "examples", "geometries")
 _TOPO = os.path.join(_REPO, "examples", "topology", "ogrid_circle.json")
 _CONF = os.path.join(_REPO, "config", "multiblock_ogrid.dat")
 sys.path.insert(0, _HERE)
-from mesher_bin import mesher_env as _mesher_env          # noqa: E402
+from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env
+
+# #55's OWN RECORDED BASELINE for this case, on the same terms as the C-grid's:
+# declared once, in the gate that owns the case, and read by
+# test_multiblock_quality_gate.py rather than retyped there.
+OGRID_BASELINE = {
+    "nonortho_max_deg": 2.250,
+    "nonortho_mean_deg": 1.875000,
+    "wall_first_cell_worst_rel": 0.000812,
+}          # noqa: E402
 from test_multiblock_weld_surface import (                # noqa: E402
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
 # The ONE writer of this repo's `.meta` sidecar convention. It lives next door
@@ -349,7 +369,7 @@ def main() -> int:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(topo.replace('"count": 49', '"count": %d' % count))
             p4, _ = run_case(tmp, "c%d" % count,
-                             base_config(topo=path) + "\nMB_SMOOTH_ITERS 0\n")
+                             base_config(topo=path) + NO_SMOOTH)
             q4 = quality(p4.stdout)
             check("7. the ring at radial count %d: exit 0, zero inverted" % count,
                   p4.returncode == 0 and q4.get("inverted") == 0.0)
