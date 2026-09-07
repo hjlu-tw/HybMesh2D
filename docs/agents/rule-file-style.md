@@ -2,9 +2,10 @@
 
 The style #59's compression tickets (#69–#72, #74) rewrite the rule files into, fixed on one
 block by **#68** so that a wrong style cost one block rather than 106k characters. The reference
-block is *"Boundary conditions are DECLARED; geometry attaches by ARC LENGTH"* in
-`.claude/rules/mesher.md` (#52), chosen because it carries all three hard cases at once: reversal
-narrative, a gate filename, and a named blind spot.
+block is *"Boundary conditions are DECLARED; geometry attaches by ARC LENGTH"*, chosen because
+it carries all three hard cases at once: reversal narrative, a gate filename, and a named blind
+spot. It was in `.claude/rules/mesher.md` (#52) and is now in
+`.claude/rules/mesher-multiblock.md`, which #89 split out of it.
 
 **What licenses this style**: the audience of these files is declared to be agents. Humans read
 `README.md`, `docs/architecture_overview.md` and `docs/design_notes/`. So a sentence whose work is
@@ -101,8 +102,12 @@ guidance the sentence carried still stands — do not trade an identifier for ch
 no longer be justified by there being room. **When a rule file runs out of budget the answer is a
 SPLIT, not a harder compression**: #77's `gui-lifecycle.md` and `gui-handoff.md` are the precedent,
 and the multi-block half of `mesher.md` (the seam, the split rules, welding, BC binding, the O- and
-C-grids, smoothing, the quality ruler) is a self-contained area with its own globs. Left as a
-decision rather than taken, because a ninth rule file changes CLAUDE.md's tripwire table.
+C-grids, smoothing, the quality ruler) was a self-contained area with its own globs. **#89 took
+it** — `.claude/rules/mesher-multiblock.md`, the ninth rule file — so this paragraph now records a
+decision made rather than one left open. What made it affordable is the distinction the next
+section draws: a relocation IS provable by concatenation equivalence, and #89's commit quotes the
+run (rules 51,671 normalised characters = 14,515 + 37,155 + 1, blind spots 17 = 3 + 14, zero
+identifiers lost).
 
 Gate: `python3 tools/PreProcessor/tests/test_instruction_budget.py` (check 3 fails the build if a
 gate filename is dropped, which is the red line most likely to be lost in transit).

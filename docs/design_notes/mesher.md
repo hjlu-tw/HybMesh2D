@@ -5,10 +5,14 @@ file was condensed to its rules. (The reason this line used to give — a 150k-c
 context limit — is false; `CLAUDE.md`'s header block carries the measured behaviour
 and keeps the superseded claim as a specimen. #60.) Nothing here was rewritten:
 this is the original prose, with its measurements, dated
-acceptance runs, injections and named blind spots. `.claude/rules/mesher.md` carries
-the rule (moved there from `CLAUDE.md` by #62, loaded on demand when a file under
-`src/`, `include/`, `config/` or `tests/cpp/` is read); this file carries why it is
-the rule.
+acceptance runs, injections and named blind spots. The RULES are in `.claude/rules/`
+(moved there from `CLAUDE.md` by #62, loaded on demand): `mesher.md` for
+configuration, the BL parameters, `MESH_MODE` the selector and the core C++, and
+`mesher-multiblock.md` for the whole `MESH_MODE 1` path, which #89 split out of it.
+Both point here, so this ONE note is the rationale for both. Which globs hand a
+session which file is `CLAUDE.md`'s tripwire table, not an enumeration here — that
+enumeration is what went stale four times in the files this note's own header used to
+list. This file carries why it is the rule.
 
 ### .dat Config Format (`config/Background_para.dat`)
 Key-value text file, command-line args override file values. Parameters grouped by function:
@@ -961,7 +965,8 @@ reach the solver.
   verified by re-injecting the chord measurement: check 36 goes red reproducing 0.049978 exactly,
   and the restore passes.
 - **Three more findings acted on, none of them behaviour.** (1) `EdgeSpec::law` was a
-  `std::string` compared at EIGHT sites — the exact shape `.claude/rules/mesher.md` already refuses
+  `std::string` compared at EIGHT sites — the exact shape `.claude/rules/mesher-multiblock.md`
+  already refuses
   for `MbEdgeKind` ("not a string compared at six sites — it was the latter for one commit, and the
   review that caught it..."), so Standards was citing the repo against the diff. It is now a
   file-local `SpacingLaw` enum with `spacingLawName` / `spacingLawList` / `parseSpacingLaw` in the
@@ -1137,7 +1142,7 @@ demonstration of one.
 
 **A SMOOTHING STAGE in the seam, with a kernel chosen because it is WRONG**
 (`MB_SMOOTH_ITERS`, default 0; #81, ticket 1 of #80's five). The rules are
-`.claude/rules/mesher.md`, "SMOOTHING is a STAGE inside the seam".
+`.claude/rules/mesher-multiblock.md`, "SMOOTHING is a STAGE inside the seam".
 
 > **THE KERNEL THIS BLOCK DESCRIBES WAS DELETED BY #82**, which is what the block was
 > written to make possible. Everything below is about the LAPLACIAN and is kept as
@@ -1278,8 +1283,8 @@ demonstration of one.
 **THE WINSLOW KERNEL, and the Laplacian deleted rather than kept beside it**
 (`MB_SMOOTH_ITERS` unchanged in key, type and default; `hybmesh::mbWinslowUpdate` in
 `include/MultiBlock.hpp` + `src/MultiBlock.cpp`; #82, ticket 2 of #80's five). The rules
-are `.claude/rules/mesher.md`, "SMOOTHING is a STAGE inside the seam, and its kernel is
-WINSLOW".
+are `.claude/rules/mesher-multiblock.md`, "SMOOTHING is a STAGE inside the seam, and its
+kernel is WINSLOW".
 
 - **What the kernel is.** The elliptic system for the COMPUTATIONAL coordinates,
   transformed so the physical ones are the unknowns:

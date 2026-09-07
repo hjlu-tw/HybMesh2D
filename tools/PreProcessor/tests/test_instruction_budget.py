@@ -83,7 +83,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 191 more of today because this repo's own prose
+bytes, which the root file has 199 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -208,6 +208,20 @@ Known remaining blind spots, stated rather than pretended away:
     line numbering again, and the running total since the split is what a line-number
     pointer would have to survive. The three `CLAUDE.md:235` mentions in this docstring
     are still the only ones in the repo and are still history rather than pointers.
+    #89's sweep found FIVE and repointed all five, which is the most any ticket in this
+    series has made stale: `docs/agents/rule-file-style.md`'s reference block (the document
+    teaching the style, pointing at a block it no longer holds), two `Why:` reverse pointers
+    in `docs/design_notes/mesher.md` naming the smoothing rule's file, that note's own
+    `MbEdgeKind` citation, and its HEADER, whose enumeration of which rule file carries what
+    is the exact form that went stale four times in `gui.md` — so it was replaced with a
+    pointer at the tripwire table, the fix that has held everywhere it was applied. Two more
+    are the shape this entry keeps naming and were repointed rather than named, in files
+    #89's own ticket puts out of scope: `src/MultiBlock.cpp:200` and
+    `test_multiblock_ogrid_surface.py:79`, each citing a rule by title that #89 moved. Both
+    are comment text, so no behaviour changed and the full suite and the golden comparator
+    say so; leaving a pointer this commit itself broke would have been the defect, not the
+    discipline. The two from EARLIER tickets (`arch_probes.py:171`,
+    `test_field_spec_tables.py:515`) are still there and still not this ticket's to fix.
  c2. `ROOT_BUDGET`'s DERIVATION is not checked, only its VALUE — and since #79 those are
     two claims rather than one. Check 7 holds the value: the root file's stated
     budget must equal this constant and its stated slack must equal that constant minus
@@ -258,18 +272,23 @@ Known remaining blind spots, stated rather than pretended away:
     loader for a pattern like `a/*/b`. Every pattern in this repo is a prefix glob or a
     literal, where the two agree — but a future middle-wildcard glob would be matched
     more eagerly here than by the tooling.
- f. Check 5's reach is 45 of the 132 module mentions across the eight rule files
-    (measured): 84 are named by a rule file whose globs do not claim them BY FILENAME —
-    the cross-area pointers the check must not fail — and 3 more are claimed but named in
+ f. Check 5's reach is 45 of the 132 module mentions across the rule files — the count of
+    FILES deliberately not spelled here, since #88's defect was a rule-file count written as
+    an English word and this entry carried a second one until #89 made it false. The 45 is
+    DATED and was already stale when #89 read it (48 today, drifted by some earlier commit);
+    it is ungated per (g) and reported on that ticket rather than quietly re-derived into a
+    figure that will decay again. Of the 132: 84 are named by a rule file whose globs do
+    not claim them BY FILENAME — the cross-area pointers the check must not fail — and 3
+    more are claimed but named in
     no design note at all (`controllers/solver_ctrl.py`,
     `views/result_canvas_interaction_mixin.py`, `views/result_canvas_plots_mixin.py`), so
     a rule whose rationale was never written is invisible to it. Two further escapes: a
     module named in BOTH notes passes, which is why `case_export.py` — already in
     `pipeline.md` through the `case_archive` and `case_input_paths` rationale — is not
     among the three its own injection fires on; and a rule file naming no Python module
-    is vacuously true, which is `mesher.md` (zero, its rules being about C++ and `.dat`
-    keys). The check therefore bites on the MAJORITY of a misfiled set, never on every
-    member.
+    is vacuously true, which is `mesher.md` and — since #89 split it —
+    `mesher-multiblock.md` (zero each, their rules being about C++ and `.dat` keys). The
+    check therefore bites on the MAJORITY of a misfiled set, never on every member.
  g. Check 7 covers figures the instruction files state about THEMSELVES. Four
     neighbouring families of hand-maintained figure are outside it, named here rather
     than left ambiguous — and a fifth thing that is not a family but a single third copy:
@@ -295,10 +314,10 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eight rule files now — 57,530 / 43,087 / 15,762 / 13,315 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher, pipeline-case, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 2,470 / 16,913 of
+    Nine rule files now — 44,429 / 43,087 / 16,451 / 15,762 / 13,315 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher-multiblock, pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 15,571 / 16,913 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    six, which have 44,238 / 46,685 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
+    seven, which have 43,549 / 44,238 / 46,685 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -409,7 +428,7 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # The property is a RELATIONSHIP between this number and the file's actual size, so it
 # is held by injection 5c below and not by this comment. RULE_BUDGET is untouched: #59
 # fixes that one, and nothing here reaches a rule file.
-ROOT_BUDGET = 34_500
+ROOT_BUDGET = 35_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

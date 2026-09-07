@@ -76,9 +76,9 @@ an r = 10 far field, BL_INITIAL_THICKNESS 0.001):
            tWall_valuesogrid.dat, vsurface_qtyogrid.dat.
 
 THIS IS THE FIRST MULTI-BLOCK GRID OF MORE THAN ONE BLOCK TO GO THROUGH EITHER
-BINARY. ``.claude/rules/mesher.md`` recorded that as outstanding for #53 on the
-grounds that "this checkout has no solver tree"; it has one, and the run above is
-it.
+BINARY. ``.claude/rules/mesher-multiblock.md`` recorded that as outstanding for #53
+on the grounds that "this checkout has no solver tree"; it has one, and the run
+above is it.
 
 BLIND SPOTS, named rather than papered over:
 
