@@ -15,7 +15,10 @@ paths:
 
 Loaded on demand when a multi-block header, source, `.dat` config or C++ test is read. The
 globs are PATTERNS rather than an enumeration, deliberately: an allow-list exempts whatever
-nobody enrolled, so a future `src/Mb*.cpp` starts life covered instead of silently ruleless.
+nobody enrolled, so a future `src/Mb*.cpp` or `include/Mb*.hpp` starts life covered instead of
+silently ruleless. **The coverage that buys is exactly those prefixes, not "any multi-block
+module"** — 4 of the 9 entries are literal filenames, so a `src/MultiBlockSmoother.cpp` would
+arrive with no rules. Name a new module `Mb*` or add the glob.
 Two of them are NOT multi-block modules and carry this path's rules from outside it —
 `src/cli.cpp`, which prints the quality banner and the two machine-readable lines, and
 `include/Config.hpp`, one of the two doors a negative sweep count is refused by name at.

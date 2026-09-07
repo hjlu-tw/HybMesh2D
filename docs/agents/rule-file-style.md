@@ -82,7 +82,7 @@ mechanical, since a false positive and a real loss look identical. It does **not
 | identifiers lost | **none** |
 | gate filenames preserved | `tests/cpp/test_multiblock.cpp`, `tests/test_multiblock_binding_surface.py` |
 | reversal | `SUPERSEDED by #53` + a grep-verified anchor (count 1) |
-| blind spot | moved to `mesher.md`'s new `## Named blind spots` |
+| blind spot | moved to `mesher.md`'s new `## Named blind spots`; #89 took it on to `mesher-multiblock.md` with the block |
 
 **−12% is the honest expectation, not −50%**, and where a file's blind spots consolidate into a
 list that did not exist before, the headline is smaller still: #73's whole-file pass was −7.7%,

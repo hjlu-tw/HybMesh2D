@@ -169,7 +169,10 @@ Known remaining blind spots, stated rather than pretended away:
     subprocess-environment rule rules on directly (its HINTS list is the defect that kept
     CI red) and which no glob in any rule file matches; `.github/workflows/gui-tests.yml`
     is the same shape. Both are named in `gui-lifecycle.md`'s header and in its tripwire
-    row. Three instances now (`phi_quality.py`, `run_batch.py`, `CMakeLists.txt`), and the
+    row. Three instances at that point (`phi_quality.py`, `run_batch.py`, `CMakeLists.txt`) —
+    a FOURTH arrived with #89, recorded in `mesher-multiblock.md`'s blind-spot list
+    (`tools/PreProcessor/include/Spacing.hpp`, named by the O-grid rule and reached by no
+    glob anywhere) — and the
     pattern is that the unreachable file is always the one OUTSIDE the package the rule's
     other modules live in. Check 6 is the inverse-direction check and does not see this
     one: it asks whether a glob reaches a file whose rule is elsewhere, never whether a
@@ -272,12 +275,16 @@ Known remaining blind spots, stated rather than pretended away:
     loader for a pattern like `a/*/b`. Every pattern in this repo is a prefix glob or a
     literal, where the two agree — but a future middle-wildcard glob would be matched
     more eagerly here than by the tooling.
- f. Check 5's reach is 45 of the 132 module mentions across the rule files — the count of
+ f. Check 5's reach is 45 of the 136 module mentions across the rule files — the count of
     FILES deliberately not spelled here, since #88's defect was a rule-file count written as
-    an English word and this entry carried a second one until #89 made it false. The 45 is
-    DATED and was already stale when #89 read it (48 today, drifted by some earlier commit);
-    it is ungated per (g) and reported on that ticket rather than quietly re-derived into a
-    figure that will decay again. Of the 132: 84 are named by a rule file whose globs do
+    an English word and this entry carried a second one until #89 made it false. #89's first
+    attempt at this sentence then supplied the thirteenth instance of the defect the whole
+    ledger is about, and BOTH review axes caught it: it read `48 today` over the 45, which is
+    `owned` and not `reach` — the two differ by the 3 below. Measured across HEAD~1 and HEAD:
+    reach 45 both times and never stale, while the TOTAL had drifted 132 -> 135 under some
+    earlier commit and #89 itself added the 136th. All four numbers are re-derived together
+    here, because the entry decomposes (45 + 88 + 3 = 136) and half an update makes it read
+    consistently while being wrong. Of the 136: 88 are named by a rule file whose globs do
     not claim them BY FILENAME — the cross-area pointers the check must not fail — and 3
     more are claimed but named in
     no design note at all (`controllers/solver_ctrl.py`,
@@ -314,10 +321,10 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Nine rule files now — 44,429 / 43,087 / 16,451 / 15,762 / 13,315 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher-multiblock, pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 15,571 / 16,913 of
+    Nine rule files now — 44,680 / 43,087 / 16,451 / 15,762 / 13,669 / 12,672 / 12,643 / 11,861 / 8,969  characters (mesher-multiblock, pipeline-case, mesher, gui-results, gui-seams, gui-canvas-edit, gui-handoff, gui-panels-config, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 15,320 / 16,913 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    seven, which have 43,549 / 44,238 / 46,685 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
+    seven, which have 43,549 / 44,238 / 46,331 / 47,328 / 47,357 / 48,139 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -1123,9 +1130,12 @@ SELF_REPORT = (
                 r"left\.\*\*",
      "fields": ("rule_count",)},
     # The SAME derivation's second anchor in the root: the tripwire table's `gui-seams`
-    # row calls its glob "the widest glob of the eight". #88's own Spec review found it
-    # still hand-written after the ticket claimed to have closed the last one, which is
-    # story 5's shape exactly -- one derivation, two anchors, one check.
+    # row calls its glob "the widest glob of the <count>" -- the word itself is what this
+    # entry rewrites, so it is not quoted here. #88's own Spec review found it still
+    # hand-written after the ticket claimed to have closed the last one, which is story 5's
+    # shape exactly -- one derivation, two anchors, one check. #89 found the THIRD copy of
+    # the same sentence, in `gui-seams.md`'s own header, where no target reaches it: it was
+    # DELETED rather than gated, since a count that need not be stated cannot go stale.
     {"label": "the root's rule-file count, the tripwire table's copy", "target": "root",
      "pattern": r"the~widest~glob~of~the~([a-z]+|[\d,]+),~because~these~rules~bind",
      "fields": ("rule_count_lower",)},

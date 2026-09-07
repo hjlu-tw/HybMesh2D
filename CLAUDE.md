@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **34,834
-characters (35,033 bytes, 2026-09-07) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **34,854
+characters (35,053 bytes, 2026-09-07) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**35,500**, leaving 666 characters of slack — derived by a rule the gate states at that
+**35,500**, leaving 646 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -73,7 +73,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | Area | Read this rule file first | Before touching |
 |------|---------------------------|-----------------|
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
-| Mesher — the `MESH_MODE 1` multi-block path (the pure entry point, the split rules, the quality ruler, BC binding by arc length, topological welding, the O-grid, the C-grid, smoothing) | `.claude/rules/mesher-multiblock.md` | `include/Mb*.hpp`, `src/Mb*.cpp`, `MultiBlock.[hc]pp`, `config/multiblock_*.dat`, `tests/cpp/test_m[bu]*.cpp` — the exact globs are that file's own `paths:` list, and they are PATTERNS rather than an enumeration so a future multi-block module is covered with no edit. Two of them, `src/cli.cpp` and `include/Config.hpp`, are the row above's as well and are named in its header: a multi-block session loads BOTH files, which is the intended overlap. |
+| Mesher — the `MESH_MODE 1` multi-block path (the pure entry point, the split rules, the quality ruler, BC binding by arc length, topological welding, the O-grid, the C-grid, smoothing) | `.claude/rules/mesher-multiblock.md` | `include/MultiBlock.hpp`, `include/Mb*.hpp`, `src/MultiBlock.cpp`, `src/Mb*.cpp`, `src/cli.cpp`, `include/Config.hpp`, `config/multiblock_*.dat`, `tests/cpp/test_multiblock*.cpp`, `tests/cpp/test_mb_*.cpp` — all nine verbatim, not a shorthand, which this row got wrong once. Five are patterns, so a new `Mb*` module is covered with no edit and a differently-named one is not. The last two, `src/cli.cpp` and `include/Config.hpp`, are the row above's as well and are named in that file's header: a multi-block session loads BOTH files, the intended overlap. |
 | Full pipeline and solver case (case directory, archive, clean, restart point, bDecompose, STL3d, the immersed-boundary hand-off, the pipeline schema and stage set, the portable case export and its `.hws` re-import) | `.claude/rules/pipeline-case.md` | the case / solver-case / restart / pipeline / STL3d / IB / contour services, `models/pipeline_config.py`, `run_pipeline.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, workers and views it also governs from outside them. |
 | GUI panel configuration (the field-spec tables, the one-directional panel↔model data flow, the derived `.dat` key map, the Edit-BL dialog's grouping, length units and `Linf`, the physical-length spin box) | `.claude/rules/gui-panels-config.md` | `views/panels/**`, `views/clean_double_spin_box.py`, the field-spec / units / config-ownership services, `models/mesh_config*` — the exact globs are that file's own `paths:` list, and its header names the controllers it also governs from outside them. Two of its globs are WIDER than the area: a results panel's rules are in `gui-results.md`, `views/panels/restart_chooser.py`'s are in `pipeline-case.md`, and `MeshConfig.output_base`'s Output-`.*` rule is in `gui-handoff.md` with `models/mesh_output_names.py`, where #77 moved it. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `commands/**`, `app/popup_stack.py` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
@@ -92,10 +92,9 @@ a file in its area.**
 **Nine rule files now, and NO area of residue is left.** #59 planned six, derived from this
 file's section HEADINGS; deriving them from the text instead needed eight, and the two extra
 (#77's `gui-lifecycle.md` and `gui-handoff.md`) hold 13,894 characters this file used to carry
-for areas the original partition assigned to nobody. The ninth (#89) is the first split taken
-for CONTEXT rather than coverage — the contiguous 66% of `mesher.md` that was the
-`MESH_MODE 1` path — so it is an OVERLAP rather than a partition, and it moved no rule,
-which its commit PROVES by concatenation equivalence. The last residue went with #76: the two
+for areas the original partition assigned to nobody. The ninth (#89) is the first taken for
+CONTEXT rather than coverage — the contiguous 66% of `mesher.md` that was the `MESH_MODE 1`
+path — so it OVERLAPS rather than partitions. The last residue went with #76: the two
 portable case-export blocks, 3,878 characters, into `pipeline-case.md` — the rule file whose
 globs ALREADY reached their four modules, which is what made them a defect rather than a gap —
 and their rationale from `docs/design_notes/gui.md` into `pipeline.md`, so that rule file's one

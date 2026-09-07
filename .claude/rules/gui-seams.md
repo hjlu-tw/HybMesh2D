@@ -6,8 +6,11 @@ paths:
 # GUI seam rules, and the four repo-wide standards in full
 
 Loaded on demand when **any** file under `tools/PreProcessor/gui/` is read — deliberately the
-widest glob of the eight, because these rules bind every GUI file rather than one area's, so no
-narrower glob keeps their reach. **Rules only** — the rationale (the measurements, the dated user
+widest glob of any rule file, because these rules bind every GUI file rather than one area's, so
+no narrower glob keeps their reach. **The COUNT of rule files is not spelled here on purpose**:
+this sentence carried it as an English word, `--sync` could not reach it, and #89's ninth file
+left it false while the identical wording in the root's tripwire row was rewritten from the tree.
+A count that need not be stated is better deleted than gated — #88's lesson, applied by removal. **Rules only** — the rationale (the measurements, the dated user
 reports, the injections and the named blind spots) is `docs/design_notes/gui.md`. Read that note
 before overruling a rule here; when a rule changes, update BOTH. **One rule's rationale is here
 instead, so that pointer is true only in part**: the parity block came out of the root file's
