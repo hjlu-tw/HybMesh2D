@@ -312,17 +312,25 @@ Known remaining blind spots, stated rather than pretended away:
     Since #79 the MEASUREMENTS in this entry are GATED by check 7 — the sizes, their
     descending order, the file names beside them, both headroom lists and `RULE_BUDGET`'s
     own value, all derived from one reading of the tree — so what follows is the argument
-    for the shape, no longer a request for discipline. #88 closed the ONE figure #79 left
-    behind, and it was a word rather than a number: the count in "any of the other six"
-    was English, written into this sentence, into that registry entry's own label and
-    into an injection argument. `--sync` rewrote the numbers after it and could not
-    reach the noun that counts them, so a ninth rule file would have landed with the gate
-    reporting ALL PASS over its own prose saying there were eight — a hand-maintained
-    count inside the check that exists so no figure needs a person to remember it. It is
-    now `rule_count_rest`, `len()` of the very slice the headroom beside it is computed
-    from, and injections 13e2/13e3 hold it in both directions. Named here rather than
-    quietly deleted, because the interesting part is not the fix: this is the twelfth
-    instance in the series, arriving from INSIDE the thing built to end it.
+    for the shape, no longer a request for discipline. #88 closed what #79 left behind,
+    and it was a WORD rather than a number: the count in "any of the other six" was
+    English, written into this sentence, into that registry entry's own label and into an
+    injection argument. `--sync` rewrote the numbers after it and could not reach the noun
+    that counts them, so a ninth rule file would have landed with the gate reporting ALL
+    PASS over its own prose saying there were eight — a hand-maintained count inside the
+    check that exists so no figure needs a person to remember it. It is now
+    `rule_count_rest`, `len()` of the very slice the headroom beside it is computed from,
+    and injections 13e2/13e3 hold it in both directions.
+
+    #88 thought that was the last one and it was not: its own Spec review found a SECOND
+    hand-written count, in the root's tripwire table ("the widest glob of the eight"),
+    left standing by the commit that announced the defect closed. Same derivation, third
+    anchor. It also needed `rule_count_lower`, because `_fmt_word` capitalises for the
+    prose count that opens its sentence and `--sync` wrote "Nine" into a mid-sentence
+    slot whose anchor then stopped resolving — a red the tree could not fix by hand.
+    Named here rather than quietly deleted, because the interesting part is not the fix:
+    these are the twelfth and thirteenth instances in the series, and both arrived from
+    INSIDE the thing built to end it.
     The entry's other figures (#76's
     3,446, #70's 263, #65's 12,611, the 11,348 below) are dated history and are NOT gated,
     per blind spot (g). It was the last of these figures to be maintained by hand and
@@ -985,7 +993,7 @@ def _fmt_word(values):
 def _fmt_word_lower(values):
     """`_fmt_word`'s word where the prose is mid-sentence and a capital would be wrong.
 
-    A formatter and not a second parse rule: both callers spell the SAME derivation off
+    A formatter and not a second parse rule: every caller spells the SAME derivation off
     the same reading of the tree, and only their position in a sentence differs. The
     digit fallback is unaffected -- `str(n).lower()` is `str(n)`.
     """
@@ -998,6 +1006,11 @@ def _parse_names(text):
 
 def _fmt_names(values):
     return ", ".join(values)
+
+
+def _rule_count(world):
+    """How many rule files there are. One derivation; three anchors spell it."""
+    return (len(world["rules"]),)
 
 
 def _rules_by_size(world):
@@ -1046,7 +1059,12 @@ _FIGURES = {
     # headroom lists that are DERIVED from it. Ungated, that sentence could read 60,000
     # while `--sync` rewrote every headroom beside it from a different constant.
     "rule_budget": _Figure(_parse_nums, _fmt_nums, lambda w: (RULE_BUDGET,)),
-    "rule_count": _Figure(_parse_word, _fmt_word, lambda w: (len(w["rules"]),)),
+    "rule_count": _Figure(_parse_word, _fmt_word, _rule_count),
+    # The same derivation for a MID-SENTENCE anchor, where `_fmt_word`'s capital would be
+    # wrong. Not cosmetic: measured on a phantom ninth rule file, `--sync` wrote "Nine"
+    # into the tripwire table's lowercase slot and the `[a-z]+` anchor beside it stopped
+    # resolving on the next pass -- check 7 red, with no hand-fixable figure to blame.
+    "rule_count_lower": _Figure(_parse_word, _fmt_word_lower, _rule_count),
     "rule_sizes": _Figure(
         _parse_nums, _fmt_nums, lambda w: tuple(c for _, c in _rules_by_size(w))),
     "rule_names": _Figure(
@@ -1085,6 +1103,13 @@ SELF_REPORT = (
      "pattern": r"\*\*([A-Za-z]+|[\d,]+)~rule~files~now,~and~NO~area~of~residue~is~"
                 r"left\.\*\*",
      "fields": ("rule_count",)},
+    # The SAME derivation's second anchor in the root: the tripwire table's `gui-seams`
+    # row calls its glob "the widest glob of the eight". #88's own Spec review found it
+    # still hand-written after the ticket claimed to have closed the last one, which is
+    # story 5's shape exactly -- one derivation, two anchors, one check.
+    {"label": "the root's rule-file count, the tripwire table's copy", "target": "root",
+     "pattern": r"the~widest~glob~of~the~([a-z]+|[\d,]+),~because~these~rules~bind",
+     "fields": ("rule_count_lower",)},
     # Story 5: the byte-char delta is stated in BOTH files and drifted in BOTH during
     # #78, then drifted here AGAIN in the commit before #79 while the root's copy was
     # re-measured. One derivation, two anchors, one check.
@@ -1784,7 +1809,7 @@ hits = [f for f in sr if "rule_sizes" in f]
 check(len(hits) == 1
       and _fmt_nums(tuple(c for _, c in _rules_by_size(world))) in hits[0],
       "injection 13d. check 7 fails on blind spot (d)'s hand-maintained sizes, printing "
-      "the whole derived list so the fix is a paste rather than eight measurements")
+      "the whole derived list so the fix is a paste rather than one measurement per file")
 
 # 13e. a NEW rule file. The count word, the name list and both size lists all go stale at
 # once, and every one of them is a figure a future ticket would otherwise have to
@@ -1798,14 +1823,18 @@ sr = check_self_report(inj)
 # `startswith`, not `in`: every check 7 message ENDS with the gate path, because that is
 # where the `--sync` it tells you to run lives. `_TARGET_PATH["gate"] in f` is therefore
 # true of the ROOT's failure too, and "fails in BOTH files" would be half-untested.
+# Named field by field, and BOTH of the root's anchors: one derivation spelled in three
+# places, so an assertion that any ONE of them fired would leave the other two inert.
 check(any("(rule_count)" in f and f.startswith(_ROOT_NAME) for f in sr)
+      and any("(rule_count_lower)" in f and f.startswith(_ROOT_NAME) for f in sr)
       and any("(rule_count)" in f and f.startswith(_TARGET_PATH["gate"]) for f in sr)
       and any("rule_names" in f for f in sr)
       and any("rule_headroom_rest" in f for f in sr)
       and any("rule_count_rest" in f for f in sr),
-      "injection 13e. check 7 fails on the rule-file COUNT in both files, on the name list, "
-      "on the headroom list and on the COUNT INSIDE that headroom sentence — a new rule "
-      "file cannot land while two files still state the old one")
+      "injection 13e. check 7 fails on the rule-file COUNT at all three of its anchors — "
+      "the root's prose, the root's tripwire table and this file — plus the name list, the "
+      "headroom list and the COUNT INSIDE that headroom sentence: a new rule file cannot "
+      "land while any of them still states the old one")
 
 # 13e2. #88: the same phantom file through `--sync`, which is the half that makes the
 # sentence maintainable rather than merely gated. Before #88 `--sync` rewrote the six
