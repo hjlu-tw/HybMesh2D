@@ -66,7 +66,7 @@ Checks:
  7. Every figure the instruction files state ABOUT THEMSELVES agrees with disk: the
     root's character count, its byte count, its token estimate, its budget and its slack;
     the byte-char delta, stated in BOTH this file and the root; the rule-file count, also
-    stated in both; and blind spot (d)'s eight rule-file sizes with their descending order,
+    stated in both; and blind spot (d)'s rule-file sizes with their descending order,
     both headroom lists and `RULE_BUDGET`'s own value beside them. Every one of those was maintained BY HAND, and writing any of
     them changes the file being measured, so keeping them true is a joint fixed-point
     iteration rather than a measurement — which is why it had failed eleven times in eight
@@ -309,10 +309,21 @@ Known remaining blind spots, stated rather than pretended away:
     derivation stated at its definition below, which is the one place that spells it out;
     this entry deliberately does not restate it, since a second copy is what "stated there
     only" would stop being true of. `RULE_BUDGET` stays flat; #59 fixes that one.
-    Since #79 the MEASUREMENTS in this entry are GATED by check 7 — the eight sizes, their
+    Since #79 the MEASUREMENTS in this entry are GATED by check 7 — the sizes, their
     descending order, the file names beside them, both headroom lists and `RULE_BUDGET`'s
     own value, all derived from one reading of the tree — so what follows is the argument
-    for the shape, no longer a request for discipline. The entry's other figures (#76's
+    for the shape, no longer a request for discipline. #88 closed the ONE figure #79 left
+    behind, and it was a word rather than a number: the count in "any of the other six"
+    was English, written into this sentence, into that registry entry's own label and
+    into an injection argument. `--sync` rewrote the six numbers after it and could not
+    reach the noun that counts them, so a ninth rule file would have landed with the gate
+    reporting ALL PASS over its own prose saying there were eight — a hand-maintained
+    count inside the check that exists so no figure needs a person to remember it. It is
+    now `rule_count_rest`, `len()` of the very slice the headroom beside it is computed
+    from, and injections 13e2/13e3 hold it in both directions. Named here rather than
+    quietly deleted, because the interesting part is not the fix: this is the twelfth
+    instance in the series, arriving from INSIDE the thing built to end it.
+    The entry's other figures (#76's
     3,446, #70's 263, #65's 12,611, the 11,348 below) are dated history and are NOT gated,
     per blind spot (g). It was the last of these figures to be maintained by hand and
     the last to go stale: `gui-handoff.md` read 11,348 against a real 12,643, left by the
@@ -876,7 +887,7 @@ def check_root_rule_coverage(world):
 
 # --- check 7 ------------------------------------------------------------------
 # The instruction files state figures ABOUT THEMSELVES -- the root's character count,
-# its byte count, the byte-char delta, its budget and its slack; this file's own eight
+# its byte count, the byte-char delta, its budget and its slack; this file's own
 # rule-file sizes and their headroom. Every one was maintained by hand, and writing any
 # of them changes the file being measured, so keeping them true needs a joint
 # fixed-point iteration rather than a measurement. That had failed ELEVEN times in eight
@@ -931,7 +942,7 @@ def _rx(pattern):
 
 
 # A run of comma-grouped integers separated by ` / `, which is how this file writes the
-# eight rule-file sizes and both headroom lists.
+# rule-file sizes and both headroom lists.
 _NUM_LIST = r"((?:[\d,]+~/~)*[\d,]+)"
 
 _NUM_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
@@ -965,10 +976,20 @@ def _fmt_word(values):
     A `_NUM_WORDS[13]` would be an IndexError rather than a named failure, and a gate
     whose job is to say WHICH figure is wrong must not answer with a traceback (this
     repo has scored an injection's crash as a pass before). Thirteen rule files is a
-    reachable state: #59 planned six and there are eight.
+    reachable state: #59 planned six and #77 made it eight.
     """
     n = values[0]
     return _NUM_WORDS[n].capitalize() if 0 <= n < len(_NUM_WORDS) else str(n)
+
+
+def _fmt_word_lower(values):
+    """`_fmt_word`'s word where the prose is mid-sentence and a capital would be wrong.
+
+    A formatter and not a second parse rule: both callers spell the SAME derivation off
+    the same reading of the tree, and only their position in a sentence differs. The
+    digit fallback is unaffected -- `str(n).lower()` is `str(n)`.
+    """
+    return _fmt_word(values).lower()
 
 
 def _parse_names(text):
@@ -1036,6 +1057,16 @@ _FIGURES = {
     "rule_headroom_rest": _Figure(
         _parse_nums, _fmt_nums,
         lambda w: tuple(RULE_BUDGET - c for _, c in _rules_by_size(w)[2:])),
+    # How many files that "the rest" list covers, spelled as the word the sentence uses.
+    # It is `len()` of the very slice the headroom beside it is computed from, so the two
+    # cannot disagree. Until #88 this was the English word "six", written three times by
+    # hand -- into the entry's label, into its pattern and into an injection argument --
+    # and it was the LAST hand-maintained figure inside the check that exists so that no
+    # figure needs a person to remember it. `--sync` rewrote the numbers beside it and
+    # could not reach the word, so a ninth rule file would have left the gate ALL PASS
+    # while its own documentation said there were eight.
+    "rule_count_rest": _Figure(
+        _parse_word, _fmt_word_lower, lambda w: (len(_rules_by_size(w)[2:]),)),
 }
 
 SELF_REPORT = (
@@ -1059,11 +1090,11 @@ SELF_REPORT = (
     {"label": "this gate's own byte-char delta", "target": "gate",
      "pattern": r"the~root~file~has~([\d,]+)~more~of~today",
      "fields": ("root_delta",)},
-    # Blind spot (d)'s eight sizes, their descending ORDER, and the count word that
+    # Blind spot (d)'s sizes, their descending ORDER, and the count word that
     # introduces them. #79 asks whether these are in scope; they are, because the
     # anchoring allows it -- the entry names the files beside their sizes, so the
     # mapping is in the prose rather than assumed here.
-    {"label": "blind spot (d)'s eight rule-file sizes", "target": "gate",
+    {"label": "blind spot (d)'s rule-file sizes", "target": "gate",
      "pattern": r"([A-Za-z]+)~rule~files~now~—~" + _NUM_LIST +
                 r"~characters~\(([a-z0-9-]+(?:,~[a-z0-9-]+)*)\)",
      "fields": ("rule_count", "rule_sizes", "rule_names")},
@@ -1074,9 +1105,9 @@ SELF_REPORT = (
      "pattern": r"a~move~larger~than~the~" + _NUM_LIST +
                 r"~of~headroom~the~two~large~ones~have~left",
      "fields": ("rule_headroom_large",)},
-    {"label": "blind spot (d)'s headroom, the other six", "target": "gate",
-     "pattern": r"a~move~into~any~of~the~other~six,~which~have~" + _NUM_LIST + r"\.",
-     "fields": ("rule_headroom_rest",)},
+    {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
+     "pattern": r"a~move~into~any~of~the~other~([a-z]+),~which~have~" + _NUM_LIST + r"\.",
+     "fields": ("rule_count_rest", "rule_headroom_rest")},
 )
 
 # Derived from the registry, never stated: a figure count written here by hand would be
@@ -1733,14 +1764,14 @@ check(len(hits) == 1 and "70,000" in hits[0] and _fmt_nums((RULE_BUDGET,)) in hi
       "injection 13c2. check 7 fails when the prose and the constant disagree, so the "
       "budget the headroom lists are computed FROM cannot drift away from them")
 
-# 13d. blind spot (d)'s eight rule-file sizes. #79 asks whether they are in scope; they
+# 13d. blind spot (d)'s rule-file sizes. #79 asks whether they are in scope; they
 # are, and this is why it was answerable: the entry names each file beside its size, so
 # the size list, the descending ORDER and the two headroom lists all derive from the same
 # on-disk measurement.
-inj, was = bend_figure(world, "blind spot (d)'s eight rule-file sizes", 2,
+inj, was = bend_figure(world, "blind spot (d)'s rule-file sizes", 2,
                        "1 / 2 / 3 / 4 / 5 / 6 / 7 / 8")
 check(inj["gate"] != world["gate"] and _parse_nums(was) != (1, 2, 3, 4, 5, 6, 7, 8)
-      and _resolve(inj, _entry_by_label("blind spot (d)'s eight rule-file sizes"))[1] is None,
+      and _resolve(inj, _entry_by_label("blind spot (d)'s rule-file sizes"))[1] is None,
       "injection 13d. injection is well-formed: the size list really differs and the entry "
       "still parses as one anchor with three fields")
 sr = check_self_report(inj)
@@ -1759,13 +1790,56 @@ check(len(inj["rules"]) == len(world["rules"]) + 1
       and _rules_by_size(inj) != _rules_by_size(world),
       "injection 13e. injection is well-formed: the rule set really gained a file")
 sr = check_self_report(inj)
-check(any("rule_count" in f and _ROOT_NAME in f for f in sr)
-      and any("rule_count" in f and _TARGET_PATH["gate"] in f for f in sr)
+check(any("(rule_count)" in f and _ROOT_NAME in f for f in sr)
+      and any("(rule_count)" in f and _TARGET_PATH["gate"] in f for f in sr)
       and any("rule_names" in f for f in sr)
-      and any("rule_headroom_rest" in f for f in sr),
-      "injection 13e. check 7 fails on the rule-file COUNT in both files, on the name list "
-      "and on the headroom list — a ninth rule file cannot land while two files still say "
-      "eight")
+      and any("rule_headroom_rest" in f for f in sr)
+      and any("rule_count_rest" in f for f in sr),
+      "injection 13e. check 7 fails on the rule-file COUNT in both files, on the name list, "
+      "on the headroom list and on the COUNT INSIDE that headroom sentence — a ninth rule "
+      "file cannot land while two files still say eight")
+
+# 13e2. #88: the same phantom file through `--sync`, which is the half that makes the
+# sentence maintainable rather than merely gated. Before #88 `--sync` rewrote the six
+# numbers in that sentence and left the noun counting them, so this is the run that used
+# to end ALL PASS over prose saying eight.
+#
+# Every word below is DERIVED, the one on disk today included: an injection that spells
+# the tree's current count is the same defect one level out, and would go red on the
+# ninth rule file it exists to bless.
+_rest_entry = _entry_by_label("blind spot (d)'s headroom, the rest")
+
+
+def _rest_word(w):
+    """The count word blind spot (d)'s second headroom list should carry, for world `w`."""
+    return _fmt_word_lower((len(_rules_by_size(w)[2:]),))
+
+
+_before = _resolve(world, _rest_entry)[0].group(1)
+synced9, changes9, ok9 = sync_world(inj)
+_after = _resolve(synced9, _rest_entry)[0].group(1)
+check(ok9 and not check_self_report(synced9)
+      and _before == _rest_word(world) and _after == _rest_word(inj) and _after != _before
+      and any("the rest" in c and "%r -> %r" % (_before, _after) in c for c in changes9),
+      "injection 13e2. --sync moves the COUNT WORD in blind spot (d)'s prose with the tree "
+      "— %r -> %r on a ninth rule file, off the same slice the headroom list beside it is "
+      "computed from, with no hand edit anywhere" % (_before, _after))
+
+# 13e3. ...and the other direction, which is what makes 13e2 evidence rather than a
+# coincidence: bend the WORD by hand on the real tree and check 7 must fail, naming the
+# field and printing both the word on disk and the word the registry derives.
+_wrong_word = _fmt_word_lower((len(_rules_by_size(world)[2:]) + 1,))
+inj, was = bend_figure(world, "blind spot (d)'s headroom, the rest", 1, _wrong_word)
+check(inj["gate"] != world["gate"] and was == _rest_word(world)
+      and _resolve(inj, _rest_entry)[1] is None,
+      "injection 13e3. injection is well-formed: the count word really moved and the "
+      "entry still resolves as one anchor with two fields")
+sr = check_self_report(inj)
+hits = [f for f in sr if "rule_count_rest" in f]
+check(len(hits) == 1 and repr(_wrong_word) in hits[0] and repr(was) in hits[0]
+      and _TARGET_PATH["gate"] in hits[0],
+      "injection 13e3. check 7 fails on a hand-bent count word, naming the gate, the field "
+      "and BOTH words — the failure that was unreachable while the count was English")
 
 # 13f. `--sync` is the half #79 suspected was worth more than the check, so it is tested
 # as a property rather than shipped as a convenience: from an ARBITRARILY bent world it
@@ -1774,7 +1848,8 @@ check(any("rule_count" in f and _ROOT_NAME in f for f in sr)
 # substitution — the character count moves when the character count is written.
 inj, _was = bend_figure(world, "the root's always-loaded cost", 1, "7")
 inj, _was = bend_figure(inj, "the root's budget and its slack", 2, "123,456")
-inj, _was = bend_figure(inj, "blind spot (d)'s headroom, the other six", 1, "0 / 0 / 0 / 0 / 0 / 0")
+inj, _was = bend_figure(inj, "blind spot (d)'s headroom, the rest", 2,
+                        "0 / 0 / 0 / 0 / 0 / 0")
 check(len(check_self_report(inj)) >= 3 and len(inj["root"]) != len(world["root"]),
       "injection 13f. injection is well-formed: three figures across both files disagree, "
       "and bending them CHANGED the root's length — so the correct values are not the ones "
