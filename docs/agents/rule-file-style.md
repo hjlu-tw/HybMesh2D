@@ -90,9 +90,19 @@ anchors. **A compression ticket pays for the structure it adds**, so the headlin
 number to optimise — report the decomposition and let the two numbers disagree in public. These
 files are
 already dense; the style's value is structural — claim first, identifiers intact, reversals
-pointing rather than retelling, blind spots in one list — and **not** byte savings. No rule file is
-anywhere near its 60,000 budget, so a ticket that trades an identifier for characters has the
-trade backwards.
+pointing rather than retelling, blind spots in one list — and **not** byte savings, so a ticket
+that trades an identifier for characters has the trade backwards.
+
+**"No rule file is anywhere near its 60,000 budget" WAS this paragraph's next sentence and is no
+longer true** (measured 2026-09-07): `.claude/rules/mesher.md` reached **58,294 characters — 1,706
+of slack** as #82 landed, and a second whole-file pass over a file already in this style bought
+**−1.3% (764 characters, zero identifiers lost)**, in line with #69's −1.6% and #70's −0.7%. The
+guidance the sentence carried still stands — do not trade an identifier for characters — but it can
+no longer be justified by there being room. **When a rule file runs out of budget the answer is a
+SPLIT, not a harder compression**: #77's `gui-lifecycle.md` and `gui-handoff.md` are the precedent,
+and the multi-block half of `mesher.md` (the seam, the split rules, welding, BC binding, the O- and
+C-grids, smoothing, the quality ruler) is a self-contained area with its own globs. Left as a
+decision rather than taken, because a ninth rule file changes CLAUDE.md's tripwire table.
 
 Gate: `python3 tools/PreProcessor/tests/test_instruction_budget.py` (check 3 fails the build if a
 gate filename is dropped, which is the red line most likely to be lost in transit).

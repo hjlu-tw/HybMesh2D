@@ -284,10 +284,10 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   a block READS its four sides' node ids. There is no tolerance literal in the module. Negative
   control: two corners at the SAME coordinates under different ids stay TWO nodes.
 - **Only the block INTERIOR is interpolated now** — `coons` at u = 0 computes `(X + west[j]) - X`, so
-  a shared edge must be the side's OWN discretisation, not two curves that agree. Measured: 14/221
-  and 8/35 golden nodes move by **1.11e-16**, the new value being the exact one. `golden_mesh.py`
-  renders that as `worst 9.167e-01` — an ARTEFACT of zipping two sorted node lists whose x-groups
-  split; **do not read its magnitude on a case whose node SET changed membership**.
+  a shared edge must be the side's OWN discretisation, not two curves that agree. Golden nodes move
+  by **1.11e-16**, the new value being the exact one, which `golden_mesh.py` renders as
+  `worst 9.167e-01` — an ARTEFACT of zipping two sorted node lists whose x-groups split; **do not
+  read its magnitude on a case whose node SET changed membership**.
 - **The relation is "opposite sides of one block", and there is NO second rule for an interface** — a
   shared edge is one edge two blocks name, so it propagates across blocks by itself. `count` is now a
   SEED. The COUNT propagates; the **SPACING LAW does not**.
@@ -355,23 +355,22 @@ the measurements that forced the blending change, the acceptance run and the bli
   the edge could not honour (coarser than its count allows) is a WARNING measured on the produced
   nodes, not re-derived from the law — and **in ARC LENGTH, never the chord**: a bound edge follows
   a polyline, so a first interval spanning several facets has a shorter chord, and comparing that
-  fired the warning on a law that had honoured the request exactly (a 0.05 request reported as
-  0.049978) while blaming the node count for the geometry's own faceting. Found by BOTH review axes
-  independently; gated with a negative control by `test_multiblock.cpp` 36.
+  fired the warning on a law that had honoured the request exactly, blaming the node count for the
+  geometry's own faceting. Gated with a negative control by `test_multiblock.cpp` 36.
 - **`coons` blends by the boundary's own NORMALIZED ARC LENGTH, not by the logical index**, and this
   is load bearing rather than a refinement: the index blend put an O-grid's first interior ring
   **6927% above** the requested wall height (806% even at twelve sectors), the arc-length blend
   reproduces a polar annulus EXACTLY. Facing curves are averaged; a degenerate side falls back to the
   index; both ends pinned to 0 and 1. **Behaviour-preserving on the existing set, measured against a
-  HEAD binary**: worst node movement 6.7e-16. `golden_mesh.py` still showed 3 DIFFs — the
-  node-SET-membership artefact — so the baseline was re-captured, 17/17 SAME.
+  HEAD binary**: worst node movement 6.7e-16, with `golden_mesh.py`'s 3 DIFFs the node-SET-membership
+  artefact above.
 - **The O-grid is FOUR BLOCKS IN A RING** (`examples/topology/ogrid_circle.json`,
   `config/multiblock_ogrid.dat`): i runs outward, j anticlockwise, so the four radials are ONE
   equivalence class that WRAPS — one declared count, three propagated, the last block welded back to
   the first by node identity. Measured on the shipped files: 0 inverted, non-orthogonality max
-  2.25°, wall first cell **0.08%** off. That residue is the stored polyline's FACETING, not the law
-  — the same case on 10× finer circles measures 0.0007%, and the figure is identical at
-  `BL_INITIAL_THICKNESS` 1e-3, 1e-5 and 1e-7. Re-seeding the ring (25 / 49 / 97) does not move it.
+  2.25°, wall first cell **0.08%** off — a residue that is the stored polyline's FACETING, not the
+  law (10× finer circles measure 0.0007%; it does not move with `BL_INITIAL_THICKNESS` or the ring
+  seeding).
 - **The shipped circles are checked against their ONE generator** (`write_circle` in the surface
   gate), never trusted: a hand-edited `.dat` whose `.meta` still describes the old point set is a
   mesh with corners on the wrong segments and no error at all.
@@ -397,21 +396,16 @@ acceptance run: `docs/design_notes/mesher.md`.**
   (check 39) — the O-grid's ring closes on itself, this chain does not, and its open ends are the
   two halves the cut splits the outlet plane into.
 - **The gate that bit was GATE 2, not gate 1, and the fix was in the DOCUMENT.** Zero inverted
-  cells came on the first run of the shipped declaration, so **none of #57's three escalation steps
-  (Laplacian smoothing, shipping the O-grid instead, pulling elliptic smoothing forward) was
-  reached**. The solver then went to NaN in 40 iterations.
+  cells on the first run of the shipped declaration; the solver then went to NaN in 40 iterations.
 - **The far field's two nose sides cluster at their TRAILING-EDGE end to the AIRFOIL's own
   `ds_start`.** Over the chordwise surface the body's normals are nearly vertical and that boundary
   is horizontal, so the outer point opposite a body point sits at very nearly the same x and the
-  outer distribution must TRACK the body's. Left uniform: max non-orthogonality 59.52°, mean
-  16.0°, wall first cell 3.46%, and the blow-up was on the surface just aft of the **LEADING** edge
-  — #57 predicted the trailing edge. With it: **32.04° / 4.56° / 0.44%**, and the solver runs at
-  the same `cfl 0.6` the O-grid used. **It is DERIVED, not tuned**: change the airfoil edges'
-  spacing and this must follow.
-- **Lowering `cfl` to 0.3 also makes the BAD mesh run**, so "the solver runs" is quotable without
-  improving the grid at all — which is why the recorded run states its CFL. And the wake's 3144:1
-  worst edge ratio is **measured NOT to be the cause**: cutting it to 211 left the solver diverging
-  at the same iteration.
+  outer distribution must TRACK the body's. Left uniform: 59.52° / 16.0° / 3.46%, blowing up just
+  aft of the **LEADING** edge. With it: **32.04° / 4.56° / 0.44%**, at the same `cfl 0.6` the
+  O-grid used. **It is DERIVED, not tuned**: change the airfoil edges' spacing and this must follow.
+- **A recorded acceptance run must state its CFL**: lowering `cfl` to 0.3 also makes the BAD mesh
+  run, so "the solver runs" is quotable without improving the grid at all. The wake's 3144:1 worst
+  edge ratio is **measured NOT to be the cause**.
 - **A second airfoil file, not a sidecar beside `examples/geometries/naca0012.dat`.** That one is
   the hybrid path's geometry and has a golden baseline; a `.meta` beside it would change what that
   path reads. `naca0012_cgrid.dat` (two segments, split at the leading edge) and
@@ -454,24 +448,23 @@ pre-existing golden cases are unchanged (measured for both tickets, 18/18 SAME a
   (`MB_SMOOTH_ITERS 1.9` runs one sweep): the `.dat` reader takes every int key through a `double`,
   and diverging for one key would put back the per-row parse rule that let the two parsers
   disagree. Recorded as a limit, not left silent.
-- **THE NUMBER IS A CAP, AND THE SOLVE HAS THREE ENDINGS.** It stops when its residual — the
-  largest node move, over the STARTING mesh's bounding-box diagonal — falls under `MB_SMOOTH_TOL`
-  (1e-8; relative so mm and m take the same sweeps, and NOT a config key, because the knob a user
-  has is the cap). Still moving at the cap comes back `smoothConverged == false` with a warning.
-  **And it can DIVERGE**: the lagged-coefficient point iteration is only conditionally stable, and
-  the shipped C-grid turns at sweep 3724. So the solve stops at `MB_SMOOTH_DIVERGE_FACTOR` (10x)
-  its best residual and **returns the BEST ITERATE, not the last**, publishing `smoothDiverged` and
-  that iterate's sweep. **Never hand back a truncated solve as though it had finished.**
-- **A CAP IS TWO SITUATIONS, AND THE ADVICE MUST TELL THEM APART.** `smoothBestSweep` /
+- **THE NUMBER IS A CAP, AND THE SOLVE HAS THREE ENDINGS: converged, capped, DIVERGED.** It stops
+  when its residual — the largest node move, over the STARTING mesh's bounding-box diagonal — falls
+  under `MB_SMOOTH_TOL` (1e-8; relative so mm and m take the same sweeps, and NOT a config key,
+  because the knob a user has is the cap); still moving at the cap comes back
+  `smoothConverged == false` with a warning. The lagged-coefficient point iteration is only
+  conditionally stable, so on divergence the solve stops at `MB_SMOOTH_DIVERGE_FACTOR` (10x) its
+  best residual and **returns the BEST ITERATE, not the last**, publishing `smoothConverged`,
+  `smoothDiverged` and that iterate's sweep. **Never hand back a truncated solve as though it had finished.**
+- **A CAP IS TWO SITUATIONS AND THE ADVICE MUST TELL THEM APART.** `smoothBestSweep` /
   `smoothBestResidual` publish the smallest residual reached and when, recorded BEFORE either stop
   is tested (so a converged solve's best is the sweep it returned). Still FALLING has more to give;
-  already ABOVE its best has TURNED, and telling that user to raise the cap points at a worse mesh
-  — both wear `converged == false && diverged == false`, so the flags cannot distinguish them.
-  **And "raise it until it converges" is never the advice**: a converged plain Winslow solve is
-  each block's harmonic map and holds no declared first-cell height (3133% off on the C-grid, 1382%
-  on the O-grid). A small cap is the useful setting until #83. **The mesh at a cap is still the
-  LAST iterate** — N sweeps means N sweeps outside the diverged path — so the difference is SAID,
-  not silently repaired.
+  already ABOVE its best has TURNED, and both wear `converged == false && diverged == false`, so
+  the flags alone cannot distinguish them. **And "raise it until it converges" is never the
+  advice** — a converged plain Winslow solve is each block's harmonic map and holds no declared
+  first-cell height (3133% off on the C-grid, 1382% on the O-grid), so a small cap is the useful
+  setting until #83. **The mesh at a cap is still the LAST iterate** — N sweeps means N sweeps
+  outside the diverged path — so the difference is SAID, not silently repaired.
 - **EACH MACHINE-READABLE LINE KEEPS ONE MEANING, and the prefix is matched WITH its trailing
   space.** `HYBMESH_MB_QUALITY` always describes the mesh AS EXPORTED; the before half is
   `HYBMESH_MB_QUALITY_BEFORE` and appears only when a sweep ran, so an unsmoothed run's QUALITY
@@ -491,19 +484,18 @@ pre-existing golden cases are unchanged (measured for both tickets, 18/18 SAME a
   Winslow has no memory of the declared height. Record the miss as a number.
 - **THE LAPLACIAN #81 SHIPPED IS DELETED, not kept behind a selector.** Nothing read it and it
   loses on every column of both shipped cases at every cap (C-grid at 1 sweep: max 89.40° vs
-  31.44°, wall 36.61% vs 11.65%; at 5 it folds 4 cells where Winslow folds 0). A kernel-selection
-  enum over one surviving kernel is the abstraction the no-inert-alternatives rule exists to
-  prevent. It survives ONLY as `laplacianByHand` in `tests/cpp/test_multiblock.cpp`, so checks
-  claiming the two kernels differ have both sides written down.
-- **#80's O-GRID NEGATIVE CONTROL IS NOT MET BY THIS TICKET, and the reason is the freeze.** A case
-  already at 2.250° comes out at **3.312°**. The run's own wall table localises it: the first cell
-  is the declared height EXACTLY where a frozen radial interface pins it and 9.13% off mid-block,
-  so what the smoother adds is a KINK AT THE INTERFACE. Unfreezing those is #84. Recorded as unmet
-  and owned, not asserted away.
+  31.44°, wall 36.61% vs 11.65%). A kernel-selection enum over one surviving kernel is the
+  abstraction the no-inert-alternatives rule exists to prevent. It survives ONLY as
+  `laplacianByHand` in `tests/cpp/test_multiblock.cpp`, so checks claiming the two kernels differ
+  have both sides written down.
+- **#80's O-GRID NEGATIVE CONTROL IS NOT MET BY THIS TICKET, and the reason is the FREEZE.** A
+  case already at 2.250° comes out at **3.312°**: the first cell is the declared height EXACTLY
+  where a frozen radial interface pins it and 9.13% off mid-block, so what the smoother adds is a
+  KINK AT THE INTERFACE. Unfreezing those is #84. Recorded as unmet and owned, not asserted away.
 - **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
   9, no new code. **But it is no longer reachable on the shipped files** — Winslow folds nothing
-  the Laplacian folded (4 at 5 sweeps, 26 at 20) and REPAIRS folds the algebraic fill makes (13 of
-  13 on a re-entrant block). Reaching one needs a wall first cell of 0.0005 on the C-grid fixture.
+  the Laplacian folded (4 at 5 sweeps, 26 at 20) and REPAIRS folds the algebraic fill makes.
+  Reaching one needs a wall first cell of 0.0005 on the C-grid fixture.
 - Gated by `tests/cpp/test_multiblock.cpp` 40-50 (7 injections from #81 plus 13 from #82, dated in
   that file — twelve bit, and a thirteenth is INERT because the cross stencil's two off-diagonals
   enter with the same sign, which no gate can catch), `tests/test_multiblock_smooth_surface.py`
