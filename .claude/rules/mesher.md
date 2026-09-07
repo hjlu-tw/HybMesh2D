@@ -678,7 +678,7 @@ one list. #68 moved the first; #69 moved the rest.
   past the split — is INERT, because every reader downstream of it is id-only today. The
   fill-then-smooth-then-split ordering is a design rule held by a comment, not by a gate.
 - **The smoothed mesh is never given to the solver or the grid converter.** At this kernel that
-  would be a strange thing to want — 36.61% off the requested wall height is not a boundary layer
+  would be a strange thing to want — 11.65% off the requested wall height is not a boundary layer
   worth integrating — but it means "smoothing produces a mesh a solver accepts" is unproven, and
   belongs to the #80 ticket that makes the numbers better.
 - **The before/after tables are dated quotations**, not re-measured. The gates assert a DIRECTION
