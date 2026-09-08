@@ -48,12 +48,19 @@ def bc_definitions_for_patches(patches, group_bc: dict | None = None,
     """``bc_definitions`` rows for ``[(seg_id, patch_name), ...]`` — one row per
     patch, in the order given, each with the flag ``bc_flag_for_patch`` decides
     and no extra value (only a handful of BC types take one, and none of them can
-    be guessed from a patch)."""
+    be guessed from a patch).
+
+    ``patches`` is not defaulted away: ``None`` raises here as it did inline,
+    rather than being read as "no patches" — the one caller guards for that
+    already, and a silent empty table is the wrong answer to a bug upstream. The
+    one deliberate difference from the inline code it replaces: the rows are
+    built BEFORE the panel clears its table, so a malformed patch list leaves the
+    table as it was instead of half-filled."""
     return [{"segment_no": sid,
              "bc_type": bc_flag_for_patch(name, group_bc, euler),
              "values": "",
              "name": name}
-            for sid, name in patches or []]
+            for sid, name in patches]
 
 
 def bc_flag_overrides(names, group_bc: dict | None = None,
@@ -69,10 +76,8 @@ def bc_flag_overrides(names, group_bc: dict | None = None,
     item there), and is skipped without a lookup — distinct from ``""``, a row
     whose patch really is unnamed."""
     group_bc = group_bc or {}
-    if not group_bc:
-        return {}
     out: dict[int, int] = {}
-    for i, name in enumerate(names or []):
+    for i, name in enumerate(names):
         if name is None:
             continue
         key = name.strip()

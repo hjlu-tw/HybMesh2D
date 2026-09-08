@@ -141,6 +141,15 @@ check(bc_flag_overrides(_names, {}, euler=False) == {}
       and bc_flag_overrides([], _GROUP) == {},
       "8. …and nothing assigned means nothing offered, so a manual tweak on an "
       "unassigned row stands")
+_raised = []
+for _fn, _arg in ((bc_definitions_for_patches, None), (bc_flag_overrides, None)):
+    try:
+        _fn(_arg, _GROUP)
+    except TypeError:
+        _raised.append(_fn.__name__)
+check(_raised == ["bc_definitions_for_patches", "bc_flag_overrides"],
+      f"8. …while `None` where a LIST belongs still raises, as it did inline — a "
+      f"silent empty table is the wrong answer to a bug upstream ({_raised})")
 check(bc_flag_overrides(["geom", None, "XMin"], {**_GROUP, "": "inlet"}) == {0: 3, 2: 1},
       "8. …and a row with no name CELL is skipped without a lookup, which `\"\"` "
       "as a stand-in would not be — the panel passes None for exactly that row "
