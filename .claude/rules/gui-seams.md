@@ -130,10 +130,21 @@ and the IB hand-off.
   Silent when every patch resolves, which is what makes it mean something when it appears.
   **One line per distinct NAME, carrying its segment ids** — a mesh names several segments the
   same on purpose (the shipped C-grid has four `farfield`), and four identical lines is the
-  burial this rule exists to undo.
-  `is_known_bc_name` keeps ONE caller, like the flag it qualifies. The wording avoids the words
-  "error" and "failed", which `user_log.classify` would grade ERROR. Gated by
-  `tests/test_bc_name_unresolved.py`.
+  burial this rule exists to undo. **A caller that knows the flag really in force passes it as
+  `in_force`** (the GUI does, from the table): a segment whose flag the user picked by hand is
+  ANSWERED, and reporting it would name a flag the table does not carry and would not stop when
+  the user did the fix the message names.
+  **Named blind spots.** (i) A run with NO `.bnd`, or one with no patches, derives nothing and so
+  warns nothing, while `stage_bc_def_companion` copies getPGrid's table with the same silent
+  fallback in it — there are no patch names to inspect on that path, so this is recorded, not
+  fixed. (ii) The headless route has no `in_force`, because nothing there can override the
+  derivation; if a script ever gains a per-patch override, it must pass one.
+  `is_known_bc_name` keeps ONE caller, like the flag it qualifies. It grades WARNING through `user_log.classify` — but by the
+  KEYWORD heuristic, not by its `[WARNING]` tag: that classifier's level prefix is anchored at the
+  start of the line, so every `[Component] [LEVEL]` line in this repo (the dominant shape, ~20 of
+  them) falls through to keywords. So the wording must avoid "error" and "failed", which would
+  grade it ERROR. Gated by `tests/test_bc_name_unresolved.py`, whose check 2 measures the level
+  through the real classifier.
 - **The token choice is `bc_token_for_patch`, and only there.** #92 split it out of
   `bc_flag_for_patch` so that "was it resolved?" and "what flag?" cannot answer about different
   tokens; nothing else may re-derive `assigned if assigned else name`.
@@ -144,7 +155,9 @@ and the IB hand-off.
 Gated by `tests/test_solver_bc_table.py`, whose checks 10 and 11 hold the "no behaviour change"
 claim against the pre-#90 inline code rather than against the service itself — and
 `tests/test_bc_name_unresolved.py`, whose check 5 does the same for #92 against the pre-#92
-`bc_flag_for_patch`, over the same 96 combinations.
+`bc_flag_for_patch`, over the same 96 combinations. **Both oracles call the LIVE
+`default_bc_flag_for_name`, so both pin the PRECEDENCE and neither pins the MAPPING** — that is
+`tests/test_pipeline_bc_from_mesh.py` check 10's job, against getPGrid's own C++.
 
 **User messages go through `app/utils.py`'s graded helpers, never a raw `QMessageBox`** — with
 **two recorded exemptions, and no third without a helper**: `views/case_dir_dialog.py` (the

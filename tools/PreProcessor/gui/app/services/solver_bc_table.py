@@ -117,7 +117,9 @@ _UNRESOLVED_FIX = ("assign its type in the Mesh Generator (Edit segment BCs…),
 
 
 def unresolved_patches(patches, group_bc: dict | None = None,
-                       euler: bool = False) -> list[tuple[str, str, int, list]]:
+                       euler: bool = False,
+                       in_force: dict | None = None
+                       ) -> list[tuple[str, str, int, list]]:
     """``[(patch_name, token, flag, [segment ids]), ...]`` for the patches whose
     BC could NOT be resolved — the ones that took the tolerant wall fallback
     (#92). One entry per distinct NAME, in first-appearance order.
@@ -134,6 +136,16 @@ def unresolved_patches(patches, group_bc: dict | None = None,
     exists to undo. getPGrid already prints 288 of them on that run. The segment
     ids are kept so the line still says WHERE.
 
+    ``in_force`` is ``{segment id: the flag that segment will REALLY be solved
+    with}``, when a caller knows that independently of this derivation — the GUI
+    solver table does, and it is allowed to hold a hand-picked flag the
+    derivation would not choose (``bc_flag_overrides`` preserves exactly that).
+    A segment whose in-force flag is not the fallback has been ANSWERED, so it is
+    dropped, and a patch all of whose segments were answered is not reported at
+    all. Without this the resync route named a flag the table did not carry, and
+    doing the fix the message recommends did not stop the message. Omit it (the
+    default) where the rows come from this derivation and the two cannot differ.
+
     Empty for a mesh whose names all resolve, which is what makes the warning
     mean something when it appears."""
     order: list[str] = []
@@ -142,26 +154,36 @@ def unresolved_patches(patches, group_bc: dict | None = None,
         token = bc_token_for_patch(name, group_bc)
         if is_known_bc_name(token):
             continue
+        flag = bc_flag_for_patch(name, group_bc, euler)
+        if in_force is not None and in_force.get(sid, flag) != flag:
+            continue                      # answered by hand; not this run's wall
         if name not in seen:
             order.append(name)
-            seen[name] = (name, token, bc_flag_for_patch(name, group_bc, euler), [])
+            seen[name] = (name, token, flag, [])
         seen[name][3].append(sid)
     return [seen[n] for n in order]
 
 
 def unresolved_patch_warnings(patches, group_bc: dict | None = None,
-                              euler: bool = False) -> list[str]:
+                              euler: bool = False,
+                              in_force: dict | None = None) -> list[str]:
     """One user-log line per unresolved patch NAME, naming the PATCH, the
     segments carrying it, the FLAG it fell back to and the fix — ready to hand
     to ``AppController.log`` or to a headless ``log=`` callback, so both hosts
     say the same words (#92).
 
-    Empty when every patch resolved. The ``[WARNING]`` tag is what
-    ``services/user_log.classify`` grades on; the wording deliberately avoids the
-    words "error" and "failed", which that classifier would read as ERROR — this
-    is a fallback the run survives, not a failure."""
+    Empty when every patch resolved. It grades WARNING through
+    ``services/user_log.classify``, but NOT via the ``[WARNING]`` tag: that
+    classifier's level prefix is anchored at the start of the line, so a
+    ``[Component] [LEVEL]`` line — this repo's dominant shape, ~20 of them,
+    ``[IB] [WARNING]`` in `pipeline_runner` among them — falls through to the
+    KEYWORD heuristic instead. The tag is there for the reader; what actually
+    grades it is the word "warning", and what keeps it out of ERROR is that the
+    wording avoids "error" and "failed". Measured through the real classifier by
+    check 2, because that is a fact about a regex nobody would re-derive."""
     out = []
-    for name, token, flag, sids in unresolved_patches(patches, group_bc, euler):
+    for name, token, flag, sids in unresolved_patches(patches, group_bc, euler,
+                                                     in_force):
         shown = name or "(unnamed)"
         via = "" if token == name else f", assigned '{token}',"
         label = "segment" if len(sids) == 1 else "segments"

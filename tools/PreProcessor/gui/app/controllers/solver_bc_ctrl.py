@@ -78,9 +78,18 @@ class SolverBcControllerMixin:
         built by the derivation service, not here, so the two hosts cannot drift.
 
         Says nothing when every patch resolved, which is what makes it mean
-        something when it appears."""
+        something when it appears.
+
+        The table's CURRENT flags go with the question, because this also runs on
+        the resync route, where a row may hold a flag the user picked by hand and
+        `resync_bc_types_from_group` deliberately preserves. Without them the
+        message named the fallback while the run used the tweak — and doing the
+        fix it recommends did not stop it repeating."""
         from app.services.solver_bc_table import unresolved_patch_warnings
-        for msg in unresolved_patch_warnings(segs, group_bc, euler):
+        panel = self.main_window.solver_config_panel
+        in_force = {r["segment_no"]: r["bc_type"]
+                    for r in panel.get_config().bc_definitions}
+        for msg in unresolved_patch_warnings(segs, group_bc, euler, in_force):
             self.log(msg)
 
     def resync_solver_bc_from_group(self):
@@ -114,17 +123,24 @@ class SolverBcControllerMixin:
             if segs and mesh_names != table_names:
                 # Table is stale vs the mesh — seed it fresh (this applies
                 # group_bc too, via detect_bc_from_mesh -> populate_bc_from_segments).
-                self.detect_bc_from_mesh()
-            elif group_bc and panel.bc_table.rowCount():
-                n = panel.resync_bc_types_from_group(group_bc, euler=euler)
-                if n:
-                    log(f"[Solver] Updated {n} BC row(s) from the current "
-                        f"Mesh-Generator patch assignments.")
-                    # Only when rows actually moved: an assignment naming a token
-                    # nobody knows lands a wall here too, and this branch runs on
-                    # every entry into Solver mode (#92).
+                self.detect_bc_from_mesh()          # warns for itself
+            else:
+                if group_bc and panel.bc_table.rowCount():
+                    n = panel.resync_bc_types_from_group(group_bc, euler=euler)
+                    if n:
+                        log(f"[Solver] Updated {n} BC row(s) from the current "
+                            f"Mesh-Generator patch assignments.")
+                # Unconditionally, not only when a row moved (#92). This runs on
+                # entering Solver mode AND before a run, and "before a run" is the
+                # last moment the warning can still reach the user — a patch that
+                # resolves to nothing is just as wrong on the second visit as on
+                # the first, and gating it on `n` made it announce itself once and
+                # then go quiet, which is the silence this closes.
+                if segs:
                     self._log_unresolved_bc_patches(segs, group_bc, euler)
         elif group_bc and panel.bc_table.rowCount():
+            # No mesh .bnd at all, so there are no patches to report on — the
+            # rows here came from somewhere else and #92 has nothing to say.
             n = panel.resync_bc_types_from_group(group_bc, euler=euler)
             if n:
                 log(f"[Solver] Updated {n} BC row(s) from the current "

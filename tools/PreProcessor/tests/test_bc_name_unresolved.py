@@ -19,10 +19,21 @@ the solver reads, so getPGrid's table (and its warning) is no longer what
 decides. The one place that knows both facts is
 ``services/solver_bc_table.py``, and that is where this speaks from.
 
-**The fallback itself is unchanged.** Check 5 pins that against the pre-#92
-function, over the same 96 name/assignment/solution-type combinations
-``test_solver_bc_table.py`` check 11 uses: #92 makes the fallback audible, it
-does not make it a refusal.
+**The fallback itself is unchanged.** Check 5 pins the RESTRUCTURING against the
+pre-#92 `bc_flag_for_patch`, over the same 96 name/assignment/solution-type
+combinations ``test_solver_bc_table.py`` check 11 uses: #92 makes the fallback
+audible, it does not make it a refusal.
+
+**What check 5 does NOT pin, said plainly.** Its oracle calls the LIVE
+``default_bc_flag_for_name``, so both sides move together and a change to the
+name→flag MAPPING itself passes it. That is deliberate — a hand-copied
+`_NAME_TO_FLAG` here would rot into a second source of truth — and the mapping is
+pinned elsewhere, by ``test_pipeline_bc_from_mesh.py`` check 10, which reads
+getPGrid's own ``getBCType`` C++ and compares all 25 tokens. What check 5 catches
+is what #92 actually touched: the token choice moving into ``bc_token_for_patch``.
+Measured: breaking the precedence fails it; mutating the fallback's own return
+does not (checks 1, 2, 4, 6 and 8 catch that instead). #90's check 11 has the same
+shape and the same limit.
 
 Checks:
  1. the seam: ``unresolved_patches`` names the patch, the token really looked up,
@@ -41,8 +52,9 @@ Checks:
     says nothing for a mesh that resolves
  7. both hosts emit the SAME text, built once in the service; and the mapping's
     ``is_known_bc_name`` keeps ONE caller, like ``default_bc_flag_for_name``
- 8. the OTHER GUI route — the resync that runs on entering Solver mode, where an
-    assignment changed after the table was seeded lands its flag — warns too
+ 8. the OTHER GUI route — the resync that runs on entering Solver mode AND
+    before a run — warns too, on EVERY entry rather than only the one where a
+    row moved, and for an unresolvable patch name as well as an assignment
 
 Run:  python3 tools/PreProcessor/tests/test_bc_name_unresolved.py
 """
@@ -177,7 +189,8 @@ check(_n2 == 8 and not [x for x in _lines2 if "WARNING" in x],
 # ── 5. the fallback is UNCHANGED ─────────────────────────────────────────────
 def _pre92_flag(name, group_bc, euler):
     """`solver_bc_table.bc_flag_for_patch` as of 566b8d0, before #92 split the
-    token choice out of it."""
+    token choice out of it. It calls the LIVE `default_bc_flag_for_name` on
+    purpose, so this pins the PRECEDENCE and not the mapping — see the header."""
     assigned = (group_bc or {}).get(name)
     return default_bc_flag_for_name(assigned if assigned else name, euler)
 
@@ -191,8 +204,9 @@ _bad = [(nm, g, eu, bc_flag_for_patch(nm, g, eu), _pre92_flag(nm, g, eu))
         for nm, g, eu in _MATRIX
         if bc_flag_for_patch(nm, g, eu) != _pre92_flag(nm, g, eu)]
 check(not _bad and len(_MATRIX) == 96,
-      f"5. the flags are bit-identical to pre-#92 over {len(_MATRIX)} "
-      f"name/assignment/solution-type combinations ({_bad[:3]})")
+      f"5. the RESTRUCTURING is bit-identical to pre-#92 over {len(_MATRIX)} "
+      f"name/assignment/solution-type combinations — the mapping itself is "
+      f"pinned by test_pipeline_bc_from_mesh.py check 10, not here ({_bad[:3]})")
 
 # ── 6. the GUI host, through the real controller ─────────────────────────────
 import threading                                                     # noqa: E402
@@ -283,6 +297,13 @@ check(len(_res_warn) == 1 and "segments 3, 4" in _res_warn[0],
 check([r["bc_type"] for r in _panel.get_config().bc_definitions][2:4] == [2, 2],
       f"8. …and the wall it lands is the wall it always landed "
       f"({[r['bc_type'] for r in _panel.get_config().bc_definitions]})")
+del _seen[:]
+_c.resync_solver_bc_from_group()
+check([x for x in _seen if "nonsense" in x and "WARNING" in x],
+      f"8. …and AGAIN on the next entry into Solver mode, when the table already "
+      f"matches and no row moves: a patch that resolves to nothing is just as "
+      f"wrong the second time, and this runs before a RUN — the last moment the "
+      f"warning can still reach anyone ({[x[:80] for x in _seen]})")
 _c.global_mesh_config.group_bc = {"outlet": "farfield"}
 _detect(_CLEAN, "gui_resync2.bnd")
 del _seen[:]
@@ -290,7 +311,28 @@ _c.resync_solver_bc_from_group()
 check(not [x for x in _seen if "WARNING" in x],
       f"8. …while assignments that all resolve stay silent on that route too "
       f"({[x[:80] for x in _seen]})")
+# The fix the message RECOMMENDS must stop the message. `resync_bc_types_from_group`
+# preserves a hand-picked flag on an unassigned row, so the derivation's answer and
+# the table's can differ — and it is the table the run uses.
 _c.global_mesh_config.group_bc = {}
+_detect(_TYPO, "gui_manualfix.bnd")
+_combo = _panel.bc_table.cellWidget(4, 2)          # segment 5, the `far-feild` row
+_combo.setCurrentIndex(_combo.findData(1))         # set it by hand, as the message says
+del _seen[:]
+_c.resync_solver_bc_from_group()
+check(not [x for x in _seen if "WARNING" in x],
+      f"8. …and setting the type by hand in the solver's BC table — the fix the "
+      f"message names — stops it: the row no longer carries the fallback, so "
+      f"there is nothing left to warn about ({[x[:80] for x in _seen]})")
+check([r["bc_type"] for r in _panel.get_config().bc_definitions][4] == 1,
+      "8. …and the hand-picked flag survives the resync, as it always has")
+
+_detect(_TYPO, "gui_resync3.bnd")
+del _seen[:]
+_c.resync_solver_bc_from_group()
+check([x for x in _seen if "far-feild" in x and "WARNING" in x],
+      f"8. …and with NO assignments at all, an unresolvable PATCH NAME is "
+      f"reported on this route too, not only by Detect ({[x[:80] for x in _seen]})")
 user_log.remove_sink(_sink)
 
 print()
