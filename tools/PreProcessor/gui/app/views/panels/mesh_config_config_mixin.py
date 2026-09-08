@@ -218,7 +218,7 @@ class MeshConfigConfigMixin:
             for f in cfg.geom_files:
                 item = QListWidgetItem(os.path.basename(f))
                 item.setData(Qt.ItemDataRole.UserRole, f)
-                rinfo = cfg.geom_roles.get(f)
+                rinfo = cfg.role_of(f)
                 if rinfo:
                     item.setData(self._ROLE_DATA, dict(rinfo))
                 self.geom_list_widget.addItem(item)
@@ -303,12 +303,18 @@ class MeshConfigConfigMixin:
         self._apply_global_bl_to_cfg(cfg)
 
         # 3. Facts one widget holds for many things (see MESH_EXTRA_AUTHORED).
+        # Through add_geom_file, not append: the panel is the authority at generate
+        # time, so a round-trip through it must not be able to put back the
+        # two-spellings-one-file state the model just removed. The role is keyed by
+        # the spelling that SURVIVED the add, or it would key a dropped duplicate
+        # and be pruned away with it.
         cfg.geom_files = []
         cfg.geom_roles = {}
         for row in range(self.geom_list_widget.count()):
             item = self.geom_list_widget.item(row)
             p = item.data(Qt.ItemDataRole.UserRole)
-            cfg.geom_files.append(p)
+            if not cfg.add_geom_file(p):
+                continue
             rinfo = item.data(self._ROLE_DATA)
             if rinfo and rinfo.get("role") in ("seed", "nobl", "farfield", "wall", "bl"):
                 cfg.geom_roles[p] = dict(rinfo)

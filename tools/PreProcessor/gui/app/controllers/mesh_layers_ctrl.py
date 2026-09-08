@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QListWidgetItem
 from app.utils import block_signals, report_info
 from app.commands.segment_cmds_core import UpdateMultipleSegmentsStateCmd
 from app.services import meta_io
+from app.services.geom_path_identity import canonical_geom_path
 
 class MeshLayersControllerMixin:
     """Mixin managing the Geometry Layers list of the mesh generator — syncing
@@ -34,8 +35,7 @@ class MeshLayersControllerMixin:
             return
 
         cfg = self.config_from_panel("mesh_config_panel")
-        if abs_path not in cfg.geom_files:
-            cfg.geom_files.append(abs_path)
+        if cfg.add_geom_file(abs_path):
             self.push_panel_config(self.main_window.mesh_config_panel, cfg)
             self.log(f"Added resampled geometry to configuration: {abs_path}")
             self.sync_mesh_layers_panel()
@@ -78,10 +78,10 @@ class MeshLayersControllerMixin:
         cfg = self.global_mesh_config
         if not cfg or not out_file:
             return
-        abs_out = os.path.abspath(out_file)
-        before = len(cfg.geom_files)
-        cfg.geom_files = [p for p in cfg.geom_files if os.path.abspath(p) != abs_out]
-        if len(cfg.geom_files) == before:
+        # By IDENTITY, never os.path.abspath: that is cwd-relative, so this prune
+        # missed a repo-relative entry whenever the GUI was launched from anywhere
+        # but the repo root, and the deleted geometry stayed in the mesh.
+        if not cfg.remove_geom_file(out_file):
             return  # this geometry was not part of the mesh
         cfg.prune_roles()  # drop the removed geometry's seed role, if any
 
@@ -91,7 +91,7 @@ class MeshLayersControllerMixin:
         self.push_panel_config(self.main_window.mesh_config_panel, cfg)
         self.sync_mesh_layers_panel()
         self.log(
-            f"Removed deleted geometry '{os.path.basename(abs_out)}' from the "
+            f"Removed deleted geometry '{os.path.basename(out_file)}' from the "
             "mesh generator input list."
         )
 
@@ -111,7 +111,7 @@ class MeshLayersControllerMixin:
 
                 abs_out_file = ""
                 if out_file:
-                    abs_out_file = os.path.abspath(out_file)
+                    abs_out_file = canonical_geom_path(out_file)
                     if not os.path.exists(abs_out_file):
                         display_text += " (not exported)"
                 else:
@@ -120,7 +120,7 @@ class MeshLayersControllerMixin:
                 item = QListWidgetItem(display_text)
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
 
-                if abs_out_file and abs_out_file in self.global_mesh_config.geom_files:
+                if self.global_mesh_config.has_geom_file(abs_out_file):
                     item.setCheckState(Qt.CheckState.Checked)
                 else:
                     item.setCheckState(Qt.CheckState.Unchecked)
@@ -136,14 +136,19 @@ class MeshLayersControllerMixin:
             # left over from a closed tab). They would otherwise be invisible here
             # yet still meshed — so list them explicitly, checked, with uncheck =
             # remove, giving one complete view of what the mesh will contain.
+            # Both sides through the SAME resolver. With os.path.abspath a
+            # repo-relative geom_files entry did not match the session that
+            # exported it whenever the GUI ran from another cwd, so the geometry
+            # was listed as its own layer AND again as an "external file" — the
+            # reported "listed every geometry twice".
             session_outs = set()
             for session in self.sessions:
                 out_file = session.project_model.output_file
                 if out_file:
-                    session_outs.add(os.path.abspath(out_file))
+                    session_outs.add(canonical_geom_path(out_file))
 
             for gf in self.global_mesh_config.geom_files:
-                abs_gf = os.path.abspath(gf)
+                abs_gf = canonical_geom_path(gf)
                 if abs_gf in session_outs:
                     continue
                 tag = "external file" if os.path.exists(abs_gf) else "missing file"
@@ -172,10 +177,7 @@ class MeshLayersControllerMixin:
         # it from the mesh; unchecking removes it from the geometry list.
         if session_id is None:
             if item.checkState() != Qt.CheckState.Checked and abs_out_file:
-                self.global_mesh_config.geom_files = [
-                    p for p in self.global_mesh_config.geom_files
-                    if os.path.abspath(p) != os.path.abspath(abs_out_file)
-                ]
+                self.global_mesh_config.remove_geom_file(abs_out_file)
                 self.global_mesh_config.prune_roles()
                 self._sync_global_scalars_from_panel()
                 self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
@@ -210,11 +212,14 @@ class MeshLayersControllerMixin:
                     item.setCheckState(Qt.CheckState.Unchecked)
                 return
 
-            if abs_out_file not in self.global_mesh_config.geom_files:
-                self.global_mesh_config.geom_files.append(abs_out_file)
+            self.global_mesh_config.add_geom_file(abs_out_file)
         else:
-            if abs_out_file in self.global_mesh_config.geom_files:
-                self.global_mesh_config.geom_files.remove(abs_out_file)
+            # The partner of the add above, and it has to match it: adding by
+            # identity while removing by STRING meant a config holding the
+            # repo-relative spelling (what a loaded workspace or case package
+            # carries) could not be unchecked at all — the box cleared and the
+            # geometry stayed in the mesh.
+            if self.global_mesh_config.remove_geom_file(abs_out_file):
                 self.global_mesh_config.prune_roles()
 
         self._sync_global_scalars_from_panel()
@@ -247,12 +252,12 @@ class MeshLayersControllerMixin:
         closed tab), which is why the caller must handle None rather than treat
         it as an error.
         """
-        target = os.path.abspath(path or "")
+        target = canonical_geom_path(path or "")
         if not target:
             return None
         for session in self.sessions:
             out = (session.project_model.output_file or "").strip()
-            if out and os.path.abspath(out) == target:
+            if out and canonical_geom_path(out) == target:
                 return session
         return None
 
@@ -391,10 +396,9 @@ class MeshLayersControllerMixin:
         for session in self.sessions:
             out_file = session.project_model.output_file
             if out_file:
-                abs_out = os.path.abspath(out_file)
+                abs_out = canonical_geom_path(out_file)
                 if os.path.exists(abs_out):
-                    if abs_out not in self.global_mesh_config.geom_files:
-                        self.global_mesh_config.geom_files.append(abs_out)
+                    if self.global_mesh_config.add_geom_file(abs_out):
                         added_any = True
                 else:
                     missing_exports.append(session.display_name)

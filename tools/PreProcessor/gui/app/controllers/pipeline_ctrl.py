@@ -190,9 +190,11 @@ class PipelineControllerMixin:
             self.log(
                 f"[Pipeline] [WARNING] could not load resampled preview: {e}")
 
-        abs_out = os.path.abspath(out)
-        if abs_out not in self.global_mesh_config.geom_files:
-            self.global_mesh_config.geom_files.append(abs_out)
+        # add_geom_file, not a `not in` string compare: the workspace this run
+        # was loaded from may hold the repo-relative spelling of this very file,
+        # and appending the absolute one listed the geometry twice and meshed it
+        # twice. See services/geom_path_identity.
+        self.global_mesh_config.add_geom_file(os.path.abspath(out))
         self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
         self.sync_mesh_layers_panel()
         self.log(f"[Pipeline] resampled -> {out}")

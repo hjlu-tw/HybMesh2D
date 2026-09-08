@@ -6,6 +6,7 @@ paths:
   - tools/PreProcessor/gui/app/views/units_ui.py
   - tools/PreProcessor/gui/app/services/*field_spec*
   - tools/PreProcessor/gui/app/services/config_ownership.py
+  - tools/PreProcessor/gui/app/services/geom_path_identity.py
   - tools/PreProcessor/gui/app/services/units.py
   - tools/PreProcessor/gui/app/models/mesh_config*
 ---
@@ -149,6 +150,60 @@ global default, so a per-geometry override never hides behind a collapsed header
   `CollapsibleSection._on_toggle` invalidates its own layout.
 - **The leftover-space absorber is stretch 0 + Expanding**, never a stretched item, which would
   compete proportionally with the capped scroll area.
+- **A field the selected scheme cannot read is greyed out AND says WHY, in the visible row**
+  (#23, USER-REPORTED). `BL_JUNCTION_ANGLE_C1` is dead under the default junction method and
+  disabling it is correct — the SILENCE was the defect, because on screen a greyed box with no
+  reason is indistinguishable from one greyed for another reason, or from a bug. The same `_sync`
+  that calls `setEnabled` sets or clears the row's marker, so the lock and its explanation cannot
+  disagree; `_FIELD_NOTES` is the ONE declaration of the short text and the long prose stays the
+  spec's own `_C1_TIP`, not a copy. Three placement facts are MEASURED, not stylistic: the note
+  rides beside the FIELD because the label column is sized from the labels actually built
+  (171 px today, bounded 120..240) and a suffixed C1 label measures **240** — the ceiling; the
+  note cell is the ONE composite field cell in the GUI, legal only because nothing in the
+  dialog's mixins calls `labelForField` (gated by AST over its own MRO); and a tooltip on the
+  disabled widget is impossible, since Qt picks the mouse receiver by walking past disabled
+  widgets, so the box gets no `Enter` — nor does its parent. Gated by
+  `tests/test_bl_dialog_sections.py` check 14, which binds "disabled ⇔ a non-empty reason
+  showing" in BOTH directions and proves itself non-vacuous by re-running the real pre-fix wiring.
+  **The composite cell is what mode-hiding must hide**: `mesh_bl_dialog_layout` hides `cell`, not
+  `w`, or a row the active `MESH_MODE` does not read leaves its note showing beside nothing.
+
+**A geometry in the mesh config is the FILE it names, not the string that names it**
+(`services/geom_path_identity.py`, Qt-free — `canonical_geom_path` / `same_geom_file` /
+`dedupe_geom_paths`; the model's verbs are `models/mesh_config_geoms.py::GeomListMixin`, split off
+when `mesh_config.py` went over the file-size budget). Every dedup guard in the tree used to be a
+`not in` string compare over `MeshConfig.geom_files`, so the repo-relative and absolute spellings
+of one file were two entries: the Mesh Generator listed the geometry twice and the mesher was
+handed a doubled boundary — USER-REPORTED (2026-08-20), reopening an exported case package, which
+is exactly the case that mixes spellings (the workspace stores relative, the panel computes
+absolute). Two rules:
+
+- **The base is the repo, never the process cwd.** `os.path.abspath` is cwd-relative, so one
+  stored entry named a different file depending on where the GUI was launched from (measured:
+  `<repo>/results/...` from the repo root, `/private/tmp/results/...` from `/tmp`). Every relative
+  path this app stores is repo-relative — that is what `mesh_config_io` writes.
+- **Canonical means realpath**, so a symlinked scratch dir or a case-insensitive volume cannot
+  reintroduce two-strings-one-file. Identity by inode (`case_workspace`'s rule) is stronger but
+  needs the file to EXIST, and the whole point here is entries that may not.
+
+**Membership and removal had to move WITH addition; shipping only the additions was worse than not
+starting.** The first round converted the six `add` sites and left the removals and the `in` tests
+comparing strings, so `mesh_layers_ctrl` added a layer by identity and un-added it by string: on a
+config holding the relative spelling the checkbox drew **Unchecked for a geometry that was in the
+mesh**, and unchecking it cleared the box and left the geometry to be meshed. `remove_geom_file`
+existed and was called from nowhere. The full set is now `add_geom_file` / `remove_geom_file` /
+`has_geom_file` / `role_of` / `prune_roles` / `dedupe_geom_paths`, and
+**`tests/test_geom_files_identity.py` check 7 fails the build on a raw `append` / `remove` / `in`
+over `geom_files` anywhere outside the mixin** — by AST, because the prose recording the rule names
+every construct it forbids and a substring scan fires on that. Its allow-list is keyed to where the
+verbs LIVE, which is how it noticed them moving into the mixin.
+
+Two things the fix deliberately does NOT do: `dedupe_geom_paths` keeps the FIRST spelling rather
+than rewriting entries to canonical form (that would churn a saved config on load, and
+`pipeline_config` regressed a test by trying it — `/tmp` became `/private/tmp`), and `validate()`
+stays PURE, so "is this file on disk?" is `geom_files_not_on_disk()` and not a validation error.
+That method is **not** `missing_geom_files`, the field one word away on the same class: the field
+holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
 
 ## Named blind spots
 

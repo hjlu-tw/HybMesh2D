@@ -214,6 +214,14 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     why = missing_mesh_input(mc)
     if why:
         raise PipelineError(why)
+    # Same refusal as the GUI pre-flight, same wording (mesh_config owns it):
+    # a geom_files entry naming no file otherwise reaches the mesher and comes
+    # back as HYBMESH_ERROR 3 GEOMETRY_LOAD. This asks about the entries that ARE
+    # listed, so it stays inert where #56's refusal was wrong -- a multi-block
+    # case listing no GEOM_FILE has nothing here to be missing.
+    missing = mc.geom_files_not_on_disk()
+    if missing:
+        raise PipelineError(mc.missing_geometry_message(missing))
 
     # Create the temp config inside the try so its removal is guaranteed even if
     # creation or save raises before we'd otherwise reach a guard.

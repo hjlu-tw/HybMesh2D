@@ -155,8 +155,7 @@ class SessionLoadControllerMixin:
                     f"({self.length_unit_symbol()})")
 
             abs_path = os.path.abspath(file_path)
-            if abs_path not in session.mesh_config.geom_files:
-                session.mesh_config.geom_files.append(abs_path)
+            session.mesh_config.add_geom_file(abs_path)
             if record_recent:
                 self.update_recent_files(abs_path)
 
@@ -263,9 +262,7 @@ class SessionLoadControllerMixin:
             try:
                 from app.services.geometry_service import load_points_dat
                 session.original_points = load_points_dat(input_file)
-                abs_path = os.path.abspath(input_file)
-                if abs_path not in session.mesh_config.geom_files:
-                    session.mesh_config.geom_files.append(abs_path)
+                session.mesh_config.add_geom_file(os.path.abspath(input_file))
             except Exception as e:
                 self.log(f"Error reading geometry: {e}")
                 return
