@@ -27,7 +27,8 @@ from __future__ import annotations
 import os
 
 from app.services.bnd_io import read_bnd_segments
-from app.services.solver_bc_table import bc_definitions_for_patches
+from app.services.solver_bc_table import (bc_definitions_for_patches,
+                                          unresolved_patch_warnings)
 
 
 def derive_bc_definitions(sc, group_bc: dict | None = None, log=print) -> int:
@@ -69,4 +70,10 @@ def derive_bc_definitions(sc, group_bc: dict | None = None, log=print) -> int:
     log(f"[Solver] BC table derived from {os.path.basename(sc.input_bnd_file)} "
         f"({len(patches)} patch(es)): {listing}. The script stated none, and "
         "getPGrid's own table would call every name it does not know a wall.")
+    # …and this is where "every name it does not know" stops being a figure of
+    # speech (#92). The headless path is where nobody is watching a table, so the
+    # patches THIS run could not resolve are named here rather than left to be
+    # inferred from the flags in the listing above. Silent when they all resolve.
+    for msg in unresolved_patch_warnings(patches, group_bc, euler):
+        log(msg)
     return len(sc.bc_definitions)

@@ -100,6 +100,11 @@ the schema and the stage logic.
     it to, so the `group_bc` half of the lookup usually misses and it is the PATCH NAME that
     decides. That is enough for #91 — the mesher already resolved the labels when it named the
     patches — but do not read the `group_bc` argument as working.
+  - **A patch the derivation cannot resolve is NAMED, on this path above all** (#92): headless is
+    where nobody is watching a table, so `derive_bc_definitions` logs
+    `solver_bc_table.unresolved_patch_warnings` after its own report line — the patch, the flag it
+    fell back to and the fix. It says nothing when every patch resolves. The fallback is
+    unchanged; only its silence is. Gated by `tests/test_bc_name_unresolved.py`.
   - **The GUI's own Run is untouched** — it goes through `workers/solver_run.py` with the panel's
     table, which was always authoritative. **The GUI's BATCH QUEUE is not**: it reaches
     `pipeline_runner.run_pipeline` through `services/batch_runner.py`, so a hand-written script

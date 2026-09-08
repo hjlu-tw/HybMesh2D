@@ -77,10 +77,31 @@ _NAME_TO_FLAG = {
 }
 
 
+def is_known_bc_name(name: str) -> bool:
+    """True when the mapping RECOGNISES this token, i.e. the flag
+    ``default_bc_flag_for_name`` returns for it was looked up rather than fallen
+    back to.
+
+    The fallback stays exactly as it is (#92): refusing to mesh or to solve
+    because a patch is named something unexpected would be worse than a wall.
+    What this exists for is that the fallback was SILENT — a user who typed
+    ``far-feild`` got a solid wall where they meant an outflow, and the only
+    symptom was a solution that was quietly wrong. Separating "known" from
+    "flag" is what lets the derivation say so out loud without changing what it
+    decides.
+
+    Not a public answer for views: like ``default_bc_flag_for_name`` it has ONE
+    caller, ``services/solver_bc_table.py``, gated by
+    ``tests/test_bc_name_unresolved.py``.
+    """
+    return (name or "").strip().lower() in _NAME_TO_FLAG
+
+
 def default_bc_flag_for_name(name: str, euler: bool = False) -> int:
     """Suggested solver BC flag for a patch name. Unknown names default to a
     solid wall (slip/reflect 0 for inviscid Euler, no-slip 2 for viscous NS),
-    matching getPGrid's tolerant fallback."""
+    matching getPGrid's tolerant fallback. That fallback is deliberate and
+    silent-no-longer: ``is_known_bc_name`` is how a caller tells the two apart."""
     key = (name or "").strip().lower()
     if key in _NAME_TO_FLAG:
         return _NAME_TO_FLAG[key]

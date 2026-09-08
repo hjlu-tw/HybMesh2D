@@ -22,6 +22,14 @@ reverting to the patch's own name. An empty or missing assignment is not an
 assignment. The patch name is preserved on the row regardless, because it is the
 grouping LABEL the user set upstream.
 
+**A name nothing can resolve is AUDIBLE, not refused** (#92). ``unresolved_patches``
+answers which patches took ``default_bc_flag_for_name``'s tolerant wall fallback
+instead of a real lookup, and ``unresolved_patch_warnings`` turns that into the
+line both hosts log. The fallback itself is unchanged — refusing to solve because
+a patch is named something unexpected would be worse — but it no longer happens
+in silence, which is how a typo'd ``far-feild`` became a solid wall where the user
+meant an outflow with nothing to show for it.
+
 One asymmetry worth knowing before extending this: ``group_bc`` is keyed by the
 per-segment grouping LABEL, while a ``.bnd`` patch name is the physical BC TYPE
 the mesher resolved that label to (``src/Mesh.cpp``, ``Config::resolveGroupBc``).
@@ -31,16 +39,30 @@ it; it is not an endorsement of it.
 """
 from __future__ import annotations
 
-from app.services.bnd_io import default_bc_flag_for_name
+from app.models.solver_config import BC_FLAG_TO_LABEL
+from app.services.bnd_io import default_bc_flag_for_name, is_known_bc_name
+
+
+def bc_token_for_patch(name: str, group_bc: dict | None = None) -> str:
+    """THE precedence rule, one copy: the token whose meaning decides this
+    patch's BC — an explicit ``group_bc`` assignment for the patch name, else the
+    patch name itself. An empty or missing assignment is not an assignment.
+
+    Split out of ``bc_flag_for_patch`` by #92 so that asking "was it resolved?"
+    and asking "what flag?" cannot answer about different tokens. Nothing else
+    may re-derive it."""
+    assigned = (group_bc or {}).get(name)
+    return assigned if assigned else name
 
 
 def bc_flag_for_patch(name: str, group_bc: dict | None = None,
                       euler: bool = False) -> int:
-    """The solver BC flag for one boundary patch. THE precedence rule, one copy:
-    an explicit ``group_bc`` assignment for this patch name wins over guessing
-    from the name itself; both are resolved by ``default_bc_flag_for_name``."""
-    assigned = (group_bc or {}).get(name)
-    return default_bc_flag_for_name(assigned if assigned else name, euler)
+    """The solver BC flag for one boundary patch: ``bc_token_for_patch`` decides
+    WHICH token is asked about, and ``default_bc_flag_for_name`` resolves it — so
+    an assignment naming a token getPGrid does not know takes the same wall
+    fallback as an unknown patch name, rather than reverting to the patch's own
+    name."""
+    return default_bc_flag_for_name(bc_token_for_patch(name, group_bc), euler)
 
 
 def bc_definitions_for_patches(patches, group_bc: dict | None = None,
@@ -83,4 +105,71 @@ def bc_flag_overrides(names, group_bc: dict | None = None,
         key = name.strip()
         if group_bc.get(key):
             out[i] = bc_flag_for_patch(key, group_bc, euler)
+    return out
+
+
+# The fix the warning below names. Both halves are real places in this GUI: the
+# Mesh Generator's per-patch assignment (which travels into the mesh) and the
+# solver panel's Boundary Conditions table (which does not, but overrides the
+# guess for this run).
+_UNRESOLVED_FIX = ("assign its type in the Mesh Generator (Edit segment BCs…), "
+                   "or set it in the solver's Boundary Conditions table")
+
+
+def unresolved_patches(patches, group_bc: dict | None = None,
+                       euler: bool = False) -> list[tuple[str, str, int, list]]:
+    """``[(patch_name, token, flag, [segment ids]), ...]`` for the patches whose
+    BC could NOT be resolved — the ones that took the tolerant wall fallback
+    (#92). One entry per distinct NAME, in first-appearance order.
+
+    ``token`` is what was actually looked up (``bc_token_for_patch``), so a patch
+    that failed because of an unrecognised Mesh-Generator ASSIGNMENT is
+    distinguishable from one that failed on its own name. ``flag`` is the flag
+    the run will really use, asked of ``bc_flag_for_patch`` rather than
+    re-derived, so this can never name a flag the table does not carry.
+
+    **Grouped by name rather than one entry per segment**, because a mesh names
+    several segments the same on purpose — the shipped C-grid has four
+    ``farfield`` patches — and four identical lines is the burial this ticket
+    exists to undo. getPGrid already prints 288 of them on that run. The segment
+    ids are kept so the line still says WHERE.
+
+    Empty for a mesh whose names all resolve, which is what makes the warning
+    mean something when it appears."""
+    order: list[str] = []
+    seen: dict[str, tuple[str, str, int, list]] = {}
+    for sid, name in patches:
+        token = bc_token_for_patch(name, group_bc)
+        if is_known_bc_name(token):
+            continue
+        if name not in seen:
+            order.append(name)
+            seen[name] = (name, token, bc_flag_for_patch(name, group_bc, euler), [])
+        seen[name][3].append(sid)
+    return [seen[n] for n in order]
+
+
+def unresolved_patch_warnings(patches, group_bc: dict | None = None,
+                              euler: bool = False) -> list[str]:
+    """One user-log line per unresolved patch NAME, naming the PATCH, the
+    segments carrying it, the FLAG it fell back to and the fix — ready to hand
+    to ``AppController.log`` or to a headless ``log=`` callback, so both hosts
+    say the same words (#92).
+
+    Empty when every patch resolved. The ``[WARNING]`` tag is what
+    ``services/user_log.classify`` grades on; the wording deliberately avoids the
+    words "error" and "failed", which that classifier would read as ERROR — this
+    is a fallback the run survives, not a failure."""
+    out = []
+    for name, token, flag, sids in unresolved_patches(patches, group_bc, euler):
+        shown = name or "(unnamed)"
+        via = "" if token == name else f", assigned '{token}',"
+        label = "segment" if len(sids) == 1 else "segments"
+        where = f"{label} " + ", ".join(str(s) for s in sids)
+        out.append(
+            f"[Solver] [WARNING] Boundary patch '{shown}' ({where}){via} matches "
+            f"no boundary condition this repo or getPGrid knows, so it falls "
+            f"back to a solid wall — flag {flag}: "
+            f"{BC_FLAG_TO_LABEL.get(flag, 'unknown')}. If that is not what you "
+            f"meant, {_UNRESOLVED_FIX}.")
     return out

@@ -122,12 +122,29 @@ and the IB hand-off.
   assignment is not an assignment. The name is kept on the row either way, as the grouping label.
 - **`default_bc_flag_for_name` keeps ONE caller**, the service; no view may call it. Gated
   statically, because a second copy of the rule is wrong only once it drifts.
+- **A name NOTHING can resolve is audible, not refused** (#92). `bnd_io.is_known_bc_name` says
+  whether a token was looked up or fell through; `unresolved_patches` pairs that with the flag
+  the run really uses, and `unresolved_patch_warnings` builds the ONE line both hosts log —
+  naming the patch, the flag (number and label) and the fix. The fallback itself is unchanged:
+  refusing to solve because a patch is named something unexpected would be worse than a wall.
+  Silent when every patch resolves, which is what makes it mean something when it appears.
+  **One line per distinct NAME, carrying its segment ids** — a mesh names several segments the
+  same on purpose (the shipped C-grid has four `farfield`), and four identical lines is the
+  burial this rule exists to undo.
+  `is_known_bc_name` keeps ONE caller, like the flag it qualifies. The wording avoids the words
+  "error" and "failed", which `user_log.classify` would grade ERROR. Gated by
+  `tests/test_bc_name_unresolved.py`.
+- **The token choice is `bc_token_for_patch`, and only there.** #92 split it out of
+  `bc_flag_for_patch` so that "was it resolved?" and "what flag?" cannot answer about different
+  tokens; nothing else may re-derive `assigned if assigned else name`.
 - `bc_flag_overrides` answers a *different* question from the row builder — which already-built
   rows should ADOPT a changed assignment — and returns only the rows carrying one, so a manual
   tweak on an unassigned row survives. `None` in its names is a row with no name cell, skipped
   without a lookup; `""` is a row whose patch really is unnamed.
 Gated by `tests/test_solver_bc_table.py`, whose checks 10 and 11 hold the "no behaviour change"
-claim against the pre-#90 inline code rather than against the service itself.
+claim against the pre-#90 inline code rather than against the service itself — and
+`tests/test_bc_name_unresolved.py`, whose check 5 does the same for #92 against the pre-#92
+`bc_flag_for_patch`, over the same 96 combinations.
 
 **User messages go through `app/utils.py`'s graded helpers, never a raw `QMessageBox`** — with
 **two recorded exemptions, and no third without a helper**: `views/case_dir_dialog.py` (the

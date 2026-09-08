@@ -70,6 +70,18 @@ class SolverBcControllerMixin:
         listing = ", ".join(f"{sid}={nm or '(unnamed)'}" for sid, nm in segs)
         log(f"[Solver] Detected {n} boundary patch(es) from "
             f"{os.path.basename(bnd)}: {listing}. Review the BC types, then Run.")
+        self._log_unresolved_bc_patches(segs, group_bc, euler)
+
+    def _log_unresolved_bc_patches(self, segs, group_bc: dict, euler: bool):
+        """Say which patches took the tolerant wall fallback instead of a real
+        lookup (#92), in the same words the headless path uses — the message is
+        built by the derivation service, not here, so the two hosts cannot drift.
+
+        Says nothing when every patch resolved, which is what makes it mean
+        something when it appears."""
+        from app.services.solver_bc_table import unresolved_patch_warnings
+        for msg in unresolved_patch_warnings(segs, group_bc, euler):
+            self.log(msg)
 
     def resync_solver_bc_from_group(self):
         """#2/#7: make the solver BC rows reflect the CURRENT mesh + the latest
@@ -108,6 +120,10 @@ class SolverBcControllerMixin:
                 if n:
                     log(f"[Solver] Updated {n} BC row(s) from the current "
                         f"Mesh-Generator patch assignments.")
+                    # Only when rows actually moved: an assignment naming a token
+                    # nobody knows lands a wall here too, and this branch runs on
+                    # every entry into Solver mode (#92).
+                    self._log_unresolved_bc_patches(segs, group_bc, euler)
         elif group_bc and panel.bc_table.rowCount():
             n = panel.resync_bc_types_from_group(group_bc, euler=euler)
             if n:
