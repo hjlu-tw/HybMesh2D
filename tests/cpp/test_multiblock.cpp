@@ -4451,8 +4451,9 @@ int main() {
                   && mentions(w0, " polyline facets"),
               "57. ...quoting BOTH counts — the mesh's and the polyline's (got: "
               + w0 + ")");
-        CHECK(mentions(w0, "facets per interval, which does not DIVIDE"),
-              "57. ...and the ratio between them");
+        CHECK(mentions(w0, "facets per interval, which is not a WHOLE number of "
+                           "facets to a node"),
+              "57. ...and the ratio between them, stated as the mechanism it is");
         CHECK(mentions(w0, "MULTIPLE of") && mentions(w0, "or declare count "),
               "57. ...and BOTH fixes, since the user can act on either end");
         // THE COST IS QUANTIFIED AND THE TWO ANGLES ARE IN THE ORDER THE SENTENCE
@@ -4510,6 +4511,40 @@ int main() {
         CHECK(count > 1 && facets % (count - 1) == 0,
               "57. ...and the suggested count's intervals DIVIDE the facets ("
               + std::to_string(count) + ")");
+        // ── THE COUNT FIX IS THE CLASS's, NOT THIS EDGE's ───────────────────
+        //
+        // #94's review found this defect, and it was real: derived per edge, the
+        // shipped O-grid advised count 41 on its body arcs and 21 on its
+        // far-field ones — one chain, one count, two contradictory instructions —
+        // and 41 puts the far field at a 0.500 ratio costing 2.250 deg of turn
+        // against the 0.750 it started from, so one of the two "fixes" made the
+        // mesh three times worse. The count is the GCD of every bound stretch on
+        // the chain now.
+        //
+        // THE FIXTURE MAKES THAT CHECKABLE WITHOUT A SECOND NUMBER TO TRUST: this
+        // class holds the body's 10 facets and the far field's 5, so the gcd is 5
+        // and the advice is count 6 — which is EXACTLY the commensurate control
+        // built below. The warning's own suggestion is the case that goes silent.
+        std::vector<long> advised;
+        for (const std::string& w : rate) {
+            const size_t at = w.find("or declare count ");
+            if (at != std::string::npos) advised.push_back(std::atol(w.c_str() + at + 17));
+        }
+        CHECK(advised.size() == rate.size() && !advised.empty()
+                  && std::equal(advised.begin() + 1, advised.end(), advised.begin()),
+              "57. ...and the count advised is the CLASS's, so the warnings on one chain "
+              "cannot contradict each other (" + std::to_string(advised.size())
+              + " counts over " + std::to_string(rate.size()) + " warnings)");
+        // AND ITS VALUE, WHICH IS WHAT MAKES THE PREVIOUS CHECK MORE THAN "THEY
+        // AGREE". This O-grid's arcs form FOUR classes, not one — `q0` pairs its
+        // east `o0` with its west `w0`, and the four blocks do that separately —
+        // so each chain holds one body arc (10 facets) and one far-field arc (5).
+        // The gcd is 5, the advice is count 6, and 6 is EXACTLY the commensurate
+        // control built below: the warning names the case that goes silent.
+        CHECK(!advised.empty() && advised.front() == 6,
+              "57. ...and it is the gcd of that chain's bound stretches plus one (10 and "
+              "5 facets -> 6), the commensurate control below (got "
+              + std::to_string(advised.empty() ? -1 : advised.front()) + ")");
 
         // ── AND IT IS SILENT WHERE THE SAMPLING IS FREE, both ways ──────────
         //
@@ -4524,6 +4559,91 @@ int main() {
         CHECK(quiet == 0,
               "57. a commensurate declaration says NOTHING, so the warning means "
               "something when it appears (got " + std::to_string(quiet) + ")");
+
+        // ── AND THE 1/n RATIO IS NOT EXEMPT, WHICH IS THE OPPOSITE OF WHAT IT
+        //    LOOKS LIKE ──────────────────────────────────────────────────────
+        //
+        // #94's review proposed widening the divisibility test to `intervals %
+        // facets` as well, reasoning that at a ratio of 1/n every facet carries
+        // exactly n equal intervals and the sampling is therefore even. Measured,
+        // it is the reverse: the same geometry under an 11-node arc puts 10
+        // intervals on the far field's 5 facets, and the node turns run
+        // 0, 9, 0, 9 — every other node takes a WHOLE vertex turn and the rest
+        // take none, which is the most irregular polygon in the family. It costs
+        // 9.000 deg of turn here against 0.750 at the shipped 0.833, so widening
+        // that test would silence the worst cases. This check is what stops it.
+        //
+        // The body arcs are at 10 facets over 10 intervals on the same run, so the
+        // two halves of the claim ride one fixture: 1/n fires, 1/1 does not.
+        MbResult half = hybmesh::buildMultiBlock(ogrid("", 7, 11), geoms, MbParams{});
+        CHECK(half.ok, "57. the 1/n O-grid meshes (err: " + half.error + ")");
+        size_t onFar = 0, onBody = 0;
+        for (const std::string& w : half.warnings) {
+            if (!mentions(w, "sample a bound stretch")) continue;
+            if (mentions(w, "edge 'o")) ++onFar;
+            if (mentions(w, "edge 'w")) ++onBody;
+        }
+        CHECK(onFar == 4 && onBody == 0,
+              "57. a ratio of exactly 1/n is the WORST sampling, not an exempt one: "
+              "the four far-field arcs at 5 facets over 10 intervals are named and "
+              "the four body arcs at 10 over 10 are not (" + std::to_string(onFar)
+              + " far, " + std::to_string(onBody) + " body)");
+
+        // AND ONLY THE CHAIN's *BOUND* EDGES COUNT TOWARDS THAT GCD. An unbound
+        // edge's "polyline" is the chord between its two corners — ONE facet — so
+        // letting it into the gcd drags every chain it touches down to 1 and turns
+        // sound advice into "no single count suits this chain". This fixture is
+        // #94's answer to an injection that was otherwise INERT, and WHICH binding
+        // it strips is the whole point: take away `o0`'s and `q0`'s chain becomes
+        // one bound body arc (10 facets) plus an unbound chord, so `w0` must be
+        // advised the gcd of 10 alone — count 11 — while the other three chains,
+        // still holding both arcs, stay at 6. Stripping `w0`'s instead proves
+        // nothing: that leaves `o0` at a 1.25 ratio, which costs nothing and says
+        // nothing, and the check passes in both worlds.
+        MbResult mixed = hybmesh::buildMultiBlock(
+            swap1(ogrid("", 7, 5), R"(, "binding": {"geom": "far.dat", "seg": 0})", ""),
+            geoms, MbParams{});
+        CHECK(mixed.ok, "57. the part-bound O-grid meshes (err: " + mixed.error + ")");
+        long lone = -1;
+        size_t noneSuits = 0, mixedSaid = 0;
+        for (const std::string& w : mixed.warnings) {
+            if (!mentions(w, "sample a bound stretch")) continue;
+            ++mixedSaid;
+            if (mentions(w, "No single count suits this chain")) ++noneSuits;
+            const size_t at = w.find("or declare count ");
+            if (at != std::string::npos && mentions(w, "edge 'w0'"))
+                lone = std::atol(w.c_str() + at + 17);
+        }
+        CHECK(mixedSaid == 4 && noneSuits == 0 && lone == 11,
+              "57. ...so an UNBOUND edge on the chain does not drag its gcd to 1: 'w0' "
+              "is advised 11, the gcd of the ONE bound stretch left on its chain, rather "
+              "than losing the count fix altogether (" + std::to_string(mixedSaid)
+              + " warnings, " + std::to_string(noneSuits) + " with no count, w0 advised "
+              + std::to_string(lone) + ")");
+
+        // AND A CHAIN WITH NO COMMON COUNT SAYS SO RATHER THAN NAMING ONE.
+        // 7 facets per body quarter against 4 per far-field quarter are coprime,
+        // so the only count that divides both is 2 — which is not advice. The
+        // message then offers the resampling fix alone.
+        const std::vector<hybmesh::MbGeometry> coprime{
+            circleGeom(7, 0.5, "body.dat", "wall"),
+            circleGeom(4, 10.0, "far.dat", "farfield")};
+        MbResult cop = hybmesh::buildMultiBlock(ogrid("", 7, 6), coprime, MbParams{});
+        CHECK(cop.ok, "57. the coprime O-grid meshes (err: " + cop.error + ")");
+        std::vector<std::string> copSaid;
+        for (const std::string& w : cop.warnings)
+            if (mentions(w, "sample a bound stretch")) copSaid.push_back(w);
+        CHECK(!copSaid.empty(), "57. ...and it warns at all");
+        size_t noCount = 0;
+        for (const std::string& w : copSaid) {
+            if (mentions(w, "No single count suits this chain")
+                && !mentions(w, "or declare count ")) ++noCount;
+        }
+        CHECK(noCount == copSaid.size(),
+              "57. ...naming the RESAMPLING fix alone, because a chain of coprime "
+              "stretches has no count to name and inventing one would just move the "
+              "problem to another edge of it (" + std::to_string(noCount) + " of "
+              + std::to_string(copSaid.size()) + ")");
 
         // AND A NON-DIVIDING RATIO ON A STRAIGHT STRETCH SAYS NOTHING EITHER,
         // which is the half that keeps this readable rather than the half that

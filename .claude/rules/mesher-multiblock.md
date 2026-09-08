@@ -248,13 +248,28 @@ wall that drift exported a band of wall at every junction.)
   - **The DIVISIBILITY test is kept although no injection can make it fire**, because on a dividing
     ratio the estimator's bias is toward silence. It is what makes the MESSAGE's own advice true
     whenever the message is printed, and check 57 reads those numbers back out of the message.
+  - **THE COUNT FIX IS THE EQUIVALENCE CLASS's, NEVER THE EDGE's**, and it is
+    `gcd(facet counts of the chain's BOUND edges) + 1` — an interval count divides a stretch
+    exactly when it divides that stretch's facet count. #94's review found the per-edge version,
+    which advised 41 on the shipped O-grid's body arcs and 21 on its far-field ones with `w0` and
+    `o0` in ONE class: two contradictory instructions, one of which (41) puts the far field at the
+    1/n worst case and costs 2.250° against the 0.750 it started from. **Unbound edges are excluded
+    from that gcd** — a chord is one facet and would drag every chain it touches to 1 — and **a
+    chain of coprime stretches is told it has no count**, rather than being handed the useless 2.
+  - **AND IT IS ONE-DIRECTIONAL: a ratio of 1/n is the WORST sampling, not an exempt one.** #94's
+    review asked for `intervals % facets` as well, reasoning that n equal intervals to a facet is
+    even sampling. Measured, every n-th node lands on a vertex and takes its WHOLE turn while the
+    rest take none: 0.500 costs 2.250° of turn against the shipped 0.833's 0.750°. Widening it
+    would silence the worst cases, and check 57's `ogrid("", 7, 11)` row is what stops that.
+    The MESSAGE is what the review got right — at an exact 1/n the nodes do span the same number
+    of facets — so it states the ratio as "not a WHOLE number of facets to a node".
   - Gated by `tests/cpp/test_multiblock.cpp` 57, whose fixture is non-commensurate BY DECLARATION
-    so that #95 cannot take the coverage away with the shipped geometry (11 hand injections, 3
+    so that #95 cannot take the coverage away with the shipped geometry (14 hand injections, 3
     inert and named); `tests/test_multiblock_ogrid_surface.py` group 9, which asserts the warned
     figure ACCOUNTS FOR that mesh's own max-minus-mean gap (0.375 deg, exactly half the worst
     warned excess) rather than asserting that a warning appeared; and
     `tests/test_multiblock_cgrid_surface.py` group 10, the SILENCE. Neither surface half is worth
-    much alone. **No behaviour change: golden 19/19 SAME at exactly 0.0.**
+    much alone.
     Why: `docs/design_notes/mesher.md`, "A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID".
 - **`MbWallSpec` reports all four sides and the gate stays `kind`**, since "labelled inlet" and
   "viscous surface whose first-cell height matters" are different questions. SUPERSEDED by #53: the

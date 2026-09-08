@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <map>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <string>
@@ -803,6 +804,10 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
 // of a growth-rate solver is a guaranteed future divergence. `generateGeometric`
 // at ratio 1 IS the uniform law, so "uniform" is not a special case here either.
 //
+// `cum` is `arcLengths(path)`, and it is passed IN rather than computed here:
+// #94's sample-rate check needs the same array off the same path, and the caller
+// is the one scope that can hand both of them one copy of it.
+//
 // `arcOut`, when given, receives the ARC-LENGTH POSITION of every node returned,
 // parallel to the points. Reported from here for the same reason `achieved` is:
 // this is the only scope holding both the law's positions and the measure they
@@ -810,12 +815,12 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
 // them downstream from the returned points would mean re-locating each one on the
 // polyline, a second implementation of arithmetic that already exists here.
 std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& path,
+                                const std::vector<double>& cum,
                                 double achieved[2] = nullptr,
                                 std::vector<double>* arcOut = nullptr) {
     std::vector<Point2D> pts;
     if (arcOut) arcOut->clear();
-    if (path.size() < 2) return pts;
-    const std::vector<double> cum = arcLengths(path);
+    if (path.size() < 2 || cum.size() != path.size()) return pts;
     const double L = cum.back();
     std::vector<double> t = spacingAlong(e, L);
     // The two END INTERVALS THIS LAW ACTUALLY PRODUCED, IN ARC LENGTH — reported
@@ -1232,7 +1237,8 @@ bool resolveBlockFrames(const std::vector<BlockSpec>& blocks,
 bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
                        const std::vector<Frame>& frames,
                        std::vector<EdgeSpec>& edges,
-                       std::vector<hybmesh::MbEdgeCount>& out, std::string& err) {
+                       std::vector<hybmesh::MbEdgeCount>& out,
+                       std::vector<int>& classOf, std::string& err) {
     // ── Point-count propagation ───────────────────────────────────────────
     //
     // Two edges are structurally forced to carry the same node count when they are
@@ -1345,6 +1351,12 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
     }
     for (size_t k = 0; k < edges.size(); ++k)
         out.push_back({edges[k].id, edges[k].count, seeded[k] > 0});
+    // WHICH CLASS each edge ended in, reported for #94's sample-rate advice: a
+    // count is a property of the CLASS, so advice about one must be derived from
+    // every edge in it. The root id is opaque and only its equality matters.
+    classOf.assign(edges.size(), -1);
+    for (size_t k = 0; k < edges.size(); ++k)
+        classOf[k] = findRoot(static_cast<int>(k));
     return true;
 }
 
@@ -1959,7 +1971,9 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
 
     std::vector<Frame> frames;
     if (!resolveBlockFrames(blocks, edges, frames, err)) return fail(err);
-    if (!resolveEdgeCounts(blocks, frames, edges, r.edgeCounts, err)) return fail(err);
+    std::vector<int> edgeClass;
+    if (!resolveEdgeCounts(blocks, frames, edges, r.edgeCounts, edgeClass, err))
+        return fail(err);
 
     // ── The fallback boundary condition ───────────────────────────────────
     // Resolved before attachment, because a bound edge whose segment carries no
@@ -2148,9 +2162,18 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         r.nodes.push_back(c.xy);
     }
 
-    // One edge's node ids, in its OWN declared direction, and their positions.
-    struct EdgeNodes { std::vector<int> ids; std::vector<Point2D> pts; };
-    std::vector<EdgeNodes> eNodes(edges.size());
+    // THE POLYLINE EACH EDGE RUNS ALONG, resolved for every edge BEFORE any of
+    // them is filled. For an unbound edge that is the chord between its two
+    // corners; for a bound one it is the stretch of its source segment the edge
+    // covers, which is what makes "this edge lies on that segment" true rather
+    // than merely declared.
+    //
+    // A PRE-PASS and not part of the fill loop below, because #94's advice is
+    // about an EQUIVALENCE CLASS and cannot be derived one edge at a time: the
+    // count a user would change is shared by every edge on the chain, so a
+    // suggestion has to see all of their facet counts first. Building them here
+    // also means no path is built twice.
+    std::vector<std::vector<Point2D>> paths(edges.size());
     for (size_t k = 0; k < edges.size(); ++k) {
         const EdgeSpec& e = edges[k];
         const Corner* ca = cornerById(e.a);
@@ -2162,24 +2185,54 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             return fail("edge '" + e.id + "': a corner resolved during parsing and not "
                         "during filling; the topology was not read consistently and no "
                         "mesh was made.");
-        // The polyline this edge RUNS ALONG. For an unbound edge that is the chord
-        // between its two corners; for a bound one it is the stretch of its source
-        // segment the edge covers, which is what makes "this edge lies on that
-        // segment" true rather than merely declared.
-        std::vector<Point2D> path;
         const auto bd = bound.find(e.id);
-        if (bd == bound.end()) path = {ca->xy, cb->xy};
+        if (bd == bound.end()) paths[k] = {ca->xy, cb->xy};
         else {
             const SegSpan& sp = spans.at({bd->second.geomId, bd->second.segId});
-            path = subPath(sp.pts, sp.cum, bd->second.ta, bd->second.tb);
+            paths[k] = subPath(sp.pts, sp.cum, bd->second.ta, bd->second.tb);
         }
+    }
+
+    // THE LARGEST INTERVAL COUNT THAT SUITS EVERY BOUND EDGE ON A CHAIN, per
+    // equivalence class — the GCD of their facet counts, since an interval count
+    // divides a stretch evenly exactly when it divides that stretch's facet count.
+    //
+    // #94's review found this the hard way, and it was a REAL defect rather than a
+    // nicety: derived per edge, the shipped O-grid's eight warnings advised count
+    // 41 on its body arcs and 21 on its far-field ones — one chain, one count, two
+    // contradictory instructions — and 41 is actively WORSE, putting the far field
+    // at a 0.500 ratio costing 2.250 deg of turn against the 0.750 it started
+    // from. The GCD of 40 and 20 is 20, so the advice is count 21 on all eight,
+    // which is the one that measures right (every warning gone, max == mean).
+    //
+    // 0 MEANS "NO COMMON COUNT WORTH NAMING": a class of coprime stretches (20 and
+    // 21 facets) has only the useless gcd of 1, and a two-node edge is not advice.
+    // The message then names the resampling fix alone rather than a count that
+    // cannot help.
+    std::map<int, int> classFacetGcd;
+    for (size_t k = 0; k < edges.size(); ++k) {
+        if (bound.find(edges[k].id) == bound.end()) continue;
+        const int f = static_cast<int>(paths[k].size()) - 1;
+        if (f <= 0) continue;
+        int& g = classFacetGcd[edgeClass[k]];
+        g = (g == 0) ? f : static_cast<int>(std::gcd(g, f));
+    }
+
+    // One edge's node ids, in its OWN declared direction, and their positions.
+    struct EdgeNodes { std::vector<int> ids; std::vector<Point2D> pts; };
+    std::vector<EdgeNodes> eNodes(edges.size());
+    for (size_t k = 0; k < edges.size(); ++k) {
+        const EdgeSpec& e = edges[k];
+        const std::vector<Point2D>& path = paths[k];
+        const auto bd = bound.find(e.id);
         // The two end intervals this law really produced, IN ARC LENGTH — the
         // measure the request is in. See `discretise`: comparing the CHORD
         // instead made this warning fire on a bound curved edge whose law had
         // honoured the request exactly.
         double achieved[2] = {0.0, 0.0};
         std::vector<double> nodeArc;
-        eNodes[k].pts = discretise(e, path, achieved, &nodeArc);
+        const std::vector<double> pathArc = arcLengths(path);
+        eNodes[k].pts = discretise(e, path, pathArc, achieved, &nodeArc);
         // A CLUSTERING REQUEST THAT THE EDGE COULD NOT HONOUR IS SAID.
         //
         // The tanh solver returns "uniform" when the requested first cell is at or
@@ -2210,32 +2263,60 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // because a non-dividing ratio on a straight stretch costs nothing at all
         // and a warning that fires there fires on most of this repo. See
         // `sampleRate` for what the cost is and why it is an angle.
+        //
+        // THE DIVISIBILITY TEST IS ONE-DIRECTIONAL ON PURPOSE, and #94's review
+        // proposed widening it to `intervals % facets` as well — on the reasoning
+        // that at a ratio of 1/n every facet carries exactly n equal intervals, so
+        // the sampling is even. MEASURED, IT IS THE OPPOSITE: on a curved quarter
+        // at 20 facets over 40 intervals the node turns run 0, 4.5, 0, 4.5 — every
+        // other node takes a whole vertex turn and the rest take none — which is
+        // the most irregular polygon in the whole family, costing 2.250 deg of turn
+        // against 0.750 at the shipped 0.833. Widening the test would silence the
+        // WORST cases, so it stays as it is, and check 57 pins the 1/n row.
         if (bd != bound.end()) {
-            const SampleRate sr = sampleRate(path, arcLengths(path),
-                                             eNodes[k].pts, nodeArc);
+            const SampleRate sr = sampleRate(path, pathArc, eNodes[k].pts, nodeArc);
             if (sr.intervals > 0 && sr.facets % sr.intervals != 0
                 && sr.excessDeg() > hybmesh::MB_SAMPLE_RATE_TOL_DEG) {
                 const int nextMul = sr.intervals * (sr.facets / sr.intervals + 1);
+                // THE COUNT FIX COMES FROM THE CLASS, NEVER FROM THIS EDGE. See
+                // `classFacetGcd`: a count is shared along the chain, so advice
+                // derived from one edge contradicts the same advice on its
+                // neighbour and can point at a WORSE mesh.
+                const int gcdF = classFacetGcd.count(edgeClass[k])
+                                     ? classFacetGcd.at(edgeClass[k]) : 0;
+                const std::string countFix =
+                    gcdF >= 2
+                        ? ", or declare count " + std::to_string(gcdF + 1)
+                          + " on this edge's equivalence class — the largest count that "
+                            "suits EVERY bound edge on that chain"
+                          + (gcdF + 1 < e.count
+                                 ? std::string(", and coarser than the ")
+                                   + std::to_string(e.count) + " declared here"
+                                 : std::string(""))
+                          + ". The count PROPAGATES, so it moves the opposite side of "
+                            "every block on the chain"
+                        : std::string(". No single count suits this chain — its bound "
+                            "stretches share no common divisor above 1 — so resampling "
+                            "is the only fix that does not simply move the problem to "
+                            "another edge of it");
                 r.warnings.push_back(
                     "edge '" + e.id + "': its " + std::to_string(e.count) + " nodes ("
                     + std::to_string(sr.intervals) + " intervals) sample a bound stretch "
                       "stored as " + std::to_string(sr.facets) + " polyline facets — "
                     + fmt3(static_cast<double>(sr.facets) / sr.intervals)
-                    + " facets per interval, which does not DIVIDE, so consecutive nodes "
-                      "span different numbers of facets and the polygon this edge meshes "
-                      "has irregular corners. Its worst corner turns "
+                    + " facets per interval, which is not a WHOLE number of facets to a "
+                      "node, so the polyline's own turning does not fall equally on the "
+                      "nodes and the polygon this edge meshes has irregular corners. Its "
+                      "worst corner turns "
                     + fmt3(sr.worstDeg) + " deg where an even sampling of the same curve "
                       "at this density turns " + fmt3(sr.evenDeg) + ", so "
                     + fmt3(sr.excessDeg()) + " deg of that corner is the SAMPLE RATE and "
-                      "not the geometry — about half of it reaches the worst "
-                      "non-orthogonality this run reports. Two fixes, either one: "
-                      "resample this geometry so the stretch carries a MULTIPLE of "
-                    + std::to_string(sr.intervals) + " facets ("
-                    + std::to_string(nextMul) + " is the nearest above), or declare "
-                      "count " + std::to_string(sr.facets + 1) + " on this edge's "
-                      "equivalence class — one node per polyline vertex, and the count "
-                      "PROPAGATES, so it moves the opposite side of every block on the "
-                      "chain. A stretch whose facets divide costs exactly nothing.");
+                      "not the geometry — about half of that reaches the non-orthogonality "
+                      "of the cells along this edge. Resample this geometry so the stretch "
+                      "carries a MULTIPLE of " + std::to_string(sr.intervals) + " facets ("
+                    + std::to_string(nextMul) + " is the nearest above)" + countFix
+                    + ". A stretch carrying a whole number of facets per node costs "
+                      "exactly nothing.");
             }
         }
         if (eNodes[k].pts.size() != static_cast<size_t>(e.count))

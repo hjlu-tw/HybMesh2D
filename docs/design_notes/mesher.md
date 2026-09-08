@@ -2313,11 +2313,72 @@ of the seam, said by the caller, like every other refusal and shortfall on this 
   gives the south segment 3 facets under 4 intervals), and an UNBOUND edge, which has no polyline
   to be measured against.
 
-- **INJECTIONS, dated 2026-09-08, exit code read before the FAIL count. 8 of 11 bite.** Dropping
+- **THE DIVISIBILITY TEST IS ONE-DIRECTIONAL, AND #94's OWN REVIEW ASKED FOR THE OPPOSITE.** It
+  proposed widening the gate to `intervals % facets != 0` as well, on the reasoning that at a ratio
+  of 1/n every facet carries exactly n equal intervals, so the sampling is even and the message's
+  mechanism sentence is false there. **MEASURED, THE PREMISE IS BACKWARDS** — a curved quarter at
+  20 facets over 40 intervals, node turns in degrees:
+
+      fac/int   node turns                  worst    even    excess
+      1.000     4.5, 4.5, 4.5, 4.5, ...     4.500   4.500   0.000
+      0.500     0, 4.5, 0, 4.5, ...         4.500   2.250   2.250
+      0.250     0, 0, 0, 4.5, 0, 0, ...     4.500   1.125   3.375
+
+  Every n-th node lands on a vertex and takes its WHOLE turn while the rest take none, so 1/n is
+  the most irregular polygon in the entire family and costs **three times** what the shipped 0.833
+  does. Widening the test would have silenced the worst cases. **What the review got right is the
+  SENTENCE**: at an exact 1/n ratio consecutive nodes span the SAME number of facets, so "different
+  numbers of facets" was false there. The message now says what is true of both sub-cases — the
+  ratio is "not a WHOLE number of facets to a node", so the polyline's turning does not fall
+  equally on them — and `test_multiblock.cpp` 57 pins the 1/n row (`ogrid("", 7, 11)` puts 10
+  intervals on the far field's 5 facets and 10 on the body's 10, so 1/n fires and 1/1 does not on
+  ONE run). The widening is now injection 1b and BITES.
+
+- **AND THE SECOND FIX CAN BE A COARSENING, so the message says when it is.** On the shipped far
+  field, 20 facets under a declared 25 nodes, "one node per polyline vertex" is count 21 — fewer
+  than the user asked for. Also #94's review; the message now names the declared count beside it
+  rather than leaving the reader to notice.
+
+- **THE COUNT FIX IS THE EQUIVALENCE CLASS's, AND DERIVING IT PER EDGE WAS A REAL DEFECT** — #94's
+  review, and the sharper of its two findings. A count is shared along the chain, so advice about
+  one edge is advice about all of them. Derived per edge, the shipped O-grid's eight warnings said
+  count **41** on its body arcs and **21** on its far-field ones, and `w0` and `o0` are the west and
+  east of block `q0` — ONE class, one count, two contradictory instructions in the same run. Worse,
+  one of them is a trap: measured, count 41 puts the far field at a **0.500** ratio costing **2.250°**
+  of turn against the 0.750 it started from, which is the 1/n worst case the block above measures.
+  Count 21 is the one that works — every warning gone, `nonortho_max_deg` and `nonortho_mean_deg`
+  both exactly 2.250000, so the polygon is regular (a coarser regular 80-gon, whose own floor is
+  360/80/2).
+  * **The rule is the GCD**: an interval count divides a stretch evenly exactly when it divides that
+    stretch's facet count, so the largest count suiting a whole chain is
+    `gcd(facet counts of its BOUND edges) + 1`. On the shipped O-grid `gcd(40, 20) = 20`, so all
+    eight warnings now say 21.
+  * **BOUND edges only.** An unbound edge's polyline is the chord between its corners — one facet —
+    and letting it into the gcd drags every chain it touches to 1. Check 57's part-bound fixture is
+    what makes that falsifiable, and WHICH binding it strips is the point: stripping `o0`'s leaves
+    `w0` alone on its chain and advised 11, while stripping `w0`'s leaves `o0` at a 1.25 ratio that
+    costs nothing and says nothing, so the check would pass in both worlds.
+  * **AND A CHAIN MAY HAVE NO ANSWER, which is said rather than papered over.** Coprime stretches —
+    7 facets against 4 — share only the gcd of 1, and count 2 is not advice. The message then offers
+    the resampling fix alone, "so resampling is the only fix that does not simply move the problem to
+    another edge of it".
+  * **THE O-GRID's ARCS ARE FOUR CHAINS, NOT ONE**, which a first draft of check 57 had wrong: `q0`
+    pairs its east `o0` with its west `w0`, and the four blocks do that separately. The four agree at
+    21 by the case's own symmetry, not by construction.
+
+- **AND THE METRIC CLAUSE WAS TRUE OF THE RUN, PRINTED ON EVERY EDGE.** Also #94's review: every
+  warning ended "about half of it reaches the worst non-orthogonality this run reports", which holds
+  for the far-field edges' 0.750 and not for the body arcs' 0.300 — that run's worst is the far
+  field's alone. The clause is now local ("the non-orthogonality of the cells along this edge") and
+  the run-wide relation lives where it is measured, in the O-grid gate's group 9.
+
+- **INJECTIONS, dated 2026-09-08, exit code read before the FAIL count. 11 of 14 bite.** Dropping
   the cost gate (the C-grid's straight edges then fire, in TWO gates); flipping the excess
   comparison; reading `phi` as a step; the nearest-multiple arithmetic off by one; suggesting a
   count whose intervals do not divide; quoting the two angles the other way round; taking the MEAN
-  turn instead of the worst; and measuring only UNBOUND edges. **THREE ARE INERT AND NAMED**: the
+  turn instead of the worst; measuring only UNBOUND edges; the review's proposed widening of the
+  divisibility gate; deriving the count fix from the edge rather than the class; and letting unbound
+  edges into that gcd. **THREE ARE INERT AND NAMED**: the
   two window-placement mutations above, and **dropping the divisibility gate itself** — which is
   unfalsifiable on a correct document, because on a dividing ratio the estimator's bias is toward
   silence and every fixture's excess there is 0. That gate is kept anyway, and not because it
@@ -2330,7 +2391,12 @@ of the seam, said by the caller, like every other refusal and shortfall on this 
   `discretise` gained an optional `arcOut` out-parameter for the same reason it already had
   `achieved` — that scope is the only one holding both the law's positions and the measure they are
   in, and recovering them downstream would mean a second implementation of arithmetic that exists
-  there.
+  there. It also now takes `cum` IN rather than computing it, so the path's arc lengths are built
+  once per edge and handed to both readers; the first draft called `arcLengths` twice on the same
+  path, which #94's review flagged against `arcOut`'s own argument. **Bundling the two out-params
+  into one report type was considered and DECLINED**, on #82's reasoning about the smoothing
+  figures: they are read by two unrelated warnings — the clustering one and the sample-rate one —
+  so a type holding both would give one shape two owners.
 
 - **BLIND SPOTS THIS LEAVES.**
   * **The bias above can MASK a real cost on a strongly curved non-dividing stretch** — up to about
