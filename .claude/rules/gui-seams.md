@@ -179,9 +179,14 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
 ## Named blind spots
 
 - **The file-length standard is the only one of the four with NO gate**, so the number is a habit
-  rather than a check. Measured 2026-09-03: 258 GUI `.py` files, of which 5 exceed 500 lines —
+  rather than a check — and #91 measured what that costs: `services/pipeline_runner.py` was pushed
+  from 490 to 537 lines by a 40-line function, and only a REVIEW caught it. That is the failure
+  this bullet describes, not a hypothetical. It was SPLIT (`services/pipeline_bc_derive.py`), not
+  pinned. Re-measured 2026-09-08: 260 GUI `.py` files, of which 6 exceed 500 lines —
   `models/pipeline_config.py` 523, `services/case_run_note.py` 508, `controllers/session_io_ctrl.py`
-  508, `services/result_legs.py` 501, `models/solver_config.py` 501.
+  508, `models/mesh_config.py` 505, `services/result_legs.py` 501, `models/solver_config.py` 501.
+  Five are the files the 2026-09-03 count named; `mesh_config.py` crossed in between under no
+  ticket's eye — the same silence, and nobody reviewed it.
 - **`tests/test_gui_cpp_config_parity.py` cannot see a spec's `key=` being removed**: both sides
   then agree with the parameter gone from each, while the writer keeps emitting the line — the
   writer's f-strings are independent of the map. Why: `docs/design_notes/gui.md`, "removing a spec's `key=` left both sides agreeing".

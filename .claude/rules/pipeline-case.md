@@ -95,7 +95,11 @@ the schema and the stage logic.
   - **Nothing to derive from — no `.bnd`, or one with no patches — declines and says so**, leaving
     the pre-#91 getPGrid fallback exactly as it was.
   - The rule it applies is #90's `services/solver_bc_table.py`, the same one the GUI panel calls,
-    so the two hosts cannot drift.
+    so the two hosts cannot drift. **It inherits that service's blind spot**: `group_bc` is keyed
+    by the per-segment grouping LABEL while a `.bnd` patch name is the BC TYPE the mesher resolved
+    it to, so the `group_bc` half of the lookup usually misses and it is the PATCH NAME that
+    decides. That is enough for #91 — the mesher already resolved the labels when it named the
+    patches — but do not read the `group_bc` argument as working.
   - **The GUI's own Run is untouched** — it goes through `workers/solver_run.py` with the panel's
     table, which was always authoritative. **The GUI's BATCH QUEUE is not**: it reaches
     `pipeline_runner.run_pipeline` through `services/batch_runner.py`, so a hand-written script

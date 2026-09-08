@@ -941,6 +941,12 @@ reach the solver.
     `services/bnd_io._NAME_TO_FLAG` and writes the flag into the `.bc.def`, which is what
     the acceptance run did by hand — so a GUI-driven run never sees it. Not chased,
     because the mesher's job ends at the patch NAME and the flag is the solver panel's.
+    **That last clause was the mistake, and #91 is what it cost**: "the flag is the solver
+    panel's" is true of the GUI and was false of the headless hosts, which had no panel and
+    therefore no flag — so the pipeline ran the C-grid demo in a closed viscous box for as
+    long as this note said not to chase it. The rule now is that the flag belongs to a
+    SERVICE both hosts call (#90's `solver_bc_table`, applied headlessly by
+    `services/pipeline_bc_derive.py`), and the mesher's job still ends at the patch NAME.
 - **BL_INITIAL_THICKNESS and BL_GROWTH_RATE leave `blSurvivorsUnread`.** #49 declared four
   survivors and v0 read none; two are now real inputs, so they must be SILENT — warning
   that a value does nothing while the mesh is being built from it is the one wrong answer

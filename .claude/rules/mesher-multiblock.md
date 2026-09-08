@@ -429,10 +429,15 @@ otherwise learn the hole exists.
 - **The C-grid's 0.005 far-field clustering is UNENFORCED**: derived from the airfoil edges' own
   `ds_start`, but two numbers in one document that happen to agree; only the acceptance run would
   notice them diverging.
-- **GATE 2 DOES NOT EXERCISE THE `.bnd` NAME -> SOLVER FLAG MAPPING.** `getPGrid` does not know
-  `farfield` and defaults those faces to a no-slip wall, so both recorded runs wrote the flag into
-  a `.bc.def` BY HAND — what the GUI's `services/bnd_io._NAME_TO_FLAG` does automatically. Nothing
-  from either run is committed, so each is a quotation and not a reproduction.
+- **GATE 2 DOES NOT EXERCISE THE `.bnd` NAME -> SOLVER FLAG MAPPING.** Still true of GATE 2, and
+  no longer true of the repo: `getPGrid` does not know `farfield` and defaults those faces to a
+  no-slip wall, so both recorded runs wrote the flag into a `.bc.def` BY HAND. **#91 closed the
+  "only the GUI does this automatically" half** — `services/pipeline_bc_derive.py` derives the
+  table from the mesh's own patches for the HEADLESS hosts too, and
+  `tests/test_pipeline_bc_from_mesh.py` gates the mapping token-by-token against getPGrid's own
+  `getBCType`, which is the first automated coverage it has ever had. What is still hand-built is
+  gate 2's own runs, and nothing from either is committed, so each remains a quotation and not a
+  reproduction.
 - **GATE 2 IS ONE OPERATING POINT, AND NOTHING RE-RUNS IT.** #57's acceptance run is M 0.2, Re 200,
   zero incidence, 100 iterations, `cfl 0.6`, every non-wall patch flag 1. "The solver runs" is all
   it claims — not convergence, not accuracy, and no pressure distribution is compared with

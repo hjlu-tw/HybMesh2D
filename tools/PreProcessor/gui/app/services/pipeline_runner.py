@@ -20,8 +20,7 @@ from app.models.pipeline_config import PipelineConfig
 from app.services import (
     case_sources, ib_handoff, pipeline_stages, solver_case, stl3d_case,
 )
-from app.services.bnd_io import read_bnd_segments
-from app.services.solver_bc_table import bc_definitions_for_patches
+from app.services.pipeline_bc_derive import derive_bc_definitions
 from app.services.logging_setup import get_logger
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
@@ -315,45 +314,6 @@ def _case_sources(pcfg: PipelineConfig, repo: str, geoms, vtk: str):
     return [p for p in out if p], generated
 
 
-def derive_bc_definitions(sc, group_bc: dict | None = None, log=print) -> int:
-    """Fill an EMPTY solver BC table from the mesh's own boundary patches (#91).
-
-    Returns the number of rows derived, 0 when it declines. It declines in
-    exactly two cases, and both leave the pre-#91 behaviour untouched:
-
-    * **The script states the table.** A declaration always wins — deriving fills
-      a gap, it never overwrites an answer someone gave. This is what keeps a
-      GUI-authored `.hws` (which carries `project.solver_config` wholesale, its
-      `bc_definitions` included) behaving exactly as it did.
-    * **There is nothing to derive FROM** — no `.bnd`, or one with no patches.
-      `solver_case.stage_bc_def_companion` then copies getPGrid's own table, as
-      it always has.
-
-    Why this exists: `solver_case` writes `<case>.bc.def` from `bc_definitions`
-    when it has any and otherwise copies the table getPGrid wrote for itself.
-    getPGrid does not know the name `farfield` and defaults those patches to a
-    NO-SLIP ADIABATIC WALL, so a hand-written script — every script in
-    `config/pipeline/`, the documented headless entry points — solved a body in a
-    closed viscous box while exiting 0 with a plausible contour plot. The GUI has
-    always derived this; it did so inside a Qt panel until #90 gave the rule a
-    home both hosts can call.
-    """
-    if sc.bc_definitions:
-        return 0
-    bnd = getattr(sc, "input_bnd_file", "") or ""
-    patches = read_bnd_segments(bnd)
-    if not patches:
-        return 0
-    euler = getattr(sc, "flow_solu_type", "") == "euler_sol"
-    sc.bc_definitions = bc_definitions_for_patches(patches, group_bc, euler)
-    listing = ", ".join(f"{r['segment_no']}={r['name'] or '(unnamed)'}:{r['bc_type']}"
-                        for r in sc.bc_definitions)
-    log(f"[Solver] BC table derived from {os.path.basename(bnd)} "
-        f"({len(patches)} patch(es)): {listing}. The script stated none, and "
-        "getPGrid's own table would call every name it does not know a wall.")
-    return len(sc.bc_definitions)
-
-
 def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
                 on_process=None, geoms=None, phi: str = "") -> str:
     sc = pcfg.build_solver_config(repo)
@@ -394,7 +354,8 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
     # not (#91). BEFORE prepare_case_dir, which writes work/<bc>.def from it —
     # and which is also what makes stage_bc_def_companion below skip getPGrid's
     # table instead of copying it over ours.
-    derive_bc_definitions(sc, pcfg.build_mesh_config(geoms).group_bc, log=log)
+    mesh_cfg = pcfg.build_mesh_config(geoms)
+    derive_bc_definitions(sc, mesh_cfg.group_bc, log=log)
 
     bins = find_solver_executables()
     if not bins.get("getpgrid"):

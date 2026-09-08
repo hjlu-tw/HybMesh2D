@@ -65,6 +65,17 @@ here, because a real run auto-versions a NEW `results/solver/<case>_NNN/` every
 time and a suite run must not grow the user's tree unasked. CI has no solver
 binary in any case.
 
+WHAT RUNS UNCONDITIONALLY IS WEAKER THAN #91's WORDING, and that is said here
+rather than left to be discovered. The criterion asks for "a test [that] drives
+the headless path on a shipped case and asserts the flags in the produced
+`.bc.def`". Checks 6-7 do drive the real `prepare_case_dir` /
+`stage_bc_def_companion` and assert the flags in the file they produce, using the
+SHIPPED script's own solver section — but from a SYNTHETIC `.bnd`, so that they
+run in a clean clone with nothing built. The shipped mesh itself is reached by
+check 1 (skips when it is not built) and check 9 (opt-in). Nothing that runs
+everywhere ties the flag assertion to a file the mesher actually wrote. Check 1
+is what stops the fixture drifting away from the mesh it stands in for.
+
 Run:  python3 tools/PreProcessor/tests/test_pipeline_bc_from_mesh.py
 """
 import os
@@ -103,7 +114,8 @@ def read_def(path):
     return out
 
 
-from app.services import pipeline_runner, solver_case                # noqa: E402
+from app.services import pipeline_bc_derive, solver_case             # noqa: E402
+from app.services.pipeline_bc_derive import derive_bc_definitions    # noqa: E402
 from app.services.bnd_io import default_bc_flag_for_name             # noqa: E402
 from app.services.bnd_io import read_bnd_segments                    # noqa: E402
 from app.models.pipeline_config import PipelineConfig                # noqa: E402
@@ -166,7 +178,7 @@ _bnd = write_bnd(os.path.join(tmp, "mesh.bnd"), _PATCHES)
 _sc = _pcfg.build_solver_config(_REPO)
 _sc.input_bnd_file = _bnd
 _LOG = []
-_n = pipeline_runner.derive_bc_definitions(_sc, {}, log=_LOG.append)
+_n = derive_bc_definitions(_sc, {}, log=_LOG.append)
 check(_n == 8
       and {r["segment_no"]: r["bc_type"] for r in _sc.bc_definitions} == _WANT
       and [r["name"] for r in _sc.bc_definitions] == [n for _s, n in _PATCHES],
@@ -180,7 +192,7 @@ _stated = [{"segment_no": 5, "bc_type": 3, "values": "2.5", "name": "farfield"}]
 _sc2 = _pcfg.build_solver_config(_REPO)
 _sc2.input_bnd_file = _bnd
 _sc2.bc_definitions = [dict(r) for r in _stated]
-_n2 = pipeline_runner.derive_bc_definitions(_sc2, {}, log=_LOG.append)
+_n2 = derive_bc_definitions(_sc2, {}, log=_LOG.append)
 check(_n2 == 0 and _sc2.bc_definitions == _stated,
       f"4. a script that states the table keeps it, untouched — deriving fills a "
       f"gap, it never overwrites a declaration ({_sc2.bc_definitions})")
@@ -188,11 +200,11 @@ check(_n2 == 0 and _sc2.bc_definitions == _stated,
 # ── 5. nothing to derive from ────────────────────────────────────────────────
 _sc3 = _pcfg.build_solver_config(_REPO)
 _sc3.input_bnd_file = os.path.join(tmp, "does_not_exist.bnd")
-_n3 = pipeline_runner.derive_bc_definitions(_sc3, {}, log=_LOG.append)
+_n3 = derive_bc_definitions(_sc3, {}, log=_LOG.append)
 _empty = write_bnd(os.path.join(tmp, "empty.bnd"), [])
 _sc4 = _pcfg.build_solver_config(_REPO)
 _sc4.input_bnd_file = _empty
-_n4 = pipeline_runner.derive_bc_definitions(_sc4, {}, log=_LOG.append)
+_n4 = derive_bc_definitions(_sc4, {}, log=_LOG.append)
 check(_n3 == 0 and not _sc3.bc_definitions and _n4 == 0 and not _sc4.bc_definitions,
       f"5. a missing or patch-less .bnd derives nothing and leaves the table "
       f"empty, so the pre-#91 getPGrid fallback still applies ({_n3}, {_n4})")
@@ -282,6 +294,24 @@ else:
           f"leaves the solver a table with every farfield/outlet at flag 1 "
           f"(rc={_rc.returncode}, case={_cases[-1] if _cases else '?'}, "
           f"def={_defs}, {_got})")
+
+# ── 11. the ORDERING, read from the runner's source ──────────────────────────
+# Check 7 catches a companion copy that lands on top of the derived table. This
+# states the rule that prevents it: the derivation runs BEFORE prepare_case_dir,
+# which is what writes work/<bc>.def FROM bc_definitions. Deriving afterwards
+# would leave a correct table in memory and a wrong one on disk.
+_runner_src = open(os.path.join(_GUI, "app", "services", "pipeline_runner.py"),
+                   encoding="utf-8").read()
+_rs_body = _runner_src[_runner_src.index("def _run_solver("):]
+_rs_body = _rs_body[:_rs_body.index("\ndef ")]
+_i_derive = _rs_body.find("derive_bc_definitions(")
+_i_prep = _rs_body.find("solver_case.prepare_case_dir(")
+check(_i_derive > 0 and _i_prep > 0 and _i_derive < _i_prep,
+      f"11. _run_solver derives the BC table BEFORE prepare_case_dir writes it "
+      f"out (derive@{_i_derive}, prepare@{_i_prep})")
+check("derive_bc_definitions" in _runner_src
+      and pipeline_bc_derive.derive_bc_definitions is derive_bc_definitions,
+      "11. …and it is the runner that calls it, not only this test")
 
 # ── 10. the mapping itself, against getPGrid's OWN source ────────────────────
 # The blind spot #55, #57 and #85 all name is "the .bnd name -> solver flag
