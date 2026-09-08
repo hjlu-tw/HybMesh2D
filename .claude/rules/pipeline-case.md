@@ -77,6 +77,36 @@ the schema and the stage logic.
   by `tests/test_pipeline_ib_handoff.py`, which drives the real conversion, proves the chain by
   AST, and **compiles the generated DLL** (`stage_dll` returns `""` with a mere WARNING on a
   compile failure, so a source that does not build degrades silently to "no init DLL").
+- **A HEADLESS RUN SOLVES THE BCs THE MESH DECLARES, NOT getPGrid'S GUESS** (#91,
+  `pipeline_runner.derive_bc_definitions`). `solver_case` writes `<case>.bc.def` from
+  `SolverConfig.bc_definitions` when it has any and otherwise copies the table getPGrid wrote for
+  itself (`stage_bc_def_companion`) — and getPGrid does not know the name `farfield`, so it
+  defaults those patches to a **no-slip adiabatic wall**. Nothing headless populated
+  `bc_definitions`, so the fallback ALWAYS won: the shipped C-grid demo solved a body in a
+  **closed viscous box** (exit 0, 100 iterations, no NaN, a plausible contour plot, and not one
+  word said). A GUI-authored `.hws` was never affected — it carries `project.solver_config`
+  wholesale — so this hit exactly the hand-written scripts in `config/pipeline/`, the documented
+  headless entry points.
+  - **Derive fills a gap; it NEVER overwrites a declaration.** A script that states
+    `bc_definitions` keeps it, which is what leaves the `.hws` route and the GUI byte-identical.
+  - **It runs BEFORE `prepare_case_dir`**, which is what makes `stage_bc_def_companion` skip
+    getPGrid's table rather than copy it over the derived one a few lines later. That ordering is
+    the one way this can be undone silently, so it is gated on its own.
+  - **Nothing to derive from — no `.bnd`, or one with no patches — declines and says so**, leaving
+    the pre-#91 getPGrid fallback exactly as it was.
+  - The rule it applies is #90's `services/solver_bc_table.py`, the same one the GUI panel calls,
+    so the two hosts cannot drift.
+  - **The GUI's own Run is untouched** — it goes through `workers/solver_run.py` with the panel's
+    table, which was always authoritative. **The GUI's BATCH QUEUE is not**: it reaches
+    `pipeline_runner.run_pipeline` through `services/batch_runner.py`, so a hand-written script
+    queued there gets the derivation too. That is the intended reach, not a leak.
+  Gated by `tests/test_pipeline_bc_from_mesh.py`, which is also **the first automated coverage of
+  the `.bnd` name -> solver flag mapping** (#55, #57 and #85 all name that as an outstanding blind
+  spot): its check 10 reads getPGrid's own `getBCType` C++ and compares token by token, with one
+  case-fold collision PINNED with both values (`nozzle` is 50 there and 2 here — this map is
+  case-insensitive by design and cannot represent a token whose meaning flips with case). **CI's
+  end-to-end result does NOT change**: it runs `run_pipeline.sh ... --no-solver`, which stops
+  before this stage.
 - **`services/solver_case.py`** (Qt-free) owns the case dir
   (`results/solver/<name>/{work,grid,dll}`) for both the GUI worker and the headless runner, and
   answers **where a case lives** (`case_root_for` / `work_dir_of`). **The grid stem is the

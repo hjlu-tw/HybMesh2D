@@ -181,16 +181,22 @@ WHAT THIS RUN DOES **NOT** EXERCISE, so it is not read as more than it is:
     is the whole claim. It is not convergence, not accuracy, and no pressure
     distribution is compared with anything — not even between the smoothed run and
     its own control, which is the obvious next question and is not answered here.
-  * THE `.bnd` NAME -> SOLVER FLAG MAPPING IS STILL NOT EXERCISED, and #85 measured
-    why the pipeline route does not close it either. getPGrid writes the
-    `<case>.bc.def` segment table itself and does not know 'farfield', so it
-    defaults those four patches to a NO-SLIP WALL; nothing in the Python re-writes
-    it. Driving the same case through `config/pipeline/multiblock_cgrid_demo.json`
-    therefore ran a body in a closed viscous box — exit 0, 100 iterations, no NaN,
-    but NOT this operating point. The flag-1 above was written into the `.bc.def`
-    by hand, exactly as #55's and #57's runs were. What the GUI does automatically
-    is `services/bnd_io._NAME_TO_FLAG`; check 6 is where the names themselves are
-    measured.
+  * THE `.bnd` NAME -> SOLVER FLAG MAPPING WAS NOT EXERCISED HERE, and it still
+    is not — but it is no longer UNEXERCISED, which is a different sentence.
+    CLOSED BY #91 (2026-09-08), stated here rather than deleted because the runs
+    quoted above predate it. #85 had measured why the pipeline route did not
+    close it: getPGrid writes the `<case>.bc.def` segment table itself, does not
+    know 'farfield', and defaulted those four patches to a NO-SLIP WALL with
+    nothing in the Python re-writing it — so driving the same case through
+    `config/pipeline/multiblock_cgrid_demo.json` ran a body in a closed viscous
+    box (exit 0, 100 iterations, no NaN, but NOT this operating point), and the
+    flag-1 above was written into the `.bc.def` by hand, exactly as #55's and
+    #57's runs were. #91 made the headless runner derive the table from the
+    mesh's own patches, so a pipeline run now REPRODUCES this operating point;
+    its own dated run and the token-by-token gate against getPGrid's `getBCType`
+    live in `tools/PreProcessor/tests/test_pipeline_bc_from_mesh.py`. What the
+    GUI does automatically is `services/bnd_io._NAME_TO_FLAG`; check 6 is where
+    the names themselves are measured.
   * NO OUTPUT IS ON DISK, following #55 — no para.in, no bc.def, no solver output
     is committed, so these figures are a quotation and not a reproduction.
   * CI has no solver binary. This checkout does (`solver/execute/unicones.eqn6.mac`

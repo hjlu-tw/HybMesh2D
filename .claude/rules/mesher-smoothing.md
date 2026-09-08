@@ -343,12 +343,20 @@ docstring, beside #57's. **THIS CHECKOUT HAS A SOLVER TREE** — `solver/execute
 and `solver/preprocess/getPGrid/work/getPGrid` — which corrects a "no solver tree" claim that had
 survived a review in `test_multiblock_weld_surface.py`. CI still has neither, so every recorded run
 is a dated quotation.
-- **THE `.bnd` NAME -> SOLVER FLAG MAPPING IS STILL NOT EXERCISED, and #85 measured why the
-  pipeline route does not close it.** getPGrid writes the `<case>.bc.def` segment table ITSELF and
-  does not know `farfield`, so it defaults those patches to a no-slip wall and no Python rewrites
-  it — driving `config/pipeline/multiblock_cgrid_demo.json` therefore solved a body in a closed
-  viscous box (exit 0, 100 iterations, no NaN, but NOT the recorded operating point). The flag-1 in
-  every recorded run was written into the `.bc.def` BY HAND, as #55's and #57's were.
+- ~~**THE `.bnd` NAME -> SOLVER FLAG MAPPING IS STILL NOT EXERCISED.**~~ **CLOSED BY #91**, and
+  kept here as a specimen rather than deleted. #85 measured why the pipeline route did not close
+  it: getPGrid writes the `<case>.bc.def` segment table ITSELF, does not know `farfield`, and
+  defaulted those patches to a no-slip wall while no Python rewrote it — so driving
+  `config/pipeline/multiblock_cgrid_demo.json` solved a body in a CLOSED VISCOUS BOX (exit 0, 100
+  iterations, no NaN, but NOT the recorded operating point), and the flag-1 in every recorded run
+  was written into the `.bc.def` BY HAND, as #55's and #57's were. #91 made the headless runner
+  derive the table from the mesh's own patches (`pipeline_runner.derive_bc_definitions`, using
+  #90's service), so the PIPELINE now reproduces that operating point instead of approximating it
+  — dated run 2026-09-08 in `tools/PreProcessor/tests/test_pipeline_bc_from_mesh.py`'s docstring.
+  The mapping itself is now gated token-by-token against getPGrid's own `getBCType` C++ by that
+  file's check 10, with one case-fold collision pinned (`nozzle`). **A declaration still wins**: a
+  script that states `bc_definitions` is never overwritten, which is why a GUI-authored `.hws` is
+  unaffected.
 
 ## Named blind spots
 

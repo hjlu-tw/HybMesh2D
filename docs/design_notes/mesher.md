@@ -1132,9 +1132,13 @@ demonstration of one.
 - **Blind spots, named.** Gate 2 is ONE operating point (M 0.2, Re 200, zero incidence,
   100 iterations, `cfl 0.6`, every non-wall patch flag 1) and nothing re-runs it — CI has
   no solver binary, so it is a dated quotation like #55's — and nothing from it is
-  committed, so re-doing it means rebuilding the case by hand. It also does NOT exercise
+  committed, so re-doing it means rebuilding the case by hand. It also did NOT exercise
   the `.bnd` name -> solver flag mapping: getPGrid does not know `farfield`, so the flag
-  the run used was written into `cgrid.bc.def` by hand, exactly as #55's was. Non-orthogonality remains a
+  the run used was written into `cgrid.bc.def` by hand, exactly as #55's was — **CLOSED BY
+  #91 for the PIPELINE route** (2026-09-08), which derives the table from the mesh's own
+  patches and gates the mapping against getPGrid's own `getBCType`
+  (`tools/PreProcessor/tests/test_pipeline_bc_from_mesh.py`); this hand-built run is
+  still hand-built. Non-orthogonality remains a
   baseline and not a gate, and 32.04° in the first wall cell is still what the
   elliptic-smoothing increment exists to move. The 0.005 relation is unenforced. And the
   surface gate measures conformity on the EXPORTED files, so it cannot separate "welded
@@ -2059,15 +2063,21 @@ because `mesher-multiblock.md` was full.
   tree" as its reason for not running one on the H-grid; the reason is corrected in place to the
   narrower true one — nothing has needed a solver answer about a synthetic 2x2 box.
 
-- **THE PIPELINE ROUTE DOES NOT CLOSE #57's BC-MAPPING BLIND SPOT, and #85 measured why.** getPGrid
-  writes the `<case>.bc.def` segment table ITSELF and does not know `farfield`, so it defaults
-  those patches to a no-slip wall; no Python rewrites it. Driving
+- ~~**THE PIPELINE ROUTE DOES NOT CLOSE #57's BC-MAPPING BLIND SPOT.**~~ **CLOSED BY #91**
+  (2026-09-08); kept as a specimen. #85 measured why it had not been: getPGrid writes the
+  `<case>.bc.def` segment table ITSELF and does not know `farfield`, so it defaulted those patches
+  to a no-slip wall and no Python rewrote it. Driving
   `config/pipeline/multiblock_cgrid_demo.json` therefore ran a body in a closed viscous box — exit
-  0, 100 iterations, no NaN, but NOT the recorded operating point, so it is not comparable with
-  #55's or #57's runs. Every recorded run's flag-1 was written into the `.bc.def` BY HAND. What the
-  GUI does automatically is `services/bnd_io._NAME_TO_FLAG`. Recorded because the first attempt at
-  this ticket's acceptance run went through the pipeline and would have been quoted as #57's
-  operating point without the bc.def being read.
+  0, 100 iterations, no NaN, but NOT the recorded operating point, so it was not comparable with
+  #55's or #57's runs. Every recorded run's flag-1 had been written into the `.bc.def` BY HAND.
+  What the GUI does automatically is `services/bnd_io._NAME_TO_FLAG`. Recorded because the first
+  attempt at #85's acceptance run went through the pipeline and would have been quoted as #57's
+  operating point without the bc.def being read — which is exactly the failure #91 removes:
+  `pipeline_runner.derive_bc_definitions` now fills an unstated table from the mesh's own patches,
+  a stated one still wins, and a 2026-09-08 run of the SHIPPED script produced
+  `1=2 2=2 3=1 4=1 5..8=1` where getPGrid's own companion said `5..8=2`. The lesson that survives
+  the fix: **a solver run that exits 0 with plausible contours is not evidence that it solved the
+  problem the document declares** — read the `.bc.def`.
 
 - **THE GUI's HELP TEXT DESCRIBED THE #81 KERNEL, two tickets after it was gone.**
   `mesh_field_specs.py`'s `mb_smooth_iters` blurb told the user every node on a block boundary is
