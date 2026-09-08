@@ -4401,5 +4401,158 @@ int main() {
         }
     }
 
+    // ── 57. A SAMPLE RATE THE POLYLINE CANNOT CARRY SAYS SO ─────────────────
+    //
+    // #94: a bound edge asking for more nodes than its source segment's polyline
+    // can place evenly meshes an irregular polygon, and nothing errors. Same shape
+    // as check 55 and as the edge-distribution warning it sits beside: named edge,
+    // the numbers, and what to do — measured on the produced nodes rather than
+    // predicted from the ratio.
+    //
+    // THE FIXTURE IS DELIBERATELY NON-COMMENSURATE, and that is the point of it
+    // being here rather than only on the shipped files. The shipped O-grid
+    // exhibits this today (8 warnings, its two circles at 1.667 and 0.833 facets
+    // per interval), and #95 resolves that geometry — so a gate resting on the
+    // shipped case would go quiet the moment the weakness was fixed on ONE case,
+    // taking the coverage with it. `ogridGeoms(10)` under a 5-node arc gives 2.5
+    // and 1.25 facets per interval; the SAME topology at 6 nodes gives 2 and 1 and
+    // is the negative control, so the two cases differ by exactly one number.
+    {
+        const auto geoms = ogridGeoms(10);
+        MbResult bad = hybmesh::buildMultiBlock(ogrid("", 7, 5), geoms, MbParams{});
+        CHECK(bad.ok, "57. the non-commensurate O-grid meshes (err: " + bad.error + ")");
+        std::vector<std::string> rate;
+        for (const std::string& w : bad.warnings)
+            if (mentions(w, "sample a bound stretch")) rate.push_back(w);
+        CHECK(!rate.empty(),
+              "57. a bound edge whose node count its polyline cannot place evenly "
+              "is named in a warning");
+        // WHICH EDGES, not just how many, and this is the half a first draft got
+        // wrong. The fixture's four BODY arcs read 2.5 facets per interval and cost
+        // 0.889 deg of turn; its four FAR-FIELD arcs read 1.25 and cost nothing
+        // measurable, because at four intervals to a quadrant the chords cut more
+        // corner than the uneven sampling adds. So `!rate.empty()` alone passes
+        // when the two swap over, which is exactly what one injection here does —
+        // reading `phi` as a step at each vertex silences the body arcs and makes
+        // the far-field ones fire instead, and the whole block was INERT against it.
+        size_t named = 0;
+        for (const std::string& w : rate)
+            if (mentions(w, "edge 'w")) ++named;
+        CHECK(rate.size() == 4 && named == 4,
+              "57. ...and it is the four BODY arcs, the edges whose ratio actually "
+              "costs something, rather than four of whichever eight are bound (got "
+              + std::to_string(rate.size()) + ", " + std::to_string(named)
+              + " naming a body arc)");
+        const std::string& w0 = rate.empty() ? bad.error : rate[0];
+        CHECK(mentions(w0, "edge '"),
+              "57. ...naming the EDGE (got: " + w0 + ")");
+        CHECK(mentions(w0, " nodes (") && mentions(w0, " intervals) sample a bound "
+                                                      "stretch stored as ")
+                  && mentions(w0, " polyline facets"),
+              "57. ...quoting BOTH counts — the mesh's and the polyline's (got: "
+              + w0 + ")");
+        CHECK(mentions(w0, "facets per interval, which does not DIVIDE"),
+              "57. ...and the ratio between them");
+        CHECK(mentions(w0, "MULTIPLE of") && mentions(w0, "or declare count "),
+              "57. ...and BOTH fixes, since the user can act on either end");
+        // THE COST IS QUANTIFIED AND THE TWO ANGLES ARE IN THE ORDER THE SENTENCE
+        // CLAIMS. Without this the checks above pass on a warning that fires on
+        // every bound edge, which check 55 learned the hard way is the same thing
+        // as no warning: the numbers are what tell a harmless mismatch from one
+        // worth acting on, so they are read back out of the message the user sees.
+        double got = -1.0, even = -1.0, excess = -1.0;
+        {
+            const size_t p1 = w0.find("worst corner turns ");
+            const size_t p2 = w0.find("at this density turns ");
+            const size_t p3 = w0.find("deg of that corner is the SAMPLE RATE");
+            if (p1 != std::string::npos && p2 != std::string::npos
+                && p3 != std::string::npos && p1 < p2 && p2 < p3) {
+                got  = std::atof(w0.c_str() + p1 + 19);
+                even = std::atof(w0.c_str() + p2 + 21);
+                // The excess is the last number before that phrase.
+                const size_t s = w0.rfind(", so ", p3);
+                if (s != std::string::npos) excess = std::atof(w0.c_str() + s + 5);
+            }
+        }
+        CHECK(got > even && even > 0.0,
+              "57. ...with the achieved turn LARGER than the even-sampling one, so "
+              "'the mesh is worse' is a claim the figures support (" + fmtE(even)
+              + " -> " + fmtE(got) + ")");
+        CHECK(excess > 0.0 && std::fabs(excess - (got - even)) <= 1e-3,
+              "57. ...and the quoted cost IS their difference rather than a third "
+              "number (" + fmtE(excess) + " vs " + fmtE(got - even) + ")");
+        // AND THE TWO SUGGESTED FIXES ARE ARITHMETICALLY REAL. A message telling
+        // the reader to resample to a count that still does not divide is worse
+        // than one that only complains, so both are recomputed from the counts the
+        // same message quotes.
+        long facets = -1, intervals = -1, base = -1, mul = -1, count = -1;
+        {
+            const size_t p1 = w0.find(" nodes (");
+            const size_t p2 = w0.find("stretch stored as ");
+            const size_t p3 = w0.find("MULTIPLE of ");
+            const size_t p4 = w0.find("or declare count ");
+            const size_t p5 = w0.find("facets (");
+            if (p1 != std::string::npos) intervals = std::atol(w0.c_str() + p1 + 8);
+            if (p2 != std::string::npos) facets    = std::atol(w0.c_str() + p2 + 18);
+            if (p3 != std::string::npos) base      = std::atol(w0.c_str() + p3 + 12);
+            if (p4 != std::string::npos) count     = std::atol(w0.c_str() + p4 + 17);
+            if (p5 != std::string::npos) mul       = std::atol(w0.c_str() + p5 + 8);
+        }
+        CHECK(facets > 0 && intervals > 0 && facets % intervals != 0,
+              "57. the counts quoted really are non-commensurate (" + std::to_string(facets)
+              + " facets over " + std::to_string(intervals) + " intervals)");
+        CHECK(base == intervals && mul > facets && intervals > 0
+                  && mul % intervals == 0 && mul - intervals <= facets,
+              "57. ...the 'multiple of' suggestion is a multiple of THIS EDGE's "
+              "interval count and is the NEAREST one above the facet count (a "
+              "multiple of " + std::to_string(base) + ", nearest "
+              + std::to_string(mul) + ")");
+        CHECK(count > 1 && facets % (count - 1) == 0,
+              "57. ...and the suggested count's intervals DIVIDE the facets ("
+              + std::to_string(count) + ")");
+
+        // ── AND IT IS SILENT WHERE THE SAMPLING IS FREE, both ways ──────────
+        //
+        // A COMMENSURATE declaration on the SAME geometry: 6 nodes over the same
+        // arcs is 5 intervals into 10 and 5 facets, so every mesh node lands on a
+        // polyline vertex and there is nothing to say.
+        MbResult good = hybmesh::buildMultiBlock(ogrid("", 7, 6), geoms, MbParams{});
+        CHECK(good.ok, "57. the commensurate O-grid meshes (err: " + good.error + ")");
+        size_t quiet = 0;
+        for (const std::string& w : good.warnings)
+            if (mentions(w, "sample a bound stretch")) ++quiet;
+        CHECK(quiet == 0,
+              "57. a commensurate declaration says NOTHING, so the warning means "
+              "something when it appears (got " + std::to_string(quiet) + ")");
+
+        // AND A NON-DIVIDING RATIO ON A STRAIGHT STRETCH SAYS NOTHING EITHER,
+        // which is the half that keeps this readable rather than the half that
+        // makes it fire: `squareGeom(3)` gives the south segment 3 facets under
+        // that edge's 4 intervals, so the ratio does NOT divide — and every facet
+        // is collinear, so where between two vertices a node lands cannot matter.
+        // Six of the shipped C-grid's eight bound edges are exactly this case.
+        MbResult flat = hybmesh::buildMultiBlock(
+            boundSquare(att("sw", 0.0), att("se", 1.0)), {squareGeom(3)}, MbParams{});
+        CHECK(flat.ok, "57. the straight bound square meshes (err: " + flat.error + ")");
+        size_t flatSaid = 0;
+        for (const std::string& w : flat.warnings)
+            if (mentions(w, "sample a bound stretch")) ++flatSaid;
+        CHECK(flatSaid == 0,
+              "57. a ratio that does not divide on a STRAIGHT stretch costs nothing "
+              "and is not reported — the warning is keyed on the measured cost, not "
+              "on the ratio (got " + std::to_string(flatSaid) + ")");
+
+        // AND AN UNBOUND EDGE IS NEVER MEASURED AT ALL: its "polyline" is the
+        // chord between its two corners, so a facet count derived from it would be
+        // 1 and the ratio meaningless. The plain single block declares no binding.
+        MbResult none = build(square(5, 4));
+        size_t noneSaid = 0;
+        for (const std::string& w : none.warnings)
+            if (mentions(w, "sample a bound stretch")) ++noneSaid;
+        CHECK(noneSaid == 0,
+              "57. an edge that declares no binding is not measured against a "
+              "polyline it does not have (got " + std::to_string(noneSaid) + ")");
+    }
+
     return hybmesh::test::report("test_multiblock");
 }

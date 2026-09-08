@@ -2213,6 +2213,143 @@ freeze with one that was measured against it.
   Nothing in the tables above is gated; they are a dated quotation, re-derivable by regenerating
   both circles at a chosen facet count against the shipped topology.
 
+**A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID, AND THE WARNING IS KEYED ON THE COST
+RATHER THAN ON THE RATIO** (#94, measured 2026-09-08). #93 established the mechanism and left the
+run silent about it. This ticket makes the run say it: `src/MultiBlock.cpp`'s `sampleRate`, beside
+the edge-distribution warning it reads like, pushing a string into `MbResult::warnings` — data out
+of the seam, said by the caller, like every other refusal and shortfall on this path.
+
+- **WHY A WARNING AND NOT AN ALGORITHM CHANGE.** There is no third option available to the mesher.
+  The node counts are DECLARED and propagated and the polyline is the geometry it was handed, so it
+  cannot place the nodes better than evenly in arc length — which is what it already does. What it
+  can do is name the two fixes that ARE available to the user: resolve the geometry more finely, or
+  declare a count that suits the geometry. Both are in the message, with the arithmetic done.
+
+- **THE MEASURE IS A COST IN DEGREES, NOT THE RATIO, AND THE SHIPPED C-GRID IS WHY.** A ratio that
+  does not divide is not itself a defect: on a STRAIGHT stretch every facet is collinear, so where
+  between two vertices a node lands cannot matter. Measured over every bound edge this repo ships
+  (`fac/int` is facets per mesh interval; `worst`/`even` are the largest turn the mesh nodes make
+  and the largest an even sampling of the same curve at the same density would make; degrees):
+
+      case    edges                 facets  int   fac/int  worst    even    excess  warns
+      ogrid   w0..w3   (body)          40    24    1.667    4.050   3.750   0.300   YES
+      ogrid   o0..o3   (far field)     20    24    0.833    4.500   3.750   0.750   YES
+      cgrid   af_up, af_lo             96    48    2.000   16.926  17.589   0       no, divides
+      cgrid   e_out_up, e_out_lo       20    40    0.500    0        0      0       no, straight
+      cgrid   e_ff_up, e_ff_lo         40    24    1.667    0        0      0       no, straight
+      cgrid   e_ff_nose_up/lo          44    48    0.917    6.880   6.893   0       no, straight
+      cavity  south, east, north       16    16    1.000    0        0      0       no, divides
+
+  **19 bound edges, 14 of which do not divide, and 8 of those cost something.** So a ratio-keyed
+  warning would fire on 14 and be read by nobody — the shape #83's own review named, where a
+  warning that says everything says nothing. Keyed on the cost it fires on 8, and every one of them
+  is one of the O-grid's two circles. Both halves are gated: the O-grid's surface gate group 9 says
+  it APPEARS, the C-grid's group 10 says it stays QUIET, and neither is worth much alone.
+
+- **HOW THE COST IS MEASURED, AND THE ONE PART THAT IS REQUIRED RATHER THAN TIDY.** `worst` is the
+  largest turn between two consecutive mesh chords; `even` is the largest turn the polyline's own
+  curvature would put at those same nodes, read off a cumulative-turn function `phi`. Both are
+  maxima over the edge's interior nodes, the way `MbQuality` takes its worst corner, and the excess
+  of the first over the second is the sample rate's share of it. **`phi` SMEARS each vertex's turn
+  over its two half-facets rather than leaving it as a step at the vertex, and without that the
+  whole measurement reads zero on the case that motivated it**: a window shorter than one facet —
+  exactly the shipped far field at 0.833 — returns either a whole 4.5° vertex turn or nothing from
+  a step function, so `even` comes back EQUAL to `worst`. Measured, step against smeared:
+
+      path                        fac/int   worst    even (smeared)  even (step)
+      shipped far field  20/24     0.833     4.500     3.750          4.500
+      shipped body       40/24     1.667     4.050     3.750          4.500
+      C++ fixture body   10/4      2.5      23.389    22.500         27.000
+      C++ fixture far     5/4      1.25     21.629    22.500         18.000
+
+  The step column silences both shipped edges (excess 0) and makes the fixture's FAR-FIELD edges
+  fire instead of its body ones — which is how that injection came back inert against a first draft
+  of check 57 that only asked whether SOME edge had warned. It is check 57's per-edge assertion
+  that catches it.
+
+- **THE ESTIMATOR's OWN PROPERTIES, MEASURED RATHER THAN ASSUMED.**
+  * **Exact where curvature is uniform.** On both shipped circles it returns `even` = 3.750 =
+    360/96, and 4.050 - 3.750 = 0.300 and 4.500 - 3.750 = 0.750 reproduce #93's tables A and B to
+    the digit (1.667 costs 2.025 - 1.875 = 0.150 of non-orthogonality, 0.833 costs 0.375). Two
+    independent derivations of the same numbers, one from a density sweep and one from the produced
+    nodes.
+  * **Biased TOWARD SILENCE where curvature varies**, which is the safe direction for a warning.
+    On the C-grid airfoil — 16.9° of turn at the leading edge, at a DIVIDING ratio of 2.0 where the
+    true cost is zero — it returns `even` 17.589 against `worst` 16.926, over-predicting the even
+    sampling by 0.663 and clamping the excess to 0. Chords cut corners; the smeared window does
+    not. So a curvature spike cannot manufacture a warning, and the price is that it can mask a
+    real cost of up to about 4% of the local turn (named as a blind spot below).
+  * **Insensitive to the window's PHASE and to chord-versus-arc.** Two injections are INERT:
+    shifting the smear window half a facet (`mid[k] = cum[k]`) and measuring the window in mesh
+    CHORDS instead of arc length both leave every figure above unchanged. What matters is that the
+    turn is smeared AT ALL and that the window is about one interval wide; sub-facet changes to
+    where it sits are not a defect and are recorded here rather than being gated.
+
+- **THE BAR IS 0.1 DEGREES OF TURN AND IT IS PICKED INSIDE A GAP, NOT FITTED TO A CASE**
+  (`MB_SAMPLE_RATE_TOL_DEG` in `include/MultiBlock.hpp`). #93's density sweep over the shipped
+  O-grid measures the cost at fac/int 0.833, 1.667, 2.5, 3.333 and 6.667 as 0.750, 0.300, 0.150,
+  0.074 and 0.018 degrees of turn. **Nothing it measured lands between 0.074 and 0.150**, so any
+  bar in that gap separates the rows that move the reported metric by 0.05° or more from those that
+  move it by 0.02° or less, and 0.1 is the round one. It is a judgement about what is worth saying;
+  a RELATIVE bar (a percentage of the even turn) was considered and declined because the metric the
+  reader is judging the case by is in absolute degrees.
+
+- **HALF THE TURN IS WHAT REACHES THE METRIC, AND ON THE SHIPPED O-GRID IT IS EXACT.** A boundary
+  turn of t puts about t/2 into the quad corners either side of it. Unsmoothed, the shipped O-grid
+  reports `nonortho_max_deg=2.250000 nonortho_mean_deg=1.875000`, a gap of **0.375000** — exactly
+  half the worst warned excess of 0.750. The mean is the floor because a regular 96-gon's every
+  quad corner deviates by half the sector angle, which is #93's finding, so **the whole of this
+  case's unmet #80 bullet is in that one warned number**. The O-grid gate's group 9 asserts that
+  relation rather than asserting that a warning appeared, and it **survives #95 by construction**:
+  resolve the far field and both sides go to zero together, while a resolution that left a residue
+  behind shows up as a gap the warning no longer explains.
+
+- **THE FIXTURE IS NON-COMMENSURATE BY DECLARATION, WHICH IS THE POINT OF IT.** `test_multiblock.cpp`
+  check 57 drives `ogridGeoms(10)` — 10 facets per body quarter, 5 per far-field quarter — under a
+  5-node arc, giving 2.5 and 1.25 facets per interval; the SAME topology at 6 nodes gives 2 and 1
+  and is the negative control, so the two cases differ by exactly one number. A gate resting on the
+  shipped O-grid would go quiet the moment #95 fixed that one case, taking the coverage with it.
+  Two further silences are pinned there: a non-dividing ratio on a STRAIGHT stretch (`squareGeom(3)`
+  gives the south segment 3 facets under 4 intervals), and an UNBOUND edge, which has no polyline
+  to be measured against.
+
+- **INJECTIONS, dated 2026-09-08, exit code read before the FAIL count. 8 of 11 bite.** Dropping
+  the cost gate (the C-grid's straight edges then fire, in TWO gates); flipping the excess
+  comparison; reading `phi` as a step; the nearest-multiple arithmetic off by one; suggesting a
+  count whose intervals do not divide; quoting the two angles the other way round; taking the MEAN
+  turn instead of the worst; and measuring only UNBOUND edges. **THREE ARE INERT AND NAMED**: the
+  two window-placement mutations above, and **dropping the divisibility gate itself** — which is
+  unfalsifiable on a correct document, because on a dividing ratio the estimator's bias is toward
+  silence and every fixture's excess there is 0. That gate is kept anyway, and not because it
+  fires: it is what makes the MESSAGE's own advice ("which does not DIVIDE", and both fixes) true
+  whenever the message is printed, and check 57 reads those numbers back out of the message to
+  prove it.
+
+- **NO BEHAVIOUR CHANGE.** Golden 19/19 SAME at exactly 0.0 deviation against a HEAD build
+  (`HYBMESH_GOLDEN_BIN`), which is the whole claim: this ticket adds a sentence and moves no node.
+  `discretise` gained an optional `arcOut` out-parameter for the same reason it already had
+  `achieved` — that scope is the only one holding both the law's positions and the measure they are
+  in, and recovering them downstream would mean a second implementation of arithmetic that exists
+  there.
+
+- **BLIND SPOTS THIS LEAVES.**
+  * **The bias above can MASK a real cost on a strongly curved non-dividing stretch** — up to about
+    4% of the local turn, measured as 0.663° at 16.9° on the C-grid airfoil. Nothing in this repo
+    ships such an edge (the airfoil divides), so the masking is unmeasured on a case that would
+    show it.
+  * **The facet count is the SUBPATH's, and its two end facets may be PARTIAL** when a corner is
+    declared mid-facet. Every corner in every shipped topology and every fixture sits at `t = 0` or
+    `t = 1`, i.e. on a polyline vertex, so the count is exact everywhere it has been measured — and
+    where it is not, the "resample to a multiple of N" advice is directional rather than exact.
+  * **Nothing relates the warning to the SMOOTHER's own excess.** #93 measured that the smoother's
+    contribution tracks the same ratio (+0.026° at 0.833, exactly zero wherever it divides), and
+    this warning is emitted at FILL time from the fill's own nodes. A run whose smoothed excess is
+    really its far field's sampling still reports as the kernel's, which is
+    `.claude/rules/mesher-smoothing.md`'s existing blind spot and is not closed here.
+  * **The half-the-turn relation is measured on ONE case.** It is exact on the shipped O-grid and
+    is stated as "about half" in the message for that reason; a wall whose grid lines leave it well
+    off perpendicular would divide the turn differently, and nothing measures that.
+
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.
 Verbatim as that file carried it:

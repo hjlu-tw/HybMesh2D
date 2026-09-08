@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <map>
 #include <set>
 #include <sstream>
@@ -801,9 +802,18 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
 // pure arithmetic already used by the preprocessor, and a second implementation
 // of a growth-rate solver is a guaranteed future divergence. `generateGeometric`
 // at ratio 1 IS the uniform law, so "uniform" is not a special case here either.
+//
+// `arcOut`, when given, receives the ARC-LENGTH POSITION of every node returned,
+// parallel to the points. Reported from here for the same reason `achieved` is:
+// this is the only scope holding both the law's positions and the measure they
+// are in, and #94's sample-rate check needs them in that measure — recovering
+// them downstream from the returned points would mean re-locating each one on the
+// polyline, a second implementation of arithmetic that already exists here.
 std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& path,
-                                double achieved[2] = nullptr) {
+                                double achieved[2] = nullptr,
+                                std::vector<double>* arcOut = nullptr) {
     std::vector<Point2D> pts;
+    if (arcOut) arcOut->clear();
     if (path.size() < 2) return pts;
     const std::vector<double> cum = arcLengths(path);
     const double L = cum.back();
@@ -825,17 +835,135 @@ std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& p
     }
 
     pts.reserve(static_cast<size_t>(e.count));
+    if (arcOut) arcOut->reserve(static_cast<size_t>(e.count));
     size_t m = 0;
     for (int k = 0; k < e.count; ++k) {
         // Parametrise by arc length, and pin both ends onto the corners exactly.
         // A t/L that lands 1e-16 short of 1 would leave the last node off the
         // corner it is supposed to BE.
-        if (k == 0)               { pts.push_back(path.front()); continue; }
-        if (k == e.count - 1)     { pts.push_back(path.back());  continue; }
+        //
+        // The arc position reported for those two is 0 and L for the same reason:
+        // the position of a node pinned onto the path's own end IS that end, not
+        // whatever the law's own t[0] or t[count-1] rounded to.
+        if (k == 0)               { pts.push_back(path.front());
+                                    if (arcOut) arcOut->push_back(0.0); continue; }
+        if (k == e.count - 1)     { pts.push_back(path.back());
+                                    if (arcOut) arcOut->push_back(L);   continue; }
         const double s = (L > 0.0) ? t[static_cast<size_t>(k)] : 0.0;
         pts.push_back(lerpAtArc(path, cum, s, m));
+        if (arcOut) arcOut->push_back(s);
     }
     return pts;
+}
+
+// ── A BOUND EDGE's SAMPLE RATE AGAINST ITS OWN POLYLINE (#94) ─────────────
+//
+// A bound edge places its nodes by ARC LENGTH along the stored polyline, so when
+// its node count and that polyline's facet count are not commensurate,
+// consecutive nodes span different numbers of facets and the polygon the edge
+// actually meshes has IRREGULAR corners. Nothing is wrong with the declaration
+// and nothing errors — the mesh is simply worse than the same declaration on a
+// polyline it can sample evenly. Measured on the shipped O-grid (#93): 96 mesh
+// nodes on an 80-facet ring cost 0.375 deg of the worst non-orthogonality, 20% of
+// the figure #80 judges that case on.
+//
+// WHAT IS MEASURED IS THE COST, NOT THE RATIO, and that distinction is the whole
+// design. A non-dividing ratio on a STRAIGHT stretch costs exactly nothing — every
+// facet is collinear, so it does not matter where between two vertices a node
+// lands — and six of the shipped C-grid's eight bound edges are exactly that. A
+// warning keyed on the ratio alone would fire on them, and on 14 of this repo's
+// 19 shipped bound edges, which is the same thing as no warning at all. Keyed on
+// the cost it fires on 8, and every one of them is one of the O-grid's two
+// circles: measured 2026-09-08, the whole shipped set is in
+// `docs/design_notes/mesher.md`.
+//
+// SO THE COST IS AN ANGLE, AND IT IS COMPARED AGAINST THE SAME ANGLE THIS EDGE
+// WOULD HAVE HAD ON A POLYLINE IT COULD SAMPLE EVENLY. Both are maxima over the
+// edge's own interior nodes, the way `MbQuality` takes its worst corner:
+//
+//   worstDeg  the largest turn between two consecutive mesh chords — what the
+//             mesh actually has.
+//   evenDeg   the largest turn an EVEN sampling of the same curve at the same
+//             density would put at those nodes. Read off `phi` below.
+//
+// and the excess of the first over the second is the sample rate's share of the
+// corner quality. On a fine, well-divided polyline the two are equal and the
+// excess is 0.
+//
+// `phi` IS THE POLYLINE's OWN TURNING, SMEARED over each vertex's two half-facets
+// rather than left as a step at the vertex — and the smearing is required, not a
+// nicety. Read as a step function, a window shorter than one facet (which is
+// exactly the shipped O-grid's far field, 0.83 facets per interval) returns either
+// a whole 4.5 deg vertex turn or nothing, so `evenDeg` would come back equal to
+// `worstDeg` and the cost would measure as zero on the very case that motivated
+// it. Smeared, the same window returns the curvature there — 3.75 deg — which is
+// what an even sampling would actually produce, and the difference is the 0.75 deg
+// of turn (0.375 of non-orthogonality) #93 measured.
+struct SampleRate {
+    int    facets    = 0;      // facets of the source polyline this edge covers
+    int    intervals = 0;      // mesh intervals along it
+    double worstDeg  = 0.0;    // the worst turn the mesh nodes actually make
+    double evenDeg   = 0.0;    // ... and the worst an even sampling would make
+    double excessDeg() const { return worstDeg > evenDeg ? worstDeg - evenDeg : 0.0; }
+};
+
+// The SIGNED turn at `b`, in degrees: how far the direction b->c has rotated from
+// a->b. Signed rather than absolute so that `phi` accumulates an inflection
+// correctly — an S-curve's two halves must cancel there, and a sum of magnitudes
+// would report a straightening stretch as curving.
+double turnDeg(const Point2D& a, const Point2D& b, const Point2D& c) {
+    const Point2D u = b - a, v = c - b;
+    if (!(u.length() > 0.0) || !(v.length() > 0.0)) return 0.0;
+    return std::atan2(u.cross(v), u.dot(v)) * 180.0 / M_PI;
+}
+
+SampleRate sampleRate(const std::vector<Point2D>& path, const std::vector<double>& cum,
+                      const std::vector<Point2D>& pts, const std::vector<double>& arc) {
+    SampleRate sr;
+    if (path.size() < 2 || pts.size() < 3 || arc.size() != pts.size()) return sr;
+    sr.facets    = static_cast<int>(path.size()) - 1;
+    sr.intervals = static_cast<int>(pts.size()) - 1;
+
+    // `phi` sampled at facet MIDPOINTS: each interior vertex's turn is spread
+    // linearly over the half-facet either side of it, so between mid[k-1] and
+    // mid[k] the accumulated turn rises by the turn at vertex k.
+    const size_t nf = path.size() - 1;
+    std::vector<double> mid(nf, 0.0), phi(nf, 0.0);
+    for (size_t k = 0; k < nf; ++k) mid[k] = 0.5 * (cum[k] + cum[k + 1]);
+    for (size_t k = 1; k < nf; ++k)
+        phi[k] = phi[k - 1] + turnDeg(path[k - 1], path[k], path[k + 1]);
+    // Flat outside [mid.front(), mid.back()]: the first and last half-facet carry
+    // no vertex turn of their own, and extrapolating one there would invent
+    // curvature at the two corners the edge is pinned to.
+    const auto phiAt = [&](double s) {
+        if (s <= mid.front()) return phi.front();
+        if (s >= mid.back())  return phi.back();
+        const size_t k = static_cast<size_t>(
+            std::lower_bound(mid.begin(), mid.end(), s) - mid.begin());
+        const double span = mid[k] - mid[k - 1];
+        const double f = (span > 0.0) ? (s - mid[k - 1]) / span : 0.0;
+        return phi[k - 1] + (phi[k] - phi[k - 1]) * f;
+    };
+
+    for (size_t i = 1; i + 1 < pts.size(); ++i) {
+        const double got = std::fabs(turnDeg(pts[i - 1], pts[i], pts[i + 1]));
+        // The window this node's corner is made of: half the interval behind it
+        // and half the one ahead, so its width is the node's own local spacing.
+        const double back = arc[i] - arc[i - 1], fwd = arc[i + 1] - arc[i];
+        const double even = std::fabs(phiAt(arc[i] + 0.5 * fwd)
+                                      - phiAt(arc[i] - 0.5 * back));
+        if (got  > sr.worstDeg) sr.worstDeg = got;
+        if (even > sr.evenDeg)  sr.evenDeg  = even;
+    }
+    return sr;
+}
+
+// A small figure as three decimals rather than `std::to_string`'s six, which
+// renders a 0.375 deg cost beside a 4.500000 and makes the sentence unreadable.
+std::string fmt3(double v) {
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(3) << v;
+    return os.str();
 }
 
 // ── Geometry lookup ───────────────────────────────────────────────────────
@@ -2050,7 +2178,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // instead made this warning fire on a bound curved edge whose law had
         // honoured the request exactly.
         double achieved[2] = {0.0, 0.0};
-        eNodes[k].pts = discretise(e, path, achieved);
+        std::vector<double> nodeArc;
+        eNodes[k].pts = discretise(e, path, achieved, &nodeArc);
         // A CLUSTERING REQUEST THAT THE EDGE COULD NOT HONOUR IS SAID.
         //
         // The tanh solver returns "uniform" when the requested first cell is at or
@@ -2071,6 +2200,43 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                 + ". A tanh law cannot cluster COARSER than the uniform spacing its "
                   "own node count gives, so either lower the count on this edge's "
                   "equivalence class or ask for a finer height.");
+        }
+        // A SAMPLE RATE THE SOURCE POLYLINE CANNOT CARRY IS SAID (#94).
+        //
+        // BOUND EDGES ONLY, and the two conditions are both required rather than
+        // belt and braces. The RATIO must not divide, because the message's advice
+        // ("resample to a multiple", "declare a count that divides") is only true
+        // of an edge whose ratio is the problem; the COST must clear the bar,
+        // because a non-dividing ratio on a straight stretch costs nothing at all
+        // and a warning that fires there fires on most of this repo. See
+        // `sampleRate` for what the cost is and why it is an angle.
+        if (bd != bound.end()) {
+            const SampleRate sr = sampleRate(path, arcLengths(path),
+                                             eNodes[k].pts, nodeArc);
+            if (sr.intervals > 0 && sr.facets % sr.intervals != 0
+                && sr.excessDeg() > hybmesh::MB_SAMPLE_RATE_TOL_DEG) {
+                const int nextMul = sr.intervals * (sr.facets / sr.intervals + 1);
+                r.warnings.push_back(
+                    "edge '" + e.id + "': its " + std::to_string(e.count) + " nodes ("
+                    + std::to_string(sr.intervals) + " intervals) sample a bound stretch "
+                      "stored as " + std::to_string(sr.facets) + " polyline facets — "
+                    + fmt3(static_cast<double>(sr.facets) / sr.intervals)
+                    + " facets per interval, which does not DIVIDE, so consecutive nodes "
+                      "span different numbers of facets and the polygon this edge meshes "
+                      "has irregular corners. Its worst corner turns "
+                    + fmt3(sr.worstDeg) + " deg where an even sampling of the same curve "
+                      "at this density turns " + fmt3(sr.evenDeg) + ", so "
+                    + fmt3(sr.excessDeg()) + " deg of that corner is the SAMPLE RATE and "
+                      "not the geometry — about half of it reaches the worst "
+                      "non-orthogonality this run reports. Two fixes, either one: "
+                      "resample this geometry so the stretch carries a MULTIPLE of "
+                    + std::to_string(sr.intervals) + " facets ("
+                    + std::to_string(nextMul) + " is the nearest above), or declare "
+                      "count " + std::to_string(sr.facets + 1) + " on this edge's "
+                      "equivalence class — one node per polyline vertex, and the count "
+                      "PROPAGATES, so it moves the opposite side of every block on the "
+                      "chain. A stretch whose facets divide costs exactly nothing.");
+            }
         }
         if (eNodes[k].pts.size() != static_cast<size_t>(e.count))
             return fail("edge '" + e.id + "': its " + std::to_string(e.count)

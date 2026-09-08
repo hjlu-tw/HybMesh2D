@@ -111,6 +111,7 @@ Skips cleanly if ./build/HybMesh2D has not been built.
 """
 import math
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -378,6 +379,58 @@ def main() -> int:
               "three (%r) — the count is propagated to three of the four radials, "
               "so the law absorbs one it did not choose" % heights,
               len(set(heights.values())) == 1 and None not in heights.values())
+
+
+        # ── 9. THE SAMPLE RATE IS SAID, AND ITS NUMBER IS THE MESH's GAP ────
+        #
+        # #94. The shipped far field is an 80-facet polyline under a 96-node ring,
+        # so each mesh interval spans 0.833 of a facet and the ring meshes an
+        # IRREGULAR polygon; the body, 160 facets under the same ring, spans 1.667.
+        # Neither divides, so the seam warns on all eight bound edges.
+        #
+        # AND THE CHECK IS NOT THAT IT WARNED. Anyone can print a warning; what
+        # makes this one worth reading is that its figure ACCOUNTS FOR the gap
+        # between this mesh's worst corner and its mean. Unsmoothed, this case is
+        # max 2.250000 / mean 1.875000, and the worst warned excess is 0.750 deg of
+        # boundary TURN — half of which is 0.375, the gap exactly. The mean is the
+        # floor here because a regular 96-gon's every quad corner deviates by half
+        # the sector angle (360/96/2), which is #93's finding; so the whole of this
+        # case's unmet #80 bullet is in that one number.
+        #
+        # SURVIVES #95 BY CONSTRUCTION, and that is deliberate. When the far field
+        # is resolved to a dividing count the warning goes away and the gap goes to
+        # zero with it, so the relation still holds with both sides at 0 — and a
+        # resolution that left a residue behind would show up as a gap the warning
+        # no longer explains. Only the count below is a fact about TODAY's geometry.
+        # The permanent home of the weakness itself is the C++ gate's check 57,
+        # whose fixture is non-commensurate by declaration rather than by accident.
+        p5, _ = run_case(tmp, "rate", base_config() + NO_SMOOTH)
+        q5 = quality(p5.stdout)
+        said = [ln for ln in (p5.stdout + p5.stderr).splitlines()
+                if "sample a bound stretch" in ln]
+        check("9. every bound edge whose sample rate costs something is named "
+              "(%d warnings; the shipped ring is 96 nodes over an 80-facet far "
+              "field and a 160-facet body, so all eight fire — #95 resolves that "
+              "geometry and is expected to take this count to 0)" % len(said),
+              len(said) == 8)
+        worst = 0.0
+        for ln in said:
+            m = re.search(r"so ([0-9.]+) deg of that corner is the SAMPLE RATE", ln)
+            if m:
+                worst = max(worst, float(m.group(1)))
+        gap = (q5.get("nonortho_max_deg", -1.0)
+               - q5.get("nonortho_mean_deg", -1.0))
+        # A boundary turn of t puts about t/2 into the quad corners either side of
+        # it, so half the worst excess is what reaches the metric. The slack is the
+        # bar's own half: an edge whose cost sits under MB_SAMPLE_RATE_TOL_DEG says
+        # nothing and may still contribute that much to the gap.
+        check("9. ...and the worst of those figures ACCOUNTS FOR this mesh's whole "
+              "corner gap: max %.6f - mean %.6f = %.6f deg, against half the worst "
+              "warned excess of %.3f deg of turn = %.6f"
+              % (q5.get("nonortho_max_deg", -1.0), q5.get("nonortho_mean_deg", -1.0),
+                 gap, worst, worst / 2.0),
+              p5.returncode == 0 and gap >= worst / 2.0 - 1e-3
+              and gap <= worst / 2.0 + 0.05 + 1e-3)
 
     print()
     if failures:

@@ -415,5 +415,9 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
   polyline's facet count divides the mesh's node count, +0.026° at the shipped 0.833 ratio — and
   none of that is gated: the quality gate reads ONE geometry, so a case whose excess is really its
   far field's sampling reports as the kernel's. It replaces no rule: the claim it corrects — that
-  the residue was the frozen wall's — was never a coverage limit.
+  the residue was the frozen wall's — was never a coverage limit. **STILL OPEN AFTER #94, and
+  narrower**: that ticket warns on the sampling cost at FILL time, from the fill's own nodes
+  (`sampleRate`, `.claude/rules/mesher-multiblock.md`), so a reader now has the fill's share named
+  — 0.750° of turn on the shipped far field, exactly the 0.375° gap between that mesh's max and
+  mean non-orthogonality. What nothing relates to it is the SWEEP's additional +0.026°.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".

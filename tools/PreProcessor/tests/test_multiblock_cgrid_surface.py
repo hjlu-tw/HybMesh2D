@@ -738,6 +738,29 @@ def main() -> int:
               "mesh to look at",
               not os.path.exists(stem9 + ".vtk"))
 
+
+        # ── 10. THE SAMPLE-RATE WARNING IS SILENT HERE, AND THAT IS MEASURED ──
+        #
+        # #94, and this case is the reason that warning is keyed on a COST rather
+        # than on a ratio. Six of this topology's eight bound edges have a
+        # facets-per-interval ratio that does not divide — the two outlet halves at
+        # 0.5, the two upper/lower far-field sides at 1.667, the two nose sides at
+        # 0.917 — and every one of them lies on a STRAIGHT segment of
+        # `cgrid_farfield.dat`, where every facet is collinear and where between
+        # two vertices a node lands cannot matter. The remaining two are the airfoil
+        # surfaces, 96 facets under 48 intervals, which divide exactly.
+        #
+        # So a ratio-keyed warning would fire six times on a case it has nothing to
+        # say about, and this check is what would catch that: the O-grid gate's
+        # group 9 proves the warning APPEARS where it costs something, and this one
+        # proves it stays quiet where it does not. Neither half is worth much alone.
+        said = [ln for ln in (p.stdout + p.stderr).splitlines()
+                if "sample a bound stretch" in ln]
+        check("10. the shipped C-grid says NOTHING about its sample rates, though "
+              "six of its eight bound edges do not divide — they are straight, so "
+              "the cost is nil (%d warnings)" % len(said),
+              not said)
+
     print()
     if failures:
         print("%d check(s) failed:" % len(failures))

@@ -161,6 +161,32 @@ struct MbParams {
     int smoothIters = 0;
 };
 
+// WHEN A BOUND EDGE's SAMPLE RATE IS WORTH TELLING THE USER ABOUT: the corner
+// turn its non-dividing facets-per-interval ratio adds, in degrees, over the turn
+// an even sampling of the same curve at the same density would give (#94).
+//
+// AN ANGLE AND NOT A RATIO, which is the decision this constant carries. A ratio
+// that does not divide is not itself a defect: on a STRAIGHT stretch every facet
+// is collinear, so where between two vertices a node lands cannot matter, and six
+// of the shipped C-grid's eight bound edges are exactly that. Keyed on the ratio
+// this would fire on 14 of the repo's 19 shipped bound edges and be read by
+// nobody; keyed on the angle it fires on 8, and every one of them is one of the
+// O-grid's two circles. `sampleRate` in `src/MultiBlock.cpp` is what measures it.
+//
+// 0.1 DEGREES OF TURN — about 0.05 deg of non-orthogonality, since a boundary
+// turn of t puts about t/2 into the quad corners either side of it (measured: the
+// shipped O-grid's far field costs 0.750 deg of turn and its reported max
+// non-orthogonality is 0.375 deg over the floor).
+//
+// THE NUMBER IS PICKED INSIDE A GAP RATHER THAN FITTED TO A CASE. #93's density
+// sweep over the shipped O-grid measures the cost at facets-per-interval 0.833,
+// 1.667, 2.5, 3.333 and 6.667 as 0.750, 0.300, 0.150, 0.074 and 0.018 deg of
+// turn; nothing it measured lands between 0.074 and 0.150, so any bar in that gap
+// separates the rows that move the reported metric by 0.05 deg or more from those
+// that move it by 0.02 or less, and 0.1 is the round one. It is a judgement about
+// what is worth saying, not a threshold anything derives.
+constexpr double MB_SAMPLE_RATE_TOL_DEG = 0.1;
+
 // WHEN THE ELLIPTIC SOLVE IS FINISHED: the largest distance any interior node
 // moved in a sweep, divided by the bounding-box diagonal of the mesh the solve
 // started from, has fallen to this.

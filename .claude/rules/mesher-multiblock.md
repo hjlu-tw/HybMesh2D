@@ -225,6 +225,37 @@ wall that drift exported a band of wall at every junction.)
 - **Two warnings, both about getting the fallback you did not ask for**: no edge declares a binding
   (everything on `BC_GEOM`), and a bound edge whose segment carries no label. The banner prints one
   row per patch naming the segment it was read off.
+- **A SAMPLE RATE THE SOURCE POLYLINE CANNOT CARRY IS SAID, AND THE WARNING IS KEYED ON THE COST
+  RATHER THAN ON THE RATIO** (`sampleRate` in `src/MultiBlock.cpp`; `MB_SAMPLE_RATE_TOL_DEG`, 0.1
+  deg of TURN; #94). A bound edge places its nodes by arc length, so when its interval count and
+  its stretch's facet count are not commensurate, consecutive nodes span different numbers of
+  facets and the polygon it meshes has IRREGULAR corners — nothing is wrong with the declaration
+  and nothing errors, the mesh is simply worse than the same declaration on a better-resolved
+  geometry. The warning names the EDGE, both counts, the ratio, both angles and BOTH fixes with the
+  arithmetic done: resample so the stretch carries a MULTIPLE of the interval count, or declare the
+  count whose intervals divide the facets — saying that the count PROPAGATES, so it moves the
+  opposite side of every block on the chain.
+  - **THE COST IS AN ANGLE AND THAT IS THE DECISION.** A non-dividing ratio on a STRAIGHT stretch
+    costs exactly nothing, so keying on the ratio fires on **14 of the 19 shipped bound edges** and
+    is read by nobody, while keying on the cost fires on **8**, every one of them one of the
+    O-grid's two circles. Measured as the worst turn the mesh nodes make against the worst an EVEN
+    sampling of the same curve at the same density would make, both maxima over the edge's interior
+    nodes the way `MbQuality` takes its worst corner.
+  - **THE POLYLINE's TURN MUST BE SMEARED over each vertex's two half-facets**, and that is
+    required rather than tidy: read as a STEP at the vertex, a window shorter than one facet — the
+    shipped far field, at 0.833 facets per interval — returns the whole vertex turn, `even` comes
+    back equal to `worst`, and the whole measurement reads zero on the case that motivated it.
+  - **The DIVISIBILITY test is kept although no injection can make it fire**, because on a dividing
+    ratio the estimator's bias is toward silence. It is what makes the MESSAGE's own advice true
+    whenever the message is printed, and check 57 reads those numbers back out of the message.
+  - Gated by `tests/cpp/test_multiblock.cpp` 57, whose fixture is non-commensurate BY DECLARATION
+    so that #95 cannot take the coverage away with the shipped geometry (11 hand injections, 3
+    inert and named); `tests/test_multiblock_ogrid_surface.py` group 9, which asserts the warned
+    figure ACCOUNTS FOR that mesh's own max-minus-mean gap (0.375 deg, exactly half the worst
+    warned excess) rather than asserting that a warning appeared; and
+    `tests/test_multiblock_cgrid_surface.py` group 10, the SILENCE. Neither surface half is worth
+    much alone. **No behaviour change: golden 19/19 SAME at exactly 0.0.**
+    Why: `docs/design_notes/mesher.md`, "A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID".
 - **`MbWallSpec` reports all four sides and the gate stays `kind`**, since "labelled inlet" and
   "viscous surface whose first-cell height matters" are different questions. SUPERSEDED by #53: the
   `kind` gate now bites — an interior side is not a wall — so the list is the outer walls.
@@ -411,10 +442,19 @@ otherwise learn the hole exists.
   residue is its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads — and #83
   KEPT it that way on purpose rather than by omission, by deciding that wall nodes do not slide;
   the rule above carries the reason. The same faceting owns the O-grid's NON-ORTHOGONALITY too
-  (#93), not only the wall height: **nothing checks a bound edge's sample rate against its
-  polyline** — the shipped far field is 80 facets under 96 mesh nodes, and a facets-per-interval
-  ratio that does not divide costs up to 0.375° with no warning (#94 refuses it, #95 resolves it).
-  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
+  (#93), not only the wall height: the shipped far field is 80 facets under 96 mesh nodes, and a
+  facets-per-interval ratio that does not divide costs up to 0.375°.
+  ~~**Nothing checks a bound edge's sample rate against its polyline.**~~ **CLOSED by #94**, which
+  measures the cost and WARNS; **#95 still owns fixing the shipped geometry**, so every mesh this
+  repo ships from that declaration is unchanged and 8 of its edges now say so. Two narrower holes
+  replace it, both in the estimator rather than in the coverage: on a dividing ratio it
+  over-predicts the even sampling (0.663° at 16.9° of turn on the C-grid airfoil), so a real cost
+  on a STRONGLY CURVED non-dividing stretch can be masked by about 4% of the local turn and nothing
+  shipped exercises that; and the facet count is the SUBPATH's, whose two end facets would be
+  PARTIAL for a corner declared mid-facet — every shipped and fixture corner sits on a vertex, so
+  the count is exact everywhere it has been measured.
+  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL"
+  and "A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID".
 - **A curved INTERFACE is still undeclarable** (a `binding` is wall-only), so #55's O-grid is a
   single ring rather than a boundary-layer ring inside a far-field one, and no two-sided stretching
   function with DIFFERENT heights at each end exists.
