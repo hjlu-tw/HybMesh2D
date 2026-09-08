@@ -231,15 +231,14 @@ attributable, and the one #85 deliberately spent.
   **32.04° / 26.90° -> 29.90° / 24.91°** at twenty sweeps. The instrument is a quad reader in the
   surface gate, not a new metric: the METRIC is the ruler's and the gate adds a SELECTION, validated
   by reproducing the ruler's whole-mesh figures off the same code first.
-- **#80's O-GRID NEGATIVE CONTROL IS MET SINCE #95 — THE EXCESS IS EXACTLY ZERO.** The shipped far
-  field is 320 facets instead of 80, so the case reads **2.024972° unsmoothed AND at every cap**,
-  and the paragraph below is what the figures were on the 80-facet geometry. Its two surviving
-  facts: the residue was the faceted wall's, and it was never the kernel's. The **wall first cell
-  now moves the OTHER way** on this case (0.0036% -> 0.0371% at the default) because the unsmoothed
-  spacing is already 22× inside #55's bar — a cost on a mesh that starts good, not a regression, and
-  the quality gate declares that expectation per case rather than asserting one direction for both.
-- **~~STILL NOT MET — BY 1.2%, AND THE RESIDUE IS THE FACETED WALL's RATHER THAN THE INTERFACE's.~~**
-  (Superseded above; kept because the measurements are #84's and still true of that geometry.) All three clauses: the first alone reads worse than the truth, and
+- **#80's O-GRID NEGATIVE CONTROL IS MET SINCE #95 — THE EXCESS IS EXACTLY ZERO**, on a geometry
+  change and no kernel change: the far field is 320 facets instead of 80 and the case reads
+  **2.024972° unsmoothed AND at every cap**. The **wall first cell now moves the OTHER way** here
+  (0.0036% -> 0.0371% at the default), because the unsmoothed spacing is already 22× inside #55's
+  bar — a cost on a mesh that starts good, not a regression, and the quality gate declares that
+  expectation per case rather than asserting one direction for both.
+- **#80's O-GRID NEGATIVE CONTROL IS STILL NOT MET — BY 1.2%, AND THE RESIDUE IS THE FACETED WALL's
+  RATHER THAN THE INTERFACE's.** All three clauses: the first alone reads worse than the truth, and
   dropping it reads better. A case already at 2.250° comes out at **2.276°** at EVERY cap from 1 to
   150, against #83's 3.632° at one sweep and **12.036° at twenty** — so #83's "no single
   `MB_SMOOTH_ITERS` satisfies both of #80's bullets" is **GONE**. The mean is exactly #55's 1.875°,
@@ -250,8 +249,12 @@ attributable, and the one #85 deliberately spent.
   the mid-block band's own cells come out BETTER than the fill left them.
   **SUPERSEDED by #93:** what that wall is faceted BY is a polyline COARSER than the mesh reading it
   — 80 facets under 96 nodes — so the cause is the sampling ratio, and #83's "wall nodes do not
-  slide" is untouched rather than the thing to revisit.
-  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
+  slide" is untouched rather than the thing to revisit. **AND by #95**, which stored that circle at
+  320 facets: every figure in this bullet is the 80-facet geometry's, and the bullet above it is
+  what the shipped case measures. Kept rather than deleted because the four-kernel comparison it
+  records is still true of the geometry it was run on.
+  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL"
+  and "THE SHIPPED O-GRID's FAR FIELD IS 320 FACETS, AND #80's LAST BULLET IS MET".
 - **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
   9, no new code. **And it is REACHABLE on the shipped files**, reversing #82's blind spot — the
   C-grid folds 184 cells by a cap of 400, so the surface gate asserts exit 9 on a real file. **The

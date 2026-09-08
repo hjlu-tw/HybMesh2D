@@ -2036,7 +2036,11 @@ because `mesher-multiblock.md` was full.
       ogrid   2.250 / 1.875 / 0.081%  -> 2.276 / 1.875 / 0.044%
       cgrid  32.044 / 4.562 / 0.437%  -> 29.895 / 3.821 / 0.097%
 
-  Zero inverted everywhere. **"UNCHANGED" IS TO ROUNDING ON THE SQUARE AND BIT FOR BIT ONLY ON THE
+  Zero inverted everywhere. **The `ogrid` row is the 80-facet far field's and no longer
+  reproduces**: since #95 that circle is stored at 320 facets and the same pair reads
+  2.025 / 1.875 / 0.004% -> 2.025 / 1.875 / 0.037%, i.e. an excess of exactly zero. The row is
+  annotated rather than rewritten (#43's rule) — it is what ran on 2026-09-07, and what it was
+  measuring, the DEFAULT FLIP, is unaffected by a later geometry change. **"UNCHANGED" IS TO ROUNDING ON THE SQUARE AND BIT FOR BIT ONLY ON THE
   CAVITY**, which the first draft of this block and of `Config::mbSmoothIters` both got wrong by
   claiming bit-for-bit for both — caught by a review against this same commit's golden note, which
   had the 255-nodes-by-3.5e-16 figure two screens away. A graded rectangle is a fixed point of the

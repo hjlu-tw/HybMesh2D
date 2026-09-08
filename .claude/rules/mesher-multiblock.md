@@ -381,9 +381,12 @@ the measurements that forced the blending change, the acceptance run and the bli
   the first by node identity. **Its far field is stored at 320 facets since #95** — the density past
   which it stops binding the 96-node ring, not a convergence point. Measured on the shipped files at
   the default: 0 inverted, non-orthogonality max **2.025°**, wall first cell **0.037%** (0.0036%
-  unsmoothed). Both residues are the stored polyline's FACETING, not the law, and both are now the
-  BODY's 160 facets under the same ring; #55's 2.25° / 0.08% were the FAR FIELD's 80 and are what
-  #80's last unmet bullet was written against. **Do not make the far field commensurate with the
+  unsmoothed). The angle is the stored polyline's FACETING, not the law, and is now the BODY's 160
+  facets under the same ring. **The wall figure is NOT**, and that is new: 0.0036% is what the
+  faceting leaves, and the default's 20 sweeps take it to 0.037% — so at the default the SMOOTHER's
+  own perturbation of the second row is the larger of the two effects, and #55's "10× finer circles
+  measure 0.0007%" is a statement about the unsmoothed number. #55's 2.25° / 0.08% were the FAR
+  FIELD's 80 facets and are what #80's last unmet bullet was written against. **Do not make the far field commensurate with the
   ring** (96, 192, 288 all reach the 1.875° floor): the ring's count is one declared number the
   equivalence class propagates, so that would couple a geometry file to a count nothing enforces.
   A robust 2.025 over a fragile 1.875 — the reasoning is #57's far-field-clustering blind spot.

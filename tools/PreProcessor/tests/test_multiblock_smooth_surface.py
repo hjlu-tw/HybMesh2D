@@ -118,9 +118,12 @@ plain Winslow and #81's Laplacian (both quoted from their tickets):
     300    +seams    (#84)          192   2.274   1.875    0.0598%   200
 
   THE MEAN OF EXACTLY 1.875 IS STRUCTURAL, not a coincidence and not a strong
-  result: a 48-gon's every quad corner deviates by half the sector angle whatever
+  result: a 96-gon's every quad corner deviates by half the sector angle whatever
   the radial distribution is, so this column measures the faceting and nothing
-  else. What it DOES say is that the grid is polar again — #83's 2.571 at a cap of
+  else. (It said "48-gon" until #95, whose review found the third copy of a slip
+  #93 had already corrected in the design note. 360/48/2 is 3.75, not 1.875 — the
+  arithmetic never produced the number the sentence explains; the ring is 96 nodes,
+  4704 vertices over 49 radial stations.) What it DOES say is that the grid is polar again — #83's 2.571 at a cap of
   20 was the interior pulled off the polar structure by the frozen radials.
 
   the mid-block radial band of the shipped O-grid — the 48 interface nodes with
@@ -653,6 +656,10 @@ def main() -> int:
         # sampling artefact (#93), and the shipped far field is 320 facets. The
         # unsmoothed mesh reads 2.025, which is the BODY's own 1.667 facets per
         # mesh interval and the residue everything below is measured against.
+        # 2.025 IS A SPECIMEN HERE, NOT A BAR. Every threshold with an owner lives
+        # in test_multiblock_quality_gate.py; this file's job is the four KERNELS
+        # against each other, and the literal it compares against is the geometry's
+        # figure on the day — like the 3.632 / 12.036 / 2.276 rows below it.
         check(f"8. ...over 9216 cells, unsmoothed at 2.025 deg — the body's "
               f"sampling residue, #55's 2.250 having been the far field's until "
               f"#95 resolved it ({bo[0]['nonortho_max_deg'] if bo else None})",
@@ -738,10 +745,14 @@ def main() -> int:
         # With that circle stored at 320 facets the far field no longer binds and the
         # worst sits on the BODY at r = 0.500, whose 160 facets under the same ring
         # are 1.667 per interval — the residue #94's warning names on those four
-        # edges and the whole of this mesh's 2.025. What is asserted is therefore the
-        # PROPERTY (the worst is on a bound wall, not on an interface) with the
-        # radius reported, rather than a radius that has to be edited each time the
-        # binding constraint moves.
+        # edges and the whole of this mesh's 2.025.
+        #
+        # SO THE ASSERTION IS THE BODY, NOT "a wall". A first draft of this accepted
+        # either circle, on the reasoning that the PROPERTY under test is
+        # wall-rather-than-interface; a review pointed out that this accepts the
+        # pre-#95 state, so a reverted geometry would pass a check whose own comment
+        # says the far field no longer binds. The far field binding again IS a
+        # regression here, and this is the check that should say so.
         oq = "\nMB_SPLIT_QUADS 0\n"
         _, _, oqs0 = run(tmp, "oq0", oq + NO_SMOOTH, config=ogrid_config)
         _, _, oqs1 = run(tmp, "oq1", oq + "\nMB_SMOOTH_ITERS 20\n",
@@ -792,13 +803,12 @@ def main() -> int:
                 if d > worst:
                     worst, at = d, p
         rad = math.hypot(*at) if at else -1.0
-        check(f"9. ...and the smoothed mesh's WORST corner is on a FACETED WALL "
-              f"rather than on a mid-block interface ({worst:.4f} deg at "
-              f"r={rad:.3f}; the body is r=0.5 and the far field r=10, and the "
-              f"interfaces this ticket freed run between them) — since #95 it is "
-              f"the BODY's, 160 facets under 96 mesh nodes, the far field having "
-              f"been resolved to 320 where it no longer binds",
-              rad < 0.55 or rad > 9.0)
+        check(f"9. ...and the smoothed mesh's WORST corner is on the BODY's faceted "
+              f"wall — not on a mid-block interface, which is what #84 moved it off, "
+              f"and not back on the far field, which is what #95 moved it off "
+              f"({worst:.4f} deg at r={rad:.3f}; the body is r=0.5, the far field "
+              f"r=10, and the freed interfaces run between them)",
+              rad < 0.55)
 
         # ── 10. #83's OWN ACCEPTANCE, on the shipped C-grid ─────────────────
         #

@@ -86,15 +86,20 @@ WHAT THIS FILE DOES NOT DO, said plainly:
   * The bars are absolute figures from one dated run on one machine. The mesher is
     not bit-reproducible (coordinates wobble ~1e-13, see tools/scripts/
     golden_mesh.py), and most bars carry slack far above that floor — but **the
-    O-grid's MEAN bar passes on EXACT EQUALITY** (1.875000 <= 1.875000), so that
-    one has no slack at all. It survives because the figure is structural rather
+    O-grid's MEAN bar and, since #95, two of check 4's comparisons pass on EXACT
+    EQUALITY** (1.875000 <= 1.875000, and the zero-excess pair), so those have no
+    slack at all. It survives because the figure is structural rather
     than computed: a 96-gon's every quad corner deviates by half the sector angle
     whatever the radial distribution is, which is why it reads the same at every
     cap from 0 to 200 and at every far-field density #95 measured. (It said
     "48-gon" until #95; the ring is 96 nodes — 4704 vertices over 49 radial
     stations — and 360/96/2 is what gives 1.875. #93 corrected the same slip in the
-    design note and this copy was missed.) If it ever wobbles, this is the bar that will say so first,
-    and the fix is a tolerance rather than a looser number. The arithmetic behind
+    design note and this copy was missed.) THE ZERO-EXCESS PAIR IS READ OFF ONE
+    RUN, not two: ``_BEFORE`` and the final line come out of the same invocation, so
+    the unsmoothed figure is literally the mesh the smoother was handed and the
+    comparison cannot flake on the run-to-run wobble this bullet is about. The mean
+    bar has no such shelter — if it ever wobbles, it is the bar that will say so
+    first, and the fix there is a tolerance rather than a looser number. The arithmetic behind
     every figure is the C++ ruler's, pinned in tests/cpp/test_mb_quality.cpp.
   * Nothing here checks the cap is a GOOD one. 20 is the safe cap, not the best
     measured: the C-grid's worst angle keeps improving to a cap of 100. The
@@ -146,8 +151,9 @@ DEFAULT_SWEEPS = 20
 # 2.250 again, and check 4 now asserts the bullet is met instead of that it is not.
 
 # case -> (figure, comparison, bar, origin). "<" is strict where the epic asked
-# for "better than"; "<=" where the bar IS the measured figure or a recorded one
-# the run reproduces exactly.
+# for "better than" OR where the case now BEATS a recorded baseline rather than
+# reproducing it (the O-grid's worst angle since #95, by 0.225 deg); "<=" where the
+# bar IS the measured figure or a recorded one the run reproduces exactly.
 THRESHOLDS = {
     "cgrid": [
         ("inverted", "==", 0, "#80's acceptance"),
@@ -227,7 +233,7 @@ def main() -> int:
               "_BEFORE" in out and len(qlines(out)) == 1)
 
         # ── 2. every threshold, named ───────────────────────────────────────
-        at_default = {}
+        at_default, at_default_before = {}, {}
         for case, rows in THRESHOLDS.items():
             rc, out = run(tmp, case + "_d", CONFIGS[case])
             q = qlines(out)
@@ -236,6 +242,14 @@ def main() -> int:
             if not q:
                 continue
             at_default[case] = q[0]
+            # The SAME run's unsmoothed figures. Kept because check 4's zero-excess
+            # comparison is an exact equality, and reading the two halves off one
+            # invocation is what makes that safe on a mesher whose coordinates
+            # wobble ~1e-13 run to run — `_BEFORE` is literally the mesh this run's
+            # smoother was handed, not a second mesh of the same declaration.
+            before = qlines(out, "_BEFORE")
+            if before:
+                at_default_before[case] = before[0]
             for key, op, bar, origin in rows:
                 got = q[0].get(key)
                 shown = (f"{100 * got:.4f}%" if key.endswith("_rel")
@@ -257,6 +271,10 @@ def main() -> int:
         # inside #55's bar that the smoother cannot improve on it, so what is
         # asserted there is that the metric MOVED. Stated as a table rather than as
         # an `if case ==`, so a third shipped case has to declare which it is.
+        # A TYPO IN A VALUE MUST NOT SILENTLY WEAKEN THE CHECK, which a fall-through
+        # to "moves" — the weaker of the two — would do. `holds()` above refuses the
+        # same way and for the same reason; an unknown CASE already raises here by
+        # KeyError, and this makes an unknown EXPECTATION raise too.
         wall_direction = {"cgrid": "better", "ogrid": "moves"}
         unsmoothed = {}
         for case in THRESHOLDS:
@@ -270,6 +288,8 @@ def main() -> int:
             unsmoothed[case] = q0[0]
             on, off = at_default[case], q0[0]
             want = wall_direction[case]
+            if want not in ("better", "moves"):
+                raise ValueError(f"unknown wall direction {want!r} for {case}")
             moved = f"({100 * off['wall_first_cell_worst_rel']:.4f}% -> " \
                     f"{100 * on['wall_first_cell_worst_rel']:.4f}%)"
             if want == "better":
@@ -279,13 +299,21 @@ def main() -> int:
                       on["wall_first_cell_worst_rel"]
                       < off["wall_first_cell_worst_rel"])
             else:
+                # AND BY MORE THAN THE MESHER'S OWN NOISE. `!=` alone would accept
+                # a last-digit difference, which is what run-to-run coordinate
+                # wobble (~1e-13, see golden_mesh.py) produces on its own. The floor
+                # is 1e-6 of relative wall error: seven orders above that wobble and
+                # two orders below the 3.4e-4 the smoother actually moves this
+                # figure, so it can only be satisfied by a solve that ran.
+                moved_by = abs(on["wall_first_cell_worst_rel"]
+                               - off["wall_first_cell_worst_rel"])
                 check(f"3. {case}: the WALL FIRST CELL MOVES at the default {moved} "
                       f"— since #95 the unsmoothed spacing on this case is already "
                       f"inside #55's bar by 22x, so the smoother cannot improve on "
                       f"it and a direction would be asserting the wrong thing; what "
-                      f"a dead smoother could not do is move it at all",
-                      on["wall_first_cell_worst_rel"]
-                      != off["wall_first_cell_worst_rel"])
+                      f"a dead smoother could not do is move it by {moved_by:.2e}, "
+                      f"seven orders above this mesher's run-to-run wobble",
+                      moved_by > 1.0e-6)
             check(f"3. {case}: and the cell count is unchanged "
                   f"({off['cells']} -> {on['cells']}), so the comparison is two "
                   f"coordinate sets over one mesh", on["cells"] == off["cells"])
@@ -321,7 +349,7 @@ def main() -> int:
         # wall by 2.2x, and the MEAN is met EXACTLY and can never be met by more —
         # 1.875 is half the 96-gon's sector angle, so it is structural.
         og = at_default.get("ogrid")
-        og_off = unsmoothed.get("ogrid")
+        og_off = at_default_before.get("ogrid")
         if og:
             bar = OGRID_BASELINE["nonortho_max_deg"]
             check(f"4. #80's O-grid bullet is MET on the worst angle: "
@@ -349,11 +377,16 @@ def main() -> int:
             # unmet bullet. Exact equality is the right comparison and not a
             # tolerance dodge: at a far-field density the mesh can sample, the
             # smoother's excess is not small but ZERO, to all six printed digits.
+            # BOTH FIGURES COME OFF THE SAME RUN — `_BEFORE` and the final line of
+            # one invocation — so this equality cannot flake on the coordinate
+            # wobble the blind-spot list above names. Comparing the default run
+            # against check 3's separate zero-sweep run would have been two meshes.
             check(f"4. ...and the SMOOTHER'S EXCESS over its own unsmoothed "
                   f"baseline is exactly zero on this case "
                   f"({og_off['nonortho_max_deg']:.6f} -> "
-                  f"{og['nonortho_max_deg']:.6f}), which is #80's negative control "
-                  f"and what the shipped geometry could not demonstrate before #95",
+                  f"{og['nonortho_max_deg']:.6f}, both off ONE run), which is #80's "
+                  f"negative control and what the shipped geometry could not "
+                  f"demonstrate before #95",
                   og["nonortho_max_deg"] == og_off["nonortho_max_deg"])
 
     print()

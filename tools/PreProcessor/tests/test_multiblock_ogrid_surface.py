@@ -443,11 +443,17 @@ def main() -> int:
         q5 = quality(p5.stdout)
         said = [ln for ln in (p5.stdout + p5.stderr).splitlines()
                 if "sample a bound stretch" in ln]
+        # WHICH FOUR, NOT HOW MANY. A count cannot tell the four body arcs from the
+        # four far-field ones, so four far-field warnings with the body silent would
+        # read the same — and that is the state #95 was supposed to leave behind.
+        # The edge names are in the message; the topology calls the body's arcs
+        # w0..w3 and the far field's o0..o3 (f0..f3 are that circle's CORNERS).
+        named = sorted(set(re.findall(r"edge '([^']+)'", "\n".join(said))))
         check("9. every bound edge whose sample rate costs something is named, and "
-              "ONLY those (%d warnings; the shipped ring is 96 nodes over a "
-              "320-facet far field and a 160-facet body, so the four body arcs fire "
-              "and the four far-field arcs no longer do)" % len(said),
-              len(said) == 4)
+              "ONLY those (%d warnings on %r; the shipped ring is 96 nodes over a "
+              "320-facet far field and a 160-facet body, so the four BODY arcs fire "
+              "and the four far-field arcs no longer do)" % (len(said), named),
+              len(said) == 4 and named == ["w0", "w1", "w2", "w3"])
         worst = 0.0
         for ln in said:
             m = re.search(r"so ([0-9.]+) deg of that corner is the SAMPLE RATE", ln)

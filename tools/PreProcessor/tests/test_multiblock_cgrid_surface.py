@@ -170,6 +170,16 @@ run too, because #80's negative control ought not to break the solver either.
         both      EXIT 0 / 0 / 0, 100 iterations, no NaN, 192 'farfield' warnings.
         mesher    2.250000 / 1.875000 / 0.0812%  ->  2.276042 / 1.875000 / 0.0442%
 
+        THOSE TWO MESHER ROWS ARE THE 80-FACET FAR FIELD's AND NO LONGER REPRODUCE
+        (#95, 2026-09-08). The shipped circle is stored at 320 facets since then and
+        the same two invocations read 2.024972 / 1.875000 / 0.0036% -> 2.024972 /
+        1.875000 / 0.0371%, which meets every figure #80 asked of this case with the
+        smoother's excess exactly zero. The record above is NOT edited — it is what
+        ran on 2026-09-07 (#43's rule) — and the solver half of it is untouched by
+        #95, which changed a geometry and no code. The live figures are gated in
+        test_multiblock_quality_gate.py; the derivation is in
+        docs/design_notes/mesher.md, "THE SHIPPED O-GRID's FAR FIELD IS 320 FACETS".
+
 THE CFL IS STATED BECAUSE #57 MEASURED THAT IT MATTERS: lowering cfl to 0.3 makes
 a BAD mesh run too, so a recorded run that does not say which one it used proves
 less than it appears to. All four above are cfl 0.6, the value #55 used.
