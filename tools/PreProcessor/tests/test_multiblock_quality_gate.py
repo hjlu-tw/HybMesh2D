@@ -32,38 +32,47 @@ THE THRESHOLDS, and where each number comes from:
     nonortho mean     < 4.562    #57's recorded baseline                   3.821
     wall first cell   <= 0.4368% #57's recorded baseline                  0.0968%
 
-  shipped O-grid (config/multiblock_ogrid.dat), 9216 cells
+  shipped O-grid (config/multiblock_ogrid.dat), 9216 cells — REMEASURED 2026-09-08
+  after #95 resolved the far field; every bar is #55's again
 
     inverted          == 0       #80's acceptance                              0
-    nonortho max      <= 2.2761  #85's own measurement — NOT #55's 2.250   2.2760
+    nonortho max      <  2.250   #55's recorded baseline                  2.0250
     nonortho mean     <= 1.8750  #55's recorded baseline                   1.8750
-    wall first cell   <= 0.0812% #55's recorded baseline                  0.0442%
+    wall first cell   <= 0.0812% #55's recorded baseline                  0.0371%
 
-#80's O-GRID BULLET IS NOT MET AND THIS GATE DOES NOT PRETEND IT IS. That bullet
-asks for "nothing worse than 2.25 / 1.875 / 0.08" and the worst angle comes out at
-2.2760 — 0.026 deg, 1.2%, worse. The bar above is therefore #85's own measurement
-and not #55's, which is the honest way to hold a number that is not the one the
-epic asked for: the gate still catches a regression, and the shortfall is recorded
-rather than rounded away. #84 localised the residue and it is not the smoother's —
-the unsmoothed mesh's own worst corner is 2.250 deg ON the faceted outer wall and
-the smoothed one's is 2.276 one grid line in from it. Check 4 asserts the gap is
-still under 2% so it cannot grow in silence.
+#80's O-GRID BULLET IS MET, AND THE BAR IS #55's AGAIN (#95, 2026-09-08). That
+bullet asks for "nothing worse than 2.25 / 1.875 / 0.08". For four tickets the
+worst angle came out at 2.2760 and this gate held a 2.2761 bar that was #85's own
+measurement rather than a recorded baseline, plus a check that the 1.2% shortfall
+could not grow. Both are DELETED rather than loosened: the shipped far field is now
+a 320-facet polyline instead of an 80-facet one, and the worst angle is 2.0250 —
+under #55's figure with 0.225 deg of margin, on a mesh that needed no kernel change
+at all.
 
-CORRECTED by #93 (2026-09-08): that wall being FROZEN is not why. It is faceted by
-an 80-segment polyline the mesh samples at 96 nodes, and a ratio that does not
-divide is the whole residue — at 96, 192 or 288 facets the angle is exactly 1.875
-and the smoother adds exactly 0, with #83's wall nodes still not sliding. So #55's
-2.250 bar is itself a sampling artefact, the case's floor is 1.875, and closing the
-bullet is #95's geometry work rather than a revisited decision or a looser bar
-here. Every threshold above is unchanged, because the shipped geometry is. See
-docs/design_notes/mesher.md, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A
-FROZEN WALL".
+WHY THE GEOMETRY WAS THE ANSWER (#93). #55's 2.250 was itself a SAMPLING artefact:
+an 80-facet circle under a 96-node ring is 0.833 facets per mesh interval, so the
+ring meshed an irregular polygon and the polyline's turning fell unevenly on the
+nodes. Resolved past the mesh, the far field stops binding and the residue moves to
+the BODY — 160 facets under the same ring — which is the whole of today's 2.0250,
+and is why refining further does not move it. THE MEAN IS MET EXACTLY AND
+STRUCTURALLY, never with margin: 1.875 is half a 96-gon's sector angle (360/96/2)
+and no far-field density moves it. See docs/design_notes/mesher.md, "THE O-GRID's
+RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
 
 A BAR ALONE CANNOT CATCH A SMOOTHER THAT STOPPED WORKING, because every threshold
 here is an upper bound and a mesh that never moved would sit under three of the
-four. So check 3 also drives each case with ``MB_SMOOTH_ITERS 0`` and asserts the
-default beats it where it should — a DIRECTION, which is what the smoothing gate
-next door uses for the same reason.
+four. So check 3 also drives each case with ``MB_SMOOTH_ITERS 0`` and compares — a
+DIRECTION, which is what the smoothing gate next door uses for the same reason.
+
+IT IS NOT ONE DIRECTION FOR BOTH CASES SINCE #95. The C-grid's wall first cell is
+still strictly BETTER at the default (0.4368% -> 0.0968%), which is what #83's
+control functions were built for. The O-grid's is no longer better and cannot be:
+with the far field resolved, its UNSMOOTHED wall spacing is 0.0036% — 22x inside
+#55's bar and an order better than anything the smoother has ever delivered on this
+case — so the default moves it to 0.0371%, which is a cost rather than a
+regression, and still 2.2x inside the bar. What catches a dead smoother there is
+that the figure MOVES AT ALL, asserted as such rather than as an improvement it
+cannot make. The threshold it must not break is #80's, and check 2 holds it.
 
 WHAT THIS FILE DOES NOT DO, said plainly:
 
@@ -79,9 +88,12 @@ WHAT THIS FILE DOES NOT DO, said plainly:
     golden_mesh.py), and most bars carry slack far above that floor — but **the
     O-grid's MEAN bar passes on EXACT EQUALITY** (1.875000 <= 1.875000), so that
     one has no slack at all. It survives because the figure is structural rather
-    than computed: a 48-gon's every quad corner deviates by half the sector angle
+    than computed: a 96-gon's every quad corner deviates by half the sector angle
     whatever the radial distribution is, which is why it reads the same at every
-    cap from 0 to 200. If it ever wobbles, this is the bar that will say so first,
+    cap from 0 to 200 and at every far-field density #95 measured. (It said
+    "48-gon" until #95; the ring is 96 nodes — 4704 vertices over 49 radial
+    stations — and 360/96/2 is what gives 1.875. #93 corrected the same slip in the
+    design note and this copy was missed.) If it ever wobbles, this is the bar that will say so first,
     and the fix is a tolerance rather than a looser number. The arithmetic behind
     every figure is the C++ ruler's, pinned in tests/cpp/test_mb_quality.cpp.
   * Nothing here checks the cap is a GOOD one. 20 is the safe cap, not the best
@@ -127,13 +139,11 @@ DEFAULT_SWEEPS = 20
 # from both — and it is what makes "the thresholds have one owner" a property of
 # the modules rather than a promise in this docstring. It was three owners for one
 # commit, and a review counted them.
-# The one figure that is NOT a recorded baseline: #80's O-grid bullet is unmet, so
-# its worst-angle bar is #85's own measurement. Kept apart from OGRID_BASELINE so
-# the two cannot be read as the same kind of number.
-OGRID_MAX_ACHIEVED = 2.2761
-# How far past #55's figure the O-grid's worst angle is allowed to sit — the "under
-# 2%" the docstring states, derived from that baseline rather than typed as a float.
-OGRID_MAX_GAP_FRAC = 0.02
+# THERE IS NO LONGER A FIGURE HERE THAT IS NOT A RECORDED BASELINE. `OGRID_MAX_ACHIEVED
+# = 2.2761` and `OGRID_MAX_GAP_FRAC = 0.02` lived here for four tickets, holding #80's
+# O-grid shortfall visible and stopping it growing in silence. #95 resolved the geometry
+# that caused it, so both are DELETED rather than loosened — the bar below is #55's own
+# 2.250 again, and check 4 now asserts the bullet is met instead of that it is not.
 
 # case -> (figure, comparison, bar, origin). "<" is strict where the epic asked
 # for "better than"; "<=" where the bar IS the measured figure or a recorded one
@@ -150,8 +160,10 @@ THRESHOLDS = {
     ],
     "ogrid": [
         ("inverted", "==", 0, "#80's acceptance"),
-        # NOT #55's 2.250: see the docstring. #80's bullet is unmet by 1.2%.
-        ("nonortho_max_deg", "<=", OGRID_MAX_ACHIEVED, "#85's own measurement"),
+        # #55's own again since #95, and STRICT: the case beats it by 0.225 deg
+        # rather than reproducing it, so "<" is what the measurement supports.
+        ("nonortho_max_deg", "<", OGRID_BASELINE["nonortho_max_deg"],
+         "#55's recorded baseline"),
         ("nonortho_mean_deg", "<=", OGRID_BASELINE["nonortho_mean_deg"],
          "#55's recorded baseline"),
         ("wall_first_cell_worst_rel", "<=",
@@ -238,6 +250,14 @@ def main() -> int:
         # Three of the four thresholds are upper bounds, so a smoother that
         # stopped moving nodes would sit under them on the O-grid and under two of
         # them on the C-grid. The direction is what catches that.
+        #
+        # WHAT THE DEFAULT MUST DO TO THE WALL METRIC, PER CASE. It was one rule for
+        # both until #95 resolved the O-grid's far field; see the docstring. The
+        # C-grid still improves; the O-grid's unsmoothed spacing is now so far
+        # inside #55's bar that the smoother cannot improve on it, so what is
+        # asserted there is that the metric MOVED. Stated as a table rather than as
+        # an `if case ==`, so a third shipped case has to declare which it is.
+        wall_direction = {"cgrid": "better", "ogrid": "moves"}
         unsmoothed = {}
         for case in THRESHOLDS:
             rc0, out0 = run(tmp, case + "_off", CONFIGS[case],
@@ -249,14 +269,23 @@ def main() -> int:
                 continue
             unsmoothed[case] = q0[0]
             on, off = at_default[case], q0[0]
-            check(f"3. {case}: the WALL FIRST CELL is strictly better at the "
-                  f"default than with smoothing off "
-                  f"({100 * off['wall_first_cell_worst_rel']:.4f}% -> "
-                  f"{100 * on['wall_first_cell_worst_rel']:.4f}%) — the metric "
-                  f"#83's control functions exist for, and the one that moves on "
-                  f"BOTH shipped cases",
-                  on["wall_first_cell_worst_rel"]
-                  < off["wall_first_cell_worst_rel"])
+            want = wall_direction[case]
+            moved = f"({100 * off['wall_first_cell_worst_rel']:.4f}% -> " \
+                    f"{100 * on['wall_first_cell_worst_rel']:.4f}%)"
+            if want == "better":
+                check(f"3. {case}: the WALL FIRST CELL is strictly better at the "
+                      f"default than with smoothing off {moved} — the metric "
+                      f"#83's control functions exist for",
+                      on["wall_first_cell_worst_rel"]
+                      < off["wall_first_cell_worst_rel"])
+            else:
+                check(f"3. {case}: the WALL FIRST CELL MOVES at the default {moved} "
+                      f"— since #95 the unsmoothed spacing on this case is already "
+                      f"inside #55's bar by 22x, so the smoother cannot improve on "
+                      f"it and a direction would be asserting the wrong thing; what "
+                      f"a dead smoother could not do is move it at all",
+                      on["wall_first_cell_worst_rel"]
+                      != off["wall_first_cell_worst_rel"])
             check(f"3. {case}: and the cell count is unchanged "
                   f"({off['cells']} -> {on['cells']}), so the comparison is two "
                   f"coordinate sets over one mesh", on["cells"] == off["cells"])
@@ -281,26 +310,51 @@ def main() -> int:
                       for k, v in CGRID_BASELINE.items()
                       if not k.endswith("_rel")))
 
-        # ── 4. #80's O-grid bullet: unmet, and the gap cannot GROW ──────────
+        # ── 4. #80's O-grid bullet: MET, on all three figures ───────────────
+        #
+        # This check was the mirror of itself for four tickets — "NOT met and the
+        # shortfall is held under 2%" — and said in as many words that when the gap
+        # reached 0 it should be deleted and the bullet closed. #95 took it to 0, so
+        # it is rewritten in the direction it now measures rather than kept as a
+        # loosened bound. The margin is stated per figure because the three are met
+        # in three different ways: the worst angle beats #55's by 0.225 deg, the
+        # wall by 2.2x, and the MEAN is met EXACTLY and can never be met by more —
+        # 1.875 is half the 96-gon's sector angle, so it is structural.
         og = at_default.get("ogrid")
+        og_off = unsmoothed.get("ogrid")
         if og:
             bar = OGRID_BASELINE["nonortho_max_deg"]
-            gap = og["nonortho_max_deg"] - bar
-            check(f"4. #80's O-grid bullet is NOT met and the shortfall is held: "
-                  f"the worst angle is {og['nonortho_max_deg']:.4f} deg against "
-                  f"#55's {bar:g}, a gap of {gap:.4f} deg "
-                  f"({100 * gap / bar:.2f}%) — under "
-                  f"{100 * OGRID_MAX_GAP_FRAC:g}%, and #93 measured the cause: the "
-                  f"outer wall is an 80-facet polyline under 96 mesh nodes, so the "
-                  f"SAMPLING RATIO owns it and #55's bar is itself an artefact of "
-                  f"that geometry. If this ever reaches 0, delete the check and "
-                  f"close the bullet in #80.",
-                  0.0 < gap < OGRID_MAX_GAP_FRAC * bar)
+            check(f"4. #80's O-grid bullet is MET on the worst angle: "
+                  f"{og['nonortho_max_deg']:.4f} deg against #55's {bar:g}, a "
+                  f"margin of {bar - og['nonortho_max_deg']:.4f} deg — and #55's "
+                  f"figure was itself a sampling artefact of an 80-facet far field "
+                  f"under 96 mesh nodes (#93), which #95 resolved to 320",
+                  og["nonortho_max_deg"] < bar)
+            mbar = OGRID_BASELINE["nonortho_mean_deg"]
+            check(f"4. ...the MEAN exactly and structurally, never with margin "
+                  f"({og['nonortho_mean_deg']:.6f} vs {mbar:.6f}): it is half a "
+                  f"96-gon's sector angle, 360/96/2, so no geometry density moves "
+                  f"it and a figure BELOW it would mean the ring stopped being "
+                  f"polar",
+                  og["nonortho_mean_deg"] == mbar)
             wbar = OGRID_BASELINE["wall_first_cell_worst_rel"]
-            check(f"4. ...while the O-grid's WALL accuracy is better than #55's "
-                  f"{100 * wbar:.4f}%, which is the metric a viscous solve reads "
+            check(f"4. ...and the WALL accuracy, the metric a viscous solve reads, "
+                  f"better than #55's {100 * wbar:.4f}% "
                   f"({100 * og['wall_first_cell_worst_rel']:.4f}%)",
                   og["wall_first_cell_worst_rel"] < wbar)
+        if og and og_off:
+            # THE NEGATIVE CONTROL #80 ASKED FOR AND THIS CASE COULD NOT GIVE. A
+            # smoother run on a mesh that is already good must not make it worse;
+            # for four tickets it added 0.026 deg here, which was the whole of the
+            # unmet bullet. Exact equality is the right comparison and not a
+            # tolerance dodge: at a far-field density the mesh can sample, the
+            # smoother's excess is not small but ZERO, to all six printed digits.
+            check(f"4. ...and the SMOOTHER'S EXCESS over its own unsmoothed "
+                  f"baseline is exactly zero on this case "
+                  f"({og_off['nonortho_max_deg']:.6f} -> "
+                  f"{og['nonortho_max_deg']:.6f}), which is #80's negative control "
+                  f"and what the shipped geometry could not demonstrate before #95",
+                  og["nonortho_max_deg"] == og_off["nonortho_max_deg"])
 
     print()
     if failures:

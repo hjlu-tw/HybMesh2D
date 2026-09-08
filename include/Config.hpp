@@ -139,12 +139,22 @@ struct Config {
     // caught it against the same commit's own golden note. `cavity` genuinely is;
     // `square` moves 255 nodes by at most 3.5e-16, six orders under the golden
     // comparator's tolerance, which is reassociation and not a mesh change.
-    // The one figure that moves the wrong way is the O-grid's worst angle, by
+    // The one figure that moved the wrong way was the O-grid's worst angle, by
     // 0.026 deg: #84 localised that to the faceted outer wall rather than to the
     // smoother, and the same case's wall accuracy nearly halves. #93 measured what
     // the faceting IS -- an 80-segment polyline the mesh samples at 96 nodes, a
     // ratio that does not divide -- so the 0.026 is not the kernel's and NOT the
     // frozen wall's either; at a ratio that divides the excess is exactly 0.
+    // GONE SINCE #95 (2026-09-08), WHICH CHANGED THE GEOMETRY AND NOT THIS FILE:
+    // the shipped far field is stored at 320 facets instead of 80, and the row
+    // above reads 2.025 / 1.875 / 0.004% -> 2.025 / 1.875 / 0.037%. The excess is
+    // now exactly zero at every cap measured, so no shipped case has a figure that
+    // moves the wrong way at this default. The wall column goes the other way on
+    // that case for the first time -- the UNSMOOTHED spacing is already 0.0036%,
+    // 22x inside #55's bar, so the solve costs a little rather than buying
+    // anything -- which is a property of a mesh that starts good and not a reason
+    // to lower the cap. The 2026-09-07 rows above are left as the dated record of
+    // what ran that day (#43's rule).
     int mbSmoothIters = 20;
 
     // 預設參數值 (若檔案中未指定則使用)

@@ -1997,13 +1997,21 @@ because `mesher-multiblock.md` was full.
   worst corner is 2.250° ON that wall. ~~Closing it needs #83's "wall nodes do not slide"
   revisited, not a tighter threshold.~~ **SUPERSEDED by #93**: what that wall is faceted BY is a
   polyline coarser than the mesh reading it, so closing it needs neither a tighter threshold nor a
-  sliding wall. #93's own block below measures it.
+  sliding wall. #93's own block below measures it. **AND MET BY #95**: the far field is stored at
+  320 facets since 2026-09-08, the worst angle is **2.025°**, the bar is #55's 2.250° again, and
+  `OGRID_MAX_ACHIEVED` and its 2% gap check are DELETED rather than loosened. Check 4 asserts the
+  bullet is met, in the three ways it is met — see #95's block at the end of this file.
 
 - **AN UPPER BOUND CANNOT CATCH A SMOOTHER THAT STOPPED WORKING**, which is the trap a threshold
   gate walks into: a mesh nothing touched sits under three of the four bars. So the gate also runs
   each case at zero sweeps and asserts a DIRECTION — the wall first cell strictly better on both
   cases, both angles strictly better on the C-grid — and re-derives #57's baseline at zero sweeps
-  so the bars cannot drift away from the mesh they were written against.
+  so the bars cannot drift away from the mesh they were written against. **THE WALL DIRECTION IS NO
+  LONGER ONE RULE FOR BOTH CASES (#95).** With the O-grid's far field resolved, that case's
+  UNSMOOTHED wall spacing is 0.0036% — 22x inside #55's bar — so the smoother cannot improve on it
+  and the default costs a little (0.0371%, still 2.2x inside). "Strictly better" would then be
+  asserting the wrong thing, so the gate declares the expectation per case in a `wall_direction`
+  table: `cgrid` better, `ogrid` moves at all. A dead smoother still fails both.
 
 - **THE DEFAULT IS ON, AT 20, AND THE DERIVATION IS STABILITY RATHER THAN QUALITY.** 20 is not the
   best cap measured — the C-grid's worst angle keeps improving to 100 (26.49° against 29.90°) — it
@@ -2114,7 +2122,10 @@ because `mesher-multiblock.md` was full.
   than 2.25° / 1.875° / 0.08% — **NOT MET on the worst angle by 1.2%**, met on the other two; a
   dated acceptance run through the converter and the solver on a smoothed mesh — **MET**; the
   eighteen pre-existing golden cases unchanged or deliberately recaptured — **MET**, three
-  recaptured. So the epic closes with one bullet unmet, named and gated at the achieved figure.
+  recaptured. So the epic closed with one bullet unmet, named and gated at the achieved figure —
+  **and that bullet is MET as of #95 (2026-09-08)**, on a geometry change rather than a kernel one:
+  2.024972° / 1.875000° / 0.0371%, all three of #55's figures, with the smoother's excess over its
+  own unsmoothed baseline exactly zero. The mean is met EXACTLY and can never be met by more.
   ~~And attributed to a decision (#83's frozen walls) rather than to a defect.~~ **CORRECTED by
   #93**: it is attributable to neither. The bullet's own 2.250 baseline is a SAMPLING artefact of
   the shipped far-field polyline, and the case's floor is 1.875 — the figure the epic asked for as
@@ -2209,7 +2220,8 @@ freeze with one that was measured against it.
 
 - **WHAT #93 DELIBERATELY DOES NOT DO.** It does not change the shipped geometry, so the gate's
   2.2761 bar and its 2% gap check are untouched and still pass — resolving the far field and
-  settling the bullet is **#95**, and refusing a sample rate a polyline cannot carry is **#94**.
+  settling the bullet is **#95** (done; both of those figures are now deleted), and refusing a
+  sample rate a polyline cannot carry is **#94**.
   Nothing in the tables above is gated; they are a dated quotation, re-derivable by regenerating
   both circles at a chosen facet count against the shipped topology.
 
@@ -2415,6 +2427,87 @@ of the seam, said by the caller, like every other refusal and shortfall on this 
   * **The half-the-turn relation is measured on ONE case.** It is exact on the shipped O-grid and
     is stated as "about half" in the message for that reason; a wall whose grid lines leave it well
     off perpendicular would divide the turn differently, and nothing measures that.
+
+**THE SHIPPED O-GRID's FAR FIELD IS 320 FACETS, AND #80's LAST BULLET IS MET** (#95, measured
+2026-09-08). #93 established that #55's 2.250° baseline was the SAMPLING RATIO of an 80-facet
+polyline under a 96-node ring, and left the shipped geometry alone on purpose. This ticket changes
+that geometry and nothing else: **no C++ file was touched**, and the four-ticket shortfall in #80's
+O-grid bullet closes on a `.dat` and its sidecar.
+
+- **THE CHANGE IS ONE NUMBER IN THE ONE GENERATOR.** `test_multiblock_ogrid_surface.py`'s `SHIPPED`
+  table went from 20 points per quarter to 80, and `--write` regenerated
+  `examples/geometries/circle_farfield.dat` and its `.meta` from `write_circle`. Check 1 compares
+  the committed files against that generator on every run, so a hand-edited `.dat` whose sidecar
+  still describes the old point set cannot survive. The body was rewritten by the same command and
+  came back **byte-identical**, which is the control on the generator itself.
+
+- **THE MEASUREMENT, everything else held fixed** (shipped topology, shipped config,
+  `BL_INITIAL_THICKNESS` 0.001, 9216 cells, 0 inverted on every row). `fac/int` is the far field's
+  facets per mesh interval; the body is left at its shipped 160 throughout:
+
+    far field  fac/int   unsmoothed  at cap 20  smoother's excess  wall (unsmoothed)  #94 warnings
+    80 (ship)  0.833     2.250       2.276      +0.026             0.0812%            8
+    160        1.667     2.025       2.035      +0.010             0.0171%            8
+    320 (new)  3.333     2.025       2.025       0                 0.0036%            4
+    640        6.667     2.025       2.025       0                 0.0002%            4
+
+  All four rows of #95's own table reproduced to the digit, as #93's had.
+
+- **WHAT 320 IS: THE DENSITY PAST WHICH THE FAR FIELD NO LONGER BINDS — NOT A CONVERGENCE POINT.**
+  This is the ticket's own wording corrected, and #93's block above is why: the column goes flat at
+  2.025 because the worst corner has MOVED to the body, which is 160 facets under the same 96-node
+  ring (fac/int 1.667). 2.025 is therefore the BODY's residue and a plateau rather than a floor —
+  regenerate the body too and it keeps moving (1.912 at 320, 1.884 at 640, 1.875 at any integer
+  ratio). Anyone who later refines the body will find this number move, and that is not a
+  regression.
+
+- **AND THE HAND-OFF IS EXACT.** #94's warning on the body's four arcs says its worst corner turns
+  0.300° more than an even sampling would, of which about half reaches the cells: max 2.024972 −
+  mean 1.875000 = **0.149972** against **0.150000**. That relation was written against the old
+  geometry with both sides at 0.375, and it reads the new residue to four digits on a mesh neither
+  figure was written for. It is `test_multiblock_ogrid_surface.py` group 9, and the far field's
+  four arcs now cost less than `MB_SAMPLE_RATE_TOL_DEG` and say nothing — 4 warnings, not 8.
+
+- **WHY NOT COMMENSURATE, and the objection stated against the real mechanism.** Matching the ring
+  exactly (96) reaches the 1.875 floor, and so does **any integer facets-per-interval ratio** — 192
+  and 288 hit it too, which is why a 192-facet polyline beats a 640-facet one. The safe set is much
+  wider than "equal to 96", so the rejection does not rest on 96 being fragile. It rests on the
+  coupling being UNENFORCED: the ring's count is one declared number that the equivalence class
+  PROPAGATES to three more edges, so a later change to it would move the polygon off its multiple
+  and take the quality back toward 2.2 with nothing to say so. That is #57's far-field-clustering
+  blind spot exactly — two numbers in two documents that happen to agree. A robust 2.025 over a
+  fragile 1.875, with #94's warning as the thing that speaks when a count does move.
+
+- **#80's THREE FIGURES, AND HOW EACH IS MET.** Worst angle 2.024972 against 2.250, a margin of
+  0.225°. Wall first cell 0.0371% against 0.0812%, 2.2x inside. **The MEAN is met exactly and can
+  never be met by more**: 1.875 is half a 96-gon's sector angle (360/96/2), structural, and no
+  geometry density moves it — the acceptance criterion's "with margin" is unmeetable on that one
+  figure by construction, which #95's own comment thread said before the work started. And the
+  smoother's excess over its own unsmoothed baseline is **exactly zero**, at every cap from 1 to
+  150, which is the negative control #80 asked for and this case could not demonstrate.
+
+- **THE WALL METRIC NOW MOVES THE OTHER WAY ON THIS CASE, AND THAT IS NOT A REGRESSION.** Unsmoothed
+  is 0.0036% and the default's 20 sweeps take it to 0.0371%. Before #95 the unsmoothed figure was
+  0.0812% and the smoother halved it, so the quality gate asserted "strictly better at the default"
+  on both shipped cases. It cannot on this one any more — there is nothing left to improve, and the
+  solve's own perturbation of the second row is now the larger of the two effects. The gate
+  declares the expectation per case rather than dropping the check: `cgrid` better, `ogrid` moves at
+  all. Both bars are still #55's and #57's.
+
+- **WHAT MOVED, AND WHAT DID NOT.** The golden set was captured before the change and compared
+  after: **18 of 19 cases bit-identical (worst coordinate deviation 0.000e+00), one DIFF —
+  `mb_ogrid`, recaptured deliberately.** Its far-field boundary faces moved between patches with
+  the per-name totals unchanged (96 `wall` / 96 `farfield`), which is what relocating the outer
+  ring's nodes along a finer circle looks like. **The C-grid is untouched** and its four bars are
+  unmoved: it binds to `cgrid_farfield.dat` and the NACA body, neither of which this ticket
+  regenerates.
+
+- **WHAT #95 DELIBERATELY DOES NOT DO.** It does not resolve the BODY, so the case keeps a
+  measurable 0.150° of sampling residue and four of #94's warnings — deliberately, since that is
+  the repo's only shipped case where the weakness is visible in a headline metric and #94's own
+  fixture is the permanent home. It does not enforce the ratio anywhere; the geometry and the
+  declared counts remain two independent numbers that a warning relates. And it does not touch
+  #83's frozen walls, which #93 had already cleared.
 
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.

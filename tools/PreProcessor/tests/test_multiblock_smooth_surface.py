@@ -96,7 +96,12 @@ plain Winslow and #81's Laplacian (both quoted from their tickets):
   because the interior was shearing against a frozen seam. #84's falls monotonically
   to 26.49 at a cap of 100 and turns only past 150.
 
-  shipped O-grid, 9216 cells, unsmoothed 0 inverted / 2.250 / 1.875 / 0.0812%:
+  shipped O-grid, 9216 cells, unsmoothed 0 inverted / 2.250 / 1.875 / 0.0812%.
+  THIS WHOLE TABLE IS ON THE 80-FACET FAR FIELD and is left as the dated record it
+  is; the shipped far field is 320 facets since #95, on which every `max` column
+  below reads 2.025 at every cap and the smoother's excess is exactly zero. What
+  the table still measures is the four KERNELS against each other on one geometry,
+  which is what it was written for:
 
     1      Laplacian (#81)            0   4.344   1.882   53.36%      --
     1      Winslow   (#82)            0   3.312   1.875    9.13%      --
@@ -156,7 +161,15 @@ asserted rather than summarised:
     CORRECTED by #93 (2026-09-08): what that wall is faceted BY is a polyline
     coarser than the mesh reading it — 80 facets under 96 nodes — so the cause is
     the sampling ratio and NOT #83's frozen wall, whose decision this leaves
-    untouched. Both figures above are still the shipped case's and still assert.
+    untouched.
+    AND MET BY #95 (2026-09-08), which stored that far field at 320 facets instead
+    of 80. The shipped case now reads 2.024972 unsmoothed AND 2.024972 at every cap
+    measured, so the smoother's excess is not 1.2% but exactly zero, and all three
+    of #80's figures are met — the worst angle and the wall with margin, the mean
+    exactly and structurally. The paragraph above is kept because it is what those
+    figures were, and because the two facts it got right survive: the residue was
+    the faceted wall's, and it was never the kernel's. Groups 8 and 9 assert the
+    met form; the bars are the quality gate's.
 
 WHAT #84's OWN CRITERION ASKED FOR AND THIS FILE COULD NOT DELIVER, said plainly:
 the ticket asks that the wake cut's "own cells improve rather than staying at their
@@ -630,59 +643,57 @@ def main() -> int:
               and "DIVERGED" in outd
               and "the BEST iterate" in outd)
 
-        # ── 8. the O-grid: #80's negative control, and it is NOT met ────────
+        # ── 8. the O-grid: #80's negative control, and it IS met ───────────
         rco0, outo0, _ = run(tmp, "o0", NO_SMOOTH, config=ogrid_config)
         rco1, outo1, _ = run(tmp, "o1", "\nMB_SMOOTH_ITERS 1\n", config=ogrid_config)
         bo, ao = qlines(outo1, "_BEFORE"), qlines(outo1)
         check(f"8. the shipped O-grid meshes with and without smoothing "
               f"(rc={rco0}/{rco1})", rco0 == 0 and rco1 == 0)
-        check("8. ...over 9216 cells, unsmoothed at #55's recorded figures",
+        # NOT #55's 2.250 SINCE #95: that figure was the 80-facet far field's
+        # sampling artefact (#93), and the shipped far field is 320 facets. The
+        # unsmoothed mesh reads 2.025, which is the BODY's own 1.667 facets per
+        # mesh interval and the residue everything below is measured against.
+        check(f"8. ...over 9216 cells, unsmoothed at 2.025 deg — the body's "
+              f"sampling residue, #55's 2.250 having been the far field's until "
+              f"#95 resolved it ({bo[0]['nonortho_max_deg'] if bo else None})",
               bool(bo) and bo[0]["cells"] == 9216
-              and abs(bo[0]["nonortho_max_deg"] - 2.250) < 0.01)
+              and abs(bo[0]["nonortho_max_deg"] - 2.025) < 0.01)
         check(f"8. ...and every column beats #81's Laplacian at the same cap "
               f"(Laplacian {LAPLACIAN_2026_09_04[('ogrid', 1)]})",
               bool(ao) and beats_laplacian("ogrid", 1, ao[0]))
-        # #80's NEGATIVE CONTROL: STILL NOT MET, AND NOW BY 1.2% RATHER THAN BY
-        # 5.3x. All three facts, because the first alone reads better than the truth
-        # and the third alone reads worse.
+        # #80's NEGATIVE CONTROL: MET AS OF #95, AND BY EXACT EQUALITY. The check
+        # below read "STILL NOT MET" for four tickets and said in as many words that
+        # when it started passing it should be turned round and #80 told. It is
+        # turned round here rather than loosened, and the history it held is kept:
         #
-        #   cap    #83 max    #84 max     #55 baseline 2.250
-        #   1        3.632      2.276
-        #   5        6.418      2.276
-        #   20      12.036      2.276
-        #   40      16.787      2.276
+        #   cap    #83 max    #84 max    #95 max    (#55's bar 2.250)
+        #   1        3.632      2.276      2.025
+        #   5        6.418      2.276      2.025
+        #   20      12.036      2.276      2.025
+        #   40      16.787      2.276      2.025
         #
-        # The residue is the FACETED OUTER WALL's, not the interface's, and group 9
-        # measures that rather than asserting it: the unsmoothed mesh's own worst
-        # corner is 2.250 deg ON that wall, the smoothed one's is 2.276 one grid line
-        # in from it.
-        # CORRECTED by #93: the wall row IS frozen, but that is not why. The far
-        # field is an 80-facet polyline under 96 mesh nodes, so the ratio does not
-        # divide; at a ratio that does, the angle is exactly 1.875 and the smoother's
-        # excess is exactly 0, with wall nodes still not sliding. #83's decision is
-        # untouched — it was simply not the cause. Closing this is #95's geometry
-        # work. See docs/design_notes/mesher.md, "THE O-GRID's RESIDUE IS A SAMPLING
-        # RATIO, NOT A FROZEN WALL".
-        check(f"8. #80's NEGATIVE CONTROL IS STILL NOT MET: a case already at 2.250 "
-              f"deg max comes out at "
-              f"{ao[0]['nonortho_max_deg'] if ao else None} deg. Recorded as unmet, "
-              f"not asserted away — if this ever starts passing, delete the check "
-              f"and say so in #80.",
-              bool(ao) and ao[0]["nonortho_max_deg"] > bo[0]["nonortho_max_deg"])
-        check(f"8. ...but the GAP is now under 2% of #55's figure rather than the "
-              f"61% #83 left at the same cap of one (3.632 deg), and it no longer "
-              f"grows with the cap — #84's whole deliverable on this case "
-              f"({ao[0]['nonortho_max_deg'] if ao else -1:.4f} vs 2.250)",
+        # WHAT CHANGED IS THE GEOMETRY, NOT THE KERNEL. #93 measured the +0.026 to be
+        # the SAMPLING RATIO of an 80-facet far field under a 96-node ring rather
+        # than the frozen wall it had been attributed to; #95 stored that circle at
+        # 320 facets, and the excess went not to something small but to ZERO, at
+        # every cap. #83's decision is untouched — wall nodes still do not slide, and
+        # group 9's wall-row check still holds it. See docs/design_notes/mesher.md,
+        # "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
+        check(f"8. #80's NEGATIVE CONTROL IS MET: a case the fill already leaves at "
+              f"{bo[0]['nonortho_max_deg'] if bo else -1:.6f} deg comes out at "
+              f"{ao[0]['nonortho_max_deg'] if ao else -1:.6f} — the smoother adds "
+              f"EXACTLY nothing, which is what the shipped geometry could not "
+              f"demonstrate until #95 resolved its far field",
               bool(ao) and bool(bo)
-              and ao[0]["nonortho_max_deg"] < bo[0]["nonortho_max_deg"] * 1.02
-              and ao[0]["nonortho_max_deg"] < 3.632)
+              and ao[0]["nonortho_max_deg"] == bo[0]["nonortho_max_deg"])
         _, outo20, _ = run(tmp, "o20", "\nMB_SMOOTH_ITERS 20\n", config=ogrid_config)
-        ao20 = qlines(outo20)
-        check(f"8. ...at a cap of TWENTY too, where #83 was at 12.036 deg — 5.3x "
-              f"#55's — so there is no longer a cap at which #80's C-grid bullet and "
-              f"its O-grid bullet pull apart "
-              f"({ao20[0]['nonortho_max_deg'] if ao20 else -1:.4f} deg)",
-              bool(ao20) and ao20[0]["nonortho_max_deg"] < 2.30
+        ao20, bo20 = qlines(outo20), qlines(outo20, "_BEFORE")
+        check(f"8. ...at a cap of TWENTY too, where #83 was at 12.036 deg and #84 at "
+              f"2.276 — so the excess does not merely start at zero, it stays there "
+              f"as the solve runs ({ao20[0]['nonortho_max_deg'] if ao20 else -1:.6f} "
+              f"deg)",
+              bool(ao20) and bool(bo20)
+              and ao20[0]["nonortho_max_deg"] == bo20[0]["nonortho_max_deg"]
               and ao20[0]["nonortho_mean_deg"] <= 1.876
               and ao20[0]["inverted"] == 0)
         check(f"8. ...and the wall first cell is BETTER than #55's 0.0812%, which "
@@ -716,11 +727,21 @@ def main() -> int:
         # criterion about a shared edge's own cells improving.
         #
         # Second, the whole mesh's worst corner has MOVED: off the mid-block
-        # interface and onto the line one in from the faceted outer wall (r = 9.19
-        # against that wall's own 10.0), at the faceting's own magnitude. Both
+        # interface and onto a FACETED WALL, at that faceting's own magnitude. Both
         # halves are needed — the first alone would pass on a mesh whose worst had
         # merely moved somewhere else worse, and the second alone would not show
         # that the interface improved rather than being left alone.
+        #
+        # WHICH wall is a fact about the shipped geometry and has changed once. Until
+        # #95 it was the OUTER circle's, one grid line in at r = 9.19, because an
+        # 80-facet polyline under 96 mesh nodes was the coarsest thing in the case.
+        # With that circle stored at 320 facets the far field no longer binds and the
+        # worst sits on the BODY at r = 0.500, whose 160 facets under the same ring
+        # are 1.667 per interval — the residue #94's warning names on those four
+        # edges and the whole of this mesh's 2.025. What is asserted is therefore the
+        # PROPERTY (the worst is on a bound wall, not on an interface) with the
+        # radius reported, rather than a radius that has to be edited each time the
+        # binding constraint moves.
         oq = "\nMB_SPLIT_QUADS 0\n"
         _, _, oqs0 = run(tmp, "oq0", oq + NO_SMOOTH, config=ogrid_config)
         _, _, oqs1 = run(tmp, "oq1", oq + "\nMB_SMOOTH_ITERS 20\n",
@@ -771,13 +792,13 @@ def main() -> int:
                 if d > worst:
                     worst, at = d, p
         rad = math.hypot(*at) if at else -1.0
-        check(f"9. ...and the smoothed mesh's WORST corner has moved off the "
-              f"mid-block interface to the line one in from the faceted outer wall "
-              f"({worst:.4f} deg at r={rad:.3f}, that wall itself being r=10 and "
-              f"2.250 deg) — the residue #80's O-grid bullet still fails on is the "
-              f"WALL's faceting, which #93 measured to be its 80-facet polyline "
-              f"under 96 mesh nodes rather than the fact that #83 froze it",
-              rad > 9.0)
+        check(f"9. ...and the smoothed mesh's WORST corner is on a FACETED WALL "
+              f"rather than on a mid-block interface ({worst:.4f} deg at "
+              f"r={rad:.3f}; the body is r=0.5 and the far field r=10, and the "
+              f"interfaces this ticket freed run between them) — since #95 it is "
+              f"the BODY's, 160 facets under 96 mesh nodes, the far field having "
+              f"been resolved to 320 where it no longer binds",
+              rad < 0.55 or rad > 9.0)
 
         # ── 10. #83's OWN ACCEPTANCE, on the shipped C-grid ─────────────────
         #

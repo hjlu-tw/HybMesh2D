@@ -23,9 +23,11 @@ What this pins down:
   4. The two geometries' own conditions reach the ``.bnd``: the body as ``wall``
      and the far field as ``farfield``, four patches each.
   5. The wall first-cell height TRACKS ``BL_INITIAL_THICKNESS``. Three values two
-     orders apart, each reproduced to 0.08% -- and that residue is the polyline
-     FACETING of the stored circle, not the law: the same case on a 10x finer
-     circle measures 0.0007%.
+     orders apart, each reproduced to 0.04%. That residue was the polyline
+     FACETING of the stored circles until #95 resolved the far field; the
+     UNSMOOTHED mesh now reproduces the asked-for height to 0.0036%, so what is
+     left at the default is the SMOOTHER's own contribution rather than the
+     geometry's. Both are far under #55's recorded 0.0812%.
   6. A per-edge ``ds_start`` beats the global, measured on the same document with
      one key added.
   7. Changing the ring's ONE seeded count does not move the wall spacing. This is
@@ -64,6 +66,16 @@ an r = 10 far field, BL_INITIAL_THICKNESS 0.001):
     #85's own runs on this case, at both 0 and 20 sweeps, are in
     test_multiblock_cgrid_surface.py's docstring with the rest of that gate-2 set.
 
+    AND SINCE #95 IT IS SHORT A GEOMETRY AS WELL AS A LINE. The far field above is
+    the 80-facet circle; the shipped one is 320 facets, so no invocation of the
+    command reproduces the record — the numbers moved because the GEOMETRY did.
+    What the shipped case measures today is 2.024972 / 1.875000 / 0.000036
+    unsmoothed and 2.024972 / 1.875000 / 0.000371 at the default cap of 20, which
+    meets every figure #80 asked of this case. Those are gated in
+    test_multiblock_quality_gate.py rather than restated as a run here: this block
+    is a record of what ran on 2026-09-04 and is annotated rather than edited
+    (#43's rule).
+
     solver/preprocess/getPGrid/work/getPGrid < para.in        # the grid converter
         -> EXIT 0
            "Read in 4704 vertices coordinates"
@@ -96,8 +108,13 @@ BLIND SPOTS, named rather than papered over:
   * Nothing here re-runs the solver. The figures above are a record of one dated
     run, not something this file measures.
   * The circles are stored as POLYLINES, so "follows the circle" is measured
-    against the polyline's own vertices and the 0.08% wall-height residue is that
-    faceting. Nothing on this path projects onto an analytic curve --
+    against the polyline's own vertices, and how finely each is stored is a
+    property of the geometry file rather than of anything this path enforces. #95
+    chose the far field's 320 facets so the mesh no longer reads a curve coarser
+    than itself; NOTHING GATES THAT CHOICE against a later change to the topology's
+    declared counts, which is the coupling #95 refused to create. What names the
+    cost when it goes wrong is #94's warning, group 9 below.
+    Nothing on this path projects onto an analytic curve --
     BL_USE_ANALYTIC_GEOM survives into this mode and is still not read.
   * Check 8 measures conformity on the EXPORTED files, so it cannot distinguish a
     ring that welded correctly from one that was welded correctly and then
@@ -144,10 +161,25 @@ from test_multiblock_cgrid_surface import closed_polyline_meta   # noqa: E402
 from test_multiblock_quality_surface import qlines as _qlines   # noqa: E402
 
 # The two shipped circles, as (basename, radius, points per quarter, BC label).
-# The body is twice as finely stored as the far field because it is the surface
-# whose faceting the wall spacing is measured against.
+#
+# THE FAR FIELD IS 320 FACETS SINCE #95, and the number is the density past which
+# the far field STOPS BINDING rather than a convergence point. At the shipped 20
+# per quarter (80 facets) it was COARSER than the 96-node ring reading it — 0.833
+# facets per mesh interval — so the ring meshed an irregular polygon and #55's
+# 2.250 deg baseline was that sampling artefact rather than a floor (#93). At 80
+# per quarter the worst corner moves off the far field onto the BODY and reads
+# 2.025, which is the body's own 1.667 ratio; 160 and 640 per quarter read the
+# same 2.025 because the far field is no longer what binds.
+#
+# NOT MADE COMMENSURATE, deliberately. Matching the ring's own 96 nodes — or any
+# integer multiple of them — reaches the 1.875 floor, but that couples a geometry
+# file to node counts the topology PROPAGATES, so a later change to one declared
+# count would silently take the quality back to ~2.2 with nothing to say so. #95
+# took the robust 2.025 over the fragile 1.875. The coupling is not enforced
+# anywhere; what names the cost when it is wrong is #94's per-edge warning, which
+# still fires on the body's four edges and is asserted in check 9.
 SHIPPED = (("circle_body", 0.5, 40, "wall"),
-           ("circle_farfield", 10.0, 20, "farfield"))
+           ("circle_farfield", 10.0, 80, "farfield"))
 
 failures = []
 
@@ -383,10 +415,11 @@ def main() -> int:
 
         # ── 9. THE SAMPLE RATE IS SAID, AND ITS NUMBER IS THE MESH's GAP ────
         #
-        # #94. The shipped far field is an 80-facet polyline under a 96-node ring,
-        # so each mesh interval spans 0.833 of a facet and the ring meshes an
-        # IRREGULAR polygon; the body, 160 facets under the same ring, spans 1.667.
-        # Neither divides, so the seam warns on all eight bound edges.
+        # #94. SINCE #95 THE FAR FIELD IS 320 FACETS and costs less than the
+        # warning's own tolerance, so its four edges say nothing; the BODY is still
+        # 160 facets under the same 96-node ring — 1.667 facets per interval, which
+        # does not divide — and its four edges still warn. Four, not eight, and the
+        # four that remain are the ones that still cost something.
         #
         # AND THE CHECK IS NOT THAT IT WARNED. Anyone can print a warning; what
         # makes this one worth reading is that its figure ACCOUNTS FOR the gap
@@ -397,22 +430,24 @@ def main() -> int:
         # the sector angle (360/96/2), which is #93's finding; so the whole of this
         # case's unmet #80 bullet is in that one number.
         #
-        # SURVIVES #95 BY CONSTRUCTION, and that is deliberate. When the far field
-        # is resolved to a dividing count the warning goes away and the gap goes to
-        # zero with it, so the relation still holds with both sides at 0 — and a
-        # resolution that left a residue behind would show up as a gap the warning
-        # no longer explains. Only the count below is a fact about TODAY's geometry.
-        # The permanent home of the weakness itself is the C++ gate's check 57,
-        # whose fixture is non-commensurate by declaration rather than by accident.
+        # IT SURVIVED #95, WHICH IS THE POINT OF WRITING IT AS A RELATION. #95 left
+        # a residue rather than removing one — the far field stopped binding and the
+        # BODY's 1.667 ratio became the whole of it — and the relation reads the new
+        # residue as exactly as it read the old: max 2.024972 - mean 1.875000 =
+        # 0.149972 against half the body's warned 0.300 deg of turn = 0.150000, four
+        # digits, on a mesh neither figure was written against. Only the count below
+        # is a fact about TODAY's geometry. The permanent home of the weakness itself
+        # is the C++ gate's check 57, whose fixture is non-commensurate by
+        # declaration rather than by accident.
         p5, _ = run_case(tmp, "rate", base_config() + NO_SMOOTH)
         q5 = quality(p5.stdout)
         said = [ln for ln in (p5.stdout + p5.stderr).splitlines()
                 if "sample a bound stretch" in ln]
-        check("9. every bound edge whose sample rate costs something is named "
-              "(%d warnings; the shipped ring is 96 nodes over an 80-facet far "
-              "field and a 160-facet body, so all eight fire — #95 resolves that "
-              "geometry and is expected to take this count to 0)" % len(said),
-              len(said) == 8)
+        check("9. every bound edge whose sample rate costs something is named, and "
+              "ONLY those (%d warnings; the shipped ring is 96 nodes over a "
+              "320-facet far field and a 160-facet body, so the four body arcs fire "
+              "and the four far-field arcs no longer do)" % len(said),
+              len(said) == 4)
         worst = 0.0
         for ln in said:
             m = re.search(r"so ([0-9.]+) deg of that corner is the SAMPLE RATE", ln)

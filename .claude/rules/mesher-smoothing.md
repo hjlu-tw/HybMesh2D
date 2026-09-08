@@ -231,8 +231,15 @@ attributable, and the one #85 deliberately spent.
   **32.04° / 26.90° -> 29.90° / 24.91°** at twenty sweeps. The instrument is a quad reader in the
   surface gate, not a new metric: the METRIC is the ruler's and the gate adds a SELECTION, validated
   by reproducing the ruler's whole-mesh figures off the same code first.
-- **#80's O-GRID NEGATIVE CONTROL IS STILL NOT MET — BY 1.2%, AND THE RESIDUE IS THE FACETED WALL's
-  RATHER THAN THE INTERFACE's.** All three clauses: the first alone reads worse than the truth, and
+- **#80's O-GRID NEGATIVE CONTROL IS MET SINCE #95 — THE EXCESS IS EXACTLY ZERO.** The shipped far
+  field is 320 facets instead of 80, so the case reads **2.024972° unsmoothed AND at every cap**,
+  and the paragraph below is what the figures were on the 80-facet geometry. Its two surviving
+  facts: the residue was the faceted wall's, and it was never the kernel's. The **wall first cell
+  now moves the OTHER way** on this case (0.0036% -> 0.0371% at the default) because the unsmoothed
+  spacing is already 22× inside #55's bar — a cost on a mesh that starts good, not a regression, and
+  the quality gate declares that expectation per case rather than asserting one direction for both.
+- **~~STILL NOT MET — BY 1.2%, AND THE RESIDUE IS THE FACETED WALL's RATHER THAN THE INTERFACE's.~~**
+  (Superseded above; kept because the measurements are #84's and still true of that geometry.) All three clauses: the first alone reads worse than the truth, and
   dropping it reads better. A case already at 2.250° comes out at **2.276°** at EVERY cap from 1 to
   150, against #83's 3.632° at one sweep and **12.036° at twenty** — so #83's "no single
   `MB_SMOOTH_ITERS` satisfies both of #80's bullets" is **GONE**. The mean is exactly #55's 1.875°,
@@ -296,7 +303,8 @@ has landed.
   Measured at 20 on all five shipped multi-block configs: `cavity` is IDENTICAL bit for bit and
   `square` unchanged to 3.5e-16 over 255 of its 441 nodes — **not the same claim, and this file said
   "both identical" until a review checked it** — then `hgrid` 3.099/0.445/0.146% ->
-  2.859/0.435/0.081%, `ogrid` 2.250/1.875/0.081% -> 2.276/1.875/0.044%, `cgrid` 32.044/4.562/0.437%
+  2.859/0.435/0.081%, `ogrid` 2.250/1.875/0.081% -> 2.276/1.875/0.044% (that row is the 80-facet far
+  field's; since #95 it is 2.025/1.875/0.004% -> 2.025/1.875/0.037%), `cgrid` 32.044/4.562/0.437%
   -> 29.895/3.821/0.097%. Zero inverted everywhere. Golden: **16 of 19 SAME, 3 DIFF** —
   `mb_hgrid`, `mb_ogrid`, `mb_cgrid`, recaptured deliberately; `mb_cgrid_smooth` unchanged because
   an explicit `MB_SMOOTH_ITERS 1` beats the default, and the nine hybrid-path cases are `MESH_MODE
@@ -332,12 +340,17 @@ has landed.
   epic asked for — and check 4 asserts the GAP stays under 2% so it cannot grow in silence.
   **SUPERSEDED by #93:** #55's 2.250° bar is itself a SAMPLING artefact of the shipped 80-facet far
   field, the case's floor is 1.875° with no code change, and closing it is #95's geometry work
-  rather than a sliding wall or a tighter threshold. The bar and check 4 are unchanged, because the
-  shipped geometry is.
+  rather than a sliding wall or a tighter threshold.
+  **AND CLOSED by #95: THE BULLET IS MET AND THE BAR IS #55's AGAIN.** The far field is stored at
+  320 facets, the worst angle is **2.025°** with 0.225° of margin, the wall 0.0371%, and the mean
+  met EXACTLY — 1.875° is half a 96-gon's sector angle and can never be met by more. `OGRID_MAX_
+  ACHIEVED` and `OGRID_MAX_GAP_FRAC` are **DELETED, not loosened**, and check 4 asserts the met form
+  plus the zero excess. Every bar in that file is a recorded baseline again.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
 - **AN UPPER BOUND CANNOT CATCH A SMOOTHER THAT STOPPED WORKING**, since a mesh that never moved
   sits under three of the four bars. So check 3 drives each case at 0 as well and asserts the
-  DIRECTION — the wall first cell strictly better on BOTH cases, and both angles strictly better on
+  DIRECTION — the wall first cell per a `wall_direction` table since #95 (`cgrid` strictly better,
+  `ogrid` moves at all; see the O-grid entry above), and both angles strictly better on
   the C-grid.
 
 **GATE 2 ON A SMOOTHED MESH: RUN, DATED, AND IT PASSES (#85).** Four hand-built
@@ -414,7 +427,9 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
   O-grid excess over the unsmoothed baseline is FACETING-driven — exactly zero wherever the
   polyline's facet count divides the mesh's node count, +0.026° at the shipped 0.833 ratio — and
   none of that is gated: the quality gate reads ONE geometry, so a case whose excess is really its
-  far field's sampling reports as the kernel's. It replaces no rule: the claim it corrects — that
+  far field's sampling reports as the kernel's. **#95 makes the shipped O-grid a case where the
+  excess is zero rather than a case that measures the relation** — it changed the geometry, not the
+  instrument — so this hole is untouched and is now harder to notice from the shipped cases alone. It replaces no rule: the claim it corrects — that
   the residue was the frozen wall's — was never a coverage limit. **STILL OPEN AFTER #94, and
   narrower**: that ticket warns on the sampling cost at FILL time, from the fill's own nodes
   (`sampleRate`, `.claude/rules/mesher-multiblock.md`), so a reader now has the fill's share named

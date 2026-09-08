@@ -378,10 +378,15 @@ the measurements that forced the blending change, the acceptance run and the bli
 - **The O-grid is FOUR BLOCKS IN A RING** (`examples/topology/ogrid_circle.json`,
   `config/multiblock_ogrid.dat`): i runs outward, j anticlockwise, so the four radials are ONE
   equivalence class that WRAPS — one declared count, three propagated, the last block welded back to
-  the first by node identity. Measured on the shipped files: 0 inverted, non-orthogonality max
-  2.25°, wall first cell **0.08%** off — a residue that is the stored polyline's FACETING, not the
-  law (10× finer circles measure 0.0007%; it does not move with `BL_INITIAL_THICKNESS` or the ring
-  seeding).
+  the first by node identity. **Its far field is stored at 320 facets since #95** — the density past
+  which it stops binding the 96-node ring, not a convergence point. Measured on the shipped files at
+  the default: 0 inverted, non-orthogonality max **2.025°**, wall first cell **0.037%** (0.0036%
+  unsmoothed). Both residues are the stored polyline's FACETING, not the law, and both are now the
+  BODY's 160 facets under the same ring; #55's 2.25° / 0.08% were the FAR FIELD's 80 and are what
+  #80's last unmet bullet was written against. **Do not make the far field commensurate with the
+  ring** (96, 192, 288 all reach the 1.875° floor): the ring's count is one declared number the
+  equivalence class propagates, so that would couple a geometry file to a count nothing enforces.
+  A robust 2.025 over a fragile 1.875 — the reasoning is #57's far-field-clustering blind spot.
 - **The shipped circles are checked against their ONE generator** (`write_circle` in the surface
   gate), never trusted: a hand-edited `.dat` whose `.meta` still describes the old point set is a
   mesh with corners on the wrong segments and no error at all.
@@ -453,15 +458,16 @@ otherwise learn the hole exists.
   structured grid cells only.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
 - **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
-  "follows the circle" is measured against that polyline's vertices and #55's 0.08% wall-height
-  residue is its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads — and #83
+  "follows the circle" is measured against that polyline's vertices and the wall-height residue is
+  its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads — and #83
   KEPT it that way on purpose rather than by omission, by deciding that wall nodes do not slide;
   the rule above carries the reason. The same faceting owns the O-grid's NON-ORTHOGONALITY too
-  (#93), not only the wall height: the shipped far field is 80 facets under 96 mesh nodes, and a
-  facets-per-interval ratio that does not divide costs up to 0.375°.
+  (#93), not only the wall height: a facets-per-interval ratio that does not divide costs up to
+  0.375° at the worst ratio.
   ~~**Nothing checks a bound edge's sample rate against its polyline.**~~ **CLOSED by #94**, which
-  measures the cost and WARNS; **#95 still owns fixing the shipped geometry**, so every mesh this
-  repo ships from that declaration is unchanged and 8 of its edges now say so. Two narrower holes
+  measures the cost and WARNS. **#95 then fixed the shipped geometry** — the far field at 320 facets
+  — so 4 of that case's 8 edges stopped warning and the other 4, the body's, still do; nothing
+  ENFORCES the ratio, and the warning is what speaks when a declared count moves off it. Two narrower holes
   replace it, both in the estimator rather than in the coverage: on a dividing ratio it
   over-predicts the even sampling (0.663° at 16.9° of turn on the C-grid airfoil), so a real cost
   on a STRONGLY CURVED non-dividing stretch can be masked by about 4% of the local turn and nothing
