@@ -236,13 +236,15 @@ attributable, and the one #85 deliberately spent.
   dropping it reads better. A case already at 2.250° comes out at **2.276°** at EVERY cap from 1 to
   150, against #83's 3.632° at one sweep and **12.036° at twenty** — so #83's "no single
   `MB_SMOOTH_ITERS` satisfies both of #80's bullets" is **GONE**. The mean is exactly #55's 1.875°,
-  which is STRUCTURAL rather than a strong result (a 48-gon's every quad corner deviates by half the
-  sector angle whatever the radial distribution is) but does say the grid is POLAR again. **WHERE
-  THE KINK WENT, measured**: #83's worst corners sat MID-BLOCK on the four declared radials, #84's
-  sit one line in from the faceted outer circle, and the mid-block band's own cells come out BETTER
-  than the fill left them. **So the bullet fails on the frozen WALL's faceting, and closing it needs
-  #83's "wall nodes do not slide" revisited, not more sweeps.**
-  Why: `docs/design_notes/mesher.md`, "#80's O-GRID NEGATIVE CONTROL: STILL NOT MET".
+  which is STRUCTURAL rather than a strong result (a **96-gon's** every quad corner deviates by half
+  the sector angle whatever the radial distribution is — 360/96/2, and the ring IS 96 nodes) but
+  does say the grid is POLAR again. **WHERE THE KINK WENT, measured**: #83's worst corners sat
+  MID-BLOCK on the four declared radials, #84's sit one line in from the faceted outer circle, and
+  the mid-block band's own cells come out BETTER than the fill left them.
+  **SUPERSEDED by #93:** what that wall is faceted BY is a polyline COARSER than the mesh reading it
+  — 80 facets under 96 nodes — so the cause is the sampling ratio, and #83's "wall nodes do not
+  slide" is untouched rather than the thing to revisit.
+  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
 - **A fold from smoothing is an ORDINARY inverted mesh**: counted after the sweeps, exported, exit
   9, no new code. **And it is REACHABLE on the shipped files**, reversing #82's blind spot — the
   C-grid folds 184 cells by a cap of 400, so the surface gate asserts exit 9 on a real file. **The
@@ -327,9 +329,12 @@ has landed.
 - **#80's O-GRID BULLET IS NOT MET AND THE GATE DOES NOT PRETEND IT IS.** It asks for nothing worse
   than 2.250° / 1.875° / 0.0812% and the worst angle is **2.276°**, 1.2% worse. The bar is therefore
   #85's own measurement rather than #55's — the honest way to hold a number that is not the one the
-  epic asked for — and check 4 asserts the GAP stays under 2% so it cannot grow in silence. The
-  residue is the frozen faceted outer wall's, not the smoother's, so closing it needs #83's "wall
-  nodes do not slide" revisited.
+  epic asked for — and check 4 asserts the GAP stays under 2% so it cannot grow in silence.
+  **SUPERSEDED by #93:** #55's 2.250° bar is itself a SAMPLING artefact of the shipped 80-facet far
+  field, the case's floor is 1.875° with no code change, and closing it is #95's geometry work
+  rather than a sliding wall or a tighter threshold. The bar and check 4 are unchanged, because the
+  shipped geometry is.
+  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
 - **AN UPPER BOUND CANNOT CATCH A SMOOTHER THAT STOPPED WORKING**, since a mesh that never moved
   sits under three of the four bars. So check 3 drives each case at 0 as well and asserts the
   DIRECTION — the wall first cell strictly better on BOTH cases, and both angles strictly better on
@@ -405,3 +410,12 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
 - **The before/after tables are dated quotations**, not re-measured: the gates assert a DIRECTION
   with a floor, so a kernel that stopped moving anything is caught while one that moves things
   differently is free to.
+- **NOTHING RELATES THE SMOOTHER's OWN EXCESS TO THE GEOMETRY UNDER IT.** #93 measured that the
+  O-grid excess over the unsmoothed baseline is FACETING-driven — exactly zero wherever the
+  polyline's facet count divides the mesh's node count, +0.026° at the shipped 0.833 ratio — and
+  none of that is gated: the quality gate reads ONE geometry, so a case whose excess is really its
+  far field's sampling reports as the kernel's. **This bullet corrects, rather than replaces, the
+  claim that the residue was the frozen wall's**, which is the reason it is here: nothing measured
+  the wall, the freeze was the nearest mechanism to hand, and the localisation to r = 9.19 that was
+  read as evidence for it was evidence of the polyline underneath it.
+  Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".

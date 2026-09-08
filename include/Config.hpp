@@ -140,8 +140,11 @@ struct Config {
     // `square` moves 255 nodes by at most 3.5e-16, six orders under the golden
     // comparator's tolerance, which is reassociation and not a mesh change.
     // The one figure that moves the wrong way is the O-grid's worst angle, by
-    // 0.026 deg: #84 localised that to the FROZEN faceted outer wall rather than to
-    // the smoother, and the same case's wall accuracy nearly halves.
+    // 0.026 deg: #84 localised that to the faceted outer wall rather than to the
+    // smoother, and the same case's wall accuracy nearly halves. #93 measured what
+    // the faceting IS -- an 80-segment polyline the mesh samples at 96 nodes, a
+    // ratio that does not divide -- so the 0.026 is not the kernel's and NOT the
+    // frozen wall's either; at a ratio that divides the excess is exactly 0.
     int mbSmoothIters = 20;
 
     // 預設參數值 (若檔案中未指定則使用)

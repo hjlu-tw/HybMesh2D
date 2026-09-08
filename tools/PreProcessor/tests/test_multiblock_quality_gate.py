@@ -45,11 +45,19 @@ asks for "nothing worse than 2.25 / 1.875 / 0.08" and the worst angle comes out 
 and not #55's, which is the honest way to hold a number that is not the one the
 epic asked for: the gate still catches a regression, and the shortfall is recorded
 rather than rounded away. #84 localised the residue and it is not the smoother's —
-the unsmoothed mesh's own worst corner is 2.250 deg ON the faceted outer wall, the
-smoothed one's is 2.276 one grid line in from it, and that wall is frozen because
-#83 decided wall nodes do not slide. Closing it needs that decision revisited, not
-a tighter threshold here. Check 4 asserts the gap is still under 2% so it cannot
-grow in silence.
+the unsmoothed mesh's own worst corner is 2.250 deg ON the faceted outer wall and
+the smoothed one's is 2.276 one grid line in from it. Check 4 asserts the gap is
+still under 2% so it cannot grow in silence.
+
+CORRECTED by #93 (2026-09-08): that wall being FROZEN is not why. It is faceted by
+an 80-segment polyline the mesh samples at 96 nodes, and a ratio that does not
+divide is the whole residue — at 96, 192 or 288 facets the angle is exactly 1.875
+and the smoother adds exactly 0, with #83's wall nodes still not sliding. So #55's
+2.250 bar is itself a sampling artefact, the case's floor is 1.875, and closing the
+bullet is #95's geometry work rather than a revisited decision or a looser bar
+here. Every threshold above is unchanged, because the shipped geometry is. See
+docs/design_notes/mesher.md, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A
+FROZEN WALL".
 
 A BAR ALONE CANNOT CATCH A SMOOTHER THAT STOPPED WORKING, because every threshold
 here is an upper bound and a mesh that never moved would sit under three of the
@@ -282,9 +290,11 @@ def main() -> int:
                   f"the worst angle is {og['nonortho_max_deg']:.4f} deg against "
                   f"#55's {bar:g}, a gap of {gap:.4f} deg "
                   f"({100 * gap / bar:.2f}%) — under "
-                  f"{100 * OGRID_MAX_GAP_FRAC:g}%, and #84 localised it to the "
-                  f"FROZEN faceted outer wall rather than to the smoother. If this "
-                  f"ever reaches 0, delete the check and close the bullet in #80.",
+                  f"{100 * OGRID_MAX_GAP_FRAC:g}%, and #93 measured the cause: the "
+                  f"outer wall is an 80-facet polyline under 96 mesh nodes, so the "
+                  f"SAMPLING RATIO owns it and #55's bar is itself an artefact of "
+                  f"that geometry. If this ever reaches 0, delete the check and "
+                  f"close the bullet in #80.",
                   0.0 < gap < OGRID_MAX_GAP_FRAC * bar)
             wbar = OGRID_BASELINE["wall_first_cell_worst_rel"]
             check(f"4. ...while the O-grid's WALL accuracy is better than #55's "

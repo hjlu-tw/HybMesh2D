@@ -1845,8 +1845,10 @@ the shared edges".
   RESIDUE IS THE FACETED WALL's.** 2.276 deg against #55's 2.250, at EVERY cap from 1 to 150
   — so #83's "no single `MB_SMOOTH_ITERS` satisfies #80's C-grid bullet and its O-grid bullet
   together" is gone: the gap no longer grows with the cap. The mean is exactly 1.875, and
-  **that is structural rather than a strong result**: a 48-gon's every quad corner deviates by
+  **that is structural rather than a strong result**: a 96-gon's every quad corner deviates by
   half the sector angle whatever the radial distribution is, so the column measures faceting;
+  ("48-gon" here until #93 — the ring is 96 nodes, 4704/49, and half of 360/96 is exactly the
+  1.875 the run prints, so the wrong polygon was being quoted beside the right number.)
   what it does say is that the grid is POLAR again, where #83's 2.571 at a cap of 20 was the
   interior pulled off the polar structure.
   **The localisation is the evidence.** #83's worst corners sat mid-block on the radials at
@@ -1854,8 +1856,13 @@ the shared edges".
   corners are 2.250 deg at r = 10. And the mid-block band's own cells now come out BETTER
   than the algebraic fill left them: over the 48 interface nodes with 2 < r < 8 and the 416
   corners touching them, 2.2477 -> 1.9475 at one sweep and 1.8794 at twenty. **So what the
-  bullet still fails on is the frozen WALL's faceting, and closing it needs #83's "wall nodes
-  do not slide" revisited rather than more sweeps.** The band is indexed on the UNSMOOTHED
+  bullet still fails on is the outer wall's FACETING** — that much the localisation carries, and
+  it is the half of this claim that survived.
+  ~~And closing it needs #83's "wall nodes do not slide" revisited rather than more sweeps.~~
+  **SUPERSEDED by #93 (2026-09-08), which measured the wall instead of reasoning from the fact
+  that it is frozen**: the far-field polyline is COARSER than the mesh sampling it, no sliding is
+  involved, and the case's floor is reachable with no code change at all. See "THE O-GRID's
+  RESIDUE IS A SAMPLING RATIO" below. The band is indexed on the UNSMOOTHED
   mesh and reused, because a theta filter re-applied to the smoothed mesh silently loses four
   of its 84 nodes — a freed interface bends.
 
@@ -1986,9 +1993,11 @@ because `mesher-multiblock.md` was full.
   worse — so the bar there is #85's OWN measurement, which is the honest way to hold a number that
   is not the one the epic asked for: the gate still catches a regression, and the shortfall is
   recorded rather than rounded away. Check 4 pins the GAP under 2% so it cannot grow in silence,
-  and #84 had already localised the residue to the FROZEN faceted outer wall — the unsmoothed
-  mesh's own worst corner is 2.250° ON that wall. Closing it needs #83's "wall nodes do not slide"
-  revisited, not a tighter threshold.
+  and #84 had already localised the residue to the faceted outer wall — the unsmoothed mesh's own
+  worst corner is 2.250° ON that wall. ~~Closing it needs #83's "wall nodes do not slide"
+  revisited, not a tighter threshold.~~ **SUPERSEDED by #93**: what that wall is faceted BY is a
+  polyline coarser than the mesh reading it, so closing it needs neither a tighter threshold nor a
+  sliding wall — see "THE O-GRID's RESIDUE IS A SAMPLING RATIO" below.
 
 - **AN UPPER BOUND CANNOT CATCH A SMOOTHER THAT STOPPED WORKING**, which is the trap a threshold
   gate walks into: a mesh nothing touched sits under three of the four bars. So the gate also runs
@@ -2105,8 +2114,87 @@ because `mesher-multiblock.md` was full.
   than 2.25° / 1.875° / 0.08% — **NOT MET on the worst angle by 1.2%**, met on the other two; a
   dated acceptance run through the converter and the solver on a smoothed mesh — **MET**; the
   eighteen pre-existing golden cases unchanged or deliberately recaptured — **MET**, three
-  recaptured. So the epic closes with one bullet unmet, named, gated at the achieved figure and
-  attributed to a decision (#83's frozen walls) rather than to a defect.
+  recaptured. So the epic closes with one bullet unmet, named and gated at the achieved figure.
+  ~~And attributed to a decision (#83's frozen walls) rather than to a defect.~~ **CORRECTED by
+  #93**: it is attributable to neither. The bullet's own 2.250 baseline is a SAMPLING artefact of
+  the shipped far-field polyline, and the case's floor is 1.875 — the figure the epic asked for as
+  its mean — reachable with no code change. The block below measures it.
+
+**THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL** (#93, measured 2026-09-08).
+Three places in this repo had recorded that the O-grid's 2.276° worst angle is the frozen faceted
+outer wall's and that closing it needs #83's "wall nodes do not slide" revisited. **Both halves of
+that are wrong, and the ticket moves no code**: it replaces a cause that was reasoned from the
+freeze with one that was measured against it.
+
+- **WHAT THE MESH ACTUALLY READS.** The four arc edges carry `count` 25, so the ring is 24
+  intervals per quadrant — **96 nodes**, confirmed by the run's own 4704 vertices over 49 radial
+  stations. The shipped far field is an **80-facet** polyline and the shipped body a 160-facet one.
+  So each mesh interval on the far field spans 1.2 facets and each on the body 1.667, the mesh
+  lands between polyline vertices, and the polygon it actually meshes has IRREGULAR corners. That
+  is what the angle measures.
+
+- **THE MEASUREMENT, everything else held fixed** (`MB_SMOOTH_ITERS 20`, `BL_INITIAL_THICKNESS`
+  0.001, the shipped topology; both circles regenerated by the same generator, whose 80/160 output
+  is bit-identical to the shipped files, which is what makes the first row a control). `fac/int` is
+  facets per mesh interval; 0 inverted cells on every row.
+
+    A. far field refined, body left at its shipped 160:
+
+      far field  fac/int   unsmoothed  smoothed  smoother's excess
+      80 (ship)  0.833     2.250       2.276     +0.026
+      96         1.000     2.025       2.025      0
+      160        1.667     2.025       2.035     +0.010
+      192        2.000     2.025       2.025      0
+      320        3.333     2.025       2.025      0
+      640        6.667     2.025       2.025      0
+
+    B. BOTH circles at the same facet count:
+
+      both       fac/int   unsmoothed  smoothed  smoother's excess
+      80 (ship)  0.833     2.250       2.276     +0.026
+      96         1.000     1.875       1.875      0
+      160        1.667     2.025       2.035     +0.010
+      192        2.000     1.875       1.875      0
+      240        2.500     1.950       1.954     +0.004
+      288        3.000     1.875       1.875      0
+      320        3.333     1.912       1.915     +0.002
+      640        6.667     1.884       1.885     +0.001
+
+- **THE MECHANISM IS AN INTEGER RATIO, NOT RESOLUTION, and table B is what proves it.** At
+  fac/int 1, 2 and 3 the angle is **exactly 1.875** and the smoother's excess is **exactly zero**;
+  at 2.5, 3.333 and 6.667 it is not. **A 192-facet polyline therefore BEATS a 640-facet one**
+  (1.875 against 1.884), which no "refine it" account of this can explain. When the count divides,
+  the mesh nodes land on polyline vertices and it meshes a true regular 96-gon, whose every quad
+  corner deviates by half the sector angle — 360/96/2 = **1.875**, which is why the MEAN was
+  already exactly that on every row and had been read as merely structural.
+
+- **SO #55's 2.250 BASELINE IS ITSELF A SAMPLING ARTEFACT**, not a property of the mesher or of the
+  O-grid topology, and #80's unmet bullet was written against it. The case's true floor is 1.875 —
+  the very figure the epic asked for as its MEAN — and it needs no C++ change, only a far field the
+  mesh can sample. **The shipped case is the worst possible row**: at fac/int 0.833 the polyline is
+  COARSER than the mesh reading it, which is also where the smoother's excess is largest.
+
+- **AND THE SMOOTHER'S CONTRIBUTION IS FACETING-DRIVEN.** Its excess over the unsmoothed baseline
+  tracks the ratio and vanishes wherever the ratio divides — so the +0.026 that made #80's bullet
+  fail is not a property of the Winslow kernel, of the freeze, or of the interfaces #84 freed.
+  Nothing here reopens #83: **wall nodes still do not slide, on every row above**, including the
+  rows that read exactly 1.875. #83's decision was untouched by this — it was simply not the cause,
+  and `BL_USE_ANALYTIC_GEOM` remains a declared survivor nothing reads.
+
+- **THE HONEST PART IS THAT THIS REPO ALREADY KNEW HALF OF IT.**
+  `.claude/rules/mesher-multiblock.md` records #55's sibling metric correctly — the O-grid's 0.08%
+  wall-first-cell residue is "the stored polyline's FACETING, not the law (10x finer circles
+  measure 0.0007%)". The same explanation, on the same case, from a ticket that had already run
+  refined circles. The ANGLE got a different and unmeasured cause anyway, because the freeze was
+  the nearest available mechanism and the localisation to r = 9.19 sat right beside it. **A
+  localisation is not a cause**: #84's r = 9.19 was correct and still is; what it identified was
+  the polyline under that wall, not the fact that the wall was held.
+
+- **WHAT #93 DELIBERATELY DOES NOT DO.** It does not change the shipped geometry, so the gate's
+  2.2761 bar and its 2% gap check are untouched and still pass — resolving the far field and
+  settling the bullet is **#95**, and refusing a sample rate a polyline cannot carry is **#94**.
+  Nothing in the tables above is gated; they are a dated quotation, re-derivable by regenerating
+  both circles at a chosen facet count against the shipped topology.
 
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.

@@ -152,8 +152,11 @@ asserted rather than summarised:
     gap is 1.2% and no longer grows with the cap, so #83's "no single cap meets
     both of #80's bullets" is GONE. The residue is the FACETED OUTER WALL's rather
     than the interface's: the unsmoothed mesh's own worst corner is 2.250 ON that
-    wall, the smoothed one's is 2.276 one grid line in from it, and wall nodes do
-    not slide (#83's decision). Groups 8 and 9.
+    wall and the smoothed one's is 2.276 one grid line in from it. Groups 8 and 9.
+    CORRECTED by #93 (2026-09-08): what that wall is faceted BY is a polyline
+    coarser than the mesh reading it — 80 facets under 96 nodes — so the cause is
+    the sampling ratio and NOT #83's frozen wall, whose decision this leaves
+    untouched. Both figures above are still the shipped case's and still assert.
 
 WHAT #84's OWN CRITERION ASKED FOR AND THIS FILE COULD NOT DELIVER, said plainly:
 the ticket asks that the wake cut's "own cells improve rather than staying at their
@@ -652,9 +655,14 @@ def main() -> int:
         # The residue is the FACETED OUTER WALL's, not the interface's, and group 9
         # measures that rather than asserting it: the unsmoothed mesh's own worst
         # corner is 2.250 deg ON that wall, the smoothed one's is 2.276 one grid line
-        # in from it, and the wall row is frozen because #83 decided wall nodes do
-        # not slide. So this stays open, and closing it needs that decision revisited
-        # rather than more sweeps.
+        # in from it.
+        # CORRECTED by #93: the wall row IS frozen, but that is not why. The far
+        # field is an 80-facet polyline under 96 mesh nodes, so the ratio does not
+        # divide; at a ratio that does, the angle is exactly 1.875 and the smoother's
+        # excess is exactly 0, with wall nodes still not sliding. #83's decision is
+        # untouched — it was simply not the cause. Closing this is #95's geometry
+        # work. See docs/design_notes/mesher.md, "THE O-GRID's RESIDUE IS A SAMPLING
+        # RATIO, NOT A FROZEN WALL".
         check(f"8. #80's NEGATIVE CONTROL IS STILL NOT MET: a case already at 2.250 "
               f"deg max comes out at "
               f"{ao[0]['nonortho_max_deg'] if ao else None} deg. Recorded as unmet, "
@@ -767,7 +775,8 @@ def main() -> int:
               f"mid-block interface to the line one in from the faceted outer wall "
               f"({worst:.4f} deg at r={rad:.3f}, that wall itself being r=10 and "
               f"2.250 deg) — the residue #80's O-grid bullet still fails on is the "
-              f"WALL's faceting, and wall nodes do not slide (#83)",
+              f"WALL's faceting, which #93 measured to be its 80-facet polyline "
+              f"under 96 mesh nodes rather than the fact that #83 froze it",
               rad > 9.0)
 
         # ── 10. #83's OWN ACCEPTANCE, on the shipped C-grid ─────────────────
