@@ -414,8 +414,6 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
   O-grid excess over the unsmoothed baseline is FACETING-driven — exactly zero wherever the
   polyline's facet count divides the mesh's node count, +0.026° at the shipped 0.833 ratio — and
   none of that is gated: the quality gate reads ONE geometry, so a case whose excess is really its
-  far field's sampling reports as the kernel's. **This bullet corrects, rather than replaces, the
-  claim that the residue was the frozen wall's**, which is the reason it is here: nothing measured
-  the wall, the freeze was the nearest mechanism to hand, and the localisation to r = 9.19 that was
-  read as evidence for it was evidence of the polyline underneath it.
+  far field's sampling reports as the kernel's. It replaces no rule: the claim it corrects — that
+  the residue was the frozen wall's — was never a coverage limit.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".

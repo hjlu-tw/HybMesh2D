@@ -410,11 +410,10 @@ otherwise learn the hole exists.
   "follows the circle" is measured against that polyline's vertices and #55's 0.08% wall-height
   residue is its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads — and #83
   KEPT it that way on purpose rather than by omission, by deciding that wall nodes do not slide;
-  the rule above carries the reason. **WIDENED by #93:** the same faceting owns the O-grid's
-  non-orthogonality too, and this bullet reached only the wall HEIGHT for two tickets while
-  `mesher-smoothing.md` attributed the ANGLE to the freeze instead. **Nothing checks a bound edge's
-  sample rate against its polyline** — the shipped far field is 80 facets under 96 mesh nodes, and
-  a ratio that does not divide costs up to 0.375° with no warning (#94 refuses it, #95 resolves it).
+  the rule above carries the reason. The same faceting owns the O-grid's NON-ORTHOGONALITY too
+  (#93), not only the wall height: **nothing checks a bound edge's sample rate against its
+  polyline** — the shipped far field is 80 facets under 96 mesh nodes, and a facets-per-interval
+  ratio that does not divide costs up to 0.375° with no warning (#94 refuses it, #95 resolves it).
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
 - **A curved INTERFACE is still undeclarable** (a `binding` is wall-only), so #55's O-grid is a
   single ring rather than a boundary-layer ring inside a far-field one, and no two-sided stretching
