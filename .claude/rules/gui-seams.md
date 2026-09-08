@@ -108,6 +108,27 @@ itself, so a process that never ran the GUI's `main()` still leaves its log on d
 `tests/test_user_log_seam.py`. This is a different log from `get_logger(__name__)`, which is
 developer diagnostics.
 
+**The solver BC table is DERIVED by a service, not by the panel that shows it**
+(`services/solver_bc_table.py`, Qt-free, #90). Everything else in the chain from a meshed patch
+to the solver's `.bc.def` already was: `bnd_io.read_bnd_segments` reads the `(segment id, patch
+name)` pairs, `bnd_io.default_bc_flag_for_name` mirrors getPGrid's `getBCType` name→flag mapping,
+`SolverConfig.bc_definitions` is a plain model field and `services/solver_case.py` writes it for
+BOTH hosts — only the rule that USES them was a widget. The same seam as the pipeline stage set
+and the IB hand-off.
+- **The precedence rule is stated ONCE**, in `bc_flag_for_patch`: an explicit Mesh-Generator
+  assignment (`group_bc[name]`) beats the guess from the patch name, and BOTH go through
+  `default_bc_flag_for_name` — so an assignment naming a token getPGrid does not know takes the
+  same wall fallback instead of quietly reverting to the patch's own name. An empty or missing
+  assignment is not an assignment. The name is kept on the row either way, as the grouping label.
+- **`default_bc_flag_for_name` keeps ONE caller**, the service; no view may call it. Gated
+  statically, because a second copy of the rule is wrong only once it drifts.
+- `bc_flag_overrides` answers a *different* question from the row builder — which already-built
+  rows should ADOPT a changed assignment — and returns only the rows carrying one, so a manual
+  tweak on an unassigned row survives. `None` in its names is a row with no name cell, skipped
+  without a lookup; `""` is a row whose patch really is unnamed.
+Gated by `tests/test_solver_bc_table.py`, whose checks 10 and 11 hold the "no behaviour change"
+claim against the pre-#90 inline code rather than against the service itself.
+
 **User messages go through `app/utils.py`'s graded helpers, never a raw `QMessageBox`** — with
 **two recorded exemptions, and no third without a helper**: `views/case_dir_dialog.py` (the
 case-dir question, four mutually exclusive dispositions) and `controllers/curve_join_ctrl.py`
@@ -164,6 +185,12 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
 - **`tests/test_gui_cpp_config_parity.py` cannot see a spec's `key=` being removed**: both sides
   then agree with the parameter gone from each, while the writer keeps emitting the line — the
   writer's f-strings are independent of the map. Why: `docs/design_notes/gui.md`, "removing a spec's `key=` left both sides agreeing".
+- **`solver_bc_table` looks a `group_bc` assignment up by the `.bnd` PATCH NAME**, while a
+  `group_bc` key is the per-segment grouping LABEL and a patch name is the physical BC TYPE the
+  mesher resolved that label to (`src/Mesh.cpp`, `Config::resolveGroupBc`; the same two namespaces
+  `.claude/rules/gui-handoff.md` records the audit confusing once). The precedence rule therefore
+  only fires where a label happens to be named after its own type. #90 PRESERVED that, being a
+  prefactor with no behaviour change; it is not an endorsement of it.
 - **`tests/test_qt_free_seam.py` records one pre-existing defect the sweep surfaced and did *not*
   fix**, in `CANNOT_IMPORT_STANDALONE`: `services/index_helpers.py` cannot be imported first, a
   cycle enabled by eager re-exports in two `__init__.py` files.

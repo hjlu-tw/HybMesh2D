@@ -30,16 +30,17 @@ class SolverConfigBCMixin:
         when a patch NAME has an explicit BC type assigned in the Mesh Generator
         (``group_bc[name]``), that assignment wins over guessing from the name;
         the name is still shown (read-only) so the grouping label is preserved.
+
+        The rows themselves are DERIVED by ``services/solver_bc_table.py`` (#90),
+        which both hosts can call; this method only turns them into widgets.
         Returns the number of rows added."""
-        from app.services.bnd_io import default_bc_flag_for_name
-        group_bc = group_bc or {}
+        from app.services.solver_bc_table import bc_definitions_for_patches
+        rows = bc_definitions_for_patches(segments, group_bc, euler)
         self.bc_table.setRowCount(0)
-        for sid, name in segments:
-            assigned = group_bc.get(name)
-            flag = (default_bc_flag_for_name(assigned, euler) if assigned
-                    else default_bc_flag_for_name(name, euler))
-            self._add_bc_row(sid, flag, "", name)
-        return len(segments)
+        for row in rows:
+            self._add_bc_row(row["segment_no"], row["bc_type"],
+                             row["values"], row["name"])
+        return len(rows)
 
     def resync_bc_types_from_group(self, group_bc: dict | None,
                                    euler: bool = False) -> int:
@@ -53,20 +54,15 @@ class SolverConfigBCMixin:
         the solver table was first seeded never reached the solver (the table was
         only re-seeded on an explicit 'Detect from Mesh'). Returns how many rows
         actually changed."""
-        group_bc = group_bc or {}
-        if not group_bc:
-            return 0
-        from app.services.bnd_io import default_bc_flag_for_name
+        from app.services.solver_bc_table import bc_flag_overrides
+        names = [(self.bc_table.item(r, 1).text()
+                  if self.bc_table.item(r, 1) is not None else None)
+                 for r in range(self.bc_table.rowCount())]
         changed = 0
-        for r in range(self.bc_table.rowCount()):
-            name_item = self.bc_table.item(r, 1)
+        for r, flag in bc_flag_overrides(names, group_bc, euler).items():
             combo = self.bc_table.cellWidget(r, 2)
-            if name_item is None or combo is None:
+            if combo is None:
                 continue
-            assigned = group_bc.get(name_item.text().strip())
-            if not assigned:
-                continue
-            flag = default_bc_flag_for_name(assigned, euler)
             idx = combo.findData(flag)
             if idx >= 0 and idx != combo.currentIndex():
                 combo.setCurrentIndex(idx)
