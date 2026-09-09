@@ -850,10 +850,15 @@ std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& p
         // The arc position reported for those two is 0 and L for the same reason:
         // the position of a node pinned onto the path's own end IS that end, not
         // whatever the law's own t[0] or t[count-1] rounded to.
+        // Braces on the inner `if`: with the `continue` trailing it on one line GCC
+        // reads it as misleadingly indented -- guarded by `if (arcOut)` when it is
+        // not -- and -Wmisleading-indentation is an ERROR in CI's -Werror build.
         if (k == 0)               { pts.push_back(path.front());
-                                    if (arcOut) arcOut->push_back(0.0); continue; }
+                                    if (arcOut) { arcOut->push_back(0.0); }
+                                    continue; }
         if (k == e.count - 1)     { pts.push_back(path.back());
-                                    if (arcOut) arcOut->push_back(L);   continue; }
+                                    if (arcOut) { arcOut->push_back(L); }
+                                    continue; }
         const double s = (L > 0.0) ? t[static_cast<size_t>(k)] : 0.0;
         pts.push_back(lerpAtArc(path, cum, s, m));
         if (arcOut) arcOut->push_back(s);
