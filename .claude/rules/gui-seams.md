@@ -73,9 +73,16 @@ C++-only keys must be justified in `KNOWN_CPP_ONLY`; structural multi-token line
   **unconditionally**, so the mesher's differing default is never the one in force for a GUI run.
   Not a formality — 7 of the writer's keys really are conditional.
 
-**Keep each file under `tools/PreProcessor/gui/` at ~500 lines; split it when it grows past.** The
-`~` is doing real work: treat it as an instruction to split, not as a threshold something enforces
-(see the blind spots). A standing instruction from the user, named among the four repo-wide
+**Keep each file under `tools/PreProcessor/gui/` at ~500 lines; split it when it grows past.**
+Gate: `tests/test_file_length.py` (#97) — a static scan of line counts off disk, importing no
+application module, so it runs in CI's **lint** job as well as in `run_all.sh`. It names every
+offender's file, length and overage in ONE run. The `~` is still doing real work as an instruction
+to split, but it is no longer only that: the failure is now the build's, not a reviewer's. The
+files that were already over when the gate landed are pinned in its `PINS` at their measured
+sizes, and a pin is self-invalidating in BOTH directions — the file growing FURTHER fails
+(already over is not a licence), and the file dropping back under the limit fails as an obsolete
+pin. That is `test_instruction_budget.py`'s `KNOWN_RESIDUE` shape, reused rather than reinvented.
+A standing instruction from the user, named among the four repo-wide
 standards by #59 and #67, but ADDED by #67 rather than relocated — it has never appeared in
 `CLAUDE.md` in this repo's git history (`git log -S`, back past `854f53e`), while
 `docs/architecture_overview.md:928` asserted that it had, which is how the belief survived
@@ -208,15 +215,21 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
 
 ## Named blind spots
 
-- **The file-length standard is the only one of the four with NO gate**, so the number is a habit
-  rather than a check — and #91 measured what that costs: `services/pipeline_runner.py` was pushed
-  from 490 to 537 lines by a 40-line function, and only a REVIEW caught it. That is the failure
-  this bullet describes, not a hypothetical. It was SPLIT (`services/pipeline_bc_derive.py`), not
-  pinned. Re-measured 2026-09-08: 260 GUI `.py` files, of which 6 exceed 500 lines —
-  `models/pipeline_config.py` 523, `services/case_run_note.py` 508, `controllers/session_io_ctrl.py`
-  508, `models/mesh_config.py` 505, `services/result_legs.py` 501, `models/solver_config.py` 501.
-  Five are the files the 2026-09-03 count named; `mesh_config.py` crossed in between under no
-  ticket's eye — the same silence, and nobody reviewed it.
+- **`tests/test_file_length.py`'s pin is a CEILING, not a measurement**: a pinned file that
+  shrinks while STAYING over the limit passes, and may grow back to its pin without the gate
+  speaking. Deliberate — #102 and #103 split two of these files, and an exact-match pin would go
+  red on every intermediate commit of the very work it exists to provoke. The hole is bounded by
+  the pin, which never rises. Two smaller ones beside it: the gate counts LINES, so a 400-line file
+  can be far worse than a 510-line one and nothing here can tell; and it reaches `.py` files only.
+  Re-measured 2026-09-09: 262 GUI `.py` files, of which 7 exceed 500 lines —
+  `models/pipeline_config.py` 524, `controllers/mesh_gen_ctrl.py` 512, `services/case_run_note.py`
+  508, `controllers/session_io_ctrl.py` 508, `services/pipeline_runner.py` 506,
+  `services/result_legs.py` 501, `models/solver_config.py` 501. That figure is still hand-written
+  here; #101 puts it under `--sync`. What the ungated years cost is measured rather than argued:
+  #91 pushed `services/pipeline_runner.py` from 490 to 537 lines by a 40-line function and only a
+  REVIEW caught it (it was SPLIT into `services/pipeline_bc_derive.py`, not pinned); #47's merge
+  then crossed the standard TWICE more; and `models/mesh_config.py` crossed at 505 in between under
+  no ticket's eye and was split back to 426 by the same merge that broke the other two.
 - **`tests/test_gui_cpp_config_parity.py` cannot see a spec's `key=` being removed**: both sides
   then agree with the parameter gone from each, while the writer keeps emitting the line — the
   writer's f-strings are independent of the map. Why: `docs/design_notes/gui.md`, "removing a spec's `key=` left both sides agreeing".

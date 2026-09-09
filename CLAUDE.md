@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **34,420
-characters (34,612 bytes, 2026-09-08) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **34,688
+characters (34,880 bytes, 2026-09-09) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**35,500**, leaving 1,080 characters of slack — derived by a rule the gate states at that
+**35,500**, leaving 812 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -124,8 +124,11 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   directions**; a type divergence is never pinned, a default divergence pins both values plus a
   reason. Gate: `tests/test_gui_cpp_config_parity.py`.
 - **GUI file length.** Keep each file under `tools/PreProcessor/gui/` at **~500 lines**; split it
-  when it grows past. The only one of the four with **no gate** — re-measured 2026-09-08, 6 of 260
-  files exceed it (worst 523). #91 crossed it and only a REVIEW caught it.
+  when it grows past. Gate: `tests/test_file_length.py`, added by #97 — until then the only one of
+  the four with none, and it was crossed FOUR times (#91 once, #47's merge twice more) with a human
+  reading a diff as its only enforcement. Re-measured 2026-09-09, 7 of 262 files exceed it (worst
+  524); those seven are PINNED at their measured sizes, and a pin fails both when the file grows
+  further and when it drops back under the limit.
 - **Never `except Exception: pass`.** Use `services/logging_setup.py::get_logger(__name__)` and
   log at `debug(..., exc_info=True)`, or `warning` when the failure silently degrades what the
   user asked for. Gate: `tests/test_silent_exceptions.py`.
