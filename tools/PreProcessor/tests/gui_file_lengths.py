@@ -7,11 +7,15 @@ rather than a copied walk is that they must not be able to disagree:
   * `test_file_length.py` ENFORCES the standard — every `.py` file under
     `tools/PreProcessor/gui/` is within `LIMIT` or pinned at the size it had when
     that gate landed;
-  * `test_instruction_budget.py` check 7 DERIVES the status figure `CLAUDE.md`
-    states about that standard — how many files exceed it, out of how many, and
-    the worst one's size — from the same walk, so `--sync` rewrites it from disk
-    and a stale one goes red. Those numbers are deliberately not repeated here: a
-    figure stated in a file no `--sync` reaches is the defect #101 removed.
+  * `test_instruction_budget.py` check 7 DERIVES the status figure the instruction
+    files state about that standard — how many files exceed it, out of how many,
+    the worst one's size, and in `.claude/rules/gui-seams.md` every offender by
+    name — from the same walk, so `--sync` rewrites it from disk and a stale one
+    goes red. THREE files state it (the root, that rule file and
+    `docs/design_notes/gui.md`) and all three are registered; #101 registered only
+    the root, which is why this docstring used to name only `CLAUDE.md`. Those
+    numbers are deliberately not repeated here: a figure stated in a file no
+    `--sync` reaches is the defect #101 set out to remove.
 
 A second copy of `LIMIT` is the failure this split exists to make unreachable: a
 standard changed to 400 in the enforcing gate while the documented status was

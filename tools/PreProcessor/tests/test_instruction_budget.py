@@ -1348,6 +1348,22 @@ SELF_REPORT = (
      "target": "note:gui.md",
      "pattern": r"about~this~standard~\(([\d,]+)~of~([\d,]+),~worst~([\d,]+)\)",
      "fields": ("gui_over_count", "gui_file_count", "gui_worst")},
+    # The STANDARD's own number where the standard is actually STATED -- the rule file
+    # carries its full text, the note quotes it. Registered for the reason `gui_limit`
+    # already had in the root and only two thirds delivered: a standard relaxed to 600 in
+    # the prose while `gui_file_lengths.LIMIT` still enforced 500 leaves a count that is
+    # arithmetically true of a limit nothing applies, and prose is where a person relaxes
+    # a standard.
+    {"label": "the file-length standard's limit, gui-seams.md's copy",
+     "target": "rule:gui-seams.md",
+     "pattern": r"\*\*Keep~each~file~under~`tools/PreProcessor/gui/`~at~"
+                r"\x7e([\d,]+)~lines;",
+     "fields": ("gui_limit",)},
+    {"label": "the file-length standard's limit, the design note's copy",
+     "target": "note:gui.md",
+     "pattern": r"\(\"keep~each~file~under~`tools/PreProcessor/gui/`~at~"
+                r"\x7e([\d,]+)~lines\"\)",
+     "fields": ("gui_limit",)},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
      # Either spelling: `_fmt_word_lower` writes a word up to twelve and DIGITS past it,
      # and thirteen rule files is a state that docstring calls reachable. A word-only
@@ -2412,6 +2428,27 @@ check(not _nontuple,
       "injection 13i5. every one of the %d derivations returns a tuple, so none can be "
       "permanently unequal to what its parser produces: %s"
       % (_EXPECTED_FIGURES, _nontuple or "none are lists"))
+
+# 13i6. the STANDARD's own number, in the two files that STATE it rather than report on
+# it. 13h4 covers the root's copy; this covers the other two, and the split matters
+# because those are the ones a person edits to relax a standard — the root's is a summary
+# of them. A prose limit that drifts from `gui_file_lengths.LIMIT` makes every count
+# beside it arithmetically true of a limit nothing applies.
+for _label, _path in (
+        ("the file-length standard's limit, gui-seams.md's copy",
+         _TARGET_PATH["rule:gui-seams.md"]),
+        ("the file-length standard's limit, the design note's copy",
+         _TARGET_PATH["note:gui.md"])):
+    inj, was = bend_figure(world, _label, 1, "600")
+    check(was == _fmt_nums((GUI_LIMIT,))
+          and _resolve(inj, _entry_by_label(_label))[1] is None,
+          "injection 13i6. injection is well-formed: %s really stated the enforcing "
+          "gate's own constant, and the entry still resolves" % _path)
+    hits = [f for f in check_self_report(inj)
+            if "gui_limit" in f and f.startswith(_path)]
+    check(len(hits) == 1 and "600" in hits[0] and _fmt_nums((GUI_LIMIT,)) in hits[0],
+          "injection 13i6. check 7 fails when %s relaxes the standard while "
+          "`test_file_length.py` still enforces %s" % (_path, _fmt_nums((GUI_LIMIT,))))
 
 # 13g. negative control
 check(not check_self_report(world),
