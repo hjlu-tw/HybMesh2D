@@ -96,3 +96,7 @@ config/mesh/
 # GUI session's default name, accepted once and committed.
 config/pipeline/cyl0d5_Rot1d0.hws
 config/pipeline/Untitled 1.json
+
+# The file-length gate writes this probe into the GUI tree and removes it again;
+# a run killed mid-injection must not leave something committable behind.
+zz_file_length_probe.py

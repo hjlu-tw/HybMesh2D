@@ -225,11 +225,17 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
   `models/pipeline_config.py` 524, `controllers/mesh_gen_ctrl.py` 512, `services/case_run_note.py`
   508, `controllers/session_io_ctrl.py` 508, `services/pipeline_runner.py` 506,
   `services/result_legs.py` 501, `models/solver_config.py` 501. That figure is still hand-written
-  here; #101 puts it under `--sync`. What the ungated years cost is measured rather than argued:
-  #91 pushed `services/pipeline_runner.py` from 490 to 537 lines by a 40-line function and only a
-  REVIEW caught it (it was SPLIT into `services/pipeline_bc_derive.py`, not pinned); #47's merge
-  then crossed the standard TWICE more; and `models/mesh_config.py` crossed at 505 in between under
-  no ticket's eye and was split back to 426 by the same merge that broke the other two.
+  here; #101 puts it under `--sync`. What the ungated years cost is MEASURED (2026-09-09, one walk
+  of each GUI `.py` file's own history comparing every blob with its predecessor): **44 commits
+  across 35 files** took a GUI file past 500 lines, and **four of them landed in the six days after
+  #67 wrote the standard down** — `98003f1` (#85) took `models/mesh_config.py` 499 -> 505,
+  `306d6a1` (#91) took `services/pipeline_runner.py` 490 -> 537 by a 40-line function, and the #47
+  merge `8bdc36a` did it twice in one commit (`controllers/mesh_gen_ctrl.py` 490 -> 512,
+  `services/pipeline_runner.py` 498 -> 506). A review caught three of the four; nothing caught
+  `98003f1`, whose own ticket was about something else, and the same merge that broke two files
+  split `mesh_config.py` back to 426 for exactly this budget. The count decays on every commit and
+  is a dated fact, not a gated one — `test_instruction_budget.py` blind spot (g) says why a
+  git-history figure is left out of `--sync`.
 - **`tests/test_gui_cpp_config_parity.py` cannot see a spec's `key=` being removed**: both sides
   then agree with the parameter gone from each, while the writer keeps emitting the line — the
   writer's f-strings are independent of the map. Why: `docs/design_notes/gui.md`, "removing a spec's `key=` left both sides agreeing".

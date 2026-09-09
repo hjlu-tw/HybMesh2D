@@ -5,13 +5,25 @@ CLAUDE.md names four standards that bind before any file is opened. Three of the
 already fail the build when they are crossed — a silent `except`, a raw
 `blockSignals` pair, a mesh key that disagrees across the GUI/C++ seam. The
 fourth, *keep each file under `tools/PreProcessor/gui/` at ~500 lines*, had no
-gate at all, and was crossed four times: #91 once, and #47's merge twice more
-(`mesh_gen_ctrl` 490 → 512, `pipeline_runner` 498 → 506) while worsening a third
-(`pipeline_config` 523 → 524). Every one of those was caught by a human reading a
-diff, which is to say the standard was enforced whenever somebody happened to
-look. That merge demonstrably KNEW the rule — it split `mesh_config` 505 → 426
-for exactly this budget in the same change — so the failure is inconsistency, not
-ignorance, and inconsistency is the signature of a rule nothing enforces.
+gate at all. How often it was crossed is MEASURED rather than counted off the
+tickets that happened to notice — one walk of each GUI `.py` file's own history,
+comparing every blob with its predecessor, on 2026-09-09: **44 commits across 35
+files** took a GUI file past 500 lines, and **four landed in the six days after
+#67 wrote the standard into `CLAUDE.md`** (2026-09-02):
+
+    98003f1  #85            models/mesh_config.py        499 -> 505
+    306d6a1  #91            services/pipeline_runner.py  490 -> 537
+    8bdc36a  #47's merge    controllers/mesh_gen_ctrl.py 490 -> 512
+    8bdc36a  #47's merge    services/pipeline_runner.py  498 -> 506
+
+A review caught three of those four, each time after the fact; nothing at all
+caught `98003f1`, whose ticket was about something else. And that merge
+demonstrably KNEW the rule — it split `mesh_config` 505 → 426 for exactly this
+budget in the same change, while breaking two other files. The failure is
+inconsistency, not ignorance, and inconsistency is the signature of a rule
+nothing enforces. (An earlier draft of this paragraph said "crossed four times"
+and then listed three of them; the count is now derived from the tree, which is
+what the first version should have been.)
 
 There is no production code behind this gate: the thing under test is a line
 count off disk. It imports no application module and constructs no widget, so it
@@ -303,7 +315,11 @@ check(over and set(over) == set(world["pins"]),
 # `returncode`, never a count of FAIL lines in the output: an injection that
 # CRASHED prints no FAIL line at all, and scoring that as a bite is a mistake this
 # repo has already made once.
-probe = os.path.join(_GUI, "app", "controllers", "zz_file_length_probe.py")
+# Deliberately at the GUI ROOT rather than inside `app/`: it is still inside the
+# tree the gate scans, but it is not inside a package, so a run killed between the
+# write and the `finally` below cannot leave an importable module behind. The name
+# is also in .gitignore, so such a leftover cannot be committed by accident.
+probe = os.path.join(_GUI, "zz_file_length_probe.py")
 if os.path.exists(probe):
     # An earlier run was interrupted between writing the probe and its `finally`.
     # Check 1 has already failed on it by name; remove it so the run below is not
@@ -323,6 +339,13 @@ try:
           "injection 6. the gate EXITS 1 on it (exit %d) — read from the exit code, "
           "never from a FAIL-line count, which a crashed injection would not print at "
           "all" % grew.returncode)
+    # Exit 1 alone does NOT separate a bite from a crash: an unhandled exception in the
+    # child exits 1 too, which is the very confusion the exit-code rule exists against.
+    # The verdict is therefore exit 1 AND a clean stderr AND the named offender below.
+    check("Traceback" not in grew.stderr and not grew.stderr.strip(),
+          "injection 6. ...and it exited 1 by FAILING, not by CRASHING — stderr is empty "
+          "(%r), so the exit code is a verdict rather than an unhandled exception"
+          % grew.stderr[:120])
     check("zz_file_length_probe.py" in grew.stdout and "11 over" in grew.stdout,
           "injection 6. ...and the failure it printed names the file and its overage")
 finally:

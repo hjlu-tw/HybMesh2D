@@ -1140,6 +1140,49 @@ controller handler (so undo, redo and the projection are proven, not asserted).
 
 **Error handling**: never `except Exception: pass`. Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step allowed to fail, or `warning` when the failure silently degrades what the user asked for. `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build if a new undocumented silent handler appears.
 
+**File length — why the number got a gate, and why its pins are a ceiling.** The rule is
+`.claude/rules/gui-seams.md`'s ("keep each file under `tools/PreProcessor/gui/` at ~500 lines");
+this is what was measured. Of the four standards that bind before any file is opened, this was the
+only one nothing enforced, and the cost is measurable rather than arguable. One walk of each GUI
+`.py` file's own history on 2026-09-09, comparing every blob with its predecessor: **44 commits
+across 35 files** took a GUI file past 500 lines. **Four of those landed in the six days after #67
+wrote the standard into `CLAUDE.md`** (2026-09-02) — `98003f1` (#85) `models/mesh_config.py`
+499→505, `306d6a1` (#91) `services/pipeline_runner.py` 490→537, and the #47 merge `8bdc36a` twice
+in one commit (`controllers/mesh_gen_ctrl.py` 490→512, `services/pipeline_runner.py` 498→506). A
+review caught three of the four, always after the fact; nothing caught `98003f1` at all. The same
+merge split `mesh_config` 505→426 for exactly this budget while breaking two other files, so the
+failure was never ignorance of the rule — it was inconsistency, which is the signature of a rule
+whose only enforcement is whether somebody happens to look. #97 replaced that with
+`tests/test_file_length.py`.
+
+Three decisions inside that gate were bought rather than assumed:
+
+- **The seven files already over the limit are PINNED, not exempted, and the pin fails in BOTH
+  directions** — growing further fails (already over is not a licence), dropping back under fails
+  as an obsolete pin. That is `test_instruction_budget.py`'s `KNOWN_RESIDUE` shape, reused because
+  it had already been proved here: those pins failed the moment #76 stopped them being violations,
+  rather than quietly outliving the defect the way a skip list does.
+- **A pin is a CEILING, not an exact measurement.** An exact-match pin is the stricter rule and was
+  rejected: #102 and #103 split two of these very files, and an exact match would go red on every
+  intermediate commit of the work the gate exists to provoke — `ruff.toml`'s "a permanently-red
+  gate is worse than none" arriving through a different door. The cost is a real hole (a pinned
+  file may shrink and grow back to its pin unseen), bounded by a pin that never rises, and it is
+  recorded as a named blind spot rather than left implicit.
+- **The end-to-end injection reads a child process's EXIT CODE, and exit 1 alone is not enough.**
+  An unhandled exception in the child also exits 1, which is the exact confusion the exit-code rule
+  was written against — this repo has previously scored a crashed injection as a bite that never
+  happened (a FAIL-line count reports a crash as zero bites). So the verdict is exit 1 AND an empty
+  stderr AND the offender named in stdout, with a negative control asserting the same command exits
+  0 once the probe is removed. The probe is written at the GUI ROOT rather than inside `app/`, so a
+  run killed between the write and its `finally` cannot leave an importable module behind, and the
+  name is in `.gitignore` so such a leftover cannot be committed.
+
+The status figure the instruction files print about this standard (7 of 262, worst 524) is still
+hand-written; #101 puts it under `--sync`. The 44/35 history count deliberately is NOT gated —
+`test_instruction_budget.py` blind spot (g) states the reason: a git-history figure decays on every
+commit rather than on every edit to the file, so gating one would make each commit re-measure
+`git log`, and there is no fixed point to converge on.
+
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`
