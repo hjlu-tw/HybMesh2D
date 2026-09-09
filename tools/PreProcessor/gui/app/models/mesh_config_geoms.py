@@ -14,14 +14,21 @@ removal and every role lookup — asks that one question, so no caller can add b
 identity and remove by string. It could, and did: the checkbox in the Mesh
 Generator drew Unchecked for a geometry that was in the mesh, and unchecking it
 removed nothing. Gated by ``tests/test_geom_files_identity.py`` check 7, which
-fails the build on a raw ``append``/``remove``/``in`` over ``geom_files``
-anywhere outside :class:`MeshConfig` itself.
+fails the build on every raw way in over ``geom_files`` anywhere outside THIS
+MIXIN: the eight list mutators, ``in`` / ``not in``, a wholesale
+``cfg.geom_files = [...]`` rebind, a slice rebind, a ``del``, a literal
+``setattr`` and a ``geom_files=`` keyword to the constructor or
+``dataclasses.replace``. The rebind is the one that
+mattered — the exact pre-fix shape, and invisible to the scan until #99.
+:class:`MeshConfig` is NOT exempt: the allow-list is derived from where the verbs
+are defined, so when they moved into this module the exemption moved with them and
+the config class kept none.
 """
 from __future__ import annotations
 
 import os
 
-from app.services.geom_path_identity import canonical_geom_path
+from app.services.geom_path_identity import canonical_geom_path, dedupe_geom_paths
 
 __all__ = ["GeomListMixin"]
 
@@ -69,6 +76,22 @@ class GeomListMixin:
                 return False
         self.geom_files.append(path)
         return True
+
+    def set_geom_files(self, paths: list[str] | None) -> None:
+        """Replace the whole list, keeping one entry per FILE.
+
+        The wholesale-replace half of the one way in, and the reason it exists is
+        that a bare ``cfg.geom_files = [...]`` is BOTH the pre-fix shape (five
+        callers outside here rebuilt the list) and the one construct the identity
+        gate could not see. Dedupes by identity, so a rebuilt list cannot put back
+        the two-spellings-one-file state ``add_geom_file`` removed; the spelling
+        the caller gave is kept and a falsy entry is dropped, both per
+        ``dedupe_geom_paths`` — which is already what the mesher-config WRITER
+        does to this list, so the two cannot disagree about what is in the mesh.
+        ``None`` is an empty replacement, since a restored workspace may hold a
+        JSON null where the list should be.
+        """
+        self.geom_files = dedupe_geom_paths(paths)
 
     def has_geom_file(self, path: str) -> bool:
         """Is that FILE already in geom_files? The read half of the one way in.

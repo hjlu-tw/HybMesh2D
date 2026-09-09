@@ -97,11 +97,41 @@ def _gui_root() -> str:
     return os.path.dirname(os.path.dirname(here))              # gui
 
 
+#: Model METHODS that author a field, and which field each one writes. Filling a
+#: field through the model's own verb is authoring it exactly as ``cfg.field = …``
+#: is, and this scan reads syntax, so a verb-only field would otherwise look
+#: unauthored. Declared rather than derived from the name, because ``add_geom_file``
+#: does not spell its plural field and a guess would fail silently in the direction
+#: that matters (a field wrongly reported unauthored makes the sync preserve it, so
+#: the panel's edit is dropped).
+#:
+#: Not hypothetical: #99 made ``geom_files`` verb-only outside the model, and until
+#: this map existed the mesh panel's `cfg.geom_files = []` was the ONLY thing telling
+#: this scan the panel owns the geometry list — the `cfg.add_geom_file(p)` beside it
+#: was already invisible.
+#:
+#: What the field-spec gate checks is that each entry RESOLVES — one model class
+#: carrying both the method and the field — so an entry surviving a rename fails.
+#: It does NOT check that an entry is reached: ``remove_geom_file`` is declared for
+#: the set's sake and is inert today, its only callers being in
+#: ``controllers/mesh_layers_ctrl.py``, outside every :data:`PANEL_SOURCES` glob.
+#: The direction that cannot fail at all is a MISSING entry — a new model verb
+#: nobody lists here leaves its field reading as unauthored, so the sync preserves
+#: (i.e. discards) the panel's edit. Recorded in
+#: ``.claude/rules/gui-panels-config.md``'s ``## Named blind spots``.
+MODEL_WRITER_METHODS = {
+    "set_geom_files": "geom_files",
+    "add_geom_file": "geom_files",
+    "remove_geom_file": "geom_files",
+}
+
+
 def _targets(tree: ast.AST, var: str) -> set:
-    """Every ``<var>.<field>`` assigned to anywhere in ``tree``.
+    """Every ``<var>.<field>`` written anywhere in ``tree``.
 
     Covers plain assignment, tuple/list targets, augmented and annotated assignment,
-    and ``setattr(<var>, "field", ...)`` with a literal name.
+    ``setattr(<var>, "field", ...)`` with a literal name, and a call to one of the
+    model's own writer verbs (:data:`MODEL_WRITER_METHODS`).
     """
     found = set()
 
@@ -121,6 +151,11 @@ def _targets(tree: ast.AST, var: str) -> set:
                 note(t)
         elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
             note(node.target)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and node.func.attr in MODEL_WRITER_METHODS \
+                and isinstance(node.func.value, ast.Name) \
+                and node.func.value.id == var:
+            found.add(MODEL_WRITER_METHODS[node.func.attr])
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
                 and node.func.id == "setattr" and len(node.args) >= 2:
             obj, name = node.args[0], node.args[1]

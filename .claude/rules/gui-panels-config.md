@@ -70,6 +70,18 @@ Load-bearing rules:
   table sits BEHIND those three; the panel-owned `_loading` flag is unchanged.
 - **`PRESERVED_FIELDS` is a subtraction, not a list**: model fields − table − the residue each
   panel declares beside its table (`*_EXTRA_AUTHORED`, for facts one widget holds for many things).
+- **Filling a field through the MODEL'S OWN VERB counts as authoring it**, declared in
+  `config_ownership.MODEL_WRITER_METHODS` (method → field): the ownership scan reads syntax, so a
+  field a panel can only write through a verb otherwise reads as unauthored and the sync
+  *preserves* — i.e. discards — what the panel just built. Declared rather than guessed from the
+  name, since `add_geom_file` does not spell its plural field. Gated by
+  `tests/test_field_spec_tables.py` check 2, which fails on an entry naming a method or a field
+  that no ONE model class carries together, and asserts at least one field is verb-authored with no
+  assignment in that panel's own `get_config`, so deleting the map cannot pass. #99 is what made
+  that real: `geom_files` became verb-only outside the model, and the mesh panel's own
+  `cfg.add_geom_file(p)` had always been invisible to the scan — only the bare `cfg.geom_files = []`
+  beside it was keeping the answer right. **An entry may be inert**: `remove_geom_file`'s callers
+  are in `controllers/mesh_layers_ctrl.py`, outside every `PANEL_SOURCES` glob.
 - **`LENGTH_FIELDS` is derived from `kind == "sci"`**, which IS the physical-length rule, so the
   list and the widgets cannot disagree.
 - **Widgets are seeded from the model's defaults**, not literals repeated in build code.
@@ -205,11 +217,35 @@ comparing strings, so `mesh_layers_ctrl` added a layer by identity and un-added 
 config holding the relative spelling the checkbox drew **Unchecked for a geometry that was in the
 mesh**, and unchecking it cleared the box and left the geometry to be meshed. `remove_geom_file`
 existed and was called from nowhere. The full set is now `add_geom_file` / `remove_geom_file` /
-`has_geom_file` / `role_of` / `prune_roles` / `dedupe_geom_paths`, and
-**`tests/test_geom_files_identity.py` check 7 fails the build on a raw `append` / `remove` / `in`
-over `geom_files` anywhere outside the mixin** — by AST, because the prose recording the rule names
-every construct it forbids and a substring scan fires on that. Its allow-list is keyed to where the
-verbs LIVE, which is how it noticed them moving into the mixin.
+`has_geom_file` / `set_geom_files` / `role_of` / `prune_roles` / `dedupe_geom_paths`, and
+**`tests/test_geom_files_identity.py` check 7 fails the build on EVERY raw way in over
+`geom_files` outside the mixin**: the eight list mutators (`append` / `remove` / `extend` /
+`insert` / `pop` / `clear` / `sort` / `reverse`), `in` / `not in`, a wholesale
+`cfg.geom_files = [...]` rebind, a slice rebind, a `del`, a literal
+`setattr(cfg, "geom_files", …)` and a `geom_files=` keyword to `MeshConfig(…)` or
+`dataclasses.replace(…)` — by AST, because the prose
+recording the rule names every construct it forbids and a substring scan fires on that. Its
+allow-list is DERIVED from where the verbs live (`inspect.getsourcefile`), which is how it noticed
+them moving into the mixin and is why `models/mesh_config.py` — the config class itself — is **not**
+exempt. **Each new door must be shown to fail the BUILD, by injection into a real GUI package with
+the verdict read from the child's exit code** and a negative control on the untouched tree; the
+first widening proved only the rebind, and the constructor keyword — which reaches the dataclass
+field with no assignment and no method call anywhere — was then found by review, not by the scan.
+
+- **Replacing the whole list is `set_geom_files`, and only the mixin may rebind** (#99). It
+  dedupes by identity and keeps the caller's spelling, so a list rebuilt from widgets or from a
+  restored workspace cannot put back the state `add_geom_file` removed; a falsy entry is dropped,
+  as the mesher-config writer already did. It also drops the alias a rebind left — the restored
+  `dict`'s own list is no longer the config's. Five callers outside the mixin were rebinding when
+  the scan gained the construct (`mesh_config.load_from_dict`,
+  `mesh_config_io.load_config_from_file`, `pipeline_config.build_mesh_config`, `pipeline_io_ctrl`
+  and the mesh panel's config mixin), one of them a `[os.path.abspath(out)]` of the kind
+  `geom_path_identity` exists to replace. A sixth site matched the NAME without being this list —
+  see the next rule.
+- **A class outside the model may not name an attribute `geom_files`.** The scan matches by
+  attribute NAME, since an AST cannot resolve the type of `self`; `mesh_canvas_loader`'s thread
+  therefore holds `self.paths`. Renaming the neighbour is the fix, never an allow-list entry — one
+  exemption keyed to the verbs is checkable, a growing filename list is not.
 
 Two things the fix deliberately does NOT do: `dedupe_geom_paths` keeps the FIRST spelling rather
 than rewriting entries to canonical form (that would churn a saved config on load, and
@@ -221,7 +257,7 @@ holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
 ## Named blind spots
 
 Consolidated here rather than trailing the rules they belong to, so a coverage claim can be checked
-against one list. #71 moved both.
+against one list; #71 moved the first two here.
 
 - **`config_ownership` is Qt-free at IMPORT only.** The SOLVER and IB tables still live under
   `views/panels/`, whose package `__init__` eagerly imports eight Qt panels, so a
@@ -229,3 +265,26 @@ against one list. #71 moved both.
   `services/field_spec.py` only.
 - **The unit size-plausibility check only catches gross errors, and says so.** A *plausible* wrong
   unit is left to the two visible defences above, which do nothing but print the number.
+- **`MODEL_WRITER_METHODS` fails on a STALE entry, never on a MISSING one.** The gate proves every
+  declared verb resolves; nothing notices a *new* model verb that writes a field and is not listed,
+  and the symptom is silent — the field reads as unauthored, so the sync preserves it and the
+  panel's edit is dropped. The gate's check that at least one field is verb-authored keeps the map
+  from being deleted wholesale, not from being incomplete.
+- **The geometry-identity scan is NAME-based and TREE-scoped**, so five things stay outside it.
+  (i) It cannot tell `MeshConfig.geom_files` from any other object's attribute of that name — it
+  over-reaches (hence `mesh_canvas_loader.paths`) and would under-reach an ALIAS,
+  `lst = cfg.geom_files; lst.append(p)`. Nothing in the tree aliases the list, and nothing here
+  would notice if something started. (ii) A name it cannot read as a literal: a computed
+  `setattr(cfg, name, …)` or `getattr(cfg, name).append(…)` passes, where the literal
+  `setattr(cfg, "geom_files", …)` fails. (iii) A DUNDER called directly —
+  `cfg.geom_files.__setitem__(0, p)`, `__iadd__` — is not in the mutator list; the subscript and
+  `+=` FORMS those spell are caught as syntax, and nobody writes the method call. (iv) The
+  `geom_files=` keyword is scoped to `MeshConfig(…)` and `dataclasses.replace(…)`, so a
+  differently-named factory building the config, or a `**kwargs` splat, passes — the alternative
+  was firing on the NINE functions here that take an ordinary `geom_files` parameter, and a gate
+  that red-lights `audit_mesh_bc(bnd, geom_files=…)` gets worked around rather than obeyed.
+  (v) It walks
+  `.py` files under `gui/app/` only, so a caller in `tools/PreProcessor/`, `tools/scripts/` or the
+  tests is unreached — the tests deliberately rebind, to build the stale state under test. Beside
+  those, one thing it deliberately does not watch: the per-geometry `geom_roles` dict has no such
+  gate, and a role keyed under a dropped spelling is `prune_roles`' job rather than a scan's.

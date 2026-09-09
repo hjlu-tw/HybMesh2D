@@ -10,8 +10,9 @@ def load_config_from_file(cfg, path: str):
         raise FileNotFoundError(f"Config file not found: {path}")
 
     path = os.path.abspath(path)
-    # Clear existing geometry files list
-    cfg.geom_files = []
+    # Clear existing geometry files list (through the model's verb -- a bare
+    # rebind is what the identity gate forbids everywhere but the mixin)
+    cfg.set_geom_files([])
     # Per-geometry roles (seed geometries), rebuilt from SEED_FILE lines
     cfg.geom_roles = {}
     # Per-group BC-type assignments, rebuilt from GROUP_BC lines (#4)

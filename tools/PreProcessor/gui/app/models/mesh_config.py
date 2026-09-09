@@ -239,10 +239,17 @@ class MeshConfig(GeomListMixin):
                 except (TypeError, ValueError):
                     pass
                 setattr(self, attr, v)
-        # `or []`/`or {}` (not the .get default) so an explicit JSON null still
-        # lands as an empty container instead of None, which would crash
-        # save_to_file's `for gf in self.geom_files` iteration.
-        self.geom_files = d.get("geom_files") or []
+        # Through set_geom_files, not a rebind: a stale workspace is exactly the
+        # dict that carries one file under two spellings, so the restore is the
+        # last place that should be allowed to put that state back. Three
+        # consequences, none of them the old line's: an explicit JSON null lands
+        # as [] (the verb's own rule, where this used to need `or []`), a falsy
+        # entry is DROPPED rather than kept, and the list is a copy -- `d`'s own
+        # list is no longer aliased into the config, so mutating one no longer
+        # mutates the other.
+        self.set_geom_files(d.get("geom_files"))
+        # `or {}` (not the .get default) so an explicit JSON null still lands as
+        # an empty container instead of None, which would crash save_to_file.
         self.geom_roles = d.get("geom_roles", {}) or {}
         self.group_bc = d.get("group_bc", {}) or {}
         # #3: a session predating this key already carries real BCs, so default

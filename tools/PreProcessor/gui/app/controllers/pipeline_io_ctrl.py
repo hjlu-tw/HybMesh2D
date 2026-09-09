@@ -197,7 +197,9 @@ class PipelineIoControllerMixin:
             if not self.global_mesh_config.geom_files and session is not None:
                 out = session.project_model.output_file
                 if out:
-                    self.global_mesh_config.geom_files = [os.path.abspath(out)]
+                    # add_geom_file, not a rebind: the branch above already
+                    # established the list is empty, so this is the one way in.
+                    self.global_mesh_config.add_geom_file(os.path.abspath(out))
             self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
             self.sync_mesh_layers_panel()
 

@@ -308,7 +308,7 @@ class MeshConfigConfigMixin:
         # two-spellings-one-file state the model just removed. The role is keyed by
         # the spelling that SURVIVED the add, or it would key a dropped duplicate
         # and be pruned away with it.
-        cfg.geom_files = []
+        cfg.set_geom_files([])
         cfg.geom_roles = {}
         for row in range(self.geom_list_widget.count()):
             item = self.geom_list_widget.item(row)

@@ -110,6 +110,7 @@ from app.models.solver_config import SolverConfig  # noqa: E402
 from app.models.stl3d_config import Stl3dConfig  # noqa: E402
 from app.services import field_spec as fs  # noqa: E402
 from app.services.config_ownership import (  # noqa: E402
+    MODEL_WRITER_METHODS,
     PANEL_SOURCES, extra_authored, hand_authored, preserved_fields, spec_tables,
     unauthored_fields,
 )
@@ -315,6 +316,38 @@ for panel, cls in PANELS.items():
     check(len(found) >= len(extra_authored(panel)),
           f"2. the ast extractor still finds {panel}'s hand-written assignments "
           f"({len(found)} found, {len(extra_authored(panel))} declared)")
+
+# The extractor counts a call to one of the model's own writer verbs as authoring
+# the field it writes -- #99 made geom_files verb-only outside the model, so
+# without that the mesh panel would look as if it did not own the geometry list
+# and the sync would preserve (i.e. discard) what the panel just built. That map
+# is DECLARED, so it must be checked: every entry needs a real method on a real
+# model, naming a real field of it, or a rename leaves an inert line behind.
+# ONE class must carry BOTH, or an entry naming SolverConfig's method and
+# MeshConfig's field would resolve against a model that has neither pair.
+def _resolves(meth, fld):
+    return any(callable(getattr(cls, meth, None))
+               and fld in {f.name for f in dataclasses.fields(cls)}
+               for cls in PANELS.values())
+
+
+_bad_writers = sorted(f"{meth} -> {fld}"
+                      for meth, fld in MODEL_WRITER_METHODS.items()
+                      if not _resolves(meth, fld))
+check(MODEL_WRITER_METHODS and not _bad_writers,
+      f"2. every declared model writer verb exists and names a real model field "
+      f"({_bad_writers})")
+# ...and it is not vacuous: the panel really does author a field ONLY through a
+# verb, so deleting the map would put that field back in the unauthored set.
+# `hand_read` is scoped to get_config/_read_bl_widgets in the panel's own
+# sources, which is exactly the scope this claim is about -- not the whole tree.
+_verb_only = {fld for meth, fld in MODEL_WRITER_METHODS.items()
+              if fld in hand_authored("mesh_config_panel")}
+check("geom_files" in _verb_only
+      and "geom_files" not in hand_read(panel_sources("mesh_config_panel"),
+                                        {"geom_files"}),
+      f"2. ...and at least one field is authored by a verb with no assignment in "
+      f"the panel's own get_config ({sorted(_verb_only)})")
 
 # Injection: claim a residue field the panel does not actually write.
 _extra = set(extra_authored("solver_config_panel")) | {"work_dir"}

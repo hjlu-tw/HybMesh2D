@@ -428,14 +428,14 @@ class PipelineConfig:
         if not mc.geom_files and geom_files:
             if isinstance(geom_files, str):
                 geom_files = [geom_files]
-            # The headless path dedupes the same way the GUI does. It kept its own
-            # inline os.path.abspath copy, which is the cwd-relative compare
-            # geom_path_identity exists to replace. The SPELLING the caller gave is
-            # kept (that is dedupe_geom_paths' documented rule) -- canonicalising
-            # every entry here would rewrite /tmp to /private/tmp and churn a script
-            # on load, which is a different job from deciding what is a duplicate.
-            from app.services.geom_path_identity import dedupe_geom_paths
-            mc.geom_files = dedupe_geom_paths(geom_files)
+            # Through the model's own verb, so there is ONE dedupe and not a
+            # second copy of the rule here (nor the inline os.path.abspath compare
+            # this path kept, which is the cwd-relative one geom_path_identity
+            # exists to replace). The SPELLING the caller gave is kept, per
+            # dedupe_geom_paths -- canonicalising every entry would rewrite /tmp to
+            # /private/tmp and churn a script on load, a different job from
+            # deciding what is a duplicate.
+            mc.set_geom_files(geom_files)
         return mc
 
     def build_stl3d_config(self, repo_root: str = ""):
