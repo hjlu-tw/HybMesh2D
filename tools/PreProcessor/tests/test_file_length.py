@@ -84,15 +84,18 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
-_GUI_REL = os.path.join("tools", "PreProcessor", "gui")
-_GUI = os.path.join(_REPO, _GUI_REL)
 
-# The standard, verbatim from CLAUDE.md: "Keep each file under
-# `tools/PreProcessor/gui/` at ~500 lines; split it when it grows past."
-LIMIT = 500
+# The standard's number and its walk live in `gui_file_lengths.py`, imported here
+# rather than restated: `test_instruction_budget.py` check 7 derives CLAUDE.md's
+# status figure for this standard from the SAME walk, and two copies of `LIMIT`
+# would let the documented status measure a limit this gate no longer enforces.
+# The path insert is belt-and-braces — this file's own directory is already
+# `sys.path[0]` when it is run as a script, which is how `run_all.sh` and CI both
+# run it.
+sys.path.insert(0, _HERE)
+from gui_file_lengths import GUI_REL, LIMIT, gui_dir, measure  # noqa: E402
 
-# Directories that hold no source of ours.
-_SKIP_DIRS = {"__pycache__", ".ruff_cache", ".git", ".mypy_cache", ".pytest_cache"}
+_GUI = gui_dir(_REPO)
 
 # The files that were already over the limit when this gate landed (2026-09-09),
 # pinned at their measured lengths so the gate can be green today without
@@ -101,7 +104,7 @@ _SKIP_DIRS = {"__pycache__", ".ruff_cache", ".git", ".mypy_cache", ".pytest_cach
 # is NOT here has to be split, and an entry that stops being a violation FAILS
 # rather than quietly outliving the defect.
 PINS = {
-    "app/models/pipeline_config.py": 524,        # worst of the seven
+    "app/models/pipeline_config.py": 524,        # the worst offender
     "app/controllers/mesh_gen_ctrl.py": 512,     # #102 splits it
     "app/services/case_run_note.py": 508,
     "app/controllers/session_io_ctrl.py": 508,
@@ -122,26 +125,6 @@ def check(cond, msg):
 # --- the inputs, as one value -------------------------------------------------
 # The check is a pure function of this dict, which is what makes the injections
 # below cheap: mutate a copy, ask the same function.
-def measure(root):
-    """{relative path: line count} for every .py file under `root`.
-
-    Lines are counted with `splitlines()` rather than by counting newlines, so a
-    file with no trailing newline is not silently one line short of its real size.
-    """
-    lengths = {}
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
-        for name in filenames:
-            if not name.endswith(".py"):
-                continue
-            path = os.path.join(dirpath, name)
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
-            rel = os.path.relpath(path, root).replace(os.sep, "/")
-            lengths[rel] = len(text.splitlines())
-    return lengths
-
-
 def read_world():
     return {"lengths": measure(_GUI), "pins": dict(PINS)}
 
@@ -160,7 +143,7 @@ def check_lengths(world):
                 "%s/%s is %d lines, %d over the ~%d-line standard. Split it. `PINS` "
                 "grandfathers only the files that predate this gate and is not a place "
                 "to put a new one."
-                % (_GUI_REL, rel, length, length - LIMIT, LIMIT))
+                % (GUI_REL, rel, length, length - LIMIT, LIMIT))
     for rel in sorted(pins):
         pinned = pins[rel]
         if rel not in lengths:
@@ -168,7 +151,7 @@ def check_lengths(world):
                 "PINS pins `%s` at %d lines, but there is no such file under %s/. "
                 "Delete the entry, or fix its path — a pin nothing measures is a pin "
                 "that cannot fail."
-                % (rel, pinned, _GUI_REL))
+                % (rel, pinned, GUI_REL))
             continue
         length = lengths[rel]
         if length > pinned:
@@ -176,7 +159,7 @@ def check_lengths(world):
                 "%s/%s is pinned at %d lines and is now %d — %d MORE. Already being "
                 "over the limit is not a licence to grow: the pin is a ceiling, not an "
                 "exemption."
-                % (_GUI_REL, rel, pinned, length, length - pinned))
+                % (GUI_REL, rel, pinned, length, length - pinned))
         elif length <= LIMIT:
             fails.append(
                 "PINS pins `%s` at %d lines, but it is now %d — inside the ~%d-line "

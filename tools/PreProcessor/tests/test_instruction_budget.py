@@ -67,7 +67,17 @@ Checks:
     root's character count, its byte count, its token estimate, its budget and its slack;
     the byte-char delta, stated in BOTH this file and the root; the rule-file count, also
     stated in both; and blind spot (d)'s rule-file sizes with their descending order,
-    both headroom lists and `RULE_BUDGET`'s own value beside them. Every one of those was maintained BY HAND, and writing any of
+    both headroom lists and `RULE_BUDGET`'s own value beside them. Plus ONE figure that is
+    not about these files at all (#101): the status the root states for the GUI
+    file-length standard — how many files exceed it, out of how many, the worst one's
+    size and the limit itself — derived from `gui_file_lengths.py`, the same walk
+    `test_file_length.py` enforces the standard with. It is here because it decays the
+    same way and had already decayed — it read `6 of 260 ... worst 523` two days after
+    the standard's own gate landed, and that gate reported ALL PASS beside it, because
+    the figure was never registered here. A figure a human must remember goes stale
+    eventually, whatever it describes. What the tree says TODAY is not repeated in this
+    docstring: it is derived below, and restating it here would be the same defect one
+    level out. Every one of those was maintained BY HAND, and writing any of
     them changes the file being measured, so keeping them true is a joint fixed-point
     iteration rather than a measurement — which is why it had failed eleven times in eight
     tickets by the time this landed, every instance caught by a human or a review agent
@@ -83,7 +93,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 196 more of today because this repo's own prose
+bytes, which the root file has 200 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -390,6 +400,18 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+
+# Check 7's one figure about the TREE rather than about these files. Imported, never
+# restated: `test_file_length.py` ENFORCES this standard off the same `LIMIT` and the
+# same walk, and a second copy here would let the status the root file states be derived
+# at a limit the gate no longer enforces. The path insert is belt-and-braces — this
+# file's own directory is already `sys.path[0]` when it is run as a script, which is how
+# `run_all.sh` and CI both run it.
+sys.path.insert(0, _HERE)
+from gui_file_lengths import LIMIT as GUI_LIMIT  # noqa: E402
+from gui_file_lengths import gui_dir  # noqa: E402
+from gui_file_lengths import measure as gui_measure  # noqa: E402
+
 _ROOT_NAME = "CLAUDE.md"
 _RULES_DIR = os.path.join(".claude", "rules")
 _NOTES_DIR = os.path.join("docs", "design_notes")
@@ -487,7 +509,11 @@ def read_world():
     with open(os.path.abspath(__file__), encoding="utf-8") as fh:
         gate_text = fh.read()
     return {"root": root_text, "rules": rules, "notes": notes, "gate": gate_text,
-            "pins": dict(KNOWN_RESIDUE), "tests": collect_test_files()}
+            "pins": dict(KNOWN_RESIDUE), "tests": collect_test_files(),
+            # An INPUT like every other, so check 7's GUI figures are a pure function of
+            # this dict and an injection can move the tree by mutating a copy instead of
+            # writing 263 files.
+            "gui_lengths": gui_measure(gui_dir(_REPO))}
 
 
 def collect_test_files():
@@ -1065,6 +1091,32 @@ def _root_bytes(world):
     return (len(world["root"].encode("utf-8")),)
 
 
+# The GUI file-length standard's status, as the root file states it. ONE walk behind four
+# figures, so the count, the total, the worst offender and the limit they are measured
+# against cannot disagree with each other -- and, because the walk is
+# `gui_file_lengths.py`'s, cannot disagree with the gate that ENFORCES the standard
+# either. #101: this figure sat outside the registry, decayed to `6 of 260 ... worst 523`,
+# and every gate in the repo stayed green.
+def _gui_over(world):
+    """Line counts of the GUI files over the standard, largest first."""
+    return sorted((n for n in world["gui_lengths"].values() if n > GUI_LIMIT),
+                  reverse=True)
+
+
+def _gui_worst(world):
+    """The worst offender's size, or 0 when there is no offender at all.
+
+    0 rather than a `max()` over the whole tree: the figure the root states is the worst
+    OFFENDER's, and the file-length standard being met by every file is a state whose
+    sentence ("N of M files exceed it") has to be rewritten by a person anyway. It is
+    also not a `ValueError` on an empty sequence, which would abort the run before the
+    other figures were read -- the rule `_fmt_word`'s docstring states, that a gate whose
+    job is to say WHICH figure is wrong must not answer with a traceback.
+    """
+    over = _gui_over(world)
+    return (over[0] if over else 0,)
+
+
 # The registry. Each entry declares WHERE the figure is, the pattern that anchors it, and
 # one field per capture group. A field named "date" is deliberately not compared: gating
 # it would go red with the calendar rather than with the file, which is the
@@ -1116,6 +1168,22 @@ _FIGURES = {
     # while its own documentation said there were eight.
     "rule_count_rest": _Figure(
         _parse_word, _fmt_word_lower, lambda w: (len(_rules_by_size(w)[2:]),)),
+    # The GUI file-length standard's status (#101). `gui_limit` is registered for the
+    # same reason `rule_budget` is: the three figures beside it are measured AGAINST it,
+    # so a standard relaxed to 600 in the prose while the gate still enforced 500 would
+    # leave a count that is arithmetically true of a limit nobody applies.
+    "gui_limit": _Figure(_parse_nums, _fmt_nums, lambda w: (GUI_LIMIT,)),
+    "gui_over_count": _Figure(
+        _parse_nums, _fmt_nums, lambda w: (len(_gui_over(w)),)),
+    # The SAME derivation, spelled as the word the sentence uses two clauses later. #88
+    # is the reason it is a field at all: the last hand-maintained figure inside this
+    # check was an English word beside numbers `--sync` had been rewriting for a ticket,
+    # and it read "eight" while the tree held nine.
+    "gui_over_count_word": _Figure(
+        _parse_word, _fmt_word_lower, lambda w: (len(_gui_over(w)),)),
+    "gui_file_count": _Figure(
+        _parse_nums, _fmt_nums, lambda w: (len(w["gui_lengths"]),)),
+    "gui_worst": _Figure(_parse_nums, _fmt_nums, _gui_worst),
 }
 
 SELF_REPORT = (
@@ -1165,6 +1233,22 @@ SELF_REPORT = (
      "pattern": r"a~move~larger~than~the~" + _NUM_LIST +
                 r"~of~headroom~the~two~large~ones~have~left",
      "fields": ("rule_headroom_large",)},
+    # #101. The one figure here that is about the TREE rather than about these files, and
+    # the only one whose derivation lives in another gate's module. `\x7e` is a LITERAL
+    # tilde: `_rx` turns every `~` into a whitespace run, and the standard is written
+    # "**~500 lines**" with the tilde meaning "about".
+    {"label": "the GUI file-length standard's limit", "target": "root",
+     "pattern": r"file~under~`tools/PreProcessor/gui/`~at~\*\*\x7e([\d,]+)~lines\*\*",
+     "fields": ("gui_limit",)},
+    # One sentence, four figures, one walk. The DATE two lines above it is deliberately
+    # not part of this anchor: it dates the history beside it (44 crossings over the whole
+    # history, which no `--sync` can re-derive), and stamping that with the day a file
+    # count moved would date a measurement that did not happen.
+    {"label": "the GUI file-length standard's status", "target": "root",
+     "pattern": r"([\d,]+)~of~([\d,]+)~files~exceed~it~\(worst~([\d,]+)\);~"
+                r"those~([a-z]+|[\d,]+)~are~PINNED",
+     "fields": ("gui_over_count", "gui_file_count", "gui_worst",
+                "gui_over_count_word")},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
      # Either spelling: `_fmt_word_lower` writes a word up to twelve and DIGITS past it,
      # and thirteen rule files is a state that docstring calls reachable. A word-only
@@ -1355,7 +1439,8 @@ run(check_self_report,
 # corrupts its input looks identical to the check working.
 def copy_world(w):
     return {"root": w["root"], "rules": dict(w["rules"]), "notes": dict(w["notes"]),
-            "gate": w["gate"], "pins": dict(w["pins"]), "tests": set(w["tests"])}
+            "gate": w["gate"], "pins": dict(w["pins"]), "tests": set(w["tests"]),
+            "gui_lengths": dict(w["gui_lengths"])}
 
 
 # 5. an oversized file
@@ -1967,6 +2052,88 @@ untouched, _c2, _o2 = sync_world(synced, today=_STALE_DAY)
 check(_STALE_DAY not in untouched["root"] and untouched["root"] == synced["root"],
       "injection 13f2. ...and does NOT stamp it when every figure in the block already "
       "matched disk, so a run that changes nothing leaves the date alone")
+
+# 13h. #101: the GUI file-length standard's status, which is the one figure here that
+# moves when the TREE moves rather than when these files do. The event is a GUI file
+# growing past the standard, so the injection is a file in `gui_lengths` and not a bent
+# number: all four figures in that sentence must go stale at once, exactly as they did
+# between #97 and #101 while every gate in the repo reported ALL PASS.
+inj = copy_world(world)
+inj["gui_lengths"]["app/views/zz_injected_over.py"] = GUI_LIMIT + 1000
+check(len(inj["gui_lengths"]) == len(world["gui_lengths"]) + 1
+      and len(_gui_over(inj)) == len(_gui_over(world)) + 1
+      and _gui_worst(inj) != _gui_worst(world),
+      "injection 13h. injection is well-formed: the GUI tree really gained a file, it "
+      "really is over the standard, and it is the worst one")
+sr = check_self_report(inj)
+check(all(any("(%s)" % field in f and f.startswith(_ROOT_NAME) for f in sr)
+          for field in ("gui_over_count", "gui_file_count", "gui_worst",
+                        "gui_over_count_word")),
+      "injection 13h. check 7 fails on ALL FOUR figures of the status sentence — the "
+      "count, the total, the worst offender and the word counting them — so a GUI file "
+      "crossing the standard cannot leave the root file describing the tree before it")
+
+# 13h2. ...and through `--sync`, which is what makes the figure maintainable rather than
+# merely gated: the WORD moves with the digits, off the same derivation, with no hand
+# edit. Every value below is derived from the mutated world -- an injection that spelled
+# today's `7 / 262 / 524 / seven` would go red on the next file this repo splits.
+_status = _entry_by_label("the GUI file-length standard's status")
+synced_gui, changes_gui, ok_gui = sync_world(inj)
+_m_after, _err_after = _resolve(synced_gui, _status)
+check(ok_gui and not check_self_report(synced_gui) and _err_after is None
+      and _m_after.groups() == (_fmt_nums((len(_gui_over(inj)),)),
+                                _fmt_nums((len(inj["gui_lengths"]),)),
+                                _fmt_nums(_gui_worst(inj)),
+                                _fmt_word_lower((len(_gui_over(inj)),)))
+      and any("file-length standard's status" in c for c in changes_gui),
+      "injection 13h2. --sync rewrites the whole status sentence from the tree — %s of %s, "
+      "worst %s, and the word %r beside them — and the synced world passes check 7"
+      % (_fmt_nums((len(_gui_over(inj)),)), _fmt_nums((len(inj["gui_lengths"]),)),
+         _fmt_nums(_gui_worst(inj)), _fmt_word_lower((len(_gui_over(inj)),))))
+again_gui, changes_gui2, ok_gui2 = sync_world(synced_gui)
+check(ok_gui2 and not changes_gui2 and again_gui["root"] == synced_gui["root"],
+      "injection 13h2. ...idempotently: a second pass over its own output reports no "
+      "change, so the sentence is a fixed point and not a value that keeps moving")
+
+# 13h3. the count WORD bent by hand on the real tree, which is the direction that makes
+# 13h2 evidence rather than a coincidence — and the shape #88 found still hand-written
+# after a ticket claimed to have closed the last one.
+_wrong_gui_word = _fmt_word_lower((len(_gui_over(world)) + 1,))
+inj, was = bend_figure(world, "the GUI file-length standard's status", 4, _wrong_gui_word)
+check(inj["root"] != world["root"] and was == _fmt_word_lower((len(_gui_over(world)),))
+      and _resolve(inj, _status)[1] is None,
+      "injection 13h3. injection is well-formed: the count word really moved and the "
+      "entry still resolves as one anchor with four fields")
+sr = check_self_report(inj)
+hits = [f for f in sr if "gui_over_count_word" in f]
+check(len(hits) == 1 and repr(_wrong_gui_word) in hits[0] and repr(was) in hits[0]
+      and hits[0].startswith(_ROOT_NAME),
+      "injection 13h3. check 7 fails on the hand-bent word, naming the root, the field "
+      "and BOTH words — the half a digits-only anchor would have left inert")
+
+# 13h4. the STANDARD's own number, registered for `rule_budget`'s reason: the three
+# figures beside it are measured against it, so prose relaxed to 600 while
+# `gui_file_lengths.LIMIT` still enforced 500 would state a count that is arithmetically
+# true of a limit nothing applies.
+inj, was = bend_figure(world, "the GUI file-length standard's limit", 1, "600")
+check(inj["root"] != world["root"] and was == _fmt_nums((GUI_LIMIT,)),
+      "injection 13h4. injection is well-formed: the stated limit really moved, and what "
+      "it moved away from was the enforcing gate's own constant")
+sr = check_self_report(inj)
+hits = [f for f in sr if "gui_limit" in f]
+check(len(hits) == 1 and "600" in hits[0] and _fmt_nums((GUI_LIMIT,)) in hits[0],
+      "injection 13h4. check 7 fails when the standard the root states and the standard "
+      "`test_file_length.py` enforces disagree")
+
+# 13h5. the GUI figures' own negative control, beside 13g's. A walk that reached nothing
+# would derive 0 of 0 and fail check 7 loudly rather than pass it, but it would also make
+# 13h's four bites meaningless, so the non-vacuity is asserted rather than inferred.
+check(len(world["gui_lengths"]) > 200 and len(_gui_over(world)) > 0
+      and _gui_worst(world)[0] > GUI_LIMIT,
+      "injection 13h5. the GUI walk really reached the package (%d files, %d over the "
+      "~%d-line standard, worst %d), so the four figures above are measured rather than "
+      "empty" % (len(world["gui_lengths"]), len(_gui_over(world)), GUI_LIMIT,
+                 _gui_worst(world)[0]))
 
 # 13g. negative control
 check(not check_self_report(world),
