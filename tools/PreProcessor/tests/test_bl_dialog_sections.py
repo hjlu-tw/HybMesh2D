@@ -400,6 +400,28 @@ def label_col(scale: float = 1.0) -> tuple[int, int]:
         app.setFont(base)
 
 
+#: The share of the plain label the reason must ADD before riding beside the field is
+#: the cheaper choice — the magnitude the ceiling comparison used to carry, kept as a
+#: RATIO because a ratio is what survives a font change. It measures 1.40 today and
+#: stayed inside 1.39..1.41 at every metric swept below, where the PIXEL it replaced
+#: moved 191..385 across the same sweep.
+_MIN_SUFFIX_GROWTH = 1.25
+
+
+def suffix_cost(plain: int, suffixed: int) -> str:
+    """What moving the reason into the LABEL would cost the FORM, at the metric these
+    two widths were measured on. It is always one of two things, which is the reason
+    the check asserts the COST and not a pixel: either the shared column grows (every
+    label in the dialog shoved right), or the labels alone already sit on
+    ``LABEL_COL_MAX`` and the suffixed one does not fit the cell it is right-aligned
+    in, losing its FIRST characters. ``''`` means it would cost nothing — the label was
+    the right place after all, and this row should go back to it."""
+    was, now = clamp_label_col(plain), clamp_label_col(suffixed)
+    if now > was:
+        return f"widens {was}->{now}"
+    return f"clips {suffixed} into {now}" if suffixed > now else ""
+
+
 label_only, suffixed_w = label_col()
 want_w = clamp_label_col(label_only)
 check(len(cells) == len(spec_keys) and widths == {want_w},
@@ -411,18 +433,23 @@ check(LABEL_COL_MIN <= want_w <= LABEL_COL_MAX,
 # suffix on the label): the suffixed composite must really COST the column width, or
 # the label was the right place after all and this row should go back to it.
 #
-# Clamp-relative, with no pixel literal on either side. The row this replaced asserted
-# `>= 240`, the ceiling written out as a number — and measured EXACTLY 240 here, so a
-# narrower metric (227 at 0.9, MEASURED below) failed it with the code correct, which
-# is the platform failure the comment above it existed to forbid. Both sides now come
-# from the running font and go through the clamp the build itself applies, and the
-# TEETH are the injection below rather than the pixel: with the reason actually moved
-# into the label, the column check above goes red.
-grown = clamp_label_col(suffixed_w)
-check(grown > want_w,
-      f"14. ...and suffixing the LABEL instead would widen the column from {want_w} to "
-      f"{grown} (band {LABEL_COL_MIN}..{LABEL_COL_MAX}), shoving every label in the "
-      f"dialog right, which is why the reason rides beside the field")
+# Clamp-relative, with no pixel literal on either side, and asserted at BOTH ends of
+# the band. The row this replaced asserted `>= 240` — the ceiling written out as a
+# number, measuring EXACTLY 240 here — so a narrower metric failed it with the code
+# correct, the platform failure the comment above it existed to forbid. But a
+# comparison of two CLAMPED widths has the same defect mirrored: past ~1.8x the plain
+# labels alone reach the ceiling, both sides collapse onto it, and "the column grows"
+# is false while the code is still right. So the claim is the COST, which is one of two
+# things at every metric, plus the RATIO for the magnitude the ceiling used to carry.
+cost = suffix_cost(label_only, suffixed_w)
+check(bool(cost),
+      f"14. ...and suffixing the LABEL instead costs the form width or the text itself "
+      f"({cost or 'NOTHING'}, band {LABEL_COL_MIN}..{LABEL_COL_MAX}), which is why the "
+      f"reason rides beside the field")
+check(suffixed_w >= label_only * _MIN_SUFFIX_GROWTH,
+      f"14. ...and it costs a real share of the column rather than a hair "
+      f"({suffixed_w}/{label_only} = {suffixed_w / label_only:.2f}x, floor "
+      f"{_MIN_SUFFIX_GROWTH}x)")
 # Every text label in a row, the NOTE included: it is right-aligned in a fixed cell,
 # so a clip eats the first characters rather than the last.
 texts = [t for c in cells for t in c.findChildren(QLabel)[:1]]
@@ -433,16 +460,19 @@ check(not clipped, f"14. ...and nothing clips its own text, note included ({clip
 check(wide._widgets[C1][0].width() == wide._widgets["BL_JUNCTION_ANGLE_C2"][0].width(),
       "14. ...and the note cell leaves C1's box the same width as C2's beside it")
 
-# ...at deliberately narrower metrics too, which is the whole point: the property is
-# scale-free where the literal was not. Below every check that reads `wide`'s live
+# ...at deliberately narrower AND wider metrics, which is the whole point: the property
+# is scale-free where the literal was not, and the mirrored defect lives at 1.8x+ where
+# the plain labels alone reach the ceiling. Below every check that reads `wide`'s live
 # geometry, deliberately: `label_col(scale)` swaps the APPLICATION font, and the
 # injection builds a second dialog, so measuring `wide` across either would be reading
 # one state through another.
-narrowed = [(sc, clamp_label_col(p), clamp_label_col(su))
-            for sc, (p, su) in ((sc, label_col(sc)) for sc in (0.9, 0.8, 0.7))]
-check(all(g > w for _sc, w, g in narrowed),
-      f"14. ...and that holds under a NARROWER font metric, so the check cannot go red "
-      f"for the platform instead of for the code ({narrowed})")
+metrics = [(sc, suffix_cost(p, su), su / p)
+           for sc, (p, su) in ((sc, label_col(sc))
+                               for sc in (0.7, 0.8, 0.9, 1.5, 1.8, 2.0))]
+check(all(c and r >= _MIN_SUFFIX_GROWTH for _sc, c, r in metrics),
+      f"14. ...and that holds at every font metric swept, so the check cannot go red "
+      f"for the platform instead of for the code "
+      f"({[(sc, c, round(r, 2)) for sc, c, r in metrics]})")
 
 # INJECTION: put the reason where the spec's first choice would have — suffixed onto
 # C1's LABEL — through the REAL build, and the column check above must fail. Without
@@ -464,14 +494,20 @@ try:
     suffixed_dlg.show()
     app.processEvents()
     app.processEvents()
-    suf_widths = {hb.parentWidget().width()
-                  for hb in suffixed_dlg.findChildren(HelpButton)}
+    suf_cells = [hb.parentWidget() for hb in suffixed_dlg.findChildren(HelpButton)]
+    suf_widths = {c.width() for c in suf_cells}
+    # BOTH consequences, for the same reason `suffix_cost` names two: on a wide metric
+    # the column is already on its ceiling and the cost lands on the TEXT instead.
+    suf_clipped = [(t.text(), t.width(), t.sizeHint().width())
+                   for c in suf_cells for t in c.findChildren(QLabel)[:1]
+                   if t.width() < t.sizeHint().width()]
 finally:
     bl_layout.by_key = _real_by_key
 check(bl_layout.by_key is _real_by_key, "14. (injection restored the real spec table)")
-check(suf_widths != {want_w} and min(suf_widths) > want_w,
-      f"14. INJECTION: the reason suffixed onto the LABEL widens the column past what "
-      f"the labels measure ({want_w} -> {sorted(suf_widths)}) and fails the check above")
+check(suf_widths != {want_w} or bool(suf_clipped),
+      f"14. INJECTION: the reason suffixed onto the LABEL takes the column off what the "
+      f"labels measure ({want_w} -> {sorted(suf_widths)}) or clips inside it "
+      f"({suf_clipped}) — either way the two checks above go red")
 
 # The note cell is the ONE composite field cell in the GUI, against CLAUDE.md's
 # "never wrapped" rule. What that rule protects is labelForField, so pin its
@@ -501,6 +537,7 @@ check(len(_own) >= 2 and not _calls,
 # read fine, so the toggling above only ever exercises the two live paths and the
 # fallback was intended rather than verified.
 _real_read = PerGeomBLDialog._widget_value
+_raised: list = []
 
 
 def _unreadable_method(self, w, spec):
@@ -508,28 +545,42 @@ def _unreadable_method(self, w, spec):
     way an unparseable value does."""
     m = self._widgets.get("BL_JUNCTION_METHOD")
     if m is not None and w is m[0]:
+        _raised.append(1)
         raise ValueError("junction method is not readable as an int")
     return _real_read(self, w, spec)
+
+
+def _c1_state(d) -> tuple:
+    return (d._widgets[C1][0].isEnabled(), d.field_note(C1), c1_bound(d))
 
 
 PerGeomBLDialog._widget_value = _unreadable_method
 try:
     ur = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
     um, uk = ur._widgets["BL_JUNCTION_METHOD"]
-    ur._set_widget_value(um, uk, 1)      # the method that DOES disable C1 when read
-    app.processEvents()
-    ur_state = (ur._widgets[C1][0].isEnabled(), ur.field_note(C1), c1_bound(ur))
+    # THREE arrivals at the fallback, not one: the constructor's own `_sync`, then a
+    # real `currentIndexChanged` in each direction. The seed is already method 1
+    # (`include/BLParams.hpp`'s default), so re-setting 1 emits NOTHING — asserting
+    # off that alone would have left the signal path unexercised and looked identical.
+    ur_states = [(None, *_c1_state(ur))]
+    for meth in (0, 1):
+        ur._set_widget_value(um, uk, meth)
+        app.processEvents()
+        ur_states.append((meth, *_c1_state(ur)))
 finally:
     PerGeomBLDialog._widget_value = _real_read
 check(PerGeomBLDialog._widget_value is _real_read,
       "15. (the injection restored the real widget reader)")
-check(ur_state[0],
+check(len(_raised) >= 3,
+      f"15. the fallback is REACHED, on the build and on a real index change in both "
+      f"directions ({len(_raised)} unreadable reads)")
+check(all(en for _m, en, _n, _b in ur_states),
       f"15. a junction method the dialog cannot read leaves C1 EDITABLE rather than "
-      f"stuck off, on the method that otherwise disables it ({ur_state})")
-check(ur_state[1] == "",
+      f"stuck off, method 1 — which otherwise disables it — included ({ur_states})")
+check(all(not n for _m, _en, n, _b in ur_states),
       f"15. ...and shows NO reason, an editable field having nothing to explain "
-      f"(got {ur_state[1]!r})")
-check(ur_state[2],
+      f"({[n for _m, _en, n, _b in ur_states]})")
+check(all(b for _m, _en, _n, b in ur_states),
       "15. ...so check 14's disabled <=> reason binding holds in the fallback too")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)

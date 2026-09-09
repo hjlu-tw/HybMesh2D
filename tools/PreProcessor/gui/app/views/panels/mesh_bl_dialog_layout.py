@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QWidget
 
+from app.services.logging_setup import get_logger
 from app.utils import align_form_labels, help_label
 from app.views.collapsible import CollapsibleSection
 from app.services.field_spec import by_key, reads_in_mode
@@ -271,6 +272,13 @@ class BLDialogLayoutMixin:
                 reads_c1 = self._widget_value(m[0], m[1]) == 0
             except (TypeError, ValueError):
                 reads_c1 = True          # unreadable: leave it editable, never stuck off
+                # Permissive by decision, but not INVISIBLE: this branch is unreachable
+                # for both shipped methods, so if it ever fires the reason is a spec or
+                # widget change and the only trace would otherwise be a field that
+                # stopped greying out.
+                get_logger(__name__).debug(
+                    "junction method unreadable; leaving %s editable", _C1_KEY,
+                    exc_info=True)
             c1[0].setEnabled(reads_c1)
             # ...and say so where the user is already looking. Editable means there is
             # nothing to explain, which is why the unreadable-method fallback shows no

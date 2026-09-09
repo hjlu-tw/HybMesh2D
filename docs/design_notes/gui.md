@@ -568,6 +568,56 @@ left. The leftover-space absorber (trailing spacer / per-segment list) is
 **stretch 0 + Expanding**, never a stretched item, which would compete proportionally
 with the capped scroll area and leave the groups short of their own cap.
 
+**A greyed field says WHY, and where the reason RIDES was measured** (#23,
+USER-REPORTED). `BL_JUNCTION_ANGLE_C1` is dead under the default junction method,
+which bins its slide by a hard-coded 95 deg, so disabling it is correct — the SILENCE
+was the defect: on screen a greyed box with no reason is indistinguishable from one
+greyed for another reason, or from a bug, which is what it was reported as. Three
+placement facts, none of them stylistic. A tooltip on the box is impossible: MEASURED
+on this Qt, hovering an ENABLED spin box delivers `Enter` to it while hovering the
+disabled one delivers nothing to it OR to its parent, because Qt picks the mouse
+receiver by walking PAST disabled widgets. Suffixing the label was the first choice and
+costs the whole form: the label column is one shared width measured from the labels
+actually built, and the suffixed composite measures 240 against the plain 171 on the
+metric these numbers were taken on, which shoves every label in the dialog 69 px right
+and onto `LABEL_COL_MAX`, where the next parameter added clips instead. So the reason
+rides in a composite FIELD cell — the one in the GUI — which feeds no measurement at
+all: 171 + 86 (spin box) + 4 + 73 (note) = 334 px, inside the dialog's own 380 px
+minimum.
+
+**A pixel literal is a metric of one machine, and the gate had one** (#98).
+`test_bl_dialog_sections.py` check 14 carried the argument in its own comment — "a
+macOS font metric asserted on an Ubuntu CI runner — a gate that goes red for the
+platform rather than for the code" — and then asserted `suffixed >= 240`, the ceiling
+written out as a number, which measured EXACTLY 240 here. MEASURED: the same assertion
+fails at 224 (`QT_FONT_DPI=84`) and 191 (72) with the code correct. The first fix was
+also wrong and in the same class, mirrored: comparing two CLAMPED widths collapses past
+a ~1.8x metric, where the plain labels alone reach the ceiling and "the column grows"
+is false while the code is still right — found by BOTH review axes independently. What
+survives a font change is not a width but the CONSEQUENCE, and there are exactly two:
+the shared column grows, or it is already on `LABEL_COL_MAX` and the suffixed label
+clips inside the cell it is right-aligned in. The gate asserts that cost
+(`suffix_cost`), plus the growth as a RATIO for the magnitude the ceiling comparison
+used to carry — 1.40 today, and inside 1.39..1.41 across a 0.7..2.0 sweep over which
+the pixel itself moved 191..385. The band it clamps against is DECLARED as
+`LABEL_COL_MIN`/`LABEL_COL_MAX` with `clamp_label_col` in `mesh_bl_dialog_layout.py`,
+so the gate reads the bound instead of restating it. The TEETH are an injection, not a
+comparison: `by_key` is patched to hand the build a C1 spec whose label already carries
+the reason, and the column check must go red on the real dialog.
+
+**An unreadable method value leaves the field LIVE** — `_sync`'s
+`except (TypeError, ValueError)` sets `reads_c1 = True`, never stuck off, and shows no
+marker, an editable field having nothing to explain. Both halves were intended rather
+than verified for two tickets: check 14 toggles between the two shipped methods and
+both parse fine, so nothing ever entered the branch. Check 15 raises from
+`_widget_value` for the junction combo and asserts the state at all THREE arrivals —
+the constructor's own `_sync` and a real `currentIndexChanged` in each direction. The
+first version of it asserted off `_set_widget_value(..., 1)` alone, which is inert: the
+seed is already method 1 (`include/BLParams.hpp`'s default), so no signal is emitted
+and an unexercised signal path looks identical to an exercised one. The branch also
+logs at `debug(..., exc_info=True)` now — permissive by decision, but not invisible,
+since its only other trace would be a field that quietly stopped greying out.
+
 **Transient results (Results tab playback)**: a transient run appends one Tecplot
 zone per dumped step, so the Results view is a movie. `models/tecplot_index.py`
 scans the file ONCE for the byte offset of every `zone` header and caches that
