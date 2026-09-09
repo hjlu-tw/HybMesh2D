@@ -157,14 +157,24 @@ global default, so a per-geometry override never hides behind a collapsed header
   that calls `setEnabled` sets or clears the row's marker, so the lock and its explanation cannot
   disagree; `_FIELD_NOTES` is the ONE declaration of the short text and the long prose stays the
   spec's own `_C1_TIP`, not a copy. Three placement facts are MEASURED, not stylistic: the note
-  rides beside the FIELD because the label column is sized from the labels actually built
-  (171 px today, bounded 120..240) and a suffixed C1 label measures **240** — the ceiling; the
-  note cell is the ONE composite field cell in the GUI, legal only because nothing in the
+  rides beside the FIELD because the label column is sized from the labels actually built and
+  clamped to `LABEL_COL_MIN..LABEL_COL_MAX` (120..240, DECLARED in `mesh_bl_dialog_layout` with
+  `clamp_label_col`, so the gate asserts the BOUND rather than restating a pixel), and a suffixed
+  C1 label WIDENS that column — 171 → the 240 ceiling on the metric these numbers were taken on;
+  the note cell is the ONE composite field cell in the GUI, legal only because nothing in the
   dialog's mixins calls `labelForField` (gated by AST over its own MRO); and a tooltip on the
   disabled widget is impossible, since Qt picks the mouse receiver by walking past disabled
-  widgets, so the box gets no `Enter` — nor does its parent. Gated by
-  `tests/test_bl_dialog_sections.py` check 14, which binds "disabled ⇔ a non-empty reason
-  showing" in BOTH directions and proves itself non-vacuous by re-running the real pre-fix wiring.
+  widgets, so the box gets no `Enter` — nor does its parent. **The gate asserts the WIDENING, never
+  the pixel** (#98): label widths scale with the font and the clamp does not, so the `>= 240` it
+  used to pin — which measured EXACTLY 240 here — went red for the platform with the code correct
+  (MEASURED: 224 at `QT_FONT_DPI=84`, 191 at 72), the very failure its own comment existed to
+  forbid. **An unreadable method value leaves the field LIVE and SILENT**: `_sync`'s
+  `except (TypeError, ValueError)` sets `reads_c1 = True` — never stuck off — and an editable field
+  has nothing to explain, so no marker is shown. Gated by `tests/test_bl_dialog_sections.py`
+  check 14, which binds "disabled ⇔ a non-empty reason showing" in BOTH directions, proves itself
+  non-vacuous by re-running the real pre-fix wiring, and moves the reason into the LABEL through
+  the real build to prove the column check bites; plus check 15, which raises from `_widget_value`
+  for the junction combo — the fallback path both shipped methods never take.
   **The composite cell is what mode-hiding must hide**: `mesh_bl_dialog_layout` hides `cell`, not
   `w`, or a row the active `MESH_MODE` does not read leaves its note showing beside nothing.
 

@@ -29,15 +29,20 @@ Checks:
  7. The dialog still round-trips every parameter through result_params().
  8. Section state persistence is scoped and headless-safe (ui_state contract).
 
-Checks 13-14 are the OTHER half of a greyed-out field: the lock and its reason.
+Checks 13-15 are the OTHER half of a greyed-out field: the lock and its reason.
 BL_JUNCTION_ANGLE_C1 is dead under the default junction scheme and is disabled for
 it (13), and USER-REPORTED (issue #23) that a silent lock reads as a bug — so the row
 must also SAY why, on screen, with no hover (14). 14 binds the two in both directions
-and proves the binding is not vacuous by breaking the real wiring.
+and proves the binding is not vacuous by breaking the real wiring; it also pins WHERE
+the reason rides (beside the field, never suffixed onto the label), clamp-relative
+rather than on a pixel literal, with an injection that moves it into the label for the
+teeth. 15 exercises the third path neither of them reaches: a method value the dialog
+cannot read at all, which is permissive by decision (never stuck off) and silent.
 
 Run:  python3 tools/PreProcessor/tests/test_bl_dialog_sections.py
 """
 import ast
+import dataclasses
 import os
 import sys
 
@@ -57,11 +62,14 @@ def check(cond, msg):
         _FAILS.append(msg)
 
 
+from PyQt6.QtGui import QFont                                        # noqa: E402
 from PyQt6.QtWidgets import QApplication, QLabel                    # noqa: E402
 from app.utils import HelpButton, help_label                         # noqa: E402
 from app.views.collapsible import CollapsibleSection                # noqa: E402
+from app.views.panels import mesh_bl_dialog_layout as bl_layout      # noqa: E402
 from app.views.panels.mesh_bl_dialog_layout import (                 # noqa: E402
-    BLDialogLayoutMixin,
+    BLDialogLayoutMixin, LABEL_COL_MAX, LABEL_COL_MIN, _FIELD_NOTES,
+    clamp_label_col,
 )
 from app.views.panels.mesh_dialogs_bl import (                      # noqa: E402
     _BL_FIELD_SPECS, _BL_FIELD_GROUPS, _value_differs, PerGeomBLDialog,
@@ -353,10 +361,11 @@ stuck._notes[C1].setText("method 0 only")
 check(not c1_bound(stuck),
       "14. INJECTION: a reason left showing beside an ENABLED C1 fails it as well")
 
-# The label column is MEASURED from the labels built (bounded 120..240), so the reason
-# rides beside the FIELD: suffixing the label measures 240 against today's 171 and
-# would shove every label right. Labels are right-aligned in a fixed-width cell, so a
-# clip eats the FIRST characters — check every one of them, widest included.
+# The label column is MEASURED from the labels built and clamped by the layout's own
+# `clamp_label_col`, so the reason rides beside the FIELD: suffixing the label would
+# widen that column and shove every label right. Labels are right-aligned in a
+# fixed-width cell, so a clip eats the FIRST characters — check every one of them,
+# widest included.
 wide = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
 wide._set_all_sections(True)
 wide.show()
@@ -364,26 +373,56 @@ app.processEvents()
 app.processEvents()
 cells = [hb.parentWidget() for hb in wide.findChildren(HelpButton)]
 widths = {c.width() for c in cells}
-# Recomputed from the LABELS ALONE, the way the build measures them: the invariant is
-# that the note fed no measurement, not that the answer is any particular number of
-# pixels. A literal here would be a macOS font metric asserted on an Ubuntu CI runner
-# — a gate that goes red for the platform rather than for the code.
-label_only = max(help_label(lbl + ":", "t").sizeHint().width()
-                 for _k, lbl, _kind, _o in _BL_FIELD_SPECS)
-want_w = min(max(label_only, 120), 240)
+
+#: The label the spec's FIRST CHOICE would have built — the reason appended to C1's
+#: own label — assembled from the spec and the note table rather than typed out, so it
+#: cannot drift from either.
+_C1_LABEL = next(lbl for k, lbl, _kind, _o in _BL_FIELD_SPECS if k == C1)
+_SUFFIXED = f"{_C1_LABEL} \u2014 {_FIELD_NOTES[C1]}:"
+
+
+def label_col(scale: float = 1.0) -> tuple[int, int]:
+    """``(plain, suffixed)`` widest-label widths, measured the way the BUILD measures
+    them — from the LABELS ALONE — under a font scaled by ``scale``. Unclamped: the
+    caller puts them through the layout's own clamp, so the band is asserted once and
+    from its declaration. The scaled font is the APPLICATION's and is restored before
+    returning, so no caller sees it."""
+    base = app.font()
+    if scale != 1.0:
+        f = QFont(base)
+        f.setPointSizeF(base.pointSizeF() * scale)
+        app.setFont(f)
+    try:
+        plain = max(help_label(lbl + ":", "t").sizeHint().width()
+                    for _k, lbl, _kind, _o in _BL_FIELD_SPECS)
+        return plain, help_label(_SUFFIXED, "t").sizeHint().width()
+    finally:
+        app.setFont(base)
+
+
+label_only, suffixed_w = label_col()
+want_w = clamp_label_col(label_only)
 check(len(cells) == len(spec_keys) and widths == {want_w},
       f"14. the label column is what the LABELS measure ({want_w} px), i.e. the row "
       f"note fed nothing into it (got {widths})")
-check(120 <= want_w <= 240,
+check(LABEL_COL_MIN <= want_w <= LABEL_COL_MAX,
       f"14. ...and that measurement is still inside its declared bound ({want_w})")
-# The number that LICENSES the field cell rather than the spec's first choice (a
-# suffix on the label): the suffixed composite must really reach the 240 clamp, or
+# The measurement that LICENSES the field cell rather than the spec's first choice (a
+# suffix on the label): the suffixed composite must really COST the column width, or
 # the label was the right place after all and this row should go back to it.
-suffixed = help_label("Junction \u03b8 C1 (deg) \u2014 method 0 only:", "t")
-check(suffixed.sizeHint().width() >= 240 > want_w,
-      f"14. ...and suffixing the LABEL instead would push the column from {want_w} to "
-      f"its 240 ceiling ({suffixed.sizeHint().width()}), which is why the reason rides "
-      f"beside the field")
+#
+# Clamp-relative, with no pixel literal on either side. The row this replaced asserted
+# `>= 240`, the ceiling written out as a number — and measured EXACTLY 240 here, so a
+# narrower metric (227 at 0.9, MEASURED below) failed it with the code correct, which
+# is the platform failure the comment above it existed to forbid. Both sides now come
+# from the running font and go through the clamp the build itself applies, and the
+# TEETH are the injection below rather than the pixel: with the reason actually moved
+# into the label, the column check above goes red.
+grown = clamp_label_col(suffixed_w)
+check(grown > want_w,
+      f"14. ...and suffixing the LABEL instead would widen the column from {want_w} to "
+      f"{grown} (band {LABEL_COL_MIN}..{LABEL_COL_MAX}), shoving every label in the "
+      f"dialog right, which is why the reason rides beside the field")
 # Every text label in a row, the NOTE included: it is right-aligned in a fixed cell,
 # so a clip eats the first characters rather than the last.
 texts = [t for c in cells for t in c.findChildren(QLabel)[:1]]
@@ -393,6 +432,46 @@ clipped = [(t.text(), t.width(), t.sizeHint().width())
 check(not clipped, f"14. ...and nothing clips its own text, note included ({clipped})")
 check(wide._widgets[C1][0].width() == wide._widgets["BL_JUNCTION_ANGLE_C2"][0].width(),
       "14. ...and the note cell leaves C1's box the same width as C2's beside it")
+
+# ...at deliberately narrower metrics too, which is the whole point: the property is
+# scale-free where the literal was not. Below every check that reads `wide`'s live
+# geometry, deliberately: `label_col(scale)` swaps the APPLICATION font, and the
+# injection builds a second dialog, so measuring `wide` across either would be reading
+# one state through another.
+narrowed = [(sc, clamp_label_col(p), clamp_label_col(su))
+            for sc, (p, su) in ((sc, label_col(sc)) for sc in (0.9, 0.8, 0.7))]
+check(all(g > w for _sc, w, g in narrowed),
+      f"14. ...and that holds under a NARROWER font metric, so the check cannot go red "
+      f"for the platform instead of for the code ({narrowed})")
+
+# INJECTION: put the reason where the spec's first choice would have — suffixed onto
+# C1's LABEL — through the REAL build, and the column check above must fail. Without
+# this the property rests on a comparison of measurements, and a loosening of it would
+# look the same as a fix.
+_real_by_key = bl_layout.by_key
+
+
+def _by_key_suffixing_c1(*tables):
+    specs = _real_by_key(*tables)
+    specs[C1] = dataclasses.replace(specs[C1], label=_SUFFIXED.rstrip(":"))
+    return specs
+
+
+bl_layout.by_key = _by_key_suffixing_c1
+try:
+    suffixed_dlg = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+    suffixed_dlg._set_all_sections(True)
+    suffixed_dlg.show()
+    app.processEvents()
+    app.processEvents()
+    suf_widths = {hb.parentWidget().width()
+                  for hb in suffixed_dlg.findChildren(HelpButton)}
+finally:
+    bl_layout.by_key = _real_by_key
+check(bl_layout.by_key is _real_by_key, "14. (injection restored the real spec table)")
+check(suf_widths != {want_w} and min(suf_widths) > want_w,
+      f"14. INJECTION: the reason suffixed onto the LABEL widens the column past what "
+      f"the labels measure ({want_w} -> {sorted(suf_widths)}) and fails the check above")
 
 # The note cell is the ONE composite field cell in the GUI, against CLAUDE.md's
 # "never wrapped" rule. What that rule protects is labelForField, so pin its
@@ -412,6 +491,46 @@ _calls = [(os.path.basename(f), n.lineno) for f in sorted(_own)
 check(len(_own) >= 2 and not _calls,
       f"14. nothing in the dialog's own {len(_own)} mixin(s) resolves a label on its "
       f"forms ({_calls}), which is the precondition the wrapped C1 field cell needs")
+
+# ── 15. a junction method the dialog cannot READ leaves C1 live and silent ─────────
+# Issue #23 decided this fallback is PERMISSIVE: a method value `_widget_value` cannot
+# read (a scheme added later as a string, a spec whose kind stops matching its combo)
+# must leave the field editable — "never stuck off" — and an editable field has nothing
+# to explain, so it shows NO marker. Both halves are the `except` branch of
+# `_wire_method_dependent_fields`, which check 14 never reaches: both shipped methods
+# read fine, so the toggling above only ever exercises the two live paths and the
+# fallback was intended rather than verified.
+_real_read = PerGeomBLDialog._widget_value
+
+
+def _unreadable_method(self, w, spec):
+    """The real reader everywhere except the junction-method combo, which raises the
+    way an unparseable value does."""
+    m = self._widgets.get("BL_JUNCTION_METHOD")
+    if m is not None and w is m[0]:
+        raise ValueError("junction method is not readable as an int")
+    return _real_read(self, w, spec)
+
+
+PerGeomBLDialog._widget_value = _unreadable_method
+try:
+    ur = PerGeomBLDialog("Global default", dict(defaults), dict(defaults))
+    um, uk = ur._widgets["BL_JUNCTION_METHOD"]
+    ur._set_widget_value(um, uk, 1)      # the method that DOES disable C1 when read
+    app.processEvents()
+    ur_state = (ur._widgets[C1][0].isEnabled(), ur.field_note(C1), c1_bound(ur))
+finally:
+    PerGeomBLDialog._widget_value = _real_read
+check(PerGeomBLDialog._widget_value is _real_read,
+      "15. (the injection restored the real widget reader)")
+check(ur_state[0],
+      f"15. a junction method the dialog cannot read leaves C1 EDITABLE rather than "
+      f"stuck off, on the method that otherwise disables it ({ur_state})")
+check(ur_state[1] == "",
+      f"15. ...and shows NO reason, an editable field having nothing to explain "
+      f"(got {ur_state[1]!r})")
+check(ur_state[2],
+      "15. ...so check 14's disabled <=> reason binding holds in the fallback too")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

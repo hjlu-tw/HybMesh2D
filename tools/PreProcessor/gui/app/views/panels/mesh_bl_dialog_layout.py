@@ -29,7 +29,8 @@ from app.views.panels.mesh_bl_field_specs import (
     BL_SPECS, _BL_FIELD_GROUPS, _value_differs,
 )
 
-__all__ = ["BLDialogLayoutMixin"]
+__all__ = ["BLDialogLayoutMixin", "LABEL_COL_MIN", "LABEL_COL_MAX",
+           "clamp_label_col"]
 
 #: A field the selected junction scheme cannot read is greyed out, and its row says
 #: WHY -> the short on-screen reason, keyed by parameter. ONE declaration: the row
@@ -39,6 +40,21 @@ __all__ = ["BLDialogLayoutMixin"]
 #: own tip (``services/mesh_bl_field_specs._C1_TIP``) and is NOT repeated here.
 _C1_KEY = "BL_JUNCTION_ANGLE_C1"
 _FIELD_NOTES = {_C1_KEY: "method 0 only"}
+
+#: The band the MEASURED label column is held inside. Below the floor the column
+#: looks ragged against the other panels; above the ceiling one long label eats the
+#: field column. DECLARED here rather than written inline at the one place that
+#: clamps, because the gate asserts against the bound (issue #98): a check that
+#: restates the pixel instead reads as a font metric of the machine it was written
+#: on, and goes red on a narrower one with the code correct.
+LABEL_COL_MIN = 120
+LABEL_COL_MAX = 240
+
+
+def clamp_label_col(width: int) -> int:
+    """The label column the build uses for a measured widest-label ``width``."""
+    return min(max(int(width), LABEL_COL_MIN), LABEL_COL_MAX)
+
 
 #: The dialog's secondary-text style, for a group's hint line and a row's note alike.
 _HINT_QSS = "color:#8a93ad; font-size:10px;"
@@ -142,8 +158,8 @@ class BLDialogLayoutMixin:
         # (deg)") overflows a guessed 150 and, being right-aligned in a fixed-width
         # cell, loses its first characters — and the next parameter added would go
         # stale again. Bounded so one long label cannot eat the field column.
-        col_w = max((lbl.sizeHint().width() for lbl in labels), default=150)
-        col_w = min(max(col_w, 120), 240)
+        col_w = clamp_label_col(
+            max((lbl.sizeHint().width() for lbl in labels), default=150))
         for form in forms:
             align_form_labels(form, col_w)
 
@@ -166,12 +182,16 @@ class BLDialogLayoutMixin:
 
         The note rides beside the FIELD rather than being appended to the LABEL, and
         that is measured rather than stylistic. The label column is sized from the
-        labels actually built (bounded 120..240) and measures 171 today; the composite
-        for ``Junction \u03b8 C1 (deg) \u2014 method 0 only:`` measures 240, so
-        suffixing the label would shove every label in the dialog 69 px right and sit
-        on the upper bound, where the next parameter added would clip instead. The note
-        cell feeds no measurement: 171 + 86 (spin box) + 4 + 73 (note) = 334 px, inside
-        the dialog's own 380 px minimum width, so nothing moves and nothing clips.
+        labels actually built and clamped by :func:`clamp_label_col`; on the metric
+        these numbers were taken on it measures 171, while the composite for
+        ``Junction \u03b8 C1 (deg) \u2014 method 0 only:`` measures 240 — so suffixing
+        the label would shove every label in the dialog 69 px right and sit on
+        :data:`LABEL_COL_MAX`, where the next parameter added would clip instead. The
+        widths scale with the font and the clamp does not, so the gate asserts that the
+        suffix MOVES the column rather than that it lands on any particular pixel
+        (issue #98). The note cell feeds no measurement: 171 + 86 (spin box) + 4 + 73
+        (note) = 334 px, inside the dialog's own 380 px minimum width, so nothing moves
+        and nothing clips.
 
         This is the ONE row in the GUI whose field cell is a composite, against
         CLAUDE.md's "Numeric and combo rows go into the form DIRECTLY, never wrapped".
