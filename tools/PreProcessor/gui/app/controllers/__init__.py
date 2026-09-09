@@ -21,6 +21,7 @@ from app.controllers.file_edit_ctrl import FileEditControllerMixin
 from app.controllers.pending_edit_ctrl import PendingEditControllerMixin
 from app.controllers.backend_ctrl import BackendControllerMixin
 from app.controllers.mesh_gen_ctrl import MeshGenControllerMixin
+from app.controllers.mesh_config_io_ctrl import MeshConfigIoControllerMixin
 from app.controllers.mesh_export_ctrl import MeshExportControllerMixin
 from app.controllers.mesh_layers_ctrl import MeshLayersControllerMixin
 from app.controllers.open_endpoint_ctrl import OpenEndpointControllerMixin
@@ -59,7 +60,8 @@ __all__ = [
     "CurveDrawControllerMixin",
     "CurveEditControllerMixin", "FileEditControllerMixin",
     "PendingEditControllerMixin", "BackendControllerMixin",
-    "MeshGenControllerMixin", "MeshExportControllerMixin",
+    "MeshGenControllerMixin", "MeshConfigIoControllerMixin",
+    "MeshExportControllerMixin",
     "MeshLayersControllerMixin", "OpenEndpointControllerMixin",
     "CaseDispositionControllerMixin",
     "SolverControllerMixin", "SolverBcControllerMixin",

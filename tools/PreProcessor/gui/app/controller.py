@@ -42,6 +42,7 @@ from app.controllers import (
     PendingEditControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
+    MeshConfigIoControllerMixin,
     MeshExportControllerMixin,
     MeshLayersControllerMixin,
     OpenEndpointControllerMixin,
@@ -90,6 +91,7 @@ class AppController(
     PendingEditControllerMixin,
     BackendControllerMixin,
     MeshGenControllerMixin,
+    MeshConfigIoControllerMixin,
     MeshExportControllerMixin,
     MeshLayersControllerMixin,
     OpenEndpointControllerMixin,
@@ -279,6 +281,17 @@ class AppController(
         different audience.
         """
         user_log.log(message, level)
+
+    def log_report(self, message, level: str = "ERROR"):
+        """Say something MULTI-LINE to the user, as ONE graded message.
+
+        ``self.log`` once per line grades each wrapped line separately, so a
+        four-line refusal reads as four failures. The head/tail split that
+        avoids that belongs with the classifier it exists for — see
+        :func:`app.services.user_log.log_report`, which also says why the grade
+        is stated here rather than guessed from the first line.
+        """
+        user_log.log_report(message, level)
 
     def show_main_window(self):
         self.main_window.show()

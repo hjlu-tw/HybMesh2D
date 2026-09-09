@@ -217,15 +217,15 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
 
 - **`tests/test_file_length.py`'s pin is a CEILING, not a measurement**: a pinned file that
   shrinks while STAYING over the limit passes, and may grow back to its pin without the gate
-  speaking. Deliberate — #102 and #103 split two of these files, and an exact-match pin would go
-  red on every intermediate commit of the very work it exists to provoke. The hole is bounded by
+  speaking. Deliberate — #102 and #103 split two of these files rather than living inside their
+  pins (#102 is done: `mesh_gen_ctrl.py` LEFT the list rather than shrinking within it), and an
+  exact-match pin would go red on every intermediate commit of the work it exists to provoke. The hole is bounded by
   the pin, which never rises. Two smaller ones beside it: the gate counts LINES, so a 400-line file
   can be far worse than a 510-line one and nothing here can tell; and it reaches `.py` files only.
-  Re-measured 2026-09-09: 262 GUI `.py` files, of which 7 exceed 500 lines —
-  `app/models/pipeline_config.py` 524, `app/controllers/mesh_gen_ctrl.py` 512,
-  `app/controllers/session_io_ctrl.py` 508, `app/services/case_run_note.py` 508,
-  `app/services/pipeline_runner.py` 506, `app/models/solver_config.py` 501,
-  `app/services/result_legs.py` 501. Every figure in that sentence is DERIVED, never remembered —
+  Re-measured 2026-09-09: 263 GUI `.py` files, of which 6 exceed 500 lines —
+  `app/models/pipeline_config.py` 524, `app/controllers/session_io_ctrl.py` 508,
+  `app/services/case_run_note.py` 508, `app/services/pipeline_runner.py` 506,
+  `app/models/solver_config.py` 501, `app/services/result_legs.py` 501. Every figure in that sentence is DERIVED, never remembered —
   the count, the total, the standard and each offender by name and size — off
   `test_file_length.py`'s own walk, so `--sync` rewrites this list and a stale one goes red. Two
   same-size offenders are ordered by NAME, so a swap here goes red too (#101). What the ungated

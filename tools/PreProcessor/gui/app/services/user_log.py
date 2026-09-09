@@ -188,6 +188,35 @@ def log(message, level: str | None = None) -> None:
                 exc_info=True)
 
 
+def log_report(message, level: str = "ERROR") -> None:
+    """Emit a MULTI-LINE user-facing report as ONE graded message.
+
+    A wrapped failure is one failure. Sinks are handed the raw text and classify
+    each line for themselves (see the module docstring), so a caller that tagged
+    every line of a four-line refusal ``[ERROR]`` made the user read four errors
+    — which is what the mesh stage's missing-geometry refusal did until #102.
+    The tag therefore goes on the FIRST line only, and the continuation lines go
+    out untagged, where the heuristics in :func:`classify` leave them INFO.
+
+    The SPLIT is this module's, because the whole reason for it is what
+    :func:`classify` does with a level tag; the GRADE stays the caller's, which
+    is why *level* has a value rather than being guessed. Guessing it would
+    reintroduce a defect from the other side: the real refusal's headline is
+    "Geometry file(s) not found:", which carries none of the words the keyword
+    heuristics look for and so grades INFO on its own — a failure rendered in
+    muted grey. ``ERROR`` is the default because a report worth wrapping is a
+    refusal being explained at length; a caller with a milder one says so.
+    """
+    if not message:
+        return
+    head, _, rest = str(message).partition("\n")
+    _, clean = classify(head, level)
+    if clean:
+        log(f"[{level}] {clean}", level)
+    for line in rest.splitlines():
+        log(line)
+
+
 def log_all(messages: Iterable[str], level: str | None = None) -> None:
     """Emit several lines in order. Convenience for multi-line reports."""
     for m in messages:

@@ -1157,14 +1157,16 @@ whose only enforcement is whether somebody happens to look. #97 replaced that wi
 
 Three decisions inside that gate were bought rather than assumed:
 
-- **The seven files already over the limit are PINNED, not exempted, and the pin fails in BOTH
-  directions** — growing further fails (already over is not a licence), dropping back under fails
-  as an obsolete pin. That is `test_instruction_budget.py`'s `KNOWN_RESIDUE` shape, reused because
+- **The seven files already over the limit when the gate landed are PINNED, not exempted, and the
+  pin fails in BOTH directions** — growing further fails (already over is not a licence), dropping
+  back under fails as an obsolete pin. #102 collected the first of those failures on purpose:
+  splitting `controllers/mesh_gen_ctrl.py` turned its own pin red as obsolete, and clearing the
+  entry is what closed the ticket. That is `test_instruction_budget.py`'s `KNOWN_RESIDUE` shape, reused because
   it had already been proved here: those pins failed the moment #76 stopped them being violations,
   rather than quietly outliving the defect the way a skip list does.
 - **A pin is a CEILING, not an exact measurement.** An exact-match pin is the stricter rule and was
-  rejected: #102 and #103 split two of these very files, and an exact match would go red on every
-  intermediate commit of the work the gate exists to provoke — `ruff.toml`'s "a permanently-red
+  rejected: #102 and #103 split two of these very files rather than living inside their pins, and
+  an exact match would go red on every intermediate commit of the work the gate exists to provoke — `ruff.toml`'s "a permanently-red
   gate is worse than none" arriving through a different door. The cost is a real hole (a pinned
   file may shrink and grow back to its pin unseen), bounded by a pin that never rises, and it is
   recorded as a named blind spot rather than left implicit.
@@ -1177,7 +1179,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (7 of 262, worst 524) is DERIVED
+The status figure the instruction files print about this standard (6 of 263, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —

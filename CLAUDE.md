@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **35,095
-characters (35,297 bytes, 2026-09-09) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **35,092
+characters (35,294 bytes, 2026-09-09) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**35,500**, leaving 405 characters of slack — derived by a rule the gate states at that
+**35,500**, leaving 408 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -129,10 +129,10 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   the four with none, and a human reading a diff was its whole enforcement. Measured 2026-09-09:
   **four** commits crossed it in the six days after #67 wrote it down — `98003f1` (#85),
   `306d6a1` (#91) and `8bdc36a` (#47's merge) TWICE — and 44 across 35 files over the whole
-  history. 7 of 262 files exceed it (worst 524); those seven are PINNED at their measured sizes,
+  history. 6 of 263 files exceed it (worst 524); those six are PINNED at their measured sizes,
   and a pin fails both when the file grows further and when it drops back under the limit. That
   status is DERIVED, never remembered: `--sync` rewrites it from the same walk, in all three
-  files that state it — here, `gui-seams.md` (which lists all seven) and the design note (#101).
+  files that state it — here, `gui-seams.md` (which names each one) and the design note (#101).
 - **Never `except Exception: pass`.** Use `services/logging_setup.py::get_logger(__name__)` and
   log at `debug(..., exc_info=True)`, or `warning` when the failure silently degrades what the
   user asked for. Gate: `tests/test_silent_exceptions.py`.

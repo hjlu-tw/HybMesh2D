@@ -2,14 +2,13 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import QFileDialog
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import (find_binary_executable, repo_root, confirm,
-                       report_error, report_warning)
+                       report_error)
 
 if TYPE_CHECKING:
     from app.models.mesh_config import MeshConfig
@@ -44,7 +43,11 @@ def mesh_input_warning(cfg) -> str:
 
 
 class MeshGenControllerMixin:
-    """Mixin containing HybMesh2D mesh generator execution, config editor mapping, and results visualization logic."""
+    """Run the HybMesh2D mesh generator, and show what it produced.
+
+    Reading and writing the mesher's own ``.dat`` config through a file dialog is
+    the other half this class used to hold; it is ``mesh_config_io_ctrl.py``.
+    """
 
     def add_mesh_tab(self):
         """Add a new tab to the Mesh Generator / Statistics tab strip.
@@ -66,73 +69,6 @@ class MeshGenControllerMixin:
         if bar.count() <= 1:
             return
         bar.removeTab(idx)
-
-    def load_mesh_config(self):
-        """Prompt file dialog to load a Background_para.dat configuration file."""
-        root_dir = repo_root()
-        default_dir = os.path.join(root_dir, "config", "mesh")
-        
-        path, _ = QFileDialog.getOpenFileName(
-            self.main_window, 
-            "Load Mesh Configuration", 
-            default_dir, 
-            "Config Files (Background_para.dat Background_para*.dat *.dat);;All Files (*)"
-        )
-        if not path:
-            return
-
-        try:
-            self.global_mesh_config.load_from_file(path)
-            self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
-            self.log(f"Loaded mesh configuration from {path}")
-            missing = getattr(self.global_mesh_config, "missing_geom_files", [])
-            if missing:
-                self.log(
-                    f"[WARNING] Geometry file(s) not found (paths may be broken): {', '.join(missing)}"
-                )
-            for w in getattr(self.global_mesh_config, "parse_warnings", []):
-                self.log(f"[WARNING] {w}")
-            self.sync_mesh_layers_panel()
-        except Exception as e:
-            self.log(f"[ERROR] Failed to load mesh config: {e}")
-            report_warning(self.main_window, "Load Mesh Config Failed",
-                           "The mesh configuration could not be loaded.",
-                           detail=str(e))
-
-    def save_mesh_config(self):
-        """Extract config settings from UI panel and save them to a file."""
-        root_dir = repo_root()
-        
-        default_name = "Background_para.dat"
-        session = self.active_session()
-        if session and session.file_path:
-            stem = os.path.splitext(os.path.basename(session.file_path))[0]
-            default_name = f"Background_para_{stem}.dat"
-        # config/local/, for the reason given in .gitignore's "Local working
-        # configs" block: config/mesh/ already carries two of these files as
-        # tracked accidents, so a default proposing that folder can overwrite one.
-        out_dir = os.path.join(root_dir, "config", "local")
-        os.makedirs(out_dir, exist_ok=True)
-        default_path = os.path.join(out_dir, default_name)
-
-        path, _ = QFileDialog.getSaveFileName(
-            self.main_window, 
-            "Save Mesh Configuration", 
-            default_path, 
-            "Config Files (*.dat);;All Files (*)"
-        )
-        if not path:
-            return
-
-        try:
-            cfg = self.config_from_panel("mesh_config_panel")
-            cfg.save_to_file(path)
-            self.log(f"Saved mesh configuration to {path}")
-        except Exception as e:
-            self.log(f"[ERROR] Failed to save mesh config: {e}")
-            report_error(self.main_window, "Save Mesh Config Failed",
-                         "The mesh configuration could not be saved to disk.",
-                         detail=str(e))
 
     def preview_mesh_generator(self):
         """Update and fit the canvas view to the current geometry input files and domain box coordinates."""
@@ -216,13 +152,9 @@ class MeshGenControllerMixin:
         missing = cfg.geom_files_not_on_disk()
         if missing:
             msg = cfg.missing_geometry_message(missing)
-            # ONE [ERROR] for one error: the log service classifies on the raw
-            # message, so tagging every wrapped prose line of a multi-line message
-            # made a single failure read as four.
-            head, _, rest = msg.partition("\n")
-            self.log(f"[ERROR] {head}")
-            for line in rest.splitlines():
-                self.log(line)
+            # ONE [ERROR] for one error, and the head/tail split that achieves it
+            # lives with the classifier it exists for (user_log.log_report).
+            self.log_report(msg)
             report_error(self.main_window, "Geometry File Not Found", msg)
             return
         for w in warnings:

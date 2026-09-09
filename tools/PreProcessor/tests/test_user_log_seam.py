@@ -21,6 +21,12 @@ What this pins, and why each one is a defect that shipped:
 4. A FAILING SINK IS NOT FATAL. Sinks are called from subprocess-output slots; a
    dead C++ widget must not take the worker down, and the other sinks still run.
 
+5. A WRAPPED FAILURE IS ONE FAILURE. Sinks classify for themselves, so a caller
+   that tagged every line of a multi-line refusal `[ERROR]` made the user read
+   one failure as several — which the mesh stage's missing-geometry refusal did
+   until #102 moved the head/tail split next to the classifier it exists for.
+   `log_report` grades the FIRST line only.
+
 Run:  python3 tools/PreProcessor/tests/test_user_log_seam.py
 """
 import ast
@@ -178,6 +184,47 @@ has_log = any(isinstance(n, ast.FunctionDef) and n.name == "log"
               for cls in _ctl.body if isinstance(cls, ast.ClassDef)
               for n in cls.body)
 check("5. AppController.log exists as the controller-side entry point", has_log)
+
+# ── 6. log_report: a wrapped failure is ONE graded failure ───────────────
+# Shaped like the real one — services/mesh_config_geoms.missing_geometry_message
+# is a headline, a bulleted path per missing file, and a paragraph of advice.
+REFUSAL = ("Geometry file(s) not found:\n"
+           "  • results/resampled/gone.dat\n"
+           "  • results/resampled/also_gone.dat\n"
+           "Remove them from Geometry Files, or re-export the geometry they name.")
+
+shown = []
+user_log.add_sink(shown.append)
+user_log.log_report(REFUSAL)
+user_log.remove_sink(shown.append)
+
+# The display sink classifies the RAW text it was handed, which is the whole
+# reason the split has to happen before the sinks see it.
+graded = [user_log.classify(m)[0] for m in shown]
+check("6. every line of the report reaches the sinks (%d of 4)" % len(shown),
+      len(shown) == 4)
+check(f"6. exactly ONE of them grades ERROR, not four ({graded})",
+      graded.count("ERROR") == 1 and graded[0] == "ERROR")
+check("6. ...and the tag is not doubled in the displayed text",
+      shown and user_log.classify(shown[0])[1] == "Geometry file(s) not found:")
+check("6. the continuation lines are shown verbatim",
+      shown[1:] == REFUSAL.split("\n")[1:])
+
+# NEGATIVE CONTROL: the pre-#102 shape, tagging each line, really does grade four
+# — so the check above is measuring the split and not a message that could never
+# have gone wrong.
+naive = [user_log.classify(f"[ERROR] {ln}")[0] for ln in REFUSAL.split("\n")]
+check(f"6. negative control: tagging every line grades FOUR errors ({naive})",
+      naive.count("ERROR") == 4)
+
+# An explicit level is honoured, so a multi-line WARNING is not promoted.
+shown2 = []
+user_log.add_sink(shown2.append)
+user_log.log_report("careful:\nsecond line", "WARNING")
+user_log.remove_sink(shown2.append)
+check("6. an explicit level grades the head line and only the head line",
+      [user_log.classify(m)[0] for m in shown2] == ["WARNING", "INFO"])
+check("6. sinks unregister cleanly after section 6", user_log.sinks() == ())
 
 print()
 if failures:
