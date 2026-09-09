@@ -222,10 +222,14 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
   the pin, which never rises. Two smaller ones beside it: the gate counts LINES, so a 400-line file
   can be far worse than a 510-line one and nothing here can tell; and it reaches `.py` files only.
   Re-measured 2026-09-09: 262 GUI `.py` files, of which 7 exceed 500 lines —
-  `models/pipeline_config.py` 524, `controllers/mesh_gen_ctrl.py` 512, `services/case_run_note.py`
-  508, `controllers/session_io_ctrl.py` 508, `services/pipeline_runner.py` 506,
-  `services/result_legs.py` 501, `models/solver_config.py` 501. That figure is still hand-written
-  here; #101 puts it under `--sync`. What the ungated years cost is MEASURED (2026-09-09, one walk
+  `app/models/pipeline_config.py` 524, `app/controllers/mesh_gen_ctrl.py` 512,
+  `app/controllers/session_io_ctrl.py` 508, `app/services/case_run_note.py` 508,
+  `app/services/pipeline_runner.py` 506, `app/models/solver_config.py` 501,
+  `app/services/result_legs.py` 501. Every figure in that sentence is DERIVED, never remembered —
+  the count, the total, the standard and each offender by name and size — off
+  `test_file_length.py`'s own walk, so `--sync` rewrites this list and a stale one goes red. Two
+  same-size offenders are ordered by NAME, so a swap here goes red too (#101). What the ungated
+  years cost is MEASURED (2026-09-09, one walk
   of each GUI `.py` file's own history comparing every blob with its predecessor): **44 commits
   across 35 files** took a GUI file past 500 lines, and **four of them landed in the six days after
   #67 wrote the standard down** — `98003f1` (#85) took `models/mesh_config.py` 499 -> 505,

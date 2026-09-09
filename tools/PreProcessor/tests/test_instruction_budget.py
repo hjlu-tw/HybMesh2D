@@ -67,17 +67,22 @@ Checks:
     root's character count, its byte count, its token estimate, its budget and its slack;
     the byte-char delta, stated in BOTH this file and the root; the rule-file count, also
     stated in both; and blind spot (d)'s rule-file sizes with their descending order,
-    both headroom lists and `RULE_BUDGET`'s own value beside them. Plus ONE figure that is
-    not about these files at all (#101): the status the root states for the GUI
-    file-length standard — how many files exceed it, out of how many, the worst one's
-    size and the limit itself — derived from `gui_file_lengths.py`, the same walk
+    both headroom lists and `RULE_BUDGET`'s own value beside them. Plus one figure that is
+    not about these files at all (#101): the status of the GUI file-length standard — how
+    many files exceed it, out of how many, the worst one's size, the limit itself and
+    every offender by name — derived from `gui_file_lengths.py`, the same walk
     `test_file_length.py` enforces the standard with. It is here because it decays the
-    same way and had already decayed — it read `6 of 260 ... worst 523` two days after
-    the standard's own gate landed, and that gate reported ALL PASS beside it, because
-    the figure was never registered here. A figure a human must remember goes stale
-    eventually, whatever it describes. What the tree says TODAY is not repeated in this
-    docstring: it is derived below, and restating it here would be the same defect one
-    level out. Every one of those was maintained BY HAND, and writing any of
+    same way and had already decayed: it read `6 of 260 ... worst 523` from `566b8d0`
+    (2026-09-08) until #97 corrected it BY HAND the next day, in the very commit that gave
+    the standard its own gate — while THIS gate, the one whose whole job is figures that
+    go stale, reported ALL PASS beside it, because that figure was never registered here.
+    A figure a human must remember goes stale eventually, whatever it describes. That
+    figure is stated in THREE files — the root, `.claude/rules/gui-seams.md` (which lists
+    every offender) and `docs/design_notes/gui.md` — and #101 registered only the first,
+    leaving the other two stating it by hand while promising in the same sentence that
+    #101 had gated it; its follow-up registered all three. What the tree says TODAY is not
+    repeated in this docstring: it is derived below, and restating it here would be the
+    same defect one level out. Every one of those was maintained BY HAND, and writing any of
     them changes the file being measured, so keeping them true is a joint fixed-point
     iteration rather than a measurement — which is why it had failed eleven times in eight
     tickets by the time this landed, every instance caught by a human or a review agent
@@ -93,7 +98,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 200 more of today because this repo's own prose
+bytes, which the root file has 202 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -312,12 +317,18 @@ Known remaining blind spots, stated rather than pretended away:
     `docs/agents/rule-file-style.md` mentions the 60,000 rule budget in passing prose
     ("anywhere near its 60,000 budget"), which check 7 does not read because that file is
     not an instruction file and states the number as an aside rather than as a figure:
-      - The root's GUI-file-length figures ("7 of 262 files exceed it (worst 524)") and
-        the two tripwire rows that count their own globs' files. All derivable, and all
-        left out for one reason: their INPUTS are GUI source files, so a stale figure
-        there is left by a commit that never opens an instruction file, and gating it
-        would put a red gate in front of an author who changed nothing self-describing.
-        That is `ruff.toml`'s permanently-red gate arriving through a different door.
+      - The two tripwire rows that count their own globs' files ("24 files, verified",
+        "8 files, verified"). Derivable, and left out for one reason: their INPUTS are GUI
+        source files, so a stale figure there is left by a commit that never opens an
+        instruction file, and gating it would put a red gate in front of an author who
+        changed nothing self-describing. That is `ruff.toml`'s permanently-red gate
+        arriving through a different door. The GUI file-length STATUS sat in this bullet
+        for that same reason until #101 overruled it, and the overruling is the more
+        useful half: the argument is about the AUTHOR who trips the gate, not about the
+        figure, and `--sync` answers it — a red gate whose fix is one command is not the
+        permanently-red shape this list guards against. What decided it was evidence, not
+        the argument: the figure had already decayed twice. The rows above stay out until
+        they do the same.
       - This docstring's own behavioural counts — check 5's `0 / 3 / 8 / 27` ladder, and
         blind spot (f)'s reach — which describe what the checks would report under
         narrowings that were REJECTED, so re-deriving them means keeping three discarded
@@ -331,10 +342,10 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 46,476 / 43,870 / 38,649 / 20,880 / 16,805 / 16,479 / 15,762 / 12,672 / 12,643 / 8,969  characters (pipeline-case, mesher-multiblock, mesher-smoothing, gui-seams, mesher, gui-panels-config, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 46,476 / 43,870 / 38,649 / 21,156 / 16,805 / 16,479 / 15,762 / 12,672 / 12,643 / 8,969  characters (pipeline-case, mesher-multiblock, mesher-smoothing, gui-seams, mesher, gui-panels-config, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 13,524 / 16,130 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 21,351 / 39,120 / 43,195 / 43,521 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 21,351 / 38,844 / 43,195 / 43,521 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -1010,6 +1021,14 @@ def _rx(pattern):
 # the opposite of what an over-budget tree should hear.
 _NUM_LIST = r"((?:-?[\d,]+~/~)*-?[\d,]+)"
 
+# A run of `<path>.py` <lines> pairs, comma separated -- how `gui-seams.md` names the GUI
+# files that exceed the standard. Built out of `~` pieces rather than one `.+?` because
+# the list WRAPS across lines in that file and `.` does not match a newline, while `~`
+# becomes `\s+` which does. Without this the anchor resolved 0 times and check 7 reported
+# a missing figure instead of a stale one.
+_GUI_OFFENDER = r"`[A-Za-z0-9_/]+\.py`~[\d,]+"
+_OFFENDER_LIST = r"((?:" + _GUI_OFFENDER + r",~)*" + _GUI_OFFENDER + r")"
+
 _NUM_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
               "nine", "ten", "eleven", "twelve")
 
@@ -1065,6 +1084,41 @@ def _fmt_names(values):
     return ", ".join(values)
 
 
+_OFFENDER_PAIR = re.compile(r"`([A-Za-z0-9_/]+\.py)`\s+([\d,]+)")
+
+
+def _parse_offenders(text):
+    return tuple((m.group(1), int(m.group(2).replace(",", "")))
+                 for m in _OFFENDER_PAIR.finditer(text))
+
+
+# The list is seven entries long and would be a 300-character line unwrapped, in a file
+# whose every other line stops near 100. The anchor reads it through `~` (`\s+`), so where
+# the breaks fall cannot affect equality -- wrapping is cosmetic to the CHECK and load
+# bearing for the READER, and being a pure function of the values it stays idempotent.
+_OFFENDER_WRAP = 98
+_OFFENDER_INDENT = "  "
+
+
+def _fmt_offenders(values):
+    words = ["`%s` %s," % (path, "{:,}".format(n)) for path, n in values]
+    if words:
+        words[-1] = words[-1][:-1]
+    lines, cur = [], _OFFENDER_INDENT.rstrip()
+    for word in words:
+        candidate = (cur + " " + word) if cur else word
+        if cur and len(candidate) > _OFFENDER_WRAP:
+            lines.append(cur)
+            cur = _OFFENDER_INDENT + word
+        else:
+            cur = candidate
+    if cur:
+        lines.append(cur)
+    # The first line is spliced in where the anchor already sits, so it carries no indent
+    # of its own; every continuation does.
+    return "\n".join(lines).lstrip()
+
+
 def _rule_count(world):
     """How many rule files there are. One derivation; three anchors spell it."""
     return (len(world["rules"]),)
@@ -1097,10 +1151,26 @@ def _root_bytes(world):
 # `gui_file_lengths.py`'s, cannot disagree with the gate that ENFORCES the standard
 # either. #101: this figure sat outside the registry, decayed to `6 of 260 ... worst 523`,
 # and every gate in the repo stayed green.
+def _gui_offenders(world):
+    """(path, lines) per GUI file over the standard, largest first, ties by NAME.
+
+    The order is derived here rather than read from the prose it checks, for
+    `_rules_by_size`'s reason: a file that grows past another needs the NAME list to move
+    with it, which no amount of re-deriving the sizes alone would say. Ties by name make
+    that order total -- this tree has two 508s and two 501s, so without it `--sync` would
+    have a choice to make and would not be a fixed point.
+    """
+    pairs = [(p, n) for p, n in world["gui_lengths"].items() if n > GUI_LIMIT]
+    # A TUPLE, not the `sorted()` list: every figure here is compared with `!=` against
+    # what the prose parses to, and a parser returning a tuple never equals a list. That
+    # is not a cosmetic mismatch -- it made `--sync` rewrite this list with the string it
+    # already held, once per round, until the 12-round cap called it an oscillation.
+    return tuple(sorted(pairs, key=lambda pair: (-pair[1], pair[0])))
+
+
 def _gui_over(world):
     """Line counts of the GUI files over the standard, largest first."""
-    return sorted((n for n in world["gui_lengths"].values() if n > GUI_LIMIT),
-                  reverse=True)
+    return [n for _, n in _gui_offenders(world)]
 
 
 def _gui_worst(world):
@@ -1184,6 +1254,11 @@ _FIGURES = {
     "gui_file_count": _Figure(
         _parse_nums, _fmt_nums, lambda w: (len(w["gui_lengths"]),)),
     "gui_worst": _Figure(_parse_nums, _fmt_nums, _gui_worst),
+    # The offenders themselves, name and size, as `gui-seams.md` lists them. The richest
+    # hand-maintained figure in this registry and the one with the most ways to go stale:
+    # a file can join the list, leave it, change size, or keep its size and move past
+    # another. All four are the same walk, so all four are one figure.
+    "gui_over_list": _Figure(_parse_offenders, _fmt_offenders, _gui_offenders),
 }
 
 SELF_REPORT = (
@@ -1249,6 +1324,23 @@ SELF_REPORT = (
                 r"those~([a-z]+|[\d,]+)~are~PINNED",
      "fields": ("gui_over_count", "gui_file_count", "gui_worst",
                 "gui_over_count_word")},
+    # The SAME status figure, in the rule file that carries the standard's blind spots --
+    # with strictly more to go stale than the root's copy: every offender by name and
+    # size. Registered by #101's follow-up, which found this file (and the note below)
+    # still stating the figure by hand while promising in that same sentence that #101 had
+    # gated it.
+    {"label": "the file-length standard's status, gui-seams.md's copy",
+     "target": "rule:gui-seams.md",
+     "pattern": r"Re-measured~(\d{4}-\d\d-\d\d):~([\d,]+)~GUI~`\.py`~files,~of~which~"
+                r"([\d,]+)~exceed~([\d,]+)~lines~—~" + _OFFENDER_LIST + r"\.",
+     "fields": ("date", "gui_file_count", "gui_over_count", "gui_limit",
+                "gui_over_list")},
+    # And in the design note, where the RATIONALE for the standard lives. Three files
+    # state this figure; one walk derives it.
+    {"label": "the file-length standard's status, the design note's copy",
+     "target": "note:gui.md",
+     "pattern": r"about~this~standard~\(([\d,]+)~of~([\d,]+),~worst~([\d,]+)\)",
+     "fields": ("gui_over_count", "gui_file_count", "gui_worst")},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
      # Either spelling: `_fmt_word_lower` writes a word up to twelve and DIGITS past it,
      # and thirteen rule files is a state that docstring calls reachable. A word-only
@@ -1263,10 +1355,54 @@ SELF_REPORT = (
 _EXPECTED_FIGURES = sum(len([f for f in e["fields"] if f != "date"])
                         for e in SELF_REPORT)
 
+# Where a figure can live. `root` and `gate` are whole files in `world`; a
+# `rule:<name>` / `note:<name>` target reaches INTO the rule-file and design-note dicts
+# `read_world` already loads. #101 gated the GUI status figure in the root and stopped
+# there, while `.claude/rules/gui-seams.md` and `docs/design_notes/gui.md` went on stating
+# the same figure by hand -- both of them, at the time, promising that this ticket had put
+# it under `--sync`. One figure stated in three files is one derivation with three anchors,
+# which is exactly what `rule_count` already is; the only thing missing was a target that
+# could name a file inside a bucket.
+_TARGET_DIR = {"rule": _RULES_DIR, "note": _NOTES_DIR}
+_TARGET_BUCKET = {"rule": "rules", "note": "notes"}
+
 _TARGET_PATH = {"root": _ROOT_NAME,
                 "gate": "tools/PreProcessor/tests/" + os.path.basename(__file__)}
 _TARGET_ABS = {"root": os.path.join(_REPO, _ROOT_NAME),
                "gate": os.path.abspath(__file__)}
+# Derived from the registry rather than listed, so registering a figure in a file
+# `--sync` cannot write is not expressible: a target with no path here would KeyError at
+# import, not compare-but-never-sync.
+for _t in dict.fromkeys(e["target"] for e in SELF_REPORT):
+    _kind, _, _name = _t.partition(":")
+    if _name:
+        _TARGET_PATH[_t] = "/".join(_TARGET_DIR[_kind].split(os.sep) + [_name])
+        _TARGET_ABS[_t] = os.path.join(_REPO, _TARGET_DIR[_kind], _name)
+
+
+def _target_text(world, target):
+    """The text a target names. `""` for a rule file or note that is not on disk.
+
+    Empty rather than a KeyError: a renamed rule file must reach the reader as check 7's
+    "the anchor resolved 0 times" -- which names the file, the figure and the pattern --
+    and not as a traceback from inside the resolver.
+    """
+    kind, _, name = target.partition(":")
+    if not name:
+        return world[kind]
+    return world[_TARGET_BUCKET[kind]].get(name, "")
+
+
+def _target_set(world, target, text):
+    """Write a target back into a COPY-safe world (the bucket dict is replaced, not
+    mutated, so `sync_world`'s `cur` cannot write through into the caller's `world`)."""
+    kind, _, name = target.partition(":")
+    if not name:
+        world[kind] = text
+        return
+    bucket = dict(world[_TARGET_BUCKET[kind]])
+    bucket[name] = text
+    world[_TARGET_BUCKET[kind]] = bucket
 
 
 def _resolve(world, entry):
@@ -1276,7 +1412,7 @@ def _resolve(world, entry):
         return None, ("self-report entry %r is malformed: its pattern has %d capture "
                       "groups and it declares %d fields."
                       % (entry["label"], rx.groups, len(entry["fields"])))
-    ms = list(rx.finditer(world[entry["target"]]))
+    ms = list(rx.finditer(_target_text(world, entry["target"])))
     if len(ms) != 1:
         return None, (
             "the anchor for %s in %s resolved %d times, and exactly 1 is required. A "
@@ -1338,7 +1474,7 @@ def sync_world(world, today=None):
                 # An unresolvable anchor is check 7's failure to report, not sync's to
                 # paper over: rewriting nothing here leaves it red rather than green.
                 continue
-            text = cur[entry["target"]]
+            text = _target_text(cur, entry["target"])
             edits, touched = [], False
             for i, field in enumerate(entry["fields"], start=1):
                 if field == "date":
@@ -1359,7 +1495,7 @@ def sync_world(world, today=None):
                 continue
             for (lo, hi), want in sorted(edits, reverse=True):
                 text = text[:lo] + want + text[hi:]
-            cur[entry["target"]] = text
+            _target_set(cur, entry["target"], text)
         if not round_changes:
             return cur, changes, True
         changes.extend(round_changes)
@@ -1378,10 +1514,13 @@ if "--sync" in sys.argv[1:]:
         world, today=datetime.date.today().isoformat())
     for line in sync_changes:
         print("SYNC " + line, flush=True)
-    for _target in ("root", "gate"):
-        if synced[_target] != world[_target]:
+    # Every target the registry declares, not a hand-listed pair: #101's own residue was
+    # a figure registered in one file while two others stated it, and a writer that knew
+    # only about the root and this gate is how that shape would come back.
+    for _target in sorted(_TARGET_ABS):
+        if _target_text(synced, _target) != _target_text(world, _target):
             with open(_TARGET_ABS[_target], "w", encoding="utf-8") as fh:
-                fh.write(synced[_target])
+                fh.write(_target_text(synced, _target))
             print("WROTE " + _TARGET_PATH[_target], flush=True)
     if not sync_ok:
         print("\nRESULT: --sync did NOT converge in 12 rounds. The figures above are "
@@ -1837,8 +1976,8 @@ def bend_figure(w, label, group, replacement):
     assert err is None, "injection fixture: " + err
     lo, hi = m.span(group)
     was = m.group(group)
-    text = inj[entry["target"]]
-    inj[entry["target"]] = text[:lo] + replacement + text[hi:]
+    text = _target_text(inj, entry["target"])
+    _target_set(inj, entry["target"], text[:lo] + replacement + text[hi:])
     return inj, was
 
 
@@ -2134,6 +2273,100 @@ check(len(world["gui_lengths"]) > 200 and len(_gui_over(world)) > 0
       "~%d-line standard, worst %d), so the four figures above are measured rather than "
       "empty" % (len(world["gui_lengths"]), len(_gui_over(world)), GUI_LIMIT,
                  _gui_worst(world)[0]))
+
+# 13i. #101's own residue. The status figure was registered in the ROOT and nowhere else,
+# while `.claude/rules/gui-seams.md` and `docs/design_notes/gui.md` went on stating it by
+# hand — each of them, in the same sentence, telling the reader that #101 had put it under
+# `--sync`. So the event 13h injects must now bite in all THREE files, and this asserts the
+# two the original registration missed, by file rather than by field: a figure gated in one
+# of its three homes is the defect, not the fix.
+_seams_status = _entry_by_label(
+    "the file-length standard's status, gui-seams.md's copy")
+_note_status = _entry_by_label(
+    "the file-length standard's status, the design note's copy")
+inj = copy_world(world)
+inj["gui_lengths"]["app/views/zz_injected_over.py"] = GUI_LIMIT + 1000
+sr = check_self_report(inj)
+_seams_path = _TARGET_PATH["rule:gui-seams.md"]
+_note_path = _TARGET_PATH["note:gui.md"]
+check(any(f.startswith(_seams_path) for f in sr)
+      and any(f.startswith(_note_path) for f in sr)
+      and any(f.startswith(_ROOT_NAME) for f in sr),
+      "injection 13i. check 7 fails in ALL THREE files that state the standard's status — "
+      "%s, %s and %s — so gating the figure in one of its homes cannot look like gating "
+      "the figure" % (_ROOT_NAME, _seams_path, _note_path))
+check(all(any("(%s)" % field in f and f.startswith(_seams_path) for f in sr)
+          for field in ("gui_over_count", "gui_file_count", "gui_over_list"))
+      and all(any("(%s)" % field in f and f.startswith(_note_path) for f in sr)
+              for field in ("gui_over_count", "gui_file_count", "gui_worst")),
+      "injection 13i. ...naming every field each file states: the rule file's count, "
+      "total and OFFENDER LIST, and the note's count, total and worst offender")
+
+# 13i2. ...and `--sync` reaches both of them. Not a formality: until this ticket the writer
+# looped over a hand-written `("root", "gate")`, so a figure could be compared in a rule
+# file forever and never written — gated and unmaintainable at once, which is worse than
+# either.
+synced_i, changes_i, ok_i = sync_world(inj)
+_m_seams, _err_seams = _resolve(synced_i, _seams_status)
+_m_note, _err_note = _resolve(synced_i, _note_status)
+check(ok_i and not check_self_report(synced_i)
+      and _err_seams is None and _err_note is None
+      and _fmt_offenders(_gui_offenders(inj)) in _m_seams.group(5)
+      and _m_note.group(3) == _fmt_nums(_gui_worst(inj))
+      and any(c.startswith(_seams_path) for c in changes_i)
+      and any(c.startswith(_note_path) for c in changes_i),
+      "injection 13i2. --sync rewrites both copies from the tree — the rule file's whole "
+      "offender list, the note's worst offender %s — and the synced world passes check 7"
+      % _fmt_nums(_gui_worst(inj)))
+again_i, changes_i2, ok_i2 = sync_world(synced_i)
+check(ok_i2 and not changes_i2
+      and _target_text(again_i, "rule:gui-seams.md")
+      == _target_text(synced_i, "rule:gui-seams.md")
+      and _target_text(again_i, "note:gui.md")
+      == _target_text(synced_i, "note:gui.md"),
+      "injection 13i2. ...idempotently, in the files it just wrote: a second pass reports "
+      "no change, so the wrapped offender list is a fixed point and not a value that "
+      "reflows every run")
+
+# 13i3. the offender LIST bent by hand, and bent the one way only a name list can catch:
+# two files SWAP places at the same size. Every NUMBER in the sentence stays true — the
+# count, the total and the worst offender are all unmoved by a swap, and all still pass —
+# so this is the single figure standing between the reader and a list that points at the
+# wrong files. The numbers are deliberately not spelled here: this comment would be the
+# next hand-maintained copy of the figure the file is about. This tree has two 508s and two 501s, which is why `_gui_offenders` breaks ties by
+# name rather than leaving `--sync` a choice.
+_pairs = _gui_offenders(world)
+_tie = next((i for i in range(len(_pairs) - 1)
+             if _pairs[i][1] == _pairs[i + 1][1]), None)
+assert _tie is not None, "injection fixture: no same-size pair to swap"
+_swapped = list(_pairs)
+_swapped[_tie], _swapped[_tie + 1] = _swapped[_tie + 1], _swapped[_tie]
+inj, was = bend_figure(world, "the file-length standard's status, gui-seams.md's copy",
+                       5, _fmt_offenders(tuple(_swapped)))
+check(_target_text(inj, "rule:gui-seams.md")
+      != _target_text(world, "rule:gui-seams.md")
+      and _parse_offenders(was) == _pairs
+      and _resolve(inj, _seams_status)[1] is None,
+      "injection 13i3. injection is well-formed: two same-size offenders really swapped, "
+      "every NUMBER in the sentence is still true, and the entry still resolves as one "
+      "anchor with five fields")
+sr = check_self_report(inj)
+hits = [f for f in sr if "gui_over_list" in f]
+check(len(hits) == 1 and hits[0].startswith(_seams_path)
+      and not any("gui_over_count" in f or "gui_worst" in f for f in sr),
+      "injection 13i3. check 7 fails on the NAME order alone, naming the rule file — the "
+      "reorder no count and no worst-offender figure can see, which is `_rules_by_size`'s "
+      "lesson arriving in a second list")
+
+# 13i4. every target the registry names is one `--sync` can write. Structural rather than
+# hopeful: `_TARGET_ABS` is built FROM `SELF_REPORT`, so this asserts the property that
+# construction is for, and would have failed for `rule:` and `note:` before this ticket.
+check(all(e["target"] in _TARGET_ABS and e["target"] in _TARGET_PATH
+          for e in SELF_REPORT)
+      and len({e["target"] for e in SELF_REPORT}) == 4,
+      "injection 13i4. every one of the %d targets SELF_REPORT declares has a path "
+      "`--sync` can write, so a figure cannot be compared in a file the writer never "
+      "opens" % len({e["target"] for e in SELF_REPORT}))
 
 # 13g. negative control
 check(not check_self_report(world),
