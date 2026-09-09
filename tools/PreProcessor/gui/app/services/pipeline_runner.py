@@ -7,7 +7,9 @@ without any Qt dependency, so it can run headless from a plain Python process.
 The per-stage *config file formats* all come from the shared config models
 (:class:`ProjectModel`, :class:`MeshConfig`, :class:`SolverConfig`) and the case
 layout from :mod:`app.services.solver_case`, so this runner only owns the
-sequencing + subprocess plumbing.
+sequencing + subprocess plumbing. Collecting what a scripted case carries
+into its own ``grid/cad/`` is neither, and lives in
+:mod:`app.services.pipeline_case_sources` (#103).
 """
 from __future__ import annotations
 import os
@@ -18,10 +20,10 @@ import threading
 from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import (
-    case_sources, ib_handoff, pipeline_stages, solver_case, stl3d_case,
+    ib_handoff, pipeline_stages, solver_case, stl3d_case,
 )
 from app.services.pipeline_bc_derive import derive_bc_definitions
-from app.services.logging_setup import get_logger
+from app.services.pipeline_case_sources import case_sources_for
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
 from app.services.mesh_modes import missing_mesh_input
@@ -30,8 +32,6 @@ from app.services.paths import (
 )
 # Qt-free process helpers (no PyQt import), so this module stays headless-safe.
 from app.workers.proc_util import stop_process
-
-_log = get_logger(__name__)
 
 # tag distinguishes CLI solver output (xtecp_sol_allz.dat.cli) from the GUI's.
 # One declaration, in case_files: the archive's rename rule strips exactly the
@@ -279,49 +279,6 @@ def _run_stl3d(pcfg: PipelineConfig, repo: str, log, on_process=None) -> str:
 # --------------------------------------------------------------------------- #
 # Solver (getPGrid -> unicones)
 # --------------------------------------------------------------------------- #
-def _case_sources(pcfg: PipelineConfig, repo: str, geoms, vtk: str):
-    """``(sources, generated)`` for staging a scripted case's grid/cad/.
-
-    The headless twin of ``solver_ctrl._case_source_files`` /
-    ``_case_generated_files``: the same things per body — the imported source and
-    the resampled ``.dat`` the mesher read, plus the immersed STL, the mesh
-    provenance sidecar and the mesh parameter file — so a case run from a script
-    carries what a case run from the GUI carries. Nothing is filtered by whether
-    the resample ran: a skipped CAD entry still points at a geometry the mesh was
-    cut from, and the staging service drops whatever does not exist on disk.
-    """
-    from app.models.mesh_config_io import config_to_text
-
-    out: list = []
-    for i in pcfg.cad_indices():
-        out.append(pcfg.resolve_input_file(repo, i))
-        out.append(pcfg.default_cad_output(repo, i))
-    stl = (pcfg.stl3d or {}).get("stl_path", "")
-    if stl:
-        out.append(stl if os.path.isabs(stl) else os.path.join(repo, stl))
-    out.extend(case_sources.mesh_provenance_paths(vtk))
-
-    generated: list = []
-    try:
-        mc = pcfg.build_mesh_config(geoms)
-        mc.output_filename = vtk or mc.output_filename
-        # The block topology a MESH_MODE 1 run filled: an input of this run and
-        # not a preference, so it is staged like the CAD rather than only quoted
-        # by the generated parameter file. Repo-relative in a script, hence repo.
-        out.extend(case_sources.mesh_input_paths(mc, repo))
-        generated.append((f"Background_para_{pcfg.name or 'case'}.dat",
-                          config_to_text(mc)))
-    except Exception:
-        # Staging the geometry is worth having even when the settings cannot be
-        # rebuilt; failing the solver run over it is not. Both the topology and
-        # the parameter file are lost together, because both are read off the
-        # MeshConfig this block builds.
-        _log.warning("could not rebuild the mesh config, so neither it nor the "
-                     "block topology reaches the case's cad/ folder",
-                     exc_info=True)
-    return [p for p in out if p], generated
-
-
 def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
                 on_process=None, geoms=None, phi: str = "") -> str:
     sc = pcfg.build_solver_config(repo)
@@ -373,7 +330,7 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
     sc.getpgrid_binary = bins["getpgrid"]
     sc.solver_binary = bins["solver"]
 
-    src_files, src_generated = _case_sources(pcfg, repo, geoms, vtk)
+    src_files, src_generated = case_sources_for(pcfg, repo, geoms, vtk)
     work_dir, grid_dir, input_in = solver_case.prepare_case_dir(
         sc, log=log, sources=src_files, generated_sources=src_generated)
 

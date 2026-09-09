@@ -64,9 +64,10 @@ Known blind spots, stated rather than pretended away:
  a. A pin is a CEILING, not a fixed measurement. A pinned file that shrinks while
     staying over the limit passes, and may then grow back to its pin without the
     gate speaking. That is deliberate: #102 and #103 split two of these files
-    rather than living inside their pins — #102 is done, and `mesh_gen_ctrl.py`
-    LEFT this list rather than shrinking within it — and an exact-match pin would
-    go red on every intermediate commit of the very work it exists to provoke.
+    rather than living inside their pins — both are done, and `mesh_gen_ctrl.py`
+    and `pipeline_runner.py` LEFT this list rather than shrinking within it — and
+    an exact-match pin would go red on every intermediate commit of the very work
+    it exists to provoke.
     The hole is bounded by the pin, which never rises.
  b. It counts LINES, which is a proxy. A 400-line file can be far worse than a
     510-line one, and nothing here can tell. The standard is a splitting
@@ -109,7 +110,6 @@ PINS = {
     "app/models/pipeline_config.py": 524,        # the worst offender
     "app/services/case_run_note.py": 508,
     "app/controllers/session_io_ctrl.py": 508,
-    "app/services/pipeline_runner.py": 506,      # #103 splits it
     "app/services/result_legs.py": 501,
     "app/models/solver_config.py": 501,
 }

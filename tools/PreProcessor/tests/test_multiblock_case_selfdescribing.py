@@ -226,9 +226,10 @@ from app.services import pipeline_runner                 # noqa: E402
 
 pc = PipelineConfig(name="mb56", cads=[],
                     mesh=mbcfg(topo).to_dict(), solver={"skip": True})
-_src, _gen = pipeline_runner._case_sources(pc, _REPO, [], "")
+_src, _gen = pipeline_runner.case_sources_for(pc, _REPO, [], "")
 check(topo in _src,
-      "6. the headless host stages the topology (pipeline_runner._case_sources)")
+      "6. the headless host stages the topology, asked through the RUNNER's own name "
+      "(`pipeline_runner.case_sources_for`) rather than #103's new module directly")
 check(any(n.startswith("Background_para_") for n, _t in _gen),
       "6. ...without disturbing the generated mesh parameter file beside it")
 

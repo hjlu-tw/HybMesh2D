@@ -58,6 +58,12 @@ the schema and the stage logic.
   whoever next trips it.
 - **`services/pipeline_runner.py`** (Qt-free, blocking) runs the 3 CLI stages via subprocess
   (surface_resampler → HybMesh2D → getPGrid→unicones); `run_pipeline()` returns the artifact paths.
+  **It owns the SEQUENCING and the subprocess plumbing, and nothing else** (#103): collecting
+  what a scripted case carries into `grid/cad/` is `services/pipeline_case_sources.py`
+  (`case_sources_for()`), which is the half with rules of its own — per-body sources, the
+  per-MODE topology, the generated parameter file, and the refusal to fail a solve when the
+  mesh config cannot be rebuilt. The runner therefore has no logger: its one `warning` was that
+  refusal and travelled with it.
 - **Producing a phi field is not the same as wiring one up** (`services/ib_handoff.py`, Qt-free):
   `link_phi_to_solver()` is the one owner and all three hosts call it. STL3d writes a *Tecplot*
   field while the init DLL reads a *headerless* `phi.dat` with the STL3d grid spec compiled into
@@ -403,7 +409,8 @@ the schema and the stage logic.
   **inverted** version of the one that pinned the dialog's restart branch.
 - **A case describes its own geometry, not only its mesh** (`services/case_sources.py`, Qt-free):
   the CAD/STL a case was cut from is copied into **`grid/cad/`**. Fed by
-  `solver_ctrl._case_source_files` / `_case_generated_files` and `pipeline_runner._case_sources` —
+  `solver_ctrl._case_source_files` / `_case_generated_files` and
+  `services/pipeline_case_sources.py::case_sources_for()` —
   the imported source, the resampled `.dat` the mesher read, the immersed STL, the mesh
   `.provenance.json`, the **block topology document** of a `MESH_MODE 1` run, and the
   **mesh parameter file**, which is *generated* rather than copied
@@ -428,7 +435,8 @@ the schema and the stage logic.
   `GEOM_FILE`. It answers **per mode**: the same path in a hybrid config stages nothing, because
   the mesher warns about a key the active mode never reads and a staged file the run never read
   is that same untruth the other way round. Both hosts call it — the GUI's
-  `_case_source_files` and the runner's `_case_sources` — and a relative declaration resolves
+  `_case_source_files` and `pipeline_case_sources.case_sources_for` — and a relative
+  declaration resolves
   against the RUN's base directory, never the interpreter's cwd. Gated by
   `tests/test_multiblock_case_selfdescribing.py`.
 - **The mesh stage's precondition is per MODE, stated once in
