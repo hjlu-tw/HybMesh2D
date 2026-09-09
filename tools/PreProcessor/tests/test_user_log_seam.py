@@ -180,10 +180,14 @@ for must in ("app/controller.py", "app/utils.py", "main.py"):
 
 # controller.py must expose the replacement, or the rule above has no answer.
 _ctl = ast.parse(open(os.path.join(_GUI, "app/controller.py"), encoding="utf-8").read())
-has_log = any(isinstance(n, ast.FunctionDef) and n.name == "log"
-              for cls in _ctl.body if isinstance(cls, ast.ClassDef)
-              for n in cls.body)
-check("5. AppController.log exists as the controller-side entry point", has_log)
+_methods = {n.name for cls in _ctl.body if isinstance(cls, ast.ClassDef)
+            for n in cls.body if isinstance(n, ast.FunctionDef)}
+check("5. AppController.log exists as the controller-side entry point",
+      "log" in _methods)
+# Both entry points, or the rule "say it through the controller" has no answer for
+# the multi-line half and a controller re-grows the head/tail split section 6 pins.
+check("5. AppController.log_report exists as the MULTI-LINE entry point",
+      "log_report" in _methods)
 
 # ── 6. log_report: a wrapped failure is ONE graded failure ───────────────
 # Shaped like the real one — services/mesh_config_geoms.missing_geometry_message
@@ -210,9 +214,9 @@ check("6. ...and the tag is not doubled in the displayed text",
 check("6. the continuation lines are shown verbatim",
       shown[1:] == REFUSAL.split("\n")[1:])
 
-# NEGATIVE CONTROL: the pre-#102 shape, tagging each line, really does grade four
-# — so the check above is measuring the split and not a message that could never
-# have gone wrong.
+# NEGATIVE CONTROL, for the check above and not for the split: tagging each line
+# of THIS message really does grade four, so "exactly one ERROR" is a property of
+# `log_report` and not of a message that could never have graded otherwise.
 naive = [user_log.classify(f"[ERROR] {ln}")[0] for ln in REFUSAL.split("\n")]
 check(f"6. negative control: tagging every line grades FOUR errors ({naive})",
       naive.count("ERROR") == 4)
@@ -224,6 +228,18 @@ user_log.log_report("careful:\nsecond line", "WARNING")
 user_log.remove_sink(shown2.append)
 check("6. an explicit level grades the head line and only the head line",
       [user_log.classify(m)[0] for m in shown2] == ["WARNING", "INFO"])
+# A report whose first line carries no text of its own must still arrive GRADED:
+# the head would emit nothing and the body is deliberately untagged, so the whole
+# refusal would ship as INFO — this function's own defect, from the far side.
+for raw, want in (("\nfoo", ["[ERROR] foo"]),
+                  ("[ERROR]\nfoo", ["[ERROR] foo"]),
+                  ("a\nb", ["[ERROR] a", "b"])):
+    edge = []
+    user_log.add_sink(edge.append)
+    user_log.log_report(raw)
+    user_log.remove_sink(edge.append)
+    check(f"6. {raw!r} still grades exactly one line ({edge})", edge == want)
+
 check("6. sinks unregister cleanly after section 6", user_log.sinks() == ())
 
 print()

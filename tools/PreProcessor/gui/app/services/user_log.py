@@ -195,8 +195,15 @@ def log_report(message, level: str = "ERROR") -> None:
     each line for themselves (see the module docstring), so a caller that tagged
     every line of a four-line refusal ``[ERROR]`` made the user read four errors
     — which is what the mesh stage's missing-geometry refusal did until #102.
-    The tag therefore goes on the FIRST line only, and the continuation lines go
-    out untagged, where the heuristics in :func:`classify` leave them INFO.
+    The tag therefore goes on the FIRST line with text of its own, and every
+    line after it goes out untagged, to be graded on its own words. That is NOT
+    a promise that they grade INFO: a continuation line containing "failed", or
+    one of the crash tokens, still grades up. It holds for the wording the one
+    real caller produces (``MeshConfig.missing_geometry_message``), and a report
+    whose body carries those words is asking for what it gets.
+
+    Use :func:`log_all` instead for several INDEPENDENT lines, which is a
+    different job: there, each line is its own message and grades for itself.
 
     The SPLIT is this module's, because the whole reason for it is what
     :func:`classify` does with a level tag; the GRADE stays the caller's, which
@@ -205,19 +212,32 @@ def log_report(message, level: str = "ERROR") -> None:
     "Geometry file(s) not found:", which carries none of the words the keyword
     heuristics look for and so grades INFO on its own — a failure rendered in
     muted grey. ``ERROR`` is the default because a report worth wrapping is a
-    refusal being explained at length; a caller with a milder one says so.
+    refusal being explained at length; a caller with a milder one says so, and
+    *level* then beats a level tag already in the text — :func:`classify`'s own
+    precedence, and the tag is stripped rather than shown twice.
     """
     if not message:
         return
-    head, _, rest = str(message).partition("\n")
-    _, clean = classify(head, level)
-    if clean:
-        log(f"[{level}] {clean}", level)
-    for line in rest.splitlines():
+    lines = str(message).split("\n")
+    # The first line with text of its OWN carries the tag. Taking line 0 on
+    # faith would ship a report that opens with a blank line — or with a bare
+    # ``[ERROR]`` — entirely ungraded, since a tagless empty head emits nothing
+    # and the body is deliberately untagged: the defect this function exists to
+    # prevent, arriving from the far side.
+    head = next((i for i, ln in enumerate(lines) if classify(ln, level)[1].strip()),
+                -1)
+    if head < 0:
+        return
+    log(f"[{level}] {classify(lines[head], level)[1]}", level)
+    for line in lines[head + 1:]:
         log(line)
 
 
 def log_all(messages: Iterable[str], level: str | None = None) -> None:
-    """Emit several lines in order. Convenience for multi-line reports."""
+    """Emit several INDEPENDENT lines in order, each graded on its own.
+
+    Not :func:`log_report`, which is the other way round: one message that
+    happens to wrap, graded once.
+    """
     for m in messages:
         log(m, level)
