@@ -229,15 +229,15 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
   the count, the total, the standard and each offender by name and size — off
   `test_file_length.py`'s own walk, so `--sync` rewrites this list and a stale one goes red. Two
   same-size offenders are ordered by NAME, so a swap here goes red too (#101). What the ungated
-  years cost is MEASURED (2026-09-09, one walk
-  of each GUI `.py` file's own history comparing every blob with its predecessor): **44 commits
+  years cost is MEASURED (2026-09-09, one walk of each GUI `.py` file's own history comparing
+  every blob with its predecessor): **44 commits
   across 35 files** took a GUI file past 500 lines, and **four of them landed in the six days after
-  #67 wrote the standard down** — `98003f1` (#85) took `models/mesh_config.py` 499 -> 505,
-  `306d6a1` (#91) took `services/pipeline_runner.py` 490 -> 537 by a 40-line function, and the #47
-  merge `8bdc36a` did it twice in one commit (`controllers/mesh_gen_ctrl.py` 490 -> 512,
-  `services/pipeline_runner.py` 498 -> 506). A review caught three of the four; nothing caught
+  #67 wrote the standard down** — `98003f1` (#85) took `app/models/mesh_config.py` 499 -> 505,
+  `306d6a1` (#91) took `app/services/pipeline_runner.py` 490 -> 537 by a 40-line function, and the #47
+  merge `8bdc36a` did it twice in one commit (`app/controllers/mesh_gen_ctrl.py` 490 -> 512,
+  `app/services/pipeline_runner.py` 498 -> 506). A review caught three of the four; nothing caught
   `98003f1`, whose own ticket was about something else, and the same merge that broke two files
-  split `mesh_config.py` back to 426 for exactly this budget. The count decays on every commit and
+  split `app/models/mesh_config.py` back to 426 for exactly this budget. The count decays on every commit and
   is a dated fact, not a gated one — `test_instruction_budget.py` blind spot (g) says why a
   git-history figure is left out of `--sync`.
 - **`tests/test_gui_cpp_config_parity.py` cannot see a spec's `key=` being removed**: both sides

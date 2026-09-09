@@ -1179,7 +1179,8 @@ Three decisions inside that gate were bought rather than assumed:
 
 The status figure the instruction files print about this standard (7 of 262, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
-`.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history count deliberately is NOT gated —
+`.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
+count deliberately is NOT gated —
 `test_instruction_budget.py` blind spot (g) states the reason: a git-history figure decays on every
 commit rather than on every edit to the file, so gating one would make each commit re-measure
 `git log`, and there is no fixed point to converge on.

@@ -342,10 +342,10 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 46,476 / 43,870 / 38,649 / 21,156 / 16,805 / 16,479 / 15,762 / 12,672 / 12,643 / 8,969  characters (pipeline-case, mesher-multiblock, mesher-smoothing, gui-seams, mesher, gui-panels-config, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 46,476 / 43,870 / 38,649 / 21,183 / 16,805 / 16,479 / 15,762 / 12,672 / 12,643 / 8,969  characters (pipeline-case, mesher-multiblock, mesher-smoothing, gui-seams, mesher, gui-panels-config, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 13,524 / 16,130 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 21,351 / 38,844 / 43,195 / 43,521 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 21,351 / 38,817 / 43,195 / 43,521 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -1096,27 +1096,31 @@ def _parse_offenders(text):
 # whose every other line stops near 100. The anchor reads it through `~` (`\s+`), so where
 # the breaks fall cannot affect equality -- wrapping is cosmetic to the CHECK and load
 # bearing for the READER, and being a pure function of the values it stays idempotent.
+#
+# Hand-rolled rather than `textwrap`, which breaks on any space and would split the one
+# INSIDE a `` `path` size `` pair, leaving a line that ends in a backtick and a bare
+# number alone on the next. The unit being wrapped is the pair, not the word.
 _OFFENDER_WRAP = 98
 _OFFENDER_INDENT = "  "
 
 
 def _fmt_offenders(values):
-    words = ["`%s` %s," % (path, "{:,}".format(n)) for path, n in values]
-    if words:
-        words[-1] = words[-1][:-1]
-    lines, cur = [], _OFFENDER_INDENT.rstrip()
-    for word in words:
-        candidate = (cur + " " + word) if cur else word
-        if cur and len(candidate) > _OFFENDER_WRAP:
+    pairs = ["`%s` %s" % (path, "{:,}".format(n)) for path, n in values]
+    lines, cur = [], ""
+    for i, pair in enumerate(pairs):
+        word = pair if i == len(pairs) - 1 else pair + ","
+        # The FIRST line is spliced in where the anchor already sits, mid-sentence, so it
+        # carries no indent of its own; every continuation carries the file's.
+        if not cur:
+            cur = word
+        elif len(cur + " " + word) > _OFFENDER_WRAP:
             lines.append(cur)
             cur = _OFFENDER_INDENT + word
         else:
-            cur = candidate
+            cur = cur + " " + word
     if cur:
         lines.append(cur)
-    # The first line is spliced in where the anchor already sits, so it carries no indent
-    # of its own; every continuation does.
-    return "\n".join(lines).lstrip()
+    return "\n".join(lines)
 
 
 def _rule_count(world):
@@ -1134,7 +1138,9 @@ def _rules_by_size(world):
     list, which no amount of re-deriving the SIZES alone would have said.
     """
     pairs = [(n[:-3], len(t)) for n, t in world["rules"].items()]
-    return sorted(pairs, key=lambda p: (-p[1], p[0]))
+    # A tuple, for `_gui_offenders`'s reason: slices of it stay tuples, so a figure
+    # derived straight off this can never be permanently unequal to its parser.
+    return tuple(sorted(pairs, key=lambda p: (-p[1], p[0])))
 
 
 def _root_chars(world):
@@ -1157,8 +1163,9 @@ def _gui_offenders(world):
     The order is derived here rather than read from the prose it checks, for
     `_rules_by_size`'s reason: a file that grows past another needs the NAME list to move
     with it, which no amount of re-deriving the sizes alone would say. Ties by name make
-    that order total -- this tree has two 508s and two 501s, so without it `--sync` would
-    have a choice to make and would not be a fixed point.
+    that order total: same-size offenders are ordinary here, and without a tiebreak
+    `--sync` would have a choice to make and so would not be a fixed point. How many
+    there are is not stated -- 13i3 FINDS a same-size pair rather than naming one.
     """
     pairs = [(p, n) for p, n in world["gui_lengths"].items() if n > GUI_LIMIT]
     # A TUPLE, not the `sorted()` list: every figure here is compared with `!=` against
@@ -2197,11 +2204,25 @@ check(_STALE_DAY not in untouched["root"] and untouched["root"] == synced["root"
 # growing past the standard, so the injection is a file in `gui_lengths` and not a bent
 # number: all four figures in that sentence must go stale at once, exactly as they did
 # between #97 and #101 while every gate in the repo reported ALL PASS.
-inj = copy_world(world)
-inj["gui_lengths"]["app/views/zz_injected_over.py"] = GUI_LIMIT + 1000
-check(len(inj["gui_lengths"]) == len(world["gui_lengths"]) + 1
-      and len(_gui_over(inj)) == len(_gui_over(world)) + 1
-      and _gui_worst(inj) != _gui_worst(world),
+def over_standard_world(w):
+    """A copy of `w` whose GUI tree gained one file, comfortably the worst offender.
+
+    Shared by 13h and 13i because those two inject the same EVENT and read it in
+    different files' figures; two hand-copied fixtures are how the pair drifts apart.
+    """
+    inj = copy_world(w)
+    inj["gui_lengths"]["app/views/zz_injected_over.py"] = GUI_LIMIT + 1000
+    return inj
+
+
+def over_standard_wellformed(inj, w):
+    return (len(inj["gui_lengths"]) == len(w["gui_lengths"]) + 1
+            and len(_gui_over(inj)) == len(_gui_over(w)) + 1
+            and _gui_worst(inj) != _gui_worst(w))
+
+
+inj = over_standard_world(world)
+check(over_standard_wellformed(inj, world),
       "injection 13h. injection is well-formed: the GUI tree really gained a file, it "
       "really is over the standard, and it is the worst one")
 sr = check_self_report(inj)
@@ -2284,8 +2305,12 @@ _seams_status = _entry_by_label(
     "the file-length standard's status, gui-seams.md's copy")
 _note_status = _entry_by_label(
     "the file-length standard's status, the design note's copy")
-inj = copy_world(world)
-inj["gui_lengths"]["app/views/zz_injected_over.py"] = GUI_LIMIT + 1000
+inj = over_standard_world(world)
+check(over_standard_wellformed(inj, world)
+      and _resolve(inj, _seams_status)[1] is None
+      and _resolve(inj, _note_status)[1] is None,
+      "injection 13i. injection is well-formed: the same event 13h injects, and BOTH new "
+      "anchors still resolve — so what follows is a stale figure and not a lost one")
 sr = check_self_report(inj)
 _seams_path = _TARGET_PATH["rule:gui-seams.md"]
 _note_path = _TARGET_PATH["note:gui.md"]
@@ -2332,9 +2357,10 @@ check(ok_i2 and not changes_i2
 # two files SWAP places at the same size. Every NUMBER in the sentence stays true — the
 # count, the total and the worst offender are all unmoved by a swap, and all still pass —
 # so this is the single figure standing between the reader and a list that points at the
-# wrong files. The numbers are deliberately not spelled here: this comment would be the
-# next hand-maintained copy of the figure the file is about. This tree has two 508s and two 501s, which is why `_gui_offenders` breaks ties by
-# name rather than leaving `--sync` a choice.
+# wrong files. No number is spelled anywhere in this block -- not the counts, not how many
+# same-size pairs the tree holds -- because a comment inside the gate is exactly where the
+# next hand-maintained copy of this figure would go. The pair is FOUND below, and the
+# `assert` beside it says what happens if the tree ever stops having one.
 _pairs = _gui_offenders(world)
 _tie = next((i for i in range(len(_pairs) - 1)
              if _pairs[i][1] == _pairs[i + 1][1]), None)
@@ -2361,12 +2387,31 @@ check(len(hits) == 1 and hits[0].startswith(_seams_path)
 # 13i4. every target the registry names is one `--sync` can write. Structural rather than
 # hopeful: `_TARGET_ABS` is built FROM `SELF_REPORT`, so this asserts the property that
 # construction is for, and would have failed for `rule:` and `note:` before this ticket.
-check(all(e["target"] in _TARGET_ABS and e["target"] in _TARGET_PATH
-          for e in SELF_REPORT)
-      and len({e["target"] for e in SELF_REPORT}) == 4,
+# The non-vacuity beside it names the two KINDS this ticket added rather than counting
+# targets: `== 4` was the shape #88 removed from `rule_count_rest`, and it arrived here
+# with a message that derived the number, so a fifth target would have failed while
+# reading correct.
+_targets = {e["target"] for e in SELF_REPORT}
+check(all(t in _TARGET_ABS and t in _TARGET_PATH for t in _targets)
+      and any(t.startswith("rule:") for t in _targets)
+      and any(t.startswith("note:") for t in _targets),
       "injection 13i4. every one of the %d targets SELF_REPORT declares has a path "
-      "`--sync` can write, so a figure cannot be compared in a file the writer never "
-      "opens" % len({e["target"] for e in SELF_REPORT}))
+      "`--sync` can write — and a rule file and a design note are among them, so the "
+      "property is not vacuously true of the two targets that predate this ticket"
+      % len(_targets))
+
+# 13i5. ...and every derivation returns a TUPLE, which is the seam the oscillation bug
+# came through: `check_self_report` compares `stated != derived` raw, and a parser
+# returning a tuple never equals a derive returning a list, so `--sync` rewrites the
+# figure with the string it already holds once per round until the 12-round cap calls it
+# an oscillation. Fixing `_gui_offenders` fixed the instance; this closes the CLASS, for
+# every figure in the registry and the next one added.
+_nontuple = sorted(f for e in SELF_REPORT for f in e["fields"]
+                   if f != "date" and not isinstance(_FIGURES[f].derive(world), tuple))
+check(not _nontuple,
+      "injection 13i5. every one of the %d derivations returns a tuple, so none can be "
+      "permanently unequal to what its parser produces: %s"
+      % (_EXPECTED_FIGURES, _nontuple or "none are lists"))
 
 # 13g. negative control
 check(not check_self_report(world),
