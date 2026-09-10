@@ -1277,8 +1277,8 @@ own docstring had claimed it was.
 **Shipping only the ADD sites was worse than not starting**, which is the durable lesson here:
 the first round converted the six additions and left the removals and the `in` tests comparing
 strings, so `mesh_layers_ctrl` added a layer by identity and un-added it by string — on a config
-holding the relative spelling the checkbox drew Unchecked for a geometry that was in the mesh, and
-unchecking it cleared the box and left the geometry to be meshed. `remove_geom_file` existed and
+holding the relative spelling the checkbox drew **Unchecked for a geometry that was in the
+mesh**, and unchecking it cleared the box and left the geometry to be meshed. `remove_geom_file` existed and
 was called from nowhere. A review found that; nothing in the tree could, which is why the verbs are
 now ONE set the rule file names in full — `add_geom_file` / `remove_geom_file` / `has_geom_file` /
 `set_geom_files` / `role_of` / `prune_roles` / `dedupe_geom_paths` — and why the rule is an AST

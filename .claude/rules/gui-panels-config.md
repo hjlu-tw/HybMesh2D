@@ -178,11 +178,11 @@ global default, so a per-geometry override never hides behind a collapsed header
   rides beside the FIELD because the label column is one shared width measured from the labels
   actually built and clamped to `LABEL_COL_MIN`..`LABEL_COL_MAX` (120..240, declared with
   `clamp_label_col` in `mesh_bl_dialog_layout`), which a suffixed C1 label either widens or clips
-  inside; the note cell is the ONE composite field cell in the GUI — the exemption to
-  **"Numeric and combo rows go into the form DIRECTLY, never wrapped"** above, recorded there as
-  well — legal only because nothing in the dialog's mixins calls `labelForField` (gated by AST
-  over its own MRO); and a tooltip on the disabled widget is impossible, since Qt picks the mouse
-  receiver by walking past disabled widgets, so the box gets no `Enter` — nor does its parent.
+  inside; the note cell is the ONE composite field cell in the GUI, which is the exemption to
+  **"Numeric and combo rows go into the form DIRECTLY, never wrapped"** — what makes it legal, and
+  the gate that pins that, are stated with THAT rule above and only there; and a tooltip on the
+  disabled widget is impossible, since Qt picks the mouse receiver by walking past disabled
+  widgets, so the box gets no `Enter` — nor does its parent.
   **The gate asserts that COST, never a pixel.** SUPERSEDES #23: `suffix_cost` asserts the
   consequence a suffixed label would impose — the shared column grows, or it is already on
   `LABEL_COL_MAX` and the label clips — plus the growth as a RATIO for the magnitude, since a
@@ -297,8 +297,7 @@ field with no assignment and no method call anywhere — was then found by revie
   therefore holds `self.paths`. Renaming the neighbour is the fix, never an allow-list entry — one
   exemption keyed to the verbs is checkable, a growing filename list is not.
 
-Why, and what shipping half the verb set cost: docs/design_notes/gui.md,
-"Shipping only the ADD sites was worse than not starting".
+Why: docs/design_notes/gui.md, "Shipping only the ADD sites was worse than not starting"
 
 Two things the fix deliberately does NOT do: `dedupe_geom_paths` keeps the FIRST spelling rather
 than rewriting entries to canonical form (that would churn a saved config on load, and
