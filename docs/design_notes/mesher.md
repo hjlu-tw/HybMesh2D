@@ -986,9 +986,11 @@ reach the solver.
   frame; ends are now indexed by an `EdgeEnd` and the inversion is one XOR against `rev`.
 - **Two findings ANSWERED rather than acted on, recorded so neither reads as an oversight.**
   Spec called `ROOT_BUDGET` 33,500 -> 34,000 unnecessary because "the gate still passed". It did
-  pass — check 7 holds the VALUE, and blind spot (c2) of that gate says in as many words that the
-  DERIVATION is deliberately unchecked and that the rule at the constant "asks whoever edits the
-  root" to re-derive it. This work edited the root, which fell to 33,304 and left 196 of slack
+  pass — check 7 holds the VALUE, and blind spot (c2) of that gate said in as many words that the
+  DERIVATION was unchecked and that the rule at the constant "asks whoever edits the
+  root" to re-derive it. (That was true when this was written and is no longer: #109 gave the band
+  its own check, on the evidence of this very incident recurring twice more. What is still
+  unchecked is the arithmetic, and (c2) is rewritten to say so.) This work edited the root, which fell to 33,304 and left 196 of slack
   against a documented band of (500, 1000] — the shape where a typo fix must also edit the gate.
   #79 hit the same thing at 481 and re-derived by hand; this is that precedent, not a loosening.
   Spec also read "topology edges project onto curved geometry" as partly delivered because nothing
