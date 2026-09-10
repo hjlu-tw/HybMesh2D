@@ -2706,6 +2706,31 @@ Verbatim as that file carried it:
 
   - **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 19 mesher cases (~8 s), for proving that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not byte-reproducible, and node NUMBERING varies run to run — so it canonicalises by COORDINATE (nodes lexicographically sorted; each cell its node ranks, rotated to a fixed start and direction so winding cannot disagree; the cell list sorted) and reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits the tolerance. **That distinction is load bearing, and measuring it corrected a belief recorded here**: the nondeterminism is not confined to numbering — `wedge_45` returns a coordinate differing by ~1.2e-13 in roughly 1 run in 12 (worst seen 2.5e-13 over ~20 runs, when two wobbles compound), while the other eight cases *of the nine that existed when this was measured* were bit-identical every time. Exact equality would therefore flake, and the 1e-10 tolerance is set ~400× above that measured floor. It also compares **both** STAR-CD files: the `.bnd` patch names, their face counts and each face's own coordinates, and the `.cel` connectivity — which is the grid the SOLVER reads and is not the `.vtk`, since the `.cel` writer owns a winding normalisation, a degenerate-cell skip and a duplicate-cell dedupe that exist nowhere else (a review found the comparator could report SAME while that file had changed). A `.cel` triangle is written `v1 v2 v3 v3` and which vertex repeats follows the element's node order, so the duplicate is collapsed before comparing while the winding deliberately is not. Comparing the `.bnd` matters because because the two most expensive junction bugs this repo has had (see the `BoundaryLayer.cpp` notes above) produced a geometrically perfect mesh with the BCs on the wrong patches. Boundary faces are keyed by coordinate, not vertex id — `.bnd` ids index the `.vrt` numbering while cells index the `.vtk` numbering, and those are precisely the numbers free to move. Duct/wedge geometries are **imported** from `tools/PreProcessor/tests/test_nobl_junction_acute.py` rather than copied (a tool reaching into a test dir is unusual; a second copy of a geometry generator is guaranteed divergence). Two junction bins are NOT reachable this way — case 3/4 need θ > 270°, which no geometry writer produces — and `list` says so. **`HYBMESH_GOLDEN_BIN` points the capture at a different build**, which is what makes a behaviour-preserving claim checkable at all: `git archive <start-commit> | tar -x -C <dir>` (no git state touched), build there, capture the baseline from THAT binary, then compare with the working tree. Without it a baseline can only be captured from the tree that already contains the change it is meant to be evidence about.
 
+**AND IT PRINTED A DEVIATION IT HAD NOT MEASURED, which re-auditing #48 found on 2026-09-10.**
+The distinction above — an exact `0.0` kept distinguishable from a match that merely fits `TOL` —
+is what made this the worst possible line to fabricate, and `compare` fabricated it. `_diff`
+returns early when either record is `{"rc": N, "error": ...}`, which is a legitimate golden value
+(`isolated_corner` is the wontfix junction and refuses on both sides), and it returned `worst =
+0.0` from that path; the caller printed `SAME <case>  (worst coordinate deviation 0.000e+00)`,
+identical to a case that really had matched every coordinate and strictly stronger-looking than
+one that matched within tolerance. `capture` never had the defect: it prints `rc=6: no mesh
+produced`, and its code says why.
+
+**What it cost is a claim in this repo's own record, which is why it is a gate now and not a
+comment.** The #48 re-audit compared the nine hybrid golden cases against a binary built from
+`cd29bb8~1` and wrote down "9/9 SAME at an exact 0.000e+00". Eight of those are meshes; the ninth
+is a matched refusal. The overclaim was in the instrument's output, so re-reading the report could
+not catch it — the same shape as the `19/19 SAME` that answered one question and looked like it
+answered two (#106). `_diff` now returns `None` for "no coordinates compared", the SAME line says
+`NO MESH on either side`, and the summary adds `OF THOSE, N matched a NO-MESH outcome rather than
+a mesh: [...]` so a total cannot be quoted as if every case had been a mesh. Gated by
+`tools/PreProcessor/tests/test_golden_comparator.py` (10 checks, 4 dated injections), which drives
+the PRINTER with `_run_case` stubbed — the fabricated number lived there, and a check on `_diff`
+alone would have passed throughout. **One injection is recorded for its own sake**: assigning
+`worst = None` inside the coordinate block scores **0 FAIL**, because `if worst > TOL` then raises
+and the run dies before any check prints — a crash and an inert check differ by exit code and not
+by count, which is the trap named in that file's docstring.
+
 **AND ITS CANONICAL ORDER WAS NOT AS TOLERANT AS ITS COMPARISON, which #85 found and fixed.**
 `TOL`'s own note says it "deliberately DOES hide pure floating-point reassociation, which is not
 the kind of change this tool exists to detect" — and the COMPARISON did, while the ORDER did not.

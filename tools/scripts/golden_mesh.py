@@ -563,15 +563,26 @@ def _run_case(name: str) -> dict:
 
 # ── Comparison ─────────────────────────────────────────────────────────────
 
-def _diff(ref: dict, new: dict) -> tuple[list[str], float]:
-    """(human-readable differences, worst relative coordinate deviation)."""
+def _diff(ref: dict, new: dict) -> tuple[list[str], float | None]:
+    """(human-readable differences, worst relative coordinate deviation).
+
+    The deviation is ``None`` when NO coordinates were compared, which is not the
+    same fact as a deviation of zero and must not be printed as one. A case that
+    produces no mesh is a legitimate golden value (one junction shape is expected
+    to refuse), so a refusal matching a refusal is a real SAME — but the evidence
+    behind it is an exit code, not 5920 coordinates, and this tool deliberately
+    keeps an exact 0.0 distinguishable from a match that merely fits `TOL`. That
+    makes a fabricated 0.000e+00 here the strongest-looking number in the report
+    with the least behind it, which is how "9/9 at an exact 0.000e+00" came to be
+    written down about eight meshes and one matched refusal (#48 re-audit).
+    """
     out: list[str] = []
-    worst = 0.0
     if "error" in ref or "error" in new:
         if ref.get("error") != new.get("error") or ref.get("rc") != new.get("rc"):
             out.append(f"run outcome changed: ref={ref.get('error', ref.get('rc'))} "
                        f"new={new.get('error', new.get('rc'))}")
-        return out, worst
+        return out, None
+    worst = 0.0
     for key in ("rc", "n_nodes", "n_cells", "n_cel_cells", "coincident_nodes",
                 "malformed_rows"):
         if ref.get(key) != new.get(key):
@@ -657,6 +668,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     failed = []
+    no_mesh = []
     for name in names:
         path = os.path.join(args.dir, name + ".json")
         if not os.path.exists(path):
@@ -672,10 +684,21 @@ def main(argv: list[str]) -> int:
             for d in diffs:
                 print(f"         | {d}")
             failed.append(name)
+        elif worst is None:
+            # A matched refusal, and it says so. The alternative — printing the
+            # deviation `_diff` did not measure — reads exactly like the cases
+            # that really did match 5920 coordinates.
+            no_mesh.append(name)
+            print(f"SAME     {name}  (NO MESH on either side: rc={ref.get('rc')} "
+                  f"{ref.get('error')!r}; no coordinates compared)")
         else:
             print(f"SAME     {name}  (worst coordinate deviation {worst:.3e})")
     print("-------------------------------------------")
     print(f"TOTAL: {len(names)}   SAME: {len(names) - len(failed)}   DIFF: {len(failed)}")
+    if no_mesh:
+        # So a total cannot be quoted as if every case had been a mesh.
+        print(f"OF THOSE, {len(no_mesh)} matched a NO-MESH outcome rather than a "
+              f"mesh: {no_mesh}")
     if failed:
         print(f"DIFFERED: {failed}")
         return 1

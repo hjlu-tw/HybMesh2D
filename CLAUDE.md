@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **35,444
-characters (35,650 bytes, 2026-09-10) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **35,667
+characters (35,875 bytes, 2026-09-10) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**36,000**, leaving 556 characters of slack — derived by a rule the gate states at that
+**36,000**, leaving 333 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -43,7 +43,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 206 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 208 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -365,7 +365,9 @@ and its rationale with it. Nothing is ruled on here. The rationale for the GUI a
   that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not
   byte-reproducible and node NUMBERING varies run to run — so it canonicalises by COORDINATE and
   reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits
-  the 1e-10 tolerance. It compares the `.vtk` AND both STAR-CD files, because the `.cel` is the grid
+  the 1e-10 tolerance — and a case that produces NO mesh (one junction shape is expected to refuse)
+  reports `NO MESH`, never a deviation measured off nothing, so an `N/N SAME` cannot be quoted as N
+  meshes (`tests/test_golden_comparator.py`). It compares the `.vtk` AND both STAR-CD files, because the `.cel` is the grid
   the SOLVER reads and its writer owns a winding normalisation, a degenerate-cell skip and a
   duplicate dedupe that exist nowhere else; the `.bnd` is compared because the two most expensive
   junction bugs this repo has had produced a geometrically perfect mesh with the BCs on the wrong
