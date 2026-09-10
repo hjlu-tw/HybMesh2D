@@ -48,16 +48,21 @@ What this pins down:
 
 VERIFIED BY INJECTION, 2026-09-10, each one restored and REBUILT before the next
 (the exit code is read first: a gate that crashes reports zero FAIL lines and
-would look inert). Counts are FAIL lines out of 37 checks:
+would look inert). Counts are FAIL lines out of 41 checks:
 
-  * ``src/Mesh.cpp``: delete the whole ``if (allTagged)`` block.  -> exit 1,
-    23 FAIL across groups 1, 2, 4 and 5. Group 6 stays green, which is correct:
-    it asserts an ABSENCE. So does group 7 — ``VTKMesh`` and the viewer never
-    read the section, which is the blind spot below stated as a measurement.
-  * ``src/Mesh.cpp``: keep writing it but drop the guard —
-    ``if (true || allTagged)`` with ``el.blockId ? *el.blockId : 0``.  -> exit 1,
-    2 FAIL, BOTH in group 6: the hybrid file grows a section of zeros. Groups
-    1-5 stay green, which is the whole reason group 6 exists.
+  * ``src/Mesh.cpp``: delete the whole ``CELL_DATA`` write.  -> exit 1, 27 FAIL
+    across groups 1, 2, 4 and 5. Group 6 stays green, which is correct: it
+    asserts an ABSENCE. So does group 7 — ``VTKMesh`` and the viewer never read
+    the section, which is the blind spot below stated as a measurement.
+  * ``src/Mesh.cpp``: keep writing it but drop the guard — ``if (true)`` with
+    ``el.blockId ? *el.blockId : 0``.  -> exit 1, 2 FAIL, BOTH in group 6: the
+    hybrid file grows a section of zeros. Groups 1-5 stay green, which is the
+    whole reason group 6 exists.
+  * ``src/Mesh.cpp``: rename the array, ``SCALARS blockId int 1``.  -> exit 1,
+    4 FAIL, all of them check 1's header pin and nothing else. Every content
+    check stays green, because the CONTENT is unchanged. That is why the pin is
+    here: the array name is what a reader selects in ParaView, so it is part of
+    the interface, and before this check it was written down nowhere in the tree.
   * ``src/cli.cpp``: write a constant, ``mesh.addElement(c.nodeIds, 0)``.
     -> exit 1, 6 FAIL, in groups 1 (four blocks no longer all present), 2 (the
     counts) and 4 (the identity). The square cases stay green, because on a
@@ -86,7 +91,15 @@ BLIND SPOTS, named rather than papered over:
     geometrically; 0-vs-3 (the two wake blocks) is left open, and a swap of just
     those two would pass everything here.
   * The value is read as an integer, so nothing here would notice the exporter
-    writing it as a float that happens to round-trip.
+    writing it as a float that happens to round-trip. The DECLARED type is
+    pinned (``["block", "int", "1"]``), which is the half that matters to a
+    reader.
+  * NOTHING HERE REACHES THE PARTIALLY-TAGGED STATE. ``exportVTK`` warns when
+    some but not all cells carry a tag and writes no section; no ``MESH_MODE 1``
+    path can produce that today (the adapter's one loop tags every cell it
+    adds), so the warning is unexercised. A test would have to inject the state
+    it guards against, which is the C++ side of an injection this file cannot
+    make permanent.
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_block_field.py
 Skips cleanly if ./build/HybMesh2D has not been built.
@@ -129,8 +142,16 @@ def check(msg, cond):
 
 # ── Reading the file ────────────────────────────────────────────────────────
 def read_vtk(path):
-    """``(points, cells, field)`` from a legacy-VTK file; ``field`` is None when
-    the file carries no ``CELL_DATA`` section.
+    """``(points, cells, field, header)`` from a legacy-VTK file. ``field`` is
+    None when there is no ``CELL_DATA`` section, and ``header`` is the SCALARS
+    declaration's tokens (``[name, type, ncomp]``) or None.
+
+    NOTHING HERE RAISES ON A MALFORMED FILE. An earlier version asserted the
+    section's shape, which would have turned a broken exporter into a traceback
+    -- and this file's own injection log says the exit code is read first
+    precisely because a gate that crashes reports zero FAIL lines and looks
+    inert. A shape it does not recognise comes back as ``header = None`` and
+    fails check 1 on its merits.
 
     A parser of its own, rather than ``VTKMesh``, precisely because ``VTKMesh``
     stops at ``CELL_TYPES`` -- the thing check 7 relies on and the thing that
@@ -140,7 +161,7 @@ def read_vtk(path):
     """
     with open(path, encoding="utf-8") as f:
         toks = f.read().split()
-    pts, cells, field = [], [], None
+    pts, cells, field, header = [], [], None, None
     i, n = 0, len(toks)
     while i < n:
         if toks[i] == "POINTS":
@@ -158,19 +179,20 @@ def read_vtk(path):
                 cnt = int(toks[i]); i += 1
                 cells.append([int(toks[i + j]) for j in range(cnt)])
                 i += cnt
-            assert len(cells) == ncells
             continue
         if toks[i] == "CELL_DATA":
             ncells = int(toks[i + 1])
             # SCALARS <name> <type> <ncomp>, then LOOKUP_TABLE <name>.
-            assert toks[i + 2] == "SCALARS", toks[i + 2:i + 8]
-            assert toks[i + 6] == "LOOKUP_TABLE", toks[i + 2:i + 10]
-            i += 8
-            field = [int(v) for v in toks[i:i + ncells]]
-            i += ncells
+            if toks[i + 2:i + 3] == ["SCALARS"] and toks[i + 6:i + 7] == ["LOOKUP_TABLE"]:
+                header = toks[i + 3:i + 6]
+                i += 8
+                field = [int(v) for v in toks[i:i + ncells]]
+                i += ncells
+                continue
+            i += 2
             continue
         i += 1
-    return pts, cells, field
+    return pts, cells, field, header
 
 
 def has_cell_data(path):
@@ -207,11 +229,17 @@ def centroid_y(pts, cell):
 # ── One case, checked the same way every time ───────────────────────────────
 def check_case(label, out, stem, split=True):
     """Groups 1-3 for one multi-block run. Returns ``(pts, cells, field)``."""
-    pts, cells, field = read_vtk(stem + ".vtk")
+    pts, cells, field, header = read_vtk(stem + ".vtk")
     blocks = reported_blocks(out)
     check(f"1. [{label}] the run reports its blocks, so there is something to "
           f"check the field against ({len(blocks)} block(s))", bool(blocks))
     check(f"1. [{label}] the .vtk carries a CELL_DATA block field", field is not None)
+    # THE ARRAY NAME IS PART OF THE INTERFACE: it is what a reader selects in
+    # ParaView, so a rename is a user-visible change and not a tidy-up. Pinned
+    # here because it is pinned nowhere else -- without this the exporter could
+    # call it anything and all the content checks below would stay green.
+    check(f"1. [{label}] ...declared as `SCALARS block int 1`, the name a reader "
+          f"selects by ({header})", header == ["block", "int", "1"])
     # NO EARLY RETURN on an absent field. Every check below is a claim about the
     # field's CONTENT, and an absent field fails each of them on its merits --
     # `vals` is empty, so the counts do not match and no block is present. The
@@ -295,8 +323,8 @@ def main() -> int:
         check(f"5. the same topology as QUADS meshes (rc={rc})", rc == 0)
         if rc == 0:
             check_case("square/quads", qout, q_stem, split=False)
-            _, qcells, qfield = read_vtk(q_stem + ".vtk")
-            _, scells, _ = read_vtk(sq_stem + ".vtk")
+            _, qcells, qfield, _ = read_vtk(q_stem + ".vtk")
+            _, scells, _, _ = read_vtk(sq_stem + ".vtk")
             check(f"5. ...over HALF as many cells as the split run "
                   f"({len(qcells)} vs {len(scells)}), so the field counts what "
                   f"was exported and not what was filled",
@@ -319,7 +347,7 @@ OUTPUT_FILENAME {hyb}
         check(f"6. a hybrid-path run meshes (rc={rc})",
               rc == 0 and os.path.exists(hyb + ".vtk"))
         if os.path.exists(hyb + ".vtk"):
-            _, hcells, hfield = read_vtk(hyb + ".vtk")
+            _, hcells, hfield, _ = read_vtk(hyb + ".vtk")
             check(f"6. ...and its .vtk carries NO cell field at all — not a field "
                   f"of zeros, not one of -1 ({len(hcells)} cells)", hfield is None)
             check("6. ...with neither 'CELL_DATA' nor 'SCALARS' anywhere in the "
@@ -330,7 +358,7 @@ OUTPUT_FILENAME {hyb}
         if os.path.exists(cg_stem + ".vtk"):
             from app.models.vtk_mesh import VTKMesh
             m = VTKMesh.from_file(cg_stem + ".vtk")
-            _, cells, _ = read_vtk(cg_stem + ".vtk")
+            _, cells, _, _ = read_vtk(cg_stem + ".vtk")
             check(f"7. VTKMesh — which golden_mesh.py compares through — still "
                   f"reads the mesh, and sees the same cells "
                   f"({len(m.triangles) + len(m.quads) + len(m.polygons)} vs "

@@ -2676,11 +2676,29 @@ nothing writes yet, since no exporter has changed."*
   between two runs of the OLD binary as well. The substantive half of the item — no section is
   added — is asserted as text by the gate's group 6.
 
-- Gated by `tools/PreProcessor/tests/test_multiblock_block_field.py` (37 checks on the three
-  shipped configs plus a hybrid run; five injections, dated in that file's docstring, one of
-  which — swapping indices 1 and 2 — passes every count check and is caught only by the
-  geometric identity check, which is what earns that check its place).
+- **A PARTIALLY TAGGED MESH IS NAMED, NOT SILENTLY DROPPED.** The all-or-nothing rule has one
+  bad outcome: a future `MESH_MODE 1` change adding a single untagged element would make the
+  whole field DISAPPEAR. That is the right failure — half a field can only be written with the
+  sentinel the optional exists to avoid — but a debug aid that vanishes without saying so is
+  indistinguishable from one that was never built, which is exactly the defect #106 exists to
+  fix. So `exportVTK` counts the tagged cells and warns when the count is neither 0 nor all.
+  **Unreachable today** (the adapter's one loop tags every cell it adds, and no other path adds
+  a tagged one), so nothing gates it; that is recorded as a blind spot rather than covered by a
+  test for a state nothing can produce. Raised by #106's own Spec review.
 
+- **THE "RE-CAPTURE" IN ACCEPTANCE ITEM 5 RECORDS NOTHING, AND CANNOT.** Golden captures are
+  untracked artefacts written to a directory the caller names; there is no committed baseline to
+  update. The capture WAS taken (from `4a101d7` built in a scratch tree, via
+  `HYBMESH_GOLDEN_BIN`) and the compare against the working tree run — that is where the 19/19
+  comes from — but "re-captured" leaves no trace in the repo by construction. Stated so a later
+  reader does not go looking for the artefact.
+
+- Gated by `tools/PreProcessor/tests/test_multiblock_block_field.py` (41 checks on the three
+  shipped configs plus a hybrid run; six injections, dated in that file's docstring, two of
+  which earn a specific check its place: swapping indices 1 and 2 passes every count check and
+  is caught only by the geometric identity check, and renaming the array is caught only by the
+  header pin — the array NAME is what a reader selects in ParaView, so it is interface, and
+  before that check it was pinned nowhere in the tree).
 
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.

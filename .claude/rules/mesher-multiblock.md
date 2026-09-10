@@ -435,6 +435,7 @@ acceptance run: `docs/design_notes/mesher.md`.**
   `tests/test_multiblock_cgrid_surface.py` (9 groups on the SHIPPED files, reusing #53's conformity
   measure) and the `mb_cgrid` golden case. The dated solver acceptance run is in that file's
   docstring.
+
 **The BLOCK ID is written to the VTK as a cell field, and it is OPTIONAL** (`Element::blockId`
 in `include/Mesh.hpp`, the `CELL_DATA` section in `src/Mesh.cpp::exportVTK`, filled by the
 adapter in `src/cli.cpp`; #106). #48's user story 39, the one item of that issue never built and
@@ -456,12 +457,11 @@ it "blocks are internal scaffolding, not an output format" is the whole story.
 - **`addElement(ids, blockId)` is an OVERLOAD, not a write to `elements.back()`** — the same
   reason `addTaggedEdge` exists: the assign-to-`back()` idiom is a second chance to record the
   cell and forget the tag.
-- **`golden_mesh.py` IS BLIND TO THIS FIELD** and a multi-block `SAME` is not coverage of it —
-  `VTKMesh` stops parsing at `CELL_TYPES`. That is what made #106's hybrid claim measurable
-  (19/19 SAME, worst deviation 0.000e+00, against a pre-change binary); it is also why the surface
-  gate is the only thing covering the field. Also in the blind-spot list below.
-- Gated by `tests/test_multiblock_block_field.py` (37 checks over the three shipped configs plus a
-  hybrid run; 5 injections dated in that file). Its per-block counts are compared against the
+- **The array is named `block`, and that name is part of the interface** — it is what a reader
+  selects in ParaView, so renaming it is a user-visible change and not a tidy-up. Pinned by name
+  in `tests/test_multiblock_block_field.py`.
+- Gated by `tests/test_multiblock_block_field.py` (41 checks over the three shipped configs plus a
+  hybrid run; 6 injections dated in that file). Its per-block counts are compared against the
   RUN'S OWN reported block dimensions, never a written-down number, so a re-seeded topology moves
   both sides together.
   Why: `docs/design_notes/mesher.md`, "THE BLOCK ID AS A VTK CELL FIELD".
@@ -495,6 +495,11 @@ otherwise learn the hole exists.
   stops at `CELL_TYPES`. Measured — 19/19 SAME across the commit that ADDED the field. The same
   shape as the `.bnd` `segm_no` hole in `.claude/rules/mesher.md`'s list, and stated here because
   it is this path's field; `tests/test_multiblock_block_field.py` is the whole of its coverage.
+- **NOTHING CHECKS THAT EVERY MULTI-BLOCK CELL IS TAGGED.** `exportVTK` writes the section only
+  when ALL cells carry a tag, and today the adapter's one loop guarantees that. A future
+  `MESH_MODE 1` change adding a single untagged element would make the whole field disappear
+  rather than half-appear; that is the right FAILURE, but it is a silent one. The C++ names it in
+  a warning; no gate reaches the state, because nothing on this path can currently produce it.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
 - **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
   "follows the circle" is measured against that polyline's vertices and the wall-height residue is

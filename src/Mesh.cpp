@@ -394,10 +394,22 @@ void Mesh::exportVTK(const std::string& filename) const {
     // mesh could only be written with a sentinel — the thing Element::blockId is
     // optional in order to avoid. All-or-nothing keeps the hybrid path's file
     // exactly what it was: no CELL_DATA section, not a section of zeros.
-    const bool allTagged = !elements.empty()
-        && std::all_of(elements.begin(), elements.end(),
-                       [](const Element& el) { return el.blockId.has_value(); });
-    if (allTagged) {
+    const size_t tagged = static_cast<size_t>(
+        std::count_if(elements.begin(), elements.end(),
+                      [](const Element& el) { return el.blockId.has_value(); }));
+    if (tagged > 0 && tagged < elements.size()) {
+        // Unreachable today -- the multi-block adapter's one loop tags every cell
+        // it adds, and no other path adds a tagged one. Said out loud anyway,
+        // because the failure it guards is the silent kind: the section simply
+        // would not appear, and a debug aid that vanishes without saying so is
+        // indistinguishable from one that was never built. That is the whole
+        // shape of the defect #106 exists to fix.
+        LOG_WARN("VTK export: " << tagged << " of " << elements.size()
+                 << " cells carry a block id, so the block-id cell field is "
+                 "omitted -- it has one value per cell and no way to spell "
+                 "'this cell has none'. Every cell must be tagged or none.");
+    }
+    if (!elements.empty() && tagged == elements.size()) {
         ofs << "CELL_DATA " << elements.size() << "\n";
         ofs << "SCALARS block int 1\n";
         ofs << "LOOKUP_TABLE default\n";

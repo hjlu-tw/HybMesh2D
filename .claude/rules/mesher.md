@@ -175,14 +175,7 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   curvature is the point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc
   length).
 - **`Mesh.cpp`**: mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration,
-  VTK and STAR-CD export. **`exportVTK` writes a `CELL_DATA` block-id field only when EVERY
-  element carries one** (`Element::blockId`, an `std::optional`) — the multi-block path's debug
-  affordance, #106. Stated here as well as in `.claude/rules/mesher-multiblock.md` because that
-  file's globs do NOT reach `src/Mesh.cpp` or `include/Mesh.hpp`, so a session editing the
-  exporter is handed only this file: a defaulted 0 or a `-1` would put a wrong answer in every
-  hybrid `.vtk`, and the all-or-nothing guard is what makes the optional expressible in a format
-  with one value per cell. The rest of the rule — that the value is the INDEX into
-  `MbResult::blocks` and not the declared id, and that no other exporter gains it — is there. **A boundary edge's BC and its source segment are ONE fact and are private**:
+  VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are private**:
   write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with
   `boundaryEdgeInfo(v1, v2)`. Two public parallel maps keyed by hand made "wrote the BC, forgot the
   segment key" a defect the interface could not prevent, and half an identity reaching the exporter
@@ -210,6 +203,19 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   frame a node two blocks share is moved. Pure, total, never throws; rules there too.
 - **`Config.hpp`**: single-header; parses `.dat` files into ~50 typed parameters.
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross.
+
+**`exportVTK` writes the block-id `CELL_DATA` field ONLY when EVERY element carries one**
+(`Element::blockId`, an `std::optional<int>`, in `include/Mesh.hpp`; `src/Mesh.cpp`; #106).
+Absent means absent: the hybrid path has no blocks, so a defaulted `0` would make every hybrid
+`.vtk` claim its cells came from block 0, and a `-1` would be a field every reader has to know
+to ignore. A VTK scalar array has one value per cell and no way to spell "this one has none",
+which is what makes all-or-nothing the only way to express the optional in the format. **Stated
+here AS WELL AS in `.claude/rules/mesher-multiblock.md`**, deliberately: that file's globs reach
+`src/cli.cpp` but NOT `src/Mesh.cpp` or `include/Mesh.hpp`, so a session editing the exporter is
+handed only this file. The rest of the rule is there — that the value is the INDEX into
+`MbResult::blocks` and never the declared `id` string, that the array is named `block`, and that
+no other exporter gains it. Gated by `tests/test_multiblock_block_field.py`.
+Why: `docs/design_notes/mesher.md`, "THE BLOCK ID AS A VTK CELL FIELD".
 
 ## Named blind spots
 
