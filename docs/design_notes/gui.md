@@ -997,8 +997,8 @@ STAR-CD boundary conditions and got the same result". The mesher's own
 time, several clicks before the grid is exported, sent and run, so
 `audit_mesh_bc()` re-checks the actual file at each of those three points
 (`mesh_export_ctrl.mesh_bc_problems` / `warn_if_mesh_bc_stale`, and
-`solver_ctrl._confirm_mesh_bc_state`, which *asks* rather than deciding —
-`headless_default=True` so batch/CI, which regenerate in the same pass, are not
+`controllers/solver_ctrl.py`'s `_confirm_mesh_bc_state`, which *asks* rather than
+deciding — `headless_default=True` so batch/CI, which regenerate in the same pass, are not
 blocked). Two independent signals: an assigned BC **type** with no patch of that
 name in the `.bnd`, and a geometry `.meta` **newer** than the mesh (the per-segment
 BC and No-BL flags are projected there from the model on every edit, so its mtime

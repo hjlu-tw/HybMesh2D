@@ -41,19 +41,34 @@ Checks:
     from the globs, not from a coverage list: a glob whose last component is `**` or `*`
     claims a directory rather than a file and is deliberately NOT ownership, because
     `views/panels/**` reaches `restart_chooser.py` and `tools/PreProcessor/gui/**`
-    reaches everything. It fires only when the module IS named in another note, so the
-    check reports a misfiled rationale rather than an undocumented module. Both
-    narrowings are measured rather than assumed, and the whole ladder is stated because
-    the first version of this entry attached the LAST number to the FIRST rung: as
-    shipped 0 failures today; counting a directory glob as ownership too, 3 (all
-    legitimate cross-area pointers — `restart_chooser.py` under `views/panels/**`,
-    `pipeline_config.py` and `case_run_note.py` under the whole-GUI glob); dropping
-    ownership entirely, as #76 specifies the check, 8; and dropping the
-    named-in-another-note filter as well, which is that ticket's literal wording, 27.
+    reaches everything. That narrowing is measured rather than assumed, and the whole
+    ladder is stated because the first version of this entry attached the LAST number to
+    the FIRST rung: as shipped 0 failures today; counting a directory glob as ownership
+    too, 3 (all legitimate cross-area pointers — `restart_chooser.py` under
+    `views/panels/**`, `pipeline_config.py` and `case_run_note.py` under the whole-GUI
+    glob); dropping ownership entirely, as #76 specifies the check, 8; and dropping
+    ownership AND the note filter below, which is that ticket's literal wording, 27.
     #76 measured 20/20 with zero false positives when only two rule files existed, and
     specified that it should land BEFORE #64-#67; it did not, so the six wide-glob GUI
     rule files those tickets and #77 added were already in the tree. The narrowing is a
     consequence of that ordering, not an improvement on the ticket.
+    TWO shapes fail here, and #105 added the second. If ANOTHER note names the module,
+    the rationale is MISFILED — it stayed where the rule used to live. If NO note names
+    it anywhere, the rationale never left the rule file at all: newly-written measurements
+    going straight into a rule file while the note it points its readers at never learns
+    about them. #99 is that instance — ~4,600 characters into `gui-panels-config.md` and
+    nothing into `gui.md` — and it was invisible here until #105 because "named in another
+    note" was a FILTER rather than a message selector. Three modules were live when the
+    filter came off, and how each was closed is the point: `controllers/solver_ctrl.py`'s
+    rationale was already in `gui.md`, which named the member and not the file, so the
+    note gained the filename; the two result-canvas mixins are named in `gui-results.md`
+    ONLY to hand the reader to `gui-canvas-edit.md`'s pop-up rule, so they are pinned in
+    `UNDOCUMENTED_MODULES` with that reason. That list, unlike `KNOWN_RESIDUE`, is NOT
+    expected to empty out — a note entry written to satisfy this check is the thing the
+    check exists against — so its staleness half carries the weight instead: a pin fails
+    the moment a note starts naming the module OR the rule file stops claiming it, and
+    both directions are injected because a pin list validated against the check's own
+    FAILURES rather than against the live set would catch neither.
  6. No rule in the ROOT names a GUI module that some rule file's globs already
     reach. That state splits one rule across two layers: the glob hands a session a
     rule file which is silent about the file it just opened, and nothing says so. It
@@ -98,7 +113,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 202 more of today because this repo's own prose
+bytes, which the root file has 206 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -290,27 +305,40 @@ Known remaining blind spots, stated rather than pretended away:
     loader for a pattern like `a/*/b`. Every pattern in this repo is a prefix glob or a
     literal, where the two agree — but a future middle-wildcard glob would be matched
     more eagerly here than by the tooling.
- f. Check 5's reach is 45 of the 136 module mentions across the rule files — the count of
-    FILES deliberately not spelled here, since #88's defect was a rule-file count written as
-    an English word and this entry carried a second one until #89 made it false. #89's first
-    attempt at this sentence then supplied the thirteenth instance of the defect the whole
-    ledger is about, and BOTH review axes caught it: it read `48 today` over the 45, which is
-    `owned` and not `reach` — the two differ by the 3 below. Measured across HEAD~1 and HEAD:
-    reach 45 both times and never stale, while the TOTAL had drifted 132 -> 135 under some
-    earlier commit and #89 itself added the 136th. All four numbers are re-derived together
-    here, because the entry decomposes (45 + 88 + 3 = 136) and half an update makes it read
-    consistently while being wrong. Of the 136: 88 are named by a rule file whose globs do
-    not claim them BY FILENAME — the cross-area pointers the check must not fail — and 3
-    more are claimed but named in
-    no design note at all (`controllers/solver_ctrl.py`,
-    `views/result_canvas_interaction_mixin.py`, `views/result_canvas_plots_mixin.py`), so
-    a rule whose rationale was never written is invisible to it. Two further escapes: a
-    module named in BOTH notes passes, which is why `case_export.py` — already in
-    `pipeline.md` through the `case_archive` and `case_input_paths` rationale — is not
-    among the three its own injection fires on; and a rule file naming no Python module
-    is vacuously true, which is `mesher.md` and — since #89 split it —
-    `mesher-multiblock.md` (zero each, their rules being about C++ and `.dat` keys). The
-    check therefore bites on the MAJORITY of a misfiled set, never on every member.
+ f. Check 5's reach is 50 of the 148 module mentions across the rule files, re-derived at
+    #105 — the count of FILES deliberately not spelled here, since #88's defect was a
+    rule-file count written as an English word and this entry carried a second one until #89
+    made it false. The other 98 are named by a rule file whose globs do not claim them BY
+    FILENAME: the cross-area pointers the check must not fail. `reach` and `owned` are now
+    the SAME number, which they were not before #105 — this entry used to carry a third
+    bucket of 3 modules that were claimed and named in no design note at all, so a rule whose
+    rationale was never written was invisible to the check. #105 made those fail, so the
+    bucket is gone rather than shrunk.
+    Every number here has gone stale at least once, which is why they are re-derived
+    together rather than patched: #89's first attempt at this sentence supplied the
+    thirteenth instance of the defect the whole ledger is about, and BOTH review axes caught
+    it — it read `48 today` over the 45, which was `owned` and not `reach`, the two differing
+    by exactly the bucket #105 has since removed. Measured across HEAD~1 and HEAD at the
+    time: reach 45 both times and never stale, while the TOTAL had drifted 132 -> 135 under
+    some earlier commit and #89 itself added the 136th. By #105 all three had moved again
+    (45 -> 50, 88 -> 98, 136 -> 148) with no ticket in between noticing, which is the cost of
+    an entry check 7 deliberately does not gate — see blind spot (c).
+    Four escapes are left. A module named in BOTH notes passes, which is why
+    `case_export.py` — already in `pipeline.md` through the `case_archive` and
+    `case_input_paths` rationale — is not among the modules its own injection fires on. A
+    rule file naming no Python module is vacuously true: `mesher.md` and
+    `mesher-smoothing.md` (zero each, their rules being about C++ and `.dat` keys) —
+    `mesher-multiblock.md` was the second of those when #89 split it and no longer is,
+    naming `services/phi_quality.py` and `services/pipeline_bc_derive.py`. A module a glob
+    claims that the rule file never NAMES is invisible, because ownership is read off the
+    names in the prose and then filtered by the globs, never enumerated from the globs
+    themselves. And the note side is matched by BASENAME WITH ITS `.py`, so a note that
+    names the module by STEM reads as not naming it — which is exactly what #105 hit on
+    `controllers/solver_ctrl.py`, whose rationale was already in `gui.md` as
+    `solver_ctrl._confirm_mesh_bc_state`. That was closed by making the note name the FILE
+    rather than by loosening the match: a bare-stem match would fire on `units`, `paths` or
+    `segment` anywhere in the 120k characters of `gui.md`. The check therefore bites on the
+    MAJORITY of a misfiled set, never on every member.
  g. Check 7 covers figures the instruction files state about THEMSELVES. Four
     neighbouring families of hand-maintained figure are outside it, named here rather
     than left ambiguous — and a fifth thing that is not a family but a single third copy:
@@ -487,6 +515,32 @@ RULE_BUDGET = 60_000
 # mutates a copy of the world instead of passing an argument past it.
 KNOWN_RESIDUE = {}
 
+# Check 5's pins, for the direction #105 added: a module a rule file's globs claim BY
+# FILENAME that NO design note names anywhere. Unlike `KNOWN_RESIDUE` this list is not
+# expected to empty out, because not every claimed module HAS rationale to strand — a
+# rule file names some modules only to hand the reader to another rule file, and a note
+# entry written to satisfy this check would be the thing the check exists against. An
+# entry states WHY the module is named and what would make it a real violation, and the
+# staleness half below fails the moment a note starts naming it, so a pin cannot outlive
+# its reason.
+UNDOCUMENTED_MODULES = {
+    # Both are named in `gui-results.md`'s "Inward" boundary paragraph and NOWHERE else
+    # in it: they are listed as three of the files whose modeless pop-ups the rule in
+    # `.claude/rules/gui-canvas-edit.md` governs, and that paragraph says in its own words
+    # that "nothing here restates it and nothing here counts those calls: that file's
+    # header is the one place the count lives". A `gui.md` entry naming them would
+    # duplicate a count this repo deliberately keeps in one place. The third file in that
+    # same sentence, `result_canvas_surface_mixin.py`, IS named in `gui.md` — for the
+    # surface-source rules, which are its own — so the pin is per module and not a blanket
+    # exemption for the paragraph. Either of these becomes a real violation the moment
+    # `gui-results.md` rules on it, and the staleness half below catches the other
+    # direction.
+    "views/result_canvas_interaction_mixin.py": (
+        "#105: named only to hand the reader to gui-canvas-edit.md's pop-up rule"),
+    "views/result_canvas_plots_mixin.py": (
+        "#105: named only to hand the reader to gui-canvas-edit.md's pop-up rule"),
+}
+
 _FAILS = []
 
 
@@ -520,7 +574,8 @@ def read_world():
     with open(os.path.abspath(__file__), encoding="utf-8") as fh:
         gate_text = fh.read()
     return {"root": root_text, "rules": rules, "notes": notes, "gate": gate_text,
-            "pins": dict(KNOWN_RESIDUE), "tests": collect_test_files(),
+            "pins": dict(KNOWN_RESIDUE), "note_pins": dict(UNDOCUMENTED_MODULES),
+            "tests": collect_test_files(),
             # An INPUT like every other, so check 7's GUI figures are a pure function of
             # this dict and an injection can move the tree by mutating a copy instead of
             # writing 263 files.
@@ -869,6 +924,10 @@ def rule_owned_modules(world, name, text):
 
 def check_note_coverage(world):
     fails = []
+    # Every module the second direction currently finds unnamed, pinned or not: the pin
+    # list is validated against THIS rather than against the failures, so a pin whose
+    # module stopped being claimed fails the same way as one whose note caught up.
+    live_unnamed = set()
     for name, text in sorted(world["rules"].items()):
         note = note_pointer(text)
         if note is None:
@@ -885,6 +944,20 @@ def check_note_coverage(world):
                 continue
             elsewhere = sorted(n for n, tx in world["notes"].items() if base in tx)
             if not elsewhere:
+                # #105: no note names it ANYWHERE. That is not misfiled rationale, it is
+                # rationale that never left the rule file — the shape newly-written
+                # measurements take when they go straight into a rule file, which #100
+                # found in `gui-panels-config.md` and only a review axis caught.
+                live_unnamed.add(rel)
+                if rel in world["note_pins"]:
+                    continue
+                fails.append(
+                    "%s/%s rules on `%s` (its own glob `%s` claims it) and points its reader "
+                    "at %s/%s, which never names that module — and NO design note does. The "
+                    "rationale never left the rule file, so that pointer is dead for this "
+                    "module: put the measurements in %s/%s, or — if the mention is wayfinding "
+                    "rather than a rule — pin it in UNDOCUMENTED_MODULES with the reason."
+                    % (_RULES_DIR, name, rel, pat, _NOTES_DIR, note, _NOTES_DIR, note))
                 continue
             fails.append(
                 "%s/%s rules on `%s` (its own glob `%s` claims it) and points its reader at "
@@ -893,6 +966,13 @@ def check_note_coverage(world):
                 "file."
                 % (_RULES_DIR, name, rel, pat, _NOTES_DIR, note,
                    ", ".join("%s/%s" % (_NOTES_DIR, n) for n in elsewhere), note))
+    for rel, why in sorted(world["note_pins"].items()):
+        if rel not in live_unnamed:
+            fails.append(
+                "UNDOCUMENTED_MODULES pins `%s` (%s), but that is no longer a violation — "
+                "either a design note now names it, or no rule file's globs claim it by "
+                "filename any more. Delete the entry; a pin that outlives its reason is the "
+                "skip list this direction was written instead of." % (rel, why))
     return fails
 
 
@@ -1585,7 +1665,9 @@ run(check_paths_frontmatter,
     "check 4. every rule file's `paths:` is present, non-empty and not only `**`")
 run(check_note_coverage,
     "check 5. every rule file's design-note pointer resolves, and names every module the "
-    "rule file's own globs claim by filename that some other design note discusses")
+    "rule file's own globs claim by filename — whether the rationale is misfiled in another "
+    "note or reached no note at all, and every UNDOCUMENTED_MODULES pin is still a real "
+    "violation")
 
 run(check_root_rule_coverage,
     "check 6. no rule in the root names a GUI module some rule file's globs already reach, "
@@ -1601,7 +1683,8 @@ run(check_self_report,
 # corrupts its input looks identical to the check working.
 def copy_world(w):
     return {"root": w["root"], "rules": dict(w["rules"]), "notes": dict(w["notes"]),
-            "gate": w["gate"], "pins": dict(w["pins"]), "tests": set(w["tests"]),
+            "gate": w["gate"], "pins": dict(w["pins"]),
+            "note_pins": dict(w["note_pins"]), "tests": set(w["tests"]),
             "gui_lengths": dict(w["gui_lengths"])}
 
 
@@ -1965,10 +2048,116 @@ nc = check_note_coverage(inj)
 check(len(nc) == 1 and "nope.md" in nc[0] and victim in nc[0],
       "injection 12c. check 5 fails when the rationale pointer resolves to nothing")
 
+# --- injection 12e: check 5's SECOND direction, the defect #100 was -------------
+# The mirror of 12. There the rationale sat in ANOTHER note, which is a rule that moved
+# and left its evidence behind; here it is in NO note at all, which is what newly-written
+# measurements look like when they go straight into a rule file and the note never learns
+# about them. #99 is the instance the direction is named after: ~4,600 characters into
+# `gui-panels-config.md` and nothing into `gui.md`, invisible to check 5 as it stood and
+# caught only by a review axis (#100).
+#
+# Scored the way every injection in this file is: the check is a pure function of a copied
+# world, so an exception inside it does not read as "zero failures" — it kills the run and
+# `run_all.sh` reports the non-zero exit. That is the property #105 asks for; there is no
+# child process here to read an exit code from.
+inj = copy_world(world)
+_v_rule = "gui-panels-config.md"
+_v_mod = "services/geom_path_identity.py"
+_v_base = os.path.basename(_v_mod)
+check(_v_mod in rule_owned_modules(world, _v_rule, world["rules"][_v_rule])
+      and note_pointer(world["rules"][_v_rule]) == "gui.md"
+      and sum(1 for tx in world["notes"].values() if _v_base in tx) == 1
+      and _v_base in world["notes"]["gui.md"],
+      "injection 12e. fixture: the rule file's own globs claim the module BY FILENAME, its "
+      "pointer resolves to gui.md, and exactly one design note — that one — names it")
+for _n in list(inj["notes"]):
+    inj["notes"][_n] = inj["notes"][_n].replace(_v_base, "REDACTED_MODULE.py")
+check(inj["notes"]["gui.md"] != world["notes"]["gui.md"]
+      and inj["rules"] == world["rules"]
+      and all(_v_base not in tx for tx in inj["notes"].values())
+      and _v_mod in rule_owned_modules(inj, _v_rule, inj["rules"][_v_rule]),
+      "injection 12e. injection is well-formed: no note names the module any more, the RULE "
+      "files are untouched, and the rule file still claims it — so what changed is the "
+      "rationale's absence and not the ownership")
+nc = check_note_coverage(inj)
+check(len(nc) == 1 and _v_mod in nc[0] and _v_rule in nc[0] and "gui.md" in nc[0]
+      and "NO design note" in nc[0],
+      "injection 12e. check 5's second direction fails on a module NO design note names, "
+      "naming the module, the rule file and the note its pointer resolves to")
+check(nc and all("did not travel with the rule" not in f for f in nc),
+      "injection 12e. ...and fails for the SECOND reason, not the first: the message says the "
+      "rationale never left the rule file rather than that it stayed in another note")
+
+# --- injection 12e2: the FIRST direction still fires ----------------------------
+# The same victim, moved rather than deleted: rationale that exists in the wrong note must
+# still be reported as misfiled and not as missing. Without this, widening the check could
+# have collapsed both directions into the new message and nobody would see it.
+inj2 = copy_world(world)
+inj2["notes"]["gui.md"] = inj2["notes"]["gui.md"].replace(_v_base, "REDACTED_MODULE.py")
+inj2["notes"]["mesher.md"] = inj2["notes"]["mesher.md"].rstrip("\n") + (
+    "\n\n`services/%s` is discussed over here instead.\n" % _v_base)
+check(_v_base not in inj2["notes"]["gui.md"] and _v_base in inj2["notes"]["mesher.md"]
+      and inj2["rules"] == world["rules"],
+      "injection 12e2. injection is well-formed: the module's only mention moved from the "
+      "note the rule file points at into another one, and no rule file changed")
+nc2 = check_note_coverage(inj2)
+check(len(nc2) == 1 and _v_mod in nc2[0] and "mesher.md" in nc2[0]
+      and "did not travel with the rule" in nc2[0] and "NO design note" not in nc2[0],
+      "injection 12e2. check 5's FIRST direction still fires and still names the note the "
+      "module IS discussed in — the two directions did not collapse into one")
+
+# --- injection 12f: a pin that stops being a violation, both ways ----------------
+# `UNDOCUMENTED_MODULES` is the one pin list here that is NOT expected to empty out, so its
+# staleness half matters more than `KNOWN_RESIDUE`'s, not less: nothing else would ever
+# force a re-read. Both ways out of being a violation are injected, because a pin list
+# validated against the FAILURES rather than against the live set would catch neither.
+check(bool(world["note_pins"]),
+      "injection 12f. fixture: UNDOCUMENTED_MODULES is non-empty, so the staleness assertions "
+      "below are not vacuously true")
+_pinned = sorted(world["note_pins"])[0]
+inj = copy_world(world)
+inj["notes"]["gui.md"] = inj["notes"]["gui.md"].rstrip("\n") + (
+    "\n\nThe rationale for `%s` now lives here.\n" % _pinned)
+check(os.path.basename(_pinned) in inj["notes"]["gui.md"]
+      and os.path.basename(_pinned) not in world["notes"]["gui.md"],
+      "injection 12f. injection is well-formed: the note really started naming the pinned "
+      "module, and really did not before")
+nc = check_note_coverage(inj)
+check(any(_pinned in f and "no longer a violation" in f for f in nc),
+      "injection 12f. check 5 fails on a pin whose note caught up, so a pin cannot outlive "
+      "the reason it was written")
+
+inj = copy_world(world)
+_owner = next(n for n, tx in world["rules"].items()
+              if _pinned in rule_owned_modules(world, n, tx))
+inj["rules"][_owner] = inj["rules"][_owner].replace(os.path.basename(_pinned), "gone.py")
+check(_pinned not in rule_owned_modules(inj, _owner, inj["rules"][_owner])
+      and inj["notes"] == world["notes"],
+      "injection 12f2. injection is well-formed: the rule file stopped naming the pinned "
+      "module, so no glob claims it BY FILENAME any more, and no note changed")
+nc = check_note_coverage(inj)
+check(any(_pinned in f and "no longer a violation" in f for f in nc),
+      "injection 12f2. check 5 fails on a pin whose module the rule file stopped claiming — "
+      "the direction a pin list checked against its own failures would miss")
+
+# --- injection 12g: every pin is a REAL violation today -------------------------
+# Non-vacuity of the list itself rather than of the check: an entry that would pass anyway
+# is a skip list growing under cover of the check that permits it.
+for _rel in sorted(world["note_pins"]):
+    inj = copy_world(world)
+    inj["note_pins"] = {k: v for k, v in inj["note_pins"].items() if k != _rel}
+    nc = check_note_coverage(inj)
+    check(any(_rel in f and "NO design note" in f for f in nc),
+          "injection 12g. UNDOCUMENTED_MODULES pin `%s` is a real violation: unpinned, check 5 "
+          "fails on it" % _rel)
+
 # --- injection 12d: negative control -------------------------------------------
+# No count in this message: #105 added four injections above it and the previous count
+# ("the five failures above") had no way to move with them.
 check(not check_note_coverage(world),
-      "injection 12d. negative control: the real, unmutated world passes check 5, so the five "
-      "failures above are the mutation and not the checker")
+      "injection 12d. negative control: the real, unmutated world passes check 5 in BOTH "
+      "directions and with every pin live, so the failures above are the mutations and not "
+      "the checker")
 
 
 # --- injection 13: check 7, a stated figure that disagrees with disk ------------
@@ -2180,15 +2369,24 @@ check(len(hits) == 1 and repr(_wrong_word) in hits[0] and repr(was) in hits[0]
 # here are inside the file they measure, so this is the joint fixed point and not a
 # substitution — the character count moves when the character count is written.
 inj, _was = bend_figure(world, "the root's always-loaded cost", 1, "7")
+# Asserted on THIS bend alone, before the next one lands. Two figures bent inside the same
+# file can cancel by DIGIT WIDTH, and on #105 they did: the root's cost went 6 digits -> 1
+# (-5) while its slack, which that same ticket's edit had left at 2 digits, went -> 7 (+5),
+# so the joint assertion read "the length did not move" while both bends were real and both
+# figures disagreed. A well-formedness check that a real mutation can turn off is the
+# green-but-inert family this file exists to keep out, so the property is now read where it
+# is produced.
+check(len(inj["root"]) != len(world["root"]),
+      "injection 13f. injection is well-formed: bending the root's own character count "
+      "CHANGED the root's length, so --sync has to ITERATE rather than substitute once")
 inj, _was = bend_figure(inj, "the root's budget and its slack", 2, "123,456")
 # The bend is as wide as the list it replaces, derived: a fixed six-entry string would
 # stop being the same SHAPE of figure on the day a ninth rule file lands.
 inj, _was = bend_figure(inj, "blind spot (d)'s headroom, the rest", 2,
                         _fmt_nums((0,) * len(_rules_by_size(world)[2:])))
-check(len(check_self_report(inj)) >= 3 and len(inj["root"]) != len(world["root"]),
-      "injection 13f. injection is well-formed: three figures across both files disagree, "
-      "and bending them CHANGED the root's length — so the correct values are not the ones "
-      "the unmutated file states")
+check(len(check_self_report(inj)) >= 3,
+      "injection 13f. injection is well-formed: three figures across both files disagree — "
+      "so the correct values are not the ones the unmutated files state")
 synced, changes, converged = sync_world(inj)
 check(converged and changes and not check_self_report(synced),
       "injection 13f. --sync converges and the synced world passes check 7, which is the "
