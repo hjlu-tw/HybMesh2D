@@ -107,34 +107,49 @@ Checks:
     goes RED rather than quietly inert. `--sync` performs the iteration and rewrites every
     figure from disk, which removes the manual step all eleven defects happened in.
  8. `ROOT_BUDGET` obeys ITS OWN rule. Check 7 holds the budget's VALUE — the root file may
-    not misreport the constant — and until #109 nothing held the constant against the band
+    not misreport the constant — and until #109 nothing held the constant against the rule
     its own definition states, which is what blind spot (c2) said. The gap was not
-    theoretical: the slack left the band at `87244f2` and stayed out until #105 re-derived
-    it by hand, and left it again on the fourth commit after that fix, when 223 characters
-    of unrelated prose landed. Every check reported ALL PASS both times and a review axis
-    is what noticed — the same shape as the eleven stale figures check 7 exists
-    for. The band's two ends are READ from that one statement rather than restated here (the
-    root file says the rule lives there and there only, so a second copy inside the check
-    enforcing it would be check 7's defect class one level out), and the boundary
-    granularity is derived from them as `high - low`, which makes the check accept exactly
-    the budgets the rule could have produced. It fails at BOTH ends, printing the size, the
-    budget, the slack, the band and the budget value that would put the slack back inside
-    it — except when the root is ALSO over budget, where the value is printed as
-    arithmetic and the advice DEFERS to check 1: telling an author to fit the budget to
-    the file is the evasion story 12 refuses, and two checks giving opposite instructions
-    is worse than one giving none. It is deliberately NOT registered for `--sync`: the figures that sync rewrites are
-    restatements of disk, while the budget is a decision, and a budget that raised itself on
-    demand is #75's lock with a machine to move it — the ratchet that TRACKED this file
+    theoretical: the slack left the band at `87244f2`, stayed out until #105 re-derived the
+    constant by hand (to 57, still out of band), and left the band a THIRD time on the
+    fourth commit after `fccff2c` finally landed it inside, when 223 characters of
+    unrelated prose took it to 333. Every check reported ALL PASS every time and a review
+    axis is what noticed — the same shape as the eleven stale figures check 7 exists for.
+    All THREE numbers the rule states are READ from that one statement rather than
+    restated here — the band's two ends AND the boundary the derivation rounds down to.
+    Reading two of them was this check's first draft, and Spec review measured the
+    difference: with the boundary inferred as `high - low`, bending the band alone made
+    the failure recommend a boundary the prose one clause away did not state. Reading all
+    three lets the check REFUSE a rule that contradicts itself instead of picking a
+    reading, and the identity it refuses on (the addend IS the ceiling, the boundary IS
+    the band's width) is why the band has the width it has. The LOCATION is enforced too,
+    for the same reason the numbers are not restated: the root file says the rule lives at
+    the constant and there ONLY, so the statement must sit in that constant's own comment
+    block and nowhere else in this file. It fails at BOTH ends, printing the size, the
+    budget, the slack, the band and a budget value that would put the slack back inside it
+    — one the author can PASTE, which is not the same as the rule's bare arithmetic: at a
+    slack of exactly the ceiling the root's own statement of that slack gets wider, so
+    writing it changes the size it describes and `--sync` oscillates instead of
+    converging. The recommendation backs one character off that single case. When the root
+    is ALSO over budget the value is printed as arithmetic and the advice DEFERS to check
+    1: telling an author to fit the budget to the file is the evasion story 12 refuses,
+    and two checks giving opposite instructions is worse than one giving none. It is
+    deliberately NOT registered for `--sync`: the figures that sync rewrites are
+    restatements of disk, while the budget is a decision, and a budget that raised itself
+    on demand is #75's lock with a machine to move it — the ratchet that TRACKED this file
     instead of constraining it, which is #59's user story 12 unmet. The failure names the
     value; re-banding stays a decision that can no longer be forgotten.
  injections. Every check is verified by an in-test injection over a mutated COPY of
     the inputs, asserting the check then fails, that the mutated input is still
-    well-formed, and that it really differs from the original. Printed labels say
+    well-formed, and that it really differs from the original. In-process, calling the
+    check function directly: the failure mode that makes an END-TO-END injection harness
+    lie — scoring a run by counting its FAIL lines, so a crash reports zero and reads as
+    inert — cannot arise here, because an exception inside a check propagates out of this
+    script and `run_all.sh` reports the exit code. Printed labels say
     `check N` or `injection N`: the two used to share one integer space, and #77's
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 210 more of today because this repo's own prose
+bytes, which the root file has 212 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -290,23 +305,33 @@ Known remaining blind spots, stated rather than pretended away:
     times when #78 counted, eleven when #79 re-derived it). The band IS the design; the
     arithmetic is one way of landing in it.
     A NEW blind spot arrives with the check, and it is the price of the property the
-    ticket asked for. Check 8 reads its threshold from the prose that documents it, so
-    WIDENING the rule widens the check: nothing gates the band's own two ends. Injection
-    14c is that fact from the useful side (bending the rule moves both the verdict and the
+    ticket asked for. Check 8 reads its thresholds from the prose that documents them, so
+    WIDENING the rule widens the check: nothing gates the rule's own numbers. Injection
+    14c is that fact from the useful side (shifting the rule moves both the verdict and the
     recommended value, which is how the check proves it did not hardcode them), and the
-    unuseful side is that a maintainer who edits the interval instead of the constant
-    passes — one line, in the file a reviewer of a `CLAUDE.md` change is least likely to
-    open. Restating the numbers in the check would only move the same hole, since the root
-    file says the rule is stated at the constant and stated there ONLY.
+    unuseful side is that a maintainer who edits the rule instead of the constant passes,
+    in the file a reviewer of a `CLAUDE.md` change is least likely to open. Restating the
+    numbers in the check would only move the same hole, since the root file says the rule
+    is stated at the constant and stated there ONLY. What DID narrow it came from review of
+    the first draft, one finding per axis. BOTH axes measured the LOCATION, which is now
+    enforced: the statement must sit in the constant's own comment block and nowhere else
+    in this file, where the draft searched the whole gate — so a reviewer moved the
+    statement to the end of it and into `RULE_BUDGET`'s comment and the check passed both
+    times, while its own failure text said the rule lives at the constant. Spec measured
+    the second: the rule must not contradict ITSELF, since all three numbers are read, so
+    widening now means editing the band AND the derivation into agreement rather than
+    editing one clause. Two edits in agreement is a higher bar than one; it is not a
+    gate.
     The ledger these checks were bought with, kept because the rule alone does not carry
     the argument for itself. The constant drifted to 481 of slack against a floor of 500 in
     the commit before #79, which is the shape that makes a typo fix edit this file too; #79
     re-derived it by hand, as the rule asks of whoever edits the root, and nothing made it.
     It went out again at `87244f2` and stayed out until #105 re-derived it by hand a SECOND
     time, to 57 — out of band at the same end, against the same floor — which
-    that ticket's review caught and `fccff2c` fixed; three commits then ran in band and the
-    fourth left it again. Two hand re-derivations, two recurrences, a review axis every
-    time. The drift was BOUNDED even then, and the first draft of this entry got that wrong
+    that ticket's review caught and `fccff2c` fixed by re-deriving it a THIRD time, to 556;
+    three commits then ran in band and the fourth left it again. Three hand re-derivations
+    (#79, #105, `fccff2c`) and three drifts, every one of them caught by a human or a
+    review agent rather than by the build. The drift was BOUNDED even then, and the first draft of this entry got that wrong
     in the direction that flatters it: it claimed a budget left at 33,000 while the root
     fell to 20,000 would leave "every check still passing", and review measured the
     opposite — injection 5c goes RED once the slack reaches about 3,000, which is the whole
@@ -547,12 +572,15 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # same floor, on 223 characters of prose about something else. Three commits is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather than
 # a third one. Re-derived at #109, and stated in the PAST tense on purpose: the root
-# settled at 35,976 once that ticket's own synced figures were written -- a joint fixed
-# point, since two of them are its size and its slack -- and 35,976 down to a 500 boundary
-# is 35,500, plus 1,000. Check 8 gates the BAND, not this sentence; blind spot (g) is why
+# settled at 36,018 once that ticket's own synced figures were written -- a joint fixed
+# point, since two of them are its size and its slack -- and 36,018 down to a 500 boundary
+# is 36,000, plus 1,000. The value below is check 8's OWN recommendation, pasted: the
+# ticket's second round of review grew the root past the floor, the gate named 37,000 and
+# named it as pasteable, and closing that loop by hand is the last time this number will
+# need one. Check 8 gates the BAND, not this sentence; blind spot (g) is why
 # a dated measurement is left to be a dated measurement rather than registered for
 # `--sync`, which would rewrite the evidence for the number every time the root moved.
-ROOT_BUDGET = 36_500
+ROOT_BUDGET = 37_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -1617,26 +1645,36 @@ def check_self_report(world):
 # --- check 8 ------------------------------------------------------------------
 # Check 7 holds the budget's VALUE: the root file may not MISREPORT the constant. What
 # nothing held until #109 is whether the constant still obeys ITS OWN rule -- and blind
-# spot (c2) named that gap while the thing it names happened twice. The slack left the
-# band at `87244f2` and stayed out -- the run is enumerated at the constant's own
-# definition -- until #105 re-derived it BY HAND, exactly as the rule there asks; the
-# FOURTH commit after that fix took it to 333 and out again, on 223 characters of
-# unrelated prose. Both times every check reported ALL PASS and a review axis is what
+# spot (c2) named that gap while the thing it names kept happening. The slack left the
+# band at `87244f2` and stayed out -- the run is enumerated below -- until #105 re-derived
+# the constant BY HAND, exactly as the rule there asks, and landed on 57, which is still
+# out of band at the same end. `fccff2c` re-derived it a third time, to 556 and inside;
+# the FOURTH commit after that took it to 333 and out again, on 223 characters of
+# unrelated prose. Every time, every check reported ALL PASS and a review axis is what
 # noticed, which is the same shape as the eleven stale figures check 7 exists for: a rule
 # a person has to remember re-deriving is a rule that decays quietly.
 #
-# The band's ENDS are READ from the rule's own statement at `ROOT_BUDGET`'s definition,
+# All THREE numbers the rule states are READ from its own statement at `ROOT_BUDGET`'s
+# definition -- the band's two ends AND the boundary the derivation rounds down to --
 # never restated here. Not tidiness: the root file says the rule is stated at that
 # constant "and stated there only", so a second copy inside the check enforcing it would
 # make an instruction file wrong about itself -- check 7's own defect class, one level out.
 # A check that reads its threshold from the prose that documents it also cannot drift from
-# it, which is the property the whole file is built on.
+# it, which is the property the whole file is built on. For the same reason the LOCATION
+# is enforced rather than assumed, which the first draft did not do: it searched the whole
+# file, so review moved the statement to the end of it and into `RULE_BUDGET`'s comment
+# and the check passed both times while its own message said the rule lives at the
+# constant.
 #
-# The boundary GRANULARITY comes from the band too, as `high - low`, so the rule's two
-# numbers are the check's only input. That identity is why the band has the width it has:
-# the derivation's own output -- the size taken DOWN to a boundary, plus `high` -- leaves
-# a slack of `high - (size mod step)`, which lands in `(high - step, high]`, and that is
-# the band precisely when `step == high - low`. So the check accepts every budget the
+# Reading all three is also what lets the check REFUSE a rule that contradicts itself. The
+# first draft read two and inferred the boundary as `high - low`; Spec review bent the
+# band alone and the failure recommended rounding to a boundary the prose one clause away
+# still stated as 500 -- a check enforcing a rule nobody wrote, invisible today only
+# because the two happen to coincide. The identity it now refuses on is why the band has
+# the width it has: the derivation's output -- the size taken DOWN to a boundary, plus the
+# addend -- leaves a slack of `addend - (size mod boundary)`, which lands in
+# `(addend - boundary, addend]`, and that is the stated band exactly when the addend is
+# the ceiling and the boundary is the band's width. So the check accepts every budget the
 # rule could have produced and nothing else, without recomputing the rule and without
 # becoming the exact ratchet #78 rejected: a re-measured figure or a typo fix moves the
 # size by tens of characters and changes nothing here.
@@ -1649,77 +1687,158 @@ def check_self_report(world):
 # value to set rather than setting it: re-banding stays a decision, and the only thing
 # that changes is that it can no longer be forgotten.
 #
-# The separator in the anchor is `[\s#]+` rather than `_rx`'s `\s+`, because this rule is
-# stated in a COMMENT block: the band sits mid-sentence, and a re-wrap that pushes it
-# onto the next line puts `# ` between two of its words. An anchor a re-wrap can break is
-# check 7's "resolved 0 times" family arriving here, where it would report a missing rule
-# on a tree whose rule is perfectly fine.
-_BAND_GAP = r"[\s#]+"
+# The separators are `[\s#]+` rather than `_rx`'s `\s+`, because this rule is stated in a
+# COMMENT block: each figure sits mid-sentence, and a re-wrap that pushes one onto the
+# next line puts `# ` between two of its words. An anchor a re-wrap can break is check 7's
+# "resolved 0 times" family arriving here, where it would report a missing rule on a tree
+# whose rule is perfectly fine. The comma inside the interval takes `[\s#]*` for the same
+# reason from the other side: review found that `(500,1000]` -- a legal reformatting of
+# the same interval -- reddened the gate with "the band is not stated", which is a
+# misleading failure rather than a wrong one.
+_RULE_GAP = r"[\s#]+"
+_DERIV_RX = re.compile(
+    r"taken" + _RULE_GAP + r"DOWN" + _RULE_GAP + r"to" + _RULE_GAP + r"a" + _RULE_GAP
+    + r"(\d[\d,]*)" + _RULE_GAP + r"boundary" + _RULE_GAP + r"with" + _RULE_GAP
+    + r"(\d[\d,]*)" + _RULE_GAP + r"added")
 _BAND_RX = re.compile(
-    r"slack" + _BAND_GAP + r"always" + _BAND_GAP + r"in" + _BAND_GAP
-    + r"\((\d[\d,]*)," + _BAND_GAP + r"(\d[\d,]*)\]")
+    r"slack" + _RULE_GAP + r"always" + _RULE_GAP + r"in" + _RULE_GAP
+    + r"\((\d[\d,]*),[\s#]*(\d[\d,]*)\]")
+
+# All three numbers the rule states, never two of them. `boundary` was `high - low` in
+# this check's first draft, and Spec review measured why that is not the same thing: bend
+# the band to (400, 1200] and the failure recommended "down to an 800 boundary" while the
+# line one clause away still said 500 -- the check enforcing a rule the prose does not
+# state, invisible today only because 500 == 1,000 - 500. Reading all three lets the
+# check REFUSE a rule that contradicts itself instead of silently picking a reading.
+_Rule = collections.namedtuple("_Rule", "low high boundary")
 
 
-def root_slack_band(world):
-    """(low, high) of the documented slack band, or None when the rule is unreadable.
+def budget_rule_block(gate_text):
+    """The contiguous comment block immediately above the one `ROOT_BUDGET =` line.
 
-    None is "the rule is not stated exactly once, or is not an ascending interval" --
-    which check 8 reports as a failure in its own right rather than skipping. A check
-    that silently finds no rule to enforce is the green-but-inert family this file has
-    been bitten by three times (#62's injection 7, #77's injection B, and an injection
-    sized from the constant it tested).
+    The rule's LOCATION is part of what the failure claims and what the root file says
+    about it ("stated there only"), so it is enforced rather than assumed: review moved
+    the statement to the end of this file and to `RULE_BUDGET`'s comment, and the first
+    draft -- which searched the whole file -- passed both times while its own message
+    said the rule lives at the constant.
     """
-    found = _BAND_RX.findall(world["gate"])
-    if len(found) != 1:
+    lines = gate_text.splitlines()
+    at = [i for i, line in enumerate(lines) if line.startswith("ROOT_BUDGET = ")]
+    if len(at) != 1:
         return None
-    low, high = (int(part.replace(",", "")) for part in found[0])
+    first = at[0]
+    while first > 0 and lines[first - 1].startswith("#"):
+        first -= 1
+    if first == at[0]:
+        return None
+    return "\n".join(lines[first:at[0]])
+
+
+def root_budget_rule(world):
+    """(rule, error) — the budget rule as its own statement gives it, or why not.
+
+    An error rather than None-and-skip: a check that silently finds no rule to enforce
+    is the green-but-inert family this file has been bitten by three times (#62's
+    injection 7, #77's injection B, and an injection sized from the constant it tested).
+    """
+    where = ("`ROOT_BUDGET`'s own comment block in %s" % _TARGET_PATH["gate"])
+    block = budget_rule_block(world["gate"])
+    if block is None:
+        return None, ("this check cannot find %s -- there must be exactly one "
+                      "`ROOT_BUDGET = ` line with a contiguous `#` comment block above "
+                      "it. The rule is READ from there, and deliberately not restated "
+                      "in the check, because the root file says it lives there and "
+                      "there only." % where)
+    bands = _BAND_RX.findall(block)
+    derivs = _DERIV_RX.findall(block)
+    if len(bands) != 1 or len(derivs) != 1:
+        return None, ("%s must state the slack BAND once and the DERIVATION once; it "
+                      "states them %d and %d times. Restore the statement rather than "
+                      "hardcoding the numbers into this check. Anchors: %s -- and -- %s"
+                      % (where, len(bands), len(derivs),
+                         _BAND_RX.pattern, _DERIV_RX.pattern))
+    elsewhere = len(_BAND_RX.findall(world["gate"])) - 1
+    if elsewhere:
+        return None, ("the slack band is stated %d further time(s) in %s, outside %s. "
+                      "The root file says the rule lives at the constant and there "
+                      "ONLY, so a second copy makes an instruction file wrong about "
+                      "itself -- which is check 7's defect class, one level out."
+                      % (elsewhere, _TARGET_PATH["gate"], where))
+    low, high = (int(part.replace(",", "")) for part in bands[0])
+    boundary, addend = (int(part.replace(",", "")) for part in derivs[0])
     if not 0 <= low < high:
-        return None
-    return (low, high)
+        return None, ("%s states the band as (%d, %d], which is not an ascending "
+                      "interval of a floor below a ceiling." % (where, low, high))
+    if addend != high or high - low != boundary:
+        return None, (
+            "%s contradicts ITSELF, so there is no one rule to enforce: it says the "
+            "size is taken down to a %d boundary with %d added, and that the slack "
+            "always lands in (%d, %d]. Those agree only when the addend IS the ceiling "
+            "(%d vs %d) and the boundary IS the band's width (%d vs %d) -- that identity "
+            "is why the band has the width it has, since the derivation leaves a slack "
+            "of ceiling minus (size mod boundary). Fix the statement, not this check."
+            % (where, boundary, addend, low, high, addend, high, boundary, high - low))
+    return _Rule(low=low, high=high, boundary=boundary), None
+
+
+def recommended_budget(size, rule):
+    """(budget, backed_off) — the value to PASTE for a root file of this size.
+
+    The rule's own arithmetic, plus one correction that the arithmetic cannot see. The
+    ROOT FILE STATES ITS OWN SLACK, so the recommended value has to survive being
+    written down: at a slack of exactly the ceiling, `--sync` writes `1,000` where `998`
+    stood, the two extra characters change the file's size, the next round derives 998
+    again, and the sync oscillates instead of converging -- measured by Spec review on a
+    pasted 36,976, which took check 7 red with "did NOT converge in 12 rounds". It is the
+    ONE slack in the band whose stated width differs from its neighbour's, so backing off
+    a single character removes the whole family rather than patching one case. The band's
+    floor is what makes that legal: `high - 1 > low` for any boundary above 1.
+    """
+    want = (size // rule.boundary) * rule.boundary + rule.high
+    slack = want - size
+    if (len(_fmt_nums((slack,))) != len(_fmt_nums((slack - 1,)))
+            and slack - 1 > rule.low):
+        return want - 1, True
+    return want, False
 
 
 def check_root_budget_band(world):
-    band = root_slack_band(world)
-    if band is None:
-        return ["%s does not state the root slack band exactly once, as an ascending "
-                "interval, at `ROOT_BUDGET`'s own definition -- so this check cannot "
-                "tell what band to enforce. The ends are READ from that rule and "
-                "deliberately not restated here, because the root file says the rule "
-                "lives there and there only; restore the statement rather than "
-                "hardcoding the numbers into this check. Anchor: %s"
-                % (_TARGET_PATH["gate"], _BAND_RX.pattern)]
-    low, high = band
+    rule, err = root_budget_rule(world)
+    if err:
+        return [err]
     size = len(world["root"])
     slack = ROOT_BUDGET - size
-    if low < slack <= high:
+    if rule.low < slack <= rule.high:
         return []
-    step = high - low
-    want = (size // step) * step + high
+    want, backed_off = recommended_budget(size, rule)
+    arith = ("the size taken DOWN to a %d boundary plus %d%s, which leaves %d of slack"
+             % (rule.boundary, rule.high,
+                (", less one character -- at a slack of exactly %d the root's own "
+                 "statement of it gets wider, and `--sync` then oscillates" % rule.high)
+                if backed_off else "",
+                want - size))
     if slack <= 0:
         # OVER budget, where the two checks would otherwise give opposite instructions.
-        # Check 1 says move the detail into a design note; a bare "set the budget to %d"
-        # here would hand the author the evasion check 1 exists to refuse -- #59's user
-        # story 12 with this gate's own blessing. The numbers are still printed, because
-        # the check reports the same measurement either way and an author who has decided
-        # to re-band needs the value; what changes is that they are framed as arithmetic
-        # rather than as advice.
+        # Check 1 says move the detail into a design note; a bare "set the budget to
+        # <value>" here would hand the author the evasion check 1 exists to refuse --
+        # #59's user story 12 with this gate's own blessing. The numbers are still
+        # printed, because the check reports the same measurement either way and an
+        # author who has decided to re-band needs the value; what changes is that they
+        # are framed as arithmetic rather than as advice.
         verdict = ("The root is also OVER its budget, so check 1's instruction comes "
                    "FIRST: move the detail into a design note or the rule file for its "
                    "area. The band arithmetic below is reported, not recommended -- "
                    "fitting the budget to the file is the evasion check 1 refuses.")
-        fix = ("The band's own arithmetic gives `ROOT_BUDGET = %d`: the size taken DOWN "
-               "to a %d boundary plus %d, which would leave %d of slack." % (
-                   want, step, high, want - size))
+        fix = "The band's own arithmetic gives `ROOT_BUDGET = %d`: %s." % (want, arith)
     else:
         verdict = ("Too TIGHT: the next typo fix in the root would have to edit this gate "
                    "too, which is the shape #78's first draft was refuted for."
-                   if slack <= low else
+                   if slack <= rule.low else
                    "Too LOOSE: a feature could add thousands of characters here in "
                    "silence, which is #59's user story 12 unmet.")
-        fix = ("Set `ROOT_BUDGET = %d`: the file's size taken DOWN to a %d boundary plus "
-               "%d, which leaves %d of slack. Re-derive the comment beside the constant "
-               "in the same edit, so the argument for the number matches the number." % (
-                   want, step, high, want - size))
+        fix = ("Set `ROOT_BUDGET = %d`: %s. Re-derive the comment beside the constant in "
+               "the same edit, so the argument for the number matches the number."
+               % (want, arith))
     return [
         "%s is %d chars and `ROOT_BUDGET` is %d, which leaves %d characters of slack -- "
         "outside the (%d, %d] band the rule at that constant's own definition states. "
@@ -1727,7 +1846,7 @@ def check_root_budget_band(world):
         "rewrites are restatements of disk, while the budget is a decision, and a budget "
         "that raised itself on demand is the ratchet that tracked this file instead of "
         "constraining it."
-        % (_ROOT_NAME, size, ROOT_BUDGET, slack, low, high, verdict, fix)]
+        % (_ROOT_NAME, size, ROOT_BUDGET, slack, rule.low, rule.high, verdict, fix)]
 
 
 # --- --sync: the other half ---------------------------------------------------
@@ -2836,28 +2955,35 @@ check(not check_self_report(world),
       "failures above are the mutations and not the checker — and every figure the "
       "instruction files state about themselves is true as committed")
 
-# --- injection 14: check 8, both ends of the band -------------------------------
-# The injection space is its own integer space, deliberately: checks 3 and 8 both have
-# an injection numbered 8 already, and #77's check 6 colliding with check 2's injection
-# 6 is why the printed labels say which of the two they are.
+# --- injection 14: check 8, the band and the rule it is read from ---------------
+# The injection space is its own integer space, deliberately: checks 3 and 8 both have an
+# injection numbered 8 already, and #77's check 6 colliding with check 2's injection 6 is
+# why the printed labels say which of the two they are.
 #
-# Every one of these mutates the band or the file it is measured against, never the
+# Every one of these mutates the RULE or the file it is measured against, never the
 # constant -- the constant is what the check is ABOUT, so bending it would test the
 # arithmetic rather than the rule.
-_BAND8 = root_slack_band(world)
-check(_BAND8 is not None and _BAND8[0] < (ROOT_BUDGET - len(world["root"])) <= _BAND8[1],
-      "injection 14. the rule at `ROOT_BUDGET` is readable and the committed tree is "
-      "INSIDE the band, so both directions below are reachable from here")
-_LOW8, _HIGH8 = _BAND8
-_STEP8 = _HIGH8 - _LOW8
-# The band's own text, rebuilt from the parsed ends rather than written out. A literal
-# copy here would state the rule a second time in the very file that says it is stated
-# once -- and `root_slack_band` would then resolve TWICE and return None, failing every
-# injection below for a reason that has nothing to do with the band.
-_BAND8_TXT = "slack always in (%d, %d]" % (_LOW8, _HIGH8)
-check(world["gate"].count(_BAND8_TXT) == 1,
-      "injection 14. the band is stated exactly once in this file, at the constant's "
-      "own definition")
+_RULE8, _RULE8_ERR = root_budget_rule(world)
+check(_RULE8_ERR is None
+      and _RULE8.low < (ROOT_BUDGET - len(world["root"])) <= _RULE8.high,
+      "injection 14. the rule at `ROOT_BUDGET` is readable, self-consistent and states "
+      "all three numbers, and the committed tree is INSIDE the band — so every direction "
+      "below is reachable from here")
+_STEP8 = _RULE8.boundary
+# The rule's own two sentences, rebuilt from the parsed numbers rather than written out.
+# Literal copies here would state the rule a second time in the very file that says it is
+# stated once -- and `root_budget_rule` would then refuse the real world for a reason
+# that has nothing to do with the band, failing every injection below.
+# Captured from the block rather than re-formatted from the numbers: the rule spells the
+# same 1,000 with a comma in one sentence and without one in the other, and a
+# reconstruction that picked either would silently fail to find the other.
+_BLOCK8 = budget_rule_block(world["gate"])
+_BAND8_TXT = _BAND_RX.search(_BLOCK8).group(0)
+_DERIV8_TXT = _DERIV_RX.search(_BLOCK8).group(0)
+check(world["gate"].count(_BAND8_TXT) == 1 and world["gate"].count(_DERIV8_TXT) == 1
+      and _BAND8_TXT in _BLOCK8 and _DERIV8_TXT in _BLOCK8,
+      "injection 14. both halves of the rule are stated exactly once in this file, and "
+      "both are inside the constant's OWN comment block")
 
 # 14a. too TIGHT: prose lands in the root until the slack reaches the floor. This is the
 # state the tree was actually in when #109 was written -- 333 against a floor of 500 --
@@ -2865,23 +2991,23 @@ check(world["gate"].count(_BAND8_TXT) == 1,
 # has to edit this file too.
 _PAD8 = "padding. "
 inj = copy_world(world)
-_need8 = (ROOT_BUDGET - len(world["root"])) - _LOW8
+_need8 = (ROOT_BUDGET - len(world["root"])) - _RULE8.low
 inj["root"] = inj["root"] + "\n" + (_PAD8 * ((_need8 // len(_PAD8)) + 1))
 check(inj["root"] != world["root"] and inj["root"].startswith("# " + _ROOT_NAME)
-      and root_slack_band(inj) == _BAND8
-      and (ROOT_BUDGET - len(inj["root"])) <= _LOW8,
+      and root_budget_rule(inj)[0] == _RULE8
+      and 0 < (ROOT_BUDGET - len(inj["root"])) <= _RULE8.low,
       "injection 14a. injection is well-formed: the root grew, still reads as itself, the "
-      "band is untouched, and the slack is now at or under the floor")
+      "rule is untouched, and the slack is now at or under the floor but still positive")
 band8 = check_root_budget_band(inj)
 check(len(band8) == 1 and "Too TIGHT" in band8[0] and _ROOT_NAME in band8[0]
       and str(ROOT_BUDGET) in band8[0]
-      and ("(%d, %d]" % (_LOW8, _HIGH8)) in band8[0]
+      and ("(%d, %d]" % (_RULE8.low, _RULE8.high)) in band8[0]
       and str(ROOT_BUDGET - len(inj["root"])) in band8[0],
       "injection 14a. check 8 fails when the slack falls to the floor, and the failure "
       "prints the size, the budget, the slack and the band")
-_want8a = ((len(inj["root"]) // _STEP8) * _STEP8) + _HIGH8
+_want8a = recommended_budget(len(inj["root"]), _RULE8)[0]
 check(("`ROOT_BUDGET = %d`" % _want8a) in band8[0]
-      and _LOW8 < (_want8a - len(inj["root"])) <= _HIGH8,
+      and _RULE8.low < (_want8a - len(inj["root"])) <= _RULE8.high,
       "injection 14a. ...and names a budget value that really would put the slack back "
       "inside the band")
 
@@ -2889,57 +3015,108 @@ check(("`ROOT_BUDGET = %d`" % _want8a) in band8[0]
 # prompted the ticket would have missed. A whole-line prefix of the root rather than a
 # stub: the mutation has to be a document, or the size it reports is meaningless.
 inj = copy_world(world)
-_cut8 = world["root"][:ROOT_BUDGET - _HIGH8 - 1]
+_cut8 = world["root"][:ROOT_BUDGET - _RULE8.high - 1]
 inj["root"] = _cut8[:_cut8.rfind("\n") + 1]
 check(inj["root"] != world["root"] and inj["root"].startswith("# " + _ROOT_NAME)
       and inj["root"].endswith("\n") and len(inj["root"]) > ROOT_BUDGET // 2
-      and root_slack_band(inj) == _BAND8
-      and (ROOT_BUDGET - len(inj["root"])) > _HIGH8,
+      and root_budget_rule(inj)[0] == _RULE8
+      and (ROOT_BUDGET - len(inj["root"])) > _RULE8.high,
       "injection 14b. injection is well-formed: the root shrank to a whole-line prefix "
-      "of itself, the band is untouched, and the slack is now over the ceiling")
+      "of itself, the rule is untouched, and the slack is now over the ceiling")
 band8b = check_root_budget_band(inj)
-_want8b = ((len(inj["root"]) // _STEP8) * _STEP8) + _HIGH8
+_want8b = recommended_budget(len(inj["root"]), _RULE8)[0]
 check(len(band8b) == 1 and "Too LOOSE" in band8b[0]
       and ("`ROOT_BUDGET = %d`" % _want8b) in band8b[0] and _want8b < ROOT_BUDGET
-      and _LOW8 < (_want8b - len(inj["root"])) <= _HIGH8,
+      and _RULE8.low < (_want8b - len(inj["root"])) <= _RULE8.high,
       "injection 14b. check 8 fails when the slack rises past the ceiling, and names a "
       "LOWER budget that puts it back inside the band")
 
-# 14c. the ENDS are read from the rule, not restated in the check. Bending the band one
-# step up leaves the real, unmutated root out of band at the floor -- so the failure has
-# to quote the BENT ends and a value derived from them. If the numbers were hardcoded
-# here this world would pass, which is the whole assertion.
+# 14c. the rule's NUMBERS are read from the rule, not restated in the check. Shifting the
+# whole rule one boundary up -- band and derivation together, so it stays self-consistent
+# -- leaves the real, unmutated root out of band at the floor. The failure has to quote
+# the SHIFTED numbers and a value derived from them; if any of the three were hardcoded
+# here, this world would pass, which is the whole assertion.
 inj = copy_world(world)
-_BENT8 = (_LOW8 + _STEP8, _HIGH8 + _STEP8)
+_SHIFT8 = _Rule(low=_RULE8.low + _STEP8, high=_RULE8.high + _STEP8,
+                boundary=_RULE8.boundary)
 inj["gate"] = world["gate"].replace(
-    _BAND8_TXT, "slack always in (%d, %d]" % _BENT8, 1)
-check(inj["gate"] != world["gate"] and root_slack_band(inj) == _BENT8
+    _BAND8_TXT, "slack always in (%d, %d]" % (_SHIFT8.low, _SHIFT8.high), 1)
+inj["gate"] = inj["gate"].replace(
+    _DERIV8_TXT, "taken DOWN to a %d boundary with %d added" % (
+        _SHIFT8.boundary, _SHIFT8.high), 1)
+check(inj["gate"] != world["gate"] and root_budget_rule(inj)[0] == _SHIFT8
       and inj["root"] == world["root"],
-      "injection 14c. injection is well-formed: the rule now states a different band and "
-      "the root file is untouched")
+      "injection 14c. injection is well-formed: the rule now states a different, still "
+      "self-consistent band and the root file is untouched")
 band8c = check_root_budget_band(inj)
-_want8c = ((len(world["root"]) // _STEP8) * _STEP8) + _BENT8[1]
-check(len(band8c) == 1 and ("(%d, %d]" % _BENT8) in band8c[0]
-      and ("(%d, %d]" % (_LOW8, _HIGH8)) not in band8c[0]
+_want8c = recommended_budget(len(world["root"]), _SHIFT8)[0]
+check(len(band8c) == 1 and ("(%d, %d]" % (_SHIFT8.low, _SHIFT8.high)) in band8c[0]
+      and ("(%d, %d]" % (_RULE8.low, _RULE8.high)) not in band8c[0]
       and ("`ROOT_BUDGET = %d`" % _want8c) in band8c[0],
-      "injection 14c. check 8 enforces the band the RULE states: bending the rule moves "
+      "injection 14c. check 8 enforces the band the RULE states: shifting the rule moves "
       "the verdict and the recommended value, and the committed band appears nowhere in "
       "the failure")
+
+# 14c2. the THIRD number is read too, which the first draft of this check got wrong. It
+# derived the boundary as `high - low` and Spec review measured the consequence: bend the
+# band alone and the failure recommended a boundary the prose one clause away does not
+# state. A rule that contradicts itself has no single reading, so the check REFUSES it
+# instead of picking one.
+inj = copy_world(world)
+inj["gate"] = world["gate"].replace(
+    _BAND8_TXT, "slack always in (%d, %d]" % (_RULE8.low - 100, _RULE8.high + 200), 1)
+_rule8c2, _err8c2 = root_budget_rule(inj)
+check(inj["gate"] != world["gate"] and inj["root"] == world["root"]
+      and _rule8c2 is None and _err8c2 is not None,
+      "injection 14c2. injection is well-formed: the band moved while the derivation "
+      "beside it did not, and the rule no longer parses as one rule")
+band8c2 = check_root_budget_band(inj)
+check(len(band8c2) == 1 and "contradicts ITSELF" in band8c2[0]
+      and str(_RULE8.boundary) in band8c2[0] and str(_RULE8.high + 200) in band8c2[0],
+      "injection 14c2. check 8 refuses a self-contradicting rule and names both halves, "
+      "rather than enforcing a boundary the prose does not state")
 
 # 14d. the rule removed. A missing threshold must FAIL rather than pass vacuously --
 # green-but-inert is the family this file has been bitten by three times, and here it
 # would be a gate that enforces no band at all while reporting that it does.
 inj = copy_world(world)
 inj["gate"] = world["gate"].replace(_BAND8_TXT, "slack kept sensible", 1)
-check(inj["gate"] != world["gate"] and root_slack_band(inj) is None
+check(inj["gate"] != world["gate"] and root_budget_rule(inj)[0] is None
       and inj["root"] == world["root"],
       "injection 14d. injection is well-formed: the band statement is gone and the root "
       "file is untouched")
 band8d = check_root_budget_band(inj)
-check(len(band8d) == 1 and "exactly once" in band8d[0]
+check(len(band8d) == 1 and "states them 0 and 1 times" in band8d[0]
       and _TARGET_PATH["gate"] in band8d[0] and "ROOT_BUDGET" in band8d[0],
-      "injection 14d. check 8 fails when the rule it reads is not stated exactly once, "
-      "naming the file and the anchor rather than passing with nothing to enforce")
+      "injection 14d. check 8 fails when the rule it reads is not stated, naming the "
+      "file and both anchors rather than passing with nothing to enforce")
+
+# 14d2. the rule's LOCATION, which the failure text and the root file both assert and the
+# first draft did not enforce: it searched the whole gate, so review moved the statement
+# to the end of this file and into `RULE_BUDGET`'s comment and the check passed both
+# times. Moving it out of the constant's block must fail, and so must a second copy left
+# anywhere in the file -- "stated there only" is a claim in the root file, so a duplicate
+# is an instruction file made wrong about itself.
+inj = copy_world(world)
+inj["gate"] = world["gate"].replace(_BAND8_TXT, "slack kept sensible", 1).rstrip("\n") \
+    + "\n\n# A stray copy: " + _BAND8_TXT + "\n"
+check(_BAND8_TXT in inj["gate"] and _BAND8_TXT not in budget_rule_block(inj["gate"]),
+      "injection 14d2. injection is well-formed: the band is still stated in this file, "
+      "just not in the constant's own block")
+band8d2 = check_root_budget_band(inj)
+check(len(band8d2) == 1 and "states them 0 and 1 times" in band8d2[0],
+      "injection 14d2. check 8 fails when the rule is stated somewhere ELSE in the gate, "
+      "because the failure and the root file both say it lives at the constant")
+inj = copy_world(world)
+inj["gate"] = world["gate"].rstrip("\n") + "\n\n# A second copy: " + _BAND8_TXT + "\n"
+check(inj["gate"].count(_BAND8_TXT) == 2
+      and _BAND8_TXT in budget_rule_block(inj["gate"]),
+      "injection 14d2. injection is well-formed: the block still states the rule and a "
+      "duplicate now sits outside it")
+band8d2b = check_root_budget_band(inj)
+check(len(band8d2b) == 1 and "stated 1 further time" in band8d2b[0],
+      "injection 14d2. ...and a DUPLICATE fails too: the root file says the rule is "
+      "stated at the constant and there only")
 
 # 14e. `--sync` does NOT rewrite the budget, which is the half of this ticket that is a
 # refusal rather than a check. Run on 14a's out-of-band world: the ROOT's statement of
@@ -2973,24 +3150,49 @@ check(len(check_root_budget_band(synced8)) == 1,
 inj = copy_world(world)
 inj["root"] = inj["root"] + "\n" + (_PAD8 * ((ROOT_BUDGET // len(_PAD8)) + 2))
 check(inj["root"].startswith("# " + _ROOT_NAME) and len(inj["root"]) > ROOT_BUDGET
-      and root_slack_band(inj) == _BAND8,
+      and root_budget_rule(inj)[0] == _RULE8,
       "injection 14g. injection is well-formed: the root is now over its own budget and "
-      "the band is untouched")
+      "the rule is untouched")
 band8g = check_root_budget_band(inj)
 check(len(check_sizes(inj)) == 1 and len(band8g) == 1
       and "check 1's instruction comes FIRST" in band8g[0]
       and "not recommended" in band8g[0]
       and "Set `ROOT_BUDGET" not in band8g[0]
-      and ("`ROOT_BUDGET = %d`" % (((len(inj["root"]) // _STEP8) * _STEP8) + _HIGH8))
+      and ("`ROOT_BUDGET = %d`" % recommended_budget(len(inj["root"]), _RULE8)[0])
       in band8g[0],
       "injection 14g. check 8 still fails and still prints the arithmetic, but DEFERS to "
       "check 1 instead of telling the author to fit the budget to the file")
+
+# 14h. the recommended value must be PASTEABLE, over every size rather than over the one
+# this tree happens to have. Spec review found the case the arithmetic alone gets wrong:
+# at a slack of exactly the ceiling the root's own statement of it gets wider, `--sync`
+# writes it, the file grows, the next round derives a smaller slack, and the sync
+# oscillates instead of converging -- check 7 red, from pasting the value check 8 named.
+# Swept over a whole boundary's worth of sizes, so the property is about the rule and not
+# about today's file.
+_sweep8 = range(len(world["root"]) - _STEP8, len(world["root"]) + _STEP8 + 1)
+_bad_band8 = [s for s in _sweep8
+              if not _RULE8.low < (recommended_budget(s, _RULE8)[0] - s) <= _RULE8.high]
+_unstable8 = [s for s in _sweep8
+              if len(_fmt_nums((recommended_budget(s, _RULE8)[0] - s,)))
+              != len(_fmt_nums((recommended_budget(s, _RULE8)[0] - s - 1,)))]
+check(not _bad_band8 and not _unstable8,
+      "injection 14h. over %d consecutive root sizes the recommended budget always lands "
+      "in the band AND always leaves a slack whose stated width matches its neighbour's, "
+      "so pasting it can never make `--sync` oscillate" % len(_sweep8))
+_naive8 = [s for s in _sweep8
+           if len(_fmt_nums(((s // _STEP8) * _STEP8 + _RULE8.high - s,)))
+           != len(_fmt_nums(((s // _STEP8) * _STEP8 + _RULE8.high - s - 1,)))]
+check(len(_naive8) > 0 and all(recommended_budget(s, _RULE8)[1] for s in _naive8),
+      "injection 14h. ...and the back-off is not decoration: %d of those sizes make the "
+      "rule's bare arithmetic name an unpasteable value, and `recommended_budget` reports "
+      "backing off on every one of them" % len(_naive8))
 
 # 14f. negative control
 check(not check_root_budget_band(world),
       "injection 14f. negative control: the real, unmutated world passes check 8, so the "
       "failures above are the mutations and not the checker — `ROOT_BUDGET` is inside its "
-      "own band as committed")
+      "own band as committed, and the rule it is read from is self-consistent")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
 sys.exit(1 if _FAILS else 0)

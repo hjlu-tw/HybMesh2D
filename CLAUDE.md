@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **35,976
-characters (36,186 bytes, 2026-09-10) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **36,018
+characters (36,230 bytes, 2026-09-10) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,20 +32,20 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**36,500**, leaving 524 characters of slack — derived by a rule the gate states at that
+**37,000**, leaving 982 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
-this sentence; and since #109 a check there READS the band's two ends from that one statement and
-fails when the slack leaves them, naming the budget that would put it back — re-banding stays a
-decision, so `--sync` does not touch the constant. #75 had locked it at 40,000 while this
+this sentence; and since #109 a check there READS all three of that statement's numbers — the
+band's two ends and the boundary — and fails when the slack leaves the band, naming a budget value
+that would put it back. Re-banding stays a decision, so `--sync` does not touch the constant. #75 had locked it at 40,000 while this
 file was 32,043, so two such additions COULD have landed unnoticed. None did, and the stronger fact
 is not the size of the drift but who made it: every commit under the lock was #75's own, no
 feature commit ever ran against it, and the file drifted 110 characters in total. The defect was
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 210 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 212 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
