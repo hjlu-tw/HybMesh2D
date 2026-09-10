@@ -496,7 +496,19 @@ _NOTES_DIR = os.path.join("docs", "design_notes")
 # The property is a RELATIONSHIP between this number and the file's actual size, so it
 # is held by injection 5c below and not by this comment. RULE_BUDGET is untouched: #59
 # fixes that one, and nothing here reaches a rule file.
-ROOT_BUDGET = 35_500
+# Re-derived at #105, the first re-cut since #78 set the band -- and the review that
+# demanded it was RIGHT for a reason that is not the one first written here. The band did
+# not break at #105. MEASURED: it was last true at `19c44c9` (34,992, slack 508) and broke
+# at `87244f2` (35,095, slack 405), then ran out of band through `bccdea1` (408),
+# `011d3ee` (407) and both #100 commits (407) before #105 touched anything. What #105 did
+# was take slack from 407 to 57 -- from out of band to one typo away, which is exactly the
+# shape #78's first draft was refuted for, where the next typo fix has to edit this file
+# too. Nothing failed at any point, because the derivation is not checked, only the VALUE
+# (blind spot (c2)); five commits ran under a budget its own stated rule contradicted and
+# a review axis is what noticed. The root settles at 35,444 once its own synced figures
+# are written -- the joint fixed point, since two of them are its size and its slack --
+# and 35,444 down to a 500 boundary is 35,000, plus 1,000.
+ROOT_BUDGET = 36_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -2143,6 +2155,12 @@ check(any(_pinned in f and "no longer a violation" in f for f in nc),
 # --- injection 12g: every pin is a REAL violation today -------------------------
 # Non-vacuity of the list itself rather than of the check: an entry that would pass anyway
 # is a skip list growing under cover of the check that permits it.
+# Guarded HERE rather than by 12f's fixture above: a loop over an empty dict asserts
+# nothing, and borrowing another injection's guard makes deleting that one silently turn
+# this one off.
+check(bool(world["note_pins"]),
+      "injection 12g. fixture: there is at least one pin to unpin, so the loop below is not "
+      "vacuous")
 for _rel in sorted(world["note_pins"]):
     inj = copy_world(world)
     inj["note_pins"] = {k: v for k, v in inj["note_pins"].items() if k != _rel}
