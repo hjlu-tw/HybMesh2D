@@ -57,6 +57,74 @@ What this pins down:
  11. #84's OWN DELIVERABLES: the freeze rule reported rather than inferred, node
      and cell counts unchanged, the mesh still CONFORMAL by #53's measure, and the
      wake cut measured on its own terms.
+ 12. THE WALL WARNING'S BAR SITS ABOVE ITS OWN ARITHMETIC (#107). The additive
+     term under that bar was 1e-12, BELOW the noise of the quantity it bounds, so
+     the shipped C-grid's two outlet-side walls warned on a relative deviation of
+     2.3e-12 and printed `0.000000%` against `0.000000%`. Both directions are
+     asserted on real files: the two noise warnings are gone, the two walls whose
+     deviation is real still warn in the SAME run, and the two that went quiet are
+     back at a cap where their own deviation rises above the floor.
+
+MEASURED 2026-09-10 on the five shipped multi-block configs, before and after
+(counts of `could not hold ... first cell height` warnings, from two builds of this
+tree differing only in that constant):
+
+    case      1e-12   1e-9   which edges went quiet
+    square        0      0   --
+    cavity        0      0   --
+    hgrid         7      7   none
+    ogrid         4      4   none
+    cgrid         4      2   e_out_up, e_out_lo (2.3e-12 relative)
+
+  ONLY THE TWO NOISE WARNINGS MOVED, which is acceptance criterion 2 and is
+  measured rather than reasoned about. #107's own text predicted "the hgrid's five
+  and the ogrid's two"; the tree says SEVEN and FOUR. The prediction that mattered
+  — that none of them would move — holds, and the counts beside it did not, so they
+  are corrected here rather than quoted.
+
+  THE FOUR C-GRID EDGES, in full, with the format temporarily widened to read them:
+
+    e_out_up (south of block 0)   2.334e-10 %   was 4.662e-13 %   -> now silent
+    e_out_lo (north of block 3)   2.334e-10 %   was 2.260e-13 %   -> now silent
+    e_ff_up  (east of block 0)    9.499e-04 %   was 1.686e-13 %   -> still warns
+    e_ff_lo  (east of block 3)    9.499e-04 %   was 0.000e+00 %   -> still warns
+
+INJECTIONS, dated 2026-09-10, EXIT CODE READ BEFORE THE FAIL COUNT. Hand runs on
+this tree, in the shape the C++ test next door established — a gate cannot mutate
+the binary it drove, and rebuilding one from inside a check is not something this
+repo ships. Both bite:
+
+  A. the floor restored to 1e-12 (the defect itself). Rebuilt, exit 1, TWO checks
+     red and both name `e_out_up`: the absence half and the identical-figures half.
+     The negative controls stayed GREEN throughout, which is what says they are not
+     riding on the fix.
+  B. the floor raised absurdly to 1e-3. Rebuilt, exit 1: `e_ff_up` and `e_ff_lo`
+     silenced at the default, their margin check with them, and the two outlet
+     walls no longer coming back at a cap of 400. So a bar raised too far is
+     caught here and not only a bar left too low.
+     **AND THE CHECK LABELLED "THE NEGATIVE CONTROL, gross end" STAYS GREEN under
+     it, which the first draft of this log got wrong by saying "the NEGATIVE
+     control goes red".** `af_up`'s 27.37% against 0.4368% before clears a bar of
+     0.0054 without noticing, and no floor below **0.269** relative can silence
+     it. What actually bounds this constant from ABOVE is the `e_ff` pair at
+     9.499e-6 — see the blind spot below. The gross-end control earns its place by
+     proving a real loss is never mutable at all, not by bounding the floor.
+  B'. B RE-RUN AFTER REVIEW, and this is why it was re-run rather than quoted: on
+     the first pass B turned TWO checks red, and the margin check between them
+     stayed GREEN because its `all(...)` was vacuously true once both edges
+     vanished. With each edge's presence asserted in its own clause it turns red
+     too — 3 red, not 2. An injection's own bite count is evidence about the
+     CHECKS, so a check repaired after an injection has to face it again.
+  Restored to 1e-9 and rebuilt: ALL PASS, and ctest 6/6.
+
+WHAT THE REVIEW OF THIS WORK CHANGED, since two of its findings were in figures
+this docstring states: **"six orders" was 2.6.** The floor is 2.6 orders above the
+2.334e-12 that fired and 4.0 below `e_ff_up`'s 9.499e-6; six is the distance to the
+~1e-15 PRE-SMOOTHING residual, a different quantity, and #107's own text made that
+substitution — carried in here from the ticket and corrected in all four places
+that stated it. And the margin check **claimed five orders while asserting two**,
+the shape #95 recorded: it now asserts two, says two, and DERIVES the measured
+margin from the same reading rather than printing a number typed beside it.
 
 MEASURED 2026-09-07 by this file's own runs, #84's FREED SHARED EDGES beside #83's
 frozen ones (re-measured the same day, from the commit before this one), #82's
@@ -213,6 +281,26 @@ BLIND SPOTS, named rather than papered over:
   * NO SYNTHETIC FIXTURE REACHES THE SATURATING-AND-DESCENDING regime that the
     stability limit lives in; the shipped C-grid at a cap of 400 is the only case
     that does, which is why that check is here and not next door.
+  * THE WALL WARNING'S NOISE FLOOR IS CALIBRATED, SO IT CAN GO STALE. 1e-9 is
+    2.6 orders above the deviation the shipped C-grid's 5920 nodes produced and
+    4.0 orders below the smallest deviation anyone would act on, but it is a
+    fixed number and
+    nothing re-derives it from the mesh it is applied to. A mesh an order denser
+    has a higher noise floor, and the first symptom would be the same false
+    warning on a case nobody has run yet. Group 12 pins BOTH ends on the shipped
+    C-grid — it cannot speak for a mesh that is not in the tree.
+  * AND THE UPPER END IS PINNED AT 9.499e-6, NOT AT 1e-9. What catches a floor set
+    too HIGH is the `e_ff` pair going silent, so the whole band between the chosen
+    1e-9 and that figure — three and a half orders — is a raise nothing here would
+    notice. The gross-end control does not narrow it: `af_up`'s 27.37% survives any
+    floor under 0.269. Named because injection B's first write-up read as though
+    the gross-end control bounded the constant, and it does not.
+  * ACCEPTANCE CRITERION 2 IS GATED ON TWO OF THE FIVE SHIPPED CONFIGS. This file
+    drives the C-grid and the O-grid, so those two are asserted; `multiblock_hgrid`
+    (7 warnings), `multiblock_square` (0) and `multiblock_cavity` (0) were measured
+    across two builds on 2026-09-10 and are recorded in the table above, but no
+    gate re-measures them. A later change to this floor that moved one of the three
+    would be caught by a reader, not by a run.
   * The banner is checked for its headings and the numbers are read out of the
     machine-readable lines, exactly as the quality gate next door does it: the two
     are built from one report object, and the C++ test pins the report. The
@@ -311,6 +399,30 @@ def smooth_line(out):
         k, _, v = tok.partition("=")
         out_[k] = float(v) if ("." in v or "e" in v) else int(v)
     return out_
+
+
+_WALL_HEIGHT_WARN = re.compile(
+    r"wall edge '([^']+)' \([^)]*\): the control function could not hold "
+    r"the first cell height the declaration asks for "
+    r"\(worst ([-\d.eE+]+)% off it, against ([-\d.eE+]+)% before the sweeps\)")
+
+
+def wall_height_warns(out):
+    """The HEIGHT half of every wall-control warning: edge id -> (now, was), in %.
+
+    THE HALF IS NAMED IN THE PATTERN and not filtered for afterwards, because the
+    message is one sentence with two optional halves — a wall can be warned about
+    for its 90 degrees alone, and such a line carries no height figures to read.
+    Matching the height clause is what keeps "no height warning" and "no warning"
+    apart, which is exactly the distinction group 12 turns on.
+
+    THE FIGURES COME BACK AS THE MESSAGE PRINTS THEM, not re-measured: what #107 is
+    about is what a reader is shown, and a check that re-derived the deviation from
+    the mesh could pass while the sentence beside it stayed nonsense.
+    """
+    return {m.group(1): (float(m.group(2)), float(m.group(3)))
+            for m in (_WALL_HEIGHT_WARN.search(l) for l in out.splitlines())
+            if m}
 
 
 def quad_corners(vtk_path):
@@ -1036,6 +1148,132 @@ def main() -> int:
               bool(wd1) and max(wd1) < 1.0 and bool(a84)
               and a84[0]["nonortho_max_deg"] < 32.044
               and a84[0]["nonortho_mean_deg"] < 4.562)
+
+        # ── 12. THE WALL WARNING'S BAR SITS ABOVE ITS OWN ARITHMETIC (#107) ─
+        #
+        # THE COMPARISON IS STILL "WORSE THAN THE MESH THE SOLVE STARTED FROM" and
+        # this ticket does not touch that. What it moves is the ADDITIVE term under
+        # it, which existed so that a wall whose pre-smoothing residual is exactly 0
+        # would not get a bar of exactly 0 — and which sat at 1e-12, BELOW this
+        # quantity's own arithmetic noise on a 5920-node mesh. So the term written
+        # to protect near-zero walls was the one that fired on them: the shipped
+        # C-grid's two outlet-side walls warned on a relative deviation of 2.3e-12,
+        # printing `0.000000%` against `0.000000%` — a reader told a control
+        # function failed, shown a before and an after identical to every digit, and
+        # handed two remedies for nothing.
+        #
+        # BOTH HALVES, BECAUSE ABSENCE ALONE IS NOT THE CLAIM. A check that only
+        # asserted the two noise warnings had gone would pass just as well on a
+        # warning deleted outright, which is the failure a bar-raising fix invites.
+        # So the two edges whose deviation is REAL are asserted present in the same
+        # run, and the two that went quiet are asserted BACK at a cap where their
+        # own deviation rises above the floor — the mute is on the quantity, never
+        # on the edge.
+        #
+        # THE FLOOR IS 1e-9 RELATIVE, AND THE ORDERS ARE WRITTEN OUT BECAUSE #107's
+        # OWN TEXT GOT THEM WRONG: it claims "six orders above what was measured
+        # here (2.3e-12)", which is 2.6 (1e-9 / 2.334e-12 = 428). Six is true of the
+        # ~1e-15 PRE-SMOOTHING residual, a different quantity from the one the bar
+        # compares. Below, it is 4.0 orders under `e_ff_up`'s 9.499e-6, not five.
+        # The margins are wide either side; the round numbers were not measured.
+        # The angle bar on the line below it is unchanged and needs no change — it is
+        # already absolute and in degrees, and 0.5 deg is nowhere near the noise.
+        #
+        # BLIND SPOT, and it is the reason this group exists rather than a comment:
+        # the floor is calibrated against THIS repo's shipped cases at THEIR shipped
+        # node counts. A mesh an order denser has a higher noise floor, and nothing
+        # re-derives this constant from the mesh it is applied to. It is a threshold
+        # that can go stale, and only these checks would notice.
+        w20 = wall_height_warns(out84)
+        check(f"12. the shipped C-grid at the default cap no longer warns about the "
+              f"two outlet-side walls whose deviation is arithmetic noise — 2.3e-12 "
+              f"relative, eight orders under this mesh's own worst wall (warned "
+              f"about: {sorted(w20)})",
+              "e_out_up" not in w20 and "e_out_lo" not in w20)
+        check(f"12. ...while the two walls whose deviation is REAL still warn, so "
+              f"this is a bar that was raised and not a warning that was deleted "
+              f"({ {k: v[0] for k, v in w20.items()} })",
+              "e_ff_up" in w20 and "e_ff_lo" in w20)
+        # THE ASSERT AND THE SENTENCE ARE THE SAME CLAIM. This check said "five
+        # orders" while asserting two, so a regression to a hundredth of the
+        # measured value would have printed a false sentence and passed — #95's own
+        # recorded lesson, caught by review here rather than by a run. What is
+        # asserted is TWO orders (the bar), what is measured is four, and both are
+        # printed. AND EACH EDGE IS REQUIRED TO BE PRESENT: the same line without
+        # `e in w20` was vacuously true if both vanished, which is the absence this
+        # group's own comment says is not the claim.
+        # The margin in the message is DERIVED from the same reading the assert
+        # uses, never a figure typed beside it: an injection that silenced these
+        # edges left a hardcoded "4.0 orders up" standing next to a live 0.000000%,
+        # which is a stale label on a live number.
+        floor_pct = 1e-9 * 100.0
+        worst_pct = w20.get("e_ff_up", (0.0, 0.0))[0]
+        up = (math.log10(worst_pct / floor_pct) if worst_pct > 0.0 else float("-inf"))
+        check(f"12. ...at least two orders above the new floor of {floor_pct:.0e}% "
+              f"rather than beside it, which is what makes the gap between the two "
+              f"pairs a decision and not a coin toss (worst {worst_pct:.6f}%, "
+              f"{up:.1f} orders up)",
+              all(e in w20 and w20[e][0] > 100.0 * floor_pct
+                  for e in ("e_ff_up", "e_ff_lo")))
+        # WHAT THE READER IS SHOWN, on this case and stated as this case's own
+        # measurement rather than as a property the floor guarantees: at 1e-9
+        # relative a legal warning CAN still print two figures that round together
+        # at six decimal places, and nothing here stops it. What is asserted is that
+        # the shipped C-grid no longer does.
+        same = {e: v for e, v in w20.items() if v[0] == v[1]}
+        check(f"12. ...and no surviving warning on this case shows a before and an "
+              f"after that are the same number to every digit it prints, which is "
+              f"the shape the reader could not act on ({same})", not same)
+        # THE NEGATIVE CONTROL, in the shape #95 established: a wall the smoother
+        # GENUINELY pulls off its declared height must still warn, or this fix has
+        # bought silence rather than accuracy. Two of them, at the two ends of the
+        # range, because one alone leaves the other end untested.
+        #
+        # THE `e_ff` PAIR ABOVE IS THE OTHER ONE, and it does double duty rather
+        # than belonging to the positive half alone: 1.7e-13 -> 9.5e-6 is a wall
+        # genuinely pulled off, which is the spec's own words for a negative
+        # control, AND it is the check that stops the absence half passing on a
+        # deleted warning. It is also the ONLY thing bounding this floor from
+        # above — the gross-end pair below survives any floor under 0.269 — so the
+        # two are not interchangeable and the docstring's blind spots say which
+        # does what.
+        #
+        # Group 7's own cap-400 run, bound once above and named here rather than
+        # inherited silently — the habit group 11 records after a measurement that
+        # depended on which assignment had run last.
+        w400 = wall_height_warns(outs)
+        check(f"12. THE NEGATIVE CONTROL, gross end: at a cap of 400 the smoother "
+              f"destroys the airfoil walls and is still told to say so — 27.37% off "
+              f"a declaration it was handed exactly (af_up "
+              f"{w400.get('af_up', (0, 0))[0]:.4f}%, af_lo "
+              f"{w400.get('af_lo', (0, 0))[0]:.4f}%)",
+              w400.get("af_up", (0, 0))[0] > 1.0
+              and w400.get("af_lo", (0, 0))[0] > 1.0)
+        check(f"12. ...and the two edges the default run stopped warning about are "
+              f"BACK at that cap, where their own deviation has risen above the "
+              f"floor: the bar mutes a QUANTITY, never an edge (e_out_up "
+              f"{w400.get('e_out_up', (0, 0))[0]:.6f}%, e_out_lo "
+              f"{w400.get('e_out_lo', (0, 0))[0]:.6f}%)",
+              "e_out_up" in w400 and "e_out_lo" in w400)
+        check("12. ...while a run that smoothed NOTHING warns about no wall at all, "
+              "because there is no pair of coordinate sets to compare and a bar "
+              "applied to one mesh would be a tolerance somebody picked",
+              not wall_height_warns(outu84))
+        # THE OTHER SHIPPED CASE THIS FILE ALREADY DRIVES, which is acceptance
+        # criterion 2's only half reachable from here for free: group 8's own
+        # default-cap O-grid run, bound once above. All four of its wall warnings
+        # sit at 1e-3% or above and none of them may move — if one does, the floor
+        # was set too high, and that is the criterion stated as an assert instead of
+        # as prose. The other three shipped configs are NOT driven by this file
+        # (its subject is the C-grid and the O-grid) and stay measured-not-gated;
+        # the docstring's blind spots say so rather than leaving it to be inferred.
+        wo20 = wall_height_warns(outo20)
+        check(f"12. the shipped O-GRID keeps all four of its wall warnings at the "
+              f"default, none of them being anywhere near the floor — acceptance "
+              f"criterion 2 on the one other case this file drives "
+              f"({ {k: round(v[0], 6) for k, v in wo20.items()} })",
+              len(wo20) == 4
+              and all(v[0] > 100.0 * floor_pct for v in wo20.values()))
 
     print()
     if failures:

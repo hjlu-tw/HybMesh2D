@@ -220,6 +220,21 @@ attributable, and the one #85 deliberately spent.
   cell, whose location is set by the wall row #83 froze: at twenty #83 was at 4.301° mean against
   #84's 3.821° with the max identical to three decimals, and at forty 34.78° against 28.55°. The
   full four-kernel table, both cases, every cap: `docs/design_notes/mesher.md`.
+- **A WALL THE SWEEPS LEFT FURTHER FROM ITS DECLARED HEIGHT IS WARNED ABOUT, AND THE BAR IS THE
+  MESH THE SOLVE STARTED FROM** — never a tolerance somebody picked, which is what
+  `preSmoothNodes` is for. The height half is MULTIPLICATIVE (1%, because that quantity is itself
+  relative and spans four orders across the shipped cases); the angle half is ABSOLUTE (0.5 deg,
+  because a deviation from 90 already is), and #107 left it alone deliberately — 0.5 deg is nowhere
+  near any noise. **THE ADDITIVE TERM UNDER THE HEIGHT BAR IS A NOISE FLOOR AND IS NAMED
+  (`kHeightNoiseFloor`, 1e-9 relative, `src/MultiBlock.cpp`; #107).** It exists so a wall whose
+  pre-smoothing residual is exactly 0 does not get a bar of exactly 0, and at **1e-12 it fired on
+  precisely that case**: where the algebraic fill is already exact `was.worstHeightRel` is ~1e-15,
+  the 1% slack contributes nothing, and the bar collapses onto a floor BELOW what summing a
+  5920-node mesh's coordinates costs. The shipped C-grid warned on **2.3e-12** relative and printed
+  `0.000000%` against `0.000000%` — a reader handed two remedies for nothing, eight orders under
+  that mesh's own worst wall. **WIDENING THE PRINTED PRECISION IS NOT THE FIX and was rejected**:
+  `2.334e-10%` is the same false warning stated more precisely. Only the two noise warnings moved —
+  hgrid 7 and ogrid 4 are unchanged, measured across two builds.
 - **THE RUN REPORTS WHICH NODES IT WAS FREE TO MOVE** (`MbResult::smoothMoved` /
   `smoothMovedShared`, a `Movable nodes` banner row, `moved=` / `moved_shared=` on
   `HYBMESH_MB_SMOOTH`; NEGATIVE when no sweep ran, on `smoothResidual`'s rule). The freeze rule is a
@@ -423,6 +438,20 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
   The two are different signals and only one of them is acted on. **This bullet said "folds past
   about forty sweeps" until #85**, which was #83's figure and had been superseded by #84 two tickets
   earlier without this line moving — the shape a blind-spot list is supposed to prevent.
+- **THE WALL WARNING'S NOISE FLOOR IS CALIBRATED, SO IT CAN GO STALE.** `kHeightNoiseFloor` is a
+  fixed 1e-9 against THIS repo's shipped cases at THEIR node counts; nothing re-derives it from the
+  mesh it is applied to, and a mesh an order denser has a higher noise floor. The first symptom
+  would be #107's own defect on a case nobody has run yet. Group 12 of
+  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py` pins both ends — the noise gone and
+  the real deviations still warned about — on the shipped C-grid, and cannot speak for a mesh that
+  is not in the tree. **AND THE UPPER END IS PINNED AT 9.499e-6, NOT AT 1e-9** — what catches a
+  floor set too HIGH is the `e_ff` pair going silent, so a raise anywhere below that figure is
+  uncaught; the gross-end control does not narrow it, `af_up`'s 27.37% surviving any floor under
+  0.269. **NO C++ CHECK PINS THE VALUE AT ALL**: check 55's deep notch is orders above any plausible
+  floor, and its silence half (`quiet == 0`) gets EASIER to satisfy as the floor rises. Group 12 is
+  the only thing that can see this constant set too high. **Acceptance criterion 2 is gated on TWO
+  of the five shipped configs** — the C-grid and O-grid this file drives; `hgrid` 7, `square` 0 and
+  `cavity` 0 are dated measurements, not assertions.
 - **The before/after tables are dated quotations**, not re-measured: the gates assert a DIRECTION
   with a floor, so a kernel that stopped moving anything is caught while one that moves things
   differently is free to.

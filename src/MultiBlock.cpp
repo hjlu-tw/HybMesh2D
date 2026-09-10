@@ -1707,6 +1707,32 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // fill already was is a smoothing pass that took away the thing it was told to
     // hold. `preSmoothNodes` makes that a comparison of two coordinate sets over
     // the same walls, so the difference is the smoother and nothing else.
+    //
+    // AND THE ADDITIVE TERM UNDER THAT BAR IS A NOISE FLOOR, which is a different
+    // job from the multiplicative slack beside it and is why it carries a name.
+    // It exists so a wall whose pre-smoothing residual is exactly 0 does not get a
+    // bar of exactly 0 — and at 1e-12 that was the one case it FAILED to cover
+    // (#107). Where the algebraic fill is already essentially exact
+    // `was.worstHeightRel` is ~1e-15, the 1% slack contributes nothing, and the
+    // bar collapses onto the floor, which sat BELOW this quantity's own arithmetic
+    // noise. So the term written to protect near-zero walls was what fired on
+    // them, twice on every run of the shipped C-grid.
+    //
+    // THE VALUE IS BOUNDED ON BOTH SIDES AND THE MARGINS ARE MEASURED, not round:
+    // 2.6 orders above the deviation that fired and 4.0 below the smallest anyone
+    // would act on. Do NOT restate that as "six orders" — six is the distance to
+    // the ~1e-15 residual, a DIFFERENT quantity from the one the bar compares, and
+    // #107's own text made exactly that substitution. Widening the printed
+    // precision was considered and rejected: it states the same false warning more
+    // precisely. **Every figure, both directions, and what the C++ tests can and
+    // cannot see: `docs/design_notes/mesher.md`.**
+    //
+    // IT IS CALIBRATED, SO IT CAN GO STALE — a fixed number against this repo's
+    // cases at their node counts, with nothing re-deriving it from the mesh it is
+    // applied to. Named as a blind spot in `.claude/rules/mesher-smoothing.md`;
+    // pinned in BOTH directions, and only there, by group 12 of
+    // `test_multiblock_smooth_surface.py`. No C++ check pins this value.
+    constexpr double kHeightNoiseFloor = 1e-9;
     {
         hybmesh::MbResult before = r;
         before.nodes = r.preSmoothNodes;
@@ -1731,7 +1757,8 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
             // that are nearly perfect.
             const bool heightLost =
                 now.worstHeightRel >= 0.0 && was.worstHeightRel >= 0.0
-                && now.worstHeightRel > was.worstHeightRel * 1.01 + 1e-12;
+                && now.worstHeightRel
+                       > was.worstHeightRel * 1.01 + kHeightNoiseFloor;
             const bool angleLost =
                 now.worstAngleDeg >= 0.0 && was.worstAngleDeg >= 0.0
                 && now.worstAngleDeg > was.worstAngleDeg + 0.5;

@@ -1536,6 +1536,99 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   saying which way to read it, and the advice points at the inverted-cell count, which is
   machinery that already existed.
 
+- **THE WARNING'S OWN BAR HAD A FLOOR UNDER ITS OWN NOISE, AND THE CASE IT FAILED TO COVER
+  WAS THE ONE IT WAS WRITTEN FOR (#107, 2026-09-10).** The comparison is
+  `now > was * 1.01 + floor` and the shape was never in dispute: multiplicative on the
+  height because that quantity is itself relative and spans four orders across the shipped
+  cases, absolute on the angle because a deviation from 90 already is. The additive term
+  existed for one reason — a wall whose pre-smoothing residual is exactly 0 must not get a
+  bar of exactly 0 — and at **1e-12** it was BELOW the arithmetic noise of the quantity it
+  bounds. On an edge whose algebraic fill is already essentially exact `was.worstHeightRel`
+  is ~1e-15, the 1% slack contributes nothing, and the whole bar collapses onto that floor.
+  So the term written to protect near-zero walls was exactly what fired on them.
+
+  **EVERY RUN OF THE SHIPPED C-GRID PRINTED TWO WARNINGS WITH NOTHING IN THEM**, and the
+  message's own two numbers were identical to every digit it printed — `0.000000%` off it,
+  against `0.000000%` before the sweeps, followed by two remedies. Read with the format
+  temporarily widened to `fmtSci` (source restored, `git status` clean, ctest 6/6):
+
+  | wall edge | worst now | worst before the sweeps | after #107 |
+  |---|---|---|---|
+  | `e_out_up` (south of block 0) | 2.334e-10 % | 4.662e-13 % | silent |
+  | `e_out_lo` (north of block 3) | 2.334e-10 % | 2.260e-13 % | silent |
+  | `e_ff_up` (east of block 0) | 9.499e-04 % | 1.686e-13 % | still warns |
+  | `e_ff_lo` (east of block 3) | 9.499e-04 % | 0.000e+00 % | still warns |
+
+  The first two fire on a relative deviation of **2.3e-12**, two parts in a trillion, while
+  that run's own quality report puts the worst wall on the mesh at 0.0968% — eight orders
+  above them. Stable across six consecutive runs, this path touching Gmsh nowhere: constant
+  noise, not flake. The C-grid's outlet-side walls are where the transfinite fill is exact
+  and there is no curvature residue to sit above the noise, which is why it is those two.
+
+  **1e-9 SITS BETWEEN THE TWO, AND THE ORDERS ARE WRITTEN OUT BECAUSE #107's OWN TEXT GOT
+  THEM WRONG** — it says "six orders above what was measured here", having read the figure
+  off the wrong quantity, and the review of this work is what caught it. Against the
+  deviation that actually fired, 2.334e-12, the new floor is **2.6 orders** above
+  (`1e-9 / 2.334e-12 = 428`); against the smallest deviation anyone would act on, `e_ff_up`
+  at 9.499e-6, it is **4.0 orders** below (`9.499e-6 / 1e-9 = 9499`). Six orders is true
+  only of the **~1e-15 pre-smoothing residual** whose collapse onto the floor causes the
+  defect — a different quantity from the one the bar is compared against, and the one the
+  ticket's sentence silently substituted. The margin either side is what matters and it is
+  wide; the round number was not. `kHeightNoiseFloor` is where that reasoning now lives.
+  **WIDENING THE PRINTED PRECISION WAS REJECTED**: `2.334e-10%` is the same false warning
+  stated more precisely, and the defect is that it is emitted at all. The angle bar was
+  considered and left alone — 0.5 deg is nowhere near any noise — so the next reader does
+  not have to re-derive that.
+
+  **MEASURED ACROSS TWO BUILDS on all five shipped configs**, which is the acceptance that
+  matters here: square 0 -> 0, cavity 0 -> 0, hgrid 7 -> 7, ogrid 4 -> 4, cgrid 4 -> 2.
+  Only the two noise warnings moved. #107's own text predicted "the hgrid's five and the
+  ogrid's two"; the tree says SEVEN and FOUR — the prediction that mattered held and the
+  counts beside it did not, so they are corrected rather than quoted, the same shape as
+  #97's "crossed FOUR times" that listed three.
+
+  **IT IS CALIBRATED, SO IT IS A THRESHOLD THAT CAN GO STALE** — a fixed number against
+  this repo's cases at their node counts, with nothing re-deriving it from the mesh it is
+  applied to. Named as a blind spot in `.claude/rules/mesher-smoothing.md` and in the gate's
+  own docstring, because the first symptom would be this same defect on a denser mesh
+  nobody has run yet. Gated by group 12 of
+  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`, which asserts BOTH
+  directions — the noise gone, the real deviations still warned about in the same run, and
+  the two silenced edges BACK at a cap of 400 where their own deviation rises above the
+  floor, so the bar mutes a quantity and never an edge. Two hand injections, dated
+  2026-09-10 in that docstring: restoring 1e-12 turns the positive control red, raising the
+  floor to 1e-3 turns the NEGATIVE control red.
+
+  **WHAT BOUNDS THE CONSTANT FROM ABOVE IS 9.499e-6, NOT 1e-9, AND THE SPEC's OWN INJECTION
+  READS OTHERWISE.** #107 says "raise the floor absurdly (1e-3), assert the negative control
+  goes red". Run: at 1e-3 the check written as the gross-end negative control — `af_up` at
+  27.37% against 0.4368% before — clears a bar of 0.0054 and stays GREEN, and no floor under
+  **0.269** relative can silence it. What reddens is the `e_ff` pair going silent, which is
+  the OTHER negative control and does double duty as the positive half's presence check. So
+  the whole band between the chosen 1e-9 and 9.499e-6 is a raise nothing catches — three and
+  a half orders — and the gross-end control narrows it not at all. It earns its place by
+  proving a genuine loss is never mutable, not by bounding the floor. The review of this work
+  is what separated the two; the first write-up of injection B said "the NEGATIVE control
+  goes red" and named the one that does not.
+
+  **ACCEPTANCE CRITERION 2 IS GATED ON TWO OF THE FIVE SHIPPED CONFIGS.** The surface gate
+  drives the C-grid and the O-grid, and both are now asserted — the O-grid's four warnings off
+  a run that file already made, at no extra cost. `hgrid` 7, `square` 0 and `cavity` 0 are the
+  dated two-build measurement above and nothing re-measures them; a later floor change that
+  moved one would be caught by a reader, not by a run. The spec asked for the measurement, not
+  for a gate, so this is recorded rather than treated as a shortfall.
+
+  **THE C++ SIDE NEEDS NO CHANGE, AND THAT IS TRUE OF ONE HALF OF IT RATHER THAN BOTH.**
+  Check 55's positive half — the deep notch, a wall lost by thousands of percent — is orders
+  above any floor anyone would write, so it is untouched. Its SILENCE half (`quiet == 0` on
+  `wallSquare`, that a run whose walls are held says nothing) gets strictly EASIER to satisfy
+  as the floor rises, so it cannot notice this constant going too high. **Nothing in C++ pins
+  the value at all**; what pins it is group 12 at the surface, in both directions, and
+  injection B is the evidence. Recorded rather than repaired: a C++ check would need a
+  fixture whose loss lands in the narrow band between the noise and 9.5e-6, and the shipped
+  C-grid already IS that fixture. #98's mirrored-band lesson, arriving from a review rather
+  than from a run.
+
 - **THE TABLE, measured 2026-09-07 on the SHIPPED files**, beside #82's plain Winslow at
   the same cap (quoted from that ticket):
 
