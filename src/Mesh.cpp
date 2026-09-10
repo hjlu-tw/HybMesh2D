@@ -284,7 +284,11 @@ void Mesh::addTaggedEdge(int v1, int v2, const std::string& bc, long long segKey
 }
 
 void Mesh::addElement(const std::vector<int>& ids) {
-    elements.push_back({ids});
+    elements.push_back({ids, std::nullopt});
+}
+
+void Mesh::addElement(const std::vector<int>& ids, int blockId) {
+    elements.push_back({ids, blockId});
 }
 
 void Mesh::generateCartesianMesh(double xMin, double xMax, double yMin, double yMax, double ds) {
@@ -379,6 +383,25 @@ void Mesh::exportVTK(const std::string& filename) const {
         if (el.nodeIds.size() == 3) ofs << "5\n";
         else if (el.nodeIds.size() == 4) ofs << "9\n";
         else ofs << "7\n"; // Polygon
+    }
+
+    // The multi-block block index as a cell field (issue #106), so "which block
+    // is that bad corner in" is a question the mesh answers instead of one you
+    // answer by counting cells against the reported block dimensions.
+    //
+    // WRITTEN ONLY WHEN EVERY CELL CARRIES ONE. A VTK scalar array has one value
+    // per cell and no way to spell "this cell has none", so a partially tagged
+    // mesh could only be written with a sentinel — the thing Element::blockId is
+    // optional in order to avoid. All-or-nothing keeps the hybrid path's file
+    // exactly what it was: no CELL_DATA section, not a section of zeros.
+    const bool allTagged = !elements.empty()
+        && std::all_of(elements.begin(), elements.end(),
+                       [](const Element& el) { return el.blockId.has_value(); });
+    if (allTagged) {
+        ofs << "CELL_DATA " << elements.size() << "\n";
+        ofs << "SCALARS block int 1\n";
+        ofs << "LOOKUP_TABLE default\n";
+        for (const auto& el : elements) ofs << *el.blockId << "\n";
     }
 
     ofs.close();

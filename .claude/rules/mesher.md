@@ -175,7 +175,14 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   curvature is the point). `=0` restores the legacy taper-to-zero (~12% floor ramping back over arc
   length).
 - **`Mesh.cpp`**: mesh data structure (Nodes/Elements/Edges), Gmsh far-field integration,
-  VTK and STAR-CD export. **A boundary edge's BC and its source segment are ONE fact and are private**:
+  VTK and STAR-CD export. **`exportVTK` writes a `CELL_DATA` block-id field only when EVERY
+  element carries one** (`Element::blockId`, an `std::optional`) — the multi-block path's debug
+  affordance, #106. Stated here as well as in `.claude/rules/mesher-multiblock.md` because that
+  file's globs do NOT reach `src/Mesh.cpp` or `include/Mesh.hpp`, so a session editing the
+  exporter is handed only this file: a defaulted 0 or a `-1` would put a wrong answer in every
+  hybrid `.vtk`, and the all-or-nothing guard is what makes the optional expressible in a format
+  with one value per cell. The rest of the rule — that the value is the INDEX into
+  `MbResult::blocks` and not the declared id, and that no other exporter gains it — is there. **A boundary edge's BC and its source segment are ONE fact and are private**:
   write with `recordBoundaryEdge(v1, v2, srcNode, overwrite)`, read with
   `boundaryEdgeInfo(v1, v2)`. Two public parallel maps keyed by hand made "wrote the BC, forgot the
   segment key" a defect the interface could not prevent, and half an identity reaching the exporter

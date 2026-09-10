@@ -2606,6 +2606,82 @@ O-grid bullet closes on a `.dat` and its sidecar.
   declared counts remain two independent numbers that a warning relates. And it does not touch
   #83's frozen walls, which #93 had already cleared.
 
+**THE BLOCK ID AS A VTK CELL FIELD: #48's ONE UNBUILT STORY** (`include/Mesh.hpp`,
+`src/Mesh.cpp`, `src/cli.cpp`; #106, landed 2026-09-10). #48's user story 39 — "a block id
+available as a cell field in the VTK output, so that when something is wrong I can see which
+block it is in" — is the one item of that issue that was never built AND never reversed. It
+fell out of the decomposition into #49–#57: none of those nine tickets mentions a block id or
+a cell field, no design note recorded dropping it, and no rule file ruled on it. The
+2026-09-10 acceptance audit is what found it, and `MbCell::block`'s own header comment had
+been saying so since #50 — *"Issue #48 wants it as a VTK cell field for debugging — which
+nothing writes yet, since no exporter has changed."*
+
+- **IT IS NOT DECORATION, IT IS WHAT PAID FOR "BLOCKS ARE INTERNAL SCAFFOLDING".** Two of
+  #48's Implementation Decisions name it as the design's ONLY concession to blocks surviving
+  the flattening step. Without it the concession does not exist and the flattening is simply
+  one-way, which is the thing `MbCell::block` was carried to avoid. The concrete cost was
+  measurable: the shipped C-grid's worst non-orthogonality is **29.895°**, an order above the
+  O-grid's 2.025°, and "which block is that corner in" was answered by counting cells against
+  the reported `MbBlock` dimensions BY HAND.
+
+- **OPTIONAL, NEVER A DEFAULTED 0 AND NEVER A SENTINEL.** `Mesh::Element` gains
+  `std::optional<int> blockId`. The hybrid path has no blocks, so a defaulted `0` would make
+  its `.vtk` claim every cell came from block 0 — a confidently wrong answer, worse than no
+  field — and a `-1` would be a field every reader has to know to ignore. The exporter writes
+  the section **only when EVERY cell carries a tag**, because a VTK scalar array has one value
+  per cell and no way to spell "this one has none": a partially tagged mesh could only be
+  written with the sentinel the optional exists to avoid. Measured: the hybrid path's file
+  contains neither `CELL_DATA` nor `SCALARS`, and its mesh body is unchanged.
+
+- **THE VALUE IS THE INDEX INTO `MbResult::blocks`, AND THAT IS DELIBERATE.** It is what
+  `MbCell::block` holds, and it must stay distinct from the block's declared `id` STRING — the
+  thing the randomized split rule hashes, for the reason `MultiBlock.hpp` states: an index
+  moves when a block is declared ahead of it, a declared id does not. Both properties are
+  wanted, in different places. If the declared id is ever wanted in the file too it belongs in
+  a second, string-valued field, not as a substitute.
+
+- **ONE OVERLOAD, NOT A WRITE TO `elements.back()`.** `addElement(ids, blockId)` sits beside
+  `addElement(ids)` for the same reason `addTaggedEdge` exists one line up in the header: the
+  `addEdge` + assign-to-`back()` idiom is two chances to record the cell and forget the tag.
+
+- **THE EXPORTER IS THE ONLY PLACE IT LANDS.** No `.vrt` / `.cel` / `.bnd` change — the
+  solver's grid converter is unstructured and has nowhere to put it, which is #48's own
+  reasoning for blocks not being an output format. No config flag either: it is one integer
+  per cell on a path that already declares its blocks, and a switch to turn off a debug aid
+  that costs nothing is a knob to maintain and a second state to test.
+
+- **ACCEPTANCE, MEASURED 2026-09-10 on the shipped configs.** `multiblock_cgrid`: four blocks
+  reported 41x25 / 41x49 / 41x49 / 41x25, field histogram 1920 / 3840 / 3840 / 1920, summing
+  to the 11520 exported cells. `multiblock_ogrid`: four 49x25 blocks, 2304 each, 9216 total.
+  `multiblock_square`: one 21x21 block, 800. `tools/scripts/view_mesh_vtk.py` still renders
+  the C-grid (5920 pts, 11520 cells) — its reader walks unknown tokens, so the new section is
+  skipped rather than tripped over.
+
+- **THE GOLDEN COMPARATOR IS BLIND TO THIS FIELD, AND THAT IS WHY THE HYBRID HALF WAS
+  MEASURABLE AT ALL.** `golden_mesh.py` reads the `.vtk` through
+  `app/models/vtk_mesh.VTKMesh`, whose parser stops at `CELL_TYPES` and ignores everything
+  after it. So capture-before / compare-after against a pre-change binary came back **19 of 19
+  SAME, worst coordinate deviation 0.000e+00** — all nine hybrid cases, which is the claim
+  #106 needed and the same measurement #49 made for the same reason, and all ten multi-block
+  cases too, which is NOT evidence about the new field. The golden set contributes nothing to
+  covering it; `tools/PreProcessor/tests/test_multiblock_block_field.py` is the only thing that
+  does. **Do not read a multi-block SAME as coverage of the cell field.**
+
+- **WHY "BYTE-IDENTICAL" IS NOT THE FORM THE HYBRID CLAIM TAKES.** #106's acceptance item 3
+  asks for a byte-identical hybrid `.vtk`. Two runs of the SAME binary cannot promise that
+  here: line 2 of every export carries a build hash and a UTC timestamp, and the mesher's node
+  NUMBERING varies run to run. Measured on `naca0012` at the default config, old binary vs
+  new: 38238 lines both, the POINTS multiset **bit-identical**, and four far-field nodes
+  renumbered — which is the wobble `golden_mesh.py` exists to see through, and which reproduced
+  between two runs of the OLD binary as well. The substantive half of the item — no section is
+  added — is asserted as text by the gate's group 6.
+
+- Gated by `tools/PreProcessor/tests/test_multiblock_block_field.py` (37 checks on the three
+  shipped configs plus a hybrid run; five injections, dated in that file's docstring, one of
+  which — swapping indices 1 and 2 — passes every count check and is caught only by the
+  geometric identity check, which is what earns that check its place).
+
+
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.
 Verbatim as that file carried it:

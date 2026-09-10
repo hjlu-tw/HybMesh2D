@@ -435,6 +435,37 @@ acceptance run: `docs/design_notes/mesher.md`.**
   `tests/test_multiblock_cgrid_surface.py` (9 groups on the SHIPPED files, reusing #53's conformity
   measure) and the `mb_cgrid` golden case. The dated solver acceptance run is in that file's
   docstring.
+**The BLOCK ID is written to the VTK as a cell field, and it is OPTIONAL** (`Element::blockId`
+in `include/Mesh.hpp`, the `CELL_DATA` section in `src/Mesh.cpp::exportVTK`, filled by the
+adapter in `src/cli.cpp`; #106). #48's user story 39, the one item of that issue never built and
+never reversed — it is #48's ONLY concession to blocks surviving the flattening step, so without
+it "blocks are internal scaffolding, not an output format" is the whole story.
+- **The value is the INDEX into `MbResult::blocks`, never the block's declared `id` string.** The
+  randomized split rule hashes the id for the reason `MultiBlock.hpp` states — an index moves when
+  a block is declared ahead of it — and both properties are wanted, in different places. The
+  declared id, if ever wanted in the file, is a SECOND string-valued field and not a substitute.
+- **PRESENT OR ABSENT, never a defaulted 0 and never a `-1`.** The hybrid path has no blocks: a
+  field claiming every one of its cells is in block 0 is a confidently wrong answer, and a
+  sentinel is a field every reader has to know to ignore. So the section is written **only when
+  EVERY cell carries a tag** — a VTK scalar array has one value per cell and no way to spell
+  "this one has none", so a partially tagged mesh could only be written with that sentinel.
+- **The exporter is the ONLY place it lands, and there is NO config flag.** No `.vrt` / `.cel` /
+  `.bnd` change: the solver's grid converter is unstructured and has nowhere to put it, which is
+  #48's own reasoning for blocks not being an output format. A switch to turn off a debug aid that
+  costs one integer per cell is a knob to maintain and a second state to test.
+- **`addElement(ids, blockId)` is an OVERLOAD, not a write to `elements.back()`** — the same
+  reason `addTaggedEdge` exists: the assign-to-`back()` idiom is a second chance to record the
+  cell and forget the tag.
+- **`golden_mesh.py` IS BLIND TO THIS FIELD** and a multi-block `SAME` is not coverage of it —
+  `VTKMesh` stops parsing at `CELL_TYPES`. That is what made #106's hybrid claim measurable
+  (19/19 SAME, worst deviation 0.000e+00, against a pre-change binary); it is also why the surface
+  gate is the only thing covering the field. Also in the blind-spot list below.
+- Gated by `tests/test_multiblock_block_field.py` (37 checks over the three shipped configs plus a
+  hybrid run; 5 injections dated in that file). Its per-block counts are compared against the
+  RUN'S OWN reported block dimensions, never a written-down number, so a re-seeded topology moves
+  both sides together.
+  Why: `docs/design_notes/mesher.md`, "THE BLOCK ID AS A VTK CELL FIELD".
+
 **SMOOTHING (`MB_SMOOTH_ITERS`) HAS ITS OWN RULE FILE: `.claude/rules/mesher-smoothing.md`**
 (#85). The whole of #80's five-ticket arc lives there — the stage inside the seam, the Winslow
 kernel, the wall control functions, which nodes may move and in whose frame, the two
@@ -459,6 +490,11 @@ otherwise learn the hole exists.
 
 - **Non-orthogonality says nothing about the shape of the SPLIT TRIANGLES** — it is measured on the
   structured grid cells only.
+- **`golden_mesh.py` DOES NOT COMPARE THE VTK CELL FIELD**, so a defect confined to #106's block
+  id is invisible to all ten multi-block cases: it reads the `.vtk` through `VTKMesh`, whose parser
+  stops at `CELL_TYPES`. Measured — 19/19 SAME across the commit that ADDED the field. The same
+  shape as the `.bnd` `segm_no` hole in `.claude/rules/mesher.md`'s list, and stated here because
+  it is this path's field; `tests/test_multiblock_block_field.py` is the whole of its coverage.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
 - **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
   "follows the circle" is measured against that polyline's vertices and the wall-height residue is

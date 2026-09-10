@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <optional>
 #include <utility>
 
 enum class NodeType {
@@ -51,6 +52,17 @@ struct Edge {
 
 struct Element {
     std::vector<int> nodeIds;
+    // MESH_MODE 1 only: which declared block this cell was filled from, as the
+    // INDEX into MbResult::blocks (never the block's declared `id` string — the
+    // randomized split rule hashes that one, and MultiBlock.hpp says why the two
+    // must not be conflated). Written to the VTK as a cell field so a mesh under
+    // inspection can say which declaration produced a bad corner; issue #106.
+    //
+    // OPTIONAL, and that is the decision: the hybrid path has no blocks, so a
+    // defaulted 0 would claim every one of its cells came from block 0, and a -1
+    // sentinel would be a field every reader has to know to ignore. Absent means
+    // absent, and the exporter writes no section at all.
+    std::optional<int> blockId;
 };
 
 // Refinement seed (Pointwise-like source): a geometry used only to drive a local
@@ -124,6 +136,11 @@ public:
     // same defect shape `recordBoundaryEdge` exists to prevent one level down.
     void addTaggedEdge(int v1, int v2, const std::string& bc, long long segKey);
     void addElement(const std::vector<int>& ids);
+    // The same cell, carrying the multi-block block index it came from. An
+    // overload rather than a write to `elements.back()`, for the reason
+    // `addTaggedEdge` exists one line up: the call site cannot then record the
+    // cell and forget the tag.
+    void addElement(const std::vector<int>& ids, int blockId);
 
     // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制
     // seeds: 加密種子 (Pointwise-like sources)，只驅動局部最小尺寸/選擇性內嵌貼合

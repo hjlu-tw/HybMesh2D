@@ -468,8 +468,10 @@ struct MbCell {
     std::vector<int> nodeIds;
     // Which block this cell came from. Carried because flattening is otherwise
     // one-way: once the cells are a flat list there is nothing left to ask.
-    // Issue #48 wants it as a VTK cell field for debugging — which nothing writes
-    // yet, since no exporter has changed.
+    // Issue #48 wanted it as a VTK cell field for debugging, and since #106
+    // `exportVTK` writes it: the adapter copies it onto `Mesh::Element::blockId`
+    // and the VTK gains a `CELL_DATA` section. The VTK ONLY — no `.vrt`/`.cel`/
+    // `.bnd` carries it, because blocks are not an output format.
     //
     // NOT what the randomized diagonal hashes, and the difference is the whole
     // point of that rule: this is a POSITION in `MbResult::blocks`, so declaring a

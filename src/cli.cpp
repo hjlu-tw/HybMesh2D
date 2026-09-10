@@ -504,7 +504,11 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     }
 
     for (const Point2D& p : res.nodes) mesh.addNode(p, NodeType::Interior);
-    for (const auto& c : res.cells) mesh.addElement(c.nodeIds);
+    // The block index travels WITH the cell (issue #106). It is carried through
+    // to the VTK as a debug cell field and is the one way blocks survive the
+    // flattening step — #48's single concession to "blocks are internal
+    // scaffolding, not an output format".
+    for (const auto& c : res.cells) mesh.addElement(c.nodeIds, c.block);
     for (const auto& be : res.boundaryEdges) {
         // A synthetic carrier node, because recordBoundaryEdge takes the whole
         // source Node: its convention is "an edge belongs to the segment of its
