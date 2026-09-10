@@ -47,6 +47,7 @@ if _GUI not in sys.path:
 from app.services.mesh_bc_audit import (                          # noqa: E402
     audit_mesh_bc, expected_bc_types, mesh_bc_gap, stale_meta_files,
 )
+from app.services.meta_io import meta_path_for                    # noqa: E402
 
 _FAILS = []
 
@@ -134,8 +135,14 @@ check(exp.get("symp") == ["duct_s4"] and "inlet" not in exp,
 check(stale_meta_files(good, [geom]) == [],
       "5. a mesh newer than the .meta is not flagged")
 os.utime(geom + ".meta", (os.path.getmtime(good) + 10,) * 2)
-check(stale_meta_files(good, [geom]) == [geom + ".meta"],
-      "5. a .meta edited after the mesh flags that geometry")
+# Through meta_path_for, not `geom + ".meta"`: since #104 the sidecar is
+# resolved by IDENTITY (a stored geometry entry is repo-relative, so appending
+# to the raw string reaches the process cwd), and what comes back names the file
+# that was actually stat'd -- here the tmp dir's realpath. The user-facing line
+# shows its basename either way.
+check(stale_meta_files(good, [geom]) == [meta_path_for(geom)],
+      f"5. a .meta edited after the mesh flags that geometry "
+      f"(got {stale_meta_files(good, [geom])})")
 problems = audit_mesh_bc(good, [geom], GROUP)
 check(any("generated before" in p for p in problems),
       "5. ...and the audit reports it even though the BC types are all present "

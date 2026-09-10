@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
+from app.services.geom_path_identity import canonical_geom_path
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import (find_binary_executable, repo_root, confirm,
@@ -227,7 +228,11 @@ class MeshGenControllerMixin:
         dmaxs = [float("-inf"), float("-inf")]
         have = have_dom = False
         for gf in cfg.geom_files:
-            if not os.path.exists(gf):
+            # The entry is a SPELLING; the file it names is its canonical path.
+            # Reading it raw resolved a repo-relative entry (a loaded workspace,
+            # a saved script, the resample stage) against the process cwd.
+            gp = canonical_geom_path(gf)
+            if not os.path.exists(gp):
                 # Not logged here: the pre-flight above already refused the run
                 # over it (cfg.geom_files_not_on_disk(), which asks the filesystem
                 # -- deliberately NOT validate(), which is pure).
@@ -236,11 +241,11 @@ class MeshGenControllerMixin:
                 # exactly what it used to do.
                 continue
             try:
-                pts = np.loadtxt(gf, ndmin=2)
+                pts = np.loadtxt(gp, ndmin=2)
             except Exception:
                 # Fall back to a bare point count so at least the diagnostic prints.
                 try:
-                    with open(gf) as _f:
+                    with open(gp) as _f:
                         npts = sum(1 for ln in _f if ln.strip())
                     self.log(
                         f"[geom] {os.path.basename(gf)} ({npts} points)")

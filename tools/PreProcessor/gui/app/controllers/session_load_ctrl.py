@@ -4,6 +4,7 @@ import numpy as np
 from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtCore import QSettings
 from app.models.session import SESSION_COLORS
+from app.services.geom_path_identity import stored_geom_path
 from app.utils import repo_root, report_warning
 
 
@@ -154,8 +155,16 @@ class SessionLoadControllerMixin:
                     f"  scaled by {unit_scale:.10g} to the model unit "
                     f"({self.length_unit_symbol()})")
 
+            # os.path.abspath FIRST, and it is right here: `file_path` is a
+            # path the USER gave (a dialog, a CLI argument), so the process cwd
+            # is its base -- the same cwd `load_points_dat` above just read it
+            # against. What must not be cwd-relative is the ENTRY, so the store
+            # goes through stored_geom_path from the resolved path: resolving the
+            # raw spelling against the REPO instead would let the session load
+            # one file and list another. The RECENT-files list stays absolute --
+            # an open-history of files anywhere on disk, not a geometry identity.
             abs_path = os.path.abspath(file_path)
-            session.mesh_config.add_geom_file(abs_path)
+            session.mesh_config.add_geom_file(stored_geom_path(abs_path))
             if record_recent:
                 self.update_recent_files(abs_path)
 
@@ -261,8 +270,13 @@ class SessionLoadControllerMixin:
         if input_file and os.path.exists(input_file):
             try:
                 from app.services.geometry_service import load_points_dat
+                # From the cwd-resolved path, not the raw one: the
+                # os.path.exists guard above is cwd-relative, so resolving the
+                # spelling against the REPO here would store an entry naming a
+                # different file than the one just loaded.
                 session.original_points = load_points_dat(input_file)
-                session.mesh_config.add_geom_file(os.path.abspath(input_file))
+                session.mesh_config.add_geom_file(
+                    stored_geom_path(os.path.abspath(input_file)))
             except Exception as e:
                 self.log(f"Error reading geometry: {e}")
                 return

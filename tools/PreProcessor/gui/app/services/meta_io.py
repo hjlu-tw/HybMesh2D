@@ -18,9 +18,23 @@ through verbatim so points / pieces / kinds are preserved.
 from __future__ import annotations
 import os
 
+from app.services.geom_path_identity import canonical_geom_path
+
 
 def meta_path_for(dat_path: str) -> str:
-    return dat_path + ".meta"
+    """Where the sidecar for this geometry lives.
+
+    The sidecar belongs to the FILE, not to the spelling that named it. A stored
+    geometry entry is repo-relative (``services/geom_path_identity``), so
+    appending ``.meta`` to the raw string resolves against the process CWD: the
+    reads come back empty and, worse, the WRITES land in a stray tree beside
+    wherever the GUI happened to be launched from, leaving the real sidecar
+    holding the old BCs. Resolving HERE rather than at each call site is what
+    keeps the rule one rule -- nine call sites across the panels, the layer
+    controller and the `.bnd` audit reach the sidecar, and every one of them goes
+    through this function.
+    """
+    return canonical_geom_path(dat_path) + ".meta"
 
 
 def read_meta_segments(dat_path: str) -> list[tuple[int, str, str]]:

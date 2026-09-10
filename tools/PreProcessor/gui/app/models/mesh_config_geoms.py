@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import os
 
-from app.services.geom_path_identity import canonical_geom_path, dedupe_geom_paths
+from app.services.geom_path_identity import (canonical_geom_keys,
+                                             canonical_geom_path,
+                                             dedupe_geom_paths)
 
 __all__ = ["GeomListMixin"]
 
@@ -70,10 +72,11 @@ class GeomListMixin:
         """
         if not path:
             return False
-        want = canonical_geom_path(path)
-        for g in self.geom_files:
-            if canonical_geom_path(g) == want:
-                return False
+        # Through has_geom_file, not a second canonical-key loop: "is that FILE
+        # already here?" is exactly the membership verb below, and a rule stated
+        # twice is a rule that can come to disagree with itself.
+        if self.has_geom_file(path):
+            return False
         self.geom_files.append(path)
         return True
 
@@ -104,8 +107,7 @@ class GeomListMixin:
         a geometry that was in the mesh, and unchecking it removed nothing.
         """
         want = canonical_geom_path(path)
-        return bool(want) and any(
-            canonical_geom_path(g) == want for g in self.geom_files)
+        return bool(want) and want in canonical_geom_keys(self.geom_files)
 
     def remove_geom_file(self, path: str) -> bool:
         """Drop whichever entry names the same FILE as `path`."""
@@ -212,6 +214,6 @@ class GeomListMixin:
     def prune_roles(self):
         """Drop geom_roles entries whose path is no longer in geom_files, so a
         stale seed role can't silently re-attach when a path is added again."""
-        present = {canonical_geom_path(g) for g in self.geom_files}
+        present = canonical_geom_keys(self.geom_files)
         self.geom_roles = {k: v for k, v in self.geom_roles.items()
                            if canonical_geom_path(k) in present}

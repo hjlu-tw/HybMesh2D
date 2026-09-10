@@ -1,6 +1,8 @@
 from __future__ import annotations
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from app.services.geom_path_identity import canonical_geom_path
+
 
 class GeomLoaderThread(QThread):
     """Loads multiple geometry files in a background thread to prevent UI freezing."""
@@ -24,6 +26,10 @@ class GeomLoaderThread(QThread):
         from app.services.geometry_service import load_points_dat
         results = []
         for f in self.paths:
+            # A stored geometry entry is a spelling, resolved against the REPO
+            # (services/geom_path_identity); reading it raw resolved a relative
+            # entry against the process cwd and the preview silently vanished.
+            f = canonical_geom_path(f)
             if not f or not os.path.exists(f):
                 continue
             try:

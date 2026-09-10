@@ -36,6 +36,15 @@ Three defects behind that, each pinned below:
     allow-list is DERIVED from where the verbs are defined rather than naming a
     file.
 
+ 5. RESIDUE (#104). One canonicalisation rule, written three times -- the add
+    path re-derived the canonical key the membership verb beside it already
+    answers, and both restated the dedupe helper's loop. The identity import was
+    function-local where no cycle required it. And two callers still STORED what
+    ``os.path.abspath`` returned, i.e. the cwd-relative spelling defect 2 is
+    about: nothing was broken, because every comparison canonicalises, but a
+    rule its own callers contradict is how the first defect got in. Checks 8
+    and 9, each shown to fail the BUILD like the doors above.
+
 Run: python3 tools/PreProcessor/tests/test_geom_files_identity.py
 """
 import os
@@ -328,8 +337,16 @@ def _raw_geom_file_sites(path: str) -> list[tuple[int, str]]:
     return out
 
 
-def _scan_app_tree() -> list[str]:
-    """Every offending site under gui/app, one run reporting all of them."""
+def _scan_app_tree(sites=None, skip=None) -> list[str]:
+    """Every offending site under gui/app, one run reporting all of them.
+
+    ``sites`` is the per-file check (default: the raw-construct scan of check 7);
+    ``skip`` the allow-list it exempts. Checks 8 and 9 walk the SAME tree with
+    their own per-file check, so the walk itself is written once -- three copies
+    of "which files does this gate look at?" is how two of them come to disagree
+    about a directory."""
+    sites = sites or _raw_geom_file_sites
+    skip = _RAW_OK if skip is None else skip
     bad = []
     for root, dirs, files in os.walk(os.path.join(_GUI, "app")):
         dirs[:] = [d for d in dirs if d != "__pycache__"]
@@ -337,9 +354,9 @@ def _scan_app_tree() -> list[str]:
             if not f.endswith(".py"):
                 continue
             full = os.path.normpath(os.path.join(root, f))
-            if full in _RAW_OK:
+            if full in skip:
                 continue
-            for ln, what in _raw_geom_file_sites(full):
+            for ln, what in sites(full):
                 bad.append(f"{os.path.relpath(full, _GUI)}:{ln} {what}")
     return bad
 
@@ -419,6 +436,202 @@ _cfg8.set_geom_files(None)
 check(_cfg8.geom_files == [],
       f"7. ...and a None/empty replacement clears it (got {_cfg8.geom_files})")
 
+# ── 8. the identity import is at MODULE level, and no cycle requires else ─
+# A deferred import hides a real dependency, which is the seam gate's own
+# lesson: with `test_qt_free_seam`'s import-time sweep green, `run_pipeline.sh`
+# still died on a PyQt6-less machine because three call sites imported inside a
+# function body. Nothing here imports the model, so there was no cycle to defer
+# around -- and "there is no cycle" is VERIFIED below rather than asserted, by
+# importing the module that carried the deferred form as the FIRST thing a fresh
+# interpreter does.
+def _deferred_identity_imports(path: str) -> list[tuple[int, str]]:
+    """(line, statement) for every ``geom_path_identity`` import nested inside a
+    function or class body in one file. By AST at ANY depth, like the Qt-free
+    seam's own scan -- a name is deferred whether it sits one level in or four."""
+    tree = ast.parse(open(path).read())
+    out = []
+
+    def _names(node) -> bool:
+        if isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            return (mod.endswith("geom_path_identity")
+                    or any(a.name == "geom_path_identity" for a in node.names))
+        if isinstance(node, ast.Import):
+            return any(a.name.endswith("geom_path_identity") for a in node.names)
+        return False
+
+    def _walk(node, inside: bool):
+        for child in ast.iter_child_nodes(node):
+            deeper = inside or isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            if inside and _names(child):
+                out.append((child.lineno, "deferred geom_path_identity import"))
+            _walk(child, deeper)
+
+    _walk(tree, False)
+    return out
+
+
+_deferred = _scan_app_tree(_deferred_identity_imports, skip=())
+check(not _deferred,
+      f"8. every geom_path_identity import under gui/app is at module level "
+      f"({_deferred})")
+
+_probe8 = os.path.join(tmp, "probe_deferred.py")
+with open(_probe8, "w") as fh:
+    fh.write("def f():\n"
+             "    from app.services.geom_path_identity import canonical_geom_path\n"
+             "    return canonical_geom_path\n"
+             "\n"
+             "class C:\n"
+             "    def g(self):\n"
+             "        if True:\n"
+             "            from app.services import geom_path_identity\n"
+             "        return geom_path_identity\n")
+check(len(_deferred_identity_imports(_probe8)) == 2,
+      f"8. INJECTION: the scan sees a deferred import at any depth "
+      f"({_deferred_identity_imports(_probe8)})")
+# ...and it is not firing on the module-level ones it must ignore, or the check
+# above would be green for the wrong reason.
+_probe8b = os.path.join(tmp, "probe_toplevel.py")
+with open(_probe8b, "w") as fh:
+    fh.write("from app.services.geom_path_identity import canonical_geom_path\n"
+             "\n"
+             "def f():\n"
+             "    return canonical_geom_path\n")
+check(not _deferred_identity_imports(_probe8b),
+      "8. ...and a module-level import is NOT reported")
+
+# The cycle: MEASURED, not assumed. mesh_config_io is the module whose import
+# was deferred, and it is on the HEADLESS path (run_pipeline.sh / run_batch.sh),
+# so the same run says it still drags in no Qt.
+_cyc = subprocess.run(
+    [sys.executable, "-c",
+     "import sys; sys.path.insert(0, %r);"
+     "import app.models.mesh_config_io as m;"
+     "print('QT' if 'PyQt6' in sys.modules else 'NOQT')" % _GUI],
+    capture_output=True, text=True)
+check(_cyc.returncode == 0,
+      f"8. mesh_config_io imports FIRST in a fresh interpreter -- no cycle "
+      f"requires the deferred form (exit {_cyc.returncode}: "
+      f"{_cyc.stderr.strip()[:200]})")
+check("NOQT" in _cyc.stdout,
+      f"8. ...and hoisting it drags no Qt onto the headless path ({_cyc.stdout.strip()})")
+
+# ── 9. what is STORED is never a cwd-relative spelling ────────────────────
+# The rule the module states -- "the base is the repo, never the process cwd" --
+# was contradicted by its own callers: they resolved with os.path.abspath and
+# stored THAT as the entry. Nothing was broken, because every comparison
+# canonicalises, but a stored `<cwd>/results/...` stops naming the same file the
+# moment the GUI is launched from somewhere else. stored_geom_path is the answer
+# to "how is the entry written down?", and it is repo-relative -- the spelling
+# the config writer emits.
+_cwd = os.getcwd()
+try:
+    os.chdir(tempfile.gettempdir())
+    _stored_from_tmp = gpi.stored_geom_path(rel)
+    _outside_from_tmp = gpi.stored_geom_path(os.path.join(tmp, "elsewhere.dat"))
+finally:
+    os.chdir(_cwd)
+check(_stored_from_tmp == rel and gpi.stored_geom_path(absolute) == rel,
+      f"9. a geometry inside the repo is STORED repo-relative, from any cwd and "
+      f"from either spelling (got {_stored_from_tmp!r} / "
+      f"{gpi.stored_geom_path(absolute)!r}, want {rel!r})")
+check(os.path.isabs(_outside_from_tmp)
+      and _outside_from_tmp == gpi.canonical_geom_path(os.path.join(tmp, "elsewhere.dat")),
+      f"9. a geometry OUTSIDE the repo is stored absolute, not cwd-relative "
+      f"({_outside_from_tmp})")
+check(gpi.same_geom_file(gpi.stored_geom_path(absolute), absolute)
+      and gpi.stored_geom_path("") == "",
+      "9. ...and re-spelling an entry never changes which FILE it names")
+
+# The callers, statically: no geometry reaches the list through the cwd-relative
+# call. Scoped to the model's two ADD/REPLACE verbs, so an os.path.abspath used
+# for anything else (the recent-files list is one) is not swept up.
+_STORE_VERBS = ("add_geom_file", "set_geom_files")
+
+
+def _cwd_relative_stores(path: str) -> list[tuple[int, str]]:
+    """(line, construct) for every ``add_geom_file(os.path.abspath(...))`` -- the
+    cwd-relative call feeding the model's own store verb, directly or inside a
+    list literal."""
+    tree = ast.parse(open(path).read())
+    out = []
+
+    def _is_abspath(node) -> bool:
+        if not isinstance(node, ast.Call):
+            return False
+        f = node.func
+        return ((isinstance(f, ast.Attribute) and f.attr == "abspath")
+                or (isinstance(f, ast.Name) and f.id == "abspath"))
+
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr in _STORE_VERBS):
+            continue
+        args = list(n.args)
+        for a in list(args):
+            if isinstance(a, (ast.List, ast.Tuple)):
+                args.extend(a.elts)
+        if any(_is_abspath(a) for a in args):
+            out.append((n.lineno, f"{n.func.attr}(os.path.abspath(...))"))
+    return out
+
+
+_stores = _scan_app_tree(_cwd_relative_stores, skip=())
+check(not _stores,
+      f"9. no caller stores the cwd-relative spelling into geom_files ({_stores})")
+
+# The READ side of the same rule, where it has a seam rather than a scan: a
+# `.meta` sidecar belongs to the FILE. Nine call sites across the panels, the
+# layer controller and the .bnd audit reach a sidecar, and every one goes
+# through meta_io.meta_path_for -- so this is driven end to end from a FOREIGN
+# cwd, which is the condition under which the raw string is wrong. The write is
+# the half that matters most: it used to be able to leave a stray tree beside
+# wherever the GUI was launched from, with the real sidecar still holding the
+# old BCs.
+from app.services import meta_io                       # noqa: E402
+
+# The sidecar the C++ resampler would have left beside the geometry.
+with open(absolute + ".meta", "w") as fh:
+    fh.write("HYBMESH_META 2\nCOUNT 4\nNSEGMENTS 1\n1 inflow line\n"
+             "POINTS 4\n1 0\n1 0\n1 0\n1 0\n")
+
+_cwd = os.getcwd()
+_stray = os.path.join(tmp, "stray_cwd")
+os.makedirs(_stray, exist_ok=True)
+try:
+    os.chdir(_stray)
+    _wrote = meta_io.write_meta_group_bc(rel, {"inflow": "inlet"})
+    _read_back = meta_io.read_meta_group_bc(rel)
+finally:
+    os.chdir(_cwd)
+check(_wrote and _read_back == {"inflow": "inlet"},
+      f"9. a .meta sidecar round-trips through the REPO-relative spelling from a "
+      f"foreign cwd (wrote={_wrote}, read={_read_back})")
+check(meta_io.read_meta_group_bc(absolute) == {"inflow": "inlet"},
+      "9. ...and the other spelling of the same file reads the same sidecar")
+check(not os.path.exists(os.path.join(_stray, "results")),
+      f"9. ...and nothing was written under the process cwd "
+      f"({os.listdir(_stray)})")
+try:
+    os.remove(absolute + ".meta")
+except OSError:
+    pass
+
+_probe9 = os.path.join(tmp, "probe_store.py")
+with open(_probe9, "w") as fh:
+    fh.write("import os\n"
+             "\n"
+             "def f(cfg, p):\n"
+             "    cfg.add_geom_file(os.path.abspath(p))\n"
+             "    cfg.set_geom_files([os.path.abspath(p)])\n"
+             "    cfg.add_geom_file(stored_geom_path(p))\n"
+             "    return os.path.abspath(p)\n")
+check(len(_cwd_relative_stores(_probe9)) == 2,
+      f"9. INJECTION: the scan sees the cwd-relative call at BOTH store verbs, "
+      f"and leaves an unrelated abspath alone ({_cwd_relative_stores(_probe9)})")
+
 # ── 7b. the gate is non-vacuous AS A BUILD STEP, read from the exit code ──
 # The scan-level probe above proves the AST walk sees the constructs; it cannot
 # prove this FILE goes red when one appears in the real tree. So run this whole
@@ -462,6 +675,20 @@ if not os.environ.get(_NO_SUB):
          "def reintroduce_the_defect(paths):\n"
          "    return MeshConfig(geom_files=list(paths))\n",
          "_geom_ident_inj_probe.py:4 geom_files= keyword to MeshConfig()"),
+        # Checks 8 and 9 are scans over the same real tree, so they are held to
+        # the same bar: a door opened in a real GUI package, and the verdict read
+        # from the child's exit code.
+        ("the deferred identity import",
+         "def reintroduce_the_defect():\n"
+         "    from app.services.geom_path_identity import canonical_geom_path\n"
+         "    return canonical_geom_path\n",
+         "_geom_ident_inj_probe.py:2 deferred geom_path_identity import"),
+        ("the cwd-relative store",
+         "import os\n"
+         "\n"
+         "def reintroduce_the_defect(cfg, p):\n"
+         "    cfg.add_geom_file(os.path.abspath(p))\n",
+         "_geom_ident_inj_probe.py:4 add_geom_file(os.path.abspath(...))"),
     )
     for _what, _src, _want in _DOORS:
         try:

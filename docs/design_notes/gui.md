@@ -1237,6 +1237,69 @@ count deliberately is NOT gated —
 commit rather than on every edit to the file, so gating one would make each commit re-measure
 `git log`, and there is no fixed point to converge on.
 
+**A GEOMETRY IS THE FILE IT NAMES.** `services/geom_path_identity.py`, the rules in
+`.claude/rules/gui-panels-config.md`. USER-REPORTED 2026-08-20, reopening an exported case
+package: the Mesh Generator listed every geometry twice and Run All died with
+`HYBMESH_ERROR 3 GEOMETRY_LOAD results/resampled/Untitled`. Every dedup guard in the tree was a
+`not in` string compare over `MeshConfig.geom_files`, so `results/x.dat` and `/repo/results/x.dat`
+were two entries for one file — measured as two identical `GEOM_FILE` lines, i.e. a doubled
+boundary handed to the mesher, not an untidy list. The resolution base was `os.path.abspath`, so
+the same entry named `<repo>/results/…` launched from the repo root and `/private/tmp/results/…`
+launched from `/tmp`, and `repo_root()` was already imported in that same function for relativising
+OUTPUT only. Canonical is `realpath` and NOT `(st_dev, st_ino)` — `case_workspace`'s inode rule is
+the stronger test but needs the file to exist, and the entries this reasons about are exactly the
+ones that may not (a reopened package carries no CAD).
+
+**Shipping only the ADD sites was worse than not starting**, which is the durable lesson here:
+the first round converted the six additions and left the removals and the `in` tests comparing
+strings, so `mesh_layers_ctrl` added a layer by identity and un-added it by string — on a config
+holding the relative spelling the checkbox drew Unchecked for a geometry that was in the mesh, and
+unchecking it removed nothing. A review found that; nothing in the tree could, which is why the
+rule is now an AST gate over every raw construct rather than a convention (#99, and its own
+widening was still incomplete until review found the constructor keyword).
+
+**#104: three residues, all of the same shape — a rule stated in more places than it is enforced.**
+(i) One canonicalisation loop was hand-written three times, the add path re-deriving the canonical
+key that the membership verb beside it already answers. Three copies of one rule is how the
+string-compare defect got in, so the loop is now `_keyed` and the verbs read it. (ii) The identity
+import was function-local in `mesh_config_io` where no cycle required it. Measured rather than
+assumed: that module imports first in a fresh interpreter and drags in no Qt, which matters because
+it is on the headless path. The check that proves it immediately caught a *fresh* deferred import
+the same change had just added to `mesh_canvas_loader` — the gate paying for itself inside its own
+ticket. (iii) Callers still STORED what `os.path.abspath` returned: the exact cwd-relative
+spelling rule (i) of the module condemns. Nothing was broken by it, because every comparison
+canonicalises, which is precisely why it survived — a rule contradicted by its own callers and no
+symptom to point at.
+
+**Storing the repo-relative spelling forced the READ side into the open, and the first sweep of it
+was WRONG.** With the entry stored as `results/resampled/x.dat` rather than absolute, every call
+site that opened the raw string answers against the process cwd. They already would have, for the
+repo-relative entries a loaded workspace or a saved script has always carried; the change only
+makes the common case common. The first pass converted five readers — the Run-All pre-flight, the
+mesh bbox scan, the BC canvas overlay, the preview loader thread, the `.bnd` audit — and the two
+review axes found **five more it had missed**, four from Standards: `read_meta_group_bc` in the mesh panel,
+`read_meta_segments` and `write_meta_group_bc` in the BL mixin, and `mesh_layers_ctrl`'s
+`write_meta_*`. Two lessons, and the second is the one worth keeping. First, the WRITE sites were
+the dangerous half: `write_meta_group_bc` against the cwd drops a stray sidecar in a tree beside
+wherever the GUI was launched, leaving the real one holding the old BCs — the all-`wall` grid of
+2026-08-11, reached by a new route. Second, nine hand-converted call sites is the shotgun-surgery
+shape of one rule, and the fix was not to convert the last four: every one of the nine reaches its
+sidecar through `meta_io.meta_path_for`, so the rule went THERE — a `.meta` belongs to the FILE,
+not to the spelling. The fifth, from the Spec axis, had no sidecar in it at all — the canvas
+SELECTION HIGHLIGHT, reading the list item's own data, which is the stored entry verbatim; its
+symptom is the same silence, a highlight that stops drawing. What is left at the call sites is the
+five readers that open the geometry itself, which have no such choke point.
+
+**One thing `os.path.abspath` is still right for, and the same review found it being taken away.**
+A path the USER gave — a CLI argument, a dialog result — really is cwd-relative, and
+`session_load_ctrl` loads the points from it that way. Storing `stored_geom_path(input_file)` from
+the RAW spelling therefore resolved against the repo while the load beside it resolved against the
+cwd, so the session could load one file and list another — a defect the abspath the change was
+removing had been preventing. The rule is not "abspath is wrong"; it is "the base for an ENTRY is
+the repo". Resolve the user's path with `abspath` first, derive the entry from that. That asymmetry is the recorded blind spot: the STORE side
+has an AST gate, the sidecar side has a seam, and those four have neither — an AST cannot follow a
+value through a variable, and the symptom of a missed one is silence.
+
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`

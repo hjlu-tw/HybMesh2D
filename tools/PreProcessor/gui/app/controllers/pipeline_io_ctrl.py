@@ -12,6 +12,7 @@ import os
 from PyQt6.QtWidgets import QFileDialog
 
 from app.models.pipeline_config import PipelineConfig, PIPELINE_FORMAT_VERSION
+from app.services.geom_path_identity import stored_geom_path
 from app.utils import repo_root
 
 from app.services.logging_setup import get_logger
@@ -199,7 +200,9 @@ class PipelineIoControllerMixin:
                 if out:
                     # add_geom_file, not a rebind: the branch above already
                     # established the list is empty, so this is the one way in.
-                    self.global_mesh_config.add_geom_file(os.path.abspath(out))
+                    # stored_geom_path, not os.path.abspath: the entry is written
+                    # down repo-relative, as the config writer emits it.
+                    self.global_mesh_config.add_geom_file(stored_geom_path(out))
             self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
             self.sync_mesh_layers_panel()
 

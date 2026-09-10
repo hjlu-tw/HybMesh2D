@@ -2,6 +2,11 @@ from __future__ import annotations
 import os
 
 from app.models.mesh_config_keys import _KEY_MAP
+# Module level, not inside the writer: nothing here imports the model, so there
+# is no cycle to defer around, and a deferred import hides a real dependency --
+# the seam gate's own lesson (`tests/test_qt_free_seam.py`: "a deferred import is
+# still a dependency"). Gated by tests/test_geom_files_identity.py check 8.
+from app.services.geom_path_identity import canonical_geom_path, dedupe_geom_paths
 
 
 def load_config_from_file(cfg, path: str):
@@ -313,8 +318,6 @@ def config_to_text(cfg, path: str = "") -> str:
     # i.e. hand the mesher a doubled boundary. And the resolution base is the
     # repo, never the process cwd -- os.path.abspath made the same entry name a
     # different file depending on where the GUI was launched from.
-    from app.services.geom_path_identity import (canonical_geom_path,
-                                                 dedupe_geom_paths)
     for gf in dedupe_geom_paths(cfg.geom_files):
         abs_gf = canonical_geom_path(gf)
 

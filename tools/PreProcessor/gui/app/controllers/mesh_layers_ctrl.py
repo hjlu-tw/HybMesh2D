@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QListWidgetItem
 from app.utils import block_signals, report_info
 from app.commands.segment_cmds_core import UpdateMultipleSegmentsStateCmd
 from app.services import meta_io
-from app.services.geom_path_identity import canonical_geom_path
+from app.services.geom_path_identity import canonical_geom_path, stored_geom_path
 
 class MeshLayersControllerMixin:
     """Mixin managing the Geometry Layers list of the mesh generator — syncing
@@ -27,7 +27,11 @@ class MeshLayersControllerMixin:
             return
 
         path = session.project_model.output_file
-        abs_path = os.path.abspath(path)
+        # canonical_geom_path to ASK about the file, stored_geom_path to write
+        # the entry down: os.path.abspath answered both questions against the
+        # process cwd, which is the base services/geom_path_identity condemns.
+        abs_path = canonical_geom_path(path)
+        entry = stored_geom_path(path)
         if not os.path.exists(abs_path):
             self.log(
                 f"Resampled file does not exist at '{abs_path}'. Run 'Save & Export' first."
@@ -35,9 +39,9 @@ class MeshLayersControllerMixin:
             return
 
         cfg = self.config_from_panel("mesh_config_panel")
-        if cfg.add_geom_file(abs_path):
+        if cfg.add_geom_file(entry):
             self.push_panel_config(self.main_window.mesh_config_panel, cfg)
-            self.log(f"Added resampled geometry to configuration: {abs_path}")
+            self.log(f"Added resampled geometry to configuration: {entry}")
             self.sync_mesh_layers_panel()
         else:
             self.log("Geometry file is already in the list.")

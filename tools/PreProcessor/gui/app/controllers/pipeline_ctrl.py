@@ -18,6 +18,9 @@ import os
 
 import numpy as np
 
+from app.services.geom_path_identity import (canonical_geom_path,
+                                             stored_geom_path)
+
 from app.services import ib_handoff, pipeline_stages
 from app.utils import repo_root
 
@@ -48,8 +51,12 @@ class PipelineControllerMixin:
         session = self.active_session()
         has_cad = session is not None and (
             session.original_points is not None or session.project_model.segments)
+        # By IDENTITY: an entry is repo-relative (a loaded workspace, a saved
+        # script, or the resample stage below), so os.path.exists on the raw
+        # string answers about the process cwd.
         mesh_files_ready = any(
-            os.path.exists(gf) for gf in self.global_mesh_config.geom_files)
+            os.path.exists(canonical_geom_path(gf))
+            for gf in self.global_mesh_config.geom_files)
         if not has_cad and not mesh_files_ready:
             log("[Pipeline] No active geometry. Load or draw a geometry first "
                 "(or add a geometry file in the Mesh Generator).")
@@ -193,8 +200,11 @@ class PipelineControllerMixin:
         # add_geom_file, not a `not in` string compare: the workspace this run
         # was loaded from may hold the repo-relative spelling of this very file,
         # and appending the absolute one listed the geometry twice and meshed it
-        # twice. See services/geom_path_identity.
-        self.global_mesh_config.add_geom_file(os.path.abspath(out))
+        # twice. And stored_geom_path, not os.path.abspath: `out` is already
+        # under the repo, so what goes in is the repo-relative spelling the
+        # mesher config writer emits -- not the cwd-relative call this module's
+        # own rule condemns. See services/geom_path_identity.
+        self.global_mesh_config.add_geom_file(stored_geom_path(out))
         self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
         self.sync_mesh_layers_panel()
         self.log(f"[Pipeline] resampled -> {out}")

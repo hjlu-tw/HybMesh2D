@@ -300,6 +300,8 @@ class MeshExportControllerMixin:
         cfg = getattr(self, "global_mesh_config", None)
         if cfg is None:
             return []
+        # The entries go in as stored: the audit reaches every geometry through
+        # meta_io.meta_path_for, which resolves the spelling itself.
         geoms = [g for g in (cfg.geom_files or []) if not cfg.is_seed(g)]
         return audit_mesh_bc(bnd_path, geoms, cfg.group_bc)
 

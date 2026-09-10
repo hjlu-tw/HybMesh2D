@@ -195,7 +195,8 @@ global default, so a per-geometry override never hides behind a collapsed header
 
 **A geometry in the mesh config is the FILE it names, not the string that names it**
 (`services/geom_path_identity.py`, Qt-free — `canonical_geom_path` / `same_geom_file` /
-`dedupe_geom_paths`; the model's verbs are `models/mesh_config_geoms.py::GeomListMixin`, split off
+`canonical_geom_keys` / `dedupe_geom_paths` / `stored_geom_path`; the model's verbs are
+`models/mesh_config_geoms.py::GeomListMixin`, split off
 when `mesh_config.py` went over the file-size budget). Every dedup guard in the tree used to be a
 `not in` string compare over `MeshConfig.geom_files`, so the repo-relative and absolute spellings
 of one file were two entries: the Mesh Generator listed the geometry twice and the mesher was
@@ -210,6 +211,50 @@ absolute). Two rules:
 - **Canonical means realpath**, so a symlinked scratch dir or a case-insensitive volume cannot
   reintroduce two-strings-one-file. Identity by inode (`case_workspace`'s rule) is stronger but
   needs the file to EXIST, and the whole point here is entries that may not.
+
+Both of those are about COMPARING two spellings. Four more say how one is WRITTEN DOWN and READ
+BACK — the three residues #104 closed, plus the read-side rule that closing them exposed:
+
+- **What goes INTO the list is `stored_geom_path`, never `os.path.abspath`** — repo-relative for a
+  file inside the repo (the spelling `mesh_config_io` emits and a workspace carries, so the model,
+  the config and the script agree and a case package stays portable), canonical absolute for one
+  outside it. The callers used to store what `abspath` returned, i.e. the exact cwd-relative
+  spelling the first rule condemns; nothing was broken by it because every comparison
+  canonicalises, but a stored `<cwd>/results/…` stops naming the same file the moment the GUI is
+  launched from elsewhere. Gated by `tests/test_geom_files_identity.py` check 9, by AST over
+  `add_geom_file` / `set_geom_files`.
+- **A reader RESOLVES an entry before opening it**: `os.path.exists(gf)` / `np.loadtxt(gf)` on the
+  raw string answers about the process cwd. This is what makes the repo-relative store above safe
+  rather than a silent "the preview vanished", and it is TWO rules, not one, because the readers
+  are two kinds:
+  - The five that open the geometry itself resolve at the call site with `canonical_geom_path` —
+    the Run-All pre-flight, the mesh bbox scan, the BC canvas overlay, the preview loader thread
+    and the selection highlight.
+  - **A path the USER gave is the one thing `os.path.abspath` is still right for**: a CLI argument
+    or a dialog result really is cwd-relative, and the load beside it reads it that way. Resolve
+    it with `abspath` FIRST and derive the entry from THAT (`stored_geom_path(abs_path)`) —
+    resolving the raw spelling against the repo instead makes the session load one file and list
+    another. `session_load_ctrl` is both such sites.
+  - **A `.meta` sidecar belongs to the FILE, and `meta_io.meta_path_for` is where that is
+    decided** — not at its callers. Nine sites across the panels, `mesh_layers_ctrl` and the
+    `.bnd` audit reach a sidecar; converting them one by one is the shotgun-surgery version of
+    one rule, and the WRITE half is the dangerous one — `write_meta_group_bc` on a raw
+    repo-relative entry drops a stray sidecar under the cwd while the real one keeps the old BCs,
+    i.e. the all-`wall` grid this repo has already shipped once. Driven end to end from a foreign
+    cwd by check 9, which also asserts nothing was written under it.
+- **The canonical-key loop is written ONCE**, in the service's `_keyed`; `dedupe_geom_paths` and
+  `canonical_geom_keys` read it, and the model's `add_geom_file` asks `has_geom_file` rather than
+  re-deriving the key. Three hand-written copies of one canonicalisation rule is how the
+  string-compare defect got in. That is the MEMBERSHIP shape only: `remove_geom_file` and
+  `role_of` still compare per entry, deliberately — `_keyed` drops a falsy entry, which is right
+  for a dedupe and would silently make `remove_geom_file` delete empty entries as a side effect of
+  removing something else.
+- **The identity import is at MODULE level everywhere**, and the absence of a cycle is MEASURED —
+  `mesh_config_io` (the module that carried the deferred form, and is on the headless path)
+  imports first in a fresh interpreter, dragging in no Qt. A deferred import hides a real
+  dependency: that is `test_qt_free_seam`'s own lesson, where an import-time sweep was green while
+  `run_pipeline.sh` still died on three function-body imports. Gated by check 8, at any nesting
+  depth.
 
 **Membership and removal had to move WITH addition; shipping only the additions was worse than not
 starting.** The first round converted the six `add` sites and left the removals and the `in` tests
@@ -288,3 +333,14 @@ against one list; #71 moved the first two here.
   tests is unreached — the tests deliberately rebind, to build the stale state under test. Beside
   those, one thing it deliberately does not watch: the per-geometry `geom_roles` dict has no such
   gate, and a role keyed under a dropped spelling is `prune_roles`' job rather than a scan's.
+- **The cwd-relative STORE scan (check 9) reads the ARGUMENT, so an indirection passes.**
+  `add_geom_file(os.path.abspath(p))` and the same inside a list literal fail; `q =
+  os.path.abspath(p); add_geom_file(q)` does not, for the reason blind spot (i) gives — an AST
+  cannot follow a value. Two things bound it: the scan is scoped to the model's own store verbs, so
+  an `os.path.abspath` for anything else (the recent-files list keeps one, deliberately) is not
+  swept up, and check 9's behavioural half asserts what `stored_geom_path` RETURNS from any cwd,
+  which no caller can re-implement correctly by accident. **The READ side has no scan at all**, and
+  is held by a seam for sidecars (`meta_path_for`) and by nothing at all for the four call sites
+  that open the geometry directly: a new `np.loadtxt(gf)` fails no gate, and its symptom is silent
+  — a preview that does not draw. The first attempt at #104 converted five readers and left four,
+  which is how that reach is known rather than assumed.

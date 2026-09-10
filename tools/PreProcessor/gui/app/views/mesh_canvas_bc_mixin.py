@@ -3,6 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
 from app.utils import BC_COLORS, DEFAULT_BC_COLOR
+from app.services.geom_path_identity import canonical_geom_path
 from app.services.meta_io import read_meta_segments, read_meta_point_segids
 
 
@@ -96,14 +97,17 @@ class MeshCanvasBCMixin:
         # falling back to the raw label when a group has no assigned type yet.
         group_bc = getattr(self.mesh_config, "group_bc", {}) or {}
         for gf in self.mesh_config.geom_files:
+            # By IDENTITY: a repo-relative entry names its file relative to the
+            # REPO, never to the process cwd (services/geom_path_identity).
+            gp = canonical_geom_path(gf)
             try:
-                pts = np.atleast_2d(np.loadtxt(gf))
+                pts = np.atleast_2d(np.loadtxt(gp))
             except Exception:
                 continue
             if pts.shape[0] < 2 or pts.shape[1] < 2:
                 continue
-            labels = {sid: bc for sid, bc, _k in read_meta_segments(gf)}
-            segids = read_meta_point_segids(gf)
+            labels = {sid: bc for sid, bc, _k in read_meta_segments(gp)}
+            segids = read_meta_point_segids(gp)
             if not segids or len(segids) != pts.shape[0]:
                 continue  # no per-segment info → leave the grey outline
 
