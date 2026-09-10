@@ -89,7 +89,13 @@ Load-bearing rules:
   `False` against an int `0` a coin toss), and an unavailable value falls back to a *declared* one
   instead of index 0.
 - **Numeric and combo rows go into the form DIRECTLY, never wrapped**: `QFormLayout.labelForField`
-  only finds a label for the widget that IS the field cell.
+  only finds a label for the widget that IS the field cell, and four visibility helpers use it to
+  hide a row's label with its field. **ONE exemption exists in the whole GUI and it is recorded
+  here**: the Edit-BL dialog's C1 note cell (measured in the greyed-field rule below), legal only
+  because nothing in that dialog's OWN mixins calls `labelForField` —
+  `tests/test_bl_dialog_sections.py` check 14 pins that precondition by AST over the dialog's own
+  MRO, so a visibility helper added there fails the build instead of silently finding no label.
+  Anywhere else a wrapped cell orphans its label.
 - **Three escape hatches, each used by exactly one field and named with its reason in the gate**:
   `read`/`write` on a spec (`ascii_combo`), `panel_choices` (`bl_concave_method`), `host_writes`
   (`output_filename`).
@@ -172,13 +178,15 @@ global default, so a per-geometry override never hides behind a collapsed header
   rides beside the FIELD because the label column is one shared width measured from the labels
   actually built and clamped to `LABEL_COL_MIN`..`LABEL_COL_MAX` (120..240, declared with
   `clamp_label_col` in `mesh_bl_dialog_layout`), which a suffixed C1 label either widens or clips
-  inside; the note cell is the ONE composite field cell in the GUI, legal only because nothing in
-  the dialog's mixins calls `labelForField` (gated by AST over its own MRO); and a tooltip on the
-  disabled widget is impossible, since Qt picks the mouse receiver by walking past disabled
-  widgets, so the box gets no `Enter` — nor does its parent. **The gate asserts that COST, never a
-  pixel.** SUPERSEDES #23: `suffix_cost` asserts the consequence a suffixed label would impose —
-  the shared column grows, or it is already on `LABEL_COL_MAX` and the label clips — plus the
-  growth as a RATIO for the magnitude, since a width scales with the font and the clamp does not.
+  inside; the note cell is the ONE composite field cell in the GUI — the exemption to
+  **"Numeric and combo rows go into the form DIRECTLY, never wrapped"** above, recorded there as
+  well — legal only because nothing in the dialog's mixins calls `labelForField` (gated by AST
+  over its own MRO); and a tooltip on the disabled widget is impossible, since Qt picks the mouse
+  receiver by walking past disabled widgets, so the box gets no `Enter` — nor does its parent.
+  **The gate asserts that COST, never a pixel.** SUPERSEDES #23: `suffix_cost` asserts the
+  consequence a suffixed label would impose — the shared column grows, or it is already on
+  `LABEL_COL_MAX` and the label clips — plus the growth as a RATIO for the magnitude, since a
+  width scales with the font and the clamp does not.
   Why: docs/design_notes/gui.md, "A pixel literal is a metric of one machine"
   **An unreadable method value leaves the field LIVE and SILENT**: `_sync`'s
   `except (TypeError, ValueError)` sets `reads_c1 = True` — never stuck off — and an editable field
@@ -256,16 +264,13 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   `run_pipeline.sh` still died on three function-body imports. Gated by check 8, at any nesting
   depth.
 
-**Membership and removal had to move WITH addition; shipping only the additions was worse than not
-starting.** The first round converted the six `add` sites and left the removals and the `in` tests
-comparing strings, so `mesh_layers_ctrl` added a layer by identity and un-added it by string: on a
-config holding the relative spelling the checkbox drew **Unchecked for a geometry that was in the
-mesh**, and unchecking it cleared the box and left the geometry to be meshed. `remove_geom_file`
-existed and was called from nowhere. The full set is now `add_geom_file` / `remove_geom_file` /
-`has_geom_file` / `set_geom_files` / `role_of` / `prune_roles` / `dedupe_geom_paths`, and
-**`tests/test_geom_files_identity.py` check 7 fails the build on EVERY raw way in over
-`geom_files` outside the mixin**: the eight list mutators (`append` / `remove` / `extend` /
-`insert` / `pop` / `clear` / `sort` / `reverse`), `in` / `not in`, a wholesale
+**Addition, removal and membership are ONE verb set, and no caller outside the mixin may reach
+`geom_files` by any other route** — they move together, because half of them converted is a config
+that adds a layer by identity and un-adds it by string. The set is `add_geom_file` /
+`remove_geom_file` / `has_geom_file` / `set_geom_files` / `role_of` / `prune_roles` /
+`dedupe_geom_paths`, and **`tests/test_geom_files_identity.py` check 7 fails the build on EVERY
+raw way in over `geom_files` outside the mixin**: the eight list mutators (`append` / `remove` /
+`extend` / `insert` / `pop` / `clear` / `sort` / `reverse`), `in` / `not in`, a wholesale
 `cfg.geom_files = [...]` rebind, a slice rebind, a `del`, a literal
 `setattr(cfg, "geom_files", …)` and a `geom_files=` keyword to `MeshConfig(…)` or
 `dataclasses.replace(…)` — by AST, because the prose
@@ -291,6 +296,9 @@ field with no assignment and no method call anywhere — was then found by revie
   attribute NAME, since an AST cannot resolve the type of `self`; `mesh_canvas_loader`'s thread
   therefore holds `self.paths`. Renaming the neighbour is the fix, never an allow-list entry — one
   exemption keyed to the verbs is checkable, a growing filename list is not.
+
+Why, and what shipping half the verb set cost: docs/design_notes/gui.md,
+"Shipping only the ADD sites was worse than not starting".
 
 Two things the fix deliberately does NOT do: `dedupe_geom_paths` keeps the FIRST spelling rather
 than rewriting entries to canonical form (that would churn a saved config on load, and

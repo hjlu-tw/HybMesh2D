@@ -509,8 +509,10 @@ check(suf_widths != {want_w} or bool(suf_clipped),
       f"labels measure ({want_w} -> {sorted(suf_widths)}) or clips inside it "
       f"({suf_clipped}) — either way the two checks above go red")
 
-# The note cell is the ONE composite field cell in the GUI, against CLAUDE.md's
-# "never wrapped" rule. What that rule protects is labelForField, so pin its
+# The note cell is the ONE composite field cell in the GUI, against
+# .claude/rules/gui-panels-config.md's "never wrapped" rule -- #62 moved that rule out
+# of CLAUDE.md, which rules on nothing in this area now, and the rule file records this
+# exemption beside it. What that rule protects is labelForField, so pin its
 # precondition: nothing may resolve a label on this dialog's forms. Without this the
 # exemption is a comment, and a visibility helper added here would silently find no
 # label instead of failing the build.

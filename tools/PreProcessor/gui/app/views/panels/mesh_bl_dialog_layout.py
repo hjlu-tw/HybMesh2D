@@ -195,8 +195,10 @@ class BLDialogLayoutMixin:
         and nothing clips.
 
         This is the ONE row in the GUI whose field cell is a composite, against
-        CLAUDE.md's "Numeric and combo rows go into the form DIRECTLY, never wrapped".
-        The precondition that rule protects is named there and holds here: a wrapped
+        ``.claude/rules/gui-panels-config.md``'s "Numeric and combo rows go into the
+        form DIRECTLY, never wrapped" (#62 moved that rule out of ``CLAUDE.md``, which
+        rules on nothing in this area now; the rule file records this exemption beside
+        it). The precondition that rule protects is named there and holds here: a wrapped
         cell hides the row from ``QFormLayout.labelForField``, which the four
         visibility helpers use to hide a label with its field — and NO caller resolves
         a label on this dialog's forms (all twelve live in ``mesh_sizing_mixin`` and

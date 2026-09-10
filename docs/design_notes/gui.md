@@ -68,6 +68,22 @@ to build (`add_spec_rows`), once to write (`write_specs`) and once to read
   residue each panel declares beside its table (`*_EXTRA_AUTHORED`, for facts one
   widget holds for many things — the geometry list, the BC-definition table). What is
   left to prove is that the declared residue equals the code still written by hand.
+- **The ownership scan reads SYNTAX, so a field written only through a model VERB reads
+  as unauthored** — and "unauthored" means the sync *preserves* it, i.e. discards what
+  the panel just built. `config_ownership.MODEL_WRITER_METHODS` declares the method →
+  field map, and #99 is what made that real rather than theoretical: making `geom_files`
+  verb-only outside the model removed the mesh panel's bare `cfg.geom_files = []`, and
+  the panel's own `cfg.add_geom_file(p)` beside it had ALWAYS been invisible to the scan
+  — the assignment was the only thing keeping the answer right. Declared rather than
+  guessed from the name, because `add_geom_file` does not spell its plural field.
+  `tests/test_field_spec_tables.py` check 2 fails on an entry naming a method or a field
+  that no ONE model class carries together, and asserts at least one field is
+  verb-authored with no assignment in that panel's own `get_config`, so the map cannot be
+  deleted wholesale and pass. An entry may be INERT and that is legal:
+  `remove_geom_file`'s callers are in `controllers/mesh_layers_ctrl.py`, outside every
+  `PANEL_SOURCES` glob. The recorded blind spot is the direction it cannot fail in — a
+  STALE entry fails, a MISSING one does not, and a new model verb that writes a field and
+  is never listed has the silent symptom above.
 - **`LENGTH_FIELDS` is derived from `kind == "sci"`**, which IS the physical-length rule
   (`SciDoubleSpinBox`, no floor, decade steps), so the list and the widgets cannot
   disagree.
@@ -1250,13 +1266,25 @@ OUTPUT only. Canonical is `realpath` and NOT `(st_dev, st_ino)` — `case_worksp
 the stronger test but needs the file to exist, and the entries this reasons about are exactly the
 ones that may not (a reopened package carries no CAD).
 
+**The verbs did not stay on the config class, and the reason was the 500-line standard.** They live
+in `models/mesh_config_geoms.py::GeomListMixin`, split off when `mesh_config.py` crossed it; the
+merge that landed this took that file 505 -> 426 lines, so the split is what put it back under the
+standard rather than a tidy-up done beside the fix. That split is also what makes the AST gate's
+allow-list derivable at all: it is keyed to where the verbs LIVE (`inspect.getsourcefile`), so
+`models/mesh_config.py` — the config class itself — is provably not exempt, which the mixin's
+own docstring had claimed it was.
+
 **Shipping only the ADD sites was worse than not starting**, which is the durable lesson here:
 the first round converted the six additions and left the removals and the `in` tests comparing
 strings, so `mesh_layers_ctrl` added a layer by identity and un-added it by string — on a config
 holding the relative spelling the checkbox drew Unchecked for a geometry that was in the mesh, and
-unchecking it removed nothing. A review found that; nothing in the tree could, which is why the
-rule is now an AST gate over every raw construct rather than a convention (#99, and its own
-widening was still incomplete until review found the constructor keyword).
+unchecking it cleared the box and left the geometry to be meshed. `remove_geom_file` existed and
+was called from nowhere. A review found that; nothing in the tree could, which is why the verbs are
+now ONE set the rule file names in full — `add_geom_file` / `remove_geom_file` / `has_geom_file` /
+`set_geom_files` / `role_of` / `prune_roles` / `dedupe_geom_paths` — and why the rule is an AST
+gate over every raw construct rather than a convention (#99, and its own widening was still
+incomplete until review found the constructor keyword). The verb set is also why the ownership map
+above exists: verb-only is exactly the shape the syntax scan cannot see.
 
 **#104: three residues, all of the same shape — a rule stated in more places than it is enforced.**
 (i) One canonicalisation loop was hand-written three times, the add path re-deriving the canonical
