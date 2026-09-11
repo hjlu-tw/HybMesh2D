@@ -431,10 +431,10 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 47,618 / 47,008 / 41,360 / 33,815 / 21,429 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 47,618 / 47,008 / 43,336 / 33,815 / 21,429 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 12,382 / 12,992 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 18,640 / 26,185 / 38,571 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 16,664 / 26,185 / 38,571 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a

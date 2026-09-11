@@ -24,6 +24,15 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
+SINCE #114 GROUP 12 ALSO DRIVES THE OTHER THREE — ``multiblock_square``,
+``multiblock_cavity`` and ``multiblock_hgrid``, so all FIVE shipped multi-block
+configs are exercised for the wall warning's floor. Those three have no gate of
+their own to import from (nothing else in the tree runs them), so they enter
+through ``shipped_config`` below, which retargets by KEY rather than by the needle
+list ``base_config`` can afford. What each of the three can and cannot see is in
+the blind spots, per config: the floor-revert injection reaches NONE of them, and
+saying so is half of what this widening bought.
+
 What this pins down:
 
   1. At the default (no ``MB_SMOOTH_ITERS`` line at all) the output is what it was
@@ -64,6 +73,17 @@ What this pins down:
      asserted on real files: the two noise warnings are gone, the two walls whose
      deviation is real still warn in the SAME run, and the two that went quiet are
      back at a cap where their own deviation rises above the floor.
+ 13. AND THE SAME CRITERION ON ALL FIVE SHIPPED CONFIGS (#114), which was checked
+     on two of them until that ticket. The H-grid's eight declared wall edges give
+     seven warnings whose smallest, 5.90e-6 relative, is now the TIGHTEST upper
+     bound this floor has — under the C-grid's `e_ff` pair at 9.499e-6 — and its
+     eighth edge is the only wall in any shipped config that starts off its
+     declaration and is IMPROVED by the sweeps, so it is this mesh's worst-held
+     wall and correctly silent. Square and cavity are rectangles the solve leaves
+     where it found them, so their walls are at an exact zero before and after and
+     the silence is the MESH's rather than the bar's: no floor can reach them, and
+     what they gate is a comparison that starts warning about a wall nothing
+     happened to.
 
 MEASURED 2026-09-10 on the five shipped multi-block configs, before and after
 (counts of `could not hold ... first cell height` warnings, from two builds of this
@@ -107,7 +127,8 @@ repo ships. Both bite:
      control goes red".** `af_up`'s 27.37% against 0.4368% before clears a bar of
      0.0054 without noticing, and no floor below **0.269** relative can silence
      it. What actually bounds this constant from ABOVE is the `e_ff` pair at
-     9.499e-6 — see the blind spot below. The gross-end control earns its place by
+     9.499e-6 — the tightest bound in the tree as of this run; #114's H-grid
+     superseded it at 5.90e-6, see the blind spot below. The gross-end control earns its place by
      proving a real loss is never mutable at all, not by bounding the floor.
   B'. B RE-RUN AFTER REVIEW, and this is why it was re-run rather than quoted: on
      the first pass B turned TWO checks red, and the margin check between them
@@ -116,6 +137,49 @@ repo ships. Both bite:
      too — 3 red, not 2. An injection's own bite count is evidence about the
      CHECKS, so a check repaired after an injection has to face it again.
   Restored to 1e-9 and rebuilt: ALL PASS, and ctest 6/6.
+
+INJECTIONS FOR #114's THREE ADDED CONFIGS, dated 2026-09-11, EXIT CODE READ FIRST.
+Same shape: edit `src/MultiBlock.cpp`, `./build.sh`, run this file, `git checkout`
+the source and rebuild. The three partition cleanly, and the first one is the
+answer to #114's own criterion 2 rather than a confirmation of it:
+
+  A. THE LITERAL REVERT, the floor back to 1e-12 — #114 asks that "with the
+     warning guard reverted, each of the three new ones reports the failure".
+     It does not. Exit 1, TWO checks red, both the C-grid's, exactly as in
+     #107's own A above. Square 0, cavity 0, hgrid 7: not one of the ten added
+     checks moves. The criterion was written from its own shape; the table above,
+     dated the day before the ticket, already said only the C-grid's two edges
+     move. So the three are scored against the injections that DO reach them:
+  B. the floor raised absurdly to 1e-3. Exit 1, EIGHT checks red where the same
+     injection bit THREE before this work — four of the five H-grid checks go with
+     it (its seven warnings, the eighth's silence, the two-order margin and the
+     upper-bound relation). The H-grid is therefore non-vacuous against a floor
+     raised too far, which is the direction the blind spots call the wide one.
+     **AND IT CRASHED THE FIRST DRAFT OF GROUP 13 rather than failing it**: with
+     every warning silenced, `max(v[0] for v in w_hg.values())` raised on the empty
+     set, the run stopped there and the square and cavity checks never executed —
+     read off the output it looked like a bite of five. Both readings now fall back
+     to a number (`default=0.0`, and `-inf` for the log) so every check can be
+     scored. Re-run after the fix: 8 red, not 5.
+  C. the comparison's own direction, `> was * 1.01 + floor` becoming
+     `>= was * 1.01 - floor` — a guard that warns about a wall the sweeps did not
+     make worse, which IS #107's symptom reached by the other route. Exit 1, FOUR
+     red: the C-grid's two, and the SQUARE and CAVITY pair. Those two are the only
+     shipped cases where that flip invents a warning, because they are the only
+     ones whose every wall has `now` exactly equal to `was` — the H-grid stays
+     green under it, since `v00` improved by more than the 1% slack.
+     (Deleting the guard outright is not the injection: `-Werror` rejects the build
+     for an unused `kHeightNoiseFloor`, so the floor is kept and neutralised.)
+  D. THE BAR REWRITTEN AS AN ABSOLUTE TOLERANCE ON THE DECLARATION, `> 1e-4`
+     instead of `> was * 1.01 + floor` — the change the blind spots say nothing
+     used to catch. Exit 1, SEVEN red, and the two that matter are the airfoil
+     pair's silence on the C-grid and `v00`'s on the H-grid: both are walls that
+     go IN off their declaration and come out closer to it, so a bar that forgot
+     the baseline warns about the very walls the control functions rescued. That
+     check did not exist when this injection was first run; writing it is what
+     this injection bought.
+  All four re-run against the repaired gate: A 2 red, B 8, C 4, D 7. Restored and
+  rebuilt: ALL PASS, 103 checks, ctest 7/7.
 
 WHAT THE REVIEW OF THIS WORK CHANGED, since two of its findings were in figures
 this docstring states: **"six orders" was 2.6.** The floor is 2.6 orders above the
@@ -283,24 +347,54 @@ BLIND SPOTS, named rather than papered over:
     that does, which is why that check is here and not next door.
   * THE WALL WARNING'S NOISE FLOOR IS CALIBRATED, SO IT CAN GO STALE. 1e-9 is
     2.6 orders above the deviation the shipped C-grid's 5920 nodes produced and
-    4.0 orders below the smallest deviation anyone would act on, but it is a
+    3.8 orders below the smallest deviation anyone would act on — the H-grid's
+    `v21`, since #114; 4.0 is the distance to the C-grid's `e_ff` pair, which is
+    the figure this bullet carried before that — but it is a
     fixed number and
     nothing re-derives it from the mesh it is applied to. A mesh an order denser
     has a higher noise floor, and the first symptom would be the same false
-    warning on a case nobody has run yet. Group 12 pins BOTH ends on the shipped
-    C-grid — it cannot speak for a mesh that is not in the tree.
-  * AND THE UPPER END IS PINNED AT 9.499e-6, NOT AT 1e-9. What catches a floor set
-    too HIGH is the `e_ff` pair going silent, so the whole band between the chosen
-    1e-9 and that figure — three and a half orders — is a raise nothing here would
-    notice. The gross-end control does not narrow it: `af_up`'s 27.37% survives any
-    floor under 0.269. Named because injection B's first write-up read as though
-    the gross-end control bounded the constant, and it does not.
-  * ACCEPTANCE CRITERION 2 IS GATED ON TWO OF THE FIVE SHIPPED CONFIGS. This file
-    drives the C-grid and the O-grid, so those two are asserted; `multiblock_hgrid`
-    (7 warnings), `multiblock_square` (0) and `multiblock_cavity` (0) were measured
-    across two builds on 2026-09-10 and are recorded in the table above, but no
-    gate re-measures them. A later change to this floor that moved one of the three
-    would be caught by a reader, not by a run.
+    warning on a case nobody has run yet. Groups 12 and 13 pin BOTH ends on the
+    five shipped configs — they cannot speak for a mesh that is not in the tree.
+  * AND THE UPPER END IS PINNED AT 5.90e-6, NOT AT 1e-9. What catches a floor set
+    too HIGH is a real warning going silent, so the whole band between the chosen
+    1e-9 and the lowest real warning in the tree — 3.77 orders — is a raise nothing
+    here would notice. #114 narrowed that figure from the C-grid `e_ff` pair's
+    9.499e-6 to the H-grid `v21`'s 5.90e-6, a factor of 1.6 and 0.2 of an order:
+    real, and small. The gross-end control does not narrow it at all: `af_up`'s
+    27.37% survives any floor under 0.269. Named because injection B's first
+    write-up read as though the gross-end control bounded the constant, and it
+    does not.
+  * ALL FIVE SHIPPED CONFIGS CARRY THE CRITERION NOW, AND THREE OF THEM CANNOT
+    SEE THE FLOOR AT ALL (#114, which replaces "gated on two of the five"). What
+    each one is worth against a change to `kHeightNoiseFloor` was measured, not
+    assumed, and the answers differ:
+      - cgrid: the only case whose warnings MOVE when the floor does. Both ends.
+      - ogrid: four warnings at 3.7e-4 relative; catches a floor raised past that.
+      - hgrid: seven warnings, the lowest at 5.90e-6, which is the tree's tightest
+        upper bound — and an eighth edge that is one of the two places the bar's
+        BASELINE is now pinned (see below).
+      - square, cavity: NOTHING a floor at or above zero can reach. Both are
+        rectangles the solve leaves as it found them (cavity bit for bit), so every
+        wall has `now` exactly equal to `was` and the comparison is false for any
+        floor. They gate the COMPARISON instead — injection C, a `>` flipped to a
+        `>=`, reddens exactly this pair and nothing else new.
+    So a floor moved DOWN is still seen by one config only, and widening the gate
+    did not change that. What widening bought is the H-grid's tighter upper bound,
+    the baseline check below, and two cases that see the other guard.
+  * THE BAR'S BASELINE WAS NOT ASSERTED AT ALL UNTIL #114, and looking for it is
+    what found that. "Worse than the mesh the solve started from" is the whole
+    sentence, and it has two instances in the tree: the C-grid's `af_up`/`af_lo`
+    go in 0.44% off the declared height and come out at 0.05%, and the H-grid's
+    `v00` goes in at 0.15% (a declared geometric spacing the algebraic fill cannot
+    land on exactly) and comes out at 0.08%. Both are their mesh's worst-held wall
+    and both are correctly silent; neither was named by any check before this
+    ticket, so a bar rewritten as an absolute tolerance on the DECLARATION would
+    have passed the whole gate. Both are asserted now — the C-grid's in group 12,
+    the H-grid's in group 13 — and injection D is the evidence (7 red). **THIS
+    BULLET CLAIMED `v00` WAS THE ONLY SUCH WALL**, which is what the ticket's own
+    framing suggested and what measuring the C-grid's banner disproved. The
+    O-grid's `o*` edges are the near miss: their `was` is a real 3.6e-5 rather
+    than a rounding, but the sweeps make them WORSE, so they warn.
   * The banner is checked for its headings and the numbers are read out of the
     machine-readable lines, exactly as the quality gate next door does it: the two
     are built from one report object, and the C++ test pins the report. The
@@ -310,6 +404,19 @@ BLIND SPOTS, named rather than papered over:
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_smooth_surface.py
 Skips cleanly if ./build/HybMesh2D has not been built.
+
+COST, measured 2026-09-11 on this machine, three timed runs each way: **median
+9.3 s before #114 (8.6-9.3), 10.5 s after (10.1-11.2)**. The part that is
+attributable is the 0.71 s of mesher runs group 13 adds, timed on their own
+(square 0.42, cavity 0.20, hgrid 0.09); this file's whole-run spread is a
+comparable size, so 0.71 s is the figure to quote and the median delta is not.
+
+It is the FOURTH-slowest file in `run_all.sh`, not the slowest — measured, because
+the first draft of this paragraph asserted the latter: `test_geom_files_identity.py`
+is 60.3 s, `test_gui_review_batch_2026_08_06.py` 12.6 s and `test_qt_free_seam.py`
+10.4 s. What is true is that it makes 20-odd mesher invocations, the C-grid at a
+cap of 20000 among them, so a C-grid or O-grid run costs ~1 s here and the three
+cheapest configs in the repo were the affordable way to widen it.
 """
 import math
 import os
@@ -377,6 +484,93 @@ def run(tmp, name, extra="", config=None):
     p = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=_mesher_env(),
                        capture_output=True, text=True, timeout=900)
     return p.returncode, (p.stdout or "") + (p.stderr or ""), stem
+
+
+# ── The three shipped configs no other gate drives (#114) ────────────────────
+#
+# The C-grid and the O-grid arrive above through `base_config`, each imported
+# from the gate that owns it. `multiblock_square`, `multiblock_cavity` and
+# `multiblock_hgrid` have no such gate: nothing else in the tree RUNS them, so
+# there is no owner to import from and this is where they enter.
+#
+# RETARGETED BY KEY, NOT BY A LIST OF NEEDLES, which is the one deliberate
+# difference from `base_config`. That list is honest there because the gate that
+# holds it reads the same file for a dozen other claims, so a path it stopped
+# naming would be noticed. Here the only reader is this block, and a needle list
+# it owned alone would rot into a run that quietly wrote into the repo's own
+# `results/` while this file, seeing a mesh, reported PASS. Every value of a path
+# key is rewritten, so a path ADDED to one of these files is retargeted with no
+# edit here, and a key whose value stops being a path fails loudly below.
+_MB_PATH_KEYS = ("MESH_TOPOLOGY_FILE", "GEOM_FILE", "DOMAIN_FILE")
+
+
+def shipped_config(name):
+    """``config/<name>.dat``, retargeted at ``@STEM@`` and at this checkout.
+
+    Read from disk for the reason the C-grid's own `base_config` gives: these
+    files are documentation a user runs, and a test that composed an equivalent
+    one would leave an edit to the shipped file invisible from here.
+    """
+    path = os.path.join(_REPO, "config", name + ".dat")
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    out_, hit = [], {"MESH_MODE": False, "OUTPUT_FILENAME": False}
+    for ln in lines:
+        key = ln.split()[0] if ln.split() else ""
+        val = ln[len(key):].strip()
+        if key in _MB_PATH_KEYS:
+            rel = os.path.join(_REPO, val)
+            if not os.path.exists(rel):
+                raise AssertionError(
+                    "%s: %s %r does not resolve under %s, so this test cannot "
+                    "retarget it. Update shipped_config()." % (path, key, val, _REPO))
+            ln = key + " " + rel
+        elif key == "OUTPUT_FILENAME":
+            hit[key] = True
+            ln = key + " @STEM@.vtk"
+        elif key == "MESH_MODE":
+            hit[key] = (val == "1")
+        out_.append(ln)
+    for k, ok in hit.items():
+        if not ok:
+            raise AssertionError(
+                "%s no longer declares %s (as MESH_MODE 1 where that is the key), "
+                "so this test cannot drive it. Update shipped_config()." % (path, k))
+    return "\n".join(out_) + "\n"
+
+
+_WALL_BANNER = re.compile(
+    r"^\s+\w+ '([^']+)'\s+: asked .* got .* \(([-\d.]+)%\)\s*$")
+
+
+def wall_banner(out, before=False):
+    """One quality banner's per-edge wall lines: edge id -> deviation in %.
+
+    THE READER OF LAST RESORT, and it is used for exactly one thing the
+    machine-readable line cannot answer: `wall_first_cell_worst_rel` carries the
+    WORST edge, and the claim below is about a NAMED edge that is not the worst.
+    Two decimal places is all the banner prints, which is enough for the one
+    comparison made on it (0.15% falling to 0.08%) and is not enough for a bar —
+    every threshold in this group is read from the warning text instead.
+
+    `before` picks the pre-smoothing banner. The two are told apart by the
+    machine-readable line that TERMINATES each, not by the heading above it: the
+    heading carries a sweep count and the terminator does not, so a run at a
+    different cap parses the same way.
+    """
+    sections, cur = {}, []
+    for ln in out.splitlines():
+        if ln.startswith("HYBMESH_MB_QUALITY_BEFORE "):
+            sections["before"], cur = cur, []
+        elif ln.startswith("HYBMESH_MB_QUALITY "):
+            sections["after"], cur = cur, []
+        else:
+            cur.append(ln)
+    got = sections.get("before" if before else "after")
+    if got is None:
+        return {}
+    return {m.group(1): float(m.group(2))
+            for m in (_WALL_BANNER.match(l) for l in got) if m}
 
 
 def wrote(stem):
@@ -1264,16 +1458,156 @@ def main() -> int:
         # default-cap O-grid run, bound once above. All four of its wall warnings
         # sit at 1e-3% or above and none of them may move — if one does, the floor
         # was set too high, and that is the criterion stated as an assert instead of
-        # as prose. The other three shipped configs are NOT driven by this file
-        # (its subject is the C-grid and the O-grid) and stay measured-not-gated;
-        # the docstring's blind spots say so rather than leaving it to be inferred.
+        # as prose. THE OTHER THREE SHIPPED CONFIGS ARE GROUP 13's, since #114 —
+        # this sentence used to say they were measured-not-gated, which was this
+        # file's own blind spot and is no longer true of any of the five.
+        # THE BAR'S BASELINE, NAMED ON THIS CASE AT LAST (#114). "Worse than the
+        # mesh the solve started from" is the whole sentence, and the C-grid's
+        # airfoil pair is where it bites hardest: `af_up` and `af_lo` go in at
+        # 0.44% off the declared height — the fill cannot hold a wall spacing that
+        # fine around the leading edge — and come out at 0.05%, so they are the
+        # worst-held walls in the BEFORE mesh and are correctly silent. Nothing
+        # asserted that before this ticket: group 12's absence half named only the
+        # two noise edges, and a bar rewritten as an absolute tolerance on the
+        # DECLARATION would have passed every check here while warning about these
+        # two. Found while widening the gate to the H-grid, whose `v00` is the
+        # other instance of the same property and which this file first claimed
+        # was the only one.
+        cg_b, cg_a = wall_banner(out84, before=True), wall_banner(out84)
+        check(f"12. ...and the airfoil pair, the WORST-held walls of the before "
+              f"mesh, are silent because the sweeps IMPROVED them — the bar is the "
+              f"mesh the solve started from and not the declaration (af_up "
+              f"{cg_b.get('af_up')}% -> {cg_a.get('af_up')}%, af_lo "
+              f"{cg_b.get('af_lo')}% -> {cg_a.get('af_lo')}%)",
+              "af_up" not in w20 and "af_lo" not in w20
+              and all(cg_b.get(e, 0.0) > cg_a.get(e, 0.0) > 0.0
+                      for e in ("af_up", "af_lo"))
+              and min(cg_b.get(e, 0.0) for e in ("af_up", "af_lo"))
+                  >= max(cg_b.values()))
         wo20 = wall_height_warns(outo20)
         check(f"12. the shipped O-GRID keeps all four of its wall warnings at the "
-              f"default, none of them being anywhere near the floor — acceptance "
-              f"criterion 2 on the one other case this file drives "
+              f"default, none of them being anywhere near the floor — the second "
+              f"of the five shipped configs to carry acceptance criterion 2 "
               f"({ {k: round(v[0], 6) for k, v in wo20.items()} })",
               len(wo20) == 4
               and all(v[0] > 100.0 * floor_pct for v in wo20.values()))
+
+        # ── 13. THE SAME CRITERION ON THE OTHER THREE SHIPPED CONFIGS (#114) ─
+        #
+        # The criterion group 12 asserts is true of the FIVE shipped multi-block
+        # configs; until #114 it was checked on the two this file happened to
+        # already drive. The remaining three go through the same warning path with
+        # the same floor, and this group is the removal of that blind spot.
+        #
+        # THE LITERAL REVERT DOES NOT REACH ANY OF THE THREE, measured rather than
+        # predicted, and #114's own criterion 2 asked for the opposite: with
+        # `kHeightNoiseFloor` put back to 1e-12 and the tree rebuilt (2026-09-11),
+        # square stays at 0 warnings, cavity at 0 and the H-grid at 7 — the same
+        # counts as at 1e-9, edge for edge and figure for figure. That is not a
+        # surprise this work uncovered; it is the table THIS DOCSTRING ALREADY
+        # HELD, dated 2026-09-10, which says in as many words that only the two
+        # C-grid warnings moved. The ticket was written from the criterion's shape
+        # rather than from that table. So what each of the three is worth is stated
+        # here per config, and what none of them can do is stated with it.
+        sq = run(tmp, "sq114", config=lambda: shipped_config("multiblock_square"))[1]
+        cv = run(tmp, "cv114", config=lambda: shipped_config("multiblock_cavity"))[1]
+        hg = run(tmp, "hg114", config=lambda: shipped_config("multiblock_hgrid"))[1]
+        w_hg = wall_height_warns(hg)
+        hg_before, hg_after = wall_banner(hg, before=True), wall_banner(hg)
+        check(f"13. the shipped H-GRID's eight declared wall edges are all MEASURED "
+              f"at the default cap, so this case reaches the warning path rather "
+              f"than being silent for lack of a target ({sorted(hg_after)})",
+              len(hg_after) == 8 and len(hg_before) == 8)
+        check(f"13. ...and SEVEN of the eight warn, every one of them a real "
+              f"deviation the sweeps introduced from a fill that had been exact "
+              f"({ {k: v[0] for k, v in sorted(w_hg.items())} })",
+              len(w_hg) == 7 and all(v[1] == 0.0 for v in w_hg.values()))
+        # THE EIGHTH IS THE BAR'S BASELINE ON THIS CASE. `v00` declares a geometric
+        # spacing the algebraic fill cannot land on exactly, so it goes in 0.15%
+        # off the declared height, and the sweeps make it BETTER, 0.08%. It is
+        # therefore at once the worst-held wall in this mesh and correctly not
+        # warned about — the bar's own sentence ("worse than the mesh the solve
+        # started from") stated as a run rather than as a comment.
+        #
+        # **IT IS NOT THE ONLY ONE, WHICH THIS COMMENT CLAIMED UNTIL IT WAS
+        # MEASURED.** The C-grid's `af_up`/`af_lo` do the same thing and larger:
+        # 0.44% in, 0.05% out. So the property has two instances rather than one,
+        # and the honest consequence is that BOTH are now asserted — the C-grid's
+        # pair in group 12 above, added by this ticket because looking for a claim
+        # of uniqueness is what found that nothing asserted the property at all.
+        # The O-grid's `o*` edges are the near miss: their `was` is a real
+        # 3.6e-5, not a rounding, but the sweeps make them WORSE, so they warn.
+        #
+        # THE SEVEN ARE RE-ASSERTED IN THIS CHECK'S OWN CLAUSE rather than
+        # inherited from the one above, which is the habit this group already
+        # records: `"v00" not in w_hg` is vacuously true on a build that warns
+        # about nothing, and injection B is a build that warns about nothing.
+        check(f"13. ...while the EIGHTH, `v00`, is this mesh's WORST-held wall and "
+              f"is still not warned about, because the sweeps IMPROVED it "
+              f"({hg_before.get('v00')}% before -> {hg_after.get('v00')}% after): "
+              f"the bar is the mesh the solve started from, the H-grid's instance "
+              f"of the property the C-grid's airfoil pair carries above",
+              len(w_hg) == 7 and "v00" not in w_hg
+              and hg_before.get("v00", 0.0) > hg_after.get("v00", 0.0) > 0.0
+              and hg_after.get("v00", 0.0) >= max(
+                  v[0] for v in w_hg.values()))
+        # `hg_min` FALLS BACK TO A NUMBER AND THE LOG TO -inf rather than either
+        # raising: injection B silenced all seven, and the first draft of this
+        # block CRASHED on the empty set instead of failing — which took the two
+        # checks after it out of the run and would have read as a bite of five
+        # where it was really a bite of seven. A check that cannot fail cannot be
+        # scored, so nothing here may raise on a mesh the injection emptied.
+        hg_min = min((v[0] for v in w_hg.values()), default=0.0)
+        hg_up = (math.log10(hg_min / floor_pct) if hg_min > 0.0
+                 else float("-inf"))
+        check(f"13. ...and every one of the seven sits at least two orders above "
+              f"the floor, the smallest {hg_min:.6f}% being "
+              f"{hg_up:.1f} orders up — so a floor raised "
+              f"to swallow this case has to be raised a long way",
+              bool(w_hg) and hg_min > 100.0 * floor_pct)
+        # AND IT TIGHTENS THE ONLY BOUND THIS CONSTANT HAS FROM ABOVE, which the
+        # docstring's blind spot names as the wide half: what catches a floor set
+        # too HIGH is a real warning going silent, and the lowest real warning in
+        # the tree was the C-grid's `e_ff` pair at 9.499e-6 relative. The H-grid's
+        # `v21` is 5.90e-6, so the band a raise could hide in narrows by a factor
+        # of 1.6 — 3.98 orders to 3.77. That is a real tightening and a small one,
+        # and it is asserted as the RELATION rather than as either figure, so the
+        # claim stays true when a mesh moves.
+        check(f"13. ...and the smallest of them is BELOW the C-grid's `e_ff` pair, "
+              f"so the H-grid now carries the tightest upper bound this floor has "
+              f"({hg_min:.6f}% against {worst_pct:.6f}%)",
+              0.0 < hg_min < worst_pct)
+        same_hg = {e: v for e, v in w_hg.items() if v[0] == v[1]}
+        check(f"13. ...and none of the seven shows a before and an after identical "
+              f"to every digit it prints — #107's own symptom, asserted on the case "
+              f"where seven warnings could carry it ({same_hg})", not same_hg)
+        # SQUARE AND CAVITY ARE THE SILENT PAIR, AND THE SILENCE IS THE MESH'S, NOT
+        # THE BAR'S. Both are rectangles, which the elliptic solve leaves where it
+        # found them (the design note's "A RECTANGLE IS A FIXED POINT"): cavity
+        # comes back bit for bit, square to 3.5e-16. Their walls are therefore at
+        # an EXACT zero deviation before and after, and `now > was * 1.01 + floor`
+        # is false for every floor at or above zero — which is why the 1e-12 build
+        # above leaves them at 0 and why no floor injection can ever reach them.
+        #
+        # WHAT THEY DO GATE is the other direction, and it is the one #107 was
+        # actually about: a wall the smoother did not move must not be warned
+        # about. The guard that delivers that is the comparison itself, not the
+        # floor — and these two are the only shipped cases where a `>` quietly
+        # becoming a `>=` produces warnings out of nothing, because they are the
+        # only ones where `now` equals `was` exactly on every wall. The count of
+        # moved nodes is asserted beside it so the silence can never be a run that
+        # smoothed nothing.
+        for nm, out_ in (("SQUARE", sq), ("CAVITY", cv)):
+            bef, aft = wall_banner(out_, before=True), wall_banner(out_)
+            ws, sl = wall_height_warns(out_), smooth_line(out_)
+            check(f"13. the shipped {nm} measures four wall edges at the default "
+                  f"cap and warns about NONE of them, on a run that was free to "
+                  f"move {sl.get('moved')} nodes and left every wall at the exact "
+                  f"height the declaration asked for (before {bef}, after {aft})",
+                  len(bef) == 4 and len(aft) == 4 and not ws
+                  and sl.get("cap") == 20 and sl.get("moved", 0) > 0
+                  and all(v == 0.0 for v in bef.values())
+                  and all(v == 0.0 for v in aft.values()))
 
     print()
     if failures:

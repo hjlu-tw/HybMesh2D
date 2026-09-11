@@ -1572,7 +1572,8 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   off the wrong quantity, and the review of this work is what caught it. Against the
   deviation that actually fired, 2.334e-12, the new floor is **2.6 orders** above
   (`1e-9 / 2.334e-12 = 428`); against the smallest deviation anyone would act on, `e_ff_up`
-  at 9.499e-6, it is **4.0 orders** below (`9.499e-6 / 1e-9 = 9499`). Six orders is true
+  at 9.499e-6, it is **4.0 orders** below (`9.499e-6 / 1e-9 = 9499`) — a figure #114 later
+  tightened to **3.8 orders** against the H-grid `v21`'s 5.90e-6, see below. Six orders is true
   only of the **~1e-15 pre-smoothing residual** whose collapse onto the floor causes the
   defect — a different quantity from the one the bar is compared against, and the one the
   ticket's sentence silently substituted. The margin either side is what matters and it is
@@ -1593,43 +1594,98 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   this repo's cases at their node counts, with nothing re-deriving it from the mesh it is
   applied to. Named as a blind spot in `.claude/rules/mesher-smoothing.md` and in the gate's
   own docstring, because the first symptom would be this same defect on a denser mesh
-  nobody has run yet. Gated by group 12 of
-  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`, which asserts BOTH
+  nobody has run yet. Gated by groups 12 and 13 of
+  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`, which assert BOTH
   directions — the noise gone, the real deviations still warned about in the same run, and
   the two silenced edges BACK at a cap of 400 where their own deviation rises above the
   floor, so the bar mutes a quantity and never an edge. Two hand injections, dated
   2026-09-10 in that docstring: restoring 1e-12 turns the positive control red, raising the
-  floor to 1e-3 turns the NEGATIVE control red.
+  floor to 1e-3 turns the NEGATIVE control red. Three more, dated 2026-09-11 by #114 and
+  covering the other three shipped configs, are below.
 
-  **WHAT BOUNDS THE CONSTANT FROM ABOVE IS 9.499e-6, NOT 1e-9, AND THE SPEC's OWN INJECTION
+  **WHAT BOUNDS THE CONSTANT FROM ABOVE IS 5.90e-6, NOT 1e-9, AND THE SPEC's OWN INJECTION
   READS OTHERWISE.** #107 says "raise the floor absurdly (1e-3), assert the negative control
   goes red". Run: at 1e-3 the check written as the gross-end negative control — `af_up` at
   27.37% against 0.4368% before — clears a bar of 0.0054 and stays GREEN, and no floor under
-  **0.269** relative can silence it. What reddens is the `e_ff` pair going silent, which is
-  the OTHER negative control and does double duty as the positive half's presence check. So
-  the whole band between the chosen 1e-9 and 9.499e-6 is a raise nothing catches — three and
-  a half orders — and the gross-end control narrows it not at all. It earns its place by
-  proving a genuine loss is never mutable, not by bounding the floor. The review of this work
-  is what separated the two; the first write-up of injection B said "the NEGATIVE control
-  goes red" and named the one that does not.
+  **0.269** relative can silence it. What reddens is the lowest REAL warning going silent —
+  under #107 the C-grid's `e_ff` pair at 9.499e-6, which is the OTHER negative control and
+  does double duty as the positive half's presence check. So the whole band between the
+  chosen 1e-9 and that figure is a raise nothing catches, and the gross-end control narrows
+  it not at all. It earns its place by proving a genuine loss is never mutable, not by
+  bounding the floor. The review of this work is what separated the two; the first write-up
+  of injection B said "the NEGATIVE control goes red" and named the one that does not.
+  **#114 NARROWED THE BAND, BY A FACTOR OF 1.6 AND NOT MORE**: the H-grid's `v21` warns at
+  5.90e-6, below the `e_ff` pair, so the uncaught band is 3.77 orders rather than 3.98. Real
+  and small, and the figure to quote is the relation (the lowest real warning in the tree),
+  never either number — the gate asserts it that way for the same reason.
 
-  **ACCEPTANCE CRITERION 2 IS GATED ON TWO OF THE FIVE SHIPPED CONFIGS.** The surface gate
-  drives the C-grid and the O-grid, and both are now asserted — the O-grid's four warnings off
-  a run that file already made, at no extra cost. `hgrid` 7, `square` 0 and `cavity` 0 are the
-  dated two-build measurement above and nothing re-measures them; a later floor change that
-  moved one would be caught by a reader, not by a run. The spec asked for the measurement, not
-  for a gate, so this is recorded rather than treated as a shortfall.
+  **ALL FIVE SHIPPED CONFIGS CARRY ACCEPTANCE CRITERION 2 SINCE #114 — AND THE MEASUREMENT
+  THAT WIDENING PRODUCED IS THAT FOUR OF THE FIVE CANNOT SEE THIS CONSTANT.** #107 gated the
+  criterion on the two the surface gate already drove and recorded the other three as a dated
+  two-build measurement; #114 added them as group 13, with `shipped_config` retargeting each
+  by KEY (they have no gate of their own to import a needle list from). What its own
+  acceptance asked for was that the three added configs each report the failure with the
+  guard reverted, and the measurement says they do not: at 1e-12, rebuilt 2026-09-11, `square`
+  stays at 0 warnings, `cavity` at 0 and `hgrid` at 7 — unchanged edge for edge, which is
+  exactly what the two-build table above had already said. **The criterion was written from
+  its own shape rather than from that table**, the same mistake as #107's "six orders" and
+  #97's "crossed FOUR times": a figure carried in from a ticket is not evidence until
+  something re-derives it. What the three DO gate, measured by injection instead of assumed:
+
+  - **`hgrid` — the floor from above, and the bar's BASELINE.** Eight declared wall edges, all
+    measured, seven warning; the lowest at 5.90e-6 is the tree's tightest upper bound (above).
+    Its EIGHTH, `v00`, declares a geometric spacing the algebraic fill cannot land on exactly,
+    so it goes in 0.15% off the declared height and the sweeps IMPROVE it to 0.08% — at once
+    that mesh's worst-held wall and correctly silent, which is the bar's own sentence ("worse
+    than the mesh the solve started from") as a run rather than as a comment.
+
+    **AND LOOKING FOR A UNIQUENESS CLAIM IS WHAT FOUND THAT NOTHING ASSERTED THE PROPERTY AT
+    ALL.** #114's first draft wrote that `v00` was the only wall in any shipped config with a
+    real pre-sweep deviation the sweeps improve; measuring the C-grid's own quality banner
+    disproved it — `af_up` and `af_lo` go in at 0.44% and come out at 0.05%, the same shape and
+    larger. Neither instance had a check. A bar rewritten as an absolute tolerance on the
+    DECLARATION would therefore have passed the whole gate while warning about exactly the
+    walls the control functions rescued, which is **injection D** (`> 1e-4` in place of
+    `> was * 1.01 + floor`): exit 1, seven red, and the two that matter are these two silences.
+    Both are asserted now — the C-grid's pair in group 12, `v00` in group 13. The O-grid's
+    `o*` edges are the near miss: a real 3.6e-5 `was`, but the sweeps make them worse, so they
+    warn. The false claim is kept here as the specimen, the way #60's superseded claim is:
+    a property's uniqueness is not evidence until something enumerates the alternatives.
+  - **`square` and `cavity` — the COMPARISON, not the floor.** Both are rectangles the solve
+    leaves as it found them ("A RECTANGLE IS A FIXED POINT" below; cavity comes back bit for
+    bit), so every wall has `now` exactly equal to `was` and `now > was * 1.01 + floor` is
+    false for any floor at or above zero. They are the only shipped cases where a `>` quietly
+    becoming a `>=` invents warnings out of nothing — #107's symptom by the other route — and
+    injection C reddens exactly that pair. The moved-node count is asserted beside the silence
+    so it can never be a run that smoothed nothing (361 and 225 nodes).
+
+  **THE THIRD INJECTION CRASHED THE FIRST DRAFT OF GROUP 13 RATHER THAN FAILING IT**, which is
+  the harness lesson this repo has recorded before: with every warning silenced at a floor of
+  1e-3, `max(...)` over the empty warning set raised, the run stopped and the two checks after
+  it never executed — so the output read as a bite of five where the repaired gate bites eight.
+  Both readings now fall back to a value rather than raising. **A check that cannot fail cannot
+  be scored.**
+
+  **THE COST IS STATED WHERE THE GATE STATES IT** (its `Run:` block, which carried no cost
+  before #114). Three extra mesher runs, 0.71 s timed on their own — square 0.42, cavity 0.20,
+  hgrid 0.09, the three cheapest configs in the repo. The file's median goes 9.3 s -> 10.5 s
+  over three timed runs each way, but its own spread is a comparable size, so the 0.71 s is the
+  figure and the median delta is not. **It is the FOURTH-slowest file in `run_all.sh`, not the
+  slowest**, which the first draft of that paragraph asserted before anything measured it:
+  `test_geom_files_identity.py` 60.3 s, `test_gui_review_batch_2026_08_06.py` 12.6 s,
+  `test_qt_free_seam.py` 10.4 s. A C-grid or O-grid run costs ~1 s here, which is why the
+  widening went to the cheap configs.
 
   **THE C++ SIDE NEEDS NO CHANGE, AND THAT IS TRUE OF ONE HALF OF IT RATHER THAN BOTH.**
   Check 55's positive half — the deep notch, a wall lost by thousands of percent — is orders
   above any floor anyone would write, so it is untouched. Its SILENCE half (`quiet == 0` on
   `wallSquare`, that a run whose walls are held says nothing) gets strictly EASIER to satisfy
   as the floor rises, so it cannot notice this constant going too high. **Nothing in C++ pins
-  the value at all**; what pins it is group 12 at the surface, in both directions, and
+  the value at all**; what pins it is groups 12 and 13 at the surface, in both directions, and
   injection B is the evidence. Recorded rather than repaired: a C++ check would need a
-  fixture whose loss lands in the narrow band between the noise and 9.5e-6, and the shipped
-  C-grid already IS that fixture. #98's mirrored-band lesson, arriving from a review rather
-  than from a run.
+  fixture whose loss lands in the narrow band between the noise and 5.9e-6, and the shipped
+  C-grid and H-grid already ARE that fixture. #98's mirrored-band lesson, arriving from a
+  review rather than from a run.
 
 - **THE TABLE, measured 2026-09-07 on the SHIPPED files**, beside #82's plain Winslow at
   the same cap (quoted from that ticket):

@@ -1719,8 +1719,11 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // them, twice on every run of the shipped C-grid.
     //
     // THE VALUE IS BOUNDED ON BOTH SIDES AND THE MARGINS ARE MEASURED, not round:
-    // 2.6 orders above the deviation that fired and 4.0 below the smallest anyone
-    // would act on. Do NOT restate that as "six orders" — six is the distance to
+    // 2.6 orders above the deviation that fired and 3.8 below the smallest anyone
+    // would act on — the shipped H-grid's `v21` at 5.90e-6 relative, which #114
+    // measured and which replaces the C-grid `e_ff` pair's 9.499e-6 (4.0 orders)
+    // as the tightest thing bounding this constant from above.
+    // Do NOT restate that as "six orders" — six is the distance to
     // the ~1e-15 residual, a DIFFERENT quantity from the one the bar compares, and
     // #107's own text made exactly that substitution. Widening the printed
     // precision was considered and rejected: it states the same false warning more
@@ -1730,8 +1733,11 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // IT IS CALIBRATED, SO IT CAN GO STALE — a fixed number against this repo's
     // cases at their node counts, with nothing re-deriving it from the mesh it is
     // applied to. Named as a blind spot in `.claude/rules/mesher-smoothing.md`;
-    // pinned in BOTH directions, and only there, by group 12 of
-    // `test_multiblock_smooth_surface.py`. No C++ check pins this value.
+    // pinned in BOTH directions, and only there, by groups 12 and 13 of
+    // `test_multiblock_smooth_surface.py` — group 12 on the C-grid and the O-grid,
+    // group 13 on the other three shipped configs since #114, which also measured
+    // that a change to THIS CONSTANT moves the warnings of the C-grid alone. No
+    // C++ check pins this value.
     constexpr double kHeightNoiseFloor = 1e-9;
     {
         hybmesh::MbResult before = r;
@@ -1746,6 +1752,15 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
             // away. `MbWallResidual` publishes both; before #83's review only the
             // height had a reader, which made the angle an inert published
             // surface — the shape the no-inert-alternatives rule forbids.
+            //
+            // THE BASELINE IS LOAD BEARING AND HAD NO CHECK UNTIL #114. Two
+            // walls in the shipped tree are their mesh's WORST-held and correctly
+            // silent because the sweeps improved them — the C-grid's `af_up`/
+            // `af_lo` (0.44% in, 0.05% out) and the H-grid's `v00` (0.15% ->
+            // 0.08%). Rewrite this as an absolute tolerance on the DECLARATION
+            // and the warning fires on exactly the walls the control functions
+            // rescued, which is what #114's injection D measures. Both silences
+            // are now asserted, in groups 12 and 13 of the surface gate.
             //
             // THE BAR IS THE MESH THE SOLVE STARTED FROM, for both. A relative
             // slack on the height, so a wall that came out a rounding apart from

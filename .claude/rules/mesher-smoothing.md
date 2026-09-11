@@ -278,8 +278,8 @@ attributable, and the one #85 deliberately spent.
   order and the folded cells stay nearly rectangular. Only the inverted count sees it.
 - Gated by `tests/cpp/test_multiblock.cpp` 40-56 (7 injections from #81, 13 from #82, 14 from #83,
   11 from #84, dated in that file), `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`
-  (11 groups on the SHIPPED C-grid AND O-grid, importing #53's own conformity measure rather than
-  re-inventing it) and the `mb_cgrid_smooth` golden case, recaptured deliberately by #82, #83 and
+  (13 groups: 1-12 on the SHIPPED C-grid AND O-grid, importing #53's own conformity measure rather
+  than re-inventing it, and #114's group 13 on the other three shipped configs) and the `mb_cgrid_smooth` golden case, recaptured deliberately by #82, #83 and
   #84 — **the only one of the nineteen that moved any of the three times.**
   **AN INERT INJECTION IS ANSWERED WITH A CHECK OR A FIXTURE**: four of #83's needed a check, one
   needed `wallSquareTwoEnds` (the first declaring DIFFERENT heights at a wall's two ends), and #84
@@ -441,17 +441,37 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
 - **THE WALL WARNING'S NOISE FLOOR IS CALIBRATED, SO IT CAN GO STALE.** `kHeightNoiseFloor` is a
   fixed 1e-9 against THIS repo's shipped cases at THEIR node counts; nothing re-derives it from the
   mesh it is applied to, and a mesh an order denser has a higher noise floor. The first symptom
-  would be #107's own defect on a case nobody has run yet. Group 12 of
-  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py` pins both ends — the noise gone and
-  the real deviations still warned about — on the shipped C-grid, and cannot speak for a mesh that
-  is not in the tree. **AND THE UPPER END IS PINNED AT 9.499e-6, NOT AT 1e-9** — what catches a
-  floor set too HIGH is the `e_ff` pair going silent, so a raise anywhere below that figure is
-  uncaught; the gross-end control does not narrow it, `af_up`'s 27.37% surviving any floor under
+  would be #107's own defect on a case nobody has run yet. Groups 12 and 13 of
+  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py` pin both ends — the noise gone and
+  the real deviations still warned about — on ALL FIVE shipped configs since #114, and cannot speak
+  for a mesh that is not in the tree. **AND THE UPPER END IS PINNED AT 5.90e-6, NOT AT 1e-9** —
+  what catches a floor set too HIGH is a real warning going silent, so a raise anywhere below the
+  lowest real warning in the tree is uncaught; #114 narrowed that from the C-grid `e_ff` pair's
+  9.499e-6 to the H-grid `v21`'s 5.90e-6, a factor of 1.6, leaving a 3.77-order band. The
+  gross-end control does not narrow it at all, `af_up`'s 27.37% surviving any floor under
   0.269. **NO C++ CHECK PINS THE VALUE AT ALL**: check 55's deep notch is orders above any plausible
-  floor, and its silence half (`quiet == 0`) gets EASIER to satisfy as the floor rises. Group 12 is
-  the only thing that can see this constant set too high. **Acceptance criterion 2 is gated on TWO
-  of the five shipped configs** — the C-grid and O-grid this file drives; `hgrid` 7, `square` 0 and
-  `cavity` 0 are dated measurements, not assertions.
+  floor, and its silence half (`quiet == 0`) gets EASIER to satisfy as the floor rises. Those two
+  groups are the only thing that can see this constant set too high.
+- **ONLY THE C-GRID's WARNINGS MOVE WHEN THE FLOOR DOES, and widening the gate to all five did not
+  change that (#114).** The rule this replaces said acceptance criterion 2 was gated on two of the
+  five; all five are asserted now, and what the measurement says is that the other four cannot see
+  this constant. The floor reverted to 1e-12 and the tree rebuilt (2026-09-11) leaves `square` at 0
+  warnings, `cavity` at 0 and `hgrid` at 7 — unchanged, edge for edge. What the three added configs
+  DO gate: the H-grid's seven warnings bound the floor from above (above) and its `v00` pins the
+  bar's BASELINE; `square` and `cavity` are the only shipped cases where the COMPARISON flipping
+  from `>` to `>=` invents a warning, because they are the only ones where every wall's `now` is
+  exactly its `was` (both are rectangles the solve leaves as it found them — cavity bit for bit).
+- **THE BAR'S BASELINE IS "WORSE THAN THE MESH THE SOLVE STARTED FROM", AND NOTHING ASSERTED IT
+  UNTIL #114.** Two walls in the tree are their mesh's worst-held AND correctly silent, because the
+  sweeps improved them: the C-grid's `af_up`/`af_lo` (0.44% in, 0.05% out) and the H-grid's `v00`
+  (0.15% in, 0.08% out, from a declared geometric spacing the algebraic fill cannot land on
+  exactly). Before #114 no check named either, so a bar rewritten as an absolute tolerance on the
+  DECLARATION would have passed the whole gate while warning about the very walls the control
+  functions rescued — injection D, 7 red, is the evidence. Both are asserted now, the C-grid's in
+  group 12 and the H-grid's in group 13. **#114's first draft claimed `v00` was the only such
+  wall**; measuring the C-grid's banner disproved it, and looking for the uniqueness is what found
+  that the property had no check at all. The O-grid's `o*` edges are the near miss — a real 3.6e-5
+  `was`, but the sweeps make them worse, so they warn.
 - **The before/after tables are dated quotations**, not re-measured: the gates assert a DIRECTION
   with a floor, so a kernel that stopped moving anything is caught while one that moves things
   differently is free to.
