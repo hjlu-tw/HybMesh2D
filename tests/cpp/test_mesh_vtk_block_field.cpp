@@ -42,7 +42,22 @@
 //   * rename the array, `SCALARS blockId int 1`.         -> exit 1, 1 FAIL, the
 //     header pin alone -- the content is unchanged, and the array name is what
 //     a reader selects in ParaView, so it is interface.
+//   * warn UNCONDITIONALLY, `if (true)` on the warning guard.
+//                                                        -> exit 1, 3 FAIL, the
+//     three silence assertions and nothing else. Added after #113's Spec review
+//     found them asserted by no injection at all: every other mutation here
+//     makes the warning say LESS, so the false-positive half of "warns when SOME
+//     cells carry a tag" -- that it does NOT warn on the other three states --
+//     was three vacuous checks. Groups 1 and 3-5's file checks stay green,
+//     because a warning changes no file.
 //   * NEGATIVE CONTROL, unmutated tree.                  -> exit 0.
+//
+// 16 of the 19 checks are covered by one of those. The other three are guards on
+// THIS FILE rather than assertions about the writer, and no mutation of
+// src/Mesh.cpp would flip them: that a file was exported at all, that the
+// provenance exclusion really dropped a line, and that the refused file still
+// carries its four cells. They are here so that a broken test reports broken
+// rather than reporting absence.
 //
 // Two of those were found by the injections rather than confirmed by them, and
 // both were defects in THIS FILE:
@@ -150,8 +165,8 @@ bool has(const std::string& hay, const std::string& needle) {
 // byte comparison of two files is a flake, not a check. MEASURED, not reasoned
 // about: the comparison below passed for several runs and then failed once the
 // machine was loaded enough to push the two exports into different seconds.
-// docs/design_notes/mesher.md says the same thing under "WHY 'BYTE-IDENTICAL'
-// IS NOT THE FORM THE HYBRID CLAIM TAKES".
+// The same property is recorded in docs/design_notes/mesher.md, under
+// "WHY "BYTE-IDENTICAL" IS NOT THE FORM THE HYBRID CLAIM TAKES".
 std::string withoutProvenance(const std::string& vtk) {
     const size_t first = vtk.find('\n');
     if (first == std::string::npos) return vtk;

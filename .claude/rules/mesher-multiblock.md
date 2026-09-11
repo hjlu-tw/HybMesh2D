@@ -500,11 +500,9 @@ otherwise learn the hole exists.
 - **NOTHING CHECKS THAT EVERY MULTI-BLOCK CELL IS TAGGED.** `exportVTK` writes the section only
   when ALL cells carry a tag, and today the adapter's one loop guarantees that. A future
   `MESH_MODE 1` change adding a single untagged element would make the whole field disappear
-  rather than half-appear; that is the right FAILURE, but it is a silent one. **The failure ITSELF
-  is now gated** — `tests/cpp/test_mesh_vtk_block_field.cpp` builds the partially tagged mesh
-  directly and pins both halves, the absent section and the warning (#113). What is still
-  unchecked is the PRECONDITION: nothing asserts that this path keeps tagging every cell, so the
-  change that made the field disappear would be caught by the warning at run time and by no gate.
+  rather than half-appear; that is the right FAILURE, but it is a silent one, caught by the
+  warning at run time and by no gate. **PARTLY CLOSED by #113**, which gates the failure but not
+  this precondition — the rule above names the gate.
 - **Nothing runs the solver or the grid converter on the folded mesh** (`MbQuality`'s sharpest).
 - **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
   "follows the circle" is measured against that polyline's vertices and the wall-height residue is

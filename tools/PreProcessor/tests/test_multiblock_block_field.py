@@ -42,6 +42,14 @@ What this pins down:
      and a ``.vtk`` claiming every cell is in block 0 is a worse answer than no
      field at all. Not "the values are -1" -- no ``CELL_DATA`` and no ``SCALARS``
      anywhere in the file.
+  6b. NOT THE PARTIALLY-TAGGED STATE, and this gate cannot reach it: no
+     ``MESH_MODE 1`` run produces one (the adapter's one loop tags every cell it
+     adds), so a gate driving the real binary has no way to construct it.
+     ``tests/cpp/test_mesh_vtk_block_field.cpp`` covers it one layer down by
+     linking ``hybmesh_core`` and building the mesh directly (#113). Recorded
+     here as a SCOPE boundary, not as a blind spot -- the hole that remains is
+     that nothing asserts the state stays unreachable, and that one is named in
+     ``.claude/rules/mesher-multiblock.md``.
   7. The readers this repo ships still parse a file that HAS the section --
      ``models/vtk_mesh.VTKMesh`` (which ``golden_mesh.py`` compares through) and
      ``tools/scripts/view_mesh_vtk.py`` -- and see the same cells they saw before.
@@ -94,17 +102,6 @@ BLIND SPOTS, named rather than papered over:
     writing it as a float that happens to round-trip. The DECLARED type is
     pinned (``["block", "int", "1"]``), which is the half that matters to a
     reader.
-  * NOTHING **HERE** REACHES THE PARTIALLY-TAGGED STATE, and nothing can: no
-    ``MESH_MODE 1`` run produces one (the adapter's one loop tags every cell it
-    adds), so a gate that drives the real binary cannot construct it. **That
-    state is covered, one layer down** — ``tests/cpp/test_mesh_vtk_block_field.cpp``
-    links ``hybmesh_core`` and builds the mesh directly, asserting that a
-    partially tagged export gets no ``CELL_DATA`` section (byte-identical to the
-    same mesh untagged) and that the warning is emitted, with a fully tagged
-    export as the negative control (#113). What remains open here is only the
-    join: nothing checks that the state stays unreachable from production, which
-    is the "NOTHING CHECKS THAT EVERY MULTI-BLOCK CELL IS TAGGED" hole named in
-    ``.claude/rules/mesher-multiblock.md``.
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_block_field.py
 Skips cleanly if ./build/HybMesh2D has not been built.

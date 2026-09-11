@@ -2708,20 +2708,31 @@ nothing writes yet, since no exporter has changed."*
   omitted) and an EMPTY mesh, where `tagged == elements.size()` holds vacuously at zero and only
   the `!elements.empty()` clause stops a headerless `CELL_DATA 0` being written.
 
-  Six injections into `src/Mesh.cpp`, 2026-09-11, each restored and rebuilt before the next, the
+  Seven injections into `src/Mesh.cpp`, 2026-09-11, each restored and rebuilt before the next, the
   verdict read from the EXIT CODE first: silence the warning (`if (false)`) -> exit 1, 3 FAIL;
   drop the guard and write a sentinel 0 -> exit 1, 6 FAIL, including the whole-file comparison and
   both the untagged and empty states; never write the section -> exit 1, 4 FAIL, all in the
   negative control; drop the `!elements.empty()` clause -> exit 1, 1 FAIL, the empty-mesh check
   alone; write a constant value -> exit 1, 1 FAIL; rename the array to `blockId` -> exit 1,
-  1 FAIL, the header pin alone. Unmutated tree: exit 0. **The first run of the third injection
+  1 FAIL, the header pin alone; warn UNCONDITIONALLY -> exit 1, 3 FAIL. Unmutated tree: exit 0.
+  **The seventh was added by this ticket's own review, and it is the interesting one**: every other
+  mutation here makes the warning say LESS, so the FALSE-POSITIVE half of the rule -- that a fully
+  tagged, an untagged and an empty export each warn about NOTHING -- was asserted by three checks
+  no injection reached. Three green vacuous checks are the shape the exit-code discipline exists to
+  catch, and it took the second review axis to see it: the axis reading the code found five real
+  defects and not this one, because a vacuous check looks exactly like a passing one. 16 of the 19
+  checks are now covered by an injection; the other three are guards on the TEST (a file was
+  exported at all, the provenance exclusion really dropped a line, the refused file still carries
+  its cells) that no mutation of the writer would flip, and that is stated at them rather than
+  counted as coverage. **The first run of the third injection
   scored exit 134, not 1** — the value-order check fed `find`'s `npos` straight to `substr` and
   the uncaught exception ended the run before the later groups reported. A crash prints no
   further FAIL lines, which is the failure mode this repo has already scored once as a bite that
   never happened; the check now tests the position first, so an injection that removes the
   section can report that and keep going. **The second defect was the byte-equality check
-  itself**, and it is this note's own "WHY 'BYTE-IDENTICAL' IS NOT THE FORM THE HYBRID CLAIM
-  TAKES" bullet arriving a second time: line 2 of every export carries a UTC timestamp at SECOND
+  itself**, and it is this section's own byte-identity bullet arriving a second time (referred to
+  rather than quoted by its heading, because a second copy of that heading in this file would
+  make every anchor citation pointing AT it ambiguous -- rule 4's second failure mode): line 2 of every export carries a UTC timestamp at SECOND
   resolution, so two exports from ONE process differ there the moment they straddle a second.
   It passed for several runs and failed once the machine was loaded enough to separate them. The
   check compares everything but that line now, and a companion assert proves the exclusion really

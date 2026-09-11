@@ -217,8 +217,8 @@ handed only this file. The rest of the rule is there — that the value is the I
 no other exporter gains it. Gated by `tests/test_multiblock_block_field.py` from the outside, on
 the shipped configs — and the PARTIALLY tagged refusal, which no run can produce, by
 `tests/cpp/test_mesh_vtk_block_field.cpp`, which links `Mesh` and builds that state directly
-(#113). **The branch is unreachable from production, not untestable**; if you change this writer,
-that file is where the all-or-nothing rule is actually held.
+(#113) -- the branch is unreachable from production, not untestable, so that file is where the
+PARTIAL half of the rule is held.
 Why: `docs/design_notes/mesher.md`, "THE BLOCK ID AS A VTK CELL FIELD".
 
 ## Named blind spots
