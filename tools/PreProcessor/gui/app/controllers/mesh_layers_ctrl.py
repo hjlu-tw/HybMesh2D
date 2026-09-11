@@ -400,15 +400,12 @@ class MeshLayersControllerMixin:
         added_any = False
         missing_exports = []
         for session in self.sessions:
-            # "Canonicalise the entry, then find out whether there is anything
-            # to open" is readable_geom_path's whole question, and this is the
-            # only site in this file that asks it: the three beside it need the
-            # canonical path precisely WHEN the file is absent -- for the
-            # refusal message, the "(not exported)" label and the "missing
-            # file" tag -- and "" is the one answer that destroys what they
-            # need. Here the path is used only on the branch where it exists,
-            # so the two missing cases (no output file at all, and an export
-            # that is gone) fall together into one.
+            # The only site in this file that asks readable_geom_path's
+            # question, so the two missing cases -- no output file, and an
+            # export that is gone -- fall together into one branch. The three
+            # beside it need the canonical path when the file is ABSENT and
+            # must NOT use the verb; why, and what gates it, is in
+            # .claude/rules/gui-panels-config.md.
             abs_out = readable_geom_path(session.project_model.output_file)
             if abs_out:
                 if self.global_mesh_config.add_geom_file(abs_out):

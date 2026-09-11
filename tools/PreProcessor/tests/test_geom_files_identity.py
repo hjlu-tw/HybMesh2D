@@ -283,15 +283,26 @@ _LIST_MUTATORS = ("append", "remove", "extend", "insert", "pop", "clear",
 _CONFIG_BUILDERS = frozenset({MeshConfig.__name__, "replace"})
 
 
+def _callee_name(node: ast.Call):
+    """The name being CALLED, whether it is reached through an attribute or
+    not: ``os.path.exists(...)``, ``path.exists(...)`` and a bare imported
+    ``exists(...)`` are one answer. Shared by all four scans below, which each
+    used to spell it inline."""
+    f = node.func
+    return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+
+
+def _is_geom(node) -> bool:
+    """``<anything>.geom_files`` -- the attribute, not what it is used for."""
+    return isinstance(node, ast.Attribute) and node.attr == "geom_files"
+
+
 def _raw_geom_file_sites(path: str) -> list[tuple[int, str]]:
     """(line, construct) for every raw list mutation/membership/rebind over
     ``*.geom_files`` in one file. Reads what the code DOES, so a rename or a
     reflowed line cannot make a violation invisible the way a grep could."""
     tree = ast.parse(open(path).read())
     out = []
-
-    def _is_geom(node) -> bool:
-        return isinstance(node, ast.Attribute) and node.attr == "geom_files"
 
     def _leaf_targets(t):
         """Unpack `a, cfg.geom_files = ...` so a tuple target cannot hide one."""
@@ -338,8 +349,7 @@ def _raw_geom_file_sites(path: str) -> list[tuple[int, str]]:
             # `audit_mesh_bc(bnd, geom_files=...)` gets worked around, not
             # obeyed. The class name is taken from the class, so a rename of the
             # model follows without an edit here.
-            _callee = (n.func.attr if isinstance(n.func, ast.Attribute)
-                       else getattr(n.func, "id", None))
+            _callee = _callee_name(n)
             if _callee in _CONFIG_BUILDERS:
                 for kw in n.keywords:
                     if kw.arg == "geom_files":
@@ -611,11 +621,7 @@ def _cwd_relative_stores(path: str) -> list[tuple[int, str]]:
     out = []
 
     def _is_abspath(node) -> bool:
-        if not isinstance(node, ast.Call):
-            return False
-        f = node.func
-        return ((isinstance(f, ast.Attribute) and f.attr == "abspath")
-                or (isinstance(f, ast.Name) and f.id == "abspath"))
+        return isinstance(node, ast.Call) and _callee_name(node) == "abspath"
 
     for n in ast.walk(tree):
         if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
@@ -809,14 +815,18 @@ check(gpi.readable_geom_path("") == "",
 # taken against the tree BEFORE this check was written (#112, an AST walk at
 # #111): mesh_layers_ctrl.py carried FIVE canonicalise-then-exists sites and
 # only ONE was this defect. THREE of the other four need the canonical path
-# precisely WHEN the file is absent -- it goes into the refusal message, onto
-# the "(not exported)" label with the membership test and the item data, and
-# onto the "missing file" tag by basename -- and "" is the one answer that
-# destroys what they need. The fifth re-tests a path taken from the widget's
-# item data, with no canonicalising call feeding it at all. A gate that
-# red-lights four correct sites to find one real one gets worked around rather
-# than obeyed, and the escape hatch it would need -- "these files are fine" --
-# is the growing filename list the derived allow-lists here exist to avoid.
+# precisely WHEN the file is absent -- it goes into the refusal message
+# (add_active_preprocessor_geometry), onto the "(not exported)" label with the
+# membership test and the item data, and onto the "missing file" tag by basename
+# (both in sync_mesh_layers_panel) -- and "" is the one answer that destroys what
+# they need. The fifth re-tests a path taken from the widget's item data
+# (handle_mesh_layer_toggled), with no canonicalising call feeding it at all, so
+# the scan below never reaches it: the ticket counted it among the four a shape
+# ban would red-light because it was measured FILE-scoped, and the scan that
+# shipped is function-scoped, which is why the number here is THREE. Either way
+# a gate that red-lights correct sites to find one real one gets worked around
+# rather than obeyed, and the escape hatch it would need -- "these files are
+# fine" -- is the growing filename list the derived allow-lists exist to avoid.
 #
 # So the ban is on the QUESTION, not on the shape: an existence call on a
 # canonicalised entry is a violation only when that entry is used NOWHERE but
@@ -836,28 +846,27 @@ check(gpi.readable_geom_path("") == "",
 _EXISTENCE_CALLS = ("exists", "isfile", "lexists", "access")
 _READ_CALLS = ("open", "loadtxt", "genfromtxt", "stat", "getsize", "getmtime")
 
-#: Derived from the verbs, like _RAW_OK: the module that DEFINES the read side
-#: is the one place that may canonicalise and then ask the filesystem, because
-#: that is the question it exists to answer. Both names are read off the module
-#: so that splitting it moves the exemption with them.
+#: Derived from the verb, like _RAW_OK: the module that DEFINES the read side is
+#: the one place that may canonicalise and then ask the filesystem, because that
+#: is the question it exists to answer. Read off the FUNCTION, so moving it moves
+#: the exemption with it. ONE verb is named, not both halves of the module:
+#: canonical_geom_path sits beside it today, and a module holding only that one
+#: would contain none of the calls below anyway -- os.path.realpath is not one of
+#: them -- so naming it too would exempt a module with nothing to exempt, which
+#: is exactly what the load-bearing check underneath refuses.
 _READ_OK = {
-    os.path.normpath(inspect.getsourcefile(_verb)): "defines the read-side verb"
-    for _verb in (gpi.readable_geom_path, gpi.canonical_geom_path)
+    os.path.normpath(inspect.getsourcefile(gpi.readable_geom_path)):
+        "defines the read-side verb",
 }
 
 _CANON_VERB = gpi.canonical_geom_path.__name__
-
-
-def _callee_name(node: ast.Call):
-    f = node.func
-    return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
 
 
 def _is_geom_list(node) -> bool:
     """``cfg.geom_files`` as something to iterate, `or []` tail included."""
     while isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
         node = node.values[0]
-    return isinstance(node, ast.Attribute) and node.attr == "geom_files"
+    return _is_geom(node)
 
 
 def _name_scopes(tree) -> list[list]:
@@ -947,7 +956,7 @@ def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
         for c in ast.iter_child_nodes(n):
             parent[id(c)] = n
 
-    out = {}
+    out = set()
     for scope in _name_scopes(tree):
         canon, raw = {}, set()
         for n in scope:
@@ -972,17 +981,22 @@ def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
                 continue
             arg = n.args[0]
             if isinstance(arg, ast.Call) and _callee_name(arg) == _CANON_VERB:
-                out[(n.lineno, f"{fn}({_CANON_VERB}(...))")] = 1
+                out.add((n.lineno, f"{fn}({_CANON_VERB}(...))"))
+                continue
+            # cfg.geom_files[0] handed straight to the call: the same raw entry
+            # the loop yields, reached by index instead.
+            if isinstance(arg, ast.Subscript) and _is_geom(arg.value):
+                out.add((n.lineno, f"{fn}() on a raw geom_files entry"))
                 continue
             if not isinstance(arg, ast.Name):
                 continue
             if arg.id in raw:
-                out[(n.lineno, f"{fn}() on a raw geom_files entry")] = 1
+                out.add((n.lineno, f"{fn}() on a raw geom_files entry"))
                 continue
             if arg.id not in canon:
                 continue
             if fn in _READ_CALLS:
-                out[(n.lineno, f"{fn}() on a canonicalised entry")] = 1
+                out.add((n.lineno, f"{fn}() on a canonicalised entry"))
                 continue
             guard, present = _existence_guard(n, parent)
             # Uses inside the guard's own test are part of the question, not a
@@ -995,9 +1009,9 @@ def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
                          and isinstance(u.ctx, ast.Load)
                          and id(u) not in asked and id(u) not in found_here]
             if not elsewhere:
-                out[(n.lineno,
-                     f"{fn}() on a canonicalised entry used only where it "
-                     f"exists")] = 1
+                out.add((n.lineno,
+                         f"{fn}() on a canonicalised entry used only where it "
+                         f"exists"))
     return sorted(out)
 
 
@@ -1055,7 +1069,10 @@ with open(_probe12, "w") as fh:
              "            yield open(gf)\n"
              "\n"
              "def raw_comp(cfg):\n"
-             "    return [np.loadtxt(g) for g in (cfg.geom_files or [])]\n")
+             "    return [np.loadtxt(g) for g in (cfg.geom_files or [])]\n"
+             "\n"
+             "def raw_index(cfg):\n"
+             "    return os.stat(cfg.geom_files[0])\n")
 _seen12 = {w for _ln, w in _reach_around_read_sites(_probe12)}
 check(_seen12 == {
           "exists(canonical_geom_path(...))",
@@ -1065,16 +1082,20 @@ check(_seen12 == {
           "loadtxt() on a canonicalised entry",
           "exists() on a raw geom_files entry",
           "open() on a raw geom_files entry",
-          "loadtxt() on a raw geom_files entry"},
+          "loadtxt() on a raw geom_files entry",
+          "stat() on a raw geom_files entry"},
       f"12. INJECTION: the scan sees both shapes -- the direct call, the local "
       f"bound from it in either polarity, with no guard at all, a read that "
-      f"presupposes the answer, and a raw entry from a loop or a comprehension "
-      f"({sorted(_seen12)})")
+      f"presupposes the answer, and a raw entry from a loop, a comprehension or "
+      f"a subscript ({sorted(_seen12)})")
 
-# ...and it is silent on the four correct sites, or the tree passing above says
-# nothing. These are the real ones, rewritten to the fixture's names: the
-# refusal message, the "(not exported)" label, the "missing file" tag, and the
-# re-test of a path that no canonicalising call fed.
+# ...and it is silent on the sites that are not this question, or the tree
+# passing above says nothing. These are the real ones, rewritten to the
+# fixture's names: the THREE that need the canonical path where the file is
+# absent -- the refusal message, the "(not exported)" label, the "missing file"
+# tag -- plus the near-shape, a re-test of a path that no canonicalising call
+# fed, which is silent for a different reason and is here so the two reasons are
+# not confused for one.
 _probe12b = os.path.join(tmp, "probe_read_ok.py")
 with open(_probe12b, "w") as fh:
     fh.write("import os\n"
@@ -1109,10 +1130,9 @@ with open(_probe12b, "w") as fh:
              "    if q:\n"
              "        self.use(q)\n")
 check(not _reach_around_read_sites(_probe12b),
-      f"12. ...and silent on the four sites that ask a DIFFERENT question -- "
-      f"each needs the canonical path where the file is absent, or was never "
-      f"fed by a canonicalising call -- and on a converted reader "
-      f"({_reach_around_read_sites(_probe12b)})")
+      f"12. ...and silent on the three sites that need the canonical path where "
+      f"the file is ABSENT, on the near-shape no canonicalising call feeds, and "
+      f"on a converted reader ({_reach_around_read_sites(_probe12b)})")
 
 # ── 7b. the gate is non-vacuous AS A BUILD STEP, read from the exit code ──
 # The scan-level probe above proves the AST walk sees the constructs; it cannot

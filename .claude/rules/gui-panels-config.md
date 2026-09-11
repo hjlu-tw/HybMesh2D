@@ -393,15 +393,24 @@ against one list; #71 moved the first two here.
   swept up, and check 9's behavioural half asserts what `stored_geom_path` RETURNS from any cwd,
   which no caller can re-implement correctly by accident. **Every side that OPENS a file now has a
   seam AND a scan** — `meta_path_for` for sidecars, `readable_geom_path` for the geometry itself,
-  and check 12 for both of that verb's reach-arounds (#112). What that check still cannot see is
-  the same AST limit as (i): an INDIRECTION — a canonical path handed to a helper, returned to a
-  caller, or stored on `self` — because it follows a plain `v = canonical_geom_path(…)` binding
-  inside one function scope and nothing further; a canonicalising call bound by a walrus or a
-  tuple unpack; and a filesystem call whose NAME is outside the two lists it carries
-  (`pathlib.Path(canon).read_text()`, `shutil.copy`, `os.path.getatime`), which name the calls
-  this tree actually asks about a geometry rather than every way to touch a file. One limit is
-  DELIBERATE rather than residual: a site that uses the canonical path where the file is ABSENT is
-  silent by construction, so a reader that should delegate but also logs the missing path passes.
-  That is the same property keeping the three correct `mesh_layers_ctrl` sites green, and it was
-  bought knowing the cost — the measurement that decided it (five canonicalise-then-exists sites
-  in that one file, of which one was the defect) is in `docs/design_notes/gui.md`.
+  and check 12 for both of that verb's reach-arounds (#112). What that check still cannot see,
+  enumerated rather than summarised because "the rest is covered" is the claim this list exists to
+  stop being made:
+  - **An INDIRECTION**, the same AST limit as (i): a canonical path handed to a helper, returned
+    to a caller, or stored on `self`. It follows a plain `v = canonical_geom_path(…)` binding
+    inside ONE function scope and nothing further — so a walrus, a tuple unpack and a closure
+    reading its enclosing function's binding all pass too.
+  - **The existence ANSWER bound to a name**: `q = canonical_geom_path(p); ok = os.path.exists(q);
+    if ok: use(q)`. The ternary and `if` spellings of that same guard DO fail, so this is a
+    spelling gap rather than the "an AST cannot follow a value" one above — it would take a second
+    dataflow layer, over the boolean rather than over the path, and it is not there.
+  - **A filesystem call whose NAME is outside the two lists it carries**
+    (`pathlib.Path(canon).read_text()`, `shutil.copy`, `os.path.getatime`), and an ALIASED import
+    of the canonicalising verb. Both lists name what this tree actually asks about a geometry, not
+    every way to touch a file. `cfg.geom_files[0]` handed straight to a call IS covered, alongside
+    the loop and the comprehension.
+  One limit is DELIBERATE rather than residual: a site that uses the canonical path where the file
+  is ABSENT is silent by construction, so a reader that should delegate but also logs the missing
+  path passes. That is the same property keeping the three correct `mesh_layers_ctrl` sites green,
+  and it was bought knowing the cost — the measurement that decided it (five canonicalise-then-
+  exists sites in that one file, of which one was the defect) is in `docs/design_notes/gui.md`.

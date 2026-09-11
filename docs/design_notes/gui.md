@@ -1380,7 +1380,8 @@ check that only argues.
 
 **What the seam does NOT cover, measured for #112 rather than left for it to find — and the count
 was wrong the first time it was written down here, which is the ticket's own lesson recurring one
-paragraph later.** Walking the AST for a filesystem call whose argument is a canonicalising call or
+paragraph later.** The line numbers below are as measured AT #111 (`e1f98fc`) and have already
+moved; the method names beside them in the next section are what to grep for. Walking the AST for a filesystem call whose argument is a canonicalising call or
 a variable bound from one finds FIVE in `mesh_layers_ctrl` alone, and they are not one thing.
 THREE cannot use the verb, because they need the canonical path precisely WHEN the file is absent:
 it goes into the refusal message `Resampled file does not exist at '<path>'` (`:33`), onto the
@@ -1424,11 +1425,14 @@ details make that hold on the real tree rather than on a fixture:
   be invisible while the identical logic one indent deeper failed — and the reach-around would
   have a spelling.
 - **The name analysis is FUNCTION-scoped, not file-scoped**, because a file-wide read over-reaches
-  measurably here: `mesh_layers_ctrl` binds `abs_out_file` from the canonicalising call at `:118`
-  and unpacks a same-named local from the widget's item data at `:177`, and a file-wide scan
-  reports `:207` as though the first fed the second. It does not; the ticket's own write-up had
-  already said an AST scan keyed on the canonicalising call would not fire there, so a scan that
-  did would have contradicted the measurement it was built from.
+  measurably here: `sync_mesh_layers_panel` binds `abs_out_file` from the canonicalising call, and
+  `handle_mesh_layer_toggled` unpacks a same-named local from the widget's item data and re-tests
+  it. A file-wide scan reports that second re-test as though the first fed it. It does not; the
+  ticket's own write-up had already said an AST scan keyed on the canonicalising call would not
+  fire there, so a scan that did would have contradicted the measurement it was built from. **That
+  is also where the ticket's "four correct sites" becomes THREE**: the near-shape is one of the
+  four only under the file-scoped walk that produced the figure, and the scan that shipped never
+  reaches it. Both numbers are right about different scans, and the one in the gate is the gate's.
 
 A call that READS (`open`, `np.loadtxt`, `os.stat`) needs no discrimination at all: it presupposes
 the answer, so canonicalise-then-read is always the reach-around.
@@ -1446,10 +1450,19 @@ defect the blind spot predicted rather than one that is there — so the only th
 it is the injection: a module dropped into a real GUI package handing a raw `geom_files` entry to
 `os.path.exists`, with the verdict read from the child's EXIT CODE and not from a FAIL-line count,
 which reports a crash as zero failures. Both new doors sit beside the four already there, each
-shown to move exactly one verdict, against a negative control on the untouched tree. What the
-check still cannot see is stated in the rule file's blind-spot list, including the one limit that
-is deliberate: a site that uses the canonical path where the file is absent is silent BY
-CONSTRUCTION, which is the same property that keeps the three correct sites green.
+shown to move exactly one verdict, against a negative control on the untouched tree. Reaching a
+raw entry by SUBSCRIPT (`open(cfg.geom_files[0])`) is covered alongside the loop and the
+comprehension, because it is the same entry by another route and costs one branch.
+
+What the check still cannot see is enumerated in the rule file's blind-spot list rather than
+summarised, and two of the three entries there were found by REVIEW rather than by writing the
+scan: the existence ANSWER bound to a name (`ok = os.path.exists(q); if ok: use(q)` is silent,
+while the `if` and ternary spellings of the same guard fail — a spelling gap, not the "an AST
+cannot follow a value" one), and a closure reading its enclosing function's binding, which falls
+out of the function scoping above. One limit is DELIBERATE rather than residual: a site that uses
+the canonical path where the file is absent is silent BY CONSTRUCTION, which is the same property
+that keeps the three correct sites green. Each of those was verified against the shipped scan, not
+reasoned about — the gap list is the part of a gate most likely to be written from intent.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
