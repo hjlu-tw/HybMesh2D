@@ -435,14 +435,24 @@ check(not _cfg7b.remove_geom_file(other) and _cfg7b.geom_files == [absolute],
 # Why remove_geom_file compares through same_geom_file instead of reading the
 # shared keyer like the list-wide verbs: that keyer drops a falsy entry, which
 # is right for a dedupe and would make a removal delete the empty entries
-# BESIDE the one it was asked about. The state is only reachable by the raw
-# rebind the mixin is exempt for, which is exactly why the verb is the thing
-# that has to be safe.
+# BESIDE the one it was asked about. No writer in this tree can produce that
+# state -- add_geom_file refuses a falsy path, set_geom_files drops one, and
+# the mixin's own two rebinds are built from those -- so the check below is
+# NOT non-vacuous against a reachable regression: it discriminates against the
+# DESIGN ALTERNATIVE the two docstrings reject, which is what the line after it
+# measures. It is here because that rejection is otherwise a claim no gate
+# holds.
 _cfg7c = MeshConfig()
 _cfg7c.geom_files = [_rel, ""]
 check(_cfg7c.remove_geom_file(absolute) and _cfg7c.geom_files == [""],
       f"7. removing one geometry leaves a falsy entry beside it alone -- a "
       f"removal is not a dedupe (got {_cfg7c.geom_files})")
+_via_keyer = [p for key, p in gpi.keyed_geom_paths([_rel, ""])
+              if key != gpi.canonical_geom_path(absolute)]
+check(_via_keyer == [],
+      f"7. INJECTION: the same removal written through the keyer deletes that "
+      f"falsy entry as a side effect, which is the alternative the verb's "
+      f"docstring rejects (got {_via_keyer})")
 check(not _cfg7c.remove_geom_file("") and _cfg7c.geom_files == [""],
       f"7. ...and removing '' names no file, so it removes nothing and says so "
       f"(got {_cfg7c.geom_files})")
@@ -658,6 +668,7 @@ check(len(_cwd_relative_stores(_probe9)) == 2,
 # ── 10. what routing the RESTORE through the verb actually changed ───────
 # load_from_dict used to rebind: `self.geom_files = d.get("geom_files") or []`.
 # Routing it through set_geom_files (#99) changed three things no test asserted
+# (a fourth, the JSON null, the rebind already handled and is asserted last)
 # -- they arrived as a consequence of the routing and were described in a
 # comment, which is the shape this repo keeps having to close. All three are
 # right for a STALE WORKSPACE, which is exactly the dict that carries one file
@@ -708,6 +719,17 @@ _c10d.add_geom_file(other)
 check(_aliased["geom_files"] == [_rel, other],
       f"10. INJECTION: the rebind ALIASED the dict's own list -- adding to the "
       f"config appended to the caller's list (got {_aliased['geom_files']})")
+
+# The fourth consequence the comment beside the call names. NO injection is
+# claimed for this one: the rebind's own `or []` got it right too, so the
+# bypass agrees -- and saying so is the point, since three of the four are the
+# verb's and one is not.
+_null_ws = {"geom_files": None}
+_c10e = MeshConfig()
+_c10e.load_from_dict(_null_ws)
+check(_c10e.geom_files == [] == _bypass_restore(_null_ws).geom_files,
+      f"10. a JSON null for the whole list restores as [] -- the one of the "
+      f"four the rebind also got right (got {_c10e.geom_files})")
 
 # ── 7b. the gate is non-vacuous AS A BUILD STEP, read from the exit code ──
 # The scan-level probe above proves the AST walk sees the constructs; it cannot

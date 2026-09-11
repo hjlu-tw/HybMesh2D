@@ -251,18 +251,20 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
     i.e. the all-`wall` grid this repo has already shipped once. Driven end to end from a foreign
     cwd by check 9, which also asserts nothing was written under it.
 - **The canonical-key loop is written ONCE**, in the service's `keyed_geom_paths`, whose own
-  docstring names its readers rather than leaving them to be grepped for: `dedupe_geom_paths` and
-  `canonical_geom_keys` (hence the model's `has_geom_file`, hence `add_geom_file`, hence
-  `prune_roles`), and `geom_files_not_on_disk`, which asks the filesystem about each key. Three
-  hand-written copies of one canonicalisation rule is how the string-compare defect got in. That
-  is the WHICH-FILES-ARE-IN-THIS-LIST shape only, and the two verbs that do NOT read it say so at
-  the code, because an omission in a "written once" rule must read as a decision:
-  `remove_geom_file` asks about ONE file and compares through `same_geom_file` — the keyer drops a
-  falsy entry, right for a dedupe (it names no file) and wrong for a removal, which would then
-  delete the empty entries BESIDE the one it was asked about; and `role_of` walks `geom_roles`, a
-  different container, against the one key it has already derived. Gated by check 7: a removal
-  leaves a falsy entry alone, `remove_geom_file("")` removes nothing and returns False, and
-  removing a geometry the list does not hold reports that nothing went.
+  docstring names its THREE readers rather than leaving them to be grepped for —
+  `dedupe_geom_paths`, `canonical_geom_keys` and the model's `geom_files_not_on_disk` — and states
+  that every other verb reaches the loop through the first two (`has_geom_file` hence
+  `add_geom_file`, and `prune_roles`, through the keys; `set_geom_files` hence the workspace
+  restore, and `mesh_config_io`'s GEOM_FILE writer, through the dedupe). Three hand-written copies
+  of one canonicalisation rule is how the string-compare defect got in. **The two verbs that ask an
+  identity question and do NOT read it say so AT THE CODE**, and the helper's list says it back:
+  `remove_geom_file` compares through `same_geom_file`, because the keyer drops a falsy entry —
+  right for a dedupe, and a removal that did it would delete the empty entries BESIDE the one it
+  was asked about; `role_of` walks `geom_roles`, a different container, against the key it has
+  already derived. Gated by check 7: a removal leaves a falsy entry alone — shown non-vacuous
+  against the keyer-delegation it argues against, not against a state the tree can reach —
+  `remove_geom_file("")` removes nothing and returns False, and removing a geometry the list does
+  not hold reports that nothing went.
 - **The identity import is at MODULE level everywhere**, and the absence of a cycle is MEASURED —
   `mesh_config_io` (the module that carried the deferred form, and is on the headless path)
   imports first in a fresh interpreter, dragging in no Qt. A deferred import hides a real
@@ -297,12 +299,14 @@ field with no assignment and no method call anywhere — was then found by revie
   `mesh_config_io.load_config_from_file`, `pipeline_config.build_mesh_config`, `pipeline_io_ctrl`
   and the mesh panel's config mixin), one of them a `[os.path.abspath(out)]` of the kind
   `geom_path_identity` exists to replace. A sixth site matched the NAME without being this list —
-  see the next rule. **Routing `load_from_dict` through it changed three things, and all three are
-  ASSERTED** (check 10) rather than described beside the call: a workspace listing one file under
-  two spellings restores as one entry, a null or empty entry is dropped instead of restoring a
-  nameless geometry, and the restored list is a copy — mutating the dict no longer mutates the
-  config. They arrived as an undeclared consequence of the routing; each is now shown non-vacuous
-  by re-running the rebind it replaced, on the real model, through the public restore API.
+  see the next rule. **Routing `load_from_dict` through it has four consequences, and check 10 holds
+  all four** rather than the comment beside the call describing them: a workspace listing one file
+  under two spellings restores as ONE entry, a null or empty entry is dropped instead of restoring
+  a nameless geometry, the restored list is a copy (mutating the dict no longer mutates the
+  config), and a JSON null for the list lands as `[]`. The first three arrived as an undeclared
+  consequence of the routing and are each shown non-vacuous by re-running the rebind they replaced,
+  on the real model, through the public restore API; the fourth is the one that rebind also got
+  right, with its `or []`, so no injection is claimed for it.
 - **A class outside the model may not name an attribute `geom_files`.** The scan matches by
   attribute NAME, since an AST cannot resolve the type of `self`; `mesh_canvas_loader`'s thread
   therefore holds `self.paths`. Renaming the neighbour is the fix, never an allow-list entry — one

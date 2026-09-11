@@ -241,12 +241,14 @@ class MeshConfig(GeomListMixin):
                 setattr(self, attr, v)
         # Through set_geom_files, not a rebind: a stale workspace is exactly the
         # dict that carries one file under two spellings, so the restore is the
-        # last place that should be allowed to put that state back. Three
-        # consequences, none of them the old line's: an explicit JSON null lands
-        # as [] (the verb's own rule, where this used to need `or []`), a falsy
-        # entry is DROPPED rather than kept, and the list is a copy -- `d`'s own
-        # list is no longer aliased into the config, so mutating one no longer
-        # mutates the other.
+        # last place that should be allowed to put that state back. Four
+        # consequences, and all four are held by test_geom_files_identity.py
+        # check 10 rather than by this comment: the two spellings collapse to
+        # ONE entry, a falsy entry is DROPPED rather than kept, the list is a
+        # copy -- `d`'s own list is no longer aliased into the config, so
+        # mutating one no longer mutates the other -- and an explicit JSON null
+        # lands as [] , which is the one of the four the old line also got
+        # right, with `or []`.
         self.set_geom_files(d.get("geom_files"))
         # `or {}` (not the .get default) so an explicit JSON null still lands as
         # an empty container instead of None, which would crash save_to_file.

@@ -1290,7 +1290,8 @@ above exists: verb-only is exactly the shape the syntax scan cannot see.
 (i) One canonicalisation loop was hand-written three times, the add path re-deriving the canonical
 key that the membership verb beside it already answers. Three copies of one rule is how the
 string-compare defect got in, so the loop is now `keyed_geom_paths` and the verbs read it — all
-but two, and #110 made those two say why at the code rather than only in the rule file:
+but two of those that ask an identity question, and #110 made those two say why at the code rather
+than only in the rule file:
 `remove_geom_file` asks about one file and compares through `same_geom_file` (the keyer drops a
 falsy entry, which is a dedupe's job and would make a removal delete the empty entries beside the
 one it was asked about — now gated, check 7), and `role_of` walks the roles dict against the key
@@ -1312,7 +1313,9 @@ are right for a stale workspace — a saved file is exactly where one geometry a
 spellings — but they were carried by a comment, which is the same shape as a rule stated at a
 constant and enforced nowhere. Check 10 asserts them through the public restore API and shows each
 non-vacuous by re-running the rebind they replaced on the real model, so the comment is now a
-description of something a gate holds.
+description of something a gate holds. It asserts the fourth consequence beside them — a JSON null
+for the list lands as `[]` — with NO injection, because the rebind's own `or []` got that one
+right: a non-vacuity claim is per assertion, and three of the four are the verb's doing.
 
 **Storing the repo-relative spelling forced the READ side into the open, and the first sweep of it
 was WRONG.** With the entry stored as `results/resampled/x.dat` rather than absolute, every call

@@ -72,19 +72,24 @@ def keyed_geom_paths(paths, base: str | None = None):
     disagree. That is not hypothetical: the string-compare defect this module
     exists for was a rule stated once and applied in several hand-written copies.
 
-    Read by :func:`dedupe_geom_paths` and :func:`canonical_geom_keys` below --
-    and so, through the latter, by the model's ``has_geom_file`` (hence
-    ``add_geom_file``) and ``prune_roles`` -- and directly by the model's
-    ``geom_files_not_on_disk``, which asks the filesystem about each key.
+    THREE readers, and the list stays three long however many verbs are added
+    above it: :func:`dedupe_geom_paths` and :func:`canonical_geom_keys` below,
+    and the model's ``geom_files_not_on_disk``, which asks the filesystem about
+    each key. Everything else reaches this loop through those two -- the model's
+    ``has_geom_file`` (hence ``add_geom_file``) and ``prune_roles`` through the
+    keys; its ``set_geom_files`` (hence the workspace restore) and
+    ``mesh_config_io``'s GEOM_FILE writer through the dedupe.
 
-    Two of the model's verbs do NOT read it, and both omissions are decisions
-    rather than oversights. ``remove_geom_file`` asks about ONE file, so it
-    compares through :func:`same_geom_file`: dropping a falsy entry is right for
-    a dedupe, since such an entry names no file, and would make a removal
-    silently delete the empty entries beside the one it was asked about.
+    Two verbs that ask an IDENTITY question do NOT read it, and both omissions
+    are decisions rather than oversights. ``remove_geom_file`` asks about ONE
+    file, so it compares through :func:`same_geom_file`: dropping a falsy entry
+    is right for a dedupe, since such an entry names no file, and would make a
+    removal silently delete the empty entries beside the one it was asked about.
     ``role_of`` walks ``geom_roles`` -- a different container, whose keys are
     spellings of the same files -- against the one key it has already derived.
-    This helper is for the verbs that answer "which files are in this list?".
+    (The model's ``domain_file`` / ``boundary_files`` / ``seed_files`` walk the
+    list too, but ask no identity question: they filter it by ROLE and hand back
+    the stored spellings verbatim.)
     """
     for p in paths or ():
         key = canonical_geom_path(p, base)
