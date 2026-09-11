@@ -94,12 +94,17 @@ BLIND SPOTS, named rather than papered over:
     writing it as a float that happens to round-trip. The DECLARED type is
     pinned (``["block", "int", "1"]``), which is the half that matters to a
     reader.
-  * NOTHING HERE REACHES THE PARTIALLY-TAGGED STATE. ``exportVTK`` warns when
-    some but not all cells carry a tag and writes no section; no ``MESH_MODE 1``
-    path can produce that today (the adapter's one loop tags every cell it
-    adds), so the warning is unexercised. A test would have to inject the state
-    it guards against, which is the C++ side of an injection this file cannot
-    make permanent.
+  * NOTHING **HERE** REACHES THE PARTIALLY-TAGGED STATE, and nothing can: no
+    ``MESH_MODE 1`` run produces one (the adapter's one loop tags every cell it
+    adds), so a gate that drives the real binary cannot construct it. **That
+    state is covered, one layer down** — ``tests/cpp/test_mesh_vtk_block_field.cpp``
+    links ``hybmesh_core`` and builds the mesh directly, asserting that a
+    partially tagged export gets no ``CELL_DATA`` section (byte-identical to the
+    same mesh untagged) and that the warning is emitted, with a fully tagged
+    export as the negative control (#113). What remains open here is only the
+    join: nothing checks that the state stays unreachable from production, which
+    is the "NOTHING CHECKS THAT EVERY MULTI-BLOCK CELL IS TAGGED" hole named in
+    ``.claude/rules/mesher-multiblock.md``.
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_block_field.py
 Skips cleanly if ./build/HybMesh2D has not been built.

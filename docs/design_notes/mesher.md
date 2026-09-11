@@ -2684,9 +2684,55 @@ nothing writes yet, since no exporter has changed."*
   sentinel the optional exists to avoid — but a debug aid that vanishes without saying so is
   indistinguishable from one that was never built, which is exactly the defect #106 exists to
   fix. So `exportVTK` counts the tagged cells and warns when the count is neither 0 nor all.
-  **Unreachable today** (the adapter's one loop tags every cell it adds, and no other path adds
-  a tagged one), so nothing gates it; that is recorded as a blind spot rather than covered by a
-  test for a state nothing can produce. Raised by #106's own Spec review.
+  **Unreachable FROM PRODUCTION** (the adapter's one loop tags every cell it adds, and no other
+  path adds a tagged one). Raised by #106's own Spec review, and left ungated there on the
+  argument that a state nothing can produce needs no test.
+
+  **#113 REVERSED THAT (2026-09-11): unreachable is not untestable.** The gate over the field is
+  a Python script that drives the real binary, and no invocation of that binary can construct a
+  partially tagged mesh — so from THERE the state is genuinely out of reach, and the blind spot
+  was correctly stated for the layer it was stated at. But `Mesh` is a library target the C++
+  test tree links (the seam #2 of the architecture backlog created), so one layer down the state
+  is three lines of setup. `tests/cpp/test_mesh_vtk_block_field.cpp` builds a four-quad strip,
+  tags three of the four, exports, and asserts the OBSERVABLE outcome rather than the branch: no
+  `CELL_DATA`, no `SCALARS`, no `LOOKUP_TABLE`, and the file **identical to the same mesh with no
+  tags at all, provenance line aside** — the strongest available spelling of "the section simply
+  does not appear", which a sentinel of any value would break. (Why that line is excluded, and
+  what it cost to learn, is two paragraphs down.) The warning is asserted too: `LOG_WARN`
+  writes through a reference bound to `std::cerr`, so swapping that stream's buffer captures it,
+  and the message is pinned on the counts it names (`3 of 4`) rather than on its whole text.
+  A fully tagged export is the **negative control**, asserting the section IS present with its
+  values in cell order — without it, a writer that had stopped writing the field entirely would
+  pass the partial half and the test would prove nothing. Two further states are pinned beside
+  them: no cell tagged (the hybrid answer — no section AND no warning, because nothing was
+  omitted) and an EMPTY mesh, where `tagged == elements.size()` holds vacuously at zero and only
+  the `!elements.empty()` clause stops a headerless `CELL_DATA 0` being written.
+
+  Six injections into `src/Mesh.cpp`, 2026-09-11, each restored and rebuilt before the next, the
+  verdict read from the EXIT CODE first: silence the warning (`if (false)`) -> exit 1, 3 FAIL;
+  drop the guard and write a sentinel 0 -> exit 1, 6 FAIL, including the whole-file comparison and
+  both the untagged and empty states; never write the section -> exit 1, 4 FAIL, all in the
+  negative control; drop the `!elements.empty()` clause -> exit 1, 1 FAIL, the empty-mesh check
+  alone; write a constant value -> exit 1, 1 FAIL; rename the array to `blockId` -> exit 1,
+  1 FAIL, the header pin alone. Unmutated tree: exit 0. **The first run of the third injection
+  scored exit 134, not 1** — the value-order check fed `find`'s `npos` straight to `substr` and
+  the uncaught exception ended the run before the later groups reported. A crash prints no
+  further FAIL lines, which is the failure mode this repo has already scored once as a bite that
+  never happened; the check now tests the position first, so an injection that removes the
+  section can report that and keep going. **The second defect was the byte-equality check
+  itself**, and it is this note's own "WHY 'BYTE-IDENTICAL' IS NOT THE FORM THE HYBRID CLAIM
+  TAKES" bullet arriving a second time: line 2 of every export carries a UTC timestamp at SECOND
+  resolution, so two exports from ONE process differ there the moment they straddle a second.
+  It passed for several runs and failed once the machine was loaded enough to separate them. The
+  check compares everything but that line now, and a companion assert proves the exclusion really
+  dropped a line rather than leaving two empty strings to compare equal. The general shape: a
+  property this repo has already written down as "cannot be claimed byte-for-byte" does not stop
+  being true because the two files come from the same process.
+
+  What is NOT closed: nothing asserts the state stays unreachable. A `MESH_MODE 1` change adding
+  one untagged cell would still make the whole field vanish, caught by the warning at run time
+  and by no gate — the blind spot in `.claude/rules/mesher-multiblock.md` now names that
+  precondition rather than the branch.
 
 - **THE "RE-CAPTURE" IN ACCEPTANCE ITEM 5 RECORDS NOTHING, AND CANNOT.** Golden captures are
   untracked artefacts written to a directory the caller names; there is no committed baseline to
@@ -2700,7 +2746,9 @@ nothing writes yet, since no exporter has changed."*
   which earn a specific check its place: swapping indices 1 and 2 passes every count check and
   is caught only by the geometric identity check, and renaming the array is caught only by the
   header pin — the array NAME is what a reader selects in ParaView, so it is interface, and
-  before that check it was pinned nowhere in the tree).
+  before that check it was pinned nowhere in the tree), and by
+  `tests/cpp/test_mesh_vtk_block_field.cpp` (19 checks over four tag states, six injections,
+  #113) for the one state a gate over the binary cannot reach.
 
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.
