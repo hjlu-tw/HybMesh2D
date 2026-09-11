@@ -1399,6 +1399,58 @@ verb is also the THIRD identity verb that deliberately does not read `keyed_geom
 about one entry, like `remove_geom_file` — so the helper's own census of its readers names it,
 which is the census #110 had just paid to make true.
 
+**#112 made that exemption a property of the CODE rather than a list of files, and converted the
+one real reader.** The gate's check 12 walks the same tree for two shapes, both of them exactly
+what the converted readers used to be: a filesystem call whose argument is a canonicalising call
+(or a local bound from one), and a filesystem call on a value taken straight from a `geom_files`
+iteration. The second is the reader the rule file's blind spot named — `for gf in cfg.geom_files:
+np.loadtxt(gf)` — which resolves a repo-relative entry against the process cwd and makes a preview
+silently not draw.
+
+The discriminator is what keeps the first shape from red-lighting the three correct sites: **an
+existence call on a canonicalised entry is a violation only when that entry is used NOWHERE but the
+branch where the file turned out to be there.** That is "use it only if it is there", which is
+`readable_geom_path`'s question and nothing else's; the three correct sites all use the path where
+the file is ABSENT, so they fall out by the question they ask rather than by their filename. Three
+details make that hold on the real tree rather than on a fixture:
+
+- **Uses inside the guard's own test do not count.** `canon and os.path.exists(canon)` is one
+  question, not a use of the answer — and that is what makes `readable_geom_path`'s own body the
+  banned shape, so its module's exemption is LOAD BEARING rather than decoration, the same bar
+  check 7's derived allow-list is held to.
+- **The guard-clause spelling counts as the indented one.** When `if not os.path.exists(q):` ends
+  its branch with a `return`/`raise`/`continue`/`break`, the rest of the enclosing block IS the
+  file-is-there branch. Without that, `q = canonical(p); if not exists(q): return; use(q)` would
+  be invisible while the identical logic one indent deeper failed — and the reach-around would
+  have a spelling.
+- **The name analysis is FUNCTION-scoped, not file-scoped**, because a file-wide read over-reaches
+  measurably here: `mesh_layers_ctrl` binds `abs_out_file` from the canonicalising call at `:118`
+  and unpacks a same-named local from the widget's item data at `:177`, and a file-wide scan
+  reports `:207` as though the first fed the second. It does not; the ticket's own write-up had
+  already said an AST scan keyed on the canonicalising call would not fire there, so a scan that
+  did would have contradicted the measurement it was built from.
+
+A call that READS (`open`, `np.loadtxt`, `os.stat`) needs no discrimination at all: it presupposes
+the answer, so canonicalise-then-read is always the reach-around.
+
+The one real reader was converted rather than pinned: `add_all_sessions_to_mesh` now asks
+`readable_geom_path(session.project_model.output_file)`, which collapses its two missing cases —
+no output file at all, and an export that is gone — into the one branch that already handled both
+the same way, so `missing_exports` gets the same names it did before. #111 had correctly left it,
+because it does not OPEN the file; it asks the same question about it, which is what makes it the
+same verb's. With that landed, check 12 against the tree reports exactly ONE site, in
+`geom_path_identity.py` itself, and nothing is pinned or exempted by name.
+
+**Shape 2 has zero sites in this tree, and saying so is the point.** It is prophylactic — the
+defect the blind spot predicted rather than one that is there — so the only thing standing behind
+it is the injection: a module dropped into a real GUI package handing a raw `geom_files` entry to
+`os.path.exists`, with the verdict read from the child's EXIT CODE and not from a FAIL-line count,
+which reports a crash as zero failures. Both new doors sit beside the four already there, each
+shown to move exactly one verdict, against a negative control on the untouched tree. What the
+check still cannot see is stated in the rule file's blind-spot list, including the one limit that
+is deliberate: a site that uses the canonical path where the file is absent is silent BY
+CONSTRUCTION, which is the same property that keeps the three correct sites green.
+
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`

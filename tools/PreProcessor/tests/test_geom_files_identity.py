@@ -54,6 +54,16 @@ Three defects behind that, each pinned below:
     does not draw. ``readable_geom_path`` is that one question, and check 11 asks
     it from a foreign cwd.
 
+ 7. REACH ON THE READ SIDE (#112). A verb with no scan is a rule the sixth
+    reader can be written around, which is what happened on the store side
+    twice. Check 12 fails the build on both shapes the converted readers used
+    to be: canonicalise-then-ask-the-filesystem, and a raw ``geom_files`` entry
+    handed to it. The first is banned by the QUESTION rather than by the shape
+    -- only when the canonicalised entry is used nowhere but the branch where
+    the file turned out to be there -- because three sites in one controller
+    need that path precisely WHEN the file is absent, and a gate that
+    red-lights three correct sites to find one real one gets worked around.
+
 Run: python3 tools/PreProcessor/tests/test_geom_files_identity.py
 """
 import os
@@ -777,6 +787,333 @@ check(gpi.readable_geom_path("") == "",
       "11. ...and a falsy entry is answered without a separate emptiness test, "
       "as the shared derivation answers it")
 
+# ── 12. the READ side has a SCAN as well as a verb ───────────────────────
+# Check 11 holds what readable_geom_path ANSWERS. It says nothing about who
+# ASKS: the sixth reader can still be written the way the first five were, and
+# the symptom is silent -- a repo-relative entry resolved against the process
+# cwd, and a preview that simply does not draw. Both previous sweeps on this
+# rule (#99, #104) had a review find sites they had missed, so the reach is
+# known rather than assumed.
+#
+# TWO shapes, both of them exactly what the converted readers used to be:
+#
+#  (a) canonicalise, then ask the filesystem -- os.path.exists(
+#      canonical_geom_path(p)), or the same over a local bound from it. That is
+#      readable_geom_path written out by hand.
+#  (b) a RAW geom_files entry handed to the filesystem -- `for gf in
+#      cfg.geom_files: np.loadtxt(gf)`, the reader the rule file's blind spot
+#      named. A stored entry is a repo-relative SPELLING, so this one resolves
+#      it against the process cwd.
+#
+# Shape (a) cannot be banned outright, and the measurement that says so was
+# taken against the tree BEFORE this check was written (#112, an AST walk at
+# #111): mesh_layers_ctrl.py carried FIVE canonicalise-then-exists sites and
+# only ONE was this defect. THREE of the other four need the canonical path
+# precisely WHEN the file is absent -- it goes into the refusal message, onto
+# the "(not exported)" label with the membership test and the item data, and
+# onto the "missing file" tag by basename -- and "" is the one answer that
+# destroys what they need. The fifth re-tests a path taken from the widget's
+# item data, with no canonicalising call feeding it at all. A gate that
+# red-lights four correct sites to find one real one gets worked around rather
+# than obeyed, and the escape hatch it would need -- "these files are fine" --
+# is the growing filename list the derived allow-lists here exist to avoid.
+#
+# So the ban is on the QUESTION, not on the shape: an existence call on a
+# canonicalised entry is a violation only when that entry is used NOWHERE but
+# the branch where the file turned out to be there. That is "use it only if it
+# is there", which is readable_geom_path's question and nothing else's. Uses
+# inside the guard's own test do not count -- `canon and os.path.exists(canon)`
+# is one question, not two -- which is why the verb's own body is a violation
+# and its exemption is load bearing. A call that READS (open, loadtxt, ...)
+# needs no such discrimination: it presupposes the answer.
+
+#: The filesystem calls this tree asks about a geometry path, split by the
+#: question they answer. The existence half is what readable_geom_path absorbs
+#: (four of #111's five readers spelled it os.path.exists); the read half is how
+#: the fifth asked it -- np.loadtxt, letting the failure be the answer. Matched
+#: by attribute name, so `os.path.exists`, `path.exists` and a bare imported
+#: `exists` are one entry, and `np.loadtxt` needs no import to be recognised.
+_EXISTENCE_CALLS = ("exists", "isfile", "lexists", "access")
+_READ_CALLS = ("open", "loadtxt", "genfromtxt", "stat", "getsize", "getmtime")
+
+#: Derived from the verbs, like _RAW_OK: the module that DEFINES the read side
+#: is the one place that may canonicalise and then ask the filesystem, because
+#: that is the question it exists to answer. Both names are read off the module
+#: so that splitting it moves the exemption with them.
+_READ_OK = {
+    os.path.normpath(inspect.getsourcefile(_verb)): "defines the read-side verb"
+    for _verb in (gpi.readable_geom_path, gpi.canonical_geom_path)
+}
+
+_CANON_VERB = gpi.canonical_geom_path.__name__
+
+
+def _callee_name(node: ast.Call):
+    f = node.func
+    return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+
+
+def _is_geom_list(node) -> bool:
+    """``cfg.geom_files`` as something to iterate, `or []` tail included."""
+    while isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+        node = node.values[0]
+    return isinstance(node, ast.Attribute) and node.attr == "geom_files"
+
+
+def _name_scopes(tree) -> list[list]:
+    """Every set of nodes whose NAMES belong together: the module and each
+    function, each WITHOUT the bodies of the functions nested inside it.
+
+    Function-scoped rather than file-scoped because a file-scoped read
+    over-reaches: mesh_layers_ctrl binds ``abs_out_file`` from the canonicalising
+    call in one method and unpacks a same-named local from the widget's item
+    data in another, and a file-wide scan reports the second as if the first fed
+    it."""
+    out = []
+
+    def walk(node):
+        own = []
+
+        def collect(n):
+            for c in ast.iter_child_nodes(n):
+                if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef, ast.Lambda)):
+                    walk(c)
+                    continue
+                own.append(c)
+                collect(c)
+        collect(node)
+        out.append(own)
+
+    walk(tree)
+    return out
+
+
+def _subtree_ids(nodes) -> set:
+    return {id(x) for n in nodes for x in ast.walk(n)}
+
+
+#: What makes the statements AFTER a refusal part of the file-is-there branch.
+_TERMINATORS = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+
+
+def _siblings_after(stmt, parent) -> list:
+    """The statements following ``stmt`` in the block that holds it."""
+    p = parent.get(id(stmt))
+    for field in ("body", "orelse", "finalbody"):
+        block = getattr(p, field, None)
+        if isinstance(block, list) and any(x is stmt for x in block):
+            i = next(k for k, x in enumerate(block) if x is stmt)
+            return block[i + 1:]
+    return []
+
+
+def _existence_guard(call, parent):
+    """``(the if/IfExp guarded by this existence call, the branch taken when the
+    file IS there)``, or ``(None, None)`` when the call is not a guard.
+
+    Polarity is counted through ``not``, so the early-refusal spelling ``if not
+    os.path.exists(p):`` has the same two branches as ``if os.path.exists(p):``
+    with them swapped -- and when that refusal ENDS the branch (return, raise,
+    continue, break), the rest of the enclosing block is the file-is-there branch
+    too. Without that, the guard-clause spelling of the reach-around would be
+    invisible while the indented one fails."""
+    negated = False
+    node, p = call, parent.get(id(call))
+    while p is not None:
+        if isinstance(p, ast.UnaryOp) and isinstance(p.op, ast.Not):
+            negated = not negated
+        if isinstance(p, (ast.If, ast.IfExp)):
+            if p.test is not node:
+                return None, None          # climbed out of the test, not a guard
+            body = p.body if isinstance(p.body, list) else [p.body]
+            orelse = p.orelse if isinstance(p.orelse, list) else [p.orelse]
+            present = list(orelse if negated else body)
+            absent = body if negated else orelse
+            if (isinstance(p, ast.If) and absent
+                    and isinstance(absent[-1], _TERMINATORS)):
+                present += _siblings_after(p, parent)
+            return p, present
+        node, p = p, parent.get(id(p))
+    return None, None
+
+
+def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
+    """(line, construct) for every site in one file that reaches around
+    ``readable_geom_path`` -- shape (a) or shape (b) above."""
+    tree = ast.parse(open(path).read())
+    parent = {}
+    for n in ast.walk(tree):
+        for c in ast.iter_child_nodes(n):
+            parent[id(c)] = n
+
+    out = {}
+    for scope in _name_scopes(tree):
+        canon, raw = {}, set()
+        for n in scope:
+            if (isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)
+                    and _callee_name(n.value) == _CANON_VERB):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        canon[t.id] = n
+            it = tgt = None
+            if isinstance(n, (ast.For, ast.AsyncFor)):
+                it, tgt = n.iter, n.target
+            elif isinstance(n, ast.comprehension):
+                it, tgt = n.iter, n.target
+            if it is not None and _is_geom_list(it):
+                raw |= {t.id for t in ast.walk(tgt) if isinstance(t, ast.Name)}
+
+        for n in scope:
+            if not (isinstance(n, ast.Call) and n.args):
+                continue
+            fn = _callee_name(n)
+            if fn not in _EXISTENCE_CALLS + _READ_CALLS:
+                continue
+            arg = n.args[0]
+            if isinstance(arg, ast.Call) and _callee_name(arg) == _CANON_VERB:
+                out[(n.lineno, f"{fn}({_CANON_VERB}(...))")] = 1
+                continue
+            if not isinstance(arg, ast.Name):
+                continue
+            if arg.id in raw:
+                out[(n.lineno, f"{fn}() on a raw geom_files entry")] = 1
+                continue
+            if arg.id not in canon:
+                continue
+            if fn in _READ_CALLS:
+                out[(n.lineno, f"{fn}() on a canonicalised entry")] = 1
+                continue
+            guard, present = _existence_guard(n, parent)
+            # Uses inside the guard's own test are part of the question, not a
+            # second use of the answer. With no guard at all, the existence call
+            # itself is the only thing standing in for one.
+            asked = _subtree_ids([guard.test] if guard is not None else [n])
+            found_here = _subtree_ids(present) if guard is not None else set()
+            elsewhere = [u for u in scope
+                         if isinstance(u, ast.Name) and u.id == arg.id
+                         and isinstance(u.ctx, ast.Load)
+                         and id(u) not in asked and id(u) not in found_here]
+            if not elsewhere:
+                out[(n.lineno,
+                     f"{fn}() on a canonicalised entry used only where it "
+                     f"exists")] = 1
+    return sorted(out)
+
+
+_readers = _scan_app_tree(_reach_around_read_sites, skip=_READ_OK)
+check(not _readers,
+      f"12. no reader canonicalises and then asks the filesystem itself, and "
+      f"none hands a raw geom_files entry to it ({_readers})")
+
+# The exemption is LOAD BEARING, like check 7's: readable_geom_path's own body
+# IS shape (a) -- canonicalise, then os.path.exists on the result, used only
+# where it exists -- so exempting the module it lives in is doing work, and the
+# scan is reaching the one construct it must not ban.
+check(len(_READ_OK) == 1 and all(_reach_around_read_sites(p) for p in _READ_OK),
+      f"12. the derived allow-list is the one module that DEFINES the verb, and "
+      f"it really contains the construct "
+      f"({ {os.path.basename(k): _reach_around_read_sites(k) for k in _READ_OK} })")
+check(os.path.normpath(os.path.join(_GUI, "app", "controllers",
+                                    "mesh_layers_ctrl.py")) not in _READ_OK,
+      "12. ...and the controller carrying the three sites that need the "
+      "canonical path WHEN IT IS ABSENT is not exempt -- they are distinguished "
+      "by the question they ask, not by their filename")
+
+# The scan sees every shape it forbids.
+_probe12 = os.path.join(tmp, "probe_read.py")
+with open(_probe12, "w") as fh:
+    fh.write("import os\n"
+             "import numpy as np\n"
+             "\n"
+             "def direct(p):\n"
+             "    return os.path.exists(canonical_geom_path(p))\n"
+             "\n"
+             "def guarded(p):\n"
+             "    q = canonical_geom_path(p)\n"
+             "    if os.path.exists(q):\n"
+             "        return q\n"
+             "    return ''\n"
+             "\n"
+             "def refused(p):\n"
+             "    q = canonical_geom_path(p)\n"
+             "    if not os.path.isfile(q):\n"
+             "        return ''\n"
+             "    return q\n"
+             "\n"
+             "def flagged(p):\n"
+             "    q = canonical_geom_path(p)\n"
+             "    return os.path.lexists(q)\n"
+             "\n"
+             "def opened(p):\n"
+             "    q = canonical_geom_path(p)\n"
+             "    return np.loadtxt(q)\n"
+             "\n"
+             "def raw_loop(cfg):\n"
+             "    for gf in cfg.geom_files:\n"
+             "        if os.path.exists(gf):\n"
+             "            yield open(gf)\n"
+             "\n"
+             "def raw_comp(cfg):\n"
+             "    return [np.loadtxt(g) for g in (cfg.geom_files or [])]\n")
+_seen12 = {w for _ln, w in _reach_around_read_sites(_probe12)}
+check(_seen12 == {
+          "exists(canonical_geom_path(...))",
+          "exists() on a canonicalised entry used only where it exists",
+          "isfile() on a canonicalised entry used only where it exists",
+          "lexists() on a canonicalised entry used only where it exists",
+          "loadtxt() on a canonicalised entry",
+          "exists() on a raw geom_files entry",
+          "open() on a raw geom_files entry",
+          "loadtxt() on a raw geom_files entry"},
+      f"12. INJECTION: the scan sees both shapes -- the direct call, the local "
+      f"bound from it in either polarity, with no guard at all, a read that "
+      f"presupposes the answer, and a raw entry from a loop or a comprehension "
+      f"({sorted(_seen12)})")
+
+# ...and it is silent on the four correct sites, or the tree passing above says
+# nothing. These are the real ones, rewritten to the fixture's names: the
+# refusal message, the "(not exported)" label, the "missing file" tag, and the
+# re-test of a path that no canonicalising call fed.
+_probe12b = os.path.join(tmp, "probe_read_ok.py")
+with open(_probe12b, "w") as fh:
+    fh.write("import os\n"
+             "\n"
+             "def refusal(self, p):\n"
+             "    q = canonical_geom_path(p)\n"
+             "    if not os.path.exists(q):\n"
+             "        self.log(f\"does not exist at '{q}'\")\n"
+             "        return\n"
+             "    self.use(q)\n"
+             "\n"
+             "def label(self, p):\n"
+             "    q = canonical_geom_path(p)\n"
+             "    text = 'name'\n"
+             "    if not os.path.exists(q):\n"
+             "        text += ' (not exported)'\n"
+             "    self.item(text, q)\n"
+             "\n"
+             "def tag(self, cfg):\n"
+             "    for gf in cfg.geom_files:\n"
+             "        q = canonical_geom_path(gf)\n"
+             "        t = 'external file' if os.path.exists(q) else 'missing file'\n"
+             "        self.item(f'{os.path.basename(q)} ({t})')\n"
+             "\n"
+             "def retest(self, data):\n"
+             "    _sid, q = data\n"
+             "    if not q or not os.path.exists(q):\n"
+             "        self.refuse()\n"
+             "\n"
+             "def converted(self, p):\n"
+             "    q = readable_geom_path(p)\n"
+             "    if q:\n"
+             "        self.use(q)\n")
+check(not _reach_around_read_sites(_probe12b),
+      f"12. ...and silent on the four sites that ask a DIFFERENT question -- "
+      f"each needs the canonical path where the file is absent, or was never "
+      f"fed by a canonicalising call -- and on a converted reader "
+      f"({_reach_around_read_sites(_probe12b)})")
+
 # ── 7b. the gate is non-vacuous AS A BUILD STEP, read from the exit code ──
 # The scan-level probe above proves the AST walk sees the constructs; it cannot
 # prove this FILE goes red when one appears in the real tree. So run this whole
@@ -834,6 +1171,35 @@ if not os.environ.get(_NO_SUB):
          "def reintroduce_the_defect(cfg, p):\n"
          "    cfg.add_geom_file(os.path.abspath(p))\n",
          "_geom_ident_inj_probe.py:4 add_geom_file(os.path.abspath(...))"),
+        # Check 12's two shapes, held to the same bar for the same reason:
+        # its scan-level probe proves the AST walk sees them, and only a run of
+        # this FILE against a door opened in a real GUI package proves the gate
+        # goes red. The first is the discriminated shape -- the canonical path
+        # used only on the branch where the file turned out to be there -- so
+        # this door is also what keeps the discriminator from being a way to
+        # never fire at all.
+        ("the canonicalise-then-ask reach-around",
+         "import os\n"
+         "\n"
+         "from app.services.geom_path_identity import canonical_geom_path\n"
+         "\n"
+         "\n"
+         "def reintroduce_the_defect(p):\n"
+         "    q = canonical_geom_path(p)\n"
+         "    if os.path.exists(q):\n"
+         "        return q\n"
+         "    return ''\n",
+         "_geom_ident_inj_probe.py:8 exists() on a canonicalised entry used "
+         "only where it exists"),
+        ("the raw geom_files entry handed to the filesystem",
+         "import os\n"
+         "\n"
+         "\n"
+         "def reintroduce_the_defect(cfg):\n"
+         "    for gf in cfg.geom_files:\n"
+         "        if os.path.exists(gf):\n"
+         "            yield open(gf)\n",
+         "_geom_ident_inj_probe.py:6 exists() on a raw geom_files entry"),
     )
     for _what, _src, _want in _DOORS:
         try:
