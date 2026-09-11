@@ -3,7 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
 from app.utils import BC_COLORS, DEFAULT_BC_COLOR
-from app.services.geom_path_identity import canonical_geom_path
+from app.services.geom_path_identity import readable_geom_path
 from app.services.meta_io import read_meta_segments, read_meta_point_segids
 
 
@@ -99,7 +99,9 @@ class MeshCanvasBCMixin:
         for gf in self.mesh_config.geom_files:
             # By IDENTITY: a repo-relative entry names its file relative to the
             # REPO, never to the process cwd (services/geom_path_identity).
-            gp = canonical_geom_path(gf)
+            gp = readable_geom_path(gf)
+            if not gp:
+                continue
             try:
                 pts = np.atleast_2d(np.loadtxt(gp))
             except Exception:

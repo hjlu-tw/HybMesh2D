@@ -45,6 +45,13 @@ Three defects behind that, each pinned below:
     rule its own callers contradict is how the first defect got in. Checks 8
     and 9, each shown to fail the BUILD like the doors above.
 
+ 6. THE READ SIDE (#111). The write side got ``stored_geom_path`` and the
+    sidecar side ``meta_io.meta_path_for``; the side that OPENS the file got
+    neither, so five readers across three layers each hand-wrote "canonicalise,
+    then ask the filesystem" -- the shape whose symptom is a preview that
+    silently does not draw. ``readable_geom_path`` is that one question, and
+    check 11 asks it from a foreign cwd with the raw form measured beside it.
+
 Run: python3 tools/PreProcessor/tests/test_geom_files_identity.py
 """
 import os
@@ -730,6 +737,37 @@ _c10e.load_from_dict(_null_ws)
 check(_c10e.geom_files == [] == _bypass_restore(_null_ws).geom_files,
       f"10. a JSON null for the whole list restores as [] -- the one of the "
       f"four the rebind also got right (got {_c10e.geom_files})")
+
+# ── 11. the READ side is one verb too ────────────────────────────────────
+# The five readers that OPEN a geometry (the mesh bbox scan, the Run-All
+# readiness check, the preview loader thread, the BC overlay and the selection
+# highlight) each hand-wrote "canonicalise the entry, then ask the filesystem
+# about the result". readable_geom_path is that question, asked once. Driven
+# from a FOREIGN cwd, because that is the only condition under which the two
+# spellings disagree -- and the raw alternative is measured beside it, so this
+# is about the verb and not about a fixture that would pass either way.
+_cwd = os.getcwd()
+try:
+    os.chdir(tempfile.gettempdir())
+    _readable_from_tmp = gpi.readable_geom_path(_rel)
+    _raw_from_tmp = os.path.exists(_rel)
+    _missing_from_tmp = gpi.readable_geom_path(
+        os.path.relpath(gone, _REPO))
+finally:
+    os.chdir(_cwd)
+check(_readable_from_tmp == gpi.canonical_geom_path(absolute),
+      f"11. a repo-relative entry reads back as the file it names, from any cwd "
+      f"(got {_readable_from_tmp!r})")
+check(not _raw_from_tmp,
+      f"11. INJECTION: the hand-written raw form the readers used to carry "
+      f"answers FALSE for that same entry from that same cwd, so the check "
+      f"above is the verb's (os.path.exists({_rel!r}) -> {_raw_from_tmp})")
+check(_missing_from_tmp == "" and gpi.readable_geom_path(gone) == "",
+      f"11. an entry naming a file that is not on disk reads back as \"\", the "
+      f"same answer a falsy entry gets (got {_missing_from_tmp!r})")
+check(gpi.readable_geom_path("") == "" and gpi.readable_geom_path(None) == "",
+      "11. ...and a falsy entry is answered without a separate emptiness test, "
+      "as the shared derivation answers it")
 
 # ── 7b. the gate is non-vacuous AS A BUILD STEP, read from the exit code ──
 # The scan-level probe above proves the AST walk sees the constructs; it cannot

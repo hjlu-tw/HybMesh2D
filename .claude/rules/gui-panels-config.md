@@ -203,7 +203,8 @@ global default, so a per-geometry override never hides behind a collapsed header
 
 **A geometry in the mesh config is the FILE it names, not the string that names it**
 (`services/geom_path_identity.py`, Qt-free — `canonical_geom_path` / `same_geom_file` /
-`canonical_geom_keys` / `dedupe_geom_paths` / `stored_geom_path`; the model's verbs are
+`canonical_geom_keys` / `dedupe_geom_paths` / `stored_geom_path` / `readable_geom_path`; the
+model's verbs are
 `models/mesh_config_geoms.py::GeomListMixin`, split off
 when `mesh_config.py` went over the file-size budget). Every dedup guard in the tree used to be a
 `not in` string compare over `MeshConfig.geom_files`, so the repo-relative and absolute spellings
@@ -235,9 +236,22 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   raw string answers about the process cwd. This is what makes the repo-relative store above safe
   rather than a silent "the preview vanished", and it is TWO rules, not one, because the readers
   are two kinds:
-  - The five that open the geometry itself resolve at the call site with `canonical_geom_path` —
-    the Run-All pre-flight, the mesh bbox scan, the BC canvas overlay, the preview loader thread
-    and the selection highlight.
+  - **The five that open the geometry itself go through `readable_geom_path`** (#111) — entry in,
+    the canonical path when a file is there and `""` when there is nothing to open, with the
+    existence question answered INSIDE the verb. The five are the Run-All readiness check, the
+    mesh bbox scan, the BC canvas overlay, the preview loader thread and the selection highlight;
+    each used to hand-write `canonical_geom_path` and then ask the filesystem itself, which is
+    the same shotgun surgery `meta_path_for` was extracted from on the sidecar side and has the
+    same silent symptom — a preview that does not draw. Existence is `os.path.exists`, the
+    question those five asked, and NOT `isfile`/`os.access`: a file that exists and still cannot
+    be read is the OPEN's failure, and every caller already has a handler holding the filename
+    and the exception. The verb stays at the PATH layer — it does not load, and does not absorb
+    the preview loader's NaN/`(N,2)` validation (`geometry_service.load_points_dat`). **No plural
+    form**: only one caller would write the comprehension, since the bbox scan and the overlay
+    need the stored spelling as well as the path. A falsy entry reads back as `""`, the same
+    answer the shared derivation gives, so one filter covers both. Behaviour-preserving by
+    construction and shown so by the existing GUI gates; its own contract is check 11, driven
+    from a FOREIGN cwd with the raw `os.path.exists(gf)` measured beside it.
   - **A path the USER gave is the one thing `os.path.abspath` is still right for**: a CLI argument
     or a dialog result really is cwd-relative, and the load beside it reads it that way. Resolve
     it with `abspath` FIRST and derive the entry from THAT (`stored_geom_path(abs_path)`) —
@@ -361,8 +375,10 @@ against one list; #71 moved the first two here.
   cannot follow a value. Two things bound it: the scan is scoped to the model's own store verbs, so
   an `os.path.abspath` for anything else (the recent-files list keeps one, deliberately) is not
   swept up, and check 9's behavioural half asserts what `stored_geom_path` RETURNS from any cwd,
-  which no caller can re-implement correctly by accident. **The READ side has no scan at all**, and
-  is held by a seam for sidecars (`meta_path_for`) and by nothing at all for the four call sites
-  that open the geometry directly: a new `np.loadtxt(gf)` fails no gate, and its symptom is silent
-  — a preview that does not draw. The first attempt at #104 converted five readers and left four,
-  which is how that reach is known rather than assumed.
+  which no caller can re-implement correctly by accident. **The READ side now has a seam on every
+  side — `meta_path_for` for sidecars, `readable_geom_path` for the geometry itself — but still no
+  SCAN**: a new reader that canonicalises and then calls the filesystem itself, or hands a raw
+  `geom_files` entry to it, fails no gate, and its symptom is silent — a preview that does not
+  draw. Check 11 holds the verb's own answer, not its reach; #112 adds the two AST shapes that
+  close this. The first attempt at #104 converted five readers and left four, which is how that
+  reach is known rather than assumed.

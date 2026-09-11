@@ -18,7 +18,7 @@ import os
 
 import numpy as np
 
-from app.services.geom_path_identity import (canonical_geom_path,
+from app.services.geom_path_identity import (readable_geom_path,
                                              stored_geom_path)
 
 from app.services import ib_handoff, pipeline_stages
@@ -53,9 +53,10 @@ class PipelineControllerMixin:
             session.original_points is not None or session.project_model.segments)
         # By IDENTITY: an entry is repo-relative (a loaded workspace, a saved
         # script, or the resample stage below), so os.path.exists on the raw
-        # string answers about the process cwd.
+        # string answers about the process cwd. readable_geom_path asks both
+        # halves of that question once.
         mesh_files_ready = any(
-            os.path.exists(canonical_geom_path(gf))
+            readable_geom_path(gf)
             for gf in self.global_mesh_config.geom_files)
         if not has_cad and not mesh_files_ready:
             log("[Pipeline] No active geometry. Load or draw a geometry first "

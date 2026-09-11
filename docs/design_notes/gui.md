@@ -1342,9 +1342,31 @@ A path the USER gave — a CLI argument, a dialog result — really is cwd-relat
 the RAW spelling therefore resolved against the repo while the load beside it resolved against the
 cwd, so the session could load one file and list another — a defect the abspath the change was
 removing had been preventing. The rule is not "abspath is wrong"; it is "the base for an ENTRY is
-the repo". Resolve the user's path with `abspath` first, derive the entry from that. That asymmetry is the recorded blind spot: the STORE side
-has an AST gate, the sidecar side has a seam, and those four have neither — an AST cannot follow a
-value through a variable, and the symptom of a missed one is silence.
+the repo". Resolve the user's path with `abspath` first, derive the entry from that.
+
+**The read side got its verb last, and the argument for it is the one the sidecar side already
+made (#111).** After #104 the asymmetry was the recorded blind spot: the STORE side had an AST
+gate, the sidecar side had `meta_path_for`, and the five call sites that open the geometry itself
+had neither — each hand-writing "canonicalise the entry, then ask the filesystem about the result",
+which is two steps of one rule copied five times across three layers. Two review axes that cannot
+see each other converged on it from opposite directions, the Standards axis as duplicated code and
+the Spec axis as a rule #104 said would be expressed once and is not; and the reach was known
+rather than assumed, since #99 and #104 each paid for a full-tree sweep and each had a review find
+sites it had missed. So the third sweep bought a seam instead: `readable_geom_path`, entry in, the
+canonical path or `""` out, the existence question answered inside. The shape of the verb is
+decided by what the five callers asked, not by what a path helper could offer — existence is
+`os.path.exists` and not `isfile`/`os.access`, because a file that exists and still cannot be read
+is the OPEN's failure and every caller already has a handler holding the filename and the
+exception; and it stays at the PATH layer, absorbing neither the loader thread's NaN/`(N,2)`
+validation nor anything else that has a home. No plural form was added, because only one of the
+five would have written the comprehension: the bbox scan and the BC overlay need the stored
+spelling for their log line and their role test as well as the path. The conversion is
+behaviour-preserving by construction — a missing file still reaches each caller's existing skip,
+with no new refusal and no new log line — so it is held by the GUI gates that already run rather
+than by tests written to prove a conversion correct, and check 11 holds the VERB's own contract,
+driven from a foreign cwd with the raw `os.path.exists(gf)` measured beside it as the negative
+half. What is still missing is the SCAN: a sixth reader can still reach around the verb, which is
+#112's two AST shapes, and until they land the rule file concedes exactly that and nothing more.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

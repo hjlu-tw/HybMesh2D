@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from app.views.mesh_canvas_loader import GeomLoaderThread
 
-from app.services.geom_path_identity import canonical_geom_path
+from app.services.geom_path_identity import readable_geom_path
 from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
@@ -221,12 +221,11 @@ class MeshCanvasGeomMixin:
                     "item", exc_info=True)
             self._sel_highlight_item = None
 
-        import os
         # The payload is a stored geometry ENTRY (the list item's data), which is
         # repo-relative; reading it raw resolves against the process cwd and the
         # highlight silently fails to draw. See services/geom_path_identity.
-        path = canonical_geom_path(path)
-        if not path or not os.path.exists(path):
+        path = readable_geom_path(path)
+        if not path:
             return
         try:
             pts = np.atleast_2d(np.loadtxt(path))

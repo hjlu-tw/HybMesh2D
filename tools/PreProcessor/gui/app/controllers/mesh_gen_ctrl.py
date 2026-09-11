@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
-from app.services.geom_path_identity import canonical_geom_path
+from app.services.geom_path_identity import readable_geom_path
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import (find_binary_executable, repo_root, confirm,
@@ -228,11 +228,12 @@ class MeshGenControllerMixin:
         dmaxs = [float("-inf"), float("-inf")]
         have = have_dom = False
         for gf in cfg.geom_files:
-            # The entry is a SPELLING; the file it names is its canonical path.
-            # Reading it raw resolved a repo-relative entry (a loaded workspace,
-            # a saved script, the resample stage) against the process cwd.
-            gp = canonical_geom_path(gf)
-            if not os.path.exists(gp):
+            # The entry is a SPELLING; readable_geom_path is the one verb that
+            # turns it into the file to open. Reading it raw resolved a
+            # repo-relative entry (a loaded workspace, a saved script, the
+            # resample stage) against the process cwd.
+            gp = readable_geom_path(gf)
+            if not gp:
                 # Not logged here: the pre-flight above already refused the run
                 # over it (cfg.geom_files_not_on_disk(), which asks the filesystem
                 # -- deliberately NOT validate(), which is pure).

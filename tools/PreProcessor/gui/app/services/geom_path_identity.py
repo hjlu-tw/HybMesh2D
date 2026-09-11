@@ -29,7 +29,11 @@ Two rules, and the second is the one that was wrong:
 Both rules are about COMPARING two spellings. :func:`stored_geom_path` is the
 third question they leave open -- which spelling to write down in the first
 place -- and it exists because the callers answered it with the very
-``os.path.abspath`` the first rule condemns.
+``os.path.abspath`` the first rule condemns. :func:`readable_geom_path` is the
+fourth -- which path to OPEN -- and it exists for the same reason: five readers
+across three layers answered it by hand-writing the same two steps, and the two
+full-tree sweeps that paid for the other sides each had a review find sites they
+had missed.
 """
 from __future__ import annotations
 
@@ -38,7 +42,8 @@ import os
 from app.services.paths import repo_root
 
 __all__ = ["canonical_geom_path", "same_geom_file", "keyed_geom_paths",
-           "canonical_geom_keys", "dedupe_geom_paths", "stored_geom_path"]
+           "canonical_geom_keys", "dedupe_geom_paths", "stored_geom_path",
+           "readable_geom_path"]
 
 
 def canonical_geom_path(path: str, base: str | None = None) -> str:
@@ -146,3 +151,35 @@ def stored_geom_path(path: str, base: str | None = None) -> str:
     if canon == root or canon.startswith(root + os.sep):
         return os.path.relpath(canon, root)
     return canon
+
+
+def readable_geom_path(path: str, base: str | None = None) -> str:
+    """The path to OPEN for ``path``: its canonical spelling when a file is
+    there, "" when there is nothing to open.
+
+    "Canonicalise the entry, then ask the filesystem about the result" is ONE
+    question, and this is where it is asked. It used to be written out at five
+    call sites across three layers -- the mesh bbox scan, the Run-All readiness
+    check, the preview loader thread, the BC overlay and the selection highlight
+    -- which is the shape :func:`meta_path_for` was extracted from on the sidecar
+    side, for the same reason: converting readers one by one is the
+    shotgun-surgery version of one rule, and the symptom of getting it wrong is
+    SILENT -- a repo-relative entry resolved against the process cwd, and a
+    preview that simply does not draw.
+
+    Existence is ``os.path.exists``, which is exactly the question the converted
+    readers asked -- not ``isfile``, not ``os.access``. A path that exists and
+    still cannot be read is the OPEN's failure, and every caller already has a
+    handler that names the file; answering it here would move a diagnostic out
+    of the layer that has the filename and the exception.
+
+    The verb stays at the PATH layer. It does not load, and it does not absorb
+    the preview loader's NaN / ``(N,2)`` validation, which is a separate concern
+    with a home of its own (``geometry_service.load_points_dat``).
+
+    A falsy entry canonicalises to "" and so reads back as "" -- the same answer
+    the shared derivation gives, so a caller filtering on the empty string is
+    filtering both cases at once.
+    """
+    canon = canonical_geom_path(path, base)
+    return canon if canon and os.path.exists(canon) else ""
