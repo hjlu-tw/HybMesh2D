@@ -1347,8 +1347,13 @@ the repo". Resolve the user's path with `abspath` first, derive the entry from t
 **The read side got its verb last, and the argument for it is the one the sidecar side already
 made (#111).** After #104 the asymmetry was the recorded blind spot: the STORE side had an AST
 gate, the sidecar side had `meta_path_for`, and the five call sites that open the geometry itself
-had neither — each hand-writing "canonicalise the entry, then ask the filesystem about the result",
-which is two steps of one rule copied five times across three layers. Two review axes that cannot
+had neither — each answering "canonicalise the entry, then find out whether there is anything to
+open" for itself, which is two steps of one rule copied five times across three layers. FOUR of the
+five spelled the second step `os.path.exists` on the canonical path; the BC overlay spelled it by
+letting `np.loadtxt` fail into its own `continue`, which is the same question with no separate call
+to name — worth stating exactly, because "all five wrote the same two steps" is the kind of round
+number this repo keeps having to walk back, and both review axes walked this one back independently.
+Two review axes that cannot
 see each other converged on it from opposite directions, the Standards axis as duplicated code and
 the Spec axis as a rule #104 said would be expressed once and is not; and the reach was known
 rather than assumed, since #99 and #104 each paid for a full-tree sweep and each had a review find
@@ -1365,8 +1370,25 @@ behaviour-preserving by construction — a missing file still reaches each calle
 with no new refusal and no new log line — so it is held by the GUI gates that already run rather
 than by tests written to prove a conversion correct, and check 11 holds the VERB's own contract,
 driven from a foreign cwd with the raw `os.path.exists(gf)` measured beside it as the negative
-half. What is still missing is the SCAN: a sixth reader can still reach around the verb, which is
-#112's two AST shapes, and until they land the rule file concedes exactly that and nothing more.
+half. The check is FOUR assertions and only three of them are the verb's: the fourth measures the
+FIXTURE — that `os.path.exists` on the same entry from the same cwd really does answer differently
+— and it is labelled a fixture control rather than an injection, because no mutation of the verb
+can turn it red. What makes check 11 non-vacuous about the verb is the mutation run beside it:
+rewriting the body back to `os.path.abspath` exits 1 with the first assertion the first FAIL.
+Calling a fixture control an injection is the shape #110's review named one commit earlier — a
+check that only argues.
+
+**What the seam does NOT cover, measured for #112 rather than left for it to find.** Three sites in
+the tree carry #112's shapes and are not defects: `mesh_layers_ctrl` resolves a session's output
+file and then tags a `geom_files` entry `external file` or `missing file`, and both need the
+canonical path precisely WHEN the file is absent — it is the basename of a missing file that goes
+on the label — which is the one answer `readable_geom_path` replaces with `""`; and
+`geom_files_not_on_disk` asks the whole-list inverse through `keyed_geom_paths`. So the rule is
+"the side that OPENS a file has a seam", not "every filesystem call about an entry goes through
+one verb", and a shape ban with no exemption for those three would red-light correct code. The
+verb is also the THIRD identity verb that deliberately does not read `keyed_geom_paths` — it asks
+about one entry, like `remove_geom_file` — so the helper's own census of its readers names it,
+which is the census #110 had just paid to make true.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

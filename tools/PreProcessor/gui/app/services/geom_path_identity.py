@@ -31,9 +31,9 @@ third question they leave open -- which spelling to write down in the first
 place -- and it exists because the callers answered it with the very
 ``os.path.abspath`` the first rule condemns. :func:`readable_geom_path` is the
 fourth -- which path to OPEN -- and it exists for the same reason: five readers
-across three layers answered it by hand-writing the same two steps, and the two
-full-tree sweeps that paid for the other sides each had a review find sites they
-had missed.
+across three layers each answered it for themselves, and the two full-tree
+sweeps that paid for the other sides each had a review find sites they had
+missed.
 """
 from __future__ import annotations
 
@@ -85,11 +85,15 @@ def keyed_geom_paths(paths, base: str | None = None):
     keys; its ``set_geom_files`` (hence the workspace restore) and
     ``mesh_config_io``'s GEOM_FILE writer through the dedupe.
 
-    Two verbs that ask an IDENTITY question do NOT read it, and both omissions
-    are decisions rather than oversights. ``remove_geom_file`` asks about ONE
-    file, so it compares through :func:`same_geom_file`: dropping a falsy entry
-    is right for a dedupe, since such an entry names no file, and would make a
-    removal silently delete the empty entries beside the one it was asked about.
+    THREE verbs that ask an IDENTITY question do NOT read it, and all three
+    omissions are decisions rather than oversights. ``remove_geom_file`` asks
+    about ONE file, so it compares through :func:`same_geom_file`: dropping a
+    falsy entry is right for a dedupe, since such an entry names no file, and
+    would make a removal silently delete the empty entries beside the one it was
+    asked about. :func:`readable_geom_path` asks about ONE entry for the same
+    reason, and reaches :func:`canonical_geom_path` directly: a caller holding a
+    list still calls it per entry, because each of its callers needs the stored
+    spelling beside the path.
     ``role_of`` walks ``geom_roles`` -- a different container, whose keys are
     spellings of the same files -- against the one key it has already derived.
     (The model's ``domain_file`` / ``boundary_files`` / ``seed_files`` walk the
@@ -157,21 +161,23 @@ def readable_geom_path(path: str, base: str | None = None) -> str:
     """The path to OPEN for ``path``: its canonical spelling when a file is
     there, "" when there is nothing to open.
 
-    "Canonicalise the entry, then ask the filesystem about the result" is ONE
-    question, and this is where it is asked. It used to be written out at five
-    call sites across three layers -- the mesh bbox scan, the Run-All readiness
-    check, the preview loader thread, the BC overlay and the selection highlight
-    -- which is the shape :func:`meta_path_for` was extracted from on the sidecar
-    side, for the same reason: converting readers one by one is the
+    "Canonicalise the entry, then find out whether there is anything to open"
+    is ONE question, and this is where it is asked. It used to be answered at
+    five call sites across three layers -- the mesh bbox scan, the Run-All
+    readiness check, the preview loader thread, the BC overlay and the selection
+    highlight -- which is the shape :func:`meta_path_for` was extracted from on
+    the sidecar side, for the same reason: converting readers one by one is the
     shotgun-surgery version of one rule, and the symptom of getting it wrong is
     SILENT -- a repo-relative entry resolved against the process cwd, and a
     preview that simply does not draw.
 
-    Existence is ``os.path.exists``, which is exactly the question the converted
-    readers asked -- not ``isfile``, not ``os.access``. A path that exists and
-    still cannot be read is the OPEN's failure, and every caller already has a
-    handler that names the file; answering it here would move a diagnostic out
-    of the layer that has the filename and the exception.
+    FOUR of the five spelled it ``os.path.exists`` on the canonical path; the
+    BC overlay asked by attempting the open and treating the failure as a skip,
+    which is the same question with no separate call to name. Existence here is
+    therefore ``os.path.exists`` -- not ``isfile``, not ``os.access``. A path
+    that exists and still cannot be read is the OPEN's failure, and every caller
+    already has a handler that names the file; answering it here would move a
+    diagnostic out of the layer that has the filename and the exception.
 
     The verb stays at the PATH layer. It does not load, and it does not absorb
     the preview loader's NaN / ``(N,2)`` validation, which is a separate concern
