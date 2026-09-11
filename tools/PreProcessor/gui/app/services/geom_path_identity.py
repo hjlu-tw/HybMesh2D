@@ -37,8 +37,8 @@ import os
 
 from app.services.paths import repo_root
 
-__all__ = ["canonical_geom_path", "same_geom_file", "canonical_geom_keys",
-           "dedupe_geom_paths", "stored_geom_path"]
+__all__ = ["canonical_geom_path", "same_geom_file", "keyed_geom_paths",
+           "canonical_geom_keys", "dedupe_geom_paths", "stored_geom_path"]
 
 
 def canonical_geom_path(path: str, base: str | None = None) -> str:
@@ -62,16 +62,29 @@ def same_geom_file(a: str, b: str, base: str | None = None) -> bool:
         canonical_geom_path(a, base) == canonical_geom_path(b, base))
 
 
-def _keyed(paths, base: str | None = None):
+def keyed_geom_paths(paths, base: str | None = None):
     """``(canonical key, the spelling it came from)`` for every entry that names
     a file. Falsy entries are dropped here, once.
 
-    The ONE place a list of spellings becomes identities. Every verb that walks
-    the list -- dedupe below, and the model's membership and role-prune through
-    :func:`canonical_geom_keys` -- reads it through here, because the same loop
-    written per verb is how one canonicalisation rule drifts into three that can
+    The ONE place a list of spellings becomes identities, and its readers are
+    named here rather than left to be grepped for, because the same loop written
+    per verb is how one canonicalisation rule drifts into three that can
     disagree. That is not hypothetical: the string-compare defect this module
     exists for was a rule stated once and applied in several hand-written copies.
+
+    Read by :func:`dedupe_geom_paths` and :func:`canonical_geom_keys` below --
+    and so, through the latter, by the model's ``has_geom_file`` (hence
+    ``add_geom_file``) and ``prune_roles`` -- and directly by the model's
+    ``geom_files_not_on_disk``, which asks the filesystem about each key.
+
+    Two of the model's verbs do NOT read it, and both omissions are decisions
+    rather than oversights. ``remove_geom_file`` asks about ONE file, so it
+    compares through :func:`same_geom_file`: dropping a falsy entry is right for
+    a dedupe, since such an entry names no file, and would make a removal
+    silently delete the empty entries beside the one it was asked about.
+    ``role_of`` walks ``geom_roles`` -- a different container, whose keys are
+    spellings of the same files -- against the one key it has already derived.
+    This helper is for the verbs that answer "which files are in this list?".
     """
     for p in paths or ():
         key = canonical_geom_path(p, base)
@@ -82,7 +95,7 @@ def _keyed(paths, base: str | None = None):
 def canonical_geom_keys(paths, base: str | None = None) -> set[str]:
     """The set of identities in ``paths`` -- the membership question, answered
     for a whole list at once."""
-    return {key for key, _ in _keyed(paths, base)}
+    return {key for key, _ in keyed_geom_paths(paths, base)}
 
 
 def dedupe_geom_paths(paths, base: str | None = None) -> list[str]:
@@ -94,7 +107,7 @@ def dedupe_geom_paths(paths, base: str | None = None) -> list[str]:
     """
     seen: set[str] = set()
     out: list[str] = []
-    for key, p in _keyed(paths, base):
+    for key, p in keyed_geom_paths(paths, base):
         if key in seen:
             continue
         seen.add(key)

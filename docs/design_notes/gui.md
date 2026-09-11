@@ -1289,7 +1289,13 @@ above exists: verb-only is exactly the shape the syntax scan cannot see.
 **#104: three residues, all of the same shape — a rule stated in more places than it is enforced.**
 (i) One canonicalisation loop was hand-written three times, the add path re-deriving the canonical
 key that the membership verb beside it already answers. Three copies of one rule is how the
-string-compare defect got in, so the loop is now `_keyed` and the verbs read it. (ii) The identity
+string-compare defect got in, so the loop is now `keyed_geom_paths` and the verbs read it — all
+but two, and #110 made those two say why at the code rather than only in the rule file:
+`remove_geom_file` asks about one file and compares through `same_geom_file` (the keyer drops a
+falsy entry, which is a dedupe's job and would make a removal delete the empty entries beside the
+one it was asked about — now gated, check 7), and `role_of` walks the roles dict against the key
+it already has. The same ticket found the third hand-written copy the first sweep left behind, in
+`geom_files_not_on_disk`, which is the keyer's exact shape and now reads it. (ii) The identity
 import was function-local in `mesh_config_io` where no cycle required it. Measured rather than
 assumed: that module imports first in a fresh interpreter and drags in no Qt, which matters because
 it is on the headless path. The check that proves it immediately caught a *fresh* deferred import
@@ -1298,6 +1304,15 @@ ticket. (iii) Callers still STORED what `os.path.abspath` returned: the exact cw
 spelling rule (i) of the module condemns. Nothing was broken by it, because every comparison
 canonicalises, which is precisely why it survived — a rule contradicted by its own callers and no
 symptom to point at.
+
+**Routing the restore through the verb changed three things nobody had declared (#110).**
+`load_from_dict`'s rebind became `set_geom_files`, and with it a duplicate identity collapses, a
+falsy entry is dropped and the restored list stops being an alias of the `dict`'s own. All three
+are right for a stale workspace — a saved file is exactly where one geometry appears under two
+spellings — but they were carried by a comment, which is the same shape as a rule stated at a
+constant and enforced nowhere. Check 10 asserts them through the public restore API and shows each
+non-vacuous by re-running the rebind they replaced on the real model, so the comment is now a
+description of something a gate holds.
 
 **Storing the repo-relative spelling forced the READ side into the open, and the first sweep of it
 was WRONG.** With the entry stored as `results/resampled/x.dat` rather than absolute, every call

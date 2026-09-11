@@ -30,7 +30,9 @@ import os
 
 from app.services.geom_path_identity import (canonical_geom_keys,
                                              canonical_geom_path,
-                                             dedupe_geom_paths)
+                                             dedupe_geom_paths,
+                                             keyed_geom_paths,
+                                             same_geom_file)
 
 __all__ = ["GeomListMixin"]
 
@@ -110,9 +112,22 @@ class GeomListMixin:
         return bool(want) and want in canonical_geom_keys(self.geom_files)
 
     def remove_geom_file(self, path: str) -> bool:
-        """Drop whichever entry names the same FILE as `path`."""
-        want = canonical_geom_path(path)
-        keep = [g for g in self.geom_files if canonical_geom_path(g) != want]
+        """Drop whichever entry names the same FILE as `path`.
+
+        Through ``same_geom_file``, not a second canonical-key loop: this verb
+        asks about ONE file, and the module's comparison verb is that question.
+        NOT through ``keyed_geom_paths``, which the list-wide verbs read --
+        stated here because the omission is a decision: that helper drops a
+        falsy entry, which is right for a dedupe (such an entry names no file)
+        and would make a removal silently delete the empty entries beside the
+        one it was asked about. Its docstring records the same split.
+
+        Returns True if an entry went. A falsy `path` names no file, so it
+        removes nothing and says so, rather than matching the falsy entries.
+        """
+        if not path:
+            return False
+        keep = [g for g in self.geom_files if not same_geom_file(g, path)]
         removed = len(keep) != len(self.geom_files)
         self.geom_files = keep
         return removed
@@ -142,9 +157,14 @@ class GeomListMixin:
         CAD by design, so the entry its workspace restored is dead. It used to be
         WARNED about in the diagnostic scan and then written into the mesher
         config regardless, and the mesher exited 3 on it.
+
+        Through ``keyed_geom_paths``: "drop the entries that name no file, then
+        canonicalise the rest" is that helper's whole job, and the third
+        hand-written copy of it here is what #104 removed from the two verbs
+        beside it.
         """
-        return [g for g in self.geom_files
-                if g and not os.path.exists(canonical_geom_path(g))]
+        return [p for key, p in keyed_geom_paths(self.geom_files)
+                if not os.path.exists(key)]
 
     def _role_name(self, path: str) -> str | None:
         r = self.role_of(path)

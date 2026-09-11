@@ -423,6 +423,29 @@ check(not _cfg7.add_geom_file(absolute) and _cfg7.geom_files == [_rel],
 check(_cfg7.remove_geom_file(absolute) and _cfg7.geom_files == [],
       "7. ...and removing by the other spelling really removes it "
       "(unchecking the box used to clear the box and keep the geometry)")
+check(not MeshConfig().remove_geom_file(absolute),
+      "7. ...removing from a list that does not hold the file reports that "
+      "nothing went (an empty list)")
+_cfg7b = MeshConfig()
+_cfg7b.add_geom_file(absolute)
+check(not _cfg7b.remove_geom_file(other) and _cfg7b.geom_files == [absolute],
+      f"7. ...and so does removing a DIFFERENT geometry, which stays listed "
+      f"(got {_cfg7b.geom_files})")
+
+# Why remove_geom_file compares through same_geom_file instead of reading the
+# shared keyer like the list-wide verbs: that keyer drops a falsy entry, which
+# is right for a dedupe and would make a removal delete the empty entries
+# BESIDE the one it was asked about. The state is only reachable by the raw
+# rebind the mixin is exempt for, which is exactly why the verb is the thing
+# that has to be safe.
+_cfg7c = MeshConfig()
+_cfg7c.geom_files = [_rel, ""]
+check(_cfg7c.remove_geom_file(absolute) and _cfg7c.geom_files == [""],
+      f"7. removing one geometry leaves a falsy entry beside it alone -- a "
+      f"removal is not a dedupe (got {_cfg7c.geom_files})")
+check(not _cfg7c.remove_geom_file("") and _cfg7c.geom_files == [""],
+      f"7. ...and removing '' names no file, so it removes nothing and says so "
+      f"(got {_cfg7c.geom_files})")
 
 # set_geom_files is the REPLACE verb the widened scan leaves callers, so it must
 # do the identity job a rebind did not: a rebuilt list carrying both spellings of
@@ -631,6 +654,60 @@ with open(_probe9, "w") as fh:
 check(len(_cwd_relative_stores(_probe9)) == 2,
       f"9. INJECTION: the scan sees the cwd-relative call at BOTH store verbs, "
       f"and leaves an unrelated abspath alone ({_cwd_relative_stores(_probe9)})")
+
+# ── 10. what routing the RESTORE through the verb actually changed ───────
+# load_from_dict used to rebind: `self.geom_files = d.get("geom_files") or []`.
+# Routing it through set_geom_files (#99) changed three things no test asserted
+# -- they arrived as a consequence of the routing and were described in a
+# comment, which is the shape this repo keeps having to close. All three are
+# right for a STALE WORKSPACE, which is exactly the dict that carries one file
+# under two spellings (the panel computed the absolute one, the saved file kept
+# the relative one). Asserted through the model's public restore API, and each
+# one shown non-vacuous by the bypass below.
+def _bypass_restore(d: dict) -> MeshConfig:
+    """The pre-#99 restore: the raw rebind, on the real model.
+
+    Not a stub -- a MeshConfig carrying the one line the routing replaced, so
+    "the verb is what makes these three true" is measured rather than claimed.
+    """
+    c = MeshConfig()
+    c.geom_files = d.get("geom_files") or []
+    return c
+
+
+_dup_ws = {"geom_files": [_rel, absolute]}
+_c10 = MeshConfig()
+_c10.load_from_dict(_dup_ws)
+check(_c10.geom_files == [_rel],
+      f"10. restoring a workspace that lists one file under two spellings "
+      f"yields ONE entry, the saved spelling (got {_c10.geom_files})")
+check(_bypass_restore(_dup_ws).geom_files == [_rel, absolute],
+      "10. INJECTION: the rebind it replaced restores BOTH, so the check above "
+      "is about the verb and not about the fixture")
+
+_stale_ws = {"geom_files": [_rel, None, "", other]}
+_c10b = MeshConfig()
+_c10b.load_from_dict(_stale_ws)
+check(_c10b.geom_files == [_rel, other],
+      f"10. a null or empty entry in a saved workspace is DROPPED, not restored "
+      f"as a nameless geometry (got {_c10b.geom_files})")
+check(_bypass_restore(_stale_ws).geom_files == [_rel, None, "", other],
+      "10. INJECTION: the rebind restores them, so that check is the verb's too")
+
+_alias_ws = {"geom_files": [_rel]}
+_c10c = MeshConfig()
+_c10c.load_from_dict(_alias_ws)
+_c10c.add_geom_file(other)
+_alias_ws["geom_files"].append(gone)
+check(_alias_ws["geom_files"] == [_rel, gone] and _c10c.geom_files == [_rel, other],
+      f"10. the restored list is a COPY: mutating either side leaves the other "
+      f"alone (dict={_alias_ws['geom_files']}, cfg={_c10c.geom_files})")
+_aliased = {"geom_files": [_rel]}
+_c10d = _bypass_restore(_aliased)
+_c10d.add_geom_file(other)
+check(_aliased["geom_files"] == [_rel, other],
+      f"10. INJECTION: the rebind ALIASED the dict's own list -- adding to the "
+      f"config appended to the caller's list (got {_aliased['geom_files']})")
 
 # ── 7b. the gate is non-vacuous AS A BUILD STEP, read from the exit code ──
 # The scan-level probe above proves the AST walk sees the constructs; it cannot
