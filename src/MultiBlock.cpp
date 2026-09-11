@@ -1720,7 +1720,7 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     //
     // THE VALUE IS BOUNDED ON BOTH SIDES AND THE MARGINS ARE MEASURED, not round:
     // 2.6 orders above the deviation that fired and 3.8 below the smallest anyone
-    // would act on — the shipped H-grid's `v21` at 5.90e-6 relative, which #114
+    // would act on — the shipped H-grid's `v21` at 5.90e-6, which #114
     // measured and which replaces the C-grid `e_ff` pair's 9.499e-6 (4.0 orders)
     // as the tightest thing bounding this constant from above.
     // Do NOT restate that as "six orders" — six is the distance to
@@ -1735,9 +1735,12 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // applied to. Named as a blind spot in `.claude/rules/mesher-smoothing.md`;
     // pinned in BOTH directions, and only there, by groups 12 and 13 of
     // `test_multiblock_smooth_surface.py` — group 12 on the C-grid and the O-grid,
-    // group 13 on the other three shipped configs since #114, which also measured
-    // that a change to THIS CONSTANT moves the warnings of the C-grid alone. No
-    // C++ check pins this value.
+    // group 13 on the other three shipped configs since #114. WHO SEES THIS VALUE
+    // DEPENDS ON THE DIRECTION IT MOVES: lowered, only the C-grid's warnings
+    // change (though that reddens the H-grid's upper-bound check too, the noise
+    // pair returning below it); raised, the O-grid's and the H-grid's go silent
+    // as well; square and cavity cannot see it in either direction. No C++ check
+    // pins this value.
     constexpr double kHeightNoiseFloor = 1e-9;
     {
         hybmesh::MbResult before = r;
@@ -1759,8 +1762,8 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
             // `af_lo` (0.44% in, 0.05% out) and the H-grid's `v00` (0.15% ->
             // 0.08%). Rewrite this as an absolute tolerance on the DECLARATION
             // and the warning fires on exactly the walls the control functions
-            // rescued, which is what #114's injection D measures. Both silences
-            // are now asserted, in groups 12 and 13 of the surface gate.
+            // rescued, which is what #114's injection D measures (7 red). Both
+            // silences are asserted, in groups 12 and 13 of the surface gate.
             //
             // THE BAR IS THE MESH THE SOLVE STARTED FROM, for both. A relative
             // slack on the height, so a wall that came out a rounding apart from

@@ -1619,28 +1619,49 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   and small, and the figure to quote is the relation (the lowest real warning in the tree),
   never either number — the gate asserts it that way for the same reason.
 
-  **ALL FIVE SHIPPED CONFIGS CARRY ACCEPTANCE CRITERION 2 SINCE #114 — AND THE MEASUREMENT
-  THAT WIDENING PRODUCED IS THAT FOUR OF THE FIVE CANNOT SEE THIS CONSTANT.** #107 gated the
+  **WHO SEES THIS CONSTANT DEPENDS ON THE DIRECTION IT MOVES.** All five shipped configs
+  carry acceptance criterion 2 since #114, and what widening produced is a count by direction
+  rather than one number: **lowered**, only the C-grid's WARNINGS change — though the H-grid's
+  upper-bound CHECK reddens with them, since the C-grid's noise pair returning at 2.3e-10% makes
+  the H-grid no longer the lowest warning in the tree; **raised**, three of the five change
+  (C-grid, O-grid, H-grid); and **two cannot see it in either direction**, `square` and
+  `cavity`. The first draft of this block said "FOUR OF THE FIVE CANNOT SEE THIS
+  CONSTANT" while its own bullets below credited the H-grid with bounding the floor from above
+  — a count contradicted by its own enumeration, #111's shape, caught by review in all three
+  homes at once. #107 gated the
   criterion on the two the surface gate already drove and recorded the other three as a dated
   two-build measurement; #114 added them as group 13, with `shipped_config` retargeting each
   by KEY (they have no gate of their own to import a needle list from). What its own
-  acceptance asked for was that the three added configs each report the failure with the
-  guard reverted, and the measurement says they do not: at 1e-12, rebuilt 2026-09-11, `square`
-  stays at 0 warnings, `cavity` at 0 and `hgrid` at 7 — unchanged edge for edge, which is
-  exactly what the two-build table above had already said. **The criterion was written from
-  its own shape rather than from that table**, the same mistake as #107's "six orders" and
-  #97's "crossed FOUR times": a figure carried in from a ticket is not evidence until
-  something re-derives it. What the three DO gate, measured by injection instead of assumed:
+  acceptance asked for was that the three added configs each report the failure with "the
+  warning guard reverted", and **WHICH GUARD THAT MEANS DECIDES WHETHER IT IS MET.** Read as
+  the floor's VALUE, the warning COUNTS do not move: at 1e-12, rebuilt 2026-09-11, `square`
+  stays at 0 warnings, `cavity` at 0 and `hgrid` at 7 — unchanged edge for edge, exactly what
+  the two-build table above had already said. **But the H-grid's upper-bound CHECK goes red on
+  that injection, so the criterion's literal reading is met there**, and it took three tries to
+  learn it: the first draft of that check compared the H-grid against ONE C-grid edge and
+  stayed green, and widening it to every warning the other four produce — a review finding
+  about the check's WORDING, not about the injection — is what made it bite. Read as the
+  `heightLost` BAR the criterion is met by all three: injection B (the floor raised) reddens
+  four H-grid checks, C (`>` flipped to `>=`) reddens square and cavity, D (an absolute
+  tolerance) reddens both baseline checks. **The first write-up of this said the criterion was
+  "not satisfiable as literally written", which is wider than the measurement, and the second
+  said the floor's value was "visible to the C-grid alone", which the re-run disproved** —
+  #114's review narrowed the first and its own injections the second, the same shape as #107's
+  "six orders" and #97's "crossed FOUR times": a claim is not evidence until something
+  re-derives it. What stays true is the narrowest version: `square` and `cavity` cannot see
+  this constant in either direction, and no injection to it will make them.
+  What the three DO gate, measured by injection instead of assumed:
 
   - **`hgrid` — the floor from above, and the bar's BASELINE.** Eight declared wall edges, all
-    measured, seven warning; the lowest at 5.90e-6 is the tree's tightest upper bound (above).
+    measured, seven warning; the lowest at 5.90e-6 is the tree's tightest upper bound, as the
+    paragraph above sets out.
     Its EIGHTH, `v00`, declares a geometric spacing the algebraic fill cannot land on exactly,
     so it goes in 0.15% off the declared height and the sweeps IMPROVE it to 0.08% — at once
     that mesh's worst-held wall and correctly silent, which is the bar's own sentence ("worse
     than the mesh the solve started from") as a run rather than as a comment.
 
-    **AND LOOKING FOR A UNIQUENESS CLAIM IS WHAT FOUND THAT NOTHING ASSERTED THE PROPERTY AT
-    ALL.** #114's first draft wrote that `v00` was the only wall in any shipped config with a
+    **THE BASELINE HAD NO CHECK, AND A UNIQUENESS CLAIM IS WHAT FOUND THAT.**
+    #114's first draft wrote that `v00` was the only wall in any shipped config with a
     real pre-sweep deviation the sweeps improve; measuring the C-grid's own quality banner
     disproved it — `af_up` and `af_lo` go in at 0.44% and come out at 0.05%, the same shape and
     larger. Neither instance had a check. A bar rewritten as an absolute tolerance on the
@@ -1667,10 +1688,13 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   be scored.**
 
   **THE COST IS STATED WHERE THE GATE STATES IT** (its `Run:` block, which carried no cost
-  before #114). Three extra mesher runs, 0.71 s timed on their own — square 0.42, cavity 0.20,
-  hgrid 0.09, the three cheapest configs in the repo. The file's median goes 9.3 s -> 10.5 s
-  over three timed runs each way, but its own spread is a comparable size, so the 0.71 s is the
-  figure and the median delta is not. **It is the FOURTH-slowest file in `run_all.sh`, not the
+  before #114, and `.claude/rules/mesher-smoothing.md` beside the smoother's own). Three extra
+  mesher runs, 0.71 s timed on their own — square 0.42, cavity 0.20,
+  hgrid 0.09, the three cheapest configs in the repo. **The whole-run wall clock is NOT quoted
+  as a before/after**, in any of the three homes: across measurements either side of the change
+  it ranged 8.6-11.2 s and a review run of the changed file came back at 9.73 s, inside the
+  range an earlier draft had given as the "after". The spread is wider than the addition, so
+  only the 0.71 s is stated. **It is the FOURTH-slowest file in `run_all.sh`, not the
   slowest**, which the first draft of that paragraph asserted before anything measured it:
   `test_geom_files_identity.py` 60.3 s, `test_gui_review_batch_2026_08_06.py` 12.6 s,
   `test_qt_free_seam.py` 10.4 s. A C-grid or O-grid run costs ~1 s here, which is why the

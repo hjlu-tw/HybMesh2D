@@ -77,13 +77,15 @@ What this pins down:
      on two of them until that ticket. The H-grid's eight declared wall edges give
      seven warnings whose smallest, 5.90e-6 relative, is now the TIGHTEST upper
      bound this floor has — under the C-grid's `e_ff` pair at 9.499e-6 — and its
-     eighth edge is the only wall in any shipped config that starts off its
-     declaration and is IMPROVED by the sweeps, so it is this mesh's worst-held
-     wall and correctly silent. Square and cavity are rectangles the solve leaves
-     where it found them, so their walls are at an exact zero before and after and
-     the silence is the MESH's rather than the bar's: no floor can reach them, and
-     what they gate is a comparison that starts warning about a wall nothing
-     happened to.
+     eighth starts 0.15% off its declaration, is IMPROVED to 0.08% and is
+     correctly silent, so it pins the bar's BASELINE. That is not unique to it:
+     the C-grid's `af_up`/`af_lo` do the same at 0.44% -> 0.05%, nothing asserted
+     either before this ticket, and both are asserted now — group 12 for the
+     C-grid's pair, group 13 for `v00`. Square and cavity are rectangles the solve
+     leaves where it found them, so their walls are at an exact zero before and
+     after and the silence is the MESH's rather than the bar's: no floor can reach
+     them, and what they gate is a comparison that starts warning about a wall
+     nothing happened to.
 
 MEASURED 2026-09-10 on the five shipped multi-block configs, before and after
 (counts of `could not hold ... first cell height` warnings, from two builds of this
@@ -143,18 +145,39 @@ Same shape: edit `src/MultiBlock.cpp`, `./build.sh`, run this file, `git checkou
 the source and rebuild. The three partition cleanly, and the first one is the
 answer to #114's own criterion 2 rather than a confirmation of it:
 
-  A. THE LITERAL REVERT, the floor back to 1e-12 — #114 asks that "with the
-     warning guard reverted, each of the three new ones reports the failure".
-     It does not. Exit 1, TWO checks red, both the C-grid's, exactly as in
-     #107's own A above. Square 0, cavity 0, hgrid 7: not one of the ten added
-     checks moves. The criterion was written from its own shape; the table above,
+  A. THE FLOOR BACK TO 1e-12, which is what #114's criterion 2 calls reverting
+     the warning guard. **EXIT 1, THREE CHECKS RED, AND ONE OF THEM IS #114's
+     OWN** — the H-grid's upper-bound relation, because at 1e-12 the C-grid's
+     noise pair returns at 2.3e-10% and is then the lowest warning in the tree.
+     So the criterion's literal reading IS met on the H-grid. It took three
+     attempts to find that out, and the two that failed are worth more than the
+     one that worked: the first draft of that check compared the H-grid against
+     ONE C-grid edge and stayed green here, and widening it to every warning the
+     other four produce — a review finding about the check's WORDING, not about
+     this injection — is what made it bite. **An earlier draft of this paragraph
+     said the criterion was unsatisfiable.** It is not: read as the floor's VALUE
+     it reaches the C-grid and, through that relation, the H-grid; read as the
+     `heightLost` BAR it reaches all three (B, C, D below). What stays true and
+     narrow is that SQUARE AND CAVITY cannot see this constant in either
+     direction, and no injection to it will make them.
+     Square 0 warnings, cavity 0, hgrid 7 — counts unchanged, as the table above
+     says. ELEVEN checks are added by this ticket (ten in group 13 — six on the
+     H-grid, one enumerating the five configs, one on the three exit codes, and
+     one loop body printing twice — plus the C-grid baseline check in group 12;
+     94 checks before, 105 after, counted by running both). The criterion was written from its own shape; the table above,
      dated the day before the ticket, already said only the C-grid's two edges
      move. So the three are scored against the injections that DO reach them:
   B. the floor raised absurdly to 1e-3. Exit 1, EIGHT checks red where the same
-     injection bit THREE before this work — four of the five H-grid checks go with
+     injection bit THREE before this work — four of the SEVEN H-grid checks go with
      it (its seven warnings, the eighth's silence, the two-order margin and the
      upper-bound relation). The H-grid is therefore non-vacuous against a floor
      raised too far, which is the direction the blind spots call the wide one.
+     THE THREE THAT STAY GREEN ARE NAMED because one of them is green for a bad
+     reason: "eight edges measured" is still true (the targets exist, they simply
+     stop warning) and so is the exit code, but "none shows a before and an after
+     identical to every digit" is VACUOUS on an empty warning set — the same vacuity #107's own
+     review found in the margin check, surviving here in the half that cannot be
+     repaired by a presence clause, because the claim IS about survivors.
      **AND IT CRASHED THE FIRST DRAFT OF GROUP 13 rather than failing it**: with
      every warning silenced, `max(v[0] for v in w_hg.values())` raised on the empty
      set, the run stopped there and the square and cavity checks never executed —
@@ -163,8 +186,9 @@ answer to #114's own criterion 2 rather than a confirmation of it:
      scored. Re-run after the fix: 8 red, not 5.
   C. the comparison's own direction, `> was * 1.01 + floor` becoming
      `>= was * 1.01 - floor` — a guard that warns about a wall the sweeps did not
-     make worse, which IS #107's symptom reached by the other route. Exit 1, FOUR
-     red: the C-grid's two, and the SQUARE and CAVITY pair. Those two are the only
+     make worse, which IS #107's symptom reached by the other route. Exit 1, FIVE
+     red: the C-grid's two, the H-grid's bound relation, and the SQUARE and CAVITY
+     pair. Those two are the only
      shipped cases where that flip invents a warning, because they are the only
      ones whose every wall has `now` exactly equal to `was` — the H-grid stays
      green under it, since `v00` improved by more than the 1% slack.
@@ -178,8 +202,11 @@ answer to #114's own criterion 2 rather than a confirmation of it:
      the baseline warns about the very walls the control functions rescued. That
      check did not exist when this injection was first run; writing it is what
      this injection bought.
-  All four re-run against the repaired gate: A 2 red, B 8, C 4, D 7. Restored and
-  rebuilt: ALL PASS, 103 checks, ctest 7/7.
+  ALL FOUR RE-RUN AFTER EVERY REPAIR, twice over, because each round of review
+  changed a check and a changed check has to face the injections again: A 3 red,
+  B 8, C 5, D 7. The first round, before the review's fixes, read A 2, B 8, C 4,
+  D 7 — A and C moved because the bound check was widened. Restored and rebuilt:
+  ALL PASS, 105 checks, ctest 7/7.
 
 WHAT THE REVIEW OF THIS WORK CHANGED, since two of its findings were in figures
 this docstring states: **"six orders" was 2.6.** The floor is 2.6 orders above the
@@ -364,10 +391,17 @@ BLIND SPOTS, named rather than papered over:
     27.37% survives any floor under 0.269. Named because injection B's first
     write-up read as though the gross-end control bounded the constant, and it
     does not.
-  * ALL FIVE SHIPPED CONFIGS CARRY THE CRITERION NOW, AND THREE OF THEM CANNOT
-    SEE THE FLOOR AT ALL (#114, which replaces "gated on two of the five"). What
-    each one is worth against a change to `kHeightNoiseFloor` was measured, not
-    assumed, and the answers differ:
+  * ALL FIVE SHIPPED CONFIGS CARRY THE CRITERION NOW, AND WHICH OF THEM SEES THE
+    FLOOR DEPENDS ON THE DIRECTION IT MOVES (#114, which replaces "gated on two of
+    the five"). Lowered, only the C-grid's WARNINGS change — though that shows up
+    in the H-grid's upper-bound check too, since the noise pair returning at
+    2.3e-10% makes the H-grid no longer the lowest. RAISED, three of the
+    five change — the C-grid, the O-grid and the H-grid. Two cannot see this
+    constant in either direction: square and cavity. **This bullet said "three of
+    them cannot see the floor at all" and its own list below contradicted it**,
+    which is the count-against-its-own-enumeration shape #111 recorded. What each
+    one is worth against a change to `kHeightNoiseFloor` was measured, not
+    assumed:
       - cgrid: the only case whose warnings MOVE when the floor does. Both ends.
       - ogrid: four warnings at 3.7e-4 relative; catches a floor raised past that.
       - hgrid: seven warnings, the lowest at 5.90e-6, which is the tree's tightest
@@ -380,7 +414,7 @@ BLIND SPOTS, named rather than papered over:
         `>=`, reddens exactly this pair and nothing else new.
     So a floor moved DOWN is still seen by one config only, and widening the gate
     did not change that. What widening bought is the H-grid's tighter upper bound,
-    the baseline check below, and two cases that see the other guard.
+    the baseline checks below, and two cases that see the other guard.
   * THE BAR'S BASELINE WAS NOT ASSERTED AT ALL UNTIL #114, and looking for it is
     what found that. "Worse than the mesh the solve started from" is the whole
     sentence, and it has two instances in the tree: the C-grid's `af_up`/`af_lo`
@@ -405,19 +439,22 @@ BLIND SPOTS, named rather than papered over:
 Run:  python3 tools/PreProcessor/tests/test_multiblock_smooth_surface.py
 Skips cleanly if ./build/HybMesh2D has not been built.
 
-COST, measured 2026-09-11 on this machine, three timed runs each way: **median
-9.3 s before #114 (8.6-9.3), 10.5 s after (10.1-11.2)**. The part that is
-attributable is the 0.71 s of mesher runs group 13 adds, timed on their own
-(square 0.42, cavity 0.20, hgrid 0.09); this file's whole-run spread is a
-comparable size, so 0.71 s is the figure to quote and the median delta is not.
+COST, measured 2026-09-11 on this machine: **the attributable figure is 0.71 s**,
+the three mesher runs group 13 adds, timed on their own (square 0.42, cavity 0.20,
+hgrid 0.09). The whole-run wall clock is NOT evidence here and is deliberately not
+quoted as a before/after: across measurements either side of the change it ranged
+8.6-11.2 s, and a review run of the CHANGED file came back at 9.73 s — inside the
+range an earlier draft of this paragraph had given as the "after". The spread is
+wider than the addition, so only the 0.71 s is stated.
 
-It is the FOURTH-slowest file in `run_all.sh`, not the slowest — measured, because
-the first draft of this paragraph asserted the latter: `test_geom_files_identity.py`
-is 60.3 s, `test_gui_review_batch_2026_08_06.py` 12.6 s and `test_qt_free_seam.py`
-10.4 s. What is true is that it makes 20-odd mesher invocations, the C-grid at a
+It is the FOURTH-slowest file in `run_all.sh`, not the slowest — measured over one
+full sweep of every test file, because the first draft of this paragraph asserted
+the latter: `test_geom_files_identity.py` is 60.3 s,
+`test_gui_review_batch_2026_08_06.py` 12.6 s and `test_qt_free_seam.py` 10.4 s. What is true is that it makes 20-odd mesher invocations, the C-grid at a
 cap of 20000 among them, so a C-grid or O-grid run costs ~1 s here and the three
 cheapest configs in the repo were the affordable way to widen it.
 """
+import glob
 import math
 import os
 import re
@@ -498,9 +535,34 @@ def run(tmp, name, extra="", config=None):
 # holds it reads the same file for a dozen other claims, so a path it stopped
 # naming would be noticed. Here the only reader is this block, and a needle list
 # it owned alone would rot into a run that quietly wrote into the repo's own
-# `results/` while this file, seeing a mesh, reported PASS. Every value of a path
-# key is rewritten, so a path ADDED to one of these files is retargeted with no
-# edit here, and a key whose value stops being a path fails loudly below.
+# `results/` while this file, seeing a mesh, reported PASS.
+#
+# A KEY LIST IS STILL A LIST, AND THE SWEEP BELOW IS WHAT MAKES THE PARAGRAPH
+# ABOVE TRUE. `_MB_PATH_KEYS` is as capable of going stale as a needle list: a
+# path added to one of these configs under a key NOT in it would be left relative
+# and the run would write into the repo. So after the rewrite every remaining
+# value is checked for resolving to a file in this checkout, and one that does is
+# a KEY THIS FUNCTION DOES NOT KNOW — raised by name, never retargeted silently.
+# That, not the keying, is the part a reviewer should trust; the review of #114
+# is what asked for it, having read the paragraph above as a guarantee.
+#
+# ALL FOUR GUARDS PROBED BY HAND, 2026-09-11, each by mutating the shipped square
+# config and reading the raise: an unknown key carrying a resolving path
+# (`BC_GEOM_FILE`), a missing `OUTPUT_FILENAME`, `MESH_MODE` no longer 1, and a
+# known path key whose value stopped resolving. All four fired and named the file,
+# the key and the value; the config was restored and `git diff` came back clean.
+# They are not gate checks — a check that edits a shipped config under the gate
+# that reads it is a hazard this repo does not ship — so the probe is the record.
+#
+# AND THIS IS A THIRD "READ THE SHIPPED `.dat`, RETARGET, FAIL LOUDLY", named
+# because the two it sits beside are imported under a comment that says "Imported,
+# not copied". The key-driven form here could subsume both `base_config`s and
+# leave one implementation — `qlines`'s own note next door records what four
+# copies of a parser cost when #81 had to make the identical one-character fix in
+# two of them. It is NOT done here: those two functions are owned by the gates
+# that hold them, each does something extra (the C-grid's `bc_geom` override, the
+# O-grid's topology argument), and collapsing three into one across three files is
+# a refactor rather than #114. Recorded as the residue it is.
 _MB_PATH_KEYS = ("MESH_TOPOLOGY_FILE", "GEOM_FILE", "DOMAIN_FILE")
 
 
@@ -530,12 +592,26 @@ def shipped_config(name):
             ln = key + " @STEM@.vtk"
         elif key == "MESH_MODE":
             hit[key] = (val == "1")
-        out_.append(ln)
-    for k, ok in hit.items():
-        if not ok:
+        elif key and not key.startswith("#") and val and os.path.isfile(
+                os.path.join(_REPO, val)):
+            # A PATH UNDER A KEY THIS FUNCTION DOES NOT KNOW. Left alone it would
+            # stay repo-relative, the mesher would read the repo's own file and,
+            # for an output, write into the repo's `results/`. Caught by what the
+            # value IS rather than by what the key is called, so the list above
+            # cannot go stale in silence.
             raise AssertionError(
-                "%s no longer declares %s (as MESH_MODE 1 where that is the key), "
-                "so this test cannot drive it. Update shipped_config()." % (path, k))
+                "%s: %s %r resolves to a file in this checkout but %s is not in "
+                "_MB_PATH_KEYS, so the run would read (or write) the repo's own "
+                "tree. Add it there." % (path, key, val, key))
+        out_.append(ln)
+    if not hit["MESH_MODE"]:
+        raise AssertionError(
+            "%s is no longer a MESH_MODE 1 config, so this test cannot drive it "
+            "as one. Update shipped_config()." % path)
+    if not hit["OUTPUT_FILENAME"]:
+        raise AssertionError(
+            "%s no longer declares OUTPUT_FILENAME, so this test cannot retarget "
+            "its output away from the repo. Update shipped_config()." % path)
     return "\n".join(out_) + "\n"
 
 
@@ -546,12 +622,16 @@ _WALL_BANNER = re.compile(
 def wall_banner(out, before=False):
     """One quality banner's per-edge wall lines: edge id -> deviation in %.
 
-    THE READER OF LAST RESORT, and it is used for exactly one thing the
-    machine-readable line cannot answer: `wall_first_cell_worst_rel` carries the
-    WORST edge, and the claim below is about a NAMED edge that is not the worst.
-    Two decimal places is all the banner prints, which is enough for the one
-    comparison made on it (0.15% falling to 0.08%) and is not enough for a bar —
-    every threshold in this group is read from the warning text instead.
+    THE READER OF LAST RESORT, for the one thing the machine-readable line cannot
+    answer: `wall_first_cell_worst_rel` carries only the WORST edge, so counting
+    how many edges were MEASURED at all needs the per-edge lines.
+
+    TWO DECIMAL PLACES IS ALL IT PRINTS, AND NO ASSERT MAY COMPARE MAGNITUDES OFF
+    IT. #114's first draft did — `v00`'s rounded 0.08 against another edge's
+    6-digit 0.075166, where the rounding interval straddles the competitor — so
+    what survives is COUNTING edges and printing the reader-facing figure in a
+    message. Every threshold and every ordering in groups 12 and 13 is read from
+    the warning text or from `qlines` instead.
 
     `before` picks the pre-smoothing banner. The two are told apart by the
     machine-readable line that TERMINATES each, not by the heading above it: the
@@ -1499,19 +1579,46 @@ def main() -> int:
         # already drive. The remaining three go through the same warning path with
         # the same floor, and this group is the removal of that blind spot.
         #
-        # THE LITERAL REVERT DOES NOT REACH ANY OF THE THREE, measured rather than
-        # predicted, and #114's own criterion 2 asked for the opposite: with
+        # THE FLOOR'S VALUE IS VISIBLE TO THE C-GRID ALONE, measured rather than
+        # predicted. #114's criterion 2 asks that each added config report the
+        # failure "with the warning guard reverted", and which guard that means
+        # decides whether it is met: reverting the floor's VALUE reaches none of
+        # the three, while reverting the BAR reaches all three (injections B, C
+        # and D). An earlier draft of this comment called the criterion
+        # unsatisfiable, which was wider than the measurement. With
         # `kHeightNoiseFloor` put back to 1e-12 and the tree rebuilt (2026-09-11),
         # square stays at 0 warnings, cavity at 0 and the H-grid at 7 — the same
         # counts as at 1e-9, edge for edge and figure for figure. That is not a
         # surprise this work uncovered; it is the table THIS DOCSTRING ALREADY
         # HELD, dated 2026-09-10, which says in as many words that only the two
-        # C-grid warnings moved. The ticket was written from the criterion's shape
-        # rather than from that table. So what each of the three is worth is stated
-        # here per config, and what none of them can do is stated with it.
-        sq = run(tmp, "sq114", config=lambda: shipped_config("multiblock_square"))[1]
-        cv = run(tmp, "cv114", config=lambda: shipped_config("multiblock_cavity"))[1]
-        hg = run(tmp, "hg114", config=lambda: shipped_config("multiblock_hgrid"))[1]
+        # C-grid warnings moved. So what each of the three is worth is stated here
+        # per config, against the guard it can actually see.
+        # THE FIVE ARE ENUMERATED FROM DISK, not from this list, because a sixth
+        # shipped config would otherwise ship un-gated and nothing would say so —
+        # the very shape this group exists to remove, and #114's review is what
+        # noticed it surviving inside the fix for it. The three names below are
+        # then the five minus the two group 12 drives.
+        shipped = sorted(os.path.basename(f)[:-4] for f in
+                         glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
+        driven = ["multiblock_cavity", "multiblock_cgrid", "multiblock_hgrid",
+                  "multiblock_ogrid", "multiblock_square"]
+        check(f"13. the five shipped multi-block configs are exactly the five this "
+              f"file drives, read off `config/` rather than from a list here — so a "
+              f"SIXTH one cannot ship without a gate ({shipped})",
+              shipped == driven)
+        # THE EXIT CODE IS READ, as it is for every other run in this file: a case
+        # that folded and exited 9 still prints its banners, so a group that only
+        # parsed them would report ALL PASS on a broken mesh. #114's review.
+        rc_sq, sq, _ = run(tmp, "sq114",
+                           config=lambda: shipped_config("multiblock_square"))
+        rc_cv, cv, _ = run(tmp, "cv114",
+                           config=lambda: shipped_config("multiblock_cavity"))
+        rc_hg, hg, _ = run(tmp, "hg114",
+                           config=lambda: shipped_config("multiblock_hgrid"))
+        check(f"13. all three added configs EXIT 0 at the default cap, so the "
+              f"banners the checks below parse describe a mesh that was actually "
+              f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg})",
+              (rc_sq, rc_cv, rc_hg) == (0, 0, 0))
         w_hg = wall_height_warns(hg)
         hg_before, hg_after = wall_banner(hg, before=True), wall_banner(hg)
         check(f"13. the shipped H-GRID's eight declared wall edges are all MEASURED "
@@ -1542,15 +1649,31 @@ def main() -> int:
         # inherited from the one above, which is the habit this group already
         # records: `"v00" not in w_hg` is vacuously true on a build that warns
         # about nothing, and injection B is a build that warns about nothing.
+        # READ OFF THE MACHINE-READABLE LINE, NOT THE BANNER, and #114's review is
+        # why: `wall_first_cell_worst_rel` carries the worst wall at full precision
+        # while the banner prints two decimals, and at two decimals `h10` ALSO
+        # reads 0.08. The first draft compared `v00`'s ROUNDED 0.08 against
+        # `h10`'s 6-digit 0.075166 — a true claim resting on a rounding interval
+        # that straddles its own competitor, so it could have passed while false.
+        # What is asserted instead needs no per-edge figure at all: the mesh's
+        # worst wall (8.06e-4) is strictly ABOVE the worst of the seven warned
+        # ones (7.5166e-4), so the worst-held wall is not among them — and the
+        # eighth edge is the only one left. The banner figures stay in the message
+        # as the reader-facing two decimals they are.
+        q_hg = qlines(hg)
+        qb_hg = qlines(hg, "_BEFORE")
+        worst_hg = q_hg[0]["wall_first_cell_worst_rel"] * 100.0 if q_hg else 0.0
+        worstb_hg = qb_hg[0]["wall_first_cell_worst_rel"] * 100.0 if qb_hg else 0.0
         check(f"13. ...while the EIGHTH, `v00`, is this mesh's WORST-held wall and "
               f"is still not warned about, because the sweeps IMPROVED it "
-              f"({hg_before.get('v00')}% before -> {hg_after.get('v00')}% after): "
-              f"the bar is the mesh the solve started from, the H-grid's instance "
-              f"of the property the C-grid's airfoil pair carries above",
+              f"(worst wall {worstb_hg:.6f}% -> {worst_hg:.6f}%, above the worst "
+              f"of the seven at {max((v[0] for v in w_hg.values()), default=0.0):.6f}%; "
+              f"banner {hg_before.get('v00')}% -> {hg_after.get('v00')}%): the bar "
+              f"is the mesh the solve started from, the H-grid's instance of the "
+              f"property the C-grid's airfoil pair carries above",
               len(w_hg) == 7 and "v00" not in w_hg
-              and hg_before.get("v00", 0.0) > hg_after.get("v00", 0.0) > 0.0
-              and hg_after.get("v00", 0.0) >= max(
-                  v[0] for v in w_hg.values()))
+              and worst_hg > max((v[0] for v in w_hg.values()), default=0.0)
+              and worstb_hg > worst_hg > 0.0)
         # `hg_min` FALLS BACK TO A NUMBER AND THE LOG TO -inf rather than either
         # raising: injection B silenced all seven, and the first draft of this
         # block CRASHED on the empty set instead of failing — which took the two
@@ -1573,10 +1696,28 @@ def main() -> int:
         # of 1.6 — 3.98 orders to 3.77. That is a real tightening and a small one,
         # and it is asserted as the RELATION rather than as either figure, so the
         # claim stays true when a mesh moves.
-        check(f"13. ...and the smallest of them is BELOW the C-grid's `e_ff` pair, "
-              f"so the H-grid now carries the tightest upper bound this floor has "
-              f"({hg_min:.6f}% against {worst_pct:.6f}%)",
-              0.0 < hg_min < worst_pct)
+        # AGAINST EVERY WARNING THE OTHER CONFIGS PRODUCE, not against one C-grid
+        # edge. "The tightest upper bound this floor has" is a claim about all of
+        # them, and the O-grid's four were in scope and excluded — #114's review.
+        # They do not change the answer at the committed floor (0.037% each, two
+        # orders above), which is exactly why leaving them out was a claim wider
+        # than its assert.
+        #
+        # EVERY WARNING, NOT EVERY *REAL* ONE, and that word is load bearing:
+        # "real" is not something a run can decide, and comparing against all of
+        # them is what makes this the ONE added check the floor's own VALUE can
+        # move in BOTH directions. Lowered to 1e-12 the C-grid's noise pair comes
+        # back at 2.3e-10%, under the H-grid's 5.90e-4%, and this check goes red —
+        # which is #114's criterion 2 met literally on the H-grid, found only by
+        # re-running the injections after the review widened the comparison.
+        # Square and cavity still cannot see the value at all.
+        others = ([v[0] for v in w20.values()] + [v[0] for v in wo20.values()])
+        check(f"13. ...and the smallest of them is BELOW every warning the other "
+              f"four configs produce, so the H-grid carries the tightest upper "
+              f"bound this floor has — and a floor LOWERED until noise reappears "
+              f"under it reddens this too ({hg_min:.6f}% against a minimum of "
+              f"{min(others, default=0.0):.6f}% over {len(others)} of them)",
+              bool(others) and 0.0 < hg_min < min(others))
         same_hg = {e: v for e, v in w_hg.items() if v[0] == v[1]}
         check(f"13. ...and none of the seven shows a before and an after identical "
               f"to every digit it prints — #107's own symptom, asserted on the case "
