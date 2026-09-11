@@ -1378,14 +1378,23 @@ rewriting the body back to `os.path.abspath` exits 1 with the first assertion th
 Calling a fixture control an injection is the shape #110's review named one commit earlier — a
 check that only argues.
 
-**What the seam does NOT cover, measured for #112 rather than left for it to find.** Three sites in
-the tree carry #112's shapes and are not defects: `mesh_layers_ctrl` resolves a session's output
-file and then tags a `geom_files` entry `external file` or `missing file`, and both need the
-canonical path precisely WHEN the file is absent — it is the basename of a missing file that goes
-on the label — which is the one answer `readable_geom_path` replaces with `""`; and
-`geom_files_not_on_disk` asks the whole-list inverse through `keyed_geom_paths`. So the rule is
-"the side that OPENS a file has a seam", not "every filesystem call about an entry goes through
-one verb", and a shape ban with no exemption for those three would red-light correct code. The
+**What the seam does NOT cover, measured for #112 rather than left for it to find — and the count
+was wrong the first time it was written down here, which is the ticket's own lesson recurring one
+paragraph later.** Walking the AST for a filesystem call whose argument is a canonicalising call or
+a variable bound from one finds FIVE in `mesh_layers_ctrl` alone, and they are not one thing.
+THREE cannot use the verb, because they need the canonical path precisely WHEN the file is absent:
+it goes into the refusal message `Resampled file does not exist at '<path>'` (`:33`), onto the
+`(not exported)` label beside the membership test and the item data (`:118`), and onto the
+`external file` / `missing file` label BY BASENAME (`:155`). `""` is the one answer that destroys
+what those three need. ONE is a real unconverted reader of the "use it only if it is there" kind
+and should delegate — `:403` canonicalises, tests existence and adds. One is a near-shape rather
+than this shape (`:207` re-tests a path taken from the widget's item data, already canonical, with
+no canonicalising call feeding it), and `geom_files_not_on_disk` asks the whole-list inverse
+through `keyed_geom_paths`. So the rule is "the side that OPENS a file has a seam", not "every
+filesystem call about an entry goes through one verb": a shape ban with no exemption red-lights
+four correct call sites to find one real one, and the exemption cannot be a list of FILES — it has
+to be the question the site is asking, since three of `mesh_layers_ctrl`'s five are correct and
+one is not. The
 verb is also the THIRD identity verb that deliberately does not read `keyed_geom_paths` — it asks
 about one entry, like `remove_geom_file` — so the helper's own census of its readers names it,
 which is the census #110 had just paid to make true.

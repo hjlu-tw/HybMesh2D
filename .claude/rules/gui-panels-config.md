@@ -381,10 +381,18 @@ against one list; #71 moved the first two here.
   still no SCAN**: a new reader that canonicalises and then calls the filesystem itself, or hands a
   raw `geom_files` entry to it, fails no gate, and its symptom is silent — a preview that does not
   draw. Check 11 holds the verb's own answer, not its reach; #112 adds the two AST shapes that
-  close this. **Measured for that ticket rather than left for it to discover (#111): three sites
-  carry those shapes and are NOT defects** — `mesh_layers_ctrl.py`'s two (the session's output
-  file, and the layer list tagging a `geom_files` entry `external file`/`missing file`) need the
-  canonical path when the file is absent, which is the one answer the verb replaces with `""`, and
-  `geom_files_not_on_disk` asks the whole-list inverse through the keyer. A shape ban alone
-  therefore red-lights three correct call sites. The first attempt at #104 converted five readers
-  and left four, which is how the reach here is known rather than assumed.
+  close this. **Measured for that ticket rather than left for it to discover (#111), by walking
+  the AST for a filesystem call whose argument is a canonicalising call or a variable bound from
+  one**: `mesh_layers_ctrl.py` carries FIVE, and they do not all mean the same thing. THREE cannot
+  use the verb, because they need the canonical path precisely WHEN the file is absent — it goes
+  into the refusal message (`:33`), onto the `(not exported)` label with the membership test and
+  the item data (`:118`), and onto the `external file`/`missing file` label by basename (`:155`) —
+  and `""` is the one answer that destroys what they need. ONE is a genuine unconverted reader of
+  the "use it only if it is there" kind and SHOULD delegate (`:403`, which canonicalises, tests,
+  and adds). One more is a near-shape, not this shape: `:207` re-tests a path taken from the
+  widget's item data, already canonical, with no canonicalising call feeding it.
+  `geom_files_not_on_disk` (`models/mesh_config_geoms.py:167`) is the whole-list inverse through
+  the keyer. **So a shape ban alone red-lights four correct call sites and finds one real one** —
+  the exemption cannot be "these files", it has to be the question the site is asking. The first
+  attempt at #104 converted five readers and left four, which is how the reach here is known
+  rather than assumed.
