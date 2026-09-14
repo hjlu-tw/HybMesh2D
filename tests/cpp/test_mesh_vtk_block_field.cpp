@@ -72,6 +72,15 @@
 //     because a warning changes no file.
 //   * NEGATIVE CONTROL, unmutated tree.                  -> exit 0.
 //
+// HOW MANY BULLETS THAT LIST HOLDS IS A GATED FIGURE (#116). docs/design_notes/mesher.md
+// states this gate's injection count at TWO anchors and had said "Seven" at one and
+// "six" at the other ever since #113's own review added the last one and updated one of
+// the two. tools/PreProcessor/tests/test_instruction_budget.py check 7 now derives the
+// count from the list above -- bullets minus the one NEGATIVE CONTROL, which is why that
+// bullet must stay in the list and must keep saying so. Add an injection here and run
+// that gate with `--sync`; do not hand-edit the note, which is where all of this repo's
+// stale figures were hand-edited.
+//
 // 16 of the 19 checks are covered by one of those. The other three are guards on
 // THIS FILE rather than assertions about the writer, and no mutation of
 // src/Mesh.cpp would flip them: that a file was exported at all, that the

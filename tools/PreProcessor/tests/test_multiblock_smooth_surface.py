@@ -24,14 +24,18 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
-SINCE #114 GROUP 12 ALSO DRIVES THE OTHER THREE — ``multiblock_square``,
+SINCE #114 GROUP 13 ALSO DRIVES THE OTHER THREE — ``multiblock_square``,
 ``multiblock_cavity`` and ``multiblock_hgrid``, so all FIVE shipped multi-block
 configs are exercised for the wall warning's floor. Those three have no gate of
 their own to import from (nothing else in the tree runs them), so they enter
 through ``shipped_config`` below, which retargets by KEY rather than by the needle
 list ``base_config`` can afford. What each of the three can and cannot see is in
 the blind spots, per config: the floor-revert injection reaches NONE of them, and
-saying so is half of what this widening bought.
+saying so is half of what this widening bought. (That group number is a GATED figure
+since #116: this line said 12 while the code, the numbered list below, the section
+banner and the rule file all said 13, and `test_instruction_budget.py` check 7 now
+derives it from the checks that follow the three ``shipped_config`` retargets. Renumber
+the group and run that gate with ``--sync`` rather than editing this sentence.)
 
 What this pins down:
 
@@ -447,12 +451,18 @@ quoted as a before/after: across measurements either side of the change it range
 range an earlier draft of this paragraph had given as the "after". The spread is
 wider than the addition, so only the 0.71 s is stated.
 
-It is the FOURTH-slowest file in `run_all.sh`, not the slowest — measured over one
-full sweep of every test file, because the first draft of this paragraph asserted
-the latter: `test_geom_files_identity.py` is 60.3 s,
-`test_gui_review_batch_2026_08_06.py` 12.6 s and `test_qt_free_seam.py` 10.4 s. What is true is that it makes 20-odd mesher invocations, the C-grid at a
-cap of 20000 among them, so a C-grid or O-grid run costs ~1 s here and the three
-cheapest configs in the repo were the affordable way to widen it.
+THE `run_all.sh` RANKING THAT STOOD HERE IS DELETED, NOT CORRECTED (#116). Three
+homes called this the FOURTH-slowest file in `run_all.sh` and named three files with
+absolute timings behind it; the ranking was wrong a second time and the absolutes
+re-timed 1.5x to 3.5x under what they said. Re-deriving either means timing every
+test file in the suite, which is why nobody does and why both readings decayed
+unseen, and by
+`docs/agents/rule-file-style.md` rule 6 — keep a measurement that CONSTRAINS a
+decision, drop one that only justifies it — it decided nothing. What did decide the
+widening survives: this file makes 20-odd mesher invocations, the C-grid at a cap of
+20000 among them, so a C-grid or O-grid run costs ~1 s here and the three cheapest
+configs in the repo were the affordable way to widen it. The rationale, and why the
+true rank is not stated in its place, is in `docs/design_notes/mesher.md`.
 """
 import glob
 import math

@@ -285,7 +285,10 @@ attributable, and the one #85 deliberately spent.
 - Gated by `tests/cpp/test_multiblock.cpp` 40-56 (7 injections from #81, 13 from #82, 14 from #83,
   11 from #84, dated in that file), `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`
   (13 groups: 1-12 on the SHIPPED C-grid AND O-grid, importing #53's own conformity measure rather
-  than re-inventing it, and #114's group 13 on the other three shipped configs) and the
+  than re-inventing it, and #114's group 13 on the other three shipped configs — **that group
+  NUMBER is gated since #116**, derived from the checks following the three `shipped_config`
+  retargets by `tools/PreProcessor/tests/test_instruction_budget.py` check 7 and written into
+  that gate's head docstring by `--sync`, never by hand) and the
   `mb_cgrid_smooth` golden case, recaptured deliberately by #82, #83 and
   #84 — **the only one of the nineteen that moved any of the three times.**
   **AN INERT INJECTION IS ANSWERED WITH A CHECK OR A FIXTURE**: four of #83's needed a check, one
@@ -337,12 +340,15 @@ has landed.
 - **THE RUNTIME COST IS NIL** — 0.26 s either way on both shipped cases, so there is no performance
   argument on either side of the decision. **THE GATE's COST IS NOT NIL AND IS STATED**:
   `tools/PreProcessor/tests/test_multiblock_smooth_surface.py` makes 20-odd mesher runs, the C-grid
-  at a cap of 20000 among them, and is the fourth-slowest file in `run_all.sh` (behind
-  `test_geom_files_identity.py` 60.3 s, `test_gui_review_batch_2026_08_06.py` 12.6 s,
-  `test_qt_free_seam.py` 10.4 s). #114's three added configs cost **0.71 s** — square 0.42, cavity
+  at a cap of 20000 among them. #114's three added configs cost **0.71 s** — square 0.42, cavity
   0.20, hgrid 0.09, the cheapest in the repo; a C-grid or O-grid run costs ~1 s. The whole-run wall
   clock is deliberately NOT quoted as a before/after: its own spread, 8.6-11.2 s, is wider than the
-  addition.
+  addition. **The `run_all.sh` RANKING that stood beside these figures is DELETED, not corrected
+  (#116)**: it was wrong a second time in all three homes that stated it, the three absolute
+  timings beside it re-timed 1.5x to 3.5x under what they said, re-deriving it costs a timing
+  sweep of every file in the suite, and by rule 6 of
+  `docs/agents/rule-file-style.md` it constrained no decision while the per-run figures beside it
+  do.
 - **A FOLD IS NOT SMOOTHED INTO A PASS.** The quality gate's dart declaration folds 16 cells
   unsmoothed and 8 at the default — the solve genuinely repairs half of it — and still exits 9 and
   still exports. Pinned by `test_multiblock_quality_surface.py` check 4b, because a default that

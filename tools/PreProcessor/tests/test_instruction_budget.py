@@ -82,8 +82,9 @@ Checks:
     root's character count, its byte count, its token estimate, its budget and its slack;
     the byte-char delta, stated in BOTH this file and the root; the rule-file count, also
     stated in both; and blind spot (d)'s rule-file sizes with their descending order,
-    both headroom lists and `RULE_BUDGET`'s own value beside them. Plus one figure that is
-    not about these files at all (#101): the status of the GUI file-length standard — how
+    both headroom lists and `RULE_BUDGET`'s own value beside them. Plus three figures that
+    are not about these files at all. The first (#101): the status of the GUI file-length
+    standard — how
     many files exceed it, out of how many, the worst one's size, the limit itself and
     every offender by name — derived from `gui_file_lengths.py`, the same walk
     `test_file_length.py` enforces the standard with. It is here because it decays the
@@ -95,7 +96,19 @@ Checks:
     figure is stated in THREE files — the root, `.claude/rules/gui-seams.md` (which lists
     every offender) and `docs/design_notes/gui.md` — and #101 registered only the first,
     leaving the other two stating it by hand while promising in the same sentence that
-    #101 had gated it; its follow-up registered all three. What the tree says TODAY is not
+    #101 had gated it; its follow-up registered all three. The other two are #116's, and
+    both are a claim in one file about the CONTENTS of a gate: how many injections
+    `tests/cpp/test_mesh_vtk_block_field.cpp` lists, which `docs/design_notes/mesher.md`
+    states at two anchors and had disagreed with itself about since the review that added
+    the seventh; and which numbered group of `test_multiblock_smooth_surface.py` drives
+    the other three shipped multi-block configs, which that file's head docstring — the
+    first line a reader lands on in 1,600 of them — got wrong. Both are derived from the
+    gate itself, never from the prose beside the figure: the bullets that gate LISTS, and
+    the group number on the checks that follow its `shipped_config(...)` retargets. A
+    third figure #116 looked at, a "fourth-slowest file in `run_all.sh`" ranking, is NOT
+    here — it was deleted instead, because re-deriving it means timing every test file in
+    the suite and it constrained no decision. Derivability is what admits a tree figure to
+    this registry; being wrong is only what sends someone to look. What the tree says TODAY is not
     repeated in this docstring: it is derived below, and restating it here would be the
     same defect one level out. Every one of those was maintained BY HAND, and writing any of
     them changes the file being measured, so keeping them true is a joint fixed-point
@@ -400,8 +413,9 @@ Known remaining blind spots, stated rather than pretended away:
     rather than by loosening the match: a bare-stem match would fire on `units`, `paths` or
     `segment` anywhere in the 120k characters of `gui.md`. The check therefore bites on the
     MAJORITY of a misfiled set, never on every member.
- g. Check 7 covers figures the instruction files state about THEMSELVES. Four
-    neighbouring families of hand-maintained figure are outside it, named here rather
+ g. Check 7 covers figures the instruction files state about THEMSELVES, plus the three
+    tree figures item 7 names. Four neighbouring families of hand-maintained figure are
+    outside it, named here rather
     than left ambiguous — and a fifth thing that is not a family but a single third copy:
     `docs/agents/rule-file-style.md` mentions the 60,000 rule budget in passing prose
     ("anywhere near its 60,000 budget"), which check 7 does not read because that file is
@@ -431,10 +445,10 @@ Known remaining blind spots, stated rather than pretended away:
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 47,618 / 47,008 / 44,643 / 33,815 / 21,429 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 47,618 / 47,008 / 45,155 / 33,815 / 21,429 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 12,382 / 12,992 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 15,357 / 26,185 / 38,571 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 14,845 / 26,185 / 38,571 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -501,8 +515,9 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 
-# Check 7's one figure about the TREE rather than about these files. Imported, never
-# restated: `test_file_length.py` ENFORCES this standard off the same `LIMIT` and the
+# The first of check 7's figures about the TREE rather than about these files; #116 added
+# two more, whose derivations sit beside the registry because no other gate owns them.
+# Imported, never restated: `test_file_length.py` ENFORCES this standard off the same `LIMIT` and the
 # same walk, and a second copy here would let the status the root file states be derived
 # at a limit the gate no longer enforces. The path insert is belt-and-braces — this
 # file's own directory is already `sys.path[0]` when it is run as a script, which is how
@@ -515,6 +530,20 @@ from gui_file_lengths import measure as gui_measure  # noqa: E402
 _ROOT_NAME = "CLAUDE.md"
 _RULES_DIR = os.path.join(".claude", "rules")
 _NOTES_DIR = os.path.join("docs", "design_notes")
+
+# Source files check 7 DERIVES a figure from, and in one case also writes back to (#116).
+# An instruction file's figure about ITSELF needs no such entry -- the file is both the
+# claim and the measurement -- but a figure about a GATE is a claim in one file about the
+# contents of another, which is the shape both of #116's surviving figures have and the
+# shape the two of them decayed in. Listed here rather than opened inside a derivation so
+# that every check stays a pure function of `world` and an injection can move the tree by
+# mutating a copy.
+_SOURCES = {
+    "test_mesh_vtk_block_field.cpp": os.path.join(
+        "tests", "cpp", "test_mesh_vtk_block_field.cpp"),
+    "test_multiblock_smooth_surface.py": os.path.join(
+        "tools", "PreProcessor", "tests", "test_multiblock_smooth_surface.py"),
+}
 
 # --- budgets -----------------------------------------------------------------
 # ROOT_BUDGET is the root file's size taken DOWN to a 500 boundary with 1,000 added --
@@ -657,7 +686,17 @@ def read_world():
                     notes[name] = fh.read()
     with open(os.path.abspath(__file__), encoding="utf-8") as fh:
         gate_text = fh.read()
+    sources = {}
+    for _name, _rel in _SOURCES.items():
+        _path = os.path.join(_REPO, _rel)
+        # Missing rather than fatal, for `_target_text`'s reason: a renamed gate has to
+        # reach the reader as check 7's named failure and not as a traceback from inside
+        # `read_world`, which would take every other check down with it.
+        if os.path.isfile(_path):
+            with open(_path, encoding="utf-8") as fh:
+                sources[_name] = fh.read()
     return {"root": root_text, "rules": rules, "notes": notes, "gate": gate_text,
+            "sources": sources,
             "pins": dict(KNOWN_RESIDUE), "note_pins": dict(UNDOCUMENTED_MODULES),
             "tests": collect_test_files(),
             # An INPUT like every other, so check 7's GUI figures are a pure function of
@@ -1358,6 +1397,126 @@ def _gui_worst(world):
     return (over[0] if over else 0,)
 
 
+# --- #116: two figures about a GATE, and what makes them derivable ------------
+class _DeriveError(Exception):
+    """A derivation whose INPUT stopped having the shape it parses.
+
+    Raised rather than returned, because what a broken parse would return is a NUMBER and
+    check 7 compares numbers: a bullet list that stopped matching would derive 0, report
+    the prose stale, and `--sync` would then write "zero injections" into the design note.
+    A wrong figure written BY the ledger is strictly worse than the stale one it replaced,
+    and it would carry the ledger's authority. Check 7 catches this and names the
+    derivation, the file and the shape it wanted; `--sync` writes nothing and leaves the
+    gate red, the same answer it already gives an unresolvable anchor.
+    """
+
+
+# `//   * ` opens a bullet in a C++ comment's injection list; its continuation lines are
+# indented past the `*` and carry none, so a re-wrapped bullet is still one bullet.
+_CPP_BULLET = re.compile(r"^//\s{2,4}\* ")
+_INJ_HEADING = "VERIFIED BY INJECTION"
+_NEG_CONTROL = "NEGATIVE CONTROL"
+
+
+def _injection_bullets(text, where):
+    """The bullets of the one injection list in `text`.
+
+    The list runs from its heading to the first EMPTY comment line after the bullets
+    start, which is the shape every injection list in this tree is written in. Ending it
+    on a blank comment line rather than on the end of the comment block matters: the same
+    files carry a `BLIND SPOTS:` list of identically-shaped bullets further down.
+    """
+    lines = text.splitlines()
+    at = [i for i, ln in enumerate(lines) if _INJ_HEADING in ln]
+    if len(at) != 1:
+        raise _DeriveError(
+            "%s must carry exactly one `%s` heading over the list this figure counts, "
+            "and it carries %d." % (where, _INJ_HEADING, len(at)))
+    bullets = []
+    for ln in lines[at[0] + 1:]:
+        if not ln.startswith("//"):
+            break
+        if _CPP_BULLET.match(ln):
+            bullets.append(ln)
+        elif bullets and ln.strip() == "//":
+            break
+    return bullets
+
+
+def _block_field_injections(world):
+    """How many injections `tests/cpp/test_mesh_vtk_block_field.cpp` LISTS.
+
+    The negative control is a bullet in that list and is not an injection, so it is
+    subtracted rather than filtered by position -- and its absence is a `_DeriveError`
+    rather than a count one larger, because a list with no negative control is not the
+    thing the design note's sentence is about.
+
+    Why this is gated at all (#116, story 9's sibling): the note stated this figure at TWO
+    anchors, #113's own review added the seventh injection and updated ONE of them, and
+    the note then spent a ticket telling a reader deciding whether to trust that gate two
+    different numbers. It is derivable in one walk of the file it describes, which is the
+    test #101 set for admitting a tree figure to this registry.
+    """
+    name = "test_mesh_vtk_block_field.cpp"
+    where = _SOURCES[name].replace(os.sep, "/")
+    bullets = _injection_bullets(world["sources"].get(name, ""), where)
+    controls = [b for b in bullets if _NEG_CONTROL in b]
+    if not bullets or len(controls) != 1:
+        raise _DeriveError(
+            "%s lists %d bullets under `%s`, %d of them a %s. This figure is the bullets "
+            "MINUS the one negative control, so the list must hold at least one bullet "
+            "and exactly one control."
+            % (where, len(bullets), _INJ_HEADING, len(controls), _NEG_CONTROL))
+    return (len(bullets) - len(controls),)
+
+
+# `check("13. ...` / `check(f"13. ...` -- every gate in this tree prefixes a check message
+# with its group number, which is what makes the GROUP derivable from code rather than
+# only stated in the prose that got it wrong.
+_CHECK_GROUP = re.compile(r"check\(\s*f?\"(\d+)\.")
+_OTHER_THREE = ("multiblock_square", "multiblock_cavity", "multiblock_hgrid")
+
+
+def _smooth_other_three_group(world):
+    """Which numbered group of `test_multiblock_smooth_surface.py` drives the other three
+    shipped multi-block configs, read off the CODE and never off the prose.
+
+    Off the code deliberately: the defect (#116) was a head docstring disagreeing with
+    four other passages in its own file and with the rule file, and a derivation that read
+    any of those five would only have picked a side. What the group IS, is where the runs
+    are -- so this finds each config's one `shipped_config(...)` retarget and takes the
+    group of the first numbered check after it, requiring all three to agree.
+
+    All three, not one: "GROUP n ALSO DRIVES THE OTHER THREE" is a claim about the three
+    together, and a split across two groups makes the sentence unwriteable rather than
+    merely wrong. That is a `_DeriveError` naming both groups, not a silent pick.
+    """
+    name = "test_multiblock_smooth_surface.py"
+    where = _SOURCES[name].replace(os.sep, "/")
+    text = world["sources"].get(name, "")
+    groups = set()
+    for config in _OTHER_THREE:
+        calls = list(re.finditer(r"shipped_config\(\"%s\"\)" % re.escape(config), text))
+        if len(calls) != 1:
+            raise _DeriveError(
+                "%s retargets to `%s` through `shipped_config(...)` %d times; this figure "
+                "needs exactly one, so that the group driving that config is unambiguous."
+                % (where, config, len(calls)))
+        m = _CHECK_GROUP.search(text, calls[0].end())
+        if m is None:
+            raise _DeriveError(
+                "%s has no numbered `check(\"N. ...` after its `shipped_config(\"%s\")` "
+                "call, so the group that drives that config cannot be read off the code."
+                % (where, config))
+        groups.add(int(m.group(1)))
+    if len(groups) != 1:
+        raise _DeriveError(
+            "%s drives the other three shipped configs from %d different groups (%s), and "
+            "the head docstring names ONE. Either the code or that sentence has to change."
+            % (where, len(groups), ", ".join(str(g) for g in sorted(groups))))
+    return (groups.pop(),)
+
+
 # The registry. Each entry declares WHERE the figure is, the pattern that anchors it, and
 # one field per capture group. A field named "date" is deliberately not compared: gating
 # it would go red with the calendar rather than with the file, which is the
@@ -1430,6 +1589,16 @@ _FIGURES = {
     # a file can join the list, leave it, change size, or keep its size and move past
     # another. All four are the same walk, so all four are one figure.
     "gui_over_list": _Figure(_parse_offenders, _fmt_offenders, _gui_offenders),
+    # #116's two, both about a GATE rather than about an instruction file. The injection
+    # count is spelled as a WORD at both of its anchors, one of them opening a sentence
+    # -- `rule_count`/`rule_count_lower`'s arrangement exactly: one derivation, two
+    # formatters, so the two homes cannot come apart the way they already did.
+    "bf_injections": _Figure(_parse_word, _fmt_word, _block_field_injections),
+    "bf_injections_lower": _Figure(_parse_word, _fmt_word_lower,
+                                   _block_field_injections),
+    # Digits, not a word: the sentence writes "GROUP 13", and a group number is an
+    # identifier a reader greps for in the file rather than a count they read.
+    "smooth_group": _Figure(_parse_nums, _fmt_nums, _smooth_other_three_group),
 }
 
 SELF_REPORT = (
@@ -1528,6 +1697,30 @@ SELF_REPORT = (
      "pattern": r"\(\"keep~each~file~under~`tools/PreProcessor/gui/`~at~"
                 r"\x7e([\d,]+)~lines\"\)",
      "fields": ("gui_limit",)},
+    # #116. The injection count `docs/design_notes/mesher.md` states for
+    # `tests/cpp/test_mesh_vtk_block_field.cpp`, at BOTH of its anchors. #113's own review
+    # added the seventh injection and updated one of the two, so the note went on telling
+    # a reader deciding whether to trust that gate two different numbers -- inside the
+    # ticket that added the injection. Registered as ONE derivation with two anchors,
+    # which is the arrangement that makes that specific failure unexpressible.
+    {"label": "the block-field gate's injection count", "target": "note:mesher.md",
+     "pattern": r"([A-Za-z]+|[\d,]+)~injections~into~`src/Mesh\.cpp`,",
+     "fields": ("bf_injections",)},
+    {"label": "the block-field gate's injection count, the gate list's copy",
+     "target": "note:mesher.md",
+     "pattern": r"tag~states,~([a-z]+|[\d,]+)~injections,~#113\)",
+     "fields": ("bf_injections_lower",)},
+    # #116. The group number the smoothing gate's head docstring opens with -- the first
+    # line a reader lands on in a 1,600-line docstring, and the one sentence in it that
+    # was wrong. The other four passages in that file and the one in
+    # `.claude/rules/mesher-smoothing.md` are NOT registered: they are prose about what
+    # a group asserts rather than restatements of the number, and #116 measured them all
+    # already agreeing with the code. What decayed was the entry point, which is also the
+    # copy furthest from the runs it names.
+    {"label": "the smoothing gate's other-three group number",
+     "target": "src:test_multiblock_smooth_surface.py",
+     "pattern": r"SINCE~#114~GROUP~([\d,]+)~ALSO~DRIVES~THE~OTHER~THREE",
+     "fields": ("smooth_group",)},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
      # Either spelling: `_fmt_word_lower` writes a word up to twelve and DIGITS past it,
      # and thirteen rule files is a state that docstring calls reachable. A word-only
@@ -1550,8 +1743,13 @@ _EXPECTED_FIGURES = sum(len([f for f in e["fields"] if f != "date"])
 # it under `--sync`. One figure stated in three files is one derivation with three anchors,
 # which is exactly what `rule_count` already is; the only thing missing was a target that
 # could name a file inside a bucket.
-_TARGET_DIR = {"rule": _RULES_DIR, "note": _NOTES_DIR}
-_TARGET_BUCKET = {"rule": "rules", "note": "notes"}
+# `src:` joined them in #116, for a figure whose target is neither an instruction file
+# nor this gate but the C++/Python gate the figure is ABOUT. Its files do not share a
+# directory, so the relative path comes from `_SOURCES` rather than from a dir + name.
+_TARGET_REL = {"rule": lambda n: os.path.join(_RULES_DIR, n),
+               "note": lambda n: os.path.join(_NOTES_DIR, n),
+               "src": lambda n: _SOURCES[n]}
+_TARGET_BUCKET = {"rule": "rules", "note": "notes", "src": "sources"}
 
 _TARGET_PATH = {"root": _ROOT_NAME,
                 "gate": "tools/PreProcessor/tests/" + os.path.basename(__file__)}
@@ -1563,8 +1761,9 @@ _TARGET_ABS = {"root": os.path.join(_REPO, _ROOT_NAME),
 for _t in dict.fromkeys(e["target"] for e in SELF_REPORT):
     _kind, _, _name = _t.partition(":")
     if _name:
-        _TARGET_PATH[_t] = "/".join(_TARGET_DIR[_kind].split(os.sep) + [_name])
-        _TARGET_ABS[_t] = os.path.join(_REPO, _TARGET_DIR[_kind], _name)
+        _rel = _TARGET_REL[_kind](_name)
+        _TARGET_PATH[_t] = "/".join(_rel.split(os.sep))
+        _TARGET_ABS[_t] = os.path.join(_REPO, _rel)
 
 
 def _target_text(world, target):
@@ -1622,8 +1821,20 @@ def check_self_report(world):
             if field == "date":
                 continue
             spec = _FIGURES[field]
-            stated, derived = spec.parse(m.group(i)), spec.derive(world)
             compared += 1
+            try:
+                derived = spec.derive(world)
+            except _DeriveError as exc:
+                # Counted as compared: this figure was reached and answered, just with a
+                # failure instead of a number. Skipping the increment would light up the
+                # registry-count failure below as well, and two messages about one defect
+                # is how a reader ends up fixing the wrong thing.
+                fails.append(
+                    "%s states %s (%s) as %r, and the tree cannot say what it should "
+                    "be: %s" % (_TARGET_PATH[entry["target"]], entry["label"], field,
+                                m.group(i), exc))
+                continue
+            stated = spec.parse(m.group(i))
             if stated != derived:
                 fails.append(
                     "%s states %s (%s) as %r, and disk says %r. Run `python3 %s "
@@ -1874,8 +2085,16 @@ def sync_world(world, today=None):
                 if field == "date":
                     continue
                 spec = _FIGURES[field]
-                want = spec.fmt(spec.derive(cur))
-                if spec.parse(m.group(i)) != spec.derive(cur):
+                try:
+                    derived = spec.derive(cur)
+                except _DeriveError:
+                    # An unrunnable derivation is check 7's failure to report, not sync's
+                    # to paper over -- the same answer an unresolvable anchor gets above.
+                    # Writing the figure this branch could still guess at is the one
+                    # outcome worse than leaving it stale.
+                    continue
+                want = spec.fmt(derived)
+                if spec.parse(m.group(i)) != derived:
                     edits.append((m.span(i), want))
                     round_changes.append("%s: %s %r -> %r"
                                          % (_TARGET_PATH[entry["target"]], entry["label"],
@@ -1980,7 +2199,7 @@ def copy_world(w):
     return {"root": w["root"], "rules": dict(w["rules"]), "notes": dict(w["notes"]),
             "gate": w["gate"], "pins": dict(w["pins"]),
             "note_pins": dict(w["note_pins"]), "tests": set(w["tests"]),
-            "gui_lengths": dict(w["gui_lengths"])}
+            "gui_lengths": dict(w["gui_lengths"]), "sources": dict(w["sources"])}
 
 
 # 5. an oversized file
@@ -2909,11 +3128,12 @@ check(len(hits) == 1 and hits[0].startswith(_seams_path)
 _targets = {e["target"] for e in SELF_REPORT}
 check(all(t in _TARGET_ABS and t in _TARGET_PATH for t in _targets)
       and any(t.startswith("rule:") for t in _targets)
-      and any(t.startswith("note:") for t in _targets),
+      and any(t.startswith("note:") for t in _targets)
+      and any(t.startswith("src:") for t in _targets),
       "injection 13i4. every one of the %d targets SELF_REPORT declares has a path "
-      "`--sync` can write — and a rule file and a design note are among them, so the "
-      "property is not vacuously true of the two targets that predate this ticket"
-      % len(_targets))
+      "`--sync` can write — and a rule file, a design note and a gate SOURCE file are "
+      "among them, so the property is not vacuously true of the two targets that "
+      "predate this ticket" % len(_targets))
 
 # 13i5. ...and every derivation returns a TUPLE, which is the seam the oscillation bug
 # came through: `check_self_report` compares `stated != derived` raw, and a parser
@@ -2948,6 +3168,164 @@ for _label, _path in (
     check(len(hits) == 1 and "600" in hits[0] and _fmt_nums((GUI_LIMIT,)) in hits[0],
           "injection 13i6. check 7 fails when %s relaxes the standard while "
           "`test_file_length.py` still enforces %s" % (_path, _fmt_nums((GUI_LIMIT,))))
+
+# 13j. #116's first figure, at BOTH of its anchors. The defect was not that the note was
+# wrong: it was that one home of one derivation was updated and the other was not, BY the
+# review that added the seventh injection. Each anchor is bent on its own, so a check that
+# happened to cover only the first would fail here rather than read as covering both.
+for _label, _bend in (("the block-field gate's injection count", "Twelve"),
+                      ("the block-field gate's injection count, the gate list's copy",
+                       "twelve")):
+    inj, was = bend_figure(world, _label, 1, _bend)
+    check(inj["notes"]["mesher.md"] != world["notes"]["mesher.md"]
+          and inj["sources"] == world["sources"] and was != _bend
+          and _resolve(inj, _entry_by_label(_label))[1] is None,
+          "injection 13j. injection is well-formed: only the NOTE's copy of %s moved, the "
+          "gate it describes is untouched, and the anchor still resolves" % _label)
+    hits = [f for f in check_self_report(inj) if _label + " (" in f]
+    check(len(hits) == 1 and _bend in hits[0]
+          and hits[0].startswith(_TARGET_PATH["note:mesher.md"]),
+          "injection 13j. check 7 fails on %s, naming the design note, the anchor and "
+          "both values" % _label)
+
+# 13k. ...and the derivation really reads the GATE, which is the half 13j cannot show: bend
+# the note and the tree is still the authority, but move the TREE and both homes must
+# follow. An eighth injection lands in the C++ file and `--sync` rewrites the note's two
+# anchors from it — the capitalised one and the mid-sentence one — off one walk.
+_CPP = "test_mesh_vtk_block_field.cpp"
+inj = copy_world(world)
+_bullet = "//   * write a constant value for every cell."
+assert inj["sources"][_CPP].count(_bullet) == 1, "injection fixture: bullet moved"
+inj["sources"][_CPP] = inj["sources"][_CPP].replace(
+    _bullet, _bullet + "\n//   * an EIGHTH injection, added by this fixture.")
+check(_block_field_injections(inj) == (_block_field_injections(world)[0] + 1,)
+      and inj["notes"] == world["notes"],
+      "injection 13k. injection is well-formed: the gate now lists exactly one more "
+      "injection than it does on disk, and the design note is untouched")
+_hits = [f for f in check_self_report(inj) if "bf_injections" in f]
+check(len(_hits) == 2 and all("eight" in f.lower() for f in _hits),
+      "injection 13k. check 7 fails at BOTH of the note's anchors when the gate gains an "
+      "injection, so a count updated in one home cannot pass as updated")
+synced, _changes, _ok = sync_world(inj)
+# Read back through the anchors rather than by substring: the second one WRAPS in the
+# note, so `"eight injections, #113" in text` is false for a correctly synced file — the
+# reason `_rx` turns every space into `\s+` in the first place.
+_written = tuple(
+    _resolve(synced, _entry_by_label(_l))[0].group(1)
+    for _l in ("the block-field gate's injection count",
+               "the block-field gate's injection count, the gate list's copy"))
+check(_ok and not check_self_report(synced) and _written == ("Eight", "eight"),
+      "injection 13k. ...and `--sync` rewrites both homes from the gate — 'Eight' where "
+      "the sentence opens and 'eight' mid-sentence — off ONE walk, which is what makes "
+      "the two homes unable to come apart again (wrote %r)" % (_written,))
+
+# 13l. the STRUCTURAL half. A derivation whose input stops parsing must not answer with a
+# number: counting bullets with the negative control gone would derive one MORE injection
+# than the gate lists, `--sync` would write it, and the ledger would have manufactured a
+# figure. It fails by name instead, and `--sync` writes nothing.
+inj = copy_world(world)
+_control = [ln for ln in inj["sources"][_CPP].splitlines() if _NEG_CONTROL in ln
+            and _CPP_BULLET.match(ln)]
+assert len(_control) == 1, "injection fixture: negative-control bullet moved"
+inj["sources"][_CPP] = inj["sources"][_CPP].replace(_control[0] + "\n", "")
+check(inj["sources"][_CPP] != world["sources"][_CPP]
+      and inj["notes"] == world["notes"],
+      "injection 13l. injection is well-formed: the gate's negative-control bullet is "
+      "gone and nothing that STATES the figure was touched")
+_hits = [f for f in check_self_report(inj) if "bf_injections" in f]
+check(len(_hits) == 2
+      and all("cannot say what it should be" in f and _NEG_CONTROL in f for f in _hits),
+      "injection 13l. check 7 refuses to derive a count from a list with no negative "
+      "control, naming the file and the shape it wanted, rather than reporting the note "
+      "stale against a number one too high")
+synced, _changes, _ok = sync_world(inj)
+check(_ok and check_self_report(synced)
+      and synced["notes"]["mesher.md"] == world["notes"]["mesher.md"],
+      "injection 13l. ...and `--sync` leaves the note alone and the gate RED, rather than "
+      "writing the figure it could still have guessed at")
+
+# 13m. #116's second figure: the group number the smoothing gate's head docstring opens
+# with, which said 12 while four other passages in that file, its rule file and the CODE
+# all said 13. Bent in the prose first.
+_SMOOTH = "test_multiblock_smooth_surface.py"
+_GROUP_LABEL = "the smoothing gate's other-three group number"
+inj, was = bend_figure(world, _GROUP_LABEL, 1, "12")
+check(was == _fmt_nums(_smooth_other_three_group(world)) and was != "12"
+      and _resolve(inj, _entry_by_label(_GROUP_LABEL))[1] is None,
+      "injection 13m. injection is well-formed: the docstring stated the group the code "
+      "runs those three configs from, and now states the number the defect had")
+_hits = [f for f in check_self_report(inj) if "smooth_group" in f]
+check(len(_hits) == 1 and "'12'" in _hits[0]
+      and _hits[0].startswith(_TARGET_PATH["src:" + _SMOOTH]),
+      "injection 13m. check 7 fails on the head docstring's group number, naming the gate "
+      "file and both values — the exact figure that shipped wrong in #114")
+
+# 13m2. ...and the other direction, which is what makes 13m evidence rather than a
+# coincidence: RENUMBER the group in the code and the docstring must follow it, because
+# the code is what the figure is about. A gate that read the number out of the prose
+# beside it would pass here.
+inj = copy_world(world)
+_renamed = 'check(f"13. all three added configs EXIT 0'
+assert inj["sources"][_SMOOTH].count(_renamed) == 1, "injection fixture: check moved"
+inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(
+    _renamed, 'check(f"14. all three added configs EXIT 0')
+check(_smooth_other_three_group(inj) == (14,),
+      "injection 13m2. injection is well-formed: the code now drives the other three "
+      "configs from group 14, and the docstring still says what it said")
+_hits = [f for f in check_self_report(inj) if "smooth_group" in f]
+check(len(_hits) == 1 and "14" in _hits[0],
+      "injection 13m2. check 7 follows the CODE, not the prose beside the figure: moving "
+      "the group reddens the head docstring")
+synced, _changes, _ok = sync_world(inj)
+check(_ok and not check_self_report(synced)
+      and "SINCE #114 GROUP 14 ALSO DRIVES" in synced["sources"][_SMOOTH],
+      "injection 13m2. ...and `--sync` rewrites the head docstring from the code, so the "
+      "entry point to a 1,600-line docstring stops being hand-maintained")
+
+# 13n. the structural half again, in the shape this figure can actually break: the three
+# configs driven from two different groups. "GROUP n ALSO DRIVES THE OTHER THREE" is a
+# claim about the three TOGETHER, so a split makes the sentence unwriteable rather than
+# merely wrong, and picking one of the two silently is the answer that must not happen.
+inj = copy_world(world)
+_sq_call = '                           config=lambda: shipped_config("multiblock_square"))\n'
+assert inj["sources"][_SMOOTH].count(_sq_call) == 1, "injection fixture: retarget moved"
+inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(
+    _sq_call, _sq_call + '        check("99. fixture", True)\n')
+check(inj["sources"][_SMOOTH] != world["sources"][_SMOOTH]
+      and _resolve(inj, _entry_by_label(_GROUP_LABEL))[1] is None,
+      "injection 13n. injection is well-formed: one of the three configs is now followed "
+      "by a check from another group, and the docstring's anchor still resolves")
+_hits = [f for f in check_self_report(inj) if "smooth_group" in f]
+check(len(_hits) == 1 and "cannot say what it should be" in _hits[0]
+      and "99" in _hits[0] and "13" in _hits[0],
+      "injection 13n. check 7 refuses a split rather than picking a side, and names BOTH "
+      "groups so the reader can see which of the two is the accident")
+synced, _changes, _ok = sync_world(inj)
+check(_ok and check_self_report(synced)
+      and synced["sources"][_SMOOTH] == inj["sources"][_SMOOTH],
+      "injection 13n. ...and `--sync` writes nothing into the docstring, leaving the gate "
+      "red instead of stamping it with one of two disagreeing answers")
+
+# 13j2. the INERT direction for both of #116's figures, which is the family this repo has
+# been bitten by three times: the anchor is reworded away while the figure itself stays
+# CORRECT, so a check that merely looked for a number would pass while measuring nothing.
+for _label, _target, _was, _now in (
+        ("the block-field gate's injection count", "note:mesher.md",
+         "injections into `src/Mesh.cpp`", "injections into the writer"),
+        (_GROUP_LABEL, "src:" + _SMOOTH,
+         "ALSO DRIVES THE OTHER THREE", "ALSO DRIVES THE REMAINING THREE")):
+    inj = copy_world(world)
+    _text = _target_text(inj, _target)
+    assert _text.count(_was) == 1, "injection fixture: %s moved" % _was
+    _target_set(inj, _target, _text.replace(_was, _now))
+    check(_resolve(inj, _entry_by_label(_label))[1] is not None,
+          "injection 13j2. injection is well-formed: the anchor for %s really stopped "
+          "resolving, and only the sentence around the figure changed" % _label)
+    _sr = check_self_report(inj)
+    check(any("resolved 0 times" in f and _label in f for f in _sr)
+          and any("of the %d figures" % _EXPECTED_FIGURES in f for f in _sr),
+          "injection 13j2. check 7 FAILS on the missing anchor for %s rather than "
+          "skipping it, and reports how many figures went uncompared" % _label)
 
 # 13g. negative control
 check(not check_self_report(world),

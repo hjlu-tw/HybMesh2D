@@ -1631,7 +1631,18 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   homes at once. #107 gated the
   criterion on the two the surface gate already drove and recorded the other three as a dated
   two-build measurement; #114 added them as group 13, with `shipped_config` retargeting each
-  by KEY (they have no gate of their own to import a needle list from). What its own
+  by KEY (they have no gate of their own to import a needle list from). **THAT GROUP NUMBER IS
+  GATED SINCE #116**, in the one home that had it wrong: the gate's head docstring opened with
+  "SINCE #114 GROUP 12 ALSO DRIVES THE OTHER THREE" — the first line a reader lands on in
+  1,600 of them, contradicted by that same docstring's numbered item 13, by its section
+  banner, by two further passages in it and by `.claude/rules/mesher-smoothing.md`. Check 7 in
+  `tools/PreProcessor/tests/test_instruction_budget.py` now derives it from the CODE, never
+  from the prose beside it: the group number on the first numbered check after each of the
+  three `shipped_config(...)` retargets, all three required to agree. Deriving it from any of
+  the five agreeing passages would only have picked a side; deriving it from the runs
+  themselves is what makes the sentence answerable. The other five passages are left
+  ungated — they describe what a group ASSERTS rather than restating its number, and #116
+  measured them all already agreeing with the code. What its own
   acceptance asked for was that the three added configs each report the failure with "the
   warning guard reverted", and **WHICH GUARD THAT MEANS DECIDES WHETHER IT IS MET.** Read as
   the floor's VALUE, the warning COUNTS do not move: at 1e-12, rebuilt 2026-09-11, `square`
@@ -1694,11 +1705,30 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   as a before/after**, in any of the three homes: across measurements either side of the change
   it ranged 8.6-11.2 s and a review run of the changed file came back at 9.73 s, inside the
   range an earlier draft had given as the "after". The spread is wider than the addition, so
-  only the 0.71 s is stated. **It is the FOURTH-slowest file in `run_all.sh`, not the
-  slowest**, which the first draft of that paragraph asserted before anything measured it:
-  `test_geom_files_identity.py` 60.3 s, `test_gui_review_batch_2026_08_06.py` 12.6 s,
-  `test_qt_free_seam.py` 10.4 s. A C-grid or O-grid run costs ~1 s here, which is why the
+  only the 0.71 s is stated. A C-grid or O-grid run costs ~1 s here, which is why the
   widening went to the cheap configs.
+
+  **AND THE RANKING BESIDE IT IS DELETED RATHER THAN CORRECTED (#116).** All three homes
+  said "the FOURTH-slowest file in `run_all.sh`, not the slowest" — itself a correction, of a
+  first draft that asserted the slowest before anything measured it — and named three other
+  test files with an absolute timing each behind it. Those three timings are not quoted here
+  either: a deletion record that repeats the figure it deleted leaves the figure in the file.
+  #115's review read it a second time and it was
+  wrong a second time: FIFTH, with a file the claim does not name sitting between this one and
+  the one it names as next. The three absolutes beside it were re-timed here before deleting
+  them rather than taken from the review, and all three came back well under what the note
+  stated — between 1.5x and 3.5x under, one sample each, on a machine that is not the one that
+  wrote them. **That last clause is the whole problem with an absolute timing**: it is a
+  property of the machine and the load as much as of the test, so it is stale the moment it
+  leaves the terminal it was measured in. **The second wrong reading is the
+  argument for deleting instead of correcting a third time**: a `run_all.sh` ranking can only
+  be re-derived by timing every test file in the suite, so nobody re-measures it and both
+  readings decayed unseen, and `docs/agents/rule-file-style.md` rule 6 keeps a measurement that
+  CONSTRAINS a decision and drops one that only justifies it. This one decided nothing — what
+  decided the widening is the 0.71 s and the ~1 s per C-grid/O-grid run above, each of which is
+  one run to re-measure. **The true rank is deliberately NOT stated in its place**, and neither
+  are corrected absolutes: a third copy of the same figure at the same re-derivation cost is
+  the defect, not the value it happens to hold today.
 
   **THE C++ SIDE NEEDS NO CHANGE, AND THAT IS TRUE OF ONE HALF OF IT RATHER THAN BOTH.**
   Check 55's positive half — the deep notch, a wall lost by thousands of percent — is orders
@@ -2838,8 +2868,21 @@ nothing writes yet, since no exporter has changed."*
   is caught only by the geometric identity check, and renaming the array is caught only by the
   header pin — the array NAME is what a reader selects in ParaView, so it is interface, and
   before that check it was pinned nowhere in the tree), and by
-  `tests/cpp/test_mesh_vtk_block_field.cpp` (19 checks over four tag states, six injections,
+  `tests/cpp/test_mesh_vtk_block_field.cpp` (19 checks over four tag states, seven injections,
   #113) for the one state a gate over the binary cannot reach.
+
+  **AND THAT SEVEN IS NOW GATED, IN BOTH OF THE PLACES THIS FILE STATES IT (#116).** It said
+  "Seven" above and "six" here, about the same gate, from the moment #113's own review added
+  the seventh injection and updated one home of the two — so a reader deciding whether that
+  check is proved was told two numbers by one file. It is registered in
+  `tools/PreProcessor/tests/test_instruction_budget.py`'s check 7 as ONE derivation with two
+  anchors, `--sync` rewrites both from the bullets the gate LISTS, and adding an eighth
+  injection to that file now reddens this note rather than quietly ageing it. Deciding to gate
+  it rather than merely fix it is the point: this figure is a claim in one file about the
+  contents of another, which is the shape that decays without anyone touching either. The
+  count excludes the negative control, and a list that has lost its negative control is a
+  named failure rather than a count one too high — a ledger that MANUFACTURES a figure is
+  worse than the stale one it replaced.
 
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.
