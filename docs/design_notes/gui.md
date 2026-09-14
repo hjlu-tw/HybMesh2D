@@ -1204,7 +1204,7 @@ controller handler (so undo, redo and the projection are proven, not asserted).
 
 **Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)` (`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, which is a re-entrant depth counter (a bare bool let a nested populate clear the outer guard). `tests/test_signal_guards.py` statically fails the build on either.
 
-**Error handling**: never `except Exception: pass`. Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step allowed to fail, or `warning` when the failure silently degrades what the user asked for. `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build if a new undocumented silent handler appears.
+**Error handling**: never a BROAD `except` that discards. Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step allowed to fail, or `warning` when the failure silently degrades what the user asked for. `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build if a new undocumented silent handler appears. The rule is `.claude/rules/gui-seams.md`'s; why it is about the handler rather than about `pass`, and what the widening found, is "A standard that bans one KEYWORD" below.
 
 **File length — why the number got a gate, and why its pins are a ceiling.** The rule is
 `.claude/rules/gui-seams.md`'s ("keep each file under `tools/PreProcessor/gui/` at ~500 lines");
@@ -1252,6 +1252,71 @@ count deliberately is NOT gated —
 `test_instruction_budget.py` blind spot (g) states the reason: a git-history figure decays on every
 commit rather than on every edit to the file, so gating one would make each commit re-measure
 `git log`, and there is no fixed point to converge on.
+
+**A standard that bans one KEYWORD has three other spellings of the same silence.** The rule is
+`.claude/rules/gui-seams.md`'s ("never a BROAD `except` that discards"); this is what #118
+measured and decided. The standard has always been ABOUT the handler — a catch that neither
+records the failure nor re-raises it — and its gate implemented that by matching a body of exactly
+`["pass"]`. #117 is the evidence that the gap is a defect and not untidiness: a refactor moved
+what REACHES one of these handlers, a correct skip became a swallowed diagnostic, nothing in the
+handler changed, and every gate stayed green because the body said `continue`. No review would
+have caught it either; nothing about it looks like a regression in a diff.
+
+Four decisions inside the widening:
+
+- **BROAD, not every handler — and this is the whole of why the gate can be green.** The ticket's
+  figures (28 `pass`, 14 `continue`, 3 `return`, 0 `break`) reproduce EXACTLY when the scan is run
+  over every `except` clause in `app/` on the pre-#117 tree, which is the scan that would need an
+  allowlist of a hundred-odd sites: `except ValueError: continue` inside a line parser is the
+  correct idiom and this tree is full of deliberate narrow fallbacks (`except OSError: return []`
+  in `services/meta_io.py`, `except (TypeError, ValueError): return 1.0` in `services/units.py`).
+  A gate that red-lights correct sites to find one real one gets worked around rather than obeyed
+  — `ruff.toml`'s "a permanently-red gate is worse than none", the same door #97 came through. So
+  the line is drawn where the STANDARD draws it, at a catch wide enough to swallow an error nobody
+  predicted: `except Exception:`, `except BaseException:`, a bare `except:`, or a tuple holding
+  either. Re-derived on the tree the widening actually landed on (#118's own criterion says to),
+  that reaches **10** sites rather than 17, and check 2 prints the count on every run rather than
+  any file restating it.
+- **Every one of the 10 was FIXED; the allowlist did not grow.** The project baseline and its
+  dirty comparison (`warning` — "conservative" means the close prompt that protects unsaved work
+  never appears again), the curve preview (`warning` — the edge does not draw), the two geometry
+  reads behind the auto-sizing hints (GRADED, below), the transform handle length, the gmsh probe
+  and the formula evaluator's two (`debug`). Two of the ten were deleted outright rather than
+  logged: `views/panels/mesh_sizing_mixin.py` guarded two deferred `import numpy` calls with
+  `except Exception: return None`, and numpy is a hard dependency of this GUI, so those handlers
+  were unreachable defensive code. Deleting a handler is the better half of "fix it or allowlist
+  it", and `test_qt_free_seam.py` check 6 already says a deferred import is still a dependency.
+- **Where one failure can mean two things, the GRADE is computed rather than fixed.** #117's
+  distinction is that a geometry the user has not produced yet is not an error while one that is
+  there and will not read is, and the two hint scans reach both. `_grade(path)` returns `WARNING`
+  when the file exists and `DEBUG` when it does not — the file that IS there drops silently out of
+  the domain extent / spacing average, so the number the panel SHOWS is wrong rather than missing,
+  and a wrong number nobody can trace is exactly what the warning tier is for.
+- **`ast`, not a regex plus an indentation walk.** The old scan reconstructed the body from the
+  next seven lines by indentation, so a comment above the keyword, an `except` clause spilling
+  over two lines or a docstring inside the handler each walked around it, and it could only ever
+  see the one spelling it was written against. The AST sees the handler, which also made a fifth
+  and sixth silence free: `return <fallback>` (the caller cannot tell it from success) and a body
+  that is nothing but a string literal (the loudest-looking silence there is, since the text
+  usually reads as an explanation). The same parse widened the ROOT from `app/` to the GUI tree
+  the standard actually binds, which is how `gui/main.py` came inside it.
+
+Check 2's injections are in two tiers, because the in-process ones cannot prove the walk. In
+process, against the scan's output as a value: each of the six discarding bodies fires alone,
+three at once are all reported in one run, an allowlisted site does NOT fire while the same site
+without its comment does, an allowlist entry whose file stops holding one fails as obsolete, an
+unparsable file is a failure rather than a skip, and a negative control shows the real tree passes
+because its silent sites are exactly the allowlisted ones. End to end, a probe file is written
+into the real GUI tree and the gate run as a child in `--scan-only` mode, once per keyword — the
+verdict exit 1 AND an empty stderr AND the probe named in stdout, with the probe removed for a
+final run that must exit 0. The allowlist gets the same treatment rather than only the in-process
+one: `--allow-probe` adds the probe's own path to the allowlist for one child run, which must exit
+0, against the identical file without the entry (exit 1) and the identical file without its
+comment (exit 1). The lever can only ever reach a filename this gate writes and deletes itself, so
+it exempts nothing real — the alternative was editing one of the three genuinely allowlisted source
+files, which a killed run would leave modified, and this repo has already lost a fix to a stale
+injection backup once. That is `test_file_length.py`'s shape reused rather than reinvented,
+including the GUI-root probe location and its `.gitignore` line.
 
 **A GEOMETRY IS THE FILE IT NAMES.** `services/geom_path_identity.py`, the rules in
 `.claude/rules/gui-panels-config.md`. USER-REPORTED 2026-08-20, reopening an exported case
@@ -1387,8 +1452,8 @@ Before #112 those two handlers WERE the existence answer — the missing file ra
 `np.loadtxt` and the skip was correct, because a geometry the user has not made yet is not an
 error. #112 moved the existence question OUT, in front of the open. From that commit on,
 everything arriving at the unchanged handler is a genuine read failure on a file that exists. The
-standard's own gate could not see it either: it matches a handler body of exactly `["pass"]`, and
-these two spell it `continue` and `return` (the back door #118 closes).
+standard's own gate could not see it either: it matched a handler body of exactly `["pass"]`, and
+these two spell it `continue` and `return` — the back door #118 then closed, below.
 
 #117 fixed the three rather than softening the claim, all at `warning`: the standard's grade for a
 failure that silently degrades what the user asked for, which is what an overlay that does not

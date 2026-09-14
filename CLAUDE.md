@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **36,018
-characters (36,230 bytes, 2026-09-10) ≈ 9k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **36,411
+characters (36,623 bytes, 2026-09-14) ≈ 9k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**37,000**, leaving 982 characters of slack — derived by a rule the gate states at that
+**37,000**, leaving 589 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -140,9 +140,13 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   and a pin fails both when the file grows further and when it drops back under the limit. That
   status is DERIVED, never remembered: `--sync` rewrites it from the same walk, in all three
   files that state it — here, `gui-seams.md` (which names each one) and the design note (#101).
-- **Never `except Exception: pass`.** Use `services/logging_setup.py::get_logger(__name__)` and
-  log at `debug(..., exc_info=True)`, or `warning` when the failure silently degrades what the
-  user asked for. Gate: `tests/test_silent_exceptions.py`.
+- **Never a BROAD `except` that discards.** `except Exception:` (or wider) whose whole body is
+  `pass`, `continue`, `break`, `return`, `return <fallback>` or a bare string records nothing and
+  re-raises nothing; matching only `pass` was the back door #117 went through, and #118 widened
+  the rule to the HANDLER. Use `services/logging_setup.py::get_logger(__name__)` and log at
+  `debug(..., exc_info=True)`, or `warning` when the failure silently degrades what the user asked
+  for. A NARROW `except ValueError: continue` is not this rule's subject. Gate:
+  `tests/test_silent_exceptions.py`, which walks all of `tools/PreProcessor/gui/`.
 - **Never a raw `blockSignals(True)`/`blockSignals(False)` pair, and never an `_is_populating`
   assignment.** Use `with block_signals(...)` and `with controller.populating():`. Gate:
   `tests/test_signal_guards.py`.

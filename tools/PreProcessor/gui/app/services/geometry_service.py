@@ -2,6 +2,10 @@ from __future__ import annotations
 import math
 import os
 import numpy as np
+
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.session import GeometrySession
@@ -438,5 +442,15 @@ class GeometryService:
             try:
                 return GeometryService.compute_curve_preview_pts(seg, n, session.original_points)
             except Exception:
+                # WARNING: returning None here is the edge NOT DRAWING -- on the
+                # canvas, in the preview and in every export that asks this verb
+                # for a curve's points. The user authored that curve; its
+                # disappearance is a degradation of what they asked for, not a
+                # best-effort step. Named by curve type and segment index so the
+                # record identifies WHICH edge vanished.
+                _log.warning("could not compute preview points for %s segment "
+                             "%s (%d points requested); it will not draw",
+                             seg.curve_type, getattr(seg, "id", "?"), n,
+                             exc_info=True)
                 return None
 

@@ -100,3 +100,6 @@ config/pipeline/Untitled 1.json
 # The file-length gate writes this probe into the GUI tree and removes it again;
 # a run killed mid-injection must not leave something committable behind.
 zz_file_length_probe.py
+
+# The silent-handler gate (#118) does the same, one probe per injected keyword.
+zz_silent_handler_probe.py

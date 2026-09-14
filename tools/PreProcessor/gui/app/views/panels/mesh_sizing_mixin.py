@@ -7,6 +7,10 @@ _domain_patch_dialog/_domain_patch_body, _sizing_form and domain_source_changed.
 toggles (role / transition / convex) and the _mesh_sublabel section-label
 factory relocated from the panel body."""
 from __future__ import annotations
+import logging
+import os
+
+import numpy as np
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox, QLabel
 from app.services.field_spec import by_attr, reads_in_mode
@@ -15,6 +19,23 @@ from app.utils import keep_on_top, BC_COLORS, DEFAULT_BC_COLOR
 from app.views.panels.field_widgets import read_widget, set_spec_row_visible
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
+
+def _grade(path: str) -> int:
+    """The log level for a geometry this panel could not read.
+
+    #117's distinction, applied to the two hint scans below. A geometry the user
+    has not produced yet is NOT an error -- the hint simply falls back to its
+    "computed at mesh time" wording, and a record per repaint would be noise. A
+    file that IS there and will not read is different in kind: it drops silently
+    out of the extent / the spacing average, so the number this panel SHOWS is
+    wrong rather than absent, and a wrong number nobody can trace is what the
+    warning grade is for.
+    """
+    return logging.WARNING if os.path.exists(path) else logging.DEBUG
 
 
 class MeshConfigSizingMixin:
@@ -149,10 +170,6 @@ class MeshConfigSizingMixin:
             ext = max(dx, dy)
             return ext if ext > 0 else None
         # Custom domain: read geometry bounds (prefer a Domain-role geometry).
-        try:
-            import numpy as np
-        except Exception:
-            return None
         domain_paths, other_paths = [], []
         for row in range(self.geom_list_widget.count()):
             it = self.geom_list_widget.item(row)
@@ -174,6 +191,9 @@ class MeshConfigSizingMixin:
                 ymin = min(ymin, float(np.nanmin(pts[:, 1])))
                 ymax = max(ymax, float(np.nanmax(pts[:, 1])))
             except Exception:
+                _log.log(_grade(p), "auto far-field hint: could not read "
+                         "geometry %r; it is left OUT of the domain extent",
+                         p, exc_info=True)
                 continue
         if xmax > xmin or ymax > ymin:
             return max(xmax - xmin, ymax - ymin)
@@ -202,10 +222,6 @@ class MeshConfigSizingMixin:
         value the mesher's Auto Surface size resolves to (it averages the BL-front
         edge lengths, which equal the surface point spacing). None if it can't be
         determined (no boundary geometry / unreadable files)."""
-        try:
-            import numpy as np
-        except Exception:
-            return None
         total = 0.0
         count = 0
         for row in range(self.geom_list_widget.count()):
@@ -227,6 +243,9 @@ class MeshConfigSizingMixin:
                     total += float(seg.sum())
                     count += int(seg.size)
             except Exception:
+                _log.log(_grade(p), "auto surface hint: could not read geometry "
+                         "%r; it is left OUT of the spacing average", p,
+                         exc_info=True)
                 continue
         return (total / count) if count else None
 
