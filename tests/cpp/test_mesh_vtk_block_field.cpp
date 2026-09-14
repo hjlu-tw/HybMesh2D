@@ -15,6 +15,26 @@
 // target this tree links (see tests/cpp/CMakeLists.txt), so the state can simply
 // be built here. That distinction is the whole reason this file exists.
 //
+// A NEW GATE FILE, WHICH #108's USER STORY 24 ASKED FOR NONE OF — recorded here
+// as a decision rather than left for the next reader to find (#108's closing
+// audit, 2026-09-14). That story wants "no new gate FILE for any of this, so that
+// six standards' worth of checks do not become six more places to look", and the
+// Implementation Decisions name the multi-block block-field gate as the one this
+// work should have extended. Extending it is IMPOSSIBLE for this rule, for the
+// reason above — that gate drives the real binary and no run can build the state.
+// The same spec licenses the move one layer down in as many words ("the mesh
+// writer is linkable from the C++ test tree, so the branch is reachable from a
+// test"), so the question is only WHICH C++ file, and these 19 checks could have
+// joined tests/cpp/test_mesh_boundary_edge.cpp instead.
+//
+// They did not, deliberately: story 24's stated reason is about the PYTHON
+// standards gates, where a reader looking for "which gate holds standard X" pays
+// for every extra file; the C++ tree is already one-file-per-subject (seven of
+// them, each registered in tests/cpp/CMakeLists.txt), and folding a distinct
+// subject into a neighbour costs the reader more than it saves. Moving them
+// later is cheap and needs no argument from this comment — what is not cheap is
+// rediscovering that the deviation was noticed and weighed.
+//
 // What is asserted is the OBSERVABLE OUTCOME, never the branch: what the file on
 // disk looks like. And the fully tagged mesh is exported as a NEGATIVE CONTROL,
 // so "no section" cannot be what this test would report either way — a writer
