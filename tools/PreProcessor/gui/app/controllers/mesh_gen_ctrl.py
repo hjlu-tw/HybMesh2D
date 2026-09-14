@@ -253,8 +253,10 @@ class MeshGenControllerMixin:
                         npts = sum(1 for ln in _f if ln.strip())
                     self.log(
                         f"[geom] {os.path.basename(gf)} ({npts} points)")
-                    _log.debug("bbox scan: %r parsed by hand after %s", gp, e,
-                               exc_info=True)
+                    # No exc_info: this branch RECOVERED, and a traceback on a
+                    # path that succeeded is the noise the standard's `debug`
+                    # grade exists to avoid. The message names both halves.
+                    _log.debug("bbox scan: %r parsed by hand after %s", gp, e)
                 except OSError:
                     # readable_geom_path said the file is THERE and neither
                     # reader can open it: a genuine read failure, not a geometry

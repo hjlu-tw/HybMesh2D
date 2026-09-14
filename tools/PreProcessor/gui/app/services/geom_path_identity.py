@@ -187,14 +187,13 @@ def readable_geom_path(path: str, base: str | None = None) -> str:
     readability here would move a diagnostic AWAY from the layer holding both
     halves of it.
 
-    That sentence was FALSE when #112 wrote it: the BC overlay and the selection
-    highlight discarded the failure with no record at all. #117 made it true by
-    fixing them (and the bbox scan's ``except OSError: pass`` beside them) rather
-    than by softening the claim -- before #112 those handlers WERE the existence
-    answer, so their silence had been correct and stopped being so the moment the
-    question moved in here. Gated by ``tests/test_silent_exceptions.py`` checks
-    7-8, against a real unreadable file: it is what the READERS log, not what
-    this verb returns.
+    That clause was FALSE when #112 wrote it -- the BC overlay and the selection
+    highlight discarded the failure with no record, and the bbox scan's fallback
+    ended in ``except OSError: pass``. #117 fixed the readers rather than
+    softening the claim; why moving the question in here caused it is in
+    docs/design_notes/gui.md, "can turn a correct silence into a swallowed".
+    Gated by ``tests/test_silent_exceptions.py`` checks 7-8, against a real
+    unreadable file: what the four READERS record, not what this verb returns.
 
     The verb stays at the PATH layer. It does not load, and it does not absorb
     the preview loader's NaN / ``(N,2)`` validation, which is a separate concern

@@ -757,11 +757,15 @@ check(_c10e.geom_files == [] == _bypass_restore(_null_ws).geom_files,
       f"four the rebind also got right (got {_c10e.geom_files})")
 
 # ── 11. the READ side is one verb too ────────────────────────────────────
-# The five readers that OPEN a geometry (the mesh bbox scan, the Run-All
-# readiness check, the preview loader thread, the BC overlay and the selection
-# highlight) each answered "canonicalise the entry, then find out whether there
-# is anything to open" for themselves -- four with os.path.exists on the
-# canonical path, the BC overlay by letting np.loadtxt fail into its skip.
+# The FOUR readers that OPEN a geometry (the mesh bbox scan, the preview loader
+# thread, the BC overlay and the selection highlight) each answered
+# "canonicalise the entry, then find out whether there is anything to open" for
+# themselves -- three with os.path.exists on the canonical path, the BC overlay
+# by letting np.loadtxt fail into its skip. The Run-All readiness check and
+# mesh_layers_ctrl.add_all_sessions_to_mesh ask the same question and open
+# nothing, which is what makes SIX callers and not five (#117: this comment was
+# the fourth home of a "five ... that OPEN" count that included the readiness
+# check).
 # readable_geom_path is that question, asked once. Driven from a FOREIGN cwd,
 # because that is the only condition under which the two spellings disagree.
 #

@@ -1371,35 +1371,43 @@ seam rests on being an assertion rather than evidence (#117).** Counted rather t
 callers are SIX and only FOUR open a file: the mesh bbox scan, the preview loader thread, the BC
 overlay and the selection highlight. The Run-All readiness check and `add_all_sessions_to_mesh`
 never open one, so there is no open failure there to pre-empt — which also corrects the rule file's
-"five of them OPEN", a count that included the readiness check. Of the four, the loader thread
+"five of them OPEN", a count that included the readiness check — and `test_geom_files_identity.py`'s
+check 11 comment, a FOURTH home of it that the first pass of this very fix missed. Of the four, the
+loader thread
 named both halves (`[preview] skipping malformed geometry '<f>': <e>`) and the bbox scan named the
 file only on the branch where its fallback `open` SUCCEEDED — when the file is genuinely unreadable
 that fallback raises too, into `except OSError: pass`. The BC overlay's handler was
 `except Exception: continue` and the selection highlight's `except Exception: return`: the file,
 the exception, everything, gone.
 
-The mechanism is worth naming because nothing about it looks like a regression in a diff. Before
-#112 those two handlers WERE the existence answer — the missing file raised inside `np.loadtxt`
-and the skip was correct, because a geometry the user has not made yet is not an error. #112 moved
-the existence question OUT, in front of the open. Not one character of either handler changed, and
-what arrives at it did: from that commit on, everything reaching it is a genuine read failure on a
-file that exists. A refactor that changes what reaches a handler can convert a correct silence into
-a swallowed diagnostic with every gate green, and the standard's own gate could not see it — it
-matches a body of exactly `["pass"]`, and these two spell it `continue` and `return` (the back door
-#118 closes).
+**A refactor that changes what REACHES a handler can turn a correct silence into a swallowed
+diagnostic, with every gate green and not one character of the handler edited.** That is the
+mechanism, and it is worth naming because nothing about it looks like a regression in a diff.
+Before #112 those two handlers WERE the existence answer — the missing file raised inside
+`np.loadtxt` and the skip was correct, because a geometry the user has not made yet is not an
+error. #112 moved the existence question OUT, in front of the open. From that commit on,
+everything arriving at the unchanged handler is a genuine read failure on a file that exists. The
+standard's own gate could not see it either: it matches a handler body of exactly `["pass"]`, and
+these two spell it `continue` and `return` (the back door #118 closes).
 
 #117 fixed the three rather than softening the claim, all at `warning`: the standard's grade for a
 failure that silently degrades what the user asked for, which is what an overlay that does not
 draw, a highlight that does not appear and a geometry silently absent from the bbox each are. The
-proof is what they LOG, not what they return — `tests/test_silent_exceptions.py` checks 7–8 drive
+proof is what all four RECORD, not what they return — `tests/test_silent_exceptions.py` 7–8 drive
 the real `AppController` against a real unreadable file (chmod-000, falling back to a directory
-where a file should be for a user who can read anything) and read `results/logs/gui.log`. Check 8
+where a file should be for a user who can read anything) and read `results/logs/gui.log` — plus the
+loader thread's stdout, captured rather than read off the source, since "we looked and it names the
+file" is the evidence this ticket exists to replace. Check 8
 is the other half and the reason this is a fix rather than a noise increase: an ABSENT geometry
-must still produce NO record, so the two cases stay distinguishable. Four injections, verdict from
+must still produce NO record, so the two cases stay distinguishable. FIVE injections, verdict from
 the EXIT CODE with a negative control on the unmutated tree: reverting each of the three handlers
-bites its own check, and making the BC overlay log the absent case too reddens check 8. No plural form was added, because only one of the
-five would have written the comprehension: the bbox scan and the BC overlay need the stored
-spelling for their log line and their role test as well as the path. The conversion is
+bites its own check, the loader thread's print replaced by `pass` bites the fourth, and making the
+BC overlay log the absent case too reddens check 8.
+
+No plural form was added, because only one of the SIX would have written the comprehension — the
+Run-All readiness check, the one that opens nothing (the count here read "five" until #117
+recounted the callers): the bbox scan and the BC overlay need the stored spelling for their log
+line and their role test as well as the path. The conversion is
 behaviour-preserving by construction — a missing file still reaches each caller's existing skip,
 with no new refusal and no new log line — so it is held by the GUI gates that already run rather
 than by tests written to prove a conversion correct, and check 11 holds the VERB's own contract,

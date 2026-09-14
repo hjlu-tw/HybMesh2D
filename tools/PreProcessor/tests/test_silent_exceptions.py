@@ -23,17 +23,18 @@ Checks:
  4. A converted debug site records at DEBUG and is dropped at INFO.
  5. HYBMESH_LOG_LEVEL raises the level so best-effort diagnostics are reachable.
  6. Log records carry the module name, so a message can be traced to its site.
- 7. A geometry file that EXISTS and cannot be read is named in the log by all
-    three canvas/controller readers that open one (#117).
+ 7. A geometry file that EXISTS and cannot be read is named, with its
+    exception, by all FOUR readers that open one (#117).
  8. ...while a geometry file that is simply ABSENT still produces no record.
 
-Checks 7-8 are proved non-vacuous by four injections, the verdict read from the
+Checks 7-8 are proved non-vacuous by five injections, the verdict read from the
 EXIT CODE and with a negative control on the unmutated tree (this repo has
 scored a crashed injection as a bite that never happened):
 
   * the BC overlay reverted to ``except Exception: continue``   -> check 7 red
   * the selection highlight reverted to ``except Exception: return`` -> 7 red
   * the bbox scan's fallback reverted to ``except OSError: pass``     -> 7 red
+  * the loader thread's print replaced by ``pass``                    -> 7 red
   * the BC overlay made to log the ABSENT case as well               -> 8 red
 
 Run:  python3 tools/PreProcessor/tests/test_silent_exceptions.py
@@ -41,6 +42,7 @@ Run:  python3 tools/PreProcessor/tests/test_silent_exceptions.py
 import logging
 import os
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -263,6 +265,38 @@ check("unreadable.dat" in bb_log and "bbox scan" in bb_log
       and "hybmesh.gui.controllers.mesh_gen_ctrl" in bb_log,
       "7. the mesh bbox scan names it too (the third caller that OPENS)")
 
+# The FOURTH opener records to stdout rather than to the log file, beside its
+# own malformed-geometry line. Measured here rather than asserted from the
+# code, because "we looked and it names the file" is exactly the evidence this
+# ticket exists to replace. run() is called directly: it is an ordinary method,
+# and the point is what it writes, not which thread wrote it.
+import contextlib  # noqa: E402
+import io as _io  # noqa: E402
+
+from app.views.mesh_canvas_loader import GeomLoaderThread  # noqa: E402
+
+from app.services.geometry_service import load_points_dat  # noqa: E402
+
+try:
+    load_points_dat(unreadable)
+    _exc_text = ""
+except Exception as _e:               # the exception the thread has to report
+    _exc_text = str(_e)
+
+_buf = _io.StringIO()
+with contextlib.redirect_stdout(_buf):
+    GeomLoaderThread([unreadable]).run()
+loader_out = _buf.getvalue()
+# The head only: the OS embeds a path in the message, and the thread reports
+# the CANONICAL one (/private/var/... on macOS) while our own call used the
+# spelling tempfile handed us. What is measured is that the exception reaches
+# stdout at all, not that two spellings of one path match.
+_exc_head = _exc_text.split(": ")[0]         # e.g. "[Errno 13] Permission denied"
+check(bool(_exc_head), "7. the fixture really does fail the loader")
+check("unreadable.dat" in loader_out and _exc_head in loader_out,
+      f"7. the preview loader thread names it and the exception ({_exc_head}), "
+      f"on stdout")
+
 # ── 8. a geometry that is simply ABSENT stays silent ──────────────────────
 # The change must DISTINGUISH the two cases, not make both noisy: a file the
 # user has not made yet is answered by readable_geom_path and never reaches an
@@ -276,14 +310,20 @@ mcv.geom_bc_items = []
 mcv._sel_highlight_item = None
 
 before = len(read_log())
-mcv._rebuild_geom_bc_preview()
-mcv.highlight_geometry_file(absent)
-ctl._scan_geometry_files(gone_cfg)
-check(len(read_log()) == before,
-      "8. an absent geometry produces no record from any of the three")
+_buf = _io.StringIO()
+with contextlib.redirect_stdout(_buf):
+    mcv._rebuild_geom_bc_preview()
+    mcv.highlight_geometry_file(absent)
+    ctl._scan_geometry_files(gone_cfg)
+    GeomLoaderThread([absent]).run()
+check(len(read_log()) == before and _buf.getvalue().strip() == "",
+      "8. an absent geometry produces no record from any of the four")
 
+# The fixture is chmod-000 (or a directory): leave nothing undeletable behind.
 if os.path.isfile(unreadable):
     os.chmod(unreadable, 0o600)
+shutil.rmtree(_geo, ignore_errors=True)
+check(not os.path.exists(_geo), "8. the fixture directory is cleaned up")
 
 _wd.cancel()
 if _FAILS:
