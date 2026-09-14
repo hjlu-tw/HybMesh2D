@@ -101,8 +101,8 @@ Checks:
     `tests/cpp/test_mesh_vtk_block_field.cpp` lists, which `docs/design_notes/mesher.md`
     states at two anchors and had disagreed with itself about since the review that added
     the seventh; and which numbered group of `test_multiblock_smooth_surface.py` drives
-    the other three shipped multi-block configs, which that file's head docstring — the
-    first line a reader lands on in 1,600 of them — got wrong. Both are derived from the
+    the other three shipped multi-block configs, which that file's head docstring — its first
+    line, and the entry point to the whole file — got wrong. Both are derived from the
     gate itself, never from the prose beside the figure: the bullets that gate LISTS, and
     the group number on the checks that follow its `shipped_config(...)` retargets. A
     third figure #116 looked at, a "fourth-slowest file in `run_all.sh`" ranking, is NOT
@@ -444,11 +444,20 @@ Known remaining blind spots, stated rather than pretended away:
         #75's 40,000 lock against a 32,043 file, the 110-character drift, the +789 rise,
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
+ h. `--sync` WRITES A GATE FILE now, not only instruction files (#116). The `src:` target
+    is what a figure living in a gate's own source needs — the smoothing gate's head
+    docstring is one — and it is working as intended, but it widens what one `--sync` run
+    may rewrite and that is worth saying rather than leaving to be discovered. What bounds
+    it: `_TARGET_ABS` is built FROM the registry, so only `_SOURCES` entries and the
+    instruction files are reachable, and injection 13i4 asserts that construction rather
+    than hoping for it. What is NOT bounded is the blast radius inside one such file — a
+    figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
+    the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 47,618 / 47,008 / 45,155 / 33,815 / 21,429 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 47,618 / 47,008 / 45,031 / 33,815 / 21,429 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 12,382 / 12,992 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 14,845 / 26,185 / 38,571 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 14,969 / 26,185 / 38,571 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -1411,6 +1420,17 @@ class _DeriveError(Exception):
     """
 
 
+def _source(world, name):
+    """(text, repo-relative path) for one `_SOURCES` entry.
+
+    The pair, not the text alone: every `_DeriveError` below has to NAME the file it could
+    not parse, so the path travels with the text rather than being spelled again at each
+    raise. Missing reads as empty, which the derivations then report as a shape failure --
+    `_target_text`'s rule, for the same reason.
+    """
+    return world["sources"].get(name, ""), _SOURCES[name].replace(os.sep, "/")
+
+
 # `//   * ` opens a bullet in a C++ comment's injection list; its continuation lines are
 # indented past the `*` and carry none, so a re-wrapped bullet is still one bullet.
 _CPP_BULLET = re.compile(r"^//\s{2,4}\* ")
@@ -1457,9 +1477,8 @@ def _block_field_injections(world):
     different numbers. It is derivable in one walk of the file it describes, which is the
     test #101 set for admitting a tree figure to this registry.
     """
-    name = "test_mesh_vtk_block_field.cpp"
-    where = _SOURCES[name].replace(os.sep, "/")
-    bullets = _injection_bullets(world["sources"].get(name, ""), where)
+    text, where = _source(world, "test_mesh_vtk_block_field.cpp")
+    bullets = _injection_bullets(text, where)
     controls = [b for b in bullets if _NEG_CONTROL in b]
     if not bullets or len(controls) != 1:
         raise _DeriveError(
@@ -1470,9 +1489,11 @@ def _block_field_injections(world):
     return (len(bullets) - len(controls),)
 
 
-# `check("13. ...` / `check(f"13. ...` -- every gate in this tree prefixes a check message
-# with its group number, which is what makes the GROUP derivable from code rather than
-# only stated in the prose that got it wrong.
+# `check("13. ...` / `check(f"13. ...` -- the mesher SURFACE gates prefix each check message
+# with its group number, which is what makes the GROUP derivable from code rather than only
+# stated in the prose that got it wrong. Not a tree-wide convention: `test_file_length.py`
+# and `test_signal_guards.py` number nothing, which is why this pattern is applied to ONE
+# named file rather than offered as a general reader.
 _CHECK_GROUP = re.compile(r"check\(\s*f?\"(\d+)\.")
 _OTHER_THREE = ("multiblock_square", "multiblock_cavity", "multiblock_hgrid")
 
@@ -1491,9 +1512,7 @@ def _smooth_other_three_group(world):
     together, and a split across two groups makes the sentence unwriteable rather than
     merely wrong. That is a `_DeriveError` naming both groups, not a silent pick.
     """
-    name = "test_multiblock_smooth_surface.py"
-    where = _SOURCES[name].replace(os.sep, "/")
-    text = world["sources"].get(name, "")
+    text, where = _source(world, "test_multiblock_smooth_surface.py")
     groups = set()
     for config in _OTHER_THREE:
         calls = list(re.finditer(r"shipped_config\(\"%s\"\)" % re.escape(config), text))
@@ -1710,13 +1729,15 @@ SELF_REPORT = (
      "target": "note:mesher.md",
      "pattern": r"tag~states,~([a-z]+|[\d,]+)~injections,~#113\)",
      "fields": ("bf_injections_lower",)},
-    # #116. The group number the smoothing gate's head docstring opens with -- the first
-    # line a reader lands on in a 1,600-line docstring, and the one sentence in it that
-    # was wrong. The other four passages in that file and the one in
-    # `.claude/rules/mesher-smoothing.md` are NOT registered: they are prose about what
-    # a group asserts rather than restatements of the number, and #116 measured them all
-    # already agreeing with the code. What decayed was the entry point, which is also the
-    # copy furthest from the runs it names.
+    # #116. The group number the smoothing gate's head docstring opens with -- its first
+    # line, the entry point to the whole file, and the one sentence in it that was wrong.
+    # Every other passage naming the group, in that file and in
+    # `.claude/rules/mesher-smoothing.md`, is NOT registered: they are prose about what a
+    # group asserts rather than restatements of the number, and #116 measured them all
+    # already agreeing with the code. How many there are is not stated -- #116's own
+    # review found the first count written here (four) short of the tree's, which is this
+    # check's whole subject arriving inside the ticket that widened it. What decayed was
+    # the entry point, which is also the copy furthest from the runs it names.
     {"label": "the smoothing gate's other-three group number",
      "target": "src:test_multiblock_smooth_surface.py",
      "pattern": r"SINCE~#114~GROUP~([\d,]+)~ALSO~DRIVES~THE~OTHER~THREE",
@@ -1767,7 +1788,11 @@ for _t in dict.fromkeys(e["target"] for e in SELF_REPORT):
 
 
 def _target_text(world, target):
-    """The text a target names. `""` for a rule file or note that is not on disk.
+    """The text a target names. `""` for a rule file, note or gate SOURCE not on disk.
+
+    Three buckets since #116, not two -- a reader list that names them by kind goes stale the
+    moment a kind is added, which #110 measured; the code below reads `_TARGET_BUCKET`, so the
+    list is this sentence's problem alone.
 
     Empty rather than a KeyError: a renamed rule file must reach the reader as check 7's
     "the anchor resolved 0 times" -- which names the file, the figure and the pattern --
@@ -3280,7 +3305,7 @@ synced, _changes, _ok = sync_world(inj)
 check(_ok and not check_self_report(synced)
       and "SINCE #114 GROUP 14 ALSO DRIVES" in synced["sources"][_SMOOTH],
       "injection 13m2. ...and `--sync` rewrites the head docstring from the code, so the "
-      "entry point to a 1,600-line docstring stops being hand-maintained")
+      "file's first line stops being hand-maintained")
 
 # 13n. the structural half again, in the shape this figure can actually break: the three
 # configs driven from two different groups. "GROUP n ALSO DRIVES THE OTHER THREE" is a

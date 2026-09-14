@@ -453,10 +453,10 @@ wider than the addition, so only the 0.71 s is stated.
 
 THE `run_all.sh` RANKING THAT STOOD HERE IS DELETED, NOT CORRECTED (#116). Three
 homes called this the FOURTH-slowest file in `run_all.sh` and named three files with
-absolute timings behind it; the ranking was wrong a second time and the absolutes
-re-timed 1.5x to 3.5x under what they said. Re-deriving either means timing every
-test file in the suite, which is why nobody does and why both readings decayed
-unseen, and by
+absolute timings behind it; the ranking was wrong a second time, and re-timing the
+three absolutes before deleting them put every one of them well under what it said.
+Re-deriving either means timing every test file in the suite, which is why nobody
+does and why both readings decayed unseen, and by
 `docs/agents/rule-file-style.md` rule 6 — keep a measurement that CONSTRAINS a
 decision, drop one that only justifies it — it decided nothing. What did decide the
 widening survives: this file makes 20-odd mesher invocations, the C-grid at a cap of

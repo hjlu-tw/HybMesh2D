@@ -1633,16 +1633,20 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   two-build measurement; #114 added them as group 13, with `shipped_config` retargeting each
   by KEY (they have no gate of their own to import a needle list from). **THAT GROUP NUMBER IS
   GATED SINCE #116**, in the one home that had it wrong: the gate's head docstring opened with
-  "SINCE #114 GROUP 12 ALSO DRIVES THE OTHER THREE" — the first line a reader lands on in
-  1,600 of them, contradicted by that same docstring's numbered item 13, by its section
-  banner, by two further passages in it and by `.claude/rules/mesher-smoothing.md`. Check 7 in
+  "SINCE #114 GROUP 12 ALSO DRIVES THE OTHER THREE" — its first line, and the entry point to
+  the whole file — contradicted by that same docstring's numbered item 13, by its section
+  banner, by every other passage in it that names the group and by
+  `.claude/rules/mesher-smoothing.md`. Check 7 in
   `tools/PreProcessor/tests/test_instruction_budget.py` now derives it from the CODE, never
   from the prose beside it: the group number on the first numbered check after each of the
   three `shipped_config(...)` retargets, all three required to agree. Deriving it from any of
-  the five agreeing passages would only have picked a side; deriving it from the runs
-  themselves is what makes the sentence answerable. The other five passages are left
+  the agreeing passages would only have picked a side; deriving it from the runs
+  themselves is what makes the sentence answerable. Those other passages are left
   ungated — they describe what a group ASSERTS rather than restating its number, and #116
-  measured them all already agreeing with the code. What its own
+  measured them all already agreeing with the code. **How many of them there are is
+  deliberately not stated**: #116's own review found the count this paragraph first gave
+  (four) short of the tree's, which is the ticket's whole subject arriving inside the fix
+  for it, and the claim that carries the weight is "every one of them", not a number. What its own
   acceptance asked for was that the three added configs each report the failure with "the
   warning guard reverted", and **WHICH GUARD THAT MEANS DECIDES WHETHER IT IS MET.** Read as
   the floor's VALUE, the warning COUNTS do not move: at 1e-12, rebuilt 2026-09-11, `square`
@@ -1729,6 +1733,20 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   one run to re-measure. **The true rank is deliberately NOT stated in its place**, and neither
   are corrected absolutes: a third copy of the same figure at the same re-derivation cost is
   the defect, not the value it happens to hold today.
+
+  **AND THE COST FIGURES THAT SURVIVED ARE DELIBERATELY NOT GATED, which is a decision and not
+  an omission.** #116 registered its other two figures in check 7 on one test — derivability —
+  and 0.71 s and ~1 s pass that test: each is one run. What disqualifies them is the other half
+  of check 7's contract, that a registered figure is a RESTATEMENT of something on disk which
+  `--sync` may rewrite without asking. A wall-clock timing is not on disk. It is a property of
+  the machine, the load and the day, so a gate deriving it would have to RUN the mesher and
+  would then go red on a busy laptop with nothing in the tree changed — `ruff.toml`'s
+  permanently-red gate arriving through the door blind spot (g) already guards, and the reason
+  the two tripwire file-counts stay out of that registry as well. They are dated instead, which
+  is what this repo does with a measurement it cannot re-derive cheaply: a dated fact does not
+  decay, it just stops being current, and the date says which. That is also why deleting the
+  ranking was the answer rather than dating it — a RANK is not a property of one run, so no
+  single dated measurement can carry it.
 
   **THE C++ SIDE NEEDS NO CHANGE, AND THAT IS TRUE OF ONE HALF OF IT RATHER THAN BOTH.**
   Check 55's positive half — the deep notch, a wall lost by thousands of percent — is orders

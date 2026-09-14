@@ -343,12 +343,10 @@ has landed.
   at a cap of 20000 among them. #114's three added configs cost **0.71 s** — square 0.42, cavity
   0.20, hgrid 0.09, the cheapest in the repo; a C-grid or O-grid run costs ~1 s. The whole-run wall
   clock is deliberately NOT quoted as a before/after: its own spread, 8.6-11.2 s, is wider than the
-  addition. **The `run_all.sh` RANKING that stood beside these figures is DELETED, not corrected
-  (#116)**: it was wrong a second time in all three homes that stated it, the three absolute
-  timings beside it re-timed 1.5x to 3.5x under what they said, re-deriving it costs a timing
-  sweep of every file in the suite, and by rule 6 of
-  `docs/agents/rule-file-style.md` it constrained no decision while the per-run figures beside it
-  do.
+  addition. **SUPERSEDED by #116: the `run_all.sh` RANKING that stood beside these figures is
+  DELETED, not corrected** — it constrained no decision and re-deriving it costs a timing sweep of
+  every file in the suite.
+  Why: docs/design_notes/mesher.md, "AND THE RANKING BESIDE IT IS DELETED RATHER THAN CORRECTED"
 - **A FOLD IS NOT SMOOTHED INTO A PASS.** The quality gate's dart declaration folds 16 cells
   unsmoothed and 8 at the default — the solve genuinely repairs half of it — and still exits 9 and
   still exports. Pinned by `test_multiblock_quality_surface.py` check 4b, because a default that
