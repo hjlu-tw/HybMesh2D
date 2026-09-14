@@ -4,7 +4,10 @@ import numpy as np
 from PyQt6.QtCore import Qt
 from app.utils import BC_COLORS, DEFAULT_BC_COLOR
 from app.services.geom_path_identity import readable_geom_path
+from app.services.logging_setup import get_logger
 from app.services.meta_io import read_meta_segments, read_meta_point_segids
+
+_log = get_logger(__name__)
 
 
 class MeshCanvasBCMixin:
@@ -104,7 +107,18 @@ class MeshCanvasBCMixin:
                 continue
             try:
                 pts = np.atleast_2d(np.loadtxt(gp))
-            except Exception:
+            except Exception as e:
+                # readable_geom_path already answered "is there anything to
+                # open", so nothing that reaches here is a geometry the user has
+                # not made yet: it is a GENUINE read failure on a file that IS
+                # there (a permission problem, a truncated write, a directory
+                # where a file should be). Until #112 this handler WAS the
+                # existence answer and discarding it was correct; since #112 the
+                # silence hides the only evidence the user has.
+                # WARNING, not debug: the BC colouring the user switched on
+                # silently does not draw for this geometry.
+                _log.warning("BC overlay: could not read geometry %r: %s",
+                             gp, e, exc_info=True)
                 continue
             if pts.shape[0] < 2 or pts.shape[1] < 2:
                 continue

@@ -23,6 +23,18 @@ Checks:
  4. A converted debug site records at DEBUG and is dropped at INFO.
  5. HYBMESH_LOG_LEVEL raises the level so best-effort diagnostics are reachable.
  6. Log records carry the module name, so a message can be traced to its site.
+ 7. A geometry file that EXISTS and cannot be read is named in the log by all
+    three canvas/controller readers that open one (#117).
+ 8. ...while a geometry file that is simply ABSENT still produces no record.
+
+Checks 7-8 are proved non-vacuous by four injections, the verdict read from the
+EXIT CODE and with a negative control on the unmutated tree (this repo has
+scored a crashed injection as a bite that never happened):
+
+  * the BC overlay reverted to ``except Exception: continue``   -> check 7 red
+  * the selection highlight reverted to ``except Exception: return`` -> 7 red
+  * the bbox scan's fallback reverted to ``except OSError: pass``     -> 7 red
+  * the BC overlay made to log the ABSENT case as well               -> 8 red
 
 Run:  python3 tools/PreProcessor/tests/test_silent_exceptions.py
 """
@@ -186,6 +198,92 @@ check(len(read_log()) == before,
       "4. ...and is dropped at the default INFO level (no routine spam)")
 
 os.environ.pop("HYBMESH_LOG_LEVEL", None)
+
+# ── 7. a geometry that EXISTS and cannot be READ reaches the log ──────────
+# #117. Until #112 the broad `except` around np.loadtxt in these readers WAS
+# the existence answer, so discarding it was correct: a missing geometry is not
+# an error. #112 moved existence out into readable_geom_path, so everything that
+# still reaches those handlers is a GENUINE read failure on a file that is
+# there -- and both of them discarded it without a word. Driven against a real
+# unreadable file rather than by reading the code: the point is what the user
+# can find in results/logs/gui.log afterwards.
+from app.models.mesh_config import MeshConfig  # noqa: E402
+
+_geo = tempfile.mkdtemp(prefix="hybmesh_geomtest_")
+unreadable = os.path.join(_geo, "unreadable.dat")
+with open(unreadable, "w", encoding="utf-8") as _f:
+    _f.write("0 0\n1 0\n1 1\n")
+os.chmod(unreadable, 0o000)
+try:
+    open(unreadable, encoding="utf-8").close()
+    # Running as a user who can read anything (root in a container): fall back to
+    # the other failure the ticket names -- a directory where a file should be.
+    os.chmod(unreadable, 0o600)
+    os.remove(unreadable)
+    os.mkdir(unreadable)
+    _kind = "a directory where a file should be"
+except OSError:
+    _kind = "a chmod-000 file"
+check(os.path.exists(unreadable),
+      f"7. the fixture EXISTS ({_kind}) -- readable_geom_path answers it")
+
+bad_cfg = MeshConfig()
+bad_cfg.add_geom_file(unreadable)
+check(bool(bad_cfg.geom_files), "7. the fixture is in the mesh config")
+
+mcv.mesh_config = bad_cfg
+mcv.show_bc_coloring = True
+mcv.geom_bc_items = []          # nothing to remove (removeItem is stubbed above)
+mcv._sel_highlight_item = None
+
+before = len(read_log())
+mcv._rebuild_geom_bc_preview()
+bc_log = read_log()[before:]
+check("unreadable.dat" in bc_log and "BC overlay" in bc_log,
+      "7. the BC overlay names the unreadable geometry in the log")
+check("hybmesh.gui.views.mesh_canvas_bc_mixin" in bc_log
+      and "Traceback" in bc_log,
+      "7. ...from its own module, with the exception (exc_info=True)")
+
+before = len(read_log())
+mcv.highlight_geometry_file(unreadable)
+hi_log = read_log()[before:]
+check("unreadable.dat" in hi_log and "selection highlight" in hi_log,
+      "7. the selection highlight names the unreadable geometry in the log")
+check("hybmesh.gui.views.mesh_canvas_geom_mixin" in hi_log
+      and "Traceback" in hi_log,
+      "7. ...from its own module, with the exception (exc_info=True)")
+
+# The third opener of the same entry: the bbox scan's fallback read fails too,
+# and its `except OSError: pass` used to end the story there.
+before = len(read_log())
+ctl._scan_geometry_files(bad_cfg)
+bb_log = read_log()[before:]
+check("unreadable.dat" in bb_log and "bbox scan" in bb_log
+      and "hybmesh.gui.controllers.mesh_gen_ctrl" in bb_log,
+      "7. the mesh bbox scan names it too (the third caller that OPENS)")
+
+# ── 8. a geometry that is simply ABSENT stays silent ──────────────────────
+# The change must DISTINGUISH the two cases, not make both noisy: a file the
+# user has not made yet is answered by readable_geom_path and never reaches an
+# open, so there is nothing to record.
+absent = os.path.join(_geo, "not_made_yet.dat")
+check(not os.path.exists(absent), "8. the absent fixture really is absent")
+gone_cfg = MeshConfig()
+gone_cfg.add_geom_file(absent)
+mcv.mesh_config = gone_cfg
+mcv.geom_bc_items = []
+mcv._sel_highlight_item = None
+
+before = len(read_log())
+mcv._rebuild_geom_bc_preview()
+mcv.highlight_geometry_file(absent)
+ctl._scan_geometry_files(gone_cfg)
+check(len(read_log()) == before,
+      "8. an absent geometry produces no record from any of the three")
+
+if os.path.isfile(unreadable):
+    os.chmod(unreadable, 0o600)
 
 _wd.cancel()
 if _FAILS:

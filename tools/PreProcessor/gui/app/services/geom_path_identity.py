@@ -175,9 +175,26 @@ def readable_geom_path(path: str, base: str | None = None) -> str:
     BC overlay asked by attempting the open and treating the failure as a skip,
     which is the same question with no separate call to name. Existence here is
     therefore ``os.path.exists`` -- not ``isfile``, not ``os.access``. A path
-    that exists and still cannot be read is the OPEN's failure, and every caller
-    already has a handler that names the file; answering it here would move a
-    diagnostic out of the layer that has the filename and the exception.
+    that exists and still cannot be read is the OPEN's failure, and it belongs
+    to the layer that HAS the filename and the exception. Of the SIX callers,
+    four open the file -- the mesh bbox scan, the preview loader thread, the BC
+    overlay and the selection highlight -- and each of those four names the FILE
+    and the EXCEPTION when the open fails (three into ``results/logs/gui.log``;
+    the loader thread onto stdout, beside its own malformed-geometry line). The
+    other two never open one: the Run-All readiness check only asks whether
+    anything is there, and ``add_all_sessions_to_mesh`` adds the entry. So there
+    is no open failure anywhere for this verb to pre-empt, and answering
+    readability here would move a diagnostic AWAY from the layer holding both
+    halves of it.
+
+    That sentence was FALSE when #112 wrote it: the BC overlay and the selection
+    highlight discarded the failure with no record at all. #117 made it true by
+    fixing them (and the bbox scan's ``except OSError: pass`` beside them) rather
+    than by softening the claim -- before #112 those handlers WERE the existence
+    answer, so their silence had been correct and stopped being so the moment the
+    question moved in here. Gated by ``tests/test_silent_exceptions.py`` checks
+    7-8, against a real unreadable file: it is what the READERS log, not what
+    this verb returns.
 
     The verb stays at the PATH layer. It does not load, and it does not absorb
     the preview loader's NaN / ``(N,2)`` validation, which is a separate concern

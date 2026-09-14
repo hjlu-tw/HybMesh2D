@@ -238,14 +238,27 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   are two kinds:
   - **The SIX that need a path only WHEN ONE IS THERE go through `readable_geom_path`** (#111's
     five, #112's sixth) — entry in, the canonical path when a file is there and `""` when there is
-    nothing to open, the existence question answered INSIDE the verb. Five of them OPEN the file:
-    the Run-All readiness check, the mesh bbox scan, the BC canvas overlay, the preview loader
-    thread and the selection highlight. The sixth does not open anything, which is why #111
-    correctly left it — `mesh_layers_ctrl.add_all_sessions_to_mesh` adds an exported geometry to
-    the config when its file is there — but it asks the same question, so it uses the same verb,
-    and converting it is what lets check 12 below be green with nothing pinned. Existence
-    is `os.path.exists` and NOT `isfile`/`os.access`: a file that exists and still cannot be read
-    is the OPEN's failure, and the caller's own handler holds the filename and the exception.
+    nothing to open, the existence question answered INSIDE the verb. FOUR of them OPEN the file:
+    the mesh bbox scan, the BC canvas overlay, the preview loader thread and the selection
+    highlight. The other TWO open nothing — the Run-All readiness check only asks whether any
+    entry is there, and `mesh_layers_ctrl.add_all_sessions_to_mesh` adds an exported geometry to
+    the config when its file is there, which is why #111 correctly left it — but they ask the same
+    question, so they use the same verb, and converting the second is what lets check 12 below be
+    green with nothing pinned. Existence
+    is `os.path.exists` and NOT `isfile`/`os.access`: **a file that exists and still cannot be read
+    is the OPEN's failure, and each of the four that OPEN names the FILE and the EXCEPTION when it
+    fails** — three into `results/logs/gui.log`, the loader thread onto stdout beside its own
+    malformed-geometry line. That sentence was FALSE from #112 until #117: the BC overlay
+    (`except Exception: continue`) and the selection highlight (`except Exception: return`)
+    discarded it with no record, and the bbox scan's fallback ended in `except OSError: pass`.
+    Before #112 the broad `except` WAS the existence answer and the silence was correct; moving the
+    question into the verb is what turned the same handler into a swallowed diagnostic. #117 fixed
+    the three rather than softening the claim, at `warning` (the standard's grade for a failure
+    that silently degrades what the user asked for — an overlay that does not draw, a highlight
+    that does not appear, a geometry missing from the bbox). Gated by
+    `tests/test_silent_exceptions.py` checks 7–8 against a REAL unreadable file, which also hold
+    the other half: an ABSENT geometry still produces no record, so the two cases stay
+    distinguishable instead of both becoming noisy.
     **The verb stays at the PATH layer** — it does not load, and does not absorb the preview
     loader's NaN/`(N,2)` validation (`geometry_service.load_points_dat`). **No plural form**,
     because only one of the five would write the comprehension: the bbox scan and the overlay
