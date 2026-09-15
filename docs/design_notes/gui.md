@@ -1608,15 +1608,31 @@ it hands back, so banning a read on its result would red-light every one of them
 covered with no edit to the check, at the scan level AND at the build level, because the per-verb
 probes and the injection doors are both generated from the derived set.
 
-Two shapes follow from what those verbs ANSWER. They hand back a sequence rather than a path, so
-the binding the code reaches them through is a `for`/comprehension target, not an assignment —
-both are read now, every name in the target included, since the only thing that widens is which
-names a filesystem call may not be handed, and handing it a raw stored spelling is shape 2 anyway.
-And the guard is a comprehension's `if` rather than a statement, whose file-is-there branch is the
-element expression — or NOTHING when the test is negated, because then the element is produced
-precisely where the file is absent. **That last detail is what keeps `geom_files_not_on_disk` green
-without a pin**, and it is the deliberate limit above rather than a new exemption: the model writes
-the banned shape and asks the ABSENT question with it.
+Two shapes follow from what those verbs ANSWER, and the same measurement settles both. They hand
+back a SEQUENCE rather than a path, so the binding the code reaches them through is a
+`for`/comprehension target rather than an assignment — and when the element is a PAIR its two
+halves are not one question: `keyed_geom_paths` yields `(key, the spelling it came from)`, the key
+an identity and the spelling a stored entry. So the probe records WHERE the canonical path sits as
+well as which verbs produce one, and the scan binds by that position: the key is canonical, and
+everything else in the target is the raw entry it is, failing on `os.path.exists(spelling)` exactly
+as the same entry taken off the list directly does. Hard-coding "the key is first" would have put
+the module's contract in the gate; the first cut of this change did neither, gave the spelling half
+the key's discrimination, and review measured the asymmetry it produced.
+
+And the guard is then a comprehension's `if` rather than a statement, whose file-is-there branch is
+the element expression — or NOTHING when the test is negated, because then the element is produced
+precisely where the file is absent. **A negated guard with an empty file-is-there branch is the one
+thing this change subtracts from the check**, and it is the deliberate limit above rather than a
+new exemption: it is the absent question and nothing else, which is what keeps
+`geom_files_not_on_disk` green without a pin. Every other shape is judged exactly as it was before,
+by whether the entry is used anywhere but the branch where the file turned out to be there — the
+first cut required a use IN that branch instead, which silently stopped `q = canonical_geom_path(…);
+if os.path.exists(q): return True` from failing. Both regressions were review findings on this
+change's own first cut, and both are now injected: one probe per PAIR-answering verb (one today)
+asserts the key half fails where the branch uses only the ANSWER and the spelling half fails as a
+raw entry. Every fixture and every door is generated from the measured shape rather than written
+key-first, so a verb answering `(spelling, key)` would be covered by them instead of turning them
+red — which is what the "no edit for a third verb" claim has to mean.
 
 **The probe was inside the package it was measuring.** The doors were written to
 `gui/app/services/_geom_ident_inj_probe.py` and removed in a `finally` — which a SIGKILL never
@@ -1625,12 +1641,17 @@ measure. This repo has paid for that shape once already (a stale harness backup 
 a fix that had landed, #113), and the lesson recorded then was to leave nothing rather than to
 sweep afterwards. The doors now go into a temporary directory put on `sys.path` and added to the
 gate's scan roots, so they are still opened in a tree the real scans walk, with the same per-file
-AST check; a child run is handed the parent's sandbox through the environment, so the process that
-created the directory is the one that removes it. Check 7c demonstrates it rather than asserting
-it: snapshot `gui/app`, start the gate again with a pause that stops it with a probe written and
+AST check; a child run is handed the parent's sandbox through the environment, so the probe lands
+in a directory the surviving parent owns. Check 7c demonstrates it rather than asserting it:
+snapshot `gui/app`, start the gate again with a pause that stops it with a probe written and
 nothing removed, SIGKILL the process group, and compare — with two checks first that the killed run
 really had a probe on disk and that the probe was outside the package, so the third cannot pass for
-the wrong reason. What the doors used to prove as a side effect — that the package is the tree
+the wrong reason. **The killed child still makes a temp directory of its own**, and its `rmtree`
+is in the same `finally` a SIGKILL never reaches: that leaked one ~48K directory per gate run until
+review measured 17 of them. The criterion is about the package tree and held either way, but
+"leave nothing rather than sweep afterwards" has to be true of the whole run — so the child prints
+that directory beside the probe path and the KILLER removes it, checked both ways (still there
+before, gone after). What the doors used to prove as a side effect — that the package is the tree
 these scans read — is asserted directly now, against the one walk both roots go through.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

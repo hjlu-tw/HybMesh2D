@@ -427,10 +427,13 @@ against one list; #71 moved the first two here.
     `keyed_geom_paths` became public in #110 and check 12 shipped in #112 still recognising the one
     name it was written for, so the banned shape written through the second one passed. Since #119
     the set is MEASURED off `geom_path_identity` — call each exported verb with one spelling whose
-    canonical form is known, keep the verbs whose answer contains it — so `keyed_geom_paths` and
-    `canonical_geom_keys` are seen wherever `canonical_geom_path` is, bound by an assignment OR by
-    the `for`/comprehension target that iterates the call, and a THIRD verb needs no edit to the
-    check. One step past that is not followed, the same AST limit as (i): `keys =
+    canonical form is known, keep the verbs whose answer contains it, and record WHERE in that
+    answer the path sits — so `keyed_geom_paths` and `canonical_geom_keys` are seen wherever
+    `canonical_geom_path` is, bound by an assignment OR by the `for`/comprehension target that
+    iterates the call, and a THIRD verb needs no edit to the check. The measured POSITION is what
+    splits a pair: `keyed_geom_paths` yields `(key, the spelling it came from)`, so the key binds as
+    an identity and the spelling as the RAW entry it is — `os.path.exists(spelling)` fails just as
+    it does for the same entry taken off the list directly. One step past that is not followed, the same AST limit as (i): `keys =
     canonical_geom_keys(…)` and then a loop over `keys` passes. `readable_geom_path` measures as
     canonicalising too and is removed again — it is the sanctioned route TO the filesystem, and
     five of its seven callers open what it hands back. The verbs that answer with a SPELLING
@@ -441,6 +444,9 @@ against one list; #71 moved the first two here.
   path passes. That is the same property keeping the three correct `mesh_layers_ctrl` sites green
   **and the model's own `geom_files_not_on_disk`** — which reads the key through `keyed_geom_paths`
   and asks `os.path.exists` about it, i.e. writes the banned shape, and is green because it asks
-  which entries are NOT there rather than because it is pinned. It was bought knowing the cost —
+  which entries are NOT there rather than because it is pinned. Precisely: a NEGATED guard whose
+  file-is-there branch is empty. That is the whole of what #119 subtracted; a non-negated guard is
+  judged as before, by whether the entry is used anywhere but the branch where the file turned out
+  to be there, so `q = canonical_geom_path(…); if os.path.exists(q): return True` still fails. It was bought knowing the cost —
   the measurement that decided it (five canonicalise-then-exists sites in that one file, of which
   one was the defect) is in `docs/design_notes/gui.md`.

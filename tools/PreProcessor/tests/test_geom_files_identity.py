@@ -927,24 +927,11 @@ _READ_OK = {
 }
 
 
-def _verb_strings(value, depth=0):
-    """Every string anywhere in one verb's answer -- a set, a list of pairs and
-    a generator of them all flatten to the same thing."""
-    if isinstance(value, str):
-        yield value
-        return
-    if depth >= 3 or isinstance(value, (bytes, dict)):
-        return
-    try:
-        items = list(value)
-    except TypeError:
-        return                       # a bool, an int: not a path either way
-    for item in items:
-        yield from _verb_strings(item, depth + 1)
-
-
-def _canonicalising_verbs() -> set[str]:
-    """Which of the identity module's PUBLIC verbs hand a CANONICAL path back.
+def _canonicalising_verbs() -> dict:
+    """The identity module's public verbs that hand a CANONICAL path back, each
+    mapped to WHERE in its answer the path sits: ``None`` when the verb answers
+    with paths directly, or ``(how many values it yields at a time, the
+    POSITIONS holding a canonical path)`` when it answers with tuples.
 
     MEASURED off the module, never listed here, and that is the whole point of
     this derivation. Check 12 was written when there was one such verb and
@@ -960,9 +947,22 @@ def _canonicalising_verbs() -> set[str]:
     two answer SPELLINGS, and none of those three is a way to get an identity
     out of the module. Arity is discovered the same way, by trying the shapes
     the module actually takes and skipping a ``TypeError``.
+
+    The POSITIONS are measured rather than assumed for the same reason the verb
+    set is: ``keyed_geom_paths`` answers ``(key, the spelling it came from)``,
+    and the two halves are not the same question -- the key is an identity and
+    the spelling is a stored entry, which the scan below must treat as the raw
+    entry it is. Hard-coding "the key is first" would put that contract in this
+    file instead of in the module.
+
+    KNOWN LIMIT: this CALLS every exported verb. It is safe because the module
+    is pure-string by construction (its own docstring: it "never touches the
+    filesystem for its answer"), and only a ``TypeError`` -- the arity probe's
+    own signal -- is swallowed, so a verb that raised anything else would fail
+    this gate loudly rather than be silently dropped from the set.
     """
     want = gpi.canonical_geom_path(rel)
-    found = set()
+    found = {}
     for name in gpi.__all__:
         verb = getattr(gpi, name)
         for args in ((rel,), (rel, rel), ([rel],)):
@@ -970,8 +970,24 @@ def _canonicalising_verbs() -> set[str]:
                 answer = verb(*args)
             except TypeError:
                 continue             # a different arity, not a different answer
-            if want in set(_verb_strings(answer)):
-                found.add(name)
+            if isinstance(answer, str):
+                if answer == want:
+                    found[name] = None
+                    break
+                continue
+            try:
+                items = list(answer)
+            except TypeError:
+                continue             # a bool: not a path by any route
+            if want in items:
+                found[name] = None
+                break
+            tuples = [item for item in items if isinstance(item, (tuple, list))]
+            spots = {i for item in tuples
+                     for i, value in enumerate(item) if value == want}
+            if spots:
+                found[name] = (max(len(item) for item in tuples),
+                               frozenset(spots))
                 break
     return found
 
@@ -984,7 +1000,9 @@ def _canonicalising_verbs() -> set[str]:
 #: is derived from, so the two cannot come to name different verbs.
 _READ_SIDE_VERB = gpi.readable_geom_path.__name__
 _MEASURED_VERBS = _canonicalising_verbs()
-_CANON_VERBS = frozenset(_MEASURED_VERBS) - {_READ_SIDE_VERB}
+#: verb -> None (it answers with paths) or (arity, the positions holding one).
+_CANON_SPOTS = {k: v for k, v in _MEASURED_VERBS.items() if k != _READ_SIDE_VERB}
+_CANON_VERBS = frozenset(_CANON_SPOTS)
 
 check(gpi.canonical_geom_path.__name__ in _CANON_VERBS and len(_CANON_VERBS) > 1,
       f"12. the canonicalising verbs are DERIVED from the identity module, and "
@@ -997,7 +1015,11 @@ check(_READ_SIDE_VERB in _MEASURED_VERBS and _READ_SIDE_VERB not in _CANON_VERBS
 check(_CANON_VERBS < (set(gpi.__all__) - {_READ_SIDE_VERB}),
       f"12. ...and the measurement DISCRIMINATES rather than handing back the "
       f"whole public surface (exported and not canonicalising: "
-      f"{sorted(set(gpi.__all__) - _MEASURED_VERBS)})")
+      f"{sorted(set(gpi.__all__) - set(_MEASURED_VERBS))})")
+check(any(v is None for v in _CANON_SPOTS.values())
+      and any(v is not None for v in _CANON_SPOTS.values()),
+      f"12. ...and it measures WHERE the path sits, so the spelling half of a "
+      f"pair is not mistaken for an identity ({_CANON_SPOTS})")
 
 
 def _is_geom_list(node) -> bool:
@@ -1062,7 +1084,8 @@ def _siblings_after(stmt, parent) -> list:
 
 def _existence_guard(call, parent):
     """``(the TEST this existence call is part of, the branch taken when the
-    file IS there)``, or ``(None, None)`` when the call is not a guard.
+    file IS there, whether the test was NEGATED)``, or ``(None, None, False)``
+    when the call is not a guard.
 
     Polarity is counted through ``not``, so the early-refusal spelling ``if not
     os.path.exists(p):`` has the same two branches as ``if os.path.exists(p):``
@@ -1076,12 +1099,12 @@ def _existence_guard(call, parent):
     consumed by a ``for``, so the shape written through them is a filter rather
     than a statement. Its file-is-there branch is the element expression -- and
     NOTHING when the test is negated, because then the element is produced
-    precisely where the file is ABSENT. That is what keeps the model's own
-    ``geom_files_not_on_disk`` green: it reads the key through the second verb
-    and asks the filesystem about it, which is the banned shape, but it asks the
-    ABSENT question, and the deliberate limit this check has always carried is
-    that a site using the canonical path where the file is gone is silent by
-    construction."""
+    precisely where the file is ABSENT.
+
+    The third value is the POLARITY, reported rather than acted on here: what the
+    caller does with an empty file-is-there branch under a negated test is its
+    rule, and it applies that rule to the ``if`` statement and the comprehension
+    filter alike."""
     negated = False
     node, p = call, parent.get(id(call))
     while p is not None:
@@ -1089,16 +1112,16 @@ def _existence_guard(call, parent):
             negated = not negated
         if isinstance(p, ast.comprehension):
             if not any(x is node for x in p.ifs):
-                return None, None          # the ITERABLE, not a filter
+                return None, None, False   # the ITERABLE, not a filter
             comp = parent.get(id(p))
             if isinstance(comp, ast.DictComp):
                 elts = [comp.key, comp.value]
             else:
                 elts = [comp.elt] if hasattr(comp, "elt") else []
-            return node, ([] if negated else elts)
+            return node, ([] if negated else elts), negated
         if isinstance(p, (ast.If, ast.IfExp)):
             if p.test is not node:
-                return None, None          # climbed out of the test, not a guard
+                return None, None, False   # climbed out of the test, not a guard
             body = p.body if isinstance(p.body, list) else [p.body]
             orelse = p.orelse if isinstance(p.orelse, list) else [p.orelse]
             present = list(orelse if negated else body)
@@ -1106,9 +1129,9 @@ def _existence_guard(call, parent):
             if (isinstance(p, ast.If) and absent
                     and isinstance(absent[-1], _TERMINATORS)):
                 present += _siblings_after(p, parent)
-            return node, present
+            return node, present, negated
         node, p = p, parent.get(id(p))
-    return None, None
+    return None, None, False
 
 
 def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
@@ -1127,7 +1150,8 @@ def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
             if (isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)
                     and _callee_name(n.value) in _CANON_VERBS):
                 for t in n.targets:
-                    canon.update({name: n for name in _target_names(t)})
+                    if isinstance(t, ast.Name):
+                        canon[t.id] = n
             it = tgt = None
             if isinstance(n, (ast.For, ast.AsyncFor)):
                 it, tgt = n.iter, n.target
@@ -1136,15 +1160,26 @@ def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
             if it is None:
                 continue
             if _is_geom_list(it):
-                raw |= {t.id for t in ast.walk(tgt) if isinstance(t, ast.Name)}
+                raw |= _target_names(tgt)
             elif isinstance(it, ast.Call) and _callee_name(it) in _CANON_VERBS:
                 # The list-wide verbs answer with a SEQUENCE, so the binding they
                 # reach the code through is a loop target rather than an
-                # assignment. Every name in the target is bound, the pair's
-                # spelling half included: it is not itself canonical, but the
-                # only thing that widens is which names a filesystem call may not
-                # be handed, and handing it a raw stored spelling is shape (b).
-                canon.update({name: n for name in _target_names(tgt)})
+                # assignment. WHICH half is which comes from the measurement
+                # above, not from an assumption here: `keyed_geom_paths` yields
+                # (key, the spelling it came from), and the spelling is a stored
+                # entry -- so it goes into `raw`, where handing it to the
+                # filesystem is shape (b), exactly as it is when the same entry
+                # comes off the list directly.
+                shape = _CANON_SPOTS[_callee_name(it)]
+                if shape is None or not isinstance(tgt, (ast.Tuple, ast.List)):
+                    canon.update({name: n for name in _target_names(tgt)})
+                else:
+                    _, _spots = shape
+                    for _i, _elt in enumerate(tgt.elts):
+                        if _i in _spots:
+                            canon.update({nm: n for nm in _target_names(_elt)})
+                        else:
+                            raw |= _target_names(_elt)
 
         for n in scope:
             if not (isinstance(n, ast.Call) and n.args):
@@ -1171,23 +1206,27 @@ def _reach_around_read_sites(path: str) -> list[tuple[int, str]]:
             if fn in _READ_CALLS:
                 out.add((n.lineno, f"{fn}() on a canonicalised entry"))
                 continue
-            test, present = _existence_guard(n, parent)
+            test, present, negated = _existence_guard(n, parent)
             # Uses inside the guard's own test are part of the question, not a
             # second use of the answer. With no guard at all, the existence call
             # itself is the only thing standing in for one.
             asked = _subtree_ids([test] if test is not None else [n])
             found_here = _subtree_ids(present) if test is not None else set()
-            uses = [u for u in scope
-                    if isinstance(u, ast.Name) and u.id == arg.id
-                    and isinstance(u.ctx, ast.Load) and id(u) not in asked]
-            # "Used only where it exists" needs a use THERE. A guard whose
-            # file-is-there branch touches the entry at all is the shape; one
-            # that does not -- the negated comprehension filter, the label that
-            # only appends a word -- is asking the absent question, which this
-            # check has always left alone.
-            if test is not None and not any(id(u) in found_here for u in uses):
+            # A NEGATED guard with an EMPTY file-is-there branch is the absent
+            # question and nothing else: the value drives the selection of the
+            # entries that are GONE -- `[p for k, p in keyed(...) if not
+            # exists(k)]`, which is the model's own geom_files_not_on_disk.
+            # That is the deliberate limit this check has always carried, and it
+            # is the only thing #119 subtracted; every other shape is judged the
+            # way it was before, by whether the entry is used anywhere but the
+            # branch where the file turned out to be there.
+            if test is not None and negated and not present:
                 continue
-            if not [u for u in uses if id(u) not in found_here]:
+            elsewhere = [u for u in scope
+                         if isinstance(u, ast.Name) and u.id == arg.id
+                         and isinstance(u.ctx, ast.Load)
+                         and id(u) not in asked and id(u) not in found_here]
+            if not elsewhere:
                 out.add((n.lineno,
                          f"{fn}() on a canonicalised entry used only where it "
                          f"exists"))
@@ -1321,24 +1360,51 @@ check(not _reach_around_read_sites(_probe12b),
 # a SEQUENCE, so both are reached through a loop target rather than an
 # assignment. (Syntactic fixtures, like the probes above: the scan reads names
 # and shapes, and these files are never imported.)
-_VERB_READER = ("import os\n"
-                "\n"
-                "\n"
-                "def reader(cfg):\n"
-                "    for key, _spelling in {verb}(cfg.geom_files):\n"
-                "        if os.path.exists(key):\n"
-                "            yield key\n"
-                "\n"
-                "\n"
-                "def absent(cfg):\n"
-                "    return [p for key, p in {verb}(cfg.geom_files)\n"
-                "            if not os.path.exists(key)]\n")
 _WHERE_IT_EXISTS = "exists() on a canonicalised entry used only where it exists"
+_RAW_ENTRY = "exists() on a raw geom_files entry"
+
+
+def _verb_loop_names(verb):
+    """``(the loop target to write for this verb, the name bound to a canonical
+    key, the name bound to a stored spelling or None)``.
+
+    Built from the MEASURED shape rather than written key-first, because a
+    fixture that hard-codes ``for key, _spelling in ...`` makes the derivation
+    above only half true: a third verb answering ``(spelling, key)`` would turn
+    these probes RED instead of being covered by them. This generates the
+    fixture the other way round for such a verb, with no edit."""
+    shape = _CANON_SPOTS[verb]
+    if shape is None:
+        return "key", "key", None
+    arity, spots = shape
+    names, key, spelling = [], None, None
+    for i in range(arity):
+        if i in spots:
+            key = key or "key"
+            names.append(key if names.count("key") == 0 else f"_c{i}")
+        else:
+            spelling = spelling or "spelling"
+            names.append(spelling if names.count("spelling") == 0
+                         else f"_sp{i}")
+    return ", ".join(names), key, spelling
+
 
 for _verb in sorted(_CANON_VERBS):
+    _target, _key, _spelling = _verb_loop_names(_verb)
     _pv = os.path.join(tmp, f"probe_verb_{_verb}.py")
     with open(_pv, "w") as fh:
-        fh.write(_VERB_READER.format(verb=_verb))
+        fh.write("import os\n"
+                 "\n"
+                 "\n"
+                 "def reader(cfg):\n"
+                 f"    for {_target} in {_verb}(cfg.geom_files):\n"
+                 f"        if os.path.exists({_key}):\n"
+                 f"            yield {_key}\n"
+                 "\n"
+                 "\n"
+                 "def absent(cfg):\n"
+                 f"    return [{_key} for {_target} in {_verb}(cfg.geom_files)\n"
+                 f"            if not os.path.exists({_key})]\n")
     _seen = _reach_around_read_sites(_pv)
     check(_seen == [(6, _WHERE_IT_EXISTS)],
           f"12. INJECTION: a reader that canonicalises through {_verb}() and "
@@ -1346,12 +1412,52 @@ for _verb in sorted(_CANON_VERBS):
           f"through the same verb beside it is not, which is why the model's own "
           f"geom_files_not_on_disk stays green unpinned ({_seen})")
 
+# The two halves of a PAIR are two different questions, and the measured
+# POSITION is what tells them apart. Both shapes here regressed in #119's own
+# first cut and were caught by review: the key half went silent when the branch
+# uses the ANSWER rather than the path, and the spelling half was given the
+# canonical half's discrimination instead of being the raw stored entry it is --
+# so `exists(spelling)` was silent where the identical entry taken off the list
+# directly fails.
+for _verb in sorted(_CANON_VERBS):
+    _target, _key, _spelling = _verb_loop_names(_verb)
+    if _spelling is None:
+        continue                     # this verb answers with paths, not pairs
+    _pp = os.path.join(tmp, f"probe_pair_{_verb}.py")
+    with open(_pp, "w") as fh:
+        fh.write("import os\n"
+                 "\n"
+                 "\n"
+                 "def answered(cfg):\n"
+                 f"    for {_target} in {_verb}(cfg.geom_files):\n"
+                 f"        if os.path.exists({_key}):\n"
+                 "            return True\n"
+                 "    return False\n"
+                 "\n"
+                 "\n"
+                 "def spelled(cfg):\n"
+                 f"    return [{_spelling} for {_target} in "
+                 f"{_verb}(cfg.geom_files)\n"
+                 f"            if not os.path.exists({_spelling})]\n")
+    _seen = _reach_around_read_sites(_pp)
+    check(_seen == [(6, _WHERE_IT_EXISTS), (13, _RAW_ENTRY)],
+          f"12. INJECTION: through {_verb}(), the KEY half is a canonicalised "
+          f"entry even where the branch uses only the ANSWER, and the SPELLING "
+          f"half is the raw entry it is -- told apart by the measured position, "
+          f"not by which name comes first in the target ({_seen})")
+
 # ...and the discrimination is load bearing in the SCAN, not just in the set:
 # the same reader through a verb that answers with SPELLINGS or a bool is silent.
-for _verb in sorted(set(gpi.__all__) - _MEASURED_VERBS):
+for _verb in sorted(set(gpi.__all__) - set(_MEASURED_VERBS)):
     _pv = os.path.join(tmp, f"probe_notverb_{_verb}.py")
     with open(_pv, "w") as fh:
-        fh.write(_VERB_READER.format(verb=_verb))
+        fh.write("import os\n"
+                 "\n"
+                 "\n"
+                 "def reader(cfg):\n"
+                 f"    for key, _spelling in {_verb}(cfg.geom_files):\n"
+                 "        if os.path.exists(key):\n"
+                 "            yield key\n")
     check(not _reach_around_read_sites(_pv),
           f"12. ...and the same reader through {_verb}(), which the measurement "
           f"says is not a canonicalising verb, is silent "
@@ -1376,12 +1482,32 @@ _NO_SUB = "HYBMESH_GEOM_IDENT_NO_SUBPROCESS"
 #: Set on a child run by check 7c only: it stops the doors loop with a probe
 #: written and nothing removed, which is the state a crash leaves behind.
 _PAUSE = "HYBMESH_GEOM_IDENT_PAUSE_AT_INJECTION"
+#: What that child prints before it stops: the probe it just wrote, then its own
+#: temp directory. The second is there because the child is about to be SIGKILLed
+#: and its own `shutil.rmtree` at the foot of this file will never run -- so the
+#: KILLER removes it. Without this the gate leaked one ~48K directory per run:
+#: outside the package, so check 7c held either way, but "leave nothing rather
+#: than sweep afterwards" has to be true of the whole run, not of one tree.
 _PAUSE_MARK = "INJECTION-PROBE-ON-DISK "
+
+
+#: How long check 7c's paused child waits to be killed. It must outlast the
+#: watchdog below, so that a child which is somehow NOT killed still dies on its
+#: own rather than holding the suite; the watchdog is the one that normally
+#: fires. POSIX only (process groups, SIGKILL), like the rest of this repo's
+#: harness -- CI is ubuntu and development is macOS.
+_PAUSE_SECONDS = 600
+_WATCHDOG_SECONDS = 120
 
 
 def _package_snapshot():
     """Every file under gui/app with its size -- what an interrupted run of this
-    gate must leave exactly as it found it."""
+    gate must leave exactly as it found it.
+
+    A separate walk from :func:`_scanned_files`, which answers a different
+    question: that one is the SCAN's reach (``.py`` only, both roots), this one
+    is the PACKAGE's contents (every file, sizes included, the package alone) --
+    a stray ``.json`` or a rewritten module has to show up here."""
     out = []
     for _root, _dirs, _files in os.walk(os.path.join(_GUI, "app")):
         _dirs[:] = [d for d in _dirs if d != "__pycache__"]
@@ -1499,9 +1625,9 @@ if not os.environ.get(_NO_SUB):
          "\n"
          "\n"
          "def reintroduce_the_defect(cfg):\n"
-         f"    for key, _spelling in {_v}(cfg.geom_files):\n"
-         "        if os.path.exists(key):\n"
-         "            yield key\n",
+         f"    for {_verb_loop_names(_v)[0]} in {_v}(cfg.geom_files):\n"
+         f"        if os.path.exists({_verb_loop_names(_v)[1]}):\n"
+         f"            yield {_verb_loop_names(_v)[1]}\n",
          f"_geom_ident_inj_probe.py:8 {_WHERE_IT_EXISTS}")
         for _v in sorted(_CANON_VERBS - {gpi.canonical_geom_path.__name__}))
 
@@ -1511,8 +1637,8 @@ if not os.environ.get(_NO_SUB):
                 fh.write(_src)
             if os.environ.get(_PAUSE):
                 # Check 7c's child stops HERE: a probe written, nothing removed.
-                print(_PAUSE_MARK + _inj, flush=True)
-                time.sleep(600)
+                print(_PAUSE_MARK + _inj + "\t" + tmp, flush=True)
+                time.sleep(_PAUSE_SECONDS)
             _pos = _run_gate()
             check(_pos.returncode != 0,
                   f"7b. INJECTION: {_what} in a scanned tree fails the gate "
@@ -1559,13 +1685,14 @@ if not os.environ.get(_NO_SUB):
         except OSError:
             pass                       # already gone
 
-    _watchdog = threading.Timer(120, _kill_paused)
+    _watchdog = threading.Timer(_WATCHDOG_SECONDS, _kill_paused)
     _watchdog.start()
-    _left = ""
+    _left, _child_tmp = "", ""
     try:
         for _line in _paused.stdout:
             if _line.startswith(_PAUSE_MARK):
-                _left = _line.strip()[len(_PAUSE_MARK):]
+                _left, _, _child_tmp = _line.strip()[len(_PAUSE_MARK):].partition(
+                    "\t")
                 break
     finally:
         _kill_paused()
@@ -1580,14 +1707,24 @@ if not os.environ.get(_NO_SUB):
               os.path.join(os.path.abspath(_GUI), "app") + os.sep),
           f"7c. ...and it wrote that probe into the sandbox, outside the package "
           f"({_left!r})")
+    # Wider than the two above, which only say where THIS probe went: this one
+    # fails on anything the killed run left in the package, a second file or a
+    # rewritten module included.
     check(_package_snapshot() == _before,
           "7c. INTERRUPTED RUN: killing this gate mid-injection leaves gui/app "
-          "exactly as it was -- nothing is swept up afterwards because nothing "
-          "was put there")
+          "exactly as it was, file for file and byte for byte -- nothing is "
+          "swept up afterwards because nothing was put there")
+    check(bool(_child_tmp) and os.path.isdir(_child_tmp),
+          f"7c. ...and the killed run's OWN temp directory is still there, which "
+          f"its `finally` never reached -- so this process removes it rather "
+          f"than leaving one behind per run ({_child_tmp!r})")
     try:
         os.remove(_left)
     except OSError:
         pass
+    shutil.rmtree(_child_tmp, ignore_errors=True)
+    check(bool(_child_tmp) and not os.path.exists(_child_tmp),
+          f"7c. ...and it is gone ({_child_tmp!r})")
 
 for p in (absolute, other):
     try:
