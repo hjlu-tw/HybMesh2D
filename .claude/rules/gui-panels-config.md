@@ -422,8 +422,25 @@ against one list; #71 moved the first two here.
     of the canonicalising verb. Both lists name what this tree actually asks about a geometry, not
     every way to touch a file. `cfg.geom_files[0]` handed straight to a call IS covered, alongside
     the loop and the comprehension.
+  - **A canonical path reached through the LIST-WIDE verbs by more than ONE step**, which is the
+    form that was already in the tree behind the second verb. "Canonicalise" is not one verb:
+    `keyed_geom_paths` became public in #110 and check 12 shipped in #112 still recognising the one
+    name it was written for, so the banned shape written through the second one passed. Since #119
+    the set is MEASURED off `geom_path_identity` — call each exported verb with one spelling whose
+    canonical form is known, keep the verbs whose answer contains it — so `keyed_geom_paths` and
+    `canonical_geom_keys` are seen wherever `canonical_geom_path` is, bound by an assignment OR by
+    the `for`/comprehension target that iterates the call, and a THIRD verb needs no edit to the
+    check. One step past that is not followed, the same AST limit as (i): `keys =
+    canonical_geom_keys(…)` and then a loop over `keys` passes. `readable_geom_path` measures as
+    canonicalising too and is removed again — it is the sanctioned route TO the filesystem, and
+    five of its seven callers open what it hands back. The verbs that answer with a SPELLING
+    (`dedupe_geom_paths`, `stored_geom_path`) or a bool (`same_geom_file`) fall out of the
+    measurement, and the gate proves that by scanning the same reader written through each of them.
   One limit is DELIBERATE rather than residual: a site that uses the canonical path where the file
   is ABSENT is silent by construction, so a reader that should delegate but also logs the missing
-  path passes. That is the same property keeping the three correct `mesh_layers_ctrl` sites green,
-  and it was bought knowing the cost — the measurement that decided it (five canonicalise-then-
-  exists sites in that one file, of which one was the defect) is in `docs/design_notes/gui.md`.
+  path passes. That is the same property keeping the three correct `mesh_layers_ctrl` sites green
+  **and the model's own `geom_files_not_on_disk`** — which reads the key through `keyed_geom_paths`
+  and asks `os.path.exists` about it, i.e. writes the banned shape, and is green because it asks
+  which entries are NOT there rather than because it is pinned. It was bought knowing the cost —
+  the measurement that decided it (five canonicalise-then-exists sites in that one file, of which
+  one was the defect) is in `docs/design_notes/gui.md`.

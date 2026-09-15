@@ -1573,11 +1573,11 @@ same verb's. With that landed, check 12 against the tree reports exactly ONE sit
 
 **Shape 2 has zero sites in this tree, and saying so is the point.** It is prophylactic — the
 defect the blind spot predicted rather than one that is there — so the only thing standing behind
-it is the injection: a module dropped into a real GUI package handing a raw `geom_files` entry to
-`os.path.exists`, with the verdict read from the child's EXIT CODE and not from a FAIL-line count,
-which reports a crash as zero failures. Both new doors sit beside the four already there, each
-shown to move exactly one verdict, against a negative control on the untouched tree. Reaching a
-raw entry by SUBSCRIPT (`open(cfg.geom_files[0])`) is covered alongside the loop and the
+it is the injection: a module dropped into a tree the gate scans handing a raw `geom_files` entry
+to `os.path.exists`, with the verdict read from the child's EXIT CODE and not from a FAIL-line
+count, which reports a crash as zero failures. Both new doors sit beside the four already there,
+each shown to move exactly one verdict, against a negative control on the untouched tree. Reaching
+a raw entry by SUBSCRIPT (`open(cfg.geom_files[0])`) is covered alongside the loop and the
 comprehension, because it is the same entry by another route and costs one branch.
 
 What the check still cannot see is enumerated in the rule file's blind-spot list rather than
@@ -1589,6 +1589,49 @@ out of the function scoping above. One limit is DELIBERATE rather than residual:
 the canonical path where the file is absent is silent BY CONSTRUCTION, which is the same property
 that keeps the three correct sites green. Each of those was verified against the shipped scan, not
 reasoned about — the gap list is the part of a gate most likely to be written from intent.
+
+**#119: "canonicalise" was ONE name in a module that had exported a SECOND canonicalising verb
+three commits earlier.** `keyed_geom_paths` went public in #110; check 12 shipped in #112 reading
+`canonical_geom_path.__name__` and nothing else, so a reader that canonicalised through the newer
+verb and then asked the filesystem passed — and the tree already held one, written correctly, in
+the model's `geom_files_not_on_disk`. Both review axes found it independently, from opposite
+directions, which is the same signal the three-entry gap list above is there to produce.
+
+The fix is a MEASUREMENT, not a second name: call every verb in `geom_path_identity.__all__` with
+one relative spelling whose canonical form is known, and keep the verbs whose answer CONTAINS it.
+That answers on behaviour rather than on a naming convention, and it discriminates — `same_geom_file`
+answers a bool, `dedupe_geom_paths` and `stored_geom_path` answer SPELLINGS, and the gate proves
+each of those three is silent by scanning the same reader written through it. `readable_geom_path`
+measures as canonicalising and is subtracted again off the same function object `_READ_OK` is
+derived from: it is the sanctioned route TO the filesystem, and five of its seven callers open what
+it hands back, so banning a read on its result would red-light every one of them. A third verb is
+covered with no edit to the check, at the scan level AND at the build level, because the per-verb
+probes and the injection doors are both generated from the derived set.
+
+Two shapes follow from what those verbs ANSWER. They hand back a sequence rather than a path, so
+the binding the code reaches them through is a `for`/comprehension target, not an assignment —
+both are read now, every name in the target included, since the only thing that widens is which
+names a filesystem call may not be handed, and handing it a raw stored spelling is shape 2 anyway.
+And the guard is a comprehension's `if` rather than a statement, whose file-is-there branch is the
+element expression — or NOTHING when the test is negated, because then the element is produced
+precisely where the file is absent. **That last detail is what keeps `geom_files_not_on_disk` green
+without a pin**, and it is the deliberate limit above rather than a new exemption: the model writes
+the banned shape and asks the ABSENT question with it.
+
+**The probe was inside the package it was measuring.** The doors were written to
+`gui/app/services/_geom_ident_inj_probe.py` and removed in a `finally` — which a SIGKILL never
+reaches, so a cancelled or crashed run left a module in the live package for the next run to
+measure. This repo has paid for that shape once already (a stale harness backup silently reverting
+a fix that had landed, #113), and the lesson recorded then was to leave nothing rather than to
+sweep afterwards. The doors now go into a temporary directory put on `sys.path` and added to the
+gate's scan roots, so they are still opened in a tree the real scans walk, with the same per-file
+AST check; a child run is handed the parent's sandbox through the environment, so the process that
+created the directory is the one that removes it. Check 7c demonstrates it rather than asserting
+it: snapshot `gui/app`, start the gate again with a pause that stops it with a probe written and
+nothing removed, SIGKILL the process group, and compare — with two checks first that the killed run
+really had a probe on disk and that the probe was outside the package, so the third cannot pass for
+the wrong reason. What the doors used to prove as a side effect — that the package is the tree
+these scans read — is asserted directly now, against the one walk both roots go through.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
