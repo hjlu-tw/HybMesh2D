@@ -308,6 +308,24 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   against the keyer-delegation it argues against, not against a state the tree can reach —
   `remove_geom_file("")` removes nothing and returns False, and removing a geometry the list does
   not hold reports that nothing went.
+- **TWO behaviours in this block arrived UNDECLARED, and both are KEPT rather than reversed**
+  (#121). Recorded here, where the rule lives, because a decision taken against a stated decision
+  should read as a decision rather than as drift:
+  - **`keyed_geom_paths` is this service's SECOND new public surface**, taken against #108's
+    Implementation Decision *"The only new module-level surface is one read-side verb in the
+    Qt-free geometry-identity service"* — that verb is `readable_geom_path`, and #110 had already
+    promoted `_keyed` beside it. Kept because the bullet above ("written ONCE") is only checkable
+    against a NAMED list of readers, and a private helper cannot carry that list where a reader of
+    the model's verbs looks for it. The cost was real and landed three commits later: check 12
+    shipped recognising ONE canonicalising name, so the banned shape written through the second was
+    invisible with an instance of it already in the tree — closed by #119, which MEASURES the verb
+    set off the module (see the blind spot below).
+  - **`remove_geom_file("")` removes nothing and returns False, and that is a CHANGED answer, not
+    a clarification.** Before #110 the verb canonicalised both sides, so a falsy argument
+    canonicalised to `""`, matched every falsy entry and stripped them ALL, reporting True. The new
+    answer is the one the delegation reason above demands — a removal must not delete the empty
+    entries beside the one it was asked about — but no ticket asked for the flip. Gated by
+    `tests/test_geom_files_identity.py` check 7, in the falsy-entry assertions the bullet above names.
 - **The identity import is at MODULE level everywhere**, and the absence of a cycle is MEASURED —
   `mesh_config_io` (the module that carried the deferred form, and is on the headless path)
   imports first in a fresh interpreter, dragging in no Qt. A deferred import hides a real

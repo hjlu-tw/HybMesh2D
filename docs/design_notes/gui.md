@@ -1397,6 +1397,25 @@ description of something a gate holds. It asserts the fourth consequence beside 
 for the list lands as `[]` — with NO injection, because the rebind's own `or []` got that one
 right: a non-vacuity claim is per assertion, and three of the four are the verb's doing.
 
+**Two MORE of #110's changes were undeclared, and one was taken against a stated Implementation
+Decision (#121).** #108's decisions read *"The only new module-level surface is one read-side verb
+in the Qt-free geometry-identity service"*; #111 added that verb, `readable_geom_path`, and #110
+had already promoted `_keyed` to `keyed_geom_paths` beside it — two new surfaces, not one.
+Promoting it was still right: "the canonical-key loop is written ONCE" is a claim only checkable
+against a list of readers, and a private helper cannot carry that list where a reader of the
+model's verbs would look for it. The cost was real and arrived three commits later — check 12
+shipped recognising ONE canonicalising name, so the banned shape written through the second was
+invisible, with an instance of it already sitting in the tree (#119). The second change is
+`remove_geom_file("")`: it used to canonicalise both sides, so a falsy argument canonicalised to
+`""`, matched every falsy entry and stripped them all, reporting True. It now removes nothing and
+returns False — the answer the delegation reason itself demands, since a removal that deletes the
+empty entries beside the one it was asked about is exactly what refusing the keyer avoids — but no
+ticket asked for the flip, and a behaviour that is merely GATED is not a behaviour that was
+DECLARED. Neither is reversed; both are recorded in `.claude/rules/gui-panels-config.md`, where the
+rule lives. What should have caught them is #108's own closing audit, which recorded 23 of 24
+stories met and was more generous than the gates it read in three of those rows; it is corrected by
+a new comment there rather than edited, so the original stands beside the correction.
+
 **Storing the repo-relative spelling forced the READ side into the open, and the first sweep of it
 was WRONG.** With the entry stored as `results/resampled/x.dat` rather than absolute, every call
 site that opened the raw string answers against the process cwd. They already would have, for the
