@@ -1403,9 +1403,10 @@ in the Qt-free geometry-identity service"*; #111 added that verb, `readable_geom
 had already promoted `_keyed` to `keyed_geom_paths` beside it — two new surfaces, not one.
 Promoting it was still right: "the canonical-key loop is written ONCE" is a claim only checkable
 against a list of readers, and a private helper cannot carry that list where a reader of the
-model's verbs would look for it. The cost was real and arrived three commits later — check 12
-shipped recognising ONE canonicalising name, so the banned shape written through the second was
-invisible, with an instance of it already sitting in the tree (#119). The second change is
+model's verbs would look for it. The cost was real and landed with check 12, which shipped
+recognising ONE canonicalising name — so the banned shape written through the second verb was
+invisible, with an instance of it already sitting in the tree, until #119 measured the set off the
+module. The second change is
 `remove_geom_file("")`: it used to canonicalise both sides, so a falsy argument canonicalised to
 `""`, matched every falsy entry and stripped them all, reporting True. It now removes nothing and
 returns False — the answer the delegation reason itself demands, since a removal that deletes the
