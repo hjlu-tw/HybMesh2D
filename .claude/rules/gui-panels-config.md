@@ -236,20 +236,23 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   raw string answers about the process cwd. This is what makes the repo-relative store above safe
   rather than a silent "the preview vanished", and it is TWO rules, not one, because the readers
   are two kinds:
-  - **The SIX that need a path only WHEN ONE IS THERE go through `readable_geom_path`** (#111's
-    five, #112's sixth) — entry in, the canonical path when a file is there and `""` when there is
-    nothing to open, the existence question answered INSIDE the verb. FOUR of them OPEN the file:
-    the mesh bbox scan, the BC canvas overlay, the preview loader thread and the selection
-    highlight. The other TWO open nothing — the Run-All readiness check only asks whether any
+  - **The SEVEN that need a path only WHEN ONE IS THERE go through `readable_geom_path`** (#111's
+    five, #112's sixth, #118's seventh) — entry in, the canonical path when a file is there and `""` when there is
+    nothing to open, the existence question answered INSIDE the verb. FIVE of them OPEN the file:
+    the mesh bbox scan, the BC canvas overlay, the preview loader thread, the selection
+    highlight and the mesh panel's auto-sizing hint reader (`mesh_sizing_mixin._hint_points`, ONE
+    reader for both hint scans — until #118 they handed the RAW entry to `np.loadtxt` and
+    discarded the failure, breaking this rule and the count in one place). The other TWO open nothing — the Run-All readiness check only asks whether any
     entry is there, and `mesh_layers_ctrl.add_all_sessions_to_mesh` adds an exported geometry to
     the config when its file is there, which is why #111 correctly left it — but they ask the same
     question, so they use the same verb, and converting the second is what lets check 12 below be
     green with nothing pinned. Existence
     is `os.path.exists` and NOT `isfile`/`os.access`: **a file that exists and still cannot be read
-    is the OPEN's failure, so each of the four that OPEN must name the FILE and the EXCEPTION when
-    it fails** — three at `warning` through `get_logger(__name__)` (the grade for a failure that
+    is the OPEN's failure, so each of the five that OPEN must name the FILE and the EXCEPTION when
+    it fails** — four at `warning` through `get_logger(__name__)` (the grade for a failure that
     silently degrades what the user asked for: an overlay that does not draw, a highlight that
-    does not appear, a geometry missing from the bbox), the loader thread onto stdout beside its
+    does not appear, a geometry missing from the bbox, a hint whose number is computed from fewer
+    geometries than the user listed), the loader thread onto stdout beside its
     own malformed-geometry line. SUPERSEDES #112: that clause was an assertion, false of the BC
     overlay and the selection highlight from the day it was written; #117 fixed the readers, not
     the claim. Why: docs/design_notes/gui.md, "can turn a correct silence into a swallowed"
@@ -258,7 +261,7 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
     distinguishable instead of both becoming noisy.
     **The verb stays at the PATH layer** — it does not load, and does not absorb the preview
     loader's NaN/`(N,2)` validation (`geometry_service.load_points_dat`). **No plural form**,
-    because only one of the SIX would write the comprehension: the bbox scan and the overlay
+    because only one of the SEVEN would write the comprehension: the bbox scan and the overlay
     need the stored spelling for their log line and their role test as well as the path. A falsy
     entry reads back as `""`, the shared derivation's own answer, so one filter covers both.
     **A site that needs the canonical path even when the file is ABSENT is not one of these** and

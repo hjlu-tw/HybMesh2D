@@ -203,14 +203,29 @@ longer than the rule.
 
 Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a
 step allowed to fail, or `warning` when the failure silently degrades what the user asked for.
-`HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. Three shapes this repo has settled on, each
-visible in the tree: a probe whose negative answer is legitimate still records at `debug`, because
-"not installed" and "installed and broken" arrive identically (`services/env_setup.py`); a handler
-that RECOVERS by another route records at `debug`, because what is worth knowing is that the fast
-path failed at all (`services/geometry_formula.py`); and where the same failure can mean either
-case, the GRADE is computed rather than fixed — a geometry the user has not produced yet is `debug`
-and one that is there and will not read is `warning`, since only the second silently corrupts the
-number the panel shows (`views/panels/mesh_sizing_mixin.py::_grade`, #117's distinction).
+`HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. Those two tiers settle most sites on their own —
+a transform handle that still draws at a fallback length loses nothing the user asked for, so it is
+`debug` (`views/canvas_transform_mixin.py`). FOUR shapes cover the ones they do not, each visible
+in the tree:
+- **A probe whose negative answer is legitimate still records, at `debug`.** "Not installed" and
+  "installed and broken" arrive at the caller identically, and only the exception separates them
+  (`services/env_setup.py`, the gmsh library probe).
+- **A handler that RECOVERS by another route records at `debug`**: nothing is lost, so what is
+  worth knowing is that the fast path failed at all — an O(n) fallback that is always taken is a
+  silent slow path (`services/geometry_formula.py::_eval_formula_array`, whose vectorised
+  evaluation falls back to per-sample; the scalar `_eval_formula` beside it is the shape below, not
+  this one).
+- **A site called PER SAMPLE or per repaint is `debug` even when the outcome matters**, where the
+  same failure is already visible to the user as it happens. `_eval_formula` runs once per point of
+  a curve: a bad expression would write one `warning` per point, and the user is looking at the
+  curve not drawing while they type. Call rate is a real criterion, not an excuse — it does NOT
+  apply where the failure is invisible until someone asks why a number is wrong.
+- **Where one failure can mean "not there yet" or "there and unreadable", RESOLVE first and the
+  question answers itself.** `readable_geom_path` returns `""` for the first, so there is nothing
+  to record; everything that reaches the open is the second, and the reader `warning`s it
+  (`views/panels/mesh_sizing_mixin.py::_hint_points`, #117's distinction). Grading on a raw
+  `os.path.exists` instead LOOKS like the same rule and is not: the stored entry is repo-relative,
+  so from another cwd a geometry that is really there grades as one the user has not made yet.
 
 `tests/test_silent_exceptions.py` check 2 walks every `.py` file under `tools/PreProcessor/gui/`
 with `ast` — the GUI ROOT, not just `app/`, so `main.py` is inside it — and fails the build if a

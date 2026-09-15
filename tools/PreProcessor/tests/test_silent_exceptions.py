@@ -47,8 +47,9 @@ the curve preview, two numpy import guards that were dead (numpy is a hard
 dependency, so those handlers were deleted rather than logged), two geometry
 reads behind the auto-sizing hints and the formula evaluator's two — and added
 NO new allowlist entry. The ticket's own figures (28/14/3/0) came from a scan of
-EVERY except clause on the pre-#117 tree; the numbers above are re-derived here
-and printed by check 2 on every run rather than restated.
+EVERY except clause on the pre-#117 tree, its `3 return` counting BARE returns
+only; the numbers above are re-derived here and printed by check 2 on every run
+rather than restated.
 
 Checks 7-8 are proved non-vacuous by five injections, the verdict read from the
 EXIT CODE and with a negative control on the unmutated tree (this repo has
@@ -71,7 +72,9 @@ from a child process's EXIT CODE plus an empty stderr (exit 1 alone does not
 separate a bite from a crash) — once per keyword; once with the probe's own path
 allowlisted for that child run (`--allow-probe`), which must exit 0, beside the
 identical file without the entry, which must not, and the identical file without
-its comment, which must not either; and once with the probe removed, to show the
+its comment, which must not either; once whose only `#` sits inside a STRING, which
+must not either (the explanation half reads real `tokenize` COMMENT tokens, so
+punctuation cannot satisfy it); and once with the probe removed, to show the
 same command exits 0.
 
 Known blind spots, stated rather than pretended away:
@@ -97,10 +100,12 @@ import ast
 import logging
 import os
 import shutil
+import io
 import subprocess
 import sys
 import tempfile
 import threading
+import tokenize
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -260,18 +265,25 @@ def scan_gui(gui_dir):
             except SyntaxError as exc:
                 unparsed.append(f"{rel}: {exc}")
                 continue
-            lines = src.splitlines()
+            # Real COMMENT tokens, not `"#" in line`: a `#` inside a string on
+            # the same line would otherwise read as an explanation, which is the
+            # allowlist half of this check quietly satisfied by punctuation. Not
+            # wrapped in a handler — the parse above already succeeded, so a
+            # tokenize failure here is a bug that should take the gate down
+            # loudly rather than downgrade every site to "explains nothing".
+            comment_lines = {tok.start[0] for tok
+                             in tokenize.generate_tokens(io.StringIO(src).readline)
+                             if tok.type == tokenize.COMMENT}
             for node in ast.walk(tree):
                 if not isinstance(node, ast.ExceptHandler) or not _is_broad(node):
                     continue
                 st, kind = _silent_stmt(node)
                 if st is None:
                     continue
-                # "Explains itself" = a comment between the `except` line and the
-                # discarding statement, or on that statement's own line.
-                between = lines[node.lineno:st.lineno - 1]
-                commented = (any("#" in ln for ln in between)
-                             or "#" in lines[st.lineno - 1])
+                # "Explains itself" = a real comment after the `except` clause
+                # and no later than the discarding statement's own line.
+                commented = any(ln in comment_lines
+                                for ln in range(node.lineno + 1, st.lineno + 1))
                 sites.append({"rel": rel, "line": node.lineno, "kind": kind,
                               "commented": commented})
     return {"sites": sites, "unparsed": unparsed, "n_files": n_files,
@@ -509,6 +521,22 @@ try:
           "injection 7c. ...and an allowlisted site with NO comment still exits 1 "
           "(exit %d) — the entry says which FILE may be quiet, the comment says why "
           "THIS handler is" % bare.returncode)
+    # ...and a `#` that is only PUNCTUATION inside a string is not an explanation.
+    # The string statement is also the filtered-out "docstring" of the handler, so
+    # this probe exercises both halves at once: the body still reads as `continue`.
+    with open(PROBE, "w", encoding="utf-8") as fh:
+        fh.write("# a probe file, deleted by the test that wrote it\n"
+                 "def _probe(items):\n    for it in items:\n        try:\n"
+                 "            it()\n        except Exception:\n"
+                 "            \"a # inside a string, not a comment\"\n"
+                 "            continue\n")
+    faked = subprocess.run(CMD + ["--allow-probe"], capture_output=True, text=True,
+                           cwd=_REPO)
+    check(faked.returncode == 1 and "explains nothing" in faked.stdout
+          and "`continue`" not in faked.stdout,
+          "injection 7c. ...and a `#` inside a STRING is not a comment (exit %d): the "
+          "body still reads as `continue`, and the explanation half is not satisfied "
+          "by punctuation" % faked.returncode)
 finally:
     if os.path.exists(PROBE):
         os.remove(PROBE)

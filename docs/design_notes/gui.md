@@ -1266,7 +1266,9 @@ Four decisions inside the widening:
 
 - **BROAD, not every handler — and this is the whole of why the gate can be green.** The ticket's
   figures (28 `pass`, 14 `continue`, 3 `return`, 0 `break`) reproduce EXACTLY when the scan is run
-  over every `except` clause in `app/` on the pre-#117 tree, which is the scan that would need an
+  over every `except` clause in `app/` on the pre-#117 tree — its `3 return` counting BARE returns,
+  with 65 more spelled `return <value>` under the same scan, which is worth stating because the
+  widening shipped here treats those 65 as the same silence. That is the scan that would need an
   allowlist of a hundred-odd sites: `except ValueError: continue` inside a line parser is the
   correct idiom and this tree is full of deliberate narrow fallbacks (`except OSError: return []`
   in `services/meta_io.py`, `except (TypeError, ValueError): return 1.0` in `services/units.py`).
@@ -1286,12 +1288,23 @@ Four decisions inside the widening:
   `except Exception: return None`, and numpy is a hard dependency of this GUI, so those handlers
   were unreachable defensive code. Deleting a handler is the better half of "fix it or allowlist
   it", and `test_qt_free_seam.py` check 6 already says a deferred import is still a dependency.
-- **Where one failure can mean two things, the GRADE is computed rather than fixed.** #117's
-  distinction is that a geometry the user has not produced yet is not an error while one that is
-  there and will not read is, and the two hint scans reach both. `_grade(path)` returns `WARNING`
-  when the file exists and `DEBUG` when it does not — the file that IS there drops silently out of
-  the domain extent / spacing average, so the number the panel SHOWS is wrong rather than missing,
-  and a wrong number nobody can trace is exactly what the warning tier is for.
+- **Where one failure can mean two things, RESOLVE first and the question answers itself — and the
+  first version of this got it wrong in a way worth keeping.** #117's distinction is that a
+  geometry the user has not produced yet is not an error while one that is there and will not read
+  is, and the two auto-sizing hint scans reach both. The version that shipped in `77c2561` computed
+  the grade with `os.path.exists(p)` on the entry the list widget carries. Review caught it against
+  `.claude/rules/gui-panels-config.md`'s "a reader RESOLVES an entry before opening it": that entry
+  is the stored `MeshConfig.geom_files` spelling, repo-relative for a file inside the repo, so from
+  any other cwd BOTH the grade and the `np.loadtxt` beside it answer about the wrong directory — a
+  geometry that is really there reads as one the user has not made yet, which is #117's
+  distinction inverted by the helper written to make it. The fix is the verb, not a better
+  predicate: `mesh_sizing_mixin._hint_points` calls `readable_geom_path`, whose `""` IS the
+  "nothing to record" answer, and everything that reaches the open is a genuine read failure it
+  `warning`s. That makes it the seventh caller of that verb and the fifth that opens — a count
+  restated in four places, now stale for the second time in two tickets, and updated in all four.
+  The raw `np.loadtxt(p)` it replaced was PRE-EXISTING and outside this ticket's scan; `check 12`
+  of `test_geom_files_identity.py` does not reach it, because these paths come from the widget's
+  item data rather than from `cfg.geom_files`, which is the blind spot that let it live there.
 - **`ast`, not a regex plus an indentation walk.** The old scan reconstructed the body from the
   next seven lines by indentation, so a comment above the keyword, an `except` clause spilling
   over two lines or a docstring inside the handler each walked around it, and it could only ever
@@ -1311,8 +1324,10 @@ into the real GUI tree and the gate run as a child in `--scan-only` mode, once p
 verdict exit 1 AND an empty stderr AND the probe named in stdout, with the probe removed for a
 final run that must exit 0. The allowlist gets the same treatment rather than only the in-process
 one: `--allow-probe` adds the probe's own path to the allowlist for one child run, which must exit
-0, against the identical file without the entry (exit 1) and the identical file without its
-comment (exit 1). The lever can only ever reach a filename this gate writes and deletes itself, so
+0, against the identical file without the entry (exit 1), the identical file without its
+comment (exit 1), and one whose only `#` sits inside a STRING (exit 1 — the explanation half reads
+real `tokenize` COMMENT tokens, so it cannot be satisfied by punctuation, and the same probe proves
+a handler whose body is a string statement plus `continue` still reads as `continue`). The lever can only ever reach a filename this gate writes and deletes itself, so
 it exempts nothing real — the alternative was editing one of the three genuinely allowlisted source
 files, which a killed run would leave modified, and this repo has already lost a fix to a stale
 injection backup once. That is `test_file_length.py`'s shape reused rather than reinvented,
@@ -1437,7 +1452,11 @@ callers are SIX and only FOUR open a file: the mesh bbox scan, the preview loade
 overlay and the selection highlight. The Run-All readiness check and `add_all_sessions_to_mesh`
 never open one, so there is no open failure there to pre-empt — which also corrects the rule file's
 "five of them OPEN", a count that included the readiness check — and `test_geom_files_identity.py`'s
-check 11 comment, a FOURTH home of it that the first pass of this very fix missed. Of the four, the
+check 11 comment, a FOURTH home of it that the first pass of this very fix missed. (#118 moved both
+numbers again, to SEVEN and FIVE, by converting the auto-sizing hint reader; see "a standard that
+bans one KEYWORD" above. A count restated in four places is a count that goes stale in four places,
+and this one now has done so twice — but the alternative, deriving it in a gate, would pin the
+CALLERS of a verb rather than its contract, and check 12 already holds the reach.) Of the four, the
 loader thread
 named both halves (`[preview] skipping malformed geometry '<f>': <e>`) and the bbox scan named the
 file only on the branch where its fallback `open` SUCCEEDED — when the file is genuinely unreadable
@@ -1469,7 +1488,7 @@ the EXIT CODE with a negative control on the unmutated tree: reverting each of t
 bites its own check, the loader thread's print replaced by `pass` bites the fourth, and making the
 BC overlay log the absent case too reddens check 8.
 
-No plural form was added, because only one of the SIX would have written the comprehension — the
+No plural form was added, because only one of the SEVEN would have written the comprehension — the
 Run-All readiness check, the one that opens nothing (the count here read "five" until #117
 recounted the callers): the bbox scan and the BC overlay need the stored spelling for their log
 line and their role test as well as the path. The conversion is

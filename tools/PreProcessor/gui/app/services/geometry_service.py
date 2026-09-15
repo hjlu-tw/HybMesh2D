@@ -2,10 +2,6 @@ from __future__ import annotations
 import math
 import os
 import numpy as np
-
-from app.services.logging_setup import get_logger
-
-_log = get_logger(__name__)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.session import GeometrySession
@@ -26,6 +22,9 @@ from .geometry_formula import (
     _parse_vertices_str,
     format_vertices_str,
 )
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 __all__ = [
     "GeometryLoadError",
