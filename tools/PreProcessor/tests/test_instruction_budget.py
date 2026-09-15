@@ -82,7 +82,10 @@ Checks:
     root's character count, its byte count, its token estimate, its budget and its slack;
     the byte-char delta, stated in BOTH this file and the root; the rule-file count, also
     stated in both; and blind spot (d)'s rule-file sizes with their descending order,
-    both headroom lists and `RULE_BUDGET`'s own value beside them. Plus three figures that
+    both headroom lists and `RULE_BUDGET`'s own value beside them; and, since #120, the
+    root's size and that size floored to the budget rule's boundary as `ROOT_BUDGET`'s
+    OWN derivation states them — the evidence the constant rests on, and the last live
+    measurement in these files that nothing re-derived. Plus three figures that
     are not about these files at all. The first (#101): the status of the GUI file-length
     standard — how
     many files exceed it, out of how many, the worst one's size, the limit itself and
@@ -317,6 +320,12 @@ Known remaining blind spots, stated rather than pretended away:
     rounding, and #78 rejected exactness because a self-describing number goes stale (six
     times when #78 counted, eleven when #79 re-derived it). The band IS the design; the
     arithmetic is one way of landing in it.
+    #120 adds a FOURTH thing to hold, and it is not a claim about the constant but the
+    EVIDENCE for it: the derivation states the root's size as a live figure, and nothing
+    re-derived it. Any edit to the root that stayed inside the band therefore left that
+    sentence quietly false — check 8 reads only the band and the boundary — which is this
+    check's own defect class one level down, inside this check's own fix. It is a check 7
+    figure now, at both of its anchors, with the floored size in the same clause.
     A NEW blind spot arrives with the check, and it is the price of the property the
     ticket asked for. Check 8 reads its thresholds from the prose that documents them, so
     WIDENING the rule widens the check: nothing gates the rule's own numbers. Injection
@@ -444,6 +453,15 @@ Known remaining blind spots, stated rather than pretended away:
         #75's 40,000 lock against a 32,043 file, the 110-character drift, the +789 rise,
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
         rewrote one would be the falsification this whole ledger exists against.
+    #120 is this entry corrected from the other side, and the correction is about what it
+    does NOT excuse. `ROOT_BUDGET`'s own derivation cited this blind spot to leave the
+    root's size — a live reading of today's tree — hand-maintained beside the argument
+    for the constant. None of the four families above reaches it and the history list
+    above names its members by value, so the citation resolved to an entry that did not
+    cover it: blind spot (c), a pointer nothing checks. It went stale three commits
+    later, inside the band, with every check green. The figure and the floored size
+    beside it are registered now; what this list excuses is figures nothing can
+    re-derive, and it has never excused a measurement of the current tree.
  h. `--sync` WRITES A GATE FILE now, not only instruction files (#116). The `src:` target
     is what a figure living in a gate's own source needs — the smoothing gate's head
     docstring is one — and it is working as intended, but it widens what one `--sync` run
@@ -609,15 +627,21 @@ _SOURCES = {
 # four commits: three ran inside the band and `374ad04` took the slack to 333, under the
 # same floor, on 223 characters of prose about something else. Three commits is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather than
-# a third one. Re-derived at #109, and stated in the PAST tense on purpose: the root
-# settled at 36,018 once that ticket's own synced figures were written -- a joint fixed
-# point, since two of them are its size and its slack -- and 36,018 down to a 500 boundary
-# is 36,000, plus 1,000. The value below is check 8's OWN recommendation, pasted: the
-# ticket's second round of review grew the root past the floor, the gate named 37,000 and
+# a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,411 characters
+# -- a joint fixed point with the figures that file states about itself, since two of them
+# are its size and its slack -- and 36,411 taken down to the boundary above is 36,000, to
+# which the ceiling is added. The value below is check 8's OWN recommendation, pasted:
+# #109's second round of review grew the root past the floor, the gate named 37,000 and
 # named it as pasteable, and closing that loop by hand is the last time this number will
-# need one. Check 8 gates the BAND, not this sentence; blind spot (g) is why
-# a dated measurement is left to be a dated measurement rather than registered for
-# `--sync`, which would rewrite the evidence for the number every time the root moved.
+# need one. Check 8 gates the BAND and #120 gates this sentence: both sizes above and the
+# floored one are check 7 figures, so `--sync` re-derives the evidence and the argument
+# for the number stays checkable against the number. #109 left them as a DATED measurement
+# and cited blind spot (g) for the exemption -- an entry that covers HISTORY and four
+# families of hand-maintained figure, none of them a live reading of the current tree, so
+# the citation resolved to something that did not cover it, which is blind spot (c)'s own
+# shape. It then went stale three commits later at `77c2561`, on an edit that stayed
+# INSIDE the band with every check reporting ALL PASS -- #109's defect one level down,
+# inside #109's own fix.
 ROOT_BUDGET = 37_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
@@ -1224,6 +1248,19 @@ def _rx(pattern):
     return re.compile(pattern.replace("~", r"\s+"))
 
 
+def _in_comment(pattern):
+    """The same `~` convention for a figure stated inside a `#` COMMENT block.
+
+    `_rx` turns `~` into `\s+`, which is right for a docstring and wrong for a comment:
+    a re-wrap there puts `# ` between two of a sentence's words, so the anchor stops
+    resolving and check 7 reports a MISSING figure on a tree whose figure is fine. Check
+    8's `_RULE_GAP` is the same separator for the same reason, one rule lower down; this
+    is it applied to the registry, so `--sync` can reach a figure living beside a
+    constant rather than only ones living in prose.
+    """
+    return pattern.replace("~", r"[\s#]+")
+
+
 # A run of comma-grouped integers separated by ` / `, which is how this file writes the
 # rule-file sizes and both headroom lists.
 # A `/`-separated list of figures, NEGATIVES INCLUDED. The minus sign was added by #84,
@@ -1536,6 +1573,23 @@ def _smooth_other_three_group(world):
     return (groups.pop(),)
 
 
+def _root_floor(world):
+    """The root's size taken DOWN to the boundary the budget rule states (#120).
+
+    The second live measurement in `ROOT_BUDGET`'s derivation, and the reason it is
+    derived from the RULE rather than from a literal 500: the boundary is stated once,
+    at the constant, and a second copy inside this function would be the defect check 8
+    refuses one level out. While check 8 is green this figure cannot move -- in band the
+    size is pinned to one boundary's width -- so it is the belt to the size figure's
+    braces, and it is here because a live number left hand-maintained one comma away
+    from a gated one is how #120 arrived in the first place.
+    """
+    rule, err = root_budget_rule(world)
+    if err:
+        raise _DeriveError(err)
+    return ((len(world["root"]) // rule.boundary) * rule.boundary,)
+
+
 # The registry. Each entry declares WHERE the figure is, the pattern that anchors it, and
 # one field per capture group. A field named "date" is deliberately not compared: gating
 # it would go red with the calendar rather than with the file, which is the
@@ -1557,6 +1611,9 @@ _FIGURES = {
     "root_delta": _Figure(
         _parse_nums, _fmt_nums,
         lambda w: (len(w["root"].encode("utf-8")) - len(w["root"]),)),
+    # #120. The root's size taken down to the budget rule's own boundary, which is the
+    # other half of the arithmetic `ROOT_BUDGET`'s derivation shows its reader.
+    "root_floor": _Figure(_parse_nums, _fmt_nums, _root_floor),
     # The flat rule-file budget, stated in this file's own blind spot (d) beside the two
     # headroom lists that are DERIVED from it. Ungated, that sentence could read 60,000
     # while `--sync` rewrote every headroom beside it from a different constant.
@@ -1742,6 +1799,21 @@ SELF_REPORT = (
      "target": "src:test_multiblock_smooth_surface.py",
      "pattern": r"SINCE~#114~GROUP~([\d,]+)~ALSO~DRIVES~THE~OTHER~THREE",
      "fields": ("smooth_group",)},
+    # #120. The two live measurements inside `ROOT_BUDGET`'s OWN derivation -- the
+    # evidence the constant rests on. #109 wrote them as a dated fact and cited blind
+    # spot (g), which covers history and four families of hand-maintained figure and
+    # covers neither of these; the citation resolved anyway, which is blind spot (c), and
+    # the size figure went stale three commits later on an edit that stayed inside the
+    # band, where check 8 has nothing to say. One derivation, two anchors, the
+    # arrangement `rule_count` already is -- and the anchors take `_in_comment` because
+    # this figure lives in a `#` block, where a re-wrap would otherwise break them.
+    {"label": "the budget derivation's root size", "target": "gate",
+     "pattern": _in_comment(r"CLAUDE\.md~is~([\d,]+)~characters"),
+     "fields": ("root_chars",)},
+    {"label": "the budget derivation's arithmetic", "target": "gate",
+     "pattern": _in_comment(
+         r"and~([\d,]+)~taken~down~to~the~boundary~above~is~([\d,]+),~to~which"),
+     "fields": ("root_chars", "root_floor")},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
      # Either spelling: `_fmt_word_lower` writes a word up to twelve and DIGITS past it,
      # and thirteen rule files is a state that docstring calls reachable. A word-only
@@ -3331,6 +3403,81 @@ check(_ok and check_self_report(synced)
       "injection 13n. ...and `--sync` writes nothing into the docstring, leaving the gate "
       "red instead of stamping it with one of two disagreeing answers")
 
+# 13o. #120: the root-size figure inside `ROOT_BUDGET`'s OWN derivation -- the evidence
+# the constant rests on, and the last live measurement in these files that nothing
+# re-derived. It sits in a `#` block rather than a docstring, which is the only thing
+# structurally new here: its anchors take `_in_comment`, so a re-wrap that puts `# `
+# between two of the sentence's words cannot turn the figure into a missing one.
+_DERIV_LABEL = "the budget derivation's root size"
+_ARITH_LABEL = "the budget derivation's arithmetic"
+_RULE120, _ERR120 = root_budget_rule(world)
+assert _ERR120 is None, "injection fixture: " + str(_ERR120)
+inj, was = bend_figure(world, _DERIV_LABEL, 1, "1")
+check(inj["gate"] != world["gate"] and inj["root"] == world["root"] and was != "1"
+      and root_budget_rule(inj)[0] == _RULE120,
+      "injection 13o. injection is well-formed: only the GATE's derivation figure moved, "
+      "the root file is untouched, and the budget rule in the same comment block still "
+      "parses to the same three numbers")
+hits = [f for f in check_self_report(inj)
+        if "root_chars" in f and _DERIV_LABEL in f]
+check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0],
+      "injection 13o. check 7 fails on the derivation's own statement of the root's size, "
+      "naming this gate, the anchor, the field and BOTH values — while the SECOND anchor "
+      "of the same derivation, one clause away, is correct and is not reported")
+
+# 13o2. the other live measurement in that same clause: the size taken down to the rule's
+# boundary. Fixed in the same pass rather than left hand-maintained one comma from a
+# gated figure, which is the arrangement that produced this ticket.
+inj, was = bend_figure(world, _ARITH_LABEL, 2, "1")
+check(inj["gate"] != world["gate"] and was != "1"
+      and root_budget_rule(inj)[0] == _RULE120,
+      "injection 13o2. injection is well-formed: the FLOORED size moved while the size it "
+      "is floored from, in the same sentence, did not")
+hits = [f for f in check_self_report(inj) if "root_floor" in f]
+check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0]
+      and _fmt_nums(_root_floor(world)) in hits[0],
+      "injection 13o2. check 7 fails on the floored size too, and prints the value the "
+      "rule's own boundary gives — read from the rule, never a literal 500 in the check")
+
+# 13o3. the shape the ticket is actually about, and the one no check could see: an edit to
+# CLAUDE.md that stays INSIDE the band. Check 8 has nothing to say — it reads the band and
+# the boundary, not the evidence — so before #120 the argument for the constant went false
+# with every check reporting ALL PASS. That is not hypothetical: it is what `77c2561` did,
+# three commits after #109 landed, and the stale 36,018 it left is what this ticket found.
+_room120 = (ROOT_BUDGET - len(world["root"])) - _RULE120.low - 1
+check(_room120 > 0,
+      "injection 13o3. the committed tree can still grow INSIDE its band (%d characters), "
+      "so the in-band edit this injection models is reachable from here" % _room120)
+inj = copy_world(world)
+inj["root"] = inj["root"] + ("x" * _room120)
+check(inj["root"].startswith("# " + _ROOT_NAME)
+      and len(inj["root"]) == len(world["root"]) + _room120
+      and not check_root_budget_band(inj) and not check_sizes(inj),
+      "injection 13o3. injection is well-formed: the root really grew, and checks 1 and 8 "
+      "are BOTH still green on it — so check 7 is the only thing that can notice")
+sr = check_self_report(inj)
+check(any(_DERIV_LABEL in f and "root_chars" in f for f in sr)
+      and any(_ARITH_LABEL in f and "root_chars" in f for f in sr),
+      "injection 13o3. check 7 goes red at both anchors when the root moves and the "
+      "derivation does not, which is the criterion this ticket is written against")
+check(not any("root_floor" in f for f in sr),
+      "injection 13o3. ...and the FLOORED size does not move, because in band the size is "
+      "pinned to one boundary's width — so that figure can only go stale behind a check 8 "
+      "failure, and is the belt to the size figure's braces rather than a second alarm")
+_synced120, _changes120, _ok120 = sync_world(inj)
+check(_ok120 and any(_DERIV_LABEL in c for c in _changes120)
+      and any(_ARITH_LABEL in c for c in _changes120)
+      and not check_self_report(_synced120),
+      "injection 13o3. `--sync` converges it and the synced world passes check 7, so the "
+      "fix is one command rather than a hand-patch beside a constant")
+_LINE120 = re.search(r"^ROOT_BUDGET = .*$", world["gate"], re.M).group(0)
+check(_LINE120 in _synced120["gate"]
+      and not any("ROOT_BUDGET =" in c for c in _changes120)
+      and not check_root_budget_band(_synced120),
+      "injection 13o3. ...and leaves the CONSTANT alone: the evidence is a restatement of "
+      "disk and `--sync` owns it, the BAND is a decision and check 8 owns it, and #120 "
+      "moves only the first")
+
 # 13j2. the INERT direction for both of #116's figures, which is the family this repo has
 # been bitten by three times: the anchor is reworded away while the figure itself stays
 # CORRECT, so a check that merely looked for a number would pass while measuring nothing.
@@ -3338,7 +3485,11 @@ for _label, _target, _was, _now in (
         ("the block-field gate's injection count", "note:mesher.md",
          "injections into `src/Mesh.cpp`", "injections into the writer"),
         (_GROUP_LABEL, "src:" + _SMOOTH,
-         "ALSO DRIVES THE OTHER THREE", "ALSO DRIVES THE REMAINING THREE")):
+         "ALSO DRIVES THE OTHER THREE", "ALSO DRIVES THE REMAINING THREE"),
+        # Built from `_ROOT_NAME` rather than written out: this target is THIS file, so a
+        # literal here would be a second occurrence of the very phrase the fixture
+        # requires to be unique, and the loop would abort on its own source text.
+        (_DERIV_LABEL, "gate", _ROOT_NAME + " is", _ROOT_NAME + " today is")):
     inj = copy_world(world)
     _text = _target_text(inj, _target)
     assert _text.count(_was) == 1, "injection fixture: %s moved" % _was
