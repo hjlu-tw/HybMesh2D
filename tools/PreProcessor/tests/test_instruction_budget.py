@@ -634,18 +634,21 @@ _SOURCES = {
 # a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,411 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
 # are its size and its slack -- and 36,411 taken down to the boundary above is 36,000, to
-# which the ceiling is added. The value below is check 8's OWN recommendation, pasted:
-# #109's second round of review grew the root past the floor, the gate named 37,000 and
-# named it as pasteable, and closing that loop by hand is the last time this number will
-# need one. Check 8 gates the BAND and #120 gates this sentence: both sizes above and the
-# floored one are check 7 figures, so `--sync` re-derives the evidence and the argument
-# for the number stays checkable against the number. #109 left them as a DATED measurement
-# and cited blind spot (g) for the exemption -- an entry that covers HISTORY and four
-# families of hand-maintained figure, none of them a live reading of the current tree, so
-# the citation resolved to something that did not cover it, which is blind spot (c)'s own
-# shape. It then went stale three commits later at `77c2561`, on an edit that stayed
-# INSIDE the band with every check reporting ALL PASS -- #109's defect one level down,
-# inside #109's own fix.
+# which the ceiling is added. The value below is the one check 8 itself recommended at
+# #109 and named as pasteable, after that ticket's second round of review grew the root
+# past the floor; closing that loop by hand is the last time this number will need one.
+# The value is NOT restated in this sentence -- a number that need not be stated cannot go
+# stale, which is what #89 did to a count rather than gating a third copy of it, and the
+# claim left behind is dated and cannot decay. Check 8 gates the BAND and #120 gates this
+# sentence: both sizes above and the floored one are check 7 figures, so `--sync`
+# re-derives the evidence and the argument for the number stays checkable against the
+# number. #109 left them as a DATED measurement and cited blind spot (g) for the
+# exemption. That entry DOES excuse live readings of the tree -- its first bullet is two
+# of them -- so the defect is not that it excuses none; it is that no entry in it reaches
+# a figure of this kind, and the citation resolved anyway, which is blind spot (c)'s own
+# shape. The figure then went stale three commits later at `77c2561`, on an edit that
+# stayed INSIDE the band with every check reporting ALL PASS -- #109's defect one level
+# down, inside #109's own fix.
 ROOT_BUDGET = 37_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
@@ -1591,9 +1594,10 @@ def _root_floor(world):
     refuses one level out. It moves rarely rather than never, and the distinction is
     worth the sentence: the in-band size window is one boundary WIDE, so it straddles a
     boundary unless `ROOT_BUDGET - high` is a multiple of one. Today's constant is check
-    8's own recommendation, which always is, so today this figure cannot move while check
-    8 is green -- but that is a property of the value PASTED, not of the band, and a
-    hand-set budget breaks it. It is here because a live number left hand-maintained one
+    8's own recommendation, which is such a multiple in every case but the backed-off one
+    `recommended_budget` names, so today this figure cannot move while check 8 is green --
+    but that is a property of the value PASTED, not of the band, and a hand-set budget (or
+    a pasted back-off) breaks it. It is here because a live number left hand-maintained one
     comma from a gated one is how #120 arrived in the first place.
     """
     rule, err = root_budget_rule(world)
@@ -3417,10 +3421,10 @@ check(_ok and check_self_report(synced)
       "red instead of stamping it with one of two disagreeing answers")
 
 # 13o. #120: the root-size figure inside `ROOT_BUDGET`'s OWN derivation -- the evidence
-# the constant rests on, and the last live measurement in these files that nothing
-# re-derived. It sits in a `#` block rather than a docstring, which is the only thing
-# structurally new here: its anchors take `_comment_gaps`, so a re-wrap that puts `# `
-# between two of the sentence's words cannot turn the figure into a missing one.
+# the constant rests on, and a live measurement that cited a blind spot reaching no
+# figure of its kind. It sits in a `#` block rather than a docstring, which is the only
+# thing structurally new here: its anchors take `_comment_gaps`, so a re-wrap that puts
+# `# ` between two of the sentence's words cannot turn the figure into a missing one.
 _DERIV_LABEL = "the budget derivation's root size"
 _ARITH_LABEL = "the budget derivation's arithmetic"
 _RULE120, _ERR120 = root_budget_rule(world)
@@ -3470,7 +3474,7 @@ check(inj["root"].startswith("# " + _ROOT_NAME)
       and len(inj["root"]) == len(world["root"]) + _room120
       and not check_root_budget_band(inj) and not check_sizes(inj),
       "injection 13o3. injection is well-formed: the root really grew, and checks 1 and 8 "
-      "are BOTH still green on it — so check 7 is the only thing that can notice")
+      "are BOTH still green on it — so check 7 is the only check here that can notice")
 sr = check_self_report(inj)
 check(any(_DERIV_LABEL in f and "root_chars" in f for f in sr)
       and any(_ARITH_LABEL in f and "root_chars" in f for f in sr),
