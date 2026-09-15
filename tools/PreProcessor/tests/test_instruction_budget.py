@@ -84,8 +84,9 @@ Checks:
     stated in both; and blind spot (d)'s rule-file sizes with their descending order,
     both headroom lists and `RULE_BUDGET`'s own value beside them; and, since #120, the
     root's size and that size floored to the budget rule's boundary as `ROOT_BUDGET`'s
-    OWN derivation states them — the evidence the constant rests on, and the last live
-    measurement in these files that nothing re-derived. Plus three figures that
+    OWN derivation states them — the evidence the constant rests on, stated in a COMMENT
+    block rather than in prose, which is the only structurally new thing about them.
+    Plus three figures that
     are not about these files at all. The first (#101): the status of the GUI file-length
     standard — how
     many files exceed it, out of how many, the worst one's size, the limit itself and
@@ -460,8 +461,11 @@ Known remaining blind spots, stated rather than pretended away:
     above names its members by value, so the citation resolved to an entry that did not
     cover it: blind spot (c), a pointer nothing checks. It went stale three commits
     later, inside the band, with every check green. The figure and the floored size
-    beside it are registered now; what this list excuses is figures nothing can
-    re-derive, and it has never excused a measurement of the current tree.
+    beside it are registered now. The correction is narrow ON PURPOSE: this list DOES
+    excuse live readings of the tree — the first bullet's two tripwire counts are exactly
+    that, derivable and deliberately left out — so the rule is not "no live measurement
+    may cite (g)". It is that a citation has to name an entry that REACHES the figure,
+    and `ROOT_BUDGET`'s named one that does not.
  h. `--sync` WRITES A GATE FILE now, not only instruction files (#116). The `src:` target
     is what a figure living in a gate's own source needs — the smoothing gate's head
     docstring is one — and it is working as intended, but it widens what one `--sync` run
@@ -1248,17 +1252,22 @@ def _rx(pattern):
     return re.compile(pattern.replace("~", r"\s+"))
 
 
-def _in_comment(pattern):
-    """The same `~` convention for a figure stated inside a `#` COMMENT block.
+# A word gap inside a `#` COMMENT block, where a re-wrap puts `# ` between two of a
+# sentence's words. Check 8 reads the budget rule through it and check 7's registry
+# anchors a figure stated beside that rule through it; ONE definition rather than the
+# same four characters written twice, which is this file's own subject.
+_RULE_GAP = r"[\s#]+"
 
-    `_rx` turns `~` into `\s+`, which is right for a docstring and wrong for a comment:
-    a re-wrap there puts `# ` between two of a sentence's words, so the anchor stops
-    resolving and check 7 reports a MISSING figure on a tree whose figure is fine. Check
-    8's `_RULE_GAP` is the same separator for the same reason, one rule lower down; this
-    is it applied to the registry, so `--sync` can reach a figure living beside a
-    constant rather than only ones living in prose.
+
+def _comment_gaps(pattern):
+    r"""`_rx`'s `~` convention with `_RULE_GAP` between the words instead of `\s+`.
+
+    `\s+` is right for a docstring and wrong for a comment: a re-wrap there breaks the
+    anchor, so check 7 reports a MISSING figure on a tree whose figure is fine. Returns
+    a PATTERN STRING, not a compiled one -- `_resolve` still puts it through `_rx`, which
+    finds no `~` left to replace.
     """
-    return pattern.replace("~", r"[\s#]+")
+    return pattern.replace("~", _RULE_GAP)
 
 
 # A run of comma-grouped integers separated by ` / `, which is how this file writes the
@@ -1579,10 +1588,13 @@ def _root_floor(world):
     The second live measurement in `ROOT_BUDGET`'s derivation, and the reason it is
     derived from the RULE rather than from a literal 500: the boundary is stated once,
     at the constant, and a second copy inside this function would be the defect check 8
-    refuses one level out. While check 8 is green this figure cannot move -- in band the
-    size is pinned to one boundary's width -- so it is the belt to the size figure's
-    braces, and it is here because a live number left hand-maintained one comma away
-    from a gated one is how #120 arrived in the first place.
+    refuses one level out. It moves rarely rather than never, and the distinction is
+    worth the sentence: the in-band size window is one boundary WIDE, so it straddles a
+    boundary unless `ROOT_BUDGET - high` is a multiple of one. Today's constant is check
+    8's own recommendation, which always is, so today this figure cannot move while check
+    8 is green -- but that is a property of the value PASTED, not of the band, and a
+    hand-set budget breaks it. It is here because a live number left hand-maintained one
+    comma from a gated one is how #120 arrived in the first place.
     """
     rule, err = root_budget_rule(world)
     if err:
@@ -1805,13 +1817,13 @@ SELF_REPORT = (
     # covers neither of these; the citation resolved anyway, which is blind spot (c), and
     # the size figure went stale three commits later on an edit that stayed inside the
     # band, where check 8 has nothing to say. One derivation, two anchors, the
-    # arrangement `rule_count` already is -- and the anchors take `_in_comment` because
+    # arrangement `rule_count` already is -- and the anchors take `_comment_gaps` because
     # this figure lives in a `#` block, where a re-wrap would otherwise break them.
     {"label": "the budget derivation's root size", "target": "gate",
-     "pattern": _in_comment(r"CLAUDE\.md~is~([\d,]+)~characters"),
+     "pattern": _comment_gaps(r"CLAUDE\.md~is~([\d,]+)~characters"),
      "fields": ("root_chars",)},
     {"label": "the budget derivation's arithmetic", "target": "gate",
-     "pattern": _in_comment(
+     "pattern": _comment_gaps(
          r"and~([\d,]+)~taken~down~to~the~boundary~above~is~([\d,]+),~to~which"),
      "fields": ("root_chars", "root_floor")},
     {"label": "blind spot (d)'s headroom, the rest", "target": "gate",
@@ -2002,8 +2014,9 @@ def check_self_report(world):
 # whose rule is perfectly fine. The comma inside the interval takes `[\s#]*` for the same
 # reason from the other side: review found that `(500,1000]` -- a legal reformatting of
 # the same interval -- reddened the gate with "the band is not stated", which is a
-# misleading failure rather than a wrong one.
-_RULE_GAP = r"[\s#]+"
+# misleading failure rather than a wrong one. `_RULE_GAP` itself is defined once, up
+# beside `_rx`, because check 7's registry needs the same separator for a figure stated
+# in this same block.
 _DERIV_RX = re.compile(
     r"taken" + _RULE_GAP + r"DOWN" + _RULE_GAP + r"to" + _RULE_GAP + r"a" + _RULE_GAP
     + r"(\d[\d,]*)" + _RULE_GAP + r"boundary" + _RULE_GAP + r"with" + _RULE_GAP
@@ -3406,7 +3419,7 @@ check(_ok and check_self_report(synced)
 # 13o. #120: the root-size figure inside `ROOT_BUDGET`'s OWN derivation -- the evidence
 # the constant rests on, and the last live measurement in these files that nothing
 # re-derived. It sits in a `#` block rather than a docstring, which is the only thing
-# structurally new here: its anchors take `_in_comment`, so a re-wrap that puts `# `
+# structurally new here: its anchors take `_comment_gaps`, so a re-wrap that puts `# `
 # between two of the sentence's words cannot turn the figure into a missing one.
 _DERIV_LABEL = "the budget derivation's root size"
 _ARITH_LABEL = "the budget derivation's arithmetic"
@@ -3418,9 +3431,10 @@ check(inj["gate"] != world["gate"] and inj["root"] == world["root"] and was != "
       "injection 13o. injection is well-formed: only the GATE's derivation figure moved, "
       "the root file is untouched, and the budget rule in the same comment block still "
       "parses to the same three numbers")
-hits = [f for f in check_self_report(inj)
-        if "root_chars" in f and _DERIV_LABEL in f]
-check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0],
+_sr120 = check_self_report(inj)
+hits = [f for f in _sr120 if "root_chars" in f and _DERIV_LABEL in f]
+check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0]
+      and not any(_ARITH_LABEL in f for f in _sr120),
       "injection 13o. check 7 fails on the derivation's own statement of the root's size, "
       "naming this gate, the anchor, the field and BOTH values — while the SECOND anchor "
       "of the same derivation, one clause away, is correct and is not reported")
@@ -3429,11 +3443,13 @@ check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0],
 # boundary. Fixed in the same pass rather than left hand-maintained one comma from a
 # gated figure, which is the arrangement that produced this ticket.
 inj, was = bend_figure(world, _ARITH_LABEL, 2, "1")
+_sr120b = check_self_report(inj)
 check(inj["gate"] != world["gate"] and was != "1"
-      and root_budget_rule(inj)[0] == _RULE120,
+      and root_budget_rule(inj)[0] == _RULE120
+      and not any("root_chars" in f for f in _sr120b),
       "injection 13o2. injection is well-formed: the FLOORED size moved while the size it "
       "is floored from, in the same sentence, did not")
-hits = [f for f in check_self_report(inj) if "root_floor" in f]
+hits = [f for f in _sr120b if "root_floor" in f]
 check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0]
       and _fmt_nums(_root_floor(world)) in hits[0],
       "injection 13o2. check 7 fails on the floored size too, and prints the value the "
@@ -3460,10 +3476,13 @@ check(any(_DERIV_LABEL in f and "root_chars" in f for f in sr)
       and any(_ARITH_LABEL in f and "root_chars" in f for f in sr),
       "injection 13o3. check 7 goes red at both anchors when the root moves and the "
       "derivation does not, which is the criterion this ticket is written against")
-check(not any("root_floor" in f for f in sr),
-      "injection 13o3. ...and the FLOORED size does not move, because in band the size is "
-      "pinned to one boundary's width — so that figure can only go stale behind a check 8 "
-      "failure, and is the belt to the size figure's braces rather than a second alarm")
+check(not any("root_floor" in f for f in sr)
+      and (len(inj["root"]) // _RULE120.boundary
+           == len(world["root"]) // _RULE120.boundary),
+      "injection 13o3. ...and the FLOORED size does not move across THIS in-band edit, "
+      "because the constant in the tree is check 8's own recommendation and its in-band "
+      "window therefore straddles no boundary — so that figure is the belt to the size "
+      "figure's braces here, and a hand-set budget is what would make it a second alarm")
 _synced120, _changes120, _ok120 = sync_world(inj)
 check(_ok120 and any(_DERIV_LABEL in c for c in _changes120)
       and any(_ARITH_LABEL in c for c in _changes120)
