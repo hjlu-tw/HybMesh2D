@@ -25,7 +25,9 @@ Checks:
  5. HYBMESH_LOG_LEVEL raises the level so best-effort diagnostics are reachable.
  6. Log records carry the module name, so a message can be traced to its site.
  7. A geometry file that EXISTS and cannot be read is named, with its
-    exception, by all FOUR readers that open one (#117).
+    exception, by all FIVE readers that open one (#117's four, plus the mesh
+    panel's auto-sizing hint reader, added by #118 and driven here by #127 --
+    which is also when this sentence stopped saying FOUR).
  8. ...while a geometry file that is simply ABSENT still produces no record.
 
 Check 2 is about the HANDLER, not about one keyword (#118). Until then it matched
@@ -51,7 +53,7 @@ EVERY except clause on the pre-#117 tree, its `3 return` counting BARE returns
 only; the numbers above are re-derived here and printed by check 2 on every run
 rather than restated.
 
-Checks 7-8 are proved non-vacuous by five injections, the verdict read from the
+Checks 7-8 are proved non-vacuous by seven injections, the verdict read from the
 EXIT CODE and with a negative control on the unmutated tree (this repo has
 scored a crashed injection as a bite that never happened):
 
@@ -59,7 +61,13 @@ scored a crashed injection as a bite that never happened):
   * the selection highlight reverted to ``except Exception: return`` -> 7 red
   * the bbox scan's fallback reverted to ``except OSError: pass``     -> 7 red
   * the loader thread's print replaced by ``pass``                    -> 7 red
+  * the hint reader's handler made silent (#127)                      -> 7 red
+    -- and red ALONE: its body was written ``pts = None; return pts``, which is
+    blind spot (a) below, so the run's only two FAILs are check 7's own and the
+    keyword scan contributed nothing. The literal pre-#118 shape
+    (``except Exception: return None``) reddens check 7 too, and check 2 with it.
   * the BC overlay made to log the ABSENT case as well               -> 8 red
+  * the hint reader made to log the ABSENT case as well (#127)        -> 8 red
 
 Check 2 has injections of its own, in two tiers. In process: each of the six
 discarding bodies fires on its own, three at once are all reported in one run, an
@@ -709,6 +717,26 @@ check("unreadable.dat" in loader_out and _exc_head in loader_out,
       f"7. the preview loader thread names it and the exception ({_exc_head}), "
       f"on stdout")
 
+# The FIFTH opener (#118). It is a module-level function, so it is driven
+# DIRECTLY -- no panel, no widget tree -- and its two callers (the auto
+# far-field hint and the auto surface hint) share it, so one call covers both.
+# Its handler was correct by reading from the day it was written; what was
+# missing until #127 is the thing #117 exists to insist on, that the proof is
+# what the reader WRITES.
+from app.views.panels.mesh_sizing_mixin import _hint_points  # noqa: E402
+
+before = len(read_log())
+check(_hint_points(unreadable, "auto far-field hint") is None,
+      "7. the auto-sizing hint reader still answers None on an unreadable file")
+hint_log = read_log()[before:]
+check("unreadable.dat" in hint_log and "auto far-field hint" in hint_log
+      and "left OUT of the estimate" in hint_log,
+      "7. the auto-sizing hint reader names it, and says the geometry is left "
+      "out (the fifth caller that OPENS)")
+check("hybmesh.gui.views.panels.mesh_sizing_mixin" in hint_log
+      and "Traceback" in hint_log,
+      "7. ...from its own module, with the exception (exc_info=True)")
+
 # ── 8. a geometry that is simply ABSENT stays silent ──────────────────────
 # The change must DISTINGUISH the two cases, not make both noisy: a file the
 # user has not made yet is answered by readable_geom_path and never reaches an
@@ -728,8 +756,9 @@ with contextlib.redirect_stdout(_buf):
     mcv.highlight_geometry_file(absent)
     ctl._scan_geometry_files(gone_cfg)
     GeomLoaderThread([absent]).run()
+    _hint_points(absent, "auto surface hint")
 check(len(read_log()) == before and _buf.getvalue().strip() == "",
-      "8. an absent geometry produces no record from any of the four")
+      "8. an absent geometry produces no record from any of the five")
 
 # The fixture is chmod-000 (or a directory): leave nothing undeletable behind.
 if os.path.isfile(unreadable):

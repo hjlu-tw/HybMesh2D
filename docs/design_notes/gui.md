@@ -1476,7 +1476,8 @@ check 11 comment, a FOURTH home of it that the first pass of this very fix misse
 numbers again, to SEVEN and FIVE, by converting the auto-sizing hint reader; see "a standard that
 bans one KEYWORD" above. A count restated in four places is a count that goes stale in four places,
 and this one now has done so twice — but the alternative, deriving it in a gate, would pin the
-CALLERS of a verb rather than its contract, and check 12 already holds the reach.) Of the four, the
+CALLERS of a verb rather than its contract, and check 12 already holds the reach. #127 is where
+the three statements that still said FOUR were corrected: "Five, not four", below.) Of the four, the
 loader thread
 named both halves (`[preview] skipping malformed geometry '<f>': <e>`) and the bbox scan named the
 file only on the branch where its fallback `open` SUCCEEDED — when the file is genuinely unreadable
@@ -1497,16 +1498,36 @@ these two spell it `continue` and `return` — the back door #118 then closed, b
 #117 fixed the three rather than softening the claim, all at `warning`: the standard's grade for a
 failure that silently degrades what the user asked for, which is what an overlay that does not
 draw, a highlight that does not appear and a geometry silently absent from the bbox each are. The
-proof is what all four RECORD, not what they return — `tests/test_silent_exceptions.py` 7–8 drive
+proof is what all five RECORD, not what they return — `tests/test_silent_exceptions.py` 7–8 drive
 the real `AppController` against a real unreadable file (chmod-000, falling back to a directory
 where a file should be for a user who can read anything) and read `results/logs/gui.log` — plus the
 loader thread's stdout, captured rather than read off the source, since "we looked and it names the
 file" is the evidence this ticket exists to replace. Check 8
 is the other half and the reason this is a fix rather than a noise increase: an ABSENT geometry
-must still produce NO record, so the two cases stay distinguishable. FIVE injections, verdict from
+must still produce NO record, so the two cases stay distinguishable. SEVEN injections, verdict from
 the EXIT CODE with a negative control on the unmutated tree: reverting each of the three handlers
-bites its own check, the loader thread's print replaced by `pass` bites the fourth, and making the
-BC overlay log the absent case too reddens check 8.
+bites its own check, the loader thread's print replaced by `pass` bites the fourth, making the
+BC overlay log the absent case too reddens check 8, and #127's two below — the hint reader
+silenced, and the hint reader made to log the absent case — bite 7 and 8 respectively.
+
+**Five, not four — and the sentence above said FOUR from #118 until #127.** #118 added the
+fifth opener, `mesh_sizing_mixin._hint_points`, and left every statement of the count behind
+INSIDE the commit that made it wrong: this paragraph, check 7's own summary and check 8's message
+all still read FOUR, while the rule file and the verb's docstring read FIVE — two numbers for one
+set, with the gate holding the wrong one. Worse than the figure, the fifth reader was driven by
+NOTHING: run before this fix, `grep -rn '_hint_points' tools/PreProcessor/tests/` matched
+nothing at all, so its
+handler was correct only by READING — which is the state the BC overlay's handler was in before
+#112 moved what reaches it, i.e. the exact argument this whole section exists to make. #127 drove
+it the way the other four are driven (it is a module-level function, so the check calls it
+directly — no panel, no widget tree) and corrected the three sentences. Of its own two injections
+the sharper is the one that reddens check 7: the silent handler was written
+`pts = None; return pts`, which check 2 cannot see (blind spot (a)), so the run's ONLY two FAILs
+were check 7's — proving that what holds this reader is check 7 itself and not the keyword scan
+that happens to sit beside it. The count stays PROSE rather than joining the `--sync` ledger:
+deriving it would mean resolving five call sites of one verb through an AST, which pins a verb's
+CALLERS rather than its contract and is past the "derivable in one walk" test #101 set; a third
+staleness is when that trade changes.
 
 No plural form was added, because only one of the SEVEN would have written the comprehension — the
 Run-All readiness check, the one that opens nothing (the count here read "five" until #117
