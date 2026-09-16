@@ -597,9 +597,12 @@ def shipped_config(name):
     and each copy carries something the others do not: this one's key-driven
     rewrite, the only one that can retarget a config it was not written for, the
     C-grid's `bc_geom` override and the O-grid's `topo`/`thickness` arguments.
-    What three copies of one shape cost is recorded in `qlines`'s own note next door: there
-    were four copies of one parser before #81, and that ticket had to make the
-    identical one-character fix in two of them. #115's Out of Scope said this
+    What three copies of one shape cost is recorded at `qlines`, in
+    `test_multiblock_quality_surface.py`: there were four copies of one parser
+    before #81, and that ticket had to make the identical one-character fix in two
+    of them — the figure belongs to that note and not to the `quality` wrappers,
+    which state the same event with different numbers (two copies, fixed in
+    both). #115's Out of Scope said this
     residue was "already recorded as residue at the code"; it was recorded at ONE
     of the three (#114's review, at `shipped_config`) and nowhere else, which is
     what let that claim stand unchallenged for the length of a batch.
