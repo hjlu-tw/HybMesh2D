@@ -476,8 +476,9 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
 sys.path.insert(0, _HERE)
-# Imported, not copied: each shipped config is retargeted by the gate that owns
-# it, which also fails loudly if the file stops containing what it rewrites.
+# Imported, not copied: each of these names which topology, geometries and spacing
+# its own case wants, and hands the rest to the ONE retargeter (#126), which fails
+# loudly rather than writing into the repo when the config stops resolving.
 from test_multiblock_cgrid_surface import base_config  # noqa: E402
 from test_multiblock_ogrid_surface import base_config as ogrid_config  # noqa: E402
 # The ONE parser for the machine-readable quality line, in the gate that owns it.

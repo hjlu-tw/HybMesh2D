@@ -252,7 +252,7 @@ def quality(out):
     return _qlines(out)[0] if _qlines(out) else {}
 
 
-def base_config(topo=_TOPO, thickness=None, geom_dir=_GEOM):
+def base_config(topo=None, thickness=None, geom_dir=None):
     """The shipped O-grid config, retargeted at a temp output stem.
 
     Read from disk rather than rebuilt, for the reason the cavity golden case
@@ -260,17 +260,22 @@ def base_config(topo=_TOPO, thickness=None, geom_dir=_GEOM):
     that composed an equivalent one would leave an edit to the shipped file
     invisible here.
 
-    THE RETARGETING RULE ITSELF IS `mb_shipped_config.shipped_config`; what stays
-    here is the O-grid's share of it — which topology, which directory the two
-    circles come from, and the wall spacing checks 6 and 7 drive. That rule was
-    written out in full here, in the C-grid gate and in the smoothing gate until
-    #126 collapsed the three; the name survives because four other files import
-    it.
+    THE RETARGETING RULE ITSELF IS `mb_shipped_config.shipped_config` (#126, which
+    collapsed the three copies of it). What stays here is the O-grid's share: the
+    wall spacing checks 6 and 7 drive, the topology they mutate, and the geometry
+    directory a caller may point elsewhere.
+
+    EVERY ONE OF THE THREE DEFAULTS TO NOTHING rather than to this file's `_TOPO`
+    and `_GEOM`, which is not a tidy-up: a default that names the shipped value
+    asks for it BY NAME, so the gate would go on driving the same topology after
+    the shipped config was repointed at another file — the blindness the needle
+    list it replaced did not have. Unset, the seam resolves whatever the config
+    says. #126's review found it.
     """
     return shipped_config(
         "multiblock_ogrid",
-        paths={"MESH_TOPOLOGY_FILE": topo},
-        dirs={"GEOM_FILE": geom_dir},
+        paths=({"MESH_TOPOLOGY_FILE": topo} if topo is not None else None),
+        dirs=({"GEOM_FILE": geom_dir} if geom_dir is not None else None),
         overrides=({"BL_INITIAL_THICKNESS": thickness}
                    if thickness is not None else None))
 

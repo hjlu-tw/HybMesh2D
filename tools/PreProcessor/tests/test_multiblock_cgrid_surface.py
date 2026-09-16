@@ -467,23 +467,28 @@ def quality(out):
     return _qlines(out)[0] if _qlines(out) else {}
 
 
-def base_config(topo=_TOPO, bc_geom=None):
+def base_config(topo=None, bc_geom=None):
     """The shipped C-grid config, retargeted at a temp output stem.
 
     Read from disk rather than rebuilt: config/multiblock_cgrid.dat is
     documentation a user runs, and a test that composed an equivalent one would
     leave an edit to the shipped file invisible here.
 
-    THE RETARGETING RULE ITSELF IS `mb_shipped_config.shipped_config`; what stays
-    here is the C-grid's share of it — which topology, where the geometries are,
-    and the `BC_GEOM` fallback check 6 overrides. That rule was written out in
-    full here, in the O-grid gate and in the smoothing gate until #126 collapsed
-    the three; the name survives because four other files import it.
+    THE RETARGETING RULE ITSELF IS `mb_shipped_config.shipped_config` (#126, which
+    collapsed the three copies of it). What stays here is the C-grid's share: the
+    `BC_GEOM` fallback check 6 overrides, and the topology checks 7 and 9 swap for
+    a mutated one.
+
+    `topo` DEFAULTS TO NOTHING RATHER THAN TO `_TOPO`, which is not a tidy-up. The
+    first draft passed `_TOPO` always, so this gate asked for the shipped topology
+    BY NAME and would have gone on meshing it after the shipped config was
+    repointed at another file — the blindness the needle list it replaced did not
+    have. Left unset, the seam resolves whatever the config says, and #126's review
+    is what found it.
     """
     return shipped_config(
         "multiblock_cgrid",
-        paths={"MESH_TOPOLOGY_FILE": topo},
-        dirs={"GEOM_FILE": _GEOM},
+        paths=({"MESH_TOPOLOGY_FILE": topo} if topo is not None else None),
         overrides=({"BC_GEOM": bc_geom} if bc_geom is not None else None))
 
 

@@ -2993,16 +2993,31 @@ SUBSTRINGS and raised when one stopped appearing; the smoothing gate's copy read
 only form that can retarget a config it was not written for, and it is the form that survived.
 The per-gate variation — a topology, a BC geometry, a wall thickness, a geometry directory —
 rides on `paths=` / `dirs=` / `overrides=`, each keyed by config key, and the two `base_config`
-names survive as four-line wrappers because four other files import them. The needle lists'
+names survive as wrappers because three other gates import them by name and
+`tools/scripts/golden_mesh.py` reaches them as `mod.base_config()`. The needle lists'
 guarantee survives as something stronger: a retarget the caller asks for under a key the config
 does not have RAISES, so an argument can no more go silently inert than a needle could.
 
 **AND FOUR GUARDS STOPPED BEING A HAND PROBE.** "Probed by hand, 2026-09-11" was the record for
 a path key that stops resolving, an unknown key carrying a resolving path, a missing
 `OUTPUT_FILENAME` and a `MESH_MODE` that is no longer 1 — because a check that edits a shipped
-config under the gate that reads it is a hazard this repo does not ship. The `repo=` argument is
-what removed the hazard: the edit lands in a temp tree, and all four are gate checks that assert
-the raise NAMES the file and the key.
+config under the gate that reads it is a hazard this repo does not ship. What removed the hazard
+is the helper reading `_REPO` at CALL time, so the gate can point it at a temp checkout; all four
+are gate checks now, each asserting the raise NAMES the file and the key. **NOT the `repo=`
+argument** the first draft shipped and three passages credited: it had zero callers — the
+wrappers the gates call take no such argument — and both review axes found the credit and the
+dead parameter together. It is deleted.
+
+**AND THE COLLAPSE MADE TWO GATES BLIND TO A REPOINTED PATH, which is the finding worth keeping.**
+Both wrappers' first draft defaulted `topo` to their own `_TOPO` constant and passed it always, so
+each asked for the shipped topology BY NAME: repoint `config/multiblock_cgrid.dat` at another
+topology and the gate would go on meshing the old one and report PASS — a blindness the needle
+list it replaced did NOT have, arriving inside the refactor that was supposed to preserve that
+guarantee. A retarget is now passed only when the caller means it, the seam resolving whatever the
+config says otherwise, and check 2b measures it with the first-draft wrapper kept beside it as the
+negative control: same checkout, same edit, and it still reports the shipped file. **A value edit
+cannot see this** — check 2 changes what a key SAYS, and this is about which key the gate asked
+for — which is why one check was not enough.
 
 **THE GATE FOUND ITS OWN SUBJECT MISSING ON DAY ONE.** The derivation that counts retargeters
 reads `@STEM@`, and #126's helper spells it once as a module constant — so the first run derived

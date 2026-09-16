@@ -43,7 +43,10 @@ Checks:
     `_REPO` is pointed at it, and each accessor must return the EDITED value. A
     composed stand-in is run through the identical assertion as the negative
     control and must fail it — otherwise the check would pass on a helper that had
-    stopped reading the file.
+    stopped reading the file. Check 2b is the half a VALUE edit cannot reach: a
+    config REPOINTED at another topology, which the wrappers' first draft would
+    have ignored, because each defaulted its `topo` argument to its own copy of the
+    shipped path and so asked for that file by name.
  3. THE PER-GATE VARIATION LANDS. `bc_geom`, `thickness` and `topo` each reach the
     text, and the shipped value each replaces is gone from it. This is what the
     collapse had to absorb rather than flatten: the three copies took different
@@ -56,7 +59,9 @@ Checks:
     asked for under a key the config does not have. Four of those were a HAND PROBE
     recorded in a comment (2026-09-11) rather than a check, because editing a
     shipped config under the gate that reads it is a hazard this repo does not ship.
-    The `repo=` argument is what removed the hazard: the edit lands in a temp tree.
+    What removed the hazard is the seam reading `_REPO` at CALL time, so `_Repo`
+    below can point it at a temp tree — not the `repo=` argument #126's first draft
+    shipped, which had no callers and was deleted by its own review.
  5. THE ARGUMENTS REFUSE WHAT THEY CANNOT MEAN — a directory for a key that holds
     no path, an override for a key the retargeting rule owns, a key given twice
     under two arguments, one path for a key the config repeats. A caller that got
@@ -67,12 +72,12 @@ Checks:
     three callers in a temp tree, with a SECOND copy added in each spelling of
     `_SPELLINGS`: the plain one, a concatenated literal, an f-string, a method
     reading `self._CONF`, a retargeter nested in a factory, and one naming the
-    placeholder through a module constant. Every one of those is a hole this
-    derivation was once walked through — four found by #124's Standards review
-    WRITING them rather than reading the rule, and the constant found by the SEAM
-    ITSELF, which spells the placeholder once as `PLACEHOLDER` and was invisible
-    here on the day it landed: the gate reported a tree with no retargeter in it
-    and passed its own injections. Each puts a RUNNER beside the copy as the
+    placeholder through a module constant. `plain` is the shape the derivation was
+    written for; every OTHER one is a hole it was once walked through — four found
+    by #124's Standards review WRITING them rather than reading the rule, and the
+    constant found by the SEAM ITSELF, which spells the placeholder once as
+    `PLACEHOLDER` and was invisible here on the day it landed: the gate reported a
+    tree with no retargeter in it and passed its own injections. Each puts a RUNNER beside the copy as the
     negative control, since a rule loose enough to catch them all would catch the
     runner too and report a set several times its real size. Injection 0 is the
     unmutated control and injection 2 deletes the seam, because a set of zero is
@@ -347,9 +352,20 @@ def _checkout(tmp, names, edit=None):
     os.makedirs(os.path.join(root, "config"), exist_ok=True)
     for name in names:
         rel = os.path.join("config", name + ".dat")
-        shutil.copyfile(os.path.join(_REPO, rel), os.path.join(root, rel))
-        with open(os.path.join(root, rel), encoding="utf-8") as f:
+        with open(os.path.join(_REPO, rel), encoding="utf-8") as f:
             text = f.read()
+        if edit is not None:
+            old, new = edit
+            if text.count(old) != 1:
+                raise AssertionError("checkout setup: %r appears %d times in %s"
+                                     % (old, text.count(old), rel))
+            text = text.replace(old, new)
+        with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
+            f.write(text)
+        # STAGED FROM THE EDITED TEXT, not from the shipped one: an edit that
+        # REPOINTS a path key has to bring its new target with it, or check 2's
+        # repoint case would fail as "missing file" and prove nothing. A value the
+        # repo does not have is left absent on purpose — that is check 4's fixture.
         for line in text.splitlines():
             parts = line.split()
             if parts and parts[0] in mb_shipped_config._MB_PATH_KEYS:
@@ -358,13 +374,6 @@ def _checkout(tmp, names, edit=None):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 if os.path.isfile(os.path.join(_REPO, val)):
                     shutil.copyfile(os.path.join(_REPO, val), dst)
-        if edit is not None:
-            old, new = edit
-            if text.count(old) != 1:
-                raise AssertionError("checkout setup: %r appears %d times in %s"
-                                     % (old, text.count(old), rel))
-            with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
-                f.write(text.replace(old, new))
     return root
 
 
@@ -398,8 +407,11 @@ def _raises(fn):
     return None
 
 
-def _composed(name, **kw):
+def _composed(name):
     """The NEGATIVE CONTROL for check 2: a retargeter that does not read the file.
+
+    It takes the config's name and IGNORES it, which is the whole defect drawn in
+    one line.
 
     This is what the collapse must not have ended in, spelled out so the check
     that forbids it is measured against something rather than asserted. It is
@@ -408,6 +420,19 @@ def _composed(name, **kw):
     """
     return ("MESH_MODE 1\nBC_GEOM wall\nEXPORT_VTK 1\n"
             "OUTPUT_FILENAME " + _PLACEHOLDER + ".vtk\n")
+
+
+def _pinned(topo, geom_dir):
+    """The NEGATIVE CONTROL for check 2b: #126's first-draft C-grid wrapper.
+
+    It names the shipped topology and the shipped geometry directory in its own
+    defaults, so it retargets them to themselves and never asks the config. Kept
+    as a stand-in rather than described, because a check that only the CURRENT
+    code can fail is a check nothing has ever seen go red.
+    """
+    return shipped_config("multiblock_cgrid",
+                          paths={"MESH_TOPOLOGY_FILE": topo},
+                          dirs={"GEOM_FILE": geom_dir})
 
 
 def behaviour_checks():
@@ -440,6 +465,51 @@ def behaviour_checks():
                 text = fn()
             check("2. an edit to config/%s.dat reaches %s" % (name, who),
                   _PROBE in text)
+        # ── 2b. an edit that REPOINTS a path key is followed too ───────────
+        #
+        # The other half of "visible from the gate that drives it", and the one
+        # #126's first draft got wrong: both wrappers defaulted their `topo`
+        # argument to their own `_TOPO` constant, so they asked for the shipped
+        # topology BY NAME and would have gone on meshing it after the config was
+        # repointed at another file. A value edit (check 2) cannot see that — it
+        # is not the value being retargeted. Left unset, the seam resolves what the
+        # config says, and the caller's override is now a deliberate act.
+        repoints = [
+            ("multiblock_cgrid", "cgrid_naca0012.json", cgrid.base_config),
+            ("multiblock_ogrid", "ogrid_circle.json", ogrid.base_config),
+        ]
+        other = "examples/topology/hgrid_blocks.json"
+        for i, (name, shipped, fn) in enumerate(repoints):
+            root = _checkout(
+                os.path.join(tmp, "r%d" % i), [name],
+                edit=("\nMESH_TOPOLOGY_FILE examples/topology/" + shipped + "\n",
+                      "\nMESH_TOPOLOGY_FILE " + other + "\n"))
+            with _Repo(root):
+                text = fn()
+                pinned = fn(topo=os.path.join(_REPO, "examples", "topology", shipped))
+            got = [ln.split()[1] for ln in text.splitlines()
+                   if ln.startswith("MESH_TOPOLOGY_FILE")][0]
+            check("2b. config/%s.dat repointed at another topology is FOLLOWED by "
+                  "%s, not pinned by its default (%s)"
+                  % (name, fn.__module__ + ".base_config", os.path.basename(got)),
+                  got.endswith("hgrid_blocks.json"))
+            got = [ln.split()[1] for ln in pinned.splitlines()
+                   if ln.startswith("MESH_TOPOLOGY_FILE")][0]
+            check("2b. ...and an EXPLICIT `topo=` still overrides it, so following "
+                  "the config is the default and not the only behaviour",
+                  got.endswith(shipped))
+            if name != "multiblock_cgrid":
+                continue
+            with _Repo(root):
+                draft = _pinned(os.path.join(_REPO, "examples", "topology", shipped),
+                                os.path.join(_REPO, "examples", "geometries"))
+            got = [ln.split()[1] for ln in draft.splitlines()
+                   if ln.startswith("MESH_TOPOLOGY_FILE")][0]
+            check("2b. ...and the FIRST DRAFT of this wrapper ignores that same "
+                  "edit, so the check is measuring the default rather than "
+                  "asserting it (%s)" % os.path.basename(got),
+                  got.endswith(shipped))
+
         # THE NEGATIVE CONTROL. Same checkout, same assertion, a composed helper:
         # it must FAIL, or check 2 above is passing on something it cannot see.
         root = _checkout(os.path.join(tmp, "neg"), ["multiblock_square"],
@@ -538,11 +608,12 @@ def behaviour_checks():
 #
 # A SECOND COPY, written the way a second copy always arrives: a gate that needs
 # one more thing than the seam offers and writes twenty lines instead of an
-# argument. Five spellings, four of which the first version of `_emits_placeholder`
-# missed — found by the Standards review of #124 WRITING them rather than by
-# reading the rule. They are injected as SHAPES: what each asserts is that the
-# derivation SEES the copy, because a copy it cannot see leaves this gate green
-# while the set it reports is wrong.
+# argument. `plain` is the shape the derivation was written for; every OTHER key
+# here is a spelling it once missed — four found by the Standards review of #124
+# WRITING them rather than reading the rule, and `constant` by the seam itself.
+# They are injected as SHAPES: what each asserts is that the derivation SEES the
+# copy, because a copy it cannot see leaves this gate green while the set it
+# reports is wrong.
 _SPELLINGS = {
     "plain": (
         "import os\n"
@@ -648,7 +719,8 @@ def injections():
               % sorted(_spell(h) for h in hits),
               [_spell(h) for h in hits] == [_SEAM])
 
-        # 1. a second copy, in five spellings, each beside the runner that must
+        # 1. a second copy, in every spelling of `_SPELLINGS`, each beside the
+        #    runner that must
         #    NOT be counted as a third.
         for i, (label, src) in enumerate(sorted(_SPELLINGS.items())):
             tag = "1" + chr(ord("a") + i)

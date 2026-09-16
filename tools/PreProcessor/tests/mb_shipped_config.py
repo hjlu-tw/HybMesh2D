@@ -14,10 +14,12 @@ one shape written three times — read the shipped ``.dat``, repoint its paths a
 this checkout, retarget its output at ``@STEM@``, raise by name when a rewrite
 stops landing — diverging in what they retargeted and in how they said a rewrite
 had stopped landing. #124 recorded the duplication at all three; #126 collapsed
-it here. The two ``base_config`` names survive as four-line wrappers, because
-four other files import them and the per-gate variation (a topology, a BC
-geometry, a wall thickness, a geometry directory) belongs to the gate that knows
-what it means, not to this signature.
+it here. The two ``base_config`` names survive as wrappers, because three other
+gates import them by name (``test_multiblock_block_field``,
+``test_multiblock_quality_gate``, ``test_multiblock_smooth_surface``) and
+``tools/scripts/golden_mesh.py`` reaches them as ``mod.base_config()``; the
+per-gate variation (a topology, a BC geometry, a wall thickness, a geometry
+directory) belongs to the gate that knows what it means, not to this signature.
 
 RETARGETED BY KEY, NOT BY A LIST OF NEEDLES. The two ``base_config``s each
 carried a list of path substrings and raised when one stopped appearing; the
@@ -38,11 +40,12 @@ trust.
 
 ALL FIVE GUARDS ARE GATE CHECKS SINCE #126. They used to be a hand probe recorded
 in a comment (2026-09-11, four of them), because a check that edits a shipped
-config under the gate that reads it is a hazard this repo does not ship. With
-``repo=`` the edit happens in a TEMP CHECKOUT instead, so the raises are injected
-rather than remembered: a path key that stops resolving, an unknown key carrying a
-resolving path, a missing ``OUTPUT_FILENAME``, a ``MESH_MODE`` that is no longer
-1, and a supplied retarget whose key is absent.
+config under the gate that reads it is a hazard this repo does not ship. What
+removed the hazard is ``_REPO`` being read at CALL time: the gate rebinds it to a
+temp checkout, the edit lands there, and the raises are injected rather than
+remembered — a path key that stops resolving, an unknown key carrying a resolving
+path, a missing ``OUTPUT_FILENAME``, a ``MESH_MODE`` that is no longer 1, and a
+supplied retarget whose key is absent.
 
 Known blind spots, stated rather than pretended away:
 
@@ -67,18 +70,23 @@ from __future__ import annotations   # local python3 is 3.9; CI is 3.11
 import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# Rebindable on purpose: `test_shipped_config_seam.py` points it at a temp
-# checkout to prove an edited shipped config is visible from the real gates, which
-# is the one thing a `repo=` argument threaded through four wrappers could not
-# prove — the wrappers do not take one.
+# READ AT CALL TIME, AND REBINDABLE ON PURPOSE: `test_shipped_config_seam.py`
+# points it at a temp checkout to prove an edited shipped config is visible from
+# the REAL gates. A `repo=` argument would not prove that — the wrappers the gates
+# actually call take no such argument, and threading one through them would be an
+# API the tree has no other use for. #126's first draft shipped that argument with
+# zero callers, and three passages crediting it with the hazard this line removes.
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 
 # Every key whose value is a path into the checkout. Not a closed list: see the
 # sweep above, which is what catches the key that should have been added here.
 _MB_PATH_KEYS = ("MESH_TOPOLOGY_FILE", "GEOM_FILE", "DOMAIN_FILE")
 
-# The output stem the caller substitutes. Spelled here once; `run_case` in each
-# gate consumes it with `.replace(...)`.
+# The output stem the caller substitutes. Every consumer spells it as a literal in
+# its own `.replace(...)` — five of them, including `tools/scripts/golden_mesh.py`,
+# which is outside this package and cannot import from it. This name is what the
+# WRITER uses, and `test_shipped_config_seam.py` follows it because a shared
+# helper naming its placeholder is the spelling a second copy is most likely to use.
 PLACEHOLDER = "@STEM@"
 
 # Keys this module owns outright. A caller asking to override one of these is
@@ -90,7 +98,7 @@ def _fail(msg):
     raise AssertionError(msg)
 
 
-def shipped_config(name, paths=None, dirs=None, overrides=None, repo=None):
+def shipped_config(name, paths=None, dirs=None, overrides=None):
     """``config/<name>.dat``, read from disk and retargeted at this checkout.
 
     Every path key is repointed at an absolute path, ``OUTPUT_FILENAME`` at
@@ -107,10 +115,10 @@ def shipped_config(name, paths=None, dirs=None, overrides=None, repo=None):
       ``overrides``  a whole value for a non-path key, e.g. ``{"BC_GEOM": "inlet"}``
                      or ``{"BL_INITIAL_THICKNESS": "1e-3"}``.
 
-    ``repo`` is where ``config/`` and every relative value resolve; it defaults to
-    this checkout.
+    Where ``config/`` and every relative value resolve is the module's ``_REPO``,
+    read here rather than captured, so a gate can point it at a temp checkout.
     """
-    repo = repo or _REPO
+    repo = _REPO
     paths = dict(paths or {})
     dirs = dict(dirs or {})
     overrides = dict(overrides or {})
