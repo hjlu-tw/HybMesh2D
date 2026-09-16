@@ -30,6 +30,10 @@ import glob
 import os
 import sys
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 # The loader's search-path variable for this platform.
 LIB_PATH_VAR = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
 
@@ -65,6 +69,15 @@ def gmsh_lib_dir() -> str | None:
     try:
         import gmsh  # noqa: PLC0415  (probe only; import cost is paid once)
     except Exception:
+        # DEBUG rather than warning, and not silent. "gmsh is not installed" is
+        # a legitimate answer here and the callers handle it -- mesher_env()
+        # simply adds nothing to the loader path, and the baked rpath may well
+        # be right. But the two cases look identical from outside: a missing
+        # module and a gmsh whose own import blows up both arrive as None, and
+        # the second is exactly the "meshing does not work and nothing says
+        # why" this standard exists for. The exception separates them.
+        _log.debug("gmsh is not importable, so its library directory cannot be "
+                   "probed", exc_info=True)
         return None
 
     mod_file = getattr(gmsh, "__file__", None)

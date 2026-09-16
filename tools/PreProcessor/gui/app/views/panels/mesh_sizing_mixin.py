@@ -7,6 +7,7 @@ _domain_patch_dialog/_domain_patch_body, _sizing_form and domain_source_changed.
 toggles (role / transition / convex) and the _mesh_sublabel section-label
 factory relocated from the panel body."""
 from __future__ import annotations
+import numpy as np
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox, QLabel
 from app.services.field_spec import by_attr, reads_in_mode
@@ -15,6 +16,42 @@ from app.utils import keep_on_top, BC_COLORS, DEFAULT_BC_COLOR
 from app.views.panels.field_widgets import read_widget, set_spec_row_visible
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
+from app.services.geom_path_identity import readable_geom_path
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
+
+def _hint_points(entry: str, what: str):
+    """The points of a listed geometry as an (N, >=2) array, or None with the
+    failure recorded — ONE reader for both hint scans below.
+
+    It RESOLVES before it opens. The list widget carries the stored
+    ``MeshConfig.geom_files`` spelling, which is repo-relative for a file inside
+    the repo, so ``np.loadtxt(entry)`` answers about the PROCESS CWD — the defect
+    `.claude/rules/gui-panels-config.md` names in "a reader RESOLVES an entry
+    before opening it", and the one that makes the grade below honest rather than
+    merely consistent: launched from elsewhere, a geometry that is really there
+    would otherwise be read as one the user has not produced yet.
+
+    That is also the grade, and it is #117's distinction rather than a level
+    chosen per site. A geometry that is not there is NOT an error:
+    ``readable_geom_path`` answers "" and the hint falls back to its "computed at
+    mesh time" wording, so there is nothing to record and a note per repaint
+    would be noise. A file that IS there and will not read drops silently out of
+    the extent / the spacing average, so the number this panel SHOWS is wrong
+    rather than missing — and a wrong number nobody can trace is exactly what the
+    warning grade is for.
+    """
+    path = readable_geom_path(entry)
+    if not path:
+        return None
+    try:
+        return np.atleast_2d(np.loadtxt(path))
+    except Exception:
+        _log.warning("%s: could not read geometry %r; it is left OUT of the "
+                     "estimate", what, path, exc_info=True)
+        return None
 
 
 class MeshConfigSizingMixin:
@@ -149,10 +186,6 @@ class MeshConfigSizingMixin:
             ext = max(dx, dy)
             return ext if ext > 0 else None
         # Custom domain: read geometry bounds (prefer a Domain-role geometry).
-        try:
-            import numpy as np
-        except Exception:
-            return None
         domain_paths, other_paths = [], []
         for row in range(self.geom_list_widget.count()):
             it = self.geom_list_widget.item(row)
@@ -165,16 +198,13 @@ class MeshConfigSizingMixin:
         xmin = ymin = float("inf")
         xmax = ymax = float("-inf")
         for p in (domain_paths or other_paths):
-            try:
-                pts = np.atleast_2d(np.loadtxt(p))
-                if pts.size == 0 or pts.shape[1] < 2:
-                    continue
-                xmin = min(xmin, float(np.nanmin(pts[:, 0])))
-                xmax = max(xmax, float(np.nanmax(pts[:, 0])))
-                ymin = min(ymin, float(np.nanmin(pts[:, 1])))
-                ymax = max(ymax, float(np.nanmax(pts[:, 1])))
-            except Exception:
+            pts = _hint_points(p, "auto far-field hint")
+            if pts is None or pts.size == 0 or pts.shape[1] < 2:
                 continue
+            xmin = min(xmin, float(np.nanmin(pts[:, 0])))
+            xmax = max(xmax, float(np.nanmax(pts[:, 0])))
+            ymin = min(ymin, float(np.nanmin(pts[:, 1])))
+            ymax = max(ymax, float(np.nanmax(pts[:, 1])))
         if xmax > xmin or ymax > ymin:
             return max(xmax - xmin, ymax - ymin)
         return None
@@ -202,10 +232,6 @@ class MeshConfigSizingMixin:
         value the mesher's Auto Surface size resolves to (it averages the BL-front
         edge lengths, which equal the surface point spacing). None if it can't be
         determined (no boundary geometry / unreadable files)."""
-        try:
-            import numpy as np
-        except Exception:
-            return None
         total = 0.0
         count = 0
         for row in range(self.geom_list_widget.count()):
@@ -216,18 +242,15 @@ class MeshConfigSizingMixin:
             role = (it.data(self._ROLE_DATA) or {}).get("role")
             if role in ("seed", "farfield"):   # not body-fitted surfaces
                 continue
-            try:
-                pts = np.atleast_2d(np.loadtxt(p))
-                if pts.shape[0] < 2 or pts.shape[1] < 2:
-                    continue
-                d = np.diff(pts[:, :2], axis=0)
-                seg = np.sqrt((d * d).sum(axis=1))
-                seg = seg[np.isfinite(seg) & (seg > 0)]   # skip NaN piece-breaks
-                if seg.size:
-                    total += float(seg.sum())
-                    count += int(seg.size)
-            except Exception:
+            pts = _hint_points(p, "auto surface hint")
+            if pts is None or pts.shape[0] < 2 or pts.shape[1] < 2:
                 continue
+            d = np.diff(pts[:, :2], axis=0)
+            seg = np.sqrt((d * d).sum(axis=1))
+            seg = seg[np.isfinite(seg) & (seg > 0)]   # skip NaN piece-breaks
+            if seg.size:
+                total += float(seg.sum())
+                count += int(seg.size)
         return (total / count) if count else None
 
     def _update_auto_surface_hint(self, *args):

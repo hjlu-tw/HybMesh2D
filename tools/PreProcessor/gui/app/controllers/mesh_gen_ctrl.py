@@ -6,6 +6,7 @@ from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.services.geom_path_identity import readable_geom_path
+from app.services.logging_setup import get_logger
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.utils import (find_binary_executable, repo_root, confirm,
@@ -13,6 +14,8 @@ from app.utils import (find_binary_executable, repo_root, confirm,
 
 if TYPE_CHECKING:
     from app.models.mesh_config import MeshConfig
+
+_log = get_logger(__name__)
 
 
 def mesh_input_warning(cfg) -> str:
@@ -243,15 +246,27 @@ class MeshGenControllerMixin:
                 continue
             try:
                 pts = np.loadtxt(gp, ndmin=2)
-            except Exception:
+            except Exception as e:
                 # Fall back to a bare point count so at least the diagnostic prints.
                 try:
                     with open(gp) as _f:
                         npts = sum(1 for ln in _f if ln.strip())
                     self.log(
                         f"[geom] {os.path.basename(gf)} ({npts} points)")
+                    # No exc_info: this branch RECOVERED, and a traceback on a
+                    # path that succeeded is the noise the standard's `debug`
+                    # grade exists to avoid. The message names both halves.
+                    _log.debug("bbox scan: %r parsed by hand after %s", gp, e)
                 except OSError:
-                    pass
+                    # readable_geom_path said the file is THERE and neither
+                    # reader can open it: a genuine read failure, not a geometry
+                    # the user has not made yet. WARNING because this geometry
+                    # silently leaves the bbox the scan is computing, and the run
+                    # goes ahead (the pre-flight only refuses files that are
+                    # ABSENT). exc_info carries the open's error chained onto the
+                    # np.loadtxt one above it.
+                    _log.warning("bbox scan: could not read geometry %r: %s",
+                                 gp, e, exc_info=True)
                 continue
             self.log(
                 f"[geom] {os.path.basename(gf)} ({len(pts)} points)")

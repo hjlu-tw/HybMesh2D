@@ -175,9 +175,29 @@ def readable_geom_path(path: str, base: str | None = None) -> str:
     BC overlay asked by attempting the open and treating the failure as a skip,
     which is the same question with no separate call to name. Existence here is
     therefore ``os.path.exists`` -- not ``isfile``, not ``os.access``. A path
-    that exists and still cannot be read is the OPEN's failure, and every caller
-    already has a handler that names the file; answering it here would move a
-    diagnostic out of the layer that has the filename and the exception.
+    that exists and still cannot be read is the OPEN's failure, and it belongs
+    to the layer that HAS the filename and the exception. Of the SEVEN callers,
+    five open the file -- the mesh bbox scan, the preview loader thread, the BC
+    overlay, the selection highlight and the mesh panel's auto-sizing hint reader
+    (#118) -- and each of those five names the FILE and the EXCEPTION when the
+    open fails (four into ``results/logs/gui.log``; the loader thread onto
+    stdout, beside its own malformed-geometry line). The other two never open
+    one: the Run-All readiness check only asks whether anything is there, and
+    ``add_all_sessions_to_mesh`` adds the entry. So there is no open failure
+    anywhere for this verb to pre-empt, and answering readability here would move
+    a diagnostic AWAY from the layer holding both halves of it.
+
+    That clause was FALSE when #112 wrote it -- the BC overlay and the selection
+    highlight discarded the failure with no record, and the bbox scan's fallback
+    ended in ``except OSError: pass``. #117 fixed the readers rather than
+    softening the claim; why moving the question in here caused it is in
+    docs/design_notes/gui.md, "can turn a correct silence into a swallowed".
+    Gated by ``tests/test_silent_exceptions.py`` checks 7-8, against a real
+    unreadable file: what the READERS record, not what this verb returns. The
+    fifth arrived with #118: the two auto-sizing hint scans used to hand the RAW
+    entry to ``np.loadtxt`` and discard the failure, so they broke this count and
+    the resolve rule at once -- one reader (``mesh_sizing_mixin._hint_points``)
+    now serves both.
 
     The verb stays at the PATH layer. It does not load, and it does not absorb
     the preview loader's NaN / ``(N,2)`` validation, which is a separate concern

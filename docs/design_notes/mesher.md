@@ -1572,7 +1572,8 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   off the wrong quantity, and the review of this work is what caught it. Against the
   deviation that actually fired, 2.334e-12, the new floor is **2.6 orders** above
   (`1e-9 / 2.334e-12 = 428`); against the smallest deviation anyone would act on, `e_ff_up`
-  at 9.499e-6, it is **4.0 orders** below (`9.499e-6 / 1e-9 = 9499`). Six orders is true
+  at 9.499e-6, it is **4.0 orders** below (`9.499e-6 / 1e-9 = 9499`) — a figure #114 later
+  tightened to **3.8 orders** against the H-grid `v21`'s 5.90e-6, see below. Six orders is true
   only of the **~1e-15 pre-smoothing residual** whose collapse onto the floor causes the
   defect — a different quantity from the one the bar is compared against, and the one the
   ticket's sentence silently substituted. The margin either side is what matters and it is
@@ -1593,43 +1594,170 @@ kernel is WINSLOW, and since #83 that kernel is CONTROLLED".
   this repo's cases at their node counts, with nothing re-deriving it from the mesh it is
   applied to. Named as a blind spot in `.claude/rules/mesher-smoothing.md` and in the gate's
   own docstring, because the first symptom would be this same defect on a denser mesh
-  nobody has run yet. Gated by group 12 of
-  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`, which asserts BOTH
+  nobody has run yet. Gated by groups 12 and 13 of
+  `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`, which assert BOTH
   directions — the noise gone, the real deviations still warned about in the same run, and
   the two silenced edges BACK at a cap of 400 where their own deviation rises above the
   floor, so the bar mutes a quantity and never an edge. Two hand injections, dated
   2026-09-10 in that docstring: restoring 1e-12 turns the positive control red, raising the
-  floor to 1e-3 turns the NEGATIVE control red.
+  floor to 1e-3 turns the NEGATIVE control red. Three more, dated 2026-09-11 by #114 and
+  covering the other three shipped configs, are below.
 
-  **WHAT BOUNDS THE CONSTANT FROM ABOVE IS 9.499e-6, NOT 1e-9, AND THE SPEC's OWN INJECTION
+  **WHAT BOUNDS THE CONSTANT FROM ABOVE IS 5.90e-6, NOT 1e-9, AND THE SPEC's OWN INJECTION
   READS OTHERWISE.** #107 says "raise the floor absurdly (1e-3), assert the negative control
   goes red". Run: at 1e-3 the check written as the gross-end negative control — `af_up` at
   27.37% against 0.4368% before — clears a bar of 0.0054 and stays GREEN, and no floor under
-  **0.269** relative can silence it. What reddens is the `e_ff` pair going silent, which is
-  the OTHER negative control and does double duty as the positive half's presence check. So
-  the whole band between the chosen 1e-9 and 9.499e-6 is a raise nothing catches — three and
-  a half orders — and the gross-end control narrows it not at all. It earns its place by
-  proving a genuine loss is never mutable, not by bounding the floor. The review of this work
-  is what separated the two; the first write-up of injection B said "the NEGATIVE control
-  goes red" and named the one that does not.
+  **0.269** relative can silence it. What reddens is the lowest REAL warning going silent —
+  under #107 the C-grid's `e_ff` pair at 9.499e-6, which is the OTHER negative control and
+  does double duty as the positive half's presence check. So the whole band between the
+  chosen 1e-9 and that figure is a raise nothing catches, and the gross-end control narrows
+  it not at all. It earns its place by proving a genuine loss is never mutable, not by
+  bounding the floor. The review of this work is what separated the two; the first write-up
+  of injection B said "the NEGATIVE control goes red" and named the one that does not.
+  **#114 NARROWED THE BAND, BY A FACTOR OF 1.6 AND NOT MORE**: the H-grid's `v21` warns at
+  5.90e-6, below the `e_ff` pair, so the uncaught band is 3.77 orders rather than 3.98. Real
+  and small, and the figure to quote is the relation (the lowest real warning in the tree),
+  never either number — the gate asserts it that way for the same reason.
 
-  **ACCEPTANCE CRITERION 2 IS GATED ON TWO OF THE FIVE SHIPPED CONFIGS.** The surface gate
-  drives the C-grid and the O-grid, and both are now asserted — the O-grid's four warnings off
-  a run that file already made, at no extra cost. `hgrid` 7, `square` 0 and `cavity` 0 are the
-  dated two-build measurement above and nothing re-measures them; a later floor change that
-  moved one would be caught by a reader, not by a run. The spec asked for the measurement, not
-  for a gate, so this is recorded rather than treated as a shortfall.
+  **WHO SEES THIS CONSTANT DEPENDS ON THE DIRECTION IT MOVES.** All five shipped configs
+  carry acceptance criterion 2 since #114, and what widening produced is a count by direction
+  rather than one number: **lowered**, only the C-grid's WARNINGS change — though the H-grid's
+  upper-bound CHECK reddens with them, since the C-grid's noise pair returning at 2.3e-10% makes
+  the H-grid no longer the lowest warning in the tree; **raised**, three of the five change
+  (C-grid, O-grid, H-grid); and **two cannot see it in either direction**, `square` and
+  `cavity`. The first draft of this block said "FOUR OF THE FIVE CANNOT SEE THIS
+  CONSTANT" while its own bullets below credited the H-grid with bounding the floor from above
+  — a count contradicted by its own enumeration, #111's shape, caught by review in all three
+  homes at once. #107 gated the
+  criterion on the two the surface gate already drove and recorded the other three as a dated
+  two-build measurement; #114 added them as group 13, with `shipped_config` retargeting each
+  by KEY (they have no gate of their own to import a needle list from). **THAT GROUP NUMBER IS
+  GATED SINCE #116**, in the one home that had it wrong: the gate's head docstring opened with
+  "SINCE #114 GROUP 12 ALSO DRIVES THE OTHER THREE" — its first line, and the entry point to
+  the whole file — contradicted by that same docstring's numbered item 13, by its section
+  banner, by every other passage in it that names the group and by
+  `.claude/rules/mesher-smoothing.md`. Check 7 in
+  `tools/PreProcessor/tests/test_instruction_budget.py` now derives it from the CODE, never
+  from the prose beside it: the group number on the first numbered check after each of the
+  three `shipped_config(...)` retargets, all three required to agree. Deriving it from any of
+  the agreeing passages would only have picked a side; deriving it from the runs
+  themselves is what makes the sentence answerable. Those other passages are left
+  ungated — they describe what a group ASSERTS rather than restating its number, and #116
+  measured them all already agreeing with the code. **How many of them there are is
+  deliberately not stated**: #116's own review found the count this paragraph first gave
+  (four) short of the tree's, which is the ticket's whole subject arriving inside the fix
+  for it, and the claim that carries the weight is "every one of them", not a number. What its own
+  acceptance asked for was that the three added configs each report the failure with "the
+  warning guard reverted", and **WHICH GUARD THAT MEANS DECIDES WHETHER IT IS MET.** Read as
+  the floor's VALUE, the warning COUNTS do not move: at 1e-12, rebuilt 2026-09-11, `square`
+  stays at 0 warnings, `cavity` at 0 and `hgrid` at 7 — unchanged edge for edge, exactly what
+  the two-build table above had already said. **But the H-grid's upper-bound CHECK goes red on
+  that injection, so the criterion's literal reading is met there**, and it took three tries to
+  learn it: the first draft of that check compared the H-grid against ONE C-grid edge and
+  stayed green, and widening it to every warning the other four produce — a review finding
+  about the check's WORDING, not about the injection — is what made it bite. Read as the
+  `heightLost` BAR the criterion is met by all three: injection B (the floor raised) reddens
+  four H-grid checks, C (`>` flipped to `>=`) reddens square and cavity, D (an absolute
+  tolerance) reddens both baseline checks. **The first write-up of this said the criterion was
+  "not satisfiable as literally written", which is wider than the measurement, and the second
+  said the floor's value was "visible to the C-grid alone", which the re-run disproved** —
+  #114's review narrowed the first and its own injections the second, the same shape as #107's
+  "six orders" and #97's "crossed FOUR times": a claim is not evidence until something
+  re-derives it. What stays true is the narrowest version: `square` and `cavity` cannot see
+  this constant in either direction, and no injection to it will make them.
+  What the three DO gate, measured by injection instead of assumed:
+
+  - **`hgrid` — the floor from above, and the bar's BASELINE.** Eight declared wall edges, all
+    measured, seven warning; the lowest at 5.90e-6 is the tree's tightest upper bound, as the
+    paragraph above sets out.
+    Its EIGHTH, `v00`, declares a geometric spacing the algebraic fill cannot land on exactly,
+    so it goes in 0.15% off the declared height and the sweeps IMPROVE it to 0.08% — at once
+    that mesh's worst-held wall and correctly silent, which is the bar's own sentence ("worse
+    than the mesh the solve started from") as a run rather than as a comment.
+
+    **THE BASELINE HAD NO CHECK, AND A UNIQUENESS CLAIM IS WHAT FOUND THAT.**
+    #114's first draft wrote that `v00` was the only wall in any shipped config with a
+    real pre-sweep deviation the sweeps improve; measuring the C-grid's own quality banner
+    disproved it — `af_up` and `af_lo` go in at 0.44% and come out at 0.05%, the same shape and
+    larger. Neither instance had a check. A bar rewritten as an absolute tolerance on the
+    DECLARATION would therefore have passed the whole gate while warning about exactly the
+    walls the control functions rescued, which is **injection D** (`> 1e-4` in place of
+    `> was * 1.01 + floor`): exit 1, seven red, and the two that matter are these two silences.
+    Both are asserted now — the C-grid's pair in group 12, `v00` in group 13. The O-grid's
+    `o*` edges are the near miss: a real 3.6e-5 `was`, but the sweeps make them worse, so they
+    warn. The false claim is kept here as the specimen, the way #60's superseded claim is:
+    a property's uniqueness is not evidence until something enumerates the alternatives.
+  - **`square` and `cavity` — the COMPARISON, not the floor.** Both are rectangles the solve
+    leaves as it found them ("A RECTANGLE IS A FIXED POINT" below; cavity comes back bit for
+    bit), so every wall has `now` exactly equal to `was` and `now > was * 1.01 + floor` is
+    false for any floor at or above zero. They are the only shipped cases where a `>` quietly
+    becoming a `>=` invents warnings out of nothing — #107's symptom by the other route — and
+    injection C reddens exactly that pair. The moved-node count is asserted beside the silence
+    so it can never be a run that smoothed nothing (361 and 225 nodes).
+
+  **THE THIRD INJECTION CRASHED THE FIRST DRAFT OF GROUP 13 RATHER THAN FAILING IT**, which is
+  the harness lesson this repo has recorded before: with every warning silenced at a floor of
+  1e-3, `max(...)` over the empty warning set raised, the run stopped and the two checks after
+  it never executed — so the output read as a bite of five where the repaired gate bites eight.
+  Both readings now fall back to a value rather than raising. **A check that cannot fail cannot
+  be scored.**
+
+  **THE COST IS STATED WHERE THE GATE STATES IT** (its `Run:` block, which carried no cost
+  before #114, and `.claude/rules/mesher-smoothing.md` beside the smoother's own). Three extra
+  mesher runs, 0.71 s timed on their own — square 0.42, cavity 0.20,
+  hgrid 0.09, the three cheapest configs in the repo. **The whole-run wall clock is NOT quoted
+  as a before/after**, in any of the three homes: across measurements either side of the change
+  it ranged 8.6-11.2 s and a review run of the changed file came back at 9.73 s, inside the
+  range an earlier draft had given as the "after". The spread is wider than the addition, so
+  only the 0.71 s is stated. A C-grid or O-grid run costs ~1 s here, which is why the
+  widening went to the cheap configs.
+
+  **AND THE RANKING BESIDE IT IS DELETED RATHER THAN CORRECTED (#116).** All three homes
+  said "the FOURTH-slowest file in `run_all.sh`, not the slowest" — itself a correction, of a
+  first draft that asserted the slowest before anything measured it — and named three other
+  test files with an absolute timing each behind it. Those three timings are not quoted here
+  either: a deletion record that repeats the figure it deleted leaves the figure in the file.
+  #115's review read it a second time and it was
+  wrong a second time: FIFTH, with a file the claim does not name sitting between this one and
+  the one it names as next. The three absolutes beside it were re-timed here before deleting
+  them rather than taken from the review, and all three came back well under what the note
+  stated — between 1.5x and 3.5x under, one sample each, on a machine that is not the one that
+  wrote them. **That last clause is the whole problem with an absolute timing**: it is a
+  property of the machine and the load as much as of the test, so it is stale the moment it
+  leaves the terminal it was measured in. **The second wrong reading is the
+  argument for deleting instead of correcting a third time**: a `run_all.sh` ranking can only
+  be re-derived by timing every test file in the suite, so nobody re-measures it and both
+  readings decayed unseen, and `docs/agents/rule-file-style.md` rule 6 keeps a measurement that
+  CONSTRAINS a decision and drops one that only justifies it. This one decided nothing — what
+  decided the widening is the 0.71 s and the ~1 s per C-grid/O-grid run above, each of which is
+  one run to re-measure. **The true rank is deliberately NOT stated in its place**, and neither
+  are corrected absolutes: a third copy of the same figure at the same re-derivation cost is
+  the defect, not the value it happens to hold today.
+
+  **AND THE COST FIGURES THAT SURVIVED ARE DELIBERATELY NOT GATED, which is a decision and not
+  an omission.** #116 registered its other two figures in check 7 on one test — derivability —
+  and 0.71 s and ~1 s pass that test: each is one run. What disqualifies them is the other half
+  of check 7's contract, that a registered figure is a RESTATEMENT of something on disk which
+  `--sync` may rewrite without asking. A wall-clock timing is not on disk. It is a property of
+  the machine, the load and the day, so a gate deriving it would have to RUN the mesher and
+  would then go red on a busy laptop with nothing in the tree changed — `ruff.toml`'s
+  permanently-red gate arriving through the door blind spot (g) already guards, and the reason
+  the two tripwire file-counts stay out of that registry as well. They are dated instead, which
+  is what this repo does with a measurement it cannot re-derive cheaply: a dated fact does not
+  decay, it just stops being current, and the date says which. That is also why deleting the
+  ranking was the answer rather than dating it — a RANK is not a property of one run, so no
+  single dated measurement can carry it.
 
   **THE C++ SIDE NEEDS NO CHANGE, AND THAT IS TRUE OF ONE HALF OF IT RATHER THAN BOTH.**
   Check 55's positive half — the deep notch, a wall lost by thousands of percent — is orders
   above any floor anyone would write, so it is untouched. Its SILENCE half (`quiet == 0` on
   `wallSquare`, that a run whose walls are held says nothing) gets strictly EASIER to satisfy
   as the floor rises, so it cannot notice this constant going too high. **Nothing in C++ pins
-  the value at all**; what pins it is group 12 at the surface, in both directions, and
+  the value at all**; what pins it is groups 12 and 13 at the surface, in both directions, and
   injection B is the evidence. Recorded rather than repaired: a C++ check would need a
-  fixture whose loss lands in the narrow band between the noise and 9.5e-6, and the shipped
-  C-grid already IS that fixture. #98's mirrored-band lesson, arriving from a review rather
-  than from a run.
+  fixture whose loss lands in the narrow band between the noise and 5.9e-6, and the shipped
+  C-grid and H-grid already ARE that fixture. #98's mirrored-band lesson, arriving from a
+  review rather than from a run.
 
 - **THE TABLE, measured 2026-09-07 on the SHIPPED files**, beside #82's plain Winslow at
   the same cap (quoted from that ticket):
@@ -2684,9 +2812,66 @@ nothing writes yet, since no exporter has changed."*
   sentinel the optional exists to avoid — but a debug aid that vanishes without saying so is
   indistinguishable from one that was never built, which is exactly the defect #106 exists to
   fix. So `exportVTK` counts the tagged cells and warns when the count is neither 0 nor all.
-  **Unreachable today** (the adapter's one loop tags every cell it adds, and no other path adds
-  a tagged one), so nothing gates it; that is recorded as a blind spot rather than covered by a
-  test for a state nothing can produce. Raised by #106's own Spec review.
+  **Unreachable FROM PRODUCTION** (the adapter's one loop tags every cell it adds, and no other
+  path adds a tagged one). Raised by #106's own Spec review, and left ungated there on the
+  argument that a state nothing can produce needs no test.
+
+  **#113 REVERSED THAT (2026-09-11): unreachable is not untestable.** The gate over the field is
+  a Python script that drives the real binary, and no invocation of that binary can construct a
+  partially tagged mesh — so from THERE the state is genuinely out of reach, and the blind spot
+  was correctly stated for the layer it was stated at. But `Mesh` is a library target the C++
+  test tree links (the seam #2 of the architecture backlog created), so one layer down the state
+  is three lines of setup. `tests/cpp/test_mesh_vtk_block_field.cpp` builds a four-quad strip,
+  tags three of the four, exports, and asserts the OBSERVABLE outcome rather than the branch: no
+  `CELL_DATA`, no `SCALARS`, no `LOOKUP_TABLE`, and the file **identical to the same mesh with no
+  tags at all, provenance line aside** — the strongest available spelling of "the section simply
+  does not appear", which a sentinel of any value would break. (Why that line is excluded, and
+  what it cost to learn, is two paragraphs down.) The warning is asserted too: `LOG_WARN`
+  writes through a reference bound to `std::cerr`, so swapping that stream's buffer captures it,
+  and the message is pinned on the counts it names (`3 of 4`) rather than on its whole text.
+  A fully tagged export is the **negative control**, asserting the section IS present with its
+  values in cell order — without it, a writer that had stopped writing the field entirely would
+  pass the partial half and the test would prove nothing. Two further states are pinned beside
+  them: no cell tagged (the hybrid answer — no section AND no warning, because nothing was
+  omitted) and an EMPTY mesh, where `tagged == elements.size()` holds vacuously at zero and only
+  the `!elements.empty()` clause stops a headerless `CELL_DATA 0` being written.
+
+  Seven injections into `src/Mesh.cpp`, 2026-09-11, each restored and rebuilt before the next, the
+  verdict read from the EXIT CODE first: silence the warning (`if (false)`) -> exit 1, 3 FAIL;
+  drop the guard and write a sentinel 0 -> exit 1, 6 FAIL, including the whole-file comparison and
+  both the untagged and empty states; never write the section -> exit 1, 4 FAIL, all in the
+  negative control; drop the `!elements.empty()` clause -> exit 1, 1 FAIL, the empty-mesh check
+  alone; write a constant value -> exit 1, 1 FAIL; rename the array to `blockId` -> exit 1,
+  1 FAIL, the header pin alone; warn UNCONDITIONALLY -> exit 1, 3 FAIL. Unmutated tree: exit 0.
+  **The seventh was added by this ticket's own review, and it is the interesting one**: every other
+  mutation here makes the warning say LESS, so the FALSE-POSITIVE half of the rule -- that a fully
+  tagged, an untagged and an empty export each warn about NOTHING -- was asserted by three checks
+  no injection reached. Three green vacuous checks are the shape the exit-code discipline exists to
+  catch, and it took the second review axis to see it: the axis reading the code found five real
+  defects and not this one, because a vacuous check looks exactly like a passing one. 16 of the 19
+  checks are now covered by an injection; the other three are guards on the TEST (a file was
+  exported at all, the provenance exclusion really dropped a line, the refused file still carries
+  its cells) that no mutation of the writer would flip, and that is stated at them rather than
+  counted as coverage. **The first run of the third injection
+  scored exit 134, not 1** — the value-order check fed `find`'s `npos` straight to `substr` and
+  the uncaught exception ended the run before the later groups reported. A crash prints no
+  further FAIL lines, which is the failure mode this repo has already scored once as a bite that
+  never happened; the check now tests the position first, so an injection that removes the
+  section can report that and keep going. **The second defect was the byte-equality check
+  itself**, and it is this section's own byte-identity bullet arriving a second time (referred to
+  rather than quoted by its heading, because a second copy of that heading in this file would
+  make every anchor citation pointing AT it ambiguous -- rule 4's second failure mode): line 2 of every export carries a UTC timestamp at SECOND
+  resolution, so two exports from ONE process differ there the moment they straddle a second.
+  It passed for several runs and failed once the machine was loaded enough to separate them. The
+  check compares everything but that line now, and a companion assert proves the exclusion really
+  dropped a line rather than leaving two empty strings to compare equal. The general shape: a
+  property this repo has already written down as "cannot be claimed byte-for-byte" does not stop
+  being true because the two files come from the same process.
+
+  What is NOT closed: nothing asserts the state stays unreachable. A `MESH_MODE 1` change adding
+  one untagged cell would still make the whole field vanish, caught by the warning at run time
+  and by no gate — the blind spot in `.claude/rules/mesher-multiblock.md` now names that
+  precondition rather than the branch.
 
 - **THE "RE-CAPTURE" IN ACCEPTANCE ITEM 5 RECORDS NOTHING, AND CANNOT.** Golden captures are
   untracked artefacts written to a directory the caller names; there is no committed baseline to
@@ -2700,7 +2885,22 @@ nothing writes yet, since no exporter has changed."*
   which earn a specific check its place: swapping indices 1 and 2 passes every count check and
   is caught only by the geometric identity check, and renaming the array is caught only by the
   header pin — the array NAME is what a reader selects in ParaView, so it is interface, and
-  before that check it was pinned nowhere in the tree).
+  before that check it was pinned nowhere in the tree), and by
+  `tests/cpp/test_mesh_vtk_block_field.cpp` (19 checks over four tag states, seven injections,
+  #113) for the one state a gate over the binary cannot reach.
+
+  **AND THAT SEVEN IS NOW GATED, IN BOTH OF THE PLACES THIS FILE STATES IT (#116).** It said
+  "Seven" above and "six" here, about the same gate, from the moment #113's own review added
+  the seventh injection and updated one home of the two — so a reader deciding whether that
+  check is proved was told two numbers by one file. It is registered in
+  `tools/PreProcessor/tests/test_instruction_budget.py`'s check 7 as ONE derivation with two
+  anchors, `--sync` rewrites both from the bullets the gate LISTS, and adding an eighth
+  injection to that file now reddens this note rather than quietly ageing it. Deciding to gate
+  it rather than merely fix it is the point: this figure is a claim in one file about the
+  contents of another, which is the shape that decays without anyone touching either. The
+  count excludes the negative control, and a list that has lost its negative control is a
+  named failure rather than a count one too high — a ledger that MANUFACTURES a figure is
+  worse than the stale one it replaced.
 
 **THE GOLDEN COMPARATOR** (`tools/scripts/golden_mesh.py`). Moved out of `CLAUDE.md` by #85,
 which needed the room and had to change the tool anyway; the rule stays there in four lines.

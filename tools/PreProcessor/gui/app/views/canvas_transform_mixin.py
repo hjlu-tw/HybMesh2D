@@ -7,6 +7,10 @@ from __future__ import annotations
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 class CanvasTransformMixin:
     # ── Transform base-point / axis handles ───────────────────────────────
@@ -38,6 +42,13 @@ class CanvasTransformMixin:
             (x0, x1), (y0, y1) = self.plot_widget.getViewBox().viewRange()
             return 0.15 * max(abs(x1 - x0), abs(y1 - y0), 1e-9)
         except Exception:
+            # DEBUG: nothing the user asked for is lost. The handle is still
+            # drawn and still draggable -- only its on-screen length falls back
+            # to a data-unit constant, which is wrong-looking rather than
+            # missing. Recorded because a view box that will not answer its own
+            # range is a symptom worth having when something else goes wrong.
+            _log.debug("could not read the view range for the axis handle "
+                       "length; falling back to 1.0", exc_info=True)
             return 1.0
 
     def show_transform_handles(self, spec: dict):

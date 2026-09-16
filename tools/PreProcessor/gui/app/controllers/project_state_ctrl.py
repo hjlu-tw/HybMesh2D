@@ -10,6 +10,10 @@ Methods run on the composed AppController instance.
 from __future__ import annotations
 import os
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 class ProjectStateControllerMixin:
     # ── Project-level (non-CAD) state ────────────────────────────────────
@@ -71,6 +75,12 @@ class ProjectStateControllerMixin:
             # Never let baseline bookkeeping break a save/load; an unset baseline
             # only means project_is_dirty() stays conservative (see below).
             self._project_baseline = None
+            # WARNING, not debug: "conservative" means project_is_dirty() answers
+            # False forever after, so the close prompt that protects unsaved work
+            # never appears. The user asked for that protection by authoring the
+            # project; losing it silently is the failure this grade is for.
+            _log.warning("could not snapshot the project baseline; unsaved-work "
+                         "detection is off for this session", exc_info=True)
 
     def project_is_dirty(self) -> bool:
         """True if the Mesh / Solver / IB configuration differs from the baseline.
@@ -87,6 +97,11 @@ class ProjectStateControllerMixin:
         try:
             return self._collect_project_state() != baseline
         except Exception:
+            # Same grade and the same reason as the baseline snapshot above: a
+            # comparison that cannot run reports "clean", and the only thing that
+            # stands between the user and a discarded project is this answer.
+            _log.warning("could not compare the project against its baseline; "
+                         "reporting it as unchanged", exc_info=True)
             return False
 
     def has_unsaved_work(self) -> bool:

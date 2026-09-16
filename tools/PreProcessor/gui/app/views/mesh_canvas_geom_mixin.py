@@ -229,7 +229,14 @@ class MeshCanvasGeomMixin:
             return
         try:
             pts = np.atleast_2d(np.loadtxt(path))
-        except Exception:
+        except Exception as e:
+            # As in the BC overlay: readable_geom_path answered existence above,
+            # so this is a real read failure on a file that IS there, not the
+            # "no such geometry yet" case that used to arrive here before #112.
+            # WARNING, not debug: the user picked this file in the config list to
+            # see it outlined, and it silently is not.
+            _log.warning("selection highlight: could not read geometry %r: %s",
+                         path, e, exc_info=True)
             return
         if pts.shape[0] < 2 or pts.shape[1] < 2:
             return

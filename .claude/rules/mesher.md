@@ -214,7 +214,11 @@ here AS WELL AS in `.claude/rules/mesher-multiblock.md`**, deliberately: that fi
 `src/cli.cpp` but NOT `src/Mesh.cpp` or `include/Mesh.hpp`, so a session editing the exporter is
 handed only this file. The rest of the rule is there — that the value is the INDEX into
 `MbResult::blocks` and never the declared `id` string, that the array is named `block`, and that
-no other exporter gains it. Gated by `tests/test_multiblock_block_field.py`.
+no other exporter gains it. Gated by `tests/test_multiblock_block_field.py` from the outside, on
+the shipped configs — and the PARTIALLY tagged refusal, which no run can produce, by
+`tests/cpp/test_mesh_vtk_block_field.cpp`, which links `Mesh` and builds that state directly
+(#113) -- the branch is unreachable from production, not untestable, so that file is where the
+PARTIAL half of the rule is held.
 Why: `docs/design_notes/mesher.md`, "THE BLOCK ID AS A VTK CELL FIELD".
 
 ## Named blind spots

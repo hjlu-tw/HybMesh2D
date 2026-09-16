@@ -6,7 +6,9 @@ from PyQt6.QtWidgets import QListWidgetItem
 from app.utils import block_signals, report_info
 from app.commands.segment_cmds_core import UpdateMultipleSegmentsStateCmd
 from app.services import meta_io
-from app.services.geom_path_identity import canonical_geom_path, stored_geom_path
+from app.services.geom_path_identity import (canonical_geom_path,
+                                             readable_geom_path,
+                                             stored_geom_path)
 
 class MeshLayersControllerMixin:
     """Mixin managing the Geometry Layers list of the mesh generator — syncing
@@ -398,14 +400,16 @@ class MeshLayersControllerMixin:
         added_any = False
         missing_exports = []
         for session in self.sessions:
-            out_file = session.project_model.output_file
-            if out_file:
-                abs_out = canonical_geom_path(out_file)
-                if os.path.exists(abs_out):
-                    if self.global_mesh_config.add_geom_file(abs_out):
-                        added_any = True
-                else:
-                    missing_exports.append(session.display_name)
+            # The only site in this file that asks readable_geom_path's
+            # question, so the two missing cases -- no output file, and an
+            # export that is gone -- fall together into one branch. The three
+            # beside it need the canonical path when the file is ABSENT and
+            # must NOT use the verb; why, and what gates it, is in
+            # .claude/rules/gui-panels-config.md.
+            abs_out = readable_geom_path(session.project_model.output_file)
+            if abs_out:
+                if self.global_mesh_config.add_geom_file(abs_out):
+                    added_any = True
             else:
                 missing_exports.append(session.display_name)
 

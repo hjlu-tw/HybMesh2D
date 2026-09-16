@@ -236,22 +236,50 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   raw string answers about the process cwd. This is what makes the repo-relative store above safe
   rather than a silent "the preview vanished", and it is TWO rules, not one, because the readers
   are two kinds:
-  - **The five that OPEN the geometry itself go through `readable_geom_path`** (#111) — entry in,
-    the canonical path when a file is there and `""` when there is nothing to open, the existence
-    question answered INSIDE the verb. The five are the Run-All readiness check, the mesh bbox
-    scan, the BC canvas overlay, the preview loader thread and the selection highlight. Existence
-    is `os.path.exists` and NOT `isfile`/`os.access`: a file that exists and still cannot be read
-    is the OPEN's failure, and the caller's own handler holds the filename and the exception.
+  - **The SEVEN that need a path only WHEN ONE IS THERE go through `readable_geom_path`** (#111's
+    five, #112's sixth, #118's seventh) — entry in, the canonical path when a file is there and `""` when there is
+    nothing to open, the existence question answered INSIDE the verb. FIVE of them OPEN the file:
+    the mesh bbox scan, the BC canvas overlay, the preview loader thread, the selection
+    highlight and the mesh panel's auto-sizing hint reader (`mesh_sizing_mixin._hint_points`, ONE
+    reader for both hint scans — until #118 they handed the RAW entry to `np.loadtxt` and
+    discarded the failure, breaking this rule and the count in one place). The other TWO open nothing — the Run-All readiness check only asks whether any
+    entry is there, and `mesh_layers_ctrl.add_all_sessions_to_mesh` adds an exported geometry to
+    the config when its file is there, which is why #111 correctly left it — but they ask the same
+    question, so they use the same verb, and converting the second is what lets check 12 below be
+    green with nothing pinned. Existence
+    is `os.path.exists` and NOT `isfile`/`os.access`: **a file that exists and still cannot be read
+    is the OPEN's failure, so each of the five that OPEN must name the FILE and the EXCEPTION when
+    it fails** — four at `warning` through `get_logger(__name__)` (the grade for a failure that
+    silently degrades what the user asked for: an overlay that does not draw, a highlight that
+    does not appear, a geometry missing from the bbox, a hint whose number is computed from fewer
+    geometries than the user listed), the loader thread onto stdout beside its
+    own malformed-geometry line. SUPERSEDES #112: that clause was an assertion, false of the BC
+    overlay and the selection highlight from the day it was written; #117 fixed the readers, not
+    the claim. Why: docs/design_notes/gui.md, "can turn a correct silence into a swallowed"
+    Gated by `tests/test_silent_exceptions.py` checks 7–8 against a REAL unreadable file, holding
+    both halves: an ABSENT geometry must still produce NO record, so the two cases stay
+    distinguishable instead of both becoming noisy.
     **The verb stays at the PATH layer** — it does not load, and does not absorb the preview
     loader's NaN/`(N,2)` validation (`geometry_service.load_points_dat`). **No plural form**,
-    because only one of the five would write the comprehension: the bbox scan and the overlay
+    because only one of the SEVEN would write the comprehension: the bbox scan and the overlay
     need the stored spelling for their log line and their role test as well as the path. A falsy
     entry reads back as `""`, the shared derivation's own answer, so one filter covers both.
     **A site that needs the canonical path even when the file is ABSENT is not one of these** and
     must not use the verb — `mesh_layers_ctrl`'s layer list labels a missing entry by basename,
     and `geom_files_not_on_disk` answers the inverse question over the whole list. Check 11 holds
-    the verb's contract, from a FOREIGN cwd; the conversion itself is behaviour-preserving by
-    construction and is held by the GUI gates that already run.
+    the verb's contract, from a FOREIGN cwd; the conversions themselves are behaviour-preserving by
+    construction and are held by the GUI gates that already run. **Check 12 holds the REACH**
+    (#112), by AST over the same tree: a reader that canonicalises and then asks the filesystem
+    itself, or hands a raw `geom_files` entry to it, fails the build. It bans the QUESTION and not
+    the shape — an existence call on a canonicalised entry is a violation only when that entry is
+    used NOWHERE but the branch where the file turned out to be there, the guard-clause spelling
+    (`if not exists(q): return`) counted the same as the indented one — because a flat shape ban
+    red-lights the three sites above that need the path when it is ABSENT in order to find the one
+    real reader, and the exemption it would then need is the filename list the derived allow-lists
+    exist to avoid. A read that PRESUPPOSES existence (`open`, `np.loadtxt`) needs no such
+    discrimination and always fails. The allow-list is the module that DEFINES the verb, read off
+    the function rather than named, and it is load bearing: `readable_geom_path`'s own body is the
+    banned shape.
   - **A path the USER gave is the one thing `os.path.abspath` is still right for**: a CLI argument
     or a dialog result really is cwd-relative, and the load beside it reads it that way. Resolve
     it with `abspath` FIRST and derive the entry from THAT (`stored_geom_path(abs_path)`) —
@@ -280,6 +308,20 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   against the keyer-delegation it argues against, not against a state the tree can reach —
   `remove_geom_file("")` removes nothing and returns False, and removing a geometry the list does
   not hold reports that nothing went.
+- **TWO behaviours here arrived UNDECLARED, and both are KEPT rather than reversed** (#121):
+  - **`keyed_geom_paths` is a public surface this batch did not sanction.** #108's Implementation
+    Decision reads *"The only new module-level surface is one read-side verb in the Qt-free
+    geometry-identity service"*; that verb is `readable_geom_path`, and #110 had already promoted
+    `_keyed` beside it, so the batch added TWO. Kept because "written ONCE" above is only checkable
+    against a NAMED list of readers, which a private helper cannot carry where a reader of the
+    model's verbs looks for it. The cost is the blind spot below: check 12 shipped recognising ONE
+    canonicalising name, so the banned shape written through the second was invisible — with an
+    instance of it already in the tree — until #119 MEASURED the verb set off the module.
+  - **`remove_geom_file("")` CHANGED its answer, and the bullet above states only the answer it has
+    NOW.** Before #110 the verb canonicalised both sides, so a falsy argument canonicalised to `""`,
+    matched every falsy entry and stripped them ALL, reporting True. Gated by
+    `tests/test_geom_files_identity.py` check 7.
+    Why: docs/design_notes/gui.md, "Two MORE of #110's changes were undeclared"
 - **The identity import is at MODULE level everywhere**, and the absence of a cycle is MEASURED —
   `mesh_config_io` (the module that carried the deferred form, and is on the headless path)
   imports first in a fresh interpreter, dragging in no Qt. A deferred import hides a real
@@ -377,22 +419,48 @@ against one list; #71 moved the first two here.
   an `os.path.abspath` for anything else (the recent-files list keeps one, deliberately) is not
   swept up, and check 9's behavioural half asserts what `stored_geom_path` RETURNS from any cwd,
   which no caller can re-implement correctly by accident. **Every side that OPENS a file now has a
-  seam — `meta_path_for` for sidecars, `readable_geom_path` for the geometry itself — but there is
-  still no SCAN**: a new reader that canonicalises and then calls the filesystem itself, or hands a
-  raw `geom_files` entry to it, fails no gate, and its symptom is silent — a preview that does not
-  draw. Check 11 holds the verb's own answer, not its reach; #112 adds the two AST shapes that
-  close this. **Measured for that ticket rather than left for it to discover (#111), by walking
-  the AST for a filesystem call whose argument is a canonicalising call or a variable bound from
-  one**: `mesh_layers_ctrl.py` carries FIVE, and they do not all mean the same thing. THREE cannot
-  use the verb, because they need the canonical path precisely WHEN the file is absent — it goes
-  into the refusal message (`:33`), onto the `(not exported)` label with the membership test and
-  the item data (`:118`), and onto the `external file`/`missing file` label by basename (`:155`) —
-  and `""` is the one answer that destroys what they need. ONE is a genuine unconverted reader of
-  the "use it only if it is there" kind and SHOULD delegate (`:403`, which canonicalises, tests,
-  and adds). One more is a near-shape, not this shape: `:207` re-tests a path taken from the
-  widget's item data, already canonical, with no canonicalising call feeding it.
-  `geom_files_not_on_disk` (`models/mesh_config_geoms.py:167`) is the whole-list inverse through
-  the keyer. **So a shape ban alone red-lights four correct call sites and finds one real one** —
-  the exemption cannot be "these files", it has to be the question the site is asking. The first
-  attempt at #104 converted five readers and left four, which is how the reach here is known
-  rather than assumed.
+  seam AND a scan** — `meta_path_for` for sidecars, `readable_geom_path` for the geometry itself,
+  and check 12 for both of that verb's reach-arounds (#112). What that check still cannot see,
+  enumerated rather than summarised because "the rest is covered" is the claim this list exists to
+  stop being made:
+  - **An INDIRECTION**, the same AST limit as (i): a canonical path handed to a helper, returned
+    to a caller, or stored on `self`. It follows a plain `v = canonical_geom_path(…)` binding
+    inside ONE function scope and nothing further — so a walrus, a tuple unpack and a closure
+    reading its enclosing function's binding all pass too.
+  - **The existence ANSWER bound to a name**: `q = canonical_geom_path(p); ok = os.path.exists(q);
+    if ok: use(q)`. The ternary and `if` spellings of that same guard DO fail, so this is a
+    spelling gap rather than the "an AST cannot follow a value" one above — it would take a second
+    dataflow layer, over the boolean rather than over the path, and it is not there.
+  - **A filesystem call whose NAME is outside the two lists it carries**
+    (`pathlib.Path(canon).read_text()`, `shutil.copy`, `os.path.getatime`), and an ALIASED import
+    of the canonicalising verb. Both lists name what this tree actually asks about a geometry, not
+    every way to touch a file. `cfg.geom_files[0]` handed straight to a call IS covered, alongside
+    the loop and the comprehension.
+  - **A canonical path reached through the LIST-WIDE verbs by more than ONE step**, which is the
+    form that was already in the tree behind the second verb. "Canonicalise" is not one verb:
+    `keyed_geom_paths` became public in #110 and check 12 shipped in #112 still recognising the one
+    name it was written for, so the banned shape written through the second one passed. Since #119
+    the set is MEASURED off `geom_path_identity` — call each exported verb with one spelling whose
+    canonical form is known, keep the verbs whose answer contains it, and record WHERE in that
+    answer the path sits — so `keyed_geom_paths` and `canonical_geom_keys` are seen wherever
+    `canonical_geom_path` is, bound by an assignment OR by the `for`/comprehension target that
+    iterates the call, and a THIRD verb needs no edit to the check. The measured POSITION is what
+    splits a pair: `keyed_geom_paths` yields `(key, the spelling it came from)`, so the key binds as
+    an identity and the spelling as the RAW entry it is — `os.path.exists(spelling)` fails just as
+    it does for the same entry taken off the list directly. One step past that is not followed, the same AST limit as (i): `keys =
+    canonical_geom_keys(…)` and then a loop over `keys` passes. `readable_geom_path` measures as
+    canonicalising too and is removed again — it is the sanctioned route TO the filesystem, and
+    five of its seven callers open what it hands back. The verbs that answer with a SPELLING
+    (`dedupe_geom_paths`, `stored_geom_path`) or a bool (`same_geom_file`) fall out of the
+    measurement, and the gate proves that by scanning the same reader written through each of them.
+  One limit is DELIBERATE rather than residual: a site that uses the canonical path where the file
+  is ABSENT is silent by construction, so a reader that should delegate but also logs the missing
+  path passes. That is the same property keeping the three correct `mesh_layers_ctrl` sites green
+  **and the model's own `geom_files_not_on_disk`** — which reads the key through `keyed_geom_paths`
+  and asks `os.path.exists` about it, i.e. writes the banned shape, and is green because it asks
+  which entries are NOT there rather than because it is pinned. Precisely: a NEGATED guard whose
+  file-is-there branch is empty. That is the whole of what #119 subtracted; a non-negated guard is
+  judged as before, by whether the entry is used anywhere but the branch where the file turned out
+  to be there, so `q = canonical_geom_path(…); if os.path.exists(q): return True` still fails. It was bought knowing the cost —
+  the measurement that decided it (five canonicalise-then-exists sites in that one file, of which
+  one was the defect) is in `docs/design_notes/gui.md`.

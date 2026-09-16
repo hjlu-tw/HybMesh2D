@@ -1204,7 +1204,7 @@ controller handler (so undo, redo and the projection are proven, not asserted).
 
 **Signal guards**: never write a raw `blockSignals(True)`/`blockSignals(False)` pair — an exception between them leaves the widget permanently unable to emit. Use `with block_signals(w1, w2, ...)` (`app/utils.py`). Likewise, never assign `_is_populating`: use `with controller.populating():`, which is a re-entrant depth counter (a bare bool let a nested populate clear the outer guard). `tests/test_signal_guards.py` statically fails the build on either.
 
-**Error handling**: never `except Exception: pass`. Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step allowed to fail, or `warning` when the failure silently degrades what the user asked for. `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build if a new undocumented silent handler appears.
+**Error handling**: never a BROAD `except` that discards. Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step allowed to fail, or `warning` when the failure silently degrades what the user asked for. `HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the build if a new undocumented silent handler appears. The rule is `.claude/rules/gui-seams.md`'s; why it is about the handler rather than about `pass`, and what the widening found, is "A standard that bans one KEYWORD" below.
 
 **File length — why the number got a gate, and why its pins are a ceiling.** The rule is
 `.claude/rules/gui-seams.md`'s ("keep each file under `tools/PreProcessor/gui/` at ~500 lines");
@@ -1252,6 +1252,86 @@ count deliberately is NOT gated —
 `test_instruction_budget.py` blind spot (g) states the reason: a git-history figure decays on every
 commit rather than on every edit to the file, so gating one would make each commit re-measure
 `git log`, and there is no fixed point to converge on.
+
+**A standard that bans one KEYWORD has three other spellings of the same silence.** The rule is
+`.claude/rules/gui-seams.md`'s ("never a BROAD `except` that discards"); this is what #118
+measured and decided. The standard has always been ABOUT the handler — a catch that neither
+records the failure nor re-raises it — and its gate implemented that by matching a body of exactly
+`["pass"]`. #117 is the evidence that the gap is a defect and not untidiness: a refactor moved
+what REACHES one of these handlers, a correct skip became a swallowed diagnostic, nothing in the
+handler changed, and every gate stayed green because the body said `continue`. No review would
+have caught it either; nothing about it looks like a regression in a diff.
+
+Four decisions inside the widening:
+
+- **BROAD, not every handler — and this is the whole of why the gate can be green.** The ticket's
+  figures (28 `pass`, 14 `continue`, 3 `return`, 0 `break`) reproduce EXACTLY when the scan is run
+  over every `except` clause in `app/` on the pre-#117 tree — its `3 return` counting BARE returns,
+  with 65 more spelled `return <value>` under the same scan, which is worth stating because the
+  widening shipped here treats those 65 as the same silence. That is the scan that would need an
+  allowlist of a hundred-odd sites: `except ValueError: continue` inside a line parser is the
+  correct idiom and this tree is full of deliberate narrow fallbacks (`except OSError: return []`
+  in `services/meta_io.py`, `except (TypeError, ValueError): return 1.0` in `services/units.py`).
+  A gate that red-lights correct sites to find one real one gets worked around rather than obeyed
+  — `ruff.toml`'s "a permanently-red gate is worse than none", the same door #97 came through. So
+  the line is drawn where the STANDARD draws it, at a catch wide enough to swallow an error nobody
+  predicted: `except Exception:`, `except BaseException:`, a bare `except:`, or a tuple holding
+  either. Re-derived on the tree the widening actually landed on (#118's own criterion says to),
+  that reaches **10** sites rather than 17, and check 2 prints the count on every run rather than
+  any file restating it.
+- **Every one of the 10 was FIXED; the allowlist did not grow.** The project baseline and its
+  dirty comparison (`warning` — "conservative" means the close prompt that protects unsaved work
+  never appears again), the curve preview (`warning` — the edge does not draw), the two geometry
+  reads behind the auto-sizing hints (GRADED, below), the transform handle length, the gmsh probe
+  and the formula evaluator's two (`debug`). Two of the ten were deleted outright rather than
+  logged: `views/panels/mesh_sizing_mixin.py` guarded two deferred `import numpy` calls with
+  `except Exception: return None`, and numpy is a hard dependency of this GUI, so those handlers
+  were unreachable defensive code. Deleting a handler is the better half of "fix it or allowlist
+  it", and `test_qt_free_seam.py` check 6 already says a deferred import is still a dependency.
+- **Where one failure can mean two things, RESOLVE first and the question answers itself — and the
+  first version of this got it wrong in a way worth keeping.** #117's distinction is that a
+  geometry the user has not produced yet is not an error while one that is there and will not read
+  is, and the two auto-sizing hint scans reach both. The version that shipped in `77c2561` computed
+  the grade with `os.path.exists(p)` on the entry the list widget carries. Review caught it against
+  `.claude/rules/gui-panels-config.md`'s "a reader RESOLVES an entry before opening it": that entry
+  is the stored `MeshConfig.geom_files` spelling, repo-relative for a file inside the repo, so from
+  any other cwd BOTH the grade and the `np.loadtxt` beside it answer about the wrong directory — a
+  geometry that is really there reads as one the user has not made yet, which is #117's
+  distinction inverted by the helper written to make it. The fix is the verb, not a better
+  predicate: `mesh_sizing_mixin._hint_points` calls `readable_geom_path`, whose `""` IS the
+  "nothing to record" answer, and everything that reaches the open is a genuine read failure it
+  `warning`s. That makes it the seventh caller of that verb and the fifth that opens — a count
+  restated in four places, now stale for the second time in two tickets, and updated in all four.
+  The raw `np.loadtxt(p)` it replaced was PRE-EXISTING and outside this ticket's scan; `check 12`
+  of `test_geom_files_identity.py` does not reach it, because these paths come from the widget's
+  item data rather than from `cfg.geom_files`, which is the blind spot that let it live there.
+- **`ast`, not a regex plus an indentation walk.** The old scan reconstructed the body from the
+  next seven lines by indentation, so a comment above the keyword, an `except` clause spilling
+  over two lines or a docstring inside the handler each walked around it, and it could only ever
+  see the one spelling it was written against. The AST sees the handler, which also made a fifth
+  and sixth silence free: `return <fallback>` (the caller cannot tell it from success) and a body
+  that is nothing but a string literal (the loudest-looking silence there is, since the text
+  usually reads as an explanation). The same parse widened the ROOT from `app/` to the GUI tree
+  the standard actually binds, which is how `gui/main.py` came inside it.
+
+Check 2's injections are in two tiers, because the in-process ones cannot prove the walk. In
+process, against the scan's output as a value: each of the six discarding bodies fires alone,
+three at once are all reported in one run, an allowlisted site does NOT fire while the same site
+without its comment does, an allowlist entry whose file stops holding one fails as obsolete, an
+unparsable file is a failure rather than a skip, and a negative control shows the real tree passes
+because its silent sites are exactly the allowlisted ones. End to end, a probe file is written
+into the real GUI tree and the gate run as a child in `--scan-only` mode, once per keyword — the
+verdict exit 1 AND an empty stderr AND the probe named in stdout, with the probe removed for a
+final run that must exit 0. The allowlist gets the same treatment rather than only the in-process
+one: `--allow-probe` adds the probe's own path to the allowlist for one child run, which must exit
+0, against the identical file without the entry (exit 1), the identical file without its
+comment (exit 1), and one whose only `#` sits inside a STRING (exit 1 — the explanation half reads
+real `tokenize` COMMENT tokens, so it cannot be satisfied by punctuation, and the same probe proves
+a handler whose body is a string statement plus `continue` still reads as `continue`). The lever can only ever reach a filename this gate writes and deletes itself, so
+it exempts nothing real — the alternative was editing one of the three genuinely allowlisted source
+files, which a killed run would leave modified, and this repo has already lost a fix to a stale
+injection backup once. That is `test_file_length.py`'s shape reused rather than reinvented,
+including the GUI-root probe location and its `.gitignore` line.
 
 **A GEOMETRY IS THE FILE IT NAMES.** `services/geom_path_identity.py`, the rules in
 `.claude/rules/gui-panels-config.md`. USER-REPORTED 2026-08-20, reopening an exported case
@@ -1317,6 +1397,26 @@ description of something a gate holds. It asserts the fourth consequence beside 
 for the list lands as `[]` — with NO injection, because the rebind's own `or []` got that one
 right: a non-vacuity claim is per assertion, and three of the four are the verb's doing.
 
+**Two MORE of #110's changes were undeclared, and one was taken against a stated Implementation
+Decision (#121).** #108's decisions read *"The only new module-level surface is one read-side verb
+in the Qt-free geometry-identity service"*; #111 added that verb, `readable_geom_path`, and #110
+had already promoted `_keyed` to `keyed_geom_paths` beside it — two new surfaces, not one.
+Promoting it was still right: "the canonical-key loop is written ONCE" is a claim only checkable
+against a list of readers, and a private helper cannot carry that list where a reader of the
+model's verbs would look for it. The cost was real and landed with check 12, which shipped
+recognising ONE canonicalising name — so the banned shape written through the second verb was
+invisible, with an instance of it already sitting in the tree, until #119 measured the set off the
+module. The second change is
+`remove_geom_file("")`: it used to canonicalise both sides, so a falsy argument canonicalised to
+`""`, matched every falsy entry and stripped them all, reporting True. It now removes nothing and
+returns False — the answer the delegation reason itself demands, since a removal that deletes the
+empty entries beside the one it was asked about is exactly what refusing the keyer avoids — but no
+ticket asked for the flip, and a behaviour that is merely GATED is not a behaviour that was
+DECLARED. Neither is reversed; both are recorded in `.claude/rules/gui-panels-config.md`, where the
+rule lives. What should have caught them is #108's own closing audit, which recorded 23 of 24
+stories met and was more generous than the gates it read in three of those rows; it is corrected by
+a new comment there rather than edited, so the original stands beside the correction.
+
 **Storing the repo-relative spelling forced the READ side into the open, and the first sweep of it
 was WRONG.** With the entry stored as `results/resampled/x.dat` rather than absolute, every call
 site that opened the raw string answers against the process cwd. They already would have, for the
@@ -1361,11 +1461,57 @@ sites it had missed. So the third sweep bought a seam instead: `readable_geom_pa
 canonical path or `""` out, the existence question answered inside. The shape of the verb is
 decided by what the five callers asked, not by what a path helper could offer — existence is
 `os.path.exists` and not `isfile`/`os.access`, because a file that exists and still cannot be read
-is the OPEN's failure and every caller already has a handler holding the filename and the
+is the OPEN's failure and the layer that opens it is the one holding the filename and the
 exception; and it stays at the PATH layer, absorbing neither the loader thread's NaN/`(N,2)`
-validation nor anything else that has a home. No plural form was added, because only one of the
-five would have written the comprehension: the bbox scan and the BC overlay need the stored
-spelling for their log line and their role test as well as the path. The conversion is
+validation nor anything else that has a home.
+
+**That last clause was written as "every caller already has a handler holding the filename and the
+exception", and it was FALSE of two of them on the day it was written — which is the argument this
+seam rests on being an assertion rather than evidence (#117).** Counted rather than asserted, the
+callers are SIX and only FOUR open a file: the mesh bbox scan, the preview loader thread, the BC
+overlay and the selection highlight. The Run-All readiness check and `add_all_sessions_to_mesh`
+never open one, so there is no open failure there to pre-empt — which also corrects the rule file's
+"five of them OPEN", a count that included the readiness check — and `test_geom_files_identity.py`'s
+check 11 comment, a FOURTH home of it that the first pass of this very fix missed. (#118 moved both
+numbers again, to SEVEN and FIVE, by converting the auto-sizing hint reader; see "a standard that
+bans one KEYWORD" above. A count restated in four places is a count that goes stale in four places,
+and this one now has done so twice — but the alternative, deriving it in a gate, would pin the
+CALLERS of a verb rather than its contract, and check 12 already holds the reach.) Of the four, the
+loader thread
+named both halves (`[preview] skipping malformed geometry '<f>': <e>`) and the bbox scan named the
+file only on the branch where its fallback `open` SUCCEEDED — when the file is genuinely unreadable
+that fallback raises too, into `except OSError: pass`. The BC overlay's handler was
+`except Exception: continue` and the selection highlight's `except Exception: return`: the file,
+the exception, everything, gone.
+
+**A refactor that changes what REACHES a handler can turn a correct silence into a swallowed
+diagnostic, with every gate green and not one character of the handler edited.** That is the
+mechanism, and it is worth naming because nothing about it looks like a regression in a diff.
+Before #112 those two handlers WERE the existence answer — the missing file raised inside
+`np.loadtxt` and the skip was correct, because a geometry the user has not made yet is not an
+error. #112 moved the existence question OUT, in front of the open. From that commit on,
+everything arriving at the unchanged handler is a genuine read failure on a file that exists. The
+standard's own gate could not see it either: it matched a handler body of exactly `["pass"]`, and
+these two spell it `continue` and `return` — the back door #118 then closed, below.
+
+#117 fixed the three rather than softening the claim, all at `warning`: the standard's grade for a
+failure that silently degrades what the user asked for, which is what an overlay that does not
+draw, a highlight that does not appear and a geometry silently absent from the bbox each are. The
+proof is what all four RECORD, not what they return — `tests/test_silent_exceptions.py` 7–8 drive
+the real `AppController` against a real unreadable file (chmod-000, falling back to a directory
+where a file should be for a user who can read anything) and read `results/logs/gui.log` — plus the
+loader thread's stdout, captured rather than read off the source, since "we looked and it names the
+file" is the evidence this ticket exists to replace. Check 8
+is the other half and the reason this is a fix rather than a noise increase: an ABSENT geometry
+must still produce NO record, so the two cases stay distinguishable. FIVE injections, verdict from
+the EXIT CODE with a negative control on the unmutated tree: reverting each of the three handlers
+bites its own check, the loader thread's print replaced by `pass` bites the fourth, and making the
+BC overlay log the absent case too reddens check 8.
+
+No plural form was added, because only one of the SEVEN would have written the comprehension — the
+Run-All readiness check, the one that opens nothing (the count here read "five" until #117
+recounted the callers): the bbox scan and the BC overlay need the stored spelling for their log
+line and their role test as well as the path. The conversion is
 behaviour-preserving by construction — a missing file still reaches each caller's existing skip,
 with no new refusal and no new log line — so it is held by the GUI gates that already run rather
 than by tests written to prove a conversion correct, and check 11 holds the VERB's own contract,
@@ -1380,7 +1526,8 @@ check that only argues.
 
 **What the seam does NOT cover, measured for #112 rather than left for it to find — and the count
 was wrong the first time it was written down here, which is the ticket's own lesson recurring one
-paragraph later.** Walking the AST for a filesystem call whose argument is a canonicalising call or
+paragraph later.** The line numbers below are as measured AT #111 (`e1f98fc`) and have already
+moved; the method names beside them in the next section are what to grep for. Walking the AST for a filesystem call whose argument is a canonicalising call or
 a variable bound from one finds FIVE in `mesh_layers_ctrl` alone, and they are not one thing.
 THREE cannot use the verb, because they need the canonical path precisely WHEN the file is absent:
 it goes into the refusal message `Resampled file does not exist at '<path>'` (`:33`), onto the
@@ -1398,6 +1545,134 @@ one is not. The
 verb is also the THIRD identity verb that deliberately does not read `keyed_geom_paths` — it asks
 about one entry, like `remove_geom_file` — so the helper's own census of its readers names it,
 which is the census #110 had just paid to make true.
+
+**#112 made that exemption a property of the CODE rather than a list of files, and converted the
+one real reader.** The gate's check 12 walks the same tree for two shapes, both of them exactly
+what the converted readers used to be: a filesystem call whose argument is a canonicalising call
+(or a local bound from one), and a filesystem call on a value taken straight from a `geom_files`
+iteration. The second is the reader the rule file's blind spot named — `for gf in cfg.geom_files:
+np.loadtxt(gf)` — which resolves a repo-relative entry against the process cwd and makes a preview
+silently not draw.
+
+The discriminator is what keeps the first shape from red-lighting the three correct sites: **an
+existence call on a canonicalised entry is a violation only when that entry is used NOWHERE but the
+branch where the file turned out to be there.** That is "use it only if it is there", which is
+`readable_geom_path`'s question and nothing else's; the three correct sites all use the path where
+the file is ABSENT, so they fall out by the question they ask rather than by their filename. Three
+details make that hold on the real tree rather than on a fixture:
+
+- **Uses inside the guard's own test do not count.** `canon and os.path.exists(canon)` is one
+  question, not a use of the answer — and that is what makes `readable_geom_path`'s own body the
+  banned shape, so its module's exemption is LOAD BEARING rather than decoration, the same bar
+  check 7's derived allow-list is held to.
+- **The guard-clause spelling counts as the indented one.** When `if not os.path.exists(q):` ends
+  its branch with a `return`/`raise`/`continue`/`break`, the rest of the enclosing block IS the
+  file-is-there branch. Without that, `q = canonical(p); if not exists(q): return; use(q)` would
+  be invisible while the identical logic one indent deeper failed — and the reach-around would
+  have a spelling.
+- **The name analysis is FUNCTION-scoped, not file-scoped**, because a file-wide read over-reaches
+  measurably here: `sync_mesh_layers_panel` binds `abs_out_file` from the canonicalising call, and
+  `handle_mesh_layer_toggled` unpacks a same-named local from the widget's item data and re-tests
+  it. A file-wide scan reports that second re-test as though the first fed it. It does not; the
+  ticket's own write-up had already said an AST scan keyed on the canonicalising call would not
+  fire there, so a scan that did would have contradicted the measurement it was built from. **That
+  is also where the ticket's "four correct sites" becomes THREE**: the near-shape is one of the
+  four only under the file-scoped walk that produced the figure, and the scan that shipped never
+  reaches it. Both numbers are right about different scans, and the one in the gate is the gate's.
+
+A call that READS (`open`, `np.loadtxt`, `os.stat`) needs no discrimination at all: it presupposes
+the answer, so canonicalise-then-read is always the reach-around.
+
+The one real reader was converted rather than pinned: `add_all_sessions_to_mesh` now asks
+`readable_geom_path(session.project_model.output_file)`, which collapses its two missing cases —
+no output file at all, and an export that is gone — into the one branch that already handled both
+the same way, so `missing_exports` gets the same names it did before. #111 had correctly left it,
+because it does not OPEN the file; it asks the same question about it, which is what makes it the
+same verb's. With that landed, check 12 against the tree reports exactly ONE site, in
+`geom_path_identity.py` itself, and nothing is pinned or exempted by name.
+
+**Shape 2 has zero sites in this tree, and saying so is the point.** It is prophylactic — the
+defect the blind spot predicted rather than one that is there — so the only thing standing behind
+it is the injection: a module dropped into a tree the gate scans handing a raw `geom_files` entry
+to `os.path.exists`, with the verdict read from the child's EXIT CODE and not from a FAIL-line
+count, which reports a crash as zero failures. Both new doors sit beside the four already there,
+each shown to move exactly one verdict, against a negative control on the untouched tree. Reaching
+a raw entry by SUBSCRIPT (`open(cfg.geom_files[0])`) is covered alongside the loop and the
+comprehension, because it is the same entry by another route and costs one branch.
+
+What the check still cannot see is enumerated in the rule file's blind-spot list rather than
+summarised, and two of the three entries there were found by REVIEW rather than by writing the
+scan: the existence ANSWER bound to a name (`ok = os.path.exists(q); if ok: use(q)` is silent,
+while the `if` and ternary spellings of the same guard fail — a spelling gap, not the "an AST
+cannot follow a value" one), and a closure reading its enclosing function's binding, which falls
+out of the function scoping above. One limit is DELIBERATE rather than residual: a site that uses
+the canonical path where the file is absent is silent BY CONSTRUCTION, which is the same property
+that keeps the three correct sites green. Each of those was verified against the shipped scan, not
+reasoned about — the gap list is the part of a gate most likely to be written from intent.
+
+**#119: "canonicalise" was ONE name in a module that had exported a SECOND canonicalising verb
+three commits earlier.** `keyed_geom_paths` went public in #110; check 12 shipped in #112 reading
+`canonical_geom_path.__name__` and nothing else, so a reader that canonicalised through the newer
+verb and then asked the filesystem passed — and the tree already held one, written correctly, in
+the model's `geom_files_not_on_disk`. Both review axes found it independently, from opposite
+directions, which is the same signal the three-entry gap list above is there to produce.
+
+The fix is a MEASUREMENT, not a second name: call every verb in `geom_path_identity.__all__` with
+one relative spelling whose canonical form is known, and keep the verbs whose answer CONTAINS it.
+That answers on behaviour rather than on a naming convention, and it discriminates — `same_geom_file`
+answers a bool, `dedupe_geom_paths` and `stored_geom_path` answer SPELLINGS, and the gate proves
+each of those three is silent by scanning the same reader written through it. `readable_geom_path`
+measures as canonicalising and is subtracted again off the same function object `_READ_OK` is
+derived from: it is the sanctioned route TO the filesystem, and five of its seven callers open what
+it hands back, so banning a read on its result would red-light every one of them. A third verb is
+covered with no edit to the check, at the scan level AND at the build level, because the per-verb
+probes and the injection doors are both generated from the derived set.
+
+Two shapes follow from what those verbs ANSWER, and the same measurement settles both. They hand
+back a SEQUENCE rather than a path, so the binding the code reaches them through is a
+`for`/comprehension target rather than an assignment — and when the element is a PAIR its two
+halves are not one question: `keyed_geom_paths` yields `(key, the spelling it came from)`, the key
+an identity and the spelling a stored entry. So the probe records WHERE the canonical path sits as
+well as which verbs produce one, and the scan binds by that position: the key is canonical, and
+everything else in the target is the raw entry it is, failing on `os.path.exists(spelling)` exactly
+as the same entry taken off the list directly does. Hard-coding "the key is first" would have put
+the module's contract in the gate; the first cut of this change did neither, gave the spelling half
+the key's discrimination, and review measured the asymmetry it produced.
+
+And the guard is then a comprehension's `if` rather than a statement, whose file-is-there branch is
+the element expression — or NOTHING when the test is negated, because then the element is produced
+precisely where the file is absent. **A negated guard with an empty file-is-there branch is the one
+thing this change subtracts from the check**, and it is the deliberate limit above rather than a
+new exemption: it is the absent question and nothing else, which is what keeps
+`geom_files_not_on_disk` green without a pin. Every other shape is judged exactly as it was before,
+by whether the entry is used anywhere but the branch where the file turned out to be there — the
+first cut required a use IN that branch instead, which silently stopped `q = canonical_geom_path(…);
+if os.path.exists(q): return True` from failing. Both regressions were review findings on this
+change's own first cut, and both are now injected: one probe per PAIR-answering verb (one today)
+asserts the key half fails where the branch uses only the ANSWER and the spelling half fails as a
+raw entry. Every fixture and every door is generated from the measured shape rather than written
+key-first, so a verb answering `(spelling, key)` would be covered by them instead of turning them
+red — which is what the "no edit for a third verb" claim has to mean.
+
+**The probe was inside the package it was measuring.** The doors were written to
+`gui/app/services/_geom_ident_inj_probe.py` and removed in a `finally` — which a SIGKILL never
+reaches, so a cancelled or crashed run left a module in the live package for the next run to
+measure. This repo has paid for that shape once already (a stale harness backup silently reverting
+a fix that had landed, #113), and the lesson recorded then was to leave nothing rather than to
+sweep afterwards. The doors now go into a temporary directory put on `sys.path` and added to the
+gate's scan roots, so they are still opened in a tree the real scans walk, with the same per-file
+AST check; a child run is handed the parent's sandbox through the environment, so the probe lands
+in a directory the surviving parent owns. Check 7c demonstrates it rather than asserting it:
+snapshot `gui/app`, start the gate again with a pause that stops it with a probe written and
+nothing removed, SIGKILL the process group, and compare — with two checks first that the killed run
+really had a probe on disk and that the probe was outside the package, so the third cannot pass for
+the wrong reason. **The killed child still makes a temp directory of its own**, and its `rmtree`
+is in the same `finally` a SIGKILL never reaches: that leaked one ~48K directory per gate run until
+review measured 17 of them. The criterion is about the package tree and held either way, but
+"leave nothing rather than sweep afterwards" has to be true of the whole run — so the child prints
+that directory beside the probe path and the KILLER removes it, checked both ways (still there
+before, gone after). What the doors used to prove as a side effect — that the package is the tree
+these scans read — is asserted directly now, against the one walk both roots go through.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

@@ -19,6 +19,12 @@ target_include_directories(hybmesh_test_check INTERFACE ${CMAKE_CURRENT_SOURCE_D
 # test harness).
 set(HYBMESH_CORE_TESTS
     test_mesh_boundary_edge
+    # exportVTK's all-or-nothing block-id rule, driven from the partially tagged
+    # state no MESH_MODE 1 run can produce. It is unreachable from production,
+    # not untestable — which is only true because Mesh is a library target this
+    # tree can link, and is the reason the test lives here rather than beside the
+    # Python gate that covers the rule from the outside (#113).
+    test_mesh_vtk_block_field
 )
 
 foreach(t IN LISTS HYBMESH_CORE_TESTS)

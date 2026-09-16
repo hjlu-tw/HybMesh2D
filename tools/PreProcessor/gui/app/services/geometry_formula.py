@@ -2,6 +2,10 @@ from __future__ import annotations
 import math
 import numpy as np
 
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
+
 
 # ── Helper functions for formula evaluation and sampling ────────────────────
 
@@ -15,6 +19,14 @@ def _eval_formula(expr: str, var_name: str, val: float) -> float:
     try:
         return float(eval(expr.replace("^", "**"), {"__builtins__": None}, safe))
     except Exception:
+        # DEBUG, and the grade is decided by the CALL RATE rather than by how
+        # much it matters: this runs once per sample, so a formula the user is
+        # still halfway through typing would write one WARNING per point of the
+        # curve. The user-facing answer to a bad formula is the NaN itself,
+        # which draws nothing; this record is for the case where the expression
+        # looks right and the evaluation still fails.
+        _log.debug("formula %r failed at %s=%r; returning NaN", expr, var_name,
+                   val, exc_info=True)
         return float("nan")
 
 
@@ -51,6 +63,13 @@ def _eval_formula_array(expr: str, var_name: str, vals: np.ndarray) -> np.ndarra
             return res.astype(float)
         return np.full_like(vals, float(res), dtype=float)
     except Exception:
+        # DEBUG: this handler RECOVERS rather than discards -- the scalar path
+        # below evaluates the same expression per sample and is the answer, so
+        # nothing is lost when it is taken. What is worth a record is that the
+        # vectorised route failed at all, because the fallback is O(n) evals and
+        # a formula that always takes it is a silent slow path.
+        _log.debug("vectorised evaluation of %r failed; falling back to %d "
+                   "per-sample evaluations", expr, len(vals), exc_info=True)
         return np.array([_eval_formula(expr, var_name, v) for v in vals])
 
 

@@ -19,8 +19,8 @@ lines ARE its whole story and the note carries only its blind spot. Stated here 
 by moving text into a note, which #59 puts out of scope.
 
 **Four of these rules are ALSO pinned in `CLAUDE.md`, one line each, and that duplication is the
-point.** The GUI↔C++ config parity gate, the GUI file-length limit, `never except Exception: pass`
-and `never a raw blockSignals pair` belong to no area, and a glob cannot bind an edit that happens
+point.** The GUI↔C++ config parity gate, the GUI file-length limit, `never a broad except that
+discards` and `never a raw blockSignals pair` belong to no area, and a glob cannot bind an edit that happens
 outside every glob — measured in #61, a rule file does not arrive for an `Edit` without a prior
 `Read`, nor for a `Write` creating a new file. The root carries the rule and its gate; this file
 carries the whole of it. When one changes, both change.
@@ -31,7 +31,7 @@ pinned in the root:
   map. Those two are matched by `.claude/rules/mesher.md`'s `include/**`, and that file carries no
   parity rule — it only mentions the gate in passing (its `MESH_MODE` initialiser note). An agent
   editing the C++ half is reached by the root one-liner, not by this file.
-- **`except Exception: pass` and the signal guards** are repo-wide by intent; their gates
+- **The broad-`except` rule and the signal guards** are repo-wide by intent; their gates
   (`tests/test_silent_exceptions.py`, `tests/test_signal_guards.py`) sweep the GUI tree, so the
   glob covers what is gated and the root line covers what is not.
 
@@ -190,11 +190,48 @@ between them leaves the widget permanently unable to emit. Use `with block_signa
 re-entrant depth counter (a bare bool let a nested populate clear the outer guard).
 `tests/test_signal_guards.py` statically fails the build on either.
 
-**Error handling: never `except Exception: pass`.** Use
-`services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a step
-allowed to fail, or `warning` when the failure silently degrades what the user asked for.
-`HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. `tests/test_silent_exceptions.py` fails the
-build if a new undocumented silent handler appears.
+**Error handling: never a BROAD `except` that discards.** The rule is about the HANDLER, not about
+one keyword (#118). A catch wide enough to swallow an error nobody predicted — `except Exception:`,
+`except BaseException:`, a bare `except:`, or a tuple holding either — whose WHOLE body is `pass`,
+`continue`, `break`, `return`, `return <fallback>` or a bare string literal neither records the
+failure nor re-raises it, and all six spell the same defect. Matching only `pass` is the back door
+#117 went through: a refactor changed what REACHED a handler spelled `continue`, a correct skip
+became a swallowed diagnostic, and every gate stayed green. A NARROW handler is a different thing
+and is deliberately out of scope — `except ValueError: continue` inside a line parser is the right
+idiom, this tree holds over a hundred such, and a gate that flagged them would need an allowlist
+longer than the rule.
+
+Use `services/logging_setup.py::get_logger(__name__)` and log at `debug(..., exc_info=True)` for a
+step allowed to fail, or `warning` when the failure silently degrades what the user asked for.
+`HYBMESH_LOG_LEVEL=DEBUG` surfaces the debug tier. Those two tiers settle most sites on their own —
+a transform handle that still draws at a fallback length loses nothing the user asked for, so it is
+`debug` (`views/canvas_transform_mixin.py`). FOUR shapes cover the ones they do not, each visible
+in the tree:
+- **A probe whose negative answer is legitimate still records, at `debug`.** "Not installed" and
+  "installed and broken" arrive at the caller identically, and only the exception separates them
+  (`services/env_setup.py`, the gmsh library probe).
+- **A handler that RECOVERS by another route records at `debug`**: nothing is lost, so what is
+  worth knowing is that the fast path failed at all — an O(n) fallback that is always taken is a
+  silent slow path (`services/geometry_formula.py::_eval_formula_array`, whose vectorised
+  evaluation falls back to per-sample; the scalar `_eval_formula` beside it is the shape below, not
+  this one).
+- **A site called PER SAMPLE or per repaint is `debug` even when the outcome matters**, where the
+  same failure is already visible to the user as it happens. `_eval_formula` runs once per point of
+  a curve: a bad expression would write one `warning` per point, and the user is looking at the
+  curve not drawing while they type. Call rate is a real criterion, not an excuse — it does NOT
+  apply where the failure is invisible until someone asks why a number is wrong.
+- **Where one failure can mean "not there yet" or "there and unreadable", RESOLVE first and the
+  question answers itself.** `readable_geom_path` returns `""` for the first, so there is nothing
+  to record; everything that reaches the open is the second, and the reader `warning`s it
+  (`views/panels/mesh_sizing_mixin.py::_hint_points`, #117's distinction). Grading on a raw
+  `os.path.exists` instead LOOKS like the same rule and is not: the stored entry is repo-relative,
+  so from another cwd a geometry that is really there grades as one the user has not made yet.
+
+`tests/test_silent_exceptions.py` check 2 walks every `.py` file under `tools/PreProcessor/gui/`
+with `ast` — the GUI ROOT, not just `app/`, so `main.py` is inside it — and fails the build if a
+new undocumented silent broad handler appears. `ALLOWED_SILENT` names the files that may hold one,
+each handler must still explain itself in a comment at the site, and an entry whose file stops
+holding one FAILS as obsolete rather than quietly outliving its reason.
 
 ---
 
@@ -215,6 +252,14 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
 
 ## Named blind spots
 
+- **`tests/test_silent_exceptions.py` check 2 reads CONTROL FLOW, not intent.** A broad handler
+  whose body does anything else — `self._x = None`, a UI reset — is not reached and can discard
+  just as completely; `_reset_project_baseline` was fixed by hand rather than by widening the
+  scan, because deciding whether a body "records the failure" means recognising logging by name,
+  which is the fragile version of this gate. Two smaller ones beside it: the walk is scoped to the
+  GUI tree, which is what the standard binds (`tools/scripts/` and the test suite are outside it);
+  and a broad handler aliased past the name match (`Err = Exception`, then `except Err:`) is not
+  recognised — nothing in this tree does it, and a name match is what keeps the scan readable.
 - **`tests/test_file_length.py`'s pin is a CEILING, not a measurement**: a pinned file that
   shrinks while STAYING over the limit passes, and may grow back to its pin without the gate
   speaking. Deliberate — #102 and #103 split two of these files rather than living inside their

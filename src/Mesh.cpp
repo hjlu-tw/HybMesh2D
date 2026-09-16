@@ -398,12 +398,17 @@ void Mesh::exportVTK(const std::string& filename) const {
         std::count_if(elements.begin(), elements.end(),
                       [](const Element& el) { return el.blockId.has_value(); }));
     if (tagged > 0 && tagged < elements.size()) {
-        // Unreachable today -- the multi-block adapter's one loop tags every cell
-        // it adds, and no other path adds a tagged one. Said out loud anyway,
-        // because the failure it guards is the silent kind: the section simply
-        // would not appear, and a debug aid that vanishes without saying so is
-        // indistinguishable from one that was never built. That is the whole
-        // shape of the defect #106 exists to fix.
+        // Unreachable FROM PRODUCTION -- the multi-block adapter's one loop tags
+        // every cell it adds, and no other path adds a tagged one. Said out loud
+        // anyway, because the failure it guards is the silent kind: the section
+        // simply would not appear, and a debug aid that vanishes without saying
+        // so is indistinguishable from one that was never built. That is the
+        // whole shape of the defect #106 exists to fix.
+        //
+        // Unreachable is not untestable: Mesh is a library target the C++ test
+        // tree links, so tests/cpp/test_mesh_vtk_block_field.cpp builds the
+        // partially tagged state directly and asserts BOTH halves of the rule --
+        // the file gets no CELL_DATA section, and this warning is emitted (#113).
         LOG_WARN("VTK export: " << tagged << " of " << elements.size()
                  << " cells carry a block id, so the block-id cell field is "
                  "omitted -- it has one value per cell and no way to spell "
