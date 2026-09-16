@@ -566,13 +566,11 @@ def run(tmp, name, extra="", config=None):
 #
 # AND THIS IS A THIRD "READ THE SHIPPED `.dat`, RETARGET, FAIL LOUDLY", named
 # because the two it sits beside are imported under a comment that says "Imported,
-# not copied". The key-driven form here could subsume both `base_config`s and
-# leave one implementation — `qlines`'s own note next door records what four
-# copies of a parser cost when #81 had to make the identical one-character fix in
-# two of them. It is NOT done here: those two functions are owned by the gates
-# that hold them, each does something extra (the C-grid's `bc_geom` override, the
-# O-grid's topology argument), and collapsing three into one across three files is
-# a refactor rather than #114. Recorded as the residue it is.
+# not copied". The record of that duplication — the whole set, what collapsing it
+# would cost, and why it is deferred — is in `shipped_config`'s own docstring
+# below, where #124 put the SAME record at all three copies with a gate under it.
+# Until then it was here and nowhere else, which is what let #115 assert the
+# residue was recorded "at the code" while two of the three said nothing.
 _MB_PATH_KEYS = ("MESH_TOPOLOGY_FILE", "GEOM_FILE", "DOMAIN_FILE")
 
 
@@ -582,6 +580,29 @@ def shipped_config(name):
     Read from disk for the reason the C-grid's own `base_config` gives: these
     files are documentation a user runs, and a test that composed an equivalent
     one would leave an edit to the shipped file invisible from here.
+
+    SHIPPED-CONFIG RETARGETER, ONE OF 3 (#124). The other two are
+    `test_multiblock_cgrid_surface.py::base_config` and
+    `test_multiblock_ogrid_surface.py::base_config`. All three read a shipped
+    `config/*.dat` from disk, repoint its paths at this checkout, retarget its
+    output at `@STEM@` and raise BY NAME when a rewrite stops landing — one
+    shape, three implementations. The set is DERIVED rather than remembered:
+    `test_shipped_config_record.py` finds every function in the tree with that
+    shape and fails when one carries no record, when a record's count disagrees
+    with the set, or when it does not name the others — so a FOURTH copy arrives
+    as a fourth rather than quietly as a first.
+
+    NOT COLLAPSED, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT. One
+    implementation would be a refactor across three gate files with three owners,
+    and each copy carries something the others do not: this one's key-driven
+    rewrite, the only one that can retarget a config it was not written for, the
+    C-grid's `bc_geom` override and the O-grid's `topo`/`thickness` arguments.
+    What three copies of one shape cost is recorded in `qlines`'s own note next door: there
+    were four copies of one parser before #81, and that ticket had to make the
+    identical one-character fix in two of them. #115's Out of Scope said this
+    residue was "already recorded as residue at the code"; it was recorded at ONE
+    of the three (#114's review, at `shipped_config`) and nowhere else, which is
+    what let that claim stand unchallenged for the length of a batch.
     """
     path = os.path.join(_REPO, "config", name + ".dat")
     with open(path, encoding="utf-8") as f:

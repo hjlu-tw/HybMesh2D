@@ -256,6 +256,30 @@ def base_config(topo=_TOPO, thickness=None, geom_dir=_GEOM):
     gives: config/multiblock_ogrid.dat is documentation a user runs, and a test
     that composed an equivalent one would leave an edit to the shipped file
     invisible here.
+
+    SHIPPED-CONFIG RETARGETER, ONE OF 3 (#124). The other two are
+    `test_multiblock_cgrid_surface.py::base_config` and
+    `test_multiblock_smooth_surface.py::shipped_config`. All three read a shipped
+    `config/*.dat` from disk, repoint its paths at this checkout, retarget its
+    output at `@STEM@` and raise BY NAME when a rewrite stops landing — one
+    shape, three implementations. The set is DERIVED rather than remembered:
+    `test_shipped_config_record.py` finds every function in the tree with that
+    shape and fails when one carries no record, when a record's count disagrees
+    with the set, or when it does not name the others — so a FOURTH copy arrives
+    as a fourth rather than quietly as a first.
+
+    NOT COLLAPSED, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT. One
+    implementation would be a refactor across three gate files with three owners,
+    and each copy carries something the others do not: this one's `topo` and
+    `thickness` arguments, the C-grid's `bc_geom` override, and the smoothing
+    gate's key-driven rewrite, the only one that can retarget a config it was not
+    written for.
+    What three copies of one shape cost is recorded a few lines up in `quality`'s note: there
+    were four copies of one parser before #81, and that ticket had to make the
+    identical one-character fix in two of them. #115's Out of Scope said this
+    residue was "already recorded as residue at the code"; it was recorded at ONE
+    of the three (#114's review, at `shipped_config`) and nowhere else, which is
+    what let that claim stand unchallenged for the length of a batch.
     """
     with open(_CONF, encoding="utf-8") as f:
         text = f.read()
