@@ -46,7 +46,7 @@ if _GUI not in sys.path:
 
 # THE ONE SPELLING OF "NO SMOOTHING", because since #85 that is no longer the
 # default and five gates need to say it. It lived as `NO_SMOOTH` in one file, `OFF`
-# in another and a raw literal in three more for one commit — the shape this
+# in another and a raw literal in three more — the shape this
 # module's own reason for existing is against, and the one that goes stale on the
 # next flip. Carries its own leading newline so it appends to any config text.
 NO_SMOOTH = "\nMB_SMOOTH_ITERS 0\n"

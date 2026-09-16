@@ -106,7 +106,7 @@ struct Corner {
 // the law was a `std::string` compared against a literal at eight sites (four
 // refusals in `parseSpacing`, one in the resolution loop, three in
 // `spacingAlong`), which is eight chances for one of them to disagree with the
-// others. `MbEdgeKind` was exactly this for one commit and a review caught it; the
+// others. `MbEdgeKind` was exactly this and a review caught it; the
 // shape here is the same one (`mbEdgeKindName`, `mbSideAxis`), and the accepted
 // list every refusal prints is built from this table rather than retyped.
 //
@@ -201,7 +201,7 @@ struct BlockSpec {
 
 // The name of one side of a block, from the ONE place the [south, east, north,
 // west] convention lives (`mbSideAxis` in the header). There was a second copy of
-// these four words here for one commit, which is exactly the shape
+// these four words here, which is exactly the shape
 // .claude/rules/mesher-multiblock.md's "the convention is DATA, in one place" rule
 // exists to refuse.
 const char* sideName(int k) {

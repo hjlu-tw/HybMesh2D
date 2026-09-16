@@ -307,7 +307,7 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   chain-free report pass. A class with **no** seed is refused naming every edge in it — never
   defaulted, and **not** seeded from `SURFACE_MESH_SIZE`.
 - **The kind is a real `MbEdgeKind` with its names beside it** (`mbEdgeKindName`, the `mbSideAxis`
-  shape), not a string compared at six sites — it was the latter for one commit, and the review that
+  shape), not a string compared at six sites — it shipped as the latter, and the review that
   caught it also caught a second copy of the four SIDE names in the `.cpp`.
 - **It decides three things and NO arithmetic**: how many block sides the edge may be (`wall` 1,
   `interface`/`cut` 2); whether a `binding` is allowed (`wall` only); and whether it exports as a

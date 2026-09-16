@@ -669,7 +669,7 @@ node counts partition into equivalence classes the user seeds a few of.
 - **A class with NO seed is refused naming every edge in it.** Picking a default
   would decide the whole mesh density from a number nobody wrote down.
 - **The kind is a real `MbEdgeKind`, declared with its names beside it.** It shipped
-  as a validated `std::string` for one commit — compared against a literal at six
+  first as a validated `std::string` — compared against a literal at six
   sites, and published out of the seam as a string a reader had to match by hand —
   which the code review caught against this note's own "enum" wording.
   `mbEdgeKindName` sits beside it in the same shape `mbSideAxis` already uses, so
@@ -973,7 +973,7 @@ reach the solver.
 - **Three more findings acted on, none of them behaviour.** (1) `EdgeSpec::law` was a
   `std::string` compared at EIGHT sites — the exact shape `.claude/rules/mesher-multiblock.md`
   already refuses
-  for `MbEdgeKind` ("not a string compared at six sites — it was the latter for one commit, and the
+  for `MbEdgeKind` ("not a string compared at six sites — it shipped as the latter, and the
   review that caught it..."), so Standards was citing the repo against the diff. It is now a
   file-local `SpacingLaw` enum with `spacingLawName` / `spacingLawList` / `parseSpacingLaw` in the
   `mbSideAxis` shape, and every refusal builds its accepted list from that table. File-local rather
@@ -2285,7 +2285,7 @@ because `mesher-multiblock.md` was full.
   arithmetic did not.
 
 - **A STALE LABEL ON A LIVE NUMBER is the failure mode of a default flip, and this ticket shipped
-  one for a commit.** `test_multiblock_cgrid_surface.py` printed its run's figures under the label
+  one.** `test_multiblock_cgrid_surface.py` printed its run's figures under the label
   `BASELINE`; the run is at the default, so the label silently started describing the SMOOTHED mesh
   (29.895 where the docstring two screens up says 32.044). Nothing failed — the check beside it
   only asserts the figures were MEASURED. It is now two labelled lines and an assertion that #57's

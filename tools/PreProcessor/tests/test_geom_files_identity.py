@@ -67,7 +67,7 @@ Three defects behind that, each pinned below:
  8. THE SECOND VERB, AND THE PROBE (#119). Two holes #108 left, neither of them
     visible from the ticket that made it. Check 12 recognised canonicalisation
     by ONE name while the identity module had exported a second canonicalising
-    verb three commits earlier, so the banned shape written through
+    verb since #110, so the banned shape written through
     ``keyed_geom_paths`` passed -- and the tree already held an instance of it.
     The verb set is MEASURED off the module now, and a reader through each is
     injected. And the injection doors were written into ``gui/app/services/``
@@ -893,8 +893,8 @@ check(gpi.readable_geom_path("") == "",
 # needs no such discrimination: it presupposes the answer.
 #
 # And "canonicalise" is more than ONE verb (#119). This check shipped
-# recognising the single name it was written for -- three commits after
-# keyed_geom_paths became the module's second public canonicalising verb -- so
+# recognising the single name it was written for -- #110 had already made
+# keyed_geom_paths the module's second public canonicalising verb -- so
 # the banned shape written through the second one was invisible, with an
 # instance of it already sitting in the tree. The set is MEASURED off the module
 # now, so a third verb needs no edit here. The list-wide verbs answer with a
@@ -935,8 +935,8 @@ def _canonicalising_verbs() -> dict:
 
     MEASURED off the module, never listed here, and that is the whole point of
     this derivation. Check 12 was written when there was one such verb and
-    recognised canonicalisation by that one name; three commits earlier #110 had
-    already promoted ``_keyed`` to a second public one, so the banned shape
+    recognised canonicalisation by that one name; #110 had already promoted
+    ``_keyed`` to a second public one, so the banned shape
     written through it was invisible -- with an instance of that shape already
     sitting in the tree behind it. A third verb is covered with no edit here.
 

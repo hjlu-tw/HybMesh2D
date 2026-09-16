@@ -128,9 +128,10 @@ Checks:
     its own definition states, which is what blind spot (c2) said. The gap was not
     theoretical: the slack left the band at `87244f2`, stayed out until #105 re-derived the
     constant by hand (to 57, still out of band), and left the band a THIRD time on the
-    fourth commit after `fccff2c` finally landed it inside, when 223 characters of
-    unrelated prose took it to 333. Every check reported ALL PASS every time and a review
-    axis is what noticed — the same shape as the eleven stale figures check 7 exists for.
+    fourth commit after `fccff2c` finally landed it inside (`fccff2c..374ad04`), when
+    `374ad04` spent 223 characters of unrelated prose and took it to 333. Every check
+    reported ALL PASS every time and a review axis is what noticed — the same shape as
+    the eleven stale figures check 7 exists for.
     All THREE numbers the rule states are READ from that one statement rather than
     restated here — the band's two ends AND the boundary the derivation rounds down to.
     Reading two of them was this check's first draft, and Spec review measured the
@@ -352,10 +353,11 @@ Known remaining blind spots, stated rather than pretended away:
     It went out again at `87244f2` and stayed out until #105 re-derived it by hand a SECOND
     time, to 57 — out of band at the same end, against the same floor — which
     that ticket's review caught and `fccff2c` fixed by re-deriving it a THIRD time, to 556;
-    three commits then ran in band and the fourth left it again. Three hand re-derivations
-    (#79, #105, `fccff2c`) and three drifts, every one of them caught by a human or a
-    review agent rather than by the build. The drift was BOUNDED even then, and the first draft of this entry got that wrong
-    in the direction that flatters it: it claimed a budget left at 33,000 while the root
+    three commits then ran in band and the fourth, `374ad04`, left it again
+    (`fccff2c..374ad04`). Three hand re-derivations (#79, #105, `fccff2c`) and three
+    drifts, every one of them caught by a human or a review agent rather than by the
+    build. The drift was BOUNDED even then, and the first draft of this entry got that
+    wrong in the direction that flatters it: it claimed a budget left at 33,000 while the root
     fell to 20,000 would leave "every check still passing", and review measured the
     opposite — injection 5c goes RED once the slack reaches about 3,000, which is the whole
     point of expressing story 12 as a 3k addition rather than as a budget value. Measured,
@@ -449,7 +451,17 @@ Known remaining blind spots, stated rather than pretended away:
       - Git-history counts, such as the 22-of-23 measured at `ROOT_BUDGET`'s definition.
         Those decay on every commit rather than on every edit to the file, so gating one
         would make each commit touching the root re-measure `git log` — and unlike the
-        figures above there is no fixed point to converge on.
+        figures above there is no fixed point to converge on. #123 drew the conclusion
+        this exemption forces, since a family `--sync` cannot hold is a family that goes
+        stale in silence: a COMMIT DISTANCE is not gated, and is written down only where
+        it is load bearing and names the two endpoints it measures between, in the one
+        spelling `git rev-list --count A..B` re-derives — the band ledger's
+        `fccff2c..374ad04` is the shape, and an INCLUSIVE claim carries the `^`. How many
+        survive that test is deliberately NOT stated here: a count of them would be one
+        more hand-maintained tree figure inside the file that gates hand-maintained tree
+        figures, and nothing would gate it. `docs/agents/rule-file-style.md` rule 6 makes
+        DELETE the default; the 22-of-23 above stays because it is a DATED measurement
+        with its scope named, not a distance.
       - Every figure that is HISTORY rather than a measurement: the 149,141 before #62,
         #75's 40,000 lock against a 32,043 file, the 110-character drift, the +789 rise,
         #76's 3,446 and #70's 263. A dated fact does not decay, and a `--sync` that
@@ -459,11 +471,12 @@ Known remaining blind spots, stated rather than pretended away:
     root's size — a live reading of today's tree — hand-maintained beside the argument
     for the constant. None of the four families above reaches it and the history list
     above names its members by value, so the citation resolved to an entry that did not
-    cover it: blind spot (c), a pointer nothing checks. It went stale three commits
-    later, inside the band, with every check green. The figure and the floored size
-    beside it are registered now. The correction is narrow ON PURPOSE: this list DOES
-    excuse live readings of the tree — the first bullet's two tripwire counts are exactly
-    that, derivable and deliberately left out — so the rule is not "no live measurement
+    cover it: blind spot (c), a pointer nothing checks. It went stale at `77c2561`, the
+    first commit after #109's review (`9e33a6e`) to touch the root, inside the band, with
+    every check green. The figure and the floored size beside it are registered now. The
+    correction is narrow ON PURPOSE: this list DOES excuse live readings of the tree —
+    the first bullet's two tripwire counts are exactly that, derivable and deliberately
+    left out — so the rule is not "no live measurement
     may cite (g)". It is that a citation has to name an entry that REACHES the figure,
     and `ROOT_BUDGET`'s named one that does not.
  h. `--sync` WRITES A GATE FILE now, not only instruction files (#116). The `src:` target
@@ -476,10 +489,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 47,618 / 47,008 / 45,031 / 38,554 / 25,369 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 12,382 / 12,992 of
+    Ten rule files now — 47,610 / 47,008 / 45,018 / 38,554 / 25,369 / 18,223 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 12,390 / 12,992 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 14,969 / 21,446 / 34,631 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 14,982 / 21,446 / 34,631 / 41,777 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -625,15 +638,15 @@ _SOURCES = {
 # was take slack from 407 to 57 -- from out of band to one typo away, which is exactly the
 # shape #78's first draft was refuted for, where the next typo fix has to edit this file
 # too. Nothing failed at any point, because the derivation was not checked then, only the
-# VALUE (blind spot (c2)); five commits ran under a budget its own stated rule contradicted
-# and a review axis is what noticed. #105's review then re-cut it BY HAND a second time,
-# in `fccff2c`, to 36,000 against a 35,444 root -- 556 of slack, in band -- and that lasted
-# four commits: three ran inside the band and `374ad04` took the slack to 333, under the
-# same floor, on 223 characters of prose about something else. Three commits is what a
-# hand re-derivation bought, which is why #109 gave the band a check (check 8) rather than
-# a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,411 characters
+# VALUE (blind spot (c2)); the budget ran out of band under its own stated rule until a
+# review axis noticed. #105's review then re-cut it BY HAND a second time, in `fccff2c`,
+# to 36,000 against a 35,444 root -- 556 of slack, in band -- and that lasted four commits
+# (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
+# under the same floor, on 223 characters of prose about something else. That is what a
+# hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,403 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 36,411 taken down to the boundary above is 36,000, to
+# are its size and its slack -- and 36,403 taken down to the boundary above is 36,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended at
 # #109 and named as pasteable, after that ticket's second round of review grew the root
 # past the floor; closing that loop by hand is the last time this number will need one.
@@ -646,9 +659,9 @@ _SOURCES = {
 # exemption. That entry DOES excuse live readings of the tree -- its first bullet is two
 # of them -- so the defect is not that it excuses none; it is that no entry in it reaches
 # a figure of this kind, and the citation resolved anyway, which is blind spot (c)'s own
-# shape. The figure then went stale three commits later at `77c2561`, on an edit that
-# stayed INSIDE the band with every check reporting ALL PASS -- #109's defect one level
-# down, inside #109's own fix.
+# shape. The figure then went stale at `77c2561` -- the FIRST commit after `9e33a6e` to
+# touch the root at all -- on an edit that stayed INSIDE the band with every check
+# reporting ALL PASS -- #109's defect one level down, inside #109's own fix.
 ROOT_BUDGET = 37_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
@@ -1819,10 +1832,11 @@ SELF_REPORT = (
     # evidence the constant rests on. #109 wrote them as a dated fact and cited blind
     # spot (g), which covers history and four families of hand-maintained figure and
     # covers neither of these; the citation resolved anyway, which is blind spot (c), and
-    # the size figure went stale three commits later on an edit that stayed inside the
-    # band, where check 8 has nothing to say. One derivation, two anchors, the
-    # arrangement `rule_count` already is -- and the anchors take `_comment_gaps` because
-    # this figure lives in a `#` block, where a re-wrap would otherwise break them.
+    # the size figure went stale on the first commit after it to touch the root at all
+    # (`77c2561`), an edit that stayed inside the band, where check 8 has nothing to say.
+    # One derivation, two anchors, the arrangement `rule_count` already is -- and the
+    # anchors take `_comment_gaps` because this figure lives in a `#` block, where a
+    # re-wrap would otherwise break them.
     {"label": "the budget derivation's root size", "target": "gate",
      "pattern": _comment_gaps(r"CLAUDE\.md~is~([\d,]+)~characters"),
      "fields": ("root_chars",)},
@@ -1973,10 +1987,11 @@ def check_self_report(world):
 # band at `87244f2` and stayed out -- the run is enumerated below -- until #105 re-derived
 # the constant BY HAND, exactly as the rule there asks, and landed on 57, which is still
 # out of band at the same end. `fccff2c` re-derived it a third time, to 556 and inside;
-# the FOURTH commit after that took it to 333 and out again, on 223 characters of
-# unrelated prose. Every time, every check reported ALL PASS and a review axis is what
-# noticed, which is the same shape as the eleven stale figures check 7 exists for: a rule
-# a person has to remember re-deriving is a rule that decays quietly.
+# the FOURTH commit after that, `374ad04` (`fccff2c..374ad04`), took it to 333 and out
+# again, on 223 characters of unrelated prose. Every time, every check reported ALL PASS
+# and a review axis is what noticed, which is the same shape as the eleven stale figures
+# check 7 exists for: a rule a person has to remember re-deriving is a rule that decays
+# quietly.
 #
 # All THREE numbers the rule states are READ from its own statement at `ROOT_BUDGET`'s
 # definition -- the band's two ends AND the boundary the derivation rounds down to --
@@ -3463,7 +3478,8 @@ check(len(hits) == 1 and "'1'" in hits[0] and _TARGET_PATH["gate"] in hits[0]
 # CLAUDE.md that stays INSIDE the band. Check 8 has nothing to say — it reads the band and
 # the boundary, not the evidence — so before #120 the argument for the constant went false
 # with every check reporting ALL PASS. That is not hypothetical: it is what `77c2561` did,
-# three commits after #109 landed, and the stale 36,018 it left is what this ticket found.
+# the first commit after #109 to touch the root, and the stale 36,018 it left is what this
+# ticket found.
 _room120 = (ROOT_BUDGET - len(world["root"])) - _RULE120.low - 1
 check(_room120 > 0,
       "injection 13o3. the committed tree can still grow INSIDE its band (%d characters), "

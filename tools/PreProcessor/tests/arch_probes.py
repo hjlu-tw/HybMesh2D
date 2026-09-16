@@ -11,7 +11,8 @@ go stale between sessions.
 
 WHY THIS EXISTS. Reviewing that document on 2026-08-17 recommended a batch of
 three, and two of the three were already finished — including its own top
-recommendation, landed in six commits the document could not know about.
+recommendation, landed in `68d3945^..23bbe34`, which the document could not
+know about.
 Re-deriving the status by hand took six rounds of measurement and still got one
 candidate wrong on the first pass, because the signal that it was done (a leak
 count of 148 where the document said 389) was explained away as a measurement

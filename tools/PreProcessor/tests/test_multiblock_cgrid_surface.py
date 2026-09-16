@@ -579,7 +579,7 @@ def main() -> int:
         # WHAT #85 CHANGED HERE. The figures printed by the run above used to BE
         # #57's baseline, because the shipped default ran no sweeps; the default is
         # now 20, so that run is a SMOOTHED mesh and labelling it "BASELINE" would
-        # have been a stale label on a live number — which it was, for one commit.
+        # have been a stale label on a live number — which it was, until it was read.
         # So the baseline is measured on its own explicit `MB_SMOOTH_ITERS 0` run
         # and ASSERTED against #57's recorded figures, because every threshold in
         # test_multiblock_quality_gate.py is stated relative to them: if this mesh

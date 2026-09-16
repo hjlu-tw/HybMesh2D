@@ -358,7 +358,7 @@ has landed.
   silence" and is now "zero sweeps is silence", plus a new check that the default is NOT zero) and
   `test_multiblock_cgrid_surface.py` check 3, whose printed figure was labelled BASELINE and had
   silently become the smoothed mesh. **A stale label on a live number is the failure mode of a
-  default flip**, and that one shipped for a commit before the label was read.
+  default flip**, and that one shipped before the label was read.
 
 **THE BASELINE IS A GATE (`tools/PreProcessor/tests/test_multiblock_quality_gate.py`; #85).**
 - **ONE OWNER FOR THE THRESHOLDS, each stated with the run that produced it**, so a regression

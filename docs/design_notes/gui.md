@@ -1521,7 +1521,7 @@ FIXTURE — that `os.path.exists` on the same entry from the same cwd really doe
 — and it is labelled a fixture control rather than an injection, because no mutation of the verb
 can turn it red. What makes check 11 non-vacuous about the verb is the mutation run beside it:
 rewriting the body back to `os.path.abspath` exits 1 with the first assertion the first FAIL.
-Calling a fixture control an injection is the shape #110's review named one commit earlier — a
+Calling a fixture control an injection is the shape #110's review had already named — a
 check that only argues.
 
 **What the seam does NOT cover, measured for #112 rather than left for it to find — and the count
@@ -1610,8 +1610,8 @@ the canonical path where the file is absent is silent BY CONSTRUCTION, which is 
 that keeps the three correct sites green. Each of those was verified against the shipped scan, not
 reasoned about — the gap list is the part of a gate most likely to be written from intent.
 
-**#119: "canonicalise" was ONE name in a module that had exported a SECOND canonicalising verb
-three commits earlier.** `keyed_geom_paths` went public in #110; check 12 shipped in #112 reading
+**#119: "canonicalise" was ONE name in a module that had already exported a SECOND
+canonicalising verb.** `keyed_geom_paths` went public in #110; check 12 shipped in #112 reading
 `canonical_geom_path.__name__` and nothing else, so a reader that canonicalised through the newer
 verb and then asked the filesystem passed — and the tree already held one, written correctly, in
 the model's `geom_files_not_on_disk`. Both review axes found it independently, from opposite

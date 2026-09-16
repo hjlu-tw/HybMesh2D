@@ -128,7 +128,7 @@ from test_multiblock_ogrid_surface import (  # noqa: E402
 # owns it: `qlines` reports the MESH, `smooth_line` the SOLVE. Hand-rolling the
 # second is what `.claude/rules/mesher-smoothing.md` forbids in as many words —
 # "the ONE parser every gate imports rather than four near-copies" — and this file
-# did exactly that for one commit.
+# did exactly that until this import replaced it.
 from test_multiblock_quality_surface import qlines  # noqa: E402
 from test_multiblock_smooth_surface import smooth_line  # noqa: E402
 from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env  # noqa: E402

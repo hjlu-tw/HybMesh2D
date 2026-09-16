@@ -47,6 +47,32 @@ spot. It was in `.claude/rules/mesher.md` (#52) and is now in
 6. **Keep a measurement that constrains a decision; drop one that only justifies it.**
    `0.35 s → 0.07 s per frame` and `21- and 41-point resamplings` constrain. *"Four unrelated
    environment defects stood in the way"* justifies — design note.
+   **A COMMIT DISTANCE is this rule's recurring instance** — *"three commits later"*, *"for one
+   commit"* — and the default for one is DELETE. It justifies and constrains nothing; it is the
+   one figure family `--sync` cannot hold, since `test_instruction_budget.py`'s blind spot (g)
+   excludes git-history counts by name; and it decays on every commit rather than on every edit
+   to the file that states it. Corrected **twice** before it was swept, both inside #121's
+   review, which dropped two from its own text and left the originals standing as residue —
+   then swept at **#123** across the instruction, gate and design-note set: **27 claims in 13
+   files, 9 of them already refuted by the tree** — 23 deleted, 4 kept. Keep one only where it
+   is load bearing, and then name the two endpoints so the next reader can re-derive it instead
+   of trusting it. **One convention: the range must answer to `git rev-list --count A..B`** —
+   `fccff2c..374ad04` is four, and an INCLUSIVE claim carries the `^`, since `68d3945..23bbe34`
+   answers five where `68d3945^..23bbe34` answers six. A distance whose endpoints are not stated
+   cannot be re-derived by anyone, which is why an endpoint-free one is deleted even when it
+   happens to be true. Two traps #123 fell into first: the ORDINAL spelling (*"the fourth commit
+   after `X`"*) is the same claim wearing different words and walks straight past a sweep
+   grepping only for `N commits`; and a count that merely DECORATES its argument is a delete even
+   when a range would make it re-derivable — the four kept are the band ledger's, where the
+   distance IS the argument for gating the thing it measures.
+   The sweep, verbatim, so the next one is a re-run rather than a rewrite:
+
+   ```
+   git grep -nPi "\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|[0-9]+|first|second|third|fourth|fifth|sixth|next|last) +commits?\b"
+   ```
+
+   Then keep only the hits where the number MEASURES commits: `a commit/cancel pair`, `a commit
+   outcome` and `makes a commit` are the English noun, not a count.
 7. **One bolded lead sentence per rule, bullets under it.** The FILE's existing section structure
    (`##` / `###`) is not part of this style and is not restructured — `mesher.md` keeps its
    `## Configuration` / `### Core C++` split and states its rules as bolded lead paragraphs. What is
