@@ -2972,6 +2972,47 @@ must come from the SAME canonicalisation; changing the comparator invalidates ev
 captured before it. `HYBMESH_GOLDEN_BIN` is the tool that gets this right — it varies the MESHER
 while holding the comparator fixed — and it is what the second attempt used.
 
+**ONE SHIPPED-CONFIG RETARGETER** (`tools/PreProcessor/tests/mb_shipped_config.py`, #126,
+collapsed 2026-09-16). Every gate that drives one of the five shipped `MESH_MODE 1` configs
+reads the `.dat` FROM DISK and repoints it at a temp stem, and until #126 that rule was
+written out three times: `base_config` in the C-grid surface gate, `base_config` in the
+O-grid's, `shipped_config` in the smoothing gate.
+
+**THE PROPERTY THE THREE COPIES EXISTED FOR IS THE ONE A COLLAPSE COULD HAVE DESTROYED.** A
+shipped config is documentation a user runs — `./run.sh -conf config/multiblock_cgrid.dat` is
+in `CLAUDE.md` — so a gate that composed an equivalent config would leave an edit to the
+shipped file invisible. One helper that ended up composing would have removed the reason all
+three existed, so it is no longer argued in three docstrings: `test_shipped_config_seam.py`
+check 2 edits each of the five configs in a TEMP CHECKOUT, calls each gate's REAL accessor and
+requires the edit to come back, with a composed stand-in run through the identical assertion as
+the negative control.
+
+**THE COPIES DIVERGED IN WHAT THEY RETARGETED, WHICH IS WHY #115 DEFERRED THIS** as "a refactor
+across three gate files and three owners". The two `base_config`s carried a list of path
+SUBSTRINGS and raised when one stopped appearing; the smoothing gate's copy read the KEY, the
+only form that can retarget a config it was not written for, and it is the form that survived.
+The per-gate variation — a topology, a BC geometry, a wall thickness, a geometry directory —
+rides on `paths=` / `dirs=` / `overrides=`, each keyed by config key, and the two `base_config`
+names survive as four-line wrappers because four other files import them. The needle lists'
+guarantee survives as something stronger: a retarget the caller asks for under a key the config
+does not have RAISES, so an argument can no more go silently inert than a needle could.
+
+**AND FOUR GUARDS STOPPED BEING A HAND PROBE.** "Probed by hand, 2026-09-11" was the record for
+a path key that stops resolving, an unknown key carrying a resolving path, a missing
+`OUTPUT_FILENAME` and a `MESH_MODE` that is no longer 1 — because a check that edits a shipped
+config under the gate that reads it is a hazard this repo does not ship. The `repo=` argument is
+what removed the hazard: the edit lands in a temp tree, and all four are gate checks that assert
+the raise NAMES the file and the key.
+
+**THE GATE FOUND ITS OWN SUBJECT MISSING ON DAY ONE.** The derivation that counts retargeters
+reads `@STEM@`, and #126's helper spells it once as a module constant — so the first run derived
+a tree with NO retargeter in it and every injection still passed, the set being wrong in the
+direction a count cannot see. The rule now follows a NAME bound to the placeholder as well as a
+literal, and that spelling joins `_SPELLINGS` beside the four #124's review had already
+found.
+`golden_mesh.py compare` reported 19/19 SAME across the collapse, which is the claim the
+refactor was making.
+
 **Two parse behaviours CHANGED when the two parsers were unified** (2026-08-19), both
 measured on the old and new trees:
 - **`BL_AUTO_FAN_NODES` is an int on both paths.** It is 0 OFF / 1 Global Avg /

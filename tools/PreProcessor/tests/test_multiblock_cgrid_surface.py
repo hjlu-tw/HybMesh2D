@@ -271,9 +271,12 @@ _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
 _GEOM = os.path.join(_REPO, "examples", "geometries")
 _TOPO = os.path.join(_REPO, "examples", "topology", "cgrid_naca0012.json")
-_CONF = os.path.join(_REPO, "config", "multiblock_cgrid.dat")
 sys.path.insert(0, _HERE)
 from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env
+# THE ONE shipped-config retargeter (#126). Imported, never re-implemented:
+# `test_shipped_config_seam.py` derives the set of them from the tree and fails
+# on a second, because three copies of this rule is what #124 had to record.
+from mb_shipped_config import shipped_config   # noqa: E402
 
 # #57's OWN RECORDED BASELINE for this case, declared ONCE and here rather than in
 # the threshold gate, because the dependency has to run this way round: that gate
@@ -465,60 +468,23 @@ def quality(out):
 
 
 def base_config(topo=_TOPO, bc_geom=None):
-    """The shipped config, retargeted at a temp output stem.
+    """The shipped C-grid config, retargeted at a temp output stem.
 
     Read from disk rather than rebuilt: config/multiblock_cgrid.dat is
     documentation a user runs, and a test that composed an equivalent one would
     leave an edit to the shipped file invisible here.
 
-    SHIPPED-CONFIG RETARGETER, ONE OF 3 (#124). The other two are
-    `test_multiblock_ogrid_surface.py::base_config` and
-    `test_multiblock_smooth_surface.py::shipped_config`. All three read a shipped
-    `config/*.dat` from disk, repoint its paths at this checkout, retarget its
-    output at `@STEM@` and raise BY NAME when a rewrite stops landing — one
-    shape, three implementations. The set is DERIVED rather than remembered:
-    `test_shipped_config_record.py` finds every function in the tree with that
-    shape and fails when one carries no record, when a record's count disagrees
-    with the set, or when it does not name the others — so a FOURTH copy arrives
-    as a fourth rather than quietly as a first.
-
-    NOT COLLAPSED, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT. One
-    implementation would be a refactor across three gate files with three owners,
-    and each copy carries something the others do not: this one's `bc_geom`
-    override, the O-grid's `topo`/`thickness` arguments, and the smoothing gate's
-    key-driven rewrite, the only one that can retarget a config it was not written
-    for.
-    What three copies of one shape cost is recorded at `qlines`, in
-    `test_multiblock_quality_surface.py`: there were four copies of one parser
-    before #81, and that ticket had to make the identical one-character fix in two
-    of them. Not at `quality` a few lines up, which states the same event with
-    different numbers (two copies, fixed in both) — the four-copy figure is the
-    other note's. #115's Out of Scope said this
-    residue was "already recorded as residue at the code"; it was recorded at ONE
-    of the three (#114's review, at `shipped_config`) and nowhere else, which is
-    what let that claim stand unchallenged for the length of a batch.
+    THE RETARGETING RULE ITSELF IS `mb_shipped_config.shipped_config`; what stays
+    here is the C-grid's share of it — which topology, where the geometries are,
+    and the `BC_GEOM` fallback check 6 overrides. That rule was written out in
+    full here, in the O-grid gate and in the smoothing gate until #126 collapsed
+    the three; the name survives because four other files import it.
     """
-    with open(_CONF, encoding="utf-8") as f:
-        text = f.read()
-    # EVERY retarget must actually land, or the run writes into the repo's own
-    # results/ and the caller, seeing a mesh, reports PASS.
-    for needle, repl in (
-            ("examples/topology/cgrid_naca0012.json", topo),
-            ("examples/geometries/naca0012_cgrid.dat",
-             os.path.join(_GEOM, "naca0012_cgrid.dat")),
-            ("examples/geometries/cgrid_farfield.dat",
-             os.path.join(_GEOM, "cgrid_farfield.dat")),
-            ("results/meshes/multiblock_cgrid/mesh_multiblock_cgrid.vtk",
-             "@STEM@.vtk")):
-        if needle not in text:
-            raise AssertionError(
-                "%s no longer contains %r, so this test cannot retarget it away "
-                "from the repo. Update base_config()." % (_CONF, needle))
-        text = text.replace(needle, repl)
-    if bc_geom is not None:
-        text = "\n".join(("BC_GEOM " + bc_geom if line.startswith("BC_GEOM") else line)
-                          for line in text.splitlines()) + "\n"
-    return text
+    return shipped_config(
+        "multiblock_cgrid",
+        paths={"MESH_TOPOLOGY_FILE": topo},
+        dirs={"GEOM_FILE": _GEOM},
+        overrides=({"BC_GEOM": bc_geom} if bc_geom is not None else None))
 
 
 def topology(text=None):

@@ -268,11 +268,13 @@ def _multiblock_bound():
 def _shipped_multiblock(mod, extra=""):
     """A multi-block case run from the SHIPPED config its own surface gate reads.
 
-    `mod` is that gate: it owns `base_config()`, which loads `config/*.dat` from
-    disk and retargets its output stem. Reading the config from disk rather than
-    composing an equivalent one is the point `_multiblock_example` makes -- these
-    are documentation a user runs, and an edit to the shipped file has to be
-    visible here.
+    `mod` is that gate: it owns `base_config()`, which says which topology and
+    geometries this case wants and hands the rest to the ONE retargeter, in
+    `tools/PreProcessor/tests/mb_shipped_config.py` since #126 collapsed the three
+    copies of it. That helper loads `config/*.dat` from disk and retargets its
+    output stem. Reading the config from disk rather than composing an equivalent
+    one is the point `_multiblock_example` makes -- these are documentation a user
+    runs, and an edit to the shipped file has to be visible here.
 
     One factory rather than one function per case, from the second such case on:
     the O-grid's builder and the C-grid's differed only in which module supplied

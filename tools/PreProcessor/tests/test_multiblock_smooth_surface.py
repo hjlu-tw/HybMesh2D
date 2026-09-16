@@ -28,8 +28,8 @@ SINCE #114 GROUP 13 ALSO DRIVES THE OTHER THREE — ``multiblock_square``,
 ``multiblock_cavity`` and ``multiblock_hgrid``, so all FIVE shipped multi-block
 configs are exercised for the wall warning's floor. Those three have no gate of
 their own to import from (nothing else in the tree runs them), so they enter
-through ``shipped_config`` below, which retargets by KEY rather than by the needle
-list ``base_config`` can afford. What each of the three can and cannot see is in
+through ``shipped_config`` — the ONE retargeter since #126, in
+``mb_shipped_config``, which this file used to own a third copy of. What each of the three can and cannot see is in
 the blind spots, per config: the floor-revert injection reaches NONE of them, and
 saying so is half of what this widening bought. (That group number is a GATED figure
 since #116: this line said 12 while the code, the numbered list below, the section
@@ -492,6 +492,9 @@ from test_multiblock_quality_surface import qlines  # noqa: E402
 from test_multiblock_weld_surface import (  # noqa: E402
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
 from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env  # noqa: E402
+# THE ONE shipped-config retargeter (#126); the three configs below enter
+# through it, the C-grid and the O-grid through their own gates' wrappers.
+from mb_shipped_config import shipped_config  # noqa: E402
 
 # "UNSMOOTHED" IS NO LONGER THE DEFAULT, and since #85 every run that means it has
 # to say so. `MB_SMOOTH_ITERS` ships at 20, so a bare run is a SMOOTHED run — the
@@ -538,115 +541,18 @@ def run(tmp, name, extra="", config=None):
 # The C-grid and the O-grid arrive above through `base_config`, each imported
 # from the gate that owns it. `multiblock_square`, `multiblock_cavity` and
 # `multiblock_hgrid` have no such gate: nothing else in the tree RUNS them, so
-# there is no owner to import from and this is where they enter.
+# there is no owner to import from and they enter through `shipped_config`
+# directly.
 #
-# RETARGETED BY KEY, NOT BY A LIST OF NEEDLES, which is the one deliberate
-# difference from `base_config`. That list is honest there because the gate that
-# holds it reads the same file for a dozen other claims, so a path it stopped
-# naming would be noticed. Here the only reader is this block, and a needle list
-# it owned alone would rot into a run that quietly wrote into the repo's own
-# `results/` while this file, seeing a mesh, reported PASS.
-#
-# A KEY LIST IS STILL A LIST, AND THE SWEEP BELOW IS WHAT MAKES THE PARAGRAPH
-# ABOVE TRUE. `_MB_PATH_KEYS` is as capable of going stale as a needle list: a
-# path added to one of these configs under a key NOT in it would be left relative
-# and the run would write into the repo. So after the rewrite every remaining
-# value is checked for resolving to a file in this checkout, and one that does is
-# a KEY THIS FUNCTION DOES NOT KNOW — raised by name, never retargeted silently.
-# That, not the keying, is the part a reviewer should trust; the review of #114
-# is what asked for it, having read the paragraph above as a guarantee.
-#
-# ALL FOUR GUARDS PROBED BY HAND, 2026-09-11, each by mutating the shipped square
-# config and reading the raise: an unknown key carrying a resolving path
-# (`BC_GEOM_FILE`), a missing `OUTPUT_FILENAME`, `MESH_MODE` no longer 1, and a
-# known path key whose value stopped resolving. All four fired and named the file,
-# the key and the value; the config was restored and `git diff` came back clean.
-# They are not gate checks — a check that edits a shipped config under the gate
-# that reads it is a hazard this repo does not ship — so the probe is the record.
-#
-# AND THIS IS A THIRD "READ THE SHIPPED `.dat`, RETARGET, FAIL LOUDLY", named
-# because the two it sits beside are imported under a comment that says "Imported,
-# not copied". The record of that duplication — the whole set, what collapsing it
-# would cost, and why it is deferred — is in `shipped_config`'s own docstring
-# below, where #124 put the SAME record at all three copies with a gate under it.
-# Until then it was here and nowhere else, which is what let #115 assert the
-# residue was recorded "at the code" while two of the three said nothing.
-_MB_PATH_KEYS = ("MESH_TOPOLOGY_FILE", "GEOM_FILE", "DOMAIN_FILE")
-
-
-def shipped_config(name):
-    """``config/<name>.dat``, retargeted at ``@STEM@`` and at this checkout.
-
-    Read from disk for the reason the C-grid's own `base_config` gives: these
-    files are documentation a user runs, and a test that composed an equivalent
-    one would leave an edit to the shipped file invisible from here.
-
-    SHIPPED-CONFIG RETARGETER, ONE OF 3 (#124). The other two are
-    `test_multiblock_cgrid_surface.py::base_config` and
-    `test_multiblock_ogrid_surface.py::base_config`. All three read a shipped
-    `config/*.dat` from disk, repoint its paths at this checkout, retarget its
-    output at `@STEM@` and raise BY NAME when a rewrite stops landing — one
-    shape, three implementations. The set is DERIVED rather than remembered:
-    `test_shipped_config_record.py` finds every function in the tree with that
-    shape and fails when one carries no record, when a record's count disagrees
-    with the set, or when it does not name the others — so a FOURTH copy arrives
-    as a fourth rather than quietly as a first.
-
-    NOT COLLAPSED, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT. One
-    implementation would be a refactor across three gate files with three owners,
-    and each copy carries something the others do not: this one's key-driven
-    rewrite, the only one that can retarget a config it was not written for, the
-    C-grid's `bc_geom` override and the O-grid's `topo`/`thickness` arguments.
-    What three copies of one shape cost is recorded at `qlines`, in
-    `test_multiblock_quality_surface.py`: there were four copies of one parser
-    before #81, and that ticket had to make the identical one-character fix in two
-    of them — the figure belongs to that note and not to the `quality` wrappers,
-    which state the same event with different numbers (two copies, fixed in
-    both). #115's Out of Scope said this
-    residue was "already recorded as residue at the code"; it was recorded at ONE
-    of the three (#114's review, at `shipped_config`) and nowhere else, which is
-    what let that claim stand unchallenged for the length of a batch.
-    """
-    path = os.path.join(_REPO, "config", name + ".dat")
-    with open(path, encoding="utf-8") as f:
-        lines = f.read().splitlines()
-    out_, hit = [], {"MESH_MODE": False, "OUTPUT_FILENAME": False}
-    for ln in lines:
-        key = ln.split()[0] if ln.split() else ""
-        val = ln[len(key):].strip()
-        if key in _MB_PATH_KEYS:
-            rel = os.path.join(_REPO, val)
-            if not os.path.exists(rel):
-                raise AssertionError(
-                    "%s: %s %r does not resolve under %s, so this test cannot "
-                    "retarget it. Update shipped_config()." % (path, key, val, _REPO))
-            ln = key + " " + rel
-        elif key == "OUTPUT_FILENAME":
-            hit[key] = True
-            ln = key + " @STEM@.vtk"
-        elif key == "MESH_MODE":
-            hit[key] = (val == "1")
-        elif key and not key.startswith("#") and val and os.path.isfile(
-                os.path.join(_REPO, val)):
-            # A PATH UNDER A KEY THIS FUNCTION DOES NOT KNOW. Left alone it would
-            # stay repo-relative, the mesher would read the repo's own file and,
-            # for an output, write into the repo's `results/`. Caught by what the
-            # value IS rather than by what the key is called, so the list above
-            # cannot go stale in silence.
-            raise AssertionError(
-                "%s: %s %r resolves to a file in this checkout but %s is not in "
-                "_MB_PATH_KEYS, so the run would read (or write) the repo's own "
-                "tree. Add it there." % (path, key, val, key))
-        out_.append(ln)
-    if not hit["MESH_MODE"]:
-        raise AssertionError(
-            "%s is no longer a MESH_MODE 1 config, so this test cannot drive it "
-            "as one. Update shipped_config()." % path)
-    if not hit["OUTPUT_FILENAME"]:
-        raise AssertionError(
-            "%s no longer declares OUTPUT_FILENAME, so this test cannot retarget "
-            "its output away from the repo. Update shipped_config()." % path)
-    return "\n".join(out_) + "\n"
+# ONE RETARGETER SINCE #126, AND IT IS NOT HERE. Reading a shipped `.dat` and
+# repointing it at this checkout was written out in full in this file, in the
+# C-grid gate and in the O-grid's — one shape, three bodies, recorded as such by
+# #124 at all three and collapsed by #126 into `mb_shipped_config`. The key-driven
+# rewrite this file used to own is what survived the collapse, because it is the
+# only form that can retarget a config it was not written for; the two needle
+# lists did not. What it raises on, and the blind spots it keeps, are in that
+# module. `test_shipped_config_seam.py` derives the set of retargeters from the
+# tree and fails on a second, so a fourth copy cannot arrive as a first.
 
 
 _WALL_BANNER = re.compile(
