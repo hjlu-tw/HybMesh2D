@@ -248,10 +248,13 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     # just wrote (issue #132). An unattended run is the one that most needs to
     # leave evidence of mesh quality and the one with nowhere to show it, so the
     # stage that produced the mesh reports it here rather than a host doing so
-    # afterwards -- which is also what makes `run_pipeline`, the batch queue and
-    # the GUI's Run All say the same thing without three call sites. Reached only
-    # past the two guards above, so there is no path on which this reports figures
-    # for a mesh that was never written.
+    # afterwards -- which is also what makes `run_pipeline` and the batch queue
+    # (GUI and `run_batch.py` alike) say the same thing from one call site. NOT
+    # the GUI's Run All: that chains per-stage QThread workers through
+    # `controllers/pipeline_ctrl.py` and never enters this function, and its user
+    # has the Mesh Statistics panel (#131). Reached only past the two guards
+    # above, so there is no path on which this reports figures for a mesh that
+    # was never written.
     log(f"[Mesh] cell shape — {mesh_shape_stats.shape_report(vtk)}")
     return vtk
 
