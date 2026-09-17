@@ -544,6 +544,66 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   ignore colour. `test_multiblock_quality_gate.py` gains no bar on these figures,
   deliberately — and the cost is named in the surface gate's own blind spots: a
   regression that doubled every mesh's stretch would be caught by nobody.
+- **THE SHIPPED C-GRID'S 3147.958 IS THE SAME ARITHMETIC, AND #129 NEVER LOOKED AT
+  IT** (#140). The instrument shipped against two of the five shipped multi-block
+  configs — the O-grid and the H-grid — and `quad_midline_ratio` appeared in no
+  other surface gate, so the case with by far the worst figures went unmeasured by
+  anything that runs: the shipped C-grid reports **median 4.832007, p95 148.005672,
+  max 3147.957636**, two orders past the 32.8 that motivated #128. #128's own
+  Further Notes measured the O-grid and the NACA case and no line of it mentions
+  the C-grid. A per-story audit of #128 against the tree on 2026-09-17 is what
+  found it; the batch's instrument had found something on a shipped case and
+  nobody read it.
+
+  **It is arithmetic, and the same quotient the O-grid's is.** The worst cell is
+  the LAST cell on the wake cut, at the outlet plane — corners `(16.8564, ~0)`,
+  `(16.8564, -0.000999)`, `(20.0, -0.001)`, `(20.0, ~0)`:
+
+  | | value | what it is |
+  |---|---|---|
+  | long midline | **3.143570** | the last of the wake cut's 24 intervals. `wake` declares `count` 25 and `ds_start` 0.005 over a 19-chord span (trailing edge x = 1 to outlet x = 20), so the stretching law ends at 3.14 |
+  | short midline | **0.000998606** | the first radial interval off the cut, which `e_out_up` / `e_out_lo` declare as a wall end and the run's `BL_INITIAL_THICKNESS 0.001` sizes — reproduced to 0.14% |
+  | ratio | **3147.958** | 3.143570 / 0.000998606 |
+
+  The O-grid's 32.77 = 0.0327 / 0.001 is that shape exactly; this one is two orders
+  larger because the wake is 19 chords long where the O-grid's ring is 2·π·0.5
+  around. BOTH are the quotient of two spacings the DOCUMENT declares, so **it is
+  not a defect in the radial law**: what would change it is the wake cut's own
+  `count`, i.e. the topology, and #128's refusal of a threshold on these figures is
+  what keeps that the user's choice rather than the mesher's. **The claim has a
+  negative control rather than an argument**: giving the shipped wake cut a 26th
+  node — one more interval over the same 19 chords, nothing else touched — moves
+  the max to **3003.344** and moves no other case (injection D). A number that
+  tracks the wake's own count that way is the quotient above.
+- **A PIN IS NOT A THRESHOLD, and #140 added the first while #128's refusal of the
+  second stands.** All five shipped multi-block configs now run in the surface
+  gate, and each one's three figures are held against the day they were measured by
+  a check whose label names the case. A threshold says a number is BAD; a pin says
+  it MOVED, and its fix is either "re-measure the pin after reading why" or "this
+  is the regression the pin was for" — the same instrument
+  `tools/scripts/golden_mesh.py` is for the meshes themselves, and the baseline the
+  ticket that splits this report by wall band has to be visible against. **The band is DERIVED
+  from the pin, not declared per case**: a case at the metric's floor (the square
+  and the cavity, all three figures exactly 1.0) is held to exact equality, since a
+  band below 1.0 is unreachable and one above it would be slack for nothing; every
+  other case is held to `PIN_TOL` 1e-6 relative and carries a NEGATIVE CONTROL —
+  the same case at `MB_SMOOTH_ITERS 0` must miss the pin by more than that. **The
+  margin is thinner than the obvious example suggests and is recorded with the
+  number that is thinnest**: of the nine movements that control measures, the
+  smallest is the O-grid's max at **7.60e-6**, only 7.6x the band; the C-grid's max
+  at 1.4e-3 is the comfortable one and is not the one to quote. What the pin does
+  NOT buy is named in the gate's blind spots: an author who re-measures without
+  reading the number has banked the regression, because nothing here says 3147.958
+  is worse than 32.768.
+- **A FOURTH IMPLEMENTATION AGREES, which is what makes "three surfaces agree"
+  worth something.** #140's check 12 recomputes every exported quad's midline ratio
+  in Python, off the `MB_SPLIT_QUADS 0` file on disk, and reduces it by the two
+  rules `reduceCellShapes` states; all four figures must match the binary's on all
+  five cases. Three surfaces agreeing proves ONE OWNER; an independently written
+  metric agreeing is evidence the owner's answer is right. It is compared at the
+  machine line's own resolution — six DECIMALS, so an ABSOLUTE 5e-7 — and the first
+  draft compared at 1e-9 relative and went red on the three cases whose figures are
+  not exactly 1.0, naming a disagreement that was the `printf`.
 - **THE SIDECAR IS THE CONTRACT, and it is what the GUI (#131), the pipeline
   runner and the batch queue (#132) will READ rather than recompute.**
   `"mesh": { "nodes": …, "elements": …, "quality": { "metric": …, "cells": …,
@@ -557,11 +617,16 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   measuring a second time, which is what makes "the three agree" a property of the
   code instead of a check that keeps passing by luck. It is the AFTER-smoothing
   report, because the sidecar sits beside the file on disk.
-- MEASURED 2026-09-17 at the shipped defaults (`MB_SMOOTH_ITERS` 20): shipped
-  O-grid 4608 structured quads, **median 1.845977, p95 23.662285, max 32.767868**;
+- MEASURED 2026-09-17 at the shipped defaults (`MB_SMOOTH_ITERS` 20), and PINNED
+  since #140: shipped square 400 structured quads and shipped cavity 256, both
+  **1.000000 / 1.000000 / 1.000000** (uniform rectangles, at the metric's floor);
   shipped H-grid 80 structured quads, **median 1.164421, p95 1.391410, max
   1.504321**, whose four blocks report four different medians (bl 1.156, br 1.249,
-  tl 1.080, tr 1.389) — which is what makes the per-block rows worth printing.
+  tl 1.080, tr 1.389) — which is what makes the per-block rows worth printing;
+  shipped O-grid 4608 structured quads, **median 1.845977, p95 23.662285, max
+  32.767868**; shipped C-grid 5760 structured quads, **median 4.832007, p95
+  148.005672, max 3147.957636**, whose wake blocks report a median 2.7x its airfoil
+  blocks' (b_wake_up / b_wake_lo 10.107 against b_upper / b_lower 3.692).
   #128's own O-grid measurement was "max 32.8, median 1.85", reproduced.
 - **A CHECK THAT BIT BY ACCIDENT, on the day it was written.** The surface gate's
   check 6 (banner, machine line and sidecar carry the same digits) went red on both
@@ -573,8 +638,12 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   `hybmesh_pure` alone — it never builds an `MbResult`, so the module's whole
   premise is a build property), by the five new groups of
   `tests/cpp/test_mb_quality.cpp` (9, 9b, 9c, 9d, 9e), and by
-  `tools/PreProcessor/tests/test_multiblock_shape_surface.py` (10 properties, 51
-  assertions, through the real binary on the two shipped cases read from disk).
+  `tools/PreProcessor/tests/test_multiblock_shape_surface.py` (#129's 10 properties
+  and 51 assertions on the two shipped cases it read from disk; **13 properties and
+  163 assertions on all five since #140**, whose own four injections are hand runs
+  dated in that file's docstring — three into the gate, one into the shipped
+  topology, all four biting, and injection B recorded with the reason the O-grid is
+  IMMUNE to it rather than rounded up to "it bit").
   **The injections are HAND runs, dated 2026-09-17 in the two C++ tests' own
   docstrings** with the checks each broke, for the reason #51's entry gives. Two
   are worth repeating here beside `K` above. `J` — the four structured corners read

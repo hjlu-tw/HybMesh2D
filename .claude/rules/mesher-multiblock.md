@@ -202,15 +202,35 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
   - **NO COLOUR AND NO THRESHOLD, anywhere, by decision.** The shipped O-grid's max is 32.77 =
     0.0327 azimuthal spacing / 0.001 requested `BL_INITIAL_THICKNESS` — what the user asked for,
     not a defect. `test_multiblock_quality_gate.py` gains no bar on these three figures.
+  - **THE SHIPPED C-GRID'S max 3147.958 IS THE SAME QUOTIENT, and it is ARITHMETIC** (#140). Its
+    worst cell is the LAST cell on the wake cut, at the outlet: **3.143570** — the last of the
+    wake's 24 intervals, `count` 25 with `ds_start` 0.005 over a 19-chord span — over **0.000998606**,
+    the first radial interval the two outlet-plane edges declare as a wall end and
+    `BL_INITIAL_THICKNESS 0.001` sizes. Both numbers are spacings the DOCUMENT asks for, so a fix
+    would change the TOPOLOGY's wake count and not the mesher; the negative control is that a 26th
+    wake node moves the max to 3003.344 and moves no other case. #128 never measured this case —
+    its Further Notes measured the O-grid and the NACA case — so the batch's own instrument found
+    a figure two orders past its headline on a SHIPPED case and nobody looked. That is what #140's
+    pinning is for.
+  - **EVERY SHIPPED CASE'S THREE FIGURES ARE PINNED, AND A PIN IS NOT A THRESHOLD** (#140). All
+    five shipped multi-block configs run in `test_multiblock_shape_surface.py`, and each one's
+    median / p95 / max is held against the day it was measured by a check whose label names the
+    case. A threshold says a number is BAD; a pin says it MOVED, and its fix is either "re-measure"
+    or "this is the regression". The band is DERIVED from the pin: a case at the metric's floor
+    (square, cavity — all three exactly 1.0) is exact, every other is `PIN_TOL` 1e-6 relative, and
+    the toleranced ones carry a negative control proving the band is narrower than a real change
+    (the same case at `MB_SMOOTH_ITERS 0`; the thinnest margin is the O-grid's max at 7.6x the
+    band, which is the number to quote rather than the C-grid's comfortable 1.4e-3).
   - **The `.provenance.json` sidecar gains `mesh.quality`** — `metric`, `cells`, `median`, `p95`,
     `max` — fed by the SAME report object the banner and the machine line read, so the three
     cannot disagree. It is the contract #131 and #132 read instead of recomputing.
   Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
 - Gated by `tests/cpp/test_mb_quality.cpp` (14 groups, 79 checks),
   `tests/test_multiblock_quality_surface.py` and `tests/test_multiblock_shape_surface.py` (the
-  shape figures on the shipped O-grid and H-grid, through the real binary). **Its injections are
-  HAND runs, dated in the C++ test's docstring** — a C++ test cannot mutate the implementation it
-  linked against, and that distinction must not be blurred. Permanent instead are two **negative
+  shape figures on ALL FIVE shipped multi-block cases, pinned, through the real binary — 13
+  properties, 163 assertions, four hand injections dated in its own docstring). **The C++ gate's
+  injections are HAND runs, dated in that test's own docstring** — a C++ test cannot mutate the
+  implementation it linked against, and that distinction must not be blurred. Permanent instead are two **negative
   controls** computing an injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its
   ~17x stretch). One injection, `I`, is recorded as **INERT** and kept: the rule it attacks is
   guarded one level down, in the pure gate.
