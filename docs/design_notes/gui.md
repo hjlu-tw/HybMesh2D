@@ -1846,6 +1846,14 @@ has gone missing instead of reporting a rewording as an ordering defect.
   modules format the same numbers, and a gate asserts the strings the two HEADLESS hosts produce
   are identical to each other — nothing asserts the panel's rows and the batch row round the same
   way. Changing one and not the other is a divergence no gate here would catch.
+- **A case that meshed and then FAILED at a later stage shows the dash, not its mesh's
+  figures.** `run_batch` reads `job.artifacts`, and `run_pipeline` builds that dict locally and
+  raises without returning it, so a solver failure loses the `vtk` key the mesh stage had already
+  filled — the mesh is on disk with its sidecar beside it and the row says nothing about it. The
+  figures ARE still in the log, from the mesh stage's own line, so the batch is not blind; only the
+  column is. Fixing it means carrying partial artifacts out of `run_pipeline`, which changes a
+  return shape two hosts read, and #132 does not ask for it. Recorded rather than left for
+  rediscovery.
 - **`run_batch.py`'s end-of-batch summary does not carry the figures**, only the per-case `[Mesh]`
   lines interleaved in the log — which is precisely the "forty interleaved logs" problem the
   summary exists to solve, solved for status and not for quality. Left out as scope: the summary

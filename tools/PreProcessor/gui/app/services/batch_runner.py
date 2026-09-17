@@ -127,6 +127,13 @@ def _shape_of(artifacts: dict) -> str:
     asking for a sidecar beside nothing would come back "not published" —
     an absence of figures dressed as a fact about a mesh that does not exist.
     The status column is what says what happened to such a case.
+
+    A case that MESHED and then failed later reaches here the same way, and that
+    is a known gap rather than the intent: `run_pipeline` builds its artifact
+    dict locally and raises without returning it, so the `vtk` the mesh stage had
+    already filled never arrives. The figures are still in the log, from the mesh
+    stage's own line; only this column is blind. See the blind spots in
+    `docs/design_notes/gui.md`.
     """
     vtk = (artifacts or {}).get("vtk") or ""
     return mesh_shape_stats.shape_report(vtk) if vtk else ""
