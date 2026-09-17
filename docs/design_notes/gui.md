@@ -1780,6 +1780,64 @@ current shape rather than in the one that found the defect.
   allow-list over the whole package: `get_element_aspect_ratios` has exactly two homes, the model
   that defines it and the colour map that consumes it, and a third fails wherever it is written.
 
+**THE RUN NOBODY WATCHES HAD NO QUALITY SIGNAL AT ALL (#132, parent #128).** #131 made the GUI
+panel a reader; this made the two HEADLESS hosts readers as well —
+`services/pipeline_runner.py`'s mesh stage logs the figures when it finishes, and the batch
+queue's table carries them per case. The rules are `.claude/rules/gui-handoff.md`'s (the reader
+and the report string) and `.claude/rules/pipeline-case.md`'s (the stage that logs it). Before
+this, someone running `./run_batch.sh` over forty cases could find out how good the meshes were
+in exactly one way: open each one in the GUI afterwards. That is the gap #128 opens with, and it
+is why the parent ticket exists at all.
+
+**ONE STRING, TWO HOSTS — and the formatter is shared for the same reason the reader is.** Sharing
+`read_shape_summary` alone would have left each host free to round differently, drop the metric
+name, or render an unmeasured run as numbers, so `format_shape_report` is where the report's shape
+is decided and `shape_report` is the one call both hosts make. The batch dialog does not even call
+it: `batch_runner` reads once, off the GUI thread and Qt-free, and stores the string on the job, so
+the view reformats nothing. The gate compares the queue's row against the runner's own log line for
+the SAME case in the SAME run — string equality, not two numbers that agree today.
+
+**A CASE WITH NO MESH CARRIES NO FIGURES, WHICH IS A THIRD THING AGAIN.** The reader already had
+two absences — `None` for no sidecar, and `cells: 0` with negative figures for "looked and could
+not measure". A batch adds a third that is not the reader's at all: a case that failed before its
+mesh stage, or has not run yet. Asking for a sidecar beside nothing would come back `not
+published`, which is a statement ABOUT A MESH, so `batch_runner._shape_of` returns `""` when there
+is no `vtk` artifact and the row shows a dash whose tooltip points at the Status column.
+`batch_ctrl` clears it on a re-run for the same reason — the previous run's numbers standing beside
+a FAILED status is the same lie by another route.
+
+**Measured 2026-09-17 on the two scripts the ticket names as its demo** (`8eb5451` plus this
+work), `./run_pipeline.sh <script> --no-solver`: `naca_demo.json` reports
+`tri_edge_ratio: median 1.585, p95 9.901, max 35.608 (11396 cells)` and
+`multiblock_cgrid_demo.json` reports
+`quad_midline_ratio: median 4.832, p95 148.006, max 3147.958 (5760 cells)`. Dated, not gated —
+`test_instruction_budget.py` blind spot (g) is the entry that says why. **No cause is offered here
+for the C-grid's 3147** — which block or which cell it is has not been localised, and #93's lesson
+is that a plausible localisation written down as a cause outlives the measurement it never had.
+What #128 already settles is that a figure of that size is not by itself a defect: it rules out a
+threshold and a colour precisely so one does not train anyone to ignore the column.
+
+**The runner reports BELOW its own guards, and that ordering is gated rather than argued.**
+`_run_mesh` already refused a non-zero exit and a missing VTK; the report sits after both, so there
+is no path on which it describes a mesh that was never written. The gate checks the two source
+positions rather than trusting the reading, because "it is obviously after it" is exactly the claim
+a later refactor invalidates silently.
+
+**Named blind spots.**
+- **The batch column inherits #131's staleness hole and widens the window.** The sidecar is trusted
+  because it sits beside the file; a case whose output name collides with another's would show the
+  LAST writer's figures against both rows. Collisions are already warned about before the run, by
+  source file, which is the mitigation that exists — not a check that these figures describe this
+  mesh.
+- **The report's precision is pinned to the panel's `.3f` by a comment, not by a constant.** Two
+  modules format the same numbers, and a gate asserts the strings the two HEADLESS hosts produce
+  are identical to each other — nothing asserts the panel's rows and the batch row round the same
+  way. Changing one and not the other is a divergence no gate here would catch.
+- **`run_batch.py`'s end-of-batch summary does not carry the figures**, only the per-case `[Mesh]`
+  lines interleaved in the log — which is precisely the "forty interleaved logs" problem the
+  summary exists to solve, solved for status and not for quality. Left out as scope: the summary
+  dict is a published shape that three callers read, and #132 asks for the GUI queue.
+
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`

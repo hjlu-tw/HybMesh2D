@@ -141,3 +141,49 @@ def read_shape_summary(mesh_path: str) -> ShapeSummary | None:
         # worth the traceback in the log file.
         logger.debug("No shape summary in '%s': %s", path, exc, exc_info=True)
         return None
+
+
+# The one report string every HEADLESS host shows (issue #132). `run_pipeline`
+# prints it at the end of its mesh stage and the batch queue puts it in the
+# case's row, so the two cannot quote different figures for the same mesh: a
+# second formatter would be free to round differently, drop the metric name, or
+# render an unmeasured run as numbers, which is the whole failure this batch
+# exists to remove. The precision matches the panel's `.3f` for the same reason.
+def format_shape_report(summary: ShapeSummary | None) -> str:
+    """One line describing `summary`, in all three of its states.
+
+    The three read differently ON PURPOSE, because they are three different
+    facts and a batch of forty cases is read by scanning this column:
+
+    * ``None`` — the mesh carries no published figures at all (no sidecar, or one
+      written before the mesher measured shape). Says so; never a blank, which
+      in a table of numbers is read as a zero. It does NOT name the sidecar's
+      file: #131's gate refuses any `provenance` spelling in this module's code
+      strings, because the module that could compose a second path convention is
+      this one, and a message is not worth a hole in that check.
+    * measured — the metric's NAME, then median / p95 / max and the cell count
+      the three cover. The name travels because `quad_midline_ratio` and
+      `tri_edge_ratio` are different quantities (#130).
+    * not measured — the mesher looked and could not measure (a run that exported
+      no cells). Named as such rather than printed, since its stored figures are
+      negative sentinels and `0.000` on this metric would read as perfection.
+    """
+    if summary is None:
+        return "not published (no quality sidecar beside this mesh)"
+    if not summary.measured:
+        return f"{summary.metric}: not measured"
+    return (f"{summary.metric}: median {summary.median:.3f}, "
+            f"p95 {summary.p95:.3f}, max {summary.max:.3f} "
+            f"({summary.cells} cells)")
+
+
+def shape_report(mesh_path: str) -> str:
+    """Read `mesh_path`'s published figures and format them. The host call.
+
+    Read-and-format in one, because the two headless hosts have no reason to
+    hold a `ShapeSummary` — they display it and move on. A host that wants the
+    numbers themselves (the GUI panel does, to lay them out in rows) calls
+    `read_shape_summary` instead; both go through the same reader, and there is
+    no path here that computes anything.
+    """
+    return format_shape_report(read_shape_summary(mesh_path))

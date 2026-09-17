@@ -450,6 +450,19 @@ the schema and the stage logic.
   is `config/pipeline/multiblock_cgrid_demo.json`. Gated by
   `tests/test_multiblock_case_selfdescribing.py`.
   Why: docs/design_notes/pipeline.md, "#56 widened what "source" means, and the widening is per MODE"
+- **The mesh stage REPORTS the shape of the cells it produced, for both modes** (#132, parent
+  #128): `_run_mesh` logs `[Mesh] cell shape — <report>` as its last act, from
+  `services/mesh_shape_stats.shape_report` — the mesher's own published figures, read out of the
+  mesh's `.provenance.json`. **Nothing here computes anything**, and the report string is the
+  formatter's, not this module's, because the batch queue shows the same string per case and two
+  formatters would be free to disagree about one mesh. **It sits BELOW both of this function's
+  guards** — the non-zero exit and the missing VTK — so there is no path on which it describes a
+  mesh that was never written, and the gate pins that ORDERING rather than trusting a reading of
+  it. The rule for the reader, the report's three states and the batch queue's half is
+  `.claude/rules/gui-handoff.md`, which owns `services/mesh_shape_stats.py`. Gated by
+  `tests/test_headless_shape_report.py`, whose real-binary leg runs the two shipped demo scripts
+  `config/pipeline/naca_demo.json` and `config/pipeline/multiblock_cgrid_demo.json`.
+  Why: docs/design_notes/pipeline.md, "The mesh stage reports the shape of the cells it produced"
 - **`services/stl3d_case.py`** (Qt-free) is the same for the immersed-solid stage — `validate()`,
   `work_dir_for()`, `prepare_case_dir()` — and both `stl3d_ctrl.run_stl3d` and the headless IB
   stage go through it. **`Stl3dConfig.para_in_text()` must match

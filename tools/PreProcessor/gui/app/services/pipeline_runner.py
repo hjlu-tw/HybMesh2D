@@ -27,6 +27,7 @@ from app.services.pipeline_case_sources import case_sources_for
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
 from app.services.mesh_modes import missing_mesh_input
+from app.services import mesh_shape_stats
 from app.services.paths import (
     find_binary_executable, find_solver_executables, repo_root,
 )
@@ -243,6 +244,15 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     if not os.path.exists(vtk):
         raise PipelineError(f"mesh generation produced no VTK at {vtk}")
     log(f"[Mesh] generated -> {vtk}")
+    # The shape of the cells that mesh is made of, READ from the sidecar the run
+    # just wrote (issue #132). An unattended run is the one that most needs to
+    # leave evidence of mesh quality and the one with nowhere to show it, so the
+    # stage that produced the mesh reports it here rather than a host doing so
+    # afterwards -- which is also what makes `run_pipeline`, the batch queue and
+    # the GUI's Run All say the same thing without three call sites. Reached only
+    # past the two guards above, so there is no path on which this reports figures
+    # for a mesh that was never written.
+    log(f"[Mesh] cell shape — {mesh_shape_stats.shape_report(vtk)}")
     return vtk
 
 

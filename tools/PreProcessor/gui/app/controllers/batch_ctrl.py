@@ -71,6 +71,11 @@ class BatchControllerMixin:
             if job.config is not None:
                 job.status, job.error, job.seconds = "pending", "", 0.0
                 job.artifacts = {}
+                # Including the shape figures: a re-run that fails before its mesh
+                # stage would otherwise leave the PREVIOUS run's numbers sitting
+                # in the row beside a FAILED status, which reads as figures for a
+                # mesh this run never produced (issue #132).
+                job.shape = ""
 
         from app.workers.batch_run import BatchRunWorker
         worker = BatchRunWorker(dlg.jobs,

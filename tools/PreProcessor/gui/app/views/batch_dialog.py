@@ -5,7 +5,8 @@ IB → Results) are steps of *one* case; a batch is an operation over many cases
 not belong in that sequence. Modeless because the point of a batch is to leave it
 running — a modal would lock the window for the hours the queue takes.
 
-Three things this shows that the CLI cannot:
+What this shows that the CLI cannot — no count, because the list has grown once
+already and a stale "three" is the cheapest kind of wrong:
 
 * **Name collisions before the run, not during it.** Output paths derive from the case
   name, so two scripts sharing one silently overwrite each other's mesh. ``run_batch``
@@ -16,6 +17,13 @@ Three things this shows that the CLI cannot:
 * **What Cancel actually does.** It ends the case in flight and stops the queue; the
   button says so, because a Cancel that silently meant "after the current solve, in
   twenty minutes" would be worse than no button.
+* **The shape of the cells each case produced, per case.** A batch is exactly the run
+  nobody watches, and the quality signal used to require opening every mesh in the GUI
+  afterwards. The CLI is not blind to it — the pipeline runner logs the same line for
+  every case — but forty interleaved logs are not a column you can scan. The figures
+  are the MESHER's, read out of the mesh's provenance sidecar by
+  `services/mesh_shape_stats`: the same reader and the same string, so a row and a log
+  line cannot disagree about one mesh (issue #132).
 """
 from __future__ import annotations
 
@@ -41,7 +49,16 @@ _STATUS = {
     "skipped": ("skipped", "#8a93ad"),
 }
 
-_COLS = ("Case", "Source", "Status", "Time", "Detail")
+#: Cell Shape is LAST so the four columns a reader scans for "did it run" stay put;
+#: it is the only one whose text is quoted verbatim from another host's output
+#: (`mesh_shape_stats.shape_report`, the same string `run_pipeline` logs — issue
+#: #132), which is why nothing here reformats it.
+_COLS = ("Case", "Source", "Status", "Time", "Detail", "Cell Shape")
+
+#: What an empty Cell Shape cell means, rather than an empty cell. A queued or
+#: failed case produced no mesh, and a blank in a column of numbers is read as a
+#: zero — which on this metric would read as a perfect mesh.
+_NO_SHAPE = "—"
 
 
 class BatchDialog(QDialog):
@@ -84,6 +101,7 @@ class BatchDialog(QDialog):
         for c in (2, 3):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         outer.addWidget(self.table, 1)
 
         # Collision warning, hidden until there is one. Always-present empty warning
@@ -221,7 +239,11 @@ class BatchDialog(QDialog):
         text, colour = _STATUS.get(job.status, (job.status, "#a0a8c0"))
         source = os.path.basename(job.source) if job.source else "(in memory)"
         secs = f"{job.seconds:.1f}s" if job.seconds else ""
-        for c, value in enumerate((job.label, source, text, secs, job.error)):
+        # The shape cell is the runner's own report verbatim — see _COLS. A case
+        # with no mesh yet shows the dash, never a blank.
+        shape = job.shape or _NO_SHAPE
+        for c, value in enumerate(
+                (job.label, source, text, secs, job.error, shape)):
             item = QTableWidgetItem(value)
             if c == 1 and job.source:
                 item.setToolTip(job.source)
@@ -229,6 +251,15 @@ class BatchDialog(QDialog):
                 item.setToolTip(job.error)
             if c == 2:
                 item.setForeground(QBrush(QColor(colour)))
+            if c == 5:
+                item.setToolTip(
+                    "Cell shape as the MESHER measured it, read from the mesh's "
+                    ".provenance.json sidecar — the same figures run_pipeline "
+                    "logs and the Mesh Statistics panel shows. The two "
+                    "generation paths measure different quantities, so the "
+                    "metric is named."
+                    if job.shape else
+                    "No mesh from this case yet — see the Status column.")
             self.table.setItem(index, c, item)
 
     def _refresh_collisions(self):

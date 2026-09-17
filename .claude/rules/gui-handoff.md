@@ -48,7 +48,11 @@ That is the family resemblance, and it is why they are one file.
   everything a panel is otherwise — its field-spec conventions, its data flow — is that one's. The
   per-cell array the same panel's colour mode uses is built in `views/mesh_canvas_fills_mixin.py`,
   which only `.claude/rules/gui-seams.md`'s tree-wide glob reaches; #131 left it alone on purpose
-  and the rule below says so, because "unchanged" is a claim a later reader needs stated.
+  and the rule below says so, because "unchanged" is a claim a later reader needs stated. **#132
+  added three more of that kind**: `services/batch_runner.py`, `views/batch_dialog.py` and
+  `controllers/batch_ctrl.py` are the batch queue's half of the same summary and are reached by
+  no glob but that tree-wide one. A fourth, `services/pipeline_runner.py`, belongs to
+  `.claude/rules/pipeline-case.md`, which carries the mesh STAGE's side of it.
 - **Inward.** `models/segment.py` is matched here for its `bc` / `grow_bl` fields, but the
   rule that `to_dict()` / `from_dict()` is the ONE serialiser behind the resample config, the
   workspace and the pipeline script is stated in the GUI module map, in
@@ -154,12 +158,38 @@ the file on disk holds 9216 triangles.
   the Quality (Aspect Ratio) colour map's input and is built where it draws
   (`views/mesh_canvas_fills_mixin.py`, unchanged); `workers/mesh_stats_run.py` stopped computing it
   because nothing displays it any more. **Skewness is untouched** and still client-side.
+- **THE HEADLESS HOSTS READ THE SAME THING, THROUGH ONE FORMATTER** (#132). `shape_report(path)`
+  = read + format, and `format_shape_report` is where the report's shape is decided —
+  `services/pipeline_runner.py`'s mesh stage logs `[Mesh] cell shape — <report>` and
+  `services/batch_runner.py` stores the same string on the job for the queue's Cell Shape column.
+  Sharing the READER alone was not enough: each host would still have been free to round
+  differently, drop the metric name or print an unmeasured run as numbers. **The view calls
+  neither** — `batch_runner` reads once, Qt-free and off the GUI thread, and
+  `views/batch_dialog.py` displays what the job carries, reformatting nothing.
+- **A case with no mesh carries NO figures — a THIRD absence, and not the reader's.**
+  `batch_runner._shape_of` returns `""` when there is no `vtk` artifact, because asking for a
+  sidecar beside nothing comes back `not published`, which is a statement about a mesh. The row
+  shows a dash pointing at the Status column, and `controllers/batch_ctrl.py` clears `job.shape`
+  on a re-run so a FAILED row cannot stand beside the previous run's numbers.
+- **The reader's own strings never spell the sidecar's filename**, because the module that could
+  compose a second path convention is this one; the gate below refuses `provenance` anywhere in its
+  code strings, so the "no figures published" message names the concept and not the file. A HOST
+  may say so in prose — the batch dialog's tooltip does — and `tests/test_headless_shape_report.py`
+  check 2 is correspondingly the composition test (a literal ENDING in the suffix) rather than the
+  substring one. Two gates, one rule, two strengths, stated so the difference is not read as drift.
+**Three modules this rule governs sit under NO glob but `.claude/rules/gui-seams.md`'s tree-wide
+one**: `services/batch_runner.py`, `views/batch_dialog.py` and `controllers/batch_ctrl.py`. The
+tripwire table in `CLAUDE.md` is what reaches their reader; recorded here rather than left as
+silent precedent, per #66.
 Gated by `tests/test_mesh_shape_panel.py`: a negative control that HAS computable per-cell shape
 and still blanks, an allow-list over the whole GUI package for the per-cell array's two permitted
 homes, a colour-map comparison by BRUSH COLOUR over a fixture with one cell in each quality bucket,
 and a leg that runs the real binary on the shipped O-grid so the reader and the C++ writer cannot
-drift. Its hand injections are enumerated and dated in its own docstring; no count of them is
-restated here, because a second home for a count is where one goes stale.
+drift — and by `tests/test_headless_shape_report.py` (#132), whose real-binary leg runs the two
+SHIPPED demo pipeline scripts through the batch queue and compares each row against the line the
+runner logged for that same case, as strings. Both files' hand injections are enumerated and dated
+in their own docstrings; no count of them is restated here, because a second home for a count is
+where one goes stale.
 
 **A re-save of the geometry must not throw the Mesh-stage edits away, and the fix is a MODEL FIELD
 rather than a wrapper around the subprocess.** Both halves of a per-segment BC live in the `.meta` —
