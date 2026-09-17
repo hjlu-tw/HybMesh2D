@@ -498,7 +498,13 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   the exported cells would mean "is this 1:1?" answered 1.414. Measured through the
   real binary on the shipped O-grid: `MB_SPLIT_QUADS` 1 → `cells=9216`,
   `MB_SPLIT_QUADS` 0 → `cells=4608`, and all four `quad_midline_ratio_*` figures
-  **bitwise identical** across the two runs. Same on the shipped H-grid (160 → 80).
+  **identical to every digit the line prints** across the two runs. Same on the
+  shipped H-grid (160 → 80), and since #140 on the square, the cavity and the
+  C-grid as well. #129 wrote "bitwise", which the check does not carry and #140's
+  Spec review named: both sides are read back off a six-decimal line, so a
+  difference under 5e-7 is invisible to it and no surface in this tree carries more
+  precision to read the figure from. The word is corrected rather than the check
+  widened.
 - **THE TWO PATHS' METRICS HAVE DIFFERENT NAMES, AND THE NAME IS IN THE KEY.** The
   multi-block figure is `quad_midline_ratio`; the hybrid path's is
   `tri_edge_ratio` on its exported triangles — **#129 shipped the quad half only**,
@@ -566,9 +572,17 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
 
   | | value | what it is |
   |---|---|---|
-  | long midline | **3.143570** | the last of the wake cut's 24 intervals. `wake` declares `count` 25 and `ds_start` 0.005 over a 19-chord span (trailing edge x = 1 to outlet x = 20), so the stretching law ends at 3.14 |
+  | long midline | **3.143570** | the last of the wake cut's 24 intervals, MEASURED off the mesh. `wake` declares `count` 25 and `ds_start` 0.005 over a 19-chord span (x = 1 to x = 20), and walking the cut's own nodes gives a first interval of 0.0050046 and a last of 3.1435700 |
   | short midline | **0.000998606** | the first radial interval off the cut, which `e_out_up` / `e_out_lo` declare as a wall end and the run's `BL_INITIAL_THICKNESS 0.001` sizes — reproduced to 0.14%, and the mean of the two unequal corner offsets above |
   | ratio | **3147.958** | 3.143570 / 0.000998606 |
+
+  **The stretching law is IDENTIFIED here, not DERIVED, and the table reads as if it
+  were.** Those three declarations do not produce 3.14 by any law written down in
+  this note — a plain geometric ratio over them lands near 4.9 — so what the row
+  above says is where the number comes from, not how to recompute it. What the gate
+  asserts is the cell's LOCATION (it touches the outlet and lies on the cut, so its
+  long midline can be nothing but the last interval) and the QUOTIENT; the law
+  itself is asserted nowhere, and #140's Spec review is what made that explicit.
 
   The O-grid's 32.77 = 0.0327 / 0.001 is that shape exactly; this one is two orders
   larger because the wake is 19 chords long where the O-grid's ring is 2·π·0.5
@@ -599,8 +613,13 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   margin is thinner than the obvious example suggests and is recorded with the
   number that is thinnest**: of the nine movements that control measures, the
   smallest is the O-grid's max at **7.60e-6**, only 7.6x the band; the C-grid's max
-  at 1.4e-3 is the comfortable one and is not the one to quote. What the pin does
-  NOT buy is named in the gate's blind spots: an author who re-measures without
+  at 1.4e-3 is the comfortable one and is not the one to quote. **That thinness has
+  a consequence the band cannot be widened out of**: the pins were measured on one
+  toolchain (macOS/clang) and CI runs the binary built on another, so if a libm
+  difference ever exceeds 1e-6 there is no slack to absorb it — 7.60e-6 is where
+  the negative control starts failing instead. The drift is expected near 1e-15
+  relative and is not measured; the gate's blind spots say what to read if CI
+  reddens. What the pin does NOT buy is named there too: an author who re-measures without
   reading the number has banked the regression, because nothing here says 3147.958
   is worse than 32.768.
 - **A FOURTH IMPLEMENTATION AGREES, which is what makes "three surfaces agree"
@@ -665,8 +684,10 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   premise is a build property), by the five new groups of
   `tests/cpp/test_mb_quality.cpp` (9, 9b, 9c, 9d, 9e), and by
   `tools/PreProcessor/tests/test_multiblock_shape_surface.py` (#129's 10 properties
-  and 51 assertions on the two shipped cases it read from disk; **13 properties and
-  170 assertions on all five since #140**, whose own six injections are hand runs
+  and 51 assertions on the two shipped cases it read from disk; **13 properties on
+  all five since #140** — the assertion count is not restated, being a live figure
+  about another file that no `--sync` derivation keeps true — whose six injections
+  are hand runs
   dated in that file's docstring — three into the gate, three into two shipped
   topologies, all six biting. Two are worth knowing about from here: B is recorded
   with the reason the O-grid is IMMUNE to it rather than rounded up to "it bit",

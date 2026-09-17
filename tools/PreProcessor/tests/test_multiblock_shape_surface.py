@@ -55,8 +55,12 @@ What this pins down:
   6. THE SAME NUMBERS, to the digit, in all three places. This is what "one owner"
      means operationally.
   7. INDEPENDENT OF ``MB_SPLIT_QUADS``: the same shipped case at 0 exports half as
-     many cells and reports the four figures BITWISE unchanged. On all five now,
-     which is acceptance criterion 4 of #140 for the C-grid specifically.
+     many cells and reports the four figures unchanged TO EVERY DIGIT THE LINE
+     PRINTS. #129 called that "bitwise", which the assert does not carry: both
+     figures are read back off a six-decimal line, so a difference under 5e-7
+     would be invisible to it. The word is corrected rather than the check
+     widened — there is nowhere with more precision to read the figure from. On
+     all five cases now, which is acceptance criterion 4 of #140 for the C-grid.
   8. Every figure is at or above 1.0 and ordered median <= p95 <= max, on all five
      cases. 1.0 is the metric's floor, so this is what stops an absent measurement
      reaching a user as a number.
@@ -100,10 +104,18 @@ criterion 3 in the form a gate can hold. Measured 2026-09-17 on the shipped case
 
     worst cell  corners (16.856430, -0.000000000) (16.856430, -0.000997212)
                         (20.000000, -0.001000000) (20.000000,  0.000000000)
-    long midline   3.143570   the LAST of the wake cut's 24 intervals: `wake`
-                              declares `count` 25 and `ds_start` 0.005 over a
-                              19-chord span (trailing edge x = 1 to outlet x = 20),
-                              so the stretching law ends at 3.14
+    long midline   3.143570   the LAST of the wake cut's 24 intervals, MEASURED
+                              off the mesh and not derived: `wake` declares
+                              `count` 25 and `ds_start` 0.005 over a 19-chord span
+                              (trailing edge x = 1 to outlet x = 20), and walking
+                              the cut's own nodes gives a first interval of
+                              0.0050046 and a last of 3.1435700. Those three
+                              declarations do NOT produce 3.14 by any law written
+                              down here — a plain geometric ratio over them lands
+                              near 4.9 — so the stretching law is IDENTIFIED as
+                              the source of this number and is not re-derived.
+                              What check 13 asserts is the cell's location and its
+                              quotient, never the law
     short midline  0.000998606
                               the first radial interval off the cut, which
                               `e_out_up`/`e_out_lo` declare as a wall end and the
@@ -252,9 +264,23 @@ BLIND SPOTS, named rather than papered over:
     pinned. A row that reported the WRONG block's figures would pass here;
     ``tests/cpp/test_mb_quality.cpp`` check 9d is where a row is tied to its block.
   * Check 13 locates the C-grid's worst cell and names its two midlines; it does
-    NOT re-derive the wake cut's stretching law, so "3.1436 is the last of 24
-    intervals from ds_start 0.005 over 19 chords" is read off the topology by a
-    human and stated above rather than computed here.
+    NOT re-derive the wake cut's stretching law. That 3.1436 is the LAST INTERVAL
+    is asserted in substance — the cell touches the outlet and lies on the cut, so
+    its long midline can be nothing else — but that the law lands there from
+    `count` 25 and `ds_start` 0.005 over 19 chords is read off the topology by a
+    person. A reader who takes the entry above as a DERIVATION will get 4.9 from a
+    plain geometric ratio and think this file wrong.
+  * ``PIN_TOL`` WAS MEASURED ON ONE TOOLCHAIN. The pins come from macOS/clang runs
+    and CI runs the same binary built on ubuntu/GCC, so "wider than cross-toolchain
+    drift" is believed rather than measured: the figures derive from the same node
+    coordinates through `tanh`/`exp`, where a libm difference is a few ulp and
+    should land near 1e-15 relative, twelve orders inside the band. It is NOT
+    measured here and the band cannot simply be widened if it turns out wrong — it
+    is pinched between the print resolution below it and the O-grid max's 7.60e-6
+    above, which is the smallest movement the negative control needs it to catch.
+    If CI reddens check 11 first, READ THE MAGNITUDE the message prints: a drift
+    near 1e-12 is the toolchain and wants a rebuilt pin; one near 1e-3 is the
+    regression the pin exists for.
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_shape_surface.py
 Skips cleanly if ./build/HybMesh2D has not been built.
@@ -593,9 +619,12 @@ def one_case(tmp, name, config_name, blocks):
     check(f"{name}: 7. ...off EXACTLY HALF the exported cells ({line2['cells']:.0f} "
           f"quads against {line['cells']:.0f} triangles), so the two runs really "
           f"did export different meshes", line["cells"] == 2 * line2["cells"])
-    check(f"{name}: 7. ...and the four shape figures are BITWISE identical, so "
-          f"turning the split off to diagnose a mesh does not change the number "
-          f"being diagnosed", got == got2)
+    # "IDENTICAL TO EVERY DIGIT THE LINE PRINTS", not "bitwise": both sides are
+    # parsed off a six-decimal line, so this cannot see a difference under 5e-7
+    # and must not say it can (#114's shape, inherited from #129's wording).
+    check(f"{name}: 7. ...and the four shape figures are identical to every digit "
+          f"the line prints, so turning the split off to diagnose a mesh does not "
+          f"change the number being diagnosed", got == got2)
 
     # --- 12. an INDEPENDENT recomputation off the file on disk ---------------
     pts, quads = quad_corners(stem2 + ".vtk")

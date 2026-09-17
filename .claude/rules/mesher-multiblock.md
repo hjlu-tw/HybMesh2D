@@ -186,7 +186,9 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
   globs reach it and this file's do not). Median / p95 / max of the opposite-edge midline ratio,
   so a square reads **1.0** and not the 1.414 the split triangles would give, and the figure is
   **independent of `MB_SPLIT_QUADS`** — measured on the shipped O-grid: `cells=` 9216 → 4608 while
-  all four `quad_midline_ratio_*` are bitwise identical.
+  all four `quad_midline_ratio_*` are identical to every digit the line prints (#129 wrote
+  "bitwise"; both sides are read off a six-decimal line, so the check cannot see a
+  difference under 5e-7 and no surface carries more precision to read).
   - **The metric's name is in the KEY, never as a value.** Every token of `HYBMESH_MB_QUALITY` is
     `key=<float>` and `qlines` — the ONE parser, imported by SIX gates from the one that owns
     it — floats all of them, so a `shape_metric=…` token would break all seven files. The
@@ -228,7 +230,9 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
 - Gated by `tests/cpp/test_mb_quality.cpp` (14 groups, 79 checks),
   `tests/test_multiblock_quality_surface.py` and `tests/test_multiblock_shape_surface.py` (the
   shape figures on ALL FIVE shipped multi-block cases, pinned, through the real binary — 13
-  properties, 170 assertions, six hand injections dated in its own docstring). **The C++ gate's
+  properties and six hand injections, both enumerated in its own docstring; the assertion
+  count is deliberately NOT restated here, being a live figure about another file that no
+  `--sync` derivation keeps true). **The C++ gate's
   injections are HAND runs, dated in that test's own docstring** — a C++ test cannot mutate the
   implementation it linked against, and that distinction must not be blurred. Permanent instead are two **negative
   controls** computing an injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its
