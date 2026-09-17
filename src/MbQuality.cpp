@@ -48,6 +48,37 @@ double interiorAngleDeg(const Point2D& o, const Point2D& a, const Point2D& b) {
     return std::acos(c) * 180.0 / M_PI;
 }
 
+// A block is walkable as a structured grid when it is at least 2x2 and its id
+// array is the size its own ni/nj declare. Both structured-cell loops below ask
+// this, and asking it in two places is how they would come to disagree about which
+// cells are "the structured cells" — the phrase both figures' headers use.
+bool blockIsWalkable(const hybmesh::MbBlock& b) {
+    return b.ni >= 2 && b.nj >= 2
+        && b.nodeIds.size() == static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
+}
+
+// The four corners of the structured cell at logical (i, j), AROUND THE RING:
+// (i,j) (i+1,j) (i+1,j+1) (i,j+1). False when any of the four ids names no node,
+// and then `out` is not to be read.
+//
+// ONE HOME FOR THE RING ORDER, and that is the point of the helper rather than a
+// tidy-up. Both figures measured on the structured cells depend on it — the corner
+// angles' deviation from 90 degrees and the opposite-edge midline ratio — and
+// reading the four in Z order instead is the classic transcription slip (injection
+// J of tests/cpp/test_mb_quality.cpp, 11 failures). Written twice, one copy could
+// have it and the other not, and the two figures would describe different cells
+// while both calling them "the structured cells".
+bool quadCorners(const hybmesh::MbResult& mesh, const hybmesh::MbBlock& b, int i, int j,
+                 Point2D out[4]) {
+    const int ids[4] = {b.nodeAt(i, j), b.nodeAt(i + 1, j),
+                        b.nodeAt(i + 1, j + 1), b.nodeAt(i, j + 1)};
+    for (int k = 0; k < 4; ++k) {
+        if (ids[k] < 0 || static_cast<size_t>(ids[k]) >= mesh.nodes.size()) return false;
+        out[k] = mesh.nodes[static_cast<size_t>(ids[k])];
+    }
+    return true;
+}
+
 }  // namespace
 
 hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
@@ -63,22 +94,13 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
     // of question. Independent of how (or whether) the quads were split.
     double sum = 0.0;
     for (const MbBlock& b : mesh.blocks) {
-        const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
-        if (b.ni < 2 || b.nj < 2 || b.nodeIds.size() != want) continue;
+        if (!blockIsWalkable(b)) continue;
         for (int j = 0; j + 1 < b.nj; ++j) {
             for (int i = 0; i + 1 < b.ni; ++i) {
-                const int ids[4] = {b.nodeAt(i, j), b.nodeAt(i + 1, j),
-                                    b.nodeAt(i + 1, j + 1), b.nodeAt(i, j + 1)};
-                bool inRange = true;
-                for (int k = 0; k < 4; ++k)
-                    if (ids[k] < 0 || static_cast<size_t>(ids[k]) >= mesh.nodes.size())
-                        inRange = false;
-                if (!inRange) continue;
+                Point2D c[4];
+                if (!quadCorners(mesh, b, i, j, c)) continue;
                 for (int k = 0; k < 4; ++k) {
-                    const double a = interiorAngleDeg(
-                        mesh.nodes[static_cast<size_t>(ids[k])],
-                        mesh.nodes[static_cast<size_t>(ids[(k + 1) % 4])],
-                        mesh.nodes[static_cast<size_t>(ids[(k + 3) % 4])]);
+                    const double a = interiorAngleDeg(c[k], c[(k + 1) % 4], c[(k + 3) % 4]);
                     if (a < 0.0) continue;
                     const double dev = std::fabs(90.0 - a);
                     q.maxNonOrthoDeg = std::max(q.maxNonOrthoDeg, dev);
@@ -108,29 +130,19 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
             MbBlockShape row;
             row.blockId = b.id;
             std::vector<double> mine;
-            const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
-            if (b.ni >= 2 && b.nj >= 2 && b.nodeIds.size() == want) {
+            if (blockIsWalkable(b)) {
                 for (int j = 0; j + 1 < b.nj; ++j) {
                     for (int i = 0; i + 1 < b.ni; ++i) {
-                        const int ids[4] = {b.nodeAt(i, j), b.nodeAt(i + 1, j),
-                                            b.nodeAt(i + 1, j + 1), b.nodeAt(i, j + 1)};
-                        std::vector<Point2D> corners;
-                        corners.reserve(4);
-                        bool inRange = true;
-                        for (int k = 0; k < 4; ++k) {
-                            if (ids[k] < 0
-                                || static_cast<size_t>(ids[k]) >= mesh.nodes.size()) {
-                                inRange = false;
-                                break;
-                            }
-                            corners.push_back(mesh.nodes[static_cast<size_t>(ids[k])]);
-                        }
+                        Point2D c[4];
                         // A quad one of whose ids names nothing is UNMEASURABLE, and
-                        // must be said so here rather than handed on short: three
-                        // resolving ids would reach `cellShapeRatio` as a TRIANGLE and
-                        // come back with a perfectly ordinary edge ratio for a cell
-                        // nobody could measure. Check 9e is that case.
-                        mine.push_back(inRange ? cellShapeRatio(corners) : -1.0);
+                        // is pushed as such rather than handed on short: three
+                        // resolving corners would reach `cellShapeRatio` as a TRIANGLE
+                        // and come back with a perfectly ordinary edge ratio for a
+                        // cell nobody could measure. Check 9e is that case, and is why
+                        // `quadCorners` returns all four or none.
+                        mine.push_back(quadCorners(mesh, b, i, j, c)
+                                           ? cellShapeRatio({c[0], c[1], c[2], c[3]})
+                                           : -1.0);
                     }
                 }
             }

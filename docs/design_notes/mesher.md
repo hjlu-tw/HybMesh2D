@@ -500,13 +500,21 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   `MB_SPLIT_QUADS` 0 → `cells=4608`, and all four `quad_midline_ratio_*` figures
   **bitwise identical** across the two runs. Same on the shipped H-grid (160 → 80).
 - **THE TWO PATHS' METRICS HAVE DIFFERENT NAMES, AND THE NAME IS IN THE KEY.** The
-  multi-block figure is `quad_midline_ratio`; the hybrid path's (#130) is
-  `tri_edge_ratio` on its exported triangles. A `shape_metric=quad_midline_ratio`
+  multi-block figure is `quad_midline_ratio`; the hybrid path's will be
+  `tri_edge_ratio` on its exported triangles, and #130 is where it starts being
+  emitted — **this ticket ships the quad half only**, and the triangle branch of
+  `cellShapeRatio` plus `measureCellShapes` have no production caller until then.
+  Both are NAMED as unread in their own header rather than shipped as if read,
+  which is #50's "SURVIVING is not the same as READ" applied to a function. A
+  `shape_metric=quad_midline_ratio`
   token was considered and REFUSED: every token on `HYBMESH_MB_QUALITY` is
   `key=<float>` and the one shared parser (`qlines`, owned by the quality surface
-  gate and imported by four others — the C-grid's, the O-grid's, the quality gate's
-  and this ticket's own) floats every one of them, so a string-valued token would
-  have broken all five files at once. Putting the name in the KEY costs
+  gate and imported by FIVE others — the C-grid's, the O-grid's, the quality
+  gate's, the smoothing gate's and this ticket's own) floats every one of them, so
+  a string-valued token would have broken all six files at once. **That count was
+  wrong in its first draft** — written as four, from a `grep` whose output was cut
+  by a `head` — and BOTH review axes caught it independently, which is the
+  strongest signal either gives. Enumerate before writing a count. Putting the name in the KEY costs
   four longer tokens and makes the two quantities un-confusable by grep.
 - **THREE NUMBERS, BECAUSE THE MAX AND THE MEAN BOTH LIVE IN THE BOUNDARY LAYER.**
   Measured on the shipped NACA case in #128: BL triangles run at edge ratio 12–37
@@ -594,6 +602,25 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   deviation measured off nothing — so "19/19" is not 19 meshes, and is written here
   with the number that is. No mesh moved; what is new is a report, four tokens on a
   line and a key in a sidecar.
+- **WHAT THE TWO REVIEW AXES CHANGED, recorded because three of the five were
+  claims rather than code.** (1) The `qlines` count above, wrong in its first
+  draft and found by BOTH axes. (2) `tri_edge_ratio` was written in the PRESENT
+  tense in six homes — a metric nothing in the tree emits until #130 — so the
+  module's headline claim, "shared by both generation paths", was true of the
+  design and not of the code; all six now say which half shipped. (3) The surface
+  gate's colour check named `PASS` in its sentence and left it out of its tuple,
+  the inert-check shape #114 recorded; the tuple is now the message's only source.
+  (4) The banner's headline re-spelled the `not measured` case instead of calling
+  the `shape()` helper whose own comment claimed it served BOTH levels "by
+  construction" — two spellings of one state, free to drift, at the very level the
+  helper was written for. Its wording was wrong as well: "no structured block in
+  the result" asserts something about the DOCUMENT that a result holding
+  unmeasurable blocks contradicts. (5) The `(i, j)` walk was written twice, once
+  per figure, so `quadCorners` and `blockIsWalkable` now give the RING ORDER one
+  home — which matters because reading those four corners in Z order is injection
+  `J`, and two copies is one copy that has the fix and one that does not. Every
+  figure this entry records reproduces byte for byte after (5), non-orthogonality
+  included.
 - Blind spots, named rather than papered over. **`not measured` is unreachable
   through the binary**, and not for want of trying: every declaration this path
   ACCEPTS produces at least one structured quad — an edge with `count` 1 is refused

@@ -43,7 +43,7 @@
 //     wall-spacing target is later work; see MbWallHeight's declaration.
 //
 // INJECTIONS: run BY HAND at review time — 2026-08-27 for A-F, 2026-09-17 for
-// G-J, which are #129's — and recorded here rather
+// G, H, I, J and K, which are #129's — and recorded here rather
 // than written as in-test injections — a C++ test cannot mutate the
 // implementation it linked against, so unlike the Python gates next door these
 // cannot re-run themselves. Each names the checks it broke, so a later reader can

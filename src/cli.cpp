@@ -413,12 +413,20 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // is ~32.8 and that is the azimuthal spacing over the requested
     // BL_INITIAL_THICKNESS, an arithmetic consequence of what the user asked for
     // rather than a defect to flag.
+    //
+    // THE HEADLINE GOES THROUGH `shape()` TOO, including when nothing was measured.
+    // Its first draft spelled the `not measured` case out again here, which made
+    // the lambda's "used at BOTH levels by construction" claim false at the very
+    // level it was written for: two spellings of one state, free to drift.
+    std::cout << mbRow("Cell shape") << shape(q.structuredShape);
     if (q.structuredShape.cells == 0)
-        std::cout << mbRow("Cell shape")
-                  << "not measured (no structured block in the result)\n";
+        // NOT "no structured block in the result": a result CAN hold blocks none
+        // of whose cells could be measured, and the row above would then assert
+        // something false about the document. What is true in both cases is that
+        // no structured cell was measurable.
+        std::cout << " (no structured cell could be measured)\n";
     else
-        std::cout << mbRow("Cell shape") << shape(q.structuredShape)
-                  << " (quad midline ratio over " << q.structuredShape.cells
+        std::cout << " (quad midline ratio over " << q.structuredShape.cells
                   << " structured quads; 1.0 is square)\n";
     // PER BLOCK, under the headline, the way each wall gets a row under the wall
     // headline. A block is the unit the user declared, so "the wake blocks are the
@@ -441,9 +449,9 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // their own (issue #129). Two reasons, and both are about the readers: every
     // token on this line is `key=<float>` and one shared parser reads it that way,
     // so a `shape_metric=quad_midline_ratio` token would break every gate at once;
-    // and the hybrid path's own line names its different quantity
-    // `tri_edge_ratio_*`, so the two can never be confused for one another by a
-    // grep. `quad_midline_ratio_cells` is the count of STRUCTURED quads and is
+    // and the hybrid path's own line will name its different quantity
+    // `tri_edge_ratio_*` (#130), so the two can never be confused for one another
+    // by a grep. `quad_midline_ratio_cells` is the count of STRUCTURED quads and is
     // deliberately not `cells` above, which counts the cells EXPORTED — at the
     // default split the two differ by a factor of two, and that difference is the
     // evidence the figure is measured where it says it is.

@@ -67,8 +67,9 @@ CHECK 6 IS KNOWN TO BITE, by accident and on the day it was written: its first
 draft read the FIRST ``Cell shape`` row out of the output, which on a smoothed run
 (the shipped default since #85) is the report for the mesh BEFORE the sweeps — a
 mesh that was never exported. It compared that against the after-smoothing machine
-line and went red on both cases, naming the disagreement. The fix is in ``banner``
-and is the same trailing-space rule ``qlines`` carries for its own prefix.
+line and went red on both cases, naming the disagreement. The fix is in
+``last_report`` and is the same trailing-space rule ``qlines`` carries for its own
+prefix.
 
 BLIND SPOTS, named rather than papered over:
 
@@ -152,44 +153,39 @@ def run(tmp, name, config_text):
     return p.returncode, (p.stdout or "") + (p.stderr or ""), stem
 
 
-def banner(out):
-    """The headline row's four numbers, or None if the row is absent.
+def last_report(out):
+    """The LAST ``Cell shape`` block: ``(headline numbers or None, {block: text})``.
 
-    THE LAST ONE, and the trailing-space rule ``qlines`` follows is why this has
-    to be said: a smoothed run prints the whole quality block TWICE, and the first
-    is the mesh BEFORE the sweeps — a mesh that was never exported. Taking the
-    first match here compared the before-banner against the after-machine-line and
-    reported them as disagreeing, which is the false alarm that finding this cost.
+    ONE WALK, because both halves need the same answer to the same question — which
+    of the report's two copies describes the mesh on disk — and two walks is two
+    places for that answer to drift. THE LAST ONE, and the trailing-space rule
+    ``qlines`` follows is why this has to be said: a smoothed run prints the whole
+    quality block TWICE, and the first is the mesh BEFORE the sweeps, a mesh that
+    was never exported. The first draft took the first match and compared the
+    before-banner against the after-machine-line, which reddened check 6 on both
+    cases — which is how this gate is known to bite.
+
+    The headline is None when the row said ``not measured`` (or is absent); the rows
+    are whatever text each block carried, parsed by the caller.
     """
-    got = None
+    head, rows = None, {}
+    seen = False
     for line in out.splitlines():
-        m = _HEAD.match(line)
-        if m:
-            got = {"median": float(m.group(1)), "p95": float(m.group(2)),
-                   "max": float(m.group(3)), "cells": float(m.group(4))}
-    return got
-
-
-def block_rows(out):
-    """Every per-block row under the LAST headline, as {block id: text}.
-
-    The last one, because a smoothed run prints the report twice and the sidecar
-    and the unsuffixed machine line both describe the mesh AS EXPORTED — the same
-    reason ``qlines`` matches its prefix with a trailing space.
-    """
-    rows, seen_head = {}, False
-    for line in out.splitlines():
-        if _HEAD.match(line) or line.startswith("  - Cell shape"):
-            rows, seen_head = {}, True
+        if line.startswith("  - Cell shape"):
+            m = _HEAD.match(line)
+            head = ({"median": float(m.group(1)), "p95": float(m.group(2)),
+                     "max": float(m.group(3)), "cells": float(m.group(4))}
+                    if m else None)
+            rows, seen = {}, True
             continue
-        if not seen_head:
+        if not seen:
             continue
         m = _ROW.match(line)
         if m:
             rows[m.group(1)] = m.group(2).strip()
         elif line.strip() and not line.startswith("      "):
-            seen_head = False
-    return rows
+            seen = False
+    return head, rows
 
 
 def sidecar(stem):
@@ -219,7 +215,7 @@ def one_case(tmp, name, config_text, blocks):
     check(f"{name}: the shipped case runs and exits 0 (got {rc})", rc == 0)
 
     # --- 1. the banner row ---------------------------------------------------
-    head = banner(out)
+    head, rows = last_report(out)
     check(f"{name}: 1. the banner carries a Cell shape row with median, p95, max "
           f"and the count of structured quads", head is not None)
     if head is None:
@@ -234,7 +230,6 @@ def one_case(tmp, name, config_text, blocks):
           head["cells"] < line["cells"])
 
     # --- 2. one row per block ------------------------------------------------
-    rows = block_rows(out)
     check(f"{name}: 2. one row per block, named by the document's own block ids "
           f"({sorted(rows)})", sorted(rows) == sorted(blocks))
     parsed = {b: _ROWNUM.match(t) for b, t in rows.items()}
@@ -319,11 +314,17 @@ def main() -> int:
               "azimuthal spacing over the requested BL_INITIAL_THICKNESS — and "
               f"the run still exits 0 (max {got['max'] if got else '?'}, rc {rc})",
               rc == 0 and got is not None and 30.0 < got["max"] < 35.0)
-        check("9. ...and nothing in the report colours or grades it: no PASS, "
-              "FAIL, WARN or threshold word sits on the Cell shape rows",
+        # EVERY WORD IN THE MESSAGE IS IN THE TUPLE, and that is not pedantry: a
+        # check whose prose is wider than its assert is inert in exactly the gap
+        # between them, which is the shape #114 recorded. The first draft named
+        # PASS in the sentence and left it out of the tuple.
+        _GRADED = ("PASS", "WARN", "FAIL", "too ", "threshold", "exceeds")
+        check("9. ...and nothing in the report colours or grades it: none of "
+              + ", ".join(repr(w) for w in _GRADED)
+              + " sits on the Cell shape rows",
               not any(w in ln for ln in out.splitlines()
                       if "Cell shape" in ln or _ROW.match(ln)
-                      for w in ("WARN", "FAIL", "too ", "threshold", "exceeds")))
+                      for w in _GRADED))
 
         # --- 10. shape is not inversion --------------------------------------
         # The deliberately folded dart the quality gate owns. It exits 9 with

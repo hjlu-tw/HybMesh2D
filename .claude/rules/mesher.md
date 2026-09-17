@@ -197,8 +197,9 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
   the adapter records. Never throws; a malformed document comes back as an error string.
 - **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
-- **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, shared by
-  BOTH generation paths (#129). Pure, total, never throws; see the rule below.
+- **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, written to be
+  shared by both generation paths (#129) and called by ONE of them so far. Pure, total, never
+  throws; see the rule below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
   source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
 - **`MbShared.cpp`**: WHICH nodes the multi-block smoother may move, and in whose logical
@@ -214,7 +215,10 @@ those into median / p95 / max. It knows nothing about `MbResult`, `Mesh` or gmsh
 the signal the one definition has grown a dependency.
 - **The metric depends on the CELL KIND and the two carry DIFFERENT NAMES.** A quad is the ratio
   of the distances between the midpoints of OPPOSITE edges (`quad_midline_ratio`); a triangle is
-  longest edge / shortest edge (`tri_edge_ratio`). A square is exactly 1.0 as a quad and exactly
+  longest edge / shortest edge (`tri_edge_ratio`). **ONLY THE QUAD BRANCH HAS A CALLER TODAY** —
+  the triangle branch and `measureCellShapes` are #130's, named in the header rather than shipped
+  as if read, the same rule `MESH_MODE`'s "SURVIVING is not the same as READ" states.
+  A square is exactly 1.0 as a quad and exactly
   sqrt(2) as either of its split triangles, so a shared label would invite a comparison that
   means nothing. The arithmetic is shared because writing it twice guarantees drift; the two
   entry points, the two output lines and the two names stay separate.

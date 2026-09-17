@@ -188,9 +188,10 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
   **independent of `MB_SPLIT_QUADS`** — measured on the shipped O-grid: `cells=` 9216 → 4608 while
   all four `quad_midline_ratio_*` are bitwise identical.
   - **The metric's name is in the KEY, never as a value.** Every token of `HYBMESH_MB_QUALITY` is
-    `key=<float>` and `qlines` — the ONE parser, imported by FOUR gates from the one that owns
-    it — floats all of them, so a `shape_metric=…` token would break every one of them. The
-    hybrid path's different quantity is `tri_edge_ratio_*`, so a grep cannot confuse the two.
+    `key=<float>` and `qlines` — the ONE parser, imported by FIVE gates from the one that owns
+    it — floats all of them, so a `shape_metric=…` token would break all six files. The
+    hybrid path's different quantity will be `tri_edge_ratio_*` (#130, not emitted yet), so a
+    grep cannot confuse the two.
   - **A QUAD WHOSE IDS DO NOT ALL RESOLVE IS UNMEASURABLE, said HERE** — passing the
     resolved corners on short would reach the metric as a TRIANGLE and come back with an
     ordinary edge ratio for a cell nobody could measure (check 9e).
