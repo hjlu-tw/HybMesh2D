@@ -1823,6 +1823,19 @@ is no path on which it describes a mesh that was never written. The gate checks 
 positions rather than trusting the reading, because "it is obviously after it" is exactly the claim
 a later refactor invalidates silently.
 
+**Injections, run by hand 2026-09-17 against `tests/test_headless_shape_report.py`** (the harness
+lived in a scratchpad and is not in the tree; each was scored by EXIT CODE first). Seven, all of
+which bit; the list and its dating live in that file's own docstring and are not counted twice
+here. **Two of them corrected the claims written for them before they ran**, which is the reason
+for running them at all: returning `""` for a missing sidecar was predicted to leave the batch
+dialog's dash check unreached and in fact left it GREEN — the dash is fed by `_shape_of`'s own
+empty string, so the blank has to be refused where the report is made and not only where it is
+shown; and a view that reformats the report was predicted to redden the row-equals-log check and
+did not, because that check compares the job's string against the log line and never reads the
+table. A third bit somewhere unplanned: the runner reading the sidecar itself also reddened the
+ORDERING check, whose anchor is the report's exact spelling, so that check now says when an anchor
+has gone missing instead of reporting a rewording as an ordering defect.
+
 **Named blind spots.**
 - **The batch column inherits #131's staleness hole and widens the window.** The sidecar is trusted
   because it sits beside the file; a case whose output name collides with another's would show the

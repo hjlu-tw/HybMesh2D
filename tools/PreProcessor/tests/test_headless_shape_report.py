@@ -44,19 +44,25 @@ scored by EXIT CODE first, because a mutation that crashes the gate prints zero
 FAIL lines and would otherwise read as inert. Seven, all of which bit:
 
   a. `format_shape_report` renders an unmeasured summary as numbers
-     -> red: 1 (`not measured`), 1 (no `0.000`)
+     -> red: 1 (`not measured`) and 1 (neither `0.000` nor the sentinel)
   b. `format_shape_report` returns "" for a missing sidecar
-     -> red: 1 (`not published`), and 6's dash check goes UNREACHED rather than
-        green, because the fixture row then has nothing to distinguish
+     -> red: 1 (`not published`), and ONLY that. 6's dash is fed by `_shape_of`'s
+        own empty string, so it stays green — which is exactly why the blank has
+        to be refused where the report is MADE and not only where it is shown.
   c. `_shape_of` drops its `if vtk` guard -> red: both 4s
   d. the runner's report is moved ABOVE the "produced no VTK" raise -> red: 4's
      ordering check
-  e. the batch dialog reformats the report (`.2f` via a re-parse) -> red: 5's
-     row-equals-log check and 6
-  f. `batch_ctrl` stops clearing `job.shape` on a re-run -> red: 6's stale-row
-     check
+  e. the batch dialog reformats the report (`.2f` via a re-parse) -> red: BOTH of
+     6's row checks, and NOT 5 — which compares the job's string against the log
+     and never reads the table, so a view that diverges is visible only where the
+     view is read. The two sections are not redundant.
+  f. `batch_ctrl` stops clearing `job.shape` on a re-run -> red: 6's reset check
   g. the runner reads the sidecar itself (`json.load` on a composed
-     `<stem>.provenance.json`) -> red: 2's no-second-convention check
+     `<stem>.provenance.json`) -> red: both of 2's pipeline_runner checks, AND 4's
+     ordering check — the latter because its anchor is the report's exact
+     spelling, which this mutation replaces. Honest but coupled, so that check now
+     says when an anchor went MISSING rather than reporting it as an ordering
+     defect.
 
 Run:  python3 tools/PreProcessor/tests/test_headless_shape_report.py
 Section 5 skips cleanly if ./build/HybMesh2D has not been built.
@@ -223,10 +229,17 @@ check(batch_runner._shape_of({"vtk": ""}) == "",
 _runner_src = open(_SRC["pipeline_runner"], encoding="utf-8").read()
 _guard = _runner_src.find("mesh generation produced no VTK")
 _report = _runner_src.find("cell shape — {mesh_shape_stats.shape_report")
-check(0 < _guard < _report,
+# Both anchors are exact spellings, so say which one went missing rather than
+# reporting a reworded line as an ordering defect: a gate whose failure message
+# misnames the problem costs the next reader the time the gate was meant to save.
+_missing = [n for n, i in (("the no-VTK guard", _guard), ("the report", _report))
+            if i < 0]
+check(not _missing and _guard < _report,
       f"4. the runner's report sits BELOW the refusal for a stage that produced no "
       f"VTK, so there is no path on which it describes a mesh that was never "
-      f"written (guard@{_guard}, report@{_report})")
+      f"written (guard@{_guard}, report@{_report}"
+      + (f"; NOT FOUND: {', '.join(_missing)} — re-anchor this check" if _missing
+         else "") + ")")
 
 # ── 5/6. the real binary, both generation paths, both hosts ───────────────
 from PyQt6.QtWidgets import QApplication  # noqa: E402
