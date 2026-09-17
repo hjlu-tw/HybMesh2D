@@ -31,8 +31,12 @@ these reachable; the globs are the convenience.
 **Two of the globs reach files whose rules are NOT here — read that file as well.**
 `views/panels/**` is the glob #59 assigns to this area and is wider than the area: the results
 panels and mixins are governed by `.claude/rules/gui-results.md` (whose own globs name
-`views/panels/result_panel*`, so a reader of one is handed both files), and
-`views/panels/restart_chooser.py` by `.claude/rules/pipeline-case.md`. And `models/mesh_config*`
+`views/panels/result_panel*`, so a reader of one is handed both files),
+`views/panels/restart_chooser.py` by `.claude/rules/pipeline-case.md`, and
+`views/panels/mesh_stats_panel.py`'s quality-summary rows by `.claude/rules/gui-handoff.md`,
+whose own globs name that file too (#131) — what the panel READS from the mesher's provenance
+sidecar, and why it shows a blank rather than a number of its own, is a hand-off rule and not a
+panel-configuration one. And `models/mesh_config*`
 reaches `MeshConfig.output_base` / `output_path_for`, whose rule — the Output field's `.*`
 placeholder and the one module allowed to read it — is in `.claude/rules/gui-handoff.md` with
 `models/mesh_output_names.py`, where #77 moved it.

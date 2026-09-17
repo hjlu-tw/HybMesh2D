@@ -201,9 +201,14 @@ class MeshStatsPanel(CollapsibleSection):
         self.add_layout(exp_layout)
 
     def update_stats(self, mesh: VTKMesh | None, file_path: str = ""):
-        """Update the statistics display. Cheap counts (vertices, cells, bounds)
-        are shown immediately; the O(cells) quality metrics are computed on a
-        background thread for large meshes so the UI never blocks."""
+        """Update the statistics display.
+
+        Cheap counts (vertices, cells, bounds) are shown immediately; the
+        O(cells) skewness metric is computed on a background thread for large
+        meshes so the UI never blocks. The cell-shape summary is neither — it is
+        READ from `file_path`'s provenance sidecar, so it costs one small JSON
+        parse and does not depend on the loaded cells at all.
+        """
         if file_path:
             self.file_path_label.setText(f"File: {os.path.basename(file_path)}")
             self.file_path_label.setToolTip(file_path)

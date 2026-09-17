@@ -41,6 +41,24 @@ What this pins down:
      sidecar figures. This is what a hand-written fixture cannot prove — that the
      reader and `include/Provenance.hpp`'s writer still agree about the schema.
 
+Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
+automated — the harness lived in a scratchpad and is not in the tree. Each was
+scored by EXIT CODE first, because a mutation that crashes the gate prints zero
+FAIL lines and would otherwise read as inert. Eight, all of which bit:
+
+  a. the panel falls back to computing the summary when there is no sidecar
+     -> red: 6 (the blank) and 7 (the static scan finds the call)
+  b. the negative figures are formatted as numbers instead of `not measured`
+     -> red: both 4s
+  c. the reader composes `<stem>.provenance.json` itself instead of calling
+     `mesh_provenance_paths` -> red: both 2s (the second spelling stops
+     resolving, AND the AST scan finds the literal)
+  d. the metric's name is dropped from the row -> red: 5 and the real-binary 10
+  e. the figures are shown at a different precision -> red: 5 and 10
+  f. the `quality_aspect` branch of the fills mixin is disabled -> red: 8
+  g. `measured` returns True unconditionally -> red: three 4s
+  h. the shape labels are dropped from the panel's clear list -> red: 6's last
+
 Run:  python3 tools/PreProcessor/tests/test_mesh_shape_panel.py
 Check 10 skips cleanly if ./build/HybMesh2D has not been built.
 """

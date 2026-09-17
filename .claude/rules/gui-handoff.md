@@ -3,6 +3,8 @@ paths:
   - tools/PreProcessor/gui/app/services/mesh_bc_audit*
   - tools/PreProcessor/gui/app/services/project_file_kind*
   - tools/PreProcessor/gui/app/services/mesh_grid_lookup*
+  - tools/PreProcessor/gui/app/services/mesh_shape_stats*
+  - tools/PreProcessor/gui/app/views/panels/mesh_stats_panel*
   - tools/PreProcessor/gui/app/models/mesh_output_names*
   - tools/PreProcessor/gui/app/controllers/mesh_export_ctrl*
   - tools/PreProcessor/gui/app/controllers/mesh_layers_ctrl*
@@ -13,20 +15,24 @@ paths:
 # GUI file hand-off rules
 
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
-the mesh output-name resolver, the mesh-export / Mesh-layers / solver controller, or the
-segment model is read — **8 files**, verified to match. **Rules only** — the rationale (the
+the shape-summary reader, the Mesh Statistics panel, the mesh output-name resolver, the
+mesh-export / Mesh-layers / solver controller, or the segment model is read — **10 files**,
+verified to match. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
 
-**The concern is one question, asked five times: is the file this GUI session leaves on disk
-still correct when the NEXT stage reads it?** The `.bnd`'s boundary conditions, the project
-file's kind, the mesh's output name, which grid a reopened case is wired to, and the `.meta`
-sidecar's per-segment facts. Four of the five were USER-REPORTED failures, and every one of
+**The concern is one question, asked six times: is a file one stage leaves on disk still
+correct when the NEXT one reads it?** The `.bnd`'s boundary conditions, the project file's
+kind, the mesh's output name, which grid a reopened case is wired to, the `.meta` sidecar's
+per-segment facts — and, the sixth and the only one read INWARD rather than written outward,
+the `.provenance.json` the mesher leaves beside a mesh, which is where the GUI's quality
+summary now comes from (#131). Four of the six were USER-REPORTED failures, and every one of
 them produced a **plausible wrong answer rather than an error** — an all-`wall` solve that
 looks converged, a float parse error on JSON, a file literally named `mesh_<case>.*` that
 `os.path.exists` accepts, `No mesh generated yet` for a case whose grid is on disk, a sidecar
-whose labels nothing carries. That is the family resemblance, and it is why they are one file.
+whose labels nothing carries, a quality figure measuring a quantity the mesher never reported.
+That is the family resemblance, and it is why they are one file.
 
 **Boundaries run BOTH ways.**
 - **Outward.** Three owners sit under other rule files' globs. `models/mesh_config.py`
@@ -37,7 +43,12 @@ whose labels nothing carries. That is the family resemblance, and it is why they
   rest of what `controllers/solver_ctrl.py` does once the grid is accepted. Read those two
   before changing what an output name or a solver run means. A fourth, `tools/scripts/visualize_dat.py`,
   sits under NO rule file's globs at all — so this file and its own header comment are the only
-  things that reach its reader.
+  things that reach its reader. `views/panels/mesh_stats_panel.py` is matched HERE and by
+  `.claude/rules/gui-panels-config.md`'s `views/panels/**`: its summary rows are this file's, and
+  everything a panel is otherwise — its field-spec conventions, its data flow — is that one's. The
+  per-cell array the same panel's colour mode uses is built in `views/mesh_canvas_fills_mixin.py`,
+  which only `.claude/rules/gui-seams.md`'s tree-wide glob reaches; #131 left it alone on purpose
+  and the rule below says so, because "unchanged" is a claim a later reader needs stated.
 - **Inward.** `models/segment.py` is matched here for its `bc` / `grow_bl` fields, but the
   rule that `to_dict()` / `from_dict()` is the ONE serialiser behind the resample config, the
   workspace and the pipeline script is stated in the GUI module map, in
@@ -114,6 +125,36 @@ solver — trusted over any guess), then the per-case exported mesh, and takes t
 + `.cel` + `.bnd` all exist; it names which one and why in the log, and names every candidate when
 none works. `_locate_mesh_bnd` asks the SAME resolver. Whether that grid is STALE stays the mesh-BC
 audit's job, not a refusal to run. Gated by `tests/test_open_project_by_path.py`.
+
+**The mesh QUALITY SUMMARY has ONE producer, and the GUI is a reader**
+(`services/mesh_shape_stats.py`, Qt-free; displayed by `views/panels/mesh_stats_panel.py`; #131,
+parent #128). The mesher measures cell shape and publishes median / p95 / max on three surfaces —
+the run banner, a `HYBMESH_*` machine line, and `mesh.quality` in the `.provenance.json` sidecar
+beside the mesh (`include/Provenance.hpp::MeshQuality`). The panel displays THAT sidecar. Until
+#131 it computed its own per-cell aspect ratio and showed min / max / mean, so one mesh had two
+descriptions under two DEFINITIONS — the shipped O-grid's sidecar reports a quad midline ratio over
+4608 structured quads, and the file on disk holds 9216 triangles.
+- **No sidecar is a BLANK, and there is no fallback computation.** A mesh made before this work or
+  by another tool shows `—`. Computing one here would be the second implementation returning, in
+  its most dangerous form: invisible at the point of reading.
+- **A sidecar that says `cells: 0` with negative figures says `not measured`**, never 0.000 — the
+  metric's floor is 1.0, so a zero would read as a perfect mesh. That is a THIRD state, distinct
+  from the blank: the tool looked and could not measure.
+- **`metric` travels with the figures and is displayed beside them**, spelled as the sidecar spells
+  it. `quad_midline_ratio` and `tri_edge_ratio` are different quantities and comparing them means
+  nothing; a prettified label would be a fourth spelling of a name whose job is to be matched.
+- **The sidecar is found through `case_sources.mesh_provenance_paths`** — the lookup the case
+  export already stages provenance with. No second path convention; the reader spells no sidecar
+  name in its own code, and the gate checks that by AST.
+- **No colour coding and no threshold on these rows.** `max = 32.8` on the shipped O-grid is a
+  correct number, and a red one would train the user to ignore the colour.
+- **The client-side per-cell arrays were DEMOTED, not deleted.** `get_element_aspect_ratios()` is
+  the Quality (Aspect Ratio) colour map's input and is built where it draws
+  (`views/mesh_canvas_fills_mixin.py`, unchanged); `workers/mesh_stats_run.py` stopped computing it
+  because nothing displays it any more. **Skewness is untouched** and still client-side.
+Gated by `tests/test_mesh_shape_panel.py` (10 groups, a negative control that HAS computable
+per-cell shape and still blanks, and a leg that runs the real binary on the shipped O-grid so the
+reader and the C++ writer cannot drift; 8 hand injections dated in its own docstring).
 
 **A re-save of the geometry must not throw the Mesh-stage edits away, and the fix is a MODEL FIELD
 rather than a wrapper around the subprocess.** Both halves of a per-segment BC live in the `.meta` —

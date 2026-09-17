@@ -1245,7 +1245,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 264, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 265, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -1694,6 +1694,78 @@ review measured 17 of them. The criterion is about the package tree and held eit
 that directory beside the probe path and the KILLER removes it, checked both ways (still there
 before, gone after). What the doors used to prove as a side effect — that the package is the tree
 these scans read — is asserted directly now, against the one walk both roots go through.
+
+**THE MESH SUMMARY HAD TWO IMPLEMENTATIONS, AND THEY DID NOT MEASURE THE SAME THING (#131,
+parent #128).** The rule is `.claude/rules/gui-handoff.md`'s, and the reader it turns on is
+`services/mesh_shape_stats.py` (Qt-free: the sidecar read is the half a headless test can
+exercise, so the panel is left with formatting only). The panel
+(`views/panels/mesh_stats_panel.py`) computed its own per-cell aspect ratio from the loaded
+`VTKMesh` and showed min / max / mean; the mesher, since #129 and #130, measures cell shape itself
+and publishes median / p95 / max on three surfaces — the run banner, a `HYBMESH_*` machine line and
+the `mesh.quality` object of the `.provenance.json` sidecar. Two producers describing one file is
+the defect; that the two used different DEFINITIONS is what made it unfixable by agreeing on a
+format. Measured on the shipped O-grid: the sidecar says `quad_midline_ratio`, median 1.846, p95
+23.662, max 32.768 over **4608 structured quads**, while the file on disk holds **9216 triangles**
+and nothing in the GUI can see a structured quad at all. The panel's own number for that mesh was
+not a worse estimate of the mesher's; it was an answer to a different question. `#128`'s own
+headline is the other half — min / max / mean has no percentile, so one boundary-layer cell hides
+the shape of the other 99%.
+
+**The blank is the feature, and it is an accepted regression stated as one.** A mesh with no
+sidecar — produced before this work, or by another tool — shows `—` for all four rows. A fallback
+computation was refused in the ticket and again here: it is the second implementation coming back,
+and it would be the MORE dangerous version of it, because a fallback is invisible at the point of
+reading. The gate holds that against a NEGATIVE CONTROL rather than by assertion — the blank case
+is a mesh whose client-side per-cell array is non-empty (2 cells, max 1.414), so a fallback would
+have had numbers to show and the check would go green on them.
+
+**`metric` travels with the figures, and that is why the panel has a fourth row.** `1.85` means
+nothing without knowing it is a quad midline ratio over structured cells rather than a triangle
+edge ratio over exported ones, and #128's user story 6 asks for exactly this. The row shows the
+metric KEY as the sidecar spells it, not a prettified label: the banner, the machine line and the
+sidecar all spell it the same way, and a fourth spelling in the GUI would be the one a user cannot
+grep for. The gloss lives in the tooltip (`METRIC_MEANING`), where a wrong one costs nothing.
+
+**Three states, not two.** `None` from `read_shape_summary` is "no sidecar" and blanks the rows; a
+sidecar carrying `cells: 0` with negative figures is "the tool looked and could not measure", and
+says `not measured`. Collapsing them would lose the distinction the mesher deliberately writes into
+the file — negative and never 0.0, because the metric's floor is 1.0 and a 0.0 would read as a
+perfect mesh (`include/Provenance.hpp`, and the same rule `MbQualityReport` follows).
+
+**The read is synchronous while skewness is still threaded, and the asymmetry is the point.** The
+sidecar is one small JSON file, read once per `update_stats`, so the `STATS_ASYNC_CELL_LIMIT`
+machinery buys nothing for it — and unlike the skewness array it does not depend on the loaded
+cells at all, it depends on the FILE. `workers/mesh_stats_run.py` stopped computing aspect ratio at
+the same time: nothing displayed it any more, and the canvas colour map
+(`views/mesh_canvas_fills_mixin.py`) builds its own array where it draws.
+
+**Injections, run by hand 2026-09-17 against `tests/test_mesh_shape_panel.py`** (the harness lives
+in a scratchpad, not in the tree, and each mutation was scored by EXIT CODE first — a crash reports
+zero FAIL lines and would otherwise read as inert). Eight, all of which bit, none inert:
+a panel fallback computation when the sidecar is missing (red: 6 and the static 7); formatting the
+negative figures as numbers (red: both 4s); the reader composing `<stem>.provenance.json` itself
+instead of calling `mesh_provenance_paths` (red: both 2s — the second spelling stops resolving AND
+the AST scan finds the literal); dropping the metric name from the row (red: 5 and the real-binary
+10); showing the figures at a different precision from the sidecar's (red: 5 and 10); disabling the
+`quality_aspect` branch of the fills mixin (red: 8); `measured` returning True unconditionally (red:
+three 4s); and dropping the shape labels from the panel's clear list (red: 6's last).
+
+**Named blind spots.**
+- **The sidecar is trusted because it is BESIDE the file, and nothing checks that it describes
+  it.** Overwrite a `.vtk` with another mesh and the old run's sidecar still reads, so the panel
+  quotes figures for a mesh that is gone. A staleness check is buildable and was left out of #131
+  as scope rather than as impossible: measured on both shipped cases, the sidecar's `mesh.elements`
+  equals the loaded mesh's total cell count exactly (naca 11400 = 11396 triangles + 4 two-node
+  entries the parser bins as polygons; O-grid 9216 = 9216 triangles), so a future ticket has its
+  premise already measured. What it does NOT have is evidence that the equality holds for every
+  export this tool can write, which is what a guard would need before it may call a mesh stale.
+- **Only a path ending in a mesh the GUI loaded reaches this at all.** `update_stats` is called
+  with `global_vtk_path` or the expected VTK path; a case wired to a STAR-CD triplet with no `.vtk`
+  hands it `""` and blanks — correctly, but for the trivial reason rather than the measured one.
+- **The gate's colour-map leg proves the fills are still BUILT, not that they are still CORRECT.**
+  It counts `filled_items` with and without a sidecar and compares them; a mutation that recoloured
+  every cell identically wrong would pass it. The per-cell arithmetic has never had a gate here and
+  #131 did not add one — it is the rendering input the ticket explicitly leaves alone.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 212 more of today because this repo's own prose
+bytes, which the root file has 216 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -489,10 +489,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 50,194 / 47,008 / 45,018 / 38,554 / 25,369 / 24,425 / 15,762 / 12,672 / 12,643 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-results, gui-canvas-edit, gui-handoff, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 50,194 / 47,008 / 45,018 / 38,862 / 25,369 / 24,425 / 16,185 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 9,806 / 12,992 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 14,982 / 21,446 / 34,631 / 35,575 / 44,238 / 47,328 / 47,357 / 51,031. #76 spent 3,446 of
+    eight, which have 14,982 / 21,138 / 34,631 / 35,575 / 43,815 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -644,12 +644,19 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,403 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,697 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 36,403 taken down to the boundary above is 36,000, to
-# which the ceiling is added. The value below is the one check 8 itself recommended at
-# #109 and named as pasteable, after that ticket's second round of review grew the root
-# past the floor; closing that loop by hand is the last time this number will need one.
+# are its size and its slack -- and 36,697 taken down to the boundary above is 36,500, to
+# which the ceiling is added. The value below is the one check 8 itself recommended, at
+# #131, after that ticket's rule-file row and its two new globs took the slack to 303 --
+# under the floor, on 294 characters of prose about something else, which is `374ad04`'s
+# shape exactly. #109 wrote here that closing its own loop by hand was "the last time
+# this number will need one"; it was not, and the sentence is corrected rather than
+# deleted, because the useful half is WHY it was wrong: a band whose floor is 500 is
+# crossed by any ticket that adds a tripwire row, and #109 had no way to know how often
+# that happens. What #109 did buy is that the re-band is now MECHANICAL -- check 8 names
+# the pasteable value and this comment is re-derived beside it, so the hand step is a
+# paste rather than a derivation.
 # The value is NOT restated in this sentence -- a number that need not be stated cannot go
 # stale, which is what #89 did to a count rather than gating a third copy of it, and the
 # claim left behind is dated and cannot decay. Check 8 gates the BAND and #120 gates this
@@ -662,7 +669,7 @@ _SOURCES = {
 # shape. The figure then went stale at `77c2561` -- the FIRST commit after `9e33a6e` to
 # touch the root at all -- on an edit that stayed INSIDE the band with every check
 # reporting ALL PASS -- #109's defect one level down, inside #109's own fix.
-ROOT_BUDGET = 37_000
+ROOT_BUDGET = 37_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
