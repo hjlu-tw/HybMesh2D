@@ -328,16 +328,20 @@ static std::vector<int> addTaggedLoop(Mesh& mesh, const std::vector<Point2D>& pt
 // after a non-zero return: an invalid declaration is "fix your JSON", which is
 // what EXIT_ERR_TOPOLOGY exists to say).
 // One banner row's label column: 25 characters, then ": ". Every row of both
-// multi-block blocks goes through this; there used to be a second copy of the pad
-// expression inline in the topology banner.
-static std::string mbLabel(const std::string& prefix, const std::string& text) {
+// multi-block blocks goes through this, and since #130 the hybrid path's cell-shape
+// rows in `[ Mesh Statistics ]` do too — which is why the names lost their `mb`
+// prefix in that ticket: `mbRow` on a `MESH_MODE 0` banner named the one thing it
+// was not. There used to be a second copy of the pad expression inline in the
+// topology banner. The width is what makes the new rows line up with
+// `Vertices (VRT)` and `Elements (CEL)`, which are written as literals above them.
+static std::string bannerLabel(const std::string& prefix, const std::string& text) {
     const std::string l = prefix + text;
     return l + std::string(l.size() < 25 ? 25 - l.size() : 0, ' ') + ": ";
 }
-static std::string mbRow(const std::string& text) { return mbLabel("  - ", text); }
-// A per-wall detail row is indented WITHOUT a bullet, so it reads as detail under
-// the summary line above it rather than as another number beside it.
-static std::string mbSub(const std::string& text) { return mbLabel("      ", text); }
+static std::string bannerRow(const std::string& text) { return bannerLabel("  - ", text); }
+// A detail row is indented WITHOUT a bullet, so it reads as detail under the
+// summary line above it rather than as another number beside it.
+static std::string bannerSub(const std::string& text) { return bannerLabel("      ", text); }
 
 // The three cell-shape figures as one phrase, or the honest `not measured`
 // (issues #129, #130).
@@ -394,26 +398,26 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     };
 
     std::cout << "\n[ Multi-block Mesh Quality" << heading << " ]\n";
-    std::cout << mbRow("Inverted cells") << q.invertedCells << " of " << q.cells
+    std::cout << bannerRow("Inverted cells") << q.invertedCells << " of " << q.cells
               << " cells\n";
     if (q.nonOrthoSamples == 0) {
-        std::cout << mbRow("Non-orthogonality")
+        std::cout << bannerRow("Non-orthogonality")
                   << "not measured (no structured block in the result)\n";
     } else {
         std::ostringstream ang;
         ang << std::fixed << std::setprecision(3)
             << "max " << q.maxNonOrthoDeg << " deg, mean " << q.meanNonOrthoDeg << " deg";
-        std::cout << mbRow("Non-orthogonality") << ang.str() << " (over "
+        std::cout << bannerRow("Non-orthogonality") << ang.str() << " (over "
                   << q.nonOrthoSamples << " structured-cell corners)\n";
     }
     if (q.worstWallRelError < 0.0)
-        std::cout << mbRow("Wall first cell")
+        std::cout << bannerRow("Wall first cell")
                   << "not measured (no block side declares a measurable one)\n";
     else
-        std::cout << mbRow("Wall first cell") << "worst " << rel(q.worstWallRelError)
+        std::cout << bannerRow("Wall first cell") << "worst " << rel(q.worstWallRelError)
                   << " off the height the declaration asks for\n";
     for (const hybmesh::MbWallHeight& w : q.walls)
-        std::cout << mbSub(std::string(w.side) + " '" + w.edgeId + "'")
+        std::cout << bannerSub(std::string(w.side) + " '" + w.edgeId + "'")
                   << "asked " << num(w.requestedLo) << " .. " << num(w.requestedHi)
                   << ", got " << num(w.achievedMin) << " .. " << num(w.achievedMax)
                   << " (" << rel(w.worstRelError) << ")\n";
@@ -430,7 +434,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // Its first draft spelled the `not measured` case out again here, which made
     // the lambda's "used at BOTH levels by construction" claim false at the very
     // level it was written for: two spellings of one state, free to drift.
-    std::cout << mbRow("Cell shape") << shapePhrase(q.structuredShape);
+    std::cout << bannerRow("Cell shape") << shapePhrase(q.structuredShape);
     if (q.structuredShape.cells == 0)
         // NOT "no structured block in the result": a result CAN hold blocks none
         // of whose cells could be measured, and the row above would then assert
@@ -450,7 +454,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // headline. A block is the unit the user declared, so "the wake blocks are the
     // stretched ones" is an answer they can act on.
     for (const hybmesh::MbBlockShape& bs : q.blockShapes)
-        std::cout << mbSub("block '" + bs.blockId + "'") << shapePhrase(bs.shape) << "\n";
+        std::cout << bannerSub("block '" + bs.blockId + "'") << shapePhrase(bs.shape) << "\n";
 
     // One machine-readable line, in the shape of the HYBMESH_ERROR convention, so
     // the acceptance gate this instrument exists for is a grep rather than a prose
@@ -601,7 +605,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     std::cout << "\n[ Multi-block Topology ]\n";
     std::cout << "  - Source               : " << config.topologyFile << "\n";
     for (const auto& b : res.blocks)
-        std::cout << mbRow("Block '" + b.id + "'") << b.ni << " x " << b.nj << " nodes\n";
+        std::cout << bannerRow("Block '" + b.id + "'") << b.ni << " x " << b.nj << " nodes\n";
     // WHERE EACH NODE COUNT CAME FROM. Propagation is the one place on this path
     // where the mesh is decided by something the user did not write down, so a run
     // that cannot show which counts it derived is a run in which a propagation
@@ -615,7 +619,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
             derived += (derived.empty() ? "" : ", ") + std::string("'") + ec.edgeId
                      + "' = " + std::to_string(ec.count);
         }
-        std::cout << mbRow("Point counts") << seeded << " declared, "
+        std::cout << bannerRow("Point counts") << seeded << " declared, "
                   << (res.edgeCounts.size() - seeded) << " propagated"
                   << (derived.empty() ? std::string() : " (" + derived + ")") << "\n";
     }
@@ -630,7 +634,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         const std::string b = (se.blockB >= 0 && static_cast<size_t>(se.blockB)
                                                     < res.blocks.size())
             ? res.blocks[static_cast<size_t>(se.blockB)].id : std::string("?");
-        std::cout << mbRow(std::string(se.kind == hybmesh::MB_EDGE_CUT
+        std::cout << bannerRow(std::string(se.kind == hybmesh::MB_EDGE_CUT
                                            ? "Cut '" : "Interface '")
                            + se.edgeId + "'")
                   << se.nodes << " shared nodes, the "
@@ -688,7 +692,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
             // label is still worth seeing when it differs, because it is what the
             // geometry actually carries, so it is named beside the type.
             const std::string type = config.resolveGroupBc(p.bc);
-            std::cout << mbRow("Boundary '" + type + "'") << p.faces
+            std::cout << bannerRow("Boundary '" + type + "'") << p.faces
                       << " edge(s), from " << from
                       << (type == p.bc ? std::string()
                                        : " (label '" + p.bc + "')") << "\n";
@@ -751,9 +755,9 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         std::ostringstream resid;
         resid << std::scientific << std::setprecision(3) << res.smoothResidual;
         std::cout << "\n[ Multi-block Elliptic Smoothing ]\n";
-        std::cout << mbRow("Sweeps") << res.smoothSweeps << " of "
+        std::cout << bannerRow("Sweeps") << res.smoothSweeps << " of "
                   << config.mbSmoothIters << " (cap)\n";
-        std::cout << mbRow("Converged")
+        std::cout << bannerRow("Converged")
                   << (res.smoothConverged
                           ? "yes"
                           : res.smoothDiverged
@@ -767,7 +771,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << "\n";
         std::ostringstream best;
         best << std::scientific << std::setprecision(3) << res.smoothBestResidual;
-        std::cout << mbRow("Best residual") << best.str() << " at sweep "
+        std::cout << bannerRow("Best residual") << best.str() << " at sweep "
                   << res.smoothBestSweep
                   << (res.smoothBestSweep == res.smoothSweeps
                           ? " (the mesh exported)"
@@ -775,7 +779,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << "\n";
         std::ostringstream tol;
         tol << std::scientific << std::setprecision(3) << hybmesh::MB_SMOOTH_TOL;
-        std::cout << mbRow("Residual") << resid.str()
+        std::cout << bannerRow("Residual") << resid.str()
                   << " (last sweep's largest node move / domain diagonal; converges "
                      "below " << tol.str() << ")\n";
         // WHICH NODES THE SOLVE WAS FREE TO MOVE (#84). The freeze rule is a
@@ -783,7 +787,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         // interfaces and cuts are not — so a run has to be able to show it, the
         // same reason the propagated counts and the welded shared edges are
         // reported. Before #84 the second figure was 0 by construction.
-        std::cout << mbRow("Movable nodes") << res.smoothMoved << " of "
+        std::cout << bannerRow("Movable nodes") << res.smoothMoved << " of "
                   << res.nodes.size() << ", of which " << res.smoothMovedShared
                   << " on a shared edge (walls and declared corners are frozen)\n";
         std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
@@ -962,13 +966,19 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
 static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) {
     std::vector<std::vector<Point2D>> tris;
     tris.reserve(mesh.elements.size());
-    size_t exported = 0;    // cells the exporters write (STAR-CD skips size < 3)
+    // CELLS OFFERED TO THE METRIC — the entries with at least 3 corners — and NOT
+    // "what the exporters write", which was this variable's first name and is
+    // over-claimed by one exporter: `Mesh::exportStarCD` does skip the shorter
+    // entries (and drops degenerates and duplicates besides), but `Mesh::exportVTK`
+    // writes EVERY element, so on the shipped demo it emits 15237 where this counts
+    // 15233. A count is the thing it counts, and the two are not the same set.
+    size_t offered = 0;
     size_t nonTriangles = 0;
     for (const Element& el : mesh.elements) {
         // The two-node entries are the visualisation line segments addTaggedLoop
         // records, not cells: `Mesh::exportStarCD` skips them by the same test.
         if (el.nodeIds.size() < 3) continue;
-        ++exported;
+        ++offered;
         if (el.nodeIds.size() != 3) { ++nonTriangles; continue; }
         std::vector<Point2D> corners;
         corners.reserve(3);
@@ -990,7 +1000,7 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     }
     const hybmesh::ShapeStats st = hybmesh::measureCellShapes(tris);
 
-    std::cout << mbRow("Cell shape") << shapePhrase(st);
+    std::cout << bannerRow("Cell shape") << shapePhrase(st);
     if (st.cells == 0) {
         // NOT "this mesh has no cells": a mesh CAN hold cells none of which could
         // be measured (every one degenerate, or every one a fallback quad), and
@@ -1004,8 +1014,8 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
                   << "'s quad midline ratio)";
     }
     if (nonTriangles > 0)
-        std::cout << "\n" << mbSub("not triangles") << nonTriangles << " of "
-                  << exported << " exported cells have a corner count this metric "
+        std::cout << "\n" << bannerSub("not triangles") << nonTriangles << " of "
+                  << offered << " exported cells have a corner count this metric "
                      "is not defined for, and carry no figure here";
     std::cout << "\n";
 
@@ -1016,16 +1026,17 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     // name is in the key rather than in a value of its own — every token here is
     // `key=<float>` and one shared parser floats all of them.
     //
-    // `cells` counts what was EXPORTED and `tri_edge_ratio_cells` what was MEASURED.
-    // On this path the two agree whenever every exported cell is a measurable
-    // triangle, and the gap is exactly the cells named on the row above plus any
-    // degenerate one — which is why both are on the line and neither is inferred.
+    // `cells` counts what was OFFERED to the metric and `tri_edge_ratio_cells` what
+    // was MEASURED. On this path the two agree whenever every offered cell is a
+    // measurable triangle; the gap is the cells named on the row above, plus any
+    // degenerate one, plus any whose ids did not resolve — three ways in, which is
+    // why both counts are on the line and neither is inferred from the other.
     // Each figure is NEGATIVE when it could not be measured, never 0: the metric's
     // floor is 1.0, so a 0.0 here could only ever be an absent measurement wearing
     // a number.
     std::ostringstream mr;
     mr << std::setprecision(6) << std::fixed;
-    mr << "HYBMESH_HYBRID_QUALITY cells=" << exported
+    mr << "HYBMESH_HYBRID_QUALITY cells=" << offered
        << " tri_edge_ratio_cells=" << st.cells
        << " tri_edge_ratio_median=" << st.median
        << " tri_edge_ratio_p95=" << st.p95
@@ -1622,7 +1633,11 @@ int hybmesh::runCli(int argc, char* argv[]) {
     // STRUCTURED quads it declared, under its own name, and has already printed its
     // own quality block above — printing a second figure here under a third name
     // would be this ticket's own rule broken in the ticket that states it.
-    if (config.meshMode != MESH_MODE_MULTIBLOCK)
+    // NAMED, not negated. `!= MESH_MODE_MULTIBLOCK` would hand a third mode this
+    // path's triangle metric by default, which is the one thing two metric names
+    // exist to prevent; an unknown mode is refused by `Config::validate` long
+    // before here, so the positive test loses nothing.
+    if (config.meshMode == MESH_MODE_HYBRID)
         printHybridQuality(mesh, meshQuality);
     std::cout << "\n";
 

@@ -727,11 +727,31 @@ touched: that is what building the pure half first bought.
 - Measured behaviour preservation, 2026-09-17: the 19 golden cases **19/19 SAME,
   worst coordinate deviation 0.000e+00** — 18 meshes plus the one NO-MESH outcome.
   No mesh moved; what is new is a banner row, a line and a sidecar key.
-- Blind spots, named rather than papered over. **A mesh with NO CELLS AT ALL is not
-  reached through the binary** — every hybrid run that meshes anything exports
-  cells — so the `cells == 0` branch is exercised with 400 unmeasurable ones
-  instead; the zero-length reduction itself is `test_cell_shape.cpp` check 7 with
-  injection D under it. **No bar is asserted on any of the three numbers**, on
+- **"A mesh with no cells" IS REACHABLE, and the first draft said it was not.** The
+  gate shipped a blind spot claiming every hybrid run that meshes anything exports
+  cells, so the criterion's literal wording was covered only by the 400-quad
+  fallback — a mesh whose cells went unmeasured, which is a different input. The
+  Spec axis read the criterion literally and the claim did not survive one attempt:
+  a domain smaller than one far-field cell makes the Cartesian fallback refuse by
+  name, and the run goes on to print a banner and write a sidecar over 0 nodes and
+  0 elements. Check 12. What is true, and is what the blind-spot list says now, is
+  that BOTH inputs land in the same `cells == 0` branch, so neither is the other's
+  control — the point of having two is that neither one's INPUT is the other's.
+- **`cells=` IS WHAT WAS OFFERED TO THE METRIC, AND BOTH REVIEW AXES CAUGHT IT
+  SAYING OTHERWISE.** The token was commented as "cells the exporters write" and
+  the variable was called `exported`. True of `Mesh::exportStarCD`, which skips the
+  shorter entries; FALSE of `Mesh::exportVTK`, which writes every element — 15237
+  against this figure's 15233 on the shipped demo. Both axes measured the same four
+  cells independently, which is the strongest signal either gives, and the fix is a
+  rename plus the arithmetic in the comment. The number was always right; the word
+  was over-claimed by one exporter, and that is the shape this repo keeps finding.
+- **`mbRow` / `mbSub` BECAME `bannerRow` / `bannerSub`.** Their own header said
+  "every row of both multi-block blocks goes through this", which this ticket
+  falsified by routing a `MESH_MODE 0` row through them — a present-tense claim the
+  diff itself broke, found by the Standards axis. An `mb`-prefixed helper on a
+  hybrid banner names the one thing it is not.
+- Blind spots, named rather than papered over. **No bar is asserted on any of the
+  three numbers**, on
   purpose: #128 declined to create that gate, so a regression that made every mesh
   twice as stretched would pass every file here. And **nothing follows a figure
   into the GUI or the pipeline** — the sidecar is the contract, and who reads it is

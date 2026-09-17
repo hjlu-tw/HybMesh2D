@@ -262,7 +262,14 @@ that meshes a geometry.
   and the sidecar's `mesh.quality` — handed out of the reporter rather than measured a second
   time at the export, so the three cannot disagree about one mesh. Unmeasurable is NEGATIVE and
   the banner says `not measured`; unlike the multi-block path, that state is REACHABLE through
-  the binary (the quad fallback above).
+  the binary by TWO different inputs — the quad fallback above, and a domain smaller than one
+  far-field cell, which leaves 0 nodes and 0 elements and still reports.
+- **`cells=` ON THAT LINE IS WHAT WAS OFFERED TO THE METRIC, never "what the exporters write".**
+  The entries with at least 3 corners: `Mesh::exportStarCD` does skip the shorter ones, but
+  `Mesh::exportVTK` writes EVERY element, so on the shipped demo it emits 15237 where this
+  counts 15233. The gap to `tri_edge_ratio_cells` has three ways in — a cell this metric is not
+  defined for, a degenerate one, and one whose ids did not resolve — which is why both counts
+  are on the line and neither is inferred.
 - Gated by `tests/test_hybrid_shape_surface.py`, which drives the shipped
   `config/Background_para.dat` + `examples/geometries/naca0012.dat` pair BY PATH (no retarget is
   needed: that config declares no path key and no `OUTPUT_FILENAME`, so `-out_name` is the whole

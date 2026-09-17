@@ -63,6 +63,13 @@ What this pins down:
      ever be an absent measurement wearing a number), and the sidecar carries the
      same. That state is UNREACHABLE on the multi-block path, whose own gate names
      it as a blind spot; here it is a shipped case away.
+ 12. A MESH WITH NO CELLS AT ALL reports `not measured` too, and it is REACHED
+     THROUGH THE BINARY: a domain smaller than one far-field cell makes the
+     Cartesian fallback refuse by name, and the run goes on to print a banner and
+     write a sidecar over 0 nodes and 0 elements. That is the criterion's literal
+     wording, and it is a DIFFERENT input from check 10's — which exports 400 cells
+     none of which could be measured. Both reach the same `cells == 0` branch, and
+     the point of having both is that neither one's input is the other's.
  11. NO THRESHOLD AND NO COLOUR on the row. The shipped case's max is ~79 and the
      run exits 0: that number is the wall's first cell height against the surface
      spacing the user asked for, and a tool that coloured it red would be training
@@ -76,6 +83,8 @@ MEASURED 2026-09-17, on the shipped config at its shipped values:
     naca0012, -geom_nobl 12293 exported triangles
                         median 1.114486, p95 1.420814, max 7.388082
     no geometry at all    400 exported quads, 0 measured
+                        median/p95/max all -1.0, banner "not measured"
+    domain 1e-3 wide      0 nodes, 0 elements, 0 offered, 0 measured
                         median/p95/max all -1.0, banner "not measured"
 
 Those figures are a RECORD of this dated run; the bars this file asserts are
@@ -99,10 +108,14 @@ from one that merely passes:
      of 400 squares wearing the name `tri_edge_ratio`. A correct number under the
      wrong name is exactly what two names exist to prevent, and this is the check
      that sees it.
-  C. the three figures forced to 0.0 when nothing was measured -> 2 failures, both
-     in check 10, on the machine line and on the sidecar. The banner is NOT one of
-     them: it branches on `cells`, not on the figures, so this defect is guarded at
-     two places and not three. Named rather than left to look like coverage.
+  C. the three figures forced to 0.0 when nothing was measured -> 4 failures, the
+     machine line and the sidecar in BOTH check 10 and check 12. The banner is not
+     among them at either: it branches on `cells`, not on the figures, so this rule
+     is guarded at two surfaces and not three. Named rather than left to look like
+     coverage.
+     Injection B is the contrast that shows 10 and 12 are two inputs and not two
+     names for one: widening the corner guard reddens all four of check 10 and NONE
+     of check 12, whose mesh has no cells for a guard to admit.
   D. the hybrid row's `NOT comparable with MESH_MODE 1's quad midline ratio` dropped
      -> 1 failure, check 5's first half.
   E. the same sentence dropped from the MULTI-BLOCK row, restoring what that banner
@@ -115,11 +128,14 @@ from one that merely passes:
 
 BLIND SPOTS, named rather than papered over:
 
-  * A mesh with NO CELLS AT ALL is not reached here. Every hybrid run that meshes
-    anything exports cells, and check 10 reaches the same ``cells == 0`` branch
-    with 400 unmeasurable ones instead — which is the branch the banner string and
-    the negative figures live in. The zero-length reduction itself is
+  * Checks 10 and 12 both land in the ``cells == 0`` branch, so a defect INSIDE it
+    reddens both and neither is the other's control. What they separate is the two
+    ways in — cells that exist and cannot be measured, and no cells at all — which
+    a single fixture would have conflated. The zero-length reduction itself is
     ``tests/cpp/test_cell_shape.cpp`` check 7, with injection D under it.
+  * Check 12's config is COMPOSED, not shipped, and deliberately: no shipped config
+    declares a domain too small to mesh, and adding one to document a refusal would
+    be a case a user could run by accident.
   * Nothing here asserts a bar on any of the three numbers, on purpose (see check
     11). A regression that made every mesh twice as stretched would pass this file
     and would be caught by nobody, because #128 declined to create that gate.
@@ -358,6 +374,41 @@ def main() -> int:
               side3 is not None and side3.get("metric") == METRIC
               and side3.get("cells") == 0
               and all(float(side3.get(f, 0.0)) < 0.0
+                      for f in ("median", "p95", "max")))
+
+        # --- 12. a mesh with NO CELLS AT ALL ---------------------------------
+        # A domain smaller than one far-field cell: the Cartesian fallback refuses
+        # by name and the run goes on with an empty mesh. A DIFFERENT input from
+        # check 10's, reaching the same branch — which is the criterion's literal
+        # wording ("a mesh with no cells"), not a mesh whose cells went unmeasured.
+        empty_conf = os.path.join(tmp, "empty.dat")
+        with open(empty_conf, "w", encoding="utf-8") as f:
+            f.write("DOMAIN_X_MIN 0.0\nDOMAIN_X_MAX 0.001\n"
+                    "DOMAIN_Y_MIN 0.0\nDOMAIN_Y_MAX 0.001\n"
+                    "FARFIELD_MESH_SIZE 1.0\nEXPORT_VTK 1\nEXPORT_STARCD 0\n")
+        estem = os.path.join(tmp, "empty")
+        pe = subprocess.run([_BIN, "-conf", empty_conf, "-out_name", estem + ".vtk"],
+                            cwd=tmp, env=_mesher_env(), capture_output=True,
+                            text=True, timeout=600)
+        eout = (pe.stdout or "") + (pe.stderr or "")
+        ehead, erow = banner(eout)
+        eline = line_of(eout)
+        egot = shape_of(eline)
+        check("12. a domain too small to mesh really does leave NO cells "
+              f"(rc {pe.returncode})",
+              pe.returncode == 0 and "  - Elements (CEL)       : 0" in eout)
+        check(f"12. ...and the banner still prints `not measured` ({erow!r})",
+              ehead is None and erow is not None and _NOTMEAS.match(erow))
+        check("12. ...over 0 offered and 0 measured cells, every figure negative — "
+              "a figure computed off nothing is what the negatives exist to refuse",
+              egot is not None and eline is not None and eline.get("cells") == 0
+              and egot["cells"] == 0
+              and all(egot[f] < 0.0 for f in ("median", "p95", "max")))
+        eside = sidecar(estem)
+        check("12. ...and the sidecar beside the empty export says the same",
+              eside is not None and eside.get("metric") == METRIC
+              and eside.get("cells") == 0
+              and all(float(eside.get(f, 0.0)) < 0.0
                       for f in ("median", "p95", "max")))
 
         # --- 11. no colour, no threshold -------------------------------------
