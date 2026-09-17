@@ -59,6 +59,11 @@ set(HYBMESH_PURE_TESTS
     # mesh must not require the mesh container, so it belongs on this side of the
     # line: half its checks hand `measureMbQuality` a mesh nobody parsed.
     test_mb_quality
+    # The per-cell SHAPE metric both generation paths share. It takes cells as
+    # corner coordinates and nothing else, so this executable failing to link is
+    # the signal that the one definition of cell shape has grown a dependency on
+    # a mesh, a topology or gmsh -- the property that lets both paths use it.
+    test_cell_shape
 )
 
 foreach(t IN LISTS HYBMESH_PURE_TESTS)

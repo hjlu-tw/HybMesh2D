@@ -5,6 +5,7 @@
 // mesh so a run can be traced back to its tool version, inputs and effective
 // config. Hand-formatted JSON via ofstream (no JSON dependency added to src/).
 
+#include "CellShape.hpp"
 #include "Config.hpp"
 #include "Logger.hpp"
 #include <string>
@@ -102,6 +103,30 @@ inline std::string gmshVersionFallback() {
 #endif
 }
 
+// THE MESH-QUALITY HALF OF THE SIDECAR (issue #129, parent #128).
+//
+// The sidecar is the CONTRACT every downstream reader uses — the GUI panel, the
+// pipeline runner, the batch queue — which is what makes the mesher the single
+// OWNER of "how good is this mesh" instead of each surface computing its own and
+// two of them disagreeing about the same file. It is also what makes the numbers
+// outlive the process: a mesh opened three sessions later still carries them.
+//
+// `metric` NAMES the quantity, because the two generation paths measure two
+// different things (`quad_midline_ratio` on multi-block's structured quads,
+// `tri_edge_ratio` on the hybrid path's exported triangles) and a reader that
+// compares one against the other is comparing nothing. An EMPTY metric writes no
+// `quality` object at all, which is the honest answer for a path that does not
+// measure yet — as opposed to writing one full of zeros.
+//
+// A metric that IS named always writes the object, even when nothing could be
+// measured: then `cells` is 0 and the three figures are negative, which says "we
+// looked and could not measure" rather than leaving a reader to guess between
+// that and "this tool does not measure".
+struct MeshQuality {
+    std::string metric;                 // empty -> no quality object is written
+    hybmesh::ShapeStats shape;
+};
+
 // Write "<basename>.provenance.json" next to the export. `basename` is the output
 // path stripped of its extension (e.g. Results/mesh_naca). Returns false on I/O
 // failure (logged, but never fatal to the run).
@@ -109,7 +134,8 @@ inline bool writeProvenance(const std::string& basename,
                             const Config& config,
                             const std::vector<std::string>& inputFiles,
                             const std::string& gmshVersion,
-                            size_t nNodes, size_t nElements) {
+                            size_t nNodes, size_t nElements,
+                            const MeshQuality& quality = MeshQuality{}) {
     const std::string path = basename + ".provenance.json";
     std::ofstream ofs(path);
     if (!ofs) {
@@ -122,7 +148,23 @@ inline bool writeProvenance(const std::string& basename,
     ofs << "  \"git_sha\": \"" << jsonEscape(HYBMESH_GIT_SHA) << "\",\n";
     ofs << "  \"timestamp_utc\": \"" << jsonEscape(utcTimestamp()) << "\",\n";
     ofs << "  \"gmsh_version\": \"" << jsonEscape(gmshVersion.empty() ? gmshVersionFallback() : gmshVersion) << "\",\n";
-    ofs << "  \"mesh\": { \"nodes\": " << nNodes << ", \"elements\": " << nElements << " },\n";
+    ofs << "  \"mesh\": { \"nodes\": " << nNodes << ", \"elements\": " << nElements;
+    if (!quality.metric.empty()) {
+        // Nested UNDER `mesh`, because it describes the mesh this file is beside
+        // and not the run that made it. Printed at a fixed precision rather than
+        // the stream's default, so a reader comparing it against the
+        // machine-readable stdout line is comparing the same digits.
+        std::ostringstream qs;
+        qs << std::fixed;
+        qs.precision(6);
+        qs << ", \"quality\": { \"metric\": \"" << jsonEscape(quality.metric)
+           << "\", \"cells\": " << quality.shape.cells
+           << ", \"median\": " << quality.shape.median
+           << ", \"p95\": " << quality.shape.p95
+           << ", \"max\": " << quality.shape.max << " }";
+        ofs << qs.str();
+    }
+    ofs << " },\n";
     ofs << "  \"inputs\": [\n";
     for (size_t i = 0; i < inputFiles.size(); ++i) {
         InputFingerprint fp = fingerprintOf(inputFiles[i]);

@@ -1,6 +1,7 @@
 #ifndef MBQUALITY_HPP
 #define MBQUALITY_HPP
 
+#include "CellShape.hpp"
 #include "MultiBlock.hpp"
 
 #include <cstddef>
@@ -22,7 +23,7 @@
 // a bow-tie quad built by hand). It lives in `hybmesh_pure`: measuring a mesh must
 // not require the mesh container or gmsh.
 //
-// TWO MEASUREMENT DECISIONS, both load bearing:
+// THREE MEASUREMENT DECISIONS, all load bearing:
 //
 // * INVERTED is counted over the cells that are EXPORTED — triangles normally,
 //   quads when MB_SPLIT_QUADS is off — because those are the cells the solver
@@ -47,6 +48,14 @@
 //   report the same grid quality. What it does NOT say is anything about the
 //   shape of the split triangles themselves; a solver-facing skewness metric for
 //   those is a different instrument and is not this one wearing another name.
+//
+// * CELL SHAPE is measured on the STRUCTURED cells too (issue #129), by the quad
+//   rule of the pure `cellShapeRatio` next door, which both generation paths
+//   share so that the arithmetic cannot drift. It follows non-orthogonality's
+//   precedent for the same three reasons, stated where the fields are declared —
+//   and it is the answer to what the sentence above leaves open: the shape of the
+//   split triangles is NOT reported here under a quad's name, it is reported by
+//   the hybrid path under its own (`tri_edge_ratio`).
 namespace hybmesh {
 
 // One declared wall side of one filled block: what the DECLARATION asks the first
@@ -100,6 +109,24 @@ struct MbWallHeight {
     double worstRelError = -1.0;
 };
 
+// One block's structured-cell SHAPE, so the headline figure below has rows under
+// it the way the wall figure has rows under its own (issue #129).
+//
+// It is per BLOCK and not per cell because a block is the unit the user declared:
+// "the wake blocks are the stretched ones" is an answer they can act on, where a
+// list of 4608 numbers is not. The block id is the one the topology document
+// gave it, so the row names something the reader wrote down.
+//
+// `shape.cells` counts the STRUCTURED quads of this block, which is NOT the number
+// of cells it exports — at the default `MB_SPLIT_QUADS 1` each of them leaves as
+// two triangles. That difference is the figure's whole point and is visible on the
+// machine-readable line: on a mesh every cell of which could be measured, `cells=`
+// and `quad_midline_ratio_cells=` differ by exactly the factor two.
+struct MbBlockShape {
+    std::string blockId;
+    ShapeStats shape;   // negative throughout when this block had nothing measurable
+};
+
 // EVERY MEASURED QUANTITY HERE IS NEGATIVE WHEN IT WAS NOT MEASURED, never 0.
 //
 // This is the one rule of the report and it is not a formality: 0.000 deg of
@@ -120,6 +147,23 @@ struct MbQualityReport {
     // measured is still listed, with its own `worstRelError` negative.
     std::vector<MbWallHeight> walls;
     double worstWallRelError = -1.0; // the worst measured wall, or negative if none
+
+    // ── CELL SHAPE (issue #129) ─────────────────────────────────────────────
+    // Measured on the STRUCTURED (i,j) quads, by `cellShapeRatio`'s quad rule,
+    // for the same three reasons non-orthogonality is measured there: it is the
+    // cell the DOCUMENT declares and the one the wall spacing and the count
+    // propagation are about; a square reads 1.0 rather than the 1.414 the split
+    // triangles would report, so the number can be read against "is this 1:1?";
+    // and it is therefore independent of `MB_SPLIT_QUADS`, so turning the split
+    // off to diagnose a mesh does not change the number being diagnosed.
+    //
+    // NO THRESHOLD AND NO COLOUR belongs to this figure anywhere downstream. The
+    // shipped O-grid's max is ~32.8 and that is arithmetic, not a defect: the
+    // azimuthal spacing divided by the `BL_INITIAL_THICKNESS` the user asked for.
+    // A figure the tool colours red on a correct mesh is a figure users learn to
+    // ignore.
+    ShapeStats structuredShape;            // over every block's structured quads
+    std::vector<MbBlockShape> blockShapes; // one row per block, in declaration order
 };
 
 // Measure a finished multi-block mesh. Pure, total, and never throws: an empty or

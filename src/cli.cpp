@@ -360,6 +360,17 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     std::ostringstream sci;
     sci << std::scientific << std::setprecision(3);
     auto num = [&sci](double v) { sci.str(""); sci << v; return sci.str(); };
+    // The three shape figures as one phrase, or the honest `not measured`. Used at
+    // BOTH levels — the headline over every block and each block's own row — so the
+    // rule that an unmeasured figure never prints as a number holds at the row
+    // level too, by construction rather than by two authors agreeing.
+    auto shape = [](const hybmesh::ShapeStats& st) {
+        if (st.cells == 0) return std::string("not measured");
+        std::ostringstream os;
+        os << std::fixed << std::setprecision(3) << "median " << st.median
+           << ", p95 " << st.p95 << ", max " << st.max;
+        return os.str();
+    };
     auto rel = [](double v) {
         // NEGATIVE means not measured, and it must not print as a percentage —
         // "0.00%" is an excellent result and would be a false claim here. See
@@ -395,6 +406,26 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
                   << ", got " << num(w.achievedMin) << " .. " << num(w.achievedMax)
                   << " (" << rel(w.worstRelError) << ")\n";
 
+    // CELL SHAPE (issue #129), measured on the STRUCTURED quads and NOT on the
+    // cells exported — which is why its count differs from the `Inverted cells`
+    // row's above whenever the split is on, and why the number can be read against
+    // "is this 1:1?" at all. NO COLOUR AND NO THRESHOLD: the shipped O-grid's max
+    // is ~32.8 and that is the azimuthal spacing over the requested
+    // BL_INITIAL_THICKNESS, an arithmetic consequence of what the user asked for
+    // rather than a defect to flag.
+    if (q.structuredShape.cells == 0)
+        std::cout << mbRow("Cell shape")
+                  << "not measured (no structured block in the result)\n";
+    else
+        std::cout << mbRow("Cell shape") << shape(q.structuredShape)
+                  << " (quad midline ratio over " << q.structuredShape.cells
+                  << " structured quads; 1.0 is square)\n";
+    // PER BLOCK, under the headline, the way each wall gets a row under the wall
+    // headline. A block is the unit the user declared, so "the wake blocks are the
+    // stretched ones" is an answer they can act on.
+    for (const hybmesh::MbBlockShape& bs : q.blockShapes)
+        std::cout << mbSub("block '" + bs.blockId + "'") << shape(bs.shape) << "\n";
+
     // One machine-readable line, in the shape of the HYBMESH_ERROR convention, so
     // the acceptance gate this instrument exists for is a grep rather than a prose
     // parse. Each of the three measured figures is NEGATIVE when it could not be
@@ -406,11 +437,26 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
        << " nonortho_max_deg=" << q.maxNonOrthoDeg
        << " nonortho_mean_deg=" << q.meanNonOrthoDeg
        << " wall_first_cell_worst_rel=" << q.worstWallRelError;
+    // THE SHAPE FIGURES CARRY THE METRIC'S NAME IN THE KEY, not in a value of
+    // their own (issue #129). Two reasons, and both are about the readers: every
+    // token on this line is `key=<float>` and one shared parser reads it that way,
+    // so a `shape_metric=quad_midline_ratio` token would break every gate at once;
+    // and the hybrid path's own line names its different quantity
+    // `tri_edge_ratio_*`, so the two can never be confused for one another by a
+    // grep. `quad_midline_ratio_cells` is the count of STRUCTURED quads and is
+    // deliberately not `cells` above, which counts the cells EXPORTED — at the
+    // default split the two differ by a factor of two, and that difference is the
+    // evidence the figure is measured where it says it is.
+    mr << " quad_midline_ratio_cells=" << q.structuredShape.cells
+       << " quad_midline_ratio_median=" << q.structuredShape.median
+       << " quad_midline_ratio_p95=" << q.structuredShape.p95
+       << " quad_midline_ratio_max=" << q.structuredShape.max;
     std::cout << mr.str() << std::endl;
 }
 
 static int buildMultiBlockMesh(Mesh& mesh, Config& config,
-                               std::vector<std::string>& inputFiles) {
+                               std::vector<std::string>& inputFiles,
+                               hybmesh::MeshQuality& quality) {
     if (config.topologyFile.empty()) {
         LOG_ERROR("MESH_MODE " << MESH_MODE_MULTIBLOCK << " ("
                   << hybmesh::meshModeName(MESH_MODE_MULTIBLOCK)
@@ -651,6 +697,15 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     printMbQuality(q, smoothed ? " — after " + std::to_string(res.smoothSweeps)
                                      + " Winslow sweep(s)"
                                : std::string());
+    // ONE REPORT, THREE SURFACES (issue #129). The banner above, the machine line
+    // inside it and the sidecar below all read this same `q`, so the three cannot
+    // disagree about the mesh they describe — which is the acceptance criterion,
+    // and the reason the figures are handed OUT of here rather than measured a
+    // second time at the export. It is the AFTER-smoothing report, the same one
+    // the unsuffixed machine line carries, because the sidecar sits beside the
+    // file on disk and that is the mesh on disk.
+    quality.metric = "quad_midline_ratio";
+    quality.shape = q.structuredShape;
     // WHETHER THE SOLVE FINISHED, beside what it produced.
     //
     // The three endings are decided ONCE, in the seam, and are read here as flags —
@@ -1040,6 +1095,10 @@ int hybmesh::runCli(int argc, char* argv[]) {
     std::string failDetail;                 // optional detail for that code's machine line
     std::string gmshVersion;                // resolved for provenance
     std::vector<std::string> inputFiles;    // geometry inputs for provenance
+    // The shape statistics the sidecar publishes. It stays UNNAMED unless a path
+    // actually measured this mesh, and an unnamed metric writes no `quality`
+    // object — a path that does not measure says nothing rather than saying zero.
+    hybmesh::MeshQuality meshQuality;
     for (const auto& f : config.geomFiles) inputFiles.push_back(f);
     if (!config.domainFile.empty()) inputFiles.push_back(config.domainFile);
     // Declared to survive into this mode, but not read by it YET. A different
@@ -1059,7 +1118,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
         // The second generation path. It shares this function's export block and
         // nothing else: no domain box, no boundary layer, no far field, and Gmsh
         // is used nowhere — the whole domain is blocked by declaration.
-        int rc = buildMultiBlockMesh(mesh, config, inputFiles);
+        int rc = buildMultiBlockMesh(mesh, config, inputFiles, meshQuality);
         // A detail that is never empty: with no MESH_TOPOLOGY_FILE declared the
         // path is "", and a machine-readable line naming nothing is one a script
         // cannot act on.
@@ -1457,7 +1516,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
         }
         mesh.exportVTK(vtkFile);
         hybmesh::writeProvenance(stripExt(vtkFile), config, inputFiles, gmshVersion,
-                                 mesh.nodes.size(), mesh.elements.size());
+                                 mesh.nodes.size(), mesh.elements.size(), meshQuality);
         std::cout << "Mesh saved to: " << vtkFile << std::endl;
     }
 
@@ -1470,7 +1529,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
         std::string starCDPrefix = stripExt(outputFilename);
         mesh.exportStarCD(starCDPrefix, config);
         hybmesh::writeProvenance(starCDPrefix, config, inputFiles, gmshVersion,
-                                 mesh.nodes.size(), mesh.elements.size());
+                                 mesh.nodes.size(), mesh.elements.size(), meshQuality);
         std::cout << "StarCD mesh saved to: " << starCDPrefix << ".*" << std::endl;
     }
 
@@ -1478,7 +1537,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
         std::string cgnsFile = stripExt(outputFilename) + ".cgns";
         mesh.exportCGNS(cgnsFile, config);
         hybmesh::writeProvenance(stripExt(cgnsFile), config, inputFiles, gmshVersion,
-                                 mesh.nodes.size(), mesh.elements.size());
+                                 mesh.nodes.size(), mesh.elements.size(), meshQuality);
     }
 
     if (failExit != EXIT_OK)

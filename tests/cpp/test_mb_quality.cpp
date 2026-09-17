@@ -18,11 +18,21 @@
 //     inverted cells is EXPORTED and exits 9 while an invalid declaration
 //     exports nothing and exits 8 is external behaviour of the binary, pinned
 //     in tools/PreProcessor/tests/test_multiblock_quality_surface.py.
-//   * Non-orthogonality is measured on the STRUCTURED grid cells, so nothing
-//     here says anything about the shape of the split triangles. That is
-//     deliberate and argued at the declaration in include/MbQuality.hpp; a
-//     solver-facing skewness metric for the split cells is a different
-//     instrument.
+//   * Non-orthogonality AND cell shape are both measured on the STRUCTURED grid
+//     cells, so nothing here says anything about the shape of the split
+//     triangles. That is deliberate and argued at the declaration in
+//     include/MbQuality.hpp; the exported triangles are the HYBRID path's figure,
+//     under its own name (`tri_edge_ratio`), and a solver-facing skewness metric
+//     is a third instrument again.
+//   * Nothing here pins the METRIC's own arithmetic — that a square is 1.0, that
+//     a degenerate cell does not divide by zero, how p95 is ranked. That is the
+//     shared pure module's, and it is pinned in tests/cpp/test_cell_shape.cpp.
+//     What check 9 pins is which cells this report hands it and what it does with
+//     the answer.
+//   * Nothing here says the three shape figures reach the banner, the machine
+//     line or the `.provenance.json` sidecar, or that those three agree. That is
+//     external behaviour of the binary, pinned in
+//     tools/PreProcessor/tests/test_multiblock_shape_surface.py.
 //   * The wall first-cell height is a distance ALONG the grid line, not the
 //     perpendicular distance to the wall. On a non-orthogonal block the two
 //     differ by cos(non-orthogonality), which is why both numbers are reported
@@ -32,7 +42,8 @@
 //     that, and says so). Check 7 is where it earns its keep. An independent
 //     wall-spacing target is later work; see MbWallHeight's declaration.
 //
-// INJECTIONS: run BY HAND at review time, 2026-08-27, and recorded here rather
+// INJECTIONS: run BY HAND at review time — 2026-08-27 for A-F, 2026-09-17 for
+// G-J, which are #129's — and recorded here rather
 // than written as in-test injections — a C++ test cannot mutate the
 // implementation it linked against, so unlike the Python gates next door these
 // cannot re-run themselves. Each names the checks it broke, so a later reader can
@@ -55,6 +66,35 @@
 //   F. non-orthogonality measured on the split triangles instead of the
 //      structured cells -> 10 failures, across checks 1 (x3), 2, 3 (x2), 5,
 //      6 (x2) and 7.
+//   G. CELL SHAPE measured on the EXPORTED cells instead of the structured quads
+//      -> 11 failures, across checks 9 (x6), 9b (x2), 9c (x2) and 9d (x2).
+//   H. a block whose shape could not be measured dropped from `blockShapes`
+//      instead of listed with negative figures -> 1 failure, check 9d alone.
+//      CHECK 9d EXISTS BECAUSE OF 6b's history: the row-level half of the
+//      negative rule was unguarded there until an injection said so, and this
+//      figure's rows would have repeated it.
+//   K. a structured quad whose ids do not all resolve passed on SHORT, so three
+//      resolving corners reach the metric as a TRIANGLE and come back with an
+//      ordinary edge ratio for a cell nobody could measure -> 2 failures, check
+//      9e alone. WORTH READING WITH ITS FIXTURE: check 9e's first draft put the
+//      dangling id in the slot walked THIRD, which stops the walk at two corners
+//      and is refused for being too short — so this injection PASSED until the
+//      fixture moved it to the slot walked last. The check was written for the
+//      defect and did not reach it.
+//   J. the structured quad's four corners read in Z order — (i,j) (i+1,j)
+//      (i,j+1) (i+1,j+1) — instead of around the ring -> 11 failures, across
+//      checks 9 (x4), 9b, 9c (x2) and 9d (x4). The classic transcription slip,
+//      and it collapses one midline to zero, so the cells report unmeasurable
+//      rather than merely wrong.
+//
+// AND ONE THAT IS INERT, recorded because "we tried and it did not bite" is worth
+// more than silence:
+//   I. an unmeasurable structured quad folded into the statistics as 0.0 instead
+//      of being dropped -> 0 failures. `reduceCellShapes` discards a 0.0 by the
+//      same `> 0.0` test it discards a negative by, so the rule survives this
+//      layer getting it wrong. It is guarded ONE level down, in
+//      tests/cpp/test_cell_shape.cpp check 8, and this file inherits it rather
+//      than holding it.
 //
 // What survives that limitation is the two NEGATIVE CONTROLS below, which are
 // permanent because they measure the injections' own premises inside the test:
@@ -364,6 +404,166 @@ int main() {
               "8. ...and EVERY measured figure comes back negative rather than 0, so an "
               "empty mesh cannot read as a flawless one (and nothing divided by a zero "
               "sample count)");
+        CHECK(q.structuredShape.cells == 0 && q.structuredShape.median < 0.0
+              && q.structuredShape.p95 < 0.0 && q.structuredShape.max < 0.0,
+              "8. ...the three SHAPE figures included, which is the same rule applied to "
+              "the figures #129 added and not a second rule beside it");
+        CHECK(q.blockShapes.empty(),
+              "8. ...and a mesh with no blocks lists no per-block shape rows");
+    }
+
+    // ── 9. CELL SHAPE: the structured quads, and the split cannot move it ────
+    // Issue #129. The figure exists so a user can read a mesh against "is this
+    // 1:1?", which is only possible because it is measured on the cell the
+    // DOCUMENT declares rather than on the triangles the split produces.
+    {
+        const MbQualityReport q = hybmesh::measureMbQuality(build(unitSquare(5, 5)));
+        CHECK(q.structuredShape.cells == 16,
+              "9. a 5x5-node block has 16 structured quads, and the shape figure is "
+              "measured over all of them");
+        CHECK(q.cells == 32,
+              "9. ...while it EXPORTS 32 triangles, so the two counts are visibly "
+              "different quantities and not one number used twice");
+        CHECK_NEAR(q.structuredShape.median, 1.0, 1e-12,
+                   "9. every cell of a unit square is square, so the median is EXACTLY "
+                   "1.0 — not the 1.414 the split triangles would report");
+        CHECK_NEAR(q.structuredShape.p95, 1.0, 1e-12, "9. ...and so is p95");
+        CHECK_NEAR(q.structuredShape.max, 1.0, 1e-12, "9. ...and so is the max");
+        CHECK(q.blockShapes.size() == 1 && q.blockShapes[0].blockId == "b0",
+              "9. one row per block, named with the id the DOCUMENT gave it");
+        if (q.blockShapes.size() == 1)
+            CHECK(q.blockShapes[0].shape.cells == q.structuredShape.cells
+                  && q.blockShapes[0].shape.max == q.structuredShape.max,
+                  "9. ...and with one block the row and the headline agree exactly");
+    }
+
+    // ── 9b. INDEPENDENT OF MB_SPLIT_QUADS, measured rather than argued ───────
+    // The same topology filled twice, once exporting triangles and once quads. The
+    // EXPORTED count must move and the four shape figures must not — the precedent
+    // non-orthogonality already set (check 5), applied to the new figure.
+    {
+        // A graded, non-square block, so the figures are a spread of real numbers
+        // rather than 1.0 four times over, which any pair of runs would agree on.
+        const std::string doc = blockDoc(0, 0, 4, 0, 4, 1, 0, 1, 9, 9,
+                                         ", \"spacing\": {\"law\": \"geometric\", \"growth\": 1.5}");
+        const MbQualityReport tri = hybmesh::measureMbQuality(build(doc, true));
+        const MbQualityReport quad = hybmesh::measureMbQuality(build(doc, false));
+        // NEGATIVE CONTROL, computing this check's own premise twice over: the two
+        // runs really did export different cells, and the figure really does have a
+        // spread to lose — so "unchanged" below is a measurement and not two
+        // constants agreeing.
+        CHECK(tri.cells == 2 * quad.cells && quad.cells == 64,
+              "9b. the split really did change what was exported: 128 triangles "
+              "against 64 quads");
+        CHECK(tri.structuredShape.max > tri.structuredShape.median + 0.5,
+              "9b. ...and this block's cells really do span a range, so an unchanged "
+              "median is not an artefact of every cell being the same");
+        CHECK(tri.structuredShape.cells == quad.structuredShape.cells
+              && tri.structuredShape.cells == 64,
+              "9b. both runs measure the same 64 STRUCTURED quads");
+        CHECK(tri.structuredShape.median == quad.structuredShape.median
+              && tri.structuredShape.p95 == quad.structuredShape.p95
+              && tri.structuredShape.max == quad.structuredShape.max,
+              "9b. ...and report BITWISE the same three figures, so turning the split "
+              "off to diagnose a mesh does not change the number being diagnosed");
+    }
+
+    // ── 9c. A rectangle reports its own side ratio, through the whole report ─
+    // The end-to-end reading of the figure: a user who declares a 4-by-1 block at
+    // equal counts gets a 4:1 cell and the report says 4.
+    {
+        const MbQualityReport q =
+            hybmesh::measureMbQuality(build(blockDoc(0, 0, 4, 0, 4, 1, 0, 1, 5, 5)));
+        CHECK_NEAR(q.structuredShape.max, 4.0, 1e-12,
+                   "9c. a 4x1 block at equal counts reports 4.0 — the user's own side "
+                   "ratio, in the units they already have");
+        CHECK_NEAR(q.structuredShape.median, 4.0, 1e-12,
+                   "9c. ...for every cell in it, so median and max agree");
+        CHECK_NEAR(q.maxNonOrthoDeg, 0.0, 1e-9,
+                   "9c. ...on a block that is EXACTLY orthogonal, which is the pair of "
+                   "numbers that makes the two figures readable together: stretched and "
+                   "square-cornered is a different mesh from skewed and 1:1");
+    }
+
+    // ── 9d. The ROW level of the 'negative when unmeasured' rule ─────────────
+    // The half check 9 cannot reach: a report holding one measurable block AND one
+    // that yields nothing. The headline must describe the block it could measure
+    // while the other block's own row stays negative — never 0, which on this
+    // metric is not merely flattering but IMPOSSIBLE, since its floor is 1.0.
+    // Hand-built, so it holds for any producer of blocks and not just the fill.
+    {
+        MbResult m;
+        m.ok = true;
+        m.nodes = {{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}, {1.0, 1.0}};
+        hybmesh::MbBlock good;
+        good.id = "good";
+        good.ni = 2;
+        good.nj = 2;
+        good.nodeIds = {0, 1, 2, 3};   // index = j * ni + i
+        m.blocks.push_back(good);
+        hybmesh::MbBlock thin;
+        thin.id = "thin";              // one node wide: it has no quad at all
+        thin.ni = 1;
+        thin.nj = 2;
+        thin.nodeIds = {0, 2};
+        m.blocks.push_back(thin);
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        CHECK(q.blockShapes.size() == 2,
+              "9d. a block that yields nothing measurable is still LISTED, the way an "
+              "unmeasurable wall row is");
+        if (q.blockShapes.size() == 2) {
+            CHECK(q.blockShapes[0].blockId == "good" && q.blockShapes[0].shape.cells == 1,
+                  "9d. the measurable block reports its one quad");
+            CHECK_NEAR(q.blockShapes[0].shape.median, 1.0, 1e-12,
+                       "9d. ...as the unit square it is");
+            CHECK(q.blockShapes[1].blockId == "thin" && q.blockShapes[1].shape.cells == 0,
+                  "9d. the one-node-wide block measures no cells");
+            CHECK(q.blockShapes[1].shape.median < 0.0 && q.blockShapes[1].shape.p95 < 0.0
+                  && q.blockShapes[1].shape.max < 0.0,
+                  "9d. ...and its OWN three figures are NEGATIVE, so the row prints "
+                  "'not measured' rather than a number the metric cannot even produce");
+        }
+        CHECK(q.structuredShape.cells == 1,
+              "9d. the headline is over the cells that WERE measurable, one of them");
+        CHECK_NEAR(q.structuredShape.max, 1.0, 1e-12,
+                   "9d. ...and the unmeasurable block does not drag it anywhere, which a "
+                   "0.0 folded into the statistics would");
+    }
+
+    // ── 9e. A structured quad one of whose ids names nothing ────────────────
+    // The shape loop resolves four ids per cell, and the obvious implementation
+    // passes on whatever resolved. Three of four resolving is then handed to the
+    // pure metric as a TRIANGLE, which measures it happily and reports an ordinary
+    // edge ratio for a cell nobody could measure. The only honest answer is that
+    // the cell is unmeasurable, and this check is what says so.
+    {
+        MbResult m;
+        m.ok = true;
+        m.nodes = {{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}};   // one node short
+        hybmesh::MbBlock b;
+        b.id = "ragged";
+        b.ni = 2;
+        b.nj = 2;
+        // THE DANGLING ID HAS TO BE THE ONE VISITED LAST, or this check does not
+        // discriminate: the ring order is (i,j) (i+1,j) (i+1,j+1) (i,j+1), i.e.
+        // nodeIds 0, 1, 3, 2, so a bad id anywhere but slot 2 stops the walk with
+        // FEWER than three corners and the metric refuses it for being too short
+        // rather than for the reason this check is about. The first draft put it in
+        // slot 3 and the injection below passed. `nodeAt(i, j)` is `nodeIds[j*ni+i]`.
+        b.nodeIds = {0, 1, 99, 2};    // the NW corner, walked last, names nothing
+        m.blocks.push_back(b);
+        // NEGATIVE CONTROL, computed rather than claimed: the three ids that DO
+        // resolve really do form a measurable triangle, so "unmeasurable" below is
+        // this loop's decision and not an accident of the coordinates.
+        CHECK(hybmesh::cellShapeRatio({m.nodes[0], m.nodes[1], m.nodes[2]}) > 0.0,
+              "9e. the three resolving corners DO form a measurable triangle, so a "
+              "loop that passed on what resolved would report a number here");
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        CHECK(q.structuredShape.cells == 0 && q.structuredShape.max < 0.0,
+              "9e. ...and the report measures nothing, because a quad missing a "
+              "corner is not a triangle");
+        CHECK(q.blockShapes.size() == 1 && q.blockShapes[0].shape.cells == 0,
+              "9e. ...with the block still listed and its own figures negative");
     }
 
     return hybmesh::test::report("test_mb_quality");

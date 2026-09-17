@@ -133,9 +133,10 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
 **The quality report is the RULER, and it is built before the thing it measures**
 (`include/MbQuality.hpp` + `src/MbQuality.cpp` in `hybmesh_pure`; banner and exit code in
 `src/cli.cpp`; #51). Every multi-block run prints inverted cell count, max/mean non-orthogonality,
-wall first-cell height accuracy and cell count, plus one machine-readable `HYBMESH_MB_QUALITY
-cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=… wall_first_cell_worst_rel=…` line, so the
-acceptance gate is a grep.
+wall first-cell height accuracy, CELL SHAPE and cell count, plus one machine-readable
+`HYBMESH_MB_QUALITY cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=…
+wall_first_cell_worst_rel=… quad_midline_ratio_cells=… quad_midline_ratio_median=…
+quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance gate is a grep.
 - **Printed on every run, including a good one** — three of the four numbers are the baseline
   elliptic smoothing is judged against.
 - **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
@@ -180,11 +181,38 @@ acceptance gate is a grep.
 - **The `[south, east, north, west]` convention is DATA, in one place** (`mbSideAxis`). A dedup of
   `MbWallSpec`/`MbWallHeight` was considered and DECLINED: they face opposite directions and the
   shared part cannot be written HALF.
-- Gated by `tests/cpp/test_mb_quality.cpp` (9 groups, 53 checks) and
-  `tests/test_multiblock_quality_surface.py`. **Its injections are HAND runs, dated in the C++
-  test's docstring** — a C++ test cannot mutate the implementation it linked against, and that
-  distinction must not be blurred. Permanent instead are two **negative controls** computing an
-  injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its ~17x stretch).
+- **CELL SHAPE is measured on the STRUCTURED quads too, by the shared pure metric** (#129,
+  parent #128; `include/CellShape.hpp` — its own rules are in `.claude/rules/mesher.md`, whose
+  globs reach it and this file's do not). Median / p95 / max of the opposite-edge midline ratio,
+  so a square reads **1.0** and not the 1.414 the split triangles would give, and the figure is
+  **independent of `MB_SPLIT_QUADS`** — measured on the shipped O-grid: `cells=` 9216 → 4608 while
+  all four `quad_midline_ratio_*` are bitwise identical.
+  - **The metric's name is in the KEY, never as a value.** Every token of `HYBMESH_MB_QUALITY` is
+    `key=<float>` and `qlines` — the ONE parser, imported by FOUR gates from the one that owns
+    it — floats all of them, so a `shape_metric=…` token would break every one of them. The
+    hybrid path's different quantity is `tri_edge_ratio_*`, so a grep cannot confuse the two.
+  - **A QUAD WHOSE IDS DO NOT ALL RESOLVE IS UNMEASURABLE, said HERE** — passing the
+    resolved corners on short would reach the metric as a TRIANGLE and come back with an
+    ordinary edge ratio for a cell nobody could measure (check 9e).
+  - **ONE ROW PER BLOCK under the headline**, the way each wall gets a row under the wall
+    headline, named with the id the DOCUMENT gave the block. A block that yields nothing
+    measurable is LISTED with `not measured`, never dropped — the row-level half of the negative
+    rule, check 9d, written because 6b's history says it has to be.
+  - **NO COLOUR AND NO THRESHOLD, anywhere, by decision.** The shipped O-grid's max is 32.77 =
+    0.0327 azimuthal spacing / 0.001 requested `BL_INITIAL_THICKNESS` — what the user asked for,
+    not a defect. `test_multiblock_quality_gate.py` gains no bar on these three figures.
+  - **The `.provenance.json` sidecar gains `mesh.quality`** — `metric`, `cells`, `median`, `p95`,
+    `max` — fed by the SAME report object the banner and the machine line read, so the three
+    cannot disagree. It is the contract #131 and #132 read instead of recomputing.
+  Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
+- Gated by `tests/cpp/test_mb_quality.cpp` (14 groups, 79 checks),
+  `tests/test_multiblock_quality_surface.py` and `tests/test_multiblock_shape_surface.py` (the
+  shape figures on the shipped O-grid and H-grid, through the real binary). **Its injections are
+  HAND runs, dated in the C++ test's docstring** — a C++ test cannot mutate the implementation it
+  linked against, and that distinction must not be blurred. Permanent instead are two **negative
+  controls** computing an injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its
+  ~17x stretch). One injection, `I`, is recorded as **INERT** and kept: the rule it attacks is
+  guarded one level down, in the pure gate.
 
 **Boundary conditions are DECLARED; geometry attaches by ARC LENGTH** (#52; still the one pure
 entry point). A corner attaches to a source segment at a normalized arc-length position

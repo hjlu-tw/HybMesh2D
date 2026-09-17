@@ -197,12 +197,44 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
   the adapter records. Never throws; a malformed document comes back as an error string.
 - **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
+- **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, shared by
+  BOTH generation paths (#129). Pure, total, never throws; see the rule below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
   source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
 - **`MbShared.cpp`**: WHICH nodes the multi-block smoother may move, and in whose logical
   frame a node two blocks share is moved. Pure, total, never throws; rules there too.
 - **`Config.hpp`**: single-header; parses `.dat` files into ~50 typed parameters.
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross.
+
+**CELL SHAPE HAS ONE DEFINITION, AND IT IS A PURE FUNCTION OF CORNER COORDINATES**
+(`include/CellShape.hpp` + `src/CellShape.cpp` in `hybmesh_pure`; #129, parent #128). A cell
+arrives as its corner coordinates and leaves as one number; `reduceCellShapes` turns a set of
+those into median / p95 / max. It knows nothing about `MbResult`, `Mesh` or gmsh, and
+`tests/cpp/test_cell_shape.cpp` never builds an `MbResult` — that executable failing to link is
+the signal the one definition has grown a dependency.
+- **The metric depends on the CELL KIND and the two carry DIFFERENT NAMES.** A quad is the ratio
+  of the distances between the midpoints of OPPOSITE edges (`quad_midline_ratio`); a triangle is
+  longest edge / shortest edge (`tri_edge_ratio`). A square is exactly 1.0 as a quad and exactly
+  sqrt(2) as either of its split triangles, so a shared label would invite a comparison that
+  means nothing. The arithmetic is shared because writing it twice guarantees drift; the two
+  entry points, the two output lines and the two names stay separate.
+- **NOT the edge-length ratio, and the sheared-parallelogram argument for that is FALSE** — on
+  any parallelogram the two definitions agree exactly. What tells them apart is TAPER: on the
+  trapezoid `(0,0) (4,0) (3,2) (1,2)` the longest and shortest edges are both the i-direction,
+  so an edge ratio says 2.0 where the cell is 3:2. Checks 4 and 4b pin both halves.
+- **Unmeasurable is NEGATIVE, never 0 and never infinity** — fewer than 3 corners, more than 4,
+  or a zero midline. The reducer DROPS a non-positive entry rather than sorting it in, and
+  `cells` counts what was MEASURED, not what was offered. On this metric 0.0 is not merely
+  flattering but impossible: its floor is 1.0.
+- **The two percentile rules are stated at the declaration**, because a percentile with no rule
+  is a number nobody can reproduce: median = middle value, or the MEAN of the two middle ones on
+  an even count; p95 = NEAREST RANK `ceil(0.95n)` from 1, no interpolation.
+- Gated by `tests/cpp/test_cell_shape.cpp` (11 groups, 41 checks). **Its injections are HAND
+  runs, dated 2026-09-17 in that file's docstring** — a C++ test cannot mutate the implementation
+  it linked against. Permanent instead are two NEGATIVE CONTROLS computing an injection's own
+  premise: check 2 derives its sqrt(2) from the split triangle's own edge lengths, and check 4
+  computes the tapered cell's edge lengths and asserts WHICH edges the extremes are.
+  Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
 
 **`exportVTK` writes the block-id `CELL_DATA` field ONLY when EVERY element carries one**
 (`Element::blockId`, an `std::optional<int>`, in `include/Mesh.hpp`; `src/Mesh.cpp`; #106).

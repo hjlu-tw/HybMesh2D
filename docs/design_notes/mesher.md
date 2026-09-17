@@ -438,10 +438,11 @@ for is a grep and not a prose parse. Rules:
   deviation 0.000e+00**, against a baseline captured from the pre-change binary
   (`HYBMESH_GOLDEN_BIN`, `git archive 050f2af` → build → capture there). No mesh
   moved; what is new is a report and an exit code.
-- Gated by `tests/cpp/test_mb_quality.cpp` (9 groups, 53 checks, through the pure
-  seam) and `tools/PreProcessor/tests/test_multiblock_quality_surface.py`
+- Gated by `tests/cpp/test_mb_quality.cpp` (14 groups, 79 checks, through the pure
+  seam — 9 groups and 53 checks until #129 added the five shape ones) and
+  `tools/PreProcessor/tests/test_multiblock_quality_surface.py`
   (8 properties, 29 assertions, through the real binary, where the export-anyway
-  and the two exit codes live). **The six injections are HAND runs, dated and recorded
+  and the two exit codes live). **The ten injections are HAND runs, dated and recorded
   in the C++ test's own docstring with the checks each one broke — deliberately NOT
   written up as in-test injections**, because a C++ test cannot mutate the
   implementation it linked against the way the Python gates next door do; #37's
@@ -454,6 +455,154 @@ for is a grep and not a prose parse. Rules:
   named in each file's docstring; the sharpest is that nothing runs the solver or
   the grid converter on the folded mesh — that it is written is the claim, that
   anything downstream accepts it is not.
+
+**CELL SHAPE: three numbers, one definition, three surfaces that agree**
+(`include/CellShape.hpp` + `src/CellShape.cpp` in `hybmesh_pure`, the per-cell
+metric and its reducer; the multi-block figures on `MbQualityReport`; the banner,
+the machine line and the sidecar in `src/cli.cpp` and `include/Provenance.hpp`;
+issue #129, parent #128). Every `MESH_MODE 1` run now reports the shape of the
+**structured quads** it built — median, p95 and max — in three places that carry
+the same digits: the quality banner, the `HYBMESH_MB_QUALITY` line, and a
+`quality` object under the `mesh` object of the `.provenance.json` sidecar.
+
+WHY THE TICKET EXISTS AT ALL, which is the part a later reader will not guess. A
+user asked for near-field/far-field radial block splitting in order to get cells
+closer to 1:1. **Measuring showed the shipped O-grid is already 1.23–1.86 outside
+the boundary layer and the hybrid path is 1.10–1.13** — better than the requested
+change would have produced. The request was aimed at a problem the mesh did not
+have, and settling that took a throwaway script, because the numbers existed
+nowhere a user could reach. The instrument is the deliverable; the refusal of the
+`binding` on an `interface`/`cut` edge stands.
+
+- **A QUAD IS MEASURED BY ITS OPPOSITE-EDGE MIDLINES, and my first argument for
+  that was WRONG.** The metric is the ratio of the distances between the midpoints
+  of opposite edges: exactly 1.0 on a square, exactly the side ratio on a
+  rectangle, unchanged by rotation. The first write-up justified it against an
+  edge-length ratio with "a sheared parallelogram has four equal edges and is
+  visibly not square" — **false twice over**. A sheared parallelogram's edges are
+  equal in OPPOSITE PAIRS, not all four; and on ANY parallelogram the two
+  definitions agree exactly, because each midline is a translate of a side. The
+  real difference is TAPER: on the symmetric trapezoid `(0,0) (4,0) (3,2) (1,2)`
+  the longest and the shortest edge are its own bottom and its own top — the SAME
+  logical direction — so an edge ratio reports 2.0 while the cell is 3 wide on
+  average by 2 tall, which the midlines report as 1.5. Both halves are now pinned
+  rather than argued: check 4 of `tests/cpp/test_cell_shape.cpp` computes that
+  cell's edge lengths and asserts WHICH edges the extremes are, and check 4b pins
+  the parallelogram's agreement so the discarded example cannot come back as a
+  plausible-sounding one. Injecting the edge ratio breaks exactly those two cells
+  (checks 4 and 5) and nothing else — a square, a rectangle, a 1000:1 sliver and
+  the parallelogram all agree under both definitions.
+- **Measured on the STRUCTURED cells, exactly as non-orthogonality already is,
+  which is what makes the number readable.** A square split on its diagonal
+  measures **1.0 as a quad and sqrt(2) as either of its triangles**, so measuring
+  the exported cells would mean "is this 1:1?" answered 1.414. Measured through the
+  real binary on the shipped O-grid: `MB_SPLIT_QUADS` 1 → `cells=9216`,
+  `MB_SPLIT_QUADS` 0 → `cells=4608`, and all four `quad_midline_ratio_*` figures
+  **bitwise identical** across the two runs. Same on the shipped H-grid (160 → 80).
+- **THE TWO PATHS' METRICS HAVE DIFFERENT NAMES, AND THE NAME IS IN THE KEY.** The
+  multi-block figure is `quad_midline_ratio`; the hybrid path's (#130) is
+  `tri_edge_ratio` on its exported triangles. A `shape_metric=quad_midline_ratio`
+  token was considered and REFUSED: every token on `HYBMESH_MB_QUALITY` is
+  `key=<float>` and the one shared parser (`qlines`, owned by the quality surface
+  gate and imported by four others — the C-grid's, the O-grid's, the quality gate's
+  and this ticket's own) floats every one of them, so a string-valued token would
+  have broken all five files at once. Putting the name in the KEY costs
+  four longer tokens and makes the two quantities un-confusable by grep.
+- **THREE NUMBERS, BECAUSE THE MAX AND THE MEAN BOTH LIVE IN THE BOUNDARY LAYER.**
+  Measured on the shipped NACA case in #128: BL triangles run at edge ratio 12–37
+  while everything outside the BL sits at 1.10–1.13. A single max reports the BL
+  and says nothing about the other 85% of the mesh. The reducer's two rules are
+  stated because a percentile with no stated rule is a number nobody can
+  reproduce: the **median** is the middle value, or the mean of the two middle ones
+  on an even count; **p95** is NEAREST RANK, `ceil(0.95n)` counting from 1, with no
+  interpolation, so on a small set it is an actual cell's actual shape. Check 10 of
+  the pure gate is the argument as a measurement — 99 cells at 1.1 and one at 70
+  leave median and p95 at 1.1 while the MEAN is dragged past 1.5.
+- **NEGATIVE WHEN UNMEASURED, never 0.0 — and here 0.0 is not merely flattering
+  but IMPOSSIBLE**, because the metric's floor is 1.0, so a zero could only ever be
+  an absent measurement wearing a number. The rule holds at the ROW level too: the
+  banner prints one row per block under the headline, the way each wall gets a row
+  under the wall headline, and a block that yields nothing measurable is **listed**
+  with `not measured` rather than dropped. That row-level half is check 9d of
+  `test_mb_quality.cpp`, and it exists because check 6b's history says it has to —
+  the wall figure's row-level rule was unguarded until an injection said so.
+  Dropping such a row instead of listing it breaks 9d and nothing else.
+- **NO COLOUR AND NO THRESHOLD, and this is a decision rather than an omission.**
+  The shipped O-grid's max is **32.77**, and that is arithmetic: 0.0327 azimuthal
+  spacing / 0.001 requested `BL_INITIAL_THICKNESS` = 32.7, i.e. exactly what the
+  user asked for. A tool that coloured that red would be training its user to
+  ignore colour. `test_multiblock_quality_gate.py` gains no bar on these figures,
+  deliberately — and the cost is named in the surface gate's own blind spots: a
+  regression that doubled every mesh's stretch would be caught by nobody.
+- **THE SIDECAR IS THE CONTRACT, and it is what the GUI (#131), the pipeline
+  runner and the batch queue (#132) will READ rather than recompute.**
+  `"mesh": { "nodes": …, "elements": …, "quality": { "metric": …, "cells": …,
+  "median": …, "p95": …, "max": … } }`. The metric is a NAMED string there, where
+  no float-everything parser is in the way. An EMPTY metric writes no `quality`
+  object at all — the honest answer for a path that does not measure yet — while a
+  named metric always writes one, so `cells: 0` with three negative figures says
+  "we looked and could not measure" instead of leaving a reader to guess.
+- **One report object feeds all three surfaces.** `buildMultiBlockMesh` hands its
+  `MbQualityReport::structuredShape` out to the export block rather than the export
+  measuring a second time, which is what makes "the three agree" a property of the
+  code instead of a check that keeps passing by luck. It is the AFTER-smoothing
+  report, because the sidecar sits beside the file on disk.
+- MEASURED 2026-09-17 at the shipped defaults (`MB_SMOOTH_ITERS` 20): shipped
+  O-grid 4608 structured quads, **median 1.845977, p95 23.662285, max 32.767868**;
+  shipped H-grid 80 structured quads, **median 1.164421, p95 1.391410, max
+  1.504321**, whose four blocks report four different medians (bl 1.156, br 1.249,
+  tl 1.080, tr 1.389) — which is what makes the per-block rows worth printing.
+  #128's own O-grid measurement was "max 32.8, median 1.85", reproduced.
+- **A CHECK THAT BIT BY ACCIDENT, on the day it was written.** The surface gate's
+  check 6 (banner, machine line and sidecar carry the same digits) went red on both
+  cases in its first draft: it read the FIRST `Cell shape` row out of the output,
+  which on a smoothed run is the report for the mesh BEFORE the sweeps — a mesh
+  that was never exported. That is the same trap `qlines` matches its prefix with a
+  trailing space to avoid, hit again from the other direction.
+- Gated by `tests/cpp/test_cell_shape.cpp` (11 groups, 41 checks, linking
+  `hybmesh_pure` alone — it never builds an `MbResult`, so the module's whole
+  premise is a build property), by the five new groups of
+  `tests/cpp/test_mb_quality.cpp` (9, 9b, 9c, 9d, 9e), and by
+  `tools/PreProcessor/tests/test_multiblock_shape_surface.py` (10 properties, 51
+  assertions, through the real binary on the two shipped cases read from disk).
+  **The injections are HAND runs, dated 2026-09-17 in the two C++ tests' own
+  docstrings** with the checks each broke, for the reason #51's entry gives. Two
+  are worth repeating here beside `K` above. `J` — the four structured corners read
+  in Z order rather than around the ring, the classic slip — breaks 11 checks,
+  and collapses one midline to zero so the cells report UNMEASURABLE rather than
+  merely wrong. `I` is **INERT**, recorded because "we tried and it did not bite"
+  is worth more than silence: folding an unmeasurable quad into the statistics as
+  0.0 breaks nothing, because `reduceCellShapes` discards a 0.0 by the same
+  `> 0.0` test it discards a negative by. The rule is guarded one level down, in
+  the pure gate's check 8, and `test_mb_quality.cpp` inherits it rather than
+  holding it.
+- **A QUAD MISSING A CORNER IS NOT A TRIANGLE, and that had to be said in the
+  multi-block loop rather than left to the metric.** The metric's rule is by corner
+  COUNT, so three resolving ids out of four reach it as a triangle and come back
+  with a perfectly ordinary edge ratio for a cell nobody could measure. Check 9e is
+  that case — and it is worth reading with its own fixture, because the first draft
+  did NOT reach the defect: it put the dangling id in the slot walked THIRD, which
+  stops the walk at two corners and is refused for being too short, so injection
+  `K` passed. The ring order is `nodeIds` 0, 1, 3, 2, and only slot 2 is walked
+  last. A check written for a defect it cannot reach is the shape this repo keeps
+  finding, and the injection is what found it again.
+- Measured behaviour preservation, 2026-09-17: the 19 golden cases **19/19 SAME,
+  worst coordinate deviation 0.000e+00**, against a baseline captured from the
+  PRE-CHANGE binary (`HYBMESH_GOLDEN_BIN`, `git archive HEAD` → build there →
+  capture). **18 of those 19 are meshes**; the nineteenth (`isolated_corner`)
+  matched a NO-MESH outcome, which the comparator reports as such rather than as a
+  deviation measured off nothing — so "19/19" is not 19 meshes, and is written here
+  with the number that is. No mesh moved; what is new is a report, four tokens on a
+  line and a key in a sidecar.
+- Blind spots, named rather than papered over. **`not measured` is unreachable
+  through the binary**, and not for want of trying: every declaration this path
+  ACCEPTS produces at least one structured quad — an edge with `count` 1 is refused
+  by name — so no valid document fills no measurable cell. Both halves of that rule
+  are pinned where a mesh can be built by hand (`test_mb_quality.cpp` checks 8 and
+  9d); what nothing covers is the banner STRING for that state in `src/cli.cpp`.
+  And the per-block rows are checked for presence, naming, count and ordering, not
+  against per-block cell counts, which no machine-readable line carries — a row
+  reporting the WRONG block's figures would pass the surface gate.
 
 **Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
 (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;

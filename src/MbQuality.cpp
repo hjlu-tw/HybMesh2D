@@ -95,6 +95,52 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
     if (q.nonOrthoSamples > 0)
         q.meanNonOrthoDeg = sum / static_cast<double>(q.nonOrthoSamples);
 
+    // ── Cell shape: the STRUCTURED quads, per block and overall ─────────────
+    // Same loop shape as the angles above and the same reason for it — the (i,j)
+    // quads are the cells the document declares — but the per-cell arithmetic is
+    // the SHARED pure one, so this path and the hybrid path cannot drift apart on
+    // what "badly shaped" means. A block that yields nothing measurable is still
+    // LISTED, with its own figures negative, for the reason the unmeasurable wall
+    // row is listed: a block nobody could measure is worth seeing.
+    {
+        std::vector<double> all;
+        for (const MbBlock& b : mesh.blocks) {
+            MbBlockShape row;
+            row.blockId = b.id;
+            std::vector<double> mine;
+            const size_t want = static_cast<size_t>(b.ni) * static_cast<size_t>(b.nj);
+            if (b.ni >= 2 && b.nj >= 2 && b.nodeIds.size() == want) {
+                for (int j = 0; j + 1 < b.nj; ++j) {
+                    for (int i = 0; i + 1 < b.ni; ++i) {
+                        const int ids[4] = {b.nodeAt(i, j), b.nodeAt(i + 1, j),
+                                            b.nodeAt(i + 1, j + 1), b.nodeAt(i, j + 1)};
+                        std::vector<Point2D> corners;
+                        corners.reserve(4);
+                        bool inRange = true;
+                        for (int k = 0; k < 4; ++k) {
+                            if (ids[k] < 0
+                                || static_cast<size_t>(ids[k]) >= mesh.nodes.size()) {
+                                inRange = false;
+                                break;
+                            }
+                            corners.push_back(mesh.nodes[static_cast<size_t>(ids[k])]);
+                        }
+                        // A quad one of whose ids names nothing is UNMEASURABLE, and
+                        // must be said so here rather than handed on short: three
+                        // resolving ids would reach `cellShapeRatio` as a TRIANGLE and
+                        // come back with a perfectly ordinary edge ratio for a cell
+                        // nobody could measure. Check 9e is that case.
+                        mine.push_back(inRange ? cellShapeRatio(corners) : -1.0);
+                    }
+                }
+            }
+            all.insert(all.end(), mine.begin(), mine.end());
+            row.shape = reduceCellShapes(std::move(mine));
+            q.blockShapes.push_back(std::move(row));
+        }
+        q.structuredShape = reduceCellShapes(std::move(all));
+    }
+
     // ── Wall first-cell height: what was asked for, against what was filled ──
     for (const MbWallSpec& ws : mesh.wallSpecs) {
         if (ws.block < 0 || static_cast<size_t>(ws.block) >= mesh.blocks.size()) continue;

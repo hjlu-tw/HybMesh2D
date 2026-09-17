@@ -183,6 +183,7 @@ target_include_directories(HybMeshUtils INTERFACE include)
 # 新增的 src/*.cpp 預設就該落在這裡；要成為重型檔必須具名進
 # tools/PreProcessor/tests/test_cpp_pure_layer.py 的 HEAVY_SOURCES 並附理由。
 add_library(hybmesh_pure STATIC
+    src/CellShape.cpp
     src/JunctionScheme.cpp
     src/MeshMode.cpp
     src/MultiBlock.cpp
