@@ -500,18 +500,20 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   `MB_SPLIT_QUADS` 0 → `cells=4608`, and all four `quad_midline_ratio_*` figures
   **bitwise identical** across the two runs. Same on the shipped H-grid (160 → 80).
 - **THE TWO PATHS' METRICS HAVE DIFFERENT NAMES, AND THE NAME IS IN THE KEY.** The
-  multi-block figure is `quad_midline_ratio`; the hybrid path's will be
-  `tri_edge_ratio` on its exported triangles, and #130 is where it starts being
-  emitted — **this ticket ships the quad half only**, and the triangle branch of
-  `cellShapeRatio` plus `measureCellShapes` have no production caller until then.
-  Both are NAMED as unread in their own header rather than shipped as if read,
-  which is #50's "SURVIVING is not the same as READ" applied to a function. A
+  multi-block figure is `quad_midline_ratio`; the hybrid path's is
+  `tri_edge_ratio` on its exported triangles — **#129 shipped the quad half only**,
+  and until #130 the triangle branch of `cellShapeRatio` plus `measureCellShapes`
+  had no production caller. Both were NAMED as unread in their own header rather
+  than shipped as if read, which is #50's "SURVIVING is not the same as READ"
+  applied to a function; #130 is the caller they were named for, and the entry
+  below records what it took. A
   `shape_metric=quad_midline_ratio`
   token was considered and REFUSED: every token on `HYBMESH_MB_QUALITY` is
   `key=<float>` and the one shared parser (`qlines`, owned by the quality surface
-  gate and imported by FIVE others — the C-grid's, the O-grid's, the quality
-  gate's, the smoothing gate's and this ticket's own) floats every one of them, so
-  a string-valued token would have broken all six files at once. **That count was
+  gate and imported by SIX others — the C-grid's, the O-grid's, the quality
+  gate's, the smoothing gate's, this ticket's own and #130's hybrid gate) floats
+  every one of them, so a string-valued token would have broken all seven files at
+  once. **That count was
   wrong in its first draft** — written as four, from a `grep` whose output was cut
   by a `head` — and BOTH review axes caught it independently, which is the
   strongest signal either gives. Enumerate before writing a count. Putting the name in the KEY costs
@@ -630,6 +632,110 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   And the per-block rows are checked for presence, naming, count and ordering, not
   against per-block cell counts, which no machine-readable line carries — a row
   reporting the WRONG block's figures would pass the surface gate.
+
+**THE HYBRID HALF OF THE SAME INSTRUMENT** (`printHybridQuality` in `src/cli.cpp`;
+issue #130, parent #128). #129 built the pure module and wired the multi-block
+path to it, leaving the triangle branch and `measureCellShapes` NAMED as unread.
+#130 is the caller: every `MESH_MODE 0` run now reports the shape of the cells it
+EXPORTS — median, p95 and max — in the same three places, under a `[ Mesh
+Statistics ]` row, a `HYBMESH_HYBRID_QUALITY` line and the same `mesh.quality`
+sidecar schema. No C++ outside `src/cli.cpp` changed, and the metric was not
+touched: that is what building the pure half first bought.
+
+- **IT MEASURES WHAT IT EXPORTS, because there is nothing else to measure.** The
+  multi-block path measures its STRUCTURED quads rather than its exported
+  triangles, for three reasons #129 records. None of them is available here: this
+  path has no `(i, j)` cell anywhere in it, no `MB_SPLIT_QUADS` to be independent
+  of, and no declaration to be faithful to. So the cells on disk ARE the subject,
+  and the metric is the triangle rule — longest edge / shortest edge — under
+  `tri_edge_ratio`.
+- **THE TICKET'S PREMISE "the path exports no quads at all" IS TRUE OF EVERY CASE
+  THAT MESHES A GEOMETRY AND FALSE OF ONE THAT DOES NOT.** The boundary layer's
+  quad strip really is emitted as two triangles per column
+  (`src/BoundaryLayer.cpp`), so nothing four-cornered reaches the exporter on the
+  demo case or any like it. But with no geometry, no seed and no domain file the
+  path falls back to `Mesh::generateCartesianMesh`, which is 400 QUADS on the
+  shipped config — and a quad handed to `cellShapeRatio` comes back with a
+  perfectly correct MIDLINE ratio under the name `tri_edge_ratio`, which is the one
+  thing two names exist to prevent. Only three-cornered cells are offered, and the
+  rest are COUNTED on their own banner row. Checked before it was written, not
+  after: the fallback is four lines from the multi-block branch in the same
+  function.
+- **`not measured` IS REACHABLE HERE, which it is not on the other path.** #129
+  named "the banner STRING for that state is covered by nothing" as a blind spot,
+  because no valid topology fills no measurable cell. The quad fallback above walks
+  straight into it: the banner prints `not measured`, the three figures come back
+  −1.0, and the sidecar says the same. `tests/test_hybrid_shape_surface.py` check
+  10 drives it through the real binary, so that blind spot is now closed on ONE of
+  the two paths and the other's stands.
+- **THE SPREAD IS THE BOUNDARY LAYER, MEASURED RATHER THAN CLAIMED.** The ticket
+  predicts the BL dominates the max while the median sits near 1.1, which is the
+  whole reason three numbers are reported instead of one. The gate's check 9 is the
+  computed premise: the SAME config and the SAME geometry loaded through
+  `-geom_nobl`, so no layer is grown, reports a median within a few percent and a
+  p95 and max an order of magnitude smaller. Measured 2026-09-17 on the shipped
+  `config/Background_para.dat` + `examples/geometries/naca0012.dat`:
+
+      BL on        15233 exported triangles, all 15233 measured
+                   median 1.158103, p95 52.185741, max 78.703074
+      -geom_nobl   12293 exported triangles
+                   median 1.114486, p95 1.420814, max 7.388082
+      no geometry    400 exported quads, 0 measured, all figures -1.0
+
+  The p95 is the figure that earns its place: at 52 it says a twentieth of this
+  mesh is BL-stretched, which neither the median (1.16, the far field) nor the max
+  (78.7, one cell) says on its own.
+- **`shapePhrase` MOVED TO FILE SCOPE rather than being copied.** #129's review had
+  already had to collapse a second spelling of the `not measured` case inside the
+  multi-block reporter — "two spellings of one state, free to drift, at the very
+  level the helper was written for". A third reader on a second path would have
+  been that same defect across two generation paths. What is shared is the
+  FORMATTING of three numbers; the metric name, the count's units and the sentence
+  beside them stay each path's own, because those are precisely what must differ.
+- **THE DISTINCTION IS STATED ON BOTH BANNERS.** The acceptance criterion asks for
+  it "where a reader of either will see it", and the first draft had it only on the
+  row that arrived second — which reaches the reader who already had the other
+  report open, i.e. the one who did not need it. The multi-block row gained the
+  mirror in the same change.
+- **The one parser gained a `prefix=` argument rather than a seventh copy.**
+  `qlines` is imported by six gates since this ticket; the two paths print two different
+  quantities under two different names, and what they share is the `key=<float>`
+  SHAPE that function is the one reader of. Floating every token is still what a
+  `shape_metric=<name>` token would break.
+- **The gate drives the shipped pair BY PATH and adds no second retargeter.**
+  `mb_shipped_config.shipped_config` is the tree's one "read a shipped config and
+  retarget it", and `test_shipped_config_seam.py` fails on a second. It also
+  requires `MESH_MODE 1` and an `OUTPUT_FILENAME`, and `Background_para.dat` has
+  neither — but it also has no path key to retarget, so the whole of the
+  retargeting this case needs is `-out_name` on the command line, which is how
+  `tools/scripts/golden_mesh.py` has driven the same pair all along. Widening the
+  seam for a config with nothing to retarget would have been an API the tree has no
+  use for.
+- **SIX INJECTIONS, AND TWO OF THEM FOUND THE SAME DEFECT IN THE GATE.** Recorded
+  in `test_hybrid_shape_surface.py`'s own docstring with the checks each reddened;
+  what belongs here is what they changed. Injection A (the hybrid line's tokens
+  renamed to the multi-block metric's) reddened ONE check on its first run — and
+  not the check written for it: that defect also empties the parsed figures, so the
+  gate bailed out before reaching checks 3 and 4. Injection F, the same line under
+  the multi-block PREFIX, hit the identical bail-out. Both are #127's "isolate the
+  labelled check", found by injecting rather than by reading, and both now redden
+  three and four checks respectively. Injection C is the other kind of finding: the
+  three figures forced to 0.0 when nothing was measured reddens the machine line
+  and the sidecar but NOT the banner, because the banner branches on `cells` rather
+  than on the figures — so that rule is guarded at two places and not three, which
+  is written down instead of being left to look like coverage.
+- Measured behaviour preservation, 2026-09-17: the 19 golden cases **19/19 SAME,
+  worst coordinate deviation 0.000e+00** — 18 meshes plus the one NO-MESH outcome.
+  No mesh moved; what is new is a banner row, a line and a sidecar key.
+- Blind spots, named rather than papered over. **A mesh with NO CELLS AT ALL is not
+  reached through the binary** — every hybrid run that meshes anything exports
+  cells — so the `cells == 0` branch is exercised with 400 unmeasurable ones
+  instead; the zero-length reduction itself is `test_cell_shape.cpp` check 7 with
+  injection D under it. **No bar is asserted on any of the three numbers**, on
+  purpose: #128 declined to create that gate, so a regression that made every mesh
+  twice as stretched would pass every file here. And **nothing follows a figure
+  into the GUI or the pipeline** — the sidecar is the contract, and who reads it is
+  another gate's subject.
 
 **Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
 (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;

@@ -197,9 +197,10 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
   the adapter records. Never throws; a malformed document comes back as an error string.
 - **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
-- **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, written to be
-  shared by both generation paths (#129) and called by ONE of them so far. Pure, total, never
-  throws; see the rule below.
+- **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, shared by BOTH
+  generation paths since #130 — the quad branch by `measureMbQuality` (#129), the triangle branch
+  and `measureCellShapes` by `printHybridQuality` in `src/cli.cpp`. Pure, total, never throws;
+  see the rule below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
   source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
 - **`MbShared.cpp`**: WHICH nodes the multi-block smoother may move, and in whose logical
@@ -215,10 +216,8 @@ those into median / p95 / max. It knows nothing about `MbResult`, `Mesh` or gmsh
 the signal the one definition has grown a dependency.
 - **The metric depends on the CELL KIND and the two carry DIFFERENT NAMES.** A quad is the ratio
   of the distances between the midpoints of OPPOSITE edges (`quad_midline_ratio`); a triangle is
-  longest edge / shortest edge (`tri_edge_ratio`). **ONLY THE QUAD BRANCH HAS A CALLER TODAY** —
-  the triangle branch and `measureCellShapes` are #130's, named in the header rather than shipped
-  as if read, the same rule `MESH_MODE`'s "SURVIVING is not the same as READ" states.
-  A square is exactly 1.0 as a quad and exactly
+  longest edge / shortest edge (`tri_edge_ratio`). BOTH branches have a production caller since
+  #130. A square is exactly 1.0 as a quad and exactly
   sqrt(2) as either of its split triangles, so a shared label would invite a comparison that
   means nothing. The arithmetic is shared because writing it twice guarantees drift; the two
   entry points, the two output lines and the two names stay separate.
@@ -238,6 +237,39 @@ the signal the one definition has grown a dependency.
   it linked against. Permanent instead are two NEGATIVE CONTROLS computing an injection's own
   premise: check 2 derives its sqrt(2) from the split triangle's own edge lengths, and check 4
   computes the tapered cell's edge lengths and asserts WHICH edges the extremes are.
+  Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
+
+**THE HYBRID PATH REPORTS THE SHAPE OF THE CELLS IT EXPORTS, under its OWN name**
+(`printHybridQuality` in `src/cli.cpp`; #130, parent #128). It has no structured layer to
+measure — no `(i,j)` quad exists anywhere on it — so it measures what it exports, and what it
+exports is triangles: the boundary layer's quad strip is already emitted as two triangles per
+column in `src/BoundaryLayer.cpp`, so no four-cornered cell survives to the exporter on any case
+that meshes a geometry.
+- **The name is `tri_edge_ratio` and the line is `HYBMESH_HYBRID_QUALITY`**, neither of which a
+  grep or the shared parser can confuse with the multi-block path's `quad_midline_ratio` on
+  `HYBMESH_MB_QUALITY`. Same rule as there: every token is `key=<float>`, so the metric's name is
+  in the KEY and never in a value of its own.
+- **THE DISTINCTION IS ON BOTH BANNERS, not only the one that arrived second.** Each path's
+  `Cell shape` row names the other's metric as NOT comparable; a warning on one report only
+  reaches the reader who already had the other open.
+- **ONLY THREE-CORNERED CELLS ARE OFFERED TO THE METRIC**, and that is a reachable case rather
+  than a defensive habit: with no geometry, no seed and no domain file this path builds a
+  CARTESIAN QUAD fallback (`Mesh::generateCartesianMesh`), and a quad handed to `cellShapeRatio`
+  comes back as a MIDLINE ratio — a correct number under the wrong name. Such a cell is left out
+  and COUNTED, with its own banner row, so the figure never describes a mesh by a fraction of
+  itself.
+- **THREE SURFACES, ONE `ShapeStats`** — the `[ Mesh Statistics ]` banner row, the machine line
+  and the sidecar's `mesh.quality` — handed out of the reporter rather than measured a second
+  time at the export, so the three cannot disagree about one mesh. Unmeasurable is NEGATIVE and
+  the banner says `not measured`; unlike the multi-block path, that state is REACHABLE through
+  the binary (the quad fallback above).
+- Gated by `tests/test_hybrid_shape_surface.py`, which drives the shipped
+  `config/Background_para.dat` + `examples/geometries/naca0012.dat` pair BY PATH (no retarget is
+  needed: that config declares no path key and no `OUTPUT_FILENAME`, so `-out_name` is the whole
+  of it, which is how `tools/scripts/golden_mesh.py` already drives the same pair). Its check 9
+  is a computed negative control: the same config and geometry through `-geom_nobl` reports the
+  same median and a p95 and max an order of magnitude smaller, so "the spread IS the boundary
+  layer" is measured rather than claimed.
   Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
 
 **`exportVTK` writes the block-id `CELL_DATA` field ONLY when EVERY element carries one**

@@ -339,6 +339,25 @@ static std::string mbRow(const std::string& text) { return mbLabel("  - ", text)
 // the summary line above it rather than as another number beside it.
 static std::string mbSub(const std::string& text) { return mbLabel("      ", text); }
 
+// The three cell-shape figures as one phrase, or the honest `not measured`
+// (issues #129, #130).
+//
+// FILE SCOPE, AND ONE SPELLING FOR BOTH PATHS. It was a lambda inside the
+// multi-block reporter, where #129's review had already had to collapse a second
+// spelling of the `not measured` case at the headline level — two spellings of one
+// state, free to drift, at the level the helper was written for. #130 adds a THIRD
+// reader on the hybrid path, and a copy there would be that same defect across two
+// generation paths instead of two rows of one banner. What is shared is the
+// FORMATTING of three numbers; the metric NAME, the count's units and the sentence
+// beside it stay each path's own, because those are what must differ.
+static std::string shapePhrase(const hybmesh::ShapeStats& st) {
+    if (st.cells == 0) return std::string("not measured");
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(3) << "median " << st.median
+       << ", p95 " << st.p95 << ", max " << st.max;
+    return os.str();
+}
+
 // Print the quality report. Split out of the adapter because the adapter's whole
 // character is "a loop with no decisions in it", and eleven lines of formatting
 // was on its way to obscuring the one decision it does now make (the exit code).
@@ -360,17 +379,10 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     std::ostringstream sci;
     sci << std::scientific << std::setprecision(3);
     auto num = [&sci](double v) { sci.str(""); sci << v; return sci.str(); };
-    // The three shape figures as one phrase, or the honest `not measured`. Used at
-    // BOTH levels — the headline over every block and each block's own row — so the
-    // rule that an unmeasured figure never prints as a number holds at the row
-    // level too, by construction rather than by two authors agreeing.
-    auto shape = [](const hybmesh::ShapeStats& st) {
-        if (st.cells == 0) return std::string("not measured");
-        std::ostringstream os;
-        os << std::fixed << std::setprecision(3) << "median " << st.median
-           << ", p95 " << st.p95 << ", max " << st.max;
-        return os.str();
-    };
+    // `shapePhrase` is used at BOTH levels here — the headline over every block and
+    // each block's own row — so the rule that an unmeasured figure never prints as a
+    // number holds at the row level too, by construction rather than by two authors
+    // agreeing. Since #130 it serves the hybrid path's row as well.
     auto rel = [](double v) {
         // NEGATIVE means not measured, and it must not print as a percentage —
         // "0.00%" is an excellent result and would be a false claim here. See
@@ -414,11 +426,11 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // BL_INITIAL_THICKNESS, an arithmetic consequence of what the user asked for
     // rather than a defect to flag.
     //
-    // THE HEADLINE GOES THROUGH `shape()` TOO, including when nothing was measured.
+    // THE HEADLINE GOES THROUGH `shapePhrase()` TOO, including when nothing was measured.
     // Its first draft spelled the `not measured` case out again here, which made
     // the lambda's "used at BOTH levels by construction" claim false at the very
     // level it was written for: two spellings of one state, free to drift.
-    std::cout << mbRow("Cell shape") << shape(q.structuredShape);
+    std::cout << mbRow("Cell shape") << shapePhrase(q.structuredShape);
     if (q.structuredShape.cells == 0)
         // NOT "no structured block in the result": a result CAN hold blocks none
         // of whose cells could be measured, and the row above would then assert
@@ -426,13 +438,19 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
         // no structured cell was measurable.
         std::cout << " (no structured cell could be measured)\n";
     else
+        // THE DISTINCTION IS STATED ON BOTH BANNERS (#130), not only on the one
+        // that arrived second: a reader comparing this figure against the hybrid
+        // path's is comparing nothing, and which of the two reports they happen to
+        // be looking at is not something this row can assume.
         std::cout << " (quad midline ratio over " << q.structuredShape.cells
-                  << " structured quads; 1.0 is square)\n";
+                  << " structured quads; 1.0 is square, and NOT comparable with "
+                     "MESH_MODE " << MESH_MODE_HYBRID
+                  << "'s triangle edge ratio)\n";
     // PER BLOCK, under the headline, the way each wall gets a row under the wall
     // headline. A block is the unit the user declared, so "the wake blocks are the
     // stretched ones" is an answer they can act on.
     for (const hybmesh::MbBlockShape& bs : q.blockShapes)
-        std::cout << mbSub("block '" + bs.blockId + "'") << shape(bs.shape) << "\n";
+        std::cout << mbSub("block '" + bs.blockId + "'") << shapePhrase(bs.shape) << "\n";
 
     // One machine-readable line, in the shape of the HYBMESH_ERROR convention, so
     // the acceptance gate this instrument exists for is a grep rather than a prose
@@ -911,6 +929,114 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
     }
 
     return false;
+}
+
+// THE HYBRID PATH'S CELL SHAPE (issue #130, parent #128).
+//
+// WHAT IT MEASURES, and why it is not the multi-block figure under another name.
+// This path has no structured layer to measure — there is no (i,j) quad anywhere
+// in it, only what the boundary layer and Gmsh produced — so it measures WHAT IT
+// EXPORTS. Its cells are triangles: the boundary layer's "quad" strip is already
+// emitted as two triangles per column (src/BoundaryLayer.cpp), so nothing on the
+// path from geometry to export carries a four-cornered cell.
+//
+// The metric is therefore the TRIANGLE rule of the one pure `cellShapeRatio` next
+// door — longest edge / shortest edge — and it travels under `tri_edge_ratio`,
+// which is NOT `quad_midline_ratio`. A square reads 1.0 as a quad and sqrt(2) as
+// either of its split triangles, so one name over the two would invite a
+// comparison that means nothing. The arithmetic is shared because writing it twice
+// guarantees the two drift; the names, the lines and the sentences stay apart.
+//
+// ONLY THREE-CORNERED CELLS ARE OFFERED TO IT, and that is a real case rather than
+// a defensive habit: with no geometry, no seed and no domain file this path builds
+// a CARTESIAN QUAD fallback (`Mesh::generateCartesianMesh`), so "this path exports
+// no quads" is true of every case that meshes a geometry and false of that one.
+// A quad offered here would come back as a MIDLINE ratio — a correct number under
+// the wrong name — which is the one thing the two names exist to prevent. It is
+// left out of the figure and COUNTED, so the banner says so rather than quietly
+// describing a mesh by a fraction of itself.
+//
+// `quality` is the sidecar's half: the same `ShapeStats` this banner and the
+// machine line below print, handed out rather than measured a second time at the
+// export, so the three surfaces cannot disagree about one mesh.
+static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) {
+    std::vector<std::vector<Point2D>> tris;
+    tris.reserve(mesh.elements.size());
+    size_t exported = 0;    // cells the exporters write (STAR-CD skips size < 3)
+    size_t nonTriangles = 0;
+    for (const Element& el : mesh.elements) {
+        // The two-node entries are the visualisation line segments addTaggedLoop
+        // records, not cells: `Mesh::exportStarCD` skips them by the same test.
+        if (el.nodeIds.size() < 3) continue;
+        ++exported;
+        if (el.nodeIds.size() != 3) { ++nonTriangles; continue; }
+        std::vector<Point2D> corners;
+        corners.reserve(3);
+        bool resolved = true;
+        for (int id : el.nodeIds) {
+            if (id < 0 || static_cast<size_t>(id) >= mesh.nodes.size()) {
+                resolved = false;
+                break;
+            }
+            corners.push_back(mesh.nodes[static_cast<size_t>(id)].pos);
+        }
+        // A CELL WHOSE IDS DO NOT ALL RESOLVE IS UNMEASURABLE, SAID HERE. Passing
+        // the corners that did resolve on short would reach the metric as a
+        // shorter cell and come back with an ordinary ratio for a cell nobody
+        // could measure; the empty list is the "could not measure this one"
+        // signal `reduceCellShapes` drops. Same rule, same reason, as the quad
+        // case in measureMbQuality.
+        tris.push_back(resolved ? corners : std::vector<Point2D>());
+    }
+    const hybmesh::ShapeStats st = hybmesh::measureCellShapes(tris);
+
+    std::cout << mbRow("Cell shape") << shapePhrase(st);
+    if (st.cells == 0) {
+        // NOT "this mesh has no cells": a mesh CAN hold cells none of which could
+        // be measured (every one degenerate, or every one a fallback quad), and
+        // naming the cause would then be a false claim about the mesh. What is
+        // true in both cases is that no exported cell was measurable.
+        std::cout << " (no exported cell could be measured)";
+    } else {
+        std::cout << " (triangle edge ratio over " << st.cells
+                  << " exported triangles; 1.0 is equilateral, and NOT comparable "
+                     "with MESH_MODE " << MESH_MODE_MULTIBLOCK
+                  << "'s quad midline ratio)";
+    }
+    if (nonTriangles > 0)
+        std::cout << "\n" << mbSub("not triangles") << nonTriangles << " of "
+                  << exported << " exported cells have a corner count this metric "
+                     "is not defined for, and carry no figure here";
+    std::cout << "\n";
+
+    // One machine-readable line, in the shape of the HYBMESH_ERROR convention the
+    // multi-block path's HYBMESH_MB_QUALITY already follows, so an acceptance check
+    // stays a grep. A DIFFERENT PREFIX and DIFFERENT KEYS: a gate greping for one
+    // path's line can never match the other's, which is the same reason the metric's
+    // name is in the key rather than in a value of its own — every token here is
+    // `key=<float>` and one shared parser floats all of them.
+    //
+    // `cells` counts what was EXPORTED and `tri_edge_ratio_cells` what was MEASURED.
+    // On this path the two agree whenever every exported cell is a measurable
+    // triangle, and the gap is exactly the cells named on the row above plus any
+    // degenerate one — which is why both are on the line and neither is inferred.
+    // Each figure is NEGATIVE when it could not be measured, never 0: the metric's
+    // floor is 1.0, so a 0.0 here could only ever be an absent measurement wearing
+    // a number.
+    std::ostringstream mr;
+    mr << std::setprecision(6) << std::fixed;
+    mr << "HYBMESH_HYBRID_QUALITY cells=" << exported
+       << " tri_edge_ratio_cells=" << st.cells
+       << " tri_edge_ratio_median=" << st.median
+       << " tri_edge_ratio_p95=" << st.p95
+       << " tri_edge_ratio_max=" << st.max;
+    std::cout << mr.str() << std::endl;
+
+    // ONE REPORT, THREE SURFACES (issue #129, and #130 for this path): the banner
+    // above, the machine line inside it and the sidecar all read this one
+    // `ShapeStats`.
+    quality.metric = "tri_edge_ratio";
+    quality.shape = st;
 }
 
 int hybmesh::runCli(int argc, char* argv[]) {
@@ -1490,7 +1616,15 @@ int hybmesh::runCli(int argc, char* argv[]) {
     std::cout << "\n[ Mesh Statistics ]\n";
     std::cout << "  - Vertices (VRT)       : " << mesh.nodes.size() << "\n";
     std::cout << "  - Elements (CEL)       : " << mesh.elements.size() << "\n";
-    std::cout << "  - Boundary Edges (BND) : " << mesh.edges.size() << "\n\n";
+    std::cout << "  - Boundary Edges (BND) : " << mesh.edges.size() << "\n";
+    // THE HYBRID PATH'S CELL SHAPE, in the block a user already reads for the size
+    // of the mesh (issue #130). Not on the multi-block path: that one measures the
+    // STRUCTURED quads it declared, under its own name, and has already printed its
+    // own quality block above — printing a second figure here under a third name
+    // would be this ticket's own rule broken in the ticket that states it.
+    if (config.meshMode != MESH_MODE_MULTIBLOCK)
+        printHybridQuality(mesh, meshQuality);
+    std::cout << "\n";
 
     // Extension position in the FILE NAME (npos when there is none). Must ignore a
     // dot in a directory component — a path like ~/.claude/out would otherwise get a

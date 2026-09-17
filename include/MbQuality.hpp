@@ -54,8 +54,10 @@
 //   share so that the arithmetic cannot drift. It follows non-orthogonality's
 //   precedent for the same three reasons, stated where the fields are declared —
 //   and it is the answer to what the sentence above leaves open: the shape of the
-//   split triangles is NOT reported here under a quad's name, and is not reported
-//   anywhere yet — it is #130's, under its own name (`tri_edge_ratio`).
+//   split triangles is NOT reported here under a quad's name. The HYBRID path
+//   reports the shape of the cells IT exports, under its own name
+//   (`tri_edge_ratio`, #130) — a different quantity on a different line, and the
+//   two are never to be compared.
 namespace hybmesh {
 
 // One declared wall side of one filled block: what the DECLARATION asks the first

@@ -105,22 +105,30 @@ def check(msg, cond):
         failures.append(msg)
 
 
-def qlines(out, token=""):
-    """Every ``HYBMESH_MB_QUALITY<token>`` line, as dicts of floats.
+def qlines(out, token="", prefix="HYBMESH_MB_QUALITY"):
+    """Every ``<prefix><token>`` line, as dicts of floats.
 
-    THE ONE PARSER for that line, imported by the O-grid, C-grid and smoothing
-    gates rather than copied into them — the same rule ``golden_mesh.py`` follows
-    when it imports the topology writer from a surface test instead of keeping a
-    second copy. It was four copies before #81, and that ticket had to make the
-    identical one-character fix in two of them, which is the evidence.
+    THE ONE PARSER for a quality line, imported by the O-grid, C-grid, smoothing,
+    multi-block shape and hybrid shape gates rather than copied into them — the
+    same rule ``golden_mesh.py`` follows when it imports the topology writer from a
+    surface test instead of keeping a second copy. It was four copies before #81,
+    and that ticket had to make the identical one-character fix in two of them,
+    which is the evidence.
 
     THE PREFIX IS MATCHED WITH ITS TRAILING SPACE, and that is the fix: a smoothed
     run also prints ``HYBMESH_MB_QUALITY_BEFORE`` (#81), whose ``cells=`` tokens
     parse perfectly well and whose numbers describe a mesh that was never
     exported. Without the space the two are indistinguishable to a reader that
     takes the first match.
+
+    ``prefix`` ARRIVED WITH #130's ``HYBMESH_HYBRID_QUALITY``, and it is a parameter
+    rather than a sixth copy for the reason above: the two generation paths print
+    two different quantities under two different names, and what they share is the
+    ``key=<float>`` SHAPE this function is the one reader of. Every token is
+    floated, on either line — which is what a ``shape_metric=<name>`` token would
+    break, and why the metric's name is in the key instead.
     """
-    want = "HYBMESH_MB_QUALITY" + token + " "
+    want = prefix + token + " "
     return [{k: float(v) for k, _, v in
              (tok.partition("=") for tok in line.split()[1:])}
             for line in out.splitlines() if line.startswith(want)]

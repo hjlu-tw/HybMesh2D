@@ -111,13 +111,13 @@ inline std::string gmshVersionFallback() {
 // two of them disagreeing about the same file. It is also what makes the numbers
 // outlive the process: a mesh opened three sessions later still carries them.
 //
-// `metric` NAMES the quantity, because the two generation paths will measure two
-// different things (`quad_midline_ratio` on multi-block's structured quads, and at
-// #130 `tri_edge_ratio` on the hybrid path's exported triangles) and a reader that
-// compares one against the other is comparing nothing. Only the first of those is
-// emitted today. An EMPTY metric writes no `quality` object at all, which is the
-// honest answer for the path that does not measure yet — as opposed to writing one
-// full of zeros.
+// `metric` NAMES the quantity, because the two generation paths measure two
+// different things (`quad_midline_ratio` on multi-block's structured quads since
+// #129, `tri_edge_ratio` on the hybrid path's exported triangles since #130) and a
+// reader that compares one against the other is comparing nothing. Both are
+// emitted today, so a sidecar that names neither is a third case and not a default.
+// An EMPTY metric writes no `quality` object at all, which is the honest answer for
+// a path that does not measure — as opposed to writing one full of zeros.
 //
 // A metric that IS named always writes the object, even when nothing could be
 // measured: then `cells` is 0 and the three figures are negative, which says "we
