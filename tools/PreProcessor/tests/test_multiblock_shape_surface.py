@@ -82,23 +82,39 @@ What this pins down:
      of two middles; p95 = nearest rank, ``ceil(0.95n)`` from 1). All four figures
      must match the binary's. Three surfaces agreeing proves one owner; a fourth
      implementation agreeing is what makes the owner's answer right.
- 13. WHAT THE C-GRID'S 3147.958 IS, measured rather than asserted — #140's whole
-     question. The worst cell is LOCATED (it touches the outlet plane and lies on
-     the wake cut) and its two midlines are named: the wake cut's last streamwise
-     interval over the first radial height off the cut. See the entry below.
+ 13. WHAT A LARGE MAX IS, measured rather than asserted — #140's whole question.
+     Run on BOTH cases that have one: the worst quad is found by check 12's own
+     measurement and its SHORT midline must be the run's `BL_INITIAL_THICKNESS`,
+     so the max is the quotient of a spacing the document stretches to and the
+     wall spacing it asks for. Running it on the O-grid as well as the C-grid is
+     what makes "the C-grid's is the same quotient as the O-grid's" an assertion
+     instead of half an assertion and half a sentence. The C-grid's cell is then
+     LOCATED — it touches the outlet plane and lies on the wake cut — because
+     unlike the O-grid's, which is one of 4608 congruent cells, it is a specific
+     cell and "the wake cut's last streamwise interval" has to be a reading.
+     What is NOT asserted anywhere: the stretching law behind 3.1436, and "a fix
+     would change the topology", which rests on injection D.
 
 WHY THE C-GRID'S MAX IS ARITHMETIC AND NOT A DEFECT, which is #140's acceptance
 criterion 3 in the form a gate can hold. Measured 2026-09-17 on the shipped case:
 
-    worst cell  corners (16.8564, ~0) (16.8564, -0.000999)
-                        (20.0000, -0.000999) (20.0000, ~0)
+    worst cell  corners (16.856430, -0.000000000) (16.856430, -0.000997212)
+                        (20.000000, -0.001000000) (20.000000,  0.000000000)
     long midline   3.143570   the LAST of the wake cut's 24 intervals: `wake`
                               declares `count` 25 and `ds_start` 0.005 over a
                               19-chord span (trailing edge x = 1 to outlet x = 20),
                               so the stretching law ends at 3.14
-    short midline  0.000999   the first radial interval off the cut, which
+    short midline  0.000998606
+                              the first radial interval off the cut, which
                               `e_out_up`/`e_out_lo` declare as a wall end and the
-                              run's `BL_INITIAL_THICKNESS 0.001` sizes
+                              run's `BL_INITIAL_THICKNESS 0.001` sizes, reproduced
+                              to 0.14%. It is the MEAN of the cell's two ends: the
+                              corner ON the outlet plane is a boundary node and
+                              sits at exactly the declared 0.001, while the one
+                              3.14 upstream has been pulled to 0.000997212 by the
+                              smoother. Neither corner offset IS this number, and
+                              a first draft of the block above pasted it into two
+                              corner slots as if it were
     ratio          3147.96    = 3.143570 / 0.000998606
 
 That is the O-grid's 32.77 = 0.0327 / 0.001 in the same shape, two orders larger
@@ -115,14 +131,17 @@ else touched — moves the max to 3003.344 and moves NO other case. A number tha
 tracks the wake's own count that way is the quotient claimed above; a defect in the
 radial law would not have cared.
 
-INJECTIONS, run by hand 2026-09-17 against this file and the shipped topology, each
-restored by CONTENT from a copy taken first (#131's lesson: a `git checkout` on a
-mixed tree is not a restore). All four bit:
+INJECTIONS, run by hand 2026-09-17 against this file and two shipped topologies,
+each restored by CONTENT from a copy taken first (#131's lesson: a `git checkout`
+on a mixed tree is not a restore). All six bit, and the counts below were RE-RUN
+after review widened check 13 and replaced the exact branch's tautology — an
+injection count measured against an earlier draft of the file it was injected into
+is a figure nothing in the tree supports:
 
-  A  the C-grid's pinned `max` moved 0.01%           -> 1 check: `cgrid: 11. the
+  A  the C-grid's pinned `max` moved 0.01%          -> 1 check: `cgrid: 11. the
      (3147.957636 -> 3148.272432)                       pinned max`, and nothing
                                                         else in the file
-  B  `reduce_ratios` interpolates p95 instead of     -> 2 checks: `hgrid: 12` and
+  B  `reduce_ratios` interpolates p95 instead of    -> 2 checks: `hgrid: 12` and
      taking the nearest rank                            `cgrid: 12`. NOT the
                                                         O-grid's: its four blocks
                                                         are congruent, so the two
@@ -135,13 +154,38 @@ mixed tree is not a restore). All four bit:
                                                         the reason the third is
                                                         immune rather than rounded
                                                         up to "it bit"
-  C  check 13 takes the LEAST-stretched cell         -> 5 checks, all of 13: the
-     instead of the worst                               ratio, both locators and
-                                                        both midline sentences
-  D  the shipped topology's wake cut declares        -> 4 checks, all `cgrid: 11`
-     `count` 26 instead of 25                           (the cell count and all
+  C  check 13 takes the LEAST-stretched cell        -> 8 checks, all of 13: both
+     instead of the worst                               cases' ratio, short midline
+                                                        and quotient, plus the
+                                                        C-grid's two locators
+  D  the shipped C-grid topology's wake cut         -> 4 checks, all `cgrid: 11`
+     declares `count` 26 instead of 25                  (the cell count and all
                                                         three figures), and no
-                                                        other case moved
+                                                        other case moved. This is
+                                                        also the ARITHMETIC's own
+                                                        negative control, above
+  E  the shipped SQUARE topology's east edge        -> 4 checks, and the point is
+     drops to `count` 11, which the mesher              WHICH: the case exits 8 and
+     REFUSES (opposite sides must agree)                `one_case` gives up, so this
+                                                        reaches the "every shipped
+                                                        case produced a report"
+                                                        guard and check 9's own
+                                                        scan — the two places a
+                                                        `or ""` fallback would have
+                                                        turned a dead case into a
+                                                        vacuous PASS. Review found
+                                                        that fallback; this is what
+                                                        proves it gone
+  F  the shipped SQUARE topology's two horizontal   -> 5 checks, all `square: 11`:
+     edges double to `count` 41, making every           the cell count, all three
+     cell 2:1                                           EXACT pins, and the sweeps-
+                                                        move-nothing control. The
+                                                        only injection that reaches
+                                                        the exact branch at all,
+                                                        and the reason it had to be
+                                                        a topology edit: nothing in
+                                                        a config perturbs a uniform
+                                                        rectangle's shape
 
 MEASURED 2026-09-17, at the shipped defaults (``MB_SMOOTH_ITERS`` 20). These are
 the values ``PINS`` carries, and they are a PIN rather than a record now:
@@ -191,11 +235,15 @@ BLIND SPOTS, named rather than papered over:
     gate; what #140 bought is that the movement cannot happen in SILENCE.
   * THE TWO CASES AT THE METRIC'S FLOOR HAVE NO NEGATIVE CONTROL, by construction
     rather than by omission. The square and the cavity are uniform rectangles, so
-    the smoother moves nothing on them and their pin's band has no width to
-    demonstrate — check 11 holds them to exact equality instead, and says so. What
-    is NOT demonstrated there is that a real change to those two cases would be
-    caught; the exactness is the argument, and it is an argument rather than a
-    measurement.
+    check 11 holds them to exact equality and there is no band to demonstrate the
+    width of. That branch's own premise IS measured — it runs them at
+    ``MB_SMOOTH_ITERS 0`` like every other case and asserts the figures do not move
+    at all — but what stays undemonstrated is the thing a control is for: that some
+    real change to those two cases WOULD be caught. Nothing in this tree perturbs a
+    uniform rectangle's shape without editing its topology, so that gap is real and
+    is not closed by the exactness. (The first draft skipped the run entirely and
+    asserted the condition the branch was selected by, a tautology over a constant;
+    review found it and the run replaced it.)
   * The sidecar is parsed for the ``mesh.quality`` object only. Whether every
     other key in it is still right is ``test_provenance_sidecar``'s subject, not
     this file's.
@@ -568,42 +616,61 @@ def one_case(tmp, name, config_name, blocks):
 
     # --- 11. THE PIN'S OWN NEGATIVE CONTROL ----------------------------------
     # The band has to be narrower than a real change to the mesh, and the cheapest
-    # real change this path has is the smoother. A case pinned at the metric's
-    # floor is a uniform rectangle the smoother does not move, so it gets exact
-    # equality above and no control here — said out loud rather than skipped.
-    if exact:
-        check(f"{name}: 11. no negative control is offered, because this case is "
-              f"pinned at the metric's floor by EXACT equality and its band has "
-              f"no width to demonstrate", all(pin[f] == 1.0 for f in FIGURES))
-        return out, stem2
+    # real change this path has is the smoother. BOTH BRANCHES RUN IT: a case at
+    # the metric's floor is a uniform rectangle the smoother has nothing to move,
+    # and the first draft stated that as a reason to skip the run and then asserted
+    # `all(pin[f] == 1.0)` — the condition the branch was already selected by, a
+    # tautology over a constant that no injection can reach. Review found it. The
+    # run is cheap and it turns the branch's own premise into a measurement.
     rc3, out3, _ = run(tmp, name + "_nosmooth", config_text + NO_SMOOTH)
     got3 = shape_of(quality(out3))
     check(f"{name}: 11. the same case at MB_SMOOTH_ITERS 0 runs (rc {rc3})",
           rc3 == 0 and got3 is not None)
     if got3 is None:
         return out, stem2
-    moved = {f: abs(got3[f] - pin[f]) / pin[f] for f in FIGURES}
-    check(f"{name}: 11. ...and MISSES the pin by more than {PIN_TOL:g} relative "
-          "(" + ", ".join(f"{f} {moved[f]:.2e}" for f in FIGURES) + "), so the "
-          "band is measured to be narrower than a real change to this mesh "
-          "rather than assumed to be",
-          all(m > PIN_TOL for m in moved.values()))
+    if exact:
+        # AGAINST THE SMOOTHED RUN, not against the pin: the sentence claims the
+        # SWEEPS moved nothing, and only a comparison of the two runs asserts that.
+        # Comparing the unsmoothed run against the pin would be true for the same
+        # reason check 11 above is and would leave the word "move" unasserted.
+        delta = {f: abs(got3[f] - got[f]) for f in FIGURES}
+        check(f"{name}: 11. ...and the SWEEPS MOVE IT NOT AT ALL ("
+              + ", ".join(f"{f} {delta[f]:.2e}" for f in FIGURES)
+              + "): it is a uniform rectangle they have nothing to straighten, "
+              "which is why this case's pin is exact and carries no negative "
+              "control. Measured, not argued",
+              all(d == 0.0 for d in delta.values()))
+    else:
+        moved = {f: abs(got3[f] - pin[f]) / pin[f] for f in FIGURES}
+        check(f"{name}: 11. ...and MISSES the pin by more than {PIN_TOL:g} "
+              "relative (" + ", ".join(f"{f} {moved[f]:.2e}" for f in FIGURES)
+              + "), so the band is measured to be narrower than a real change to "
+              "this mesh rather than assumed to be",
+              all(m > PIN_TOL for m in moved.values()))
     return out, stem2
 
 
-def cgrid_arithmetic(stem2, config_text, reported_max):
-    """Check 13: WHAT the C-grid's max IS, located and named.
+def worst_cell_arithmetic(name, stem2, config_text, reported_max):
+    """Check 13: WHAT a large max IS — the worst cell found, and its two midlines
+    named against the one number the config declares.
 
-    #140's question in the form a gate can hold. The worst cell is found by the
-    independent measurement check 12 already trusts, then LOCATED — it must touch
-    the outlet plane (the mesh's own largest x) and lie on the wake cut (every
-    corner within one first-cell height of it) — and its two midlines are compared
-    against the one number the config declares, `BL_INITIAL_THICKNESS`.
+    #140's question in the form a gate can hold, and run on BOTH cases whose max
+    is a large number: the O-grid's 32.77 and the C-grid's 3147.96. Running it on
+    both is what turns "the C-grid's is the same quotient as the O-grid's" from a
+    sentence into an assertion — the review that found this file's first draft
+    noted that the O-grid's half of that claim was asserted nowhere.
 
-    What this settles is the ticket's either/or: the figure is the quotient of two
-    spacings the DOCUMENT asks for, not a defect in the radial law. What it does
-    NOT do is re-derive the wake cut's stretching law; that arithmetic is in this
-    file's header, read off the topology by a person.
+    The worst cell is found by the independent measurement check 12 already
+    trusts, and its SHORT midline is compared against the run's
+    `BL_INITIAL_THICKNESS`. That is the whole arithmetic: a large max is the
+    quotient of a streamwise spacing the document stretches to and the wall
+    spacing the config asks for, so it is not a defect in the radial law.
+
+    WHAT THIS DOES NOT ASSERT, said here because the messages below must not claim
+    it: the wake cut's stretching law is not re-derived (3.1436 being the last of
+    24 intervals from `ds_start` 0.005 over 19 chords is read off the topology by a
+    person, in this file's header), and "a fix would change the topology, not the
+    mesher" rests on hand injection D, not on anything here.
     """
     pts, quads = quad_corners(stem2 + ".vtk")
     worst, lo, hi = None, 0.0, 0.0
@@ -611,42 +678,61 @@ def cgrid_arithmetic(stem2, config_text, reported_max):
         a, b = midlines(pts, q)
         if a > 0.0 and (worst is None or b / a > hi / lo):
             worst, lo, hi = q, a, b
-    check("13. the C-grid's worst quad is found by the independent measurement, "
+    # PRINT_EPS, NOT A RELATIVE BAND, for the same reason check 12 uses it — and
+    # this is the SECOND place that lesson had to land. `reported_max` is read back
+    # off the six-decimal machine line, so the recomputation can legitimately
+    # differ from it by half of the last printed decimal. At the C-grid's 3147.96
+    # that is 1.6e-10 relative and a 1e-9 relative band hid the mistake; at the
+    # O-GRID's 32.77 the same half-decimal is 1.5e-8 relative and the band went
+    # red on a figure that agreed to every digit it prints. Running this check on
+    # the second case is what exposed it.
+    check(f"13. {name}: the worst quad is found by the independent measurement, "
           f"and its ratio IS the reported max ({hi / lo:.6f} against "
-          f"{reported_max:.6f})", worst is not None and close(hi / lo, reported_max, 1e-9))
+          f"{reported_max:.6f})",
+          worst is not None and abs(hi / lo - reported_max) <= PRINT_EPS)
     if worst is None:
         return
-    corners = [pts[i] for i in worst]
-    out_x = max(p[0] for p in pts)
     want = [float(ln.split()[1]) for ln in config_text.splitlines()
             if ln.split()[:1] == ["BL_INITIAL_THICKNESS"]]
-    check("13. ...the shipped config declares BL_INITIAL_THICKNESS exactly once, "
-          f"so there is one number to compare the cell against ({want})",
-          len(want) == 1)
+    check(f"13. {name}: ...the shipped config declares BL_INITIAL_THICKNESS "
+          f"exactly once, so there is one number to compare the cell against "
+          f"({want})", len(want) == 1)
     if len(want) != 1:
         return
-    check(f"13. ...and that cell TOUCHES THE OUTLET PLANE (x = {out_x:g}, the "
-          f"mesh's own largest x), so it is the last cell on the wake",
+    check(f"13. {name}: ...its SHORT midline is that requested first-cell height "
+          f"({lo:.6f} against {want[0]:g}, {abs(lo - want[0]) / want[0]:.2%} off "
+          f"it), so the denominator is what the user asked for",
+          close(lo, want[0], 0.01))
+    check(f"13. {name}: ...so the max is the quotient of a spacing the document "
+          f"stretches to and the wall spacing it asks for: {hi:.6f} / {lo:.6f} = "
+          f"{hi / lo:.3f}, which is the reported max to the last digit it prints",
+          abs(hi / lo - reported_max) <= PRINT_EPS and close(lo, want[0], 0.01))
+    return worst, pts, lo, hi, want[0]
+
+
+def cgrid_location(worst, pts, lo, want):
+    """Check 13's C-grid half: WHERE that cell is.
+
+    The O-grid's worst cell is one of 4608 congruent ones and has no distinguished
+    place to be; the C-grid's is a specific cell — the last one on the wake cut, at
+    the outlet — and locating it is what makes "the wake cut's last streamwise
+    interval" a reading rather than a guess.
+    """
+    corners = [pts[i] for i in worst]
+    out_x = max(p[0] for p in pts)
+    check(f"13. cgrid: ...and that cell TOUCHES THE OUTLET PLANE (x = {out_x:g}, "
+          f"the mesh's own largest x), so it is the last cell on the wake",
           any(abs(p[0] - out_x) <= 1e-9 * out_x for p in corners))
     # THE BOUND IS THE DECLARED HEIGHT, not the cell's own short midline: the
     # corner ON the outlet sits at exactly the declared 0.001 while the one 3.14
     # upstream has been pulled to 0.000997 by the smoother, so the midline is the
     # MEAN of the two and is smaller than the larger corner. Measuring the corners
     # against the mean is what reddened this check in its first draft.
-    check(f"13. ...and LIES ON THE WAKE CUT: every corner is within the declared "
-          f"first-cell height of y = 0 (worst |y| = "
-          f"{max(abs(p[1]) for p in corners):.9f} against {want[0]:g})",
-          max(abs(p[1]) for p in corners) <= want[0] * 1.001)
-    check(f"13. ...its SHORT midline is that requested first-cell height "
-          f"({lo:.6f} against {want[0]:g}, {abs(lo - want[0]) / want[0]:.2%} off "
-          f"it), so the denominator is what the user asked for",
-          close(lo, want[0], 0.01))
-    check(f"13. ...so the max is ARITHMETIC and not a defect: {hi:.6f}, the wake "
-          f"cut's last streamwise interval at the outlet, over {lo:.6f}, the "
-          f"requested wall spacing = {hi / lo:.3f}. The O-grid's 32.77 is the same "
-          f"quotient (0.0327 / 0.001); this one is larger because the wake is 19 "
-          f"chords long. A fix would change the TOPOLOGY's wake count, not the "
-          f"mesher", hi > 1.0 and lo > 0.0 and close(hi / lo, reported_max, 1e-9))
+    check(f"13. cgrid: ...and LIES ON THE WAKE CUT: every corner is within the "
+          f"declared first-cell height of y = 0 (worst |y| = "
+          f"{max(abs(p[1]) for p in corners):.9f} against {want:g}, with the "
+          f"cell's own midline {lo:.9f})",
+          max(abs(p[1]) for p in corners) <= want * 1.001)
 
 
 def main() -> int:
@@ -662,12 +748,22 @@ def main() -> int:
         for name, config_name, blocks in CASES:
             outs[name], stems[name] = one_case(tmp, name, config_name, blocks)
 
+        # EVERY CASE PRODUCED AN OUTPUT TO READ, asserted before anything below
+        # reads one. `one_case` returns None when it gave up early, and a `or ""`
+        # in each reader downstream would turn every one of those into a check
+        # that scanned nothing and passed — a crash or a vacuous PASS where a
+        # named FAIL belongs, which is the shape this repo's own harness notes
+        # record. Everything after this point may index `outs`/`stems` freely.
+        missing = sorted(n for n in outs if not outs[n] or not stems[n])
+        check("every shipped case produced a report and a quads run for the "
+              f"checks below to read (missing: {missing})", not missing)
+
         # --- 9. a correct large number is not a failure ----------------------
         # Both extremes, off the runs already made rather than a third run of the
         # same case: #128's own headline 32.8 and the C-grid's 3148, which no line
         # of #128 mentions because its Further Notes never measured this case.
         for name, lo, hi in (("ogrid", 30.0, 35.0), ("cgrid", 3000.0, 3300.0)):
-            got = shape_of(quality(outs[name] or ""))
+            got = shape_of(quality(outs[name])) if outs[name] else None
             check(f"9. the shipped {name}'s max is in [{lo:g}, {hi:g}] — what the "
                   f"document asks for, not a defect — and the run still exits 0 "
                   f"(max {got['max'] if got else '?'})",
@@ -681,14 +777,27 @@ def main() -> int:
             check(f"9. ...and nothing in {name}'s report colours or grades it: "
                   "none of " + ", ".join(repr(w) for w in _GRADED)
                   + " sits on the Cell shape rows",
-                  not any(w in ln for ln in (outs[name] or "").splitlines()
-                          if "Cell shape" in ln or _ROW.match(ln)
-                          for w in _GRADED))
+                  outs[name] is not None
+                  and not any(w in ln for ln in outs[name].splitlines()
+                              if "Cell shape" in ln or _ROW.match(ln)
+                              for w in _GRADED))
 
-        # --- 13. what the C-grid's 3147.958 IS -------------------------------
-        if stems["cgrid"]:
-            cgrid_arithmetic(stems["cgrid"], shipped_config("multiblock_cgrid"),
-                             shape_of(quality(outs["cgrid"]))["max"])
+        # --- 13. what a large max IS, on BOTH cases that have one ------------
+        # The O-grid as well as the C-grid, so "the C-grid's is the same quotient
+        # as the O-grid's" is asserted rather than asserted about one half and
+        # claimed about the other.
+        for name, config_name in (("ogrid", "multiblock_ogrid"),
+                                  ("cgrid", "multiblock_cgrid")):
+            got = shape_of(quality(outs[name])) if outs[name] else None
+            if not stems[name] or got is None:
+                check(f"13. {name}: the case produced a quads mesh and a max to "
+                      "locate it against", False)
+                continue
+            found = worst_cell_arithmetic(name, stems[name],
+                                          shipped_config(config_name), got["max"])
+            if found and name == "cgrid":
+                worst, pts, lo, _hi, want = found
+                cgrid_location(worst, pts, lo, want)
 
         # --- 10. shape is not inversion --------------------------------------
         # The deliberately folded dart the quality gate owns. It exits 9 with

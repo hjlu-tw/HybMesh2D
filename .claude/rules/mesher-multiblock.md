@@ -208,10 +208,7 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
     the first radial interval the two outlet-plane edges declare as a wall end and
     `BL_INITIAL_THICKNESS 0.001` sizes. Both numbers are spacings the DOCUMENT asks for, so a fix
     would change the TOPOLOGY's wake count and not the mesher; the negative control is that a 26th
-    wake node moves the max to 3003.344 and moves no other case. #128 never measured this case —
-    its Further Notes measured the O-grid and the NACA case — so the batch's own instrument found
-    a figure two orders past its headline on a SHIPPED case and nobody looked. That is what #140's
-    pinning is for.
+    wake node moves the max to 3003.344 and moves no other case.
   - **EVERY SHIPPED CASE'S THREE FIGURES ARE PINNED, AND A PIN IS NOT A THRESHOLD** (#140). All
     five shipped multi-block configs run in `test_multiblock_shape_surface.py`, and each one's
     median / p95 / max is held against the day it was measured by a check whose label names the
@@ -220,7 +217,10 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
     (square, cavity — all three exactly 1.0) is exact, every other is `PIN_TOL` 1e-6 relative, and
     the toleranced ones carry a negative control proving the band is narrower than a real change
     (the same case at `MB_SMOOTH_ITERS 0`; the thinnest margin is the O-grid's max at 7.6x the
-    band, which is the number to quote rather than the C-grid's comfortable 1.4e-3).
+    band, which is the number to quote rather than the C-grid's comfortable 1.4e-3). The two at
+    the floor run that control too and assert the sweeps move them NOT AT ALL — the branch's own
+    premise measured rather than restated as the condition it was selected by.
+  Why: `docs/design_notes/mesher.md`, "THE SHIPPED C-GRID'S 3147.958 IS THE SAME ARITHMETIC".
   - **The `.provenance.json` sidecar gains `mesh.quality`** — `metric`, `cells`, `median`, `p95`,
     `max` — fed by the SAME report object the banner and the machine line read, so the three
     cannot disagree. It is the contract #131 and #132 read instead of recomputing.
@@ -228,7 +228,7 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
 - Gated by `tests/cpp/test_mb_quality.cpp` (14 groups, 79 checks),
   `tests/test_multiblock_quality_surface.py` and `tests/test_multiblock_shape_surface.py` (the
   shape figures on ALL FIVE shipped multi-block cases, pinned, through the real binary — 13
-  properties, 163 assertions, four hand injections dated in its own docstring). **The C++ gate's
+  properties, 170 assertions, six hand injections dated in its own docstring). **The C++ gate's
   injections are HAND runs, dated in that test's own docstring** — a C++ test cannot mutate the
   implementation it linked against, and that distinction must not be blurred. Permanent instead are two **negative
   controls** computing an injection's own premise (check 6 the bow-tie's +0.5 area, check 2 its

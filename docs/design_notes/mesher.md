@@ -544,8 +544,8 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   ignore colour. `test_multiblock_quality_gate.py` gains no bar on these figures,
   deliberately — and the cost is named in the surface gate's own blind spots: a
   regression that doubled every mesh's stretch would be caught by nobody.
-- **THE SHIPPED C-GRID'S 3147.958 IS THE SAME ARITHMETIC, AND #129 NEVER LOOKED AT
-  IT** (#140). The instrument shipped against two of the five shipped multi-block
+- **THE SHIPPED C-GRID'S 3147.958 IS THE SAME ARITHMETIC, AND NEITHER #128 NOR
+  #129 LOOKED AT IT** (#140). The instrument shipped against two of the five shipped multi-block
   configs — the O-grid and the H-grid — and `quad_midline_ratio` appeared in no
   other surface gate, so the case with by far the worst figures went unmeasured by
   anything that runs: the shipped C-grid reports **median 4.832007, p95 148.005672,
@@ -556,13 +556,18 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   nobody read it.
 
   **It is arithmetic, and the same quotient the O-grid's is.** The worst cell is
-  the LAST cell on the wake cut, at the outlet plane — corners `(16.8564, ~0)`,
-  `(16.8564, -0.000999)`, `(20.0, -0.001)`, `(20.0, ~0)`:
+  the LAST cell on the wake cut, at the outlet plane — corners `(16.856430, -0.0)`,
+  `(16.856430, -0.000997212)`, `(20.0, -0.001)`, `(20.0, 0.0)`. Those two y offsets
+  DIFFER, and neither is the short midline below: the corner on the outlet plane is
+  a boundary node sitting at exactly the declared 0.001 while the one 3.14 upstream
+  has been pulled to 0.000997212 by the smoother, so the midline is their mean. A
+  first draft of this block pasted the midline into two corner slots as if it were
+  a coordinate, in this file and in the gate's docstring, and review re-measured it:
 
   | | value | what it is |
   |---|---|---|
   | long midline | **3.143570** | the last of the wake cut's 24 intervals. `wake` declares `count` 25 and `ds_start` 0.005 over a 19-chord span (trailing edge x = 1 to outlet x = 20), so the stretching law ends at 3.14 |
-  | short midline | **0.000998606** | the first radial interval off the cut, which `e_out_up` / `e_out_lo` declare as a wall end and the run's `BL_INITIAL_THICKNESS 0.001` sizes — reproduced to 0.14% |
+  | short midline | **0.000998606** | the first radial interval off the cut, which `e_out_up` / `e_out_lo` declare as a wall end and the run's `BL_INITIAL_THICKNESS 0.001` sizes — reproduced to 0.14%, and the mean of the two unequal corner offsets above |
   | ratio | **3147.958** | 3.143570 / 0.000998606 |
 
   The O-grid's 32.77 = 0.0327 / 0.001 is that shape exactly; this one is two orders
@@ -587,7 +592,10 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   and the cavity, all three figures exactly 1.0) is held to exact equality, since a
   band below 1.0 is unreachable and one above it would be slack for nothing; every
   other case is held to `PIN_TOL` 1e-6 relative and carries a NEGATIVE CONTROL —
-  the same case at `MB_SMOOTH_ITERS 0` must miss the pin by more than that. **The
+  the same case at `MB_SMOOTH_ITERS 0` must miss the pin by more than that. The two
+  at the floor run that control TOO, asserting the sweeps move them not at all —
+  the branch's own premise measured, after a first draft asserted the condition the
+  branch was selected by and review named the tautology. **The
   margin is thinner than the obvious example suggests and is recorded with the
   number that is thinnest**: of the nine movements that control measures, the
   smallest is the O-grid's max at **7.60e-6**, only 7.6x the band; the C-grid's max
@@ -603,7 +611,25 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   metric agreeing is evidence the owner's answer is right. It is compared at the
   machine line's own resolution — six DECIMALS, so an ABSOLUTE 5e-7 — and the first
   draft compared at 1e-9 relative and went red on the three cases whose figures are
-  not exactly 1.0, naming a disagreement that was the `printf`.
+  not exactly 1.0, naming a disagreement that was the `printf`. **THAT LESSON HAD
+  TO LAND TWICE**: check 13 was written with the same 1e-9 relative band, and it
+  passed — because at the C-grid's 3147.96 half of the last printed decimal is
+  1.6e-10 relative and fits. Widening the check to the O-grid, where the same half
+  decimal is 1.5e-8 relative, is what reddened it. A band that is only wide enough
+  for the largest figure it happens to be run on is a defect waiting for a second
+  case.
+- **THE ARITHMETIC IS ASSERTED ON BOTH CASES, because half of it was a sentence.**
+  Check 13's first draft located the C-grid's worst cell and then said, in the
+  message of an assert that repeated the previous one, "the O-grid's 32.77 is the
+  same quotient (0.0327 / 0.001)" — a claim nothing in the file measured (check 9
+  only bounds the O-grid's max to [30, 35]). It now runs on both: each case's worst
+  quad is found by check 12's own measurement and its SHORT midline must be the
+  run's `BL_INITIAL_THICKNESS`, which is the whole arithmetic. Only the C-grid's
+  cell is then LOCATED — on the outlet plane and on the wake cut — because the
+  O-grid's is one of 4608 congruent cells with no distinguished place to be. What
+  is still asserted NOWHERE, and is said in the gate's blind spots rather than left
+  in an assert's prose: the stretching law behind 3.1436, and "a fix would change
+  the topology", which rests on injection D.
 - **THE SIDECAR IS THE CONTRACT, and it is what the GUI (#131), the pipeline
   runner and the batch queue (#132) will READ rather than recompute.**
   `"mesh": { "nodes": …, "elements": …, "quality": { "metric": …, "cells": …,
@@ -640,10 +666,13 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   `tests/cpp/test_mb_quality.cpp` (9, 9b, 9c, 9d, 9e), and by
   `tools/PreProcessor/tests/test_multiblock_shape_surface.py` (#129's 10 properties
   and 51 assertions on the two shipped cases it read from disk; **13 properties and
-  163 assertions on all five since #140**, whose own four injections are hand runs
-  dated in that file's docstring — three into the gate, one into the shipped
-  topology, all four biting, and injection B recorded with the reason the O-grid is
-  IMMUNE to it rather than rounded up to "it bit").
+  170 assertions on all five since #140**, whose own six injections are hand runs
+  dated in that file's docstring — three into the gate, three into two shipped
+  topologies, all six biting. Two are worth knowing about from here: B is recorded
+  with the reason the O-grid is IMMUNE to it rather than rounded up to "it bit",
+  and F has to be a topology edit because nothing in a config perturbs a uniform
+  rectangle's shape, which makes it the only injection that reaches the exact-pin
+  branch at all).
   **The injections are HAND runs, dated 2026-09-17 in the two C++ tests' own
   docstrings** with the checks each broke, for the reason #51's entry gives. Two
   are worth repeating here beside `K` above. `J` — the four structured corners read
