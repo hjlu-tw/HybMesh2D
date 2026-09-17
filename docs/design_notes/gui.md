@@ -1824,7 +1824,7 @@ positions rather than trusting the reading, because "it is obviously after it" i
 a later refactor invalidates silently.
 
 **Injections, run by hand 2026-09-17 against `tests/test_headless_shape_report.py`** (the harness
-lived in a scratchpad and is not in the tree; each was scored by EXIT CODE first). Seven, all of
+lived in a scratchpad and is not in the tree; each was scored by EXIT CODE first). Eight, all of
 which bit; the list and its dating live in that file's own docstring and are not counted twice
 here. **Two of them corrected the claims written for them before they ran**, which is the reason
 for running them at all: returning `""` for a missing sidecar was predicted to leave the batch
@@ -1834,7 +1834,16 @@ shown; and a view that reformats the report was predicted to redden the row-equa
 did not, because that check compares the job's string against the log line and never reads the
 table. A third bit somewhere unplanned: the runner reading the sidecar itself also reddened the
 ORDERING check, whose anchor is the report's exact spelling, so that check now says when an anchor
-has gone missing instead of reporting a rewording as an ordering defect.
+has gone missing instead of reporting a rewording as an ordering defect. The eighth was added
+after review, for the panel-versus-report check the review asked for, and is NOT the isolated
+probe of it that it was meant to be — formatting at `.2f` reddens four checks across three
+sections, because two of them rebuild the expected string from the sidecar and carry the precision
+with it. Recorded as it ran. **Two harness hazards cost real work in this round and are worth more
+than the injections**: restoring by `git checkout` reverted UNCOMMITTED edits in the same files, in
+the middle of acting on a review (the rule since #131 is commit first, and it was not followed);
+and a same-SIZE, same-second restore of `mesh_shape_stats.py` was ignored by this platform's
+bytecode cache, so the file on disk was correct while the gate went on failing until it was
+`touch`ed — the trap this repo has recorded before and hit again.
 
 **Named blind spots.**
 - **The batch column inherits #131's staleness hole and widens the window.** The sidecar is trusted

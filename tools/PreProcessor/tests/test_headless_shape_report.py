@@ -46,7 +46,13 @@ What this pins down:
 Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
 automated (the harness lived in a scratchpad and is not in the tree). Each was
 scored by EXIT CODE first, because a mutation that crashes the gate prints zero
-FAIL lines and would otherwise read as inert. Seven, all of which bit:
+FAIL lines and would otherwise read as inert. **Two harness hazards bit during
+this run and are recorded because they cost real work**: restoring by
+`git checkout` reverted UNCOMMITTED edits in the same files (commit first, as
+`.claude/rules` has said since #131), and a same-SIZE, same-second restore of
+`mesh_shape_stats.py` was ignored by this platform's bytecode cache — the file on
+disk was correct and the gate went on failing until it was `touch`ed. Eight, all
+of which bit:
 
   a. `format_shape_report` renders an unmeasured summary as numbers
      -> red: 1 (`not measured`) and 1 (neither `0.000` nor the sentinel)
@@ -68,6 +74,13 @@ FAIL lines and would otherwise read as inert. Seven, all of which bit:
      spelling, which this mutation replaces. Honest but coupled, so that check now
      says when an anchor went MISSING rather than reporting it as an ordering
      defect.
+  h. the report formats at `.2f` -> red: 1's precision check, 7, and BOTH of 5's
+     "the figures are the ones that run PUBLISHED" checks — which rebuild the
+     expected string from the sidecar JSON, so they carry the precision too. NOT
+     an isolated probe of 7, and said so rather than claimed as one; what 7 adds
+     over them is that it compares the PANEL against the report and would fire on
+     a change to either side alone. (a) reddens 7 as well, for the unmeasured
+     wording.
 
 Run:  python3 tools/PreProcessor/tests/test_headless_shape_report.py
 Section 5 skips cleanly if ./build/HybMesh2D has not been built.
