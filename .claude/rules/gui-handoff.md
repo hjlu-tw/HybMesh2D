@@ -132,8 +132,9 @@ parent #128). The mesher measures cell shape and publishes median / p95 / max on
 the run banner, a `HYBMESH_*` machine line, and `mesh.quality` in the `.provenance.json` sidecar
 beside the mesh (`include/Provenance.hpp::MeshQuality`). The panel displays THAT sidecar. Until
 #131 it computed its own per-cell aspect ratio and showed min / max / mean, so one mesh had two
-descriptions under two DEFINITIONS — the shipped O-grid's sidecar reports a quad midline ratio over
-4608 structured quads, and the file on disk holds 9216 triangles.
+descriptions under two DEFINITIONS — measured 2026-09-17 on the shipped `config/multiblock_ogrid.dat`
+at the shipped defaults, its sidecar reports a quad midline ratio over 4608 STRUCTURED quads while
+the file on disk holds 9216 triangles.
 - **No sidecar is a BLANK, and there is no fallback computation.** A mesh made before this work or
   by another tool shows `—`. Computing one here would be the second implementation returning, in
   its most dangerous form: invisible at the point of reading.
@@ -146,15 +147,19 @@ descriptions under two DEFINITIONS — the shipped O-grid's sidecar reports a qu
 - **The sidecar is found through `case_sources.mesh_provenance_paths`** — the lookup the case
   export already stages provenance with. No second path convention; the reader spells no sidecar
   name in its own code, and the gate checks that by AST.
-- **No colour coding and no threshold on these rows.** `max = 32.8` on the shipped O-grid is a
-  correct number, and a red one would train the user to ignore the colour.
+- **No colour coding and no threshold on these rows.** That O-grid's `quad_midline_ratio` max of
+  32.8 is its wall layer and is a CORRECT number, and a red one would train the user to ignore the
+  colour.
 - **The client-side per-cell arrays were DEMOTED, not deleted.** `get_element_aspect_ratios()` is
   the Quality (Aspect Ratio) colour map's input and is built where it draws
   (`views/mesh_canvas_fills_mixin.py`, unchanged); `workers/mesh_stats_run.py` stopped computing it
   because nothing displays it any more. **Skewness is untouched** and still client-side.
-Gated by `tests/test_mesh_shape_panel.py` (10 groups, a negative control that HAS computable
-per-cell shape and still blanks, and a leg that runs the real binary on the shipped O-grid so the
-reader and the C++ writer cannot drift; 8 hand injections dated in its own docstring).
+Gated by `tests/test_mesh_shape_panel.py`: a negative control that HAS computable per-cell shape
+and still blanks, an allow-list over the whole GUI package for the per-cell array's two permitted
+homes, a colour-map comparison by BRUSH COLOUR over a fixture with one cell in each quality bucket,
+and a leg that runs the real binary on the shipped O-grid so the reader and the C++ writer cannot
+drift. Its hand injections are enumerated and dated in its own docstring; no count of them is
+restated here, because a second home for a count is where one goes stale.
 
 **A re-save of the geometry must not throw the Mesh-stage edits away, and the fix is a MODEL FIELD
 rather than a wrapper around the subprocess.** Both halves of a per-segment BC live in the `.meta` —

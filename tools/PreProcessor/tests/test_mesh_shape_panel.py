@@ -27,15 +27,20 @@ What this pins down:
      its sidecar removed shows `—`, while its client-side per-cell array is
      non-empty and would have produced numbers. That is the accepted regression,
      visible rather than papered over.
-  7. NOTHING IN THE PANEL COMPUTES THE SUMMARY. Statically: no panel module
-     touches `get_element_aspect_ratios`, and the reader imports no mesh model —
-     a fallback computation would be the second implementation coming back.
-  8. THE COLOUR MAP IS UNTOUCHED, in both cases. Quality (Aspect Ratio) shading
-     is rebuilt from the per-cell array, with and without a sidecar, and produces
-     the same fills — the per-cell arrays were demoted to a rendering input, not
-     taken away.
+  7. NOTHING COMPUTES THE SUMMARY A SECOND TIME. Statically, over the WHOLE GUI
+     package rather than over the panels directory: `get_element_aspect_ratios`
+     has exactly two homes — the model that defines it and the colour map that is
+     now its only consumer — and the reader imports no mesh model. A fallback
+     computation is the second implementation coming back wherever it is written.
+  8. THE COLOUR MAP IS UNTOUCHED, in both cases. The fixture puts one cell in
+     each of the four quality buckets, and the shading is compared by BRUSH
+     COLOUR with and without a sidecar — the per-cell arrays were demoted to a
+     rendering input, not taken away.
   9. Skewness is untouched by this ticket: its client-side min / max / mean rows
      still populate.
+ 11. AN UNRECOGNISED METRIC still displays, under its own name, and KEEPS the
+     tooltip explaining what these rows are — the one case that could otherwise
+     reach a user with a number and no way to find out what it measures.
  10. AGAINST THE REAL BINARY (skipped without a build): a shipped MESH_MODE 1
      case is run, and the panel fed the mesh it produced displays that run's own
      sidecar figures. This is what a hand-written fixture cannot prove — that the
@@ -44,7 +49,10 @@ What this pins down:
 Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
 automated — the harness lived in a scratchpad and is not in the tree. Each was
 scored by EXIT CODE first, because a mutation that crashes the gate prints zero
-FAIL lines and would otherwise read as inert. Eight, all of which bit:
+FAIL lines and would otherwise read as inert. Eleven, all of which bit — the last
+four were added after a review round that found checks 7 and 8 weaker than their
+own labels, and h's original form stopped compiling when the fix landed, which is
+why it is stated in its CURRENT shape:
 
   a. the panel falls back to computing the summary when there is no sidecar
      -> red: 6 (the blank) and 7 (the static scan finds the call)
@@ -57,7 +65,14 @@ FAIL lines and would otherwise read as inert. Eight, all of which bit:
   e. the figures are shown at a different precision -> red: 5 and 10
   f. the `quality_aspect` branch of the fills mixin is disabled -> red: 8
   g. `measured` returns True unconditionally -> red: three 4s
-  h. the shape labels are dropped from the panel's clear list -> red: 6's last
+  h. the blank leaves the metric row showing the last mesh's metric -> red: both
+     of 6's blanking checks
+  i. the clear blanks the four labels in place instead of routing through
+     `_apply_shape_summary(None)`, leaving the tooltip naming the cleared mesh's
+     sidecar -> red: 6's tooltip check
+  j. an unknown metric drops `SHAPE_METRIC_TIP` from the tooltip -> red: two 11s
+  k. a second client-side computation appears OUTSIDE `views/panels/` -> red: 7
+     (the check the first version of this file would have let through)
 
 Run:  python3 tools/PreProcessor/tests/test_mesh_shape_panel.py
 Check 10 skips cleanly if ./build/HybMesh2D has not been built.
@@ -103,22 +118,37 @@ from app.services import mesh_shape_stats  # noqa: E402
 TMP = tempfile.mkdtemp(prefix="hybmesh_shape_panel_")
 
 # A mesh with real cells, so the "no sidecar" checks below have something a
-# client-side computation COULD have answered with. Two triangles of a unit
-# square: their edge ratio is sqrt(2), which is nothing like the figures the
-# fixture sidecar carries, so a fallback computation could not pass by accident.
+# client-side computation COULD have answered with — and one that lands a cell in
+# EACH of the colour map's four aspect-ratio buckets (<=1.25, <=1.8, <=2.5, and
+# above), so check 8's comparison is over four distinct fills rather than over one.
+# The four measure 1.000, 1.414, 2.236 and 8.062 — one per bucket — and their
+# longest/shortest edge ratios are nothing like the figures the fixture sidecar
+# carries — a fallback computation could not pass any check here by accident.
 VTK = """# vtk DataFile Version 3.0
 fixture
 ASCII
 DATASET UNSTRUCTURED_GRID
-POINTS 4 float
+POINTS 12 float
 0.0 0.0 0.0
 1.0 0.0 0.0
-1.0 1.0 0.0
-0.0 1.0 0.0
-CELLS 2 8
+0.5 0.866 0.0
+2.0 0.0 0.0
+4.0 0.0 0.0
+2.0 2.0 0.0
+5.0 0.0 0.0
+7.0 0.0 0.0
+5.0 1.0 0.0
+9.0 0.0 0.0
+17.0 0.0 0.0
+9.0 1.0 0.0
+CELLS 4 16
 3 0 1 2
-3 0 2 3
-CELL_TYPES 2
+3 3 4 5
+3 6 7 8
+3 9 10 11
+CELL_TYPES 4
+5
+5
 5
 5
 """
@@ -237,7 +267,8 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication(sys.argv)  # noqa: F841
 from app.models.vtk_mesh import VTKMesh  # noqa: E402
-from app.views.panels.mesh_stats_panel import MeshStatsPanel  # noqa: E402
+from app.views.panels.mesh_stats_panel import (  # noqa: E402
+    SHAPE_METRIC_TIP, MeshStatsPanel)
 
 panel = MeshStatsPanel()
 mesh = VTKMesh.from_file(mesh_measured)
@@ -262,7 +293,7 @@ check(panel.sk_min_label.text() not in ("—", "computing…")
 mesh_blank_path = case("blank", None, sidecar=False)
 mesh_blank = VTKMesh.from_file(mesh_blank_path)
 ratios = mesh_blank.get_element_aspect_ratios()
-check(len(ratios) == 2 and float(ratios.max()) > 1.4,
+check(len(ratios) == 4 and float(ratios.max()) > 1.4,
       f"6. the negative control HAS computable per-cell shape ({len(ratios)} cells, "
       f"max {float(ratios.max()):.3f}) — a fallback would have had numbers to show")
 panel.update_stats(mesh_blank, mesh_blank_path)
@@ -280,24 +311,65 @@ check(panel.shape_median_label.text() == "not measured"
 check("not measured" in panel.shape_metric_label.text(),
       "4. ...and the metric row says so too")
 
-# A cleared panel blanks them rather than leaving the last mesh's numbers.
+# A cleared panel blanks them rather than leaving the last mesh's numbers —
+# TOOLTIP INCLUDED. The rows and the tooltip are cleared by one verb because
+# blanking the four labels in place left the metric row pointing at the previous
+# mesh's sidecar path under a row reading "—".
 panel.update_stats(mesh, mesh_measured)
+_measured_tip = panel.shape_metric_label.toolTip()
 panel.update_stats(None)
 check(panel.shape_metric_label.text() == "—"
       and panel.shape_median_label.text() == "—",
       "6. clearing the panel blanks the shape rows")
+_side = mesh_shape_stats.sidecar_for(mesh_measured)
+check(_side and _side in _measured_tip
+      and _side not in panel.shape_metric_label.toolTip(),
+      "6. ...and drops the cleared mesh's SIDECAR path from the tooltip, which it "
+      "really was carrying a moment before (the mesh path is not what the tooltip "
+      "names, and asserting on that one would pass for the wrong reason)")
 
-# ── 7. nothing in the panel computes the summary ──────────────────────────
-_panels_dir = os.path.join(_GUI, "app", "views", "panels")
-_offenders = []
-for fn in sorted(os.listdir(_panels_dir)):
-    if not fn.endswith(".py"):
-        continue
-    with open(os.path.join(_panels_dir, fn), encoding="utf-8") as fh:
-        if "get_element_aspect_ratios" in fh.read():
-            _offenders.append(fn)
-check(not _offenders,
-      f"7. no panel module computes per-cell aspect ratio ({_offenders or 'none'})")
+# ── 11. an UNKNOWN metric keeps the explanation ───────────────────────────
+# A metric this GUI has no gloss for is the one case that can reach a user
+# unannotated, so it is exactly where the base tooltip must survive.
+mesh_unknown = case("unknown_metric",
+                    '{ "metric": "some_future_ratio", "cells": 7, "median": 1.2, '
+                    '"p95": 1.4, "max": 2.0 }')
+panel.update_stats(VTKMesh.from_file(mesh_unknown), mesh_unknown)
+check(panel.shape_metric_label.text().startswith("some_future_ratio")
+      and panel.shape_median_label.text() == "1.200",
+      "11. an unrecognised metric is still displayed, under its own name")
+check(SHAPE_METRIC_TIP in panel.shape_metric_label.toolTip(),
+      "11. ...and the tooltip still explains what these rows are")
+panel.update_stats(mesh, mesh_measured)
+check(SHAPE_METRIC_TIP in panel.shape_metric_label.toolTip()
+      and mesh_shape_stats.METRIC_MEANING["tri_edge_ratio"]
+      in panel.shape_metric_label.toolTip(),
+      "11. a KNOWN metric carries both the gloss and the explanation")
+
+# ── 7. nothing computes the summary a second time ─────────────────────────
+# An ALLOW-LIST over the whole GUI package, not a scan of the panels directory:
+# the criterion is that no client-side fallback exists anywhere, and the first
+# version of this check would have passed a fallback added in a controller, a
+# service or a canvas mixin. Two files may name the per-cell array — the model
+# that defines it, and the colour map that is now its only consumer. A third is
+# the second implementation coming back, wherever it is written.
+_ALLOWED_ASPECT_CALLERS = {
+    "app/models/vtk_mesh.py",              # defines it
+    "app/views/mesh_canvas_fills_mixin.py",  # the Quality (Aspect Ratio) colour map
+}
+_callers = set()
+for dirpath, _dirs, files in os.walk(os.path.join(_GUI, "app")):
+    for fn in files:
+        if not fn.endswith(".py"):
+            continue
+        full = os.path.join(dirpath, fn)
+        with open(full, encoding="utf-8") as fh:
+            if "get_element_aspect_ratios" in fh.read():
+                _callers.add(os.path.relpath(full, _GUI).replace(os.sep, "/"))
+check(_callers == _ALLOWED_ASPECT_CALLERS,
+      f"7. the per-cell aspect array has exactly its two allowed homes "
+      f"(unexpected: {sorted(_callers - _ALLOWED_ASPECT_CALLERS) or 'none'}; "
+      f"missing: {sorted(_ALLOWED_ASPECT_CALLERS - _callers) or 'none'})")
 check("vtk_mesh" not in _src and "numpy" not in _src,
       "7. the reader imports no mesh model and no array library — it reads, it "
       "does not measure")
@@ -311,11 +383,17 @@ fills = {}
 for tag, path in (("with sidecar", mesh_measured), ("without", mesh_blank_path)):
     mcv.render_mesh(VTKMesh.from_file(path))
     mcv.set_color_mode("quality_aspect")
-    fills[tag] = len(mcv.filled_items)
-check(fills["with sidecar"] > 0 and fills["without"] > 0,
-      f"8. Quality (Aspect Ratio) shading still builds fills in both cases ({fills})")
+    # The BRUSH COLOURS, not the item count: the fixture puts one cell in each of
+    # the four quality buckets, so this is a comparison of which cell was shaded
+    # how. A count alone would have been 1 == 1 on a one-bucket mesh and could not
+    # have shown anything about the shading at all.
+    fills[tag] = sorted(it.brush().color().name() for it in mcv.filled_items)
+check(len(fills["with sidecar"]) == 4 and len(set(fills["with sidecar"])) == 4,
+      f"8. Quality (Aspect Ratio) shading still fills all four buckets "
+      f"({fills['with sidecar']})")
 check(fills["with sidecar"] == fills["without"],
-      "8. ...identically — the sidecar is a summary source, not a rendering input")
+      "8. ...and colours them identically with and without a sidecar — the sidecar "
+      "is a summary source, not a rendering input")
 _modes = []
 panel.color_mode_changed.connect(lambda m: _modes.append(m))
 panel.color_mode_combo.setCurrentText("Quality (Aspect Ratio)")

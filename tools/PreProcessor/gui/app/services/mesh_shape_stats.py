@@ -68,6 +68,9 @@ class ShapeSummary:
 
     def __init__(self, metric: str, cells: int, median: float, p95: float,
                  maximum: float, source: str = ""):
+        # `maximum` rather than `max`: the ATTRIBUTE is `max`, matching the
+        # sidecar's own key, and a parameter of that name would shadow the
+        # builtin this class's own `measured` calls.
         self.metric = metric
         self.cells = cells
         self.median = median
@@ -102,7 +105,7 @@ def sidecar_for(mesh_path: str) -> str:
     return ""
 
 
-def read_shape_summary(mesh_path: str):
+def read_shape_summary(mesh_path: str) -> ShapeSummary | None:
     """The mesh's shape summary, or ``None`` when there is none to read.
 
     ``None`` covers every way the numbers can be absent — no sidecar, an

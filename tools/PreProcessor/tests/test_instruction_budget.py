@@ -433,7 +433,9 @@ Known remaining blind spots, stated rather than pretended away:
     ("anywhere near its 60,000 budget"), which check 7 does not read because that file is
     not an instruction file and states the number as an aside rather than as a figure:
       - The two tripwire rows that count their own globs' files ("24 files, verified",
-        "8 files, verified"). Derivable, and left out for one reason: their INPUTS are GUI
+        "10 files, verified" -- 8 until #131 added two globs to `gui-handoff.md`, and this
+        quotation of it went stale in that same commit, INSIDE the gate that polices the
+        shape; a review axis caught it). Derivable, and left out for one reason: their INPUTS are GUI
         source files, so a stale figure there is left by a commit that never opens an
         instruction file, and gating it would put a red gate in front of an author who
         changed nothing self-describing. That is `ruff.toml`'s permanently-red gate
@@ -489,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 50,194 / 47,008 / 45,018 / 38,862 / 25,369 / 24,425 / 16,185 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 50,194 / 47,008 / 45,018 / 38,862 / 25,369 / 24,425 / 16,578 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 9,806 / 12,992 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 14,982 / 21,138 / 34,631 / 35,575 / 43,815 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
+    eight, which have 14,982 / 21,138 / 34,631 / 35,575 / 43,422 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a

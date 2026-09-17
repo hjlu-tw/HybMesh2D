@@ -106,8 +106,10 @@ class MeshStatsPanel(CollapsibleSection):
 
         # Cell shape, READ from the mesh's provenance sidecar (issue #131): the
         # mesher measured these and this panel quotes them. No colour coding —
-        # aspect_max = 32.8 on a boundary-layer mesh is a correct number, and a
-        # red one here would train the user to ignore the colour.
+        # the shipped O-grid's `quad_midline_ratio` max of 32.8 (its wall layer,
+        # measured 2026-09-17) is a CORRECT number, and a red one here would
+        # train the user to ignore the colour. The metric is named because these
+        # rows are not aspect ratio: see SHAPE_METRIC_TIP.
         self.shape_metric_label = QLabel("—")
         self.shape_metric_label.setStyleSheet("color: #dde6ff;")
         self.shape_metric_label.setWordWrap(True)
@@ -223,10 +225,12 @@ class MeshStatsPanel(CollapsibleSection):
         if not mesh or len(mesh.points) == 0:
             for lbl in (self.vrt_label, self.cel_label, self.tri_label,
                         self.quad_label, self.poly_label, self.bounds_label,
-                        self.shape_metric_label, self.shape_median_label,
-                        self.shape_p95_label, self.shape_max_label,
                         self.sk_min_label, self.sk_max_label, self.sk_mean_label):
                 lbl.setText("—")
+            # Through the same verb the no-sidecar case uses, never by blanking
+            # the four labels here: that left the metric row's TOOLTIP naming the
+            # PREVIOUS mesh's sidecar path under a row reading "—".
+            self._apply_shape_summary(None)
             return
 
         # Cheap, immediate stats.
@@ -306,9 +310,13 @@ class MeshStatsPanel(CollapsibleSection):
                 lbl.setText("—")
             self.shape_metric_label.setToolTip(SHAPE_METRIC_TIP)
             return
+        # SHAPE_METRIC_TIP always stays: a metric this GUI has no gloss for is
+        # exactly where a reader needs the explanation of what these rows are,
+        # and an unknown name is the one case that can reach a user unannotated.
         meaning = mesh_shape_stats.METRIC_MEANING.get(summary.metric, "")
         self.shape_metric_label.setToolTip(
-            f"{meaning}\n\nFrom {summary.source}" if meaning else f"From {summary.source}")
+            "\n\n".join(x for x in (meaning, SHAPE_METRIC_TIP,
+                                     f"From {summary.source}") if x))
         if summary.measured:
             self.shape_metric_label.setText(f"{summary.metric} ({summary.cells} cells)")
             self.shape_median_label.setText(f"{summary.median:.3f}")

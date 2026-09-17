@@ -1704,9 +1704,12 @@ exercise, so the panel is left with formatting only). The panel
 and publishes median / p95 / max on three surfaces — the run banner, a `HYBMESH_*` machine line and
 the `mesh.quality` object of the `.provenance.json` sidecar. Two producers describing one file is
 the defect; that the two used different DEFINITIONS is what made it unfixable by agreeing on a
-format. Measured on the shipped O-grid: the sidecar says `quad_midline_ratio`, median 1.846, p95
-23.662, max 32.768 over **4608 structured quads**, while the file on disk holds **9216 triangles**
-and nothing in the GUI can see a structured quad at all. The panel's own number for that mesh was
+format. Measured 2026-09-17, `./run.sh -conf config/multiblock_ogrid.dat` at the shipped defaults
+(`8eb5451`): the sidecar says `quad_midline_ratio`, median 1.846, p95 23.662, max 32.768 over
+**4608 structured quads**, while the file on disk holds **9216 triangles** and nothing in the GUI
+can see a structured quad at all. Those five figures are a DATED reading of one run, not a gated
+one — `test_instruction_budget.py` blind spot (g) is the entry that says why a figure of this kind
+stays out of `--sync`, and the gate re-derives the live ones from the binary instead. The panel's own number for that mesh was
 not a worse estimate of the mesher's; it was an answer to a different question. `#128`'s own
 headline is the other half — min / max / mean has no percentile, so one boundary-layer cell hides
 the shape of the other 99%.
@@ -1741,14 +1744,14 @@ the same time: nothing displayed it any more, and the canvas colour map
 
 **Injections, run by hand 2026-09-17 against `tests/test_mesh_shape_panel.py`** (the harness lives
 in a scratchpad, not in the tree, and each mutation was scored by EXIT CODE first — a crash reports
-zero FAIL lines and would otherwise read as inert). Eight, all of which bit, none inert:
-a panel fallback computation when the sidecar is missing (red: 6 and the static 7); formatting the
-negative figures as numbers (red: both 4s); the reader composing `<stem>.provenance.json` itself
-instead of calling `mesh_provenance_paths` (red: both 2s — the second spelling stops resolving AND
-the AST scan finds the literal); dropping the metric name from the row (red: 5 and the real-binary
-10); showing the figures at a different precision from the sidecar's (red: 5 and 10); disabling the
-`quality_aspect` branch of the fills mixin (red: 8); `measured` returning True unconditionally (red:
-three 4s); and dropping the shape labels from the panel's clear list (red: 6's last).
+zero FAIL lines and would otherwise read as inert). Eleven, all of which bit, none inert; the list
+and its dating live in that file's own docstring, and are not counted twice here. **The four added
+last are the interesting ones**, because they exist because of a review round rather than because
+of the implementation: two checks were found weaker than their own labels (see the blind spots
+below), and the mutations that would have walked through them are now what proves they do not.
+One of the original eight, "drop the shape labels from the panel's clear list", stopped COMPILING
+when the tooltip fix landed — the clear routes through one verb now — so it is recorded in its
+current shape rather than in the one that found the defect.
 
 **Named blind spots.**
 - **The sidecar is trusted because it is BESIDE the file, and nothing checks that it describes
@@ -1762,10 +1765,20 @@ three 4s); and dropping the shape labels from the panel's clear list (red: 6's l
 - **Only a path ending in a mesh the GUI loaded reaches this at all.** `update_stats` is called
   with `global_vtk_path` or the expected VTK path; a case wired to a STAR-CD triplet with no `.vtk`
   hands it `""` and blanks — correctly, but for the trivial reason rather than the measured one.
-- **The gate's colour-map leg proves the fills are still BUILT, not that they are still CORRECT.**
-  It counts `filled_items` with and without a sidecar and compares them; a mutation that recoloured
-  every cell identically wrong would pass it. The per-cell arithmetic has never had a gate here and
-  #131 did not add one — it is the rendering input the ticket explicitly leaves alone.
+- **The gate's colour-map leg proves the fills are still the SAME, not that they are RIGHT.** It
+  compares brush colours with and without a sidecar over a fixture holding one cell in each of the
+  four quality buckets, so a mutation that recoloured every cell identically wrong in both cases
+  would still pass. The per-cell arithmetic has never had a gate here and #131 did not add one — it
+  is the rendering input the ticket explicitly leaves alone. **Its first form was weaker than that
+  and its label said more than it checked**: two `len(filled_items)` counts over the SAME
+  two-triangle fixture, so the equality it called "identically" was `1 == 1` on one bucket. A
+  review axis found it; the fixture and the comparison both changed, which is the second time in
+  this ticket that a check's words outran its assert (the other is the next bullet).
+- **Check 7 was scoped to `views/panels/`, under a criterion about the whole GUI.** A fallback
+  computation added in a controller, a service or a canvas mixin would have passed it — the label
+  was honest ("no panel module") and narrower than the thing it was placed under. It is now an
+  allow-list over the whole package: `get_element_aspect_ratios` has exactly two homes, the model
+  that defines it and the colour map that consumes it, and a third fails wherever it is written.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
