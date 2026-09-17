@@ -55,10 +55,16 @@ _STATUS = {
 #: #132), which is why nothing here reformats it.
 _COLS = ("Case", "Source", "Status", "Time", "Detail", "Cell Shape")
 
-#: What an empty Cell Shape cell means, rather than an empty cell. A queued or
-#: failed case produced no mesh, and a blank in a column of numbers is read as a
-#: zero — which on this metric would read as a perfect mesh.
+#: What an empty Cell Shape cell means, rather than an empty cell. A blank in a
+#: column of numbers is read as a zero — which on this metric would read as a
+#: perfect mesh. It means "no figures for this run", NOT "no mesh": a case that
+#: meshed and then failed later shows it too, and its tooltip says so.
 _NO_SHAPE = "—"
+
+#: Named because the new column is referred to three times; the other indices in
+#: `update_row` are raw and are left as they were, since renumbering them is a
+#: change to code this ticket does not touch.
+_SHAPE_COL = _COLS.index("Cell Shape")
 
 
 class BatchDialog(QDialog):
@@ -101,7 +107,7 @@ class BatchDialog(QDialog):
         for c in (2, 3):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_SHAPE_COL, QHeaderView.ResizeMode.ResizeToContents)
         outer.addWidget(self.table, 1)
 
         # Collision warning, hidden until there is one. Always-present empty warning
@@ -251,7 +257,7 @@ class BatchDialog(QDialog):
                 item.setToolTip(job.error)
             if c == 2:
                 item.setForeground(QBrush(QColor(colour)))
-            if c == 5:
+            if c == _SHAPE_COL:
                 item.setToolTip(
                     "Cell shape as the MESHER measured it, read from the mesh's "
                     ".provenance.json sidecar — the same figures run_pipeline "
@@ -259,7 +265,13 @@ class BatchDialog(QDialog):
                     "generation paths measure different quantities, so the "
                     "metric is named."
                     if job.shape else
-                    "No mesh from this case yet — see the Status column.")
+                    # NOT "this case made no mesh": a case that meshed and then
+                    # failed at a later stage also lands here (its artifacts are
+                    # lost with the exception), and denying its mesh would be
+                    # wrong about the one row a reader consults to read the dash.
+                    "No figures for this run — see the Status column. A case "
+                    "that failed after meshing leaves them in the log's "
+                    "[Mesh] cell shape line instead.")
             self.table.setItem(index, c, item)
 
     def _refresh_collisions(self):

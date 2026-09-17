@@ -51,8 +51,10 @@ That is the family resemblance, and it is why they are one file.
   and the rule below says so, because "unchanged" is a claim a later reader needs stated. **#132
   added three more of that kind**: `services/batch_runner.py`, `views/batch_dialog.py` and
   `controllers/batch_ctrl.py` are the batch queue's half of the same summary and are reached by
-  no glob but that tree-wide one. A fourth, `services/pipeline_runner.py`, belongs to
-  `.claude/rules/pipeline-case.md`, which carries the mesh STAGE's side of it.
+  no glob but that tree-wide one, so this row of `CLAUDE.md`'s tripwire table is what reaches
+  their reader — named there rather than left as silent precedent, per #66. A fourth,
+  `services/pipeline_runner.py`, belongs to `.claude/rules/pipeline-case.md`, which carries the
+  mesh STAGE's side of it. Stated HERE and only here: a second home is where a list goes stale.
 - **Inward.** `models/segment.py` is matched here for its `bc` / `grow_bl` fields, but the
   rule that `to_dict()` / `from_dict()` is the ONE serialiser behind the resample config, the
   workspace and the pipeline script is stated in the GUI module map, in
@@ -165,22 +167,25 @@ the file on disk holds 9216 triangles.
   Sharing the READER alone was not enough: each host would still have been free to round
   differently, drop the metric name or print an unmeasured run as numbers. **The view calls
   neither** — `batch_runner` reads once, Qt-free and off the GUI thread, and
-  `views/batch_dialog.py` displays what the job carries, reformatting nothing.
+  `views/batch_dialog.py` displays what the job carries, reformatting nothing. **ONE FORMATTER
+  means one among the HEADLESS hosts**: the panel renders the same summary as four rows and keeps
+  its own formatting, because a line and a row layout are different renderings — so the two are
+  PINNED to each other instead (same precision, same metric name, same `not measured` wording),
+  by `tests/test_headless_shape_report.py` check 7.
 - **A case with no mesh carries NO figures — a THIRD absence, and not the reader's.**
   `batch_runner._shape_of` returns `""` when there is no `vtk` artifact, because asking for a
   sidecar beside nothing comes back `not published`, which is a statement about a mesh. The row
   shows a dash pointing at the Status column, and `controllers/batch_ctrl.py` clears `job.shape`
-  on a re-run so a FAILED row cannot stand beside the previous run's numbers.
+  on a re-run so a FAILED row cannot stand beside the previous run's numbers. **The dash's tooltip
+  must not say the case made no mesh**: a case that meshed and then failed at a LATER stage shows
+  the same dash — `run_pipeline` loses its artifact dict with the exception — and its mesh exists,
+  with its figures in the log. The `"vtk"` key itself is spelled once, on `BatchJob.mesh_path`.
 - **The reader's own strings never spell the sidecar's filename**, because the module that could
   compose a second path convention is this one; the gate below refuses `provenance` anywhere in its
   code strings, so the "no figures published" message names the concept and not the file. A HOST
   may say so in prose — the batch dialog's tooltip does — and `tests/test_headless_shape_report.py`
   check 2 is correspondingly the composition test (a literal ENDING in the suffix) rather than the
   substring one. Two gates, one rule, two strengths, stated so the difference is not read as drift.
-**Three modules this rule governs sit under NO glob but `.claude/rules/gui-seams.md`'s tree-wide
-one**: `services/batch_runner.py`, `views/batch_dialog.py` and `controllers/batch_ctrl.py`. The
-tripwire table in `CLAUDE.md` is what reaches their reader; recorded here rather than left as
-silent precedent, per #66.
 Gated by `tests/test_mesh_shape_panel.py`: a negative control that HAS computable per-cell shape
 and still blanks, an allow-list over the whole GUI package for the per-cell array's two permitted
 homes, a colour-map comparison by BRUSH COLOUR over a fixture with one cell in each quality bucket,

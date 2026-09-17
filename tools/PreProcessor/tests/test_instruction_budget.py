@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 50,194 / 48,211 / 45,018 / 38,862 / 25,369 / 24,425 / 19,241 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
+    Ten rule files now — 50,194 / 48,211 / 45,018 / 38,862 / 25,369 / 24,425 / 19,806 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-seams, mesher, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 9,806 / 11,789 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 14,982 / 21,138 / 34,631 / 35,575 / 40,759 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
+    eight, which have 14,982 / 21,138 / 34,631 / 35,575 / 40,194 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,697 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,882 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 36,697 taken down to the boundary above is 36,500, to
+# are its size and its slack -- and 36,882 taken down to the boundary above is 36,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #131, after that ticket's rule-file row and its two new globs took the slack to 303 --
 # under the floor, on 294 characters of prose about something else, which is `374ad04`'s

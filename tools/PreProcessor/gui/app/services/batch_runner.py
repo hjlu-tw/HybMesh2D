@@ -53,6 +53,16 @@ class BatchJob:
     def label(self) -> str:
         return self.name or (os.path.basename(self.source) or "case")
 
+    @property
+    def mesh_path(self) -> str:
+        """The mesh this case produced, or "" when it produced none.
+
+        The `"vtk"` key is `pipeline_runner`'s contract, and knowing which of its
+        artifacts is the mesh is the JOB's business rather than a reader's — so
+        the one spelling lives here, beside the dict it indexes.
+        """
+        return (self.artifacts or {}).get("vtk") or ""
+
 
 def load_jobs(paths, log=_noop) -> list:
     """Build jobs from pipeline-script / workspace paths.
@@ -117,26 +127,26 @@ def find_collisions(jobs) -> dict:
     return {k: v for k, v in seen.items() if len(v) > 1}
 
 
-def _shape_of(artifacts: dict) -> str:
+def _shape_of(job: BatchJob) -> str:
     """The case's published cell-shape figures, or "" when it made no mesh.
 
     The READ is shared with the pipeline runner's own report — same module, same
     formatter, so the row in the queue and the line in the log cannot quote
     different numbers for one mesh (issue #132). What is NOT shared is this
-    guard: a case that failed before the mesh stage has no `vtk` artifact, and
-    asking for a sidecar beside nothing would come back "not published" —
-    an absence of figures dressed as a fact about a mesh that does not exist.
-    The status column is what says what happened to such a case.
+    guard: a case with no mesh has no `mesh_path`, and asking for a sidecar
+    beside nothing would come back "not published" — an absence of figures
+    dressed as a fact about a mesh that does not exist. The status column is what
+    says what happened to such a case.
 
-    A case that MESHED and then failed later reaches here the same way, and that
-    is a known gap rather than the intent: `run_pipeline` builds its artifact
-    dict locally and raises without returning it, so the `vtk` the mesh stage had
-    already filled never arrives. The figures are still in the log, from the mesh
-    stage's own line; only this column is blind. See the blind spots in
-    `docs/design_notes/gui.md`.
+    A case that MESHED and then failed LATER never gets here at all — only the
+    `status = "ok"` path calls this — and that is a known gap rather than the
+    intent: `run_pipeline` builds its artifact dict locally and raises without
+    returning it, so the `vtk` the mesh stage had already filled is lost with the
+    exception and the job has no `mesh_path` to offer even if it were asked. The
+    figures are still in the log, from the mesh stage's own line; only this
+    column is blind. See the blind spots in `docs/design_notes/gui.md`.
     """
-    vtk = (artifacts or {}).get("vtk") or ""
-    return mesh_shape_stats.shape_report(vtk) if vtk else ""
+    return mesh_shape_stats.shape_report(job.mesh_path) if job.mesh_path else ""
 
 
 def run_batch(jobs, log=_noop, progress=None, run_solver: bool = True,
@@ -181,7 +191,7 @@ def run_batch(jobs, log=_noop, progress=None, run_solver: bool = True,
                 job.config, log=log, run_solver=run_solver, run_ib=run_ib,
                 on_process=on_process)
             job.status = "ok"
-            job.shape = _shape_of(job.artifacts)
+            job.shape = _shape_of(job)
         except pipeline_runner.PipelineError as e:
             # Expected failure mode (a stage returned non-zero, a file was
             # missing): record it and keep going.

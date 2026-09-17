@@ -35,8 +35,13 @@ What this pins down:
      which is what stops a quad midline ratio being read against a triangle edge
      ratio.
   6. THE GUI ROW. The dialog's Cell Shape cell is the job's report verbatim, and
-     a case that has not produced a mesh shows a dash with a tooltip saying so,
-     rather than an empty cell.
+     a case with no figures shows a dash whose tooltip points at the Status
+     column rather than an empty cell — and does NOT say "this case made no
+     mesh", which would be false for a case that meshed and then failed later.
+  7. THE PANEL AND THE REPORT DO NOT DRIFT. #131's panel renders the same
+     `ShapeSummary` as four rows and this renders it as one line; the two are not
+     merged, because the layouts differ, so they are PINNED to each other — same
+     precision, same metric name, same `not measured` wording.
 
 Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
 automated (the harness lived in a scratchpad and is not in the tree). Each was
@@ -221,10 +226,11 @@ check(p.returncode == 0 and p.stdout.strip() == "False",
       f"err={p.stderr.strip()[-160:]!r})")
 
 # ── 4. nothing reported off nothing ───────────────────────────────────────
-check(batch_runner._shape_of({}) == "",
+check(batch_runner._shape_of(batch_runner.BatchJob(source="x")) == "",
       "4. a case with no artifacts carries NO figures — not 'not published', "
       "which is a statement about a mesh that exists")
-check(batch_runner._shape_of({"vtk": ""}) == "",
+check(batch_runner._shape_of(
+          batch_runner.BatchJob(source="x", artifacts={"vtk": ""})) == "",
       "4. ...and neither does one whose vtk artifact is empty")
 _runner_src = open(_SRC["pipeline_runner"], encoding="utf-8").read()
 _guard = _runner_src.find("mesh generation produced no VTK")
@@ -245,9 +251,9 @@ check(not _missing and _guard < _report,
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication(sys.argv)
-from app.views.batch_dialog import BatchDialog, _COLS, _NO_SHAPE  # noqa: E402
-
-_SHAPE_COL = _COLS.index("Cell Shape")
+from app.views.batch_dialog import (  # noqa: E402
+    BatchDialog, _NO_SHAPE, _SHAPE_COL,
+)
 
 # 6 first, on a fixture: a queued case has produced no mesh and must not show a
 # blank in a column of numbers. Runs with or without a build.
@@ -259,12 +265,43 @@ dlg._refresh()
 check(dlg.table.item(0, _SHAPE_COL).text() == _NO_SHAPE,
       f"6. a case with no mesh shows a dash, not an empty cell "
       f"({dlg.table.item(0, _SHAPE_COL).text()!r})")
-check("no mesh" in (dlg.table.item(0, _SHAPE_COL).toolTip() or "").lower(),
-      f"6. ...and says why on hover "
+_tip = (dlg.table.item(0, _SHAPE_COL).toolTip() or "").lower()
+check("no figures for this run" in _tip and "status" in _tip
+      and "no mesh from this case" not in _tip,
+      f"6. ...and says why on hover, WITHOUT denying the mesh — a case that "
+      f"meshed and then failed later shows the same dash, and its mesh exists "
       f"({dlg.table.item(0, _SHAPE_COL).toolTip()!r})")
 check(dlg.table.item(1, _SHAPE_COL).text() == r_measured,
       f"6. a finished case shows the report VERBATIM — the view reformats nothing "
       f"({dlg.table.item(1, _SHAPE_COL).text()!r})")
+
+# ── 7. the panel and the report do not drift ──────────────────────────────
+# Two formatters render the same `ShapeSummary` — `format_shape_report` as one
+# line for the headless hosts, `mesh_stats_panel._apply_shape_summary` as four
+# rows — and nothing made them agree. Not merged, because a line and a row layout
+# are different renderings; pinned instead, so a precision or a wording change on
+# either side has to be a deliberate change to both.
+from app.views.panels.mesh_stats_panel import MeshStatsPanel  # noqa: E402
+
+_panel = MeshStatsPanel()
+_summary = mesh_shape_stats.ShapeSummary("tri_edge_ratio", 11396, 1.584671,
+                                         9.901041, 35.608279)
+_panel._apply_shape_summary(_summary)
+_line = mesh_shape_stats.format_shape_report(_summary)
+_rows = [_panel.shape_median_label.text(), _panel.shape_p95_label.text(),
+         _panel.shape_max_label.text()]
+check(all(r in _line for r in _rows),
+      f"7. every figure the panel shows appears in the headless report, to the "
+      f"same precision ({_rows} vs {_line!r})")
+check(_panel.shape_metric_label.text().startswith("tri_edge_ratio")
+      and _line.startswith("tri_edge_ratio"),
+      f"7. ...under the same metric name in both "
+      f"({_panel.shape_metric_label.text()!r} vs {_line!r})")
+_panel._apply_shape_summary(
+    mesh_shape_stats.ShapeSummary("quad_midline_ratio", 0, -1.0, -1.0, -1.0))
+check("not measured" in _panel.shape_metric_label.text() and "not measured" in r_un,
+      f"7. and an unmeasured run reads the same way on both surfaces "
+      f"({_panel.shape_metric_label.text()!r} vs {r_un!r})")
 
 if not _BINS_READY:
     print(f"SKIP  5 and 6's real-binary leg need the compiled binaries "

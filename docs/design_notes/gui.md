@@ -1842,10 +1842,15 @@ has gone missing instead of reporting a rewording as an ordering defect.
   LAST writer's figures against both rows. Collisions are already warned about before the run, by
   source file, which is the mitigation that exists — not a check that these figures describe this
   mesh.
-- **The report's precision is pinned to the panel's `.3f` by a comment, not by a constant.** Two
-  modules format the same numbers, and a gate asserts the strings the two HEADLESS hosts produce
-  are identical to each other — nothing asserts the panel's rows and the batch row round the same
-  way. Changing one and not the other is a divergence no gate here would catch.
+- **The panel and the report are two renderings of one `ShapeSummary`, and they are pinned rather
+  than merged.** A four-row layout and a one-line string are different renderings, so
+  `format_shape_report` does not serve the panel; what a review found was that nothing then held
+  them together — the `.3f`, the metric name and the `not measured` wording were each written
+  twice. Check 7 of `tests/test_headless_shape_report.py` now asserts the panel's three figures
+  appear verbatim in the report, under the same metric name, with the same unmeasured wording, so
+  changing one side has to be a deliberate change to both. What it still does NOT hold is the
+  LAYOUT: the panel's cell-count parenthesis and the report's are written separately and may
+  diverge in position without the check speaking.
 - **A case that meshed and then FAILED at a later stage shows the dash, not its mesh's
   figures.** `run_batch` reads `job.artifacts`, and `run_pipeline` builds that dict locally and
   raises without returning it, so a solver failure loses the `vtk` key the mesh stage had already
