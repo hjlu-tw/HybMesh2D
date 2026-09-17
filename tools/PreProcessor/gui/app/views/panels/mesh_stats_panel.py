@@ -5,6 +5,18 @@ from PyQt6.QtCore import pyqtSignal
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, COMBO_STYLE, align_form_labels, help_label, help_widget
 from app.models.vtk_mesh import VTKMesh
+from app.services import mesh_shape_stats
+
+SHAPE_METRIC_TIP = (
+    "Cell shape as the MESHER measured it, read from the mesh's .provenance.json "
+    "sidecar — the same figures its banner printed. The two generation paths measure "
+    "different quantities (quad_midline_ratio on MESH_MODE 1's structured quads, "
+    "tri_edge_ratio on the hybrid path's exported triangles) and are not comparable "
+    "with each other. A mesh with no sidecar shows a blank: the panel never computes "
+    "these itself, because a second definition of 'cell shape' is exactly what the "
+    "sidecar exists to prevent."
+)
+
 
 class MeshStatsPanel(CollapsibleSection):
     """Panel displaying mesh statistics and rendering controls."""
@@ -92,16 +104,23 @@ class MeshStatsPanel(CollapsibleSection):
         self.bounds_label.setWordWrap(True)
         self.bounds_label.setToolTip("Bounding box coordinates of the mesh (Xmin, Xmax, Ymin, Ymax)")
 
-        # Quality metrics (Aspect Ratio)
-        self.ar_min_label = QLabel("—")
-        self.ar_min_label.setStyleSheet("color: #81c784;")
-        self.ar_min_label.setToolTip("Minimum aspect ratio among all mesh elements (closer to 1.0 is better)")
-        self.ar_max_label = QLabel("—")
-        self.ar_max_label.setStyleSheet("color: #e57373;")
-        self.ar_max_label.setToolTip("Maximum aspect ratio among all mesh elements")
-        self.ar_mean_label = QLabel("—")
-        self.ar_mean_label.setStyleSheet("color: #ffb74d;")
-        self.ar_mean_label.setToolTip("Average aspect ratio across all mesh elements")
+        # Cell shape, READ from the mesh's provenance sidecar (issue #131): the
+        # mesher measured these and this panel quotes them. No colour coding —
+        # aspect_max = 32.8 on a boundary-layer mesh is a correct number, and a
+        # red one here would train the user to ignore the colour.
+        self.shape_metric_label = QLabel("—")
+        self.shape_metric_label.setStyleSheet("color: #dde6ff;")
+        self.shape_metric_label.setWordWrap(True)
+        self.shape_metric_label.setToolTip(SHAPE_METRIC_TIP)
+        self.shape_median_label = QLabel("—")
+        self.shape_median_label.setStyleSheet("color: #dde6ff;")
+        self.shape_median_label.setToolTip("Median cell shape ratio, as measured by the mesher")
+        self.shape_p95_label = QLabel("—")
+        self.shape_p95_label.setStyleSheet("color: #dde6ff;")
+        self.shape_p95_label.setToolTip("95th percentile cell shape ratio, as measured by the mesher")
+        self.shape_max_label = QLabel("—")
+        self.shape_max_label.setStyleSheet("color: #dde6ff;")
+        self.shape_max_label.setToolTip("Largest cell shape ratio, as measured by the mesher")
 
         # Quality metrics (Skewness)
         self.sk_min_label = QLabel("—")
@@ -133,9 +152,10 @@ class MeshStatsPanel(CollapsibleSection):
         stats_form.addRow(help_label("  - Quadrilaterals:", "Count of quadrilateral elements in the mesh"), self.quad_label)
         stats_form.addRow(help_label("  - Polygons:", "Count of polygonal elements (5+ sides) in the mesh"), self.poly_label)
         stats_form.addRow(help_label("Bounds (X, Y):", "Bounding box coordinates of the mesh (Xmin, Xmax, Ymin, Ymax)"), self.bounds_label)
-        stats_form.addRow(help_label("Min Aspect Ratio:", "Minimum aspect ratio among all mesh elements (closer to 1.0 is better)"), self.ar_min_label)
-        stats_form.addRow(help_label("Max Aspect Ratio:", "Maximum aspect ratio among all mesh elements"), self.ar_max_label)
-        stats_form.addRow(help_label("Mean Aspect Ratio:", "Average aspect ratio across all mesh elements"), self.ar_mean_label)
+        stats_form.addRow(help_label("Cell Shape:", SHAPE_METRIC_TIP), self.shape_metric_label)
+        stats_form.addRow(help_label("  - Median:", "Median cell shape ratio, as measured by the mesher"), self.shape_median_label)
+        stats_form.addRow(help_label("  - p95:", "95th percentile cell shape ratio, as measured by the mesher"), self.shape_p95_label)
+        stats_form.addRow(help_label("  - Max:", "Largest cell shape ratio, as measured by the mesher"), self.shape_max_label)
         stats_form.addRow(help_label("Min Skewness:", "Minimum skewness among all mesh elements (closer to 0.0 is better)"), self.sk_min_label)
         stats_form.addRow(help_label("Max Skewness:", "Maximum skewness among all mesh elements"), self.sk_max_label)
         stats_form.addRow(help_label("Mean Skewness:", "Average skewness across all mesh elements"), self.sk_mean_label)
@@ -198,7 +218,8 @@ class MeshStatsPanel(CollapsibleSection):
         if not mesh or len(mesh.points) == 0:
             for lbl in (self.vrt_label, self.cel_label, self.tri_label,
                         self.quad_label, self.poly_label, self.bounds_label,
-                        self.ar_min_label, self.ar_max_label, self.ar_mean_label,
+                        self.shape_metric_label, self.shape_median_label,
+                        self.shape_p95_label, self.shape_max_label,
                         self.sk_min_label, self.sk_max_label, self.sk_mean_label):
                 lbl.setText("—")
             return
@@ -213,16 +234,18 @@ class MeshStatsPanel(CollapsibleSection):
         xmin, xmax, ymin, ymax = mesh.bounds
         self.bounds_label.setText(f"X: [{xmin:.4f}, {xmax:.4f}]\nY: [{ymin:.4f}, {ymax:.4f}]")
 
-        # Quality metrics: inline for small meshes (imperceptible, no flash),
-        # threaded for large ones.
+        # Cell shape: QUOTED from the mesher, never computed here (issue #131).
+        # It is a small JSON read beside the mesh, so it is never threaded — and
+        # it depends on the FILE rather than on the loaded cells, which is why it
+        # sits outside the branch below.
+        self._apply_shape_summary(mesh_shape_stats.read_shape_summary(file_path))
+
+        # Skewness: inline for small meshes (imperceptible, no flash), threaded
+        # for large ones.
         if total_cells <= self.STATS_ASYNC_CELL_LIMIT:
-            self._apply_quality_stats({
-                "ar": self._reduce(mesh.get_element_aspect_ratios()),
-                "sk": self._reduce(mesh.get_element_skewness()),
-            })
+            self._apply_quality_stats({"sk": self._reduce(mesh.get_element_skewness())})
         else:
-            for lbl in (self.ar_min_label, self.ar_max_label, self.ar_mean_label,
-                        self.sk_min_label, self.sk_max_label, self.sk_mean_label):
+            for lbl in (self.sk_min_label, self.sk_max_label, self.sk_mean_label):
                 lbl.setText("computing…")
             self._start_stats_worker(mesh, self._stats_gen)
 
@@ -256,13 +279,48 @@ class MeshStatsPanel(CollapsibleSection):
             return
         self._apply_quality_stats(stats)
 
+    def _apply_shape_summary(self, summary):
+        """Fill the cell-shape rows from the sidecar, or blank them honestly.
+
+        Three states, and they say three different things:
+
+        * **No summary** (``None``) — no sidecar beside this mesh, or one written
+          before the mesher measured shape. The figures are BLANK. There is no
+          fallback computation on purpose: the panel's own per-cell arrays use a
+          different definition, so a number here computed from them would not
+          mean what the sidecar's means.
+        * **Measured** — the metric's name, the cell count it covers, and the
+          three figures at the precision the mesher's own banner prints.
+        * **Looked and could not measure** — the mesher wrote the object with
+          ``cells: 0`` and negative figures; the rows say ``not measured`` rather
+          than showing a 0.0 that would read as a perfect mesh.
+        """
+        if summary is None:
+            for lbl in (self.shape_metric_label, self.shape_median_label,
+                        self.shape_p95_label, self.shape_max_label):
+                lbl.setText("—")
+            self.shape_metric_label.setToolTip(SHAPE_METRIC_TIP)
+            return
+        meaning = mesh_shape_stats.METRIC_MEANING.get(summary.metric, "")
+        self.shape_metric_label.setToolTip(
+            f"{meaning}\n\nFrom {summary.source}" if meaning else f"From {summary.source}")
+        if summary.measured:
+            self.shape_metric_label.setText(f"{summary.metric} ({summary.cells} cells)")
+            self.shape_median_label.setText(f"{summary.median:.3f}")
+            self.shape_p95_label.setText(f"{summary.p95:.3f}")
+            self.shape_max_label.setText(f"{summary.max:.3f}")
+        else:
+            self.shape_metric_label.setText(f"{summary.metric} (not measured)")
+            for lbl in (self.shape_median_label, self.shape_p95_label, self.shape_max_label):
+                lbl.setText("not measured")
+
     def _apply_quality_stats(self, stats: dict):
-        """Fill the aspect-ratio / skewness labels from a {'ar':..,'sk':..} dict
-        (each a (min,max,mean) tuple or None)."""
-        ar = stats.get("ar")
-        self.ar_min_label.setText(f"{ar[0]:.3f}" if ar else "—")
-        self.ar_max_label.setText(f"{ar[1]:.3f}" if ar else "—")
-        self.ar_mean_label.setText(f"{ar[2]:.3f}" if ar else "—")
+        """Fill the skewness labels from a {'sk': (min,max,mean) | None} dict.
+
+        Aspect ratio left this method with #131: the mesher owns the summary now,
+        and the client-side per-cell array survives only as the canvas colour
+        map's input (``views/mesh_canvas_fills_mixin.py``).
+        """
         sk = stats.get("sk")
         self.sk_min_label.setText(f"{sk[0]:.3f}" if sk else "—")
         self.sk_max_label.setText(f"{sk[1]:.3f}" if sk else "—")
