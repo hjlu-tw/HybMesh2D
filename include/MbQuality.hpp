@@ -166,6 +166,55 @@ struct MbQualityReport {
     // ignore.
     ShapeStats structuredShape;            // over every block's structured quads
     std::vector<MbBlockShape> blockShapes; // one row per block, in declaration order
+
+    // ── THE WALL BAND (issue #144) ──────────────────────────────────────────
+    // The same three figures over the quads the WALL CLUSTERING squeezed and
+    // over every other structured quad, BESIDE `structuredShape` and never
+    // instead of it. The shipped O-grid is why: its whole-mesh p95 is 23.662
+    // against a median of 1.846, so that percentile describes the wall band and
+    // not the mesh a user is asking after — the failure #128's problem statement
+    // attributed to the max and the mean, reaching this path too.
+    //
+    // WHAT A WALL-BAND CELL IS, and it is a property of the GRID, not of a
+    // distance: walking outward from a side the document declares a `wall`, a
+    // cell is in the band while its extent ACROSS that side is shorter than its
+    // extent ALONG it, and the walk stops at the first cell where it is not. That
+    // is the definition of "the clustering squeezed this cell toward the wall",
+    // stated without a cut-off — no radius, no layer count, no multiple of the
+    // first-cell height, so nothing here is a knob that decides the figures. It
+    // uses `quadExtents` for that comparison and not `cellShapeRatio`, whose ratio
+    // is orientation-free and therefore cannot say WHICH direction is the short
+    // one.
+    //
+    // ONE ROW OFF THE WALL IS NOT THE BAND, and the measurement is what settles
+    // it: on the shipped O-grid the wall row measures 32.77, the next 28.49, and
+    // the figures fall smoothly to 1.01 twenty-four rows out. A band of one row
+    // leaves the bulk p95 at 20.05 — still a wall figure, so the split would have
+    // changed nothing about the number it exists to fix. The walk measured 24
+    // rows, and the bulk p95 is 1.878.
+    //
+    // THE WALK IS PER STATION ALONG THE SIDE, not per row, so a wall whose
+    // clustering varies along its own length reports a band that varies with it.
+    // On the shipped cases every station agrees, which is why the paragraph above
+    // can speak of rows at all.
+    //
+    // A BLOCK WITH NO DECLARED WALL SIDE CONTRIBUTES TO `structuredBulkShape`
+    // ONLY, by construction rather than by a rule written twice: it has no side
+    // to walk from, so nothing marks any of its cells. The two sets PARTITION the
+    // structured quads — `structuredShape.cells == structuredLayerShape.cells +
+    // structuredBulkShape.cells` — because each cell's ratio is pushed into the
+    // whole-mesh set and into exactly one of these, and an unmeasurable cell is
+    // dropped from all three by the same rule in `reduceCellShapes`.
+    //
+    // BOTH ARE MEASURED ON THE STRUCTURED QUADS, so both are independent of
+    // `MB_SPLIT_QUADS` for the reason `structuredShape` already is.
+    //
+    // AN EMPTY BAND IS `cells 0` WITH NEGATIVE FIGURES, and here that is an
+    // ORDINARY case: a uniform rectangle (the shipped square and cavity) clusters
+    // nothing at all, so no cell is thinner across a wall than along it and the
+    // bulk half is the whole mesh.
+    ShapeStats structuredLayerShape;       // the wall-clustered band
+    ShapeStats structuredBulkShape;        // every other structured quad
 };
 
 // Measure a finished multi-block mesh. Pure, total, and never throws: an empty or

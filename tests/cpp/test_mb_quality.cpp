@@ -158,6 +158,37 @@ const hybmesh::MbWallHeight* wall(const MbQualityReport& q, const std::string& s
     return nullptr;
 }
 
+// A hand-built block on an explicit grid of y levels, uniform in x at spacing 1.0,
+// so every cell's two extents are known exactly and the wall band's walk can be
+// pinned cell by cell. `wallSides` is what the DOCUMENT is taken to have declared.
+//
+// BUILT BY HAND RATHER THAN PARSED, for check 9e's reason: the band is a rule about
+// which cells a walk reaches, and a fixture whose spacing came out of a spacing law
+// would make the expected answer something this test also has to derive.
+MbResult ladder(const std::vector<double>& ys, int ni,
+                const std::vector<hybmesh::MbSide>& wallSides) {
+    MbResult m;
+    m.ok = true;
+    hybmesh::MbBlock b;
+    b.id = "ladder";
+    b.ni = ni;
+    b.nj = static_cast<int>(ys.size());
+    for (double y : ys)
+        for (int i = 0; i < ni; ++i) {
+            b.nodeIds.push_back(static_cast<int>(m.nodes.size()));
+            m.nodes.push_back({static_cast<double>(i), y});
+        }
+    m.blocks.push_back(b);
+    for (hybmesh::MbSide side : wallSides) {
+        hybmesh::MbWallSpec ws;
+        ws.block = 0;
+        ws.side = side;
+        ws.edgeId = "declared";
+        m.wallSpecs.push_back(ws);
+    }
+    return m;
+}
+
 }  // namespace
 
 int main() {
@@ -564,6 +595,171 @@ int main() {
               "corner is not a triangle");
         CHECK(q.blockShapes.size() == 1 && q.blockShapes[0].shape.cells == 0,
               "9e. ...with the block still listed and its own figures negative");
+    }
+
+    // ── 10. THE WALL BAND: the contiguous run off a declared wall ───────────
+    // #144's subject. A ladder whose first two rows are thinner across the wall
+    // than along it and whose third is not: the band is the first two, the walk
+    // STOPS at the third, and the two halves partition what the whole set
+    // measured.
+    {
+        const MbResult m = ladder({0.0, 0.1, 0.5, 2.0}, 4, {hybmesh::MB_SOUTH});
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        // NEGATIVE CONTROLS, computed rather than claimed: the row the walk stops
+        // at is MEASURABLE and is genuinely wider across the wall than along it,
+        // so "the band ends here" is this walk's decision and not an absent or
+        // unmeasurable cell. Both extents are read from the shared pure helper the
+        // implementation uses, in the ring order `quadCorners` builds.
+        double e01 = 0.0, e12 = 0.0;
+        CHECK(hybmesh::quadExtents({{0.0, 0.5}, {1.0, 0.5}, {1.0, 2.0}, {0.0, 2.0}},
+                                   e01, e12)
+              && e12 > e01 && hybmesh::cellShapeRatio({{0.0, 0.5}, {1.0, 0.5},
+                                                       {1.0, 2.0}, {0.0, 2.0}}) > 0.0,
+              "10. the row the walk stops at is measurable and really is WIDER "
+              "across the wall than along it (1.5 against 1.0)");
+        CHECK(q.structuredShape.cells == 9
+              && q.structuredLayerShape.cells == 6
+              && q.structuredBulkShape.cells == 3,
+              "10. the band is the two squeezed rows and the bulk is the third: "
+              "the walk stops at the first cell that is not squeezed rather than "
+              "collecting every squeezed cell in the block");
+        CHECK(q.structuredLayerShape.cells + q.structuredBulkShape.cells
+                  == q.structuredShape.cells,
+              "10. ...and the two halves PARTITION what the whole set measured, so "
+              "no cell is counted twice and none is lost between them");
+        // The rows measure 1/0.1, 1/0.4 and 1.5/1, so every figure below is
+        // arithmetic on the fixture rather than a number read off a run.
+        CHECK_NEAR(q.structuredLayerShape.median, 6.25, 1e-12,
+                   "10. ...the band's median is the two squeezed rows' (10 and 2.5)");
+        CHECK_NEAR(q.structuredLayerShape.max, 10.0, 1e-12,
+                   "10. ...and its max is the row ON the wall");
+        CHECK_NEAR(q.structuredBulkShape.median, 1.5, 1e-12,
+                   "10. ...while the bulk is the third row alone");
+        CHECK_NEAR(q.structuredBulkShape.max, 1.5, 1e-12,
+                   "10. ...max included, so the band took the whole stretch with it");
+        CHECK_NEAR(q.structuredShape.median, 2.5, 1e-12,
+                   "10. ...and the WHOLE-MESH figures are untouched by the split");
+        CHECK_NEAR(q.structuredShape.max, 10.0, 1e-12,
+                   "10. ...max included");
+    }
+
+    // ── 10b. A block with NO declared wall side is all bulk ─────────────────
+    // By construction — it has no side to walk from — which is the half of the
+    // rule that would otherwise be written twice.
+    {
+        const MbResult m = ladder({0.0, 0.1, 0.5, 2.0}, 4, {});
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        CHECK(q.structuredLayerShape.cells == 0
+              && q.structuredLayerShape.median < 0.0
+              && q.structuredLayerShape.p95 < 0.0
+              && q.structuredLayerShape.max < 0.0,
+              "10b. a block no side of which is declared a wall has an EMPTY band, "
+              "reported as 0 cells with three NEGATIVE figures rather than zeros");
+        CHECK(q.structuredBulkShape.cells == q.structuredShape.cells
+              && q.structuredBulkShape.cells == 9,
+              "10b. ...and every one of its cells is bulk — the same ladder whose "
+              "first two rows check 10 banded, so this is the DECLARATION deciding "
+              "it and not the geometry");
+    }
+
+    // ── 10c. The band does not jump a gap ──────────────────────────────────
+    // A ladder whose row ON the wall is not squeezed and whose SECOND row is. The
+    // band is empty: it is the contiguous run off the wall, not every squeezed
+    // cell in the block wherever it sits.
+    {
+        const MbResult m = ladder({0.0, 2.0, 2.1, 4.0}, 4, {hybmesh::MB_SOUTH});
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        // NEGATIVE CONTROL: the second row really IS squeezed, so "empty" below is
+        // the walk refusing to jump the first row rather than a fixture with
+        // nothing in it to find.
+        double e01 = 0.0, e12 = 0.0;
+        CHECK(hybmesh::quadExtents({{0.0, 2.0}, {1.0, 2.0}, {1.0, 2.1}, {0.0, 2.1}},
+                                   e01, e12) && e12 < e01,
+              "10c. the SECOND row really is squeezed toward the wall (0.1 across "
+              "against 1.0 along), so a band that collected it would not be empty");
+        CHECK(q.structuredLayerShape.cells == 0
+              && q.structuredBulkShape.cells == q.structuredShape.cells,
+              "10c. ...and the band is still EMPTY, because the walk stops at the "
+              "row on the wall: the band is contiguous FROM the wall");
+    }
+
+    // ── 10d. Two walls on one block, unioned and not double-counted ────────
+    // The shipped O-grid declares both its body arc and its far-field arc `wall`,
+    // so a block really can be walked from opposite sides. This also pins the
+    // FAR-END walk's indexing: a north side that stepped the wrong way would band
+    // the middle rows instead of the last.
+    {
+        const MbResult m = ladder({0.0, 0.1, 1.6, 3.1, 3.2}, 4,
+                                  {hybmesh::MB_SOUTH, hybmesh::MB_NORTH});
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        CHECK(q.structuredShape.cells == 12
+              && q.structuredLayerShape.cells == 6
+              && q.structuredBulkShape.cells == 6,
+              "10d. both walls contribute their own row and the two middle rows "
+              "are bulk, so the sides UNION rather than one of them winning");
+        // The two banded rows are 1/0.1 and the two bulk rows 1.5/1, so the
+        // figures say WHICH cells landed where — a north walk that stepped inward
+        // from the wrong end would band a 1.5 row and show up here.
+        CHECK_NEAR(q.structuredLayerShape.median, 10.0, 1e-12,
+                   "10d. ...and the band is the two rows ON the walls (10 each), "
+                   "not the two in the middle");
+        CHECK_NEAR(q.structuredBulkShape.max, 1.5, 1e-12,
+                   "10d. ...while the bulk is the two middle rows (1.5 each)");
+        CHECK(q.structuredLayerShape.cells + q.structuredBulkShape.cells
+                  == q.structuredShape.cells,
+              "10d. ...with no cell counted twice, which a union has to be asked");
+    }
+
+    // ── 10e. Two extents that agree to within rounding are not a band ──────
+    // A uniform grid clusters NOTHING, and the shipped square is one: 400
+    // geometrically identical cells whose two midlines come out of a `hypot` a
+    // last bit apart. A bare `across < along` banded 72 of them.
+    {
+        const MbResult m = ladder({0.0, 1.0, 2.0, 3.0}, 4, {hybmesh::MB_SOUTH});
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        // NEGATIVE CONTROL: every cell here is measurable and square, so an empty
+        // band below is the tie rule and not an unmeasurable fixture.
+        CHECK_NEAR(q.structuredShape.max, 1.0, 1e-12,
+                   "10e. every cell of a uniform ladder is square, so nothing in it "
+                   "is squeezed toward anything");
+        CHECK(q.structuredLayerShape.cells == 0
+              && q.structuredBulkShape.cells == 9,
+              "10e. ...and its band is EMPTY rather than however many cells the "
+              "last bit of a midline happened to fall the wrong way");
+    }
+
+    // ── 10f. The band is independent of MB_SPLIT_QUADS ─────────────────────
+    // The same rule `structuredShape` already follows (check 9b), through the real
+    // builder: both sets are measured on the structured quads, so turning the split
+    // off to diagnose a mesh does not change the sets being diagnosed.
+    //
+    // THIS FIXTURE'S BULK IS EMPTY, and that is a property of a ONE-BLOCK document
+    // rather than a weakness that went unnoticed: every side of one is a `wall`, so
+    // a row wider in j than in i is banded across its whole width from the west and
+    // the east. The O-grid has a bulk because its two radial sides are `interface`
+    // edges and its far-field row is longer radially than azimuthally — a topology
+    // this file cannot write in four lines. The STRICT-SUBSET case is pinned on all
+    // five shipped cases at `MB_SPLIT_QUADS 0` in
+    // tools/PreProcessor/tests/test_multiblock_shape_surface.py check 15.
+    {
+        const std::string doc = unitSquare(9, 9, "", ", \"spacing\": {\"ds_start\": 0.01}");
+        const MbQualityReport tri = hybmesh::measureMbQuality(build(doc, true));
+        const MbQualityReport quad = hybmesh::measureMbQuality(build(doc, false));
+        CHECK(tri.structuredShape.cells == 64
+              && tri.structuredLayerShape.cells == 64
+              && tri.structuredBulkShape.cells == 0,
+              "10f. a one-block document clustered toward one wall bands every cell, "
+              "because all four of its sides are walls and the band reaches across");
+        CHECK(tri.cells == 2 * quad.cells && quad.cells == 64,
+              "10f. ...and the split really did change what was exported, so an "
+              "unchanged pair of sets below is a measurement and not two runs of "
+              "the same thing");
+        CHECK(tri.structuredLayerShape.cells == quad.structuredLayerShape.cells
+              && tri.structuredBulkShape.cells == quad.structuredBulkShape.cells
+              && tri.structuredLayerShape.median == quad.structuredLayerShape.median
+              && tri.structuredLayerShape.p95 == quad.structuredLayerShape.p95
+              && tri.structuredLayerShape.max == quad.structuredLayerShape.max,
+              "10f. ...reporting BITWISE the same two sets either way");
     }
 
     return hybmesh::test::report("test_mb_quality");

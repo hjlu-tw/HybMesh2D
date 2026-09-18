@@ -36,16 +36,31 @@ double hybmesh::cellShapeRatio(const std::vector<Point2D>& corners) {
         return ratioOf(lo, hi);
     }
     if (corners.size() == 4) {
-        // The two OPPOSITE-EDGE midlines: edge 0-1 against edge 2-3, and edge 1-2
-        // against edge 3-0. Exactly 1.0 on a square, exactly the side ratio on a
-        // rectangle, and unchanged by rotating the cell.
-        const double d1 = midlineLength(corners[0], corners[1], corners[2], corners[3]);
-        const double d2 = midlineLength(corners[1], corners[2], corners[3], corners[0]);
-        return ratioOf(d1, d2);
+        // The two OPPOSITE-EDGE midlines, read from `quadExtents` below rather
+        // than taken again here: exactly 1.0 on a square, exactly the side ratio
+        // on a rectangle, and unchanged by rotating the cell. One home for the
+        // arithmetic, because the multi-block wall band (#144) needs the same two
+        // lengths without the ratio and a second copy is the one that drifts.
+        double e01 = 0.0, e12 = 0.0;
+        quadExtents(corners, e01, e12);
+        return ratioOf(e01, e12);
     }
     // Fewer than 3 corners is not a cell; more than 4 has no metric defined here,
     // and a guess would be worse than the honest negative. See CellShape.hpp.
     return -1.0;
+}
+
+bool hybmesh::quadExtents(const std::vector<Point2D>& corners, double& extent01,
+                          double& extent12) {
+    if (corners.size() != 4) return false;
+    // The extent in the 0->1 direction is the midline between the two edges that
+    // CROSS it (1-2 and 3-0), and vice versa. Getting these two the wrong way
+    // round is invisible in `cellShapeRatio`, which takes max over min — and is
+    // exactly what the wall band would get wrong, so the naming is by DIRECTION
+    // rather than by the edges each midline joins.
+    extent01 = midlineLength(corners[1], corners[2], corners[3], corners[0]);
+    extent12 = midlineLength(corners[0], corners[1], corners[2], corners[3]);
+    return true;
 }
 
 hybmesh::ShapeStats hybmesh::reduceCellShapes(std::vector<double> ratios) {

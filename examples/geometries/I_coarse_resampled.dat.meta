@@ -1,13 +1,24 @@
 HYBMESH_META 3
-COUNT 138
+COUNT 161
 NPIECES 0
 NSEGMENTS 4
 1 - smooth 1
 2 - smooth 1
 3 - smooth 1
 4 - smooth 1
-POINTS 138
+POINTS 161
 1 1
+1 0
+1 0
+1 0
+1 0
+1 0
+1 0
+1 0
+1 0
+1 0
+1 0
+1 0
 1 0
 1 0
 1 0
@@ -125,7 +136,19 @@ POINTS 138
 3 0
 3 0
 3 0
+3 0
+3 0
+3 0
+3 0
+3 0
+3 0
+3 0
+3 0
+3 0
+3 0
+3 0
 4 1
+4 0
 4 0
 4 0
 4 0

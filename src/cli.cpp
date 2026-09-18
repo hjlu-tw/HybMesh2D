@@ -451,6 +451,31 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
                   << " structured quads; 1.0 is square, and NOT comparable with "
                      "MESH_MODE " << MESH_MODE_HYBRID
                   << "'s triangle edge ratio)\n";
+    // THE TWO HALVES, BESIDE THE WHOLE AND NOT INSTEAD OF IT (issue #144), and
+    // above the per-block rows because they decompose the SAME headline: the band
+    // rows split the mesh by where the clustering squeezed it, the block rows by
+    // what the document declared, and neither is a sub-row of the other.
+    //
+    // Same `shapePhrase` as the headline and the block rows, so an empty half says
+    // `not measured` in the words every other row says it in — and an empty half is
+    // ORDINARY here: a uniform rectangle clusters nothing, so the shipped square
+    // and cavity have no band at all.
+    //
+    // AN EMPTY HALF NAMES NO CAUSE, the rule the headline row one branch up has
+    // carried since #130 and #143 took to its own rows: `cells 0` has two ways in —
+    // no such cell existed, or none of them could be measured — and a parenthetical
+    // that picked one would be a false claim about the mesh in the other case.
+    auto splitRow = [](const char* label, const hybmesh::ShapeStats& s,
+                       const char* what) {
+        std::cout << bannerSub(label) << shapePhrase(s);
+        if (s.cells == 0)
+            std::cout << " (none of the " << what << " could be measured)";
+        else
+            std::cout << " (over " << s.cells << " " << what << ")";
+        std::cout << "\n";
+    };
+    splitRow("wall band", q.structuredLayerShape, "wall-clustered quads");
+    splitRow("bulk", q.structuredBulkShape, "quads outside the wall band");
     // PER BLOCK, under the headline, the way each wall gets a row under the wall
     // headline. A block is the unit the user declared, so "the wake blocks are the
     // stretched ones" is an answer they can act on.
@@ -478,10 +503,33 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // deliberately not `cells` above, which counts the cells EXPORTED — at the
     // default split the two differ by a factor of two, and that difference is the
     // evidence the figure is measured where it says it is.
-    mr << " quad_midline_ratio_cells=" << q.structuredShape.cells
-       << " quad_midline_ratio_median=" << q.structuredShape.median
-       << " quad_midline_ratio_p95=" << q.structuredShape.p95
-       << " quad_midline_ratio_max=" << q.structuredShape.max;
+    //
+    // ONE SPELLING OF THE FOUR FIELD NAMES, for all three sets (issue #144, and
+    // #143's shape on the other path). `half` is the empty string for the whole
+    // mesh and `layer_` / `bulk_` for the two halves, so `quad_midline_ratio_cells`
+    // and `quad_midline_ratio_layer_cells` cannot drift apart under an edit that
+    // meant to touch one of them. That the whole-mesh four still spell out as they
+    // did before #144 is asserted against LITERAL names in
+    // tests/test_multiblock_shape_surface.py check 16.
+    auto tokens = [&mr](const char* half, const hybmesh::ShapeStats& st) {
+        mr << " quad_midline_ratio_" << half << "cells=" << st.cells
+           << " quad_midline_ratio_" << half << "median=" << st.median
+           << " quad_midline_ratio_" << half << "p95=" << st.p95
+           << " quad_midline_ratio_" << half << "max=" << st.max;
+    };
+    tokens("", q.structuredShape);
+    // THE TWO HALVES ARE APPENDED under keys that EXTEND the whole-mesh spelling
+    // rather than displacing it (issue #144): every token that existed before this
+    // ticket is still on the line, spelled as it was, so today's greps keep
+    // working. `_layer_` and `_bulk_` are the naming shape BOTH generation paths
+    // use — the hybrid path shipped `tri_edge_ratio_layer_*` first (#143) and this
+    // is where the two are made to match. The word is `layer` and not `wall`
+    // because it names the band of cells a mesher clusters against a surface in
+    // either path's own vocabulary, and makes no claim about the BC on that
+    // surface. The BANNER row above is this path's own word (`wall band`), which
+    // is the half of the shape that is deliberately NOT shared.
+    tokens("layer_", q.structuredLayerShape);
+    tokens("bulk_", q.structuredBulkShape);
     std::cout << mr.str() << std::endl;
 }
 
@@ -737,6 +785,12 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // file on disk and that is the mesh on disk.
     quality.metric = "quad_midline_ratio";
     quality.shape = q.structuredShape;
+    // `split` is unconditionally true on THIS path too since #144: it always
+    // separates, and a band that came back empty is a mesh whose clustering
+    // squeezed nothing rather than a path that does not split. See MeshQuality.
+    quality.split = true;
+    quality.layer = q.structuredLayerShape;
+    quality.bulk = q.structuredBulkShape;
     // WHETHER THE SOLVE FINISHED, beside what it produced.
     //
     // The three endings are decided ONCE, in the seam, and are read here as flags —

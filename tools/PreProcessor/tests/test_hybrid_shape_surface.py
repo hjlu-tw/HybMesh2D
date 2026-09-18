@@ -107,11 +107,17 @@ What this pins down:
      that the old figures are shown to describe the WHOLE mesh and not a half: the
      count is both halves', the max is the larger half's, and the p95 is NEITHER
      half's.
- 16. A PATH THAT DOES NOT SPLIT WRITES NEITHER KEY — a state of its own, separate
-     from a half that was measured and came back empty. The multi-block path is
-     today's only witness, and #144 will stop it being one; THIS CHECK IS THEN THE
-     ONE TO UPDATE, and the naming shape it must match is `<metric>_layer_*` /
-     `<metric>_bulk_*`, settled here because this ticket landed first.
+ 16. BOTH PATHS SPLIT, UNDER ONE NAMING SHAPE — `<metric>_layer_*` /
+     `<metric>_bulk_*` on the machine line, `quality.layer` / `quality.bulk` in the
+     sidecar, with each path's own metric name in front. This is the one place in
+     the tree where BOTH paths' output is in hand at once, so the cross-path
+     criterion is asserted here rather than in either path's own gate.
+     WHAT THIS CHECK USED TO BE, and why it changed (#144): until the multi-block
+     path split its wall band, it was the witness for `MeshQuality::split` being
+     FALSE — a path that makes no split writing neither key, rather than two
+     objects full of negatives a reader would take for "we looked and found
+     nothing". #143 wrote that this check was the one to update when #144 landed,
+     and it is. That state now has NO producer in this tree; see the blind spots.
 
 MEASURED 2026-09-17, on the shipped config at its shipped values; the two halves
 added 2026-09-18 (#143), on the same runs:
@@ -203,9 +209,11 @@ INJECTIONS FOR THE SPLIT, run 2026-09-18 the same way, a rebuild per mutation:
      branches on `cells`, not on the figures — so this rule is guarded at two
      surfaces and not three.
   J. the sidecar's `if (quality.split)` forced true, so a path that made no split
-     writes two halves full of negatives -> 1 failure, check 16. Nothing else
-     moves: the hybrid path sets `split`, so its own three surfaces are unaffected,
-     which is what makes check 16 worth having separately.
+     writes two halves full of negatives -> 1 failure, check 16. RECORDED AS
+     HISTORY SINCE #144: both paths now set `split`, so this mutation changes
+     nothing anywhere and check 16 is no longer the guard it was. Re-run 2026-09-18
+     against the new check 16: 0 failures, and that is the blind spot below rather
+     than a result.
   K. `quality.split` left false on the hybrid path, so its sidecar carries no
      halves while its banner and line do -> 2 failures, the sidecar assertion in
      check 13 and in check 14. The banner and the line are untouched: this is the
@@ -221,6 +229,15 @@ INJECTIONS FOR THE SPLIT, run 2026-09-18 the same way, a rebuild per mutation:
 
 BLIND SPOTS, named rather than papered over:
 
+  * ``MeshQuality::split`` BEING FALSE HAS NO PRODUCER AND NO GATE since #144.
+    Both generation paths set it unconditionally, so the writer's `if
+    (quality.split)` branch in ``include/Provenance.hpp`` is taken on every mesh
+    this tool writes and the other branch is reachable only by a path nobody has
+    written yet. Injection J above is the measurement: it used to redden check 16
+    and now reddens nothing. The flag is KEPT rather than deleted because deleting
+    it makes the next path write two objects full of negatives — the state #143
+    argued against — but until there is a third path this file guards the shape
+    the two halves are NAMED in, not the choice not to write them.
   * The counts and the collection rules are covered HERE only through one shipped
     mesh each: this file asserts ``cells=15233`` on a real run, not that a
     four-cornered cell is what the non-triangle row counts. Each rule separately
@@ -468,27 +485,33 @@ def main() -> int:
               f"names {METRIC} (rc {mrc})",
               mrc == 0 and not qlines(mout, prefix=PREFIX) and METRIC not in mout)
 
-        # --- 16. A PATH THAT DOES NOT SPLIT WRITES NEITHER KEY ---------------
-        # `MeshQuality::split` is a state of its own, separate from a half that
-        # was measured and came back empty: a sidecar from a path that never made
-        # the split must carry no `layer` and no `bulk`, not two objects full of
-        # negatives that a reader would take for "we looked and found nothing".
-        # The multi-block path is today's only witness to that state, and it stops
-        # being one the moment #144 splits its wall band — THIS CHECK IS THEN THE
-        # ONE TO UPDATE, deliberately, and the naming shape it must match is
-        # `<metric>_layer_*` / `<metric>_bulk_*`, settled here because this ticket
-        # landed first.
+        # --- 16. BOTH PATHS SPLIT, UNDER ONE NAMING SHAPE --------------------
+        # #144's cross-path criterion, asserted HERE because this is the one place
+        # in the tree holding both paths' output at once. Each path keeps its own
+        # metric name, its own count's units and its own banner label; what the two
+        # share is the two words the halves travel under.
+        #
+        # WHAT THIS CHECK USED TO BE: the witness for `MeshQuality::split` being
+        # FALSE, when the multi-block path was the only path that did not split.
+        # #143 wrote that #144 would be the ticket to update it, and this is that
+        # update. That state now has no producer — see this file's blind spots.
         mside = sidecar(mstem)
-        check("16. the multi-block sidecar carries its whole-mesh quality and "
-              "NEITHER split key, because that path does not split yet — a path "
-              "that does not split writes no half rather than an empty one "
-              f"({sorted(mside or {})})",
+        mline = qlines(mout)[0] if qlines(mout) else {}
+        check("16. the multi-block sidecar carries BOTH halves under the same two "
+              f"keys this path's does ({sorted(mside or {})})",
               mside is not None and mside.get("metric") == MB_METRIC
-              and not any(h in mside for h in HALVES))
-        check("16. ...and its machine line carries no half's tokens either, so "
-              "the two paths' reports cannot be told one story by a reader "
-              "greping for a half",
-              not any(f"{MB_METRIC}_{h}_" in mout for h in HALVES))
+              and all(isinstance(mside.get(h), dict) for h in HALVES))
+        check("16. ...and its machine line carries them as "
+              f"{MB_METRIC}_layer_* / {MB_METRIC}_bulk_*, the same shape as this "
+              f"path's {METRIC}_layer_* — one naming shape, two metric names, so a "
+              "grep for a half still cannot confuse the two paths",
+              all(f"{MB_METRIC}_{h}_{f}" in mline for h in HALVES for f in FIELDS)
+              and all(f"{METRIC}_{h}_{f}" in line for h in HALVES for f in FIELDS)
+              and not any(k.startswith(METRIC) for k in mline))
+        check("16. ...while the BANNER labels stay each path's own word, which is "
+              "the half of the shape that is deliberately not shared",
+              set(sub_rows(out)) == {"boundary layer", "bulk"}
+              and "wall band" in mout and "boundary layer" not in mout)
 
         # --- 5. the distinction, on BOTH banners -----------------------------
         _, mrow = banner(mout)

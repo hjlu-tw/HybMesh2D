@@ -69,6 +69,29 @@ namespace hybmesh {
 // zero — a collapsed edge, or two coincident corners. Total and never throws.
 double cellShapeRatio(const std::vector<Point2D>& corners);
 
+// A QUAD'S TWO EXTENTS, in its own logical directions — the pair the quad branch
+// above takes the ratio of, handed out so a caller can ask WHICH of the two is
+// which.
+//
+// `extent01` is the cell's extent in the 0->1 direction and `extent12` its extent
+// in the 1->2 direction. Each is the distance between the midpoints of the two
+// edges that CROSS that direction, so on an a-by-b rectangle they are exactly a
+// and b, and `cellShapeRatio`'s quad branch is the larger over the smaller. It
+// lives here, and that branch READS it, for the reason the whole module exists:
+// the midline arithmetic written a second time is the copy that drifts.
+//
+// ITS OTHER CALLER IS THE MULTI-BLOCK WALL BAND (#144), which has to know whether
+// a cell is thinner ACROSS a declared wall than along it. That is a question about
+// the two extents SEPARATELY, and a ratio — which is orientation-free on purpose —
+// cannot answer it.
+//
+// Returns false for anything but four corners, leaving both outputs untouched. A
+// DEGENERATE quad still returns true, with a zero extent: "which direction is
+// shorter" has no answer there, and a caller that needs one asks for a positive
+// length itself rather than reading a zero as small.
+bool quadExtents(const std::vector<Point2D>& corners, double& extent01,
+                 double& extent12);
+
 // Median, p95 and max over a set of per-cell metrics.
 //
 // `cells` counts the cells that were actually MEASURED, not the cells offered:

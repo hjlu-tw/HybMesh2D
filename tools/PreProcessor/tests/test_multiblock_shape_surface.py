@@ -331,6 +331,26 @@ _HEAD = re.compile(
     r"\(quad midline ratio over (\d+) structured quads")
 _ROW = re.compile(r"^      block '([^']+)'\s+: (.+)$")
 _ROWNUM = re.compile(r"^median ([\d.]+), p95 ([\d.]+), max ([\d.]+)$")
+# The two WALL-BAND rows (#144), which sit under the same headline as the block
+# rows and at the same indent. Matched by their own labels rather than by
+# position, so a row inserted between them cannot silently reassign the figures.
+_HALF = re.compile(r"^      (wall band|bulk)\s+: (.+)$")
+_HALFNUM = re.compile(
+    r"^median ([\d.]+), p95 ([\d.]+), max ([\d.]+) \(over (\d+) ")
+
+# The two halves' names, in the KEY and in the sidecar. `layer` and not `wall` is
+# the shape both generation paths share (#143 shipped it first); the BANNER label
+# is this path's own word, which is why it is spelled in `_HALF` above and not
+# built from these.
+HALVES = ("layer", "bulk")
+
+# What the line and the sidecar carried BEFORE the split, spelled out literally.
+# Check 16 asserts these rather than names rebuilt from `METRIC`/`FIELDS`: a
+# rename that moved the constant and the tokens together would be invisible to
+# those, which is the whole defect this criterion exists to stop.
+LEGACY_TOKENS = ("quad_midline_ratio_cells", "quad_midline_ratio_median",
+                 "quad_midline_ratio_p95", "quad_midline_ratio_max")
+LEGACY_SIDECAR_KEYS = ("metric", "cells", "median", "p95", "max")
 
 # THE PIN'S BAND, and why it is this wide. The machine line prints six decimals,
 # so on the C-grid's max the print resolution alone is 3e-10 relative; the six runs
@@ -405,7 +425,8 @@ def run(tmp, name, config_text):
 
 
 def last_report(out):
-    """The LAST ``Cell shape`` block: ``(headline numbers or None, {block: text})``.
+    """The LAST ``Cell shape`` block: ``(headline or None, {block: text},
+    {half label: figures or None})``.
 
     ONE WALK, because both halves need the same answer to the same question — which
     of the report's two copies describes the mesh on disk — and two walks is two
@@ -417,9 +438,14 @@ def last_report(out):
     cases — which is how this gate is known to bite.
 
     The headline is None when the row said ``not measured`` (or is absent); the rows
-    are whatever text each block carried, parsed by the caller.
+    are whatever text each block carried, parsed by the caller. THE SAME WALK
+    COLLECTS THE TWO WALL-BAND ROWS (#144), for the reason above: they are rows of
+    the same report, and a second walk over the same output is a second chance to
+    disagree about which copy of it describes the mesh on disk. A half present but
+    reporting nothing is ``None``, which is how check 17 tells ``not measured``
+    from a row that never printed.
     """
-    head, rows = None, {}
+    head, rows, halves = None, {}, {}
     seen = False
     for line in out.splitlines():
         if line.startswith("  - Cell shape"):
@@ -427,16 +453,24 @@ def last_report(out):
             head = ({"median": float(m.group(1)), "p95": float(m.group(2)),
                      "max": float(m.group(3)), "cells": float(m.group(4))}
                     if m else None)
-            rows, seen = {}, True
+            rows, halves, seen = {}, {}, True
             continue
         if not seen:
+            continue
+        m = _HALF.match(line)
+        if m:
+            n = _HALFNUM.match(m.group(2).strip())
+            halves[m.group(1)] = ({"median": float(n.group(1)),
+                                   "p95": float(n.group(2)),
+                                   "max": float(n.group(3)),
+                                   "cells": float(n.group(4))} if n else None)
             continue
         m = _ROW.match(line)
         if m:
             rows[m.group(1)] = m.group(2).strip()
         elif line.strip() and not line.startswith("      "):
             seen = False
-    return head, rows
+    return head, rows, halves
 
 
 def sidecar(stem):
@@ -462,6 +496,17 @@ def shape_of(q):
     if q is None or any(METRIC + "_" + f not in q for f in FIELDS):
         return None
     return {f: q[METRIC + "_" + f] for f in FIELDS}
+
+
+def half_of(q, half):
+    """One half's four figures off a parsed machine line (#144), or None.
+
+    ``half`` is ``"layer"`` or ``"bulk"``; the tokens are the whole-mesh spelling
+    with that word inserted, which is the shape both generation paths share.
+    """
+    if q is None or any(f"{METRIC}_{half}_{f}" not in q for f in FIELDS):
+        return None
+    return {f: q[f"{METRIC}_{half}_{f}"] for f in FIELDS}
 
 
 def midlines(pts, quad):
@@ -540,7 +585,7 @@ def one_case(tmp, name, config_name, blocks):
     check(f"{name}: the shipped case runs and exits 0 (got {rc})", rc == 0)
 
     # --- 1. the banner row ---------------------------------------------------
-    head, rows = last_report(out)
+    head, rows, halves = last_report(out)
     check(f"{name}: 1. the banner carries a Cell shape row with median, p95, max "
           f"and the count of structured quads", head is not None)
     if head is None:
@@ -585,6 +630,64 @@ def one_case(tmp, name, config_name, blocks):
           all(abs(head[f] - got[f]) < 5e-4 for f in FIGURES)
           and head["cells"] == got["cells"])
 
+    # --- 14. THE SPLIT: the wall band apart from the rest --------------------
+    # #144's subject, on every shipped case. The band is the contiguous run of
+    # cells off each declared wall side that the clustering squeezed toward it;
+    # everything else is bulk.
+    lay = half_of(line, "layer")
+    blk = half_of(line, "bulk")
+    check(f"{name}: 14. the machine line carries both halves as key=<float> "
+          f"tokens under {METRIC}_layer_* and {METRIC}_bulk_*",
+          lay is not None and blk is not None)
+    check(f"{name}: 14. ...and the banner prints them as two rows under the "
+          f"headline, under distinct labels ({sorted(halves)})",
+          set(halves) == {"wall band", "bulk"})
+    if lay is None or blk is None:
+        return None, None
+    check(f"{name}: 14. ...the two halves PARTITION what the whole set measured, "
+          f"so no cell is counted twice and none is lost between them "
+          f"({lay['cells']:.0f} + {blk['cells']:.0f} = {got['cells']:.0f})",
+          lay["cells"] + blk["cells"] == got["cells"])
+    check(f"{name}: 14. ...the banner's two rows print the machine line's numbers "
+          f"to the three decimals they show, over the same two counts",
+          all((halves[lbl] is None and h["cells"] == 0)
+              or (halves[lbl] is not None
+                  and halves[lbl]["cells"] == h["cells"]
+                  and all(abs(halves[lbl][f] - h[f]) < 5e-4 for f in FIGURES))
+              for lbl, h in (("wall band", lay), ("bulk", blk))))
+    check(f"{name}: 14. ...and the sidecar carries both halves under mesh.quality, "
+          f"to the digit, so the three surfaces tell one story about the split as "
+          f"they already do about the whole",
+          side is not None
+          and all(isinstance(side.get(k), dict)
+                  and all(float(side[k][f]) == h[f] for f in FIELDS)
+                  for k, h in (("layer", lay), ("bulk", blk))))
+    check(f"{name}: 14. ...each half is ordered and at or above the metric's floor "
+          f"wherever it measured anything, and NEGATIVE throughout where it did "
+          f"not — on a metric whose floor is 1.0 a 0.0 could only be an absent "
+          f"measurement wearing a number",
+          all((1.0 <= h["median"] <= h["p95"] <= h["max"]) if h["cells"] > 0
+              else all(h[f] < 0.0 for f in FIGURES)
+              for h in (lay, blk)))
+
+    # --- 16. TODAY'S SPELLINGS STILL READ THE WHOLE MESH --------------------
+    # The compatibility half of the criteria, against LITERAL names rather than
+    # names rebuilt from `METRIC`/`FIELDS` — a rename that moved the constant and
+    # the tokens together would be invisible to those.
+    check(f"{name}: 16. every token the line carried before the split is still on "
+          f"it, spelled as it was ({', '.join(LEGACY_TOKENS)})",
+          all(k in line for k in LEGACY_TOKENS))
+    check(f"{name}: 16. ...and they still carry the WHOLE-MESH figures rather than "
+          f"a half's: the count is both halves' and the max the larger half's",
+          line[f"{METRIC}_cells"] == lay["cells"] + blk["cells"]
+          and line[f"{METRIC}_max"] == max(lay["max"], blk["max"]))
+    check(f"{name}: 16. ...the sidecar's mesh.quality still carries every key a "
+          f"reader written before the split knows, at the TOP of the object "
+          f"({', '.join(LEGACY_SIDECAR_KEYS)})",
+          side is not None and all(k in side for k in LEGACY_SIDECAR_KEYS))
+    check(f"{name}: 16. ...holding the whole-mesh figures there, not one half's",
+          side is not None and all(float(side[f]) == got[f] for f in FIGURES))
+
     # --- 8. the figures are orderly, and above the metric's floor ------------
     check(f"{name}: 8. median <= p95 <= max "
           f"({got['median']:.3f} <= {got['p95']:.3f} <= {got['max']:.3f})",
@@ -625,6 +728,17 @@ def one_case(tmp, name, config_name, blocks):
     check(f"{name}: 7. ...and the four shape figures are identical to every digit "
           f"the line prints, so turning the split off to diagnose a mesh does not "
           f"change the number being diagnosed", got == got2)
+    # --- 15. ...AND SO ARE THE TWO HALVES (#144) ----------------------------
+    # Both are measured on the STRUCTURED quads, like the figure above, so the
+    # sets as well as the numbers have to survive the split being turned off.
+    # THIS IS WHERE THE STRICT-SUBSET CASE IS COVERED: the C++ gate's own
+    # fixture is a one-block document whose four walls band every cell, and
+    # three of the five cases here have a band that is a proper part of the
+    # mesh.
+    check(f"{name}: 15. the two halves are identical with MB_SPLIT_QUADS off "
+          f"too — the same counts and the same figures to every digit the line "
+          f"prints",
+          all(half_of(line, h) == half_of(line2, h) for h in HALVES))
 
     # --- 12. an INDEPENDENT recomputation off the file on disk ---------------
     pts, quads = quad_corners(stem2 + ".vtk")
@@ -810,6 +924,77 @@ def main() -> int:
                   and not any(w in ln for ln in outs[name].splitlines()
                               if "Cell shape" in ln or _ROW.match(ln)
                               for w in _GRADED))
+
+        # --- 17. AN EMPTY BAND IS `not measured`, NOT 0.0 --------------------
+        # ORDINARY on this path rather than an error: a uniform rectangle
+        # clusters nothing at all, so no cell is thinner across a wall than
+        # along it. Which cases those are is PINNED, so a change that quietly
+        # emptied a band elsewhere — or filled one of these — reddens a check
+        # instead of leaving this one scanning nothing.
+        empty = sorted(n for n in outs
+                       if (half_of(quality(outs[n]), "layer") or {}).get("cells")
+                       == 0)
+        check("17. exactly the two uniform-rectangle cases have an EMPTY wall "
+              f"band ({empty}), so the checks below run on something and the "
+              "three cases with a band are not quietly among them",
+              empty == ["cavity", "square"])
+        for n in empty:
+            lay = half_of(quality(outs[n]), "layer")
+            blk = half_of(quality(outs[n]), "bulk")
+            whole = shape_of(quality(outs[n]))
+            _, _, halves = last_report(outs[n])
+            check(f"17. {n}: the banner prints `not measured` for that half "
+                  f"rather than 0.0 ({halves})",
+                  "wall band" in halves and halves["wall band"] is None)
+            check(f"17. {n}: ...and the half's four tokens are on the line with 0 "
+                  "cells and three NEGATIVE figures",
+                  all(lay[f] < 0.0 for f in FIGURES))
+            check(f"17. {n}: ...while the bulk half is the whole mesh, reporting "
+                  "the same figures rather than a blank",
+                  blk == whole)
+            # The MB_SPLIT_QUADS 0 twin's sidecar, which is the stem this
+            # function has: a real sidecar from a real run, and the one check 15
+            # has just shown reports the same two halves as the default run's.
+            side = sidecar(stems[n])
+            check(f"17. {n}: ...and the sidecar says the same, so a later reader "
+                  "cannot read an empty half as a measured 0",
+                  side is not None and isinstance(side.get("layer"), dict)
+                  and side["layer"].get("cells") == 0
+                  and all(float(side["layer"][f]) < 0.0 for f in FIGURES))
+
+        # --- 18. THE BAR THE TICKET ASKS FOR, on the shipped O-grid ----------
+        # The only numeric bar in this file, and it is a bar on the SPLIT doing
+        # something rather than a quality threshold: #128 rules those out and
+        # #140's pins are not ones. Two-sided on purpose — a bulk p95 under 3
+        # alone would also pass if the band silently swallowed the whole mesh,
+        # and a whole-mesh p95 over 20 alone is check 11's pinned figure.
+        olay = half_of(quality(outs["ogrid"]), "layer")
+        oblk = half_of(quality(outs["ogrid"]), "bulk")
+        owhole = shape_of(quality(outs["ogrid"]))
+        check("18. the shipped O-grid's BULK p95 is below 3 while its WHOLE-MESH "
+              f"p95 is above 20 (bulk {oblk['p95']:.3f}, whole {owhole['p95']:.3f}) "
+              "— the number that answers \"what shape is the rest of my mesh\" is "
+              "now reported rather than absent",
+              oblk["p95"] < 3.0 and owhole["p95"] > 20.0)
+        check("18. ...and the band is MORE THAN 5% of the measured quads "
+              f"({100.0 * olay['cells'] / owhole['cells']:.1f}%), which is why the "
+              "whole-mesh p95 was a wall figure on this mesh",
+              olay["cells"] > 0.05 * owhole["cells"])
+        check("18. ...with the band a PROPER PART of the mesh, so neither half is "
+              f"the whole wearing a second name ({olay['cells']:.0f} banded, "
+              f"{oblk['cells']:.0f} bulk)",
+              0 < olay["cells"] < owhole["cells"] and oblk["cells"] > 0)
+        check("18. ...the band is where the stretch went: its median is above the "
+              f"bulk's p95 (band median {olay['median']:.3f}, bulk p95 "
+              f"{oblk['p95']:.3f}) and its max IS the whole mesh's "
+              f"({olay['max']:.3f})",
+              olay["median"] > oblk["p95"] and olay["max"] == owhole["max"]
+              and owhole["max"] > oblk["max"])
+        check("18. ...and the whole-mesh p95 is NEITHER half's, which is the "
+              "defect this split exists to stop: the figures landing beside the "
+              f"old ones rather than quietly replacing them ({owhole['p95']:.3f} "
+              f"against {olay['p95']:.3f} and {oblk['p95']:.3f})",
+              owhole["p95"] not in (olay["p95"], oblk["p95"]))
 
         # --- 13. what a large max IS, on BOTH cases that have one ------------
         # The O-grid as well as the C-grid, so "the C-grid's is the same quotient

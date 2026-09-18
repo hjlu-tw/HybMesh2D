@@ -79,6 +79,86 @@ bool quadCorners(const hybmesh::MbResult& mesh, const hybmesh::MbBlock& b, int i
     return true;
 }
 
+// WHICH OF ONE BLOCK'S STRUCTURED QUADS THE WALL CLUSTERING SQUEEZED (issue
+// #144), as a mask indexed `j * (ni - 1) + i`. Empty for a block this report
+// cannot walk, and all zeroes for a block no `wall` side of which was declared —
+// which is how "a block with no wall side is all bulk" holds without a rule of
+// its own.
+//
+// The walk starts ON the declared side and steps outward one cell at a time,
+// stopping at the first cell whose extent ACROSS the side is not shorter than its
+// extent ALONG it. That comparison is the whole definition of the band and it
+// carries no cut-off: no radius, no layer count, no multiple of the first-cell
+// height. See MbQualityReport, where the rule and the measurement behind it are
+// stated.
+//
+// PER STATION ALONG THE SIDE, not per row: `k` walks the side and `d` walks away
+// from it, so each station stops where its own clustering stops. A `break` ends
+// that station's walk and not the side's.
+//
+// TWO SIDES OF ONE BLOCK MAY BOTH BE WALLS (the shipped O-grid's body arc and its
+// far-field arc both are), so this is a UNION over the block's declared sides. A
+// cell reached from either is in the band once; the mask cannot double-count it,
+// which is what keeps the two sets a partition.
+// See the comparison inside `wallBandMask` for what this is and what it is NOT.
+constexpr double TIE_REL = 1e-12;
+
+std::vector<char> wallBandMask(const hybmesh::MbResult& mesh, size_t blockIdx) {
+    const hybmesh::MbBlock& b = mesh.blocks[blockIdx];
+    if (!blockIsWalkable(b)) return {};
+    const size_t nci = static_cast<size_t>(b.ni - 1);
+    std::vector<char> mask(nci * static_cast<size_t>(b.nj - 1), 0);
+    for (const hybmesh::MbWallSpec& ws : mesh.wallSpecs) {
+        if (ws.block < 0 || static_cast<size_t>(ws.block) != blockIdx) continue;
+        const hybmesh::MbSideWalk w = hybmesh::mbSideWalk(b, ws.side);
+        if (!w.ok) continue;
+        for (int k = 0; k + 1 < w.n; ++k) {
+            for (int d = 0; d + 1 < w.m; ++d) {
+                // The cell's LOW transverse index, counting away from the side:
+                // at the near end that is `d`, at the far end the block is walked
+                // inward from its last cell. `mbSideAxis` owns which of the two a
+                // side is, here as everywhere else in this file.
+                const int tlo = w.ax.atFarEnd ? (w.m - 2 - d) : d;
+                const int i = w.ax.alongI ? k : tlo;
+                const int j = w.ax.alongI ? tlo : k;
+                Point2D c[4];
+                // A cell this report cannot resolve ends the walk rather than
+                // being guessed past: nothing here can say whether it was
+                // clustered, and marking it either way would be an answer nobody
+                // measured. It still reaches the statistics, as the unmeasurable
+                // cell it is, through the loop below.
+                if (!quadCorners(mesh, b, i, j, c)) break;
+                double e01 = 0.0, e12 = 0.0;   // extents along i and along j
+                if (!hybmesh::quadExtents({c[0], c[1], c[2], c[3]}, e01, e12)) break;
+                // A side running along i is crossed in j, and vice versa. Both
+                // lengths must be positive: a degenerate cell has no shorter
+                // direction, and reading its 0 as "very thin" would put a cell
+                // nobody could measure at the head of the band.
+                const double across = w.ax.alongI ? e12 : e01;
+                const double along = w.ax.alongI ? e01 : e12;
+                if (!(across > 0.0) || !(along > 0.0)) break;
+                // TWO EXTENTS THAT AGREE TO WITHIN ROUNDING ARE NOT A SQUEEZED
+                // CELL, and this is a FLOATING-POINT EQUALITY tolerance rather
+                // than a physical cut-off: it decides ties, never how far the
+                // band reaches. A bare `across < along` was measured on the
+                // shipped square — a 1x1 domain filled with 400 geometrically
+                // IDENTICAL 0.05-by-0.05 cells — and banded 72 of them, because
+                // the two midlines of a square come out of a few adds and a
+                // `hypot` a last bit apart and the sign of that bit is noise. A
+                // uniform grid clusters nothing, and the report now says so.
+                // Four orders above that noise and twelve below any real
+                // clustering (the shipped O-grid's shallowest banded cell is
+                // 1.098, its first unbanded one 1.012): it empties the square's
+                // spurious 72 and the cavity's 0, and moves no other shipped
+                // case's band by a single cell.
+                if (!(across < along * (1.0 - TIE_REL))) break;
+                mask[static_cast<size_t>(j) * nci + static_cast<size_t>(i)] = 1;
+            }
+        }
+    }
+    return mask;
+}
+
 }  // namespace
 
 hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
@@ -124,12 +204,21 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
     // what "badly shaped" means. A block that yields nothing measurable is still
     // LISTED, with its own figures negative, for the reason the unmeasurable wall
     // row is listed: a block nobody could measure is worth seeing.
+    //
+    // AND SPLIT IN TWO SINCE #144: the same per-cell ratio goes into the whole-mesh
+    // set and into exactly one of the wall band and the bulk, so the two halves
+    // partition what the whole set measured by construction. The mask decides
+    // which, and an unmeasurable cell is dropped from all three by the one rule in
+    // `reduceCellShapes` — so no rule about measurability can hold in one set and
+    // not another.
     {
-        std::vector<double> all;
-        for (const MbBlock& b : mesh.blocks) {
+        std::vector<double> all, band, rest;
+        for (size_t bi = 0; bi < mesh.blocks.size(); ++bi) {
+            const MbBlock& b = mesh.blocks[bi];
             MbBlockShape row;
             row.blockId = b.id;
             std::vector<double> mine;
+            const std::vector<char> mask = wallBandMask(mesh, bi);
             if (blockIsWalkable(b)) {
                 for (int j = 0; j + 1 < b.nj; ++j) {
                     for (int i = 0; i + 1 < b.ni; ++i) {
@@ -140,9 +229,14 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
                         // and come back with a perfectly ordinary edge ratio for a
                         // cell nobody could measure. Check 9e is that case, and is why
                         // `quadCorners` returns all four or none.
-                        mine.push_back(quadCorners(mesh, b, i, j, c)
-                                           ? cellShapeRatio({c[0], c[1], c[2], c[3]})
-                                           : -1.0);
+                        const double r = quadCorners(mesh, b, i, j, c)
+                                             ? cellShapeRatio({c[0], c[1], c[2], c[3]})
+                                             : -1.0;
+                        mine.push_back(r);
+                        const size_t idx = static_cast<size_t>(j)
+                                             * static_cast<size_t>(b.ni - 1)
+                                         + static_cast<size_t>(i);
+                        (mask[idx] ? band : rest).push_back(r);
                     }
                 }
             }
@@ -151,6 +245,8 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
             q.blockShapes.push_back(std::move(row));
         }
         q.structuredShape = reduceCellShapes(std::move(all));
+        q.structuredLayerShape = reduceCellShapes(std::move(band));
+        q.structuredBulkShape = reduceCellShapes(std::move(rest));
     }
 
     // ── Wall first-cell height: what was asked for, against what was filled ──
