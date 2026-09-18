@@ -770,9 +770,24 @@ exactly the defect the whole mesh's does.
   that split would have changed nothing about the number it exists to fix; it takes
   **15 of the 48 rows** in the band before the bulk p95 drops under 3. The ticket's
   own demo prose ("the bulk figures land near 1.2–1.9") matches the clustered band
-  and not the adjacent row. The user was shown both, with the numbers, and chose the
-  band. **The one-row variant is kept as injection V** of the surface gate, so the
-  20.05 is a measurement this tree can reproduce rather than a sentence.
+  and not the adjacent row — bulk median 1.693, p95 1.878, max 1.882, all three inside
+  it. The user was shown both, with the numbers, and chose the band. **The one-row
+  variant is kept as injection V** of the surface gate, so the 20.05 is a measurement
+  this tree can reproduce rather than a sentence.
+  **THE OTHER HALF OF THAT DEMO LINE IS NOT DELIVERED, and saying so is the point of
+  writing it down.** #144 also asks for "the wall band's near 21–33", which is #128's
+  own 21.85 / 32.77 — a band of SIX rows. The band that ships is 24 rows and reaches
+  down to 1.098, so its median is **5.184**; only its p95 (28.508) and max (32.768)
+  land in that range. The two halves of that sentence describe two different bands and
+  no single rule delivers both, which is the conflict criteria 1 and 3 carry, restated
+  in the prose. Found by the Spec review.
+- **WHAT CRITERION 1 ACTUALLY GOT.** It asks for a set "identified from the structured
+  grid's own indexing, not from a geometric distance guess". The indexing chooses the
+  DIRECTION and the start — `mbSideWalk` off `wallSpecs` says which index runs across
+  the wall — while a per-cell comparison of two lengths chooses the STOP. That is not a
+  distance test and picks no cut-off, so the criterion's actual prohibition holds; but
+  "from the indexing" on its own is wider than the code, and the rule file now says
+  which half is which.
 - **A CELL IS IN THE BAND WHILE ITS EXTENT ACROSS A DECLARED WALL SIDE IS SHORTER
   THAN ITS EXTENT ALONG IT.** The walk starts on the side, steps outward, and stops
   at the first cell where that is not true — **per station along the side**, so a
@@ -797,10 +812,14 @@ exactly the defect the whole mesh's does.
   sign of that bit is noise, so the band's SIZE was noise while its figures (all
   1.000000) looked perfect. The comparison now carries a **1e-12 relative tie
   rule** — a floating-point EQUALITY tolerance and not a cut-off: it decides ties,
-  never how far the band reaches. Four orders above the arithmetic's noise and
-  twelve below any real clustering (the O-grid's shallowest banded cell is 1.098 and
-  its first unbanded one 1.012), it empties the square's and the cavity's bands and
-  moves no other shipped case by a single cell. **The C++ fixture for it had to be
+  never how far the band reaches. **3.7 orders above a double's own epsilon and TEN
+  below the nearest margin any shipped case has** — the O-grid's first UNBANDED cell
+  misses the tie by 1.2% and its shallowest banded one by 8.9% — it empties the
+  square's and the cavity's bands and moves no other shipped case by a single cell.
+  (The first draft of this entry and of the comment at the constant both said
+  TWELVE, which compares 1e-12 against 1 rather than against the margin the
+  sentence's own parenthetical names; found by the Standards axis, which measured
+  it.) **The C++ fixture for it had to be
   that 0.05 grid**: check 10e's first draft was a ladder on INTEGER coordinates,
   whose midlines come out exactly equal, and injection O was INERT against it — the
   same "a check written for a defect it cannot reach" shape as injection K one entry
@@ -870,6 +889,32 @@ exactly the defect the whole mesh's does.
   declares a side running along i, so that ternary's other branch was exercised by
   nothing while the shipped O-grid's body arc is a west side. And `O` is the tie
   rule's, inert until its fixture became the shipped square's own grid.
+- **THE BANNER ROW HELPER IS SHARED AND THE TOKEN EMITTER IS NOT, and the review that
+  asked for both is why that is written down.** #144's Standards axis found the two
+  `splitRow` lambdas byte-identical and the two `tokens` lambdas different only in one
+  literal, and called the duplication out against the rule files' own "ONE NAMING SHAPE
+  FOR BOTH GENERATION PATHS". Half of it was right: the row is now `printShapeHalf` at
+  file scope, beside `shapePhrase` and for that helper's exact reason — #143 had shipped
+  the empty-half parenthetical WRONG on one path and right on the other, which is the
+  defect two copies produce. The other half was measured and reverted: a shared
+  `printShapeTokens` takes the metric NAME as an argument, which is one step from the
+  `shape_metric=` value #142 refuses outright, and it turns
+  `tests/test_comparability_refusal.py` check 6 red on both emitters because that check
+  reads four `<metric>_*` tokens out of each emitter's own statement. **The line is
+  between RENDERING and NAMING**: a helper that formats three numbers is shared, a
+  helper that spells a metric is not. A documented standard beats a smell, and the smell
+  will be found again — which is why the refusal is a comment at `printShapeHalf` and a
+  bullet in #142's rule entry rather than only here.
+- **`MB_EDGE_WALL` IS "A BOUNDARY EDGE", NOT "A NO-SLIP WALL".** The kind is a
+  topology word — `wall` against `interface` and `cut` — and the BC comes from the
+  bound geometry's sidecar, so the O-grid's far-field arcs are `kind: "wall"` and ARE
+  walked as wall sides. They band nothing on the shipped case, because the outermost
+  radial interval (about 1.2) is longer than the arc it spans (0.654) and the walk
+  stops at once. A topology that clustered against its far field would put those cells
+  in "wall-clustered quads": correct under the rule and surprising under the word. The
+  fix would be reading a boundary CONDITION to decide a shape figure's SET, which is
+  the coupling this whole batch avoided — so the name over-claims by that much and is
+  left saying so. Found by the Spec review.
 - Blind spots, named rather than papered over. **The band's FIGURES are not pinned,
   only its two counts**: a change that kept the same cells in each half and computed
   their median, p95 or max wrongly would pass everything but the banner-and-sidecar

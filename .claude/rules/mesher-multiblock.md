@@ -242,6 +242,13 @@ Measured after the split: band 2304 quads at median 5.184 / p95 28.508 / max 32.
   nothing that would make the figures a knob. It reads `quadExtents` (`include/CellShape.hpp`) and
   NOT `cellShapeRatio`, whose ratio is orientation-free on purpose and cannot say which direction
   is the short one.
+- **THE INDEXING CHOOSES THE DIRECTION; THE CELL'S OWN TWO EXTENTS DECIDE THE STOP.** #144's
+  criterion 1 asks for a set "identified from the structured grid's own indexing, not from a
+  geometric distance guess", and the honest reading of what shipped is the sentence above rather
+  than the criterion's: `mbSideWalk` and `wallSpecs` say WHICH index runs across the wall and where
+  to start, and a per-cell comparison of two lengths says where to stop. It is not a distance test
+  and picks no cut-off, so the criterion's actual prohibition holds — but "from the indexing" alone
+  would be wider than the code, and the Spec review said so.
 - **"WALL-ADJACENT" IS NOT THE RULE, and the ticket's own two criteria could not both hold.** #144
   asked for the wall-ADJACENT cells AND for a bulk p95 below 3. Measured: a band of one row is 2.1%
   of the O-grid and leaves the bulk p95 at **20.05**, still a wall figure, so that split would have
@@ -259,6 +266,13 @@ Measured after the split: band 2304 quads at median 5.184 / p95 28.508 / max 32.
   from. **TWO SIDES OF ONE BLOCK MAY BOTH BE WALLS** (the O-grid's body arc and its far-field arc
   are), so the mask is a UNION and a cell reached from either is banded once; that is what keeps
   `structuredShape.cells == structuredLayerShape.cells + structuredBulkShape.cells` true.
+- **`MB_EDGE_WALL` IS "A BOUNDARY EDGE", NOT "A NO-SLIP WALL", so the band's name over-claims by
+  exactly that much.** The O-grid's far-field arcs are `kind: "wall"` and ARE walked; here they band
+  nothing, because the outermost radial interval is longer than the arc it spans (≈1.2 against
+  0.654). A topology that clustered against its far field would put those cells in
+  "wall-clustered quads" — correct under the rule, surprising under the word. Named by the Spec
+  review; not fixed, because the alternative is reading a BC out of the sidecar to decide a shape
+  figure's set, which is the coupling #128 spent the batch avoiding.
 - **ONE NAMING SHAPE FOR BOTH GENERATION PATHS: `<metric>_layer_*` and `<metric>_bulk_*`.** This
   path ships `quad_midline_ratio_layer_cells|median|p95|max` and `_bulk_*`, and `quality.layer` /
   `quality.bulk` in the sidecar; the hybrid path shipped `tri_edge_ratio_layer_*` first (#143) and

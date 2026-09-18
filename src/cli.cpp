@@ -363,6 +363,44 @@ static std::string shapePhrase(const hybmesh::ShapeStats& st) {
     return os.str();
 }
 
+// ONE HALF-ROW AND ONE SET OF HALF-TOKENS FOR BOTH PATHS (issues #143, #144).
+//
+// FILE SCOPE, for `shapePhrase`'s reason one screen up and with the same boundary.
+// Both rule files state "ONE NAMING SHAPE FOR BOTH GENERATION PATHS" as a RULE, and
+// #143 shipped these as a lambda inside each reporter — so the rule was written
+// twice and only `tests/test_hybrid_shape_surface.py` check 16 stood between the two
+// copies and a drift. Review found it. What is shared is the FORMATTING of three
+// numbers and the four field names; the metric NAME, the banner LABEL and the noun
+// for the cells stay each path's own and are passed in, because those are what must
+// differ.
+//
+// `what` NAMES THE CELLS AND NOTHING ELSE. An empty half prints `not measured` with
+// a parenthetical that names NO CAUSE: `cells 0` has two ways in — no such cell
+// existed, or none of them could be measured — and a parenthetical that picked one
+// would be a false claim about the mesh in the other case. The hybrid path shipped
+// the wrong one first (#143 review); one home is what stops that recurring.
+static void printShapeHalf(const char* label, const hybmesh::ShapeStats& st,
+                           const char* what) {
+    std::cout << bannerSub(label) << shapePhrase(st);
+    if (st.cells == 0)
+        std::cout << " (none of the " << what << " could be measured)";
+    else
+        std::cout << " (over " << st.cells << " " << what << ")";
+    std::cout << "\n";
+}
+
+// AND THE TOKEN EMITTERS ARE DELIBERATELY *NOT* SHARED, which is the other half of
+// the same decision. A `printShapeTokens(os, metric, half, st)` beside the row helper
+// above is the obvious next step — a review asked for it — and it is REFUSED: #142
+// rules that the two paths' shape figures are never merged and never given one shared
+// label, and `tests/test_comparability_refusal.py` check 6 enforces that by reading
+// four `<metric>_*` tokens out of EACH emitter's own statement. A shared emitter takes
+// the metric name as an ARGUMENT, which is one step from the `shape_metric=` value
+// that ticket refuses outright, and it empties the check that would notice. The
+// extraction was written, measured against that gate (check 6 red on both emitters)
+// and reverted. What is shared is the FORMATTING of three numbers; the metric name and
+// the four field names stay each path's own, written where a grep finds one home each.
+
 // Print the quality report. Split out of the adapter because the adapter's whole
 // character is "a loop with no decisions in it", and eleven lines of formatting
 // was on its way to obscuring the one decision it does now make (the exit code).
@@ -465,17 +503,8 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // carried since #130 and #143 took to its own rows: `cells 0` has two ways in —
     // no such cell existed, or none of them could be measured — and a parenthetical
     // that picked one would be a false claim about the mesh in the other case.
-    auto splitRow = [](const char* label, const hybmesh::ShapeStats& s,
-                       const char* what) {
-        std::cout << bannerSub(label) << shapePhrase(s);
-        if (s.cells == 0)
-            std::cout << " (none of the " << what << " could be measured)";
-        else
-            std::cout << " (over " << s.cells << " " << what << ")";
-        std::cout << "\n";
-    };
-    splitRow("wall band", q.structuredLayerShape, "wall-clustered quads");
-    splitRow("bulk", q.structuredBulkShape, "quads outside the wall band");
+    printShapeHalf("wall band", q.structuredLayerShape, "wall-clustered quads");
+    printShapeHalf("bulk", q.structuredBulkShape, "quads outside the wall band");
     // PER BLOCK, under the headline, the way each wall gets a row under the wall
     // headline. A block is the unit the user declared, so "the wake blocks are the
     // stretched ones" is an answer they can act on.
@@ -504,8 +533,9 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // default split the two differ by a factor of two, and that difference is the
     // evidence the figure is measured where it says it is.
     //
-    // ONE SPELLING OF THE FOUR FIELD NAMES, for all three sets (issue #144, and
-    // #143's shape on the other path). `half` is the empty string for the whole
+    // ONE SPELLING OF THE FOUR FIELD NAMES, for all three of THIS path's sets, and
+    // a lambda here rather than a helper shared with the other path — see the
+    // refusal at `printShapeHalf` (issue #144, and #143's shape on that path). `half` is the empty string for the whole
     // mesh and `layer_` / `bulk_` for the two halves, so `quad_midline_ratio_cells`
     // and `quad_midline_ratio_layer_cells` cannot drift apart under an edit that
     // meant to touch one of them. That the whole-mesh four still spell out as they
@@ -1067,28 +1097,15 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
 
     // THE TWO HALVES, BESIDE THE WHOLE AND NOT INSTEAD OF IT (issue #143). The row
     // above is the figure #130 shipped and is left exactly where it was; these two
-    // are what make it readable. Same helper, so an empty half prints `not
-    // measured` here for the same reason and in the same words it does up there —
-    // and an empty half is ORDINARY on this path, not an error: a geometry meshed
-    // through `-geom_nobl` grows no layer at all.
-    //
-    // AN EMPTY HALF NAMES NO CAUSE, for the headline row's reason one branch up:
-    // this row branches on the MEASURED count, and `cells 0` has two ways in — no
-    // such cell existed, or none of them could be measured. On the Cartesian
-    // fallback 400 quads sit outside the boundary layer and not one is measurable,
-    // so `(no cells outside the boundary layer)` would be a false claim about the
-    // mesh. What is true in both cases is that no such cell could be MEASURED.
-    auto splitRow = [](const char* label, const hybmesh::ShapeStats& s,
-                       const char* what) {
-        std::cout << bannerSub(label) << shapePhrase(s);
-        if (s.cells == 0)
-            std::cout << " (none of the " << what << " could be measured)";
-        else
-            std::cout << " (over " << s.cells << " " << what << ")";
-        std::cout << "\n";
-    };
-    splitRow("boundary layer", rep.layer, "cells the boundary layer emitted");
-    splitRow("bulk", rep.bulk, "cells outside the boundary layer");
+    // are what make it readable. An empty half is ORDINARY on this
+    // path, not an error: a geometry meshed through `-geom_nobl` grows no layer at
+    // all. The words for that state are `printShapeHalf`'s — including why the
+    // parenthetical names no cause, which this path is the worked example of: on
+    // the Cartesian fallback 400 quads DO sit outside the boundary layer and not
+    // one of them is measurable, so `(no cells outside the boundary layer)` was a
+    // false claim about the mesh and shipped as one.
+    printShapeHalf("boundary layer", rep.layer, "cells the boundary layer emitted");
+    printShapeHalf("bulk", rep.bulk, "cells outside the boundary layer");
 
     if (nonTriangles > 0)
         std::cout << bannerSub("not triangles") << nonTriangles << " of "
@@ -1113,7 +1130,9 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     std::ostringstream mr;
     mr << std::setprecision(6) << std::fixed;
     mr << "HYBMESH_HYBRID_QUALITY cells=" << offered;
-    // ONE SPELLING OF THE FOUR FIELD NAMES, for all three sets. `half` is the
+    // ONE SPELLING OF THE FOUR FIELD NAMES, for all three of THIS path's sets, and
+    // a lambda here rather than a helper shared with the multi-block path — see the
+    // refusal at `printShapeHalf`. `half` is the
     // empty string for the whole mesh and `layer_` / `bulk_` for the two halves,
     // so `tri_edge_ratio_cells` and `tri_edge_ratio_layer_cells` cannot drift
     // apart under an edit that meant to touch one of them. That the whole-mesh

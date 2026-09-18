@@ -197,7 +197,8 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
   the adapter records. Never throws; a malformed document comes back as an error string.
 - **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
-- **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, shared by BOTH
+- **`CellShape.cpp`**: the per-cell SHAPE metric, its median/p95/max reducer, and `quadExtents`
+  (the quad's two extents, named by DIRECTION — #144's wall band is its second caller), shared by BOTH
   generation paths since #130 — the quad branch by `measureMbQuality` (#129), the triangle branch
   and `measureCellShapes` by `measureHybridCellShapes` (#130 wired them from
   `printHybridQuality` in `src/cli.cpp`; #141 moved that half into the file below). Pure, total,
@@ -214,8 +215,8 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
 
 **CELL SHAPE HAS ONE DEFINITION, AND IT IS A PURE FUNCTION OF CORNER COORDINATES**
 (`include/CellShape.hpp` + `src/CellShape.cpp` in `hybmesh_pure`; #129, parent #128). A cell
-arrives as its corner coordinates and leaves as one number; `reduceCellShapes` turns a set of
-those into median / p95 / max. It knows nothing about `MbResult`, `Mesh` or gmsh, and
+arrives as its corner coordinates and leaves as one number — or, since #144, as its two EXTENTS;
+`reduceCellShapes` turns a set of the numbers into median / p95 / max. It knows nothing about `MbResult`, `Mesh` or gmsh, and
 `tests/cpp/test_cell_shape.cpp` never builds an `MbResult` — that executable failing to link is
 the signal the one definition has grown a dependency.
 - **The metric depends on the CELL KIND and the two carry DIFFERENT NAMES.** A quad is the ratio
@@ -225,6 +226,15 @@ the signal the one definition has grown a dependency.
   sqrt(2) as either of its split triangles, so a shared label would invite a comparison that
   means nothing. The arithmetic is shared because writing it twice guarantees drift; the two
   entry points, the two output lines and the two names stay separate.
+- **`quadExtents` HANDS OUT THE PAIR THE QUAD RULE REDUCES, AND ITS OUTPUTS ARE NAMED BY
+  DIRECTION** (#144). `extent01` is the cell's extent in the 0->1 direction and `extent12` in the
+  1->2 direction — each the midline between the two edges that CROSS that direction, so on an
+  a-by-b rectangle they are a and b. `cellShapeRatio`'s quad branch READS it, so the midline
+  arithmetic keeps one home. **Naming them by the edges each midline joins instead is the trap**:
+  getting the two the wrong way round is invisible in a max-over-min and is exactly what the only
+  other caller would get wrong. That caller is the multi-block WALL BAND
+  (`.claude/rules/mesher-multiblock.md`), which asks which of a cell's two directions is the short
+  one — a question the ratio is orientation-free by design and cannot answer.
 - **NOT the edge-length ratio, and the sheared-parallelogram argument for that is FALSE** — on
   any parallelogram the two definitions agree exactly. What tells them apart is TAPER: on the
   trapezoid `(0,0) (4,0) (3,2) (1,2)` the longest and shortest edges are both the i-direction,
@@ -371,6 +381,15 @@ parent #128). Half of #128's story 5 was REFUSED to keep it that way. **Do not c
 - **No shared name, key, row, column or ratio.** Not one `cell_shape` key in the sidecar (the two
   `quality.metric` labels are two), not a `shape_metric=` token, not a "both paths" column in a
   panel, a README or a pipeline summary, and never one figure derived from the two.
+- **AND NO SHARED TOKEN EMITTER, which is where a de-duplication will keep arriving.** The two
+  `key=<float>` emitters in `src/cli.cpp` are near-identical and #144's review asked for one
+  `printShapeTokens(os, metric, half, st)`. It was written, run, and REVERTED: a shared emitter
+  takes the metric name as an ARGUMENT — one step from the `shape_metric=` value the bullet above
+  refuses — and it empties `tests/test_comparability_refusal.py` check 6, which reads four
+  `<metric>_*` tokens out of EACH emitter's own statement and went red on both. **What IS shared is
+  the FORMATTING**: `shapePhrase` (#130) and `printShapeHalf` (#144) render three numbers and a
+  row, and neither knows a metric name. The line is between rendering and naming, and it is the
+  same line #130 drew.
 - **THE BANNER SENTENCE IS THE ENFORCEMENT**, not this file: the `NOT comparable` clause each
   `Cell shape` row carries (`printMbQuality` and `printHybridQuality` in `src/cli.cpp` — the rule
   that BOTH rows carry it is stated above) is quoted VERBATIM in the design note and held against

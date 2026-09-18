@@ -79,6 +79,11 @@ bool quadCorners(const hybmesh::MbResult& mesh, const hybmesh::MbBlock& b, int i
     return true;
 }
 
+// See the comparison inside `wallBandMask` below for what this is and what it is
+// NOT. Above that function's own doc block rather than between the two, so the
+// block reads as the function's and not as this constant's.
+constexpr double TIE_REL = 1e-12;
+
 // WHICH OF ONE BLOCK'S STRUCTURED QUADS THE WALL CLUSTERING SQUEEZED (issue
 // #144), as a mask indexed `j * (ni - 1) + i`. Empty for a block this report
 // cannot walk, and all zeroes for a block no `wall` side of which was declared —
@@ -100,9 +105,6 @@ bool quadCorners(const hybmesh::MbResult& mesh, const hybmesh::MbBlock& b, int i
 // far-field arc both are), so this is a UNION over the block's declared sides. A
 // cell reached from either is in the band once; the mask cannot double-count it,
 // which is what keeps the two sets a partition.
-// See the comparison inside `wallBandMask` for what this is and what it is NOT.
-constexpr double TIE_REL = 1e-12;
-
 std::vector<char> wallBandMask(const hybmesh::MbResult& mesh, size_t blockIdx) {
     const hybmesh::MbBlock& b = mesh.blocks[blockIdx];
     if (!blockIsWalkable(b)) return {};
@@ -146,11 +148,14 @@ std::vector<char> wallBandMask(const hybmesh::MbResult& mesh, size_t blockIdx) {
                 // the two midlines of a square come out of a few adds and a
                 // `hypot` a last bit apart and the sign of that bit is noise. A
                 // uniform grid clusters nothing, and the report now says so.
-                // Four orders above that noise and twelve below any real
-                // clustering (the shipped O-grid's shallowest banded cell is
-                // 1.098, its first unbanded one 1.012): it empties the square's
-                // spurious 72 and the cavity's 0, and moves no other shipped
-                // case's band by a single cell.
+                // 3.7 orders above a double's own epsilon, and TEN below the
+                // nearest margin any shipped case has: the O-grid's first
+                // UNBANDED cell misses the tie by 1.2% and its shallowest banded
+                // one by 8.9%. (An earlier draft of this comment said TWELVE,
+                // comparing the tolerance against 1 rather than against the
+                // margin the sentence's own parenthetical names.) It empties the
+                // square's spurious 72 and the cavity's 0, and moves no other
+                // shipped case's band by a single cell.
                 if (!(across < along * (1.0 - TIE_REL))) break;
                 mask[static_cast<size_t>(j) * nci + static_cast<size_t>(i)] = 1;
             }
