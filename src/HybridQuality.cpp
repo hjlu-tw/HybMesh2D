@@ -9,8 +9,8 @@ HybridShapeReport measureHybridCellShapes(
     std::vector<std::vector<Point2D>> tris;
     tris.reserve(cellNodeIds.size());
     for (const std::vector<int>& ids : cellNodeIds) {
-        // The two-node entries are the visualisation line segments addTaggedLoop
-        // records, not cells: `Mesh::exportStarCD` skips them by the same test.
+        // Not a cell. The header says what the two-node entries are and who else
+        // skips them by this same test; one home for that, not two.
         if (ids.size() < 3) continue;
         ++rep.offered;
         if (ids.size() != 3) { ++rep.nonTriangles; continue; }

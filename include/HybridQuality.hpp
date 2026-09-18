@@ -59,13 +59,13 @@ struct HybridShapeReport {
     ShapeStats shape;         // over the cells that could be measured
 };
 
-// Collect the exported cells worth measuring and reduce them, in one pass.
+// Collect the exported cells worth measuring, then reduce them.
 //
 // `cellNodeIds` is one entry per exported element, holding its node ids in order
 // around the cell; `nodes` is the coordinate for each id. An entry with fewer than
 // 3 ids is NOT A CELL and is not offered — the two-node entries are the
-// visualisation line segments `Mesh::addTaggedLoop` records, which
-// `Mesh::exportStarCD` skips by the same test.
+// visualisation line segments `addTaggedLoop` (a file-static in src/cli.cpp)
+// records, which `Mesh::exportStarCD` skips by the same test.
 //
 // A CELL WHOSE IDS DO NOT ALL RESOLVE IS UNMEASURABLE, said here rather than left
 // to the metric. Passing on the corners that did resolve would reach

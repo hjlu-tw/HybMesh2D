@@ -906,6 +906,23 @@ touched: that is what building the pure half first bought.
     defect it cannot reach. Worth knowing for the next injector: the literal
     spelling does not COMPILE under the `-Werror` build CI uses, because `resolved`
     is then set and never read.
+  - **ONE ACCEPTANCE CRITERION HAD A FALSE PREMISE, and both review axes landed on
+    the same sentence.** #141 asks that "the hybrid surface gate's blind-spot list
+    no longer names this as uncovered" — and that list never did: its six bullets
+    at `3b94da9` name the `cells == 0` branch, the composed config, the missing
+    bar, the sidecar's scope, check 9's control and the GUI, and none of them says
+    the collection rules are uncovered. The criterion was unsatisfiable as written.
+    What the change does instead is ADD a bullet scoping what this file covers of
+    them — one shipped mesh each, not one rule each — and point at the new gate,
+    which is what the criterion was reaching for. Recorded rather than ticked: a
+    criterion quietly reinterpreted is the shape #100 and #125 both found.
+  - **THE SAME REVIEW FOUND THE RELOCATION NOTE OVER-CLAIMING.** The surface gate's
+    injection block was updated to say where a later injector should now edit, and
+    the first draft named injections B AND C as having moved. Only B did: C forces
+    the three FIGURES to 0.0, which is `reduceCellShapes` in `src/CellShape.cpp`
+    and the `ShapeStats` the CLI holds, neither of which this ticket touched. An
+    injector following that sentence would have edited a file with no figure logic
+    in it and recorded an inert run.
   - Measured after the prefactor: the shipped `config/Background_para.dat` +
     `examples/geometries/naca0012.dat` pair reports `cells=15233`,
     `tri_edge_ratio_cells=15233`, **median 1.158103, p95 52.185741, max 78.703074**

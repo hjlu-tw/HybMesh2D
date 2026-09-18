@@ -199,8 +199,9 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
 - **`MbQuality.cpp`**: the multi-block quality instrument. Pure, total, never throws.
 - **`CellShape.cpp`**: the per-cell SHAPE metric and its median/p95/max reducer, shared by BOTH
   generation paths since #130 — the quad branch by `measureMbQuality` (#129), the triangle branch
-  and `measureCellShapes` by `printHybridQuality` in `src/cli.cpp`. Pure, total, never throws;
-  see the rule below.
+  and `measureCellShapes` by `measureHybridCellShapes` (#130 wired them from
+  `printHybridQuality` in `src/cli.cpp`; #141 moved that half into the file below). Pure, total,
+  never throws; see the rule below.
 - **`HybridQuality.cpp`**: WHICH cells the HYBRID path offers that metric, and the two counts
   beside the figures. Pure, total, never throws; see the rule below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
@@ -267,7 +268,7 @@ that meshes a geometry.
   keeps the OUTPUT half only: the two banner rows, the machine line and the sidecar hand-off.
   Three rules live behind that seam and each can be wrong on its own — the corner-count FLOOR (an
   entry with fewer than 3 ids is not a cell, and a two-node one is a visualisation segment
-  `Mesh::addTaggedLoop` recorded), the corner-count CEILING (the bullet above), and an
+  `addTaggedLoop` recorded), the corner-count CEILING (the bullet above), and an
   UNRESOLVED id (dropped as unmeasurable, never passed on SHORT).
 - Gated by `tests/cpp/test_hybrid_quality.cpp` (9 groups, 29 checks). **Its injections are HAND
   runs, dated 2026-09-18 in that file's docstring**, and one of the five is **INERT** and recorded

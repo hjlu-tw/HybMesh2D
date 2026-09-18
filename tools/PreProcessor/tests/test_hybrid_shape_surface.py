@@ -97,10 +97,13 @@ record is not a threshold in disguise.
 
 INJECTIONS, run 2026-09-17 against `src/cli.cpp` with a rebuild per mutation, and
 recorded here because a C++ defect cannot be injected from inside a Python gate.
-THE CODE B AND C MUTATE HAS MOVED: #141 lifted the cell collection into
-`src/HybridQuality.cpp`, so an injector repeating them edits that file now — B's
-corner-count guard and C's negative figures both live there, while A, D, E and F
-(the names, the prefix and the two banner sentences) are still `src/cli.cpp`'s.
+THE CODE INJECTION B MUTATES HAS MOVED, AND ONLY B'S: #141 lifted the cell
+collection into `src/HybridQuality.cpp`, so B's corner-count guard is edited there
+now. Every other site is where it was — A, D, E and F (the names, the prefix and
+the two banner sentences) are `src/cli.cpp`'s, and C's three figures were never in
+the collection loop at all: they come from `reduceCellShapes` in
+`src/CellShape.cpp`, and the `ShapeStats` an injector forces to 0.0 is still the
+one `printHybridQuality` holds.
 Each names the checks it reddened, so a later reader can tell a check that bites
 from one that merely passes:
 

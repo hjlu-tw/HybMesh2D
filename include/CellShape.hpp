@@ -99,11 +99,13 @@ ShapeStats reduceCellShapes(std::vector<double> ratios);
 // The two composed: measure every cell, then reduce. `cells` holds one corner
 // list per cell.
 //
-// THE HYBRID PATH IS ITS CALLER (`printHybridQuality` in src/cli.cpp, #130): one
-// flat list of exported cells, no per-block partition to keep and no quad to tell
-// from a triangle. The multi-block path composes the two halves itself instead,
-// because it needs both of those (see `measureMbQuality`) — which is why this
-// function exists beside them rather than under them.
+// THE HYBRID PATH IS ITS CALLER (`measureHybridCellShapes` in HybridQuality.hpp;
+// #130 wired it from `printHybridQuality` in src/cli.cpp and #141 moved that half
+// into the pure layer beside this one): one flat list of exported cells, no
+// per-block partition to keep and no quad to tell from a triangle. The
+// multi-block path composes the two halves itself instead, because it needs both
+// of those (see `measureMbQuality`) — which is why this function exists beside
+// them rather than under them.
 ShapeStats measureCellShapes(const std::vector<std::vector<Point2D>>& cells);
 
 }  // namespace hybmesh

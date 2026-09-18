@@ -13,9 +13,12 @@
 // WHAT IS NOT THIS FILE'S SUBJECT. The arithmetic of the metric is
 // tests/cpp/test_cell_shape.cpp: a square is 1.0 and each of its split triangles
 // sqrt(2), a degenerate cell does not divide by zero, how p95 is ranked. This
-// file takes that as given and asserts what reaches it and what does not, which
-// is why every fixture below is chosen so the two answers DIFFER — a quad of 4.0
-// beside a triangle of 1.0, never two cells that measure the same.
+// file takes that as given and asserts what reaches it and what does not.
+// WHERE A CHECK HAS TO SAY WHICH CELL REACHED THE METRIC, its fixture is built so
+// the two answers cannot coincide — check 4's 4x1 rectangle measures 4.0 beside a
+// triangle's 1.0, and a SQUARE there would have measured 1.0 either way. That is a
+// rule about those checks, not about every fixture here: checks 1, 8 and 9 hand in
+// cells that measure alike on purpose, because what they assert is a COUNT.
 //
 // BLIND SPOTS, named rather than papered over:
 //   * Nothing here prints a banner row, a machine line or a sidecar. That the
@@ -30,10 +33,10 @@
 //     That `src/cli.cpp` fills it from `Mesh::nodes` in the right order — rather
 //     than, say, from a renumbered export — is not checked here and cannot be:
 //     the surface gate's figures are what would move.
-//   * A cell whose ids all resolve to the SAME node is degenerate, not
-//     unresolved, and is dropped by the metric rather than by this module. Check
-//     6 pins that it lands in the gap between the two counts, not which of the
-//     two modules dropped it.
+//   * A cell whose ids all RESOLVE but name a coincident corner (check 6's
+//     `{0, 0, 1}`) is degenerate, not unresolved, and is dropped by the metric
+//     rather than by this module. Check 6 pins that it lands in the gap between
+//     the two counts, not which of the two modules dropped it.
 //   * The module's "an unresolved cell must not pass on SHORT" rule is NOT
 //     guarded here, and injection C below is the measurement that says so rather
 //     than an omission noticed later: on this path no fixture can reach the defect
@@ -153,7 +156,8 @@ int main() {
     }
 
     // ── 3. A TWO-NODE VISUALISATION ENTRY IS NOT A CELL ───────────────────────
-    // `Mesh::addTaggedLoop` records boundary segments as two-node elements and
+    // `addTaggedLoop` (a file-static in src/cli.cpp) records boundary segments
+    // as two-node elements and
     // `Mesh::exportStarCD` skips them by this same test. A mesh made ONLY of them
     // offers nothing — the case that separates "not a cell" from "a cell I could
     // not measure", which reports the same three figures for a different reason.
