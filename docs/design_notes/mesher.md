@@ -992,15 +992,18 @@ grown layer rather than only the wall band should read.
   not, and `false` is the true answer for the far-field triangulation, the
   Cartesian fallback, the visualisation loops and every multi-block cell. It is
   exported to no mesh file — the golden comparator saw **19/19 SAME, worst
-  coordinate deviation 0.000e+00** against the pre-change binary.
+  coordinate deviation 0.000e+00** against the pre-change binary, 18 of those
+  being meshes and the nineteenth (`isolated_corner`) a NO-MESH outcome, so
+  "19/19" is not 19 meshes.
 - **THE CELL CARRIES ITS MARK IN THE TYPE, not in a parallel array.**
   `measureHybridCellShapes` takes `std::vector<HybridCell>` — ids plus the flag —
   rather than the id lists plus a `std::vector<bool>` beside them. A parallel array
   can arrive SHORTER than the one it is parallel to, and whatever the module then
   did with the unflagged tail (call it bulk, refuse the call) would be a rule
   nobody asked for, silently deciding which set some cells land in. The signature
-  is still ids and coordinates, so `tests/cpp/test_hybrid_quality.cpp` still links
-  `hybmesh_pure` alone, which is what #141 bought.
+  is still ids, the mark and coordinates — no `Mesh&` — so
+  `tests/cpp/test_hybrid_quality.cpp` still links `hybmesh_pure` alone, which is
+  what #141 bought.
 - **THE TWO HALVES ARE TWO REDUCTIONS OF ONE COLLECTION, and the per-cell ratio is
   deliberately computed twice.** A cell is offered, counted and resolved once, and
   the corner list that results goes to `measureCellShapes` in the whole-mesh set
@@ -1034,6 +1037,18 @@ grown layer rather than only the wall band should read.
   prints it through the same `shapePhrase` the headline uses, so the two spellings
   of one state cannot drift — the defect #129's review had already had to collapse
   once.
+- **AND THE ROW NAMES NO CAUSE — a review finding, and the first wording SHIPPED
+  WAS FALSE.** The row first read `(no cells outside the boundary layer)` when the
+  half was empty. `cells 0` has TWO ways in, and on the Cartesian fallback it is
+  the second: 400 quads really do sit outside the boundary layer and not one of
+  them is measurable, so that sentence was a false claim about the mesh — and the
+  gate ASSERTED it, having been written from the same wrong premise. The headline
+  row one branch up had been careful about exactly this since #130 (`no exported
+  cell could be measured`), which is what makes this a rule stated in one home and
+  not its neighbour rather than an oversight. It now reads `(none of the cells
+  outside the boundary layer could be measured)`, true in both cases, and
+  `tests/test_hybrid_shape_surface.py` check 10 reads the PARENTHETICAL and not
+  only the state.
 - **A PATH THAT DOES NOT SPLIT WRITES NEITHER SIDECAR KEY.** `MeshQuality::split`
   is a third state beside "no metric" and "measured nothing": false writes no
   `layer` and no `bulk` rather than two objects full of negatives, which a reader
@@ -1046,9 +1061,10 @@ grown layer rather than only the wall band should read.
   split which silently measured nothing cannot pass it. It grades no mesh.
 - **INJECTIONS, hand runs dated 2026-09-18** (a C++ defect cannot be injected from
   inside a Python gate, and a C++ test cannot mutate what it linked against):
-  EIGHT distinct mutations, six measured against the surface gate and three
-  against the C++ one — the half-swap is the one measured against both, which is
-  why the two counts do not add to eight. Two are INERT and both
+  NINE mutations under EIGHT letters — `H` is two of them, the main stitch site
+  and the collapsed-wedge site one branch up — with six letters measured against
+  the surface gate and three against the C++ one, the half-swap being the one
+  letter measured against both. Two of the nine are INERT and both
   are recorded with the measurement that says why, because "we tried and it did not
   bite" is worth more than silence:
   * Reverting ONE of the four `addBoundaryLayerElement` call sites to the unmarked

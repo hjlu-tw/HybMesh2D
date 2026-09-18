@@ -174,26 +174,29 @@ inline bool writeProvenance(const std::string& basename,
         std::ostringstream qs;
         qs << std::fixed;
         qs.precision(6);
-        auto set = [&qs](const hybmesh::ShapeStats& st) {
-            qs << "{ \"cells\": " << st.cells
+        // ONE SPELLING OF THE FOUR FIELD NAMES, for all three sets: the
+        // whole-mesh figures sit FLAT on `quality` where #129 put them and the
+        // two halves sit in objects of their own, but the keys inside are written
+        // once so the three cannot drift apart under an edit meant for one.
+        auto writeFields = [&qs](const hybmesh::ShapeStats& st) {
+            qs << "\"cells\": " << st.cells
                << ", \"median\": " << st.median
                << ", \"p95\": " << st.p95
-               << ", \"max\": " << st.max << " }";
+               << ", \"max\": " << st.max;
         };
         qs << ", \"quality\": { \"metric\": \"" << jsonEscape(quality.metric)
-           << "\", \"cells\": " << quality.shape.cells
-           << ", \"median\": " << quality.shape.median
-           << ", \"p95\": " << quality.shape.p95
-           << ", \"max\": " << quality.shape.max;
+           << "\", ";
+        writeFields(quality.shape);
         if (quality.split) {
             // NESTED, and beside the whole-mesh figures rather than replacing
             // them: a reader that knows only #129's keys reads the same numbers
             // out of the same places, and one that knows these reads the split
             // without having to tell which half it is holding.
-            qs << ", \"layer\": ";
-            set(quality.layer);
-            qs << ", \"bulk\": ";
-            set(quality.bulk);
+            qs << ", \"layer\": { ";
+            writeFields(quality.layer);
+            qs << " }, \"bulk\": { ";
+            writeFields(quality.bulk);
+            qs << " }";
         }
         qs << " }";
         ofs << qs.str();

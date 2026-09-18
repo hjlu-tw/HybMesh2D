@@ -119,6 +119,12 @@
 //      instead of `(bulk)`) -> 5 failures, and this is the one the partition
 //      assertion catches: the counts no longer add up, and check 12's all-layer
 //      mesh reports a measured bulk half where there are no bulk cells at all.
+//      CHECK 11 IS NOT AMONG THEM, and cannot be: its mesh has no layer cells, so
+//      the bulk half and the whole collection ARE the same set there and the
+//      mutation is a no-op on it. That is why check 11's figure assertion pins
+//      the 3-4-5 cell's own 5/3 rather than agreement with `shape.max` — the
+//      value says which cells the half held; the agreement would have held under
+//      any construction. Re-measured 2026-09-18 after that change: still 5.
 //   N. a half re-deciding measurability, by skipping the unresolved cells it is
 //      handed instead of passing the empty corner list on (`if (resolved) ...`)
 //      -> **INERT, 0 failures**, and recorded because it is inert for a reason
@@ -360,8 +366,16 @@ int main() {
               "and every one of its figures is NEGATIVE");
         CHECK(r.bulk.cells == 2 && r.shape.cells == 2,
               "11. ...and the bulk half is the whole mesh");
-        CHECK_NEAR(r.bulk.max, r.shape.max, 1e-15,
-                   "11. ...reporting the same figure the whole-mesh set does");
+        // THE VALUE, not agreement with the whole-mesh set: in THIS fixture the
+        // two are the same collection, so `bulk.max == shape.max` would hold
+        // however the bulk half had been built and could not tell a correct half
+        // from injection M's (the half reduced over the whole collection). What
+        // names the cells is the 3-4-5 triangle's own 5/3.
+        CHECK_NEAR(r.bulk.max, 5.0 / 3.0, 1e-15,
+                   "11. ...reporting the larger of the two cells it holds");
+        CHECK_NEAR(r.shape.max, 5.0 / 3.0, 1e-15,
+                   "11. ...which is the whole-mesh figure too, there being no "
+                   "other cell for either set to hold");
     }
 
     // ── 12. ...AND THE OTHER WAY ROUND ───────────────────────────────────────

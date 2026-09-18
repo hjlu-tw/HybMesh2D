@@ -271,7 +271,7 @@ that meshes a geometry.
   entry with fewer than 3 ids is not a cell, and a two-node one is a visualisation segment
   `addTaggedLoop` recorded), the corner-count CEILING (the bullet above), and an
   UNRESOLVED id (dropped as unmeasurable, never passed on SHORT).
-- Gated by `tests/cpp/test_hybrid_quality.cpp` (13 groups, 44 checks). **Its injections are HAND
+- Gated by `tests/cpp/test_hybrid_quality.cpp` (13 groups, 45 checks). **Its injections are HAND
   runs, dated 2026-09-18 in that file's docstring**, and two of the eight are **INERT** and recorded
   as such: passing an unresolved cell on short cannot bite on THIS path, because only three-id
   cells reach the resolve loop and a prefix of at most two corners is refused by the metric
@@ -315,7 +315,11 @@ median 35.282 / p95 70.542.
   ticket's change is where the two are made to match. **The word is `layer`, NOT `bl` and NOT
   `wall`**: it names the band of cells a mesher clusters against a surface, in either path's own
   vocabulary, and makes no claim about the BC on that surface — a boundary layer here grows from a
-  geometry whatever its tag says, so `wall` would be the claim that is not true.
+  geometry whatever its tag says, so `wall` would be the claim that is not true. **The shape is
+  the KEYS', not the BANNER ROW's**: the row is labelled `boundary layer` here and will be the
+  multi-block path's own word there, which is the rule `shapePhrase` already states one level up —
+  what the two paths share is the FORMATTING of three numbers, while the metric name, the count's
+  units and the sentence beside them stay each path's own.
 - **EVERY TOKEN AND EVERY SIDECAR KEY THAT EXISTED BEFORE #143 KEEPS ITS SPELLING AND ITS
   MEANING.** The new tokens are APPENDED to `HYBMESH_HYBRID_QUALITY`; `cells`,
   `tri_edge_ratio_cells|median|p95|max` still carry the WHOLE mesh, and `mesh.quality` still holds
@@ -337,7 +341,11 @@ median 35.282 / p95 70.542.
 - **AN EMPTY HALF IS `not measured` WITH THREE NEGATIVE FIGURES, and on this path that is ORDINARY
   rather than an error**: a geometry meshed through `-geom_nobl` grows no layer, so its layer half
   is empty and its bulk half is the whole mesh. Same `shapePhrase` as the headline, so the words
-  cannot drift.
+  cannot drift — and **the parenthetical NAMES NO CAUSE**, for the headline row's reason: `cells 0`
+  has two ways in, and on the Cartesian fallback 400 quads DO sit outside the boundary layer and
+  merely cannot be measured, so `(no cells outside the boundary layer)` would be a false claim
+  about the mesh. `tests/test_hybrid_shape_surface.py` check 10 reads the parenthetical, not only
+  the state.
 - **A PATH THAT DOES NOT SPLIT WRITES NEITHER SIDECAR KEY.** `MeshQuality::split`
   (`include/Provenance.hpp`) is a state of its own: false writes no `layer` and no `bulk`, rather
   than two objects full of negatives a reader would take for "we looked and found nothing". The

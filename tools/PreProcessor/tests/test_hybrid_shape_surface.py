@@ -93,7 +93,12 @@ What this pins down:
  14. AN EMPTY HALF IS `not measured`, NOT 0.0, and it is an ORDINARY case on this
      path rather than an error: check 9's own `-geom_nobl` run grows no layer at
      all, so its layer half is empty and its bulk half is the whole mesh. Driven
-     off that same run.
+     off that same run. What the row says about WHY is check 10's, because the two
+     cases differ there: here the cells really are absent, and on the Cartesian
+     fallback 400 of them exist and cannot be measured. The row must be true of
+     BOTH, so it names no cause — and this file's first version asserted a wording
+     that was false on the second, having been written from the same wrong premise
+     as the code (#143 review).
  15. TODAY'S SPELLINGS STILL READ THE WHOLE MESH. Every token the line carried
      before the split is still on it, and the sidecar still carries #129's keys at
      the top of `mesh.quality` — asserted against LITERAL names, because a list
@@ -251,6 +256,13 @@ BLIND SPOTS, named rather than papered over:
     collection, and that an unmeasurable cell is lost from its own half only — is
     `tests/cpp/test_hybrid_quality.cpp` checks 10 to 13. Here it is visible only as
     the counts adding up on one mesh.
+  * The banner's two rows are labelled `boundary layer` and `bulk` while the tokens
+    and the sidecar keys say `layer` and `bulk`, so `HALVES` above cannot serve the
+    row patterns and both spellings are carried. That is deliberate, not drift: the
+    KEYS are what both generation paths share, and the row's words are each path's
+    own — the rule `shapePhrase` states in `src/cli.cpp`. Nothing here would catch
+    the banner and the keys naming two different SETS under those two spellings;
+    what it does catch is the numbers disagreeing, which is check 13.
 
 Run:  python3 tools/PreProcessor/tests/test_hybrid_shape_surface.py
 Skips cleanly if ./build/HybMesh2D has not been built.
@@ -309,7 +321,7 @@ _NOTMEAS = re.compile(r"^  - Cell shape\s+: not measured\b")
 _SUB = re.compile(
     r"^      (boundary layer|bulk)\s+: median ([\d.]+), p95 ([\d.]+), "
     r"max ([\d.]+) \(over (\d+) ")
-_SUB_NM = re.compile(r"^      (boundary layer|bulk)\s+: not measured \(no ")
+_SUB_NM = re.compile(r"^      (boundary layer|bulk)\s+: not measured \((.*)\)$")
 
 failures = []
 
@@ -367,14 +379,18 @@ def half_of(q, half):
     return {f: q[f"{METRIC}_{half}_{f}"] for f in FIELDS}
 
 
-def sub_rows(out):
+def sub_rows(out, reasons=None):
     """The two split rows under the `Cell shape` headline, by label.
 
     Maps the label to its four figures, or to None where the row said
     ``not measured``. A label that is absent altogether is absent from the map,
     which is what lets a check tell "printed nothing" from "printed nothing
-    measurable".
+    measurable". Pass a dict as ``reasons`` to collect the PARENTHETICAL of each
+    unmeasured row — what the banner says about WHY, which check 10 reads because
+    a row can print the right state and the wrong reason for it.
     """
+    if reasons is None:
+        reasons = {}
     rows = {}
     for line in out.splitlines():
         m = _SUB.match(line)
@@ -387,6 +403,7 @@ def sub_rows(out):
         m = _SUB_NM.match(line)
         if m:
             rows[m.group(1)] = None
+            reasons[m.group(1)] = m.group(2)
     return rows
 
 
@@ -656,16 +673,27 @@ def main() -> int:
         check("10. ...and it did export cells, so this is a mesh nothing could be "
               "measured on and not an empty one",
               line3 is not None and line3.get("cells", 0) > 0)
+        why3 = {}
         check("10. ...BOTH halves read `not measured` too: a mesh whose cells "
               "none could be measured has no measurable layer and no measurable "
               "bulk, and the split must not turn either into a 0.0",
-              set(sub_rows(out3)) == {"boundary layer", "bulk"}
+              set(sub_rows(out3, why3)) == {"boundary layer", "bulk"}
               and all(v is None for v in sub_rows(out3).values())
               and all(half_of(line3, h) is not None
                       and half_of(line3, h)["cells"] == 0
                       and all(half_of(line3, h)[f] < 0.0
                               for f in ("median", "p95", "max"))
                       for h in HALVES))
+        # AND SAYS SOMETHING TRUE ABOUT WHY. `cells 0` on a half has two ways in —
+        # no such cell existed, or none of them could be measured — and this mesh
+        # is the second: 400 quads DO sit outside the boundary layer. A row
+        # reading `(no cells outside the boundary layer)` would be a false claim
+        # about the mesh, which is the defect this assertion exists for; the
+        # headline row one line up has always been careful in the same way.
+        check(f"10. ...and NEITHER row claims the cells are absent ({why3})",
+              set(why3) == {"boundary layer", "bulk"}
+              and all(w.endswith("could be measured") and "none of the" in w
+                      for w in why3.values()))
         side3 = sidecar(stem3)
         check("10. ...and the sidecar carries the same unmeasured state, so a "
               "later reader cannot tell a different story from the banner's",

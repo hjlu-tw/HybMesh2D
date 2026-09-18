@@ -976,7 +976,8 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
 // export, so the three surfaces cannot disagree about one mesh.
 static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) {
     // THE MESH AS THE PURE HALF TAKES IT: ids, the boundary layer's mark and
-    // coordinates, with no `Mesh` in the signature — which is what keeps the decision testable without gmsh, and
+    // coordinates, with no `Mesh` in the signature — which is what keeps the
+    // decision testable without gmsh, and
     // is a copy of the connectivity rather than a view on purpose (a view over
     // `Element` would put this container back in that module's type, which is the
     // dependency the split removed). Two O(N) walks against a mesh generation that
@@ -1016,11 +1017,20 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     // measured` here for the same reason and in the same words it does up there —
     // and an empty half is ORDINARY on this path, not an error: a geometry meshed
     // through `-geom_nobl` grows no layer at all.
+    //
+    // AN EMPTY HALF NAMES NO CAUSE, for the headline row's reason one branch up:
+    // this row branches on the MEASURED count, and `cells 0` has two ways in — no
+    // such cell existed, or none of them could be measured. On the Cartesian
+    // fallback 400 quads sit outside the boundary layer and not one is measurable,
+    // so `(no cells outside the boundary layer)` would be a false claim about the
+    // mesh. What is true in both cases is that no such cell could be MEASURED.
     auto splitRow = [](const char* label, const hybmesh::ShapeStats& s,
                        const char* what) {
         std::cout << bannerSub(label) << shapePhrase(s);
-        if (s.cells == 0) std::cout << " (no " << what << ")";
-        else std::cout << " (over " << s.cells << " " << what << ")";
+        if (s.cells == 0)
+            std::cout << " (none of the " << what << " could be measured)";
+        else
+            std::cout << " (over " << s.cells << " " << what << ")";
         std::cout << "\n";
     };
     splitRow("boundary layer", rep.layer, "cells the boundary layer emitted");
@@ -1048,11 +1058,21 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     // a number.
     std::ostringstream mr;
     mr << std::setprecision(6) << std::fixed;
-    mr << "HYBMESH_HYBRID_QUALITY cells=" << offered
-       << " tri_edge_ratio_cells=" << st.cells
-       << " tri_edge_ratio_median=" << st.median
-       << " tri_edge_ratio_p95=" << st.p95
-       << " tri_edge_ratio_max=" << st.max;
+    mr << "HYBMESH_HYBRID_QUALITY cells=" << offered;
+    // ONE SPELLING OF THE FOUR FIELD NAMES, for all three sets. `half` is the
+    // empty string for the whole mesh and `layer_` / `bulk_` for the two halves,
+    // so `tri_edge_ratio_cells` and `tri_edge_ratio_layer_cells` cannot drift
+    // apart under an edit that meant to touch one of them. That the whole-mesh
+    // four still spell out as they did before #143 is asserted against LITERAL
+    // names in tests/test_hybrid_shape_surface.py check 15, which is what keeps
+    // this from being a rename waiting to happen.
+    auto tokens = [&mr](const char* half, const hybmesh::ShapeStats& s) {
+        mr << " tri_edge_ratio_" << half << "cells=" << s.cells
+           << " tri_edge_ratio_" << half << "median=" << s.median
+           << " tri_edge_ratio_" << half << "p95=" << s.p95
+           << " tri_edge_ratio_" << half << "max=" << s.max;
+    };
+    tokens("", st);
     // The two halves are APPENDED under keys that extend the whole-mesh spelling
     // rather than displacing it (issue #143): every token that existed before this
     // ticket is still on the line, spelled as it was, so today's greps keep
@@ -1064,14 +1084,8 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     // claim about the boundary condition on that surface. A boundary layer here
     // grows from a geometry whatever its BC says, so `wall` would be the claim
     // that is not true.
-    auto setTokens = [&mr](const char* half, const hybmesh::ShapeStats& s) {
-        mr << " tri_edge_ratio_" << half << "_cells=" << s.cells
-           << " tri_edge_ratio_" << half << "_median=" << s.median
-           << " tri_edge_ratio_" << half << "_p95=" << s.p95
-           << " tri_edge_ratio_" << half << "_max=" << s.max;
-    };
-    setTokens("layer", rep.layer);
-    setTokens("bulk", rep.bulk);
+    tokens("layer_", rep.layer);
+    tokens("bulk_", rep.bulk);
     std::cout << mr.str() << std::endl;
 
     // ONE REPORT, THREE SURFACES (issue #129, and #130 for this path): the banner
