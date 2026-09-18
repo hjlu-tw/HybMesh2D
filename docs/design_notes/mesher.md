@@ -984,7 +984,11 @@ two figures one name — the one thing story 6 exists to prevent.
   `tests/test_hybrid_shape_surface.py` check 5 holds the same two through the
   real binary, and #130's injections D and E are the measurement that each half
   bites on its own.
-- **STORY 5's FIRST CLAUSE CANNOT BE HAD WITHOUT BREAKING STORIES 3 AND 4.** One
+- **ONE SHARED FIGURE CANNOT BE HAD WITHOUT BREAKING STORIES 3 AND 4** — which is
+  the claim, and it is narrower than "comparability cannot be had", the bullet
+  below being the construction that refutes the wider one. The #142 review's
+  Standards axis found this heading stating the wider thing while the next bullet
+  walked it back. One
   figure over both paths needs one definition over one population, and the only
   population the two paths share is the cells they EXPORT. Measuring the
   multi-block path's exported cells is exactly what story 3 refuses (*"measured
@@ -1011,13 +1015,25 @@ two figures one name — the one thing story 6 exists to prevent.
 - Nothing in the tree changed for this record: no figure moved, no banner text
   changed, no gate's numbers changed. #142 is the record and the gate that holds
   it.
-- Blind spots, named rather than papered over. **The gate holds the SENTENCES and
-  the RECORD, never the practice**: two figures printed side by side by a future
-  GUI panel, a pipeline summary or a README table is the defect this record exists
-  to prevent, and would pass every check in that file. It reads the two machine-line
-  emitters only, so a THIRD surface that merged the names is outside both spans.
-  And it matches the banner sentences as TEXT — that a run prints them is
-  `test_hybrid_shape_surface.py` check 5's subject, which needs the binary.
+- **WHAT THE TWO REVIEW AXES CHANGED, and they found the same hole
+  independently.** Check 4 matched the record's quotation as head + ANY DIGIT +
+  tail, so a record saying `NOT comparable with MESH_MODE 7's triangle edge ratio`
+  passed — in the one entry whose whole subject is not confusing the two paths,
+  with the digit being the only token that says WHICH path's figure the row
+  disclaims. The Spec axis measured it by mutating a scratch copy; the Standards
+  axis read it off the regex. The number is now DERIVED from `include/MeshMode.hpp`
+  and an undeclared constant FAILS rather than skips (injections C2 and C3). Two
+  more: the gate's docstring read #142's fourth criterion — a one-time constraint
+  on this change — as the thing checks 6 and 7 gate, which is a criterion
+  reinterpreted into a standing gate it did not ask for (they gate the RULE, which
+  is the third criterion's); and four injections asserted only within their own
+  check, so every one now asserts the others stay GREEN.
+- Blind spots: named in `tests/test_comparability_refusal.py`'s own docstring
+  rather than restated here, since they are that file's coverage limits and one
+  home for them is the point. The one that belongs to the RECORD rather than to
+  the gate: **nothing anywhere stops the two figures being printed side by side**
+  by a GUI panel, a pipeline summary or a README table, which is the practice this
+  entry exists to prevent and no check can see.
 
 **Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
 (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;

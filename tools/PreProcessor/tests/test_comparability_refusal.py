@@ -39,10 +39,16 @@ What this pins down:
   7. The sidecar is given TWO labels and not one shared one: `quality.metric` is
      assigned exactly twice, once per name.
 
-Checks 6 and 7 are the "nothing in the tree is changed to make the two
-comparable" half. They are static where `test_hybrid_shape_surface.py` checks 3
+Checks 6 and 7 are the STANDING half: #142's fourth criterion ("nothing in the
+tree is changed to make the two comparable") is a constraint on one change and
+was met by touching no source file at all, so these two hold the RULE the third
+criterion asks the rule file to state — never merged, never one shared label —
+from the day after. They are static where `test_hybrid_shape_surface.py` checks 3
 and 4 are dynamic: this file runs with no build tree, so the rule is guarded on a
-machine that has never compiled the mesher.
+machine that has never compiled the mesher. The #142 review's Spec axis is what
+made that distinction explicit; the first draft of this docstring read criterion 4
+as the thing being gated, which is a criterion reinterpreted into a standing gate
+it did not ask for.
 
 INJECTIONS — AUTOMATED, unlike the C++ gates next door, because every input here
 is text and a copy of the world can be mutated in memory. Each asserts the
@@ -55,17 +61,35 @@ mutation is well-formed and really differs, then that the named check fails:
   C. the note's quotation reworded while `src/cli.cpp` stands -> check 4 fails.
      This is the direction the anchor exists for: the record drifting off the
      sentence it claims to quote.
-  D. the anchor removed from the note -> checks 3 and 5 fail together, since the
-     rule file's `Why:` pointer then resolves nowhere.
+  C2. the MODE NUMBER in the record's quotation changed to one no `MESH_MODE_*`
+     constant declares -> check 4 fails. ADDED BY #142's OWN REVIEW, where BOTH
+     axes found the same hole independently: the check matched any digit, and the
+     digit is the one token that says WHICH path's figure the row disclaims. A
+     record whose whole subject is not confusing the two paths had left it
+     unpinned.
+  C3. `MESH_MODE_HYBRID` removed from `include/MeshMode.hpp` -> check 4 fails
+     naming that header. A digit that cannot be derived must FAIL, never skip,
+     which is the failure shape `test_instruction_budget.py`'s check 7 gives an
+     unresolvable anchor.
+  D. the anchor removed from the note -> checks 3 and 4 fail together: the record
+     can no longer be located to read its quotations, and the rule file's `Why:`
+     pointer then resolves nowhere.
   E. the `Why:` line wrapped between the note's path and the anchor -> check 5
      fails. #59's recurring defect: a pointer split across two lines greps as
      absent.
-  F. the hybrid emitter's tokens renamed to `quad_midline_ratio_*` -> check 6
-     fails. That is injection A of `test_hybrid_shape_surface.py` seen without a
-     binary.
-  G. both sidecar labels collapsed to one name -> check 7 fails.
+  F. the hybrid emitter's four tokens renamed to `quad_midline_ratio_*` -> check 6
+     fails twice, on the missing own name and on the present other one. That is
+     injection A of `test_hybrid_shape_surface.py` seen without a binary.
+  G. ONE sidecar label relabelled to a shared-sounding `cell_shape` -> check 7
+     fails.
   H. negative control: the unmutated tree passes every check, so the failures
      above are the mutations and not the checker.
+
+EVERY injection also asserts the checks it is NOT labelled for stay GREEN
+(`others_green`). #127's "isolate the labelled check", asserted ACROSS checks and
+not only within one: a mutation that reddens the whole file proves nothing about
+the check it was written for, and the #142 review's Standards axis found four
+injections asserting only within their own check.
 
 BLIND SPOTS, named rather than papered over:
 
@@ -76,6 +100,12 @@ BLIND SPOTS, named rather than papered over:
     puts them in one row is another gate's subject.
   * Check 6 reads the two emitter statements only. A third surface that merged the
     names — a new exporter, a new line — is outside both spans and invisible here.
+  * Check 7 counts the two `quality.metric` assignments FILE-WIDE. It does not read
+    which reporter holds which, so the two swapped would pass — and they cannot be
+    scoped to the two emitter spans, because the multi-block assignment is not in
+    its emitter's function at all (`buildMultiBlockMesh`, not `printMbQuality`).
+    What a swap WOULD redden is `test_hybrid_shape_surface.py` check 6, which reads
+    the metric name out of a sidecar a real run wrote.
   * The banner sentences are matched as TEXT. That a run actually prints them is
     `test_hybrid_shape_surface.py` check 5, which needs the binary; this file
     would pass on a `src/cli.cpp` whose reporter is never called.
@@ -94,6 +124,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 
 _SRC = "src/cli.cpp"
+_MODES = "include/MeshMode.hpp"
 _NOTE = "docs/design_notes/mesher.md"
 _RULE = ".claude/rules/mesher.md"
 
@@ -141,7 +172,7 @@ def check(cond, msg):
 # injections cheap: mutate a copy, ask the same function.
 def read_world():
     out = {}
-    for key, rel in (("src", _SRC), ("note", _NOTE), ("rule", _RULE)):
+    for key, rel in (("src", _SRC), ("modes", _MODES), ("note", _NOTE), ("rule", _RULE)):
         path = os.path.join(_REPO, rel)
         # A missing file reaches the reader as a named failure rather than as a
         # traceback out of the reader, which would take every other check down.
@@ -200,6 +231,20 @@ def cpp_code(text):
         i += 1
     # `"a" "b"` is one literal in C++ and must read as one here too.
     return re.sub(r'"\s*"', "", "".join(out))
+
+
+def mode_numbers(modes_text):
+    """`{"MESH_MODE_HYBRID": "0", ...}` read from the enum, or `{}`.
+
+    Derived rather than pinned, because the DIGIT is the one token in the banner
+    sentence that says WHICH path's figure the row disclaims — and a record whose
+    whole subject is not confusing the two paths cannot leave it unpinned. BOTH
+    review axes of #142 found the same hole independently, by mutating the note's
+    quotation to `MESH_MODE 7` and watching check 4 pass.
+    """
+    if modes_text is None:
+        return {}
+    return dict(re.findall(r"\b(MESH_MODE_[A-Z]+)\s*=\s*([0-9]+)\s*,", modes_text))
 
 
 def _span(code, prefix):
@@ -274,17 +319,27 @@ def check_record_quotes(world):
     if region is None:
         return ["check 4: no record at \"%s\" in %s, so nothing quotes the banner "
                 "sentences (check 3 names the same cause)." % (ANCHOR, _NOTE)]
+    modes = mode_numbers(world["modes"])
     fails = []
-    for path, _const, head, tail in SENTENCES:
-        # The rendered form: the mode CONSTANT in the source is a digit on screen.
-        pat = re.compile(re.escape(head) + r"[0-9]" + re.escape(tail))
-        if len(pat.findall(region)) != 1:
+    for path, const, head, tail in SENTENCES:
+        # The rendered form: the mode CONSTANT in the source is a digit on screen,
+        # and WHICH digit is read from `include/MeshMode.hpp` rather than accepted
+        # as any digit. A quotation saying `MESH_MODE 7` names no path at all.
+        if const not in modes:
+            fails.append(
+                "check 4: `%s` is not declared in %s, so the digit the record's "
+                "quotation must carry cannot be derived. Accepting any digit is "
+                "what this check was fixed FROM." % (const, _MODES))
+            continue
+        want = head + modes[const] + tail
+        if region.count(want) != 1:
             fails.append(
                 "check 4: the record at \"%s\" in %s does not quote the %s path's "
                 "banner sentence verbatim exactly once. Without the quotation the "
                 "record is an assertion about %s that nothing holds, which is the "
-                "whole of #142's second acceptance criterion.\n    expected: %s0%s"
-                % (ANCHOR, _NOTE, path, _SRC, head, tail))
+                "whole of #142's second acceptance criterion. The mode number is "
+                "part of the quotation: it is what says WHICH path's figure the row "
+                "disclaims.\n    expected: %s" % (ANCHOR, _NOTE, path, _SRC, want))
     return fails
 
 
@@ -346,11 +401,12 @@ def check_two_sidecar_labels(world):
     if sorted(found) == want:
         return []
     return [
-        "check 7: `quality.metric` is assigned %r in %s and %r is required — one "
-        "label per path, two labels. The sidecar's `metric` is the only place the "
+        "check 7: `quality.metric` is assigned %r in %s and %r is required — TWO "
+        "labels, one per metric name. The sidecar's `metric` is the only place the "
         "quantity is NAMED as a string rather than spelled into a key, so one "
         "shared label there would make two different numbers answer to one name "
-        "for every later reader." % (found, _SRC, want)]
+        "for every later reader. WHICH reporter holds which assignment is not read "
+        "here (see this file's blind spots)." % (found, _SRC, want)]
 
 
 # --- run ----------------------------------------------------------------------
@@ -377,22 +433,40 @@ run(check_rule_pointer,
 run(check_names_do_not_cross,
     "check 6. neither machine-line emitter names the other path's metric")
 run(check_two_sidecar_labels,
-    "check 7. the sidecar is given TWO metric labels, one per path, never one shared")
+    "check 7. the sidecar is given TWO metric labels, one per metric NAME, never one "
+    "shared")
 
 
 # --- injections ---------------------------------------------------------------
 # Each mutates a COPY of the inputs, asserts the mutation is well-formed and really
 # differs, then asserts the check fails — an injection that merely corrupts its
 # input looks identical to the check working.
+_ALL = {
+    1: check_banner_sentences, 3: check_record_anchor, 4: check_record_quotes,
+    5: check_rule_pointer, 6: check_names_do_not_cross, 7: check_two_sidecar_labels,
+}
+
+
+def others_green(inj, *reddened):
+    """True when every check BUT the named ones still passes on the mutated world.
+
+    #127's "isolate the labelled check", asserted ACROSS checks and not only
+    within one: a mutation that reddens the whole file proves nothing about the
+    check it was written for. Checks 1 and 2 share one function, so 1 names both.
+    """
+    return not any(fn(inj) for num, fn in _ALL.items() if num not in reddened)
+
+
 inj = copy_world(world)
 inj["src"] = world["src"].replace("and NOT comparable with ", "and roughly comparable with ", 1)
 check(inj["src"] != world["src"] and "1.0 is square" in inj["src"],
       "injection A. injection is well-formed: the multi-block sentence really changed and "
       "the row it lives on is still there")
 f = check_banner_sentences(inj)
-check(len(f) == 1 and "multi-block" in f[0] and _NOTE in f[0],
+check(len(f) == 1 and "multi-block" in f[0] and _NOTE in f[0] and others_green(inj, 1),
       "injection A. check 1 fails on a REWORDED banner sentence and names the design note "
-      "that quotes it, so the reader is sent to both homes rather than one")
+      "that quotes it, so the reader is sent to both homes rather than one — and NO OTHER "
+      "check moves, so the failure is this one's and not a file-wide red")
 
 inj = copy_world(world)
 _hy = SENTENCES[1]
@@ -406,9 +480,9 @@ check(inj["src"] != world["src"] and _hy[2] not in cpp_code(inj["src"])
       "injection B. injection is well-formed: the hybrid sentence's head is gone from the "
       "joined source text and the multi-block one still stands")
 f = check_banner_sentences(inj)
-check(len(f) == 1 and "hybrid" in f[0],
-      "injection B. check 2 fails on it ALONE — the two rows are separately guarded, which "
-      "is what \"a reader of EITHER report\" needs")
+check(len(f) == 1 and "hybrid" in f[0] and others_green(inj, 1),
+      "injection B. check 2 fails on it ALONE, and no other check moves — the two rows are "
+      "separately guarded, which is what \"a reader of EITHER report\" needs")
 
 inj = copy_world(world)
 inj["note"] = world["note"].replace("1.0 is square, and NOT comparable",
@@ -417,18 +491,47 @@ check(inj["note"] != world["note"] and ANCHOR in inj["note"],
       "injection C. injection is well-formed: only the QUOTATION moved, by one letter's "
       "case, and the record is still anchored")
 f = check_record_quotes(inj)
-check(len(f) == 1 and "multi-block" in f[0] and _SRC in f[0],
-      "injection C. check 4 fails when the record drifts off the sentence it claims to "
-      "quote — the direction the anchor exists for, and one a human diff reads as noise")
+check(len(f) == 1 and "multi-block" in f[0] and _SRC in f[0] and others_green(inj, 4),
+      "injection C. check 4 ALONE fails when the record drifts off the sentence it claims "
+      "to quote — the direction the anchor exists for, and one a human diff reads as noise")
+
+inj = copy_world(world)
+inj["note"] = world["note"].replace("NOT comparable with MESH_MODE 0's",
+                                    "NOT comparable with MESH_MODE 7's", 1)
+check(inj["note"] != world["note"] and ANCHOR in inj["note"]
+      and "NOT comparable with MESH_MODE 7's" in inj["note"],
+      "injection C2. injection is well-formed: only the MODE NUMBER in the record's "
+      "quotation moved, to one no `MESH_MODE_*` constant declares")
+f = check_record_quotes(inj)
+check(len(f) == 1 and "multi-block" in f[0] and others_green(inj, 4),
+      "injection C2. check 4 fails on a quotation whose mode number names no path — the "
+      "hole BOTH review axes of #142 found independently, when the check accepted any "
+      "digit and the digit is what says WHICH path's figure the row disclaims")
+
+inj = copy_world(world)
+inj["modes"] = world["modes"].replace("MESH_MODE_HYBRID     = 0,", "", 1)
+# Asserted through `mode_numbers` rather than by grepping the NAME: the constant is
+# named in that header's comments as well as declared in its enum, so a name-based
+# assertion fails on an injection that is perfectly well-formed.
+_got = mode_numbers(inj["modes"])
+check("MESH_MODE_HYBRID" not in _got and "MESH_MODE_MULTIBLOCK" in _got,
+      "injection C3. injection is well-formed: one mode constant is no longer DECLARED and "
+      "the other still is")
+f = check_record_quotes(inj)
+check(len(f) == 1 and _MODES in f[0],
+      "injection C3. check 4 FAILS rather than skipping when the digit cannot be derived, "
+      "and names the header it came from — an undeclared constant must not read as a pass")
 
 inj = copy_world(world)
 inj["note"] = world["note"].replace(ANCHOR, "THE TWO FIGURES ARE DIFFERENT", 1)
 check(ANCHOR not in inj["note"] and "1.0 is square" in inj["note"],
       "injection D. injection is well-formed: the anchor is gone while the record's text "
       "stays, which is exactly how a retitling loses one")
-check(len(check_record_anchor(inj)) == 1 and len(check_record_quotes(inj)) == 1,
-      "injection D. checks 3 and 4 both fail: the rule file's pointer now resolves nowhere, "
-      "and the record it points at cannot be located to read its quotations")
+check(len(check_record_anchor(inj)) == 1 and len(check_record_quotes(inj)) == 1
+      and others_green(inj, 3, 4),
+      "injection D. checks 3 and 4 both fail, and only those two: the rule file's pointer "
+      "now resolves nowhere, and the record it points at cannot be located to read its "
+      "quotations")
 
 inj = copy_world(world)
 inj["rule"] = world["rule"].replace(WHY, WHY.replace('`, "', '`,\n  "'), 1)
@@ -436,7 +539,7 @@ check(inj["rule"] != world["rule"] and ANCHOR in inj["rule"] and _NOTE in inj["r
       "injection E. injection is well-formed: both halves of the pointer are still in the "
       "rule file, on two lines")
 f = check_rule_pointer(inj)
-check(len(f) == 1 and "WRAPPED" in f[0],
+check(len(f) == 1 and "WRAPPED" in f[0] and others_green(inj, 5),
       "injection E. check 5 fails on a WRAPPED pointer and says so, rather than reporting it "
       "as absent — #59's recurring defect, named in the failure a reader gets")
 
@@ -446,8 +549,11 @@ check(inj["src"] != world["src"] and "HYBMESH_HYBRID_QUALITY" in inj["src"],
       "injection F. injection is well-formed: the hybrid line still exists and now emits the "
       "other path's metric name")
 f = check_names_do_not_cross(inj)
-check(any("HYBMESH_HYBRID_QUALITY" in m and "quad_midline_ratio" in m for m in f),
-      "injection F. check 6 fails when one line emits the other's name — the same defect "
+check(len(f) == 2 and all("HYBMESH_HYBRID_QUALITY" in m for m in f)
+      and any("quad_midline_ratio`, the OTHER" in m for m in f)
+      and others_green(inj, 6),
+      "injection F. check 6 fails TWICE on the hybrid emitter — its four own tokens gone AND "
+      "the other path's name present — while every other check stays green. The same defect "
       "`test_hybrid_shape_surface.py` injection A needs a rebuilt binary to see")
 
 inj = copy_world(world)
@@ -457,13 +563,11 @@ check(inj["src"] != world["src"] and 'quality.metric = "quad_midline_ratio"' in 
       "injection G. injection is well-formed: one sidecar label was relabelled and the other "
       "stands")
 f = check_two_sidecar_labels(inj)
-check(len(f) == 1 and "cell_shape" in f[0],
+check(len(f) == 1 and "cell_shape" in f[0] and others_green(inj, 7),
       "injection G. check 7 fails when a sidecar label stops naming its own quantity, and "
       "prints what it found rather than only what it wanted")
 
-check(not any(fn(world) for fn in (check_banner_sentences, check_record_anchor,
-                                   check_record_quotes, check_rule_pointer,
-                                   check_names_do_not_cross, check_two_sidecar_labels)),
+check(others_green(world),
       "injection H. negative control: the real, unmutated tree passes every check, so the "
       "failures above are the mutations and not the checker")
 

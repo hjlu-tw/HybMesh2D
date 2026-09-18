@@ -300,20 +300,18 @@ that meshes a geometry.
 
 **THE TWO CELL-SHAPE FIGURES ARE NEVER COMPARED, NEVER MERGED AND NEVER GIVEN ONE SHARED LABEL**
 (`quad_midline_ratio` on `HYBMESH_MB_QUALITY`, `tri_edge_ratio` on `HYBMESH_HYBRID_QUALITY`; #142,
-parent #128). #128's story 5 asks for a hybrid machine line "so that the two paths are comparable";
-the tree ships the SECOND half of that sentence — neither path is silently unmeasured — and REFUSES
-the first, deliberately. Do not close the gap.
+parent #128). Half of #128's story 5 was REFUSED to keep it that way. **Do not close the gap.**
 - **No shared name, key, row, column or ratio.** Not one `cell_shape` key in the sidecar (the two
   `quality.metric` labels are two), not a `shape_metric=` token, not a "both paths" column in a
   panel, a README or a pipeline summary, and never one figure derived from the two.
-- **Each path's `Cell shape` banner row names the OTHER path's metric as NOT comparable**
-  (`printHybridQuality` and the multi-block reporter in `src/cli.cpp`), and THAT SENTENCE IS THE
-  ENFORCEMENT: it is quoted verbatim in the design note and held against the source, so rewording
-  it in one home reddens a gate rather than unhooking the record.
-- Gated by `tests/test_comparability_refusal.py` (7 checks, 8 automated injections — both banner
-  sentences against `src/cli.cpp`, the record and its anchor, the rule pointer below, and the two
-  metric names never crossing between the two emitters; no build tree needed) and by
-  `tests/test_hybrid_shape_surface.py` check 5 through the real binary.
+- **THE BANNER SENTENCE IS THE ENFORCEMENT**, not this file: the `NOT comparable` clause each
+  `Cell shape` row carries (`printMbQuality` and `printHybridQuality` in `src/cli.cpp` — the rule
+  that BOTH rows carry it is stated above) is quoted VERBATIM in the design note and held against
+  the source, mode number included, so rewording it in one home reddens a gate.
+- Gated by `tests/test_comparability_refusal.py` (7 checks, 9 automated injections and a negative
+  control — both banner sentences against `src/cli.cpp`, the record and its anchor, the pointer
+  below, and the two metric names never crossing between the two emitters; no build tree needed)
+  and by `tests/test_hybrid_shape_surface.py` check 5 through the real binary.
   Why: `docs/design_notes/mesher.md`, "THE TWO FIGURES ARE NOT COMPARABLE, BY CONSTRUCTION".
 
 **`exportVTK` writes the block-id `CELL_DATA` field ONLY when EVERY element carries one**
@@ -343,6 +341,10 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
   proves every parameter is reachable and that a number's own value appears, but the pairing of
   value to meaning IS the label prose.
 - **`tests/test_cpp_linkable_seam.py` names two of its own** in its docstring.
+- **`tests/test_comparability_refusal.py` holds the SENTENCES and the RECORD, never the practice.**
+  Two shape figures put side by side by a GUI panel, a pipeline summary or a README table is the
+  defect that rule exists to prevent and passes every check in it; so does swapping the two
+  `quality.metric` labels, which it counts file-wide. That file's own docstring names the rest.
 - **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
   boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
   0.5 s while all 68 other tests and the 9-case golden set passed.
