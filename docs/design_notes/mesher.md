@@ -752,6 +752,137 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   against per-block cell counts, which no machine-readable line carries — a row
   reporting the WRONG block's figures would pass the surface gate.
 
+**THE WALL BAND: what the O-grid's p95 was describing** (`wallBandMask` in
+`src/MbQuality.cpp`; issue #144, parent #128, and the multi-block twin of #143).
+
+The shipped O-grid reported median 1.846, **p95 23.662**, max 32.768. Measured
+row by row, its 48 radial rows run 32.77, 28.49, 23.66, 20.05, … down to 1.01 at
+row 24 and back up to 1.88 at the far field — so the p95 lands in row 2 and is a
+wall figure, which is the failure #128's problem statement attributed to the max
+and the mean. **The per-block rows already in the banner do not rescue it**: each
+of the four blocks spans the wall to the far field, so every block's own p95 has
+exactly the defect the whole mesh's does.
+
+- **THE TICKET'S OWN TWO CRITERIA COULD NOT BOTH HOLD, and the measurement is what
+  settled which gave way.** #144 asked for the wall-ADJACENT cells (criterion 1)
+  AND for a bulk p95 below 3 (criterion 3). A band of one row is **96 of 4608
+  cells, 2.1%**, and leaves the bulk p95 at **20.05** — still a wall figure, so
+  that split would have changed nothing about the number it exists to fix; it takes
+  **15 of the 48 rows** in the band before the bulk p95 drops under 3. The ticket's
+  own demo prose ("the bulk figures land near 1.2–1.9") matches the clustered band
+  and not the adjacent row. The user was shown both, with the numbers, and chose the
+  band. **The one-row variant is kept as injection V** of the surface gate, so the
+  20.05 is a measurement this tree can reproduce rather than a sentence.
+- **A CELL IS IN THE BAND WHILE ITS EXTENT ACROSS A DECLARED WALL SIDE IS SHORTER
+  THAN ITS EXTENT ALONG IT.** The walk starts on the side, steps outward, and stops
+  at the first cell where that is not true — **per station along the side**, so a
+  wall whose clustering varies along its own length reports a band that varies with
+  it. There is no radius, no layer count and no multiple of the first-cell height
+  anywhere in it, which is the whole point: a cut-off would then decide the figures,
+  and #128's refusal of a threshold would have been undone by the set instead of by
+  the number. On the shipped cases every station agrees, which is why this entry can
+  speak of rows at all.
+- **IT ASKS `quadExtents`, NOT `cellShapeRatio`.** The ratio is orientation-free by
+  design — that is what makes it readable against 1:1 — so it cannot say WHICH of a
+  cell's two directions is the short one, and the band's whole question is which.
+  `quadExtents` is new in `include/CellShape.hpp` and the quad branch of
+  `cellShapeRatio` now reads it, so the midline arithmetic keeps one home; the two
+  outputs are named by DIRECTION (`extent01`, `extent12`) rather than by the edges
+  each midline joins, because getting those the wrong way round is invisible in a
+  max-over-min and is exactly what the band would get wrong.
+- **A UNIFORM GRID CLUSTERS NOTHING, AND A BARE `across < along` DID NOT SAY SO.**
+  The shipped square is a 1×1 domain filled with 400 geometrically IDENTICAL
+  0.05-by-0.05 cells, and the first implementation banded **72** of them. The two
+  midlines of a square come out of a few adds and a `hypot` a last bit apart and the
+  sign of that bit is noise, so the band's SIZE was noise while its figures (all
+  1.000000) looked perfect. The comparison now carries a **1e-12 relative tie
+  rule** — a floating-point EQUALITY tolerance and not a cut-off: it decides ties,
+  never how far the band reaches. Four orders above the arithmetic's noise and
+  twelve below any real clustering (the O-grid's shallowest banded cell is 1.098 and
+  its first unbanded one 1.012), it empties the square's and the cavity's bands and
+  moves no other shipped case by a single cell. **The C++ fixture for it had to be
+  that 0.05 grid**: check 10e's first draft was a ladder on INTEGER coordinates,
+  whose midlines come out exactly equal, and injection O was INERT against it — the
+  same "a check written for a defect it cannot reach" shape as injection K one entry
+  up, found the same way.
+- **A BLOCK WITH NO DECLARED WALL SIDE IS ALL BULK, by construction** rather than by
+  a rule written a second time: it has no side to walk from. **TWO SIDES OF ONE
+  BLOCK MAY BOTH BE WALLS** — the O-grid declares both its body arc and its
+  far-field arc `wall`, and the far-field walk stops at once because that row is
+  longer radially than azimuthally — so the mask is a UNION, and a cell reached from
+  either side is banded once. That is what keeps `structuredShape.cells ==
+  structuredLayerShape.cells + structuredBulkShape.cells` true; every cell's ratio is
+  pushed into the whole-mesh set and into exactly one half, and an unmeasurable cell
+  is dropped from all three by the one rule in `reduceCellShapes`.
+- **ONE NAMING SHAPE FOR BOTH PATHS, AND THE BANNER LABEL IS DELIBERATELY NOT PART
+  OF IT.** `quad_midline_ratio_layer_*` / `_bulk_*` on the machine line and
+  `quality.layer` / `quality.bulk` in the sidecar — #143 shipped that shape first and
+  predicted these key names by name, and this ticket is where the two were made to
+  match. The banner row is this path's own word, `wall band`, against the hybrid's
+  `boundary layer`: what the two paths share is the FORMATTING of three numbers,
+  while the metric name, the count's units and the sentence beside them stay each
+  path's own. Every token and sidecar key that existed before #144 keeps its
+  spelling and still describes the whole mesh.
+- MEASURED 2026-09-18 at the shipped defaults, and the two COUNTS are PINNED
+  (`BAND_PINS`): shipped square **0 / 400**, cavity **0 / 256** (uniform
+  rectangles, nothing clustered), H-grid **76 / 4**, O-grid **2304 / 2304**
+  (band median 5.184, p95 28.508, max 32.768; bulk 1.693, 1.878, 1.882), C-grid
+  **2022 / 3738**. Every whole-mesh figure #140 pinned is unchanged to the digit on
+  all five, so that ticket's gate needed no edit. Golden **19/19 SAME at 0.000e+00**
+  against a binary built from the pre-change commit — 18 meshes plus one NO-MESH
+  outcome. No mesh moved; what is new is two rows, eight tokens and two sidecar
+  objects.
+- **THE COUNTS ARE PINNED BECAUSE AN INJECTION FOUND THE HOLE, not because pinning
+  was tidy.** `M2` — the walk collecting every squeezed cell instead of stopping at
+  the first unsqueezed one — moves the H-grid's band from 76 to 80 and the C-grid's
+  from 2022 to 3382, and with only the O-grid's bar in place it reddened NOTHING:
+  the O-grid's clustering is monotone away from each wall, so the two rules agree
+  there and the gate was blind on the two cases where they do not. A bar on one case
+  is not coverage of a rule.
+- **A SECOND DEFECT THE INJECTIONS FOUND WAS IN THE GATE.** `R` — the two halves'
+  tokens renamed on the machine line — reddened 13 checks including #140's pins,
+  the independent recomputation and the "nothing colours or grades it" scan, because
+  the new check returned early on a missing half and took every check below it. It
+  reported a graded banner on five cases whose banners were fine. With the early
+  return gone it reddens 31 checks, all of them the split's own. **A defect in the
+  split must redden the split's checks and nothing else's**, or the failure names
+  the wrong thing.
+- **`MeshQuality::split` BEING FALSE NOW HAS NO PRODUCER AND NO GATE.** Both paths
+  split, so the writer's other branch in `include/Provenance.hpp` is reachable only
+  by a path nobody has written. The flag is KEPT — deleting it makes the next path
+  write two objects full of negatives, which is the state #143 argued against — and
+  `tests/test_hybrid_shape_surface.py` check 16, its only witness, now asserts the
+  cross-path naming shape instead. That is recorded in that file's blind spots and
+  in #143's entry above, not only here.
+- **NO THRESHOLD, NO COLOUR, NO GRADE on either new set.** The one numeric bar near
+  them — the surface gate's check 18, "the bulk p95 below 3 while the whole-mesh p95
+  is above 20" — is the bar the ticket asks for by name and it is a bar on THE SPLIT
+  DOING SOMETHING: two-sided, so a band that swallowed the whole mesh cannot pass it
+  either. It grades no mesh.
+- **INJECTIONS, hand runs dated 2026-09-18.** Seven against the C++ gate
+  (`src/MbQuality.cpp`) and seven against the surface gate (that file,
+  `src/MbQuality.cpp` and `src/cli.cpp`), each restored by CONTENT from a copy taken
+  first. Thirteen bit; one is recorded as REDUNDANT rather than as a bite — `Q`,
+  swapping `across` and `along`, reddens exactly the same 12 checks as `L`, which
+  reverses the inequality, because those are one mutation under two names. Two are
+  worth repeating here. `W` — the extent crossing the wall taken as the j extent
+  whatever the side runs along — is why check 10g exists: every other C++ fixture
+  declares a side running along i, so that ternary's other branch was exercised by
+  nothing while the shipped O-grid's body arc is a west side. And `O` is the tie
+  rule's, inert until its fixture became the shipped square's own grid.
+- Blind spots, named rather than papered over. **The band's FIGURES are not pinned,
+  only its two counts**: a change that kept the same cells in each half and computed
+  their median, p95 or max wrongly would pass everything but the banner-and-sidecar
+  agreement. Check 12's independent recomputation covers the whole mesh and was not
+  extended to the halves, because reproducing the walk in the gate is not an
+  independent measurement of the walk. **The tie rule's CONSTANT is argued and not
+  measured** — the square is what it was chosen against, and no case sits near
+  enough to it to say 1e-12 beats 1e-9. And **every C++ fixture is a hand-built
+  `MbResult`**, so nothing there says a real topology's `wall` sides reach
+  `wallSpecs` at all; check 10f drives the real builder but on a one-block document
+  whose four walls band every cell, and the strict-subset case lives in the surface
+  gate.
+
 **THE HYBRID HALF OF THE SAME INSTRUMENT** (`printHybridQuality` in `src/cli.cpp`;
 issue #130, parent #128). #129 built the pure module and wired the multi-block
 path to it, leaving the triangle branch and `measureCellShapes` NAMED as unread.
@@ -1013,9 +1144,9 @@ grown layer rather than only the wall band should read.
   cheaper and would have cost `measureCellShapes` its only production caller,
   putting the reducer back in the state #129 left it in and #130 fixed.
 - **THE NAMING SHAPE IS `<metric>_layer_*` / `<metric>_bulk_*`, AND THIS TICKET
-  SETTLED IT because it landed first.** #144 splits the multi-block path's wall
-  band under the same shape (`quad_midline_ratio_layer_*`), and its change is where
-  the two are made to match — the criterion both tickets carry. The word is
+  SETTLED IT because it landed first.** #144 split the multi-block path's wall band
+  under the same shape (`quad_midline_ratio_layer_*`), and its change is where the
+  two were made to match — the criterion both tickets carry. The word is
   `layer`, not `bl` and not `wall`. `bl` is foreign to a path with no boundary
   layer in it; `wall` reads as a claim about the boundary condition on the surface,
   and a boundary layer here grows from a geometry whatever its tag says, so on a
@@ -1052,8 +1183,14 @@ grown layer rather than only the wall band should read.
 - **A PATH THAT DOES NOT SPLIT WRITES NEITHER SIDECAR KEY.** `MeshQuality::split`
   is a third state beside "no metric" and "measured nothing": false writes no
   `layer` and no `bulk` rather than two objects full of negatives, which a reader
-  would take for "we looked and found nothing". The multi-block path is today's
-  only witness to it and stops being one when #144 lands.
+  would take for "we looked and found nothing". The multi-block path was its only
+  witness and stopped being one in #144: BOTH paths split now, so that branch has
+  no producer in this tree and no gate. The flag is KEPT rather than deleted —
+  deleting it makes the next path write two negative objects, which is the state
+  this bullet argues against — and `tests/test_hybrid_shape_surface.py` check 16,
+  which was the witness, now asserts the cross-path naming shape instead and names
+  the lost coverage in its own blind spots. Injection J is the measurement: it used
+  to redden that check and now reddens nothing.
 - **NO THRESHOLD, NO COLOUR, NO GRADE on either new set.** The one numeric bar
   anywhere near them — `tests/test_hybrid_shape_surface.py` check 13's "bulk p95
   below 2 while the whole-mesh p95 is above 40" — is a bar on THE SPLIT DOING

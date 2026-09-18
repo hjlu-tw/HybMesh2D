@@ -311,8 +311,8 @@ answerable from the median alone. Measured after the split: bulk median 1.112 / 
 median 35.282 / p95 70.542.
 - **ONE NAMING SHAPE FOR BOTH GENERATION PATHS: `<metric>_layer_*` and `<metric>_bulk_*`.** This
   path ships `tri_edge_ratio_layer_cells|median|p95|max` and `tri_edge_ratio_bulk_*`; the
-  multi-block path's wall band takes `quad_midline_ratio_layer_*` when #144 splits it, and that
-  ticket's change is where the two are made to match. **The word is `layer`, NOT `bl` and NOT
+  multi-block path's wall band took `quad_midline_ratio_layer_*` in #144, which is where the two
+  were made to match (its rules are in `.claude/rules/mesher-multiblock.md`). **The word is `layer`, NOT `bl` and NOT
   `wall`**: it names the band of cells a mesher clusters against a surface, in either path's own
   vocabulary, and makes no claim about the BC on that surface — a boundary layer here grows from a
   geometry whatever its tag says, so `wall` would be the claim that is not true. **The shape is
@@ -350,11 +350,16 @@ median 35.282 / p95 70.542.
   (`include/Provenance.hpp`) is a state of its own: false writes no `layer` and no `bulk`, rather
   than two objects full of negatives a reader would take for "we looked and found nothing". The
   hybrid path sets it unconditionally — it always splits, and both halves empty is a mesh nothing
-  could be measured on.
+  could be measured on. **SINCE #144 THAT FALSE STATE HAS NO PRODUCER AND NO GATE**: the
+  multi-block path splits too, so the writer's other branch is reachable only by a path nobody has
+  written. The flag is KEPT, because deleting it makes that path write two negative objects; what
+  changed is that `tests/test_hybrid_shape_surface.py` check 16, its only witness, now asserts the
+  cross-path naming shape instead and says so in its own blind spots.
 - **NO THRESHOLD, NO COLOUR, NO GRADE on either new set**, the same rule #128 set for the figures
   they sit beside.
 - Gated by `tests/cpp/test_hybrid_quality.cpp` checks 10-13 (the arithmetic) and
-  `tests/test_hybrid_shape_surface.py` checks 13-16 (the three surfaces, through the binary).
+  `tests/test_hybrid_shape_surface.py` checks 13-16 (the three surfaces, through the binary; check
+  16 became the cross-path naming assertion in #144).
   Check 13 carries **the one numeric bar in that file** and the ticket asks for it by name: the
   bulk p95 below 2 while the whole-mesh p95 is above 40, two-sided so that a split measuring
   nothing cannot pass it. It is a bar on the split DOING something, not a quality threshold.

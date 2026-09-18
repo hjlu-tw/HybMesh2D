@@ -227,10 +227,65 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
     `max` — fed by the SAME report object the banner and the machine line read, so the three
     cannot disagree. It is the contract #131 and #132 read instead of recomputing.
   Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
-- Gated by `tests/cpp/test_mb_quality.cpp` (14 groups, 79 checks),
+
+**THE REPORT SEPARATES THE WALL-CLUSTERED QUADS FROM THE REST, BESIDE THE WHOLE-MESH FIGURES AND
+NEVER INSTEAD OF THEM** (`wallBandMask` in `src/MbQuality.cpp`, `printMbQuality` in `src/cli.cpp`;
+#144, parent #128). The shipped O-grid's whole-mesh p95 is 23.662 against a median of 1.846: its
+radial rows run 32.77, 28.49, 23.66 down to 1.01 twenty-four rows out, so that percentile
+describes the wall band. **The per-block rows do not rescue it** — each of the four blocks spans
+the wall to the far field, so every block's own p95 has the same defect the whole mesh's does.
+Measured after the split: band 2304 quads at median 5.184 / p95 28.508 / max 32.768, bulk 2304 at
+1.693 / 1.878 / 1.882.
+- **A CELL IS IN THE BAND WHILE ITS EXTENT ACROSS A DECLARED WALL SIDE IS SHORTER THAN ITS EXTENT
+  ALONG IT**, walking outward from that side and stopping at the first cell where it is not, **per
+  station along the side**. No radius, no layer count, no multiple of the first-cell height —
+  nothing that would make the figures a knob. It reads `quadExtents` (`include/CellShape.hpp`) and
+  NOT `cellShapeRatio`, whose ratio is orientation-free on purpose and cannot say which direction
+  is the short one.
+- **"WALL-ADJACENT" IS NOT THE RULE, and the ticket's own two criteria could not both hold.** #144
+  asked for the wall-ADJACENT cells AND for a bulk p95 below 3. Measured: a band of one row is 2.1%
+  of the O-grid and leaves the bulk p95 at **20.05**, still a wall figure, so that split would have
+  changed nothing about the number it exists to fix; it takes 15 of the 48 rows to get under 3. The
+  user chose the clustered band with that measurement in hand. Injection V of
+  `tests/test_multiblock_shape_surface.py` is the one-row variant, kept as the measurement.
+- **A UNIFORM GRID CLUSTERS NOTHING, and a bare `across < along` did not say so.** The shipped
+  square is 400 geometrically identical 0.05-by-0.05 cells and it banded **72** of them: two
+  midlines of a square come out of a `hypot` a last bit apart and the sign of that bit is noise. The
+  comparison carries a **1e-12 relative tie rule** — a floating-point EQUALITY tolerance, never a
+  cut-off: it empties the square's and the cavity's bands and moves no other shipped case by a cell.
+  The C++ gate's fixture for it has to be that 0.05 grid; on INTEGER coordinates the midlines come
+  out exactly equal and the injection is inert.
+- **A BLOCK WITH NO DECLARED WALL SIDE IS ALL BULK, by construction** — it has no side to walk
+  from. **TWO SIDES OF ONE BLOCK MAY BOTH BE WALLS** (the O-grid's body arc and its far-field arc
+  are), so the mask is a UNION and a cell reached from either is banded once; that is what keeps
+  `structuredShape.cells == structuredLayerShape.cells + structuredBulkShape.cells` true.
+- **ONE NAMING SHAPE FOR BOTH GENERATION PATHS: `<metric>_layer_*` and `<metric>_bulk_*`.** This
+  path ships `quad_midline_ratio_layer_cells|median|p95|max` and `_bulk_*`, and `quality.layer` /
+  `quality.bulk` in the sidecar; the hybrid path shipped `tri_edge_ratio_layer_*` first (#143) and
+  this is where the two were made to match. **The BANNER label is this path's own word** — `wall
+  band` — which is the half of the shape the two deliberately do not share. **EVERY TOKEN AND
+  SIDECAR KEY THAT EXISTED BEFORE #144 KEEPS ITS SPELLING AND ITS MEANING**, and still describes the
+  WHOLE mesh.
+- **BOTH HALVES ARE INDEPENDENT OF `MB_SPLIT_QUADS`**, for the reason `structuredShape` is: they
+  are measured on the structured quads. **NO THRESHOLD, NO COLOUR, NO GRADE on either new set.**
+- **AN EMPTY BAND IS `not measured` WITH THREE NEGATIVE FIGURES**, and here that is ORDINARY: the
+  shipped square and cavity have no band at all. The parenthetical NAMES NO CAUSE, the rule the
+  headline row has carried since #130.
+- **`MeshQuality::split` BEING FALSE NOW HAS NO PRODUCER.** Both paths split, so the writer's other
+  branch in `include/Provenance.hpp` is reachable only by a path nobody has written. The flag is
+  KEPT — deleting it makes the next path write two objects full of negatives, the state #143 argued
+  against — and `tests/test_hybrid_shape_surface.py` check 16, which used to be that state's
+  witness, now asserts the cross-path naming shape instead.
+- Gated by `tests/cpp/test_mb_quality.cpp` checks 10 and 10b-10g (the walk, on hand-built meshes)
+  and `tests/test_multiblock_shape_surface.py` checks 14-18, whose **18 carries the ticket's one
+  numeric bar** — the bulk p95 below 3 while the whole-mesh p95 is above 20, two-sided so a band
+  that swallowed the mesh cannot pass it — and whose `BAND_PINS` pins each case's two COUNTS, a
+  pin added because injection M2 moved the H-grid's and the C-grid's band and reddened nothing.
+  Why: `docs/design_notes/mesher.md`, "THE WALL BAND: what the O-grid's p95 was describing".
+- Gated by `tests/cpp/test_mb_quality.cpp` (21 groups, 105 checks),
   `tests/test_multiblock_quality_surface.py` and `tests/test_multiblock_shape_surface.py` (the
-  shape figures on ALL FIVE shipped multi-block cases, pinned, through the real binary — 13
-  properties and six hand injections, both enumerated in its own docstring; the assertion
+  shape figures on ALL FIVE shipped multi-block cases, pinned, through the real binary — 18
+  properties and thirteen hand injections, both enumerated in its own docstring; the assertion
   count is deliberately NOT restated here, being a live figure about another file that no
   `--sync` derivation keeps true). **The C++ gate's
   injections are HAND runs, dated in that test's own docstring** — a C++ test cannot mutate the

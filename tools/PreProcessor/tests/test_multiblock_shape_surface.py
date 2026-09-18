@@ -99,6 +99,29 @@ What this pins down:
      What is NOT asserted anywhere: the stretching law behind 3.1436, and "a fix
      would change the topology", which rests on injection D.
 
+ 14. THE WALL BAND, SPLIT OFF THE REST (#144), on every shipped case: both halves
+     as ``<metric>_layer_*`` / ``<metric>_bulk_*`` tokens, as two banner rows under
+     the headline, and in the sidecar — the three surfaces telling one story about
+     the split as they already do about the whole. The two halves PARTITION what
+     the whole set measured, and the two COUNTS are pinned in ``BAND_PINS``.
+ 15. BOTH HALVES ARE INDEPENDENT OF ``MB_SPLIT_QUADS`` too, for the reason the
+     whole-mesh figure is: they are measured on the structured quads. This is also
+     where the STRICT-SUBSET case is covered — the C++ gate's own fixture is a
+     one-block document whose four walls band every cell.
+ 16. TODAY'S SPELLINGS STILL READ THE WHOLE MESH. Every token and sidecar key that
+     existed before the split is still there, spelled as it was, and still carries
+     the WHOLE mesh: the count is both halves' and the max the larger half's.
+     Asserted against LITERAL names, because a list rebuilt from the same constants
+     the new tokens come from could not see a rename that moved both together.
+ 17. AN EMPTY BAND IS ``not measured`` WITH THREE NEGATIVE FIGURES, and on this
+     path that is ORDINARY: a uniform rectangle clusters nothing at all. Which
+     cases those are is pinned, so the checks under it cannot quietly scan nothing.
+ 18. THE BAR THE TICKET ASKS FOR, and the ONLY numeric one in this file: on the
+     shipped O-grid the BULK p95 is below 3 while the WHOLE-MESH p95 is above 20.
+     Two-sided on purpose — a bulk p95 under 3 alone would also pass if the band
+     had swallowed the whole mesh. It is a bar on the split DOING something, not a
+     quality threshold: #128 rules those out and #140's pins are not ones.
+
 WHY THE C-GRID'S MAX IS ARITHMETIC AND NOT A DEFECT, which is #140's acceptance
 criterion 3 in the form a gate can hold. Measured 2026-09-17 on the shipped case:
 
@@ -199,6 +222,55 @@ is a figure nothing in the tree supports:
                                                         a config perturbs a uniform
                                                         rectangle's shape
 
+#144'S INJECTIONS, run by hand 2026-09-18 against this file and src/MbQuality.cpp
+and src/cli.cpp, each restored by CONTENT from a copy taken first. All seven bit,
+and one of them found a hole that is now closed:
+
+  L2  the band comparison REVERSED                 -> 3 checks: the O-grid's and
+                                                      C-grid's pinned counts, and
+                                                      two of check 18
+  M2  the walk collecting every squeezed cell      -> 2 checks, and BOTH are the
+      instead of stopping at the first unsqueezed     counts this ticket added.
+      one                                             IT REDDENED NOTHING BEFORE
+                                                      THEM: it moves the H-grid
+                                                      76 -> 80 and the C-grid
+                                                      2022 -> 3382 and leaves the
+                                                      O-grid alone, whose
+                                                      clustering is monotone away
+                                                      from each wall, so check 18
+                                                      could not see it. That is
+                                                      why ``BAND_PINS`` exists
+  V   the band cut to at most ONE cell deep, which -> 5 checks: three counts and
+      is the ticket's own "wall-adjacent" wording     two of check 18, which
+                                                      MEASURES what that wording
+                                                      would have shipped — the
+                                                      O-grid's band at 2.1% of the
+                                                      mesh and its bulk p95 at
+                                                      20.05, still a wall figure
+  R   the two halves' tokens renamed `_wall_` /    -> 31 checks, all of 14 and 16
+      `_far_` on the machine line                     on all five cases and
+                                                      NOTHING else. The first
+                                                      draft returned early on a
+                                                      missing half and this
+                                                      injection took #140's pins,
+                                                      check 12 and check 9 with
+                                                      it, reporting a graded
+                                                      banner on five cases whose
+                                                      banners were fine
+  S   `quality.split` left false on this path, so  -> 7 checks: check 14's sidecar
+      the sidecar carries no halves while the         on all five and check 17's
+      banner and the line do                          on the two empty ones. The
+                                                      banner and the line do not
+                                                      move: this is the "three
+                                                      surfaces disagree" defect
+  T   the whole-mesh tokens replaced by the BULK   -> 40 checks, across 6, 11, 12,
+      half's, the defect the compatibility            13, 14, 16, 17 and 18. #140's
+      criterion exists to stop                        pins are what catch most of
+                                                      it, which is what that
+                                                      ticket bought
+  U   check 18 reading the BAND's p95 instead of   -> 1 check, check 18's bar
+      the bulk's
+
 MEASURED 2026-09-17, at the shipped defaults (``MB_SMOOTH_ITERS`` 20). These are
 the values ``PINS`` carries, and they are a PIN rather than a record now:
 
@@ -270,6 +342,18 @@ BLIND SPOTS, named rather than papered over:
     `count` 25 and `ds_start` 0.005 over 19 chords is read off the topology by a
     person. A reader who takes the entry above as a DERIVATION will get 4.9 from a
     plain geometric ratio and think this file wrong.
+  * THE BAND'S FIGURES ARE NOT PINNED — only its two COUNTS are (``BAND_PINS``).
+    A change that kept exactly the same cells in each half while computing their
+    median, p95 or max wrongly would pass every check here except the banner and
+    sidecar agreement, which compare the halves against the machine line rather
+    than against a recorded value. Check 12's independent recomputation covers the
+    WHOLE mesh and was not extended to the halves: it would have to reproduce the
+    walk to know which cells belong in which, and a second implementation of the
+    rule under test is not an independent measurement of it.
+  * WHAT THE TIE RULE'S CONSTANT IS, rather than that it exists, is argued at its
+    definition in src/MbQuality.cpp and measured nowhere. The shipped square is
+    what it was chosen against; no case here sits near enough to it to say 1e-12 is
+    better than 1e-9.
   * ``PIN_TOL`` WAS MEASURED ON ONE TOOLCHAIN. The pins come from macOS/clang runs
     and CI runs the same binary built on ubuntu/GCC, so "wider than cross-toolchain
     drift" is believed rather than measured: the figures derive from the same node
@@ -402,6 +486,26 @@ PINS = {
               "max": 32.767868},
     "cgrid": {"cells": 5760, "median": 4.832007, "p95": 148.005672,
               "max": 3147.957636},
+}
+
+# HOW MANY QUADS EACH CASE'S WALL BAND HOLDS, measured 2026-09-18 and pinned
+# (#144). COUNTS AND NOT FIGURES, deliberately: a count cannot drift by a
+# rounding, so it needs neither `PIN_TOL` nor a negative control, and it is
+# exactly what moves when the WALK changes — which cells the band reaches is the
+# only thing this ticket decided.
+#
+# IT EXISTS BECAUSE AN INJECTION FOUND THE HOLE. `M2` — the walk collecting every
+# squeezed cell instead of stopping at the first unsqueezed one — moves the H-grid
+# from 76 to 80 and the C-grid from 2022 to 3382, and with only the O-grid's bar
+# below it reddened NOTHING: the O-grid's clustering is monotone away from each
+# wall, so the two rules agree there and the gate was blind on the two cases where
+# they do not.
+BAND_PINS = {
+    "square": (0, 400),
+    "cavity": (0, 256),
+    "hgrid": (76, 4),
+    "ogrid": (2304, 2304),
+    "cgrid": (2022, 3738),
 }
 
 failures = []
@@ -642,15 +746,22 @@ def one_case(tmp, name, config_name, blocks):
     check(f"{name}: 14. ...and the banner prints them as two rows under the "
           f"headline, under distinct labels ({sorted(halves)})",
           set(halves) == {"wall band", "bulk"})
-    if lay is None or blk is None:
-        return None, None
+    # NO EARLY RETURN ON A MISSING HALF, and that is not tidiness: the first
+    # draft returned here, so injection R — the two halves renamed on the line —
+    # took every check BELOW this point with it, including #140's pins and the
+    # independent recomputation, and reported a graded banner on five cases that
+    # had nothing wrong with their banners. A defect in the split must redden the
+    # split's own checks and nothing else's.
+    have = lay is not None and blk is not None
+    if not have:
+        lay = blk = {f: float("nan") for f in FIELDS}
     check(f"{name}: 14. ...the two halves PARTITION what the whole set measured, "
           f"so no cell is counted twice and none is lost between them "
           f"({lay['cells']:.0f} + {blk['cells']:.0f} = {got['cells']:.0f})",
-          lay["cells"] + blk["cells"] == got["cells"])
+          have and lay["cells"] + blk["cells"] == got["cells"])
     check(f"{name}: 14. ...the banner's two rows print the machine line's numbers "
           f"to the three decimals they show, over the same two counts",
-          all((halves[lbl] is None and h["cells"] == 0)
+          have and all((halves[lbl] is None and h["cells"] == 0)
               or (halves[lbl] is not None
                   and halves[lbl]["cells"] == h["cells"]
                   and all(abs(halves[lbl][f] - h[f]) < 5e-4 for f in FIGURES))
@@ -658,15 +769,22 @@ def one_case(tmp, name, config_name, blocks):
     check(f"{name}: 14. ...and the sidecar carries both halves under mesh.quality, "
           f"to the digit, so the three surfaces tell one story about the split as "
           f"they already do about the whole",
-          side is not None
+          have and side is not None
           and all(isinstance(side.get(k), dict)
                   and all(float(side[k][f]) == h[f] for f in FIELDS)
                   for k, h in (("layer", lay), ("bulk", blk))))
+    check(f"{name}: 14. ...and the two counts are what they were the day the band "
+          f"was measured ({lay['cells']:.0f} banded, {blk['cells']:.0f} bulk, "
+          f"against the pinned {BAND_PINS[name]}) — a pin says the WALK moved, "
+          f"and its fix is either \"re-measure after reading why\" or \"this is "
+          f"the regression the pin was for\"",
+          have and (lay["cells"], blk["cells"])
+          == (float(BAND_PINS[name][0]), float(BAND_PINS[name][1])))
     check(f"{name}: 14. ...each half is ordered and at or above the metric's floor "
           f"wherever it measured anything, and NEGATIVE throughout where it did "
           f"not — on a metric whose floor is 1.0 a 0.0 could only be an absent "
           f"measurement wearing a number",
-          all((1.0 <= h["median"] <= h["p95"] <= h["max"]) if h["cells"] > 0
+          have and all((1.0 <= h["median"] <= h["p95"] <= h["max"]) if h["cells"] > 0
               else all(h[f] < 0.0 for f in FIGURES)
               for h in (lay, blk)))
 
@@ -679,7 +797,7 @@ def one_case(tmp, name, config_name, blocks):
           all(k in line for k in LEGACY_TOKENS))
     check(f"{name}: 16. ...and they still carry the WHOLE-MESH figures rather than "
           f"a half's: the count is both halves' and the max the larger half's",
-          line[f"{METRIC}_cells"] == lay["cells"] + blk["cells"]
+          have and line[f"{METRIC}_cells"] == lay["cells"] + blk["cells"]
           and line[f"{METRIC}_max"] == max(lay["max"], blk["max"]))
     check(f"{name}: 16. ...the sidecar's mesh.quality still carries every key a "
           f"reader written before the split knows, at the TOP of the object "

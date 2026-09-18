@@ -24,6 +24,18 @@
 //     include/MbQuality.hpp; the exported triangles are the HYBRID path's figure,
 //     under its own name (`tri_edge_ratio`), and a solver-facing skewness metric
 //     is a third instrument again.
+//   * THE WALL BAND's fixtures are all hand-built `MbResult`s (checks 10-10e,
+//     10g), so nothing there says a real topology's `wall` sides reach
+//     `wallSpecs` at all, nor that the band a shipped case reports is the one
+//     its document asks for. Check 10f drives the real builder but on a
+//     ONE-BLOCK document, whose four sides are all walls and whose band is
+//     therefore the whole block; the strict-subset case, on all five shipped
+//     topologies, is
+//     tools/PreProcessor/tests/test_multiblock_shape_surface.py checks 14-18.
+//   * NOTHING HERE PINS THE TIE RULE'S CONSTANT. Check 10e shows that a grid
+//     the metric reads as uniform reports no band; that 1e-12 rather than 1e-9
+//     is the right distance from the noise is argued at the constant and
+//     measured nowhere.
 //   * Nothing here pins the METRIC's own arithmetic — that a square is 1.0, that
 //     a degenerate cell does not divide by zero, how p95 is ranked. That is the
 //     shared pure module's, and it is pinned in tests/cpp/test_cell_shape.cpp.
@@ -87,8 +99,44 @@
 //      and it collapses one midline to zero, so the cells report unmeasurable
 //      rather than merely wrong.
 //
-// AND ONE THAT IS INERT, recorded because "we tried and it did not bite" is worth
-// more than silence:
+// AND #144's, run by hand 2026-09-18, all against src/MbQuality.cpp:
+//
+//   L. the band comparison REVERSED, so the band collects the cells that are
+//      wider across the wall than along it -> 12 failures, across checks 10 (x5),
+//      10c, 10d (x3) and 10g (x3).
+//   M. the walk never stops (`continue` for `break`), so it collects every
+//      squeezed cell in the block instead of the contiguous run off the wall
+//      -> 1 failure, check 10c ALONE — which is the check written for it. Every
+//      other fixture here is monotone away from its wall, so the two rules agree
+//      on them; the same mutation is what exposed a hole in the surface gate,
+//      where it moved the shipped H-grid and C-grid and reddened nothing until
+//      that gate pinned the two counts.
+//   N. the FAR-end walk stepping outward from the near end (`tlo = d`) -> 2
+//      failures, check 10d alone, which is the only fixture with a wall at the
+//      transverse maximum.
+//   O. the tie tolerance dropped, so two extents that agree to within rounding
+//      band a cell -> 1 failure, check 10e. WORTH READING WITH ITS FIXTURE: 10e's
+//      first draft was a ladder on INTEGER coordinates, whose midlines come out
+//      exactly equal, and this injection was INERT against it. The fixture is now
+//      the shipped square's own 0.05 grid, which is where the last bit stops
+//      agreeing. The check was written for the defect and did not reach it — the
+//      same shape as K above.
+//   P. every cell pushed into BOTH halves -> 13 failures, across checks 10 (x5),
+//      10b, 10c, 10d (x4), 10e and 10f. The partition is the one property every
+//      fixture here can see.
+//   W. the extent crossing the wall taken as the j extent whatever the side runs
+//      along -> 4 failures, checks 10g (x3) and 10f. CHECK 10g EXISTS BECAUSE OF
+//      IT: every other fixture declares a side running along i, so that ternary's
+//      other branch was exercised by nothing here while the shipped O-grid's body
+//      arc is a west side.
+//
+// AND TWO THAT BUY NOTHING — one inert and one REDUNDANT, which are different
+// failures and are recorded as two rather than rounded into one:
+//
+//   Q. `across` and `along` swapped -> 12 failures, THE SAME SET AS L to the
+//      check. NOT inert, and not independent evidence either: swapping the two
+//      operands of `a < b` and reversing the inequality are one mutation, so Q is
+//      L under another name and the pair is one bite, not two.
 //   I. an unmeasurable structured quad folded into the statistics as 0.0 instead
 //      of being dropped -> 0 failures. `reduceCellShapes` discards a 0.0 by the
 //      same `> 0.0` test it discards a negative by, so the rule survives this
@@ -165,8 +213,38 @@ const hybmesh::MbWallHeight* wall(const MbQualityReport& q, const std::string& s
 // BUILT BY HAND RATHER THAN PARSED, for check 9e's reason: the band is a rule about
 // which cells a walk reaches, and a fixture whose spacing came out of a spacing law
 // would make the expected answer something this test also has to derive.
+// The same ladder TRANSPOSED: the levels run along i and the block is `nj` rows
+// tall at unit spacing, so a wall on its west is crossed in i. Written as its own
+// builder rather than a flag on the one below, because the point of the fixture is
+// that the two axes are NOT interchangeable in `wallBandMask` — one of them is read
+// through `mbSideAxis::alongI` — and a transpose flag inside the builder would be
+// the same ternary this test exists to check.
+MbResult ladderT(const std::vector<double>& xs, int nj,
+                 const std::vector<hybmesh::MbSide>& wallSides) {
+    MbResult m;
+    m.ok = true;
+    hybmesh::MbBlock b;
+    b.id = "ladderT";
+    b.ni = static_cast<int>(xs.size());
+    b.nj = nj;
+    for (int j = 0; j < nj; ++j)
+        for (double x : xs) {
+            b.nodeIds.push_back(static_cast<int>(m.nodes.size()));
+            m.nodes.push_back({x, static_cast<double>(j)});
+        }
+    m.blocks.push_back(b);
+    for (hybmesh::MbSide side : wallSides) {
+        hybmesh::MbWallSpec ws;
+        ws.block = 0;
+        ws.side = side;
+        ws.edgeId = "declared";
+        m.wallSpecs.push_back(ws);
+    }
+    return m;
+}
+
 MbResult ladder(const std::vector<double>& ys, int ni,
-                const std::vector<hybmesh::MbSide>& wallSides) {
+                const std::vector<hybmesh::MbSide>& wallSides, double dx = 1.0) {
     MbResult m;
     m.ok = true;
     hybmesh::MbBlock b;
@@ -176,7 +254,7 @@ MbResult ladder(const std::vector<double>& ys, int ni,
     for (double y : ys)
         for (int i = 0; i < ni; ++i) {
             b.nodeIds.push_back(static_cast<int>(m.nodes.size()));
-            m.nodes.push_back({static_cast<double>(i), y});
+            m.nodes.push_back({static_cast<double>(i) * dx, y});
         }
     m.blocks.push_back(b);
     for (hybmesh::MbSide side : wallSides) {
@@ -714,18 +792,50 @@ int main() {
     // A uniform grid clusters NOTHING, and the shipped square is one: 400
     // geometrically identical cells whose two midlines come out of a `hypot` a
     // last bit apart. A bare `across < along` banded 72 of them.
+    //
+    // THE FIXTURE IS THE SHIPPED SQUARE'S OWN GRID, and it has to be: a ladder on
+    // INTEGER coordinates has midlines that come out exactly equal, so the bare
+    // comparison passes it and the injection for this rule is INERT (measured, O
+    // below). 0.05 is where the last bit stops agreeing.
     {
-        const MbResult m = ladder({0.0, 1.0, 2.0, 3.0}, 4, {hybmesh::MB_SOUTH});
+        std::vector<double> ys;
+        for (int k = 0; k < 21; ++k) ys.push_back(static_cast<double>(k) * 0.05);
+        const MbResult m = ladder(ys, 21, {hybmesh::MB_SOUTH}, 0.05);
         const MbQualityReport q = hybmesh::measureMbQuality(m);
-        // NEGATIVE CONTROL: every cell here is measurable and square, so an empty
-        // band below is the tie rule and not an unmeasurable fixture.
+        // NEGATIVE CONTROL: every cell here is measurable and square to the last
+        // digit the metric prints, so an empty band below is the tie rule and not
+        // an unmeasurable fixture.
+        CHECK(q.structuredShape.cells == 400,
+              "10e. the uniform ladder is the shipped square's own grid: 400 cells "
+              "of 0.05 by 0.05");
         CHECK_NEAR(q.structuredShape.max, 1.0, 1e-12,
-                   "10e. every cell of a uniform ladder is square, so nothing in it "
-                   "is squeezed toward anything");
+                   "10e. ...every one of them square, so nothing in it is squeezed "
+                   "toward anything");
         CHECK(q.structuredLayerShape.cells == 0
-              && q.structuredBulkShape.cells == 9,
+              && q.structuredBulkShape.cells == 400,
               "10e. ...and its band is EMPTY rather than however many cells the "
               "last bit of a midline happened to fall the wrong way");
+    }
+
+    // ── 10g. A side that runs along j, not along i ─────────────────────────
+    // Check 10's ladder transposed, with the wall on the WEST. Every fixture above
+    // declares a side running along i (south and north), so `mbSideAxis::alongI`'s
+    // OTHER branch — which of the two extents crosses the wall, and which of i and
+    // j the walk steps in — was exercised by nothing here. The shipped O-grid's
+    // body arc is a west side, so the branch is live in production.
+    {
+        const MbResult m = ladderT({0.0, 0.1, 0.5, 2.0}, 4, {hybmesh::MB_WEST});
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        CHECK(q.structuredShape.cells == 9
+              && q.structuredLayerShape.cells == 6
+              && q.structuredBulkShape.cells == 3,
+              "10g. a wall on the WEST bands the same two columns check 10's wall "
+              "on the south bands rows, so neither the extent it crosses nor the "
+              "index it steps in is hard-coded to one axis");
+        CHECK_NEAR(q.structuredLayerShape.median, 6.25, 1e-12,
+                   "10g. ...with the same figures, transposed");
+        CHECK_NEAR(q.structuredBulkShape.max, 1.5, 1e-12,
+                   "10g. ...the bulk column included");
     }
 
     // ── 10f. The band is independent of MB_SPLIT_QUADS ─────────────────────
