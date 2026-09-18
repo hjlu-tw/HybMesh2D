@@ -64,6 +64,11 @@ set(HYBMESH_PURE_TESTS
     # the signal that the one definition of cell shape has grown a dependency on
     # a mesh, a topology or gmsh -- the property that lets both paths use it.
     test_cell_shape
+    # WHICH cells the hybrid path offers to that metric, and what the two counts
+    # beside the figures mean. It was a `static` function inside src/cli.cpp until
+    # #141, so no test could link to it; this executable is what that lift bought,
+    # and it never builds a `Mesh` either.
+    test_hybrid_quality
 )
 
 foreach(t IN LISTS HYBMESH_PURE_TESTS)

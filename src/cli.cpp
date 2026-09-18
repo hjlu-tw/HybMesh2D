@@ -7,6 +7,7 @@
 #include "ExitCodes.hpp"
 #include "MeshMode.hpp"
 #include "MbQuality.hpp"
+#include "HybridQuality.hpp"
 #include "MultiBlock.hpp"
 #include "PointTolerance.hpp"
 #include <iostream>
@@ -935,7 +936,8 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
     return false;
 }
 
-// THE HYBRID PATH'S CELL SHAPE (issue #130, parent #128).
+// THE HYBRID PATH'S CELL SHAPE, REPORTED (issue #130, parent #128; the measuring
+// half lifted out by #141).
 //
 // WHAT IT MEASURES, and why it is not the multi-block figure under another name.
 // This path has no structured layer to measure — there is no (i,j) quad anywhere
@@ -951,54 +953,37 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
 // comparison that means nothing. The arithmetic is shared because writing it twice
 // guarantees the two drift; the names, the lines and the sentences stay apart.
 //
-// ONLY THREE-CORNERED CELLS ARE OFFERED TO IT, and that is a real case rather than
-// a defensive habit: with no geometry, no seed and no domain file this path builds
-// a CARTESIAN QUAD fallback (`Mesh::generateCartesianMesh`), so "this path exports
-// no quads" is true of every case that meshes a geometry and false of that one.
-// A quad offered here would come back as a MIDLINE ratio — a correct number under
-// the wrong name — which is the one thing the two names exist to prevent. It is
-// left out of the figure and COUNTED, so the banner says so rather than quietly
-// describing a mesh by a fraction of itself.
+// WHICH CELLS ARE OFFERED IS NOT DECIDED HERE ANY MORE. The corner-count floor,
+// the corner-count ceiling and the unresolved id are three separate rules, each
+// wrong on its own, and while they lived in this `static` function no test could
+// link to them: their only cover was the surface gate driving the whole binary.
+// They are `measureHybridCellShapes` in `hybmesh_pure` since #141, gated by
+// tests/cpp/test_hybrid_quality.cpp, and the header there states each rule with
+// its reason. What is left here is the half that is about OUTPUT — the banner
+// rows, the machine line and the sidecar hand-off.
 //
 // `quality` is the sidecar's half: the same `ShapeStats` this banner and the
 // machine line below print, handed out rather than measured a second time at the
 // export, so the three surfaces cannot disagree about one mesh.
 static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) {
-    std::vector<std::vector<Point2D>> tris;
-    tris.reserve(mesh.elements.size());
-    // CELLS OFFERED TO THE METRIC — the entries with at least 3 corners — and NOT
-    // "what the exporters write", which was this variable's first name and is
-    // over-claimed by one exporter: `Mesh::exportStarCD` does skip the shorter
-    // entries (and drops degenerates and duplicates besides), but `Mesh::exportVTK`
-    // writes EVERY element, so on the shipped demo it emits 15237 where this counts
-    // 15233. A count is the thing it counts, and the two are not the same set.
-    size_t offered = 0;
-    size_t nonTriangles = 0;
-    for (const Element& el : mesh.elements) {
-        // The two-node entries are the visualisation line segments addTaggedLoop
-        // records, not cells: `Mesh::exportStarCD` skips them by the same test.
-        if (el.nodeIds.size() < 3) continue;
-        ++offered;
-        if (el.nodeIds.size() != 3) { ++nonTriangles; continue; }
-        std::vector<Point2D> corners;
-        corners.reserve(3);
-        bool resolved = true;
-        for (int id : el.nodeIds) {
-            if (id < 0 || static_cast<size_t>(id) >= mesh.nodes.size()) {
-                resolved = false;
-                break;
-            }
-            corners.push_back(mesh.nodes[static_cast<size_t>(id)].pos);
-        }
-        // A CELL WHOSE IDS DO NOT ALL RESOLVE IS UNMEASURABLE, SAID HERE. Passing
-        // the corners that did resolve on short would reach the metric as a
-        // shorter cell and come back with an ordinary ratio for a cell nobody
-        // could measure; the empty list is the "could not measure this one"
-        // signal `reduceCellShapes` drops. Same rule, same reason, as the quad
-        // case in measureMbQuality.
-        tris.push_back(resolved ? corners : std::vector<Point2D>());
-    }
-    const hybmesh::ShapeStats st = hybmesh::measureCellShapes(tris);
+    // THE MESH AS THE PURE HALF TAKES IT: ids and coordinates, with no `Mesh` in
+    // the signature — which is what keeps the decision testable without gmsh, and
+    // is a copy of the connectivity rather than a view on purpose (a view over
+    // `Element` would put this container back in that module's type, which is the
+    // dependency the split removed). Two O(N) walks against a mesh generation that
+    // has already run gmsh.
+    std::vector<std::vector<int>> cellNodeIds;
+    cellNodeIds.reserve(mesh.elements.size());
+    for (const Element& el : mesh.elements) cellNodeIds.push_back(el.nodeIds);
+    std::vector<Point2D> nodePos;
+    nodePos.reserve(mesh.nodes.size());
+    for (const Node& n : mesh.nodes) nodePos.push_back(n.pos);
+
+    const hybmesh::HybridShapeReport rep =
+        hybmesh::measureHybridCellShapes(cellNodeIds, nodePos);
+    const size_t offered = rep.offered;
+    const size_t nonTriangles = rep.nonTriangles;
+    const hybmesh::ShapeStats st = rep.shape;
 
     std::cout << bannerRow("Cell shape") << shapePhrase(st);
     if (st.cells == 0) {

@@ -869,12 +869,62 @@ touched: that is what building the pure half first bought.
   falsified by routing a `MESH_MODE 0` row through them — a present-tense claim the
   diff itself broke, found by the Standards axis. An `mb`-prefixed helper on a
   hybrid banner names the one thing it is not.
+- **THE MEASURING HALF WAS INSIDE THE CLI, AND A GATE COULD ONLY REACH IT THROUGH
+  THE WHOLE BINARY** (#141, one of six gaps a per-story audit of #128 found against
+  the tree on 2026-09-17). #128's story 21 asks each new figure to be covered by
+  BOTH a C++ unit gate and a surface gate, and the two figures were not covered
+  symmetrically: `quad_midline_ratio` is gated twice — the shared arithmetic in
+  `test_cell_shape.cpp`, the FIGURE (which cells are fed in, what the counts mean)
+  in `test_mb_quality.cpp` — while `tri_edge_ratio`'s collection half sat in a
+  `static` function in `src/cli.cpp` that nothing could link to. It is
+  `measureHybridCellShapes` in `include/HybridQuality.hpp` + `src/HybridQuality.cpp`
+  (`hybmesh_pure`) since #141, gated by `tests/cpp/test_hybrid_quality.cpp` (9
+  groups, 29 checks, linking `hybmesh_pure` alone — it never builds a `Mesh`). The
+  prefactor came first and the gate second, which is also what the ticket that
+  splits this figure by boundary-layer band needs: it is the same seam.
+  - **THE SEAM TAKES IDS AND COORDINATES, not a `Mesh&`,** and that is what makes
+    the executable's link the proof rather than a claim. `printHybridQuality` builds
+    the two vectors — one `std::vector<int>` per element and one `Point2D` per node
+    — which is a COPY of the connectivity rather than a view: a view over `Element`
+    would put the mesh container back into the pure module's type and undo the
+    split. Two O(N) walks after a gmsh run.
+  - **THE FIXTURES ARE BUILT SO THE TWO ANSWERS DIFFER, which the surface gate's
+    own injection B already taught.** Check 4 puts a 4x1 RECTANGLE (midline ratio
+    4.0) beside an EQUILATERAL triangle (1.0): dropping the corner-count ceiling
+    then reports 4.0 under the name `tri_edge_ratio`, which is the whole reason the
+    two metrics have two names. A square beside that triangle would have measured
+    1.0 either way and the injection would have passed.
+  - **ONE OF THE FIVE INJECTIONS IS INERT, AND THAT IS THE FINDING.** Passing an
+    unresolved cell on SHORT — the rule the module states in as many words — breaks
+    nothing here, because only three-id cells reach the resolve loop and the prefix
+    walked before the bad id is at most two corners, which `cellShapeRatio` refuses
+    for being too short. The defect the rule stops needs a FOUR-corner cell with
+    three resolving ids, which is the multi-block path's case and is check 9e of
+    `test_mb_quality.cpp` — this is #129's "argument false, fixture unreachable"
+    from the other side: the rule is right, and no fixture on this path reaches it.
+    It is recorded as inert rather than dressed up, and no check is written for a
+    defect it cannot reach. Worth knowing for the next injector: the literal
+    spelling does not COMPILE under the `-Werror` build CI uses, because `resolved`
+    is then set and never read.
+  - Measured after the prefactor: the shipped `config/Background_para.dat` +
+    `examples/geometries/naca0012.dat` pair reports `cells=15233`,
+    `tri_edge_ratio_cells=15233`, **median 1.158103, p95 52.185741, max 78.703074**
+    — every digit of #130's record above, which is what "prefactor" has to mean.
+    Behaviour preservation, 2026-09-18: the 19 golden cases **19/19 SAME, worst
+    coordinate deviation 0.000e+00** against a baseline captured from the
+    PRE-CHANGE binary (`HYBMESH_GOLDEN_BIN`, `git archive HEAD` -> build there ->
+    capture). 18 of those are meshes and the nineteenth (`isolated_corner`)
+    matched a NO-MESH outcome, so "19/19" is not 19 meshes. Nothing moved at all:
+    this ticket added no output and changed no number.
 - Blind spots, named rather than papered over. **No bar is asserted on any of the
   three numbers**, on
   purpose: #128 declined to create that gate, so a regression that made every mesh
   twice as stretched would pass every file here. And **nothing follows a figure
   into the GUI or the pipeline** — the sidecar is the contract, and who reads it is
-  another gate's subject.
+  another gate's subject. The collection rules now have a C++ gate, so what is left
+  uncovered there is named in ITS docstring rather than here: chiefly that nothing
+  in it says the exported cells of a real hybrid mesh are triangles, which is
+  `src/BoundaryLayer.cpp`'s doing and is visible only in the surface gate's run.
 
 **Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
 (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;

@@ -5,8 +5,12 @@ case (issue #130, parent #128).
 The arithmetic is pinned next door in ``tests/cpp/test_cell_shape.cpp`` — a square
 is 1.0 and each of its split triangles sqrt(2), a degenerate cell does not divide
 by zero, how p95 is ranked, and an empty input reduces to NEGATIVE figures rather
-than zeros. What can only be checked out here is the half that IS the ticket: that
-THREE SURFACES agree about one mesh — the banner a user reads, the machine-readable
+than zeros. WHICH CELLS THIS PATH OFFERS to that metric — the corner-count floor,
+the corner-count ceiling, the unresolved id, and what the two counts on the line
+mean — is pinned in ``tests/cpp/test_hybrid_quality.cpp`` since #141, which lifted
+that half out of a ``static`` function in ``src/cli.cpp`` where nothing could link
+to it and this file was its only cover. What can only be checked out here is the
+half that IS the ticket: that THREE SURFACES agree about one mesh — the banner a user reads, the machine-readable
 line a script greps, and the ``.provenance.json`` sidecar every later reader
 consumes — and that this path's figure can never be mistaken for the multi-block
 path's, which measures a different quantity.
@@ -93,6 +97,10 @@ record is not a threshold in disguise.
 
 INJECTIONS, run 2026-09-17 against `src/cli.cpp` with a rebuild per mutation, and
 recorded here because a C++ defect cannot be injected from inside a Python gate.
+THE CODE B AND C MUTATE HAS MOVED: #141 lifted the cell collection into
+`src/HybridQuality.cpp`, so an injector repeating them edits that file now — B's
+corner-count guard and C's negative figures both live there, while A, D, E and F
+(the names, the prefix and the two banner sentences) are still `src/cli.cpp`'s.
 Each names the checks it reddened, so a later reader can tell a check that bites
 from one that merely passes:
 
@@ -128,6 +136,10 @@ from one that merely passes:
 
 BLIND SPOTS, named rather than papered over:
 
+  * The counts and the collection rules are covered HERE only through one shipped
+    mesh each: this file asserts ``cells=15233`` on a real run, not that a
+    four-cornered cell is what the non-triangle row counts. Each rule separately
+    is ``tests/cpp/test_hybrid_quality.cpp``'s subject since #141.
   * Checks 10 and 12 both land in the ``cells == 0`` branch, so a defect INSIDE it
     reddens both and neither is the other's control. What they separate is the two
     ways in — cells that exist and cannot be measured, and no cells at all — which

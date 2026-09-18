@@ -201,6 +201,8 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   generation paths since #130 — the quad branch by `measureMbQuality` (#129), the triangle branch
   and `measureCellShapes` by `printHybridQuality` in `src/cli.cpp`. Pure, total, never throws;
   see the rule below.
+- **`HybridQuality.cpp`**: WHICH cells the HYBRID path offers that metric, and the two counts
+  beside the figures. Pure, total, never throws; see the rule below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
   source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
 - **`MbShared.cpp`**: WHICH nodes the multi-block smoother may move, and in whose logical
@@ -258,6 +260,22 @@ that meshes a geometry.
   comes back as a MIDLINE ratio — a correct number under the wrong name. Such a cell is left out
   and COUNTED, with its own banner row, so the figure never describes a mesh by a fraction of
   itself.
+- **WHICH CELLS ARE OFFERED IS DECIDED IN `hybmesh_pure`, NOT IN THE CLI** (`measureHybridCellShapes`
+  in `include/HybridQuality.hpp` + `src/HybridQuality.cpp`; #141). It takes the mesh as IDS AND
+  COORDINATES, never a `Mesh&` — `tests/cpp/test_hybrid_quality.cpp` linking `hybmesh_pure` alone
+  is what proves it, the same build property `test_cell_shape.cpp` carries. `printHybridQuality`
+  keeps the OUTPUT half only: the two banner rows, the machine line and the sidecar hand-off.
+  Three rules live behind that seam and each can be wrong on its own — the corner-count FLOOR (an
+  entry with fewer than 3 ids is not a cell, and a two-node one is a visualisation segment
+  `Mesh::addTaggedLoop` recorded), the corner-count CEILING (the bullet above), and an
+  UNRESOLVED id (dropped as unmeasurable, never passed on SHORT).
+- Gated by `tests/cpp/test_hybrid_quality.cpp` (9 groups, 29 checks). **Its injections are HAND
+  runs, dated 2026-09-18 in that file's docstring**, and one of the five is **INERT** and recorded
+  as such: passing an unresolved cell on short cannot bite on THIS path, because only three-id
+  cells reach the resolve loop and a prefix of at most two corners is refused by the metric
+  anyway. The shape that rule exists to stop needs a four-corner cell with three resolving ids,
+  which is the multi-block path's case (`test_mb_quality.cpp` check 9e). Do not write a check
+  here for it: there is no fixture that reaches it until a longer cell is offered.
 - **THREE SURFACES, ONE `ShapeStats`** — the `[ Mesh Statistics ]` banner row, the machine line
   and the sidecar's `mesh.quality` — handed out of the reporter rather than measured a second
   time at the export, so the three cannot disagree about one mesh. Unmeasurable is NEGATIVE and
