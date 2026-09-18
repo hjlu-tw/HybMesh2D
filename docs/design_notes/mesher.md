@@ -943,6 +943,82 @@ touched: that is what building the pure half first bought.
   in it says the exported cells of a real hybrid mesh are triangles, which is
   `src/BoundaryLayer.cpp`'s doing and is visible only in the surface gate's run.
 
+**THE TWO FIGURES ARE NOT COMPARABLE, BY CONSTRUCTION — and half of #128's story
+5 was REFUSED to keep it that way** (#142, one of six gaps a per-story audit of
+#128 found against the tree on 2026-09-17). Story 5 reads: *"As a hybrid-path
+user, I want a machine-readable quality line for my path too, so that the two
+paths are comparable and neither is silently unmeasured."* **What shipped is the
+second half of that sentence and not the first.** Both paths emit one —
+`HYBMESH_MB_QUALITY`'s `quad_midline_ratio_*` and `HYBMESH_HYBRID_QUALITY`'s
+`tri_edge_ratio_*` — so neither is silently unmeasured; comparing them is refused
+in three places at once (story 6, the ticket's own implementation decision, and
+both banner rows). Nothing recorded that the first clause was dropped ON PURPOSE,
+which is why this entry exists: a reader auditing #128 against the tree can
+otherwise take a delivered feature for a broken one, or "fix" it by giving the
+two figures one name — the one thing story 6 exists to prevent.
+
+- **WHY COMPARING THEM IS COMPARING NOTHING, arithmetically.** A unit square
+  measures **1.0** as a quad and **sqrt(2) = 1.414** as either of the two
+  triangles it splits into: the SAME cell, two numbers, and the 41% between them
+  is a property of the split rather than of the mesh
+  (`tests/cpp/test_cell_shape.cpp` checks 1 and 2, which say so in their own
+  assert messages). The trap is concrete on the shipped cases: the NACA 0012
+  hybrid case reports median **1.158103** and the shipped O-grid **1.845977**,
+  which read side by side says "the hybrid path makes rounder cells" and means
+  nothing of the sort. THREE independent differences sit between those two
+  numbers — the DEFINITION (midlines against edges; ideal square against ideal
+  equilateral), the POPULATION (4608 structured quads before the split against
+  15233 exported triangles after a boundary layer), and the MESHES, which are two
+  different meshes of two different geometries at two different settings.
+- **THE REFUSAL IS ENFORCED IN THE USER'S OWN REPORT, not here.** Each path's
+  `Cell shape` banner row names the other path's metric as not comparable, in
+  `src/cli.cpp`. Both sentences are quoted here VERBATIM so that a reword reddens
+  a gate instead of quietly unhooking this record:
+
+      1.0 is square, and NOT comparable with MESH_MODE 0's triangle edge ratio)
+      1.0 is equilateral, and NOT comparable with MESH_MODE 1's quad midline ratio)
+
+  `tests/test_comparability_refusal.py` holds both against `src/cli.cpp` AND
+  against this block — that is #142's grep-verified anchor, and it needs no build
+  tree, so the rule is guarded on a machine that has never compiled the mesher.
+  `tests/test_hybrid_shape_surface.py` check 5 holds the same two through the
+  real binary, and #130's injections D and E are the measurement that each half
+  bites on its own.
+- **STORY 5's FIRST CLAUSE CANNOT BE HAD WITHOUT BREAKING STORIES 3 AND 4.** One
+  figure over both paths needs one definition over one population, and the only
+  population the two paths share is the cells they EXPORT. Measuring the
+  multi-block path's exported cells is exactly what story 3 refuses (*"measured
+  on the structured quads rather than on the split triangles, so that '1:1' means
+  1.0 and not 1.414"*) and what story 4 refuses (*"independent of
+  `MB_SPLIT_QUADS`"*, which an exported-cell figure cannot be — at
+  `MB_SPLIT_QUADS 0` there are no triangles to measure). So the dropped clause is
+  a CHOICE BETWEEN STORIES rather than an oversight, and the two stories the tree
+  honoured are the two that name a number the user can act on.
+- **WHAT WOULD ACTUALLY BE COMPARABLE, named so the next reader does not invent
+  it silently.** A THIRD figure — `tri_edge_ratio` over the multi-block path's
+  EXPORTED triangles, beside its quad figure rather than instead of it — would be
+  comparable with the hybrid path's and would violate neither story 3 nor story 4,
+  which both govern the quad figure. It is not what shipped: #128 scopes two
+  figures and two names, and the third would be absent on a `MB_SPLIT_QUADS 0` run
+  whose quad figure is defined. What is recorded here is therefore that THESE TWO
+  figures are never compared — not the stronger claim that no cross-path
+  comparison could ever be built, which would be false.
+- **KEPT AS A SPECIMEN, the way #60's superseded claim is.** The value is in the
+  refusal being FINDABLE. A rule file can say "never compare them" in one line and
+  cannot carry why; a reader who does not know why will eventually make them
+  comparable in good faith, and every gate on the numbers themselves would stay
+  green while they did it.
+- Nothing in the tree changed for this record: no figure moved, no banner text
+  changed, no gate's numbers changed. #142 is the record and the gate that holds
+  it.
+- Blind spots, named rather than papered over. **The gate holds the SENTENCES and
+  the RECORD, never the practice**: two figures printed side by side by a future
+  GUI panel, a pipeline summary or a README table is the defect this record exists
+  to prevent, and would pass every check in that file. It reads the two machine-line
+  emitters only, so a THIRD surface that merged the names is outside both spans.
+  And it matches the banner sentences as TEXT — that a run prints them is
+  `test_hybrid_shape_surface.py` check 5's subject, which needs the binary.
+
 **Boundary conditions are DECLARED, and geometry is attached by ARC LENGTH**
 (`include/MultiBlock.hpp` + `src/MultiBlock.cpp`, still the one pure entry point;
 issue #52). A topology corner attaches to a source segment at a normalized
