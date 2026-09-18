@@ -291,6 +291,12 @@ void Mesh::addElement(const std::vector<int>& ids, int blockId) {
     elements.push_back({ids, blockId});
 }
 
+void Mesh::addBoundaryLayerElement(const std::vector<int>& ids) {
+    // No block id: the boundary layer belongs to the hybrid path, which has no
+    // declared blocks (see `Element::blockId`).
+    elements.push_back({ids, std::nullopt, /*fromBoundaryLayer*/ true});
+}
+
 void Mesh::generateCartesianMesh(double xMin, double xMax, double yMin, double yMax, double ds) {
     // Guard the divisions: a non-positive spacing or an empty/inverted domain
     // would produce NaN/Inf coordinates (or a divide-by-zero). Skip the fallback

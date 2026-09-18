@@ -943,6 +943,146 @@ touched: that is what building the pure half first bought.
   in it says the exported cells of a real hybrid mesh are triangles, which is
   `src/BoundaryLayer.cpp`'s doing and is visible only in the surface gate's run.
 
+**THE HYBRID REPORT SPLITS THE BOUNDARY LAYER OFF FROM THE REST, so that a
+percentile describes the mesh the user is asking about** (`measureHybridCellShapes`
+in `src/HybridQuality.cpp`, `printHybridQuality` in `src/cli.cpp`,
+`Element::fromBoundaryLayer` in `include/Mesh.hpp`; issue #143, parent #128, one of
+six gaps a per-story audit of #128 found against the tree on 2026-09-17).
+
+WHAT WAS WRONG WITH THE FIGURE #130 SHIPPED, and it is the failure #128's own
+problem statement attributed to the max and the mean. On the shipped NACA case the
+path reported median 1.158, **p95 52.186**, max 78.703. 3215 of its 15233 measured
+triangles — **21.1%**, comfortably more than 5% — are boundary-layer cells, so the
+p95 falls inside the layer and is a BL figure. The only number that answered "what
+shape is the rest of my mesh" was the median, and only because the boundary layer
+happens to be under half the cells on the shipped cases; on a mesh where it is more
+than half, the question that started this whole batch — *should I split my blocks
+to get cells closer to 1:1?* — is unanswerable again. #128's evidence for adding a
+p95 at all was itself measured PER REGION (boundary layer 12–37 with p95 24–71;
+outside it 1.10–1.13 with p95 ~1.4), and that split was the one thing the shipped
+figure did not make. The tool now makes it, instead of a throwaway script.
+
+MEASURED 2026-09-18, on the shipped `config/Background_para.dat` +
+`examples/geometries/naca0012.dat` pair:
+
+    whole mesh    15233 cells   median 1.158103  p95 52.185741  max 78.703074
+    boundary layer 3215 cells   median 35.281749 p95 70.541670  max 78.703074
+    bulk          12018 cells   median 1.112154  p95  1.411765  max 11.901852
+
+The whole-mesh row is byte for byte what #141 recorded, which is the evidence that
+the split landed BESIDE the old figures rather than over them. The ticket predicted
+"the bulk figures land near 1.10 / 1.4 and the boundary-layer ones near 12–37 /
+24–71"; the bulk came in at 1.112 / 1.412 and the layer at 35.282 / 70.542 — inside
+the predicted bands, at their top end, which is what a BL set that includes every
+grown layer rather than only the wall band should read.
+
+- **THE MARK IS MADE WHERE THE CELL IS MADE, and the alternative was a knob.**
+  `Element::fromBoundaryLayer` is a plain `bool` set by `Mesh::addBoundaryLayerElement`,
+  whose only caller is `src/BoundaryLayer.cpp` at four sites. The criterion asked
+  for the distinction to come "from what the generator knows rather than from a
+  geometric guess about distance to a wall", and the reason is not purity: a
+  distance test has to pick a cut-off, and the cut-off would then DECIDE the
+  figures — a measurement that has become a knob. It also could not tell a fan cell
+  three layers out from the far-field triangle beside it, and the shipped NACA mesh
+  has both.
+- **A `bool`, NOT AN `optional`, and the asymmetry with `blockId` one field up is
+  deliberate.** Absent is a real third state for a block id (the hybrid path has no
+  blocks, so a defaulted 0 would be a false claim about every hybrid cell). It is
+  not one here: every element either came out of `BoundaryLayer::generate` or did
+  not, and `false` is the true answer for the far-field triangulation, the
+  Cartesian fallback, the visualisation loops and every multi-block cell. It is
+  exported to no mesh file — the golden comparator saw **19/19 SAME, worst
+  coordinate deviation 0.000e+00** against the pre-change binary.
+- **THE CELL CARRIES ITS MARK IN THE TYPE, not in a parallel array.**
+  `measureHybridCellShapes` takes `std::vector<HybridCell>` — ids plus the flag —
+  rather than the id lists plus a `std::vector<bool>` beside them. A parallel array
+  can arrive SHORTER than the one it is parallel to, and whatever the module then
+  did with the unflagged tail (call it bulk, refuse the call) would be a rule
+  nobody asked for, silently deciding which set some cells land in. The signature
+  is still ids and coordinates, so `tests/cpp/test_hybrid_quality.cpp` still links
+  `hybmesh_pure` alone, which is what #141 bought.
+- **THE TWO HALVES ARE TWO REDUCTIONS OF ONE COLLECTION, and the per-cell ratio is
+  deliberately computed twice.** A cell is offered, counted and resolved once, and
+  the corner list that results goes to `measureCellShapes` in the whole-mesh set
+  AND in its half — so `shape.cells == layer.cells + bulk.cells` holds by
+  construction and no rule about measurability can hold in one set and not in
+  another. Computing each ratio once and partitioning the numbers would have been
+  cheaper and would have cost `measureCellShapes` its only production caller,
+  putting the reducer back in the state #129 left it in and #130 fixed.
+- **THE NAMING SHAPE IS `<metric>_layer_*` / `<metric>_bulk_*`, AND THIS TICKET
+  SETTLED IT because it landed first.** #144 splits the multi-block path's wall
+  band under the same shape (`quad_midline_ratio_layer_*`), and its change is where
+  the two are made to match — the criterion both tickets carry. The word is
+  `layer`, not `bl` and not `wall`. `bl` is foreign to a path with no boundary
+  layer in it; `wall` reads as a claim about the boundary condition on the surface,
+  and a boundary layer here grows from a geometry whatever its tag says, so on a
+  mesh whose BL grows off an inlet-tagged segment `wall` would simply be false.
+  `layer` names the band of cells a mesher clusters against a surface, which is
+  what both paths have.
+- **EVERY SPELLING THAT EXISTED BEFORE THIS TICKET SURVIVES IT.** The four new
+  tokens per half are APPENDED to `HYBMESH_HYBRID_QUALITY`; `cells` and
+  `tri_edge_ratio_cells|median|p95|max` still carry the whole mesh. The sidecar
+  keeps `metric`, `cells`, `median`, `p95` and `max` at the top of `mesh.quality`
+  and adds `layer` and `bulk` as two nested objects beside them, so a reader that
+  knows only #129's keys reads exactly what it always read. That is asserted in
+  `tests/test_hybrid_shape_surface.py` check 15 against LITERAL names — a list
+  rebuilt from the same constants the new tokens come from could not see a rename
+  that moved both together.
+- **AN EMPTY HALF IS `not measured`, AND HERE THAT IS AN ORDINARY CASE.** A
+  geometry meshed through `-geom_nobl` grows no layer at all: its layer half is 0
+  cells with three −1.0 figures and its bulk half is the whole mesh. The banner
+  prints it through the same `shapePhrase` the headline uses, so the two spellings
+  of one state cannot drift — the defect #129's review had already had to collapse
+  once.
+- **A PATH THAT DOES NOT SPLIT WRITES NEITHER SIDECAR KEY.** `MeshQuality::split`
+  is a third state beside "no metric" and "measured nothing": false writes no
+  `layer` and no `bulk` rather than two objects full of negatives, which a reader
+  would take for "we looked and found nothing". The multi-block path is today's
+  only witness to it and stops being one when #144 lands.
+- **NO THRESHOLD, NO COLOUR, NO GRADE on either new set.** The one numeric bar
+  anywhere near them — `tests/test_hybrid_shape_surface.py` check 13's "bulk p95
+  below 2 while the whole-mesh p95 is above 40" — is a bar on THE SPLIT DOING
+  SOMETHING, asked for by the ticket in those words, and it is two-sided so that a
+  split which silently measured nothing cannot pass it. It grades no mesh.
+- **INJECTIONS, hand runs dated 2026-09-18** (a C++ defect cannot be injected from
+  inside a Python gate, and a C++ test cannot mutate what it linked against):
+  EIGHT distinct mutations, six measured against the surface gate and three
+  against the C++ one — the half-swap is the one measured against both, which is
+  why the two counts do not add to eight. Two are INERT and both
+  are recorded with the measurement that says why, because "we tried and it did not
+  bite" is worth more than silence:
+  * Reverting ONE of the four `addBoundaryLayerElement` call sites to the unmarked
+    `addElement` bites at the main stitch (bulk p95 39.610, three failures) and is
+    **INERT at the collapsed-wedge site one branch up** — that branch emits no cell
+    at all on the NACA geometry, both counts coming back 3215 and 12018 unchanged
+    to the cell. A geometry with a merged BL column would reach it; this one does
+    not.
+  * A half that SKIPS the unresolved cells it is handed, instead of passing the
+    empty corner list on, is **INERT** because an empty corner list and an omitted
+    entry reduce identically — `reduceCellShapes` drops the one and never saw the
+    other. The rule that mutation looks like it breaks lives one level down; what
+    does break here is a half built from a DIFFERENT collection.
+  * Swapping the two halves reddens 7 surface checks and 9 C++ ones — and what it
+    does NOT move is the finding: the partition assertion and the "over 5% of the
+    cells" assertion both pass under either labelling, because a partition is a
+    partition and a count says nothing about which cells it counted. The figures
+    are what name the set, which is why the C++ fixture measures 5/3 beside 1.0.
+  * Replacing the whole-mesh figures with the bulk half's — the defect the
+    compatibility criterion exists to stop — reddens 5 checks, and it found a REAL
+    DEFECT IN THE GATE rather than only in the code: check 15's second assertion
+    was `line[...] == got[...]`, which is one dict compared with itself, and it
+    passed under the mutation. It now states something independent (the old tokens'
+    count is both halves', their max is the larger half's, their p95 is NEITHER
+    half's).
+- Blind spots, named rather than papered over. **Nothing proves that every cell
+  `BoundaryLayer::generate` emits is marked and no other cell is** — the surface
+  gate asserts 3215 of 15233 on one shipped mesh, and the injection above is the
+  measurement that says a missed site is visible through the figures at one call
+  site and invisible at another on this geometry. **No bar is asserted on any of
+  the six numbers**, on purpose, for #128's reason. **Nothing follows a half into
+  the GUI or the pipeline** — that is #145's subject, and until it lands the panel
+  and both headless hosts still show the whole-mesh figures only.
+
 **THE TWO FIGURES ARE NOT COMPARABLE, BY CONSTRUCTION — and half of #128's story
 5 was REFUSED to keep it that way** (#142, one of six gaps a per-story audit of
 #128 found against the tree on 2026-09-17). Story 5 reads: *"As a hybrid-path

@@ -1032,7 +1032,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
                 if (p2c[i].size() > 1) {
                     for (int k = 0; k < (int)p2c[i].size() - 1; ++k) {
-                        m_mesh.addElement({nodeId, p2c[i][k+1], p2c[i][k]});
+                        m_mesh.addBoundaryLayerElement({nodeId, p2c[i][k+1], p2c[i][k]});
                     }
                 }
             }
@@ -1066,14 +1066,14 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
 
                 if (n_curr_last == n_next_first) {
                     if (!i_frozen || !next_frozen) {
-                        m_mesh.addElement({fs.activeFront[i], fs.activeFront[i_next], n_curr_last});
+                        m_mesh.addBoundaryLayerElement({fs.activeFront[i], fs.activeFront[i_next], n_curr_last});
                     }
                 } else {
                     if (!next_frozen) {
-                        m_mesh.addElement({fs.activeFront[i], fs.activeFront[i_next], n_next_first});
+                        m_mesh.addBoundaryLayerElement({fs.activeFront[i], fs.activeFront[i_next], n_next_first});
                     }
                     if (!i_frozen) {
-                        m_mesh.addElement({fs.activeFront[i], n_next_first, n_curr_last});
+                        m_mesh.addBoundaryLayerElement({fs.activeFront[i], n_next_first, n_curr_last});
                     }
                 }
             }

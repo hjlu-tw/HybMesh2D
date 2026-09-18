@@ -962,25 +962,35 @@ bool checkGeometriesIntersection(const std::vector<Point2D>& geom1, const std::v
 // its reason. What is left here is the half that is about OUTPUT — the banner
 // rows, the machine line and the sidecar hand-off.
 //
+// AND IT REPORTS THREE SETS, NOT ONE (#143). The whole-mesh figures #130 shipped
+// are left exactly where they were, and the same three numbers over the cells the
+// BOUNDARY LAYER emitted and over the rest land beside them — on all three
+// surfaces, under `layer` and `bulk`. On the shipped NACA case 21.1% of the
+// measured triangles are BL cells, so the whole-mesh p95 of 52.186 is a figure
+// about the layer and not about the mesh a user is asking after; the bulk half
+// reads 1.412. WHICH CELLS THE LAYER EMITTED is not decided here either: it is
+// `Element::fromBoundaryLayer`, set where the cell is made.
+//
 // `quality` is the sidecar's half: the same `ShapeStats` this banner and the
 // machine line below print, handed out rather than measured a second time at the
 // export, so the three surfaces cannot disagree about one mesh.
 static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) {
-    // THE MESH AS THE PURE HALF TAKES IT: ids and coordinates, with no `Mesh` in
-    // the signature — which is what keeps the decision testable without gmsh, and
+    // THE MESH AS THE PURE HALF TAKES IT: ids, the boundary layer's mark and
+    // coordinates, with no `Mesh` in the signature — which is what keeps the decision testable without gmsh, and
     // is a copy of the connectivity rather than a view on purpose (a view over
     // `Element` would put this container back in that module's type, which is the
     // dependency the split removed). Two O(N) walks against a mesh generation that
     // has already run gmsh.
-    std::vector<std::vector<int>> cellNodeIds;
-    cellNodeIds.reserve(mesh.elements.size());
-    for (const Element& el : mesh.elements) cellNodeIds.push_back(el.nodeIds);
+    std::vector<hybmesh::HybridCell> cells;
+    cells.reserve(mesh.elements.size());
+    for (const Element& el : mesh.elements)
+        cells.push_back({el.nodeIds, el.fromBoundaryLayer});
     std::vector<Point2D> nodePos;
     nodePos.reserve(mesh.nodes.size());
     for (const Node& n : mesh.nodes) nodePos.push_back(n.pos);
 
     const hybmesh::HybridShapeReport rep =
-        hybmesh::measureHybridCellShapes(cellNodeIds, nodePos);
+        hybmesh::measureHybridCellShapes(cells, nodePos);
     const size_t offered = rep.offered;
     const size_t nonTriangles = rep.nonTriangles;
     const hybmesh::ShapeStats st = rep.shape;
@@ -998,11 +1008,28 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
                      "with MESH_MODE " << MESH_MODE_MULTIBLOCK
                   << "'s quad midline ratio)";
     }
-    if (nonTriangles > 0)
-        std::cout << "\n" << bannerSub("not triangles") << nonTriangles << " of "
-                  << offered << " exported cells have a corner count this metric "
-                     "is not defined for, and carry no figure here";
     std::cout << "\n";
+
+    // THE TWO HALVES, BESIDE THE WHOLE AND NOT INSTEAD OF IT (issue #143). The row
+    // above is the figure #130 shipped and is left exactly where it was; these two
+    // are what make it readable. Same helper, so an empty half prints `not
+    // measured` here for the same reason and in the same words it does up there —
+    // and an empty half is ORDINARY on this path, not an error: a geometry meshed
+    // through `-geom_nobl` grows no layer at all.
+    auto splitRow = [](const char* label, const hybmesh::ShapeStats& s,
+                       const char* what) {
+        std::cout << bannerSub(label) << shapePhrase(s);
+        if (s.cells == 0) std::cout << " (no " << what << ")";
+        else std::cout << " (over " << s.cells << " " << what << ")";
+        std::cout << "\n";
+    };
+    splitRow("boundary layer", rep.layer, "cells the boundary layer emitted");
+    splitRow("bulk", rep.bulk, "cells outside the boundary layer");
+
+    if (nonTriangles > 0)
+        std::cout << bannerSub("not triangles") << nonTriangles << " of "
+                  << offered << " exported cells have a corner count this metric "
+                     "is not defined for, and carry no figure here\n";
 
     // One machine-readable line, in the shape of the HYBMESH_ERROR convention the
     // multi-block path's HYBMESH_MB_QUALITY already follows, so an acceptance check
@@ -1026,6 +1053,25 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
        << " tri_edge_ratio_median=" << st.median
        << " tri_edge_ratio_p95=" << st.p95
        << " tri_edge_ratio_max=" << st.max;
+    // The two halves are APPENDED under keys that extend the whole-mesh spelling
+    // rather than displacing it (issue #143): every token that existed before this
+    // ticket is still on the line, spelled as it was, so today's greps keep
+    // working. `_layer_` and `_bulk_` are the naming shape BOTH generation paths
+    // use — the multi-block path's wall band lands under
+    // `quad_midline_ratio_layer_*` when #144 splits it — which is why the word is
+    // `layer` and not `bl`: it names the band of cells a mesher clusters against a
+    // surface, in the one path's own vocabulary and the other's alike, and makes no
+    // claim about the boundary condition on that surface. A boundary layer here
+    // grows from a geometry whatever its BC says, so `wall` would be the claim
+    // that is not true.
+    auto setTokens = [&mr](const char* half, const hybmesh::ShapeStats& s) {
+        mr << " tri_edge_ratio_" << half << "_cells=" << s.cells
+           << " tri_edge_ratio_" << half << "_median=" << s.median
+           << " tri_edge_ratio_" << half << "_p95=" << s.p95
+           << " tri_edge_ratio_" << half << "_max=" << s.max;
+    };
+    setTokens("layer", rep.layer);
+    setTokens("bulk", rep.bulk);
     std::cout << mr.str() << std::endl;
 
     // ONE REPORT, THREE SURFACES (issue #129, and #130 for this path): the banner
@@ -1033,6 +1079,12 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     // `ShapeStats`.
     quality.metric = "tri_edge_ratio";
     quality.shape = st;
+    // `split` is unconditionally true on THIS path: it always separates, and both
+    // halves being empty is a mesh nothing could be measured on rather than a path
+    // that does not split. See MeshQuality.
+    quality.split = true;
+    quality.layer = rep.layer;
+    quality.bulk = rep.bulk;
 }
 
 int hybmesh::runCli(int argc, char* argv[]) {

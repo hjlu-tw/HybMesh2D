@@ -63,6 +63,23 @@ struct Element {
     // sentinel would be a field every reader has to know to ignore. Absent means
     // absent, and the exporter writes no section at all.
     std::optional<int> blockId;
+
+    // WHETHER THE BOUNDARY LAYER EMITTED THIS CELL, recorded where it is emitted
+    // (issue #143, parent #128). The hybrid path's report separates the cells the
+    // BL grew from the rest of the mesh, so that a percentile describes the mesh
+    // the user is asking about: on the shipped NACA case more than 5% of the
+    // exported triangles are BL cells, which makes the whole-mesh p95 a BL figure
+    // and leaves "what shape is the rest of my mesh" answerable from the median
+    // alone.
+    //
+    // A PLAIN `bool`, NOT AN `optional`, and the asymmetry with `blockId` above is
+    // the point: absent is not a third state here. Every element of a hybrid mesh
+    // either came out of `BoundaryLayer::generate` or did not, and the default
+    // `false` is the true answer for every other producer (the far-field
+    // triangulation, the Cartesian fallback, the visualisation loops, and every
+    // multi-block cell). It is NOT exported to any mesh file — it exists to be
+    // read by `printHybridQuality` while the mesh is still in memory.
+    bool fromBoundaryLayer = false;
 };
 
 // Refinement seed (Pointwise-like source): a geometry used only to drive a local
@@ -141,6 +158,13 @@ public:
     // `addTaggedEdge` exists one line up: the call site cannot then record the
     // cell and forget the tag.
     void addElement(const std::vector<int>& ids, int blockId);
+    // The same cell, marked as one the BOUNDARY LAYER emitted. A third named
+    // entry point rather than a bool parameter on the first, for the reason the
+    // overload above exists: the mark is made where the cell is made, so a call
+    // site cannot record the cell and forget what produced it. `src/BoundaryLayer
+    // .cpp` is its only caller, and that is the rule — any other producer's cells
+    // are bulk by construction rather than by remembering to pass `false`.
+    void addBoundaryLayerElement(const std::vector<int>& ids);
 
     // Phase 4: 使用 Gmsh 生成遠場三角形網格，支援長寬比過渡控制
     // seeds: 加密種子 (Pointwise-like sources)，只驅動局部最小尺寸/選擇性內嵌貼合

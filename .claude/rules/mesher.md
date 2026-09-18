@@ -202,8 +202,9 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   and `measureCellShapes` by `measureHybridCellShapes` (#130 wired them from
   `printHybridQuality` in `src/cli.cpp`; #141 moved that half into the file below). Pure, total,
   never throws; see the rule below.
-- **`HybridQuality.cpp`**: WHICH cells the HYBRID path offers that metric, and the two counts
-  beside the figures. Pure, total, never throws; see the rule below.
+- **`HybridQuality.cpp`**: WHICH cells the HYBRID path offers that metric, the two counts beside
+  the figures, and which of the two reported sets each cell lands in (#143). Pure, total, never
+  throws; see the rules below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
   source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
 - **`MbShared.cpp`**: WHICH nodes the multi-block smoother may move, and in whose logical
@@ -270,13 +271,16 @@ that meshes a geometry.
   entry with fewer than 3 ids is not a cell, and a two-node one is a visualisation segment
   `addTaggedLoop` recorded), the corner-count CEILING (the bullet above), and an
   UNRESOLVED id (dropped as unmeasurable, never passed on SHORT).
-- Gated by `tests/cpp/test_hybrid_quality.cpp` (9 groups, 29 checks). **Its injections are HAND
-  runs, dated 2026-09-18 in that file's docstring**, and one of the five is **INERT** and recorded
+- Gated by `tests/cpp/test_hybrid_quality.cpp` (13 groups, 44 checks). **Its injections are HAND
+  runs, dated 2026-09-18 in that file's docstring**, and two of the eight are **INERT** and recorded
   as such: passing an unresolved cell on short cannot bite on THIS path, because only three-id
   cells reach the resolve loop and a prefix of at most two corners is refused by the metric
   anyway. The shape that rule exists to stop needs a four-corner cell with three resolving ids,
   which is the multi-block path's case (`test_mb_quality.cpp` check 9e). Do not write a check
-  here for it: there is no fixture that reaches it until a longer cell is offered.
+  here for it: there is no fixture that reaches it until a longer cell is offered. The second
+  (N, #143) is inert for a different measured reason: a half that SKIPS the unresolved cells it
+  is handed reduces identically to one that passes the empty corner list on, because
+  `reduceCellShapes` drops the one and never saw the other.
 - **THREE SURFACES, ONE `ShapeStats`** — the `[ Mesh Statistics ]` banner row, the machine line
   and the sidecar's `mesh.quality` — handed out of the reporter rather than measured a second
   time at the export, so the three cannot disagree about one mesh. Unmeasurable is NEGATIVE and
@@ -296,6 +300,56 @@ that meshes a geometry.
   is a computed negative control: the same config and geometry through `-geom_nobl` reports the
   same median and a p95 and max an order of magnitude smaller, so "the spread IS the boundary
   layer" is measured rather than claimed.
+  Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
+
+**THE HYBRID REPORT SEPARATES THE BOUNDARY LAYER'S CELLS FROM THE REST, BESIDE THE WHOLE-MESH
+FIGURES AND NEVER INSTEAD OF THEM** (`measureHybridCellShapes` in `src/HybridQuality.cpp`,
+`printHybridQuality` in `src/cli.cpp`; #143, parent #128). On the shipped NACA case the whole-mesh
+p95 is 52.186 against a median of 1.158 because 3215 of the 15233 measured triangles (21.1%) are
+BL cells — so that percentile describes the LAYER, and "what shape is the rest of my mesh" was
+answerable from the median alone. Measured after the split: bulk median 1.112 / p95 1.412, layer
+median 35.282 / p95 70.542.
+- **ONE NAMING SHAPE FOR BOTH GENERATION PATHS: `<metric>_layer_*` and `<metric>_bulk_*`.** This
+  path ships `tri_edge_ratio_layer_cells|median|p95|max` and `tri_edge_ratio_bulk_*`; the
+  multi-block path's wall band takes `quad_midline_ratio_layer_*` when #144 splits it, and that
+  ticket's change is where the two are made to match. **The word is `layer`, NOT `bl` and NOT
+  `wall`**: it names the band of cells a mesher clusters against a surface, in either path's own
+  vocabulary, and makes no claim about the BC on that surface — a boundary layer here grows from a
+  geometry whatever its tag says, so `wall` would be the claim that is not true.
+- **EVERY TOKEN AND EVERY SIDECAR KEY THAT EXISTED BEFORE #143 KEEPS ITS SPELLING AND ITS
+  MEANING.** The new tokens are APPENDED to `HYBMESH_HYBRID_QUALITY`; `cells`,
+  `tri_edge_ratio_cells|median|p95|max` still carry the WHOLE mesh, and `mesh.quality` still holds
+  `metric`, `cells`, `median`, `p95` and `max` at its top level with `layer` and `bulk` as two
+  nested objects beside them. A reader that knows only #129's keys is unaffected.
+- **THE SPLIT COMES FROM THE GENERATOR'S OWN RECORD, NEVER FROM A DISTANCE TO A WALL.**
+  `Element::fromBoundaryLayer` (`include/Mesh.hpp`) is set where the cell is made, by
+  `Mesh::addBoundaryLayerElement` — whose ONLY caller is `src/BoundaryLayer.cpp`, at four sites.
+  A plain `bool`, not an `optional` like `blockId` beside it: absent is not a third state, every
+  other producer's cells are bulk by construction, and it is exported to no mesh file. A geometric
+  cut-off would have to be chosen, would then decide the figures, and could not tell a fan cell
+  three layers out from the far-field triangle beside it.
+- **THE TWO HALVES ARE TWO REDUCTIONS OF ONE COLLECTION.** A cell is offered, counted and resolved
+  once, and its corner list goes to `measureCellShapes` in the whole-mesh set AND in its half, so
+  `shape.cells == layer.cells + bulk.cells` holds by construction and no rule about measurability
+  can hold in one set and not another. The per-cell ratio is computed twice rather than computed
+  once and partitioned, because the alternative is this module reducing the metric itself and
+  `measureCellShapes` losing its only production caller.
+- **AN EMPTY HALF IS `not measured` WITH THREE NEGATIVE FIGURES, and on this path that is ORDINARY
+  rather than an error**: a geometry meshed through `-geom_nobl` grows no layer, so its layer half
+  is empty and its bulk half is the whole mesh. Same `shapePhrase` as the headline, so the words
+  cannot drift.
+- **A PATH THAT DOES NOT SPLIT WRITES NEITHER SIDECAR KEY.** `MeshQuality::split`
+  (`include/Provenance.hpp`) is a state of its own: false writes no `layer` and no `bulk`, rather
+  than two objects full of negatives a reader would take for "we looked and found nothing". The
+  hybrid path sets it unconditionally — it always splits, and both halves empty is a mesh nothing
+  could be measured on.
+- **NO THRESHOLD, NO COLOUR, NO GRADE on either new set**, the same rule #128 set for the figures
+  they sit beside.
+- Gated by `tests/cpp/test_hybrid_quality.cpp` checks 10-13 (the arithmetic) and
+  `tests/test_hybrid_shape_surface.py` checks 13-16 (the three surfaces, through the binary).
+  Check 13 carries **the one numeric bar in that file** and the ticket asks for it by name: the
+  bulk p95 below 2 while the whole-mesh p95 is above 40, two-sided so that a split measuring
+  nothing cannot pass it. It is a bar on the split DOING something, not a quality threshold.
   Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
 
 **THE TWO CELL-SHAPE FIGURES ARE NEVER COMPARED, NEVER MERGED AND NEVER GIVEN ONE SHARED LABEL**

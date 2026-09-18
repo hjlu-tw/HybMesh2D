@@ -123,9 +123,25 @@ inline std::string gmshVersionFallback() {
 // measured: then `cells` is 0 and the three figures are negative, which says "we
 // looked and could not measure" rather than leaving a reader to guess between
 // that and "this tool does not measure".
+//
+// THE SPLIT IS A SEPARATE STATE FROM AN UNMEASURED SET (issue #143). `split` says
+// whether the producing path separated its near-surface cells from the rest at
+// all; `layer` and `bulk` are written only when it did, and a path that does not
+// split writes neither key rather than two objects full of negatives. A path that
+// DOES split and found one half empty writes that half with `cells` 0 and negative
+// figures, which is the ordinary state of a geometry meshed with no boundary layer
+// — the same distinction `metric` already draws between "this tool does not
+// measure" and "we looked and could not measure".
+//
+// THE WHOLE-MESH KEYS DO NOT MOVE. `cells`, `median`, `p95` and `max` stay where
+// #129 put them, directly on `quality`, so a reader that knows only those keys
+// still reads the figures it always read out of a sidecar written after this work.
 struct MeshQuality {
     std::string metric;                 // empty -> no quality object is written
     hybmesh::ShapeStats shape;
+    bool split = false;                 // false -> no layer/bulk keys are written
+    hybmesh::ShapeStats layer;          // the near-surface cells
+    hybmesh::ShapeStats bulk;           // the rest
 };
 
 // Write "<basename>.provenance.json" next to the export. `basename` is the output
@@ -158,11 +174,28 @@ inline bool writeProvenance(const std::string& basename,
         std::ostringstream qs;
         qs << std::fixed;
         qs.precision(6);
+        auto set = [&qs](const hybmesh::ShapeStats& st) {
+            qs << "{ \"cells\": " << st.cells
+               << ", \"median\": " << st.median
+               << ", \"p95\": " << st.p95
+               << ", \"max\": " << st.max << " }";
+        };
         qs << ", \"quality\": { \"metric\": \"" << jsonEscape(quality.metric)
            << "\", \"cells\": " << quality.shape.cells
            << ", \"median\": " << quality.shape.median
            << ", \"p95\": " << quality.shape.p95
-           << ", \"max\": " << quality.shape.max << " }";
+           << ", \"max\": " << quality.shape.max;
+        if (quality.split) {
+            // NESTED, and beside the whole-mesh figures rather than replacing
+            // them: a reader that knows only #129's keys reads the same numbers
+            // out of the same places, and one that knows these reads the split
+            // without having to tell which half it is holding.
+            qs << ", \"layer\": ";
+            set(quality.layer);
+            qs << ", \"bulk\": ";
+            set(quality.bulk);
+        }
+        qs << " }";
         ofs << qs.str();
     }
     ofs << " },\n";

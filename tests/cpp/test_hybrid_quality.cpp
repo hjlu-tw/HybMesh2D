@@ -1,6 +1,6 @@
-// WHICH CELLS THE HYBRID PATH OFFERS TO THE SHAPE METRIC (issue #141; the rule
-// and the figures are #130's), tested through `measureHybridCellShapes` and
-// nothing else.
+// WHICH CELLS THE HYBRID PATH OFFERS TO THE SHAPE METRIC, AND WHICH OF THE TWO
+// REPORTED SETS EACH ONE LANDS IN (issues #141 and #143; the rule and the figures
+// are #130's), tested through `measureHybridCellShapes` and nothing else.
 //
 // This executable links `hybmesh_pure` and NOTHING else — not gmsh, not
 // hybmesh_core, and it never builds a `Mesh`. That build property is the whole
@@ -20,6 +20,15 @@
 // rule about those checks, not about every fixture here: checks 1, 8 and 9 hand in
 // cells that measure alike on purpose, because what they assert is a COUNT.
 //
+// THE SPLIT (#143) IS CHECKS 10 TO 13, and what they are about is ARITHMETIC, not
+// provenance: that the two halves are two reductions of ONE collection, that an
+// empty half reports `not measured` in both directions, and that an unmeasurable
+// cell is lost from its own half and only from that one. WHERE THE MARK COMES FROM
+// is `Element::fromBoundaryLayer`, set at the four `addBoundaryLayerElement` call
+// sites in src/BoundaryLayer.cpp, and nothing here can see those — that a real
+// mesh's grown cells are the marked ones is the surface gate's 3215-of-15233 run.
+// Here the mark is an input, which is the whole point of taking it in the type.
+//
 // BLIND SPOTS, named rather than papered over:
 //   * Nothing here prints a banner row, a machine line or a sidecar. That the
 //     figures and BOTH counts reach a run's three surfaces and agree there is
@@ -37,6 +46,11 @@
 //     `{0, 0, 1}`) is degenerate, not unresolved, and is dropped by the metric
 //     rather than by this module. Check 6 pins that it lands in the gap between
 //     the two counts, not which of the two modules dropped it.
+//   * WHICH CELLS CARRY THE BOUNDARY LAYER'S MARK. Every fixture here says so
+//     itself, through `bulk(...)` and `layer(...)`. That the marks on a real mesh
+//     are the cells `BoundaryLayer::generate` emitted — all of them, and nothing
+//     else — is a property of four call sites in another module, visible only
+//     through the figures of a real run (surface gate, injection H).
 //   * The module's "an unresolved cell must not pass on SHORT" rule is NOT
 //     guarded here, and injection C below is the measurement that says so rather
 //     than an omission noticed later: on this path no fixture can reach the defect
@@ -93,12 +107,33 @@
 //      move: its input is non-empty, so the short circuit never runs — the two are
 //      separate inputs to one reported state, which is the surface gate's checks
 //      10 and 12 one level down.
+//
+// INJECTIONS FOR THE SPLIT, hand runs dated 2026-09-18 the same way:
+//
+//   G. the two halves swapped (`fromBoundaryLayer ? bulk : layer`) -> 9 failures,
+//      across checks 10, 11, 12 and 13. What does NOT move is the finding: check
+//      10's partition assertion still passes, because a partition is a partition
+//      under either labelling. The figures are what say which cells they were,
+//      which is why check 10's fixture uses two shapes that cannot measure alike.
+//   M. the bulk half reduced over the WHOLE collection (`measureCellShapes(tris)`
+//      instead of `(bulk)`) -> 5 failures, and this is the one the partition
+//      assertion catches: the counts no longer add up, and check 12's all-layer
+//      mesh reports a measured bulk half where there are no bulk cells at all.
+//   N. a half re-deciding measurability, by skipping the unresolved cells it is
+//      handed instead of passing the empty corner list on (`if (resolved) ...`)
+//      -> **INERT, 0 failures**, and recorded because it is inert for a reason
+//      rather than by omission: an empty corner list and an omitted entry reduce
+//      IDENTICALLY, since `reduceCellShapes` drops the one and never saw the
+//      other, and `cells` counts what was measured either way. The rule this
+//      mutation looks like it breaks belongs one level down; what would break
+//      here is a half built from a DIFFERENT collection, which is injection M.
 #include "HybridQuality.hpp"
 #include "check.hpp"
 
 #include <cmath>
 #include <vector>
 
+using hybmesh::HybridCell;
 using hybmesh::HybridShapeReport;
 using hybmesh::measureHybridCellShapes;
 
@@ -112,12 +147,25 @@ const std::vector<Point2D>& nodes() {
     static const std::vector<Point2D> n = {
         {0.0, 0.0}, {1.0, 0.0}, {0.5, std::sqrt(3.0) / 2.0},   // 0,1,2 equilateral
         {10.0, 0.0}, {14.0, 0.0}, {14.0, 1.0}, {10.0, 1.0},    // 3,4,5,6 4x1 quad
+        {0.0, 20.0}, {3.0, 20.0}, {0.0, 24.0},                 // 7,8,9 3-4-5 right
     };
     return n;
 }
 
 const std::vector<int> kEquilateral = {0, 1, 2};
 const std::vector<int> kRectangle = {3, 4, 5, 6};
+// Edges 3, 4 and 5, so the triangle rule reads exactly 5/3 — a THIRD answer,
+// distinct from the equilateral's 1.0 and the rectangle's midline 4.0. The split
+// checks need it: a check that says which SET a figure came from cannot be written
+// with two cells that measure alike.
+const std::vector<int> kRight345 = {7, 8, 9};
+
+// One offered cell, with the mark `src/BoundaryLayer.cpp` sets on the cells it
+// emits (`Element::fromBoundaryLayer`, issue #143). Named rather than a bare
+// `true`/`false` in a braced list: the flag decides which of the two reported sets
+// a cell lands in, and every fixture below has to say which it meant.
+HybridCell bulk(const std::vector<int>& ids) { return HybridCell{ids, false}; }
+HybridCell layer(const std::vector<int>& ids) { return HybridCell{ids, true}; }
 
 }  // namespace
 
@@ -128,7 +176,7 @@ int main() {
         // The two halves of a unit square, which test_cell_shape.cpp derives as
         // sqrt(2) from the triangle's own edge lengths.
         const std::vector<Point2D> sq = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
-        const HybridShapeReport r = measureHybridCellShapes({{0, 1, 2}, {0, 2, 3}}, sq);
+        const HybridShapeReport r = measureHybridCellShapes({bulk({0, 1, 2}), bulk({0, 2, 3})}, sq);
         CHECK(r.offered == 2, "1. two three-cornered cells are two offered cells");
         CHECK(r.nonTriangles == 0, "1. ...and neither is on the non-triangle row");
         CHECK(r.shape.cells == 2, "1. ...and both were measured, so the two counts agree");
@@ -142,7 +190,7 @@ int main() {
     // gets its own check below because it is the one a real mesh contains.
     {
         const HybridShapeReport r = measureHybridCellShapes(
-            {{}, {0}, {0, 1}, kEquilateral}, nodes());
+            {bulk({}), bulk({0}), bulk({0, 1}), bulk(kEquilateral)}, nodes());
         CHECK(r.offered == 1,
               "2. of four entries only the three-cornered one is offered — the "
               "floor is a rule about what a CELL is, not a guard against bad data");
@@ -163,7 +211,7 @@ int main() {
     // not measure", which reports the same three figures for a different reason.
     {
         const HybridShapeReport r = measureHybridCellShapes(
-            {{0, 1}, {1, 2}, {2, 0}}, nodes());
+            {bulk({0, 1}), bulk({1, 2}), bulk({2, 0})}, nodes());
         CHECK(r.offered == 0,
               "3. three two-node boundary segments offer NO cells, so the count "
               "beside the figures cannot be inflated by the visualisation entries");
@@ -182,7 +230,7 @@ int main() {
     // pass with the quad folded in.
     {
         const HybridShapeReport r = measureHybridCellShapes(
-            {kEquilateral, kRectangle}, nodes());
+            {bulk(kEquilateral), bulk(kRectangle)}, nodes());
         CHECK(r.offered == 2, "4. the quad IS offered — it is a cell, and counted");
         CHECK(r.nonTriangles == 1,
               "4. ...and it lands on the non-triangle row, so the banner says so "
@@ -200,7 +248,7 @@ int main() {
         const std::vector<int> past = {0, 1, static_cast<int>(nodes().size())};
         const std::vector<int> negative = {0, -1, 2};
         const HybridShapeReport r = measureHybridCellShapes(
-            {kEquilateral, past, negative}, nodes());
+            {bulk(kEquilateral), bulk(past), bulk(negative)}, nodes());
         CHECK(r.offered == 3,
               "5. all three are three-cornered, so all three are offered");
         CHECK(r.nonTriangles == 0,
@@ -220,7 +268,8 @@ int main() {
         const std::vector<int> unresolved = {0, 1, 99};
         const std::vector<int> degenerate = {0, 0, 1};   // two coincident corners
         const HybridShapeReport r = measureHybridCellShapes(
-            {kEquilateral, kRectangle, unresolved, degenerate}, nodes());
+            {bulk(kEquilateral), bulk(kRectangle), bulk(unresolved),
+             bulk(degenerate)}, nodes());
         CHECK(r.offered == 4, "6. four cells offered");
         CHECK(r.shape.cells == 1,
               "6. ...one measured: a corner count the metric is not defined for, "
@@ -250,7 +299,7 @@ int main() {
     // 0 and this one does not.
     {
         const HybridShapeReport r = measureHybridCellShapes(
-            {kRectangle, kRectangle}, nodes());
+            {bulk(kRectangle), bulk(kRectangle)}, nodes());
         CHECK(r.offered == 2 && r.nonTriangles == 2,
               "8. two cells offered, both on the non-triangle row");
         CHECK(r.shape.cells == 0 &&
@@ -265,12 +314,93 @@ int main() {
     // one step from it.
     {
         const HybridShapeReport r = measureHybridCellShapes(
-            {kEquilateral, kEquilateral}, {});
+            {bulk(kEquilateral), bulk(kEquilateral)}, {});
         CHECK(r.offered == 2 && r.nonTriangles == 0,
               "9. both cells are three-cornered, so both are offered");
         CHECK(r.shape.cells == 0 && r.shape.max < 0.0,
               "9. ...and with no coordinates to resolve against, neither is "
               "measurable and no figure is reported");
+    }
+
+    // ── 10. THE TWO HALVES ARE A PARTITION OF WHAT THE WHOLE SET MEASURED ────
+    // The ticket's subject (issue #143). Three cells the boundary layer emitted
+    // and one it did not, and the fixture is built so a figure NAMES its set: the
+    // 3-4-5 right triangles read exactly 5/3 and the equilateral exactly 1.0, so
+    // a half that collected the wrong cells cannot report the right number.
+    {
+        const HybridShapeReport r = measureHybridCellShapes(
+            {layer(kRight345), layer(kRight345), layer(kRight345),
+             bulk(kEquilateral)}, nodes());
+        CHECK(r.offered == 4 && r.shape.cells == 4,
+              "10. four cells offered and four measured, as before the split");
+        CHECK(r.layer.cells == 3 && r.bulk.cells == 1,
+              "10. ...three of them the boundary layer's and one not");
+        CHECK(r.layer.cells + r.bulk.cells == r.shape.cells,
+              "10. ...so the two halves partition what the whole set measured, "
+              "rather than each deciding again which cells are measurable");
+        CHECK_NEAR(r.layer.max, 5.0 / 3.0, 1e-15,
+                   "10. ...the layer half reports the grown cells' 5/3");
+        CHECK_NEAR(r.bulk.max, 1.0, 1e-15,
+                   "10. ...and the bulk half the far-field cell's 1.0, which is "
+                   "the number the whole-mesh max of 5/3 cannot tell a reader");
+        CHECK_NEAR(r.shape.max, 5.0 / 3.0, 1e-15,
+                   "10. ...while the whole-mesh figure is untouched by the split");
+    }
+
+    // ── 11. A MESH WITH NO BOUNDARY LAYER: the layer half is NOT MEASURED ─────
+    // The ordinary `-geom_nobl` case, not an error. `cells 0` with three negative
+    // figures is how an empty half says so; a 0.0 on a metric whose floor is 1.0
+    // could only ever be an absent measurement wearing a number.
+    {
+        const HybridShapeReport r = measureHybridCellShapes(
+            {bulk(kEquilateral), bulk(kRight345)}, nodes());
+        CHECK(r.layer.cells == 0 && r.layer.median < 0.0 && r.layer.p95 < 0.0
+              && r.layer.max < 0.0,
+              "11. with no cell marked as grown, the layer half is not measured "
+              "and every one of its figures is NEGATIVE");
+        CHECK(r.bulk.cells == 2 && r.shape.cells == 2,
+              "11. ...and the bulk half is the whole mesh");
+        CHECK_NEAR(r.bulk.max, r.shape.max, 1e-15,
+                   "11. ...reporting the same figure the whole-mesh set does");
+    }
+
+    // ── 12. ...AND THE OTHER WAY ROUND ───────────────────────────────────────
+    // Written because "the empty half" must not be a rule about the layer half
+    // only: a mesh whose every exported cell came out of the boundary layer leaves
+    // the BULK half empty, and it must say so in the same words.
+    {
+        const HybridShapeReport r = measureHybridCellShapes(
+            {layer(kEquilateral), layer(kRight345)}, nodes());
+        CHECK(r.bulk.cells == 0 && r.bulk.median < 0.0 && r.bulk.p95 < 0.0
+              && r.bulk.max < 0.0,
+              "12. an all-layer mesh leaves the bulk half not measured, with "
+              "three negative figures rather than zeros");
+        CHECK(r.layer.cells == 2, "12. ...and the layer half is the whole mesh");
+    }
+
+    // ── 13. AN UNMEASURABLE CELL IS LOST FROM ITS OWN HALF, AND ONLY THAT ONE ─
+    // Three ways to lose a cell (check 6) and the split must not change any of
+    // them: a four-cornered cell never reaches the metric, and a degenerate one
+    // and an unresolved one are dropped by it. All three are marked as GROWN here,
+    // so if the halves were re-deciding measurability instead of inheriting it,
+    // the bulk count would move.
+    {
+        const std::vector<int> degenerate = {0, 0, 1};
+        const std::vector<int> unresolved = {0, 1, 99};
+        const HybridShapeReport r = measureHybridCellShapes(
+            {layer(kRectangle), layer(degenerate), layer(unresolved),
+             layer(kRight345), bulk(kEquilateral)}, nodes());
+        CHECK(r.offered == 5 && r.nonTriangles == 1,
+              "13. five cells offered, one of them on the non-triangle row");
+        CHECK(r.shape.cells == 2,
+              "13. ...two measured: the corner count, the degenerate cell and the "
+              "unresolved id each lose one");
+        CHECK(r.layer.cells == 1 && r.bulk.cells == 1,
+              "13. ...and the three losses all come out of the LAYER half, whose "
+              "cells they were — the bulk half neither gains nor loses a cell");
+        CHECK_NEAR(r.layer.max, 5.0 / 3.0, 1e-15,
+                   "13. ...so the layer figure is the one measurable grown cell's, "
+                   "with no quad midline ratio folded into it");
     }
 
     return hybmesh::test::report("test_hybrid_quality");
