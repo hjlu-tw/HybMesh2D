@@ -263,7 +263,10 @@ class BatchDialog(QDialog):
                     ".provenance.json sidecar — the same figures run_pipeline "
                     "logs and the Mesh Statistics panel shows. The two "
                     "generation paths measure different quantities, so the "
-                    "metric is named."
+                    "metric is named. Where the run published a split, the "
+                    "cells clustered against a surface (layer) and everything "
+                    "else (bulk) follow the whole-mesh figures; a mesh whose "
+                    "run did not publish one carries neither."
                     if job.shape else
                     # NOT "this case made no mesh": a case that meshed and then
                     # failed at a later stage also lands here (its artifacts are

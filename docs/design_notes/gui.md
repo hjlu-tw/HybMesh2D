@@ -1868,6 +1868,80 @@ bytecode cache, so the file on disk was correct while the gate went on failing u
   column is. Fixing it means carrying partial artifacts out of `run_pipeline`, which changes a
   return shape two hosts read, and #132 does not ask for it. Recorded rather than left for
   rediscovery.
+
+**THE SPLIT ARRIVED WITHOUT EITHER HEADLESS HOST CHANGING, WHICH IS WHAT #128's SEAM BOUGHT (#145,
+parent #128).** #143 and #144 made the two generation paths publish `layer` and `bulk` beside the
+whole-mesh set; this is the reader half, and the measure of the seam #131/#132 left behind is how
+little it needed. `services/pipeline_runner.py` and `services/batch_runner.py` are UNTOUCHED by
+this ticket — one `shape_report` call each, as before — and the split reaches both of them inside
+the string they already print. `views/batch_dialog.py` is untouched for the same reason: it
+displays what the job carries. What changed is one module and one panel. The rule is
+`.claude/rules/gui-handoff.md`'s.
+
+**One rendering of a HALF, and this time it IS shared with the panel.** #132's blind spot recorded
+that the panel and the report are two renderings pinned rather than merged, because a four-row
+layout and a one-line string are different shapes. That argument does not reach a HALF: both
+surfaces show one half as one string, so `format_figures` renders it and both call it — the panel's
+two rows are its output verbatim, the report's two clauses are the same call. The pin (check 7)
+still holds the whole-mesh set; check 9 holds the halves harder, by asserting the panel makes
+exactly two `format_figures` calls. Measured 2026-09-21 on the shipped cases: the hybrid NACA case
+reports `tri_edge_ratio: median 1.158, p95 52.186, max 78.703 (15233 cells); layer median 35.282,
+p95 70.542, max 78.703 (3215 cells); bulk median 1.112, p95 1.412, max 11.902 (12018 cells)`, and
+the O-grid `quad_midline_ratio: median 1.846, p95 23.662, max 32.768 (4608 cells); layer median
+5.184, p95 28.508, max 32.768 (2304 cells); bulk median 1.693, p95 1.878, max 1.882 (2304 cells)`.
+Dated, not gated — `test_instruction_budget.py` blind spot (g) says why; the gates re-derive the
+live figures from the binary instead. **The whole-mesh p95 is the boundary layer's on both**, which
+is #143's and #144's whole argument, now visible on every surface rather than in the banner alone.
+
+**A FOURTH state, and the old sidecar is the acceptance.** The reader had three — `None` (no
+sidecar), `cells: 0` with negative figures (looked and could not measure), and `""` from
+`batch_runner._shape_of` (no mesh at all). `not split` is the fourth and belongs to a HALF, not to
+a summary: the sidecar carries no `layer`/`bulk` keys because the run that wrote it predates the
+producers. It must not collapse into any of the other three — a dash reads as "no figures", `not
+measured` reads as "this mesh has no boundary layer", and a number is a lie. The state #128 bought
+is that such a sidecar still shows everything it always did, so the gate holds the headless line
+as a STRING EQUALITY against the exact line it produced before #145, not as a substring.
+
+**Both halves or neither, and the split is never inferred from a zero.** The writer emits the pair
+under one flag, so the reader collapses half a split to none: one band with nothing to compare it
+against is worse than no split, and it is a sidecar this tool did not write. The opposite mistake
+is the more tempting one — reading `layer.cells == 0` as "no split" would be wrong on the ordinary
+case #143 names, a geometry meshed with no boundary layer, whose layer really is empty and whose
+bulk is the whole mesh. Present-and-empty says `not measured`; absent says `not split`.
+
+**Injections, run by hand 2026-09-21** (five against `tests/test_mesh_shape_panel.py`, four against
+`tests/test_headless_shape_report.py`; the harness lived in a scratchpad and is not in the tree).
+All nine bit; the lists and their dating live in those files' own docstrings and are not counted
+twice here. **One of them found a defect in a check rather than in the code, and it is the one
+worth keeping**: dropping the split clause entirely — the mutation that removes the whole feature —
+printed ONE FAIL line, because the ordering check used `str.index`, which RAISES on a line with no
+split. The gate crashed and ten FAIL lines never printed. Scoring by exit code, this repo's own
+rule for exactly this hazard, does not separate the two here: an unhandled exception and a failed
+assertion both exit 1. What separated them was that the count was implausible for a mutation that
+size. The check now uses `find` and asserts both positions are real, and the harness prints stderr
+on every run rather than only on an unexpected exit code.
+
+**Named blind spots.**
+- **The split is trusted exactly as far as the sidecar is**, so it inherits #131's staleness hole
+  whole: nothing checks that the file beside the mesh describes the mesh. A stale sidecar now
+  misreports three sets instead of one.
+- **Nothing here checks that `layer` and `bulk` PARTITION the mesh.** The reader does not compare
+  `layer.cells + bulk.cells` against `cells`, and on the hybrid path they do not have to be equal —
+  the whole-mesh set counts exported triangles while the two halves are what each producer chose to
+  offer the metric. A producer that double-counted, or dropped a band, would display as
+  cheerfully as a correct one. Asserting the sum belongs to the PRODUCERS' gates (#143, #144),
+  where what the counts mean is known; asserting it here would encode a relationship this module
+  cannot know is true.
+- **A half that is present and MALFORMED loses the whole summary, not just the split.** `_figures`
+  tolerates absence and nothing else, so a corrupt `layer.median` raises into
+  `read_shape_summary`'s handler and the mesh reads as having no sidecar at all. Deliberate — a
+  corrupt sidecar is one state — and no producer writes it, but it is the one input on which the
+  old-sidecar guarantee does NOT hold.
+- **The panel's two rows are one line each, which is a layout choice this ticket made and no gate
+  holds.** Six rows (three figures per half) would have been the symmetric shape; the comparison a
+  reader actually makes is layer-against-bulk across all three at once, and six more rows push the
+  whole-mesh set off the top of the section. Nothing here would notice the choice being reversed
+  except the exact-text checks, which would simply be rewritten with it.
 - **`run_batch.py`'s end-of-batch summary does not carry the figures**, only the per-case `[Mesh]`
   lines interleaved in the log — which is precisely the "forty interleaved logs" problem the
   summary exists to solve, solved for status and not for quality. Left out as scope: the summary

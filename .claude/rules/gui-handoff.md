@@ -150,6 +150,30 @@ the file on disk holds 9216 triangles.
 - **`metric` travels with the figures and is displayed beside them**, spelled as the sidecar spells
   it. `quad_midline_ratio` and `tri_edge_ratio` are different quantities and comparing them means
   nothing; a prettified label would be a fourth spelling of a name whose job is to be matched.
+- **THE SPLIT IS READ BY THE SAME ONE READER, AND NO HOST PARSES OR COMPUTES IT** (#145; the
+  producers are #143 hybrid / #144 multi-block). The sidecar's `quality` object carries `layer` and
+  `bulk` as NESTED objects beside the whole-mesh four, which have not moved. `ShapeFigures` is one
+  set of the four published figures, `ShapeSummary` IS the whole-mesh set plus the metric and the
+  two optional halves, and `summary.split` is the question a host asks — **never inferred from a
+  zero**, because a half that is present and EMPTY (a geometry meshed with no boundary layer) is an
+  ordinary measured state. **Both halves or neither**: the writer emits the pair under one flag
+  (`include/Provenance.hpp`, `MeshQuality::split`), so half a split reads as no split.
+  **The word is `layer` on both paths**, matching the sidecar's own key, which names the band of
+  cells a mesher clusters against a surface without claiming anything about the BC on it; each
+  path's BANNER keeps its own word (`boundary layer`, `wall band`) and those reach the GUI only as
+  the per-metric gloss in `LAYER_MEANING`, shown only when this sidecar HAS a split.
+- **A SIDECAR WRITTEN BEFORE THE SPLIT STILL SHOWS ITS FIGURES, in all three hosts.** It carries
+  neither key, reads as not-split, and its whole-mesh figures display and report exactly as they
+  did before #145 — the headless line is byte-identical and the panel's rows are unchanged. The
+  split rows then say `not split`, which is a FOURTH state and none of the three that predate it:
+  not the dash (no figures at all), not `not measured` (looked and could not), not a number.
+- **ONE RENDERING OF A HALF, and this one IS shared with the panel.** `format_figures` renders one
+  set of figures, and the panel's two split rows are its output verbatim while the headless line's
+  two clauses are the same call — so unlike the whole-mesh set (two renderings, PINNED, see below)
+  there is no second place where a half's precision or wording is decided. On the headless line the
+  split is **APPENDED, never substituted**: every token the report carried before #145 is still in
+  it, in the same order and at the same precision, so the old line is a PREFIX of the new one and a
+  script that greps it keeps working.
 - **The sidecar is found through `case_sources.mesh_provenance_paths`** — the lookup the case
   export already stages provenance with. No second path convention; the reader spells no sidecar
   name in its own code, and the gate checks that by AST.
@@ -186,7 +210,12 @@ the file on disk holds 9216 triangles.
   may say so in prose — the batch dialog's tooltip does — and `tests/test_headless_shape_report.py`
   check 2 is correspondingly the composition test (a literal ENDING in the suffix) rather than the
   substring one. Two gates, one rule, two strengths, stated so the difference is not read as drift.
-Gated by `tests/test_mesh_shape_panel.py`: a negative control that HAS computable per-cell shape
+Gated for the SPLIT by `tests/test_mesh_shape_panel.py` checks 12–14 (the parse, the panel's three
+states including the old sidecar, and the halves against the REAL binary — where the shipped
+O-grid's bulk p95 is below 3 while the whole-mesh p95 is above 20, so the split is proven to do
+something rather than to exist) and `tests/test_headless_shape_report.py` checks 8–9 plus section
+5's per-half comparison on both generation paths. Gated for the rest by
+`tests/test_mesh_shape_panel.py`: a negative control that HAS computable per-cell shape
 and still blanks, an allow-list over the whole GUI package for the per-cell array's two permitted
 homes, a colour-map comparison by BRUSH COLOUR over a fixture with one cell in each quality bucket,
 and a leg that runs the real binary on the shipped O-grid so the reader and the C++ writer cannot

@@ -92,6 +92,30 @@ of which bit:
      a change to either side alone. (a) reddens 7 as well, for the unmeasured
      wording.
 
+Four more for the SPLIT (#145), run by hand on 2026-09-21 in the same way, all of
+which bit. **One of them found a defect in this file rather than in the code**:
+
+  i. the split DISPLACES the whole-mesh figures instead of following them
+     -> red: two 1s, 7, 8's old-line equality and both of 5's "the figures are
+     the ones that run PUBLISHED" (six lines). Almost all of them predate #145,
+     which is the point: what guarantees the old line survived is the old
+     checks, and this is the mutation that shows they still speak.
+  j. `ShapeFigures.measured` returns True unconditionally -> red: two 1s, 7 and
+     8's empty-half. Not isolated to #145 and not claimed as such — the sentinel
+     rule is one rule and the halves inherited it.
+  k. the report drops the split clause entirely -> red: four 8s, both 9s and all
+     four of 5's half checks (eleven lines). **Its first run printed ONE**,
+     because 8's ordering check used `str.index`, which RAISES on a line with no
+     split — the gate crashed, ten FAIL lines never printed, and a mutation that
+     removes the whole feature read as barely caught. The check now uses `find`
+     and asserts both positions are real. Exactly the hazard this file's header
+     says to score by exit code for, met from the other side: rc was 1 either
+     way, because an unhandled exception and a failed assertion exit the same.
+  l. `pipeline_runner` grows its OWN split clause beside the shared report
+     -> red: 5's row-versus-log string equality, on BOTH cases, and only that.
+     The probe of the ticket's third criterion — a second formatter in one host
+     is caught because the other host does not have it.
+
 Run:  python3 tools/PreProcessor/tests/test_headless_shape_report.py
 Section 5 skips cleanly if ./build/HybMesh2D has not been built.
 """
@@ -348,8 +372,12 @@ check("layer median 35.282, p95 70.542, max 78.703 (3215 cells)" in r_split
       and "bulk median 1.112, p95 1.412, max 11.902 (12018 cells)" in r_split,
       f"8. ...and both halves follow it, named and at that same precision "
       f"({r_split!r})")
-check(r_split.index("layer") < r_split.index("bulk"),
-      "8. ...layer first, as the sidecar and both banners order them")
+# `find`, not `index`: a report that dropped the split entirely must FAIL this
+# check, and `index` would raise instead — a crash prints no FAIL line and reads
+# as an inert mutation. Injection (g) is what found that.
+check(0 <= r_split.find("layer") < r_split.find("bulk"),
+      f"8. ...layer first, as the sidecar and both banners order them "
+      f"(layer@{r_split.find('layer')}, bulk@{r_split.find('bulk')})")
 
 # THE OLD-SIDECAR CASE, which is this ticket's acceptance: `measured` is the same
 # fixture section 1 built, with no split in it, and its report must be what it

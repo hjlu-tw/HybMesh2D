@@ -89,6 +89,27 @@ why it is stated in its CURRENT shape:
   k. a second client-side computation appears OUTSIDE `views/panels/` -> red: 7
      (the check the first version of this file would have let through)
 
+Five more for the SPLIT (#145), run by hand on 2026-09-21 in the same way, all of
+which bit:
+
+  l. `_figures` answers None for every half, so the split is never parsed
+     -> red: both of 12's parse checks, three 13s and 14 (seven lines). The
+     "through `format_figures`" check stays GREEN and correctly so — both sides
+     agree that there is nothing to render, which is what that check compares.
+  m. the panel writes its OWN f-string for a half, at `.2f` -> red: 13's exact
+     text, 13's `format_figures` identity, 14 — and 13's empty-half check, which
+     it reaches by rendering the sentinel as `median -1.00`. Four lines, and the
+     fourth is the reason the empty half is checked on the panel and not only in
+     the report.
+  n. half a split is accepted as a split (`or` -> `and` in the collapse)
+     -> red: 12's half-split check, and ONLY that.
+  o. an ABSENT half is rendered as an EMPTY one (`not split` -> `not measured`)
+     -> red: 13's old-sidecar row, and ONLY that. The two absences are one edit
+     apart in the source and three states apart in meaning.
+  p. the panel's two half rows are swapped -> red: four 13s and 14. A swap is the
+     mutation a check written as "both rows are non-empty" would miss, which is
+     why 13 asserts the exact text of each.
+
 Run:  python3 tools/PreProcessor/tests/test_mesh_shape_panel.py
 Check 10 skips cleanly if ./build/HybMesh2D has not been built.
 """
