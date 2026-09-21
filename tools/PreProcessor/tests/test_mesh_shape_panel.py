@@ -45,6 +45,21 @@ What this pins down:
      case is run, and the panel fed the mesh it produced displays that run's own
      sidecar figures. This is what a hand-written fixture cannot prove — that the
      reader and `include/Provenance.hpp`'s writer still agree about the schema.
+ 12. THE SPLIT IS READ, AND ITS ABSENCE IS NOT A DEFECT (#145). Both halves come
+     back unrounded and unswapped; the whole-mesh four are untouched by their
+     arrival; a sidecar written BEFORE #143/#144 reads as not-split and still
+     yields exactly the same whole-mesh figures; half a split is no split; and a
+     half that is PRESENT and empty is split-and-not-measured, which is a third
+     state again.
+ 13. THE PANEL SHOWS THE SPLIT, in all three of those states — both halves
+     through `format_figures`, the one rendering the headless hosts also use, so
+     a precision or wording change cannot land on one surface only. An old
+     sidecar's rows say `not split` while its whole-mesh rows are unchanged; an
+     empty half says `not measured`, never 0.000; a cleared panel blanks them.
+ 14. THE SPLIT AGAINST THE REAL BINARY, inside check 10's run: the panel's two
+     rows are that run's own published halves, and on the shipped O-grid the bulk
+     p95 is below 3 while the whole-mesh p95 is above 20 — the split is proven to
+     DO something rather than merely to exist.
 
 Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
 automated — the harness lived in a scratchpad and is not in the tree. Each was
@@ -169,10 +184,34 @@ def sidecar_text(quality_json):
             "}\n" % q)
 
 
+# The sidecar as it was written BEFORE #143/#144: the whole-mesh four and no
+# split. This is the shape the ticket's acceptance is written around, and it is
+# the DEFAULT fixture here on purpose — every check that predates #145 goes on
+# running against the file it was written for.
 MEASURED = ('{ "metric": "tri_edge_ratio", "cells": 11396, "median": 1.584671, '
             '"p95": 9.901041, "max": 35.608279 }')
 UNMEASURED = ('{ "metric": "tri_edge_ratio", "cells": 0, "median": -1.000000, '
               '"p95": -1.000000, "max": -1.000000 }')
+# ...and as a splitting path writes it (#145). The whole-mesh four are BYTE FOR
+# BYTE those of MEASURED above, so a check comparing the two sidecars is reading
+# the split and nothing else. The halves' figures are the shipped NACA case's own
+# shape — a layer p95 of 70.5 against a bulk 1.4 — so a check that confused them
+# could not pass by arithmetic accident.
+SPLIT = ('{ "metric": "tri_edge_ratio", "cells": 11396, "median": 1.584671, '
+         '"p95": 9.901041, "max": 35.608279, '
+         '"layer": { "cells": 3215, "median": 35.281749, "p95": 70.541670, '
+         '"max": 78.703074 }, '
+         '"bulk": { "cells": 12018, "median": 1.112154, "p95": 1.411765, '
+         '"max": 11.901852 } }')
+# A geometry meshed with NO boundary layer: the path split, and one half is
+# empty. An ordinary case, and the one that must never print 0.000.
+SPLIT_EMPTY_LAYER = (
+    '{ "metric": "tri_edge_ratio", "cells": 900, "median": 1.100000, '
+    '"p95": 1.400000, "max": 2.000000, '
+    '"layer": { "cells": 0, "median": -1.000000, "p95": -1.000000, '
+    '"max": -1.000000 }, '
+    '"bulk": { "cells": 900, "median": 1.100000, "p95": 1.400000, '
+    '"max": 2.000000 } }')
 
 
 def case(name, quality_json, stem_named=True, sidecar=True, raw=None):
@@ -346,6 +385,101 @@ check(SHAPE_METRIC_TIP in panel.shape_metric_label.toolTip()
       in panel.shape_metric_label.toolTip(),
       "11. a KNOWN metric carries both the gloss and the explanation")
 
+# ── 12. the reader parses the SPLIT, and its absence is not a defect ──────
+mesh_split = case("split", SPLIT)
+sp = mesh_shape_stats.read_shape_summary(mesh_split)
+check(sp is not None and sp.split
+      and (sp.layer.cells, sp.layer.median, sp.layer.p95, sp.layer.max)
+      == (3215, 35.281749, 70.541670, 78.703074)
+      and (sp.bulk.cells, sp.bulk.median, sp.bulk.p95, sp.bulk.max)
+      == (12018, 1.112154, 1.411765, 11.901852),
+      "12. both halves are read back, unrounded and not swapped")
+check(sp is not None
+      and (sp.cells, sp.median, sp.p95, sp.max) == (11396, 1.584671, 9.901041,
+                                                    35.608279),
+      "12. ...and the WHOLE-MESH four are untouched by their arrival — the same "
+      "numbers a reader that knows only #129's keys has always read")
+_old = mesh_shape_stats.read_shape_summary(mesh_measured)
+check(_old is not None and not _old.split
+      and _old.layer is None and _old.bulk is None,
+      "12. A SIDECAR WRITTEN BEFORE THIS WORK reads as NOT SPLIT — the two halves "
+      "are absent, which is a different state from empty")
+check(_old is not None
+      and (_old.cells, _old.median, _old.p95, _old.max)
+      == (sp.cells, sp.median, sp.p95, sp.max),
+      "12. ...and still yields its figures, identical to the split sidecar's "
+      "whole-mesh set — the acceptance this ticket is written around")
+_half = mesh_shape_stats.read_shape_summary(case(
+    "halfsplit",
+    '{ "metric": "tri_edge_ratio", "cells": 10, "median": 1.0, "p95": 1.0, '
+    '"max": 1.0, "layer": { "cells": 4, "median": 2.0, "p95": 2.0, "max": 2.0 } }'))
+check(_half is not None and not _half.split and _half.layer is None,
+      "12. HALF a split is no split — the writer emits the pair under one flag, "
+      "and one band with nothing to compare it against is worse than none")
+_empty = mesh_shape_stats.read_shape_summary(case("emptylayer", SPLIT_EMPTY_LAYER))
+check(_empty is not None and _empty.split
+      and not _empty.layer.measured and _empty.bulk.measured,
+      "12. a PRESENT but empty half is split-and-not-measured, never absent — a "
+      "geometry meshed with no boundary layer is an ordinary case here")
+
+# ── 13. the panel shows the split, in its three states ────────────────────
+panel.update_stats(VTKMesh.from_file(mesh_split), mesh_split)
+check(panel.shape_layer_label.text()
+      == "median 35.282, p95 70.542, max 78.703 (3215 cells)"
+      and panel.shape_bulk_label.text()
+      == "median 1.112, p95 1.412, max 11.902 (12018 cells)",
+      f"13. both halves are displayed, at the precision the other rows use "
+      f"({panel.shape_layer_label.text()!r} / {panel.shape_bulk_label.text()!r})")
+check(panel.shape_median_label.text() == "1.585"
+      and panel.shape_p95_label.text() == "9.901",
+      "13. ...beside the whole-mesh rows, which still show the whole mesh")
+# ONE formatter for a half, shared with the headless hosts: the rows are that
+# function's output verbatim, so a precision or wording change cannot land on one
+# surface only.
+check(panel.shape_layer_label.text()
+      == mesh_shape_stats.format_figures(sp.layer)
+      and panel.shape_bulk_label.text()
+      == mesh_shape_stats.format_figures(sp.bulk),
+      "13. ...through `format_figures`, the same rendering the headless hosts "
+      "put on their line — not a second set of f-strings in the panel")
+check(mesh_shape_stats.LAYER_MEANING["tri_edge_ratio"]
+      in panel.shape_layer_label.toolTip(),
+      "13. the layer row's tooltip names what THIS path's layer is (the sidecar's "
+      "key is neutral; the banner's word is not)")
+
+panel.update_stats(VTKMesh.from_file(mesh_measured), mesh_measured)
+check(panel.shape_layer_label.text() == "not split"
+      and panel.shape_bulk_label.text() == "not split",
+      f"13. AN OLD SIDECAR reads as `not split` on both rows — not a dash, which "
+      f"is this panel's word for 'no figures at all', and not 0.000 "
+      f"({panel.shape_layer_label.text()!r})")
+check(panel.shape_median_label.text() == "1.585"
+      and panel.shape_max_label.text() == "35.608"
+      and panel.shape_metric_label.text().startswith("tri_edge_ratio"),
+      "13. ...while its whole-mesh figures display exactly as they did before "
+      "#145 — the state #128 bought and paid for")
+check(mesh_shape_stats.LAYER_MEANING["tri_edge_ratio"]
+      not in panel.shape_layer_label.toolTip(),
+      "13. ...and nothing explains a wall band that this mesh never published")
+
+mesh_empty_layer = case("emptylayer_panel", SPLIT_EMPTY_LAYER)
+panel.update_stats(VTKMesh.from_file(mesh_empty_layer), mesh_empty_layer)
+check(panel.shape_layer_label.text() == "not measured"
+      and "0.000" not in panel.shape_layer_label.text()
+      and "-1" not in panel.shape_layer_label.text(),
+      f"13. an EMPTY layer says `not measured`, never 0.000 — the metric's floor "
+      f"is 1.0 and a zero would read as perfection "
+      f"({panel.shape_layer_label.text()!r})")
+check(panel.shape_bulk_label.text().startswith("median 1.100"),
+      f"13. ...while the half that WAS measured still shows its figures "
+      f"({panel.shape_bulk_label.text()!r})")
+
+panel.update_stats(None)
+check(panel.shape_layer_label.text() == "—"
+      and panel.shape_bulk_label.text() == "—",
+      "13. clearing the panel blanks the split rows too — a dash here is 'no "
+      "mesh', which is what a cleared panel means")
+
 # ── 7. nothing computes the summary a second time ─────────────────────────
 # An ALLOW-LIST over the whole GUI package, not a scan of the panels directory:
 # the criterion is that no client-side fallback exists anywhere, and the first
@@ -435,6 +569,33 @@ else:
         check(want["metric"] == "quad_midline_ratio"
               and panel.shape_metric_label.text().startswith("quad_midline_ratio"),
               "10. ...under MESH_MODE 1's own metric name, not the hybrid path's")
+        # 14: the SPLIT, against the writer rather than against a fixture. A
+        # hand-written sidecar cannot show that `include/Provenance.hpp` and this
+        # reader still agree about where the two halves live and what they are
+        # called — which is the whole reason this leg runs the binary.
+        check(set(want) >= {"layer", "bulk"},
+              f"14. the run's own sidecar carries both halves ({sorted(want)})")
+        if set(want) >= {"layer", "bulk"}:
+            check(panel.shape_layer_label.text()
+                  == (f"median {want['layer']['median']:.3f}, "
+                      f"p95 {want['layer']['p95']:.3f}, "
+                      f"max {want['layer']['max']:.3f} "
+                      f"({want['layer']['cells']} cells)")
+                  and panel.shape_bulk_label.text()
+                  == (f"median {want['bulk']['median']:.3f}, "
+                      f"p95 {want['bulk']['p95']:.3f}, "
+                      f"max {want['bulk']['max']:.3f} "
+                      f"({want['bulk']['cells']} cells)"),
+                  f"14. ...and the panel displays THAT run's two halves "
+                  f"({panel.shape_layer_label.text()!r} / "
+                  f"{panel.shape_bulk_label.text()!r})")
+            # The split is proven to DO something on the shipped case, not merely
+            # to exist: #144's own surface gate asserts the same inequality on the
+            # machine line, and this is the panel end of it.
+            check(want["bulk"]["p95"] < 3.0 < 20.0 < want["p95"],
+                  f"14. ...and on the shipped O-grid the bulk p95 ({want['bulk']['p95']:.3f}) "
+                  f"is below 3 while the whole-mesh p95 ({want['p95']:.3f}) is above "
+                  f"20 — the rows a user reads describe two different meshes")
 
 _wd.cancel()
 if _FAILS:

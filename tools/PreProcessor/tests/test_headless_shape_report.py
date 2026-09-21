@@ -42,6 +42,16 @@ What this pins down:
      `ShapeSummary` as four rows and this renders it as one line; the two are not
      merged, because the layouts differ, so they are PINNED to each other — same
      precision, same metric name, same `not measured` wording.
+  8. THE SPLIT REACHES BOTH HOSTS THROUGH THE LINE THEY ALREADY PRINT (#145),
+     and NEITHER HOST CHANGED to get it. The old line is a PREFIX of the new one,
+     so every token a script greps today survives; both halves follow it, layer
+     first; an empty half says `not measured`; and A SIDECAR WRITTEN BEFORE THIS
+     WORK reports exactly the line it always did, with no split clause at all —
+     this ticket's acceptance, held as a string equality.
+  9. ONE RENDERING OF A HALF, shared with the panel. The report's two clauses are
+     `format_figures` verbatim and the panel calls the same function for its two
+     rows, so unlike the whole-mesh set (pinned by 7 because the layouts differ)
+     there is no second place where a half's precision or wording is decided.
 
 Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
 automated (the harness lived in a scratchpad and is not in the tree). Each was
@@ -316,6 +326,80 @@ check("not measured" in _panel.shape_metric_label.text() and "not measured" in r
       f"7. and an unmeasured run reads the same way on both surfaces "
       f"({_panel.shape_metric_label.text()!r} vs {r_un!r})")
 
+# ── 8. the SPLIT reaches both headless hosts, through the same one line ───
+# The producers (#143/#144) publish `layer` and `bulk` beside the whole-mesh set;
+# #145 is the reader half, and its whole claim is that NEITHER host changed —
+# `pipeline_runner` and `batch_runner` still make one `shape_report` call each and
+# the split arrives in the string they already print. Section 5 below proves that
+# against the real binary; this proves what the string is.
+split_q = {"metric": "tri_edge_ratio", "cells": 11396, "median": 1.584671,
+           "p95": 9.901041, "max": 35.608279,
+           "layer": {"cells": 3215, "median": 35.281749, "p95": 70.541670,
+                     "max": 78.703074},
+           "bulk": {"cells": 12018, "median": 1.112154, "p95": 1.411765,
+                    "max": 11.901852}}
+r_split = mesh_shape_stats.shape_report(_sidecar("split", split_q))
+check(r_split.startswith(r_measured),
+      f"8. THE OLD LINE IS A PREFIX OF THE NEW ONE — every token the report "
+      f"carried before #145 is still in it, in the same order and at the same "
+      f"precision, so a log a user greps is not broken by the split arriving "
+      f"({r_split!r})")
+check("layer median 35.282, p95 70.542, max 78.703 (3215 cells)" in r_split
+      and "bulk median 1.112, p95 1.412, max 11.902 (12018 cells)" in r_split,
+      f"8. ...and both halves follow it, named and at that same precision "
+      f"({r_split!r})")
+check(r_split.index("layer") < r_split.index("bulk"),
+      "8. ...layer first, as the sidecar and both banners order them")
+
+# THE OLD-SIDECAR CASE, which is this ticket's acceptance: `measured` is the same
+# fixture section 1 built, with no split in it, and its report must be what it
+# always was — not a blank, not a crash, not a pair of dashes.
+check("layer" not in r_measured and "bulk" not in r_measured,
+      f"8. A SIDECAR WRITTEN BEFORE THIS WORK reports NO split clause at all — "
+      f"the absence reads as absence ({r_measured!r})")
+check(r_measured == ("tri_edge_ratio: median 1.585, p95 9.901, max 35.608 "
+                     "(11396 cells)"),
+      f"8. ...and its whole-mesh figures are the exact line it produced before "
+      f"#145 ({r_measured!r})")
+
+r_empty = mesh_shape_stats.shape_report(_sidecar("emptylayer", {
+    "metric": "tri_edge_ratio", "cells": 900, "median": 1.1, "p95": 1.4,
+    "max": 2.0,
+    "layer": {"cells": 0, "median": -1.0, "p95": -1.0, "max": -1.0},
+    "bulk": {"cells": 900, "median": 1.1, "p95": 1.4, "max": 2.0}}))
+check("layer not measured" in r_empty and "0.000" not in r_empty
+      and "-1" not in r_empty,
+      f"8. a geometry meshed with NO boundary layer has an empty half, and it "
+      f"says so — never 0.000, which on a metric whose floor is 1.0 reads as "
+      f"perfection ({r_empty!r})")
+check("bulk median 1.100" in r_empty,
+      f"8. ...while the half that WAS measured reports its figures ({r_empty!r})")
+check(len({r_measured, r_split, r_empty, r_un, r_bare}) == 5,
+      "8. the split states are distinct from the three that predate them — five "
+      "facts, five strings, none of them another's blank")
+
+# ── 9. ONE rendering of a HALF, shared with the panel ─────────────────────
+# Check 7 pins the panel's whole-mesh rows against this line by comparing their
+# text. The halves are held harder than that: the panel's two rows ARE
+# `format_figures`' output, and this line is built from the same call, so there
+# is no second place where a half's precision or wording is decided.
+_split_summary = mesh_shape_stats.read_shape_summary(_sidecar("split2", split_q))
+for _tag, _half in (("layer", _split_summary.layer), ("bulk", _split_summary.bulk)):
+    check(mesh_shape_stats.format_figures(_half) in r_split,
+          f"9. the report's {_tag} clause is `format_figures` verbatim "
+          f"({mesh_shape_stats.format_figures(_half)!r})")
+_fmt_src = ast.parse(open(os.path.join(_GUI, "app", "views", "panels",
+                                       "mesh_stats_panel.py"),
+                          encoding="utf-8").read())
+_panel_fmt = [n.func.attr for n in ast.walk(_fmt_src)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and isinstance(n.func.value, ast.Name)
+              and n.func.value.id == "mesh_shape_stats"]
+check(_panel_fmt.count("format_figures") == 2,
+      f"9. and the PANEL renders its two half rows through that same function, "
+      f"once each — not a second set of f-strings that could round differently "
+      f"({_panel_fmt})")
+
 if not _BINS_READY:
     print(f"SKIP  5 and 6's real-binary leg need the compiled binaries "
           f"({[b for b in _BINS if not os.path.exists(b)]}) — run ./build.sh",
@@ -383,6 +467,20 @@ else:
             f"{raw[k]:.3f}" in job.shape for k in ("median", "p95", "max")),
               f"5. {job.label}: the figures are the ones that run PUBLISHED "
               f"({raw}) -> {job.shape!r}")
+        # ...and so are BOTH HALVES (#145). Against the real writer, not a
+        # fixture: this is where `include/Provenance.hpp` and the reader are
+        # shown to still agree about where the split lives and what it is called,
+        # on BOTH generation paths, in the string the two hosts actually print.
+        check(all(k in raw for k in ("layer", "bulk")),
+              f"5. {job.label}: that run published the split too "
+              f"({sorted(raw)})")
+        for _half in ("layer", "bulk"):
+            _h = raw.get(_half) or {}
+            check(bool(_h) and (
+                f"{_half} median {_h['median']:.3f}, p95 {_h['p95']:.3f}, "
+                f"max {_h['max']:.3f} ({_h['cells']} cells)") in job.shape,
+                  f"5. {job.label}: the row carries that run's own {_half} "
+                  f"figures ({_h}) -> {job.shape!r}")
 
     check(len({j.shape.split(":")[0] for j in jobs}) == 2,
           f"5. the two generation paths report under DIFFERENT metric names, so "

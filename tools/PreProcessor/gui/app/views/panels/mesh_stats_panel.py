@@ -17,6 +17,22 @@ SHAPE_METRIC_TIP = (
     "sidecar exists to prevent."
 )
 
+#: The two SPLIT rows (issue #145). The whole-mesh p95 of a mesh with a boundary
+#: layer is a boundary-layer figure — on the shipped NACA case 52.2 against the
+#: bulk's 1.4 — so the three rows above answer "how bad is the worst band" while
+#: these answer "what shape is the rest of my mesh". They are shown only when the
+#: run that made this mesh published them: a sidecar written before #143/#144 has
+#: no split, and these rows say so rather than showing a dash that would read as
+#: a mesh with no boundary layer.
+SHAPE_SPLIT_TIP = (
+    "The same metric, measured separately over the cells clustered against a "
+    "surface (`layer`) and over everything else (`bulk`), as the mesher published "
+    "them. `layer` is the boundary layer on the hybrid path and the wall band in "
+    "MESH_MODE 1; the split comes from what the generator knows about the cells it "
+    "emitted, never from a distance guess. No threshold and no colour: a large "
+    "layer figure is what a clustered boundary layer IS."
+)
+
 
 class MeshStatsPanel(CollapsibleSection):
     """Panel displaying mesh statistics and rendering controls."""
@@ -123,6 +139,20 @@ class MeshStatsPanel(CollapsibleSection):
         self.shape_max_label = QLabel("—")
         self.shape_max_label.setStyleSheet("color: #dde6ff;")
         self.shape_max_label.setToolTip("Largest cell shape ratio, as measured by the mesher")
+        # One row per half rather than three rows each: the comparison a reader
+        # makes is layer-against-bulk across all three figures at once, and six
+        # more rows would push the whole-mesh set off the top of the section.
+        # The text is `mesh_shape_stats.format_figures` verbatim — the SAME
+        # rendering the headless hosts put on their line, so the panel and the
+        # log cannot write one half two ways.
+        self.shape_layer_label = QLabel("—")
+        self.shape_layer_label.setStyleSheet("color: #dde6ff;")
+        self.shape_layer_label.setWordWrap(True)
+        self.shape_layer_label.setToolTip(SHAPE_SPLIT_TIP)
+        self.shape_bulk_label = QLabel("—")
+        self.shape_bulk_label.setStyleSheet("color: #dde6ff;")
+        self.shape_bulk_label.setWordWrap(True)
+        self.shape_bulk_label.setToolTip(SHAPE_SPLIT_TIP)
 
         # Quality metrics (Skewness)
         self.sk_min_label = QLabel("—")
@@ -158,6 +188,8 @@ class MeshStatsPanel(CollapsibleSection):
         stats_form.addRow(help_label("  - Median:", "Median cell shape ratio, as measured by the mesher"), self.shape_median_label)
         stats_form.addRow(help_label("  - p95:", "95th percentile cell shape ratio, as measured by the mesher"), self.shape_p95_label)
         stats_form.addRow(help_label("  - Max:", "Largest cell shape ratio, as measured by the mesher"), self.shape_max_label)
+        stats_form.addRow(help_label("  - Layer:", SHAPE_SPLIT_TIP), self.shape_layer_label)
+        stats_form.addRow(help_label("  - Bulk:", SHAPE_SPLIT_TIP), self.shape_bulk_label)
         stats_form.addRow(help_label("Min Skewness:", "Minimum skewness among all mesh elements (closer to 0.0 is better)"), self.sk_min_label)
         stats_form.addRow(help_label("Max Skewness:", "Maximum skewness among all mesh elements"), self.sk_max_label)
         stats_form.addRow(help_label("Mean Skewness:", "Average skewness across all mesh elements"), self.sk_mean_label)
@@ -306,7 +338,8 @@ class MeshStatsPanel(CollapsibleSection):
         """
         if summary is None:
             for lbl in (self.shape_metric_label, self.shape_median_label,
-                        self.shape_p95_label, self.shape_max_label):
+                        self.shape_p95_label, self.shape_max_label,
+                        self.shape_layer_label, self.shape_bulk_label):
                 lbl.setText("—")
             self.shape_metric_label.setToolTip(SHAPE_METRIC_TIP)
             return
@@ -314,9 +347,27 @@ class MeshStatsPanel(CollapsibleSection):
         # exactly where a reader needs the explanation of what these rows are,
         # and an unknown name is the one case that can reach a user unannotated.
         meaning = mesh_shape_stats.METRIC_MEANING.get(summary.metric, "")
+        # The split's gloss is the path's own word for its layer, and it is added
+        # only when this sidecar HAS a split — naming the wall band under a mesh
+        # that never published one would explain a row that is not there.
+        layer_meaning = (mesh_shape_stats.LAYER_MEANING.get(summary.metric, "")
+                         if summary.split else "")
         self.shape_metric_label.setToolTip(
             "\n\n".join(x for x in (meaning, SHAPE_METRIC_TIP,
                                      f"From {summary.source}") if x))
+        for lbl in (self.shape_layer_label, self.shape_bulk_label):
+            lbl.setToolTip("\n\n".join(x for x in (layer_meaning,
+                                                    SHAPE_SPLIT_TIP) if x))
+        # `format_figures` and not a second set of f-strings here: the panel
+        # renders a HALF exactly as the headless hosts render it, so the two
+        # surfaces cannot drift on precision, on the cell-count parenthesis or on
+        # the wording of an empty half. Its `not split` answer is what a sidecar
+        # from before #143/#144 shows — the rows say the split is absent rather
+        # than showing a dash a reader would take for "no boundary layer".
+        self.shape_layer_label.setText(
+            mesh_shape_stats.format_figures(summary.layer))
+        self.shape_bulk_label.setText(
+            mesh_shape_stats.format_figures(summary.bulk))
         if summary.measured:
             self.shape_metric_label.setText(f"{summary.metric} ({summary.cells} cells)")
             self.shape_median_label.setText(f"{summary.median:.3f}")
