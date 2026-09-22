@@ -16,6 +16,8 @@ from app.utils import block_signals
 from app.views.panels.field_widgets import read_specs, write_specs
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
+from app.services.topology_field_specs import TOPOLOGY_SPECS
+from app.services.topology_model import TopologyModel
 
 
 class MeshConfigConfigMixin:
@@ -195,6 +197,12 @@ class MeshConfigConfigMixin:
         # the heuristic below, which reads the widget's own current text.
         write_specs(self, MESH_SPECS, cfg)
         write_specs(self, PANEL_BL_SPECS, cfg)
+        # The template parameters, against the TOPOLOGY model rather than `cfg` —
+        # the panel's third table is the only one whose rows author a field of
+        # something other than MeshConfig (#134). `cfg.topology` is always present
+        # (a dataclass default_factory), so there is no None branch to get wrong.
+        write_specs(self, TOPOLOGY_SPECS, cfg.topology)
+        self._refresh_topology_counts()
 
         # Domain source: a geometry acting as the outer domain → Custom; an
         # external-flow config with geometries but no domain outline → Rectangle
@@ -295,6 +303,18 @@ class MeshConfigConfigMixin:
 
         # 1. Every declared field the panel's own widgets author, in one traversal.
         read_specs(self, MESH_SPECS, cfg)
+        # ...and the template parameters into a topology model this panel AUTHORS.
+        #
+        # Built and then ASSIGNED, rather than read into the fresh `cfg`'s default in
+        # place. The assignment is the point: `config_ownership` derives what the
+        # panel->model sync may overwrite from what the panel's sources assign, and a
+        # field it cannot see assigned lands in PRESERVED_FIELDS — which would mean
+        # the sync keeps the model's OLD topology and every template edit the user
+        # makes is silently dropped on its way to the global config. The panel
+        # authors the whole model, so it says so in the form that is checkable.
+        topo = TopologyModel()
+        read_specs(self, TOPOLOGY_SPECS, topo)
+        cfg.topology = topo
 
         # 2. The 21 BL fields come from the authoritative global-BL store, NOT from
         # the widgets — so a per-geometry override that happened to be shown cannot

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from app.models import mesh_output_names
 from app.models.mesh_config_geoms import GeomListMixin
+from app.services.topology_model import TopologyModel
 
 
 def _key_map() -> dict:
@@ -35,7 +36,20 @@ class MeshConfig(GeomListMixin):
     mesh_mode: int = 0
     # The block topology document the multi-block path reads. Explicit, never
     # guessed from a name beside the geometry.
+    #
+    # WHEN `topology` BELOW NAMES A FAMILY, THIS FIELD IS AN OUTPUT, NOT AN INPUT:
+    # the document is a PROJECTION of that model, written beside the mesher config
+    # by `mesh_config_io.save_config_to_file`, and the line this field spells is the
+    # path that projection went to. With no family named it is what it always was —
+    # a document the user maintains by hand — and every case that predates the
+    # template library meshes exactly as it did (#134).
     mesh_topology_file: str = ""
+    # The topology TEMPLATE: which family, and every family's parameters. The model
+    # is the truth and the JSON above is its projection; two homes for one fact is
+    # the shape a per-segment BC was once bitten by, where a label and a map drifted
+    # apart and exported an all-wall mesh. Default `family=""` means "no template",
+    # which is the state every existing project is in.
+    topology: TopologyModel = field(default_factory=TopologyModel)
     # Split every quad the multi-block path fills into two triangles before
     # export. ON by default, and not as a preference: the solver's incenter
     # reconstruction is undefined on quad cells and the grid converter's slicer
@@ -221,6 +235,13 @@ class MeshConfig(GeomListMixin):
         d["geom_roles"] = self.geom_roles
         d["group_bc"] = self.group_bc
         d["bc_configured"] = self.bc_configured
+        # The topology template, named here like the four above because it has no
+        # `.dat` KEY for `_key_map()` to find it by — the mesher never sees a
+        # parameter, it sees the document one produced (#134). Without this line the
+        # project-undo snapshot (`project_state_ctrl._collect_project_state`, which
+        # is `to_dict()`) could not see a template edit at all, so Ctrl+Z would be
+        # the one thing that did nothing in this section.
+        d["topology"] = self.topology.to_dict()
         return d
 
     def load_from_dict(self, d: dict):
@@ -257,6 +278,11 @@ class MeshConfig(GeomListMixin):
         # #3: a session predating this key already carries real BCs, so default
         # True (show their colours); a new session that saved it uses the value.
         self.bc_configured = bool(d.get("bc_configured", True))
+        # Absent in every project file written before templates existed, and that
+        # must load exactly as it did: no key -> the model keeps its defaults, whose
+        # `family` is "" and so names no template.
+        if isinstance(d.get("topology"), dict):
+            self.topology.load_from_dict(d["topology"])
 
 
     def validate(self, geom_bbox: tuple | None = None,

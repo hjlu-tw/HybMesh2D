@@ -19,9 +19,11 @@ from PyQt6.QtCore import Qt
 from app.views.collapsible import CollapsibleSection
 from app.utils import make_button, align_form_labels
 from app.models.mesh_config import MeshConfig
-from app.views.panels.field_widgets import SpecRowsMixin
+from app.views.panels.field_widgets import SpecRowsMixin, edit_signal
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
+from app.services.topology_field_specs import TOPOLOGY_SPECS
+from app.services.topology_model import TopologyModel
 
 
 class MeshConfigBuildMixin(SpecRowsMixin):
@@ -48,6 +50,64 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         align_form_labels(mode_form, 130)
         self._layout.addLayout(mode_form)
         self.mesh_mode.currentIndexChanged.connect(self._apply_mode_visibility)
+
+    def _build_topology_section(self):
+        # ── 0c. Block Topology ────────────────────────────────────────────
+        # Only the multi-block path fills a topology, so every row here declares
+        # `modes=(MULTIBLOCK,)` and _apply_mode_visibility hides the whole section
+        # in the hybrid mode — one declaration, the same one the mesher's
+        # inert-parameter warnings read.
+        #
+        # SEEDED FROM TopologyModel, not from MeshConfig: `_spec_rows` seeds each
+        # widget from `_SPEC_MODEL()`, and this table's rows author fields of the
+        # topology model. A panel is otherwise built with whatever Qt leaves in an
+        # un-set widget, and since the panel->model sync reads every panel back at
+        # startup, that value would BECOME the session's default (SpecRowsMixin's
+        # own reason, applied to the panel's third table).
+        self.sec_topology = CollapsibleSection("Block Topology (template)",
+                                               start_collapsed=True)
+        self._layout.addWidget(self.sec_topology)
+        topo_form = QFormLayout()
+        self._spec_rows(topo_form, "topology", table=TOPOLOGY_SPECS,
+                        model=TopologyModel)
+        align_form_labels(topo_form, 130)
+        self.sec_topology.add_layout(topo_form)
+
+        # The derived counts are a READ-OUT of the family's own derivation, so it
+        # refreshes whenever any parameter that feeds it changes — including the
+        # family itself, which decides whether there is a derivation at all.
+        for spec in TOPOLOGY_SPECS:
+            w = getattr(self, spec.attr, None)
+            if w is None:
+                continue
+            sig = edit_signal(w, spec)
+            if sig is not None:
+                sig.connect(self._refresh_topology_counts)
+        self._refresh_topology_counts()
+
+    def _refresh_topology_counts(self, *_args):
+        """Show what the family function derives from the parameters as typed.
+
+        Reads the ONE owner of the derivation rather than repeating it
+        (``topology_hgrid.hgrid_counts``, which is also what the document seeds), so
+        the panel cannot display a count the generated mesh does not use.
+        """
+        lbl = getattr(self, "topo_hgrid_counts_derived", None)
+        if lbl is None:
+            return
+        from app.services import topology_hgrid
+        from app.views.panels.field_widgets import read_specs
+        model = TopologyModel()
+        read_specs(self, TOPOLOGY_SPECS, model)
+        if model.family != topology_hgrid.FAMILY:
+            # No family, or a family this read-out is not about. Said rather than
+            # left blank: a blank cell in a row of numbers reads as a zero.
+            lbl.setText("—  (no template selected)")
+            return
+        xc, yc = topology_hgrid.hgrid_counts(model)
+        lbl.setText(f"X: {', '.join(str(v) for v in xc)}    "
+                    f"Y: {', '.join(str(v) for v in yc)}"
+                    f"    ({len(xc)}x{len(yc)} blocks)")
 
     def _build_sizing_section(self):
         # ── 2. General Sizing ─────────────────────────────────────────────

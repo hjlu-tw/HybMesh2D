@@ -276,4 +276,9 @@ MESH_EXTRA_AUTHORED = frozenset({
     # Set by the BC editors when the user first chooses a domain BC, so the preview
     # can tell "untouched" from "deliberately wall".
     "bc_configured",
+    # The topology template model. The panel authors its CONTENTS through a third
+    # field-spec table (`services/topology_field_specs.py`, against a TopologyModel
+    # rather than against MeshConfig), so no widget authors this field ITSELF — it
+    # is a container the panel fills in place and never rebinds (#134).
+    "topology",
 })

@@ -394,6 +394,18 @@ else:
               bool(mm) and mm.group(1) == "0" and int(mm.group(2)) > 0)
         check("14c. ...and the mesh file it names was written",
               os.path.exists(stem + ".vtk"))
+        # 15. NO SECOND QUALITY PATH. A template's mesh is a mesh, so the figures
+        # the Mesh Statistics panel and both headless hosts show come from the
+        # sidecar the mesher already writes and the ONE reader #131 built — this
+        # ticket adds no quality code, and the check proves that by asking that
+        # reader rather than by parsing the run's output again.
+        sys.path.insert(0, _GUI)
+        from app.services import mesh_shape_stats  # noqa: E402
+        rep = mesh_shape_stats.shape_report(stem + ".vtk")
+        check(f"15. the existing one reader reports the template mesh's shape "
+              f"figures, so the panel and both headless hosts show them with no "
+              f"second quality path added here: {rep!r}",
+              "quad_midline_ratio" in rep and "median" in rep)
 
 print()
 if failures:

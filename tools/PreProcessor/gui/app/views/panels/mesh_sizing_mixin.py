@@ -16,6 +16,7 @@ from app.utils import keep_on_top, BC_COLORS, DEFAULT_BC_COLOR
 from app.views.panels.field_widgets import read_widget, set_spec_row_visible
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
+from app.services.topology_field_specs import TOPOLOGY_SPECS
 from app.services.geom_path_identity import readable_geom_path
 from app.services.logging_setup import get_logger
 
@@ -107,7 +108,8 @@ class MeshConfigSizingMixin:
         # the Edit-BL dialog that shows them, and it applies the same declaration
         # from the same table. Walking them anyway keeps "the panel's state matches
         # the declaration" a property that can be asked of the panel.
-        for spec in (sp for tbl in (MESH_SPECS, PANEL_BL_SPECS) for sp in tbl):
+        for spec in (sp for tbl in (MESH_SPECS, PANEL_BL_SPECS, TOPOLOGY_SPECS)
+                     for sp in tbl):
             if spec.modes is None:
                 continue                     # not this rule's business
             set_spec_row_visible(self, spec.attr, reads_in_mode(spec, mode))
@@ -117,6 +119,12 @@ class MeshConfigSizingMixin:
             self.sec_meshing.setVisible(
                 any(reads_in_mode(sp, mode) for sp in MESH_SPECS
                     if sp.group == "meshing"))
+        # The topology section the same way, and for the same reason: every row in
+        # it is multi-block only, so in the hybrid mode it would otherwise be an
+        # empty header offering a template that path cannot use.
+        if getattr(self, "sec_topology", None) is not None:
+            self.sec_topology.setVisible(
+                any(reads_in_mode(sp, mode) for sp in TOPOLOGY_SPECS))
         # Hand back to the finer rules for the rows this mode does keep.
         self._update_domain_source_visibility()
         self._update_bidirectional_visibility()

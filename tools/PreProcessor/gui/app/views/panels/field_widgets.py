@@ -419,11 +419,21 @@ class SpecRowsMixin:
     _SPEC_TABLE: tuple = ()
     _SPEC_MODEL = None
 
-    def _spec_rows(self, form, group: str, table=None, wrap=None):
-        """Lay out one declared GROUP of fields into ``form``, in table order."""
+    def _spec_rows(self, form, group: str, table=None, wrap=None, model=None):
+        """Lay out one declared GROUP of fields into ``form``, in table order.
+
+        ``model`` overrides ``_SPEC_MODEL`` as the dataclass each widget is seeded
+        from, for a table whose rows author fields of something OTHER than the
+        panel's own config — the mesh panel's topology template, whose rows author
+        a ``TopologyModel``. Seeding it from ``MeshConfig`` would seed every row
+        from a field that does not exist there, i.e. from whatever Qt leaves in an
+        un-set widget, which the class docstring above explains becomes the
+        session's default.
+        """
         from app.services.field_spec import in_group
+        cls = model or self._SPEC_MODEL
         return add_spec_rows(self, form, in_group(table or self._SPEC_TABLE, group),
-                             self._SPEC_MODEL() if self._SPEC_MODEL else None, wrap)
+                             cls() if cls else None, wrap)
 
     def _spec_widgets(self, group: str, table=None):
         """Build one declared GROUP's widgets without adding form rows.

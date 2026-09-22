@@ -51,17 +51,21 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
     # ── H-grid ───────────────────────────────────────────────────────────────
     FieldSpec("topo_hgrid_x_min", "sci", "X Min",
               "Left edge of the rectangular domain the blocks divide.",
-              model="hgrid_x_min", group=GROUP, modes=_MB),
+              model="hgrid_x_min", group=GROUP, modes=_MB,
+              opts=dict(lo=-1e9, hi=1e9)),
     FieldSpec("topo_hgrid_x_max", "sci", "X Max",
               "Right edge of the rectangular domain the blocks divide.",
-              model="hgrid_x_max", group=GROUP, modes=_MB),
+              model="hgrid_x_max", group=GROUP, modes=_MB,
+              opts=dict(lo=-1e9, hi=1e9)),
     FieldSpec("topo_hgrid_y_min", "sci", "Y Min",
               "Bottom edge of the domain. When 'Cluster To Floor' is on, this is "
               "the wall the grid clusters toward.",
-              model="hgrid_y_min", group=GROUP, modes=_MB),
+              model="hgrid_y_min", group=GROUP, modes=_MB,
+              opts=dict(lo=-1e9, hi=1e9)),
     FieldSpec("topo_hgrid_y_max", "sci", "Y Max",
               "Top edge of the domain.",
-              model="hgrid_y_max", group=GROUP, modes=_MB),
+              model="hgrid_y_max", group=GROUP, modes=_MB,
+              opts=dict(lo=-1e9, hi=1e9)),
     FieldSpec("topo_hgrid_nx", "int", "Blocks in X",
               "How many blocks across. The blocks divide the range equally; the "
               "node count of each column is derived from the target cell size and "
@@ -78,7 +82,8 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               "have; the node counts it implies are derived and displayed rather "
               "than asked for, because converting one into the other in your head "
               "is the step this template exists to remove.",
-              model="hgrid_cell", group=GROUP, modes=_MB),
+              model="hgrid_cell", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
     FieldSpec("topo_hgrid_wall_bottom", "bool", "Cluster To Floor",
               "Cluster the grid toward Y Min, the way a flat plate or a duct floor "
               "wants. The first cell height is the run's BL_INITIAL_THICKNESS — the "

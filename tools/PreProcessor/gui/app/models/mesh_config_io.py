@@ -7,6 +7,10 @@ from app.models.mesh_config_keys import _KEY_MAP
 # the seam gate's own lesson (`tests/test_qt_free_seam.py`: "a deferred import is
 # still a dependency"). Gated by tests/test_geom_files_identity.py check 8.
 from app.services.geom_path_identity import canonical_geom_path, dedupe_geom_paths
+# Module level for the reason stated just above: Qt-free, no cycle to defer
+# around (nothing in the topology modules imports this one), and a deferred
+# import would hide that the writer now has a second producer behind it.
+from app.services import topology_model
 
 
 def load_config_from_file(cfg, path: str):
@@ -163,14 +167,45 @@ def load_config_from_file(cfg, path: str):
 
 
 def save_config_to_file(cfg, path: str):
-    """Export `cfg` parameters to a Background_para.dat format text file."""
+    """Export `cfg` parameters to a Background_para.dat format text file.
+
+    NO LONGER A PURE TEXT TRANSFORMATION, and that cost is stated here rather than
+    discovered (issue #134). When `cfg.topology` names a template family this
+    function ALSO writes the block topology document beside `path` and spells that
+    document's path into the ``MESH_TOPOLOGY_FILE`` line — so the file that line
+    names exists because of where the projection is hooked, not because two hosts
+    each remembered to prepare it.
+
+    Hooked HERE because this is the one call both hosts converge on immediately
+    before launching the mesher (``controllers/mesh_gen_ctrl.py`` writes a temp
+    config, ``services/pipeline_runner.py`` writes the case's). The alternative — an
+    explicit ``prepare_topology()`` step each host calls — is the shape this repo
+    has already been bitten by, where four pipeline stages implemented twice let an
+    artefact be produced for nobody.
+
+    :func:`config_to_text` stays pure, and deliberately: its other two callers want
+    the config as CONTENT (the solver case staging its own runnable parameters, and
+    the source listing), and a projection fired from there would write a document
+    for a caller that is not about to run anything.
+    """
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    topo = ""
+    model = getattr(cfg, "topology", None)
+    if model is not None and getattr(model, "family", ""):
+        topo = topology_model.project(model, path)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(config_to_text(cfg, path))
+        f.write(config_to_text(cfg, path, topology_path=topo))
 
 
-def config_to_text(cfg, path: str = "") -> str:
+def config_to_text(cfg, path: str = "", topology_path: str = "") -> str:
     """`cfg` as Background_para.dat text, as it would be written at `path`.
+
+    ``topology_path`` overrides the ``MESH_TOPOLOGY_FILE`` line, and ONLY
+    :func:`save_config_to_file` passes it — with the path it just projected a
+    template's document to. An override rather than a mutation of ``cfg``: a text
+    builder that edited the model it is describing would leave the projected path on
+    a model the user is still editing, and the next Save would write it out as if
+    the user had typed it.
 
     Split from :func:`save_config_to_file` so a caller that needs the config as
     CONTENT rather than as a file on disk — the solver case staging its own
@@ -210,7 +245,8 @@ def config_to_text(cfg, path: str = "") -> str:
     ]
     # Only when there is one: a bare "MESH_TOPOLOGY_FILE" line with no value would
     # read back as a key with no token, which every reader here skips silently.
-    _topo = str(getattr(cfg, "mesh_topology_file", "") or "").strip()
+    _topo = (str(topology_path).strip()
+             or str(getattr(cfg, "mesh_topology_file", "") or "").strip())
     if _topo:
         lines.append(f"MESH_TOPOLOGY_FILE {_topo}")
     lines.append(f"MB_SPLIT_QUADS {1 if getattr(cfg, 'mb_split_quads', True) else 0}")

@@ -14,6 +14,7 @@ from app.services.field_spec import length_attrs
 from app.utils import align_form_labels, help_label
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
+from app.services.topology_field_specs import TOPOLOGY_SPECS
 from app.views.units_ui import UnitSelector, apply_unit_suffix
 
 #: Panel attributes holding a *physical length*, and therefore the exact set that
@@ -25,7 +26,11 @@ from app.views.units_ui import UnitSelector, apply_unit_suffix
 #: the widgets cannot disagree. tests/test_units.py asserts this equals the panel's
 #: SciDoubleSpinBox set, which is now a statement about the derivation — and that is
 #: what stops a field added later from quietly losing its unit.
-LENGTH_FIELDS = length_attrs(MESH_SPECS, PANEL_BL_SPECS)
+#: The topology table is included because its domain range and target cell size
+#: ARE physical lengths and must carry the model's unit suffix like every other
+#: one — a mm-scale template left labelled in metres is the same defect a
+#: mm mesh left at Linf=1 is, one panel section further in (#134).
+LENGTH_FIELDS = length_attrs(MESH_SPECS, PANEL_BL_SPECS, TOPOLOGY_SPECS)
 
 
 class MeshConfigUnitsMixin:

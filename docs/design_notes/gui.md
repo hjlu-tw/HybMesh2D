@@ -1245,7 +1245,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 265, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 268, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -1980,6 +1980,152 @@ a tooltip, is shown only when the sidecar HAS a split, and the sidecar's own key
   reader actually makes is layer-against-bulk across all three at once, and six more rows push the
   whole-mesh set off the top of the section. Nothing here would notice the choice being reversed
   except the exact-text checks, which would simply be rewritten with it.
+#### THE TOPOLOGY TEMPLATE LIBRARY (#134, parent #133)
+
+Three modules, named here because the rule file's pointer resolves to this note for each of them:
+`services/topology_model.py` (the model, the family registry, the projection to JSON),
+`services/topology_hgrid.py` (the H-grid family as a pure function, and the ONE owner of the count
+derivation), and `services/topology_field_specs.py` (one row per parameter, no `.dat` key). The
+panel half lives in `views/panels/mesh_config_build_mixin.py` and
+`views/panels/mesh_config_config_mixin.py`; the projection hooks into
+`models/mesh_config_io.py`.
+
+
+**The problem it was built for, measured rather than asserted.** To mesh anything with
+`MESH_MODE 1` a user had to hand-write a JSON block topology document. All five shipped topology
+documents were typed by hand; the only parametric writer in the tree lived inside a test file and
+wrote a single rectangular block for the golden comparator. Writing one by hand means knowing —
+before a single node exists — the `[south, east, north, west]` edge order, that the corner ring
+must close counter-clockwise, that a `count` is a SEED that propagates across opposite sides and
+through shared edges, that an interior line is declared once and named by both blocks, that ids
+are unique across three namespaces, and that an unknown key is refused rather than ignored. The
+GUI offered a single file-path field. The multi-block path was therefore effectively unavailable
+to anyone who had not read `.claude/rules/mesher-multiblock.md`.
+
+**Why a family is a FUNCTION and not a data-driven template file.** Seeding exactly one count per
+equivalence class, closing the ring counter-clockwise and deciding which lines are interior are
+logic, not fill-in-the-blanks. A data format expressing them needs an interpreter, and the
+interpreter is the module anyway — so the "data" would be a second language with one implementation
+and no users. Users extend the library by adding a function and a registry row; the bidirectional
+parameter gate then requires a field-spec row for every parameter that function reads.
+
+**BY CONSTRUCTION, not by a check afterwards.** Every structural rule the mesher refuses a document
+for is made unreachable by how the document is built rather than validated once it exists: the four
+sides of every block come from ONE index expression, so they cannot disagree; the id families carry
+different prefixes; the `nx + ny` count classes are seeded on the bottom row and the left column,
+which is one seed per class and never two. The alternative — build freely, then validate — leaves
+the user a refusal, which is the thing the template exists to spare them.
+
+**The count classes, derived.** Opposite sides of a block carry equal counts and a shared edge is
+one edge named by two blocks, so on an `nx x ny` H-grid the horizontal edges of column `i` are ONE
+class and the vertical edges of row `j` are another: `nx + ny` classes for `nx*ny` blocks. The
+shipped hand-written `examples/topology/hgrid_blocks.json` is a 2x2 and seeds exactly four counts
+(`h00`, `h10`, `v00`, `v01`), which is the same partition reached independently.
+
+**"Is the bottom a wall" is a SPACING, and the tree decided that, not taste.** A boundary edge MUST
+be `kind: "wall"` — the mesher requires a wall to bound exactly one block side and an
+interface/cut exactly two — so the toggle cannot be a choice of kind; there is nothing for it to
+choose. What it chooses is whether the bottom row's vertical edges cluster toward `y_min`, which is
+what a flat plate or a duct floor wants: `spacing: {"wall_ends": "start"}`, "start" naming the
+bottom because those edges are declared upward. It declares NO `ds_start`, so the first cell height
+is the run's `BL_INITIAL_THICKNESS` — #133's decision that a template uses the existing
+boundary-layer parameter names rather than an alias, the physical quantity being identical.
+**Spacing does not propagate, only counts do** (the shipped document says so in its own header),
+which is why the clustering is written onto EVERY vertical edge of the bottom row rather than onto
+the seeded one and left to spread.
+
+**Measured on the defaults, 2026-09-22.** `TopologyModel()` — a 2x2 grid over x 0..2, y 0..1 at a
+0.1 target cell, floor clustered — runs the real binary to exit 0 with **0 of 400 cells inverted**.
+Its bulk measures **exactly 1.000** on the quad midline ratio (the 0.1 target divides both spans
+evenly: 11 nodes per column, 6 per row) and its wall band **50.000**, which is arithmetic rather
+than a defect: 0.1 azimuthal over the 0.002 `BL_INITIAL_THICKNESS` asked for. The figures come from
+the sidecar the mesher already writes and the one reader #131 built — **this work adds no quality
+code at all**, which `test_topology_templates.py` check 15 holds by asking that reader rather than
+by parsing the run again.
+
+**Where the projection hooks, and what it cost.** `models/mesh_config_io.py::save_config_to_file`
+is the ONE call both hosts converge on immediately before launching the mesher
+(`controllers/mesh_gen_ctrl.py:191` writes a temp config, `services/pipeline_runner.py:234` writes
+the case's). Hooking there makes "the file `MESH_TOPOLOGY_FILE` names exists" structurally true
+rather than something two call sites must remember — the alternative, an explicit prepare step each
+host calls, is the shape this repo was already bitten by when four pipeline stages implemented
+twice let an artefact be produced for nobody. The cost is stated at the function: it is no longer a
+pure text transformation. `config_to_text` STAYS pure and takes the projected path as an OVERRIDE
+argument, because its other two callers (the solver case staging its runnable parameters, and the
+source listing) want content and are not about to run anything — a projection fired from there
+would write a document for nobody. The override is also why `cfg` is not mutated: a text builder
+that edited the model it describes would leave the projected path on a model the user is still
+editing, and the next Save would write it out as if the user had typed it.
+
+**THE FINDING THAT ONLY THE EXISTING GATES COULD HAVE MADE.** `get_config` first read the template
+parameters into the fresh config's default model IN PLACE (`read_specs(self, TOPOLOGY_SPECS,
+cfg.topology)`). Every check in `test_topology_panel.py` passed — because they all talk to the
+panel directly. What they could not see is that `config_ownership` derives what the panel->model
+sync may overwrite from what the panel's sources are seen to ASSIGN, and an in-place mutation is
+not an assignment: `topology` landed in `PRESERVED_FIELDS`, which is the set
+`sync_panel_to_model` refuses to overwrite. Every template edit the user made would have been
+silently dropped on its way to the global config. `test_field_spec_tables.py` check 2 found it as
+"written-but-undeclared". The fix is to build the model and ASSIGN it, and check 9 of the panel
+gate now pins `topology` OUT of `PRESERVED_FIELDS` so the property is held rather than remembered.
+
+**Two more the existing gates caught, both correct.** `test_units.py` check 6: the domain range and
+the target cell size are PHYSICAL LENGTHS and must carry the model's unit suffix, so `LENGTH_FIELDS`
+had to include the third table — a mm-scale template left labelled in metres is the same defect a mm
+mesh left at `Linf` 1 is, one panel section further in. And check 14d: eleven mode-restricted rows
+with no `.dat` key needed their reasons written down, which is what keeps "no key" from meaning
+"unchecked". Check 8's own injection then asserted LOUDLY that its anchor no longer matched the
+shipped `LENGTH_FIELDS` line, rather than passing as a no-op — the failure mode #101 is about.
+
+**A silent degradation caught by its own round-trip, not by a gate.** `TopologyModel`'s converter
+map was first derived with `f.type is int`. `from __future__ import annotations` is in force in
+that module, so `dataclasses.fields()` reports `f.type` as the STRING `"int"` and every field fell
+through to `str`: `hgrid_nx` restored as `'7'` and the round-trip looked like it worked. The map now
+matches on the annotation TEXT and RAISES at import on an annotation it does not know, rather than
+defaulting to anything — the same rule the schema derivation in `test_topology_templates.py` check
+6a follows, and the same failure family as every "derivation that answers on bad input" in this
+tree.
+
+**Injections: FOURTEEN recorded across the three gate files, 2026-09-22 — thirteen run deliberately
+by hand and one that fired on its own.** Counted from the files rather than remembered: six in
+`test_topology_templates.py`, three in `test_topology_param_specs.py`, five in
+`test_topology_panel.py`. FIVE corrected the prediction written beside them, and the corrections are
+kept rather than tidied away:
+
+- a spread that had grown to EIGHT parameter sets was written up as "six" — remembered, not counted,
+  which is this batch's own instance of the mistake this paragraph is now correcting;
+- seeding every horizontal edge bites even a 1x1. The prediction reasoned about interior lines; the
+  count class is about OPPOSITE SIDES, which every block has, so there was no case where it stayed
+  green;
+- swapping east/west is refused by the REAL BINARY too (exit 8), not only by the ring walk, so
+  three more checks went red than the note expected;
+- removing the derived-count read-out reddens SIX checks, not three: every claim the panel gate
+  makes about the read-out rests on the read-out existing;
+- an inline copy of the count derivation in the panel silently drops the OVERRIDE, because
+  overriding is part of the derivation and not a step after it — and the check comparing the
+  displayed number against the family's stayed GREEN throughout, which is why a source scan sits
+  beside it.
+
+And the `ast` walk in the parameter gate cannot see a read of a NON-model attribute, so a typo'd
+read shows up only as an unread ROW — kept as a named blind spot rather than as a fix. The
+FOURTEENTH fired UNPLANNED: the first draft of the schema check selected each key set by the
+`where` argument of its `rejectUnknownKeys` call, which is a runtime-built variable at four of the
+five call sites, so it reported `None` and the check beside it passed VACUOUSLY.
+
+**Named blind spot: the two other `config_to_text` callers.** The solver case staging its runnable
+mesh parameters into `grid/cad/` and the pipeline source listing call `config_to_text` directly, so
+they read `cfg.mesh_topology_file` — empty for a template case, because that path only exists once
+`save_config_to_file` has projected one. A staged config for a template case carries no
+`MESH_TOPOLOGY_FILE` line. Named rather than half-fixed: doing it right means staging the DOCUMENT
+beside the config, which is the portable-reproduction work #135 owns, and firing a projection from
+a pure text builder would write a document for a caller that is not about to run anything. The
+alternative considered and rejected was having `config_to_text` fall back to projecting into a temp
+directory, which trades a missing line for a file nobody deletes.
+
+**Named blind spot, stated here as well as in the rule file:** only `TopologyModel()`'s DEFAULTS are
+run through the real binary. The other seven parameter sets in the spread are checked structurally,
+because eight mesher runs in a gate is a cost nobody asked for — so a parameter set that is
+structurally legal and geometrically degenerate is not reached.
+
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`

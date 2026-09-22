@@ -65,6 +65,15 @@ PANEL_SPEC_TABLES = {
     "mesh_config_panel": (
         ("app.services.mesh_field_specs", "MESH_SPECS"),
         ("app.services.mesh_bl_field_specs", "PANEL_BL_SPECS"),
+        # The panel's THIRD table, and the first whose rows author a model other
+        # than the panel's own (a `TopologyModel`, reached through
+        # `MeshConfig.topology`). Registered because the group/builder and
+        # length-unit checks ask this registry what the panel declares, and a table
+        # it does not know about is a section of the panel those checks are blind
+        # to. What it must NOT be used for is the model-ownership comparison —
+        # `spec_authored` would report `hgrid_nx` as a MeshConfig field — which is
+        # why `authored_for_model` exists beside it (#134).
+        ("app.services.topology_field_specs", "TOPOLOGY_SPECS"),
     ),
     "solver_config_panel": (
         ("app.views.panels.solver_field_specs", "SOLVER_SPECS"),

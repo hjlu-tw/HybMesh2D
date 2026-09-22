@@ -57,6 +57,32 @@ class TopologyModel:
     hgrid_counts_x: str = ""
     hgrid_counts_y: str = ""
 
+    def to_dict(self) -> dict:
+        """Every parameter, as plain JSON-able values.
+
+        ALL of them, not only the selected family's: a user who tries the H-grid,
+        switches to '(none)' and comes back expects the numbers they typed to still
+        be there, and a serialiser that dropped the unselected families would make
+        switching family a destructive act.
+        """
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    def load_from_dict(self, d: dict) -> None:
+        """Restore from :meth:`to_dict`, coercing through each field's own type.
+
+        A value that will not convert keeps the default rather than landing as a
+        string that crashes the family function later — the rule
+        ``MeshConfig.load_from_dict`` already follows, for the same reason: a
+        hand-written project file may quote a number.
+        """
+        for f in fields(self):
+            if f.name not in d:
+                continue
+            try:
+                setattr(self, f.name, _COERCE[f.name](d[f.name]))
+            except (TypeError, ValueError):
+                pass
+
     def copy(self) -> "TopologyModel":
         """A detached copy — what the undo snapshot and the panel round-trip need."""
         return TopologyModel(**{f.name: getattr(self, f.name) for f in fields(self)})
@@ -66,6 +92,37 @@ class TopologyModel:
             return NotImplemented
         return all(getattr(self, f.name) == getattr(other, f.name)
                    for f in fields(self))
+
+
+#: One converter per field, so a restore coerces rather than trusts. Derived from
+#: the dataclass's own annotations, so a new parameter is covered without an edit
+#: here — and an annotation this map does not know RAISES at import time rather than
+#: quietly picking one.
+#:
+#: MATCHED ON THE ANNOTATION TEXT, not on the type object. ``from __future__ import
+#: annotations`` is in force in this module, so ``dataclasses.fields()`` reports
+#: ``f.type`` as the STRING ``"int"`` and an ``f.type is int`` test is False for
+#: every field. The first draft did exactly that, fell through to ``str`` for all of
+#: them, and restored ``hgrid_nx`` as ``'7'`` — a silent degradation that looked like
+#: a working round-trip. That is why an unknown annotation raises here instead of
+#: defaulting to anything.
+_CONVERTERS = {"bool": bool, "int": int, "float": float, "str": str}
+
+
+def _coercers() -> dict:
+    out = {}
+    for f in fields(TopologyModel):
+        t = f.type if isinstance(f.type, str) else getattr(f.type, "__name__", "")
+        if t not in _CONVERTERS:
+            raise TypeError(
+                f"TopologyModel.{f.name}: annotation {f.type!r} has no converter. "
+                f"Add one to _CONVERTERS — a parameter restored without coercion "
+                f"lands as whatever the project file happened to hold.")
+        out[f.name] = _CONVERTERS[t]
+    return out
+
+
+_COERCE = _coercers()
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,7 @@ paths:
   - tools/PreProcessor/gui/app/views/import_unit_dialog.py
   - tools/PreProcessor/gui/app/views/units_ui.py
   - tools/PreProcessor/gui/app/services/*field_spec*
+  - tools/PreProcessor/gui/app/services/topology_*
   - tools/PreProcessor/gui/app/services/config_ownership.py
   - tools/PreProcessor/gui/app/services/geom_path_identity.py
   - tools/PreProcessor/gui/app/services/units.py
@@ -382,6 +383,52 @@ stays PURE, so "is this file on disk?" is `geom_files_not_on_disk()` and not a v
 That method is **not** `missing_geom_files`, the field one word away on the same class: the field
 holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
 
+**A TOPOLOGY TEMPLATE IS A MODEL; THE JSON IS A PROJECTION** (#134, parent #133;
+`services/topology_model.py`, `services/topology_hgrid.py`, `services/topology_field_specs.py`)
+
+- **One family = one PURE FUNCTION** from `TopologyModel` to a document `dict`, registered in
+  `FAMILIES` with its own parameter PREFIX. Qt-free, mesher-free, canvas-free. A family is a
+  function and never a data-driven template file: seeding one count per equivalence class, closing
+  the ring counter-clockwise and deciding which lines are interior are LOGIC, and expressing them
+  as data means inventing a second language whose interpreter is the module anyway.
+- **The document satisfies the mesher's structural rules BY CONSTRUCTION, never by a check
+  afterwards** — the ring closes `[south, east, north, west]` from ONE index expression, ids are
+  unique by prefix, `nx + ny` count classes seeded on the bottom row and the left column, each
+  interior line declared once and named by both blocks, no key outside the schema, nothing
+  declared that reaches nothing. A template that can produce a refusal has handed the user back
+  the JSON they came to avoid. Gate: `tests/test_topology_templates.py` (checks 1-9, over a spread
+  of EIGHT parameter sets, classes derived there from the propagation rules rather than from the
+  builder; check 6a reads all five key sets out of `src/MultiBlock.cpp` by a MARKER key and fails
+  rather than answering when it cannot).
+- **`MeshConfig.mesh_topology_file` is an OUTPUT when a family is named, an input when none is.**
+  The projection is hooked into `models/mesh_config_io.py::save_config_to_file` — the ONE call both
+  hosts converge on before launching the mesher (`controllers/mesh_gen_ctrl.py`,
+  `services/pipeline_runner.py`) — so the file that line names exists because of WHERE the hook is,
+  not because two hosts each remembered a prepare step. That function's docstring states the cost:
+  it is no longer a pure text transformation. `config_to_text` STAYS pure and takes the projected
+  path as an OVERRIDE argument, because its other two callers want content, not a run.
+- **Template rows are their own field-spec table with NO `.dat` key.** A template parameter has no
+  C++ counterpart — the mesher never sees a block count, it sees the document one produced — so
+  these rows cannot ride in `MESH_SPECS`, whose key is compared against `Config.hpp` in both
+  directions. What they are compared against instead is the FAMILY FUNCTIONS, in both directions,
+  with the reads DERIVED by `ast` rather than hand-listed. Gate:
+  `tests/test_topology_param_specs.py`.
+- **The derived counts have ONE owner, shared with the panel** (`topology_hgrid.hgrid_counts`,
+  which is also what the document seeds). The panel displays that function's answer and computes
+  nothing; a second copy would be free to show a number the generated mesh does not use. Gate:
+  `tests/test_topology_panel.py` check 4, whose 4b reads the panel's own sources for a second
+  derivation because 4a cannot see one that happens to agree today.
+- **`to_dict` carries `topology` BY NAME**, because `_key_map()` finds fields by their `.dat` key
+  and this one has none — and the project-undo snapshot IS `to_dict()`, so without that line Ctrl+Z
+  would be the one thing that did nothing in this section. `load_from_dict` restores it only when
+  the key is a dict, so a project file written before templates loads exactly as it did.
+- **`_spec_rows(..., model=)` seeds a table from a class other than `_SPEC_MODEL`**, for the one
+  table whose rows author something other than the panel's own config. Without it every topology
+  row would be seeded from whatever Qt leaves in an un-set widget, which the panel->model sync then
+  makes the session's default.
+
+Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE LIBRARY".
+
 ## Named blind spots
 
 Consolidated here rather than trailing the rules they belong to, so a coverage claim can be checked
@@ -393,6 +440,24 @@ against one list; #71 moved the first two here.
   `services/field_spec.py` only.
 - **The unit size-plausibility check only catches gross errors, and says so.** A *plausible* wrong
   unit is left to the two visible defences above, which do nothing but print the number.
+- **The template parameter gate's `ast` walk is SCOPED to fields `TopologyModel` declares**, so a
+  read of an attribute that is NOT a model field is invisible to it: a typo'd `model.hgrid_cellsize`
+  is not reported as an undeclared parameter, it simply vanishes from the reads. It is still
+  caught, but only from the other direction — the row whose field is no longer read goes red.
+  Measured by injection C in that file, which corrected the prediction written beside it.
+- **`config_to_text`'s TWO OTHER CALLERS see no topology for a template case.** The solver case
+  staging its own runnable mesh parameters into `grid/cad/` (`controllers/solver_ctrl.py`) and the
+  source listing (`services/pipeline_case_sources.py`) call it directly, so they take
+  `cfg.mesh_topology_file` — which is empty when a family is named, because the path only exists
+  once `save_config_to_file` has projected one. A staged config for a template case therefore
+  carries no `MESH_TOPOLOGY_FILE` line at all. Named rather than half-fixed: making it right means
+  staging the DOCUMENT beside the config, which is the portable-reproduction work #135 owns, and a
+  projection fired from a pure text builder would write a document for a caller that is not about
+  to run anything.
+- **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
+  parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
+  real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that
+  is structurally legal and geometrically degenerate (a zero-width domain, say) is not reached.
 - **`MODEL_WRITER_METHODS` fails on a STALE entry, never on a MISSING one.** The gate proves every
   declared verb resolves; nothing notices a *new* model verb that writes a field and is not listed,
   and the symptom is silent — the field reads as unauthored, so the sync preserves it and the

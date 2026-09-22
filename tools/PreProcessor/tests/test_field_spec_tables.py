@@ -590,8 +590,12 @@ from app.views.panels.mesh_units_mixin import LENGTH_FIELDS  # noqa: E402
 
 check(set(LENGTH_FIELDS) == set(fs.length_attrs(*spec_tables("mesh_config_panel"))),
       "8. ...and equals the sci-kind fields of the mesh panel's tables")
-_mut = _units_src.replace("LENGTH_FIELDS = length_attrs(MESH_SPECS, PANEL_BL_SPECS)",
-                          'LENGTH_FIELDS = ("domain_x_min",)', 1)
+# The anchor follows the shipped call, TOPOLOGY_SPECS included (#134): the assert
+# below fails loudly when it stops matching rather than letting the injection become
+# a no-op that passes.
+_mut = _units_src.replace(
+    "LENGTH_FIELDS = length_attrs(MESH_SPECS, PANEL_BL_SPECS, TOPOLOGY_SPECS)",
+    'LENGTH_FIELDS = ("domain_x_min",)', 1)
 assert _mut != _units_src, "LENGTH_FIELDS injection changed nothing"
 ast.parse(_mut)
 check(listed_field_names(_mut, "LENGTH_FIELDS", {"domain_x_min"}) == ["domain_x_min"]
@@ -956,6 +960,27 @@ MODE_SPECS_WITHOUT_KEY = {
     "seed_radius": "as seed_size, following SEED_RADIUS",
     "auto_farfield_hint": "a derived read-out beside auto_farfield_size; hidden with "
                           "the field it describes",
+    # The topology template's eleven rows (#134). These follow no mesher key and
+    # never will: a template parameter has NO C++ counterpart — the mesher sees the
+    # document the family produced, not the block count that shaped it — so "no key"
+    # here means "compared against the family functions instead", in both directions,
+    # by tests/test_topology_param_specs.py. That is the gate this entry points at,
+    # which is what keeps "no key" from meaning "unchecked".
+    "topo_family": "the template family selector; compared against the FAMILIES "
+                   "registry by test_topology_param_specs.py",
+    "topo_hgrid_x_min": "H-grid template parameter; gated against the family "
+                        "function, not against a mesher key",
+    "topo_hgrid_x_max": "as topo_hgrid_x_min",
+    "topo_hgrid_y_min": "as topo_hgrid_x_min",
+    "topo_hgrid_y_max": "as topo_hgrid_x_min",
+    "topo_hgrid_nx": "as topo_hgrid_x_min",
+    "topo_hgrid_ny": "as topo_hgrid_x_min",
+    "topo_hgrid_cell": "as topo_hgrid_x_min",
+    "topo_hgrid_wall_bottom": "as topo_hgrid_x_min",
+    "topo_hgrid_counts_derived": "a derived read-out (model=None) of the family's "
+                                 "own count derivation; authors nothing",
+    "topo_hgrid_counts_x": "as topo_hgrid_x_min",
+    "topo_hgrid_counts_y": "as topo_hgrid_x_min",
 }
 
 from app.services.mesh_modes import (  # noqa: E402

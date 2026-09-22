@@ -138,6 +138,12 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         # path reads (driven by each field's own `modes=` declaration).
         self._build_mode_section()
 
+        # ── 0c. Block Topology ────────────────────────────────────────────
+        # After the mode row, because the mode is what decides whether it is shown
+        # at all, and before the domain box: when a template is generating the
+        # topology, IT owns the extent of the domain and the box below does not.
+        self._build_topology_section()
+
         # ── 1. Domain & Geometry Files ────────────────────────────────────
         # Section builder (combo + bounding box + geometry list + role editor)
         # relocated to MeshConfigDomainMixin.
