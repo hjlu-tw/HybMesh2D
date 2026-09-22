@@ -241,7 +241,16 @@ class MeshConfig(GeomListMixin):
         # project-undo snapshot (`project_state_ctrl._collect_project_state`, which
         # is `to_dict()`) could not see a template edit at all, so Ctrl+Z would be
         # the one thing that did nothing in this section.
-        d["topology"] = self.topology.to_dict()
+        #
+        # OPTIONAL, like `stl3d` one file over (#135): a project with no template
+        # configured writes no section, so a file predating templates and a file
+        # saved today by a user who never opened the section are the same file.
+        # `is_configured()` owns "configured" and asks about EVERY parameter, not
+        # about the family, so a number typed before the combo was touched is not
+        # dropped. Its inverse is `load_from_dict` below: absent means the DEFAULT
+        # model, which is what keeps the first template edit undoable.
+        if self.topology.is_configured():
+            d["topology"] = self.topology.to_dict()
         return d
 
     def load_from_dict(self, d: dict):
@@ -278,11 +287,23 @@ class MeshConfig(GeomListMixin):
         # #3: a session predating this key already carries real BCs, so default
         # True (show their colours); a new session that saved it uses the value.
         self.bc_configured = bool(d.get("bc_configured", True))
-        # Absent in every project file written before templates existed, and that
-        # must load exactly as it did: no key -> the model keeps its defaults, whose
-        # `family` is "" and so names no template.
-        if isinstance(d.get("topology"), dict):
-            self.topology.load_from_dict(d["topology"])
+        # ABSENT MEANS THE DEFAULT MODEL, in both directions (#135). A project
+        # file written before templates existed has no section and must load
+        # exactly as it did, which a fresh default satisfies; and because
+        # `to_dict()` now OMITS the section when nothing is configured, an absent
+        # section is also what the project-undo snapshot taken before the first
+        # template edit looks like. Were this a no-op, undoing back to that
+        # snapshot would leave the edit in place — every other field is restored by
+        # being present, this one has to be restored by being absent.
+        #
+        # A rebind rather than an in-place reset: `to_dict`/`load_from_dict` are
+        # value semantics for this section, and nothing holds the model across a
+        # load (the panel reads `cfg.topology` at each `set_config`, and
+        # `get_config` builds and ASSIGNS a fresh one — #134's finding).
+        topo = d.get("topology")
+        self.topology = TopologyModel()
+        if isinstance(topo, dict):
+            self.topology.load_from_dict(topo)
 
 
     def validate(self, geom_bbox: tuple | None = None,

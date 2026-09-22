@@ -17,7 +17,6 @@ them. Rules: ``.claude/rules/pipeline-case.md``; why:
 from __future__ import annotations
 import os
 
-from app.models.mesh_config_io import config_to_text
 from app.models.pipeline_config import PipelineConfig
 from app.services import case_sources
 from app.services.logging_setup import get_logger
@@ -52,9 +51,12 @@ def case_sources_for(pcfg: PipelineConfig, repo: str, geoms: list | str | None,
         # The block topology a MESH_MODE 1 run filled: an input of this run and
         # not a preference, so it is staged like the CAD rather than only quoted
         # by the generated parameter file. Repo-relative in a script, hence repo.
+        # That is the HAND-WRITTEN document, which exists on disk to be copied; a
+        # TEMPLATE's has no file, and is generated below beside the parameter file
+        # that names it (#135).
         out.extend(case_sources.mesh_input_paths(mc, repo))
-        generated.append((f"Background_para_{pcfg.name or 'case'}.dat",
-                          config_to_text(mc)))
+        generated.extend(case_sources.mesh_config_generated(
+            mc, pcfg.name or "case"))
     except Exception:
         # Staging the geometry is worth having even when the settings cannot be
         # rebuilt; failing the solver run over it is not. Both the topology and

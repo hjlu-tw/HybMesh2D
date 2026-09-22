@@ -83,6 +83,24 @@ class TopologyModel:
             except (TypeError, ValueError):
                 pass
 
+    def is_configured(self) -> bool:
+        """True once anything here has been touched — the OPTIONAL-section test.
+
+        Not ``bool(self.family)``: a user who types a domain range and a block
+        count before choosing the family from the combo has configured something,
+        and a writer that asked only about the family would drop every number they
+        typed. Compared against a freshly built model rather than against a
+        remembered snapshot of the defaults, so a new parameter is covered with no
+        edit here.
+
+        The other direction is :meth:`MeshConfig.load_from_dict`, where an ABSENT
+        section restores exactly this state. The two are inverses on purpose: the
+        project-undo snapshot is ``MeshConfig.to_dict()``, so the snapshot taken
+        before the first template edit has no section at all, and an absent section
+        that did nothing would make that edit the one thing Ctrl+Z cannot walk back.
+        """
+        return self != TopologyModel()
+
     def copy(self) -> "TopologyModel":
         """A detached copy — what the undo snapshot and the panel round-trip need."""
         return TopologyModel(**{f.name: getattr(self, f.name) for f in fields(self)})

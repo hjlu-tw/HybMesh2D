@@ -116,6 +116,55 @@ def mesh_input_paths(mesh_config, base_dir: str = "") -> list:
     return [os.path.abspath(topo)]
 
 
+def mesh_config_generated(mesh_config, case_name: str) -> list:
+    """``(name, text)`` pairs the case can only RECONSTRUCT, not copy.
+
+    The mesher parameter file, always: the GUI never writes a persistent one — a
+    run serialises the live config into a temp directory that is removed on exit —
+    so without regenerating it the case would record every input except the one
+    that shaped its grid.
+
+    And, when a TEMPLATE drove the run, the block topology DOCUMENT beside it
+    (#135). This is the half #134 named as a blind spot and deferred here: the two
+    callers that want the config as CONTENT rather than as a run read
+    ``cfg.mesh_topology_file``, which is EMPTY for a template case, because that
+    path does not exist until ``save_config_to_file`` has projected one. A staged
+    config therefore carried no ``MESH_TOPOLOGY_FILE`` line at all, and a case that
+    cannot say what topology it was cut from is precisely what ``grid/cad/``
+    exists to prevent — the same argument :func:`mesh_input_paths` already makes
+    for a hand-written document, which is COPIED IN as a source. A template's
+    document has no file to copy, so it is generated, exactly like the parameter
+    file it sits beside.
+
+    Named by :func:`~app.services.topology_model.projection_path`, so the pair
+    follows ONE naming rule rather than two that can drift; quoted by BARE
+    FILENAME, because the two files are siblings in the staged folder and the case
+    is meant to survive being copied somewhere else. That is the one place the
+    staged line deliberately differs from the line the run itself wrote, which is
+    absolute — the mesher resolves it against its own working directory, and the
+    staged copy is a record rather than something rerun in place.
+
+    Qt-free and shared, like everything else here: ``controllers/solver_ctrl.py``
+    and ``services/pipeline_case_sources.py`` both call this rather than each
+    spelling the name and the projection out. Raises whatever the projection
+    raises — both callers already downgrade a failure here to a warning, because a
+    case that stages its geometry but not its settings is still worth having.
+    """
+    from app.models.mesh_config_io import config_to_text
+    from app.services import topology_model
+
+    stem = f"Background_para_{case_name}"
+    model = getattr(mesh_config, "topology", None)
+    if model is None or not getattr(model, "family", ""):
+        return [(f"{stem}.dat", config_to_text(mesh_config))]
+    doc_name = os.path.basename(topology_model.projection_path(f"{stem}.dat"))
+    return [
+        (f"{stem}.dat", config_to_text(mesh_config, topology_path=doc_name)),
+        (doc_name,
+         topology_model.document_text(topology_model.build_document(model))),
+    ]
+
+
 def _unique_name(dest_dir: str, name: str, taken: set) -> str:
     """``name``, or ``stem_2.ext`` / ``stem_3.ext`` until it is free."""
     if name not in taken and not os.path.exists(os.path.join(dest_dir, name)):

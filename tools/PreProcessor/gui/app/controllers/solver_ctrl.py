@@ -8,6 +8,7 @@ from app.workers.solver_run import SolverPipelineWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import restart_points
 from app.services.case_files import GUI_RUN_TAG
+from app.services import case_sources
 from app.services.case_sources import mesh_input_paths, mesh_provenance_paths
 from app.services.mesh_grid_lookup import resolve_case_grid
 from app.services.logging_setup import get_logger
@@ -86,22 +87,22 @@ class SolverControllerMixin:
     def _case_generated_files(self) -> list:
         """``(name, text)`` the case can only reconstruct, not copy.
 
-        Just the mesh parameter file: the GUI never writes a persistent one — a
-        run serialises the live config into ``temp_dir/*_mesh_para.dat`` and that
-        directory is removed on exit — so without regenerating it here, the case
-        would record every input except the one that shaped its grid.
+        The mesh parameter file and, for a template-driven run, the block topology
+        document it names — both from ``case_sources.mesh_config_generated``, which
+        the headless collector calls too, so a GUI case and a scripted one record
+        the same thing (#135).
         """
-        from app.models.mesh_config_io import config_to_text
         cfg = getattr(self, "global_mesh_config", None)
         if cfg is None:
             return []
         case = _sanitize(getattr(self, "global_solver_config", None)
                          and self.global_solver_config.case_name or "case")
         try:
-            return [(f"Background_para_{case}.dat", config_to_text(cfg))]
+            return case_sources.mesh_config_generated(cfg, case)
         except Exception:
             # A case that stages its geometry but not its settings is still worth
-            # having; a run that dies here is not.
+            # having; a run that dies here is not. The parameter file and the
+            # topology document are lost together, because one names the other.
             _log.warning("could not serialise the mesh config for the case's "
                          "cad/ folder", exc_info=True)
             return []
