@@ -77,8 +77,30 @@ changed this file, which is recorded rather than tidied away:
      save; 6c catches and reports it now, so the legacy file's whole promise is
      one red line rather than a stack trace.
 
-  Negative control: the unmutated tree passes all 24 checks, so the reds above are
+  J. (added in review) one host spells the "does a template drive this?" predicate
+     out of the model's attribute again instead of calling `names_a_family()` ->
+     check 11b, which is a SOURCE scan on purpose: two spellings that agree today
+     are exactly the state it refuses.
+
+  K. (added in review) generated entries step aside from a PREVIOUS run's file
+     again -> checks 10c and 10d. The first version of 10c stayed GREEN on it: it
+     asked only whether each quoted document exists in the folder, and with two
+     parameter files both quoting the first run's document every name still
+     resolved. It measures a BIJECTION now — two parameter files pointing at one
+     document while two documents sit there is what makes the record false.
+  L. (added in review) the document failure costs the parameter file again ->
+     check 10e. INERT twice before it bit: the first run crashed the file, and the
+     `except` added to stop that made the raised placeholder satisfy the very
+     condition the check was testing (one entry, no `MESH_TOPOLOGY_FILE` line). It
+     pins the entry's NAME now, so "it raised" cannot read as "it fell back".
+
+  Negative control: the unmutated tree passes all 32 checks, so the reds above are
   the mutations and not the checker.
+
+  And a restore hazard this file re-learned: injection J was reverted with
+  `git checkout`, which restored the file from HEAD and silently ate the
+  UNCOMMITTED review fix in the same file. Commit before injecting, or restore by
+  content — the repo has recorded this once already.
 """
 from __future__ import annotations
 
@@ -214,6 +236,20 @@ check("6. the shipped legacy project file this check reads really has no topolog
       "section — a legacy check against a file that grew one proves nothing",
       "topology" not in (_legacy_raw.get("mesh") or {}))
 
+import logging  # noqa: E402
+
+
+class _Catch(logging.Handler):
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.seen = []
+
+    def emit(self, record):
+        self.seen.append(f"{record.name}: {record.getMessage()}")
+
+
+_catch = _Catch()
+logging.getLogger().addHandler(_catch)
 _legacy = PipelineConfig.load_from_file(_legacy_path).build_mesh_config(None)
 check("6b. it loads with no topology model, so nothing about it changed: the "
       f"family is '' (got {_legacy.topology.family!r}) and MESH_MODE 1 still "
@@ -236,6 +272,14 @@ with tempfile.TemporaryDirectory() as _tmp:
     _text = open(_conf, encoding="utf-8").read() if os.path.exists(_conf) else ""
     _line = next((ln for ln in _text.splitlines()
                   if ln.startswith("MESH_TOPOLOGY_FILE")), "")
+    logging.getLogger().removeHandler(_catch)
+    check("6b2. ...and loading and writing it emits NO WARNING anywhere — the "
+          "criterion's literal words are \"no migration prompt, no warning, no "
+          "behaviour change\", and the first two are only visible on the log "
+          f"stream and `parse_warnings`, not in the config that comes back "
+          f"(warnings: {_catch.seen}; parse_warnings: "
+          f"{getattr(_legacy, 'parse_warnings', 'unset — only a .dat read sets it')})",
+          not _catch.seen and not getattr(_legacy, "parse_warnings", []))
     check("6c. ...and writing its config raises nothing, projects NOTHING beside "
           f"it and leaves the MESH_TOPOLOGY_FILE line exactly as the project file "
           f"declares it (raised {_raised or 'nothing'}; wrote {_sidecars}; "
@@ -344,6 +388,68 @@ check("9d. a case whose topology is a hand-written FILE stages only the paramete
       and f"MESH_TOPOLOGY_FILE {_plain.mesh_topology_file}"
       in dict(_plain_gen)[_plain_gen[0][0]])
 
+# The pair must survive STAGING, not only be produced correctly. `grid/cad/` is
+# never cleared between runs (`solver_case.prepare_case_dir` has no rmtree), and
+# the staging renames a colliding entry, so before this was fixed a second run of
+# the same case wrote `Background_para_<case>_2.dat` quoting the FIRST run's
+# document — a folder stating in writing that a grid was cut from a topology it
+# was not. Found by review, then reproduced; this drives the real service twice.
+with tempfile.TemporaryDirectory() as _tmp:
+    _grid = os.path.join(_tmp, "grid")
+    case_sources.stage_case_sources([], _grid, generated=_gen)
+    case_sources.stage_case_sources([], _grid, generated=_gen)
+    _cad = os.path.join(_grid, "cad")
+    _staged = sorted(n for n in os.listdir(_cad) if n != "SOURCES.txt")
+    _dats = [n for n in _staged if n.endswith(".dat")]
+    _quoted = {}
+    for n in _dats:
+        for ln in open(os.path.join(_cad, n), encoding="utf-8"):
+            if ln.startswith("MESH_TOPOLOGY_FILE"):
+                _quoted[n] = ln.split(None, 1)[1].strip()
+    _docs = [n for n in _staged if n.endswith("_topology.json")]
+    # A BIJECTION, not "the name resolves". The first version of this check asked
+    # only whether the quoted document exists in the folder, and the injection that
+    # restores the bug LEFT IT GREEN: with two parameter files both quoting the
+    # first run's document, every quoted name still resolved. What makes the record
+    # false is two parameter files pointing at ONE document while two documents sit
+    # there, so that is what is measured.
+    check("10c. re-staging the same case replaces the pair rather than renaming "
+          "half of it: staged parameter files and staged documents are one-to-one, "
+          f"each naming its OWN (staged {_staged}; quoted {_quoted})",
+          len(_dats) == len(_docs) == len(_quoted)
+          and sorted(_quoted.values()) == sorted(_docs)
+          and len(set(_quoted.values())) == len(_dats))
+    check("10d. ...and a generated entry does not accumulate `_2` copies across "
+          "runs, because it is a reconstruction of the config as it stands now "
+          f"and a previous run's is stale, not evidence ({_staged})",
+          len(_staged) == 2)
+
+# A family that cannot build must not cost the case its PARAMETER FILE too.
+
+
+class _Broken:
+    family = "broken"
+
+    def names_a_family(self):
+        return True
+
+
+_broken_cfg = MeshConfig()
+_broken_cfg.topology = _Broken()
+# Caught, so the regression this closes goes RED rather than ending the file: the
+# injection that restores it raises straight out of the family function.
+try:
+    _bgen = case_sources.mesh_config_generated(_broken_cfg, "broken")
+except Exception as exc:                                       # noqa: BLE001
+    _bgen = [(f"<raised {type(exc).__name__}>", "")]
+check("10e. a template whose document cannot be built still stages the mesh "
+      "parameters, with no MESH_TOPOLOGY_FILE line rather than one naming a file "
+      f"that was never written — the record that shipped before templates, which "
+      f"is worse than the pair and far better than the nothing the callers' own "
+      f"`except` would have left ({[n for n, _ in _bgen]})",
+      len(_bgen) == 1 and _bgen[0][0] == "Background_para_broken.dat"
+      and "MESH_TOPOLOGY_FILE" not in dict(_bgen)[_bgen[0][0]])
+
 # Both hosts through the ONE function, not two copies of the rule. The source
 # scan is the half that #134's own finding says is not enough on its own, so the
 # headless host is also driven for real below it.
@@ -370,6 +476,37 @@ check("10b. ...and driving the real headless collector produces the pair, so "
       f"(got {[n for n, _ in _generated]})",
       len(_generated) == 2
       and any(n.endswith("_topology.json") for n, _ in _generated))
+
+# The predicate has ONE owner. Review found it spelled twice and INVERTED — the
+# funnel asking whether to PROJECT, the staging asking whether to GENERATE — which
+# is how two halves of one feature drift into disagreeing about what a template
+# case even is. Scanned rather than asserted through behaviour, because two
+# spellings that agree today are exactly the state this check exists to refuse.
+_PRED_HOSTS = {
+    "models/mesh_config_io.py": os.path.join(
+        _GUI, "app", "models", "mesh_config_io.py"),
+    "services/case_sources.py": os.path.join(
+        _GUI, "app", "services", "case_sources.py"),
+}
+_own_pred = {k: re.findall(r"""getattr\(\s*model\s*,\s*["']family["']""",
+                           open(v, encoding="utf-8").read())
+             for k, v in _PRED_HOSTS.items()}
+_uses = {k: "names_a_family()" in open(v, encoding="utf-8").read()
+         for k, v in _PRED_HOSTS.items()}
+check("11b. \"does a template drive this config?\" has ONE owner "
+      f"(`TopologyModel.names_a_family`): both sites call it ({_uses}) and neither "
+      f"spells it out of the model's attribute itself "
+      f"({ {k: len(v) for k, v in _own_pred.items()} })",
+      all(_uses.values()) and not any(_own_pred.values()))
+
+_m = MeshConfig().topology
+check("11c. ...and it is NOT `is_configured`, which answers a different question: "
+      "parameters typed before the family combo is touched are configured (so the "
+      "project file must carry them) while naming no family (so there is no "
+      "document to build)",
+      not _m.names_a_family() and not _m.is_configured()
+      and (lambda t: t.is_configured() and not t.names_a_family())(
+          _edited.topology))
 
 # ══ F. Qt-free, and the real binary on the reloaded model ═════════════════
 
@@ -416,13 +553,36 @@ else:
         if lib.returncode == 0 and lib.stdout.strip():
             env["DYLD_LIBRARY_PATH"] = lib.stdout.strip()
 
+        # THREE configs, because the criterion's words are "a headless run of the
+        # same project file produces the same mesh as the GUI run" and a live
+        # in-memory config is neither run. `gui` is a real AppController that
+        # REOPENED the project file, `headless` is the pipeline bridge reading the
+        # same file, and `live` is the model that was never written out — the
+        # round-trip's own control, which is what caught the injection that drops
+        # a field on restore while the two hosts agreed with each other about it.
         script = os.path.join(tmp, "case.json")
         PipelineConfig.from_configs("topo_rt", None, configured(),
                                     None).save_to_file(script)
+        _hws2 = os.path.join(tmp, "reopen.hws")
+        _c3 = AppController()
+        _c3.global_mesh_config.load_from_dict(configured().to_dict())
+        # The push is NOT decoration. `_collect_project_state` refreshes each model
+        # FROM ITS PANEL before serialising, so an AppController whose panel was
+        # never populated saves the panel's defaults over the config just loaded —
+        # which this gate found by producing a 441-node hybrid mesh where the other
+        # two hosts produced 253. The real GUI always has a populated panel.
+        _c3.push_panel_config(_c3.main_window.mesh_config_panel,
+                              _c3.global_mesh_config)
+        with open(_hws2, "w", encoding="utf-8") as f:
+            json.dump(_c3.workspace_dict(), f, indent=2)
+        _c4 = AppController()
+        _c4.open_workspace_path(_hws2)
+
         runs = {}
-        for host, cfg in (("gui", configured()),
+        for host, cfg in (("gui", _c4.global_mesh_config),
                           ("headless", PipelineConfig.load_from_file(script)
-                           .build_mesh_config(None))):
+                           .build_mesh_config(None)),
+                          ("live", configured())):
             conf = os.path.join(tmp, f"{host}.dat")
             cfg.output_filename = os.path.join(tmp, f"{host}.vtk")
             cfg.export_vtk = True
@@ -433,23 +593,26 @@ else:
             runs[host] = (p, (p.stdout or "") + (p.stderr or ""),
                           os.path.join(tmp, f"{host}.vtk"))
 
-        for host in ("gui", "headless"):
+        for suffix, host in (("", "gui"), ("b", "headless"), ("c", "live")):
             p, out, vtk = runs[host]
             mm = re.search(r"Inverted cells\s*:\s*(\d+) of (\d+)", out)
-            check(f"12{'' if host == 'gui' else 'b'}. the {host} host's project "
-                  f"file meshes: exit {p.returncode}, "
+            check(f"12{suffix}. the {host} config meshes: exit {p.returncode}, "
                   f"{mm.group(0) if mm else 'no Inverted cells row'}",
                   p.returncode == 0 and bool(mm) and mm.group(1) == "0"
                   and int(mm.group(2)) > 0 and os.path.exists(vtk))
 
         a, b = _points(runs["gui"][2]), _points(runs["headless"][2])
-        check("13. ...and they are the SAME mesh, node for node, snapped to 1e-10 "
-              "and canonically ordered. ASYMMETRIC on purpose: the gui side is the "
-              "LIVE model and the headless side has been through the file, so this "
-              "measures the round-trip in the mesh itself, where check 8 — reload "
-              "against reload — would agree with itself about a parameter both "
-              f"sides lost ({len(a)} vs {len(b)} nodes)",
-              a == b and len(a) > 0)
+        check("13. a headless run of the project file produces the SAME MESH as "
+              "the GUI run of it — node for node, snapped to 1e-10 and canonically "
+              "ordered, both sides having been through the file rather than shared "
+              f"an object ({len(a)} vs {len(b)} nodes)", a == b and len(a) > 0)
+
+        c = _points(runs["live"][2])
+        check("13b. ...and it is the mesh the model that was never written out "
+              "produces, which is the round-trip's own control: without it, two "
+              "hosts that reload the same lossy way would agree with each other "
+              f"about a parameter they both lost ({len(c)} nodes)",
+              a == c and len(c) > 0)
 
 print()
 if failures:

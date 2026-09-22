@@ -2177,11 +2177,42 @@ It asserts the name has no directory part now, which is a real defect — `stage
 a generated entry with `os.path.join(dest_dir, name)`, and an absolute name lands outside the case
 folder entirely.
 
-**Named blind spot: a template case that cannot build its document loses its PARAMETER FILE with
-it.** Both hosts wrap the collector in the downgrade-to-a-warning they already had, and the two
-files are produced together, so a family function that raises costs the case both. Deliberate — a
-staged parameter file naming a document that is not there is a more confident wrong record than no
-record — but it is a narrowing of what a template case used to get, and nothing gates it.
+**What the review found, and it was not in the round-trip.** Both axes passed the persistence half
+outright; all four surviving findings were in the case STAGING, which is the part of this ticket no
+acceptance criterion asked for. The sharpest was a defect the cross-reference itself created: the
+staged parameter file names the document beside it, `grid/cad/` is never cleared
+(`solver_case.prepare_case_dir` has no `rmtree`), and the staging renames a colliding entry — so a
+second run of the same case wrote `Background_para_<case>_2.dat` quoting the FIRST run's document.
+A case folder stating in writing that a grid was cut from a topology it was not, which is precisely
+the confident wrong record `grid/cad/` exists to prevent, and it was reachable from the ordinary
+"tweak a parameter, Send to Solver again" flow rather than theoretically. It was reproduced before
+it was fixed. The fix narrows `_unique_name` for GENERATED entries only: they step aside from a name
+this run has taken, never from a file a previous run left, because a generated file is a
+reconstruction of the configuration as it stands now and last run's is stale — the rule
+`_write_index` already follows by rewriting itself in full.
+
+Three more, all taken: two docstring sentences in `mesh_config_io` that the change made FALSE (the
+"ONLY `save_config_to_file` passes it" and "its other two callers" lines — this repo's own recorded
+"a reader list goes stale" failure); the "does a template drive this config?" predicate spelled
+twice and INVERTED at the two sites, now `TopologyModel.names_a_family()` with a source-scan gate,
+because two spellings that agree today are how a projection and a staging drift apart; and the
+self-declared regression that a family function raising cost the case its parameter file as well,
+now a fallback to the pre-template file with no `MESH_TOPOLOGY_FILE` line.
+
+**Two of the review's own gate checks were wrong on the first try, in the same way as the ticket's
+originals.** The re-stage check asked only whether each quoted document RESOLVES, and stayed GREEN
+on the injection that restores the bug — with two parameter files both quoting the first run's
+document, every name still resolved; it measures a BIJECTION now. And the fallback check was inert
+twice: once crashing the file, and then, with the `except` added to stop that, letting the raised
+placeholder satisfy the very condition being tested (one entry, no `MESH_TOPOLOGY_FILE` line). It
+pins the entry's NAME now, so "it raised" cannot read as "it fell back".
+
+**Named blind spot: a GENERATED staged entry can overwrite a previous run's file of the same name.**
+The narrowing above is what keeps the pair together; the cost is that a file left in `grid/cad/` by
+an earlier run whose name collides with a generated one is replaced rather than kept. Reachable only
+for a copied input named exactly `Background_para_<case>.dat` or `..._topology.json` that is no
+longer a source this run — already an unrecorded leftover, since `SOURCES.txt` is rewritten in full.
+Nothing gates it.
 
 **Named blind spot, stated here as well as in the rule file:** only `TopologyModel()`'s DEFAULTS are
 run through the real binary. The other seven parameter sets in the spread are checked structurally,

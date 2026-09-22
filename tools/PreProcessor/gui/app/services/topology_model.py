@@ -101,6 +101,23 @@ class TopologyModel:
         """
         return self != TopologyModel()
 
+    def names_a_family(self) -> bool:
+        """True when a TEMPLATE drives this configuration.
+
+        The ONE owner of that question, because three call sites now ask it and two
+        of them used to spell it themselves, inverted: the funnel decides whether to
+        PROJECT a document, the case staging decides whether to GENERATE one, and
+        `mesh_topology_file` is an output rather than an input exactly when this is
+        true. Two spellings of one predicate is how the projection and the staging
+        drift into disagreeing about what a template case is.
+
+        Deliberately NOT :meth:`is_configured`, which is a different question one
+        line up: a user who has typed parameters but not yet picked a family has
+        configured something (so the project file must carry it) while naming no
+        family (so there is no document to build).
+        """
+        return bool(self.family)
+
     def copy(self) -> "TopologyModel":
         """A detached copy — what the undo snapshot and the panel round-trip need."""
         return TopologyModel(**{f.name: getattr(self, f.name) for f in fields(self)})
@@ -193,6 +210,17 @@ def build_document(model: TopologyModel) -> dict:
     return fam.build(model)
 
 
+def document_for(model: TopologyModel) -> str:
+    """``model``'s document, as the JSON text to write.
+
+    The two-step walk (:func:`build_document` then :func:`document_text`) behind one
+    name, so a caller that wants the TEXT — the case staging, which writes it into
+    the folder itself rather than to a path — does not have to know there are two
+    steps, in the same way :func:`projection_path` already hides the naming rule.
+    """
+    return document_text(build_document(model))
+
+
 def document_text(doc: dict) -> str:
     """``doc`` as the JSON text to write. Trailing newline, stable key order."""
     return json.dumps(doc, indent=2) + "\n"
@@ -218,5 +246,5 @@ def project(model: TopologyModel, config_path: str) -> str:
     out = projection_path(config_path)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
-        f.write(document_text(build_document(model)))
+        f.write(document_for(model))
     return out

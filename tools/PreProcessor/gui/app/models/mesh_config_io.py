@@ -183,15 +183,20 @@ def save_config_to_file(cfg, path: str):
     has already been bitten by, where four pipeline stages implemented twice let an
     artefact be produced for nobody.
 
-    :func:`config_to_text` stays pure, and deliberately: its other two callers want
-    the config as CONTENT (the solver case staging its own runnable parameters, and
-    the source listing), and a projection fired from there would write a document
-    for a caller that is not about to run anything.
+    :func:`config_to_text` stays pure, and deliberately: its other caller wants the
+    config as CONTENT rather than as a run, and a projection fired from there would
+    write a document for a caller that is not about to run anything. That caller is
+    ``services/case_sources.py::mesh_config_generated`` — ONE now, where this said
+    two until #135: the solver case's staging and the pipeline source listing both
+    went through it, which is also what gave a template case the
+    ``MESH_TOPOLOGY_FILE`` line it used to have none of. It GENERATES the document
+    as a second ``(name, text)`` pair rather than projecting one, so the purity
+    this paragraph is about is unchanged.
     """
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     topo = ""
     model = getattr(cfg, "topology", None)
-    if model is not None and getattr(model, "family", ""):
+    if model is not None and model.names_a_family():
         topo = topology_model.project(model, path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(config_to_text(cfg, path, topology_path=topo))
@@ -200,12 +205,16 @@ def save_config_to_file(cfg, path: str):
 def config_to_text(cfg, path: str = "", topology_path: str = "") -> str:
     """`cfg` as Background_para.dat text, as it would be written at `path`.
 
-    ``topology_path`` overrides the ``MESH_TOPOLOGY_FILE`` line, and ONLY
-    :func:`save_config_to_file` passes it — with the path it just projected a
-    template's document to. An override rather than a mutation of ``cfg``: a text
-    builder that edited the model it is describing would leave the projected path on
-    a model the user is still editing, and the next Save would write it out as if
-    the user had typed it.
+    ``topology_path`` overrides the ``MESH_TOPOLOGY_FILE`` line. TWO callers pass it,
+    and they differ in exactly one way worth knowing: :func:`save_config_to_file`
+    passes the ABSOLUTE path it just projected a template's document to, because the
+    mesher is about to open that line relative to its own working directory;
+    ``case_sources.mesh_config_generated`` passes the BARE FILENAME of the document
+    it is staging beside this text, because that pair is a record meant to survive
+    the case folder being copied. An override rather than a mutation of ``cfg``: a
+    text builder that edited the model it is describing would leave the projected
+    path on a model the user is still editing, and the next Save would write it out
+    as if the user had typed it.
 
     Split from :func:`save_config_to_file` so a caller that needs the config as
     CONTENT rather than as a file on disk — the solver case staging its own

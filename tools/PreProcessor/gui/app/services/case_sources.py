@@ -49,6 +49,9 @@ import os
 import shutil
 
 from app.services import mesh_modes
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 # Under grid/, because that is where the mesh this geometry became already sits.
 SOURCE_DIR_NAME = "cad"
@@ -146,28 +149,57 @@ def mesh_config_generated(mesh_config, case_name: str) -> list:
 
     Qt-free and shared, like everything else here: ``controllers/solver_ctrl.py``
     and ``services/pipeline_case_sources.py`` both call this rather than each
-    spelling the name and the projection out. Raises whatever the projection
-    raises — both callers already downgrade a failure here to a warning, because a
-    case that stages its geometry but not its settings is still worth having.
+    spelling the name and the projection out.
+
+    A family function that RAISES costs the case its document but NOT its parameter
+    file: the fallback is the file that shipped before templates existed, with no
+    ``MESH_TOPOLOGY_FILE`` line, which is worse than the pair and much better than
+    the nothing both callers' own ``except`` would otherwise record. The two are
+    only produced together when the document actually exists, so the parameter file
+    never names a document that was not written.
     """
     from app.models.mesh_config_io import config_to_text
     from app.services import topology_model
 
     stem = f"Background_para_{case_name}"
     model = getattr(mesh_config, "topology", None)
-    if model is None or not getattr(model, "family", ""):
+    if model is None or not model.names_a_family():
         return [(f"{stem}.dat", config_to_text(mesh_config))]
     doc_name = os.path.basename(topology_model.projection_path(f"{stem}.dat"))
+    try:
+        doc = topology_model.document_for(model)
+    except Exception:
+        _log.warning("the %r template could not build its document, so the case "
+                     "records its mesh parameters without one", model.family,
+                     exc_info=True)
+        return [(f"{stem}.dat", config_to_text(mesh_config))]
     return [
         (f"{stem}.dat", config_to_text(mesh_config, topology_path=doc_name)),
-        (doc_name,
-         topology_model.document_text(topology_model.build_document(model))),
+        (doc_name, doc),
     ]
 
 
-def _unique_name(dest_dir: str, name: str, taken: set) -> str:
-    """``name``, or ``stem_2.ext`` / ``stem_3.ext`` until it is free."""
-    if name not in taken and not os.path.exists(os.path.join(dest_dir, name)):
+def _unique_name(dest_dir: str, name: str, taken: set,
+                 check_disk: bool = True) -> str:
+    """``name``, or ``stem_2.ext`` / ``stem_3.ext`` until it is free.
+
+    ``check_disk=False`` asks only whether THIS run has taken the name, which is
+    what a GENERATED entry wants: it is a reconstruction of the configuration as it
+    stands now, so a file of that name left by a PREVIOUS run is a stale
+    reconstruction to replace rather than evidence to step aside from — the same
+    rule `_write_index` already applies by rewriting itself in full. Stepping aside
+    from a copied input is unaffected, because copies are staged FIRST and are in
+    ``taken`` by the time a generated entry asks.
+
+    It stopped being cosmetic with #135. Before it there was one generated file and
+    a `_2` copy of it was merely clutter; now the parameter file NAMES the topology
+    document staged beside it, and `grid/cad/` is never cleared, so a second run of
+    the same case produced `Background_para_<case>_2.dat` quoting the FIRST run's
+    document — a case folder stating, in writing, that a grid was cut from a
+    topology it was not. Measured, not reasoned: that is what the code did.
+    """
+    if name not in taken and not (check_disk
+                                  and os.path.exists(os.path.join(dest_dir, name))):
         return name
     stem, ext = os.path.splitext(name)
     n = 2
@@ -243,7 +275,8 @@ def stage_case_sources(sources, grid_dir: str, log=_noop, generated=()) -> list:
     # generated one steps aside — a copied input is evidence, a regenerated one
     # is only a reconstruction.
     for gname, text in made:
-        name = _unique_name(dest_dir, os.path.basename(gname), taken)
+        name = _unique_name(dest_dir, os.path.basename(gname), taken,
+                            check_disk=False)
         taken.add(name)
         dst = os.path.join(dest_dir, name)
         with open(dst, "w", encoding="utf-8") as f:

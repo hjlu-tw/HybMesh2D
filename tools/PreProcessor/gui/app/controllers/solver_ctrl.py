@@ -8,8 +8,9 @@ from app.workers.solver_run import SolverPipelineWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
 from app.services import restart_points
 from app.services.case_files import GUI_RUN_TAG
-from app.services import case_sources
-from app.services.case_sources import mesh_input_paths, mesh_provenance_paths
+from app.services.case_sources import (
+    mesh_config_generated, mesh_input_paths, mesh_provenance_paths,
+)
 from app.services.mesh_grid_lookup import resolve_case_grid
 from app.services.logging_setup import get_logger
 from app.services.paths import (
@@ -98,7 +99,7 @@ class SolverControllerMixin:
         case = _sanitize(getattr(self, "global_solver_config", None)
                          and self.global_solver_config.case_name or "case")
         try:
-            return case_sources.mesh_config_generated(cfg, case)
+            return mesh_config_generated(cfg, case)
         except Exception:
             # A case that stages its geometry but not its settings is still worth
             # having; a run that dies here is not. The parameter file and the

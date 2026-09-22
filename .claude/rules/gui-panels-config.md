@@ -477,11 +477,16 @@ against one list; #71 moved the first two here.
   STAGED line quotes a bare filename while the line the run itself wrote is absolute, so the staged
   config is runnable in place only from the staged folder. It is a record, not a rerun, and an
   absolute path in it would be a record of one machine.
-- **A template case that cannot build its document loses its PARAMETER FILE with it.** Both hosts
-  wrap `mesh_config_generated` in the same downgrade-to-a-warning they already had, and the two
-  files are produced together, so a family function that raises costs the case both. Deliberate —
-  a staged parameter file naming a document that is not there is a more confident wrong record than
-  no record — but it is a narrowing of what a template case used to get, and nothing gates it.
+- **A GENERATED staged entry can overwrite a previous run's file of the same name.** #135
+  narrowed `_unique_name` for generated entries so the parameter file and its document stay a
+  PAIR across re-runs (`grid/cad/` is never cleared, and the old rule made the second run's
+  parameter file quote the FIRST run's document). The cost is that a file left there by an
+  earlier run whose name collides with a generated one is replaced rather than kept. Reachable
+  only for a COPIED input named exactly `Background_para_<case>.dat` or `..._topology.json`
+  that is no longer a source this run — already an unrecorded leftover, since `SOURCES.txt` is
+  rewritten in full. Nothing gates it. The earlier blind spot this replaces — a template case
+  that could not build its document losing its PARAMETER FILE too — was CLOSED in review: the
+  fallback is the pre-template parameter file with no `MESH_TOPOLOGY_FILE` line.
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that
